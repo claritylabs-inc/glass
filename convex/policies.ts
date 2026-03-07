@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { mutation, query, internalQuery } from "./_generated/server";
 import { requireAuth } from "./lib/auth";
 
 export const list = query({
@@ -136,6 +136,24 @@ export const emailIdsWithPolicies = query({
         p.extractionStatus !== "not_insurance" &&
         !p.deletedAt
       ) {
+        ids.add(p.emailId);
+      }
+    }
+    return [...ids];
+  },
+});
+
+// Internal version for scheduled actions (no auth context)
+export const emailIdsWithPoliciesInternal = internalQuery({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    const all = await ctx.db
+      .query("policies")
+      .withIndex("by_userId", (idx) => idx.eq("userId", args.userId as any))
+      .collect();
+    const ids = new Set<string>();
+    for (const p of all) {
+      if (p.emailId && p.extractionStatus !== "not_insurance" && !p.deletedAt) {
         ids.add(p.emailId);
       }
     }

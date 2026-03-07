@@ -22,7 +22,9 @@ export const classifyEmails = internalAction({
 
     // Get email IDs that already have policies so we can skip them
     const emailIdsWithPolicies = new Set(
-      await ctx.runQuery(api.policies.emailIdsWithPolicies)
+      await ctx.runQuery(internal.policies.emailIdsWithPoliciesInternal, {
+        userId: args.userId,
+      })
     );
 
     const anthropic = new Anthropic();
@@ -153,7 +155,7 @@ Date: ${email.date}`,
 
     // Update connection with policy count
     if (policiesFound > 0) {
-      const connection = await ctx.runQuery(api.connections.get, {
+      const connection = await ctx.runQuery(internal.connections.getInternal, {
         id: args.connectionId,
       });
       await ctx.runMutation(api.connections.updateScanStatus, {
