@@ -12,8 +12,8 @@ export const classifyEmails = internalAction({
     userId: v.id("users"),
   },
   handler: async (ctx, args) => {
-    // Get unprocessed emails for this connection
-    const emails = await ctx.runQuery(api.emails.list, {
+    // Get unprocessed emails for this connection (internal query — no auth needed)
+    const emails = await ctx.runQuery(internal.emails.listByConnection, {
       connectionId: args.connectionId,
     });
     const unprocessed = emails.filter((e: any) => !e.processed);

@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { mutation, query, internalQuery } from "./_generated/server";
 import { requireAuth } from "./lib/auth";
 
 export const list = query({
@@ -20,6 +20,14 @@ export const get = query({
     const connection = await ctx.db.get(args.id);
     if (!connection || connection.userId !== userId) return null;
     return connection;
+  },
+});
+
+// Internal query for use by scheduled actions (no auth context)
+export const getInternal = internalQuery({
+  args: { id: v.id("emailConnections") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.id);
   },
 });
 

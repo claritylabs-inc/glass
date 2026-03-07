@@ -2,7 +2,7 @@
 
 import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
-import { api } from "../_generated/api";
+import { api, internal } from "../_generated/api";
 import { ImapFlow } from "imapflow";
 import Anthropic from "@anthropic-ai/sdk";
 import { EXTRACTION_PROMPT, METADATA_PROMPT, buildSectionsPrompt } from "../lib/prompts";
@@ -82,13 +82,12 @@ export const extractPolicy = internalAction({
     userId: v.id("users"),
   },
   handler: async (ctx, args) => {
-    const emails = await ctx.runQuery(api.emails.list, {
-      connectionId: args.connectionId,
+    const thisEmail = await ctx.runQuery(internal.emails.getInternal, {
+      id: args.emailId,
     });
-    const thisEmail = emails.find((e) => e._id === args.emailId);
     if (!thisEmail) throw new Error("Email not found");
 
-    const connection = await ctx.runQuery(api.connections.get, {
+    const connection = await ctx.runQuery(internal.connections.getInternal, {
       id: args.connectionId,
     });
     if (!connection) throw new Error("Connection not found");
@@ -190,7 +189,7 @@ export const extractPolicy = internalAction({
 
 async function incrementExtracted(ctx: any, connectionId: any) {
   try {
-    const conn = await ctx.runQuery(api.connections.get, { id: connectionId });
+    const conn = await ctx.runQuery(internal.connections.getInternal, { id: connectionId });
     if (!conn?.scanProgress) return;
 
     const progress = { ...conn.scanProgress };
