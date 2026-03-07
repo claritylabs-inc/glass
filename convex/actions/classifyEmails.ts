@@ -36,97 +36,98 @@ export const classifyEmails = internalAction({
       scanProgress: { phase: "classifying", totalEmails: total, processedEmails: 0 },
     });
 
-    for (const email of unprocessed) {
-      // Skip emails that already produced policies
-      if (emailIdsWithPolicies.has(email._id)) {
-        await ctx.runMutation(api.emails.markProcessed, { id: email._id });
-        continue;
-      }
-      const subjectLower = email.subject.toLowerCase();
-      const fromLower = email.from.toLowerCase();
+    try {
+      for (const email of unprocessed) {
+        // Skip emails that already produced policies
+        if (emailIdsWithPolicies.has(email._id)) {
+          await ctx.runMutation(api.emails.markProcessed, { id: email._id });
+          processed++;
+          continue;
+        }
+        const subjectLower = email.subject.toLowerCase();
+        const fromLower = email.from.toLowerCase();
 
-      // Fast path: keyword heuristics
-      const keywordMatch = INSURANCE_KEYWORDS.some(
-        (kw) => subjectLower.includes(kw.toLowerCase())
-      );
-      const senderMatch = INSURANCE_SENDER_PATTERNS.some(
-        (pat) => fromLower.includes(pat.toLowerCase())
-      );
+        // Fast path: keyword heuristics
+        const keywordMatch = INSURANCE_KEYWORDS.some(
+          (kw) => subjectLower.includes(kw.toLowerCase())
+        );
+        const senderMatch = INSURANCE_SENDER_PATTERNS.some(
+          (pat) => fromLower.includes(pat.toLowerCase())
+        );
 
-      let isInsurance = false;
-      let reason = "";
-      let confidence = 0;
+        let isInsurance = false;
+        let reason = "";
+        let confidence = 0;
 
-      if (keywordMatch && senderMatch) {
-        // High confidence keyword match — skip AI
-        isInsurance = true;
-        reason = "Keyword + sender match";
-        confidence = 0.95;
-      } else if (keywordMatch || senderMatch) {
-        // Ambiguous — use Claude Haiku
-        try {
-          const response = await anthropic.messages.create({
-            model: "claude-haiku-4-5-20251001",
-            max_tokens: 256,
-            messages: [
-              {
-                role: "user",
-                content: `Is this email about insurance policies? Respond with JSON only: {"isInsurance": boolean, "reason": "brief explanation", "confidence": number 0-1}
+        if (keywordMatch && senderMatch) {
+          // High confidence keyword match — skip AI
+          isInsurance = true;
+          reason = "Keyword + sender match";
+          confidence = 0.95;
+        } else if (keywordMatch || senderMatch) {
+          // Ambiguous — use Claude Haiku
+          try {
+            const response = await anthropic.messages.create({
+              model: "claude-haiku-4-5-20251001",
+              max_tokens: 256,
+              messages: [
+                {
+                  role: "user",
+                  content: `Is this email about insurance policies? Respond with JSON only: {"isInsurance": boolean, "reason": "brief explanation", "confidence": number 0-1}
 
 Subject: ${email.subject}
 From: ${email.from}
 Date: ${email.date}`,
-              },
-            ],
-          });
+                },
+              ],
+            });
 
-          const rawText =
-            response.content[0].type === "text" ? response.content[0].text : "";
-          const text = rawText.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?```\s*$/i, "");
-          const parsed = JSON.parse(text);
-          isInsurance = parsed.isInsurance;
-          reason = parsed.reason;
-          confidence = parsed.confidence;
-        } catch {
-          // Fallback to keyword match
-          isInsurance = keywordMatch || senderMatch;
-          reason = "AI classification failed, using heuristic";
-          confidence = 0.6;
+            const rawText =
+              response.content[0].type === "text" ? response.content[0].text : "";
+            const text = rawText.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?```\s*$/i, "");
+            const parsed = JSON.parse(text);
+            isInsurance = parsed.isInsurance;
+            reason = parsed.reason;
+            confidence = parsed.confidence;
+          } catch {
+            // Fallback to keyword match
+            isInsurance = keywordMatch || senderMatch;
+            reason = "AI classification failed, using heuristic";
+            confidence = 0.6;
+          }
+        } else {
+          isInsurance = false;
+          reason = "No insurance keywords or sender patterns";
+          confidence = 0.9;
         }
-      } else {
-        isInsurance = false;
-        reason = "No insurance keywords or sender patterns";
-        confidence = 0.9;
-      }
 
-      // Update classification
-      await ctx.runMutation(api.emails.markClassified, {
-        id: email._id,
-        isInsuranceRelated: isInsurance,
-        classificationReason: reason,
-        classificationConfidence: confidence,
-      });
-
-      // If insurance email with attachments, schedule extraction
-      if (isInsurance && email.hasAttachments) {
-        await ctx.scheduler.runAfter(0, internal.actions.extractPolicy.extractPolicy, {
-          emailId: email._id,
-          connectionId: args.connectionId,
-          userId: args.userId,
+        // Update classification
+        await ctx.runMutation(api.emails.markClassified, {
+          id: email._id,
+          isInsuranceRelated: isInsurance,
+          classificationReason: reason,
+          classificationConfidence: confidence,
         });
-        policiesFound++;
-      }
 
-      // Mark as processed and update progress
-      await ctx.runMutation(api.emails.markProcessed, { id: email._id });
-      processed++;
+        // If insurance email with attachments, schedule extraction
+        if (isInsurance && email.hasAttachments) {
+          await ctx.scheduler.runAfter(0, internal.actions.extractPolicy.extractPolicy, {
+            emailId: email._id,
+            connectionId: args.connectionId,
+            userId: args.userId,
+          });
+          policiesFound++;
+        }
 
-      // Update progress every 5 emails or on last one
-      if (processed % 5 === 0 || processed === total) {
+        // Mark as processed
+        await ctx.runMutation(api.emails.markProcessed, { id: email._id });
+        processed++;
+
+        // Update progress every email
         await ctx.runMutation(api.connections.updateScanProgress, {
           id: args.connectionId,
           scanProgress: {
-            phase: policiesFound > 0 ? "extracting" : "classifying",
+            phase: "classifying",
             totalEmails: total,
             processedEmails: processed,
             insuranceFound: policiesFound,
@@ -135,6 +136,19 @@ Date: ${email.date}`,
           },
         });
       }
+    } catch (error: any) {
+      console.error("Classification failed:", error.message);
+      // Don't leave progress stuck — mark complete on error
+      await ctx.runMutation(api.connections.updateScanProgress, {
+        id: args.connectionId,
+        scanProgress: {
+          phase: "complete",
+          totalEmails: total,
+          processedEmails: processed,
+          insuranceFound: policiesFound,
+        },
+      });
+      return;
     }
 
     // Update connection with policy count
