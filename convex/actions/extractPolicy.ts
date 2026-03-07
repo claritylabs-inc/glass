@@ -125,6 +125,13 @@ export const extractPolicy = internalAction({
 
       const rawText =
         response.content[0].type === "text" ? response.content[0].text : "{}";
+
+      // Save raw response so retries can re-parse without calling the API
+      await ctx.runMutation(api.policies.updateExtraction, {
+        id: policyId,
+        rawExtractionResponse: rawText,
+      });
+
       const responseText = rawText.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?```\s*$/i, "");
       const extracted = JSON.parse(responseText);
 

@@ -204,6 +204,7 @@ export const updateExtraction = mutation({
     fileId: v.optional(v.id("_storage")),
     fileName: v.optional(v.string()),
     extractionError: v.optional(v.string()),
+    rawExtractionResponse: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const { id, ...fields } = args;

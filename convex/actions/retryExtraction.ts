@@ -6,6 +6,28 @@ import { api } from "../_generated/api";
 import { ImapFlow } from "imapflow";
 import Anthropic from "@anthropic-ai/sdk";
 
+function stripFences(text: string): string {
+  return text.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?```\s*$/i, "");
+}
+
+function applyExtracted(extracted: any) {
+  return {
+    carrier: extracted.carrier || "Unknown",
+    policyNumber: extracted.policyNumber || "Unknown",
+    policyType: extracted.policyType || "other",
+    policyYear: extracted.policyYear || new Date().getFullYear(),
+    effectiveDate: extracted.effectiveDate || "Unknown",
+    expirationDate: extracted.expirationDate || "Unknown",
+    isRenewal: extracted.isRenewal ?? false,
+    coverages: extracted.coverages || [],
+    premium: extracted.premium,
+    insuredName: extracted.insuredName || "Unknown",
+    summary: extracted.summary,
+    extractionStatus: "complete" as const,
+    extractionError: "",
+  };
+}
+
 export const retryExtraction = action({
   args: {
     policyId: v.id("policies"),
@@ -16,6 +38,25 @@ export const retryExtraction = action({
     if (!policy) return { error: "Policy not found" };
     if (!policy.emailId) return { error: "No linked email — cannot retry" };
 
+    // Phase 1: Try re-parsing the saved raw response without calling the API
+    if (policy.rawExtractionResponse) {
+      try {
+        const responseText = stripFences(policy.rawExtractionResponse);
+        const extracted = JSON.parse(responseText);
+
+        await ctx.runMutation(api.policies.updateExtraction, {
+          id: args.policyId,
+          fileName: `${extracted.policyNumber || "policy"}.pdf`,
+          ...applyExtracted(extracted),
+        });
+
+        return { success: true, reused: true };
+      } catch {
+        // Saved response couldn't be parsed — fall through to Phase 2
+      }
+    }
+
+    // Phase 2: Full retry with API call
     const emails = await ctx.runQuery(api.emails.list, {});
     const email = emails.find((e: any) => e._id === policy.emailId);
     if (!email) return { error: "Linked email not found" };
@@ -118,25 +159,21 @@ export const retryExtraction = action({
 
       const rawText =
         response.content[0].type === "text" ? response.content[0].text : "{}";
-      const responseText = rawText.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?```\s*$/i, "");
+
+      // Save raw response for future retries
+      await ctx.runMutation(api.policies.updateExtraction, {
+        id: args.policyId,
+        rawExtractionResponse: rawText,
+      });
+
+      const responseText = stripFences(rawText);
       const extracted = JSON.parse(responseText);
 
       await ctx.runMutation(api.policies.updateExtraction, {
         id: args.policyId,
         fileId,
         fileName: `${extracted.policyNumber || "policy"}.pdf`,
-        carrier: extracted.carrier || "Unknown",
-        policyNumber: extracted.policyNumber || "Unknown",
-        policyType: extracted.policyType || "other",
-        policyYear: extracted.policyYear || new Date().getFullYear(),
-        effectiveDate: extracted.effectiveDate || "Unknown",
-        expirationDate: extracted.expirationDate || "Unknown",
-        isRenewal: extracted.isRenewal ?? false,
-        coverages: extracted.coverages || [],
-        premium: extracted.premium,
-        insuredName: extracted.insuredName || "Unknown",
-        summary: extracted.summary,
-        extractionStatus: "complete",
+        ...applyExtracted(extracted),
       });
 
       return { success: true };
