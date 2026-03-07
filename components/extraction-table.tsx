@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { useAction, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { motion, AnimatePresence } from "framer-motion";
-import { RotateCw, X, AlertCircle } from "lucide-react";
+import { RotateCw, X } from "lucide-react";
 import { FadeIn } from "@/components/ui/fade-in";
 
 interface Extraction {
@@ -96,10 +96,7 @@ function ErrorLogDialog({
       <div className="absolute inset-0 bg-black/20 backdrop-blur-[2px]" onClick={onClose} />
       <div className="relative bg-white rounded-lg border border-foreground/10 shadow-xl max-w-lg w-full mx-4 overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-foreground/6">
-          <div className="flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 text-red-500" />
-            <h3 className="!text-sm !font-medium !font-sans !text-foreground">Error Log</h3>
-          </div>
+          <h3 className="!text-sm !font-medium !font-sans !text-foreground">Error Log</h3>
           <button
             type="button"
             onClick={onClose}
@@ -128,7 +125,6 @@ function ViewErrorButton({ error }: { error: string }) {
         onClick={() => setOpen(true)}
         className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-label-sm font-medium text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
       >
-        <AlertCircle className="w-3 h-3" />
         View error
       </button>
       <ErrorLogDialog error={error} open={open} onClose={() => setOpen(false)} />
