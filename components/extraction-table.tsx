@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useAction, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { motion, AnimatePresence } from "framer-motion";
-import { RotateCw, X } from "lucide-react";
+import { RotateCw, X, AlertCircle } from "lucide-react";
 import { FadeIn } from "@/components/ui/fade-in";
 
 interface Extraction {
@@ -77,6 +77,60 @@ function DismissButton({ policyId }: { policyId: string }) {
       <X className="w-3 h-3" />
       Dismiss
     </button>
+  );
+}
+
+function ErrorLogDialog({
+  error,
+  open,
+  onClose,
+}: {
+  error: string;
+  open: boolean;
+  onClose: () => void;
+}) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/20 backdrop-blur-[2px]" onClick={onClose} />
+      <div className="relative bg-white rounded-lg border border-foreground/10 shadow-xl max-w-lg w-full mx-4 overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-foreground/6">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-red-500" />
+            <h3 className="!text-sm !font-medium !font-sans !text-foreground">Error Log</h3>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md p-1 hover:bg-foreground/5 transition-colors cursor-pointer"
+          >
+            <X className="w-3.5 h-3.5 text-muted-foreground" />
+          </button>
+        </div>
+        <div className="p-4">
+          <pre className="text-label-sm text-red-600 bg-red-50 border border-red-100 rounded-md p-3 whitespace-pre-wrap break-words font-mono max-h-[300px] overflow-y-auto">
+            {error}
+          </pre>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ViewErrorButton({ error }: { error: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-label-sm font-medium text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+      >
+        <AlertCircle className="w-3 h-3" />
+        View error
+      </button>
+      <ErrorLogDialog error={error} open={open} onClose={() => setOpen(false)} />
+    </>
   );
 }
 
@@ -159,17 +213,17 @@ export function ExtractionTable({
                       <td className="px-4 py-2.5 text-body-sm text-muted-foreground whitespace-nowrap">
                         {extraction.fileName || "—"}
                       </td>
-                      <td className="px-4 py-2.5">
-                        <span
-                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium ${badge.className}`}
-                        >
-                          {badge.label}
-                        </span>
-                        {extraction.extractionStatus === "error" && extraction.extractionError && (
-                          <p className="text-label-sm text-red-500 mt-0.5 max-w-[250px] truncate" title={extraction.extractionError}>
-                            {extraction.extractionError}
-                          </p>
-                        )}
+                      <td className="px-4 py-2.5 whitespace-nowrap">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium ${badge.className}`}
+                          >
+                            {badge.label}
+                          </span>
+                          {extraction.extractionStatus === "error" && extraction.extractionError && (
+                            <ViewErrorButton error={extraction.extractionError} />
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-2.5 text-body-sm text-muted-foreground hidden md:table-cell whitespace-nowrap">
                         {formatDate(extraction._creationTime)}
