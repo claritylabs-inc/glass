@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - "convex/**"
+      - "package.json"
+      - "package-lock.json"
 
 jobs:
   deploy:
