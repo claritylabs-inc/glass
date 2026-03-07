@@ -5,14 +5,14 @@ import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { X, Server } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faGoogle, faMicrosoft, faYahoo } from "@fortawesome/free-brands-svg-icons";
+import { PillButton } from "@/components/ui/pill-button";
+import { FaGoogle, FaMicrosoft, FaYahoo } from "react-icons/fa";
 import { type ReactNode } from "react";
 
 const PRESETS: Record<string, { host: string; port: number; icon: ReactNode }> = {
-  Gmail: { host: "imap.gmail.com", port: 993, icon: <FontAwesomeIcon icon={faGoogle} style={{ width: 16, height: 16 }} /> },
-  Outlook: { host: "outlook.office365.com", port: 993, icon: <FontAwesomeIcon icon={faMicrosoft} style={{ width: 16, height: 16 }} /> },
-  Yahoo: { host: "imap.mail.yahoo.com", port: 993, icon: <FontAwesomeIcon icon={faYahoo} style={{ width: 16, height: 16 }} /> },
+  Gmail: { host: "imap.gmail.com", port: 993, icon: <FaGoogle size={16} /> },
+  Outlook: { host: "outlook.office365.com", port: 993, icon: <FaMicrosoft size={16} /> },
+  Yahoo: { host: "imap.mail.yahoo.com", port: 993, icon: <FaYahoo size={16} /> },
   Custom: { host: "", port: 993, icon: <Server className="w-4 h-4" /> },
 };
 
@@ -200,22 +200,12 @@ export function ConnectionForm({ open, onClose }: ConnectionFormProps) {
               </div>
 
               <div className="flex justify-end gap-3 pt-3">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="px-4 py-2 rounded-full border border-foreground/8 bg-white text-label font-medium text-muted-foreground hover:text-foreground hover:border-foreground/15 hover:bg-foreground/[0.02] transition-all cursor-pointer"
-                >
+                <PillButton variant="secondary" onClick={onClose}>
                   Cancel
-                </button>
-                <motion.button
-                  type="submit"
-                  disabled={saving}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  className="px-5 py-2 rounded-full bg-foreground text-background text-label font-medium shadow-sm hover:shadow-md transition-shadow disabled:opacity-50 cursor-pointer"
-                >
+                </PillButton>
+                <PillButton type="submit" disabled={saving}>
                   {saving ? "Saving..." : "Add Connection"}
-                </motion.button>
+                </PillButton>
               </div>
             </form>
           </motion.div>

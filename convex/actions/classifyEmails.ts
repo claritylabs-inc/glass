@@ -7,7 +7,10 @@ import { INSURANCE_KEYWORDS, INSURANCE_SENDER_PATTERNS } from "../lib/policyType
 import Anthropic from "@anthropic-ai/sdk";
 
 export const classifyEmails = internalAction({
-  args: { connectionId: v.id("emailConnections") },
+  args: {
+    connectionId: v.id("emailConnections"),
+    userId: v.id("users"),
+  },
   handler: async (ctx, args) => {
     // Get unprocessed emails for this connection
     const emails = await ctx.runQuery(api.emails.list, {
@@ -101,6 +104,7 @@ Date: ${email.date}`,
         await ctx.scheduler.runAfter(0, internal.actions.extractPolicy.extractPolicy, {
           emailId: email._id,
           connectionId: args.connectionId,
+          userId: args.userId,
         });
         policiesFound++;
       }

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { motion, AnimatePresence } from "framer-motion";
+import { PillButton } from "@/components/ui/pill-button";
 import { RotateCw, FileText, Sparkles } from "lucide-react";
 import { POLICY_TYPE_LABELS } from "@/convex/lib/policyTypes";
 import { FadeIn } from "@/components/ui/fade-in";
@@ -117,13 +118,9 @@ function ReExtractButton({ policyId }: { policyId: string }) {
             </button>
           </div>
           <DialogFooter>
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              className="px-4 py-2 rounded-full border border-foreground/8 bg-white text-label font-medium text-muted-foreground hover:text-foreground hover:border-foreground/15 hover:bg-foreground/[0.02] transition-all cursor-pointer"
-            >
+            <PillButton variant="secondary" onClick={() => setOpen(false)}>
               Cancel
-            </button>
+            </PillButton>
           </DialogFooter>
         </DialogContent>
       </Dialog>

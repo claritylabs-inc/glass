@@ -1,21 +1,21 @@
 "use client";
 
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faGoogle, faMicrosoft, faYahoo } from "@fortawesome/free-brands-svg-icons";
+import { FaGoogle, FaMicrosoft, FaYahoo } from "react-icons/fa";
 import { Mail } from "lucide-react";
+import { type IconType } from "react-icons";
 
-const HOST_ICONS: Record<string, typeof faGoogle> = {
-  "imap.gmail.com": faGoogle,
-  "outlook.office365.com": faMicrosoft,
-  "imap.mail.yahoo.com": faYahoo,
+const HOST_ICONS: Record<string, IconType> = {
+  "imap.gmail.com": FaGoogle,
+  "outlook.office365.com": FaMicrosoft,
+  "imap.mail.yahoo.com": FaYahoo,
 };
 
 export function ConnectionIcon({ imapHost, className = "" }: { imapHost: string; className?: string }) {
-  const faIcon = HOST_ICONS[imapHost];
-  if (faIcon) {
+  const Icon = HOST_ICONS[imapHost];
+  if (Icon) {
     return (
       <div className={`rounded-full bg-primary/10 flex items-center justify-center ${className}`}>
-        <FontAwesomeIcon icon={faIcon} className="text-primary" style={{ width: 16, height: 16 }} />
+        <Icon className="text-primary" size={16} />
       </div>
     );
   }

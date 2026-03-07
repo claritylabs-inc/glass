@@ -5,6 +5,7 @@ import { Dialog as DialogPrimitive } from "@base-ui/react/dialog"
 
 import { cn } from "@/lib/utils"
 import { XIcon } from "lucide-react"
+import { PillButton } from "@/components/ui/pill-button"
 
 function Dialog({ ...props }: DialogPrimitive.Root.Props) {
   return <DialogPrimitive.Root data-slot="dialog" {...props} />
@@ -101,9 +102,7 @@ function DialogFooter({
     >
       {children}
       {showCloseButton && (
-        <DialogPrimitive.Close
-          className="px-4 py-2 rounded-full border border-foreground/8 bg-white text-label font-medium text-muted-foreground hover:text-foreground hover:border-foreground/15 hover:bg-foreground/[0.02] transition-all cursor-pointer"
-        >
+        <DialogPrimitive.Close render={<PillButton variant="secondary" />}>
           Close
         </DialogPrimitive.Close>
       )}

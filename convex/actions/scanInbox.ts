@@ -19,6 +19,11 @@ export const scanInbox = action({
   args: { connectionId: v.id("emailConnections") },
   returns: v.any(),
   handler: async (ctx, args) => {
+    // Verify auth and get userId
+    const viewer = await ctx.runQuery(api.users.viewer);
+    if (!viewer) throw new Error("Not authenticated");
+    const userId = viewer._id;
+
     const connection = await ctx.runQuery(api.connections.get, {
       id: args.connectionId,
     });
@@ -88,6 +93,7 @@ export const scanInbox = action({
       let inserted = 0;
       for (const email of emails) {
         await ctx.runMutation(api.emails.insert, {
+          userId,
           connectionId: args.connectionId,
           messageId: email.messageId,
           uid: email.uid,
@@ -110,7 +116,7 @@ export const scanInbox = action({
       await ctx.scheduler.runAfter(
         0,
         internal.actions.classifyEmails.classifyEmails,
-        { connectionId: args.connectionId }
+        { connectionId: args.connectionId, userId }
       );
 
       return { emailsFound: inserted };

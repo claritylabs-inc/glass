@@ -9,7 +9,8 @@ import { PolicyTable } from "@/components/policy-table";
 import { PolicyGroupedView } from "@/components/policy-grouped-view";
 import { PolicyFilters } from "@/components/policy-filters";
 import { FadeIn } from "@/components/ui/fade-in";
-import { CTAButton } from "@/components/ui/cta-button";
+import { PillButton } from "@/components/ui/pill-button";
+import { ArrowRight } from "lucide-react";
 import { FixedMobileFooter } from "@/components/ui/fixed-mobile-footer";
 
 export default function DashboardPage() {
@@ -67,7 +68,7 @@ export default function DashboardPage() {
               </div>
               {policies && policies.length === 0 && (
                 <div className="hidden md:block">
-                  <CTAButton label="Seed Demo Data" onClick={() => seedData()} />
+                  <PillButton onClick={() => seedData({})}>Seed Demo Data <ArrowRight className="w-3 h-3" /></PillButton>
                 </div>
               )}
             </div>
@@ -101,7 +102,7 @@ export default function DashboardPage() {
 
       {policies && policies.length === 0 && (
         <FixedMobileFooter>
-          <CTAButton label="Seed Demo Data" onClick={() => seedData()} />
+          <PillButton onClick={() => seedData({})}>Seed Demo Data <ArrowRight className="w-3 h-3" /></PillButton>
         </FixedMobileFooter>
       )}
     </div>

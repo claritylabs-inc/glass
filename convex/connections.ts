@@ -1,17 +1,25 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { requireAuth } from "./lib/auth";
 
 export const list = query({
   args: {},
   handler: async (ctx) => {
-    return await ctx.db.query("emailConnections").collect();
+    const userId = await requireAuth(ctx);
+    return await ctx.db
+      .query("emailConnections")
+      .withIndex("by_userId", (idx) => idx.eq("userId", userId as any))
+      .collect();
   },
 });
 
 export const get = query({
   args: { id: v.id("emailConnections") },
   handler: async (ctx, args) => {
-    return await ctx.db.get(args.id);
+    const userId = await requireAuth(ctx);
+    const connection = await ctx.db.get(args.id);
+    if (!connection || connection.userId !== userId) return null;
+    return connection;
   },
 });
 
@@ -24,8 +32,10 @@ export const create = mutation({
     password: v.string(),
   },
   handler: async (ctx, args) => {
+    const userId = await requireAuth(ctx);
     return await ctx.db.insert("emailConnections", {
       ...args,
+      userId: userId as any,
     });
   },
 });
@@ -55,6 +65,10 @@ export const remove = mutation({
     deletePolicies: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
+    const userId = await requireAuth(ctx);
+    const connection = await ctx.db.get(args.id);
+    if (!connection || connection.userId !== userId) throw new Error("Not found");
+
     // Find all emails for this connection
     const emails = await ctx.db
       .query("emails")
@@ -66,7 +80,10 @@ export const remove = mutation({
 
     if (args.deletePolicies) {
       // Delete policies linked to these emails
-      const allPolicies = await ctx.db.query("policies").collect();
+      const allPolicies = await ctx.db
+        .query("policies")
+        .withIndex("by_userId", (idx) => idx.eq("userId", userId as any))
+        .collect();
       for (const policy of allPolicies) {
         if (policy.emailId && emailIds.has(policy.emailId)) {
           await ctx.db.delete(policy._id);
@@ -87,6 +104,10 @@ export const remove = mutation({
 export const countLinkedPolicies = query({
   args: { id: v.id("emailConnections") },
   handler: async (ctx, args) => {
+    const userId = await requireAuth(ctx);
+    const connection = await ctx.db.get(args.id);
+    if (!connection || connection.userId !== userId) return { emailCount: 0, policyCount: 0 };
+
     const emails = await ctx.db
       .query("emails")
       .withIndex("by_connection_processed", (idx) =>
@@ -95,7 +116,10 @@ export const countLinkedPolicies = query({
       .collect();
     const emailIds = new Set(emails.map((e) => e._id));
 
-    const allPolicies = await ctx.db.query("policies").collect();
+    const allPolicies = await ctx.db
+      .query("policies")
+      .withIndex("by_userId", (idx) => idx.eq("userId", userId as any))
+      .collect();
     const linked = allPolicies.filter(
       (p) => p.emailId && emailIds.has(p.emailId) && p.extractionStatus === "complete"
     );

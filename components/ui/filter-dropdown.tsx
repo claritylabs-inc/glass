@@ -57,7 +57,7 @@ export function FilterDropdown({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 4, scale: 0.97 }}
             transition={{ duration: 0.15 }}
-            className="absolute top-full mt-1.5 left-0 min-w-[160px] max-w-[240px] rounded-lg border border-foreground/8 bg-white shadow-lg shadow-black/[0.06] py-1 z-50"
+            className="absolute top-full mt-1.5 left-0 min-w-[160px] max-w-[240px] rounded-lg border border-foreground/6 bg-white/55 backdrop-blur-xl shadow-lg shadow-black/[0.08] py-1 z-50"
           >
             <button
               type="button"

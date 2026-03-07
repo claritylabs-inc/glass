@@ -44,6 +44,10 @@ export const retryExtraction = action({
   },
   returns: v.any(),
   handler: async (ctx, args) => {
+    // Verify auth
+    const viewer = await ctx.runQuery(api.users.viewer);
+    if (!viewer) return { error: "Not authenticated" };
+
     const policy = await ctx.runQuery(api.policies.get, { id: args.policyId });
     if (!policy) return { error: "Policy not found" };
     if (!policy.emailId) return { error: "No linked email — cannot retry" };

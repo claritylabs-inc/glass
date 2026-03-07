@@ -1,3 +1,4 @@
+import { v } from "convex/values";
 import { mutation } from "./_generated/server";
 
 export const migratePolicies = mutation({
@@ -28,5 +29,43 @@ export const migratePolicies = mutation({
     }
 
     return `Migrated ${migrated} of ${policies.length} policies`;
+  },
+});
+
+export const migrateUserId = mutation({
+  args: {
+    userId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    let migrated = 0;
+
+    // Migrate emailConnections
+    const connections = await ctx.db.query("emailConnections").collect();
+    for (const conn of connections) {
+      if (!conn.userId) {
+        await ctx.db.patch(conn._id, { userId: args.userId });
+        migrated++;
+      }
+    }
+
+    // Migrate emails
+    const emails = await ctx.db.query("emails").collect();
+    for (const email of emails) {
+      if (!email.userId) {
+        await ctx.db.patch(email._id, { userId: args.userId });
+        migrated++;
+      }
+    }
+
+    // Migrate policies
+    const policies = await ctx.db.query("policies").collect();
+    for (const policy of policies) {
+      if (!policy.userId) {
+        await ctx.db.patch(policy._id, { userId: args.userId });
+        migrated++;
+      }
+    }
+
+    return `Assigned userId to ${migrated} records`;
   },
 });

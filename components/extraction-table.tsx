@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useAction, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { motion, AnimatePresence } from "framer-motion";
+import { PillButton } from "@/components/ui/pill-button";
 import { RotateCw, X } from "lucide-react";
 import { FadeIn } from "@/components/ui/fade-in";
 import {
@@ -107,13 +108,9 @@ function ViewErrorButton({ error }: { error: string }) {
             {error}
           </pre>
           <DialogFooter>
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              className="px-4 py-2 rounded-full border border-foreground/8 bg-white text-label font-medium text-muted-foreground hover:text-foreground hover:border-foreground/15 hover:bg-foreground/[0.02] transition-all cursor-pointer"
-            >
+            <PillButton variant="secondary" onClick={() => setOpen(false)}>
               Close
-            </button>
+            </PillButton>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -12,6 +12,7 @@ import { useRouter } from "next/navigation";
 import { POLICY_TYPE_LABELS } from "@/convex/lib/policyTypes";
 import { Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
+import { PillButton } from "@/components/ui/pill-button";
 import {
   Dialog,
   DialogContent,
@@ -234,22 +235,12 @@ export default function PolicyDetailPage({
                 </DialogDescription>
               </DialogHeader>
               <DialogFooter>
-                <button
-                  type="button"
-                  onClick={() => setShowDeleteDialog(false)}
-                  disabled={deleting}
-                  className="px-4 py-2 rounded-full border border-foreground/8 bg-white text-label font-medium text-muted-foreground hover:text-foreground hover:border-foreground/15 hover:bg-foreground/[0.02] transition-all cursor-pointer disabled:opacity-50"
-                >
+                <PillButton variant="secondary" onClick={() => setShowDeleteDialog(false)} disabled={deleting}>
                   Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleDelete}
-                  disabled={deleting}
-                  className="px-5 py-2 rounded-full bg-destructive/10 text-destructive text-label font-medium hover:bg-destructive/20 transition-all cursor-pointer disabled:opacity-50"
-                >
+                </PillButton>
+                <PillButton variant="destructive" onClick={handleDelete} disabled={deleting}>
                   {deleting ? "Deleting..." : "Delete"}
-                </button>
+                </PillButton>
               </DialogFooter>
             </DialogContent>
           </Dialog>

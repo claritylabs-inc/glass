@@ -7,7 +7,7 @@ import { Nav } from "@/components/nav";
 import { ConnectionForm } from "@/components/connection-form";
 import { ScanStatus } from "@/components/scan-status";
 import { FadeIn } from "@/components/ui/fade-in";
-import { CTAButton } from "@/components/ui/cta-button";
+import { ArrowRight } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -16,6 +16,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { PillButton } from "@/components/ui/pill-button";
 import { Mail, Trash2, Play } from "lucide-react";
 import { ConnectionIcon } from "@/components/connection-icon";
 import { FixedMobileFooter } from "@/components/ui/fixed-mobile-footer";
@@ -71,42 +72,22 @@ function RemoveConnectionDialog({
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={removing}
-            className="px-4 py-2 rounded-full border border-foreground/8 bg-white text-label font-medium text-muted-foreground hover:text-foreground hover:border-foreground/15 hover:bg-foreground/[0.02] transition-all cursor-pointer disabled:opacity-50"
-          >
+          <PillButton variant="secondary" onClick={onClose} disabled={removing}>
             Cancel
-          </button>
+          </PillButton>
           {hasPolicies ? (
             <>
-              <button
-                type="button"
-                onClick={() => handleRemove(false)}
-                disabled={removing}
-                className="px-4 py-2 rounded-full border border-foreground/8 bg-white text-label font-medium text-muted-foreground hover:text-foreground hover:border-foreground/15 hover:bg-foreground/[0.02] transition-all cursor-pointer disabled:opacity-50"
-              >
+              <PillButton variant="secondary" onClick={() => handleRemove(false)} disabled={removing}>
                 Keep policies
-              </button>
-              <button
-                type="button"
-                onClick={() => handleRemove(true)}
-                disabled={removing}
-                className="px-5 py-2 rounded-full bg-destructive/10 text-destructive text-label font-medium hover:bg-destructive/20 transition-all cursor-pointer disabled:opacity-50"
-              >
+              </PillButton>
+              <PillButton variant="destructive" onClick={() => handleRemove(true)} disabled={removing}>
                 {removing ? "Removing..." : "Remove all"}
-              </button>
+              </PillButton>
             </>
           ) : (
-            <button
-              type="button"
-              onClick={() => handleRemove(false)}
-              disabled={removing}
-              className="px-5 py-2 rounded-full bg-destructive/10 text-destructive text-label font-medium hover:bg-destructive/20 transition-all cursor-pointer disabled:opacity-50"
-            >
+            <PillButton variant="destructive" onClick={() => handleRemove(false)} disabled={removing}>
               {removing ? "Removing..." : "Remove"}
-            </button>
+            </PillButton>
           )}
         </DialogFooter>
       </DialogContent>
@@ -137,10 +118,9 @@ export default function ConnectionsPage() {
                 </p>
               </div>
               <div className="hidden md:block">
-                <CTAButton
-                  label="Add Connection"
-                  onClick={() => setFormOpen(true)}
-                />
+                <PillButton onClick={() => setFormOpen(true)}>
+                  Add Connection <ArrowRight className="w-3 h-3" />
+                </PillButton>
               </div>
             </div>
           </FadeIn>
@@ -265,10 +245,9 @@ export default function ConnectionsPage() {
       </main>
 
       <FixedMobileFooter>
-        <CTAButton
-          label="Add Connection"
-          onClick={() => setFormOpen(true)}
-        />
+        <PillButton onClick={() => setFormOpen(true)}>
+          Add Connection <ArrowRight className="w-3 h-3" />
+        </PillButton>
       </FixedMobileFooter>
 
       <ConnectionForm open={formOpen} onClose={() => setFormOpen(false)} />

@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { requireAuth } from "./lib/auth";
 
 export const list = query({
   args: {
@@ -7,6 +8,7 @@ export const list = query({
     policyYear: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    const userId = await requireAuth(ctx);
     let q;
     if (args.carrier) {
       q = ctx.db
@@ -19,17 +21,28 @@ export const list = query({
           idx.eq("policyYear", args.policyYear!)
         );
     } else {
-      q = ctx.db.query("policies");
+      q = ctx.db
+        .query("policies")
+        .withIndex("by_userId", (idx) => idx.eq("userId", userId as any));
     }
     const all = await q.collect();
-    return all.filter((p) => p.extractionStatus === "complete" && !p.deletedAt);
+    return all.filter(
+      (p) =>
+        p.userId === userId &&
+        p.extractionStatus === "complete" &&
+        !p.deletedAt
+    );
   },
 });
 
 export const listPending = query({
   args: {},
   handler: async (ctx) => {
-    const all = await ctx.db.query("policies").collect();
+    const userId = await requireAuth(ctx);
+    const all = await ctx.db
+      .query("policies")
+      .withIndex("by_userId", (idx) => idx.eq("userId", userId as any))
+      .collect();
     const pending = all.filter(
       (p) =>
         !p.deletedAt &&
@@ -60,7 +73,11 @@ export const listPending = query({
 export const listExtractionLog = query({
   args: {},
   handler: async (ctx) => {
-    const all = await ctx.db.query("policies").collect();
+    const userId = await requireAuth(ctx);
+    const all = await ctx.db
+      .query("policies")
+      .withIndex("by_userId", (idx) => idx.eq("userId", userId as any))
+      .collect();
     const completed = all.filter(
       (p) =>
         !p.deletedAt &&
@@ -89,13 +106,17 @@ export const listExtractionLog = query({
 export const get = query({
   args: { id: v.id("policies") },
   handler: async (ctx, args) => {
-    return await ctx.db.get(args.id);
+    const userId = await requireAuth(ctx);
+    const policy = await ctx.db.get(args.id);
+    if (!policy || policy.userId !== userId) return null;
+    return policy;
   },
 });
 
 export const getFileUrl = query({
   args: { fileId: v.id("_storage") },
   handler: async (ctx, args) => {
+    await requireAuth(ctx);
     return await ctx.storage.getUrl(args.fileId);
   },
 });
@@ -103,7 +124,11 @@ export const getFileUrl = query({
 export const emailIdsWithPolicies = query({
   args: {},
   handler: async (ctx) => {
-    const all = await ctx.db.query("policies").collect();
+    const userId = await requireAuth(ctx);
+    const all = await ctx.db
+      .query("policies")
+      .withIndex("by_userId", (idx) => idx.eq("userId", userId as any))
+      .collect();
     const ids = new Set<string>();
     for (const p of all) {
       if (
@@ -121,8 +146,15 @@ export const emailIdsWithPolicies = query({
 export const stats = query({
   args: {},
   handler: async (ctx) => {
-    const allPolicies = await ctx.db.query("policies").collect();
-    const connections = await ctx.db.query("emailConnections").collect();
+    const userId = await requireAuth(ctx);
+    const allPolicies = await ctx.db
+      .query("policies")
+      .withIndex("by_userId", (idx) => idx.eq("userId", userId as any))
+      .collect();
+    const connections = await ctx.db
+      .query("emailConnections")
+      .withIndex("by_userId", (idx) => idx.eq("userId", userId as any))
+      .collect();
 
     const policies = allPolicies.filter((p) => p.extractionStatus === "complete" && !p.deletedAt);
     const pendingExtractions = allPolicies.filter(
@@ -165,6 +197,7 @@ export const stats = query({
 
 export const insert = mutation({
   args: {
+    userId: v.optional(v.id("users")),
     emailId: v.optional(v.id("emails")),
     fileId: v.optional(v.id("_storage")),
     fileName: v.optional(v.string()),
@@ -251,6 +284,9 @@ export const dismiss = mutation({
     id: v.id("policies"),
   },
   handler: async (ctx, args) => {
+    const userId = await requireAuth(ctx);
+    const policy = await ctx.db.get(args.id);
+    if (!policy || policy.userId !== userId) throw new Error("Not found");
     await ctx.db.patch(args.id, { extractionStatus: "not_insurance" as const });
   },
 });
@@ -258,6 +294,9 @@ export const dismiss = mutation({
 export const softDelete = mutation({
   args: { id: v.id("policies") },
   handler: async (ctx, args) => {
+    const userId = await requireAuth(ctx);
+    const policy = await ctx.db.get(args.id);
+    if (!policy || policy.userId !== userId) throw new Error("Not found");
     await ctx.db.patch(args.id, { deletedAt: Date.now() });
   },
 });
@@ -265,6 +304,9 @@ export const softDelete = mutation({
 export const restore = mutation({
   args: { id: v.id("policies") },
   handler: async (ctx, args) => {
+    const userId = await requireAuth(ctx);
+    const policy = await ctx.db.get(args.id);
+    if (!policy || policy.userId !== userId) throw new Error("Not found");
     await ctx.db.patch(args.id, { deletedAt: undefined });
   },
 });

@@ -1,14 +1,25 @@
+import { v } from "convex/values";
 import { mutation } from "./_generated/server";
 
 export const seed = mutation({
-  args: {},
-  handler: async (ctx) => {
+  args: {
+    userId: v.optional(v.id("users")),
+  },
+  handler: async (ctx, args) => {
     // Check if already seeded
     const existing = await ctx.db.query("emailConnections").first();
     if (existing) return "Already seeded";
 
+    // Use provided userId or find first user in DB
+    let userId = args.userId;
+    if (!userId) {
+      const firstUser = await ctx.db.query("users").first();
+      if (firstUser) userId = firstUser._id;
+    }
+
     // Create demo connection
     const connectionId = await ctx.db.insert("emailConnections", {
+      ...(userId ? { userId } : {}),
       label: "Rosario's Business Email",
       imapHost: "imap.gmail.com",
       imapPort: 993,
@@ -43,6 +54,7 @@ export const seed = mutation({
     for (let i = 0; i < emailData.length; i++) {
       const e = emailData[i];
       emailIds[i] = await ctx.db.insert("emails", {
+        ...(userId ? { userId } : {}),
         connectionId,
         messageId: `msg-${i + 1}@demo.rosarios.com`,
         subject: e.subject,
@@ -221,6 +233,7 @@ export const seed = mutation({
 
     for (const p of policiesData) {
       await ctx.db.insert("policies", {
+        ...(userId ? { userId } : {}),
         emailId: emailIds[p.emailIdx],
         carrier: p.carrier,
         ...("mga" in p ? { mga: p.mga } : {}),

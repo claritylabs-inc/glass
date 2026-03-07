@@ -10,6 +10,7 @@ export const extractPolicy = internalAction({
   args: {
     emailId: v.id("emails"),
     connectionId: v.id("emailConnections"),
+    userId: v.id("users"),
   },
   handler: async (ctx, args) => {
     const emails = await ctx.runQuery(api.emails.list, {
@@ -23,8 +24,9 @@ export const extractPolicy = internalAction({
     });
     if (!connection) throw new Error("Connection not found");
 
-    // Create a pending policy record
+    // Create a pending policy record with userId
     const policyId = await ctx.runMutation(api.policies.insert, {
+      userId: args.userId,
       emailId: args.emailId,
       carrier: "Extracting...",
       policyNumber: "Extracting...",
