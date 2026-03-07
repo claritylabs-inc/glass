@@ -18,7 +18,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { PillButton } from "@/components/ui/pill-button";
-import { Mail, Trash2, Play } from "lucide-react";
+import { Mail, Trash2, Play, Square } from "lucide-react";
 import { ConnectionIcon } from "@/components/connection-icon";
 import { FixedMobileFooter } from "@/components/ui/fixed-mobile-footer";
 import { Id } from "@/convex/_generated/dataModel";
@@ -108,6 +108,7 @@ export default function ConnectionsPage() {
       lastScanAt?: number;
     };
   } | null>(null);
+  const stopScan = useMutation(api.connections.stopScan);
   const [removeTarget, setRemoveTarget] = useState<{
     id: Id<"emailConnections">;
     label: string;
@@ -198,14 +199,23 @@ export default function ConnectionsPage() {
                             {conn.policiesExtracted ?? 0} policies
                           </span>
                         )}
-                        <PillButton
-                          variant="secondary"
-                          onClick={() => openScanModal(conn)}
-                          disabled={!!isScanning}
-                        >
-                          <Play className="w-3 h-3" />
-                          Scan
-                        </PillButton>
+                        {isScanning ? (
+                          <PillButton
+                            variant="destructive"
+                            onClick={() => stopScan({ id: conn._id })}
+                          >
+                            <Square className="w-3 h-3" />
+                            Stop
+                          </PillButton>
+                        ) : (
+                          <PillButton
+                            variant="secondary"
+                            onClick={() => openScanModal(conn)}
+                          >
+                            <Play className="w-3 h-3" />
+                            Scan
+                          </PillButton>
+                        )}
                         <PillButton
                           variant="icon"
                           onClick={() =>
@@ -243,14 +253,23 @@ export default function ConnectionsPage() {
                         )}
                       </div>
                       <div className="flex items-center gap-2">
-                        <PillButton
-                          variant="secondary"
-                          onClick={() => openScanModal(conn)}
-                          disabled={!!isScanning}
-                        >
-                          <Play className="w-3 h-3" />
-                          Scan
-                        </PillButton>
+                        {isScanning ? (
+                          <PillButton
+                            variant="destructive"
+                            onClick={() => stopScan({ id: conn._id })}
+                          >
+                            <Square className="w-3 h-3" />
+                            Stop
+                          </PillButton>
+                        ) : (
+                          <PillButton
+                            variant="secondary"
+                            onClick={() => openScanModal(conn)}
+                          >
+                            <Play className="w-3 h-3" />
+                            Scan
+                          </PillButton>
+                        )}
                         <PillButton
                           variant="icon"
                           onClick={() => setRemoveTarget({ id: conn._id, label: conn.label })}

@@ -84,6 +84,19 @@ export const updateScanProgress = mutation({
   },
 });
 
+export const stopScan = mutation({
+  args: { id: v.id("emailConnections") },
+  handler: async (ctx, args) => {
+    const userId = await requireAuth(ctx);
+    const connection = await ctx.db.get(args.id);
+    if (!connection || connection.userId !== userId) throw new Error("Not found");
+    await ctx.db.patch(args.id, {
+      scanProgress: { phase: "complete" },
+      lastScanStatus: "success" as const,
+    });
+  },
+});
+
 export const updateLastScanParams = mutation({
   args: {
     id: v.id("emailConnections"),
