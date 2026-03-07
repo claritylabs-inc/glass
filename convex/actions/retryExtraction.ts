@@ -11,10 +11,19 @@ function stripFences(text: string): string {
 }
 
 function applyExtracted(extracted: any) {
+  const policyTypes = Array.isArray(extracted.policyTypes)
+    ? extracted.policyTypes
+    : extracted.policyType
+      ? [extracted.policyType]
+      : ["other"];
+
   return {
     carrier: extracted.carrier || "Unknown",
+    mga: extracted.mga || undefined,
+    broker: extracted.broker || undefined,
     policyNumber: extracted.policyNumber || "Unknown",
-    policyType: extracted.policyType || "other",
+    policyTypes,
+    documentType: (extracted.documentType === "quote" ? "quote" : "policy") as "policy" | "quote",
     policyYear: extracted.policyYear || new Date().getFullYear(),
     effectiveDate: extracted.effectiveDate || "Unknown",
     expirationDate: extracted.expirationDate || "Unknown",
@@ -31,6 +40,7 @@ function applyExtracted(extracted: any) {
 export const retryExtraction = action({
   args: {
     policyId: v.id("policies"),
+    mode: v.optional(v.union(v.literal("reparse"), v.literal("full"))),
   },
   returns: v.any(),
   handler: async (ctx, args) => {
@@ -38,25 +48,34 @@ export const retryExtraction = action({
     if (!policy) return { error: "Policy not found" };
     if (!policy.emailId) return { error: "No linked email — cannot retry" };
 
-    // Phase 1: Try re-parsing the saved raw response without calling the API
-    if (policy.rawExtractionResponse) {
-      try {
-        const responseText = stripFences(policy.rawExtractionResponse);
-        const extracted = JSON.parse(responseText);
+    const mode = args.mode ?? "auto";
 
-        await ctx.runMutation(api.policies.updateExtraction, {
-          id: args.policyId,
-          fileName: `${extracted.policyNumber || "policy"}.pdf`,
-          ...applyExtracted(extracted),
-        });
+    // Reparse mode: only re-parse the saved raw response
+    if (mode === "reparse" || mode === "auto") {
+      if (policy.rawExtractionResponse) {
+        try {
+          const responseText = stripFences(policy.rawExtractionResponse);
+          const extracted = JSON.parse(responseText);
 
-        return { success: true, reused: true };
-      } catch {
-        // Saved response couldn't be parsed — fall through to Phase 2
+          await ctx.runMutation(api.policies.updateExtraction, {
+            id: args.policyId,
+            fileName: `${extracted.policyNumber || "policy"}.pdf`,
+            ...applyExtracted(extracted),
+          });
+
+          return { success: true, reused: true };
+        } catch {
+          if (mode === "reparse") {
+            return { error: "Could not parse saved AI response" };
+          }
+          // auto mode: fall through to full retry
+        }
+      } else if (mode === "reparse") {
+        return { error: "No saved AI response to re-parse" };
       }
     }
 
-    // Phase 2: Full retry with API call
+    // Full retry with API call
     const emails = await ctx.runQuery(api.emails.list, {});
     const email = emails.find((e: any) => e._id === policy.emailId);
     if (!email) return { error: "Linked email not found" };
@@ -137,11 +156,14 @@ export const retryExtraction = action({
               },
               {
                 type: "text",
-                text: `Extract structured metadata from this insurance policy document. Respond with JSON only:
+                text: `Extract structured metadata from this insurance document. Respond with JSON only:
 {
-  "carrier": "insurance company name",
+  "carrier": "insurance carrier / underwriter name",
+  "mga": "MGA or MGU name if different from carrier, or null",
+  "broker": "insurance broker name, or null",
   "policyNumber": "policy number",
-  "policyType": one of ["general_liability", "workers_comp", "commercial_auto", "property", "umbrella", "professional_liability", "cyber", "epli", "directors_officers", "other"],
+  "documentType": "policy" or "quote",
+  "policyTypes": ["general_liability", "workers_comp", "commercial_auto", "non_owned_auto", "property", "umbrella", "professional_liability", "cyber", "epli", "directors_officers", "other"],
   "policyYear": number,
   "effectiveDate": "MM/DD/YYYY",
   "expirationDate": "MM/DD/YYYY",
@@ -150,7 +172,8 @@ export const retryExtraction = action({
   "premium": "$X,XXX",
   "insuredName": "name of insured party",
   "summary": "1-2 sentence summary"
-}`,
+}
+policyTypes should include ALL coverage types found in the document. documentType should be "quote" if this is a quote/proposal, "policy" if it is a bound policy.`,
               },
             ],
           },

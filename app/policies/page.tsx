@@ -5,6 +5,7 @@ import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Nav } from "@/components/nav";
 import { PolicyTable } from "@/components/policy-table";
+import { PolicyGroupedView } from "@/components/policy-grouped-view";
 import { PolicyFilters } from "@/components/policy-filters";
 import { FadeIn } from "@/components/ui/fade-in";
 
@@ -32,7 +33,10 @@ export default function PoliciesPage() {
     if (!policies) return undefined;
     let result = policies;
     if (selectedType) {
-      result = result.filter((p) => p.policyType === selectedType);
+      result = result.filter((p) => {
+        const types = (p as any).policyTypes ?? [(p as any).policyType ?? "other"];
+        return types.includes(selectedType);
+      });
     }
     if (selectedCarrier) {
       result = result.filter((p) => p.carrier === selectedCarrier);
@@ -70,7 +74,14 @@ export default function PoliciesPage() {
             onYearChange={setSelectedYear}
           />
 
-          <PolicyTable policies={filteredPolicies as any} />
+          {activeTab === "all" ? (
+            <PolicyTable policies={filteredPolicies as any} />
+          ) : (
+            <PolicyGroupedView
+              policies={policies as any}
+              groupBy={activeTab as "type" | "year"}
+            />
+          )}
         </div>
       </main>
     </div>

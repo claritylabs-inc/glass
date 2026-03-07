@@ -17,10 +17,20 @@ export const classifyEmails = internalAction({
 
     if (unprocessed.length === 0) return;
 
+    // Get email IDs that already have policies so we can skip them
+    const emailIdsWithPolicies = new Set(
+      await ctx.runQuery(api.policies.emailIdsWithPolicies)
+    );
+
     const anthropic = new Anthropic();
     let policiesFound = 0;
 
     for (const email of unprocessed) {
+      // Skip emails that already produced policies
+      if (emailIdsWithPolicies.has(email._id)) {
+        await ctx.runMutation(api.emails.markProcessed, { id: email._id });
+        continue;
+      }
       const subjectLower = email.subject.toLowerCase();
       const fromLower = email.from.toLowerCase();
 

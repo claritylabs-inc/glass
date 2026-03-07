@@ -3,19 +3,12 @@ import { mutation, query } from "./_generated/server";
 
 export const list = query({
   args: {
-    policyType: v.optional(v.string()),
     carrier: v.optional(v.string()),
     policyYear: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     let q;
-    if (args.policyType) {
-      q = ctx.db
-        .query("policies")
-        .withIndex("by_policyType", (idx) =>
-          idx.eq("policyType", args.policyType as any)
-        );
-    } else if (args.carrier) {
+    if (args.carrier) {
       q = ctx.db
         .query("policies")
         .withIndex("by_carrier", (idx) => idx.eq("carrier", args.carrier!));
@@ -29,7 +22,7 @@ export const list = query({
       q = ctx.db.query("policies");
     }
     const all = await q.collect();
-    return all.filter((p) => p.extractionStatus === "complete");
+    return all.filter((p) => p.extractionStatus === "complete" && !p.deletedAt);
   },
 });
 
@@ -39,13 +32,43 @@ export const listPending = query({
     const all = await ctx.db.query("policies").collect();
     const pending = all.filter(
       (p) =>
-        p.extractionStatus === "pending" ||
+        !p.deletedAt &&
+        (p.extractionStatus === "pending" ||
         p.extractionStatus === "extracting" ||
-        p.extractionStatus === "error"
+        p.extractionStatus === "error")
     );
 
     const enriched = await Promise.all(
       pending.map(async (p) => {
+        let emailSubject: string | undefined;
+        let emailFrom: string | undefined;
+        if (p.emailId) {
+          const email = await ctx.db.get(p.emailId);
+          if (email) {
+            emailSubject = email.subject;
+            emailFrom = email.from;
+          }
+        }
+        return { ...p, emailSubject, emailFrom };
+      })
+    );
+
+    return enriched;
+  },
+});
+
+export const listExtractionLog = query({
+  args: {},
+  handler: async (ctx) => {
+    const all = await ctx.db.query("policies").collect();
+    const completed = all.filter(
+      (p) =>
+        !p.deletedAt &&
+        (p.extractionStatus === "complete" || p.extractionStatus === "not_insurance")
+    );
+
+    const enriched = await Promise.all(
+      completed.map(async (p) => {
         let emailSubject: string | undefined;
         let emailFrom: string | undefined;
         if (p.emailId) {
@@ -70,18 +93,44 @@ export const get = query({
   },
 });
 
+export const getFileUrl = query({
+  args: { fileId: v.id("_storage") },
+  handler: async (ctx, args) => {
+    return await ctx.storage.getUrl(args.fileId);
+  },
+});
+
+export const emailIdsWithPolicies = query({
+  args: {},
+  handler: async (ctx) => {
+    const all = await ctx.db.query("policies").collect();
+    const ids = new Set<string>();
+    for (const p of all) {
+      if (
+        p.emailId &&
+        p.extractionStatus !== "not_insurance" &&
+        !p.deletedAt
+      ) {
+        ids.add(p.emailId);
+      }
+    }
+    return [...ids];
+  },
+});
+
 export const stats = query({
   args: {},
   handler: async (ctx) => {
     const allPolicies = await ctx.db.query("policies").collect();
     const connections = await ctx.db.query("emailConnections").collect();
 
-    const policies = allPolicies.filter((p) => p.extractionStatus === "complete");
+    const policies = allPolicies.filter((p) => p.extractionStatus === "complete" && !p.deletedAt);
     const pendingExtractions = allPolicies.filter(
       (p) =>
-        p.extractionStatus === "pending" ||
+        !p.deletedAt &&
+        (p.extractionStatus === "pending" ||
         p.extractionStatus === "extracting" ||
-        p.extractionStatus === "error"
+        p.extractionStatus === "error")
     ).length;
 
     const byType: Record<string, number> = {};
@@ -89,7 +138,10 @@ export const stats = query({
     const byYear: Record<string, number> = {};
 
     for (const p of policies) {
-      byType[p.policyType] = (byType[p.policyType] || 0) + 1;
+      const types = p.policyTypes ?? ((p as any).policyType ? [(p as any).policyType] : ["other"]);
+      for (const t of types) {
+        byType[t] = (byType[t] || 0) + 1;
+      }
       byCarrier[p.carrier] = (byCarrier[p.carrier] || 0) + 1;
       byYear[p.policyYear] = (byYear[p.policyYear] || 0) + 1;
     }
@@ -117,19 +169,11 @@ export const insert = mutation({
     fileId: v.optional(v.id("_storage")),
     fileName: v.optional(v.string()),
     carrier: v.string(),
+    mga: v.optional(v.string()),
+    broker: v.optional(v.string()),
     policyNumber: v.string(),
-    policyType: v.union(
-      v.literal("general_liability"),
-      v.literal("workers_comp"),
-      v.literal("commercial_auto"),
-      v.literal("property"),
-      v.literal("umbrella"),
-      v.literal("professional_liability"),
-      v.literal("cyber"),
-      v.literal("epli"),
-      v.literal("directors_officers"),
-      v.literal("other")
-    ),
+    policyTypes: v.array(v.string()),
+    documentType: v.union(v.literal("policy"), v.literal("quote")),
     policyYear: v.number(),
     effectiveDate: v.string(),
     expirationDate: v.string(),
@@ -161,21 +205,11 @@ export const updateExtraction = mutation({
   args: {
     id: v.id("policies"),
     carrier: v.optional(v.string()),
+    mga: v.optional(v.string()),
+    broker: v.optional(v.string()),
     policyNumber: v.optional(v.string()),
-    policyType: v.optional(
-      v.union(
-        v.literal("general_liability"),
-        v.literal("workers_comp"),
-        v.literal("commercial_auto"),
-        v.literal("property"),
-        v.literal("umbrella"),
-        v.literal("professional_liability"),
-        v.literal("cyber"),
-        v.literal("epli"),
-        v.literal("directors_officers"),
-        v.literal("other")
-      )
-    ),
+    policyTypes: v.optional(v.array(v.string())),
+    documentType: v.optional(v.union(v.literal("policy"), v.literal("quote"))),
     policyYear: v.optional(v.number()),
     effectiveDate: v.optional(v.string()),
     expirationDate: v.optional(v.string()),
@@ -218,5 +252,19 @@ export const dismiss = mutation({
   },
   handler: async (ctx, args) => {
     await ctx.db.patch(args.id, { extractionStatus: "not_insurance" as const });
+  },
+});
+
+export const softDelete = mutation({
+  args: { id: v.id("policies") },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.id, { deletedAt: Date.now() });
+  },
+});
+
+export const restore = mutation({
+  args: { id: v.id("policies") },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.id, { deletedAt: undefined });
   },
 });

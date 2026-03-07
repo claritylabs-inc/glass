@@ -41,19 +41,12 @@ export default defineSchema({
     fileId: v.optional(v.id("_storage")),
     fileName: v.optional(v.string()),
     carrier: v.string(),
+    mga: v.optional(v.string()),
+    broker: v.optional(v.string()),
     policyNumber: v.string(),
-    policyType: v.union(
-      v.literal("general_liability"),
-      v.literal("workers_comp"),
-      v.literal("commercial_auto"),
-      v.literal("property"),
-      v.literal("umbrella"),
-      v.literal("professional_liability"),
-      v.literal("cyber"),
-      v.literal("epli"),
-      v.literal("directors_officers"),
-      v.literal("other")
-    ),
+    policyType: v.optional(v.string()),
+    policyTypes: v.optional(v.array(v.string())),
+    documentType: v.optional(v.union(v.literal("policy"), v.literal("quote"))),
     policyYear: v.number(),
     effectiveDate: v.string(),
     expirationDate: v.string(),
@@ -77,7 +70,7 @@ export default defineSchema({
     ),
     extractionError: v.optional(v.string()),
     rawExtractionResponse: v.optional(v.string()),
-  }).index("by_policyType", ["policyType"])
-    .index("by_carrier", ["carrier"])
+    deletedAt: v.optional(v.number()),
+  }).index("by_carrier", ["carrier"])
     .index("by_policyYear", ["policyYear"]),
 });

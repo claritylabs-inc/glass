@@ -13,6 +13,7 @@ interface FadeInProps {
   when?: boolean;
   as?: keyof typeof motion;
   duration?: number;
+  onClick?: () => void;
 }
 
 export function FadeIn({
@@ -24,6 +25,7 @@ export function FadeIn({
   when,
   as: Component = "div",
   duration = 1.5,
+  onClick,
 }: FadeInProps) {
   const resolvedDelay =
     delay ?? (staggerIndex !== undefined ? staggerIndex * STAGGER_INTERVAL : 0.05);
@@ -52,6 +54,7 @@ export function FadeIn({
         ease: [0.16, 1, 0.3, 1],
       }}
       className={className}
+      onClick={onClick}
     >
       {children}
     </MotionComponent>

@@ -8,6 +8,7 @@ export const POLICY_TYPE_LABELS: Record<string, string> = {
   cyber: "Cyber",
   epli: "EPLI",
   directors_officers: "Directors & Officers",
+  non_owned_auto: "Non-Owned Auto",
   other: "Other",
 };
 

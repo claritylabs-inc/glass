@@ -1,18 +1,31 @@
 "use client";
 
-import { use } from "react";
-import { useQuery } from "convex/react";
+import { use, useState } from "react";
+import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Nav } from "@/components/nav";
 import { FadeIn } from "@/components/ui/fade-in";
-import { ArrowLeft, Download, FileText, Calendar, Shield, DollarSign } from "lucide-react";
+import { ArrowLeft, Download, FileText, Calendar, Shield, DollarSign, Trash2 } from "lucide-react";
+import { FixedMobileFooter } from "@/components/ui/fixed-mobile-footer";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { POLICY_TYPE_LABELS } from "@/convex/lib/policyTypes";
+import { Id } from "@/convex/_generated/dataModel";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 
 const TYPE_COLORS: Record<string, string> = {
   general_liability: "bg-blue-100 text-blue-700",
   workers_comp: "bg-orange-100 text-orange-700",
   commercial_auto: "bg-purple-100 text-purple-700",
+  non_owned_auto: "bg-violet-100 text-violet-700",
   property: "bg-green-100 text-green-700",
   umbrella: "bg-sky-100 text-sky-700",
   professional_liability: "bg-amber-100 text-amber-700",
@@ -21,6 +34,38 @@ const TYPE_COLORS: Record<string, string> = {
   directors_officers: "bg-indigo-100 text-indigo-700",
   other: "bg-gray-100 text-gray-700",
 };
+
+const MAX_VISIBLE_TAGS = 3;
+
+function PolicyTypeTags({ types }: { types: string[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const visible = expanded ? types : types.slice(0, MAX_VISIBLE_TAGS);
+  const overflow = types.length - MAX_VISIBLE_TAGS;
+
+  return (
+    <div className="flex flex-wrap gap-1.5 mt-2 max-w-xl items-center">
+      {visible.map((t) => (
+        <span
+          key={t}
+          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-label-sm font-medium ${
+            TYPE_COLORS[t] || TYPE_COLORS.other
+          }`}
+        >
+          {POLICY_TYPE_LABELS[t] || t}
+        </span>
+      ))}
+      {overflow > 0 && !expanded && (
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          className="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium bg-foreground/5 text-muted-foreground hover:bg-foreground/10 transition-colors cursor-pointer"
+        >
+          +{overflow} more
+        </button>
+      )}
+    </div>
+  );
+}
 
 export default function PolicyDetailPage({
   params,
@@ -31,6 +76,17 @@ export default function PolicyDetailPage({
   const policy = useQuery(api.policies.get, {
     id: id as any,
   });
+
+  const fileUrl = useQuery(
+    api.policies.getFileUrl,
+    policy?.fileId ? { fileId: policy.fileId as Id<"_storage"> } : "skip"
+  );
+
+  const softDelete = useMutation(api.policies.softDelete);
+  const restorePolicy = useMutation(api.policies.restore);
+  const router = useRouter();
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   if (policy === undefined) {
     return (
@@ -62,10 +118,27 @@ export default function PolicyDetailPage({
     );
   }
 
+  const policyTypes: string[] = (policy as any).policyTypes ?? [(policy as any).policyType ?? "other"];
+  const documentType: string = (policy as any).documentType ?? "policy";
+  const mga: string | undefined = (policy as any).mga;
+  const broker: string | undefined = (policy as any).broker;
+  const isDeleted = !!(policy as any).deletedAt;
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      await softDelete({ id: policy._id });
+      setShowDeleteDialog(false);
+      router.push("/policies");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
     <div className="min-h-screen flex flex-col">
       <Nav />
-      <main className="flex-1">
+      <main className="flex-1 pb-20 md:pb-0">
         <div className="max-w-6xl mx-auto px-4 md:px-8 py-6">
           <FadeIn when={true} staggerIndex={0} duration={0.6}>
             <Link
@@ -76,38 +149,110 @@ export default function PolicyDetailPage({
               Back to policies
             </Link>
 
+            {isDeleted && (
+              <div className="flex items-center gap-3 mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-2.5">
+                <p className="text-body-sm text-red-700 flex-1">This policy has been deleted.</p>
+                <Button
+                  variant="outline"
+                  onClick={() => restorePolicy({ id: policy._id })}
+                  className="text-label-sm"
+                >
+                  Restore
+                </Button>
+              </div>
+            )}
+
             <div className="flex items-start justify-between mb-6">
-              <div>
+              <div className="min-w-0 flex-1 mr-4">
                 <div className="flex items-center gap-3 mb-1">
                   <h1 className="!mb-0">{policy.policyNumber}</h1>
-                  <span
-                    className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-label-sm font-medium ${
-                      TYPE_COLORS[policy.policyType] || TYPE_COLORS.other
-                    }`}
-                  >
-                    {POLICY_TYPE_LABELS[policy.policyType] || policy.policyType}
-                  </span>
+                  {documentType === "quote" && (
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-label-sm font-medium bg-yellow-100 text-yellow-800">
+                      Quote
+                    </span>
+                  )}
                   {policy.isRenewal && (
                     <span className="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium bg-amber-100 text-amber-700">
                       Renewal
                     </span>
                   )}
                 </div>
-                <p className="text-body-sm text-muted-foreground">
-                  {policy.carrier} · {policy.insuredName}
-                </p>
+                <PolicyTypeTags types={policyTypes} />
+
+                <div className="mt-4 space-y-1">
+                  {mga && (
+                    <p className="text-body-sm text-foreground">
+                      <span className="text-muted-foreground">MGA:</span> {mga}
+                    </p>
+                  )}
+                  <p className="text-body-sm text-foreground">
+                    <span className="text-muted-foreground">{mga ? "Carrier:" : "Carrier:"}</span> {policy.carrier}
+                  </p>
+                  <p className="text-body-sm text-foreground">
+                    <span className="text-muted-foreground">Insured:</span> {policy.insuredName}
+                  </p>
+                  {broker && (
+                    <p className="text-body-sm text-foreground">
+                      <span className="text-muted-foreground">Broker:</span> {broker}
+                    </p>
+                  )}
+                </div>
               </div>
-              {policy.fileId && (
-                <button
-                  type="button"
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-md border border-foreground/12 bg-white/80 text-label font-medium text-foreground hover:border-foreground/20 hover:bg-foreground/[0.03] transition-colors cursor-pointer"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  Download PDF
-                </button>
-              )}
+              <div className="hidden md:flex items-center gap-2">
+                {policy.fileId && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (fileUrl) window.open(fileUrl, "_blank");
+                    }}
+                    disabled={!fileUrl}
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-md border border-foreground/12 bg-white/80 text-label font-medium text-foreground hover:border-foreground/20 hover:bg-foreground/[0.03] transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    Download PDF
+                  </button>
+                )}
+                {!isDeleted && (
+                  <button
+                    type="button"
+                    onClick={() => setShowDeleteDialog(true)}
+                    className="p-1.5 rounded-md hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors cursor-pointer"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
             </div>
           </FadeIn>
+
+          <Dialog open={showDeleteDialog} onOpenChange={(v) => !v && setShowDeleteDialog(false)}>
+            <DialogContent showCloseButton={false}>
+              <DialogHeader>
+                <DialogTitle>Delete Policy</DialogTitle>
+                <DialogDescription>
+                  Are you sure you want to delete <strong>{policy.policyNumber}</strong>? The policy can be restored later.
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteDialog(false)}
+                  disabled={deleting}
+                  className="px-4 py-2 rounded-full border border-foreground/8 bg-white text-label font-medium text-muted-foreground hover:text-foreground hover:border-foreground/15 hover:bg-foreground/[0.02] transition-all cursor-pointer disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  className="px-5 py-2 rounded-full bg-destructive/10 text-destructive text-label font-medium hover:bg-destructive/20 transition-all cursor-pointer disabled:opacity-50"
+                >
+                  {deleting ? "Deleting..." : "Delete"}
+                </button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
 
           {/* Info grid */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
@@ -134,7 +279,7 @@ export default function PolicyDetailPage({
               },
             ].map((card, i) => (
               <FadeIn key={card.label} when={true} staggerIndex={i + 1} duration={0.6}>
-                <div className="rounded-lg border border-foreground/6 bg-white/60 px-4 py-3">
+                <div className="rounded-lg border border-foreground/6 bg-white/60 px-4 py-3 h-full">
                   <div className="flex items-center gap-2 mb-2">
                     <card.icon className="w-4 h-4 text-muted-foreground" />
                     <p className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider">
@@ -225,6 +370,29 @@ export default function PolicyDetailPage({
           </FadeIn>
         </div>
       </main>
+
+      <FixedMobileFooter>
+        {policy.fileId && (
+          <button
+            type="button"
+            onClick={() => { if (fileUrl) window.open(fileUrl, "_blank"); }}
+            disabled={!fileUrl}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-md border border-foreground/12 bg-white/80 text-label font-medium text-foreground hover:border-foreground/20 hover:bg-foreground/[0.03] transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Download className="w-3.5 h-3.5" />
+            Download PDF
+          </button>
+        )}
+        {!isDeleted && (
+          <button
+            type="button"
+            onClick={() => setShowDeleteDialog(true)}
+            className="p-1.5 rounded-md hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors cursor-pointer"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        )}
+      </FixedMobileFooter>
     </div>
   );
 }

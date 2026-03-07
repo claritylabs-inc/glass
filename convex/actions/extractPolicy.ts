@@ -28,7 +28,8 @@ export const extractPolicy = internalAction({
       emailId: args.emailId,
       carrier: "Extracting...",
       policyNumber: "Extracting...",
-      policyType: "other",
+      policyTypes: ["other"],
+      documentType: "policy",
       policyYear: new Date().getFullYear(),
       effectiveDate: "Extracting...",
       expirationDate: "Extracting...",
@@ -103,11 +104,14 @@ export const extractPolicy = internalAction({
               },
               {
                 type: "text",
-                text: `Extract structured metadata from this insurance policy document. Respond with JSON only:
+                text: `Extract structured metadata from this insurance document. Respond with JSON only:
 {
-  "carrier": "insurance company name",
+  "carrier": "insurance carrier / underwriter name",
+  "mga": "MGA or MGU name if different from carrier, or null",
+  "broker": "insurance broker name, or null",
   "policyNumber": "policy number",
-  "policyType": one of ["general_liability", "workers_comp", "commercial_auto", "property", "umbrella", "professional_liability", "cyber", "epli", "directors_officers", "other"],
+  "documentType": "policy" or "quote",
+  "policyTypes": ["general_liability", "workers_comp", "commercial_auto", "non_owned_auto", "property", "umbrella", "professional_liability", "cyber", "epli", "directors_officers", "other"],
   "policyYear": number,
   "effectiveDate": "MM/DD/YYYY",
   "expirationDate": "MM/DD/YYYY",
@@ -116,7 +120,8 @@ export const extractPolicy = internalAction({
   "premium": "$X,XXX",
   "insuredName": "name of insured party",
   "summary": "1-2 sentence summary"
-}`,
+}
+policyTypes should include ALL coverage types found in the document. documentType should be "quote" if this is a quote/proposal, "policy" if it is a bound policy.`,
               },
             ],
           },
@@ -135,13 +140,22 @@ export const extractPolicy = internalAction({
       const responseText = rawText.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?```\s*$/i, "");
       const extracted = JSON.parse(responseText);
 
+      const policyTypes = Array.isArray(extracted.policyTypes)
+        ? extracted.policyTypes
+        : extracted.policyType
+          ? [extracted.policyType]
+          : ["other"];
+
       await ctx.runMutation(api.policies.updateExtraction, {
         id: policyId,
         fileId,
         fileName: `${extracted.policyNumber || "policy"}.pdf`,
         carrier: extracted.carrier || "Unknown",
+        mga: extracted.mga || undefined,
+        broker: extracted.broker || undefined,
         policyNumber: extracted.policyNumber || "Unknown",
-        policyType: extracted.policyType || "other",
+        policyTypes,
+        documentType: extracted.documentType === "quote" ? "quote" : "policy",
         policyYear: extracted.policyYear || new Date().getFullYear(),
         effectiveDate: extracted.effectiveDate || "Unknown",
         expirationDate: extracted.expirationDate || "Unknown",

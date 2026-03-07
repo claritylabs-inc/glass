@@ -16,6 +16,7 @@ import type * as connections from "../connections.js";
 import type * as emails from "../emails.js";
 import type * as lib_aiClassifier from "../lib/aiClassifier.js";
 import type * as lib_policyTypes from "../lib/policyTypes.js";
+import type * as migrations from "../migrations.js";
 import type * as policies from "../policies.js";
 import type * as seed from "../seed.js";
 
@@ -34,6 +35,7 @@ declare const fullApi: ApiFromModules<{
   emails: typeof emails;
   "lib/aiClassifier": typeof lib_aiClassifier;
   "lib/policyTypes": typeof lib_policyTypes;
+  migrations: typeof migrations;
   policies: typeof policies;
   seed: typeof seed;
 }>;

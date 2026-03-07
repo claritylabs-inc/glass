@@ -1,12 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { createPortal } from "react-dom";
 import { useAction, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { motion, AnimatePresence } from "framer-motion";
 import { RotateCw, X } from "lucide-react";
 import { FadeIn } from "@/components/ui/fade-in";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 
 interface Extraction {
   _id: string;
@@ -81,41 +87,6 @@ function DismissButton({ policyId }: { policyId: string }) {
   );
 }
 
-function ErrorLogDialog({
-  error,
-  open,
-  onClose,
-}: {
-  error: string;
-  open: boolean;
-  onClose: () => void;
-}) {
-  if (!open) return null;
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/20 backdrop-blur-[2px]" onClick={onClose} />
-      <div className="relative bg-white rounded-lg border border-foreground/10 shadow-xl max-w-lg w-full mx-4 overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-foreground/6">
-          <h3 className="!text-sm !font-medium !font-sans !text-foreground">Error Log</h3>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-md p-1 hover:bg-foreground/5 transition-colors cursor-pointer"
-          >
-            <X className="w-3.5 h-3.5 text-muted-foreground" />
-          </button>
-        </div>
-        <div className="p-4">
-          <pre className="text-label-sm text-red-600 bg-red-50 border border-red-100 rounded-md p-3 whitespace-pre-wrap break-words font-mono max-h-[300px] overflow-y-auto">
-            {error}
-          </pre>
-        </div>
-      </div>
-    </div>,
-    document.body
-  );
-}
-
 function ViewErrorButton({ error }: { error: string }) {
   const [open, setOpen] = useState(false);
   return (
@@ -127,7 +98,25 @@ function ViewErrorButton({ error }: { error: string }) {
       >
         View error
       </button>
-      <ErrorLogDialog error={error} open={open} onClose={() => setOpen(false)} />
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent showCloseButton={false} className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Error Log</DialogTitle>
+          </DialogHeader>
+          <pre className="text-label-sm text-red-600 bg-red-50 border border-red-100 rounded-md p-3 whitespace-pre-wrap break-words font-mono max-h-[300px] overflow-y-auto">
+            {error}
+          </pre>
+          <DialogFooter>
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              className="px-4 py-2 rounded-full border border-foreground/8 bg-white text-label font-medium text-muted-foreground hover:text-foreground hover:border-foreground/15 hover:bg-foreground/[0.02] transition-all cursor-pointer"
+            >
+              Close
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
@@ -160,13 +149,13 @@ export function ExtractionTable({
     <FadeIn when={true} delay={0.2} duration={0.6}>
       <div className="rounded-lg border border-foreground/6 bg-white/60 overflow-hidden">
         <div className="overflow-x-auto scrollbar-hide">
-          <table className="w-full text-left min-w-[700px]">
+          <table className="w-full text-left md:min-w-[700px]">
             <thead>
               <tr className="bg-foreground/[0.02]">
                 <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">
                   Source Email
                 </th>
-                <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">
+                <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap hidden sm:table-cell">
                   Attachment
                 </th>
                 <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">
@@ -175,7 +164,7 @@ export function ExtractionTable({
                 <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap hidden md:table-cell">
                   Date
                 </th>
-                <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap text-right">
+                <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap text-right hidden md:table-cell">
                   Actions
                 </th>
               </tr>
@@ -208,7 +197,7 @@ export function ExtractionTable({
                           {extraction.emailFrom || "Unknown sender"}
                         </p>
                       </td>
-                      <td className="px-4 py-2.5 text-body-sm text-muted-foreground whitespace-nowrap">
+                      <td className="px-4 py-2.5 text-body-sm text-muted-foreground whitespace-nowrap hidden sm:table-cell">
                         {extraction.fileName || "—"}
                       </td>
                       <td className="px-4 py-2.5 whitespace-nowrap">
@@ -226,7 +215,7 @@ export function ExtractionTable({
                       <td className="px-4 py-2.5 text-body-sm text-muted-foreground hidden md:table-cell whitespace-nowrap">
                         {formatDate(extraction._creationTime)}
                       </td>
-                      <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                      <td className="px-4 py-2.5 text-right whitespace-nowrap hidden md:table-cell">
                         <div className="inline-flex items-center gap-2">
                           <RetryButton policyId={extraction._id} />
                           <DismissButton policyId={extraction._id} />

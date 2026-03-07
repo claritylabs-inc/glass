@@ -3,14 +3,17 @@
 import { useState } from "react";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { X, Mail, Globe, AtSign, Server } from "lucide-react";
+import { X, Server } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faGoogle, faMicrosoft, faYahoo } from "@fortawesome/free-brands-svg-icons";
+import { type ReactNode } from "react";
 
-const PRESETS: Record<string, { host: string; port: number; icon: typeof Mail }> = {
-  Gmail: { host: "imap.gmail.com", port: 993, icon: Mail },
-  Outlook: { host: "outlook.office365.com", port: 993, icon: Globe },
-  Yahoo: { host: "imap.mail.yahoo.com", port: 993, icon: AtSign },
-  Custom: { host: "", port: 993, icon: Server },
+const PRESETS: Record<string, { host: string; port: number; icon: ReactNode }> = {
+  Gmail: { host: "imap.gmail.com", port: 993, icon: <FontAwesomeIcon icon={faGoogle} style={{ width: 16, height: 16 }} /> },
+  Outlook: { host: "outlook.office365.com", port: 993, icon: <FontAwesomeIcon icon={faMicrosoft} style={{ width: 16, height: 16 }} /> },
+  Yahoo: { host: "imap.mail.yahoo.com", port: 993, icon: <FontAwesomeIcon icon={faYahoo} style={{ width: 16, height: 16 }} /> },
+  Custom: { host: "", port: 993, icon: <Server className="w-4 h-4" /> },
 };
 
 interface ConnectionFormProps {
@@ -91,9 +94,8 @@ export function ConnectionForm({ open, onClose }: ConnectionFormProps) {
                 <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-2">
                   Provider
                 </label>
-                <div className="grid grid-cols-4 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {Object.entries(PRESETS).map(([p, config]) => {
-                    const Icon = config.icon;
                     const isActive = preset === p;
                     return (
                       <button
@@ -106,7 +108,7 @@ export function ConnectionForm({ open, onClose }: ConnectionFormProps) {
                             : "border border-foreground/8 bg-white text-muted-foreground hover:border-foreground/15 hover:text-foreground hover:bg-foreground/[0.02]"
                         }`}
                       >
-                        <Icon className="w-4 h-4" />
+                        {config.icon}
                         {p}
                       </button>
                     );
@@ -184,8 +186,15 @@ export function ConnectionForm({ open, onClose }: ConnectionFormProps) {
                 />
                 {preset === "Gmail" && (
                   <p className="text-label-sm text-muted-foreground/50 mt-1.5">
-                    Gmail requires an App Password. Enable 2FA, then generate one at
-                    myaccount.google.com/apppasswords
+                    Gmail requires an App Password. Enable 2FA, then generate one at{" "}
+                    <a
+                      href="https://myaccount.google.com/apppasswords"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary underline hover:text-primary/80 transition-colors"
+                    >
+                      myaccount.google.com/apppasswords
+                    </a>
                   </p>
                 )}
               </div>

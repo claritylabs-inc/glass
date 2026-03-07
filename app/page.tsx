@@ -6,10 +6,11 @@ import { api } from "@/convex/_generated/api";
 import { Nav } from "@/components/nav";
 import { StatsCards } from "@/components/stats-cards";
 import { PolicyTable } from "@/components/policy-table";
+import { PolicyGroupedView } from "@/components/policy-grouped-view";
 import { PolicyFilters } from "@/components/policy-filters";
 import { FadeIn } from "@/components/ui/fade-in";
 import { CTAButton } from "@/components/ui/cta-button";
-import { Database } from "lucide-react";
+import { FixedMobileFooter } from "@/components/ui/fixed-mobile-footer";
 
 export default function DashboardPage() {
   const stats = useQuery(api.policies.stats);
@@ -37,7 +38,10 @@ export default function DashboardPage() {
     if (!policies) return undefined;
     let result = policies;
     if (selectedType) {
-      result = result.filter((p) => p.policyType === selectedType);
+      result = result.filter((p) => {
+        const types = (p as any).policyTypes ?? [(p as any).policyType ?? "other"];
+        return types.includes(selectedType);
+      });
     }
     if (selectedCarrier) {
       result = result.filter((p) => p.carrier === selectedCarrier);
@@ -62,7 +66,9 @@ export default function DashboardPage() {
                 </p>
               </div>
               {policies && policies.length === 0 && (
-                <CTAButton label="Seed Demo Data" onClick={() => seedData()} />
+                <div className="hidden md:block">
+                  <CTAButton label="Seed Demo Data" onClick={() => seedData()} />
+                </div>
               )}
             </div>
           </FadeIn>
@@ -82,9 +88,22 @@ export default function DashboardPage() {
             onYearChange={setSelectedYear}
           />
 
-          <PolicyTable policies={filteredPolicies as any} />
+          {activeTab === "all" ? (
+            <PolicyTable policies={filteredPolicies as any} />
+          ) : (
+            <PolicyGroupedView
+              policies={policies as any}
+              groupBy={activeTab as "type" | "year"}
+            />
+          )}
         </div>
       </main>
+
+      {policies && policies.length === 0 && (
+        <FixedMobileFooter>
+          <CTAButton label="Seed Demo Data" onClick={() => seedData()} />
+        </FixedMobileFooter>
+      )}
     </div>
   );
 }

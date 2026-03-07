@@ -20,7 +20,6 @@ interface PolicyFiltersProps {
 const TABS = [
   { id: "all", label: "All Policies" },
   { id: "type", label: "By Type" },
-  { id: "carrier", label: "By Carrier" },
   { id: "year", label: "By Year" },
 ];
 
@@ -62,8 +61,8 @@ export function PolicyFilters({
         ))}
       </div>
 
-      <div className="flex items-center gap-2">
-        {(activeTab === "type" || activeTab === "all") && (
+      {activeTab === "all" && (
+        <div className="flex flex-wrap items-center gap-2">
           <FilterDropdown
             label="All Types"
             value={selectedType}
@@ -73,18 +72,14 @@ export function PolicyFilters({
               label,
             }))}
           />
-        )}
 
-        {(activeTab === "carrier" || activeTab === "all") && (
           <FilterDropdown
             label="All Carriers"
             value={selectedCarrier}
             onChange={onCarrierChange}
             options={carriers.map((c) => ({ value: c, label: c }))}
           />
-        )}
 
-        {(activeTab === "year" || activeTab === "all") && (
           <FilterDropdown
             label="All Years"
             value={selectedYear}
@@ -93,8 +88,8 @@ export function PolicyFilters({
               .sort((a, b) => b - a)
               .map((y) => ({ value: String(y), label: String(y) }))}
           />
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

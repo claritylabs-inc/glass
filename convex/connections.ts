@@ -50,8 +50,56 @@ export const updateScanStatus = mutation({
 });
 
 export const remove = mutation({
+  args: {
+    id: v.id("emailConnections"),
+    deletePolicies: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    // Find all emails for this connection
+    const emails = await ctx.db
+      .query("emails")
+      .withIndex("by_connection_processed", (idx) =>
+        idx.eq("connectionId", args.id)
+      )
+      .collect();
+    const emailIds = new Set(emails.map((e) => e._id));
+
+    if (args.deletePolicies) {
+      // Delete policies linked to these emails
+      const allPolicies = await ctx.db.query("policies").collect();
+      for (const policy of allPolicies) {
+        if (policy.emailId && emailIds.has(policy.emailId)) {
+          await ctx.db.delete(policy._id);
+        }
+      }
+    }
+
+    // Delete emails
+    for (const email of emails) {
+      await ctx.db.delete(email._id);
+    }
+
+    // Delete the connection itself
+    await ctx.db.delete(args.id);
+  },
+});
+
+export const countLinkedPolicies = query({
   args: { id: v.id("emailConnections") },
   handler: async (ctx, args) => {
-    await ctx.db.delete(args.id);
+    const emails = await ctx.db
+      .query("emails")
+      .withIndex("by_connection_processed", (idx) =>
+        idx.eq("connectionId", args.id)
+      )
+      .collect();
+    const emailIds = new Set(emails.map((e) => e._id));
+
+    const allPolicies = await ctx.db.query("policies").collect();
+    const linked = allPolicies.filter(
+      (p) => p.emailId && emailIds.has(p.emailId) && p.extractionStatus === "complete"
+    );
+
+    return { emailCount: emails.length, policyCount: linked.length };
   },
 });
