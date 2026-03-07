@@ -8,7 +8,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { EXTRACTION_PROMPT, METADATA_PROMPT, buildSectionsPrompt } from "../lib/prompts";
 import { stripFences, applyExtracted, mergeChunkedSections, getPageChunks } from "../lib/extraction";
 
-const MODEL = "claude-sonnet-4-5-20250514";
+const MODEL = "claude-sonnet-4-6";
 const CHUNK_THRESHOLD = 30; // pages
 
 async function callClaude(

@@ -51,7 +51,7 @@ function RetryButton({ policyId }: { policyId: string }) {
       onClick={async () => {
         setRetrying(true);
         try {
-          await retryExtraction({ policyId: policyId as any });
+          await retryExtraction({ policyId: policyId as any, mode: "full" });
         } finally {
           setRetrying(false);
         }
