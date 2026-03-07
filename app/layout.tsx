@@ -23,10 +23,21 @@ const instrumentSerif = Instrument_Serif({
 
 export const metadata: Metadata = {
   title: {
-    default: "Clarity Labs - Dashboard",
-    template: "Clarity Labs - %s",
+    default: "Clarity Labs",
+    template: "%s | Clarity Labs",
   },
-  description: "AI-native insurance policy extraction from email",
+  description: "AI-powered insurance policy extraction from email",
+  openGraph: {
+    title: "Clarity Labs",
+    description: "AI-powered insurance policy extraction from email",
+    siteName: "Clarity Labs",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Clarity Labs",
+    description: "AI-powered insurance policy extraction from email",
+  },
 };
 
 export default function RootLayout({

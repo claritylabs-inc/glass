@@ -19,6 +19,7 @@ import type * as emails from "../emails.js";
 import type * as http from "../http.js";
 import type * as lib_aiClassifier from "../lib/aiClassifier.js";
 import type * as lib_auth from "../lib/auth.js";
+import type * as lib_emailTemplate from "../lib/emailTemplate.js";
 import type * as lib_policyTypes from "../lib/policyTypes.js";
 import type * as migrations from "../migrations.js";
 import type * as policies from "../policies.js";
@@ -43,6 +44,7 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   "lib/aiClassifier": typeof lib_aiClassifier;
   "lib/auth": typeof lib_auth;
+  "lib/emailTemplate": typeof lib_emailTemplate;
   "lib/policyTypes": typeof lib_policyTypes;
   migrations: typeof migrations;
   policies: typeof policies;

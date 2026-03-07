@@ -1,5 +1,6 @@
 import { convexAuth } from "@convex-dev/auth/server";
 import { Email } from "@convex-dev/auth/providers/Email";
+import { buildOtpEmail } from "./lib/emailTemplate";
 
 const ResendOTP = Email({
   id: "resend-otp",
@@ -8,6 +9,8 @@ const ResendOTP = Email({
     return Math.floor(100000 + Math.random() * 900000).toString();
   },
   async sendVerificationRequest({ identifier: email, token }: any) {
+    const siteUrl = process.env.SITE_URL ?? "http://localhost:3000";
+    const { html, text } = buildOtpEmail(token, siteUrl);
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
@@ -18,8 +21,8 @@ const ResendOTP = Email({
         from: process.env.AUTH_EMAIL_FROM ?? "onboarding@resend.dev",
         to: email,
         subject: "Your Clarity Labs sign-in code",
-        html: `<p>Your verification code is: <strong>${token}</strong></p><p>This code expires in 15 minutes.</p>`,
-        text: `Your verification code is: ${token}\n\nThis code expires in 15 minutes.`,
+        html,
+        text,
       }),
     });
     if (!res.ok) {
