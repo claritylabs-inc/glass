@@ -2,12 +2,12 @@ export function buildOtpEmail(token: string, siteUrl: string): { html: string; t
   const digits = token.split("");
   const logoUrl = `${siteUrl}/clarity-labs-logo.jpg`;
 
-  const digitCells = digits
+  const digitSpans = digits
     .map(
       (d) =>
-        `<td style="width:40px;height:48px;text-align:center;vertical-align:middle;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:24px;font-weight:600;letter-spacing:0;color:#111827;background-color:#f3f1ed;border-radius:8px;mso-padding-alt:12px 0;">${d}</td>`,
+        `<span style="display:inline-block;width:40px;height:48px;line-height:48px;text-align:center;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:24px;font-weight:600;color:#111827;background-color:#f3f1ed;border-radius:8px;margin:0 4px;">${d}</span>`,
     )
-    .join(`<td style="width:8px;"></td>`);
+    .join("");
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -39,10 +39,8 @@ export function buildOtpEmail(token: string, siteUrl: string): { html: string; t
 </td></tr>
 
 <!-- Code -->
-<tr><td align="center" style="padding:24px 40px 0 40px;">
-  <table role="presentation" cellpadding="0" cellspacing="0"><tr>
-    ${digitCells}
-  </tr></table>
+<tr><td align="center" style="padding:24px 40px 0 40px;font-size:0;">
+  ${digitSpans}
 </td></tr>
 
 <!-- Hint -->
