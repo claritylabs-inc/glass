@@ -361,11 +361,10 @@ export default function PolicyDetailPage({
       <FixedMobileFooter>
         {!isDeleted && (
           <PillButton
-            variant="secondary"
+            variant="icon"
             onClick={() => setShowDeleteDialog(true)}
           >
-            <Trash2 className="w-3.5 h-3.5" />
-            Delete
+            <Trash2 className="w-4 h-4" />
           </PillButton>
         )}
         {policy.fileId && (
