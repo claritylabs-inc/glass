@@ -29,6 +29,7 @@ export const retryExtraction = action({
     await ctx.runMutation(api.policies.updateExtraction, {
       id: args.policyId,
       extractionStatus: "extracting",
+      extractionError: "",
     });
 
     try {
@@ -142,6 +143,7 @@ export const retryExtraction = action({
       await ctx.runMutation(api.policies.updateExtraction, {
         id: args.policyId,
         extractionStatus: "error",
+        extractionError: error.message || "Extraction failed",
       });
       return { error: error.message || "Extraction failed" };
     }

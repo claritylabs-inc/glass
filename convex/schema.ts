@@ -75,6 +75,7 @@ export default defineSchema({
       v.literal("error"),
       v.literal("not_insurance")
     ),
+    extractionError: v.optional(v.string()),
   }).index("by_policyType", ["policyType"])
     .index("by_carrier", ["carrier"])
     .index("by_policyYear", ["policyYear"]),

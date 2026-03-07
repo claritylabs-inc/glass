@@ -11,6 +11,7 @@ interface Extraction {
   _id: string;
   fileName?: string;
   extractionStatus: string;
+  extractionError?: string;
   _creationTime: number;
   emailSubject?: string;
   emailFrom?: string;
@@ -158,12 +159,17 @@ export function ExtractionTable({
                       <td className="px-4 py-2.5 text-body-sm text-muted-foreground whitespace-nowrap">
                         {extraction.fileName || "—"}
                       </td>
-                      <td className="px-4 py-2.5 whitespace-nowrap">
+                      <td className="px-4 py-2.5">
                         <span
                           className={`inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium ${badge.className}`}
                         >
                           {badge.label}
                         </span>
+                        {extraction.extractionStatus === "error" && extraction.extractionError && (
+                          <p className="text-label-sm text-red-500 mt-0.5 max-w-[250px] truncate" title={extraction.extractionError}>
+                            {extraction.extractionError}
+                          </p>
+                        )}
                       </td>
                       <td className="px-4 py-2.5 text-body-sm text-muted-foreground hidden md:table-cell whitespace-nowrap">
                         {formatDate(extraction._creationTime)}

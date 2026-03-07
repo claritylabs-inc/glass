@@ -148,6 +148,7 @@ export const extractPolicy = internalAction({
       await ctx.runMutation(api.policies.updateExtraction, {
         id: policyId,
         extractionStatus: "error",
+        extractionError: error.message || "Extraction failed",
       });
       console.error("Policy extraction failed:", error.message);
     }
