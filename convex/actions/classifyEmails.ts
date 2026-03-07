@@ -59,8 +59,9 @@ Date: ${email.date}`,
             ],
           });
 
-          const text =
+          const rawText =
             response.content[0].type === "text" ? response.content[0].text : "";
+          const text = rawText.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?```\s*$/i, "");
           const parsed = JSON.parse(text);
           isInsurance = parsed.isInsurance;
           reason = parsed.reason;

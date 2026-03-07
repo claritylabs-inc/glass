@@ -116,8 +116,9 @@ export const retryExtraction = action({
         ],
       });
 
-      const responseText =
+      const rawText =
         response.content[0].type === "text" ? response.content[0].text : "{}";
+      const responseText = rawText.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?```\s*$/i, "");
       const extracted = JSON.parse(responseText);
 
       await ctx.runMutation(api.policies.updateExtraction, {
