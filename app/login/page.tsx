@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuthActions } from "@convex-dev/auth/react";
 import { useConvexAuth } from "convex/react";
 import { useRouter } from "next/navigation";
@@ -33,10 +33,11 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  if (isAuthenticated) {
-    router.replace("/");
-    return null;
-  }
+  useEffect(() => {
+    if (isAuthenticated) router.replace("/");
+  }, [isAuthenticated, router]);
+
+  if (isAuthenticated) return null;
 
   async function handleEmailSubmit(e: React.FormEvent) {
     e.preventDefault();
