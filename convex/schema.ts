@@ -42,6 +42,19 @@ export default defineSchema({
     lastScanError: v.optional(v.string()),
     emailsFound: v.optional(v.number()),
     policiesExtracted: v.optional(v.number()),
+    lastScanParams: v.optional(v.object({
+      sinceDate: v.optional(v.string()),
+      untilDate: v.optional(v.string()),
+      senderDomains: v.optional(v.array(v.string())),
+    })),
+    scanProgress: v.optional(v.object({
+      phase: v.string(),
+      totalEmails: v.optional(v.number()),
+      processedEmails: v.optional(v.number()),
+      insuranceFound: v.optional(v.number()),
+      extracting: v.optional(v.number()),
+      extracted: v.optional(v.number()),
+    })),
   }).index("by_userId", ["userId"]),
 
   emails: defineTable({

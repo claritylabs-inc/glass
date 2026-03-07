@@ -15,8 +15,18 @@ function hasAttachmentParts(structure: any): boolean {
   return false;
 }
 
+function matchesDomains(fromStr: string, domains: string[]): boolean {
+  const lower = fromStr.toLowerCase();
+  return domains.some((d) => lower.includes(d.toLowerCase()));
+}
+
 export const scanInbox = action({
-  args: { connectionId: v.id("emailConnections") },
+  args: {
+    connectionId: v.id("emailConnections"),
+    sinceDate: v.optional(v.string()),
+    untilDate: v.optional(v.string()),
+    senderDomains: v.optional(v.array(v.string())),
+  },
   returns: v.any(),
   handler: async (ctx, args) => {
     // Verify auth and get userId
@@ -29,16 +39,43 @@ export const scanInbox = action({
     });
     if (!connection) throw new Error("Connection not found");
 
+    // Save scan params
+    const scanParams: any = {};
+    if (args.sinceDate) scanParams.sinceDate = args.sinceDate;
+    if (args.untilDate) scanParams.untilDate = args.untilDate;
+    if (args.senderDomains?.length) scanParams.senderDomains = args.senderDomains;
+    await ctx.runMutation(api.connections.updateLastScanParams, {
+      id: args.connectionId,
+      lastScanParams: scanParams,
+    });
+
     await ctx.runMutation(api.connections.updateScanStatus, {
       id: args.connectionId,
       lastScanStatus: "scanning",
       lastScanAt: Date.now(),
     });
 
+    // Set initial progress
+    await ctx.runMutation(api.connections.updateScanProgress, {
+      id: args.connectionId,
+      scanProgress: { phase: "fetching" },
+    });
+
     try {
-      const since = connection.lastScanAt
-        ? new Date(connection.lastScanAt)
-        : new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+      // Determine date range
+      const since = args.sinceDate
+        ? new Date(args.sinceDate)
+        : connection.lastScanAt
+          ? new Date(connection.lastScanAt)
+          : new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+
+      const before = args.untilDate
+        ? new Date(new Date(args.untilDate).getTime() + 24 * 60 * 60 * 1000) // include the end date
+        : undefined;
+
+      // Build IMAP search criteria
+      const searchCriteria: any = { since };
+      if (before) searchCriteria.before = before;
 
       // Fetch emails via IMAP
       const client = new ImapFlow({
@@ -63,7 +100,7 @@ export const scanInbox = action({
         const lock = await client.getMailboxLock("INBOX");
         try {
           for await (const message of client.fetch(
-            { since },
+            searchCriteria,
             { uid: true, envelope: true, bodyStructure: true }
           )) {
             const envelope = message.envelope!;
@@ -71,6 +108,12 @@ export const scanInbox = action({
             const fromStr = from
               ? `${from.name || ""} <${from.address || ""}>`
               : "Unknown";
+
+            // Apply sender domain filter
+            if (args.senderDomains?.length && !matchesDomains(fromStr, args.senderDomains)) {
+              continue;
+            }
+
             emails.push({
               uid: message.uid,
               messageId: envelope.messageId || `uid-${message.uid}`,
@@ -89,6 +132,12 @@ export const scanInbox = action({
         throw error;
       }
 
+      // Update progress with email count
+      await ctx.runMutation(api.connections.updateScanProgress, {
+        id: args.connectionId,
+        scanProgress: { phase: "fetching", totalEmails: emails.length },
+      });
+
       // Insert new emails (dedup handled by mutation)
       let inserted = 0;
       for (const email of emails) {
@@ -105,6 +154,12 @@ export const scanInbox = action({
         });
         inserted++;
       }
+
+      // Update progress to classifying phase
+      await ctx.runMutation(api.connections.updateScanProgress, {
+        id: args.connectionId,
+        scanProgress: { phase: "classifying", totalEmails: inserted, processedEmails: 0 },
+      });
 
       await ctx.runMutation(api.connections.updateScanStatus, {
         id: args.connectionId,
@@ -137,7 +192,11 @@ export const scanInbox = action({
         lastScanError: friendlyError,
       });
 
-      // Return error instead of throwing so Convex doesn't log an uncaught error
+      await ctx.runMutation(api.connections.updateScanProgress, {
+        id: args.connectionId,
+        scanProgress: { phase: "complete" },
+      });
+
       return { error: friendlyError };
     }
   },

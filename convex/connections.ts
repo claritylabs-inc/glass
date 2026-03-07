@@ -59,6 +59,37 @@ export const updateScanStatus = mutation({
   },
 });
 
+export const updateScanProgress = mutation({
+  args: {
+    id: v.id("emailConnections"),
+    scanProgress: v.object({
+      phase: v.string(),
+      totalEmails: v.optional(v.number()),
+      processedEmails: v.optional(v.number()),
+      insuranceFound: v.optional(v.number()),
+      extracting: v.optional(v.number()),
+      extracted: v.optional(v.number()),
+    }),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.id, { scanProgress: args.scanProgress });
+  },
+});
+
+export const updateLastScanParams = mutation({
+  args: {
+    id: v.id("emailConnections"),
+    lastScanParams: v.object({
+      sinceDate: v.optional(v.string()),
+      untilDate: v.optional(v.string()),
+      senderDomains: v.optional(v.array(v.string())),
+    }),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.id, { lastScanParams: args.lastScanParams });
+  },
+});
+
 export const remove = mutation({
   args: {
     id: v.id("emailConnections"),

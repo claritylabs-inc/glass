@@ -171,6 +171,9 @@ export const extractPolicy = internalAction({
         fileName: `${(extracted.metadata ?? extracted).policyNumber || "policy"}.pdf`,
         ...applyExtracted(extracted),
       });
+
+      // Update extraction progress on connection
+      await incrementExtracted(ctx, args.connectionId);
     } catch (error: any) {
       await ctx.runMutation(api.policies.updateExtraction, {
         id: policyId,
@@ -178,6 +181,31 @@ export const extractPolicy = internalAction({
         extractionError: error.message || "Extraction failed",
       });
       console.error("Policy extraction failed:", error.message);
+
+      // Still increment so progress completes
+      await incrementExtracted(ctx, args.connectionId);
     }
   },
 });
+
+async function incrementExtracted(ctx: any, connectionId: any) {
+  try {
+    const conn = await ctx.runQuery(api.connections.get, { id: connectionId });
+    if (!conn?.scanProgress) return;
+
+    const progress = { ...conn.scanProgress };
+    progress.extracted = (progress.extracted ?? 0) + 1;
+
+    // If all extractions done, mark complete
+    if (progress.extracted >= (progress.extracting ?? 0)) {
+      progress.phase = "complete";
+    }
+
+    await ctx.runMutation(api.connections.updateScanProgress, {
+      id: connectionId,
+      scanProgress: progress,
+    });
+  } catch {
+    // Non-critical — don't fail extraction over progress tracking
+  }
+}

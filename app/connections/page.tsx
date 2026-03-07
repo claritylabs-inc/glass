@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery, useMutation, useAction } from "convex/react";
+import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Nav } from "@/components/nav";
 import { ConnectionForm } from "@/components/connection-form";
+import { ScanModal } from "@/components/scan-modal";
 import { ScanStatus } from "@/components/scan-status";
 import { FadeIn } from "@/components/ui/fade-in";
 import { ArrowRight } from "lucide-react";
@@ -97,12 +98,32 @@ function RemoveConnectionDialog({
 
 export default function ConnectionsPage() {
   const connections = useQuery(api.connections.list);
-  const scanInbox = useAction(api.actions.scanInbox.scanInbox);
   const [formOpen, setFormOpen] = useState(false);
+  const [scanTarget, setScanTarget] = useState<{
+    id: Id<"emailConnections">;
+    defaults?: {
+      sinceDate?: string;
+      untilDate?: string;
+      senderDomains?: string[];
+      lastScanAt?: number;
+    };
+  } | null>(null);
   const [removeTarget, setRemoveTarget] = useState<{
     id: Id<"emailConnections">;
     label: string;
   } | null>(null);
+
+  const openScanModal = (conn: NonNullable<typeof connections>[number]) => {
+    setScanTarget({
+      id: conn._id,
+      defaults: {
+        sinceDate: conn.lastScanParams?.sinceDate,
+        untilDate: conn.lastScanParams?.untilDate,
+        senderDomains: conn.lastScanParams?.senderDomains,
+        lastScanAt: conn.lastScanAt,
+      },
+    });
+  };
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -141,105 +162,107 @@ export default function ConnectionsPage() {
           )}
 
           <div className="space-y-3">
-            {connections?.map((conn, i) => (
-              <FadeIn
-                key={conn._id}
-                when={true}
-                staggerIndex={i + 1}
-                duration={0.6}
-              >
-                <div className="rounded-lg border border-foreground/6 bg-white/60 px-4 py-3">
-                  {/* Desktop layout: single row */}
-                  <div className="hidden md:flex items-center justify-between">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <ConnectionIcon imapHost={conn.imapHost} className="w-8 h-8 shrink-0" />
-                      <div className="min-w-0">
-                        <p className="text-body-sm font-medium text-foreground truncate">
-                          {conn.label}
-                        </p>
-                        <p className="text-label-sm text-muted-foreground/60 truncate">
-                          {conn.email} · {conn.imapHost}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <ScanStatus
-                        status={conn.lastScanStatus}
-                        error={conn.lastScanError}
-                      />
-                      {conn.emailsFound != null && (
-                        <span className="text-label-sm text-muted-foreground">
-                          {conn.emailsFound} emails ·{" "}
-                          {conn.policiesExtracted ?? 0} policies
-                        </span>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() =>
-                          scanInbox({ connectionId: conn._id })
-                        }
-                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-foreground/12 bg-white/80 text-label-sm font-medium text-foreground hover:border-foreground/20 hover:bg-foreground/[0.03] transition-colors cursor-pointer"
-                      >
-                        <Play className="w-3 h-3" />
-                        Scan
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setRemoveTarget({ id: conn._id, label: conn.label })
-                        }
-                        className="p-1.5 rounded-md hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors cursor-pointer"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
+            {connections?.map((conn, i) => {
+              const isScanning = conn.scanProgress && conn.scanProgress.phase !== "complete";
 
-                  {/* Mobile layout: vertical stack */}
-                  <div className="md:hidden space-y-3">
-                    <div className="flex items-center gap-3">
-                      <ConnectionIcon imapHost={conn.imapHost} className="w-8 h-8 shrink-0" />
-                      <div className="min-w-0">
-                        <p className="text-body-sm font-medium text-foreground truncate">
-                          {conn.label}
-                        </p>
-                        <p className="text-label-sm text-muted-foreground/60 truncate">
-                          {conn.email} · {conn.imapHost}
-                        </p>
+              return (
+                <FadeIn
+                  key={conn._id}
+                  when={true}
+                  staggerIndex={i + 1}
+                  duration={0.6}
+                >
+                  <div className="rounded-lg border border-foreground/6 bg-white/60 px-4 py-3">
+                    {/* Desktop layout: single row */}
+                    <div className="hidden md:flex items-center justify-between">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <ConnectionIcon imapHost={conn.imapHost} className="w-8 h-8 shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-body-sm font-medium text-foreground truncate">
+                            {conn.label}
+                          </p>
+                          <p className="text-label-sm text-muted-foreground/60 truncate">
+                            {conn.email} · {conn.imapHost}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <ScanStatus
+                          status={conn.lastScanStatus}
+                          error={conn.lastScanError}
+                          progress={conn.scanProgress}
+                        />
+                        {conn.emailsFound != null && !isScanning && (
+                          <span className="text-label-sm text-muted-foreground">
+                            {conn.emailsFound} emails ·{" "}
+                            {conn.policiesExtracted ?? 0} policies
+                          </span>
+                        )}
+                        <PillButton
+                          variant="secondary"
+                          onClick={() => openScanModal(conn)}
+                          disabled={!!isScanning}
+                        >
+                          <Play className="w-3 h-3" />
+                          Scan
+                        </PillButton>
+                        <PillButton
+                          variant="icon"
+                          onClick={() =>
+                            setRemoveTarget({ id: conn._id, label: conn.label })
+                          }
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </PillButton>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <ScanStatus
-                        status={conn.lastScanStatus}
-                        error={conn.lastScanError}
-                      />
-                      {conn.emailsFound != null && (
-                        <span className="text-label-sm text-muted-foreground">
-                          {conn.emailsFound} emails · {conn.policiesExtracted ?? 0} policies
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => scanInbox({ connectionId: conn._id })}
-                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-foreground/12 bg-white/80 text-label-sm font-medium text-foreground hover:border-foreground/20 hover:bg-foreground/[0.03] transition-colors cursor-pointer"
-                      >
-                        <Play className="w-3 h-3" />
-                        Scan
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setRemoveTarget({ id: conn._id, label: conn.label })}
-                        className="p-1.5 rounded-md hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors cursor-pointer"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+
+                    {/* Mobile layout: vertical stack */}
+                    <div className="md:hidden space-y-3">
+                      <div className="flex items-center gap-3">
+                        <ConnectionIcon imapHost={conn.imapHost} className="w-8 h-8 shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-body-sm font-medium text-foreground truncate">
+                            {conn.label}
+                          </p>
+                          <p className="text-label-sm text-muted-foreground/60 truncate">
+                            {conn.email} · {conn.imapHost}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <ScanStatus
+                          status={conn.lastScanStatus}
+                          error={conn.lastScanError}
+                          progress={conn.scanProgress}
+                        />
+                        {conn.emailsFound != null && !isScanning && (
+                          <span className="text-label-sm text-muted-foreground">
+                            {conn.emailsFound} emails · {conn.policiesExtracted ?? 0} policies
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <PillButton
+                          variant="secondary"
+                          onClick={() => openScanModal(conn)}
+                          disabled={!!isScanning}
+                        >
+                          <Play className="w-3 h-3" />
+                          Scan
+                        </PillButton>
+                        <PillButton
+                          variant="icon"
+                          onClick={() => setRemoveTarget({ id: conn._id, label: conn.label })}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </PillButton>
+                      </div>
                     </div>
                   </div>
-                </div>
-              </FadeIn>
-            ))}
+                </FadeIn>
+              );
+            })}
           </div>
         </div>
       </main>
@@ -251,6 +274,15 @@ export default function ConnectionsPage() {
       </FixedMobileFooter>
 
       <ConnectionForm open={formOpen} onClose={() => setFormOpen(false)} />
+
+      {scanTarget && (
+        <ScanModal
+          open={true}
+          onClose={() => setScanTarget(null)}
+          connectionId={scanTarget.id}
+          defaults={scanTarget.defaults}
+        />
+      )}
 
       {removeTarget && (
         <RemoveConnectionDialog

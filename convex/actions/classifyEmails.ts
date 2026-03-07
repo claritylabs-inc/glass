@@ -27,6 +27,14 @@ export const classifyEmails = internalAction({
 
     const anthropic = new Anthropic();
     let policiesFound = 0;
+    let processed = 0;
+    const total = unprocessed.length;
+
+    // Update progress
+    await ctx.runMutation(api.connections.updateScanProgress, {
+      id: args.connectionId,
+      scanProgress: { phase: "classifying", totalEmails: total, processedEmails: 0 },
+    });
 
     for (const email of unprocessed) {
       // Skip emails that already produced policies
@@ -109,8 +117,24 @@ Date: ${email.date}`,
         policiesFound++;
       }
 
-      // Mark as processed
+      // Mark as processed and update progress
       await ctx.runMutation(api.emails.markProcessed, { id: email._id });
+      processed++;
+
+      // Update progress every 5 emails or on last one
+      if (processed % 5 === 0 || processed === total) {
+        await ctx.runMutation(api.connections.updateScanProgress, {
+          id: args.connectionId,
+          scanProgress: {
+            phase: policiesFound > 0 ? "extracting" : "classifying",
+            totalEmails: total,
+            processedEmails: processed,
+            insuranceFound: policiesFound,
+            extracting: policiesFound,
+            extracted: 0,
+          },
+        });
+      }
     }
 
     // Update connection with policy count
@@ -122,6 +146,29 @@ Date: ${email.date}`,
         id: args.connectionId,
         lastScanStatus: "success",
         policiesExtracted: (connection?.policiesExtracted ?? 0) + policiesFound,
+      });
+      // Set extracting phase — extractPolicy actions will update as they complete
+      await ctx.runMutation(api.connections.updateScanProgress, {
+        id: args.connectionId,
+        scanProgress: {
+          phase: "extracting",
+          totalEmails: total,
+          processedEmails: total,
+          insuranceFound: policiesFound,
+          extracting: policiesFound,
+          extracted: 0,
+        },
+      });
+    } else {
+      // No policies to extract — mark complete
+      await ctx.runMutation(api.connections.updateScanProgress, {
+        id: args.connectionId,
+        scanProgress: {
+          phase: "complete",
+          totalEmails: total,
+          processedEmails: total,
+          insuranceFound: 0,
+        },
       });
     }
   },
