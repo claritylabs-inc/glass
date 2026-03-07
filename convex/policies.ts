@@ -28,7 +28,38 @@ export const list = query({
     } else {
       q = ctx.db.query("policies");
     }
-    return await q.collect();
+    const all = await q.collect();
+    return all.filter((p) => p.extractionStatus === "complete");
+  },
+});
+
+export const listPending = query({
+  args: {},
+  handler: async (ctx) => {
+    const all = await ctx.db.query("policies").collect();
+    const pending = all.filter(
+      (p) =>
+        p.extractionStatus === "pending" ||
+        p.extractionStatus === "extracting" ||
+        p.extractionStatus === "error"
+    );
+
+    const enriched = await Promise.all(
+      pending.map(async (p) => {
+        let emailSubject: string | undefined;
+        let emailFrom: string | undefined;
+        if (p.emailId) {
+          const email = await ctx.db.get(p.emailId);
+          if (email) {
+            emailSubject = email.subject;
+            emailFrom = email.from;
+          }
+        }
+        return { ...p, emailSubject, emailFrom };
+      })
+    );
+
+    return enriched;
   },
 });
 
@@ -42,8 +73,16 @@ export const get = query({
 export const stats = query({
   args: {},
   handler: async (ctx) => {
-    const policies = await ctx.db.query("policies").collect();
+    const allPolicies = await ctx.db.query("policies").collect();
     const connections = await ctx.db.query("emailConnections").collect();
+
+    const policies = allPolicies.filter((p) => p.extractionStatus === "complete");
+    const pendingExtractions = allPolicies.filter(
+      (p) =>
+        p.extractionStatus === "pending" ||
+        p.extractionStatus === "extracting" ||
+        p.extractionStatus === "error"
+    ).length;
 
     const byType: Record<string, number> = {};
     const byCarrier: Record<string, number> = {};
@@ -64,6 +103,7 @@ export const stats = query({
       totalPolicies: policies.length,
       activeConnections: connections.length,
       lastScanAt: lastScan,
+      pendingExtractions,
       byType,
       byCarrier,
       byYear,
@@ -108,7 +148,8 @@ export const insert = mutation({
       v.literal("pending"),
       v.literal("extracting"),
       v.literal("complete"),
-      v.literal("error")
+      v.literal("error"),
+      v.literal("not_insurance")
     ),
   },
   handler: async (ctx, args) => {
@@ -156,7 +197,8 @@ export const updateExtraction = mutation({
         v.literal("pending"),
         v.literal("extracting"),
         v.literal("complete"),
-        v.literal("error")
+        v.literal("error"),
+        v.literal("not_insurance")
       )
     ),
     fileId: v.optional(v.id("_storage")),
@@ -165,5 +207,14 @@ export const updateExtraction = mutation({
   handler: async (ctx, args) => {
     const { id, ...fields } = args;
     await ctx.db.patch(id, fields);
+  },
+});
+
+export const dismiss = mutation({
+  args: {
+    id: v.id("policies"),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.id, { extractionStatus: "not_insurance" as const });
   },
 });

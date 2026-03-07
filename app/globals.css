@@ -138,12 +138,14 @@
   html {
     scroll-behavior: smooth;
     background: var(--background);
+    overscroll-behavior: none;
   }
 
   body {
     @apply bg-background text-foreground font-sans;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    overscroll-behavior: none;
   }
 
   ::selection {

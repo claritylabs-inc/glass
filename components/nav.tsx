@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, FileText, Mail } from "lucide-react";
+import { LayoutDashboard, FileText, Mail, FileSearch } from "lucide-react";
 import { LogoIcon } from "@/components/ui/logo-icon";
 
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/extractions", label: "Extractions", icon: FileSearch },
   { href: "/policies", label: "Policies", icon: FileText },
   { href: "/connections", label: "Connections", icon: Mail },
 ];

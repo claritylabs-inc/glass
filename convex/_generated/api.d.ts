@@ -10,6 +10,7 @@
 
 import type * as actions_classifyEmails from "../actions/classifyEmails.js";
 import type * as actions_extractPolicy from "../actions/extractPolicy.js";
+import type * as actions_retryExtraction from "../actions/retryExtraction.js";
 import type * as actions_scanInbox from "../actions/scanInbox.js";
 import type * as connections from "../connections.js";
 import type * as emails from "../emails.js";
@@ -27,6 +28,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   "actions/classifyEmails": typeof actions_classifyEmails;
   "actions/extractPolicy": typeof actions_extractPolicy;
+  "actions/retryExtraction": typeof actions_retryExtraction;
   "actions/scanInbox": typeof actions_scanInbox;
   connections: typeof connections;
   emails: typeof emails;

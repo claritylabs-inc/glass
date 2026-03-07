@@ -1,13 +1,14 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { FileText, Mail, Clock, Layers } from "lucide-react";
+import { FileText, Mail, Clock, FileSearch } from "lucide-react";
 import { FadeIn } from "@/components/ui/fade-in";
 
 interface StatsData {
   totalPolicies: number;
   activeConnections: number;
   lastScanAt: number | null;
+  pendingExtractions: number;
   byType: Record<string, number>;
 }
 
@@ -29,9 +30,9 @@ export function StatsCards({ stats }: { stats: StatsData | undefined }) {
       icon: Clock,
     },
     {
-      label: "Policy Types",
-      value: stats?.byType ? Object.keys(stats.byType).length : "—",
-      icon: Layers,
+      label: "Extractions",
+      value: stats?.pendingExtractions ?? "—",
+      icon: FileSearch,
     },
   ];
 

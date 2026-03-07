@@ -72,7 +72,8 @@ export default defineSchema({
       v.literal("pending"),
       v.literal("extracting"),
       v.literal("complete"),
-      v.literal("error")
+      v.literal("error"),
+      v.literal("not_insurance")
     ),
   }).index("by_policyType", ["policyType"])
     .index("by_carrier", ["carrier"])
