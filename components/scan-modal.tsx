@@ -97,7 +97,7 @@ export function ScanModal({ open, onClose, connectionId, defaults }: ScanModalPr
                 <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
                   Date Range
                 </label>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="text-label-sm text-muted-foreground/60 block mb-1">
                       From
