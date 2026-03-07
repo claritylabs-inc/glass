@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { useAction, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { motion, AnimatePresence } from "framer-motion";
@@ -90,7 +91,7 @@ function ErrorLogDialog({
   onClose: () => void;
 }) {
   if (!open) return null;
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/20 backdrop-blur-[2px]" onClick={onClose} />
       <div className="relative bg-white rounded-lg border border-foreground/10 shadow-xl max-w-lg w-full mx-4 overflow-hidden">
@@ -113,7 +114,8 @@ function ErrorLogDialog({
           </pre>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
