@@ -4,7 +4,7 @@ import { forwardRef, useState } from "react";
 import { motion, type HTMLMotionProps } from "framer-motion";
 import { cn } from "@/lib/utils";
 
-type PillButtonVariant = "primary" | "secondary" | "destructive" | "ghost";
+type PillButtonVariant = "primary" | "secondary" | "destructive" | "ghost" | "icon";
 
 interface PillButtonProps
   extends Omit<HTMLMotionProps<"button">, "ref" | "children"> {
@@ -40,6 +40,12 @@ const variantConfig = {
     rest: { backgroundColor: "transparent" },
     hover: { backgroundColor: "rgba(17,24,39,0.05)" },
   },
+  icon: {
+    classes:
+      "text-muted-foreground cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed",
+    rest: { backgroundColor: "transparent" },
+    hover: { backgroundColor: "rgba(17,24,39,0.06)" },
+  },
 };
 
 const PAD_REST = 20;
@@ -51,6 +57,7 @@ const PillButton = forwardRef<HTMLButtonElement, PillButtonProps>(
   ({ variant = "primary", className, disabled, children, ...props }, ref) => {
     const [hovered, setHovered] = useState(false);
     const vc = variantConfig[variant];
+    const isIcon = variant === "icon";
 
     return (
       <motion.button
@@ -61,38 +68,41 @@ const PillButton = forwardRef<HTMLButtonElement, PillButtonProps>(
         onHoverEnd={() => setHovered(false)}
         initial={false}
         animate={{
-          paddingLeft: PAD_REST,
-          paddingRight: PAD_REST,
+          ...(isIcon ? {} : { paddingLeft: PAD_REST, paddingRight: PAD_REST }),
           ...vc.rest,
         }}
         whileHover={
           disabled
             ? undefined
             : {
-                paddingLeft: PAD_HOVER,
-                paddingRight: PAD_HOVER,
+                ...(isIcon ? {} : { paddingLeft: PAD_HOVER, paddingRight: PAD_HOVER }),
                 scale: 1.02,
                 ...vc.hover,
               }
         }
         whileTap={disabled ? undefined : { scale: 0.98 }}
         transition={{ duration: DURATION, ease: EASE_OUT }}
-        style={{ fontSize: "var(--text-label)" }}
+        style={isIcon ? undefined : { fontSize: "var(--text-label)" }}
         className={cn(
-          "inline-flex items-center justify-center rounded-full select-none outline-none overflow-hidden py-2",
+          "inline-flex items-center justify-center rounded-full select-none outline-none overflow-hidden",
+          isIcon ? "w-8 h-8 p-0" : "py-2",
           vc.classes,
           className,
         )}
         {...props}
       >
-        <motion.span
-          className="inline-flex items-center"
-          initial={false}
-          animate={{ gap: `${hovered && !disabled ? GAP_HOVER : GAP_REST}px` }}
-          transition={{ duration: DURATION, ease: EASE_OUT }}
-        >
-          {children}
-        </motion.span>
+        {isIcon ? (
+          children
+        ) : (
+          <motion.span
+            className="inline-flex items-center"
+            initial={false}
+            animate={{ gap: `${hovered && !disabled ? GAP_HOVER : GAP_REST}px` }}
+            transition={{ duration: DURATION, ease: EASE_OUT }}
+          >
+            {children}
+          </motion.span>
+        )}
       </motion.button>
     );
   },

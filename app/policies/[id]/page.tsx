@@ -200,27 +200,23 @@ export default function PolicyDetailPage({
                 </div>
               </div>
               <div className="hidden md:flex items-center gap-2">
+                {!isDeleted && (
+                  <PillButton
+                    variant="icon"
+                    onClick={() => setShowDeleteDialog(true)}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </PillButton>
+                )}
                 {policy.fileId && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (fileUrl) window.open(fileUrl, "_blank");
-                    }}
+                  <PillButton
+                    variant="primary"
+                    onClick={() => { if (fileUrl) window.open(fileUrl, "_blank"); }}
                     disabled={!fileUrl}
-                    className="flex items-center gap-2 px-3 py-1.5 rounded-md border border-foreground/12 bg-white/80 text-label font-medium text-foreground hover:border-foreground/20 hover:bg-foreground/[0.03] transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <Download className="w-3.5 h-3.5" />
                     Download PDF
-                  </button>
-                )}
-                {!isDeleted && (
-                  <button
-                    type="button"
-                    onClick={() => setShowDeleteDialog(true)}
-                    className="p-1.5 rounded-md hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors cursor-pointer"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  </PillButton>
                 )}
               </div>
             </div>
