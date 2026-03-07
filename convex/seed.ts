@@ -1,25 +1,21 @@
-import { v } from "convex/values";
 import { mutation } from "./_generated/server";
+import { requireAuth } from "./lib/auth";
 
 export const seed = mutation({
-  args: {
-    userId: v.optional(v.id("users")),
-  },
-  handler: async (ctx, args) => {
-    // Check if already seeded
-    const existing = await ctx.db.query("emailConnections").first();
-    if (existing) return "Already seeded";
+  args: {},
+  handler: async (ctx) => {
+    const userId = await requireAuth(ctx);
 
-    // Use provided userId or find first user in DB
-    let userId = args.userId;
-    if (!userId) {
-      const firstUser = await ctx.db.query("users").first();
-      if (firstUser) userId = firstUser._id;
-    }
+    // Check if user already has seeded data
+    const existing = await ctx.db
+      .query("emailConnections")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .first();
+    if (existing) return "Already seeded";
 
     // Create demo connection
     const connectionId = await ctx.db.insert("emailConnections", {
-      ...(userId ? { userId } : {}),
+      userId,
       label: "Rosario's Business Email",
       imapHost: "imap.gmail.com",
       imapPort: 993,
@@ -54,7 +50,7 @@ export const seed = mutation({
     for (let i = 0; i < emailData.length; i++) {
       const e = emailData[i];
       emailIds[i] = await ctx.db.insert("emails", {
-        ...(userId ? { userId } : {}),
+        userId,
         connectionId,
         messageId: `msg-${i + 1}@demo.rosarios.com`,
         subject: e.subject,
@@ -233,7 +229,7 @@ export const seed = mutation({
 
     for (const p of policiesData) {
       await ctx.db.insert("policies", {
-        ...(userId ? { userId } : {}),
+        userId,
         emailId: emailIds[p.emailIdx],
         carrier: p.carrier,
         ...("mga" in p ? { mga: p.mga } : {}),
