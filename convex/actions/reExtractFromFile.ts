@@ -3,7 +3,6 @@
 import { v } from "convex/values";
 import { action } from "../_generated/server";
 import { api } from "../_generated/api";
-import { ImapFlow } from "imapflow";
 import Anthropic from "@anthropic-ai/sdk";
 import { EXTRACTION_PROMPT, METADATA_PROMPT, buildSectionsPrompt } from "../lib/prompts";
 import { stripFences, applyExtracted, mergeChunkedSections, getPageChunks } from "../lib/extraction";
@@ -65,10 +64,10 @@ async function extractFromPdf(anthropic: Anthropic, pdfBase64: string) {
   return { rawText: JSON.stringify(merged), extracted: merged };
 }
 
-export const retryExtraction = action({
+export const reExtractFromFile = action({
   args: {
     policyId: v.id("policies"),
-    mode: v.optional(v.union(v.literal("reparse"), v.literal("full"))),
+    fileId: v.id("_storage"),
   },
   returns: v.any(),
   handler: async (ctx, args) => {
@@ -76,48 +75,11 @@ export const retryExtraction = action({
     const viewer = await ctx.runQuery(api.users.viewer);
     if (!viewer) return { error: "Not authenticated" };
 
+    // Verify policy exists and belongs to user
     const policy = await ctx.runQuery(api.policies.get, { id: args.policyId });
     if (!policy) return { error: "Policy not found" };
-    if (!policy.emailId) return { error: "No linked email — cannot retry" };
 
-    const mode = args.mode ?? "auto";
-
-    // Reparse mode: only re-parse the saved raw response
-    if (mode === "reparse" || mode === "auto") {
-      if (policy.rawExtractionResponse) {
-        try {
-          const responseText = stripFences(policy.rawExtractionResponse);
-          const extracted = JSON.parse(responseText);
-
-          await ctx.runMutation(api.policies.updateExtraction, {
-            id: args.policyId,
-            fileName: `${(extracted.metadata ?? extracted).policyNumber || "policy"}.pdf`,
-            ...applyExtracted(extracted),
-          });
-
-          return { success: true, reused: true };
-        } catch {
-          if (mode === "reparse") {
-            return { error: "Could not parse saved AI response" };
-          }
-          // auto mode: fall through to full retry
-        }
-      } else if (mode === "reparse") {
-        return { error: "No saved AI response to re-parse" };
-      }
-    }
-
-    // Full retry with API call
-    const emails = await ctx.runQuery(api.emails.list, {});
-    const email = emails.find((e: any) => e._id === policy.emailId);
-    if (!email) return { error: "Linked email not found" };
-
-    const connection = await ctx.runQuery(api.connections.get, {
-      id: email.connectionId,
-    });
-    if (!connection) return { error: "Email connection not found" };
-
-    // Reset status to extracting
+    // Set status to extracting
     await ctx.runMutation(api.policies.updateExtraction, {
       id: args.policyId,
       extractionStatus: "extracting",
@@ -125,63 +87,27 @@ export const retryExtraction = action({
     });
 
     try {
-      // Download PDF attachment via IMAP
-      const client = new ImapFlow({
-        host: connection.imapHost,
-        port: connection.imapPort,
-        secure: true,
-        auth: { user: connection.email, pass: connection.password },
-        logger: false,
-      });
+      // Read file from Convex storage
+      const blob = await ctx.storage.get(args.fileId);
+      if (!blob) throw new Error("File not found in storage");
 
-      let pdfBuffer: Buffer;
-      try {
-        await client.connect();
-        const lock = await client.getMailboxLock("INBOX");
-        try {
-          const { content } = await client.download(
-            String(email.uid ?? 0),
-            "2",
-            { uid: true }
-          );
-          const chunks: Buffer[] = [];
-          for await (const chunk of content) {
-            chunks.push(Buffer.from(chunk));
-          }
-          pdfBuffer = Buffer.concat(chunks);
-        } finally {
-          lock.release();
-        }
-        await client.logout();
-      } catch (error) {
-        try {
-          await client.logout();
-        } catch {
-          /* ignore */
-        }
-        throw error;
-      }
-
-      // Store in Convex file storage
-      const blob = new Blob([new Uint8Array(pdfBuffer)], {
-        type: "application/pdf",
-      });
-      const fileId = await ctx.storage.store(blob);
+      const arrayBuffer = await blob.arrayBuffer();
+      const pdfBase64 = Buffer.from(arrayBuffer).toString("base64");
 
       // Extract with Claude
-      const pdfBase64 = pdfBuffer.toString("base64");
       const anthropic = new Anthropic();
       const { rawText, extracted } = await extractFromPdf(anthropic, pdfBase64);
 
-      // Save raw response for future retries
+      // Save raw response
       await ctx.runMutation(api.policies.updateExtraction, {
         id: args.policyId,
         rawExtractionResponse: rawText,
       });
 
+      // Apply extraction results with new file
       await ctx.runMutation(api.policies.updateExtraction, {
         id: args.policyId,
-        fileId,
+        fileId: args.fileId,
         fileName: `${(extracted.metadata ?? extracted).policyNumber || "policy"}.pdf`,
         ...applyExtracted(extracted),
       });
@@ -191,9 +117,9 @@ export const retryExtraction = action({
       await ctx.runMutation(api.policies.updateExtraction, {
         id: args.policyId,
         extractionStatus: "error",
-        extractionError: error.message || "Extraction failed",
+        extractionError: error.message || "Re-extraction failed",
       });
-      return { error: error.message || "Extraction failed" };
+      return { error: error.message || "Re-extraction failed" };
     }
   },
 });

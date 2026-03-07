@@ -11,6 +11,7 @@
 import type * as actions_classifyEmails from "../actions/classifyEmails.js";
 import type * as actions_extractCompanyInfo from "../actions/extractCompanyInfo.js";
 import type * as actions_extractPolicy from "../actions/extractPolicy.js";
+import type * as actions_reExtractFromFile from "../actions/reExtractFromFile.js";
 import type * as actions_retryExtraction from "../actions/retryExtraction.js";
 import type * as actions_scanInbox from "../actions/scanInbox.js";
 import type * as auth from "../auth.js";
@@ -20,7 +21,9 @@ import type * as http from "../http.js";
 import type * as lib_aiClassifier from "../lib/aiClassifier.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_emailTemplate from "../lib/emailTemplate.js";
+import type * as lib_extraction from "../lib/extraction.js";
 import type * as lib_policyTypes from "../lib/policyTypes.js";
+import type * as lib_prompts from "../lib/prompts.js";
 import type * as migrations from "../migrations.js";
 import type * as policies from "../policies.js";
 import type * as seed from "../seed.js";
@@ -36,6 +39,7 @@ declare const fullApi: ApiFromModules<{
   "actions/classifyEmails": typeof actions_classifyEmails;
   "actions/extractCompanyInfo": typeof actions_extractCompanyInfo;
   "actions/extractPolicy": typeof actions_extractPolicy;
+  "actions/reExtractFromFile": typeof actions_reExtractFromFile;
   "actions/retryExtraction": typeof actions_retryExtraction;
   "actions/scanInbox": typeof actions_scanInbox;
   auth: typeof auth;
@@ -45,7 +49,9 @@ declare const fullApi: ApiFromModules<{
   "lib/aiClassifier": typeof lib_aiClassifier;
   "lib/auth": typeof lib_auth;
   "lib/emailTemplate": typeof lib_emailTemplate;
+  "lib/extraction": typeof lib_extraction;
   "lib/policyTypes": typeof lib_policyTypes;
+  "lib/prompts": typeof lib_prompts;
   migrations: typeof migrations;
   policies: typeof policies;
   seed: typeof seed;

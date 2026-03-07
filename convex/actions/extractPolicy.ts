@@ -5,6 +5,75 @@ import { internalAction } from "../_generated/server";
 import { api } from "../_generated/api";
 import { ImapFlow } from "imapflow";
 import Anthropic from "@anthropic-ai/sdk";
+import { EXTRACTION_PROMPT, METADATA_PROMPT, buildSectionsPrompt } from "../lib/prompts";
+import { stripFences, applyExtracted, mergeChunkedSections, getPageChunks } from "../lib/extraction";
+
+const MODEL = "claude-sonnet-4-5-20241022";
+const CHUNK_THRESHOLD = 30; // pages
+
+async function callClaude(
+  anthropic: Anthropic,
+  pdfBase64: string,
+  prompt: string,
+  maxTokens: number = 16384,
+) {
+  const response = await anthropic.messages.create({
+    model: MODEL,
+    max_tokens: maxTokens,
+    messages: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "document",
+            source: {
+              type: "base64",
+              media_type: "application/pdf",
+              data: pdfBase64,
+            },
+          },
+          { type: "text", text: prompt },
+        ],
+      },
+    ],
+  });
+  return response.content[0].type === "text" ? response.content[0].text : "{}";
+}
+
+async function extractFromPdf(anthropic: Anthropic, pdfBase64: string) {
+  // First pass — try single-call extraction
+  const rawText = await callClaude(anthropic, pdfBase64, EXTRACTION_PROMPT);
+  const parsed = JSON.parse(stripFences(rawText));
+  const totalPages = parsed.totalPages ?? 0;
+
+  // If document is short enough, single pass is sufficient
+  if (totalPages <= CHUNK_THRESHOLD) {
+    return { rawText, extracted: parsed };
+  }
+
+  // Long document — do chunked extraction
+  // First call already gave us an attempt; use metadata from it
+  // but re-extract sections in chunks for better coverage
+  const metadataRaw = await callClaude(anthropic, pdfBase64, METADATA_PROMPT, 4096);
+  const metadataResult = JSON.parse(stripFences(metadataRaw));
+  const pageCount = metadataResult.totalPages || totalPages;
+  const chunks = getPageChunks(pageCount);
+
+  const sectionChunks: any[] = [];
+  for (const [start, end] of chunks) {
+    const chunkRaw = await callClaude(
+      anthropic,
+      pdfBase64,
+      buildSectionsPrompt(start, end),
+      8192,
+    );
+    sectionChunks.push(JSON.parse(stripFences(chunkRaw)));
+  }
+
+  const merged = mergeChunkedSections(metadataResult, sectionChunks);
+  const mergedRaw = JSON.stringify(merged);
+  return { rawText: mergedRaw, extracted: merged };
+}
 
 export const extractPolicy = internalAction({
   args: {
@@ -24,7 +93,7 @@ export const extractPolicy = internalAction({
     });
     if (!connection) throw new Error("Connection not found");
 
-    // Create a pending policy record with userId
+    // Create a pending policy record
     const policyId = await ctx.runMutation(api.policies.insert, {
       userId: args.userId,
       emailId: args.emailId,
@@ -58,7 +127,7 @@ export const extractPolicy = internalAction({
         try {
           const { content } = await client.download(
             String(thisEmail.uid ?? 0),
-            "2", // Common part ID for first attachment
+            "2",
             { uid: true }
           );
           const chunks: Buffer[] = [];
@@ -85,88 +154,22 @@ export const extractPolicy = internalAction({
       });
       const fileId = await ctx.storage.store(blob);
 
-      // Send PDF directly to Claude as base64 (Claude supports native PDF input)
+      // Extract with Claude
       const pdfBase64 = pdfBuffer.toString("base64");
-
       const anthropic = new Anthropic();
-      const response = await anthropic.messages.create({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 1024,
-        messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "document",
-                source: {
-                  type: "base64",
-                  media_type: "application/pdf",
-                  data: pdfBase64,
-                },
-              },
-              {
-                type: "text",
-                text: `Extract structured metadata from this insurance document. Respond with JSON only:
-{
-  "carrier": "insurance carrier / underwriter name",
-  "mga": "MGA or MGU name if different from carrier, or null",
-  "broker": "insurance broker name, or null",
-  "policyNumber": "policy number",
-  "documentType": "policy" or "quote",
-  "policyTypes": ["general_liability", "workers_comp", "commercial_auto", "non_owned_auto", "property", "umbrella", "professional_liability", "cyber", "epli", "directors_officers", "other"],
-  "policyYear": number,
-  "effectiveDate": "MM/DD/YYYY",
-  "expirationDate": "MM/DD/YYYY",
-  "isRenewal": boolean,
-  "coverages": [{"name": "coverage name", "limit": "$X,XXX,XXX", "deductible": "$X,XXX"}],
-  "premium": "$X,XXX",
-  "insuredName": "name of insured party",
-  "summary": "1-2 sentence summary"
-}
-policyTypes should include ALL coverage types found in the document. documentType should be "quote" if this is a quote/proposal, "policy" if it is a bound policy.`,
-              },
-            ],
-          },
-        ],
-      });
+      const { rawText, extracted } = await extractFromPdf(anthropic, pdfBase64);
 
-      const rawText =
-        response.content[0].type === "text" ? response.content[0].text : "{}";
-
-      // Save raw response so retries can re-parse without calling the API
+      // Save raw response for retries
       await ctx.runMutation(api.policies.updateExtraction, {
         id: policyId,
         rawExtractionResponse: rawText,
       });
 
-      const responseText = rawText.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?```\s*$/i, "");
-      const extracted = JSON.parse(responseText);
-
-      const policyTypes = Array.isArray(extracted.policyTypes)
-        ? extracted.policyTypes
-        : extracted.policyType
-          ? [extracted.policyType]
-          : ["other"];
-
       await ctx.runMutation(api.policies.updateExtraction, {
         id: policyId,
         fileId,
-        fileName: `${extracted.policyNumber || "policy"}.pdf`,
-        carrier: extracted.carrier || "Unknown",
-        mga: extracted.mga || undefined,
-        broker: extracted.broker || undefined,
-        policyNumber: extracted.policyNumber || "Unknown",
-        policyTypes,
-        documentType: extracted.documentType === "quote" ? "quote" : "policy",
-        policyYear: extracted.policyYear || new Date().getFullYear(),
-        effectiveDate: extracted.effectiveDate || "Unknown",
-        expirationDate: extracted.expirationDate || "Unknown",
-        isRenewal: extracted.isRenewal ?? false,
-        coverages: extracted.coverages || [],
-        premium: extracted.premium,
-        insuredName: extracted.insuredName || "Unknown",
-        summary: extracted.summary,
-        extractionStatus: "complete",
+        fileName: `${(extracted.metadata ?? extracted).policyNumber || "policy"}.pdf`,
+        ...applyExtracted(extracted),
       });
     } catch (error: any) {
       await ctx.runMutation(api.policies.updateExtraction, {

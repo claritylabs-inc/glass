@@ -195,6 +195,52 @@ export const stats = query({
   },
 });
 
+// Shared validators for coverages and document structure
+const coverageValidator = v.object({
+  name: v.string(),
+  limit: v.string(),
+  deductible: v.optional(v.string()),
+  pageNumber: v.optional(v.number()),
+  sectionRef: v.optional(v.string()),
+});
+
+const documentValidator = v.object({
+  sections: v.array(v.object({
+    title: v.string(),
+    sectionNumber: v.optional(v.string()),
+    pageStart: v.number(),
+    pageEnd: v.optional(v.number()),
+    type: v.string(),
+    coverageType: v.optional(v.string()),
+    content: v.string(),
+    subsections: v.optional(v.array(v.object({
+      title: v.string(),
+      sectionNumber: v.optional(v.string()),
+      pageNumber: v.optional(v.number()),
+      content: v.string(),
+    }))),
+  })),
+  regulatoryContext: v.optional(v.object({
+    content: v.string(),
+    pageNumber: v.optional(v.number()),
+  })),
+  complaintContact: v.optional(v.object({
+    content: v.string(),
+    pageNumber: v.optional(v.number()),
+  })),
+  costsAndFees: v.optional(v.object({
+    content: v.string(),
+    pageNumber: v.optional(v.number()),
+  })),
+});
+
+const metadataSourceValidator = v.object({
+  carrierPage: v.optional(v.number()),
+  policyNumberPage: v.optional(v.number()),
+  premiumPage: v.optional(v.number()),
+  effectiveDatePage: v.optional(v.number()),
+});
+
 export const insert = mutation({
   args: {
     userId: v.optional(v.id("users")),
@@ -202,6 +248,8 @@ export const insert = mutation({
     fileId: v.optional(v.id("_storage")),
     fileName: v.optional(v.string()),
     carrier: v.string(),
+    security: v.optional(v.string()),
+    underwriter: v.optional(v.string()),
     mga: v.optional(v.string()),
     broker: v.optional(v.string()),
     policyNumber: v.string(),
@@ -211,16 +259,12 @@ export const insert = mutation({
     effectiveDate: v.string(),
     expirationDate: v.string(),
     isRenewal: v.boolean(),
-    coverages: v.array(
-      v.object({
-        name: v.string(),
-        limit: v.string(),
-        deductible: v.optional(v.string()),
-      })
-    ),
+    coverages: v.array(coverageValidator),
     premium: v.optional(v.string()),
     insuredName: v.string(),
     summary: v.optional(v.string()),
+    metadataSource: v.optional(metadataSourceValidator),
+    document: v.optional(documentValidator),
     extractionStatus: v.union(
       v.literal("pending"),
       v.literal("extracting"),
@@ -238,6 +282,8 @@ export const updateExtraction = mutation({
   args: {
     id: v.id("policies"),
     carrier: v.optional(v.string()),
+    security: v.optional(v.string()),
+    underwriter: v.optional(v.string()),
     mga: v.optional(v.string()),
     broker: v.optional(v.string()),
     policyNumber: v.optional(v.string()),
@@ -247,18 +293,12 @@ export const updateExtraction = mutation({
     effectiveDate: v.optional(v.string()),
     expirationDate: v.optional(v.string()),
     isRenewal: v.optional(v.boolean()),
-    coverages: v.optional(
-      v.array(
-        v.object({
-          name: v.string(),
-          limit: v.string(),
-          deductible: v.optional(v.string()),
-        })
-      )
-    ),
+    coverages: v.optional(v.array(coverageValidator)),
     premium: v.optional(v.string()),
     insuredName: v.optional(v.string()),
     summary: v.optional(v.string()),
+    metadataSource: v.optional(metadataSourceValidator),
+    document: v.optional(documentValidator),
     extractionStatus: v.optional(
       v.union(
         v.literal("pending"),
@@ -276,6 +316,14 @@ export const updateExtraction = mutation({
   handler: async (ctx, args) => {
     const { id, ...fields } = args;
     await ctx.db.patch(id, fields);
+  },
+});
+
+export const generateUploadUrl = mutation({
+  args: {},
+  handler: async (ctx) => {
+    await requireAuth(ctx);
+    return await ctx.storage.generateUploadUrl();
   },
 });
 
