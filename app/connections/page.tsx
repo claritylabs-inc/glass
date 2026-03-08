@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { toast } from "sonner";
 import { Nav } from "@/components/nav";
 import { ConnectionForm } from "@/components/connection-form";
 import { ScanModal } from "@/components/scan-modal";
@@ -47,6 +48,9 @@ function RemoveConnectionDialog({
     try {
       await removeConnection({ id: connectionId, deletePolicies });
       onClose();
+      toast.success("Connection removed");
+    } catch {
+      toast.error("Failed to remove connection");
     } finally {
       setRemoving(false);
     }

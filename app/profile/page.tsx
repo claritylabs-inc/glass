@@ -4,9 +4,10 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { useRouter } from "next/navigation";
 import { api } from "@/convex/_generated/api";
+import { toast } from "sonner";
 import { Nav } from "@/components/nav";
 import { FadeIn } from "@/components/ui/fade-in";
-import { Loader2, Globe, Sparkles, Check, AlertTriangle } from "lucide-react";
+import { Loader2, Globe, Sparkles, AlertTriangle } from "lucide-react";
 import { PillButton } from "@/components/ui/pill-button";
 import { FixedMobileFooter } from "@/components/ui/fixed-mobile-footer";
 import {
@@ -32,7 +33,6 @@ export default function ProfilePage() {
   const [companyContext, setCompanyContext] = useState("");
   const [saving, setSaving] = useState(false);
   const [extracting, setExtracting] = useState(false);
-  const [saved, setSaved] = useState(false);
   const [showResetDialog, setShowResetDialog] = useState(false);
   const [resetting, setResetting] = useState(false);
 
@@ -68,8 +68,9 @@ export default function ProfilePage() {
         companyWebsite: companyWebsite || undefined,
         companyContext: companyContext || undefined,
       });
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
+      toast.success("Profile saved");
+    } catch {
+      toast.error("Failed to save profile");
     } finally {
       setSaving(false);
     }
@@ -84,7 +85,10 @@ export default function ProfilePage() {
       const result = await extractCompanyInfo({ url });
       if (result.companyContext) {
         setCompanyContext(result.companyContext);
+        toast.success("Company info extracted");
       }
+    } catch {
+      toast.error("Failed to extract company info");
     } finally {
       setExtracting(false);
     }
@@ -95,7 +99,10 @@ export default function ProfilePage() {
     try {
       await resetAccount();
       setShowResetDialog(false);
+      toast.success("Account reset successfully");
       router.replace("/onboarding");
+    } catch {
+      toast.error("Failed to reset account");
     } finally {
       setResetting(false);
     }
@@ -112,6 +119,19 @@ export default function ProfilePage() {
     );
   }
 
+  const saveButton = (
+    <PillButton onClick={handleSave} disabled={saving}>
+      {saving ? (
+        <>
+          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          Saving...
+        </>
+      ) : (
+        "Save Profile"
+      )}
+    </PillButton>
+  );
+
   return (
     <div className="min-h-screen flex flex-col">
       <Nav />
@@ -126,22 +146,7 @@ export default function ProfilePage() {
                 </p>
               </div>
               <div className="hidden md:flex items-center gap-3">
-                {saved && (
-                  <span className="flex items-center gap-1.5 text-label font-medium text-success">
-                    <Check className="w-3.5 h-3.5" />
-                    Saved
-                  </span>
-                )}
-                <PillButton onClick={handleSave} disabled={saving}>
-                  {saving ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      Saving...
-                    </>
-                  ) : (
-                    "Save Profile"
-                  )}
-                </PillButton>
+                {saveButton}
               </div>
             </div>
           </FadeIn>
@@ -326,22 +331,7 @@ export default function ProfilePage() {
       </main>
 
       <FixedMobileFooter>
-        {saved && (
-          <span className="flex items-center gap-1.5 text-label font-medium text-success">
-            <Check className="w-3.5 h-3.5" />
-            Saved
-          </span>
-        )}
-        <PillButton onClick={handleSave} disabled={saving}>
-          {saving ? (
-            <>
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              Saving...
-            </>
-          ) : (
-            "Save Profile"
-          )}
-        </PillButton>
+        {saveButton}
       </FixedMobileFooter>
     </div>
   );

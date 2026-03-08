@@ -3,6 +3,7 @@
 import { use, useState, useRef } from "react";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { toast } from "sonner";
 import { Nav } from "@/components/nav";
 import { FadeIn } from "@/components/ui/fade-in";
 import { ArrowLeft, Download, FileText, Calendar, Shield, DollarSign, Trash2, Upload, ChevronDown, ChevronRight, Loader2, RotateCw, Scale, Phone, Receipt, AlertTriangle, Users, Eye } from "lucide-react";
@@ -564,8 +565,10 @@ export default function PolicyDetailPage({
       });
       const { storageId } = await result.json();
       await reExtract({ policyId: policy._id, fileId: storageId });
+      toast.success("PDF uploaded, re-extracting...");
     } catch (err) {
       console.error("Upload failed:", err);
+      toast.error("Upload failed");
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -577,7 +580,10 @@ export default function PolicyDetailPage({
     try {
       await softDelete({ id: policy._id });
       setShowDeleteDialog(false);
+      toast.success("Policy deleted");
       router.push("/policies");
+    } catch {
+      toast.error("Failed to delete policy");
     } finally {
       setDeleting(false);
     }

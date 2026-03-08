@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { toast } from "sonner";
 import { X, Server } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { PillButton } from "@/components/ui/pill-button";
@@ -54,6 +55,9 @@ export function ConnectionForm({ open, onClose }: ConnectionFormProps) {
       setLabel("");
       setEmail("");
       setPassword("");
+      toast.success("Connection added");
+    } catch {
+      toast.error("Failed to add connection");
     } finally {
       setSaving(false);
     }

@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { Instrument_Serif } from "next/font/google";
 import { ConvexClientProvider } from "@/components/providers";
 import { AuthGuard } from "@/components/auth-guard";
+import { AppToaster } from "@/components/ui/toaster";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -52,6 +53,7 @@ export default function RootLayout({
       >
         <ConvexClientProvider>
           <AuthGuard>{children}</AuthGuard>
+          <AppToaster />
         </ConvexClientProvider>
       </body>
     </html>

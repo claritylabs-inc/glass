@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { toast } from "sonner";
 import { X, Search } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { PillButton } from "@/components/ui/pill-button";
@@ -56,6 +57,9 @@ export function ScanModal({ open, onClose, connectionId, defaults }: ScanModalPr
         senderDomains: domains.length > 0 ? domains : undefined,
       });
       onClose();
+      toast.success("Inbox scan started");
+    } catch {
+      toast.error("Failed to start scan");
     } finally {
       setScanning(false);
     }
