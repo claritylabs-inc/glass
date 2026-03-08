@@ -1,17 +1,29 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useQuery, useMutation, useAction } from "convex/react";
+import { useRouter } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import { Nav } from "@/components/nav";
 import { FadeIn } from "@/components/ui/fade-in";
-import { Loader2, Globe, Sparkles, Check } from "lucide-react";
+import { Loader2, Globe, Sparkles, Check, AlertTriangle } from "lucide-react";
 import { PillButton } from "@/components/ui/pill-button";
+import { FixedMobileFooter } from "@/components/ui/fixed-mobile-footer";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 
 export default function ProfilePage() {
   const viewer = useQuery(api.users.viewer);
   const updateProfile = useMutation(api.users.updateProfile);
+  const resetAccount = useMutation(api.users.resetAccount);
   const extractCompanyInfo = useAction(api.actions.extractCompanyInfo.extractCompanyInfo);
+  const router = useRouter();
 
   const [name, setName] = useState("");
   const [companyName, setCompanyName] = useState("");
@@ -21,6 +33,17 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [extracting, setExtracting] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [showResetDialog, setShowResetDialog] = useState(false);
+  const [resetting, setResetting] = useState(false);
+
+  const contextRef = useRef<HTMLTextAreaElement>(null);
+  const autoResize = useCallback(() => {
+    const el = contextRef.current;
+    if (el) {
+      el.style.height = "auto";
+      el.style.height = el.scrollHeight + "px";
+    }
+  }, []);
 
   useEffect(() => {
     if (viewer) {
@@ -32,8 +55,10 @@ export default function ProfilePage() {
     }
   }, [viewer]);
 
-  async function handleSave(e: React.FormEvent) {
-    e.preventDefault();
+  useEffect(() => { autoResize(); }, [companyContext, autoResize]);
+
+  async function handleSave(e?: React.FormEvent) {
+    e?.preventDefault();
     setSaving(true);
     try {
       await updateProfile({
@@ -65,6 +90,17 @@ export default function ProfilePage() {
     }
   }
 
+  async function handleReset() {
+    setResetting(true);
+    try {
+      await resetAccount();
+      setShowResetDialog(false);
+      router.replace("/onboarding");
+    } finally {
+      setResetting(false);
+    }
+  }
+
   if (viewer === undefined) {
     return (
       <>
@@ -79,14 +115,34 @@ export default function ProfilePage() {
   return (
     <div className="min-h-screen flex flex-col">
       <Nav />
-      <main className="flex-1">
+      <main className="flex-1 pb-20 md:pb-0">
         <div className="max-w-6xl mx-auto px-4 md:px-8 py-6">
           <FadeIn when={true} staggerIndex={0} duration={0.6}>
-            <div className="mb-6">
-              <h1 className="!mb-1">Profile Settings</h1>
-              <p className="text-body-sm text-muted-foreground">
-                Manage your account and company information
-              </p>
+            <div className="flex items-start justify-between mb-6">
+              <div>
+                <h1 className="!mb-1">Profile Settings</h1>
+                <p className="text-body-sm text-muted-foreground">
+                  Manage your account and company information
+                </p>
+              </div>
+              <div className="hidden md:flex items-center gap-3">
+                {saved && (
+                  <span className="flex items-center gap-1.5 text-label font-medium text-success">
+                    <Check className="w-3.5 h-3.5" />
+                    Saved
+                  </span>
+                )}
+                <PillButton onClick={handleSave} disabled={saving}>
+                  {saving ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    "Save Profile"
+                  )}
+                </PillButton>
+              </div>
             </div>
           </FadeIn>
 
@@ -198,11 +254,13 @@ export default function ProfilePage() {
                       Company Context
                     </label>
                     <textarea
+                      ref={contextRef}
                       value={companyContext}
                       onChange={(e) => setCompanyContext(e.target.value)}
+                      onInput={autoResize}
                       placeholder="Brief description of your company, industry, and insurance needs..."
                       rows={4}
-                      className="w-full rounded-lg border border-foreground/8 bg-white px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors resize-y"
+                      className="w-full rounded-lg border border-foreground/8 bg-white px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors resize-none overflow-hidden"
                     />
                     <p className="text-label-sm text-muted-foreground/50 mt-1.5">
                       Used to provide context to the AI during policy extraction
@@ -211,29 +269,80 @@ export default function ProfilePage() {
                 </div>
               </div>
 
-              {/* Save bar */}
-              <div className="flex items-center justify-end gap-3 pt-2">
-                {saved && (
-                  <span className="flex items-center gap-1.5 text-label font-medium text-success">
-                    <Check className="w-3.5 h-3.5" />
-                    Saved
-                  </span>
-                )}
-                <PillButton type="submit" disabled={saving}>
-                  {saving ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      Saving...
-                    </>
-                  ) : (
-                    "Save Profile"
-                  )}
-                </PillButton>
-              </div>
             </form>
           </FadeIn>
+
+          {/* Danger Zone — admin only */}
+          {viewer?.isAdmin && (
+            <FadeIn when={true} staggerIndex={2} duration={0.6}>
+              <div className="mt-8">
+                <div className="rounded-lg border border-red-200 bg-red-50/50 mb-4">
+                  <div className="px-5 py-3.5 border-b border-red-200">
+                    <h3 className="!mb-0 text-sm font-medium text-red-900">Danger Zone</h3>
+                  </div>
+                  <div className="px-5 py-5">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-body-sm font-medium text-foreground">Reset Account</p>
+                        <p className="text-label-sm text-muted-foreground mt-0.5">
+                          Delete all policies, emails, and connections. This cannot be undone.
+                        </p>
+                      </div>
+                      <PillButton
+                        variant="destructive"
+                        onClick={() => setShowResetDialog(true)}
+                      >
+                        Reset Account
+                      </PillButton>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <Dialog open={showResetDialog} onOpenChange={(v) => !v && setShowResetDialog(false)}>
+                <DialogContent showCloseButton={false}>
+                  <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2">
+                      <AlertTriangle className="w-5 h-5 text-red-500" />
+                      Reset Account
+                    </DialogTitle>
+                    <DialogDescription>
+                      This will permanently delete all your policies (including stored files), emails, and connections. Your profile will be reset and you&apos;ll go through onboarding again. This action cannot be undone.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <DialogFooter>
+                    <PillButton variant="secondary" onClick={() => setShowResetDialog(false)} disabled={resetting}>
+                      Cancel
+                    </PillButton>
+                    <PillButton variant="destructive" onClick={handleReset} disabled={resetting}>
+                      {resetting ? "Resetting..." : "Yes, Reset Everything"}
+                    </PillButton>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </FadeIn>
+          )}
         </div>
       </main>
+
+      <FixedMobileFooter>
+        {saved && (
+          <span className="flex items-center gap-1.5 text-label font-medium text-success">
+            <Check className="w-3.5 h-3.5" />
+            Saved
+          </span>
+        )}
+        <PillButton onClick={handleSave} disabled={saving}>
+          {saving ? (
+            <>
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              Saving...
+            </>
+          ) : (
+            "Save Profile"
+          )}
+        </PillButton>
+      </FixedMobileFooter>
     </div>
   );
 }

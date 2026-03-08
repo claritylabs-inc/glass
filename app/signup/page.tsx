@@ -1,11 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { useAuthActions } from "@convex-dev/auth/react";
-import { useConvexAuth, useQuery } from "convex/react";
-import { useRouter } from "next/navigation";
+import { useConvexAuth } from "convex/react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { api } from "@/convex/_generated/api";
 import { FadeIn } from "@/components/ui/fade-in";
 import { LogoIcon } from "@/components/ui/logo-icon";
 import { PillButton } from "@/components/ui/pill-button";
@@ -24,50 +23,25 @@ function friendlyError(raw: string): string {
   return "Something went wrong. Please try again.";
 }
 
-export default function LoginPage() {
+export default function SignupPage() {
   const { signIn } = useAuthActions();
   const { isAuthenticated } = useConvexAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [step, setStep] = useState<"email" | "code">("email");
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
-  const [sendingCode, setSendingCode] = useState(false);
-  const [verifying, setVerifying] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  // Query to check if user exists — only enabled when we've submitted email
-  const [emailToCheck, setEmailToCheck] = useState("");
-  const emailCheck = useQuery(
-    api.users.checkEmail,
-    emailToCheck ? { email: emailToCheck } : "skip"
-  );
-
-  const sendOtp = useCallback(async (targetEmail: string) => {
-    try {
-      await signIn("resend-otp", { email: targetEmail });
-      setStep("code");
-    } catch (err: any) {
-      setError(friendlyError(err.message || ""));
-    } finally {
-      setSendingCode(false);
-      setEmailToCheck("");
-    }
-  }, [signIn]);
-
-  // Handle email check result
+  // Pre-fill email from query param (when redirected from login)
   useEffect(() => {
-    if (!emailToCheck || emailCheck === undefined) return;
-
-    if (!emailCheck.exists) {
-      // Unknown email — redirect to signup
-      setSendingCode(false);
-      router.replace(`/signup?email=${encodeURIComponent(emailToCheck)}`);
-    } else {
-      // Known email — proceed with OTP
-      sendOtp(emailToCheck);
+    const prefill = searchParams.get("email");
+    if (prefill && !email) {
+      setEmail(prefill);
     }
-  }, [emailToCheck, emailCheck, router, sendOtp]);
+  }, [searchParams, email]);
 
   useEffect(() => {
     if (isAuthenticated) router.replace("/");
@@ -77,21 +51,28 @@ export default function LoginPage() {
 
   async function handleEmailSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setSendingCode(true);
+    setLoading(true);
     setError("");
-    setEmailToCheck(email);
+    try {
+      await signIn("resend-otp", { email });
+      setStep("code");
+    } catch (err: any) {
+      setError(friendlyError(err.message || ""));
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function handleCodeSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setVerifying(true);
+    setLoading(true);
     setError("");
     try {
       await signIn("resend-otp", { email, code });
     } catch (err: any) {
       setError(friendlyError(err.message || ""));
     } finally {
-      setVerifying(false);
+      setLoading(false);
     }
   }
 
@@ -103,6 +84,9 @@ export default function LoginPage() {
             <h3 className="!mb-0 flex items-center justify-center gap-1.5">
               Clarity <LogoIcon size={22} className="shrink-0" /> Labs
             </h3>
+            <p className="text-body-sm text-muted-foreground mt-2">
+              Get started with AI-powered policy extraction
+            </p>
           </div>
 
           {step === "email" ? (
@@ -131,17 +115,17 @@ export default function LoginPage() {
               <div className="pt-1">
                 <PillButton
                   type="submit"
-                  disabled={sendingCode || !email}
+                  disabled={loading || !email}
                   className="w-full"
                 >
-                  {sendingCode ? (
+                  {loading ? (
                     <>
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
                       Sending code...
                     </>
                   ) : (
                     <>
-                      Send verification code
+                      Create account
                       <ArrowRight className="w-3.5 h-3.5" />
                     </>
                   )}
@@ -149,9 +133,9 @@ export default function LoginPage() {
               </div>
 
               <p className="text-center text-label-sm text-muted-foreground/60">
-                Don&apos;t have an account?{" "}
-                <Link href="/signup" className="text-foreground font-medium hover:underline">
-                  Sign up
+                Already have an account?{" "}
+                <Link href="/login" className="text-foreground font-medium hover:underline">
+                  Sign in
                 </Link>
               </p>
             </form>
@@ -189,17 +173,17 @@ export default function LoginPage() {
               <div className="flex flex-col gap-2.5 pt-1">
                 <PillButton
                   type="submit"
-                  disabled={verifying || code.length < 6}
+                  disabled={loading || code.length < 6}
                   className="w-full"
                 >
-                  {verifying ? (
+                  {loading ? (
                     <>
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
                       Verifying...
                     </>
                   ) : (
                     <>
-                      Verify & sign in
+                      Verify & create account
                       <ArrowRight className="w-3.5 h-3.5" />
                     </>
                   )}

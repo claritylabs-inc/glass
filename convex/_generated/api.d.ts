@@ -25,6 +25,7 @@ import type * as lib_extraction from "../lib/extraction.js";
 import type * as lib_policyTypes from "../lib/policyTypes.js";
 import type * as lib_prompts from "../lib/prompts.js";
 import type * as migrations from "../migrations.js";
+import type * as migrations_migrateOnboarding from "../migrations/migrateOnboarding.js";
 import type * as policies from "../policies.js";
 import type * as seed from "../seed.js";
 import type * as users from "../users.js";
@@ -53,6 +54,7 @@ declare const fullApi: ApiFromModules<{
   "lib/policyTypes": typeof lib_policyTypes;
   "lib/prompts": typeof lib_prompts;
   migrations: typeof migrations;
+  "migrations/migrateOnboarding": typeof migrations_migrateOnboarding;
   policies: typeof policies;
   seed: typeof seed;
   users: typeof users;

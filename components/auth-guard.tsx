@@ -1,12 +1,14 @@
 "use client";
 
-import { useConvexAuth } from "convex/react";
+import { useConvexAuth, useQuery } from "convex/react";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
+import { api } from "@/convex/_generated/api";
 import { Nav } from "@/components/nav";
 import { Skeleton } from "@/components/ui/skeleton";
 
-const PUBLIC_PATHS = ["/login"];
+const PUBLIC_PATHS = ["/login", "/signup"];
+const ONBOARDING_PATH = "/onboarding";
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useConvexAuth();
@@ -14,14 +16,34 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
 
   const isPublic = PUBLIC_PATHS.some((p) => pathname === p);
+  const isOnboarding = pathname === ONBOARDING_PATH;
+
+  // Only query viewer when authenticated
+  const viewer = useQuery(api.users.viewer, isAuthenticated ? {} : "skip");
 
   useEffect(() => {
-    if (!isLoading && !isAuthenticated && !isPublic) {
-      router.replace("/login");
-    }
-  }, [isLoading, isAuthenticated, isPublic, router]);
+    if (isLoading) return;
 
-  if (isLoading) {
+    if (!isAuthenticated && !isPublic) {
+      router.replace("/login");
+      return;
+    }
+
+    if (isAuthenticated && viewer !== undefined) {
+      // Redirect to onboarding if not complete
+      if (viewer && !viewer.onboardingComplete && !isOnboarding && !isPublic) {
+        router.replace("/onboarding");
+        return;
+      }
+      // Redirect away from onboarding if already complete
+      if (viewer && viewer.onboardingComplete && isOnboarding) {
+        router.replace("/");
+        return;
+      }
+    }
+  }, [isLoading, isAuthenticated, isPublic, isOnboarding, viewer, router, pathname]);
+
+  if (isLoading || (isAuthenticated && viewer === undefined)) {
     if (isPublic) return null;
     return (
       <div className="min-h-screen flex flex-col">
@@ -44,6 +66,16 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   }
 
   if (!isAuthenticated && !isPublic) {
+    return null;
+  }
+
+  // Waiting for redirect to onboarding
+  if (isAuthenticated && viewer && !viewer.onboardingComplete && !isOnboarding && !isPublic) {
+    return null;
+  }
+
+  // Waiting for redirect away from onboarding
+  if (isAuthenticated && viewer && viewer.onboardingComplete && isOnboarding) {
     return null;
   }
 

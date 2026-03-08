@@ -20,6 +20,9 @@ export default defineSchema({
     insuranceBroker: v.optional(v.string()),
     companyWebsite: v.optional(v.string()),
     companyContext: v.optional(v.string()),
+    // Onboarding & admin
+    onboardingComplete: v.optional(v.boolean()),
+    isAdmin: v.optional(v.boolean()),
   })
     .index("email", ["email"])
     .index("phone", ["phone"]),
