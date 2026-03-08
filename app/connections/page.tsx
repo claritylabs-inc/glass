@@ -218,6 +218,7 @@ export default function ConnectionsPage() {
                         )}
                         <PillButton
                           variant="icon"
+                          label="Remove"
                           onClick={() =>
                             setRemoveTarget({ id: conn._id, label: conn.label })
                           }
@@ -272,6 +273,7 @@ export default function ConnectionsPage() {
                         )}
                         <PillButton
                           variant="icon"
+                          label="Remove"
                           onClick={() => setRemoveTarget({ id: conn._id, label: conn.label })}
                         >
                           <Trash2 className="w-3.5 h-3.5" />

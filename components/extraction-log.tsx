@@ -1,23 +1,12 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useAction } from "convex/react";
-import { api } from "@/convex/_generated/api";
 import { motion, AnimatePresence } from "framer-motion";
-import { PillButton } from "@/components/ui/pill-button";
-import { RotateCw, FileText, Sparkles } from "lucide-react";
+import { RotateCw } from "lucide-react";
 import { POLICY_TYPE_LABELS } from "@/convex/lib/policyTypes";
 import { FadeIn } from "@/components/ui/fade-in";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
+import { RetryExtractionModal } from "@/components/ui/retry-extraction-modal";
 
 interface LogEntry {
   _id: string;
@@ -31,6 +20,8 @@ interface LogEntry {
   _creationTime: number;
   emailSubject?: string;
   emailFrom?: string;
+  hasRawResponse?: boolean;
+  hasRawMetadata?: boolean;
 }
 
 const TYPE_COLORS: Record<string, string> = {
@@ -55,76 +46,23 @@ function formatDate(timestamp: number): string {
   });
 }
 
-function ReExtractButton({ policyId }: { policyId: string }) {
-  const retryExtraction = useAction(api.actions.retryExtraction.retryExtraction);
-  const [syncing, setSyncing] = useState(false);
-  const [open, setOpen] = useState(false);
-
-  const handleReExtract = async (mode: "reparse" | "full") => {
-    setOpen(false);
-    setSyncing(true);
-    try {
-      await retryExtraction({ policyId: policyId as any, mode });
-    } finally {
-      setSyncing(false);
-    }
-  };
-
+function ReExtractButton({ entry }: { entry: LogEntry }) {
   return (
-    <>
-      <button
-        type="button"
-        disabled={syncing}
-        onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-foreground/12 bg-white/80 text-label-sm font-medium text-muted-foreground hover:border-foreground/20 hover:bg-foreground/[0.03] transition-colors cursor-pointer disabled:opacity-50"
-      >
-        <RotateCw className={`w-3 h-3 ${syncing ? "animate-spin" : ""}`} />
-        {syncing ? "Extracting..." : "Re-extract"}
-      </button>
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent showCloseButton={false}>
-          <DialogHeader>
-            <DialogTitle>Re-extract Policy</DialogTitle>
-            <DialogDescription>
-              Choose how to re-extract policy data from this document.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex flex-col gap-2">
-            <button
-              type="button"
-              onClick={() => handleReExtract("reparse")}
-              className="flex items-start gap-3 rounded-lg border border-foreground/8 p-3 text-left hover:bg-foreground/[0.02] hover:border-foreground/15 transition-colors cursor-pointer"
-            >
-              <FileText className="w-5 h-5 text-muted-foreground mt-0.5 shrink-0" />
-              <div>
-                <p className="text-body-sm font-medium text-foreground">Re-parse prior output</p>
-                <p className="text-label-sm text-muted-foreground">
-                  Re-extract fields from the saved AI response. Fast, no API call needed.
-                </p>
-              </div>
-            </button>
-            <button
-              type="button"
-              onClick={() => handleReExtract("full")}
-              className="flex items-start gap-3 rounded-lg border border-foreground/8 p-3 text-left hover:bg-foreground/[0.02] hover:border-foreground/15 transition-colors cursor-pointer"
-            >
-              <Sparkles className="w-5 h-5 text-muted-foreground mt-0.5 shrink-0" />
-              <div>
-                <p className="text-body-sm font-medium text-foreground">Full AI re-extraction</p>
-                <p className="text-label-sm text-muted-foreground">
-                  Re-download the PDF and run a new AI extraction. Slower but may fix errors.
-                </p>
-              </div>
-            </button>
-          </div>
-          <DialogFooter>
-            <PillButton variant="secondary" onClick={() => setOpen(false)}>
-              Cancel
-            </PillButton>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
+    <RetryExtractionModal
+      policyId={entry._id}
+      hasRawResponse={!!entry.hasRawResponse}
+      hasRawMetadata={!!entry.hasRawMetadata}
+      hasDocument={false}
+      trigger={
+        <button
+          type="button"
+          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-foreground/12 bg-white/80 text-label-sm font-medium text-muted-foreground hover:border-foreground/20 hover:bg-foreground/[0.03] transition-colors cursor-pointer"
+        >
+          <RotateCw className="w-3 h-3" />
+          Re-extract
+        </button>
+      }
+    />
   );
 }
 
@@ -243,7 +181,7 @@ export function ExtractionLog({ entries }: { entries: LogEntry[] }) {
                       <td className="px-4 py-2.5 text-right whitespace-nowrap hidden md:table-cell">
                         <div className="inline-flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                           {entry.emailId && (
-                            <ReExtractButton policyId={entry._id} />
+                            <ReExtractButton entry={entry} />
                           )}
                           {isComplete && (
                             <Link

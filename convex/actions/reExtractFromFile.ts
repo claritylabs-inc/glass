@@ -2,67 +2,9 @@
 
 import { v } from "convex/values";
 import { action } from "../_generated/server";
-import { api } from "../_generated/api";
+import { api, internal } from "../_generated/api";
 import Anthropic from "@anthropic-ai/sdk";
-import { EXTRACTION_PROMPT, METADATA_PROMPT, buildSectionsPrompt } from "../lib/prompts";
-import { stripFences, applyExtracted, mergeChunkedSections, getPageChunks } from "../lib/extraction";
-
-const MODEL = "claude-sonnet-4-6";
-const CHUNK_THRESHOLD = 30;
-
-async function callClaude(
-  anthropic: Anthropic,
-  pdfBase64: string,
-  prompt: string,
-  maxTokens: number = 16384,
-) {
-  const response = await anthropic.messages.create({
-    model: MODEL,
-    max_tokens: maxTokens,
-    messages: [
-      {
-        role: "user",
-        content: [
-          {
-            type: "document",
-            source: { type: "base64", media_type: "application/pdf", data: pdfBase64 },
-          },
-          { type: "text", text: prompt },
-        ],
-      },
-    ],
-  });
-  return response.content[0].type === "text" ? response.content[0].text : "{}";
-}
-
-async function extractFromPdf(anthropic: Anthropic, pdfBase64: string) {
-  const rawText = await callClaude(anthropic, pdfBase64, EXTRACTION_PROMPT);
-  const parsed = JSON.parse(stripFences(rawText));
-  const totalPages = parsed.totalPages ?? 0;
-
-  if (totalPages <= CHUNK_THRESHOLD) {
-    return { rawText, extracted: parsed };
-  }
-
-  const metadataRaw = await callClaude(anthropic, pdfBase64, METADATA_PROMPT, 4096);
-  const metadataResult = JSON.parse(stripFences(metadataRaw));
-  const pageCount = metadataResult.totalPages || totalPages;
-  const chunks = getPageChunks(pageCount);
-
-  const sectionChunks: any[] = [];
-  for (const [start, end] of chunks) {
-    const chunkRaw = await callClaude(
-      anthropic,
-      pdfBase64,
-      buildSectionsPrompt(start, end),
-      8192,
-    );
-    sectionChunks.push(JSON.parse(stripFences(chunkRaw)));
-  }
-
-  const merged = mergeChunkedSections(metadataResult, sectionChunks);
-  return { rawText: JSON.stringify(merged), extracted: merged };
-}
+import { applyExtracted, extractFromPdf } from "../lib/extraction";
 
 export const reExtractFromFile = action({
   args: {
@@ -79,7 +21,13 @@ export const reExtractFromFile = action({
     const policy = await ctx.runQuery(api.policies.get, { id: args.policyId });
     if (!policy) return { error: "Policy not found" };
 
+    const log = async (message: string) => {
+      await ctx.runMutation(internal.policies.appendExtractionLog, { id: args.policyId, message });
+    };
+
     // Set status to extracting
+    await ctx.runMutation(internal.policies.clearExtractionLog, { id: args.policyId });
+    await log("Reading uploaded PDF...");
     await ctx.runMutation(api.policies.updateExtraction, {
       id: args.policyId,
       extractionStatus: "extracting",
@@ -96,7 +44,15 @@ export const reExtractFromFile = action({
 
       // Extract with Claude
       const anthropic = new Anthropic();
-      const { rawText, extracted } = await extractFromPdf(anthropic, pdfBase64);
+      const { rawText, extracted } = await extractFromPdf(
+        anthropic, pdfBase64, log,
+        async (raw) => {
+          await ctx.runMutation(api.policies.updateExtraction, {
+            id: args.policyId,
+            rawMetadataResponse: raw,
+          });
+        },
+      );
 
       // Save raw response
       await ctx.runMutation(api.policies.updateExtraction, {
@@ -112,8 +68,10 @@ export const reExtractFromFile = action({
         ...applyExtracted(extracted),
       });
 
+      await log("Extraction complete");
       return { success: true };
     } catch (error: any) {
+      await log(`Failed: ${error.message || "Re-extraction failed"}`);
       await ctx.runMutation(api.policies.updateExtraction, {
         id: args.policyId,
         extractionStatus: "error",

@@ -2,73 +2,15 @@
 
 import { v } from "convex/values";
 import { action } from "../_generated/server";
-import { api } from "../_generated/api";
+import { api, internal } from "../_generated/api";
 import { ImapFlow } from "imapflow";
 import Anthropic from "@anthropic-ai/sdk";
-import { EXTRACTION_PROMPT, METADATA_PROMPT, buildSectionsPrompt } from "../lib/prompts";
-import { stripFences, applyExtracted, mergeChunkedSections, getPageChunks } from "../lib/extraction";
-
-const MODEL = "claude-sonnet-4-6";
-const CHUNK_THRESHOLD = 30;
-
-async function callClaude(
-  anthropic: Anthropic,
-  pdfBase64: string,
-  prompt: string,
-  maxTokens: number = 16384,
-) {
-  const response = await anthropic.messages.create({
-    model: MODEL,
-    max_tokens: maxTokens,
-    messages: [
-      {
-        role: "user",
-        content: [
-          {
-            type: "document",
-            source: { type: "base64", media_type: "application/pdf", data: pdfBase64 },
-          },
-          { type: "text", text: prompt },
-        ],
-      },
-    ],
-  });
-  return response.content[0].type === "text" ? response.content[0].text : "{}";
-}
-
-async function extractFromPdf(anthropic: Anthropic, pdfBase64: string) {
-  const rawText = await callClaude(anthropic, pdfBase64, EXTRACTION_PROMPT);
-  const parsed = JSON.parse(stripFences(rawText));
-  const totalPages = parsed.totalPages ?? 0;
-
-  if (totalPages <= CHUNK_THRESHOLD) {
-    return { rawText, extracted: parsed };
-  }
-
-  const metadataRaw = await callClaude(anthropic, pdfBase64, METADATA_PROMPT, 4096);
-  const metadataResult = JSON.parse(stripFences(metadataRaw));
-  const pageCount = metadataResult.totalPages || totalPages;
-  const chunks = getPageChunks(pageCount);
-
-  const sectionChunks: any[] = [];
-  for (const [start, end] of chunks) {
-    const chunkRaw = await callClaude(
-      anthropic,
-      pdfBase64,
-      buildSectionsPrompt(start, end),
-      8192,
-    );
-    sectionChunks.push(JSON.parse(stripFences(chunkRaw)));
-  }
-
-  const merged = mergeChunkedSections(metadataResult, sectionChunks);
-  return { rawText: JSON.stringify(merged), extracted: merged };
-}
+import { stripFences, applyExtracted, extractFromPdf, extractSectionsOnly, enrichSupplementaryFields, sanitizeNulls } from "../lib/extraction";
 
 export const retryExtraction = action({
   args: {
     policyId: v.id("policies"),
-    mode: v.optional(v.union(v.literal("reparse"), v.literal("full"))),
+    mode: v.optional(v.union(v.literal("reparse"), v.literal("enrich_only"), v.literal("sections_only"), v.literal("full"))),
   },
   returns: v.any(),
   handler: async (ctx, args) => {
@@ -80,12 +22,18 @@ export const retryExtraction = action({
     if (!policy) return { error: "Policy not found" };
     if (!policy.emailId) return { error: "No linked email — cannot retry" };
 
+    const log = async (message: string) => {
+      await ctx.runMutation(internal.policies.appendExtractionLog, { id: args.policyId, message });
+    };
+
     const mode = args.mode ?? "auto";
 
     // Reparse mode: only re-parse the saved raw response
     if (mode === "reparse" || mode === "auto") {
       if (policy.rawExtractionResponse) {
         try {
+          await ctx.runMutation(internal.policies.clearExtractionLog, { id: args.policyId });
+          await log("Re-parsing saved extraction response...");
           const responseText = stripFences(policy.rawExtractionResponse);
           const extracted = JSON.parse(responseText);
 
@@ -95,15 +43,110 @@ export const retryExtraction = action({
             ...applyExtracted(extracted),
           });
 
+          await log("Extraction complete");
           return { success: true, reused: true };
         } catch {
           if (mode === "reparse") {
+            await log("Failed: Could not parse saved AI response");
             return { error: "Could not parse saved AI response" };
           }
           // auto mode: fall through to full retry
         }
       } else if (mode === "reparse") {
         return { error: "No saved AI response to re-parse" };
+      }
+    }
+
+    // Enrich-only mode: re-run pass 3 on existing document data
+    if (mode === "enrich_only") {
+      const document = (policy as any).document;
+      if (!document) return { error: "No document data to enrich" };
+
+      await ctx.runMutation(internal.policies.clearExtractionLog, { id: args.policyId });
+      await log("Starting supplementary enrichment (pass 3 only)...");
+
+      try {
+        const Anthropic = (await import("@anthropic-ai/sdk")).default;
+        const anthropic = new Anthropic();
+        const enriched = await enrichSupplementaryFields(anthropic, document, log);
+
+        await ctx.runMutation(api.policies.updateExtraction, {
+          id: args.policyId,
+          document: sanitizeNulls(enriched),
+        });
+        await log("Enrichment complete");
+        return { success: true };
+      } catch (error: any) {
+        await log(`Failed: ${error.message || "Enrichment failed"}`);
+        return { error: error.message || "Enrichment failed" };
+      }
+    }
+
+    // Sections-only mode: re-run pass 2 using saved metadata
+    if (mode === "sections_only" && policy.rawMetadataResponse) {
+      await ctx.runMutation(internal.policies.clearExtractionLog, { id: args.policyId });
+      await log("Starting sections-only re-extraction...");
+      await ctx.runMutation(api.policies.updateExtraction, {
+        id: args.policyId,
+        extractionStatus: "extracting",
+        extractionError: "",
+      });
+
+      try {
+        // Need PDF — download from storage or IMAP
+        let pdfBase64: string;
+        if (policy.fileId) {
+          const blob = await ctx.storage.get(policy.fileId);
+          if (!blob) throw new Error("Stored PDF not found");
+          pdfBase64 = Buffer.from(await blob.arrayBuffer()).toString("base64");
+        } else {
+          // Fall back to IMAP download
+          const emails = await ctx.runQuery(api.emails.list, {});
+          const email = emails.find((e: any) => e._id === policy.emailId);
+          if (!email) throw new Error("Linked email not found");
+          const connection = await ctx.runQuery(api.connections.get, { id: email.connectionId });
+          if (!connection) throw new Error("Email connection not found");
+
+          const { ImapFlow } = await import("imapflow");
+          const client = new ImapFlow({
+            host: connection.imapHost, port: connection.imapPort, secure: true,
+            auth: { user: connection.email, pass: connection.password }, logger: false,
+          });
+          await client.connect();
+          const lock = await client.getMailboxLock("INBOX");
+          try {
+            const { content } = await client.download(String(email.uid ?? 0), "2", { uid: true });
+            const chunks: Buffer[] = [];
+            for await (const chunk of content) chunks.push(Buffer.from(chunk));
+            pdfBase64 = Buffer.concat(chunks).toString("base64");
+          } finally { lock.release(); }
+          await client.logout();
+        }
+
+        const anthropic = new Anthropic();
+        const { rawText, extracted } = await extractSectionsOnly(
+          anthropic, pdfBase64, policy.rawMetadataResponse, log,
+        );
+
+        await ctx.runMutation(api.policies.updateExtraction, {
+          id: args.policyId,
+          rawExtractionResponse: rawText,
+        });
+        await ctx.runMutation(api.policies.updateExtraction, {
+          id: args.policyId,
+          fileName: `${(extracted.metadata ?? extracted).policyNumber || "policy"}.pdf`,
+          ...applyExtracted(extracted),
+        });
+        await log("Extraction complete");
+        return { success: true };
+      } catch (error: any) {
+        await log(`Failed: ${error.message || "Sections-only extraction failed"}`);
+        await ctx.runMutation(api.policies.updateExtraction, {
+          id: args.policyId,
+          extractionStatus: "error",
+          extractionError: error.message || "Sections-only extraction failed",
+        });
+        return { error: error.message || "Sections-only extraction failed" };
       }
     }
 
@@ -118,6 +161,8 @@ export const retryExtraction = action({
     if (!connection) return { error: "Email connection not found" };
 
     // Reset status to extracting
+    await ctx.runMutation(internal.policies.clearExtractionLog, { id: args.policyId });
+    await log("Starting full re-extraction...");
     await ctx.runMutation(api.policies.updateExtraction, {
       id: args.policyId,
       extractionStatus: "extracting",
@@ -126,6 +171,7 @@ export const retryExtraction = action({
 
     try {
       // Download PDF attachment via IMAP
+      await log("Connecting to email server...");
       const client = new ImapFlow({
         host: connection.imapHost,
         port: connection.imapPort,
@@ -137,6 +183,7 @@ export const retryExtraction = action({
       let pdfBuffer: Buffer;
       try {
         await client.connect();
+        await log("Downloading PDF attachment...");
         const lock = await client.getMailboxLock("INBOX");
         try {
           const { content } = await client.download(
@@ -163,6 +210,8 @@ export const retryExtraction = action({
       }
 
       // Store in Convex file storage
+      const sizeKB = Math.round(pdfBuffer.length / 1024);
+      await log(`PDF stored (${sizeKB} KB)`);
       const blob = new Blob([new Uint8Array(pdfBuffer)], {
         type: "application/pdf",
       });
@@ -171,7 +220,15 @@ export const retryExtraction = action({
       // Extract with Claude
       const pdfBase64 = pdfBuffer.toString("base64");
       const anthropic = new Anthropic();
-      const { rawText, extracted } = await extractFromPdf(anthropic, pdfBase64);
+      const { rawText, extracted } = await extractFromPdf(
+        anthropic, pdfBase64, log,
+        async (raw) => {
+          await ctx.runMutation(api.policies.updateExtraction, {
+            id: args.policyId,
+            rawMetadataResponse: raw,
+          });
+        },
+      );
 
       // Save raw response for future retries
       await ctx.runMutation(api.policies.updateExtraction, {
@@ -186,8 +243,10 @@ export const retryExtraction = action({
         ...applyExtracted(extracted),
       });
 
+      await log("Extraction complete");
       return { success: true };
     } catch (error: any) {
+      await log(`Failed: ${error.message || "Extraction failed"}`);
       await ctx.runMutation(api.policies.updateExtraction, {
         id: args.policyId,
         extractionStatus: "error",

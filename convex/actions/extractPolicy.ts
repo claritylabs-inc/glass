@@ -5,75 +5,8 @@ import { internalAction } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import { ImapFlow } from "imapflow";
 import Anthropic from "@anthropic-ai/sdk";
-import { EXTRACTION_PROMPT, METADATA_PROMPT, buildSectionsPrompt } from "../lib/prompts";
-import { stripFences, applyExtracted, mergeChunkedSections, getPageChunks } from "../lib/extraction";
-
-const MODEL = "claude-sonnet-4-6";
-const CHUNK_THRESHOLD = 30; // pages
-
-async function callClaude(
-  anthropic: Anthropic,
-  pdfBase64: string,
-  prompt: string,
-  maxTokens: number = 16384,
-) {
-  const response = await anthropic.messages.create({
-    model: MODEL,
-    max_tokens: maxTokens,
-    messages: [
-      {
-        role: "user",
-        content: [
-          {
-            type: "document",
-            source: {
-              type: "base64",
-              media_type: "application/pdf",
-              data: pdfBase64,
-            },
-          },
-          { type: "text", text: prompt },
-        ],
-      },
-    ],
-  });
-  return response.content[0].type === "text" ? response.content[0].text : "{}";
-}
-
-async function extractFromPdf(anthropic: Anthropic, pdfBase64: string) {
-  // First pass — try single-call extraction
-  const rawText = await callClaude(anthropic, pdfBase64, EXTRACTION_PROMPT);
-  const parsed = JSON.parse(stripFences(rawText));
-  const totalPages = parsed.totalPages ?? 0;
-
-  // If document is short enough, single pass is sufficient
-  if (totalPages <= CHUNK_THRESHOLD) {
-    return { rawText, extracted: parsed };
-  }
-
-  // Long document — do chunked extraction
-  // First call already gave us an attempt; use metadata from it
-  // but re-extract sections in chunks for better coverage
-  const metadataRaw = await callClaude(anthropic, pdfBase64, METADATA_PROMPT, 4096);
-  const metadataResult = JSON.parse(stripFences(metadataRaw));
-  const pageCount = metadataResult.totalPages || totalPages;
-  const chunks = getPageChunks(pageCount);
-
-  const sectionChunks: any[] = [];
-  for (const [start, end] of chunks) {
-    const chunkRaw = await callClaude(
-      anthropic,
-      pdfBase64,
-      buildSectionsPrompt(start, end),
-      8192,
-    );
-    sectionChunks.push(JSON.parse(stripFences(chunkRaw)));
-  }
-
-  const merged = mergeChunkedSections(metadataResult, sectionChunks);
-  const mergedRaw = JSON.stringify(merged);
-  return { rawText: mergedRaw, extracted: merged };
-}
+import { applyExtracted, extractFromPdf } from "../lib/extraction";
+import { Id } from "../_generated/dataModel";
 
 export const extractPolicy = internalAction({
   args: {
@@ -91,6 +24,10 @@ export const extractPolicy = internalAction({
       id: args.connectionId,
     });
     if (!connection) throw new Error("Connection not found");
+
+    const log = async (policyId: Id<"policies">, message: string) => {
+      await ctx.runMutation(internal.policies.appendExtractionLog, { id: policyId, message });
+    };
 
     // Create a pending policy record
     const policyId = await ctx.runMutation(api.policies.insert, {
@@ -110,6 +47,8 @@ export const extractPolicy = internalAction({
     });
 
     try {
+      await ctx.runMutation(internal.policies.clearExtractionLog, { id: policyId });
+      await log(policyId, "Connecting to email server...");
       // Download PDF attachment via IMAP
       const client = new ImapFlow({
         host: connection.imapHost,
@@ -122,6 +61,7 @@ export const extractPolicy = internalAction({
       let pdfBuffer: Buffer;
       try {
         await client.connect();
+        await log(policyId, "Downloading PDF attachment...");
         const lock = await client.getMailboxLock("INBOX");
         try {
           const { content } = await client.download(
@@ -148,6 +88,8 @@ export const extractPolicy = internalAction({
       }
 
       // Store in Convex file storage
+      const sizeKB = Math.round(pdfBuffer.length / 1024);
+      await log(policyId, `PDF stored (${sizeKB} KB)`);
       const blob = new Blob([new Uint8Array(pdfBuffer)], {
         type: "application/pdf",
       });
@@ -156,7 +98,15 @@ export const extractPolicy = internalAction({
       // Extract with Claude
       const pdfBase64 = pdfBuffer.toString("base64");
       const anthropic = new Anthropic();
-      const { rawText, extracted } = await extractFromPdf(anthropic, pdfBase64);
+      const { rawText, extracted } = await extractFromPdf(
+        anthropic, pdfBase64, (msg) => log(policyId, msg),
+        async (raw) => {
+          await ctx.runMutation(api.policies.updateExtraction, {
+            id: policyId,
+            rawMetadataResponse: raw,
+          });
+        },
+      );
 
       // Save raw response for retries
       await ctx.runMutation(api.policies.updateExtraction, {
@@ -171,9 +121,12 @@ export const extractPolicy = internalAction({
         ...applyExtracted(extracted),
       });
 
+      await log(policyId, "Extraction complete");
+
       // Update extraction progress on connection
       await incrementExtracted(ctx, args.connectionId);
     } catch (error: any) {
+      await log(policyId, `Failed: ${error.message || "Extraction failed"}`);
       await ctx.runMutation(api.policies.updateExtraction, {
         id: policyId,
         extractionStatus: "error",

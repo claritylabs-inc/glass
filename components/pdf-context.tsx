@@ -1,0 +1,72 @@
+"use client";
+
+import { createContext, useContext, useState, useCallback } from "react";
+
+interface PdfContextValue {
+  currentPage: number;
+  numPages: number;
+  setNumPages: (n: number) => void;
+  navigateToPage: (page: number) => void;
+  isPdfOpen: boolean;
+  togglePdf: () => void;
+  openPdf: () => void;
+  closePdf: () => void;
+  fileUrl: string | null;
+  highlightedPage: number | null;
+}
+
+const PdfContext = createContext<PdfContextValue | null>(null);
+
+export function PdfProvider({
+  fileUrl,
+  children,
+}: {
+  fileUrl: string | null;
+  children: React.ReactNode;
+}) {
+  const [currentPage, setCurrentPage] = useState(1);
+  const [numPages, setNumPages] = useState(0);
+  const [isPdfOpen, setIsPdfOpen] = useState(false);
+  const [highlightedPage, setHighlightedPage] = useState<number | null>(null);
+
+  const navigateToPage = useCallback(
+    (page: number) => {
+      if (!fileUrl) return;
+      const clamped = Math.max(1, Math.min(page, numPages || Infinity));
+      setCurrentPage(clamped);
+      setIsPdfOpen(true);
+      // Persist highlight until a different page is selected
+      setHighlightedPage(clamped);
+    },
+    [fileUrl, numPages]
+  );
+
+  const togglePdf = useCallback(() => setIsPdfOpen((v) => !v), []);
+  const openPdf = useCallback(() => setIsPdfOpen(true), []);
+  const closePdf = useCallback(() => setIsPdfOpen(false), []);
+
+  return (
+    <PdfContext.Provider
+      value={{
+        currentPage,
+        numPages,
+        setNumPages,
+        navigateToPage,
+        isPdfOpen,
+        togglePdf,
+        openPdf,
+        closePdf,
+        fileUrl,
+        highlightedPage,
+      }}
+    >
+      {children}
+    </PdfContext.Provider>
+  );
+}
+
+export function usePdf() {
+  const ctx = useContext(PdfContext);
+  if (!ctx) throw new Error("usePdf must be used within PdfProvider");
+  return ctx;
+}

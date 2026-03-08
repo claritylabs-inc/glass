@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
-import { useAction, useMutation } from "convex/react";
+import { useState, Fragment } from "react";
+import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { motion, AnimatePresence } from "framer-motion";
 import { PillButton } from "@/components/ui/pill-button";
 import { RotateCw, X } from "lucide-react";
 import { FadeIn } from "@/components/ui/fade-in";
+import { RetryExtractionModal } from "@/components/ui/retry-extraction-modal";
 import {
   Dialog,
   DialogContent,
@@ -15,14 +16,22 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 
+interface ExtractionLogEntry {
+  timestamp: number;
+  message: string;
+}
+
 interface Extraction {
   _id: string;
   fileName?: string;
   extractionStatus: string;
   extractionError?: string;
+  extractionLog?: ExtractionLogEntry[];
   _creationTime: number;
   emailSubject?: string;
   emailFrom?: string;
+  hasRawResponse?: boolean;
+  hasRawMetadata?: boolean;
 }
 
 const STATUS_BADGES: Record<string, { label: string; className: string }> = {
@@ -40,27 +49,23 @@ const STATUS_BADGES: Record<string, { label: string; className: string }> = {
   },
 };
 
-function RetryButton({ policyId }: { policyId: string }) {
-  const retryExtraction = useAction(api.actions.retryExtraction.retryExtraction);
-  const [retrying, setRetrying] = useState(false);
-
+function RetryButton({ extraction }: { extraction: Extraction }) {
   return (
-    <button
-      type="button"
-      disabled={retrying}
-      onClick={async () => {
-        setRetrying(true);
-        try {
-          await retryExtraction({ policyId: policyId as any, mode: "full" });
-        } finally {
-          setRetrying(false);
-        }
-      }}
-      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-amber-200 bg-amber-50 text-label-sm font-medium text-amber-700 hover:border-amber-300 hover:bg-amber-100 transition-colors cursor-pointer disabled:opacity-50"
-    >
-      <RotateCw className={`w-3 h-3 ${retrying ? "animate-spin" : ""}`} />
-      {retrying ? "Retrying..." : "Retry"}
-    </button>
+    <RetryExtractionModal
+      policyId={extraction._id}
+      hasRawResponse={!!extraction.hasRawResponse}
+      hasRawMetadata={!!extraction.hasRawMetadata}
+      hasDocument={false}
+      trigger={
+        <button
+          type="button"
+          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-amber-200 bg-amber-50 text-label-sm font-medium text-amber-700 hover:border-amber-300 hover:bg-amber-100 transition-colors cursor-pointer disabled:opacity-50"
+        >
+          <RotateCw className="w-3 h-3" />
+          Retry
+        </button>
+      }
+    />
   );
 }
 
@@ -118,12 +123,47 @@ function ViewErrorButton({ error }: { error: string }) {
   );
 }
 
+function formatRelativeTime(timestamp: number): string {
+  const seconds = Math.round((Date.now() - timestamp) / 1000);
+  if (seconds < 5) return "just now";
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  return `${Math.round(minutes / 60)}h ago`;
+}
+
 function formatDate(timestamp: number): string {
   return new Date(timestamp).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
     year: "numeric",
   });
+}
+
+function ExtractionLogRow({ log, isExpanded }: { log: ExtractionLogEntry[]; isExpanded: boolean }) {
+  if (!log.length || !isExpanded) return null;
+  return (
+    <tr>
+      <td colSpan={5} className="px-4 py-0">
+        <div className="relative py-2 ml-1 mb-2">
+          <div className="pointer-events-none absolute inset-x-0 top-2 h-4 bg-gradient-to-b from-white to-transparent z-10" />
+          <div className="pointer-events-none absolute inset-x-0 bottom-2 h-4 bg-gradient-to-t from-white to-transparent z-10" />
+          <div className="max-h-[200px] overflow-y-auto scrollbar-hide pl-2 border-l-2 border-foreground/6">
+            {log.map((entry, i) => (
+              <div key={i} className="flex items-baseline gap-2 py-0.5">
+                <span className="text-[10px] tabular-nums text-muted-foreground/40 shrink-0 w-12 text-right">
+                  {formatRelativeTime(entry.timestamp)}
+                </span>
+                <span className="text-label-sm text-muted-foreground">
+                  {entry.message}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </td>
+    </tr>
+  );
 }
 
 export function ExtractionTable({
@@ -176,49 +216,58 @@ export function ExtractionTable({
               >
                 {extractions.map((extraction, i) => {
                   const badge = STATUS_BADGES[extraction.extractionStatus] || STATUS_BADGES.pending;
+                  const hasLog = extraction.extractionLog && extraction.extractionLog.length > 0;
+                  const showLog = hasLog && (extraction.extractionStatus === "extracting" || extraction.extractionStatus === "error");
                   return (
-                    <FadeIn
-                      key={extraction._id}
-                      as="tr"
-                      when={true}
-                      delay={i * 0.02}
-                      duration={0.35}
-                      direction="none"
-                      className="border-t border-foreground/4 hover:bg-foreground/[0.015] transition-colors"
-                    >
-                      <td className="px-4 py-2.5 whitespace-nowrap">
-                        <p className="text-body-sm text-foreground font-medium truncate max-w-[250px]">
-                          {extraction.emailSubject || "—"}
-                        </p>
-                        <p className="text-label-sm text-muted-foreground/60 truncate max-w-[250px]">
-                          {extraction.emailFrom || "Unknown sender"}
-                        </p>
-                      </td>
-                      <td className="px-4 py-2.5 text-body-sm text-muted-foreground whitespace-nowrap hidden sm:table-cell">
-                        {extraction.fileName || "—"}
-                      </td>
-                      <td className="px-4 py-2.5 whitespace-nowrap">
-                        <div className="flex items-center gap-2">
-                          <span
-                            className={`inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium ${badge.className}`}
-                          >
-                            {badge.label}
-                          </span>
-                          {extraction.extractionStatus === "error" && extraction.extractionError && (
-                            <ViewErrorButton error={extraction.extractionError} />
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-4 py-2.5 text-body-sm text-muted-foreground hidden md:table-cell whitespace-nowrap">
-                        {formatDate(extraction._creationTime)}
-                      </td>
-                      <td className="px-4 py-2.5 text-right whitespace-nowrap hidden md:table-cell">
-                        <div className="inline-flex items-center gap-2">
-                          <RetryButton policyId={extraction._id} />
-                          <DismissButton policyId={extraction._id} />
-                        </div>
-                      </td>
-                    </FadeIn>
+                    <Fragment key={extraction._id}>
+                      <FadeIn
+                        as="tr"
+                        when={true}
+                        delay={i * 0.02}
+                        duration={0.35}
+                        direction="none"
+                        className="border-t border-foreground/4 hover:bg-foreground/[0.015] transition-colors"
+                      >
+                        <td className="px-4 py-2.5 whitespace-nowrap">
+                          <p className="text-body-sm text-foreground font-medium truncate max-w-[250px]">
+                            {extraction.emailSubject || "—"}
+                          </p>
+                          <p className="text-label-sm text-muted-foreground/60 truncate max-w-[250px]">
+                            {extraction.emailFrom || "Unknown sender"}
+                          </p>
+                        </td>
+                        <td className="px-4 py-2.5 text-body-sm text-muted-foreground whitespace-nowrap hidden sm:table-cell">
+                          {extraction.fileName || "—"}
+                        </td>
+                        <td className="px-4 py-2.5 whitespace-nowrap">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium ${badge.className}`}
+                            >
+                              {badge.label}
+                            </span>
+                            {extraction.extractionStatus === "error" && extraction.extractionError && (
+                              <ViewErrorButton error={extraction.extractionError} />
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-2.5 text-body-sm text-muted-foreground hidden md:table-cell whitespace-nowrap">
+                          {formatDate(extraction._creationTime)}
+                        </td>
+                        <td className="px-4 py-2.5 text-right whitespace-nowrap hidden md:table-cell">
+                          <div className="inline-flex items-center gap-2">
+                            <RetryButton extraction={extraction} />
+                            <DismissButton policyId={extraction._id} />
+                          </div>
+                        </td>
+                      </FadeIn>
+                      {showLog && (
+                        <ExtractionLogRow
+                          log={extraction.extractionLog!}
+                          isExpanded={true}
+                        />
+                      )}
+                    </Fragment>
                   );
                 })}
               </motion.tbody>

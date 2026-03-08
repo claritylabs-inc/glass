@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query, internalQuery } from "./_generated/server";
+import { mutation, query, internalQuery, internalMutation } from "./_generated/server";
 import { requireAuth } from "./lib/auth";
 
 export const list = query({
@@ -62,7 +62,14 @@ export const listPending = query({
             emailFrom = email.from;
           }
         }
-        return { ...p, emailSubject, emailFrom };
+        const { rawExtractionResponse, rawMetadataResponse, ...rest } = p;
+        return {
+          ...rest,
+          emailSubject,
+          emailFrom,
+          hasRawResponse: !!rawExtractionResponse,
+          hasRawMetadata: !!rawMetadataResponse,
+        };
       })
     );
 
@@ -95,7 +102,14 @@ export const listExtractionLog = query({
             emailFrom = email.from;
           }
         }
-        return { ...p, emailSubject, emailFrom };
+        const { rawExtractionResponse, rawMetadataResponse, ...rest } = p;
+        return {
+          ...rest,
+          emailSubject,
+          emailFrom,
+          hasRawResponse: !!rawExtractionResponse,
+          hasRawMetadata: !!rawMetadataResponse,
+        };
       })
     );
 
@@ -109,7 +123,11 @@ export const get = query({
     const userId = await requireAuth(ctx);
     const policy = await ctx.db.get(args.id);
     if (!policy || policy.userId !== userId) return null;
-    return policy;
+    return {
+      ...policy,
+      hasRawResponse: !!policy.rawExtractionResponse,
+      hasRawMetadata: !!policy.rawMetadataResponse,
+    };
   },
 });
 
@@ -241,14 +259,50 @@ const documentValidator = v.object({
   regulatoryContext: v.optional(v.object({
     content: v.string(),
     pageNumber: v.optional(v.number()),
+    jurisdiction: v.optional(v.string()),
+    regulatoryBody: v.optional(v.string()),
+    governingLaw: v.optional(v.string()),
+    details: v.optional(v.array(v.object({
+      label: v.string(),
+      value: v.string(),
+    }))),
   })),
   complaintContact: v.optional(v.object({
     content: v.string(),
     pageNumber: v.optional(v.number()),
+    contacts: v.optional(v.array(v.object({
+      name: v.optional(v.string()),
+      type: v.optional(v.string()),
+      phone: v.optional(v.string()),
+      fax: v.optional(v.string()),
+      email: v.optional(v.string()),
+      title: v.optional(v.string()),
+      address: v.optional(v.string()),
+    }))),
   })),
   costsAndFees: v.optional(v.object({
     content: v.string(),
     pageNumber: v.optional(v.number()),
+    fees: v.optional(v.array(v.object({
+      name: v.string(),
+      amount: v.optional(v.string()),
+      description: v.optional(v.string()),
+      type: v.optional(v.string()),
+    }))),
+  })),
+  claimsContact: v.optional(v.object({
+    content: v.string(),
+    pageNumber: v.optional(v.number()),
+    contacts: v.optional(v.array(v.object({
+      name: v.optional(v.string()),
+      phone: v.optional(v.string()),
+      fax: v.optional(v.string()),
+      email: v.optional(v.string()),
+      address: v.optional(v.string()),
+      hours: v.optional(v.string()),
+    }))),
+    processSteps: v.optional(v.array(v.string())),
+    reportingTimeLimit: v.optional(v.string()),
   })),
 });
 
@@ -330,6 +384,7 @@ export const updateExtraction = mutation({
     fileName: v.optional(v.string()),
     extractionError: v.optional(v.string()),
     rawExtractionResponse: v.optional(v.string()),
+    rawMetadataResponse: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const { id, ...fields } = args;
@@ -364,6 +419,27 @@ export const softDelete = mutation({
     const policy = await ctx.db.get(args.id);
     if (!policy || policy.userId !== userId) throw new Error("Not found");
     await ctx.db.patch(args.id, { deletedAt: Date.now() });
+  },
+});
+
+export const appendExtractionLog = internalMutation({
+  args: {
+    id: v.id("policies"),
+    message: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const policy = await ctx.db.get(args.id);
+    if (!policy) return;
+    const log = policy.extractionLog ?? [];
+    log.push({ timestamp: Date.now(), message: args.message });
+    await ctx.db.patch(args.id, { extractionLog: log });
+  },
+});
+
+export const clearExtractionLog = internalMutation({
+  args: { id: v.id("policies") },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.id, { extractionLog: [] });
   },
 });
 

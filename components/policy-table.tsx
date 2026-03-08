@@ -140,7 +140,9 @@ export function PolicyTable({ policies }: { policies: Policy[] | undefined }) {
                       {policy.premium || "—"}
                     </td>
                     <td className="px-4 py-2.5 text-body-sm text-muted-foreground text-right hidden md:table-cell whitespace-nowrap">
-                      {policy.effectiveDate} – {policy.expirationDate}
+                      {policy.effectiveDate === "Unknown" && policy.expirationDate === "Unknown"
+                        ? policy.documentType === "quote" ? "Quote" : "Unknown"
+                        : `${policy.effectiveDate} – ${policy.expirationDate}`}
                     </td>
                     <td className="px-4 py-2.5 text-right whitespace-nowrap hidden md:table-cell">
                       <Link

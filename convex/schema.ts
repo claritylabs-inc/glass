@@ -133,14 +133,50 @@ export default defineSchema({
       regulatoryContext: v.optional(v.object({
         content: v.string(),
         pageNumber: v.optional(v.number()),
+        jurisdiction: v.optional(v.string()),
+        regulatoryBody: v.optional(v.string()),
+        governingLaw: v.optional(v.string()),
+        details: v.optional(v.array(v.object({
+          label: v.string(),
+          value: v.string(),
+        }))),
       })),
       complaintContact: v.optional(v.object({
         content: v.string(),
         pageNumber: v.optional(v.number()),
+        contacts: v.optional(v.array(v.object({
+          name: v.optional(v.string()),
+          type: v.optional(v.string()),
+          phone: v.optional(v.string()),
+          fax: v.optional(v.string()),
+          email: v.optional(v.string()),
+          title: v.optional(v.string()),
+          address: v.optional(v.string()),
+        }))),
       })),
       costsAndFees: v.optional(v.object({
         content: v.string(),
         pageNumber: v.optional(v.number()),
+        fees: v.optional(v.array(v.object({
+          name: v.string(),
+          amount: v.optional(v.string()),
+          description: v.optional(v.string()),
+          type: v.optional(v.string()),
+        }))),
+      })),
+      claimsContact: v.optional(v.object({
+        content: v.string(),
+        pageNumber: v.optional(v.number()),
+        contacts: v.optional(v.array(v.object({
+          name: v.optional(v.string()),
+          phone: v.optional(v.string()),
+          fax: v.optional(v.string()),
+          email: v.optional(v.string()),
+          address: v.optional(v.string()),
+          hours: v.optional(v.string()),
+        }))),
+        processSteps: v.optional(v.array(v.string())),
+        reportingTimeLimit: v.optional(v.string()),
       })),
     })),
     // Extraction state
@@ -152,7 +188,12 @@ export default defineSchema({
       v.literal("not_insurance")
     ),
     extractionError: v.optional(v.string()),
+    extractionLog: v.optional(v.array(v.object({
+      timestamp: v.number(),
+      message: v.string(),
+    }))),
     rawExtractionResponse: v.optional(v.string()),
+    rawMetadataResponse: v.optional(v.string()),
     deletedAt: v.optional(v.number()),
   }).index("by_carrier", ["carrier"])
     .index("by_policyYear", ["policyYear"])
