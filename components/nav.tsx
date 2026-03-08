@@ -80,7 +80,7 @@ export function Nav() {
           {/* User menu */}
           {viewer && (
             <DropdownMenu>
-              <DropdownMenuTrigger className="flex items-center justify-center w-8 h-8 rounded-full bg-foreground/8 text-label-sm font-medium text-foreground hover:bg-foreground/12 transition-colors cursor-pointer outline-none select-none">
+              <DropdownMenuTrigger openOnHover delay={150} closeDelay={300} className="flex items-center justify-center w-8 h-8 rounded-full bg-foreground/8 text-label-sm font-medium text-foreground hover:bg-foreground/12 transition-colors cursor-pointer outline-none select-none">
                 {viewer.image ? (
                   <img
                     src={viewer.image}

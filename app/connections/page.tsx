@@ -8,6 +8,7 @@ import { ConnectionForm } from "@/components/connection-form";
 import { ScanModal } from "@/components/scan-modal";
 import { ScanStatus } from "@/components/scan-status";
 import { FadeIn } from "@/components/ui/fade-in";
+import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowRight } from "lucide-react";
 import {
   Dialog,
@@ -146,6 +147,28 @@ export default function ConnectionsPage() {
               </div>
             </div>
           </FadeIn>
+
+          {connections === undefined && (
+            <div className="space-y-3">
+              {Array.from({ length: 2 }).map((_, i) => (
+                <div key={i} className="rounded-lg border border-foreground/6 bg-white/60 px-4 py-3">
+                  <div className="flex items-center gap-3">
+                    <Skeleton className="w-8 h-8 rounded-md shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <Skeleton className="h-4 w-36 mb-1.5" />
+                      <Skeleton className="h-3 w-48" />
+                    </div>
+                    <div className="hidden md:flex items-center gap-3">
+                      <Skeleton className="h-5 w-16 rounded-full" />
+                      <Skeleton className="h-4 w-28" />
+                      <Skeleton className="h-8 w-16 rounded-full" />
+                      <Skeleton className="h-8 w-8 rounded-md" />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
 
           {connections && connections.length === 0 && (
             <FadeIn when={true} delay={0.2} duration={0.6}>

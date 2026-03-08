@@ -8,6 +8,7 @@ import { PolicyTable } from "@/components/policy-table";
 import { PolicyGroupedView } from "@/components/policy-grouped-view";
 import { PolicyFilters } from "@/components/policy-filters";
 import { FadeIn } from "@/components/ui/fade-in";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export default function PoliciesPage() {
   const policies = useQuery(api.policies.list, {});
@@ -61,18 +62,33 @@ export default function PoliciesPage() {
             </div>
           </FadeIn>
 
-          <PolicyFilters
-            activeTab={activeTab}
-            onTabChange={setActiveTab}
-            carriers={carriers}
-            years={years}
-            selectedType={selectedType}
-            onTypeChange={setSelectedType}
-            selectedCarrier={selectedCarrier}
-            onCarrierChange={setSelectedCarrier}
-            selectedYear={selectedYear}
-            onYearChange={setSelectedYear}
-          />
+          {policies === undefined ? (
+            <div className="space-y-3 mb-4">
+              <div className="flex items-center gap-1 border-b border-foreground/6 pb-2">
+                <Skeleton className="h-5 w-20" />
+                <Skeleton className="h-5 w-16" />
+                <Skeleton className="h-5 w-16" />
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Skeleton className="h-8 w-24 rounded-md" />
+                <Skeleton className="h-8 w-24 rounded-md" />
+                <Skeleton className="h-8 w-24 rounded-md" />
+              </div>
+            </div>
+          ) : (
+            <PolicyFilters
+              activeTab={activeTab}
+              onTabChange={setActiveTab}
+              carriers={carriers}
+              years={years}
+              selectedType={selectedType}
+              onTypeChange={setSelectedType}
+              selectedCarrier={selectedCarrier}
+              onCarrierChange={setSelectedCarrier}
+              selectedYear={selectedYear}
+              onYearChange={setSelectedYear}
+            />
+          )}
 
           {activeTab === "all" ? (
             <PolicyTable policies={filteredPolicies as any} />

@@ -12,6 +12,7 @@ import { FadeIn } from "@/components/ui/fade-in";
 import { PillButton } from "@/components/ui/pill-button";
 import { ArrowRight } from "lucide-react";
 import { FixedMobileFooter } from "@/components/ui/fixed-mobile-footer";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export default function DashboardPage() {
   const stats = useQuery(api.policies.stats);
@@ -76,18 +77,33 @@ export default function DashboardPage() {
 
           <StatsCards stats={stats} />
 
-          <PolicyFilters
-            activeTab={activeTab}
-            onTabChange={setActiveTab}
-            carriers={carriers}
-            years={years}
-            selectedType={selectedType}
-            onTypeChange={setSelectedType}
-            selectedCarrier={selectedCarrier}
-            onCarrierChange={setSelectedCarrier}
-            selectedYear={selectedYear}
-            onYearChange={setSelectedYear}
-          />
+          {policies === undefined ? (
+            <div className="space-y-3 mb-4">
+              <div className="flex items-center gap-1 border-b border-foreground/6 pb-2">
+                <Skeleton className="h-5 w-20" />
+                <Skeleton className="h-5 w-16" />
+                <Skeleton className="h-5 w-16" />
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Skeleton className="h-8 w-24 rounded-md" />
+                <Skeleton className="h-8 w-24 rounded-md" />
+                <Skeleton className="h-8 w-24 rounded-md" />
+              </div>
+            </div>
+          ) : (
+            <PolicyFilters
+              activeTab={activeTab}
+              onTabChange={setActiveTab}
+              carriers={carriers}
+              years={years}
+              selectedType={selectedType}
+              onTypeChange={setSelectedType}
+              selectedCarrier={selectedCarrier}
+              onCarrierChange={setSelectedCarrier}
+              selectedYear={selectedYear}
+              onYearChange={setSelectedYear}
+            />
+          )}
 
           {activeTab === "all" ? (
             <PolicyTable policies={filteredPolicies as any} />

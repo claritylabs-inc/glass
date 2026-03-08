@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { POLICY_TYPE_LABELS } from "@/convex/lib/policyTypes";
 import { FadeIn } from "@/components/ui/fade-in";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface Policy {
   _id: string;
@@ -36,9 +37,62 @@ const TYPE_COLORS: Record<string, string> = {
   other: "bg-gray-100 text-gray-700",
 };
 
+function SkeletonRows() {
+  return (
+    <tbody>
+      {Array.from({ length: 5 }).map((_, i) => (
+        <tr key={i} className="border-t border-foreground/4">
+          <td className="px-4 py-2.5">
+            <Skeleton className="h-4 w-32 mb-1.5" />
+            <Skeleton className="h-3 w-24" />
+          </td>
+          <td className="px-4 py-2.5 hidden sm:table-cell">
+            <Skeleton className="h-5 w-20 rounded-full" />
+          </td>
+          <td className="px-4 py-2.5 hidden md:table-cell">
+            <Skeleton className="h-4 w-28" />
+          </td>
+          <td className="px-4 py-2.5 text-right">
+            <Skeleton className="h-4 w-16 ml-auto" />
+          </td>
+          <td className="px-4 py-2.5 hidden md:table-cell text-right">
+            <Skeleton className="h-4 w-32 ml-auto" />
+          </td>
+          <td className="px-4 py-2.5 hidden md:table-cell text-right">
+            <Skeleton className="h-7 w-12 ml-auto rounded-md" />
+          </td>
+        </tr>
+      ))}
+    </tbody>
+  );
+}
+
 export function PolicyTable({ policies }: { policies: Policy[] | undefined }) {
   const router = useRouter();
-  if (!policies || policies.length === 0) {
+
+  if (policies === undefined) {
+    return (
+      <div className="rounded-lg border border-foreground/6 bg-white/60 overflow-hidden">
+        <div className="overflow-x-auto scrollbar-hide">
+          <table className="w-full text-left md:min-w-[700px]">
+            <thead>
+              <tr className="bg-foreground/[0.02]">
+                <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">Policy</th>
+                <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap hidden sm:table-cell">Type</th>
+                <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap hidden md:table-cell">Insurer</th>
+                <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap text-right">Premium</th>
+                <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap text-right hidden md:table-cell">Period</th>
+                <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap text-right hidden md:table-cell">Actions</th>
+              </tr>
+            </thead>
+            <SkeletonRows />
+          </table>
+        </div>
+      </div>
+    );
+  }
+
+  if (policies.length === 0) {
     return (
       <FadeIn when={true} duration={0.6}>
         <div className="rounded-lg border border-foreground/6 bg-white/60 px-6 py-12 text-center text-muted-foreground">
@@ -63,7 +117,7 @@ export function PolicyTable({ policies }: { policies: Policy[] | undefined }) {
                   Type
                 </th>
                 <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap hidden md:table-cell">
-                  Carrier
+                  Insurer
                 </th>
                 <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap text-right">
                   Premium
