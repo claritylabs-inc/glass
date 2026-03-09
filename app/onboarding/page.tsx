@@ -379,10 +379,6 @@ export default function OnboardingPage() {
                 </div>
               </div>
 
-              <ConnectionForm
-                open={connectionFormOpen}
-                onClose={() => setConnectionFormOpen(false)}
-              />
             </div>
           )}
 
@@ -463,6 +459,11 @@ export default function OnboardingPage() {
           )}
         </div>
       </FadeIn>
+
+      <ConnectionForm
+        open={connectionFormOpen}
+        onClose={() => setConnectionFormOpen(false)}
+      />
     </div>
   );
 }
