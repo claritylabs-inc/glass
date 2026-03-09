@@ -79,7 +79,7 @@ export default function SignupPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <FadeIn className="w-full max-w-sm">
-        <div className="bg-white rounded-xl border border-foreground/8 p-6 sm:p-8">
+        <div className="p-2 sm:bg-white sm:rounded-xl sm:border sm:border-foreground/8 sm:p-8">
           <div className="text-center mb-6">
             <h3 className="!mb-0 flex items-center justify-center gap-1.5">
               Clarity <LogoIcon size={22} className="shrink-0" /> Labs
