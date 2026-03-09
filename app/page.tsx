@@ -11,6 +11,7 @@ import { PolicyFilters } from "@/components/policy-filters";
 import { FadeIn } from "@/components/ui/fade-in";
 import { PillButton } from "@/components/ui/pill-button";
 import { ArrowRight, Asterisk, Copy, Check } from "lucide-react";
+import { motion } from "framer-motion";
 import Link from "next/link";
 import { toast } from "sonner";
 import { FixedMobileFooter } from "@/components/ui/fixed-mobile-footer";
@@ -87,68 +88,76 @@ export default function DashboardPage() {
           {/* Agent card */}
           {viewer && (
             <FadeIn when={true} staggerIndex={1} duration={0.6}>
-              <div className="rounded-lg border border-foreground/6 bg-white/60 p-4 mb-6">
-                {viewer.agentHandle ? (
-                  <div className="flex items-center justify-between flex-wrap gap-3">
+              <Link href="/agent" className="block">
+                <motion.div
+                  whileHover={{
+                    scale: 1.01,
+                    boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.08), 0 2px 4px -4px rgb(0 0 0 / 0.08)",
+                    borderColor: "rgba(0,0,0,0.2)",
+                    backgroundColor: "white",
+                  }}
+                  whileTap={{ scale: 0.99 }}
+                  transition={{ type: "tween", duration: 0.2, ease: "easeOut" }}
+                  className="rounded-lg border border-foreground/6 bg-white/60 p-4 mb-6 cursor-pointer"
+                >
+                  {viewer.agentHandle ? (
+                    <div className="flex items-center justify-between flex-wrap gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-full bg-foreground/5 flex items-center justify-center">
+                          <Asterisk className="w-4 h-4 text-[#A0D2FA]" />
+                        </div>
+                        <div>
+                          <p className="text-label-sm text-muted-foreground">Clarity Agent</p>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              navigator.clipboard.writeText(`${viewer.agentHandle}@${AGENT_DOMAIN}`);
+                              setEmailCopied(true);
+                              setTimeout(() => setEmailCopied(false), 2000);
+                              toast.success("Copied to clipboard");
+                            }}
+                            className="inline-flex items-center gap-1.5 text-body-sm font-mono font-medium text-foreground hover:text-foreground/70 transition-colors cursor-pointer"
+                          >
+                            {viewer.agentHandle}@{AGENT_DOMAIN}
+                            {emailCopied ? (
+                              <Check className="w-3 h-3 text-emerald-600" />
+                            ) : (
+                              <Copy className="w-3 h-3 text-muted-foreground/30" />
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        {agentStats && (
+                          <span className="text-label-sm text-muted-foreground/50">
+                            {agentStats.total} conversation{agentStats.total !== 1 ? "s" : ""}
+                          </span>
+                        )}
+                        <span className="text-label-sm font-medium text-foreground flex items-center gap-1">
+                          View All <ArrowRight className="w-3 h-3" />
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
                     <div className="flex items-center gap-3">
                       <div className="w-9 h-9 rounded-full bg-foreground/5 flex items-center justify-center">
                         <Asterisk className="w-4 h-4 text-[#A0D2FA]" />
                       </div>
-                      <div>
-                        <p className="text-label-sm text-muted-foreground">Clarity Agent</p>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            navigator.clipboard.writeText(`${viewer.agentHandle}@${AGENT_DOMAIN}`);
-                            setEmailCopied(true);
-                            setTimeout(() => setEmailCopied(false), 2000);
-                            toast.success("Copied to clipboard");
-                          }}
-                          className="inline-flex items-center gap-1.5 text-body-sm font-mono font-medium text-foreground hover:text-foreground/70 transition-colors cursor-pointer"
-                        >
-                          {viewer.agentHandle}@{AGENT_DOMAIN}
-                          {emailCopied ? (
-                            <Check className="w-3 h-3 text-emerald-600" />
-                          ) : (
-                            <Copy className="w-3 h-3 text-muted-foreground/30" />
-                          )}
-                        </button>
+                      <div className="flex-1">
+                        <p className="text-body-sm font-medium text-foreground">
+                          Set Up Clarity Agent
+                        </p>
+                        <p className="text-label-sm text-muted-foreground/40">
+                          Get a dedicated email for policy questions
+                        </p>
                       </div>
+                      <ArrowRight className="w-4 h-4 text-muted-foreground/30" />
                     </div>
-                    <div className="flex items-center gap-4">
-                      {agentStats && (
-                        <span className="text-label-sm text-muted-foreground/50">
-                          {agentStats.total} conversation{agentStats.total !== 1 ? "s" : ""}
-                        </span>
-                      )}
-                      <Link
-                        href="/agent"
-                        className="text-label-sm font-medium text-foreground hover:text-foreground/70 transition-colors flex items-center gap-1"
-                      >
-                        View All <ArrowRight className="w-3 h-3" />
-                      </Link>
-                    </div>
-                  </div>
-                ) : (
-                  <Link
-                    href="/agent"
-                    className="flex items-center gap-3 group"
-                  >
-                    <div className="w-9 h-9 rounded-full bg-foreground/5 flex items-center justify-center">
-                      <Asterisk className="w-4 h-4 text-[#A0D2FA]" />
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-body-sm font-medium text-foreground group-hover:text-foreground/70 transition-colors">
-                        Set Up Clarity Agent
-                      </p>
-                      <p className="text-label-sm text-muted-foreground/40">
-                        Get a dedicated email for policy questions
-                      </p>
-                    </div>
-                    <ArrowRight className="w-4 h-4 text-muted-foreground/30 group-hover:text-muted-foreground transition-colors" />
-                  </Link>
-                )}
-              </div>
+                  )}
+                </motion.div>
+              </Link>
             </FadeIn>
           )}
 
