@@ -161,6 +161,20 @@ export const emailIdsWithPolicies = query({
   },
 });
 
+// All complete, non-deleted policies for a user (used by agent action)
+export const listAllInternal = internalQuery({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    const all = await ctx.db
+      .query("policies")
+      .withIndex("by_userId", (idx) => idx.eq("userId", args.userId as any))
+      .collect();
+    return all.filter(
+      (p) => p.extractionStatus === "complete" && !p.deletedAt
+    );
+  },
+});
+
 // Internal version for scheduled actions (no auth context)
 export const emailIdsWithPoliciesInternal = internalQuery({
   args: { userId: v.id("users") },

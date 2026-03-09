@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, useCallback } from "react";
+import { createContext, useContext, useState, useCallback, useEffect, useRef } from "react";
 
 interface PdfContextValue {
   currentPage: number;
@@ -19,9 +19,11 @@ const PdfContext = createContext<PdfContextValue | null>(null);
 
 export function PdfProvider({
   fileUrl,
+  initialPage,
   children,
 }: {
   fileUrl: string | null;
+  initialPage?: number;
   children: React.ReactNode;
 }) {
   const [currentPage, setCurrentPage] = useState(1);
@@ -40,6 +42,14 @@ export function PdfProvider({
     },
     [fileUrl, numPages]
   );
+
+  const didAutoNav = useRef(false);
+  useEffect(() => {
+    if (initialPage && fileUrl && !didAutoNav.current) {
+      didAutoNav.current = true;
+      navigateToPage(initialPage);
+    }
+  }, [initialPage, fileUrl, navigateToPage]);
 
   const togglePdf = useCallback(() => setIsPdfOpen((v) => !v), []);
   const openPdf = useCallback(() => setIsPdfOpen(true), []);

@@ -19,7 +19,10 @@ import {
   Database,
   FileText,
   Check,
+  MessageSquare,
+  Users,
 } from "lucide-react";
+import { AgentHandleForm } from "@/components/agent-handle-form";
 
 export default function OnboardingPage() {
   const router = useRouter();
@@ -45,7 +48,10 @@ export default function OnboardingPage() {
   const [seeding, setSeeding] = useState(false);
   const [seeded, setSeeded] = useState(false);
 
-  // Step 3 state
+  // Step 3 state (agent)
+  const [handleClaimed, setHandleClaimed] = useState(false);
+
+  // Step 4 state
   const [finishing, setFinishing] = useState(false);
 
   // Auto-resize textarea
@@ -141,6 +147,7 @@ export default function OnboardingPage() {
   const steps = [
     { label: "Details" },
     { label: "Data" },
+    { label: "Agent" },
     { label: "Ready" },
   ];
 
@@ -381,10 +388,80 @@ export default function OnboardingPage() {
             </div>
           )}
 
-          {/* Step 3: How It Works — Animated Demo */}
+          {/* Step 3: AI Email Agent */}
           {currentStep === 2 && (
+            <div className="space-y-4">
+              <div className="text-center mb-2">
+                <h4 className="!mb-1 text-base font-semibold">Meet Your AI Agent</h4>
+                <p className="text-label-sm text-muted-foreground/60">
+                  Get a dedicated email address that answers policy questions
+                </p>
+              </div>
+
+              <div className="max-w-sm mx-auto">
+                <AgentHandleForm
+                  suggestedHandle={
+                    companyName
+                      ? companyName
+                          .toLowerCase()
+                          .replace(/[^a-z0-9]+/g, "-")
+                          .replace(/^-|-$/g, "")
+                      : undefined
+                  }
+                  onClaimed={() => setHandleClaimed(true)}
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
+                <div className="flex items-start gap-3 p-4 rounded-lg border border-foreground/6 bg-foreground/[0.01]">
+                  <MessageSquare className="w-4 h-4 text-violet-500 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-label-sm font-medium text-foreground">Direct Mode</p>
+                    <p className="text-[11px] text-muted-foreground/50 mt-0.5">
+                      Email your agent to ask questions about your policies
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3 p-4 rounded-lg border border-foreground/6 bg-foreground/[0.01]">
+                  <Users className="w-4 h-4 text-sky-500 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-label-sm font-medium text-foreground">CC Mode</p>
+                    <p className="text-[11px] text-muted-foreground/50 mt-0.5">
+                      CC your agent on threads for instant policy lookups
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-2">
+                <PillButton variant="secondary" onClick={() => setCurrentStep(1)}>
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  Back
+                </PillButton>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setCurrentStep(3)}
+                    className="text-label-sm text-muted-foreground/50 hover:text-muted-foreground transition-colors cursor-pointer"
+                  >
+                    Skip for now
+                  </button>
+                  <PillButton
+                    onClick={() => setCurrentStep(3)}
+                    disabled={!handleClaimed && !viewer?.agentHandle}
+                  >
+                    Next
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </PillButton>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Step 4: How It Works — Animated Demo */}
+          {currentStep === 3 && (
             <HowItWorksDemo
-              onBack={() => setCurrentStep(1)}
+              onBack={() => setCurrentStep(2)}
               onFinish={handleFinish}
               finishing={finishing}
             />

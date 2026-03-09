@@ -74,6 +74,7 @@ export function PdfViewer({
   const pageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const scrollingToPage = useRef<number | null>(null);
   const visiblePageRef = useRef(1);
+  const pageWidthRef = useRef<number | undefined>(undefined);
   const [pageInput, setPageInput] = useState(String(currentPage));
 
   // Keep ref in sync
@@ -97,7 +98,7 @@ export function PdfViewer({
   useEffect(() => {
     if (!numPages || !containerRef.current) return;
     const container = containerRef.current;
-    const pw = pageWidth;
+    const pw = pageWidthRef.current;
 
     if (!pw || pageDimensions.size === 0) {
       // Dimensions not loaded yet — try DOM-based fallback
@@ -176,7 +177,7 @@ export function PdfViewer({
 
     const handleScroll = () => {
       if (scrollingToPage.current !== null) return;
-      const pw = pageWidth;
+      const pw = pageWidthRef.current;
 
       if (pw && pageDimensions.size > 0) {
         // Arithmetic-based detection
@@ -217,12 +218,27 @@ export function PdfViewer({
     if (prevScaleRef.current !== scale && numPages > 0) {
       const pageToRestore = visiblePageRef.current;
       prevScaleRef.current = scale;
-      // After layout updates, scroll back to the same page
+
+      // Suppress scroll detection during zoom transition
+      scrollingToPage.current = pageToRestore;
+
+      const container = containerRef.current;
+      const pw = pageWidth;
+      if (!container || !pw) {
+        scrollingToPage.current = null;
+        return;
+      }
+
+      // Scroll immediately with current dimensions if available
+      if (pageDimensions.size > 0) {
+        const targetTop = computeScrollOffset(pageToRestore, pw, pageDimensions, PAGE_GAP, 0);
+        container.scrollTo({ top: targetTop, behavior: "instant" });
+      }
+
+      // After layout settles, micro-correct using actual DOM positions
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          const container = containerRef.current;
-          const pw = pageWidth;
-          if (!container || !pw) return;
+          if (!container) return;
           if (pageDimensions.size > 0) {
             const targetTop = computeScrollOffset(pageToRestore, pw, pageDimensions, PAGE_GAP, 0);
             container.scrollTo({ top: targetTop, behavior: "instant" });
@@ -236,6 +252,7 @@ export function PdfViewer({
               container.scrollTo({ top: targetTop, behavior: "instant" });
             }
           }
+          scrollingToPage.current = null;
         });
       });
     }
@@ -291,6 +308,7 @@ export function PdfViewer({
   const zoomOut = () => setScale((s) => Math.max(s - 0.25, 0.5));
 
   const pageWidth = containerWidth > 0 ? (containerWidth - 24) * scale : undefined;
+  pageWidthRef.current = pageWidth;
 
   const displayPage = scrollingToPage.current !== null ? currentPage : visiblePage;
 

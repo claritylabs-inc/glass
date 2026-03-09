@@ -29,6 +29,8 @@ export default function ProfilePage() {
   const [name, setName] = useState("");
   const [companyName, setCompanyName] = useState("");
   const [insuranceBroker, setInsuranceBroker] = useState("");
+  const [brokerContactName, setBrokerContactName] = useState("");
+  const [brokerContactEmail, setBrokerContactEmail] = useState("");
   const [companyWebsite, setCompanyWebsite] = useState("");
   const [companyContext, setCompanyContext] = useState("");
   const [saving, setSaving] = useState(false);
@@ -50,6 +52,8 @@ export default function ProfilePage() {
       setName(viewer.name ?? "");
       setCompanyName(viewer.companyName ?? "");
       setInsuranceBroker(viewer.insuranceBroker ?? "");
+      setBrokerContactName(viewer.brokerContactName ?? "");
+      setBrokerContactEmail(viewer.brokerContactEmail ?? "");
       setCompanyWebsite(viewer.companyWebsite ?? "");
       setCompanyContext(viewer.companyContext ?? "");
     }
@@ -65,6 +69,8 @@ export default function ProfilePage() {
         name: name || undefined,
         companyName: companyName || undefined,
         insuranceBroker: insuranceBroker || undefined,
+        brokerContactName: brokerContactName || undefined,
+        brokerContactEmail: brokerContactEmail || undefined,
         companyWebsite: companyWebsite || undefined,
         companyContext: companyContext || undefined,
       });
@@ -193,31 +199,17 @@ export default function ProfilePage() {
                   <h3 className="!mb-0 text-sm font-medium text-foreground">Company</h3>
                 </div>
                 <div className="px-5 py-5 space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
-                        Company Name
-                      </label>
-                      <input
-                        type="text"
-                        value={companyName}
-                        onChange={(e) => setCompanyName(e.target.value)}
-                        placeholder="Acme Insurance Brokerage"
-                        className="w-full rounded-lg border border-foreground/8 bg-white px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
-                        Insurance Broker
-                      </label>
-                      <input
-                        type="text"
-                        value={insuranceBroker}
-                        onChange={(e) => setInsuranceBroker(e.target.value)}
-                        placeholder="Your broker name"
-                        className="w-full rounded-lg border border-foreground/8 bg-white px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
-                      />
-                    </div>
+                  <div>
+                    <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+                      Company Name
+                    </label>
+                    <input
+                      type="text"
+                      value={companyName}
+                      onChange={(e) => setCompanyName(e.target.value)}
+                      placeholder="Acme Insurance Brokerage"
+                      className="w-full rounded-lg border border-foreground/8 bg-white px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                    />
                   </div>
 
                   <div>
@@ -270,6 +262,53 @@ export default function ProfilePage() {
                     <p className="text-label-sm text-muted-foreground/50 mt-1.5">
                       Used to provide context to the AI during policy extraction
                     </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Insurance Broker section */}
+              <div className="rounded-lg border border-foreground/6 bg-white/60 mb-4">
+                <div className="px-5 py-3.5 border-b border-foreground/6">
+                  <h3 className="!mb-0 text-sm font-medium text-foreground">Insurance Broker</h3>
+                </div>
+                <div className="px-5 py-5">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                      <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+                        Broker (Company)
+                      </label>
+                      <input
+                        type="text"
+                        value={insuranceBroker}
+                        onChange={(e) => setInsuranceBroker(e.target.value)}
+                        placeholder="Marsh McLennan"
+                        className="w-full rounded-lg border border-foreground/8 bg-white px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+                        Contact Name
+                      </label>
+                      <input
+                        type="text"
+                        value={brokerContactName}
+                        onChange={(e) => setBrokerContactName(e.target.value)}
+                        placeholder="Jane Smith"
+                        className="w-full rounded-lg border border-foreground/8 bg-white px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+                        Contact Email
+                      </label>
+                      <input
+                        type="email"
+                        value={brokerContactEmail}
+                        onChange={(e) => setBrokerContactEmail(e.target.value)}
+                        placeholder="jane@broker.com"
+                        className="w-full rounded-lg border border-foreground/8 bg-white px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>

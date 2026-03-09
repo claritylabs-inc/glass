@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useState, useRef } from "react";
+import { use, useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
@@ -10,7 +10,7 @@ import { ArrowLeft, Download, FileText, Calendar, Shield, DollarSign, Trash2, Up
 import { Skeleton } from "@/components/ui/skeleton";
 import { FixedMobileFooter } from "@/components/ui/fixed-mobile-footer";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { POLICY_TYPE_LABELS } from "@/convex/lib/policyTypes";
 import { Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
@@ -109,12 +109,24 @@ const SECTION_TYPE_COLORS: Record<string, string> = {
   other: "bg-gray-50 text-gray-600",
 };
 
-function DocumentSection({ section }: { section: any }) {
+function DocumentSection({ section, highlighted }: { section: any; highlighted?: boolean }) {
   const [expanded, setExpanded] = useState(false);
+  const sectionRef = useRef<HTMLDivElement>(null);
   const typeColor = SECTION_TYPE_COLORS[section.type] || SECTION_TYPE_COLORS.other;
 
+  useEffect(() => {
+    if (highlighted) {
+      setExpanded(true);
+      // Delay scroll to allow expand animation
+      const timer = setTimeout(() => {
+        sectionRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 150);
+      return () => clearTimeout(timer);
+    }
+  }, [highlighted]);
+
   return (
-    <div className="border-t border-foreground/4">
+    <div ref={sectionRef} className={`border-t border-foreground/4 transition-colors duration-700 ${highlighted ? "bg-blue-50/60" : ""}`}>
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}
@@ -442,6 +454,8 @@ export default function PolicyDetailPage({
   const generateUploadUrl = useMutation(api.policies.generateUploadUrl);
   const reExtract = useAction(api.actions.reExtractFromFile.reExtractFromFile);
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const initialPage = Number(searchParams.get("page")) || undefined;
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -590,7 +604,7 @@ export default function PolicyDetailPage({
   };
 
   return (
-    <PdfProvider fileUrl={fileUrl ?? null}>
+    <PdfProvider fileUrl={fileUrl ?? null} initialPage={initialPage}>
       <div className="min-h-screen flex flex-col">
         <Nav />
         <main className="flex-1 pb-20 md:pb-0">
@@ -869,7 +883,15 @@ export default function PolicyDetailPage({
                         </div>
                       </div>
                       {policyDocument.sections.map((section: any, i: number) => (
-                        <DocumentSection key={i} section={section} />
+                        <DocumentSection
+                          key={i}
+                          section={section}
+                          highlighted={
+                            initialPage != null &&
+                            section.pageStart <= initialPage &&
+                            (section.pageEnd ?? section.pageStart) >= initialPage
+                          }
+                        />
                       ))}
                     </div>
                   </FadeIn>

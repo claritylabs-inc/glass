@@ -20,12 +20,19 @@ export default defineSchema({
     insuranceBroker: v.optional(v.string()),
     companyWebsite: v.optional(v.string()),
     companyContext: v.optional(v.string()),
+    // Broker contact details
+    brokerContactName: v.optional(v.string()),
+    brokerContactEmail: v.optional(v.string()),
+    // COI request handling preference
+    coiHandling: v.optional(v.union(v.literal("broker"), v.literal("user"), v.literal("ignore"))),
     // Onboarding & admin
     onboardingComplete: v.optional(v.boolean()),
     isAdmin: v.optional(v.boolean()),
+    agentHandle: v.optional(v.string()),
   })
     .index("email", ["email"])
-    .index("phone", ["phone"]),
+    .index("phone", ["phone"])
+    .index("by_agentHandle", ["agentHandle"]),
 
   emailConnections: defineTable({
     userId: v.optional(v.id("users")),
@@ -201,4 +208,37 @@ export default defineSchema({
   }).index("by_carrier", ["carrier"])
     .index("by_policyYear", ["policyYear"])
     .index("by_userId", ["userId"]),
+
+  agentConversations: defineTable({
+    userId: v.id("users"),
+    fromEmail: v.string(),
+    fromName: v.optional(v.string()),
+    toAddresses: v.array(v.string()),
+    ccAddresses: v.optional(v.array(v.string())),
+    subject: v.string(),
+    body: v.string(),
+    bodyHtml: v.optional(v.string()),
+    inReplyTo: v.optional(v.string()),
+    messageId: v.optional(v.string()),
+    mode: v.union(v.literal("direct"), v.literal("cc"), v.literal("forward"), v.literal("unknown")),
+    responseBody: v.optional(v.string()),
+    responseHtml: v.optional(v.string()),
+    responseTo: v.optional(v.string()),
+    responseCc: v.optional(v.array(v.string())),
+    responseSentAt: v.optional(v.number()),
+    referencedPolicyIds: v.optional(v.array(v.id("policies"))),
+    status: v.union(
+      v.literal("received"),
+      v.literal("processing"),
+      v.literal("replied"),
+      v.literal("error")
+    ),
+    error: v.optional(v.string()),
+    archivedAt: v.optional(v.number()),
+    threadId: v.optional(v.id("agentConversations")),
+    responseMessageId: v.optional(v.string()),
+    resendEmailId: v.optional(v.string()),
+  }).index("by_userId", ["userId"])
+    .index("by_messageId", ["messageId"])
+    .index("by_resendEmailId", ["resendEmailId"]),
 });

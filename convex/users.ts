@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { query, mutation } from "./_generated/server";
+import { query, mutation, internalQuery } from "./_generated/server";
 import { getAuthUserId } from "@convex-dev/auth/server";
 
 export const viewer = query({
@@ -59,8 +59,11 @@ export const updateProfile = mutation({
     name: v.optional(v.string()),
     companyName: v.optional(v.string()),
     insuranceBroker: v.optional(v.string()),
+    brokerContactName: v.optional(v.string()),
+    brokerContactEmail: v.optional(v.string()),
     companyWebsite: v.optional(v.string()),
     companyContext: v.optional(v.string()),
+    coiHandling: v.optional(v.union(v.literal("broker"), v.literal("user"), v.literal("ignore"))),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
@@ -75,6 +78,52 @@ export const completeOnboarding = mutation({
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("Not authenticated");
     await ctx.db.patch(userId, { onboardingComplete: true });
+  },
+});
+
+export const checkHandleAvailability = query({
+  args: { handle: v.string() },
+  handler: async (ctx, args) => {
+    const normalized = args.handle.toLowerCase().replace(/[^a-z0-9-]/g, "");
+    if (normalized.length < 3 || normalized.length > 30) {
+      return { available: false, normalized, reason: "Handle must be 3-30 characters" };
+    }
+    if (!/^[a-z][a-z0-9-]*[a-z0-9]$/.test(normalized) && normalized.length > 1) {
+      return { available: false, normalized, reason: "Must start with a letter and end with a letter or number" };
+    }
+    const existing = await ctx.db
+      .query("users")
+      .withIndex("by_agentHandle", (q) => q.eq("agentHandle", normalized))
+      .first();
+    return { available: !existing, normalized, reason: existing ? "Handle already taken" : undefined };
+  },
+});
+
+export const claimAgentHandle = mutation({
+  args: { handle: v.string() },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
+    const user = await ctx.db.get(userId);
+    if (user?.agentHandle) throw new Error("Handle already claimed");
+    const normalized = args.handle.toLowerCase().replace(/[^a-z0-9-]/g, "");
+    if (normalized.length < 3 || normalized.length > 30) {
+      throw new Error("Handle must be 3-30 characters");
+    }
+    const existing = await ctx.db
+      .query("users")
+      .withIndex("by_agentHandle", (q) => q.eq("agentHandle", normalized))
+      .first();
+    if (existing) throw new Error("Handle already taken");
+    await ctx.db.patch(userId, { agentHandle: normalized });
+    return normalized;
+  },
+});
+
+export const getInternal = internalQuery({
+  args: { id: v.id("users") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.id);
   },
 });
 
@@ -117,12 +166,25 @@ export const resetAccount = mutation({
       await ctx.db.delete(conn._id);
     }
 
+    // Delete all agent conversations
+    const conversations = await ctx.db
+      .query("agentConversations")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .collect();
+    for (const conv of conversations) {
+      await ctx.db.delete(conv._id);
+    }
+
     // Reset profile fields, set onboarding incomplete
     await ctx.db.patch(userId, {
       companyName: undefined,
       insuranceBroker: undefined,
+      brokerContactName: undefined,
+      brokerContactEmail: undefined,
       companyWebsite: undefined,
       companyContext: undefined,
+      coiHandling: undefined,
+      agentHandle: undefined,
       onboardingComplete: false,
     });
   },
