@@ -95,7 +95,7 @@ export default function DashboardPage() {
                         <Asterisk className="w-4 h-4 text-[#A0D2FA]" />
                       </div>
                       <div>
-                        <p className="text-label-sm text-muted-foreground">AI Agent</p>
+                        <p className="text-label-sm text-muted-foreground">Clarity Agent</p>
                         <button
                           type="button"
                           onClick={() => {
