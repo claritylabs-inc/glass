@@ -77,6 +77,14 @@ export default function OnboardingPage() {
     if (!companyWebsite) return;
     setExtracting(true);
     try {
+      // Save current form fields first so the viewer re-fetch doesn't wipe them
+      const updates: Record<string, string> = {};
+      if (name) updates.name = name;
+      if (companyName) updates.companyName = companyName;
+      if (companyWebsite) updates.companyWebsite = companyWebsite;
+      if (companyContext) updates.companyContext = companyContext;
+      await updateProfile(updates);
+
       let url = companyWebsite;
       if (!url.startsWith("http")) url = "https://" + url;
       const result = await extractCompanyInfo({ url });
