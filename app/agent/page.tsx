@@ -33,7 +33,7 @@ import { Id } from "@/convex/_generated/dataModel";
 
 dayjs.extend(relativeTime);
 
-const AGENT_DOMAIN = "agent.claritylabs.inc";
+const AGENT_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "agent.claritylabs.inc";
 
 type Conversation = {
   _id: Id<"agentConversations">;

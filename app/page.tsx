@@ -16,7 +16,7 @@ import { toast } from "sonner";
 import { FixedMobileFooter } from "@/components/ui/fixed-mobile-footer";
 import { Skeleton } from "@/components/ui/skeleton";
 
-const AGENT_DOMAIN = "agent.claritylabs.inc";
+const AGENT_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "agent.claritylabs.inc";
 
 export default function DashboardPage() {
   const stats = useQuery(api.policies.stats);

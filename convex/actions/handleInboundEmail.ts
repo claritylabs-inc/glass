@@ -8,7 +8,15 @@ import { Webhook } from "svix";
 import { buildSystemPrompt, buildPolicyContext } from "../lib/agentPrompts";
 import { Id } from "../_generated/dataModel";
 
-const AGENT_DOMAIN = "agent.claritylabs.inc";
+const DEFAULT_AGENT_DOMAIN = "agent.claritylabs.inc";
+
+function getAgentDomain(): string {
+  const from = process.env.AGENT_EMAIL_FROM;
+  if (!from) return DEFAULT_AGENT_DOMAIN;
+  // AGENT_EMAIL_FROM can be a full address "Clarity Agent <noreply@domain>" or just a domain
+  const match = from.match(/@([^>]+)/);
+  return match ? match[1] : from;
+}
 
 const CONSUMER_DOMAINS = new Set([
   "gmail.com", "googlemail.com", "yahoo.com", "yahoo.co.uk",
@@ -78,7 +86,7 @@ function parseAddressList(raw: string | string[] | undefined): string[] {
 
 function findAgentHandle(addresses: string[]): string | null {
   for (const addr of addresses) {
-    if (addr.endsWith(`@${AGENT_DOMAIN}`)) {
+    if (addr.endsWith(`@${getAgentDomain()}`)) {
       return addr.split("@")[0];
     }
   }
@@ -232,7 +240,7 @@ export const processInbound = internalAction({
     }
 
     // Loop prevention: reject emails from agent domain
-    if (fromEmail.endsWith(`@${AGENT_DOMAIN}`)) {
+    if (fromEmail.endsWith(`@${getAgentDomain()}`)) {
       console.log("Loop prevention: ignoring email from agent domain", fromEmail);
       return;
     }
@@ -266,7 +274,7 @@ export const processInbound = internalAction({
     });
 
     // Detect mode
-    const agentAddress = `${handle}@${AGENT_DOMAIN}`;
+    const agentAddress = `${handle}@${getAgentDomain()}`;
     const agentInTo = toAddresses.includes(agentAddress);
     const agentInCc = ccAddresses.includes(agentAddress);
     const otherToRecipients = toAddresses.filter((a) => a !== agentAddress);
@@ -378,7 +386,7 @@ export const processInbound = internalAction({
     // Unknown mode: notify the user instead of replying to the sender
     if (effectiveMode === "unknown") {
       try {
-        const agentAddress = `${handle}@${AGENT_DOMAIN}`;
+        const agentAddress = `${handle}@${getAgentDomain()}`;
         const userEmail = userProfile?.email;
         if (!userEmail) {
           throw new Error("User has no email address — cannot send notification");
