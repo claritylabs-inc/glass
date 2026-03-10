@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { query, mutation, internalQuery, internalMutation } from "./_generated/server";
-import { requireOrgAccess } from "./lib/orgAuth";
+import { requireOrgAccess, getOrgAccess } from "./lib/orgAuth";
 
 export const checkDuplicate = internalQuery({
   args: { resendEmailId: v.string() },
@@ -198,7 +198,9 @@ export const getThreadMessages = internalQuery({
 export const list = query({
   args: { archived: v.optional(v.boolean()) },
   handler: async (ctx, args) => {
-    const { orgId } = await requireOrgAccess(ctx);
+    const access = await getOrgAccess(ctx);
+    if (!access) return [];
+    const { orgId } = access;
     const all = await ctx.db
       .query("agentConversations")
       .withIndex("by_orgId", (q) => q.eq("orgId", orgId))
@@ -259,7 +261,9 @@ export const listByPolicyId = query({
 export const stats = query({
   args: {},
   handler: async (ctx) => {
-    const { orgId } = await requireOrgAccess(ctx);
+    const access = await getOrgAccess(ctx);
+    if (!access) return { total: 0, recent: 0 };
+    const { orgId } = access;
     const all = await ctx.db
       .query("agentConversations")
       .withIndex("by_orgId", (q) => q.eq("orgId", orgId))

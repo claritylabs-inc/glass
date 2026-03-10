@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query, internalQuery, internalMutation } from "./_generated/server";
 import { requireAuth } from "./lib/auth";
-import { requireOrgAccess } from "./lib/orgAuth";
+import { requireOrgAccess, getOrgAccess } from "./lib/orgAuth";
 
 export const list = query({
   args: {
@@ -9,7 +9,9 @@ export const list = query({
     policyYear: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const { orgId } = await requireOrgAccess(ctx);
+    const access = await getOrgAccess(ctx);
+    if (!access) return [];
+    const { orgId } = access;
     const all = await ctx.db
       .query("policies")
       .withIndex("by_orgId", (idx) => idx.eq("orgId", orgId))
@@ -27,7 +29,9 @@ export const list = query({
 export const listPending = query({
   args: {},
   handler: async (ctx) => {
-    const { orgId } = await requireOrgAccess(ctx);
+    const access = await getOrgAccess(ctx);
+    if (!access) return [];
+    const { orgId } = access;
     const all = await ctx.db
       .query("policies")
       .withIndex("by_orgId", (idx) => idx.eq("orgId", orgId))
@@ -69,7 +73,9 @@ export const listPending = query({
 export const listExtractionLog = query({
   args: {},
   handler: async (ctx) => {
-    const { orgId } = await requireOrgAccess(ctx);
+    const access = await getOrgAccess(ctx);
+    if (!access) return [];
+    const { orgId } = access;
     const all = await ctx.db
       .query("policies")
       .withIndex("by_orgId", (idx) => idx.eq("orgId", orgId))
@@ -199,7 +205,9 @@ export const emailIdsWithPoliciesInternal = internalQuery({
 export const stats = query({
   args: {},
   handler: async (ctx) => {
-    const { orgId } = await requireOrgAccess(ctx);
+    const access = await getOrgAccess(ctx);
+    if (!access) return { totalPolicies: 0, activeConnections: 0, lastScanAt: null, pendingExtractions: 0, byType: {}, byCarrier: {}, byYear: {} };
+    const { orgId } = access;
     const allPolicies = await ctx.db
       .query("policies")
       .withIndex("by_orgId", (idx) => idx.eq("orgId", orgId))

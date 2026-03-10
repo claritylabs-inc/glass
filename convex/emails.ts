@@ -1,11 +1,13 @@
 import { v } from "convex/values";
 import { mutation, query, internalQuery } from "./_generated/server";
-import { requireOrgAccess } from "./lib/orgAuth";
+import { requireOrgAccess, getOrgAccess } from "./lib/orgAuth";
 
 export const list = query({
   args: { connectionId: v.optional(v.id("emailConnections")) },
   handler: async (ctx, args) => {
-    const { orgId } = await requireOrgAccess(ctx);
+    const access = await getOrgAccess(ctx);
+    if (!access) return [];
+    const { orgId } = access;
     if (args.connectionId) {
       const all = await ctx.db
         .query("emails")
@@ -25,7 +27,9 @@ export const list = query({
 export const getInsuranceEmails = query({
   args: {},
   handler: async (ctx) => {
-    const { orgId } = await requireOrgAccess(ctx);
+    const access = await getOrgAccess(ctx);
+    if (!access) return [];
+    const { orgId } = access;
     const emails = await ctx.db
       .query("emails")
       .withIndex("by_orgId", (idx) => idx.eq("orgId", orgId))

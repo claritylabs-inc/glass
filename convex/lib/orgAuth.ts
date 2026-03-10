@@ -39,6 +39,27 @@ export async function requireOrgAccess(ctx: Ctx): Promise<OrgAccess> {
 }
 
 /**
+ * Like requireOrgAccess but returns null instead of throwing when user has no org.
+ * Use for queries that may be called during onboarding before org exists.
+ */
+export async function getOrgAccess(ctx: Ctx): Promise<OrgAccess | null> {
+  const userId = await getAuthUserId(ctx);
+  if (!userId) return null;
+
+  const membership = await ctx.db
+    .query("orgMemberships")
+    .withIndex("by_userId", (q) => q.eq("userId", userId))
+    .first();
+
+  if (!membership) return null;
+
+  const org = await ctx.db.get(membership.orgId);
+  if (!org) return null;
+
+  return { userId, orgId: membership.orgId, role: membership.role, org };
+}
+
+/**
  * Require authenticated user with admin role in their org.
  */
 export async function requireOrgAdmin(ctx: Ctx): Promise<OrgAccess> {

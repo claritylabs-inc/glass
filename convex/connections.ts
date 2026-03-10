@@ -1,14 +1,15 @@
 import { v } from "convex/values";
 import { mutation, query, internalQuery } from "./_generated/server";
-import { requireOrgAccess, requireOrgAdmin } from "./lib/orgAuth";
+import { requireOrgAccess, requireOrgAdmin, getOrgAccess } from "./lib/orgAuth";
 
 export const list = query({
   args: {},
   handler: async (ctx) => {
-    const { orgId } = await requireOrgAccess(ctx);
+    const access = await getOrgAccess(ctx);
+    if (!access) return [];
     return await ctx.db
       .query("emailConnections")
-      .withIndex("by_orgId", (idx) => idx.eq("orgId", orgId))
+      .withIndex("by_orgId", (idx) => idx.eq("orgId", access.orgId))
       .collect();
   },
 });
@@ -157,7 +158,9 @@ export const remove = mutation({
 export const countLinkedPolicies = query({
   args: { id: v.id("emailConnections") },
   handler: async (ctx, args) => {
-    const { orgId } = await requireOrgAccess(ctx);
+    const access = await getOrgAccess(ctx);
+    if (!access) return { emailCount: 0, policyCount: 0 };
+    const { orgId } = access;
     const connection = await ctx.db.get(args.id);
     if (!connection || connection.orgId !== orgId) return { emailCount: 0, policyCount: 0 };
 
