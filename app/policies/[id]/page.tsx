@@ -635,6 +635,9 @@ export default function PolicyDetailPage({
                     <div className="min-w-0 flex-1 mr-4">
                       <div className="flex items-center gap-3 mb-1">
                         <h1 className="!mb-0 break-all">{policy.policyNumber}</h1>
+                        {(policy as any).isDemo && (
+                          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">Demo</span>
+                        )}
                         {documentType === "quote" && (
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-label-sm font-medium bg-yellow-100 text-yellow-800">
                             Quote

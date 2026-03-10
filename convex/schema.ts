@@ -25,6 +25,9 @@ export default defineSchema({
     brokerContactEmail: v.optional(v.string()),
     // COI request handling preference
     coiHandling: v.optional(v.union(v.literal("broker"), v.literal("user"), v.literal("ignore"))),
+    // Industry classification
+    industry: v.optional(v.string()),
+    industryVertical: v.optional(v.string()),
     // Onboarding & admin
     onboardingComplete: v.optional(v.boolean()),
     isAdmin: v.optional(v.boolean()),
@@ -65,6 +68,7 @@ export default defineSchema({
       extracting: v.optional(v.number()),
       extracted: v.optional(v.number()),
     })),
+    isDemo: v.optional(v.boolean()),
   }).index("by_userId", ["userId"]),
 
   emails: defineTable({
@@ -80,6 +84,7 @@ export default defineSchema({
     classificationReason: v.optional(v.string()),
     classificationConfidence: v.optional(v.number()),
     processed: v.boolean(),
+    isDemo: v.optional(v.boolean()),
   }).index("by_messageId", ["messageId"])
     .index("by_connection_processed", ["connectionId", "processed"])
     .index("by_userId", ["userId"]),
@@ -205,6 +210,7 @@ export default defineSchema({
     rawExtractionResponse: v.optional(v.string()),
     rawMetadataResponse: v.optional(v.string()),
     deletedAt: v.optional(v.number()),
+    isDemo: v.optional(v.boolean()),
   }).index("by_carrier", ["carrier"])
     .index("by_policyYear", ["policyYear"])
     .index("by_userId", ["userId"]),

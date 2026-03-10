@@ -63,6 +63,8 @@ export const updateProfile = mutation({
     brokerContactEmail: v.optional(v.string()),
     companyWebsite: v.optional(v.string()),
     companyContext: v.optional(v.string()),
+    industry: v.optional(v.string()),
+    industryVertical: v.optional(v.string()),
     coiHandling: v.optional(v.union(v.literal("broker"), v.literal("user"), v.literal("ignore"))),
   },
   handler: async (ctx, args) => {
@@ -183,6 +185,8 @@ export const resetAccount = mutation({
       brokerContactEmail: undefined,
       companyWebsite: undefined,
       companyContext: undefined,
+      industry: undefined,
+      industryVertical: undefined,
       coiHandling: undefined,
       agentHandle: undefined,
       onboardingComplete: false,

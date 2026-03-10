@@ -26,6 +26,7 @@ import type * as lib_aiClassifier from "../lib/aiClassifier.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_emailTemplate from "../lib/emailTemplate.js";
 import type * as lib_extraction from "../lib/extraction.js";
+import type * as lib_industries from "../lib/industries.js";
 import type * as lib_policyTypes from "../lib/policyTypes.js";
 import type * as lib_prompts from "../lib/prompts.js";
 import type * as migrations from "../migrations.js";
@@ -59,6 +60,7 @@ declare const fullApi: ApiFromModules<{
   "lib/auth": typeof lib_auth;
   "lib/emailTemplate": typeof lib_emailTemplate;
   "lib/extraction": typeof lib_extraction;
+  "lib/industries": typeof lib_industries;
   "lib/policyTypes": typeof lib_policyTypes;
   "lib/prompts": typeof lib_prompts;
   migrations: typeof migrations;

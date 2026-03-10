@@ -21,6 +21,7 @@ interface Policy {
   premium?: string;
   insuredName: string;
   extractionStatus: string;
+  isDemo?: boolean;
 }
 
 const TYPE_COLORS: Record<string, string> = {
@@ -150,8 +151,11 @@ export function PolicyTable({ policies }: { policies: Policy[] | undefined }) {
                     onClick={() => router.push(`/policies/${policy._id}`)}
                   >
                     <td className="px-4 py-2.5 whitespace-nowrap">
-                      <p className="text-body-sm text-foreground font-medium">
+                      <p className="text-body-sm text-foreground font-medium flex items-center gap-1.5">
                         {policy.policyNumber}
+                        {policy.isDemo && (
+                          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">Demo</span>
+                        )}
                       </p>
                       <p className="text-label-sm text-muted-foreground/60 font-mono">
                         {policy.insuredName}

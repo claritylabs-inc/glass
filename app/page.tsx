@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { useQuery, useMutation } from "convex/react";
+import { useQuery, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Nav } from "@/components/nav";
 import { StatsCards } from "@/components/stats-cards";
@@ -10,7 +10,7 @@ import { PolicyGroupedView } from "@/components/policy-grouped-view";
 import { PolicyFilters } from "@/components/policy-filters";
 import { FadeIn } from "@/components/ui/fade-in";
 import { PillButton } from "@/components/ui/pill-button";
-import { ArrowRight, Asterisk, Copy, Check } from "lucide-react";
+import { ArrowRight, Asterisk, Copy, Check, X, Loader2 } from "lucide-react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -24,8 +24,12 @@ export default function DashboardPage() {
   const policies = useQuery(api.policies.list, {});
   const viewer = useQuery(api.users.viewer);
   const agentStats = useQuery(api.agentConversations.stats);
-  const seedData = useMutation(api.seed.seed);
+  const seedData = useAction(api.seed.seed);
+  const hasDemoDataResult = useQuery(api.seed.hasDemoData);
   const [emailCopied, setEmailCopied] = useState(false);
+  const hasDemo = hasDemoDataResult === true;
+  const [demoBannerDismissed, setDemoBannerDismissed] = useState(false);
+  const [seeding, setSeeding] = useState(false);
 
   const [activeTab, setActiveTab] = useState("all");
   const [selectedType, setSelectedType] = useState("");
@@ -77,13 +81,35 @@ export default function DashboardPage() {
               </div>
               {policies && policies.length === 0 && (
                 <div className="hidden md:block">
-                  <PillButton onClick={() => seedData({})}>Seed Demo Data <ArrowRight className="w-3 h-3" /></PillButton>
+                  <PillButton onClick={async () => { setSeeding(true); try { await seedData({}); } finally { setSeeding(false); } }} disabled={seeding}>
+                    {seeding ? <><Loader2 className="w-3 h-3 animate-spin" /> Generating...</> : <>Seed Demo Data <ArrowRight className="w-3 h-3" /></>}
+                  </PillButton>
                 </div>
               )}
             </div>
           </FadeIn>
 
           <StatsCards stats={stats} />
+
+          {/* Demo data banner */}
+          {hasDemo && !demoBannerDismissed && (
+            <FadeIn when={true} staggerIndex={0} duration={0.4}>
+              <div className="flex items-center gap-3 px-4 py-2.5 rounded-lg border border-amber-200 bg-amber-50/60 mb-4">
+                <p className="text-label-sm text-amber-700 flex-1">
+                  You&apos;re viewing demo data.{" "}
+                  <Link href="/profile" className="underline font-medium hover:text-amber-900">Remove demo data</Link>{" "}
+                  from Settings when you&apos;re ready.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setDemoBannerDismissed(true)}
+                  className="text-amber-500 hover:text-amber-700 transition-colors cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </FadeIn>
+          )}
 
           {/* Agent card */}
           {viewer && (
@@ -202,7 +228,9 @@ export default function DashboardPage() {
 
       {policies && policies.length === 0 && (
         <FixedMobileFooter>
-          <PillButton onClick={() => seedData({})}>Seed Demo Data <ArrowRight className="w-3 h-3" /></PillButton>
+          <PillButton onClick={async () => { setSeeding(true); try { await seedData({}); } finally { setSeeding(false); } }} disabled={seeding}>
+            {seeding ? <><Loader2 className="w-3 h-3 animate-spin" /> Generating...</> : <>Seed Demo Data <ArrowRight className="w-3 h-3" /></>}
+          </PillButton>
         </FixedMobileFooter>
       )}
     </div>
