@@ -899,41 +899,46 @@ export default function AgentPage() {
             <>
               {/* Agent email + help */}
               <FadeIn when={true} staggerIndex={1} duration={0.6}>
-                <div className="rounded-lg border border-foreground/6 bg-white/60 p-5 mb-6">
-                  <div className="flex items-center justify-between mb-3">
-                    <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">
-                      Your agent email
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const next = !helpDismissed;
-                        setHelpDismissed(next);
-                        try { localStorage.setItem("agent-help-dismissed", next ? "1" : ""); } catch {}
-                      }}
-                      className="text-[11px] text-muted-foreground/40 hover:text-muted-foreground transition-colors cursor-pointer"
-                    >
-                      {helpDismissed ? "Show Help" : "Hide Help"}
-                    </button>
+                <div className="rounded-lg border border-foreground/6 bg-white/60 p-4 mb-6">
+                  <div className="space-y-4">
+                    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+                      <div className="flex items-center justify-between md:justify-start md:gap-5">
+                        <div className="flex items-center gap-2">
+                          <Asterisk className="w-4 h-4 text-[#A0D2FA] shrink-0" />
+                          <span className="text-sm font-semibold text-foreground shrink-0">Clarity Agent</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const next = !helpDismissed;
+                            setHelpDismissed(next);
+                            try { localStorage.setItem("agent-help-dismissed", next ? "1" : ""); } catch {}
+                          }}
+                          className="inline-flex items-center gap-1 text-[11px] text-muted-foreground/40 hover:text-muted-foreground transition-colors cursor-pointer"
+                        >
+                          <HelpCircle className="w-3 h-3" />
+                          {helpDismissed ? "Show Help" : "Hide Help"}
+                        </button>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(agentEmail!);
+                          setCopied(true);
+                          setTimeout(() => setCopied(false), 2000);
+                          toast.success("Copied to clipboard");
+                        }}
+                        className="inline-flex items-center gap-1 text-xs font-mono text-muted-foreground hover:text-foreground/70 transition-colors cursor-pointer truncate min-w-0"
+                      >
+                        <span className="truncate">{agentEmail}</span>
+                        {copied ? (
+                          <Check className="w-3 h-3 text-emerald-600 shrink-0" />
+                        ) : (
+                          <Copy className="w-3 h-3 text-muted-foreground/30 shrink-0" />
+                        )}
+                      </button>
+                    </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      navigator.clipboard.writeText(agentEmail!);
-                      setCopied(true);
-                      setTimeout(() => setCopied(false), 2000);
-                      toast.success("Copied to clipboard");
-                    }}
-                    className="w-full flex items-center gap-3 px-4 py-3 rounded-lg bg-foreground/[0.03] border border-foreground/6 hover:border-foreground/12 transition-colors cursor-pointer group"
-                  >
-                    <Asterisk className="w-4 h-4 text-[#A0D2FA] shrink-0" />
-                    <span className="text-body-sm font-mono font-medium text-foreground flex-1 text-left truncate">{agentEmail}</span>
-                    {copied ? (
-                      <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                    ) : (
-                      <Copy className="w-3.5 h-3.5 text-muted-foreground/30 group-hover:text-muted-foreground shrink-0 transition-colors" />
-                    )}
-                  </button>
                   {!helpDismissed && (
                     <div className="mt-4">
                       <ModeExplainerCards companyDomains={companyDomains} />

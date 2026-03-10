@@ -127,35 +127,33 @@ export default function DashboardPage() {
                   className="rounded-lg border border-foreground/6 bg-white/60 p-4 mb-6 cursor-pointer"
                 >
                   {viewer.agentHandle ? (
-                    <div className="flex items-center justify-between flex-wrap gap-3">
-                      <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-full bg-foreground/5 flex items-center justify-center">
-                          <Asterisk className="w-4 h-4 text-[#A0D2FA]" />
+                    <div className="space-y-4">
+                      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 md:gap-2 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <Asterisk className="w-4 h-4 text-[#A0D2FA] shrink-0" />
+                          <span className="text-sm font-semibold text-foreground shrink-0">Clarity Agent</span>
                         </div>
-                        <div>
-                          <p className="text-label-sm text-muted-foreground">Clarity Agent</p>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              navigator.clipboard.writeText(`${viewer.agentHandle}@${AGENT_DOMAIN}`);
-                              setEmailCopied(true);
-                              setTimeout(() => setEmailCopied(false), 2000);
-                              toast.success("Copied to clipboard");
-                            }}
-                            className="inline-flex items-center gap-1.5 text-body-sm font-mono font-medium text-foreground hover:text-foreground/70 transition-colors cursor-pointer"
-                          >
-                            {viewer.agentHandle}@{AGENT_DOMAIN}
-                            {emailCopied ? (
-                              <Check className="w-3 h-3 text-emerald-600" />
-                            ) : (
-                              <Copy className="w-3 h-3 text-muted-foreground/30" />
-                            )}
-                          </button>
-                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            navigator.clipboard.writeText(`${viewer.agentHandle}@${AGENT_DOMAIN}`);
+                            setEmailCopied(true);
+                            setTimeout(() => setEmailCopied(false), 2000);
+                            toast.success("Copied to clipboard");
+                          }}
+                          className="inline-flex items-center gap-1 text-xs font-mono text-muted-foreground hover:text-foreground/70 transition-colors cursor-pointer truncate min-w-0"
+                        >
+                          <span className="truncate">{viewer.agentHandle}@{AGENT_DOMAIN}</span>
+                          {emailCopied ? (
+                            <Check className="w-3 h-3 text-emerald-600 shrink-0" />
+                          ) : (
+                            <Copy className="w-3 h-3 text-muted-foreground/30 shrink-0" />
+                          )}
+                        </button>
                       </div>
-                      <div className="flex items-center gap-4">
+                      <div className="flex items-center justify-between">
                         {agentStats && (
                           <span className="text-label-sm text-muted-foreground/50">
                             {agentStats.total} conversation{agentStats.total !== 1 ? "s" : ""}
@@ -167,11 +165,9 @@ export default function DashboardPage() {
                       </div>
                     </div>
                   ) : (
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-full bg-foreground/5 flex items-center justify-center">
-                        <Asterisk className="w-4 h-4 text-[#A0D2FA]" />
-                      </div>
-                      <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <Asterisk className="w-4 h-4 text-[#A0D2FA] shrink-0" />
+                      <div className="flex-1 min-w-0">
                         <p className="text-body-sm font-medium text-foreground">
                           Set Up Clarity Agent
                         </p>
@@ -179,7 +175,7 @@ export default function DashboardPage() {
                           Get a dedicated email for policy questions
                         </p>
                       </div>
-                      <ArrowRight className="w-4 h-4 text-muted-foreground/30" />
+                      <ArrowRight className="w-4 h-4 text-muted-foreground/30 shrink-0" />
                     </div>
                   )}
                 </motion.div>
