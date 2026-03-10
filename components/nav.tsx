@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { useQuery } from "convex/react";
 import { useAuthActions } from "@convex-dev/auth/react";
 import { api } from "@/convex/_generated/api";
-import { LayoutDashboard, FileText, Mail, Asterisk, Menu, X, LogOut, Settings } from "lucide-react";
+import { LayoutDashboard, FileText, Mail, Asterisk, Menu, X, LogOut, Settings, User } from "lucide-react";
 import { LogoIcon } from "@/components/ui/logo-icon";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -28,7 +28,10 @@ export function Nav() {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
   const viewer = useQuery(api.users.viewer);
+  const viewerOrg = useQuery(api.orgs.viewerOrg);
   const { signOut } = useAuthActions();
+
+  const isAdmin = viewerOrg?.membership?.role === "admin";
 
   useEffect(() => {
     setMenuOpen(false);
@@ -93,22 +96,42 @@ export function Nav() {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" sideOffset={8} className="min-w-[200px]">
                 <div className="px-2 py-2">
-                  <p className="text-body-sm font-medium text-foreground truncate">
-                    {viewer.name || viewer.email}
-                  </p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-body-sm font-medium text-foreground truncate">
+                      {viewer.name || viewer.email}
+                    </p>
+                    {viewerOrg?.membership && (
+                      <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/50 bg-foreground/5 px-1.5 py-0.5 rounded">
+                        {viewerOrg.membership.role}
+                      </span>
+                    )}
+                  </div>
                   {viewer.name && viewer.email && (
                     <p className="text-label-sm text-muted-foreground truncate">
                       {viewer.email}
+                    </p>
+                  )}
+                  {viewerOrg?.org?.name && (
+                    <p className="text-label-sm text-muted-foreground/50 truncate mt-0.5">
+                      {viewerOrg.org.name}
                     </p>
                   )}
                 </div>
                 <DropdownMenuSeparator />
                 <Link href="/profile">
                   <DropdownMenuItem className="cursor-pointer gap-2">
-                    <Settings className="w-3.5 h-3.5 text-muted-foreground" />
+                    <User className="w-3.5 h-3.5 text-muted-foreground" />
                     Profile
                   </DropdownMenuItem>
                 </Link>
+                {isAdmin && (
+                  <Link href="/settings">
+                    <DropdownMenuItem className="cursor-pointer gap-2">
+                      <Settings className="w-3.5 h-3.5 text-muted-foreground" />
+                      Settings
+                    </DropdownMenuItem>
+                  </Link>
+                )}
                 <DropdownMenuItem
                   className="cursor-pointer gap-2"
                   onClick={() => signOut()}

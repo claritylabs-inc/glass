@@ -1,7 +1,8 @@
 import { v } from "convex/values";
 import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server";
-import { internal } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import { requireAuth } from "./lib/auth";
+import { requireOrgAccess } from "./lib/orgAuth";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { Id } from "./_generated/dataModel";
@@ -13,16 +14,21 @@ export const seed = action({
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("Not authenticated");
 
+    // Get org membership
+    const orgData = await ctx.runQuery(api.orgs.viewerOrg);
+    const orgId = orgData?.org?._id;
+
     // Check if user already has seeded data
     const existing = await ctx.runQuery(internal.seed.hasExistingConnection, { userId });
     if (existing) return "Already seeded";
 
-    // Get user profile for context
+    // Get org or user profile for context
+    const org = orgId ? await ctx.runQuery(internal.orgs.getInternal, { id: orgId }) : null;
     const user = await ctx.runQuery(internal.users.getInternal, { id: userId });
-    const companyName = user?.companyName || "Demo Company";
-    const companyContext = user?.companyContext || "";
-    const industry = user?.industry || "";
-    const industryVertical = user?.industryVertical || "";
+    const companyName = org?.name || user?.companyName || "Demo Company";
+    const companyContext = org?.context || user?.companyContext || "";
+    const industry = org?.industry || user?.industry || "";
+    const industryVertical = org?.industryVertical || user?.industryVertical || "";
 
     let seedData: SeedPayload;
 
@@ -40,6 +46,7 @@ export const seed = action({
 
     await ctx.runMutation(internal.seed.insertSeedData, {
       userId,
+      orgId,
       data: seedData,
     });
 
@@ -63,13 +70,13 @@ export const hasExistingConnection = internalQuery({
 export const removeDemoData = mutation({
   args: {},
   handler: async (ctx) => {
-    const userId = await requireAuth(ctx);
+    const { orgId } = await requireOrgAccess(ctx);
     let removed = 0;
 
     // Delete demo policies + their stored files
     const policies = await ctx.db
       .query("policies")
-      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .withIndex("by_orgId", (q) => q.eq("orgId", orgId))
       .collect();
     for (const policy of policies) {
       if (policy.isDemo) {
@@ -82,7 +89,7 @@ export const removeDemoData = mutation({
     // Delete demo emails
     const emails = await ctx.db
       .query("emails")
-      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .withIndex("by_orgId", (q) => q.eq("orgId", orgId))
       .collect();
     for (const email of emails) {
       if (email.isDemo) {
@@ -94,7 +101,7 @@ export const removeDemoData = mutation({
     // Delete demo connections
     const connections = await ctx.db
       .query("emailConnections")
-      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .withIndex("by_orgId", (q) => q.eq("orgId", orgId))
       .collect();
     for (const conn of connections) {
       if (conn.isDemo) {
@@ -111,10 +118,10 @@ export const removeDemoData = mutation({
 export const hasDemoData = query({
   args: {},
   handler: async (ctx) => {
-    const userId = await requireAuth(ctx);
+    const { orgId } = await requireOrgAccess(ctx);
     const policy = await ctx.db
       .query("policies")
-      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .withIndex("by_orgId", (q) => q.eq("orgId", orgId))
       .filter((q) => q.eq(q.field("isDemo"), true))
       .first();
     return !!policy;
@@ -125,14 +132,16 @@ export const hasDemoData = query({
 export const insertSeedData = internalMutation({
   args: {
     userId: v.id("users"),
+    orgId: v.optional(v.id("organizations")),
     data: v.any(),
   },
-  handler: async (ctx, { userId, data }) => {
+  handler: async (ctx, { userId, orgId, data }) => {
     const seedData = data as SeedPayload;
 
     // Insert connection
     const connectionId = await ctx.db.insert("emailConnections", {
       userId,
+      orgId,
       label: seedData.connection.label,
       imapHost: "imap.claritylabs.inc",
       imapPort: 993,
@@ -151,6 +160,7 @@ export const insertSeedData = internalMutation({
       const e = seedData.emails[i];
       emailIds[i] = await ctx.db.insert("emails", {
         userId,
+        orgId,
         connectionId,
         messageId: `msg-${i + 1}@demo.claritylabs.inc`,
         subject: e.subject,
@@ -171,6 +181,7 @@ export const insertSeedData = internalMutation({
     for (const p of seedData.policies) {
       await ctx.db.insert("policies", {
         userId,
+        orgId,
         emailId: emailIds[p.emailIdx],
         carrier: p.carrier,
         ...(p.mga ? { mga: p.mga } : {}),

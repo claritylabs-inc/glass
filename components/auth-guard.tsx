@@ -9,6 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 const PUBLIC_PATHS = ["/login", "/signup"];
 const ONBOARDING_PATH = "/onboarding";
+const ADMIN_PATHS = ["/settings"];
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useConvexAuth();
@@ -17,9 +18,11 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
 
   const isPublic = PUBLIC_PATHS.some((p) => pathname === p);
   const isOnboarding = pathname === ONBOARDING_PATH;
+  const isAdminPath = ADMIN_PATHS.some((p) => pathname.startsWith(p));
 
   // Only query viewer when authenticated
   const viewer = useQuery(api.users.viewer, isAuthenticated ? {} : "skip");
+  const viewerOrg = useQuery(api.orgs.viewerOrg, isAuthenticated ? {} : "skip");
 
   useEffect(() => {
     if (isLoading) return;
@@ -41,7 +44,15 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
         return;
       }
     }
-  }, [isLoading, isAuthenticated, isPublic, isOnboarding, viewer, router, pathname]);
+
+    // Redirect non-admins away from admin-only paths
+    if (isAuthenticated && viewerOrg !== undefined && isAdminPath) {
+      if (!viewerOrg || viewerOrg.membership.role !== "admin") {
+        router.replace("/");
+        return;
+      }
+    }
+  }, [isLoading, isAuthenticated, isPublic, isOnboarding, isAdminPath, viewer, viewerOrg, router, pathname]);
 
   if (isLoading || (isAuthenticated && viewer === undefined)) {
     if (isPublic) return null;
@@ -76,6 +87,11 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
 
   // Waiting for redirect away from onboarding
   if (isAuthenticated && viewer && viewer.onboardingComplete && isOnboarding) {
+    return null;
+  }
+
+  // Waiting for redirect away from admin paths
+  if (isAdminPath && viewerOrg !== undefined && (!viewerOrg || viewerOrg.membership.role !== "admin")) {
     return null;
   }
 

@@ -1,14 +1,14 @@
 import { v } from "convex/values";
 import { mutation, query, internalQuery } from "./_generated/server";
-import { requireAuth } from "./lib/auth";
+import { requireOrgAccess, requireOrgAdmin } from "./lib/orgAuth";
 
 export const list = query({
   args: {},
   handler: async (ctx) => {
-    const userId = await requireAuth(ctx);
+    const { orgId } = await requireOrgAccess(ctx);
     return await ctx.db
       .query("emailConnections")
-      .withIndex("by_userId", (idx) => idx.eq("userId", userId as any))
+      .withIndex("by_orgId", (idx) => idx.eq("orgId", orgId))
       .collect();
   },
 });
@@ -16,9 +16,9 @@ export const list = query({
 export const get = query({
   args: { id: v.id("emailConnections") },
   handler: async (ctx, args) => {
-    const userId = await requireAuth(ctx);
+    const { orgId } = await requireOrgAccess(ctx);
     const connection = await ctx.db.get(args.id);
-    if (!connection || connection.userId !== userId) return null;
+    if (!connection || connection.orgId !== orgId) return null;
     return connection;
   },
 });
@@ -40,10 +40,11 @@ export const create = mutation({
     password: v.string(),
   },
   handler: async (ctx, args) => {
-    const userId = await requireAuth(ctx);
+    const { userId, orgId } = await requireOrgAdmin(ctx);
     return await ctx.db.insert("emailConnections", {
       ...args,
-      userId: userId as any,
+      userId,
+      orgId,
     });
   },
 });
@@ -87,9 +88,9 @@ export const updateScanProgress = mutation({
 export const stopScan = mutation({
   args: { id: v.id("emailConnections") },
   handler: async (ctx, args) => {
-    const userId = await requireAuth(ctx);
+    const { orgId } = await requireOrgAccess(ctx);
     const connection = await ctx.db.get(args.id);
-    if (!connection || connection.userId !== userId) throw new Error("Not found");
+    if (!connection || connection.orgId !== orgId) throw new Error("Not found");
     await ctx.db.patch(args.id, {
       scanProgress: { phase: "complete" },
       lastScanStatus: "success" as const,
@@ -117,9 +118,9 @@ export const remove = mutation({
     deletePolicies: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    const userId = await requireAuth(ctx);
+    const { orgId } = await requireOrgAdmin(ctx);
     const connection = await ctx.db.get(args.id);
-    if (!connection || connection.userId !== userId) throw new Error("Not found");
+    if (!connection || connection.orgId !== orgId) throw new Error("Not found");
 
     // Find all emails for this connection
     const emails = await ctx.db
@@ -134,7 +135,7 @@ export const remove = mutation({
       // Delete policies linked to these emails
       const allPolicies = await ctx.db
         .query("policies")
-        .withIndex("by_userId", (idx) => idx.eq("userId", userId as any))
+        .withIndex("by_orgId", (idx) => idx.eq("orgId", orgId))
         .collect();
       for (const policy of allPolicies) {
         if (policy.emailId && emailIds.has(policy.emailId)) {
@@ -156,9 +157,9 @@ export const remove = mutation({
 export const countLinkedPolicies = query({
   args: { id: v.id("emailConnections") },
   handler: async (ctx, args) => {
-    const userId = await requireAuth(ctx);
+    const { orgId } = await requireOrgAccess(ctx);
     const connection = await ctx.db.get(args.id);
-    if (!connection || connection.userId !== userId) return { emailCount: 0, policyCount: 0 };
+    if (!connection || connection.orgId !== orgId) return { emailCount: 0, policyCount: 0 };
 
     const emails = await ctx.db
       .query("emails")
@@ -170,7 +171,7 @@ export const countLinkedPolicies = query({
 
     const allPolicies = await ctx.db
       .query("policies")
-      .withIndex("by_userId", (idx) => idx.eq("userId", userId as any))
+      .withIndex("by_orgId", (idx) => idx.eq("orgId", orgId))
       .collect();
     const linked = allPolicies.filter(
       (p) => p.emailId && emailIds.has(p.emailId) && p.extractionStatus === "complete"

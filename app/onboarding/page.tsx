@@ -33,8 +33,10 @@ const AGENT_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "agent.claritylabs.
 export default function OnboardingPage() {
   const router = useRouter();
   const viewer = useQuery(api.users.viewer);
+  const viewerOrg = useQuery(api.orgs.viewerOrg);
   const connections = useQuery(api.connections.list);
   const updateProfile = useMutation(api.users.updateProfile);
+  const updateOrg = useMutation(api.orgs.updateOrg);
   const completeOnboarding = useMutation(api.users.completeOnboarding);
   const seedData = useAction(api.seed.seed);
   const extractCompanyInfo = useAction(api.actions.extractCompanyInfo.extractCompanyInfo);
@@ -74,17 +76,19 @@ export default function OnboardingPage() {
     }
   }, []);
 
-  // Pre-fill from viewer
+  // Pre-fill from org (preferred) or viewer
   useEffect(() => {
     if (viewer) {
       setName(viewer.name ?? "");
-      setCompanyName(viewer.companyName ?? "");
-      setCompanyWebsite(viewer.companyWebsite ?? "");
-      setCompanyContext(viewer.companyContext ?? "");
-      setIndustry(viewer.industry ?? "");
-      setIndustryVertical(viewer.industryVertical ?? "");
+      // Prefer org fields if available
+      const org = viewerOrg?.org;
+      setCompanyName(org?.name ?? viewer.companyName ?? "");
+      setCompanyWebsite(org?.website ?? viewer.companyWebsite ?? "");
+      setCompanyContext(org?.context ?? viewer.companyContext ?? "");
+      setIndustry(org?.industry ?? viewer.industry ?? "");
+      setIndustryVertical(org?.industryVertical ?? viewer.industryVertical ?? "");
     }
-  }, [viewer]);
+  }, [viewer, viewerOrg]);
 
   useEffect(() => { autoResize(); }, [companyContext, autoResize]);
 
@@ -101,6 +105,15 @@ export default function OnboardingPage() {
       if (companyWebsite) updates.companyWebsite = companyWebsite;
       if (companyContext) updates.companyContext = companyContext;
       await updateProfile(updates);
+
+      // Also save to org if available
+      if (viewerOrg?.org) {
+        const orgUpdates: Record<string, string> = {};
+        if (companyName) orgUpdates.name = companyName;
+        if (companyWebsite) orgUpdates.website = companyWebsite;
+        if (companyContext) orgUpdates.context = companyContext;
+        await updateOrg(orgUpdates);
+      }
 
       let url = companyWebsite;
       if (!url.startsWith("http")) url = "https://" + url;
@@ -124,14 +137,28 @@ export default function OnboardingPage() {
   async function handleStep1Next() {
     setSavingProfile(true);
     try {
-      const updates: Record<string, string> = {};
-      if (name) updates.name = name;
-      if (companyName) updates.companyName = companyName;
-      if (companyWebsite) updates.companyWebsite = companyWebsite;
-      if (companyContext) updates.companyContext = companyContext;
-      if (industry) (updates as any).industry = industry;
-      if (industryVertical) (updates as any).industryVertical = industryVertical;
-      await updateProfile(updates);
+      // Save personal fields to user profile
+      const profileUpdates: Record<string, string> = {};
+      if (name) profileUpdates.name = name;
+      // Also save company fields to user profile for backward compat during transition
+      if (companyName) profileUpdates.companyName = companyName;
+      if (companyWebsite) profileUpdates.companyWebsite = companyWebsite;
+      if (companyContext) profileUpdates.companyContext = companyContext;
+      if (industry) (profileUpdates as any).industry = industry;
+      if (industryVertical) (profileUpdates as any).industryVertical = industryVertical;
+      await updateProfile(profileUpdates);
+
+      // Also save company fields to org if org exists
+      if (viewerOrg?.org) {
+        const orgUpdates: Record<string, string> = {};
+        if (companyName) orgUpdates.name = companyName;
+        if (companyWebsite) orgUpdates.website = companyWebsite;
+        if (companyContext) orgUpdates.context = companyContext;
+        if (industry) orgUpdates.industry = industry;
+        if (industryVertical) orgUpdates.industryVertical = industryVertical;
+        await updateOrg(orgUpdates);
+      }
+
       setCurrentStep(1);
     } finally {
       setSavingProfile(false);
@@ -448,14 +475,14 @@ export default function OnboardingPage() {
           {/* Step 3: AI Email Agent */}
           {currentStep === 2 && (
             <div className="space-y-6">
-              {viewer?.agentHandle ? (
+              {(viewerOrg?.org?.agentHandle ?? viewer?.agentHandle) ? (
                 <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-4">
                   <div className="flex items-center gap-2 mb-1.5">
                     <Check className="w-4 h-4 text-emerald-600 shrink-0" />
                     <p className="text-body-sm font-medium text-foreground">Agent email claimed</p>
                   </div>
                   <p className="text-label-sm font-mono text-emerald-700 pl-6">
-                    {viewer.agentHandle}@{AGENT_DOMAIN}
+                    {viewerOrg?.org?.agentHandle ?? viewer?.agentHandle}@{AGENT_DOMAIN}
                   </p>
                 </div>
               ) : (
@@ -526,7 +553,7 @@ export default function OnboardingPage() {
                   >
                     Skip for now
                   </button>
-                  {viewer?.agentHandle ? (
+                  {(viewerOrg?.org?.agentHandle ?? viewer?.agentHandle) ? (
                     <PillButton onClick={() => setCurrentStep(3)}>
                       Next
                       <ArrowRight className="w-3.5 h-3.5" />

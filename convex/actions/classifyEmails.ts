@@ -10,6 +10,7 @@ export const classifyEmails = internalAction({
   args: {
     connectionId: v.id("emailConnections"),
     userId: v.id("users"),
+    orgId: v.optional(v.id("organizations")),
   },
   handler: async (ctx, args) => {
     // Get unprocessed emails for this connection (internal query — no auth needed)
@@ -22,9 +23,11 @@ export const classifyEmails = internalAction({
 
     // Get email IDs that already have policies so we can skip them
     const emailIdsWithPolicies = new Set(
-      await ctx.runQuery(internal.policies.emailIdsWithPoliciesInternal, {
-        userId: args.userId,
-      })
+      args.orgId
+        ? await ctx.runQuery(internal.policies.emailIdsWithPoliciesInternal, {
+            orgId: args.orgId,
+          })
+        : []
     );
 
     const anthropic = new Anthropic();
@@ -62,12 +65,10 @@ export const classifyEmails = internalAction({
         let confidence = 0;
 
         if (keywordMatch && senderMatch) {
-          // High confidence keyword match — skip AI
           isInsurance = true;
           reason = "Keyword + sender match";
           confidence = 0.95;
         } else if (keywordMatch || senderMatch) {
-          // Ambiguous — use Claude Haiku
           try {
             const response = await anthropic.messages.create({
               model: "claude-haiku-4-5-20251001",
@@ -92,7 +93,6 @@ Date: ${email.date}`,
             reason = parsed.reason;
             confidence = parsed.confidence;
           } catch {
-            // Fallback to keyword match
             isInsurance = keywordMatch || senderMatch;
             reason = "AI classification failed, using heuristic";
             confidence = 0.6;
@@ -117,6 +117,7 @@ Date: ${email.date}`,
             emailId: email._id,
             connectionId: args.connectionId,
             userId: args.userId,
+            orgId: args.orgId,
           });
           policiesFound++;
         }
@@ -140,7 +141,6 @@ Date: ${email.date}`,
       }
     } catch (error: any) {
       console.error("Classification failed:", error.message);
-      // Don't leave progress stuck — mark complete on error
       await ctx.runMutation(api.connections.updateScanProgress, {
         id: args.connectionId,
         scanProgress: {
@@ -163,7 +163,6 @@ Date: ${email.date}`,
         lastScanStatus: "success",
         policiesExtracted: (connection?.policiesExtracted ?? 0) + policiesFound,
       });
-      // Set extracting phase — extractPolicy actions will update as they complete
       await ctx.runMutation(api.connections.updateScanProgress, {
         id: args.connectionId,
         scanProgress: {
@@ -176,7 +175,6 @@ Date: ${email.date}`,
         },
       });
     } else {
-      // No policies to extract — mark complete
       await ctx.runMutation(api.connections.updateScanProgress, {
         id: args.connectionId,
         scanProgress: {

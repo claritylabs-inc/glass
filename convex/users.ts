@@ -34,7 +34,6 @@ export const seedUsers = mutation({
   handler: async (ctx, args) => {
     const created: string[] = [];
     for (const u of args.users) {
-      // Skip if user with this email already exists
       const existing = await ctx.db
         .query("users")
         .withIndex("email", (q) => q.eq("email", u.email))
@@ -54,9 +53,12 @@ export const seedUsers = mutation({
   },
 });
 
+// Personal profile fields only — company fields moved to org settings
 export const updateProfile = mutation({
   args: {
     name: v.optional(v.string()),
+    title: v.optional(v.string()),
+    // Legacy company fields — still accepted during transition
     companyName: v.optional(v.string()),
     insuranceBroker: v.optional(v.string()),
     brokerContactName: v.optional(v.string()),
@@ -80,9 +82,19 @@ export const completeOnboarding = mutation({
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("Not authenticated");
     await ctx.db.patch(userId, { onboardingComplete: true });
+
+    // Also mark org as onboarded if user has one
+    const membership = await ctx.db
+      .query("orgMemberships")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .first();
+    if (membership) {
+      await ctx.db.patch(membership.orgId, { onboardingComplete: true });
+    }
   },
 });
 
+// Legacy: keep for backward compat during transition
 export const checkHandleAvailability = query({
   args: { handle: v.string() },
   handler: async (ctx, args) => {
@@ -93,30 +105,55 @@ export const checkHandleAvailability = query({
     if (!/^[a-z][a-z0-9-]*[a-z0-9]$/.test(normalized) && normalized.length > 1) {
       return { available: false, normalized, reason: "Must start with a letter and end with a letter or number" };
     }
-    const existing = await ctx.db
+    // Check both tables
+    const existingOrg = await ctx.db
+      .query("organizations")
+      .withIndex("by_agentHandle", (q) => q.eq("agentHandle", normalized))
+      .first();
+    const existingUser = await ctx.db
       .query("users")
       .withIndex("by_agentHandle", (q) => q.eq("agentHandle", normalized))
       .first();
-    return { available: !existing, normalized, reason: existing ? "Handle already taken" : undefined };
+    const taken = !!(existingOrg || existingUser);
+    return { available: !taken, normalized, reason: taken ? "Handle already taken" : undefined };
   },
 });
 
+// Legacy: keep for backward compat during transition
 export const claimAgentHandle = mutation({
   args: { handle: v.string() },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("Not authenticated");
-    const user = await ctx.db.get(userId);
-    if (user?.agentHandle) throw new Error("Handle already claimed");
+
+    // Prefer setting on org if user has one
+    const membership = await ctx.db
+      .query("orgMemberships")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .first();
+
     const normalized = args.handle.toLowerCase().replace(/[^a-z0-9-]/g, "");
     if (normalized.length < 3 || normalized.length > 30) {
       throw new Error("Handle must be 3-30 characters");
     }
-    const existing = await ctx.db
+
+    const existingOrg = await ctx.db
+      .query("organizations")
+      .withIndex("by_agentHandle", (q) => q.eq("agentHandle", normalized))
+      .first();
+    const existingUser = await ctx.db
       .query("users")
       .withIndex("by_agentHandle", (q) => q.eq("agentHandle", normalized))
       .first();
-    if (existing) throw new Error("Handle already taken");
+    if (existingOrg || existingUser) throw new Error("Handle already taken");
+
+    if (membership) {
+      const org = await ctx.db.get(membership.orgId);
+      if (org && !org.agentHandle) {
+        await ctx.db.patch(membership.orgId, { agentHandle: normalized });
+      }
+    }
+    // Also set on user for backward compat
     await ctx.db.patch(userId, { agentHandle: normalized });
     return normalized;
   },
@@ -138,11 +175,17 @@ export const resetAccount = mutation({
     const user = await ctx.db.get(userId);
     if (!user?.isAdmin) throw new Error("Not authorized");
 
-    // Delete all policies + their stored files
-    const policies = await ctx.db
-      .query("policies")
+    // Get user's org
+    const membership = await ctx.db
+      .query("orgMemberships")
       .withIndex("by_userId", (q) => q.eq("userId", userId))
-      .collect();
+      .first();
+    const orgId = membership?.orgId;
+
+    // Delete all policies + their stored files (by org or user)
+    const policies = orgId
+      ? await ctx.db.query("policies").withIndex("by_orgId", (q) => q.eq("orgId", orgId)).collect()
+      : await ctx.db.query("policies").withIndex("by_userId", (q) => q.eq("userId", userId)).collect();
     for (const policy of policies) {
       if (policy.fileId) {
         await ctx.storage.delete(policy.fileId);
@@ -151,33 +194,30 @@ export const resetAccount = mutation({
     }
 
     // Delete all emails
-    const emails = await ctx.db
-      .query("emails")
-      .withIndex("by_userId", (q) => q.eq("userId", userId))
-      .collect();
+    const emails = orgId
+      ? await ctx.db.query("emails").withIndex("by_orgId", (q) => q.eq("orgId", orgId)).collect()
+      : await ctx.db.query("emails").withIndex("by_userId", (q) => q.eq("userId", userId)).collect();
     for (const email of emails) {
       await ctx.db.delete(email._id);
     }
 
     // Delete all connections
-    const connections = await ctx.db
-      .query("emailConnections")
-      .withIndex("by_userId", (q) => q.eq("userId", userId))
-      .collect();
+    const connections = orgId
+      ? await ctx.db.query("emailConnections").withIndex("by_orgId", (q) => q.eq("orgId", orgId)).collect()
+      : await ctx.db.query("emailConnections").withIndex("by_userId", (q) => q.eq("userId", userId)).collect();
     for (const conn of connections) {
       await ctx.db.delete(conn._id);
     }
 
     // Delete all agent conversations
-    const conversations = await ctx.db
-      .query("agentConversations")
-      .withIndex("by_userId", (q) => q.eq("userId", userId))
-      .collect();
+    const conversations = orgId
+      ? await ctx.db.query("agentConversations").withIndex("by_orgId", (q) => q.eq("orgId", orgId)).collect()
+      : await ctx.db.query("agentConversations").withIndex("by_userId", (q) => q.eq("userId", userId)).collect();
     for (const conv of conversations) {
       await ctx.db.delete(conv._id);
     }
 
-    // Reset profile fields, set onboarding incomplete
+    // Reset user profile fields
     await ctx.db.patch(userId, {
       companyName: undefined,
       insuranceBroker: undefined,
@@ -191,5 +231,22 @@ export const resetAccount = mutation({
       agentHandle: undefined,
       onboardingComplete: false,
     });
+
+    // Reset org if exists
+    if (orgId) {
+      await ctx.db.patch(orgId, {
+        name: "My Organization",
+        website: undefined,
+        context: undefined,
+        industry: undefined,
+        industryVertical: undefined,
+        insuranceBroker: undefined,
+        brokerContactName: undefined,
+        brokerContactEmail: undefined,
+        coiHandling: undefined,
+        agentHandle: undefined,
+        onboardingComplete: false,
+      });
+    }
   },
 });

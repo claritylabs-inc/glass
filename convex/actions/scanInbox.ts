@@ -29,10 +29,14 @@ export const scanInbox = action({
   },
   returns: v.any(),
   handler: async (ctx, args) => {
-    // Verify auth and get userId
+    // Verify auth and get userId + orgId
     const viewer = await ctx.runQuery(api.users.viewer);
     if (!viewer) throw new Error("Not authenticated");
     const userId = viewer._id;
+
+    // Get org membership
+    const orgData = await ctx.runQuery(api.orgs.viewerOrg);
+    const orgId = orgData?.org?._id;
 
     const connection = await ctx.runQuery(api.connections.get, {
       id: args.connectionId,
@@ -70,7 +74,7 @@ export const scanInbox = action({
           : new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
 
       const before = args.untilDate
-        ? new Date(new Date(args.untilDate).getTime() + 24 * 60 * 60 * 1000) // include the end date
+        ? new Date(new Date(args.untilDate).getTime() + 24 * 60 * 60 * 1000)
         : undefined;
 
       // Build IMAP search criteria
@@ -143,6 +147,7 @@ export const scanInbox = action({
       for (const email of emails) {
         await ctx.runMutation(api.emails.insert, {
           userId,
+          orgId,
           connectionId: args.connectionId,
           messageId: email.messageId,
           uid: email.uid,
@@ -171,7 +176,7 @@ export const scanInbox = action({
       await ctx.scheduler.runAfter(
         0,
         internal.actions.classifyEmails.classifyEmails,
-        { connectionId: args.connectionId, userId }
+        { connectionId: args.connectionId, userId, orgId }
       );
 
       return { emailsFound: inserted };

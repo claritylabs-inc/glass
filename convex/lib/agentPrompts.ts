@@ -21,7 +21,7 @@ export function buildSystemPrompt(
   siteUrl: string,
   companyName?: string,
   userName?: string,
-  coiHandling?: "broker" | "user" | "ignore",
+  coiHandling?: "broker" | "user" | "member" | "ignore",
   brokerName?: string,
   brokerContactName?: string,
   brokerContactEmail?: string,
@@ -97,7 +97,7 @@ ${buildCoverageGapGuidelines(userName)}`;
   if (mode !== "direct" && coiHandling === "broker" && brokerName && brokerContactEmail) {
     const contact = brokerContactName ? `${brokerContactName} at ${brokerName} (${brokerContactEmail})` : `${brokerName} (${brokerContactEmail})`;
     coiInstructions = `\n\nCOI REQUESTS:\n- If a certificate of insurance (COI) is requested, tell them to contact ${contact}.`;
-  } else if (mode !== "direct" && coiHandling === "user" && userName) {
+  } else if (mode !== "direct" && (coiHandling === "user" || coiHandling === "member") && userName) {
     coiInstructions = `\n\nCOI REQUESTS:\n- If a certificate of insurance (COI) is requested, tell them ${userName} (CC'd) can provide that directly.`;
   }
 
