@@ -28,6 +28,14 @@ export const retryExtraction = action({
 
     const mode = args.mode ?? "auto";
 
+    // Audit: re-extraction triggered
+    await ctx.runMutation(internal.policyAuditLog.append, {
+      policyId: args.policyId,
+      userId: viewer._id,
+      action: "re_extraction",
+      detail: `Mode: ${mode}`,
+    });
+
     // Reparse mode: only re-parse the saved raw response
     if (mode === "reparse" || mode === "auto") {
       if (policy.rawExtractionResponse) {

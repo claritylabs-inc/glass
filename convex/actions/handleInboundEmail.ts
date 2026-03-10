@@ -22,16 +22,16 @@ const CONSUMER_DOMAINS = new Set([
   "ymail.com", "gmx.com", "gmx.net",
 ]);
 
-function getCompanyDomains(user: { email?: string; companyWebsite?: string }): string[] {
+function getCompanyDomains(org: { website?: string }, memberEmails: string[]): string[] {
   const domains: string[] = [];
-  if (user.companyWebsite) {
+  if (org.website) {
     try {
-      const hostname = new URL(user.companyWebsite).hostname.replace(/^www\./, "");
+      const hostname = new URL(org.website).hostname.replace(/^www\./, "");
       if (!CONSUMER_DOMAINS.has(hostname)) domains.push(hostname);
     } catch { /* ignore invalid URLs */ }
   }
-  if (user.email) {
-    const domain = user.email.split("@")[1]?.toLowerCase();
+  for (const email of memberEmails) {
+    const domain = email.split("@")[1]?.toLowerCase();
     if (domain && !CONSUMER_DOMAINS.has(domain) && !domains.includes(domain)) {
       domains.push(domain);
     }
@@ -89,50 +89,30 @@ function findAgentHandle(addresses: string[]): string | null {
   return null;
 }
 
-/**
- * Strip inline quoted text from email body (the "On Mon, Jan 1 ... wrote:" chains).
- * Also strips lines starting with > which are quote markers.
- */
 function stripQuotedText(body: string): string {
-  // Match "On <date>... wrote:" pattern and everything after
   const onWrotePattern = /\r?\n\s*On .+wrote:\s*\r?\n[\s\S]*$/;
   let cleaned = body.replace(onWrotePattern, "");
-
-  // Also strip "---------- Forwarded message ----------" blocks
   cleaned = cleaned.replace(/\r?\n\s*-{5,}\s*Forwarded message\s*-{5,}[\s\S]*$/, "");
-
-  // Strip trailing lines that are all ">" quoted
   const lines = cleaned.split("\n");
   while (lines.length > 0 && /^\s*>/.test(lines[lines.length - 1])) {
     lines.pop();
   }
-
   return lines.join("\n").trimEnd();
 }
 
-/**
- * Extract the original sender from a forwarded email body.
- * Supports Gmail, Outlook, and Apple Mail forward formats.
- */
 function extractForwardedSender(body: string): string | null {
-  // Gmail: "---------- Forwarded message ----------\nFrom: Name <email>"
   const gmailMatch = body.match(
     /-{5,}\s*Forwarded message\s*-{5,}[\s\S]*?From:\s*(?:[^<]*<)?([^\s<>]+@[^\s<>]+)/i,
   );
   if (gmailMatch) return gmailMatch[1].toLowerCase();
-
-  // Apple Mail: "Begin forwarded message:\n...From: Name <email>"
   const appleMatch = body.match(
     /Begin forwarded message:[\s\S]*?From:\s*(?:[^<]*<)?([^\s<>]+@[^\s<>]+)/i,
   );
   if (appleMatch) return appleMatch[1].toLowerCase();
-
-  // Outlook: "From: Name <email>\nSent: ..."
   const outlookMatch = body.match(
     /From:\s*(?:[^<]*<)?([^\s<>]+@[^\s<>]+)[\s\S]*?Sent:\s*/i,
   );
   if (outlookMatch) return outlookMatch[1].toLowerCase();
-
   return null;
 }
 
@@ -158,7 +138,6 @@ function buildSignature(agentEmail: string, companyName?: string): { text: strin
 }
 
 async function fetchEmailContent(emailId: string): Promise<ReceivedEmailContent> {
-  // Resend's receiving API endpoint
   const res = await fetch(`https://api.resend.com/emails/receiving/${emailId}`, {
     headers: {
       Authorization: `Bearer ${process.env.AUTH_RESEND_KEY}`,
@@ -166,7 +145,6 @@ async function fetchEmailContent(emailId: string): Promise<ReceivedEmailContent>
   });
   if (!res.ok) {
     console.warn(`Failed to fetch from receiving API (${res.status}), trying sent emails API...`);
-    // Fallback to sent emails API
     const fallback = await fetch(`https://api.resend.com/emails/${emailId}`, {
       headers: {
         Authorization: `Bearer ${process.env.AUTH_RESEND_KEY}`,
@@ -211,7 +189,7 @@ export const processInbound = internalAction({
     const webhook: WebhookPayload = JSON.parse(args.payload);
     const data = webhook.data ?? webhook;
 
-    // Dedup: prevent processing the same inbound email twice
+    // Dedup
     const resendEmailId = data.email_id;
     if (resendEmailId) {
       const isDuplicate = await ctx.runQuery(
@@ -235,7 +213,7 @@ export const processInbound = internalAction({
       return;
     }
 
-    // Loop prevention: reject emails from agent domain
+    // Loop prevention
     if (fromEmail.endsWith(`@${getAgentDomain()}`)) {
       console.log("Loop prevention: ignoring email from agent domain", fromEmail);
       return;
@@ -248,13 +226,25 @@ export const processInbound = internalAction({
       return;
     }
 
-    // Resolve user
-    const user = await ctx.runQuery(
-      internal.agentConversations.getUserByHandle,
-      { handle },
-    );
-    if (!user) {
-      console.log("No user found for handle:", handle);
+    // Resolve org by handle (org-first, then legacy user fallback)
+    const org = await ctx.runQuery(internal.orgs.getByHandle, { handle });
+    if (!org) {
+      console.log("No organization found for handle:", handle);
+      return;
+    }
+
+    const orgId = org._id;
+
+    // Get all org members for domain detection and primary contact resolution
+    const orgMembers = await ctx.runQuery(internal.orgs.getMembersInternal, { orgId });
+    const memberEmails = orgMembers
+      .map((m: any) => m.user?.email)
+      .filter(Boolean) as string[];
+    const firstAdmin = orgMembers.find((m: any) => m.role === "admin");
+    const primaryUserId = org.primaryInsuranceContactId ?? firstAdmin?.userId;
+
+    if (!primaryUserId) {
+      console.log("No primary user found for org:", orgId);
       return;
     }
 
@@ -264,11 +254,6 @@ export const processInbound = internalAction({
     const body = stripQuotedText(rawBody);
     const bodyHtml = emailContent.html ?? undefined;
 
-    // Fetch user profile early (needed for mode detection + later use)
-    const userProfile = await ctx.runQuery(internal.users.getInternal, {
-      id: user._id,
-    });
-
     // Detect mode
     const agentAddress = `${handle}@${getAgentDomain()}`;
     const agentInTo = toAddresses.includes(agentAddress);
@@ -276,7 +261,7 @@ export const processInbound = internalAction({
     const otherToRecipients = toAddresses.filter((a) => a !== agentAddress);
 
     const senderDomain = fromEmail.split("@")[1]?.toLowerCase();
-    const companyDomains = getCompanyDomains(userProfile ?? {});
+    const companyDomains = getCompanyDomains(org, memberEmails);
     const isInternal = !!(senderDomain && companyDomains.includes(senderDomain));
 
     const subjectIsForward = /^Fwd?:/i.test(data.subject ?? "");
@@ -284,8 +269,6 @@ export const processInbound = internalAction({
     const isForwarded = subjectIsForward || bodyIsForward;
 
     const mode: "direct" | "cc" | "forward" | "unknown" =
-      // Forward detection takes priority for internal senders — they may have
-      // the agent in To or CC when forwarding depending on the email client.
       isInternal && isForwarded
         ? "forward"
         : agentInCc
@@ -296,7 +279,7 @@ export const processInbound = internalAction({
               ? "direct"
               : "unknown";
 
-    // Threading — extract headers
+    // Threading
     const messageId = data.message_id;
     const rawHeaders = emailContent.headers;
 
@@ -313,10 +296,9 @@ export const processInbound = internalAction({
     }
 
     const inReplyTo = getHeader("In-Reply-To");
-
     const subject = data.subject ?? "(no subject)";
 
-    // Resolve thread: try In-Reply-To header first, then fall back to subject matching
+    // Resolve thread
     let threadId: Id<"agentConversations"> | undefined;
     let threadRootMode: "direct" | "cc" | "forward" | "unknown" | undefined;
     if (inReplyTo) {
@@ -332,11 +314,10 @@ export const processInbound = internalAction({
       }
     }
 
-    // Fallback: match by subject line (handles Re: prefixes)
     if (!threadId) {
       const subjectMatch = await ctx.runQuery(
         internal.agentConversations.findThreadBySubject,
-        { userId: user._id, subject, fromEmail },
+        { orgId, subject, fromEmail },
       );
       if (subjectMatch) {
         threadId = subjectMatch.threadId ?? subjectMatch._id;
@@ -346,9 +327,6 @@ export const processInbound = internalAction({
       }
     }
 
-    // Inherit mode from thread root for follow-up messages.
-    // Domain guard: external senders (not on company domain) can never be "direct" —
-    // if an external sender ends up in a direct-detected situation, force to "cc".
     let effectiveMode = threadRootMode ?? mode;
     if (effectiveMode === "direct" && !isInternal) {
       effectiveMode = "unknown";
@@ -358,7 +336,8 @@ export const processInbound = internalAction({
     const conversationId = await ctx.runMutation(
       internal.agentConversations.insertInbound,
       {
-        userId: user._id,
+        userId: primaryUserId,
+        orgId,
         fromEmail,
         fromName,
         toAddresses,
@@ -379,13 +358,17 @@ export const processInbound = internalAction({
       id: conversationId,
     });
 
-    // Unknown mode: notify the user instead of replying to the sender
+    // Unknown mode: notify the primary insurance contact (or first admin)
     if (effectiveMode === "unknown") {
       try {
-        const agentAddress = `${handle}@${getAgentDomain()}`;
-        const userEmail = userProfile?.email;
-        if (!userEmail) {
-          throw new Error("User has no email address — cannot send notification");
+        const notifyUserId = org.primaryInsuranceContactId ?? firstAdmin?.userId;
+        let notifyEmail: string | undefined;
+        if (notifyUserId) {
+          const notifyUser = await ctx.runQuery(internal.users.getInternal, { id: notifyUserId });
+          notifyEmail = notifyUser?.email;
+        }
+        if (!notifyEmail) {
+          throw new Error("No user email found for notification");
         }
 
         const notificationBody = [
@@ -403,7 +386,7 @@ export const processInbound = internalAction({
           `Please reply to the original sender directly if a response is needed. The agent has not sent any reply.`,
         ].join("\n");
 
-        const signature = buildSignature(agentAddress, userProfile?.companyName);
+        const signature = buildSignature(agentAddress, org.name);
         const fullText = notificationBody + signature.text;
 
         const autoLink = (text: string) =>
@@ -418,7 +401,7 @@ export const processInbound = internalAction({
 
         const emailPayload: Record<string, unknown> = {
           from: `Clarity Agent <${agentAddress}>`,
-          to: userEmail,
+          to: notifyEmail,
           subject: notifSubject,
           text: fullText,
           html: fullHtml,
@@ -447,7 +430,7 @@ export const processInbound = internalAction({
         await ctx.runMutation(internal.agentConversations.updateResponse, {
           id: conversationId,
           responseBody: notificationBody,
-          responseTo: userEmail,
+          responseTo: notifyEmail,
           responseMessageId: sentMessageId,
         });
       } catch (error) {
@@ -462,25 +445,28 @@ export const processInbound = internalAction({
     }
 
     try {
-      // Fetch user's policies
+      // Fetch org's policies
       const policies = await ctx.runQuery(internal.policies.listAllInternal, {
-        userId: user._id,
+        orgId,
       });
 
       const siteUrl = process.env.SITE_URL ?? "http://localhost:3000";
 
-      // Build prompt
-      const userName = userProfile?.name?.split(/\s+/)[0];
+      // Get primary user profile for name reference
+      const primaryUser = await ctx.runQuery(internal.users.getInternal, { id: primaryUserId });
+      const userName = primaryUser?.name?.split(/\s+/)[0];
+
+      // Build prompt using org fields
       const systemPrompt = buildSystemPrompt(
         effectiveMode,
-        userProfile?.companyContext,
+        org.context,
         siteUrl,
-        userProfile?.companyName,
+        org.name,
         userName,
-        userProfile?.coiHandling,
-        userProfile?.insuranceBroker,
-        userProfile?.brokerContactName,
-        userProfile?.brokerContactEmail,
+        org.coiHandling as any,
+        org.insuranceBroker,
+        org.brokerContactName,
+        org.brokerContactEmail,
       );
       const { context: policyContext, relevantPolicyIds } = buildPolicyContext(
         policies,
@@ -495,7 +481,6 @@ export const processInbound = internalAction({
           internal.agentConversations.getThreadMessages,
           { threadId },
         );
-        // Add prior messages (exclude the one we just created)
         for (const msg of threadMessages) {
           if (msg._id === conversationId) continue;
           messages.push({
@@ -508,7 +493,6 @@ export const processInbound = internalAction({
         }
       }
 
-      // Add current message
       messages.push({
         role: "user",
         content: `Subject: ${subject}\n\nFrom: ${fromName ? `${fromName} <${fromEmail}>` : fromEmail}\n\n${body}`,
@@ -527,16 +511,12 @@ export const processInbound = internalAction({
         response.content[0].type === "text" ? response.content[0].text : "";
 
       // Domain guard: strip internal URLs from customer-facing replies
-      // This is the primary safety check — even if the LLM ignores the prompt,
-      // we never leak internal links to external recipients.
       if (effectiveMode === "cc" || effectiveMode === "forward") {
         const escapedSiteUrl = siteUrl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        // Strip markdown links with internal URLs: [text](internal-url) → text
         responseBody = responseBody.replace(
           new RegExp(`\\[([^\\]]+)\\]\\(${escapedSiteUrl}[^)]*\\)`, "g"),
           "$1",
         );
-        // Strip any remaining bare internal URLs
         responseBody = responseBody.replace(
           new RegExp(`${escapedSiteUrl}[^\\s)]*`, "g"),
           "[internal link removed]",
@@ -544,20 +524,14 @@ export const processInbound = internalAction({
       }
 
       // Build reply with signature
-      // Strip markdown links for plain text: [text](url) → text (url)
       const plainTextBody = responseBody.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, "$1 ($2)");
-      const signature = buildSignature(agentAddress, userProfile?.companyName);
+      const signature = buildSignature(agentAddress, org.name);
       const fullReplyText = plainTextBody + signature.text;
 
-      // Convert response body to HTML paragraphs
-      // 1. Convert markdown links [text](url) to <a> tags
-      // 2. Auto-link any remaining bare URLs as fallback
       const linkStyle = 'style="color:#2563eb;text-decoration:underline"';
       const convertLinks = (text: string) => {
-        // First: markdown links
         let result = text.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,
           `<a href="$2" ${linkStyle}>$1</a>`);
-        // Then: bare URLs not already inside an href
         result = result.replace(/(?<!href=")(https?:\/\/[^\s<)]+)/g,
           `<a href="$1" ${linkStyle}>$1</a>`);
         return result;
@@ -569,7 +543,7 @@ export const processInbound = internalAction({
       const fullReplyHtml = bodyHtmlContent + signature.html;
 
       // Determine reply recipients
-      const userEmail = userProfile?.email;
+      const primaryUserEmail = primaryUser?.email;
       let replyTo: string;
       let replyCc: string[] = [];
 
@@ -577,7 +551,6 @@ export const processInbound = internalAction({
         const originalSender = extractForwardedSender(rawBody);
         replyTo = originalSender ?? fromEmail;
         replyCc = [fromEmail];
-        // Remove the forwarder from CC if they ended up as replyTo (fallback case)
         if (replyTo === fromEmail) {
           replyCc = [];
         }
@@ -590,16 +563,14 @@ export const processInbound = internalAction({
         replyTo = fromEmail;
       }
 
-      // Always ensure the user is CC'd on cc/forward replies (they may not be
-      // in the address lists on follow-up messages from external senders)
-      if ((effectiveMode === "cc" || effectiveMode === "forward") && userEmail) {
-        if (replyTo !== userEmail && !replyCc.includes(userEmail)) {
-          replyCc.push(userEmail);
+      // Ensure user is CC'd on cc/forward replies
+      if ((effectiveMode === "cc" || effectiveMode === "forward") && primaryUserEmail) {
+        if (replyTo !== primaryUserEmail && !replyCc.includes(primaryUserEmail)) {
+          replyCc.push(primaryUserEmail);
         }
       }
 
       // Send reply via Resend
-      // Strip Fwd:/Fw: prefix for forward mode replies
       const cleanSubject = effectiveMode === "forward"
         ? subject.replace(/^Fwd?:\s*/i, "")
         : subject;
@@ -620,21 +591,16 @@ export const processInbound = internalAction({
       }
 
       // Threading headers
-      // For forward mode, thread against the original conversation, not the forwarded message.
-      // X-Forwarded-Message-Id (Gmail) gives the original Message-ID directly.
-      // References header contains the chain; the last entry is the most recent message.
       const replyHeaders: Record<string, string> = {};
       if (effectiveMode === "forward") {
         const xFwd = getHeader("X-Forwarded-Message-Id");
         const refs = getHeader("References");
-        // Pick the best original message ID: X-Forwarded-Message-Id > last in References > forwarded messageId
         const originalMessageId =
           xFwd ||
           (refs ? refs.trim().split(/\s+/).pop() : undefined) ||
           messageId;
         if (originalMessageId) {
           replyHeaders["In-Reply-To"] = originalMessageId;
-          // Preserve the full References chain so mail clients thread correctly
           replyHeaders["References"] = refs
             ? `${refs} ${originalMessageId}`
             : originalMessageId;
@@ -661,16 +627,14 @@ export const processInbound = internalAction({
         throw new Error(`Failed to send reply: ${resBody}`);
       }
 
-      // Extract response message ID for threading future replies
       let sentMessageId: string | undefined;
       try {
         const sendResult = JSON.parse(resBody);
         sentMessageId = sendResult.id;
       } catch {
-        // Non-critical — just means future replies won't thread perfectly
+        // Non-critical
       }
 
-      // Update conversation with response (store without signature for clean display)
       await ctx.runMutation(internal.agentConversations.updateResponse, {
         id: conversationId,
         responseBody,
@@ -682,6 +646,17 @@ export const processInbound = internalAction({
             ? (relevantPolicyIds as Id<"policies">[])
             : undefined,
       });
+
+      // Audit: log agent references to policies
+      for (const pId of relevantPolicyIds) {
+        await ctx.runMutation(internal.policyAuditLog.append, {
+          policyId: pId as Id<"policies">,
+          userId: primaryUserId,
+          orgId,
+          action: "agent_referenced",
+          detail: subject,
+        });
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error("Agent processing error:", message);

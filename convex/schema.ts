@@ -15,17 +15,16 @@ export default defineSchema({
     phone: v.optional(v.string()),
     phoneVerificationTime: v.optional(v.number()),
     isAnonymous: v.optional(v.boolean()),
-    // Custom profile fields
+    // Personal profile fields
+    title: v.optional(v.string()),
+    // Legacy company fields (kept for backward compat, will be removed after migration)
     companyName: v.optional(v.string()),
     insuranceBroker: v.optional(v.string()),
     companyWebsite: v.optional(v.string()),
     companyContext: v.optional(v.string()),
-    // Broker contact details
     brokerContactName: v.optional(v.string()),
     brokerContactEmail: v.optional(v.string()),
-    // COI request handling preference
     coiHandling: v.optional(v.union(v.literal("broker"), v.literal("user"), v.literal("ignore"))),
-    // Industry classification
     industry: v.optional(v.string()),
     industryVertical: v.optional(v.string()),
     // Onboarding & admin
@@ -37,8 +36,52 @@ export default defineSchema({
     .index("phone", ["phone"])
     .index("by_agentHandle", ["agentHandle"]),
 
+  // Organizations — owns company data, agent, broker info
+  organizations: defineTable({
+    name: v.string(),
+    website: v.optional(v.string()),
+    context: v.optional(v.string()),
+    industry: v.optional(v.string()),
+    industryVertical: v.optional(v.string()),
+    // Broker info
+    insuranceBroker: v.optional(v.string()),
+    brokerContactName: v.optional(v.string()),
+    brokerContactEmail: v.optional(v.string()),
+    // COI handling preference
+    coiHandling: v.optional(v.union(v.literal("broker"), v.literal("member"), v.literal("ignore"))),
+    // Agent
+    agentHandle: v.optional(v.string()),
+    // Primary insurance contact for the org
+    primaryInsuranceContactId: v.optional(v.id("users")),
+    // Onboarding
+    onboardingComplete: v.optional(v.boolean()),
+  }).index("by_agentHandle", ["agentHandle"]),
+
+  // Org memberships — links users to orgs
+  orgMemberships: defineTable({
+    orgId: v.id("organizations"),
+    userId: v.id("users"),
+    role: v.union(v.literal("admin"), v.literal("member")),
+  })
+    .index("by_userId", ["userId"])
+    .index("by_orgId", ["orgId"])
+    .index("by_orgId_userId", ["orgId", "userId"]),
+
+  // Org invitations — pending invites
+  orgInvitations: defineTable({
+    orgId: v.id("organizations"),
+    email: v.string(),
+    role: v.union(v.literal("admin"), v.literal("member")),
+    invitedBy: v.id("users"),
+    status: v.union(v.literal("pending"), v.literal("accepted"), v.literal("expired")),
+    expiresAt: v.number(),
+  })
+    .index("by_email", ["email"])
+    .index("by_orgId", ["orgId"]),
+
   emailConnections: defineTable({
     userId: v.optional(v.id("users")),
+    orgId: v.optional(v.id("organizations")),
     label: v.string(),
     imapHost: v.string(),
     imapPort: v.number(),
@@ -69,10 +112,12 @@ export default defineSchema({
       extracted: v.optional(v.number()),
     })),
     isDemo: v.optional(v.boolean()),
-  }).index("by_userId", ["userId"]),
+  }).index("by_userId", ["userId"])
+    .index("by_orgId", ["orgId"]),
 
   emails: defineTable({
     userId: v.optional(v.id("users")),
+    orgId: v.optional(v.id("organizations")),
     connectionId: v.id("emailConnections"),
     messageId: v.string(),
     uid: v.optional(v.number()),
@@ -87,10 +132,12 @@ export default defineSchema({
     isDemo: v.optional(v.boolean()),
   }).index("by_messageId", ["messageId"])
     .index("by_connection_processed", ["connectionId", "processed"])
-    .index("by_userId", ["userId"]),
+    .index("by_userId", ["userId"])
+    .index("by_orgId", ["orgId"]),
 
   policies: defineTable({
     userId: v.optional(v.id("users")),
+    orgId: v.optional(v.id("organizations")),
     emailId: v.optional(v.id("emails")),
     fileId: v.optional(v.id("_storage")),
     fileName: v.optional(v.string()),
@@ -213,10 +260,22 @@ export default defineSchema({
     isDemo: v.optional(v.boolean()),
   }).index("by_carrier", ["carrier"])
     .index("by_policyYear", ["policyYear"])
-    .index("by_userId", ["userId"]),
+    .index("by_userId", ["userId"])
+    .index("by_orgId", ["orgId"]),
+
+  policyAuditLog: defineTable({
+    policyId: v.id("policies"),
+    userId: v.id("users"),
+    orgId: v.optional(v.id("organizations")),
+    action: v.string(),
+    detail: v.optional(v.string()),
+    metadata: v.optional(v.any()),
+  }).index("by_policyId", ["policyId"])
+    .index("by_orgId", ["orgId"]),
 
   agentConversations: defineTable({
     userId: v.id("users"),
+    orgId: v.optional(v.id("organizations")),
     fromEmail: v.string(),
     fromName: v.optional(v.string()),
     toAddresses: v.array(v.string()),
@@ -245,6 +304,7 @@ export default defineSchema({
     responseMessageId: v.optional(v.string()),
     resendEmailId: v.optional(v.string()),
   }).index("by_userId", ["userId"])
+    .index("by_orgId", ["orgId"])
     .index("by_messageId", ["messageId"])
     .index("by_resendEmailId", ["resendEmailId"]),
 });

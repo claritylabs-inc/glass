@@ -8,7 +8,6 @@ import { Nav } from "@/components/nav";
 import { FadeIn } from "@/components/ui/fade-in";
 import { PillButton } from "@/components/ui/pill-button";
 import { AgentHandleForm } from "@/components/agent-handle-form";
-import Markdown from "react-markdown";
 import { motion } from "framer-motion";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
@@ -30,6 +29,8 @@ import {
   FileText,
 } from "lucide-react";
 import { Id } from "@/convex/_generated/dataModel";
+import { ModeBadge } from "@/components/mode-badge";
+import { MessageBubble, type Conversation } from "@/components/conversation-message";
 
 dayjs.extend(relativeTime);
 
@@ -45,46 +46,11 @@ function useTick(ms = 30_000) {
 
 const AGENT_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "agent.claritylabs.inc";
 
-type Conversation = {
-  _id: Id<"agentConversations">;
-  _creationTime: number;
-  subject: string;
-  fromEmail: string;
-  fromName?: string;
-  toAddresses: string[];
-  ccAddresses?: string[];
-  mode: "direct" | "cc" | "forward" | "unknown";
-  status: string;
-  body: string;
-  responseBody?: string;
-  responseTo?: string;
-  responseCc?: string[];
-  responseSentAt?: number;
-  error?: string;
-  archivedAt?: number;
-  threadId?: Id<"agentConversations">;
-};
-
 type Thread = {
   root: Conversation;
   messages: Conversation[];
   latestTime: number;
 };
-
-function ModeBadge({ mode }: { mode: "direct" | "cc" | "forward" | "unknown" }) {
-  const styles = {
-    direct: "bg-violet-50 text-violet-600",
-    cc: "bg-sky-50 text-sky-600",
-    forward: "bg-teal-50 text-teal-600",
-    unknown: "bg-amber-50 text-amber-600",
-  };
-  const labels = { direct: "Direct", cc: "CC", forward: "Forward", unknown: "Unknown" };
-  return (
-    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${styles[mode]}`}>
-      {labels[mode]}
-    </span>
-  );
-}
 
 /* ── Thread list item ── */
 function ThreadItem({
@@ -127,219 +93,6 @@ function ThreadItem({
         <span className="text-[11px] text-muted-foreground/30 shrink-0">{timeAgo}</span>
       </div>
     </button>
-  );
-}
-
-/**
- * Split email body into the new content and the quoted reply.
- * Looks for "On ... wrote:" pattern or consecutive ">" lines.
- */
-function splitQuotedReply(body: string): { content: string; quoted: string | null } {
-  // Match "On <date>... wrote:" and everything after (may span multiple lines)
-  const onWroteMatch = body.match(/\r?\n\s*On [\s\S]+?wrote:\s*\r?\n/);
-  if (onWroteMatch && onWroteMatch.index !== undefined) {
-    const content = body.slice(0, onWroteMatch.index).trimEnd();
-    const quoted = body.slice(onWroteMatch.index).trim();
-    return { content, quoted };
-  }
-
-  // Fallback: trailing block of ">" quoted lines
-  const lines = body.split("\n");
-  let quoteStart = lines.length;
-  for (let i = lines.length - 1; i >= 0; i--) {
-    if (/^\s*>/.test(lines[i])) {
-      quoteStart = i;
-    } else if (quoteStart < lines.length) {
-      break;
-    }
-  }
-
-  if (quoteStart < lines.length) {
-    const content = lines.slice(0, quoteStart).join("\n").trimEnd();
-    const quoted = lines.slice(quoteStart).join("\n").trim();
-    return { content, quoted };
-  }
-
-  return { content: body, quoted: null };
-}
-
-/** Strip the agent signature block from quoted text */
-function stripSignature(text: string): string {
-  // Match standalone "—" or "-- " signature delimiter and everything after
-  return text.replace(/\n\s*(?:—|-- )\s*\n[\s\S]*$/, "").trimEnd();
-}
-
-const QUOTED_MARKDOWN_STYLES = "[&_p]:my-1 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_strong]:font-semibold [&_ul]:my-1 [&_ul]:pl-5 [&_ul]:list-disc [&_ol]:my-1 [&_ol]:pl-5 [&_ol]:list-decimal [&_li]:my-0.5 [&_a]:text-blue-500/60 [&_a]:underline";
-
-/**
- * Render quoted text with proper nesting.
- * Strips ">" prefixes and groups consecutive lines at the same depth,
- * rendering each depth level with a left border. Markdown is rendered.
- */
-function stripAttribution(text: string): string {
-  // Remove "On <date>... wrote:" header line(s), may span multiple lines
-  return text.replace(/^\s*On [\s\S]+?wrote:\s*\n?/, "").trimStart();
-}
-
-function QuotedContent({ text }: { text: string }) {
-  const cleaned = stripAttribution(stripSignature(text));
-  const lines = cleaned.split("\n");
-
-  type Block = { depth: number; lines: string[] };
-  const blocks: Block[] = [];
-
-  for (const line of lines) {
-    const match = line.match(/^(>\s*)+/);
-    const depth = match ? (match[0].match(/>/g) || []).length : 0;
-    const content = depth > 0 ? line.replace(/^(>\s*)+/, "") : line;
-
-    const last = blocks[blocks.length - 1];
-    if (last && last.depth === depth) {
-      last.lines.push(content);
-    } else {
-      blocks.push({ depth, lines: [content] });
-    }
-  }
-
-  return (
-    <div className="text-body-sm text-muted-foreground/50 mt-3 space-y-1">
-      {blocks.map((block, i) => {
-        const blockText = block.lines.join("\n").trim();
-        if (!blockText) return null;
-
-        if (block.depth === 0) {
-          return (
-            <div key={i} className={`text-muted-foreground/40 ${QUOTED_MARKDOWN_STYLES}`}>
-              <Markdown>{blockText}</Markdown>
-            </div>
-          );
-        }
-
-        let el = (
-          <div key={i} className={QUOTED_MARKDOWN_STYLES}>
-            <Markdown>{blockText}</Markdown>
-          </div>
-        );
-        for (let d = 0; d < block.depth; d++) {
-          el = (
-            <div key={`${i}-${d}`} className="pl-3 ml-0.5 border-l-2 border-foreground/8">
-              {el}
-            </div>
-          );
-        }
-        return el;
-      })}
-    </div>
-  );
-}
-
-/* ── Single message bubble ── */
-function MessageBubble({ conv }: { conv: Conversation }) {
-  const [showQuoted, setShowQuoted] = useState(false);
-  const { content, quoted } = splitQuotedReply(conv.body || "");
-
-  return (
-    <>
-      {/* Inbound message */}
-      <div className="max-w-2xl">
-        <div className="mb-2">
-          <div className="flex items-center justify-between">
-            <span className="text-label-sm font-medium text-muted-foreground">
-              {conv.fromName ?? conv.fromEmail}
-            </span>
-            <span className="text-[11px] text-muted-foreground/30 shrink-0">
-              {dayjs(conv._creationTime).format("MMM D, h:mm A")}
-            </span>
-          </div>
-          <div className="flex flex-wrap gap-x-3 text-[11px] text-muted-foreground/35 mt-0.5">
-            <span className="truncate">
-              <span className="text-muted-foreground/25">To:</span>{" "}
-              {conv.toAddresses.join(", ")}
-            </span>
-            {conv.ccAddresses && conv.ccAddresses.length > 0 && (
-              <span className="truncate">
-                <span className="text-muted-foreground/25">CC:</span>{" "}
-                {conv.ccAddresses.join(", ")}
-              </span>
-            )}
-          </div>
-        </div>
-        <div className="rounded-lg bg-foreground/[0.02] border border-foreground/6 p-4">
-          {content ? (
-            <p className="text-body-sm text-foreground whitespace-pre-wrap">{content}</p>
-          ) : (
-            <p className="text-muted-foreground/40 italic text-body-sm">Unable to display message</p>
-          )}
-          {quoted && (
-            <>
-              <button
-                type="button"
-                onClick={() => setShowQuoted(!showQuoted)}
-                className="mt-2 px-1.5 py-0.5 rounded bg-foreground/[0.04] border border-foreground/6 text-[11px] text-muted-foreground/40 hover:text-muted-foreground/60 hover:bg-foreground/[0.06] transition-colors cursor-pointer"
-              >
-                {showQuoted ? "Hide quoted text" : "Show quoted text"}
-              </button>
-              {showQuoted && (
-                <QuotedContent text={quoted} />
-              )}
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* Agent response */}
-      {conv.status === "processing" && (
-        <div className="flex items-center gap-2 py-2 justify-end">
-          <span className="text-label-sm text-muted-foreground">Clarity Agent is thinking...</span>
-          <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />
-        </div>
-      )}
-
-      {conv.responseBody && (
-        <div className="max-w-2xl ml-auto">
-          <div className="mb-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1">
-                <Asterisk className="w-3.5 h-3.5 text-[#A0D2FA]" />
-                <span className="text-label-sm font-medium text-muted-foreground leading-none">
-                  Clarity Agent
-                </span>
-              </div>
-              <span className="text-[11px] text-muted-foreground/30 shrink-0">
-                {conv.responseSentAt
-                  ? dayjs(conv.responseSentAt).format("MMM D, h:mm A")
-                  : ""}
-              </span>
-            </div>
-            {conv.responseTo && (
-              <div className="flex flex-wrap gap-x-3 text-[11px] text-muted-foreground/35 mt-0.5">
-                <span className="truncate">
-                  <span className="text-muted-foreground/25">To:</span>{" "}
-                  {conv.responseTo}
-                </span>
-                {conv.responseCc && conv.responseCc.length > 0 && (
-                  <span className="truncate">
-                    <span className="text-muted-foreground/25">CC:</span>{" "}
-                    {conv.responseCc.join(", ")}
-                  </span>
-                )}
-              </div>
-            )}
-          </div>
-          <div className="rounded-lg bg-white border border-foreground/6 p-4 text-body-sm text-foreground [&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_strong]:font-semibold [&_ul]:my-2 [&_ul]:pl-5 [&_ul]:list-disc [&_ol]:my-2 [&_ol]:pl-5 [&_ol]:list-decimal [&_li]:my-0.5 [&_a]:text-blue-600 [&_a]:underline [&_h1]:text-base [&_h1]:font-semibold [&_h1]:mt-3 [&_h1]:mb-1 [&_h2]:text-body-sm [&_h2]:font-semibold [&_h2]:mt-3 [&_h2]:mb-1 [&_h3]:text-body-sm [&_h3]:font-semibold [&_h3]:mt-2 [&_h3]:mb-1 leading-relaxed">
-            <Markdown>{conv.responseBody}</Markdown>
-          </div>
-        </div>
-      )}
-
-      {conv.status === "error" && (
-        <div className="rounded-lg bg-red-50/50 border border-red-100 p-3">
-          <p className="text-label-sm text-red-600">
-            {conv.error ?? "An error occurred processing this message."}
-          </p>
-        </div>
-      )}
-    </>
   );
 }
 
@@ -417,7 +170,7 @@ function ThreadDetail({
       </div>
 
       {/* Messages */}
-      <div ref={messagesRef} className="flex-1 overflow-y-auto p-4 pr-5 pb-20 space-y-4">
+      <div ref={messagesRef} className="flex-1 overflow-y-auto p-4 pr-5 pb-12 space-y-4">
         {thread.messages.map((msg) => (
           <MessageBubble key={msg._id} conv={msg} />
         ))}
@@ -557,12 +310,20 @@ function CoiSettingsCard({
   coiHandling: "broker" | "user" | "ignore" | undefined;
   hasBroker: boolean;
 }) {
+  const updateOrg = useMutation(api.orgs.updateOrg);
   const updateProfile = useMutation(api.users.updateProfile);
+  const viewerOrg = useQuery(api.orgs.viewerOrg);
   const current = coiHandling ?? "ignore";
 
   async function handleChange(value: "broker" | "user" | "ignore") {
     try {
-      await updateProfile({ coiHandling: value });
+      // Save to org if available, fall back to user profile
+      if (viewerOrg?.org) {
+        const orgValue = value === "user" ? "member" : value;
+        await updateOrg({ coiHandling: orgValue as "broker" | "member" | "ignore" });
+      } else {
+        await updateProfile({ coiHandling: value });
+      }
       toast.success("COI handling updated");
     } catch {
       toast.error("Failed to update COI handling");
@@ -713,9 +474,9 @@ function ConversationsPanel({
       </div>
 
       {/* Mobile: stacked list or detail */}
-      <div className="lg:hidden">
+      <div className="lg:hidden flex flex-col" style={{ height: "calc(100dvh - 9rem)" }}>
         {selectedThread ? (
-          <div style={{ height: "calc(100dvh - 10rem)" }}>
+          <div className="flex-1 min-h-0">
             <ThreadDetail
               thread={selectedThread}
               onBack={() => setSelectedId(null)}
@@ -723,7 +484,7 @@ function ConversationsPanel({
           </div>
         ) : (
           <>
-            <div className="flex items-center justify-between px-4 py-3 border-b border-foreground/6">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-foreground/6 shrink-0">
               <h4 className="!mb-0 text-body-sm font-semibold">Conversations</h4>
               <button
                 type="button"
@@ -750,15 +511,17 @@ function ConversationsPanel({
                 )}
               </div>
             ) : (
-              threads.map((thread) => (
-                <ThreadItem
-                  key={thread.root._id}
-                  thread={thread}
-                  isSelected={false}
-                  onSelect={() => setSelectedId(thread.root._id)}
-                  tick={tick}
-                />
-              ))
+              <div className="flex-1 overflow-y-auto">
+                {threads.map((thread) => (
+                  <ThreadItem
+                    key={thread.root._id}
+                    thread={thread}
+                    isSelected={false}
+                    onSelect={() => setSelectedId(thread.root._id)}
+                    tick={tick}
+                  />
+                ))}
+              </div>
             )}
           </>
         )}
@@ -778,6 +541,7 @@ type AgentTab = typeof AGENT_TABS[number]["id"];
 /* ── Main page ── */
 export default function AgentPage() {
   const viewer = useQuery(api.users.viewer);
+  const viewerOrg = useQuery(api.orgs.viewerOrg);
   const [showArchived, setShowArchived] = useState(false);
   const conversations = useQuery(api.agentConversations.list, { archived: showArchived });
   const [selectedId, setSelectedId] = useState<Id<"agentConversations"> | null>(null);
@@ -790,10 +554,12 @@ export default function AgentPage() {
     try { setHelpDismissed(localStorage.getItem("agent-help-dismissed") === "1"); } catch {}
   }, []);
 
-  const handle = viewer?.agentHandle;
+  const org = viewerOrg?.org;
+  // Prefer org-level handle, fall back to user-level for backward compat
+  const handle = org?.agentHandle ?? viewer?.agentHandle;
   const agentEmail = handle ? `${handle}@${AGENT_DOMAIN}` : null;
 
-  // Derive company domains for display
+  // Derive company domains from org website + viewer email
   const companyDomains = useMemo(() => {
     if (!viewer) return undefined;
     const consumerDomains = new Set([
@@ -804,9 +570,10 @@ export default function AgentPage() {
       "ymail.com", "gmx.com", "gmx.net",
     ]);
     const domains: string[] = [];
-    if (viewer.companyWebsite) {
+    const website = org?.website ?? viewer.companyWebsite;
+    if (website) {
       try {
-        const hostname = new URL(viewer.companyWebsite).hostname.replace(/^www\./, "");
+        const hostname = new URL(website).hostname.replace(/^www\./, "");
         if (!consumerDomains.has(hostname)) domains.push(hostname);
       } catch { /* ignore */ }
     }
@@ -817,7 +584,7 @@ export default function AgentPage() {
       }
     }
     return domains.length > 0 ? domains : undefined;
-  }, [viewer]);
+  }, [viewer, org]);
 
   // Group conversations into threads
   const threads = useMemo(() => {
@@ -879,14 +646,20 @@ export default function AgentPage() {
                 <div className="rounded-lg border border-foreground/6 bg-white/60 p-5 mb-6">
                   <AgentHandleForm
                     suggestedHandle={
-                      viewer?.companyName
-                        ? viewer.companyName
+                      (org?.name ?? viewer?.companyName)
+                        ? (org?.name ?? viewer?.companyName ?? "")
                             .toLowerCase()
                             .replace(/[^a-z0-9]+/g, "-")
                             .replace(/^-|-$/g, "")
                         : undefined
                     }
                   />
+                  <p className="text-label-sm text-muted-foreground/40 mt-3">
+                    Agent handle can also be managed in{" "}
+                    <a href="/settings" className="text-foreground/60 hover:text-foreground underline">
+                      Organization Settings
+                    </a>.
+                  </p>
                 </div>
               </FadeIn>
 
@@ -991,10 +764,16 @@ export default function AgentPage() {
                   <div className="space-y-6">
                     <ModeExplainerCards companyDomains={companyDomains} />
                     <CoiSettingsCard
-                      coiHandling={viewer?.coiHandling}
-                      hasBroker={!!(viewer?.insuranceBroker)}
+                      coiHandling={(org?.coiHandling ?? viewer?.coiHandling) as "broker" | "user" | "ignore" | undefined}
+                      hasBroker={!!(org?.insuranceBroker ?? viewer?.insuranceBroker)}
                     />
                     <AgentHelpSection agentEmail={agentEmail!} />
+                    <p className="text-label-sm text-muted-foreground/40">
+                      COI and broker settings can be managed in{" "}
+                      <a href="/settings" className="text-foreground/60 hover:text-foreground underline">
+                        Organization Settings
+                      </a>.
+                    </p>
                   </div>
                 )}
               </FadeIn>

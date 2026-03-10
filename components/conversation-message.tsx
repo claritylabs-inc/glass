@@ -1,0 +1,284 @@
+"use client";
+
+import { useState } from "react";
+import Markdown from "react-markdown";
+import dayjs from "dayjs";
+import { Asterisk, Loader2 } from "lucide-react";
+import { Id } from "@/convex/_generated/dataModel";
+
+export type Conversation = {
+  _id: Id<"agentConversations">;
+  _creationTime: number;
+  subject: string;
+  fromEmail: string;
+  fromName?: string;
+  toAddresses: string[];
+  ccAddresses?: string[];
+  mode: "direct" | "cc" | "forward" | "unknown";
+  status: string;
+  body: string;
+  responseBody?: string;
+  responseTo?: string;
+  responseCc?: string[];
+  responseSentAt?: number;
+  error?: string;
+  archivedAt?: number;
+  threadId?: Id<"agentConversations">;
+};
+
+/**
+ * Split email body into the new content and the quoted reply.
+ * Looks for "On ... wrote:" pattern or consecutive ">" lines.
+ */
+export function splitQuotedReply(body: string): { content: string; quoted: string | null } {
+  const onWroteMatch = body.match(/\r?\n\s*On [\s\S]+?wrote:\s*\r?\n/);
+  if (onWroteMatch && onWroteMatch.index !== undefined) {
+    const content = body.slice(0, onWroteMatch.index).trimEnd();
+    const quoted = body.slice(onWroteMatch.index).trim();
+    return { content, quoted };
+  }
+
+  const lines = body.split("\n");
+  let quoteStart = lines.length;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (/^\s*>/.test(lines[i])) {
+      quoteStart = i;
+    } else if (quoteStart < lines.length) {
+      break;
+    }
+  }
+
+  if (quoteStart < lines.length) {
+    const content = lines.slice(0, quoteStart).join("\n").trimEnd();
+    const quoted = lines.slice(quoteStart).join("\n").trim();
+    return { content, quoted };
+  }
+
+  return { content: body, quoted: null };
+}
+
+/** Strip the agent signature block from quoted text */
+export function stripSignature(text: string): string {
+  return text.replace(/\n\s*(?:—|-- )\s*\n[\s\S]*$/, "").trimEnd();
+}
+
+export function stripAttribution(text: string): string {
+  return text.replace(/^\s*On [\s\S]+?wrote:\s*\n?/, "").trimStart();
+}
+
+const QUOTED_MARKDOWN_STYLES = "[&_p]:my-1 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_strong]:font-semibold [&_ul]:my-1 [&_ul]:pl-5 [&_ul]:list-disc [&_ol]:my-1 [&_ol]:pl-5 [&_ol]:list-decimal [&_li]:my-0.5 [&_a]:text-blue-500/60 [&_a]:underline";
+
+export function QuotedContent({ text }: { text: string }) {
+  const cleaned = stripAttribution(stripSignature(text));
+  const lines = cleaned.split("\n");
+
+  type Block = { depth: number; lines: string[] };
+  const blocks: Block[] = [];
+
+  for (const line of lines) {
+    const match = line.match(/^(>\s*)+/);
+    const depth = match ? (match[0].match(/>/g) || []).length : 0;
+    const content = depth > 0 ? line.replace(/^(>\s*)+/, "") : line;
+
+    const last = blocks[blocks.length - 1];
+    if (last && last.depth === depth) {
+      last.lines.push(content);
+    } else {
+      blocks.push({ depth, lines: [content] });
+    }
+  }
+
+  return (
+    <div className="text-body-sm text-muted-foreground/50 mt-3 space-y-1">
+      {blocks.map((block, i) => {
+        const blockText = block.lines.join("\n").trim();
+        if (!blockText) return null;
+
+        if (block.depth === 0) {
+          return (
+            <div key={i} className={`text-muted-foreground/40 ${QUOTED_MARKDOWN_STYLES}`}>
+              <Markdown>{blockText}</Markdown>
+            </div>
+          );
+        }
+
+        let el = (
+          <div key={i} className={QUOTED_MARKDOWN_STYLES}>
+            <Markdown>{blockText}</Markdown>
+          </div>
+        );
+        for (let d = 0; d < block.depth; d++) {
+          el = (
+            <div key={`${i}-${d}`} className="pl-3 ml-0.5 border-l-2 border-foreground/8">
+              {el}
+            </div>
+          );
+        }
+        return el;
+      })}
+    </div>
+  );
+}
+
+/**
+ * Unwrap hard line breaks from email plain text (RFC 2822 wraps at ~76 chars).
+ * Preserves intentional breaks: blank lines (paragraphs), list items, signatures, headers.
+ */
+function unwrapEmailText(text: string): string {
+  const lines = text.split("\n");
+  const result: string[] = [];
+  let buffer = "";
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trimEnd();
+
+    // Empty line = paragraph break — flush buffer and keep the blank line
+    if (trimmed === "") {
+      if (buffer) {
+        result.push(buffer);
+        buffer = "";
+      }
+      result.push("");
+      continue;
+    }
+
+    // Lines that should start a new line (not be joined to previous):
+    // - List items (1. / - / * / •)
+    // - Lines starting with dashes (signature, forwarded msg separators)
+    // - Lines that look like headers (From:, To:, Date:, Subject:, CC:)
+    const isStructural =
+      /^\s*(\d+[\.\)]\s|[-*•]\s|[-]{3,}|[A-Z][a-z]*:\s)/.test(trimmed);
+
+    if (isStructural) {
+      if (buffer) {
+        result.push(buffer);
+        buffer = "";
+      }
+      buffer = trimmed;
+      continue;
+    }
+
+    // Join to previous line if it looks like a soft wrap
+    if (buffer) {
+      buffer += " " + trimmed;
+    } else {
+      buffer = trimmed;
+    }
+  }
+
+  if (buffer) result.push(buffer);
+
+  return result.join("\n");
+}
+
+/* ── Single message bubble ── */
+export function MessageBubble({ conv }: { conv: Conversation }) {
+  const [showQuoted, setShowQuoted] = useState(false);
+  const { content: rawContent, quoted } = splitQuotedReply(conv.body || "");
+  const content = rawContent ? unwrapEmailText(rawContent) : rawContent;
+
+  return (
+    <>
+      {/* Inbound message */}
+      <div className="max-w-xl">
+        <div className="mb-2">
+          <div className="flex items-center justify-between">
+            <span className="text-label-sm font-medium text-muted-foreground">
+              {conv.fromName ?? conv.fromEmail}
+            </span>
+            <span className="text-[11px] text-muted-foreground/30 shrink-0">
+              {dayjs(conv._creationTime).format("MMM D, h:mm A")}
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-x-3 text-[11px] text-muted-foreground/35 mt-0.5">
+            <span className="truncate">
+              <span className="text-muted-foreground/25">To:</span>{" "}
+              {conv.toAddresses.join(", ")}
+            </span>
+            {conv.ccAddresses && conv.ccAddresses.length > 0 && (
+              <span className="truncate">
+                <span className="text-muted-foreground/25">CC:</span>{" "}
+                {conv.ccAddresses.join(", ")}
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="rounded-lg bg-foreground/[0.02] border border-foreground/6 p-4">
+          {content ? (
+            <p className="text-body-sm text-foreground whitespace-pre-wrap">{content}</p>
+          ) : (
+            <p className="text-muted-foreground/40 italic text-body-sm">Unable to display message</p>
+          )}
+          {quoted && (
+            <>
+              <button
+                type="button"
+                onClick={() => setShowQuoted(!showQuoted)}
+                className="mt-2 px-1.5 py-0.5 rounded bg-foreground/[0.04] border border-foreground/6 text-[11px] text-muted-foreground/40 hover:text-muted-foreground/60 hover:bg-foreground/[0.06] transition-colors cursor-pointer"
+              >
+                {showQuoted ? "Hide quoted text" : "Show quoted text"}
+              </button>
+              {showQuoted && (
+                <QuotedContent text={quoted} />
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Agent response */}
+      {conv.status === "processing" && (
+        <div className="flex items-center gap-2 py-2 justify-end">
+          <span className="text-label-sm text-muted-foreground">Clarity Agent is thinking...</span>
+          <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />
+        </div>
+      )}
+
+      {conv.responseBody && (
+        <div className="max-w-xl ml-auto">
+          <div className="mb-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1">
+                <Asterisk className="w-3.5 h-3.5 text-[#A0D2FA]" />
+                <span className="text-label-sm font-medium text-muted-foreground leading-none">
+                  Clarity Agent
+                </span>
+              </div>
+              <span className="text-[11px] text-muted-foreground/30 shrink-0">
+                {conv.responseSentAt
+                  ? dayjs(conv.responseSentAt).format("MMM D, h:mm A")
+                  : ""}
+              </span>
+            </div>
+            {conv.responseTo && (
+              <div className="flex flex-wrap gap-x-3 text-[11px] text-muted-foreground/35 mt-0.5">
+                <span className="truncate">
+                  <span className="text-muted-foreground/25">To:</span>{" "}
+                  {conv.responseTo}
+                </span>
+                {conv.responseCc && conv.responseCc.length > 0 && (
+                  <span className="truncate">
+                    <span className="text-muted-foreground/25">CC:</span>{" "}
+                    {conv.responseCc.join(", ")}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+          <div className="rounded-lg bg-white border border-foreground/6 p-4 text-body-sm text-foreground [&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_strong]:font-semibold [&_ul]:my-2 [&_ul]:pl-5 [&_ul]:list-disc [&_ol]:my-2 [&_ol]:pl-5 [&_ol]:list-decimal [&_li]:my-0.5 [&_a]:text-blue-600 [&_a]:underline [&_h1]:text-base [&_h1]:font-semibold [&_h1]:mt-3 [&_h1]:mb-1 [&_h2]:text-body-sm [&_h2]:font-semibold [&_h2]:mt-3 [&_h2]:mb-1 [&_h3]:text-body-sm [&_h3]:font-semibold [&_h3]:mt-2 [&_h3]:mb-1 leading-relaxed">
+              <Markdown>{conv.responseBody}</Markdown>
+          </div>
+        </div>
+      )}
+
+      {conv.status === "error" && (
+        <div className="rounded-lg bg-red-50/50 border border-red-100 p-3">
+          <p className="text-label-sm text-red-600">
+            {conv.error ?? "An error occurred processing this message."}
+          </p>
+        </div>
+      )}
+    </>
+  );
+}

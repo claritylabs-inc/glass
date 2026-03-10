@@ -1,11 +1,11 @@
 import { v } from "convex/values";
 import { mutation, query, internalQuery } from "./_generated/server";
-import { requireAuth } from "./lib/auth";
+import { requireOrgAccess } from "./lib/orgAuth";
 
 export const list = query({
   args: { connectionId: v.optional(v.id("emailConnections")) },
   handler: async (ctx, args) => {
-    const userId = await requireAuth(ctx);
+    const { orgId } = await requireOrgAccess(ctx);
     if (args.connectionId) {
       const all = await ctx.db
         .query("emails")
@@ -13,11 +13,11 @@ export const list = query({
           q.eq("connectionId", args.connectionId!)
         )
         .collect();
-      return all.filter((e) => e.userId === userId);
+      return all.filter((e) => (e as any).orgId === orgId);
     }
     return await ctx.db
       .query("emails")
-      .withIndex("by_userId", (idx) => idx.eq("userId", userId as any))
+      .withIndex("by_orgId", (idx) => idx.eq("orgId", orgId))
       .collect();
   },
 });
@@ -25,10 +25,10 @@ export const list = query({
 export const getInsuranceEmails = query({
   args: {},
   handler: async (ctx) => {
-    const userId = await requireAuth(ctx);
+    const { orgId } = await requireOrgAccess(ctx);
     const emails = await ctx.db
       .query("emails")
-      .withIndex("by_userId", (idx) => idx.eq("userId", userId as any))
+      .withIndex("by_orgId", (idx) => idx.eq("orgId", orgId))
       .collect();
     return emails.filter((e) => e.isInsuranceRelated === true);
   },
@@ -37,6 +37,7 @@ export const getInsuranceEmails = query({
 export const insert = mutation({
   args: {
     userId: v.optional(v.id("users")),
+    orgId: v.optional(v.id("organizations")),
     connectionId: v.id("emailConnections"),
     messageId: v.string(),
     uid: v.optional(v.number()),

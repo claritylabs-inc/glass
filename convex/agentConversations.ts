@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { query, mutation, internalQuery, internalMutation } from "./_generated/server";
-import { requireAuth } from "./lib/auth";
+import { requireOrgAccess } from "./lib/orgAuth";
 
 export const checkDuplicate = internalQuery({
   args: { resendEmailId: v.string() },
@@ -16,6 +16,7 @@ export const checkDuplicate = internalQuery({
 export const insertInbound = internalMutation({
   args: {
     userId: v.id("users"),
+    orgId: v.optional(v.id("organizations")),
     fromEmail: v.string(),
     fromName: v.optional(v.string()),
     toAddresses: v.array(v.string()),
@@ -76,8 +77,6 @@ export const updateError = internalMutation({
 
 /**
  * Normalize a Message-ID for comparison.
- * Gmail In-Reply-To might be "<re_abc123@resend.dev>" while we store "re_abc123".
- * Strip angle brackets, and extract the local part before @ for fuzzy matching.
  */
 function normalizeMessageId(id: string): string {
   return id.replace(/^<|>$/g, "").trim();
@@ -87,9 +86,7 @@ function messageIdsMatch(stored: string | undefined, lookup: string): boolean {
   if (!stored) return false;
   const normalizedStored = normalizeMessageId(stored);
   const normalizedLookup = normalizeMessageId(lookup);
-  // Exact match after normalization
   if (normalizedStored === normalizedLookup) return true;
-  // Check if one contains the other (e.g. "re_abc123" vs "re_abc123@resend.dev")
   if (normalizedLookup.startsWith(normalizedStored) || normalizedStored.startsWith(normalizedLookup)) return true;
   return false;
 }
@@ -106,15 +103,12 @@ export const findByMessageId = internalQuery({
   handler: async (ctx, args) => {
     const normalized = normalizeMessageId(args.messageId);
 
-    // Check if any conversation has this as its messageId (inbound)
-    // Try exact index match first
     const byInbound = await ctx.db
       .query("agentConversations")
       .withIndex("by_messageId", (q) => q.eq("messageId", args.messageId))
       .first();
     if (byInbound) return byInbound;
 
-    // Try normalized index match (without angle brackets)
     if (normalized !== args.messageId) {
       const byNormalized = await ctx.db
         .query("agentConversations")
@@ -123,26 +117,21 @@ export const findByMessageId = internalQuery({
       if (byNormalized) return byNormalized;
     }
 
-    // Check responseMessageId (outbound) with fuzzy matching
-    // Resend returns IDs like "re_abc123", but In-Reply-To may be "<re_abc123@resend.dev>"
     const all = await ctx.db.query("agentConversations").collect();
     return all.find((c) => messageIdsMatch(c.responseMessageId, args.messageId)) ?? null;
   },
 });
 
 /**
- * Fallback thread matching by subject line.
- * Strips "Re:", "Fwd:", etc. prefixes and finds the most recent conversation
- * from the same user with a matching base subject.
+ * Fallback thread matching by subject line — now uses orgId for scoping.
  */
 export const findThreadBySubject = internalQuery({
   args: {
-    userId: v.id("users"),
+    orgId: v.id("organizations"),
     subject: v.string(),
     fromEmail: v.string(),
   },
   handler: async (ctx, args) => {
-    // Normalize subject: strip Re:/Fwd:/Fw: prefixes (possibly repeated)
     const baseSubject = args.subject
       .replace(/^(\s*(re|fwd?)\s*:\s*)+/i, "")
       .trim()
@@ -150,14 +139,12 @@ export const findThreadBySubject = internalQuery({
 
     if (!baseSubject) return null;
 
-    // Get recent conversations for this user
     const convs = await ctx.db
       .query("agentConversations")
-      .withIndex("by_userId", (q) => q.eq("userId", args.userId))
+      .withIndex("by_orgId", (q) => q.eq("orgId", args.orgId))
       .order("desc")
       .take(100);
 
-    // Find a match by normalized subject from the same sender
     for (const conv of convs) {
       const convBaseSubject = conv.subject
         .replace(/^(\s*(re|fwd?)\s*:\s*)+/i, "")
@@ -169,7 +156,6 @@ export const findThreadBySubject = internalQuery({
       }
     }
 
-    // Also match if subjects match but sender differs (e.g. agent replied, user follows up)
     for (const conv of convs) {
       const convBaseSubject = conv.subject
         .replace(/^(\s*(re|fwd?)\s*:\s*)+/i, "")
@@ -185,6 +171,7 @@ export const findThreadBySubject = internalQuery({
   },
 });
 
+// Legacy: kept for backward compat during transition
 export const getUserByHandle = internalQuery({
   args: { handle: v.string() },
   handler: async (ctx, args) => {
@@ -198,7 +185,6 @@ export const getUserByHandle = internalQuery({
 export const getThreadMessages = internalQuery({
   args: { threadId: v.id("agentConversations") },
   handler: async (ctx, args) => {
-    // Get all messages in this thread (including the root)
     const threadMessages = await ctx.db
       .query("agentConversations")
       .collect();
@@ -212,10 +198,10 @@ export const getThreadMessages = internalQuery({
 export const list = query({
   args: { archived: v.optional(v.boolean()) },
   handler: async (ctx, args) => {
-    const userId = await requireAuth(ctx);
+    const { orgId } = await requireOrgAccess(ctx);
     const all = await ctx.db
       .query("agentConversations")
-      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .withIndex("by_orgId", (q) => q.eq("orgId", orgId))
       .order("desc")
       .collect();
     if (args.archived) {
@@ -228,9 +214,9 @@ export const list = query({
 export const get = query({
   args: { id: v.id("agentConversations") },
   handler: async (ctx, args) => {
-    const userId = await requireAuth(ctx);
+    const { orgId } = await requireOrgAccess(ctx);
     const conv = await ctx.db.get(args.id);
-    if (!conv || conv.userId !== userId) return null;
+    if (!conv || (conv as any).orgId !== orgId) return null;
     return conv;
   },
 });
@@ -238,9 +224,9 @@ export const get = query({
 export const archive = mutation({
   args: { id: v.id("agentConversations") },
   handler: async (ctx, args) => {
-    const userId = await requireAuth(ctx);
+    const { orgId } = await requireOrgAccess(ctx);
     const conv = await ctx.db.get(args.id);
-    if (!conv || conv.userId !== userId) throw new Error("Not found");
+    if (!conv || (conv as any).orgId !== orgId) throw new Error("Not found");
     await ctx.db.patch(args.id, { archivedAt: Date.now() });
   },
 });
@@ -248,20 +234,35 @@ export const archive = mutation({
 export const unarchive = mutation({
   args: { id: v.id("agentConversations") },
   handler: async (ctx, args) => {
-    const userId = await requireAuth(ctx);
+    const { orgId } = await requireOrgAccess(ctx);
     const conv = await ctx.db.get(args.id);
-    if (!conv || conv.userId !== userId) throw new Error("Not found");
+    if (!conv || (conv as any).orgId !== orgId) throw new Error("Not found");
     await ctx.db.patch(args.id, { archivedAt: undefined });
+  },
+});
+
+export const listByPolicyId = query({
+  args: { policyId: v.id("policies") },
+  handler: async (ctx, args) => {
+    const { orgId } = await requireOrgAccess(ctx);
+    const all = await ctx.db
+      .query("agentConversations")
+      .withIndex("by_orgId", (q) => q.eq("orgId", orgId))
+      .order("desc")
+      .collect();
+    return all.filter(
+      (c) => c.referencedPolicyIds?.includes(args.policyId),
+    );
   },
 });
 
 export const stats = query({
   args: {},
   handler: async (ctx) => {
-    const userId = await requireAuth(ctx);
+    const { orgId } = await requireOrgAccess(ctx);
     const all = await ctx.db
       .query("agentConversations")
-      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .withIndex("by_orgId", (q) => q.eq("orgId", orgId))
       .collect();
     const active = all.filter((c) => !c.archivedAt);
     const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;

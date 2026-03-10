@@ -170,7 +170,7 @@ export default function ConnectionsPage() {
   return (
     <div className="min-h-screen flex flex-col">
       <Nav />
-      <main className="flex-1 pb-20 md:pb-0">
+      <main className="flex-1 pb-12 md:pb-0">
         <div className="max-w-6xl mx-auto px-4 md:px-8 py-6">
           <FadeIn when={true} staggerIndex={0} duration={0.6}>
             <div className="flex items-center justify-between mb-6">

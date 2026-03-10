@@ -25,6 +25,13 @@ export const reExtractFromFile = action({
       await ctx.runMutation(internal.policies.appendExtractionLog, { id: args.policyId, message });
     };
 
+    // Audit: pdf uploaded for re-extraction
+    await ctx.runMutation(internal.policyAuditLog.append, {
+      policyId: args.policyId,
+      userId: viewer._id,
+      action: "pdf_uploaded",
+    });
+
     // Set status to extracting
     await ctx.runMutation(internal.policies.clearExtractionLog, { id: args.policyId });
     await log("Reading uploaded PDF...");

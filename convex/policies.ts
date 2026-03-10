@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query, internalQuery, internalMutation } from "./_generated/server";
 import { requireAuth } from "./lib/auth";
+import { requireOrgAccess } from "./lib/orgAuth";
 
 export const list = query({
   args: {
@@ -8,29 +9,17 @@ export const list = query({
     policyYear: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const userId = await requireAuth(ctx);
-    let q;
-    if (args.carrier) {
-      q = ctx.db
-        .query("policies")
-        .withIndex("by_carrier", (idx) => idx.eq("carrier", args.carrier!));
-    } else if (args.policyYear) {
-      q = ctx.db
-        .query("policies")
-        .withIndex("by_policyYear", (idx) =>
-          idx.eq("policyYear", args.policyYear!)
-        );
-    } else {
-      q = ctx.db
-        .query("policies")
-        .withIndex("by_userId", (idx) => idx.eq("userId", userId as any));
-    }
-    const all = await q.collect();
+    const { orgId } = await requireOrgAccess(ctx);
+    const all = await ctx.db
+      .query("policies")
+      .withIndex("by_orgId", (idx) => idx.eq("orgId", orgId))
+      .collect();
     return all.filter(
       (p) =>
-        p.userId === userId &&
         p.extractionStatus === "complete" &&
-        !p.deletedAt
+        !p.deletedAt &&
+        (!args.carrier || p.carrier === args.carrier) &&
+        (!args.policyYear || p.policyYear === args.policyYear)
     );
   },
 });
@@ -38,10 +27,10 @@ export const list = query({
 export const listPending = query({
   args: {},
   handler: async (ctx) => {
-    const userId = await requireAuth(ctx);
+    const { orgId } = await requireOrgAccess(ctx);
     const all = await ctx.db
       .query("policies")
-      .withIndex("by_userId", (idx) => idx.eq("userId", userId as any))
+      .withIndex("by_orgId", (idx) => idx.eq("orgId", orgId))
       .collect();
     const pending = all.filter(
       (p) =>
@@ -80,10 +69,10 @@ export const listPending = query({
 export const listExtractionLog = query({
   args: {},
   handler: async (ctx) => {
-    const userId = await requireAuth(ctx);
+    const { orgId } = await requireOrgAccess(ctx);
     const all = await ctx.db
       .query("policies")
-      .withIndex("by_userId", (idx) => idx.eq("userId", userId as any))
+      .withIndex("by_orgId", (idx) => idx.eq("orgId", orgId))
       .collect();
     const completed = all.filter(
       (p) =>
@@ -120,9 +109,9 @@ export const listExtractionLog = query({
 export const get = query({
   args: { id: v.id("policies") },
   handler: async (ctx, args) => {
-    const userId = await requireAuth(ctx);
+    const { orgId } = await requireOrgAccess(ctx);
     const policy = await ctx.db.get(args.id);
-    if (!policy || policy.userId !== userId) return null;
+    if (!policy || policy.orgId !== orgId) return null;
     return {
       ...policy,
       hasRawResponse: !!policy.rawExtractionResponse,
@@ -134,7 +123,7 @@ export const get = query({
 export const getFileUrl = query({
   args: { fileId: v.id("_storage") },
   handler: async (ctx, args) => {
-    await requireAuth(ctx);
+    await requireOrgAccess(ctx);
     return await ctx.storage.getUrl(args.fileId);
   },
 });
@@ -142,10 +131,10 @@ export const getFileUrl = query({
 export const emailIdsWithPolicies = query({
   args: {},
   handler: async (ctx) => {
-    const userId = await requireAuth(ctx);
+    const { orgId } = await requireOrgAccess(ctx);
     const all = await ctx.db
       .query("policies")
-      .withIndex("by_userId", (idx) => idx.eq("userId", userId as any))
+      .withIndex("by_orgId", (idx) => idx.eq("orgId", orgId))
       .collect();
     const ids = new Set<string>();
     for (const p of all) {
@@ -161,8 +150,22 @@ export const emailIdsWithPolicies = query({
   },
 });
 
-// All complete, non-deleted policies for a user (used by agent action)
+// All complete, non-deleted policies for an org (used by agent action)
 export const listAllInternal = internalQuery({
+  args: { orgId: v.id("organizations") },
+  handler: async (ctx, args) => {
+    const all = await ctx.db
+      .query("policies")
+      .withIndex("by_orgId", (idx) => idx.eq("orgId", args.orgId))
+      .collect();
+    return all.filter(
+      (p) => p.extractionStatus === "complete" && !p.deletedAt
+    );
+  },
+});
+
+// Legacy: support userId-based lookup during transition
+export const listAllInternalByUser = internalQuery({
   args: { userId: v.id("users") },
   handler: async (ctx, args) => {
     const all = await ctx.db
@@ -177,11 +180,11 @@ export const listAllInternal = internalQuery({
 
 // Internal version for scheduled actions (no auth context)
 export const emailIdsWithPoliciesInternal = internalQuery({
-  args: { userId: v.id("users") },
+  args: { orgId: v.id("organizations") },
   handler: async (ctx, args) => {
     const all = await ctx.db
       .query("policies")
-      .withIndex("by_userId", (idx) => idx.eq("userId", args.userId as any))
+      .withIndex("by_orgId", (idx) => idx.eq("orgId", args.orgId))
       .collect();
     const ids = new Set<string>();
     for (const p of all) {
@@ -196,14 +199,14 @@ export const emailIdsWithPoliciesInternal = internalQuery({
 export const stats = query({
   args: {},
   handler: async (ctx) => {
-    const userId = await requireAuth(ctx);
+    const { orgId } = await requireOrgAccess(ctx);
     const allPolicies = await ctx.db
       .query("policies")
-      .withIndex("by_userId", (idx) => idx.eq("userId", userId as any))
+      .withIndex("by_orgId", (idx) => idx.eq("orgId", orgId))
       .collect();
     const connections = await ctx.db
       .query("emailConnections")
-      .withIndex("by_userId", (idx) => idx.eq("userId", userId as any))
+      .withIndex("by_orgId", (idx) => idx.eq("orgId", orgId))
       .collect();
 
     const policies = allPolicies.filter((p) => p.extractionStatus === "complete" && !p.deletedAt);
@@ -330,6 +333,7 @@ const metadataSourceValidator = v.object({
 export const insert = mutation({
   args: {
     userId: v.optional(v.id("users")),
+    orgId: v.optional(v.id("organizations")),
     emailId: v.optional(v.id("emails")),
     fileId: v.optional(v.id("_storage")),
     fileName: v.optional(v.string()),
@@ -409,7 +413,7 @@ export const updateExtraction = mutation({
 export const generateUploadUrl = mutation({
   args: {},
   handler: async (ctx) => {
-    await requireAuth(ctx);
+    await requireOrgAccess(ctx);
     return await ctx.storage.generateUploadUrl();
   },
 });
@@ -419,20 +423,32 @@ export const dismiss = mutation({
     id: v.id("policies"),
   },
   handler: async (ctx, args) => {
-    const userId = await requireAuth(ctx);
+    const { userId, orgId } = await requireOrgAccess(ctx);
     const policy = await ctx.db.get(args.id);
-    if (!policy || policy.userId !== userId) throw new Error("Not found");
+    if (!policy || policy.orgId !== orgId) throw new Error("Not found");
     await ctx.db.patch(args.id, { extractionStatus: "not_insurance" as const });
+    await ctx.db.insert("policyAuditLog", {
+      policyId: args.id,
+      userId,
+      orgId,
+      action: "dismissed",
+    });
   },
 });
 
 export const softDelete = mutation({
   args: { id: v.id("policies") },
   handler: async (ctx, args) => {
-    const userId = await requireAuth(ctx);
+    const { userId, orgId } = await requireOrgAccess(ctx);
     const policy = await ctx.db.get(args.id);
-    if (!policy || policy.userId !== userId) throw new Error("Not found");
+    if (!policy || policy.orgId !== orgId) throw new Error("Not found");
     await ctx.db.patch(args.id, { deletedAt: Date.now() });
+    await ctx.db.insert("policyAuditLog", {
+      policyId: args.id,
+      userId,
+      orgId,
+      action: "deleted",
+    });
   },
 });
 
@@ -460,9 +476,15 @@ export const clearExtractionLog = internalMutation({
 export const restore = mutation({
   args: { id: v.id("policies") },
   handler: async (ctx, args) => {
-    const userId = await requireAuth(ctx);
+    const { userId, orgId } = await requireOrgAccess(ctx);
     const policy = await ctx.db.get(args.id);
-    if (!policy || policy.userId !== userId) throw new Error("Not found");
+    if (!policy || policy.orgId !== orgId) throw new Error("Not found");
     await ctx.db.patch(args.id, { deletedAt: undefined });
+    await ctx.db.insert("policyAuditLog", {
+      policyId: args.id,
+      userId,
+      orgId,
+      action: "restored",
+    });
   },
 });

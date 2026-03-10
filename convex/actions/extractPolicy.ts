@@ -13,6 +13,7 @@ export const extractPolicy = internalAction({
     emailId: v.id("emails"),
     connectionId: v.id("emailConnections"),
     userId: v.id("users"),
+    orgId: v.optional(v.id("organizations")),
   },
   handler: async (ctx, args) => {
     const thisEmail = await ctx.runQuery(internal.emails.getInternal, {
@@ -32,6 +33,7 @@ export const extractPolicy = internalAction({
     // Create a pending policy record
     const policyId = await ctx.runMutation(api.policies.insert, {
       userId: args.userId,
+      orgId: args.orgId,
       emailId: args.emailId,
       carrier: "Extracting...",
       policyNumber: "Extracting...",
@@ -44,6 +46,14 @@ export const extractPolicy = internalAction({
       coverages: [],
       insuredName: "Extracting...",
       extractionStatus: "extracting",
+    });
+
+    // Audit: extraction started
+    await ctx.runMutation(internal.policyAuditLog.append, {
+      policyId,
+      userId: args.userId,
+      orgId: args.orgId,
+      action: "extraction_started",
     });
 
     try {
@@ -123,6 +133,14 @@ export const extractPolicy = internalAction({
 
       await log(policyId, "Extraction complete");
 
+      // Audit: extraction complete
+      await ctx.runMutation(internal.policyAuditLog.append, {
+        policyId,
+        userId: args.userId,
+        orgId: args.orgId,
+        action: "extraction_complete",
+      });
+
       // Update extraction progress on connection
       await incrementExtracted(ctx, args.connectionId);
     } catch (error: any) {
@@ -133,6 +151,15 @@ export const extractPolicy = internalAction({
         extractionError: error.message || "Extraction failed",
       });
       console.error("Policy extraction failed:", error.message);
+
+      // Audit: extraction error
+      await ctx.runMutation(internal.policyAuditLog.append, {
+        policyId,
+        userId: args.userId,
+        orgId: args.orgId,
+        action: "extraction_error",
+        detail: error.message || "Extraction failed",
+      });
 
       // Still increment so progress completes
       await incrementExtracted(ctx, args.connectionId);

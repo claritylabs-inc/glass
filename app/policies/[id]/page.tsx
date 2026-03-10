@@ -1,12 +1,16 @@
 "use client";
 
-import { use, useState, useRef, useEffect } from "react";
+import { use, useState, useMemo, useRef, useEffect } from "react";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
 import { Nav } from "@/components/nav";
 import { FadeIn } from "@/components/ui/fade-in";
-import { ArrowLeft, Download, FileText, Calendar, Shield, DollarSign, Trash2, Upload, ChevronDown, ChevronRight, Loader2, RotateCw, Scale, Phone, Receipt, AlertTriangle, Users, Eye } from "lucide-react";
+import { ArrowLeft, Download, FileText, Calendar, Shield, DollarSign, Trash2, Upload, ChevronDown, ChevronRight, Loader2, RotateCw, Scale, Phone, Receipt, AlertTriangle, Users, Eye, Mail, MessageSquare, Activity, CheckCircle, XCircle, RefreshCw, Bot, X } from "lucide-react";
+import { motion } from "framer-motion";
+import dayjs from "dayjs";
+import { ModeBadge } from "@/components/mode-badge";
+import { MessageBubble, type Conversation } from "@/components/conversation-message";
 import { Skeleton } from "@/components/ui/skeleton";
 import { FixedMobileFooter } from "@/components/ui/fixed-mobile-footer";
 import Link from "next/link";
@@ -420,6 +424,358 @@ function ViewPdfButton() {
 }
 
 
+/* ── Conversations Tab ── */
+type PolicyThread = {
+  root: Conversation;
+  messages: Conversation[];
+  latestTime: number;
+};
+
+function PolicyThreadItem({
+  thread,
+  isSelected,
+  onSelect,
+}: {
+  thread: PolicyThread;
+  isSelected: boolean;
+  onSelect: () => void;
+}) {
+  const msgCount = thread.messages.reduce((n, m) => n + 1 + (m.responseBody ? 1 : 0), 0);
+
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={`w-full text-left px-4 py-3 border-b border-foreground/4 transition-colors cursor-pointer ${
+        isSelected
+          ? "bg-foreground/[0.04]"
+          : "hover:bg-foreground/[0.02]"
+      }`}
+    >
+      <div className="flex items-center gap-2 mb-1">
+        <span className="text-body-sm font-medium text-foreground truncate flex-1">
+          {thread.root.subject}
+        </span>
+        <ModeBadge mode={thread.root.mode} />
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="text-label-sm text-muted-foreground/50 truncate flex-1">
+          {thread.root.fromName ?? thread.root.fromEmail}
+        </span>
+        {msgCount > 1 && (
+          <span className="text-[10px] text-muted-foreground/30 shrink-0">
+            {msgCount} msgs
+          </span>
+        )}
+        <span className="text-[11px] text-muted-foreground/30 shrink-0">
+          {dayjs(thread.latestTime).format("MMM D")}
+        </span>
+      </div>
+    </button>
+  );
+}
+
+function PolicyThreadDetail({
+  thread,
+  onBack,
+}: {
+  thread: PolicyThread;
+  onBack: () => void;
+}) {
+  const messagesRef = useRef<HTMLDivElement>(null);
+  const prevThreadId = useRef<string | null>(null);
+
+  useEffect(() => {
+    const el = messagesRef.current;
+    if (!el) return;
+    const isNewThread = prevThreadId.current !== thread.root._id;
+    prevThreadId.current = thread.root._id;
+    el.scrollTo({ top: el.scrollHeight, behavior: isNewThread ? "instant" : "smooth" });
+  }, [thread.root._id, thread.messages.length]);
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Header */}
+      <div className="flex items-center gap-2 px-4 py-3 border-b border-foreground/4 shrink-0">
+        <button
+          type="button"
+          onClick={onBack}
+          className="p-1 -ml-1 rounded hover:bg-foreground/5 transition-colors cursor-pointer"
+        >
+          <ArrowLeft className="w-4 h-4 text-muted-foreground" />
+        </button>
+        <div className="flex-1 min-w-0">
+          <h4 className="!mb-0 text-body-sm font-semibold truncate">{thread.root.subject}</h4>
+          <p className="text-label-sm text-muted-foreground/50 truncate">
+            {thread.root.fromName ? `${thread.root.fromName} <${thread.root.fromEmail}>` : thread.root.fromEmail}
+          </p>
+        </div>
+        <ModeBadge mode={thread.root.mode} />
+      </div>
+
+      {/* Messages */}
+      <div ref={messagesRef} className="flex-1 overflow-y-auto p-4 space-y-4">
+        {thread.messages.map((msg) => (
+          <MessageBubble key={msg._id} conv={msg} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const CONVERSATIONS_HEIGHT_DESKTOP = "calc(100dvh - 10rem)";
+const CONVERSATIONS_HEIGHT_MOBILE = "calc(100dvh - 9rem)";
+
+function PolicyConversationsTab({ conversations }: { conversations: Conversation[] | undefined }) {
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  // Group into threads
+  const threads = useMemo(() => {
+    if (!conversations) return undefined;
+    const convs = conversations as unknown as Conversation[];
+    const threadMap = new Map<string, PolicyThread>();
+
+    for (const conv of convs) {
+      const rootId = (conv.threadId ?? conv._id) as string;
+      const existing = threadMap.get(rootId);
+      if (existing) {
+        existing.messages.push(conv);
+        if (conv._creationTime > existing.latestTime) existing.latestTime = conv._creationTime;
+      } else {
+        threadMap.set(rootId, {
+          root: conv.threadId ? convs.find((c) => c._id === conv.threadId) ?? conv : conv,
+          messages: [conv],
+          latestTime: conv._creationTime,
+        });
+      }
+    }
+
+    for (const thread of threadMap.values()) {
+      thread.messages.sort((a, b) => a._creationTime - b._creationTime);
+      if (!thread.messages.find((m) => m._id === thread.root._id)) {
+        thread.messages.unshift(thread.root);
+      }
+    }
+
+    return Array.from(threadMap.values()).sort((a, b) => b.latestTime - a.latestTime);
+  }, [conversations]);
+
+  const selectedThread = threads?.find(
+    (t) => t.root._id === selectedId || t.messages.some((m) => m._id === selectedId),
+  );
+
+  if (conversations === undefined) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="w-5 h-5 animate-spin text-muted-foreground/30" />
+      </div>
+    );
+  }
+
+  if (!threads || threads.length === 0) {
+    return (
+      <div className="rounded-lg border border-foreground/6 bg-white/60 px-6 py-12 text-center">
+        <MessageSquare className="w-8 h-8 text-muted-foreground/15 mx-auto mb-3" />
+        <p className="text-body-sm text-muted-foreground/50 mb-1">No conversations about this policy</p>
+        <p className="text-label-sm text-muted-foreground/30">
+          When Clarity Agent references this policy in email conversations, they&#39;ll appear here.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-lg border border-foreground/6 bg-white/60 overflow-hidden">
+      {/* Desktop: sidebar + detail */}
+      <div className="hidden md:flex" style={{ height: CONVERSATIONS_HEIGHT_DESKTOP }}>
+        {/* Thread list */}
+        <div className="w-72 shrink-0 border-r border-foreground/4 flex flex-col">
+          <div className="px-4 py-2.5 bg-foreground/[0.02] border-b border-foreground/4 shrink-0">
+            <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">
+              Threads
+              <span className="ml-1.5 text-[10px] font-medium bg-foreground/8 text-muted-foreground px-1.5 py-0.5 rounded-full leading-none">
+                {threads.length}
+              </span>
+            </p>
+          </div>
+          <div className="flex-1 overflow-y-auto">
+            {threads.map((thread) => (
+              <PolicyThreadItem
+                key={thread.root._id}
+                thread={thread}
+                isSelected={selectedThread?.root._id === thread.root._id}
+                onSelect={() => setSelectedId(thread.root._id)}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* Detail panel */}
+        <div className="flex-1 min-w-0">
+          {selectedThread ? (
+            <PolicyThreadDetail
+              thread={selectedThread}
+              onBack={() => setSelectedId(null)}
+            />
+          ) : (
+            <div className="flex items-center justify-center h-full">
+              <div className="text-center">
+                <Mail className="w-8 h-8 text-muted-foreground/15 mx-auto mb-2" />
+                <p className="text-body-sm text-muted-foreground/40">
+                  Select a conversation
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Mobile: stacked list or detail */}
+      <div className="md:hidden flex flex-col" style={{ height: CONVERSATIONS_HEIGHT_MOBILE }}>
+        {selectedThread ? (
+          <div className="flex-1 min-h-0">
+            <PolicyThreadDetail
+              thread={selectedThread}
+              onBack={() => setSelectedId(null)}
+            />
+          </div>
+        ) : (
+          <>
+            <div className="px-4 py-2.5 bg-foreground/[0.02] border-b border-foreground/4 shrink-0">
+              <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                Threads
+                <span className="ml-1.5 text-[10px] font-medium bg-foreground/8 text-muted-foreground px-1.5 py-0.5 rounded-full leading-none">
+                  {threads.length}
+                </span>
+              </p>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              {threads.map((thread) => (
+                <PolicyThreadItem
+                  key={thread.root._id}
+                  thread={thread}
+                  isSelected={false}
+                  onSelect={() => setSelectedId(thread.root._id)}
+                />
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── Activity Tab (Audit Log) ── */
+const AUDIT_ACTION_CONFIG: Record<string, { icon: React.ElementType; dotColor: string; bgColor: string; title: string }> = {
+  created: { icon: FileText, dotColor: "text-blue-500", bgColor: "bg-blue-50", title: "Policy created" },
+  extraction_started: { icon: Loader2, dotColor: "text-amber-500", bgColor: "bg-amber-50", title: "Extraction started" },
+  extraction_complete: { icon: CheckCircle, dotColor: "text-emerald-500", bgColor: "bg-emerald-50", title: "Extraction complete" },
+  extraction_error: { icon: XCircle, dotColor: "text-red-500", bgColor: "bg-red-50", title: "Extraction failed" },
+  re_extraction: { icon: RefreshCw, dotColor: "text-violet-500", bgColor: "bg-violet-50", title: "Re-extraction triggered" },
+  pdf_uploaded: { icon: Upload, dotColor: "text-sky-500", bgColor: "bg-sky-50", title: "PDF uploaded" },
+  deleted: { icon: Trash2, dotColor: "text-red-400", bgColor: "bg-red-50", title: "Policy deleted" },
+  restored: { icon: Shield, dotColor: "text-emerald-500", bgColor: "bg-emerald-50", title: "Policy restored" },
+  dismissed: { icon: XCircle, dotColor: "text-gray-500", bgColor: "bg-gray-50", title: "Policy dismissed" },
+  agent_referenced: { icon: Bot, dotColor: "text-indigo-500", bgColor: "bg-indigo-50", title: "Referenced by agent" },
+};
+
+function PolicyActivityTab({ policyId }: { policyId: string }) {
+  const entries = useQuery(api.policyAuditLog.listByPolicy, {
+    policyId: policyId as any,
+  });
+
+  if (entries === undefined) {
+    return (
+      <div className="rounded-lg border border-foreground/6 bg-white/60 overflow-hidden">
+        <div className="px-4 py-2.5 bg-foreground/[0.02] border-b border-foreground/4">
+          <div className="h-4 w-24 bg-foreground/5 rounded animate-pulse" />
+        </div>
+        {Array.from({ length: 3 }).map((_, i) => (
+          <div key={i} className="flex items-center gap-3 px-4 py-3 border-b border-foreground/4 last:border-b-0">
+            <div className="w-7 h-7 rounded-full bg-foreground/5 animate-pulse" />
+            <div className="flex-1">
+              <div className="h-4 w-32 bg-foreground/5 rounded animate-pulse" />
+            </div>
+            <div className="h-3 w-16 bg-foreground/5 rounded animate-pulse" />
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (entries.length === 0) {
+    return (
+      <div className="rounded-lg border border-foreground/6 bg-white/60 px-6 py-12 text-center">
+        <Activity className="w-8 h-8 text-muted-foreground/15 mx-auto mb-3" />
+        <p className="text-body-sm text-muted-foreground/50">No activity recorded yet</p>
+      </div>
+    );
+  }
+
+  // Group entries by date
+  const groups: { label: string; entries: typeof entries }[] = [];
+  for (const entry of entries) {
+    const label = dayjs(entry._creationTime).format("MMMM D, YYYY");
+    const last = groups[groups.length - 1];
+    if (last && last.label === label) {
+      last.entries.push(entry);
+    } else {
+      groups.push({ label, entries: [entry] });
+    }
+  }
+
+  return (
+    <div className="rounded-lg border border-foreground/6 bg-white/60 overflow-hidden">
+      {groups.map((group, gi) => {
+        const config = AUDIT_ACTION_CONFIG;
+        return (
+          <div key={group.label}>
+            {/* Date header */}
+            <div className={`px-4 py-2 bg-foreground/[0.02] ${gi > 0 ? "border-t border-foreground/6" : ""} border-b border-foreground/4`}>
+              <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                {group.label}
+              </p>
+            </div>
+
+            {/* Entries */}
+            {group.entries.map((entry, ei) => {
+              const cfg = config[entry.action] ?? {
+                icon: Activity,
+                dotColor: "text-gray-500",
+                bgColor: "bg-gray-50",
+                title: entry.action,
+              };
+              const Icon = cfg.icon;
+              const isLast = ei === group.entries.length - 1 && gi === groups.length - 1;
+
+              return (
+                <div
+                  key={entry._id}
+                  className={`flex items-start gap-3 px-4 py-3 ${!isLast ? "border-b border-foreground/4" : ""}`}
+                >
+                  <div className={`w-7 h-7 rounded-full ${cfg.bgColor} flex items-center justify-center shrink-0 mt-0.5`}>
+                    <Icon className={`w-3.5 h-3.5 ${cfg.dotColor}`} />
+                  </div>
+                  <div className="min-w-0 flex-1 pt-0.5">
+                    <p className="text-body-sm font-medium text-foreground">{cfg.title}</p>
+                    {entry.detail && (
+                      <p className="text-label-sm text-muted-foreground/50 mt-0.5 line-clamp-1">{entry.detail}</p>
+                    )}
+                  </div>
+                  <span className="text-[11px] text-muted-foreground/35 shrink-0 pt-1 tabular-nums">
+                    {dayjs(entry._creationTime).format("h:mm A")}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function PolicyLayoutContainer({ children, panel }: { children: React.ReactNode; panel: React.ReactNode }) {
   const { isPdfOpen, fileUrl } = usePdf();
   const hasPdfPanel = isPdfOpen && !!fileUrl;
@@ -459,7 +815,14 @@ export default function PolicyDetailPage({
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [demoBannerDismissed, setDemoBannerDismissed] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [activeTab, setActiveTab] = useState<"details" | "conversations" | "activity">("details");
+
+  const conversations = useQuery(
+    api.agentConversations.listByPolicyId,
+    policy ? { policyId: policy._id } : "skip",
+  );
 
   if (policy === undefined) {
     return (
@@ -607,7 +970,7 @@ export default function PolicyDetailPage({
     <PdfProvider fileUrl={fileUrl ?? null} initialPage={initialPage}>
       <div className="min-h-screen flex flex-col">
         <Nav />
-        <main className="flex-1 pb-20 md:pb-0">
+        <main className="flex-1 pb-12 md:pb-0">
           <PolicyLayoutContainer panel={<PdfPanel />}>
                 <FadeIn when={true} staggerIndex={0} duration={0.6}>
                   <Link
@@ -635,9 +998,6 @@ export default function PolicyDetailPage({
                     <div className="min-w-0 flex-1 mr-4">
                       <div className="flex items-center gap-3 mb-1">
                         <h1 className="!mb-0 break-all">{policy.policyNumber}</h1>
-                        {(policy as any).isDemo && (
-                          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">Demo</span>
-                        )}
                         {documentType === "quote" && (
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-label-sm font-medium bg-yellow-100 text-yellow-800">
                             Quote
@@ -717,6 +1077,61 @@ export default function PolicyDetailPage({
                   </DialogContent>
                 </Dialog>
 
+                {/* Demo data banner */}
+                {(policy as any).isDemo && !demoBannerDismissed && (
+                  <div className="flex items-center gap-3 px-4 py-2.5 rounded-lg border border-amber-200 bg-amber-50/60 mb-4">
+                    <p className="text-label-sm text-amber-700 flex-1">
+                      You&apos;re viewing demo data.{" "}
+                      <Link href="/profile" className="underline font-medium hover:text-amber-900">Remove demo data</Link>{" "}
+                      from Settings when you&apos;re ready.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setDemoBannerDismissed(true)}
+                      className="text-amber-500 hover:text-amber-700 transition-colors cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+
+                {/* Tab bar */}
+                <div className="flex items-center gap-1 border-b border-foreground/6 mb-6">
+                  {([
+                    { id: "details" as const, label: "Details" },
+                    { id: "conversations" as const, label: "Conversations", count: conversations?.length },
+                    { id: "activity" as const, label: "Activity" },
+                  ]).map((tab) => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setActiveTab(tab.id)}
+                      className={`relative px-3 py-2 text-body-sm font-medium whitespace-nowrap transition-colors cursor-pointer ${
+                        activeTab === tab.id
+                          ? "text-foreground"
+                          : "text-muted-foreground hover:text-foreground/70"
+                      }`}
+                    >
+                      <span className="flex items-center gap-1.5">
+                        {tab.label}
+                        {tab.count != null && tab.count > 0 && (
+                          <span className="text-[10px] font-medium bg-foreground/8 text-muted-foreground px-1.5 py-0.5 rounded-full leading-none">
+                            {tab.count}
+                          </span>
+                        )}
+                      </span>
+                      {activeTab === tab.id && (
+                        <motion.div
+                          layoutId="policy-tab-indicator"
+                          className="absolute bottom-0 left-0 right-0 h-[2px] bg-foreground"
+                          transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                        />
+                      )}
+                    </button>
+                  ))}
+                </div>
+
+                {activeTab === "details" && (<>
                 {/* Info grid */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                   {[
@@ -734,7 +1149,6 @@ export default function PolicyDetailPage({
                       value: policy.premium || "—",
                       sub: "Annual premium",
                       mono: true,
-                      large: true,
                     },
                     {
                       icon: Shield,
@@ -752,11 +1166,7 @@ export default function PolicyDetailPage({
                           </p>
                         </div>
                         <p
-                          className={
-                            card.large
-                              ? "text-lg font-semibold font-mono text-foreground-highlight"
-                              : `text-body-sm font-medium text-foreground ${card.mono ? "font-mono" : ""}`
-                          }
+                          className={`text-body-sm font-medium text-foreground ${card.mono ? "font-mono" : ""}`}
                         >
                           {card.value}
                         </p>
@@ -956,6 +1366,15 @@ export default function PolicyDetailPage({
                       </FadeIn>
                     )}
                   </div>
+                )}
+                </>)}
+
+                {activeTab === "conversations" && (
+                  <PolicyConversationsTab conversations={conversations} />
+                )}
+
+                {activeTab === "activity" && (
+                  <PolicyActivityTab policyId={id} />
                 )}
 
           </PolicyLayoutContainer>
