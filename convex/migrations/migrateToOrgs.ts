@@ -59,6 +59,55 @@ export const migrateUsersToOrgs = internalMutation({
 });
 
 /**
+ * Step 1b: Create orgs for any remaining users who were skipped (no companyName / not onboarded).
+ * This ensures every user with records gets an org.
+ */
+export const migrateRemainingUsers = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const users = await ctx.db.query("users").collect();
+    let created = 0;
+    let skipped = 0;
+
+    for (const user of users) {
+      const existing = await ctx.db
+        .query("orgMemberships")
+        .withIndex("by_userId", (q) => q.eq("userId", user._id))
+        .first();
+      if (existing) {
+        skipped++;
+        continue;
+      }
+
+      const orgId = await ctx.db.insert("organizations", {
+        name: user.companyName || user.name || "My Organization",
+        website: user.companyWebsite,
+        context: user.companyContext,
+        industry: user.industry,
+        industryVertical: user.industryVertical,
+        insuranceBroker: user.insuranceBroker,
+        brokerContactName: user.brokerContactName,
+        brokerContactEmail: user.brokerContactEmail,
+        coiHandling: user.coiHandling === "user" ? "member" : user.coiHandling,
+        agentHandle: user.agentHandle,
+        primaryInsuranceContactId: user._id,
+        onboardingComplete: user.onboardingComplete,
+      });
+
+      await ctx.db.insert("orgMemberships", {
+        orgId,
+        userId: user._id,
+        role: "admin",
+      });
+
+      created++;
+    }
+
+    return { created, skipped };
+  },
+});
+
+/**
  * Step 2: Backfill orgId on all existing records.
  * Run this after migrateUsersToOrgs.
  */
