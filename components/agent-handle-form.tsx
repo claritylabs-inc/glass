@@ -11,6 +11,11 @@ const AGENT_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "agent.claritylabs.
 interface AgentHandleFormProps {
   suggestedHandle?: string;
   onClaimed?: (handle: string) => void;
+  claimLabel?: string;
+  claimingLabel?: string;
+  hideButton?: boolean;
+  onAvailabilityChange?: (canClaim: boolean) => void;
+  claimRef?: React.MutableRefObject<(() => Promise<void>) | null>;
 }
 
 function normalizeHandle(input: string): string {
@@ -20,7 +25,7 @@ function normalizeHandle(input: string): string {
     .slice(0, 30);
 }
 
-export function AgentHandleForm({ suggestedHandle, onClaimed }: AgentHandleFormProps) {
+export function AgentHandleForm({ suggestedHandle, onClaimed, claimLabel = "Claim Handle", claimingLabel = "Claiming...", hideButton, onAvailabilityChange, claimRef }: AgentHandleFormProps) {
   const [input, setInput] = useState("");
   const [debouncedHandle, setDebouncedHandle] = useState("");
   const [claiming, setClaiming] = useState(false);
@@ -58,6 +63,16 @@ export function AgentHandleForm({ suggestedHandle, onClaimed }: AgentHandleFormP
     }
   }, [availability, claimHandle, debouncedHandle, onClaimed]);
 
+  // Expose claim function and availability to parent
+  useEffect(() => {
+    if (claimRef) claimRef.current = handleClaim;
+  }, [claimRef, handleClaim]);
+
+  const canClaim = !!availability?.available && !claiming;
+  useEffect(() => {
+    onAvailabilityChange?.(canClaim);
+  }, [canClaim, onAvailabilityChange]);
+
   const normalized = normalizeHandle(input);
   const isChecking = normalized.length >= 3 && availability === undefined;
   const showStatus = normalized.length >= 3 && !isChecking;
@@ -77,20 +92,22 @@ export function AgentHandleForm({ suggestedHandle, onClaimed }: AgentHandleFormP
             @{AGENT_DOMAIN}
           </div>
         </div>
-        <PillButton
-          onClick={handleClaim}
-          disabled={!availability?.available || claiming}
-          className="w-full sm:w-auto"
-        >
-          {claiming ? (
-            <>
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              Claiming...
-            </>
-          ) : (
-            "Claim Handle"
-          )}
-        </PillButton>
+        {!hideButton && (
+          <PillButton
+            onClick={handleClaim}
+            disabled={!availability?.available || claiming}
+            className="w-full sm:w-auto"
+          >
+            {claiming ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                {claimingLabel}
+              </>
+            ) : (
+              claimLabel
+            )}
+          </PillButton>
+        )}
       </div>
 
       {/* Status indicator */}

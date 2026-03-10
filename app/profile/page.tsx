@@ -7,7 +7,9 @@ import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
 import { Nav } from "@/components/nav";
 import { FadeIn } from "@/components/ui/fade-in";
-import { Loader2, Globe, Sparkles, AlertTriangle } from "lucide-react";
+import { Loader2, Globe, Sparkles, AlertTriangle, Trash2 } from "lucide-react";
+import { INDUSTRIES } from "@/convex/lib/industries";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { PillButton } from "@/components/ui/pill-button";
 import { FixedMobileFooter } from "@/components/ui/fixed-mobile-footer";
 import {
@@ -23,6 +25,8 @@ export default function ProfilePage() {
   const viewer = useQuery(api.users.viewer);
   const updateProfile = useMutation(api.users.updateProfile);
   const resetAccount = useMutation(api.users.resetAccount);
+  const removeDemoData = useMutation(api.seed.removeDemoData);
+  const hasDemoDataResult = useQuery(api.seed.hasDemoData);
   const extractCompanyInfo = useAction(api.actions.extractCompanyInfo.extractCompanyInfo);
   const router = useRouter();
 
@@ -33,10 +37,14 @@ export default function ProfilePage() {
   const [brokerContactEmail, setBrokerContactEmail] = useState("");
   const [companyWebsite, setCompanyWebsite] = useState("");
   const [companyContext, setCompanyContext] = useState("");
+  const [industry, setIndustry] = useState("");
+  const [industryVertical, setIndustryVertical] = useState("");
   const [saving, setSaving] = useState(false);
   const [extracting, setExtracting] = useState(false);
   const [showResetDialog, setShowResetDialog] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [removingDemo, setRemovingDemo] = useState(false);
+  const [showRemoveDemoDialog, setShowRemoveDemoDialog] = useState(false);
 
   const contextRef = useRef<HTMLTextAreaElement>(null);
   const autoResize = useCallback(() => {
@@ -56,8 +64,12 @@ export default function ProfilePage() {
       setBrokerContactEmail(viewer.brokerContactEmail ?? "");
       setCompanyWebsite(viewer.companyWebsite ?? "");
       setCompanyContext(viewer.companyContext ?? "");
+      setIndustry(viewer.industry ?? "");
+      setIndustryVertical(viewer.industryVertical ?? "");
     }
   }, [viewer]);
+
+  const hasDemo = hasDemoDataResult === true;
 
   useEffect(() => { autoResize(); }, [companyContext, autoResize]);
 
@@ -73,6 +85,8 @@ export default function ProfilePage() {
         brokerContactEmail: brokerContactEmail || undefined,
         companyWebsite: companyWebsite || undefined,
         companyContext: companyContext || undefined,
+        industry: industry || undefined,
+        industryVertical: industryVertical || undefined,
       });
       toast.success("Profile saved");
     } catch {
@@ -91,12 +105,33 @@ export default function ProfilePage() {
       const result = await extractCompanyInfo({ url });
       if (result.companyContext) {
         setCompanyContext(result.companyContext);
-        toast.success("Company info extracted");
       }
+      if (result.industry) {
+        setIndustry(result.industry);
+        if (result.industryVertical) {
+          setIndustryVertical(result.industryVertical);
+        } else {
+          setIndustryVertical("");
+        }
+      }
+      toast.success("Company info extracted");
     } catch {
       toast.error("Failed to extract company info");
     } finally {
       setExtracting(false);
+    }
+  }
+
+  async function handleRemoveDemo() {
+    setRemovingDemo(true);
+    try {
+      const result = await removeDemoData();
+      setShowRemoveDemoDialog(false);
+      toast.success(`Removed ${result.removed} demo records`);
+    } catch {
+      toast.error("Failed to remove demo data");
+    } finally {
+      setRemovingDemo(false);
     }
   }
 
@@ -246,6 +281,35 @@ export default function ProfilePage() {
                     </p>
                   </div>
 
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+                        Industry
+                      </label>
+                      <SearchableSelect
+                        options={INDUSTRIES.map((ind) => ({ value: ind.value, label: ind.label }))}
+                        value={industry}
+                        onChange={(v) => {
+                          setIndustry(v);
+                          setIndustryVertical("");
+                        }}
+                        placeholder="Select industry..."
+                      />
+                    </div>
+                    <div>
+                      <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+                        Vertical
+                      </label>
+                      <SearchableSelect
+                        options={INDUSTRIES.find((i) => i.value === industry)?.verticals.map((v) => ({ value: v.value, label: v.label })) ?? []}
+                        value={industryVertical}
+                        onChange={setIndustryVertical}
+                        placeholder="Select vertical..."
+                        disabled={!industry}
+                      />
+                    </div>
+                  </div>
+
                   <div>
                     <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
                       Company Context
@@ -272,7 +336,7 @@ export default function ProfilePage() {
                   <h3 className="!mb-0 text-sm font-medium text-foreground">Insurance Broker</h3>
                 </div>
                 <div className="px-5 py-5">
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
                       <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
                         Broker (Company)
@@ -315,6 +379,56 @@ export default function ProfilePage() {
 
             </form>
           </FadeIn>
+
+          {/* Demo Data section — visible when demo data exists */}
+          {hasDemo && (
+            <FadeIn when={true} staggerIndex={2} duration={0.6}>
+              <div className="rounded-lg border border-amber-200 bg-amber-50/50 mb-4">
+                <div className="px-5 py-3.5 border-b border-amber-200">
+                  <h3 className="!mb-0 text-sm font-medium text-amber-900">Demo Data</h3>
+                </div>
+                <div className="px-5 py-5">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-body-sm font-medium text-foreground">Remove Demo Data</p>
+                      <p className="text-label-sm text-muted-foreground mt-0.5">
+                        Delete all demo policies, emails, and connections. Real data is not affected.
+                      </p>
+                    </div>
+                    <PillButton
+                      variant="destructive"
+                      onClick={() => setShowRemoveDemoDialog(true)}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      Remove Demo Data
+                    </PillButton>
+                  </div>
+                </div>
+              </div>
+
+              <Dialog open={showRemoveDemoDialog} onOpenChange={(v) => !v && setShowRemoveDemoDialog(false)}>
+                <DialogContent showCloseButton={false}>
+                  <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2">
+                      <Trash2 className="w-5 h-5 text-amber-500" />
+                      Remove Demo Data
+                    </DialogTitle>
+                    <DialogDescription>
+                      This will delete all demo policies, emails, and connections. Your real data will not be affected.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <DialogFooter>
+                    <PillButton variant="secondary" onClick={() => setShowRemoveDemoDialog(false)} disabled={removingDemo}>
+                      Cancel
+                    </PillButton>
+                    <PillButton variant="destructive" onClick={handleRemoveDemo} disabled={removingDemo}>
+                      {removingDemo ? "Removing..." : "Yes, Remove Demo Data"}
+                    </PillButton>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </FadeIn>
+          )}
 
           {/* Danger Zone — admin only */}
           {viewer?.isAdmin && (

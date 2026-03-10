@@ -11,11 +11,7 @@ import { Id } from "../_generated/dataModel";
 const DEFAULT_AGENT_DOMAIN = "agent.claritylabs.inc";
 
 function getAgentDomain(): string {
-  const from = process.env.AGENT_EMAIL_FROM;
-  if (!from) return DEFAULT_AGENT_DOMAIN;
-  // AGENT_EMAIL_FROM can be a full address "Clarity Agent <noreply@domain>" or just a domain
-  const match = from.match(/@([^>]+)/);
-  return match ? match[1] : from;
+  return process.env.AGENT_DOMAIN ?? DEFAULT_AGENT_DOMAIN;
 }
 
 const CONSUMER_DOMAINS = new Set([

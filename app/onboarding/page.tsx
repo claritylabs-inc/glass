@@ -21,8 +21,14 @@ import {
   Check,
   MessageSquare,
   Users,
+  Asterisk,
+  Forward,
 } from "lucide-react";
 import { AgentHandleForm } from "@/components/agent-handle-form";
+import { INDUSTRIES } from "@/convex/lib/industries";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
+const AGENT_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "agent.claritylabs.inc";
 
 export default function OnboardingPage() {
   const router = useRouter();
@@ -30,7 +36,7 @@ export default function OnboardingPage() {
   const connections = useQuery(api.connections.list);
   const updateProfile = useMutation(api.users.updateProfile);
   const completeOnboarding = useMutation(api.users.completeOnboarding);
-  const seedData = useMutation(api.seed.seed);
+  const seedData = useAction(api.seed.seed);
   const extractCompanyInfo = useAction(api.actions.extractCompanyInfo.extractCompanyInfo);
 
   const [currentStep, setCurrentStep] = useState(0);
@@ -40,6 +46,8 @@ export default function OnboardingPage() {
   const [companyName, setCompanyName] = useState("");
   const [companyWebsite, setCompanyWebsite] = useState("");
   const [companyContext, setCompanyContext] = useState("");
+  const [industry, setIndustry] = useState("");
+  const [industryVertical, setIndustryVertical] = useState("");
   const [extracting, setExtracting] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
 
@@ -50,6 +58,8 @@ export default function OnboardingPage() {
 
   // Step 3 state (agent)
   const [handleClaimed, setHandleClaimed] = useState(false);
+  const [canClaimHandle, setCanClaimHandle] = useState(false);
+  const claimRef = useRef<(() => Promise<void>) | null>(null);
 
   // Step 4 state
   const [finishing, setFinishing] = useState(false);
@@ -71,6 +81,8 @@ export default function OnboardingPage() {
       setCompanyName(viewer.companyName ?? "");
       setCompanyWebsite(viewer.companyWebsite ?? "");
       setCompanyContext(viewer.companyContext ?? "");
+      setIndustry(viewer.industry ?? "");
+      setIndustryVertical(viewer.industryVertical ?? "");
     }
   }, [viewer]);
 
@@ -96,6 +108,14 @@ export default function OnboardingPage() {
       if (result.companyContext) {
         setCompanyContext(result.companyContext);
       }
+      if (result.industry) {
+        setIndustry(result.industry);
+        if (result.industryVertical) {
+          setIndustryVertical(result.industryVertical);
+        } else {
+          setIndustryVertical("");
+        }
+      }
     } finally {
       setExtracting(false);
     }
@@ -109,6 +129,8 @@ export default function OnboardingPage() {
       if (companyName) updates.companyName = companyName;
       if (companyWebsite) updates.companyWebsite = companyWebsite;
       if (companyContext) updates.companyContext = companyContext;
+      if (industry) (updates as any).industry = industry;
+      if (industryVertical) (updates as any).industryVertical = industryVertical;
       await updateProfile(updates);
       setCurrentStep(1);
     } finally {
@@ -157,11 +179,17 @@ export default function OnboardingPage() {
         <div className="p-2 sm:bg-white sm:rounded-xl sm:border sm:border-foreground/8 sm:p-8">
           {/* Header */}
           <div className="text-center mb-6">
-            <h3 className="!mb-0 flex items-center justify-center gap-1.5">
-              Clarity <LogoIcon size={22} className="shrink-0" /> Labs
-            </h3>
+            {currentStep === 2 ? (
+              <h3 className="!mb-0 flex items-center justify-center gap-1.5">
+                <Asterisk className="w-5 h-5 text-[#A0D2FA] shrink-0" /> Clarity Agent
+              </h3>
+            ) : (
+              <h3 className="!mb-0 flex items-center justify-center gap-1.5">
+                Clarity <LogoIcon size={22} className="shrink-0" /> Labs
+              </h3>
+            )}
             <p className="text-body-sm text-muted-foreground mt-2">
-              Let&apos;s get you set up
+              {currentStep === 2 ? "Claim an email address for your AI policy assistant" : "Let\u2019s get you set up"}
             </p>
           </div>
 
@@ -241,6 +269,35 @@ export default function OnboardingPage() {
                     )}
                     <span className="hidden sm:inline">{extracting ? "Extracting..." : "Extract Info"}</span>
                   </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+                    Industry
+                  </label>
+                  <SearchableSelect
+                    options={INDUSTRIES.map((ind) => ({ value: ind.value, label: ind.label }))}
+                    value={industry}
+                    onChange={(v) => {
+                      setIndustry(v);
+                      setIndustryVertical("");
+                    }}
+                    placeholder="Select industry..."
+                  />
+                </div>
+                <div>
+                  <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+                    Vertical
+                  </label>
+                  <SearchableSelect
+                    options={INDUSTRIES.find((i) => i.value === industry)?.verticals.map((v) => ({ value: v.value, label: v.label })) ?? []}
+                    value={industryVertical}
+                    onChange={setIndustryVertical}
+                    placeholder="Select vertical..."
+                    disabled={!industry}
+                  />
                 </div>
               </div>
 
@@ -350,10 +407,10 @@ export default function OnboardingPage() {
                   )}
                   <div className="text-center">
                     <p className="text-body-sm font-medium">
-                      {seeded ? "Demo Data Loaded" : "Try Demo Data"}
+                      {seeded ? "Demo Data Loaded" : seeding ? "Generating..." : "Try Demo Data"}
                     </p>
                     <p className="text-label-sm text-muted-foreground/50 mt-0.5">
-                      {seeded ? "Sample policies ready" : "Load sample policies"}
+                      {seeded ? "Sample policies ready" : seeding ? "Creating industry-specific data" : "Load sample policies"}
                     </p>
                   </div>
                 </button>
@@ -390,15 +447,18 @@ export default function OnboardingPage() {
 
           {/* Step 3: AI Email Agent */}
           {currentStep === 2 && (
-            <div className="space-y-4">
-              <div className="text-center mb-2">
-                <h4 className="!mb-1 text-base font-semibold">Meet Your AI Agent</h4>
-                <p className="text-label-sm text-muted-foreground/60">
-                  Get a dedicated email address that answers policy questions
-                </p>
-              </div>
-
-              <div className="max-w-sm mx-auto">
+            <div className="space-y-6">
+              {viewer?.agentHandle ? (
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-4">
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <p className="text-body-sm font-medium text-foreground">Agent email claimed</p>
+                  </div>
+                  <p className="text-label-sm font-mono text-emerald-700 pl-6">
+                    {viewer.agentHandle}@{AGENT_DOMAIN}
+                  </p>
+                </div>
+              ) : (
                 <AgentHandleForm
                   suggestedHandle={
                     companyName
@@ -408,27 +468,47 @@ export default function OnboardingPage() {
                           .replace(/^-|-$/g, "")
                       : undefined
                   }
-                  onClaimed={() => setHandleClaimed(true)}
+                  onClaimed={() => {
+                    setHandleClaimed(true);
+                    setCurrentStep(3);
+                  }}
+                  hideButton
+                  claimRef={claimRef}
+                  onAvailabilityChange={setCanClaimHandle}
                 />
-              </div>
+              )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
-                <div className="flex items-start gap-3 p-4 rounded-lg border border-foreground/6 bg-foreground/[0.01]">
-                  <MessageSquare className="w-4 h-4 text-violet-500 mt-0.5 shrink-0" />
-                  <div>
-                    <p className="text-label-sm font-medium text-foreground">Direct Mode</p>
-                    <p className="text-[11px] text-muted-foreground/50 mt-0.5">
-                      Email your agent to ask questions about your policies
-                    </p>
+              <div>
+                <p className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider mb-3">
+                  What Clarity Agent can do
+                </p>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-3 p-3 rounded-lg bg-violet-50/60 border border-violet-100">
+                    <MessageSquare className="w-4 h-4 text-violet-500 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-body-sm font-medium text-foreground">Direct: ask policy questions</p>
+                      <p className="text-[11px] text-muted-foreground/60 mt-0.5">
+                        Email your agent to look up coverages, limits, dates, and more
+                      </p>
+                    </div>
                   </div>
-                </div>
-                <div className="flex items-start gap-3 p-4 rounded-lg border border-foreground/6 bg-foreground/[0.01]">
-                  <Users className="w-4 h-4 text-sky-500 mt-0.5 shrink-0" />
-                  <div>
-                    <p className="text-label-sm font-medium text-foreground">CC Mode</p>
-                    <p className="text-[11px] text-muted-foreground/50 mt-0.5">
-                      CC your agent on threads for instant policy lookups
-                    </p>
+                  <div className="flex items-center gap-3 p-3 rounded-lg bg-sky-50/60 border border-sky-100">
+                    <Users className="w-4 h-4 text-sky-500 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-body-sm font-medium text-foreground">CC: reply-all with policy info</p>
+                      <p className="text-[11px] text-muted-foreground/60 mt-0.5">
+                        CC your agent on a thread and it replies to all participants
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 p-3 rounded-lg bg-teal-50/60 border border-teal-100">
+                    <Forward className="w-4 h-4 text-teal-500 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-body-sm font-medium text-foreground">Forward: auto-reply to customers</p>
+                      <p className="text-[11px] text-muted-foreground/60 mt-0.5">
+                        Forward a customer email and the agent replies directly to them
+                      </p>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -446,13 +526,20 @@ export default function OnboardingPage() {
                   >
                     Skip for now
                   </button>
-                  <PillButton
-                    onClick={() => setCurrentStep(3)}
-                    disabled={!handleClaimed && !viewer?.agentHandle}
-                  >
-                    Next
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </PillButton>
+                  {viewer?.agentHandle ? (
+                    <PillButton onClick={() => setCurrentStep(3)}>
+                      Next
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </PillButton>
+                  ) : (
+                    <PillButton
+                      onClick={() => claimRef.current?.()}
+                      disabled={!canClaimHandle}
+                    >
+                      Claim Handle
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </PillButton>
+                  )}
                 </div>
               </div>
             </div>

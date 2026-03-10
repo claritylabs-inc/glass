@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
@@ -32,6 +32,16 @@ import {
 import { Id } from "@/convex/_generated/dataModel";
 
 dayjs.extend(relativeTime);
+
+/** Hook that returns a tick value that increments every `ms` milliseconds, forcing re-renders for live timestamps. */
+function useTick(ms = 30_000) {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), ms);
+    return () => clearInterval(id);
+  }, [ms]);
+  return tick;
+}
 
 const AGENT_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "agent.claritylabs.inc";
 
@@ -81,13 +91,16 @@ function ThreadItem({
   thread,
   isSelected,
   onSelect,
+  tick,
 }: {
   thread: Thread;
   isSelected: boolean;
   onSelect: () => void;
+  tick: number;
 }) {
   const root = thread.root;
-  const [timeAgo] = useState(() => dayjs(thread.latestTime).fromNow());
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const timeAgo = useMemo(() => dayjs(thread.latestTime).fromNow(), [thread.latestTime, tick]);
 
   return (
     <button
@@ -104,11 +117,6 @@ function ThreadItem({
           {root.subject}
         </span>
         <div className="flex items-center gap-1.5 shrink-0">
-          {thread.messages.length > 1 && (
-            <span className="text-[11px] text-muted-foreground/40 font-medium">
-              {thread.messages.length}
-            </span>
-          )}
           <ModeBadge mode={root.mode} />
         </div>
       </div>
@@ -233,7 +241,7 @@ function MessageBubble({ conv }: { conv: Conversation }) {
   return (
     <>
       {/* Inbound message */}
-      <div className="mr-8">
+      <div className="max-w-2xl">
         <div className="mb-2">
           <div className="flex items-center justify-between">
             <span className="text-label-sm font-medium text-muted-foreground">
@@ -288,7 +296,7 @@ function MessageBubble({ conv }: { conv: Conversation }) {
       )}
 
       {conv.responseBody && (
-        <div className="ml-8">
+        <div className="max-w-2xl ml-auto">
           <div className="mb-2">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1">
@@ -347,7 +355,18 @@ function ThreadDetail({
 }) {
   const archiveConv = useMutation(api.agentConversations.archive);
   const unarchiveConv = useMutation(api.agentConversations.unarchive);
+  const messagesRef = useRef<HTMLDivElement>(null);
+  const prevThreadId = useRef<string | null>(null);
   const root = thread.root;
+
+  // Auto-scroll to bottom when thread opens or messages change
+  useEffect(() => {
+    const el = messagesRef.current;
+    if (!el) return;
+    const isNewThread = prevThreadId.current !== root._id;
+    prevThreadId.current = root._id;
+    el.scrollTo({ top: el.scrollHeight, behavior: isNewThread ? "instant" : "smooth" });
+  }, [root._id, thread.messages.length]);
   const isArchived = !!root.archivedAt;
 
   async function handleArchiveToggle() {
@@ -378,11 +397,14 @@ function ThreadDetail({
         </div>
         <div className="flex items-center gap-2.5 shrink-0">
           <ModeBadge mode={root.mode} />
-          {thread.messages.length > 1 && (
-            <span className="text-[11px] text-muted-foreground/40">
-              {thread.messages.length} messages
-            </span>
-          )}
+          {(() => {
+            const total = thread.messages.reduce((n, m) => n + 1 + (m.responseBody ? 1 : 0), 0);
+            return total > 1 ? (
+              <span className="text-[11px] text-muted-foreground/40">
+                {total} messages
+              </span>
+            ) : null;
+          })()}
           <PillButton variant="icon" onClick={handleArchiveToggle} label={isArchived ? "Unarchive" : "Archive"}>
             {isArchived ? <ArchiveRestore className="w-4 h-4" /> : <Archive className="w-4 h-4" />}
           </PillButton>
@@ -395,7 +417,7 @@ function ThreadDetail({
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 pr-5 pb-20 space-y-4">
+      <div ref={messagesRef} className="flex-1 overflow-y-auto p-4 pr-5 pb-20 space-y-4">
         {thread.messages.map((msg) => (
           <MessageBubble key={msg._id} conv={msg} />
         ))}
@@ -618,6 +640,7 @@ function ConversationsPanel({
   showArchived,
   setShowArchived,
   agentEmail,
+  tick,
 }: {
   threads: Thread[] | undefined;
   selectedThread: Thread | undefined;
@@ -626,6 +649,7 @@ function ConversationsPanel({
   showArchived: boolean;
   setShowArchived: (v: boolean) => void;
   agentEmail: string | null;
+  tick: number;
 }) {
   return (
     <div className="rounded-lg border border-foreground/6 bg-white/60 overflow-hidden">
@@ -661,6 +685,7 @@ function ConversationsPanel({
                   thread={thread}
                   isSelected={selectedThread?.root._id === thread.root._id}
                   onSelect={() => setSelectedId(thread.root._id)}
+                  tick={tick}
                 />
               ))
             )}
@@ -731,6 +756,7 @@ function ConversationsPanel({
                   thread={thread}
                   isSelected={false}
                   onSelect={() => setSelectedId(thread.root._id)}
+                  tick={tick}
                 />
               ))
             )}
@@ -758,6 +784,7 @@ export default function AgentPage() {
   const [copied, setCopied] = useState(false);
   const [activeTab, setActiveTab] = useState<AgentTab>("conversations");
   const [helpDismissed, setHelpDismissed] = useState(false);
+  const tick = useTick(30_000);
 
   useEffect(() => {
     try { setHelpDismissed(localStorage.getItem("agent-help-dismissed") === "1"); } catch {}
@@ -953,6 +980,7 @@ export default function AgentPage() {
                     showArchived={showArchived}
                     setShowArchived={setShowArchived}
                     agentEmail={agentEmail}
+                    tick={tick}
                   />
                 ) : (
                   <div className="space-y-6">
