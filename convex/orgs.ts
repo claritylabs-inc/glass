@@ -94,6 +94,43 @@ export const checkHandleAvailability = query({
 
 // ── Mutations ──
 
+export const createOrg = mutation({
+  args: {
+    name: v.string(),
+    website: v.optional(v.string()),
+    context: v.optional(v.string()),
+    industry: v.optional(v.string()),
+    industryVertical: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
+
+    // Check if user already has an org
+    const existing = await ctx.db
+      .query("orgMemberships")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .first();
+    if (existing) throw new Error("Already in an organization");
+
+    const orgId = await ctx.db.insert("organizations", {
+      name: args.name,
+      ...(args.website && { website: args.website }),
+      ...(args.context && { context: args.context }),
+      ...(args.industry && { industry: args.industry }),
+      ...(args.industryVertical && { industryVertical: args.industryVertical }),
+    });
+
+    await ctx.db.insert("orgMemberships", {
+      orgId,
+      userId,
+      role: "admin",
+    });
+
+    return orgId;
+  },
+});
+
 export const updateOrg = mutation({
   args: {
     name: v.optional(v.string()),

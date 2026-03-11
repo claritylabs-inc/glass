@@ -40,6 +40,7 @@ export default function OnboardingPage() {
   const connections = useQuery(api.connections.list);
   const invitations = useQuery(api.orgs.listInvitations);
   const updateProfile = useMutation(api.users.updateProfile);
+  const createOrg = useMutation(api.orgs.createOrg);
   const updateOrg = useMutation(api.orgs.updateOrg);
   const inviteMember = useMutation(api.orgs.inviteMember);
   const cancelInvitation = useMutation(api.orgs.cancelInvitation);
@@ -160,7 +161,7 @@ export default function OnboardingPage() {
       if (industryVertical) (profileUpdates as any).industryVertical = industryVertical;
       await updateProfile(profileUpdates);
 
-      // Also save company fields to org if org exists
+      // Create org if it doesn't exist, otherwise update it
       if (viewerOrg?.org) {
         const orgUpdates: Record<string, string> = {};
         if (companyName) orgUpdates.name = companyName;
@@ -169,6 +170,14 @@ export default function OnboardingPage() {
         if (industry) orgUpdates.industry = industry;
         if (industryVertical) orgUpdates.industryVertical = industryVertical;
         await updateOrg(orgUpdates);
+      } else if (companyName) {
+        await createOrg({
+          name: companyName,
+          ...(companyWebsite && { website: companyWebsite }),
+          ...(companyContext && { context: companyContext }),
+          ...(industry && { industry }),
+          ...(industryVertical && { industryVertical }),
+        });
       }
 
       setCurrentStep(1);
