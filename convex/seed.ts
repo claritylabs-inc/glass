@@ -2,7 +2,7 @@ import { v } from "convex/values";
 import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import { requireAuth } from "./lib/auth";
-import { requireOrgAccess } from "./lib/orgAuth";
+import { requireOrgAccess, getOrgAccess } from "./lib/orgAuth";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { Id } from "./_generated/dataModel";
@@ -131,7 +131,9 @@ export const removeDemoData = mutation({
 export const hasDemoData = query({
   args: {},
   handler: async (ctx) => {
-    const { orgId } = await requireOrgAccess(ctx);
+    const access = await getOrgAccess(ctx);
+    if (!access) return false;
+    const { orgId } = access;
     const policy = await ctx.db
       .query("policies")
       .withIndex("by_orgId", (q) => q.eq("orgId", orgId))
