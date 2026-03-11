@@ -679,21 +679,29 @@ export const processInbound = internalAction({
       }
 
       // Build reply with signature
-      const plainTextBody = responseBody.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, "$1 ($2)");
+      const stripMarkdown = (text: string) => {
+        let result = text.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, "$1 ($2)");
+        result = result.replace(/\*\*(.+?)\*\*/g, "$1");
+        result = result.replace(/\*(.+?)\*/g, "$1");
+        return result;
+      };
+      const plainTextBody = stripMarkdown(responseBody);
       const signature = buildSignature(agentAddress, org.name);
       const fullReplyText = plainTextBody + signature.text;
 
       const linkStyle = 'style="color:#2563eb;text-decoration:underline"';
-      const convertLinks = (text: string) => {
+      const markdownToHtml = (text: string) => {
         let result = text.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,
           `<a href="$2" ${linkStyle}>$1</a>`);
         result = result.replace(/(?<!href=")(https?:\/\/[^\s<)]+)/g,
           `<a href="$1" ${linkStyle}>$1</a>`);
+        result = result.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+        result = result.replace(/\*(.+?)\*/g, "<em>$1</em>");
         return result;
       };
       const bodyHtmlContent = responseBody
         .split("\n\n")
-        .map((p) => `<p style="margin:0 0 12px;line-height:1.5">${convertLinks(p.replace(/\n/g, "<br>"))}</p>`)
+        .map((p) => `<p style="margin:0 0 12px;line-height:1.5">${markdownToHtml(p.replace(/\n/g, "<br>"))}</p>`)
         .join("\n");
       const fullReplyHtml = bodyHtmlContent + signature.html;
 
