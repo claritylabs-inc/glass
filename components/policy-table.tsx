@@ -96,9 +96,8 @@ export function PolicyTable({ policies }: { policies: Policy[] | undefined }) {
   if (policies.length === 0) {
     return (
       <FadeIn when={true} duration={0.6}>
-        <div className="rounded-lg border border-foreground/6 bg-white/60 px-6 py-12 text-center text-muted-foreground">
-          No policies found. Connect an email inbox or seed demo data to get
-          started.
+        <div className="rounded-lg border border-foreground/6 bg-white/60 px-6 py-8 text-center">
+          <p className="text-body-sm text-muted-foreground/60">No policies found</p>
         </div>
       </FadeIn>
     );

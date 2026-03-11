@@ -53,6 +53,7 @@ export const updateResponse = internalMutation({
     responseTo: v.optional(v.string()),
     responseCc: v.optional(v.array(v.string())),
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
+    referencedQuoteIds: v.optional(v.array(v.id("quotes"))),
     responseMessageId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {

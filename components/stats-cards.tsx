@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { FileText, Mail, Clock, FileSearch } from "lucide-react";
+import { FileText, ClipboardList, Mail, Clock } from "lucide-react";
 import { FadeIn } from "@/components/ui/fade-in";
 
 interface StatsData {
@@ -13,13 +13,24 @@ interface StatsData {
   byType: Record<string, number>;
 }
 
-export function StatsCards({ stats }: { stats: StatsData | undefined }) {
+interface QuoteStatsData {
+  totalQuotes: number;
+  pendingExtractions: number;
+}
+
+export function StatsCards({ stats, quoteStats }: { stats: StatsData | undefined; quoteStats?: QuoteStatsData | undefined }) {
   const items = [
     {
-      label: "Total Policies",
+      label: "Policies",
       value: stats?.totalPolicies ?? "—",
       icon: FileText,
       href: "/policies",
+    },
+    {
+      label: "Quotes",
+      value: quoteStats?.totalQuotes ?? "—",
+      icon: ClipboardList,
+      href: "/quotes",
     },
     {
       label: "Connections",
@@ -32,12 +43,6 @@ export function StatsCards({ stats }: { stats: StatsData | undefined }) {
       value: stats?.lastScanAt ? formatTimeAgo(stats.lastScanAt) : "Never",
       icon: Clock,
       href: "/connections",
-    },
-    {
-      label: "Extractions",
-      value: stats?.pendingExtractions ?? "—",
-      icon: FileSearch,
-      href: "/extractions",
     },
   ];
 

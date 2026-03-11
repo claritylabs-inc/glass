@@ -19,6 +19,7 @@ import {
   Crown,
   X,
   Mail,
+  RotateCcw,
 } from "lucide-react";
 import { INDUSTRIES } from "@/convex/lib/industries";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -46,6 +47,7 @@ export default function SettingsPage() {
   const setPrimaryContact = useMutation(api.orgs.setPrimaryInsuranceContact);
   const cancelInvitation = useMutation(api.orgs.cancelInvitation);
   const resetAccount = useMutation(api.users.resetAccount);
+  const restartOnboarding = useMutation(api.users.restartOnboarding);
   const removeDemoData = useMutation(api.seed.removeDemoData);
   const hasDemoDataResult = useQuery(api.seed.hasDemoData);
   const extractCompanyInfo = useAction(api.actions.extractCompanyInfo.extractCompanyInfo);
@@ -529,9 +531,43 @@ export default function SettingsPage() {
             </div>
           </FadeIn>
 
+          {/* Onboarding section */}
+          <FadeIn when={true} staggerIndex={3} duration={0.6}>
+            <div className="rounded-lg border border-foreground/6 bg-white/60 mb-4">
+              <div className="px-5 py-3.5 border-b border-foreground/6">
+                <h3 className="!mb-0 text-sm font-medium text-foreground">Onboarding</h3>
+              </div>
+              <div className="px-5 py-5">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-body-sm font-medium text-foreground">Re-run Setup</p>
+                    <p className="text-label-sm text-muted-foreground mt-0.5">
+                      Walk through the onboarding steps again. Your existing data will not be affected.
+                    </p>
+                  </div>
+                  <PillButton
+                    variant="secondary"
+                    onClick={async () => {
+                      try {
+                        await restartOnboarding();
+                        toast.success("Restarting onboarding...");
+                        router.replace("/onboarding");
+                      } catch {
+                        toast.error("Failed to restart onboarding");
+                      }
+                    }}
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    Re-run
+                  </PillButton>
+                </div>
+              </div>
+            </div>
+          </FadeIn>
+
           {/* Demo Data section */}
           {hasDemo && (
-            <FadeIn when={true} staggerIndex={3} duration={0.6}>
+            <FadeIn when={true} staggerIndex={4} duration={0.6}>
               <div className="rounded-lg border border-amber-200 bg-amber-50/50 mb-4">
                 <div className="px-5 py-3.5 border-b border-amber-200">
                   <h3 className="!mb-0 text-sm font-medium text-amber-900">Demo Data</h3>
@@ -559,7 +595,7 @@ export default function SettingsPage() {
 
           {/* Danger Zone */}
           {viewer?.isAdmin && (
-            <FadeIn when={true} staggerIndex={4} duration={0.6}>
+            <FadeIn when={true} staggerIndex={5} duration={0.6}>
               <div className="mt-8">
                 <div className="rounded-lg border border-red-200 bg-red-50/50 mb-4">
                   <div className="px-5 py-3.5 border-b border-red-200">

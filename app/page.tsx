@@ -4,10 +4,6 @@ import { useState, useMemo } from "react";
 import { useQuery, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Nav } from "@/components/nav";
-import { StatsCards } from "@/components/stats-cards";
-import { PolicyTable } from "@/components/policy-table";
-import { PolicyGroupedView } from "@/components/policy-grouped-view";
-import { PolicyFilters } from "@/components/policy-filters";
 import { FadeIn } from "@/components/ui/fade-in";
 import { PillButton } from "@/components/ui/pill-button";
 import { ArrowRight, Asterisk, Copy, Check, X, Loader2 } from "lucide-react";
@@ -16,12 +12,38 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { FixedMobileFooter } from "@/components/ui/fixed-mobile-footer";
 import { Skeleton } from "@/components/ui/skeleton";
+import { StatsCards } from "@/components/stats-cards";
+import { CoverageByTypeSection, parseDollarAmount } from "@/components/coverage-by-type";
+import { POLICY_TYPE_LABELS } from "@/convex/lib/policyTypes";
+import dayjs from "dayjs";
 
 const AGENT_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "agent.claritylabs.inc";
 
+function parseDate(dateStr: string | undefined, format = "MM/DD/YYYY") {
+  if (!dateStr || dateStr === "Unknown") return null;
+  const d = dayjs(dateStr, format);
+  return d.isValid() ? d : null;
+}
+
+const TYPE_COLORS: Record<string, string> = {
+  general_liability: "bg-blue-100 text-blue-700",
+  workers_comp: "bg-orange-100 text-orange-700",
+  commercial_auto: "bg-purple-100 text-purple-700",
+  non_owned_auto: "bg-violet-100 text-violet-700",
+  property: "bg-green-100 text-green-700",
+  umbrella: "bg-sky-100 text-sky-700",
+  professional_liability: "bg-amber-100 text-amber-700",
+  cyber: "bg-red-100 text-red-700",
+  epli: "bg-pink-100 text-pink-700",
+  directors_officers: "bg-indigo-100 text-indigo-700",
+  other: "bg-gray-100 text-gray-700",
+};
+
 export default function DashboardPage() {
   const stats = useQuery(api.policies.stats);
+  const quoteStats = useQuery(api.quotes.stats);
   const policies = useQuery(api.policies.list, {});
+  const quotes = useQuery(api.quotes.list, {});
   const viewer = useQuery(api.users.viewer);
   const agentStats = useQuery(api.agentConversations.stats);
   const seedData = useAction(api.seed.seed);
@@ -31,40 +53,94 @@ export default function DashboardPage() {
   const [demoBannerDismissed, setDemoBannerDismissed] = useState(false);
   const [seeding, setSeeding] = useState(false);
 
-  const [activeTab, setActiveTab] = useState("all");
-  const [selectedType, setSelectedType] = useState("");
-  const [selectedCarrier, setSelectedCarrier] = useState("");
-  const [selectedYear, setSelectedYear] = useState("");
+  const today = dayjs();
 
-  const carriers = useMemo(() => {
-    if (!policies) return [];
-    return [...new Set(policies.map((p) => p.carrier))].sort();
-  }, [policies]);
-
-  const years = useMemo(() => {
-    if (!policies) return [];
-    return [...new Set(policies.map((p) => p.policyYear))].sort(
-      (a, b) => b - a
-    );
-  }, [policies]);
-
-  const filteredPolicies = useMemo(() => {
+  const activePolicies = useMemo(() => {
     if (!policies) return undefined;
-    let result = policies;
-    if (selectedType) {
-      result = result.filter((p) => {
-        const types = (p as any).policyTypes ?? [(p as any).policyType ?? "other"];
-        return types.includes(selectedType);
+    return policies.filter((p) => {
+      const eff = parseDate(p.effectiveDate);
+      const exp = parseDate(p.expirationDate);
+      // Active if: no dates (unknown) OR current date is within the policy period
+      if (!eff && !exp) return true;
+      if (eff && exp) return today.isAfter(eff.subtract(1, "day")) && today.isBefore(exp.add(1, "day"));
+      if (exp) return today.isBefore(exp.add(1, "day"));
+      return true;
+    });
+  }, [policies, today]);
+
+  const activeQuotes = useMemo(() => {
+    if (!quotes) return undefined;
+    return quotes.filter((q) => {
+      const exp = parseDate(q.quoteExpirationDate);
+      // Active if no expiration or not yet expired
+      if (!exp) return true;
+      return today.isBefore(exp.add(1, "day"));
+    });
+  }, [quotes, today]);
+
+  const coverageByType = useMemo(() => {
+    if (!activePolicies) return undefined;
+    const map = new Map<string, { total: number; count: number }>();
+    for (const p of activePolicies) {
+      if ((p as any).extractionStatus !== "complete") continue;
+      const types: string[] = (p as any).policyTypes ?? [(p as any).policyType ?? "other"];
+      const coverages: { limit: string }[] = (p as any).coverages ?? [];
+      let policyTotal = 0;
+      for (const c of coverages) {
+        const amt = parseDollarAmount(c.limit);
+        if (amt && amt > 0) policyTotal += amt;
+      }
+      if (policyTotal === 0) continue;
+      for (const t of types) {
+        const existing = map.get(t) ?? { total: 0, count: 0 };
+        existing.total += policyTotal;
+        existing.count += 1;
+        map.set(t, existing);
+      }
+    }
+    return Array.from(map.entries())
+      .map(([typeKey, { total, count }]) => ({
+        typeKey,
+        label: POLICY_TYPE_LABELS[typeKey] || typeKey,
+        totalCoverage: total,
+        policyCount: count,
+      }))
+      .sort((a, b) => b.totalCoverage - a.totalCoverage);
+  }, [activePolicies]);
+
+  const expiringPolicies = useMemo(() => {
+    if (!policies) return undefined;
+    const cutoff = today.add(90, "day");
+    return policies
+      .filter((p) => {
+        const exp = parseDate(p.expirationDate);
+        if (!exp) return false;
+        return exp.isAfter(today.subtract(1, "day")) && exp.isBefore(cutoff);
+      })
+      .sort((a, b) => {
+        const aExp = parseDate(a.expirationDate)!;
+        const bExp = parseDate(b.expirationDate)!;
+        return aExp.diff(bExp);
       });
-    }
-    if (selectedCarrier) {
-      result = result.filter((p) => p.carrier === selectedCarrier);
-    }
-    if (selectedYear) {
-      result = result.filter((p) => p.policyYear === Number(selectedYear));
-    }
-    return result;
-  }, [policies, selectedType, selectedCarrier, selectedYear]);
+  }, [policies, today]);
+
+  const expiringQuotes = useMemo(() => {
+    if (!quotes) return undefined;
+    const cutoff = today.add(30, "day");
+    return quotes
+      .filter((q) => {
+        const exp = parseDate(q.quoteExpirationDate);
+        if (!exp) return false;
+        return exp.isAfter(today.subtract(1, "day")) && exp.isBefore(cutoff);
+      })
+      .sort((a, b) => {
+        const aExp = parseDate(a.quoteExpirationDate)!;
+        const bExp = parseDate(b.quoteExpirationDate)!;
+        return aExp.diff(bExp);
+      });
+  }, [quotes, today]);
+
+  const isEmpty = policies && policies.length === 0 && quotes && quotes.length === 0;
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -74,12 +150,12 @@ export default function DashboardPage() {
           <FadeIn when={true} staggerIndex={0} duration={0.6}>
             <div className="flex items-center justify-between mb-6">
               <div>
-                <h1 className="!mb-1">Policy Dashboard</h1>
+                <h1 className="!mb-1">Dashboard</h1>
                 <p className="text-body-sm text-muted-foreground">
-                  Extracted insurance policies from connected email inboxes
+                  Overview of your insurance program
                 </p>
               </div>
-              {policies && policies.length === 0 && (
+              {isEmpty && (
                 <div className="hidden md:block">
                   <PillButton onClick={async () => { setSeeding(true); try { await seedData({}); } finally { setSeeding(false); } }} disabled={seeding}>
                     {seeding ? <><Loader2 className="w-3 h-3 animate-spin" /> Generating...</> : <>Seed Demo Data <ArrowRight className="w-3 h-3" /></>}
@@ -89,31 +165,11 @@ export default function DashboardPage() {
             </div>
           </FadeIn>
 
-          <StatsCards stats={stats} />
-
-          {/* Demo data banner */}
-          {hasDemo && !demoBannerDismissed && (
-            <FadeIn when={true} staggerIndex={0} duration={0.4}>
-              <div className="flex items-center gap-3 px-4 py-2.5 rounded-lg border border-amber-200 bg-amber-50/60 mb-4">
-                <p className="text-label-sm text-amber-700 flex-1">
-                  You&apos;re viewing demo data.{" "}
-                  <Link href="/profile" className="underline font-medium hover:text-amber-900">Remove demo data</Link>{" "}
-                  from Settings when you&apos;re ready.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setDemoBannerDismissed(true)}
-                  className="text-amber-500 hover:text-amber-700 transition-colors cursor-pointer"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </FadeIn>
-          )}
+          <StatsCards stats={stats} quoteStats={quoteStats} />
 
           {/* Agent card */}
           {viewer && (
-            <FadeIn when={true} staggerIndex={1} duration={0.6}>
+            <FadeIn when={true} staggerIndex={2} duration={0.6}>
               <Link href="/agent" className="block">
                 <motion.div
                   whileHover={{
@@ -183,46 +239,121 @@ export default function DashboardPage() {
             </FadeIn>
           )}
 
-          {policies === undefined ? (
-            <div className="space-y-3 mb-4">
-              <div className="flex items-center gap-1 border-b border-foreground/6 pb-2">
-                <Skeleton className="h-5 w-20" />
-                <Skeleton className="h-5 w-16" />
-                <Skeleton className="h-5 w-16" />
+          <CoverageByTypeSection data={coverageByType} />
+
+          {/* Demo data banner */}
+          {hasDemo && !demoBannerDismissed && (
+            <FadeIn when={true} staggerIndex={0} duration={0.4}>
+              <div className="flex items-center gap-3 px-4 py-2.5 rounded-lg border border-amber-200 bg-amber-50/60 mb-6">
+                <p className="text-label-sm text-amber-700 flex-1">
+                  You&apos;re viewing demo data.{" "}
+                  <Link href="/profile" className="underline font-medium hover:text-amber-900">Remove demo data</Link>{" "}
+                  from Settings when you&apos;re ready.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setDemoBannerDismissed(true)}
+                  className="text-amber-500 hover:text-amber-700 transition-colors cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Skeleton className="h-8 w-24 rounded-md" />
-                <Skeleton className="h-8 w-24 rounded-md" />
-                <Skeleton className="h-8 w-24 rounded-md" />
-              </div>
-            </div>
-          ) : (
-            <PolicyFilters
-              activeTab={activeTab}
-              onTabChange={setActiveTab}
-              carriers={carriers}
-              years={years}
-              selectedType={selectedType}
-              onTypeChange={setSelectedType}
-              selectedCarrier={selectedCarrier}
-              onCarrierChange={setSelectedCarrier}
-              selectedYear={selectedYear}
-              onYearChange={setSelectedYear}
-            />
+            </FadeIn>
           )}
 
-          {activeTab === "all" ? (
-            <PolicyTable policies={filteredPolicies as any} />
-          ) : (
-            <PolicyGroupedView
-              policies={policies as any}
-              groupBy={activeTab as "type" | "year"}
-            />
+          {/* Expiring Policies */}
+          {expiringPolicies && expiringPolicies.length > 0 && (
+            <FadeIn when={true} staggerIndex={3} duration={0.6}>
+              <div className="mb-6">
+                <div className="flex flex-col gap-0.5 md:flex-row md:items-center md:justify-between mb-3">
+                  <h2 className="text-body-sm font-semibold text-foreground">Expiring Policies</h2>
+                  <span className="text-label-sm text-muted-foreground/50">next 90 days</span>
+                </div>
+                <div className="rounded-lg border border-foreground/6 bg-white/60 overflow-hidden">
+                  {expiringPolicies.map((p, i) => {
+                    const exp = parseDate(p.expirationDate)!;
+                    const daysLeft = exp.diff(today, "day");
+                    const types = (p as any).policyTypes ?? [(p as any).policyType ?? "other"];
+                    const firstType = types[0];
+                    return (
+                      <Link
+                        key={p._id}
+                        href={`/policies/${p._id}`}
+                        className={`flex items-center gap-3 px-4 py-3 hover:bg-foreground/[0.02] transition-colors ${
+                          i > 0 ? "border-t border-foreground/4" : ""
+                        }`}
+                      >
+                        <div className="flex-1 min-w-0">
+                          <div className="flex flex-col md:flex-row md:items-center gap-1 md:gap-2 mb-1.5 md:mb-0">
+                            <span className="text-body-sm font-medium text-foreground">{p.policyNumber}</span>
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium w-fit truncate max-w-full ${TYPE_COLORS[firstType] || TYPE_COLORS.other}`}>
+                              {POLICY_TYPE_LABELS[firstType] || firstType}
+                            </span>
+                          </div>
+                          <p className="text-label-sm text-muted-foreground/60">{p.carrier}</p>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className={`text-body-sm font-medium ${daysLeft <= 30 ? "text-red-600" : "text-amber-600"}`}>
+                            {daysLeft <= 0 ? "Expires today" : `${daysLeft}d left`}
+                          </p>
+                          <p className="text-label-sm text-muted-foreground/50">{p.expirationDate}</p>
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            </FadeIn>
+          )}
+
+          {/* Expiring Quotes */}
+          {expiringQuotes && expiringQuotes.length > 0 && (
+            <FadeIn when={true} staggerIndex={4} duration={0.6}>
+              <div className="mb-6">
+                <div className="flex flex-col gap-0.5 md:flex-row md:items-center md:justify-between mb-3">
+                  <h2 className="text-body-sm font-semibold text-foreground">Expiring Quotes</h2>
+                  <span className="text-label-sm text-muted-foreground/50">next 30 days</span>
+                </div>
+                <div className="rounded-lg border border-foreground/6 bg-white/60 overflow-hidden">
+                  {expiringQuotes.map((q, i) => {
+                    const exp = parseDate(q.quoteExpirationDate)!;
+                    const daysLeft = exp.diff(today, "day");
+                    const types = q.policyTypes ?? ["other"];
+                    const firstType = types[0];
+                    return (
+                      <Link
+                        key={q._id}
+                        href={`/quotes/${q._id}`}
+                        className={`flex items-center gap-3 px-4 py-3 hover:bg-foreground/[0.02] transition-colors ${
+                          i > 0 ? "border-t border-foreground/4" : ""
+                        }`}
+                      >
+                        <div className="flex-1 min-w-0">
+                          <div className="flex flex-col md:flex-row md:items-center gap-1 md:gap-2 mb-1.5 md:mb-0">
+                            <span className="text-body-sm font-medium text-foreground">{q.quoteNumber}</span>
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium w-fit truncate max-w-full ${TYPE_COLORS[firstType] || TYPE_COLORS.other}`}>
+                              {POLICY_TYPE_LABELS[firstType] || firstType}
+                            </span>
+                          </div>
+                          <p className="text-label-sm text-muted-foreground/60">{q.carrier}</p>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className={`text-body-sm font-medium ${daysLeft <= 7 ? "text-red-600" : "text-orange-600"}`}>
+                            {daysLeft <= 0 ? "Expires today" : `${daysLeft}d left`}
+                          </p>
+                          <p className="text-label-sm text-muted-foreground/50">{q.quoteExpirationDate}</p>
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            </FadeIn>
           )}
         </div>
       </main>
 
-      {policies && policies.length === 0 && (
+      {isEmpty && (
         <FixedMobileFooter>
           <PillButton onClick={async () => { setSeeding(true); try { await seedData({}); } finally { setSeeding(false); } }} disabled={seeding}>
             {seeding ? <><Loader2 className="w-3 h-3 animate-spin" /> Generating...</> : <>Seed Demo Data <ArrowRight className="w-3 h-3" /></>}

@@ -1,22 +1,20 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { POLICY_TYPE_LABELS } from "@/convex/lib/policyTypes";
 import { FadeIn } from "@/components/ui/fade-in";
+import dayjs from "dayjs";
 
-interface Policy {
+interface Quote {
   _id: string;
   carrier: string;
-  policyNumber: string;
-  policyTypes: string[];
-  policyType?: string;
-  documentType?: string;
-  policyYear: number;
-  effectiveDate: string;
-  expirationDate: string;
+  quoteNumber: string;
+  policyTypes?: string[];
+  quoteYear: number;
+  proposedEffectiveDate?: string;
+  quoteExpirationDate?: string;
   isRenewal: boolean;
   premium?: string;
   insuredName: string;
@@ -37,49 +35,50 @@ const TYPE_COLORS: Record<string, string> = {
   other: "bg-gray-100 text-gray-700",
 };
 
-interface GroupedViewProps {
-  policies: Policy[] | undefined;
-  groupBy: "type" | "year";
-}
-
-interface PolicyGroup {
+interface QuoteGroup {
   key: string;
   label: string;
   badgeColor?: string;
-  policies: Policy[];
+  quotes: Quote[];
 }
 
-export function PolicyGroupedView({ policies, groupBy }: GroupedViewProps) {
-  const groups = useMemo<PolicyGroup[]>(() => {
-    if (!policies || policies.length === 0) return [];
+function isExpired(q: { quoteExpirationDate?: string }) {
+  if (!q.quoteExpirationDate) return false;
+  const expDate = dayjs(q.quoteExpirationDate, "MM/DD/YYYY");
+  return expDate.isValid() && expDate.isBefore(dayjs());
+}
 
-    const map = new Map<string, Policy[]>();
+export function QuoteGroupedView({ quotes, groupBy }: { quotes: Quote[] | undefined; groupBy: "type" | "year" }) {
+  const groups = useMemo<QuoteGroup[]>(() => {
+    if (!quotes || quotes.length === 0) return [];
+
+    const map = new Map<string, Quote[]>();
 
     if (groupBy === "type") {
-      for (const policy of policies) {
-        const types = policy.policyTypes ?? [policy.policyType ?? "other"];
+      for (const quote of quotes) {
+        const types = quote.policyTypes ?? ["other"];
         for (const type of types) {
           const existing = map.get(type) ?? [];
-          existing.push(policy);
+          existing.push(quote);
           map.set(type, existing);
         }
       }
     } else {
-      for (const policy of policies) {
-        const key = String(policy.policyYear);
+      for (const quote of quotes) {
+        const key = String(quote.quoteYear);
         const existing = map.get(key) ?? [];
-        existing.push(policy);
+        existing.push(quote);
         map.set(key, existing);
       }
     }
 
-    const result: PolicyGroup[] = [];
-    for (const [key, groupPolicies] of map) {
+    const result: QuoteGroup[] = [];
+    for (const [key, groupQuotes] of map) {
       result.push({
         key,
         label: groupBy === "type" ? (POLICY_TYPE_LABELS[key] || key) : key,
         badgeColor: groupBy === "type" ? (TYPE_COLORS[key] || TYPE_COLORS.other) : undefined,
-        policies: groupPolicies,
+        quotes: groupQuotes,
       });
     }
 
@@ -90,32 +89,26 @@ export function PolicyGroupedView({ policies, groupBy }: GroupedViewProps) {
     }
 
     return result;
-  }, [policies, groupBy]);
+  }, [quotes, groupBy]);
 
   const router = useRouter();
   const [openGroups, setOpenGroups] = useState<Set<string>>(() => new Set(groups.map((g) => g.key)));
 
-  // Keep openGroups in sync when groups change
   useMemo(() => {
     setOpenGroups((prev) => {
-      const newKeys = new Set(groups.map((g) => g.key));
-      // Add any new group keys that aren't tracked yet
       const updated = new Set(prev);
-      for (const key of newKeys) {
-        if (!prev.has(key) && prev.size > 0) {
-          // If we already have some state, add new ones as open
-        }
-        updated.add(key);
+      for (const g of groups) {
+        updated.add(g.key);
       }
       return updated;
     });
   }, [groups]);
 
-  if (!policies || policies.length === 0) {
+  if (!quotes || quotes.length === 0) {
     return (
       <FadeIn when={true} duration={0.6}>
         <div className="rounded-lg border border-foreground/6 bg-white/60 px-6 py-8 text-center">
-          <p className="text-body-sm text-muted-foreground/60">No policies found</p>
+          <p className="text-body-sm text-muted-foreground/60">No quotes found</p>
         </div>
       </FadeIn>
     );
@@ -142,15 +135,15 @@ export function PolicyGroupedView({ policies, groupBy }: GroupedViewProps) {
             <colgroup>
               <col className="w-auto" />
               <col className="w-[120px] md:w-[160px]" />
-              <col className="hidden md:table-column w-[240px]" />
-              <col className="hidden md:table-column w-[80px]" />
+              <col className="hidden md:table-column w-[180px]" />
+              <col className="hidden md:table-column w-[180px]" />
             </colgroup>
             <thead>
               <tr>
-                <th className="px-4 py-2 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">Policy</th>
+                <th className="px-4 py-2 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">Quote</th>
                 <th className="px-4 py-2 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap text-right">Premium</th>
-                <th className="px-4 py-2 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap text-right hidden md:table-cell">Period</th>
-                <th className="px-4 py-2 hidden md:table-cell" />
+                <th className="px-4 py-2 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap text-right hidden md:table-cell">Effective</th>
+                <th className="px-4 py-2 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap text-right hidden md:table-cell">Expires</th>
               </tr>
             </thead>
           </table>
@@ -182,7 +175,7 @@ export function PolicyGroupedView({ policies, groupBy }: GroupedViewProps) {
                     </span>
                   )}
                   <span className="text-label-sm text-muted-foreground/60">
-                    {group.policies.length} {group.policies.length === 1 ? "policy" : "policies"}
+                    {group.quotes.length} {group.quotes.length === 1 ? "quote" : "quotes"}
                   </span>
                 </span>
               </button>
@@ -194,41 +187,41 @@ export function PolicyGroupedView({ policies, groupBy }: GroupedViewProps) {
                       <colgroup>
                         <col className="w-auto" />
                         <col className="w-[120px] md:w-[160px]" />
-                        <col className="hidden md:table-column w-[240px]" />
-                        <col className="hidden md:table-column w-[80px]" />
+                        <col className="hidden md:table-column w-[180px]" />
+                        <col className="hidden md:table-column w-[180px]" />
                       </colgroup>
                       <tbody>
-                        {group.policies.map((policy) => (
-                          <tr
-                            key={policy._id}
-                            className="border-t border-foreground/4 first:border-t-0 hover:bg-foreground/[0.015] transition-colors cursor-pointer"
-                            onClick={() => router.push(`/policies/${policy._id}`)}
-                          >
-                            <td className="px-4 py-2.5 whitespace-nowrap">
-                              <p className="text-body-sm text-foreground font-medium">
-                                {policy.policyNumber}
-                              </p>
-                              <p className="text-label-sm text-muted-foreground/60">
-                                {policy.insuredName}
-                              </p>
-                            </td>
-                            <td className="px-4 py-2.5 text-body-sm font-mono font-medium text-foreground text-right whitespace-nowrap">
-                              {policy.premium || "—"}
-                            </td>
-                            <td className="px-4 py-2.5 text-body-sm text-muted-foreground text-right hidden md:table-cell whitespace-nowrap">
-                              {policy.effectiveDate} – {policy.expirationDate}
-                            </td>
-                            <td className="px-4 py-2.5 text-right whitespace-nowrap hidden md:table-cell">
-                              <Link
-                                href={`/policies/${policy._id}`}
-                                onClick={(e) => e.stopPropagation()}
-                                className="px-2.5 py-1 rounded-md border border-foreground/12 bg-white/80 text-label-sm font-medium text-foreground hover:border-foreground/20 hover:bg-foreground/[0.03] transition-colors"
-                              >
-                                View
-                              </Link>
-                            </td>
-                          </tr>
-                        ))}
+                        {group.quotes.map((quote) => {
+                          const expired = isExpired(quote);
+                          return (
+                            <tr
+                              key={quote._id}
+                              className="border-t border-foreground/4 first:border-t-0 hover:bg-foreground/[0.015] transition-colors cursor-pointer"
+                              onClick={() => router.push(`/quotes/${quote._id}`)}
+                            >
+                              <td className="px-4 py-2.5 whitespace-nowrap">
+                                <p className="text-body-sm text-foreground font-medium">
+                                  {quote.quoteNumber}
+                                </p>
+                                <p className="text-label-sm text-muted-foreground/60">
+                                  {quote.insuredName}
+                                </p>
+                              </td>
+                              <td className="px-4 py-2.5 text-body-sm font-mono font-medium text-foreground text-right whitespace-nowrap">
+                                {quote.premium || "—"}
+                              </td>
+                              <td className="px-4 py-2.5 text-body-sm text-muted-foreground text-right hidden md:table-cell whitespace-nowrap">
+                                {quote.proposedEffectiveDate ?? "—"}
+                              </td>
+                              <td className="px-4 py-2.5 text-right whitespace-nowrap hidden md:table-cell">
+                                <span className={`text-body-sm ${expired ? "text-red-500 font-medium" : "text-muted-foreground"}`}>
+                                  {quote.quoteExpirationDate ?? "—"}
+                                  {expired && " (expired)"}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>

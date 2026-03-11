@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import { POLICY_TYPE_LABELS } from "@/convex/lib/policyTypes";
 import { FilterDropdown } from "@/components/ui/filter-dropdown";
 
-interface PolicyFiltersProps {
+interface QuoteFiltersProps {
   activeTab: string;
   onTabChange: (tab: string) => void;
   carriers: string[];
@@ -18,12 +18,12 @@ interface PolicyFiltersProps {
 }
 
 const TABS = [
-  { id: "all", label: "Policies" },
+  { id: "all", label: "Quotes" },
   { id: "type", label: "By Type" },
   { id: "year", label: "By Year" },
 ];
 
-export function PolicyFilters({
+export function QuoteFilters({
   activeTab,
   onTabChange,
   carriers,
@@ -34,7 +34,7 @@ export function PolicyFilters({
   onCarrierChange,
   selectedYear,
   onYearChange,
-}: PolicyFiltersProps) {
+}: QuoteFiltersProps) {
   return (
     <div className="space-y-3 mb-4">
       <div className="flex items-center gap-1 border-b border-foreground/6 overflow-x-auto scrollbar-hide">
@@ -52,7 +52,7 @@ export function PolicyFilters({
             {tab.label}
             {activeTab === tab.id && (
               <motion.div
-                layoutId="tab-indicator"
+                layoutId="quote-tab-indicator"
                 className="absolute bottom-0 left-0 right-0 h-[2px] bg-foreground"
                 transition={{ type: "spring", stiffness: 400, damping: 30 }}
               />
@@ -74,7 +74,7 @@ export function PolicyFilters({
           />
 
           <FilterDropdown
-            label="All Insurers"
+            label="All Carriers"
             value={selectedCarrier}
             onChange={onCarrierChange}
             options={carriers.map((c) => ({ value: c, label: c }))}

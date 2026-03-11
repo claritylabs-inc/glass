@@ -5,7 +5,7 @@ import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import Anthropic from "@anthropic-ai/sdk";
 import { Webhook } from "svix";
-import { buildSystemPrompt, buildPolicyContext } from "../lib/agentPrompts";
+import { buildSystemPrompt, buildDocumentContext } from "../lib/agentPrompts";
 import { Id } from "../_generated/dataModel";
 
 const DEFAULT_AGENT_DOMAIN = "agent.claritylabs.inc";
@@ -445,8 +445,11 @@ export const processInbound = internalAction({
     }
 
     try {
-      // Fetch org's policies
+      // Fetch org's policies and quotes
       const policies = await ctx.runQuery(internal.policies.listAllInternal, {
+        orgId,
+      });
+      const quotes = await ctx.runQuery(internal.quotes.listAllInternal, {
         orgId,
       });
 
@@ -468,8 +471,9 @@ export const processInbound = internalAction({
         org.brokerContactName,
         org.brokerContactEmail,
       );
-      const { context: policyContext, relevantPolicyIds } = buildPolicyContext(
+      const { context: policyContext, relevantPolicyIds, relevantQuoteIds } = buildDocumentContext(
         policies,
+        quotes,
         subject + " " + body,
       );
 
@@ -644,6 +648,10 @@ export const processInbound = internalAction({
         referencedPolicyIds:
           relevantPolicyIds.length > 0
             ? (relevantPolicyIds as Id<"policies">[])
+            : undefined,
+        referencedQuoteIds:
+          relevantQuoteIds.length > 0
+            ? (relevantQuoteIds as Id<"quotes">[])
             : undefined,
       });
 

@@ -23,7 +23,10 @@ import {
   Users,
   Asterisk,
   Forward,
+  UserPlus,
+  X,
 } from "lucide-react";
+import { toast } from "sonner";
 import { AgentHandleForm } from "@/components/agent-handle-form";
 import { INDUSTRIES } from "@/convex/lib/industries";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -35,9 +38,13 @@ export default function OnboardingPage() {
   const viewer = useQuery(api.users.viewer);
   const viewerOrg = useQuery(api.orgs.viewerOrg);
   const connections = useQuery(api.connections.list);
+  const invitations = useQuery(api.orgs.listInvitations);
   const updateProfile = useMutation(api.users.updateProfile);
   const updateOrg = useMutation(api.orgs.updateOrg);
+  const inviteMember = useMutation(api.orgs.inviteMember);
+  const cancelInvitation = useMutation(api.orgs.cancelInvitation);
   const completeOnboarding = useMutation(api.users.completeOnboarding);
+  const hasDemoData = useQuery(api.seed.hasDemoData);
   const seedData = useAction(api.seed.seed);
   const extractCompanyInfo = useAction(api.actions.extractCompanyInfo.extractCompanyInfo);
 
@@ -56,14 +63,19 @@ export default function OnboardingPage() {
   // Step 2 state
   const [connectionFormOpen, setConnectionFormOpen] = useState(false);
   const [seeding, setSeeding] = useState(false);
-  const [seeded, setSeeded] = useState(false);
+  const seeded = hasDemoData === true;
 
   // Step 3 state (agent)
   const [handleClaimed, setHandleClaimed] = useState(false);
   const [canClaimHandle, setCanClaimHandle] = useState(false);
   const claimRef = useRef<(() => Promise<void>) | null>(null);
 
-  // Step 4 state
+  // Step 4 state (team invites)
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState<"admin" | "member">("member");
+  const [inviting, setInviting] = useState(false);
+
+  // Step 5 state
   const [finishing, setFinishing] = useState(false);
 
   // Auto-resize textarea
@@ -92,7 +104,7 @@ export default function OnboardingPage() {
 
   useEffect(() => { autoResize(); }, [companyContext, autoResize]);
 
-  const hasConnection = (connections?.length ?? 0) > 0;
+  const hasConnection = (connections?.filter((c) => !c.isDemo)?.length ?? 0) > 0;
 
   async function handleExtract() {
     if (!companyWebsite) return;
@@ -169,9 +181,22 @@ export default function OnboardingPage() {
     setSeeding(true);
     try {
       await seedData();
-      setSeeded(true);
     } finally {
       setSeeding(false);
+    }
+  }
+
+  async function handleInvite() {
+    if (!inviteEmail) return;
+    setInviting(true);
+    try {
+      await inviteMember({ email: inviteEmail, role: inviteRole });
+      toast.success(`Invitation sent to ${inviteEmail}`);
+      setInviteEmail("");
+    } catch (err: any) {
+      toast.error(err.message ?? "Failed to send invitation");
+    } finally {
+      setInviting(false);
     }
   }
 
@@ -194,11 +219,14 @@ export default function OnboardingPage() {
   }
 
   const steps = [
-    { label: "Details" },
-    { label: "Data" },
-    { label: "Agent" },
-    { label: "Ready" },
+    { label: "Details", subtitle: "Tell us about you and your company" },
+    { label: "Data", subtitle: "Connect an email account or try with demo data" },
+    { label: "Agent", subtitle: "Claim an email address for your AI policy assistant" },
+    { label: "Team", subtitle: "Invite teammates to collaborate on your insurance program" },
+    { label: "Ready", subtitle: "See how Clarity organizes your policies" },
   ];
+
+  const pendingInvitations = invitations?.filter((inv) => inv.status === "pending") ?? [];
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4 py-12">
@@ -216,7 +244,7 @@ export default function OnboardingPage() {
               </h3>
             )}
             <p className="text-body-sm text-muted-foreground mt-2">
-              {currentStep === 2 ? "Claim an email address for your AI policy assistant" : "Let\u2019s get you set up"}
+              {steps[currentStep].subtitle}
             </p>
           </div>
 
@@ -371,13 +399,6 @@ export default function OnboardingPage() {
           {/* Step 2: Link Your Data */}
           {currentStep === 1 && (
             <div className="space-y-4">
-              <div className="text-center mb-2">
-                <h4 className="!mb-1 text-base font-semibold">Link Your Data</h4>
-                <p className="text-label-sm text-muted-foreground/60">
-                  Connect an email account or try with demo data
-                </p>
-              </div>
-
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {/* Connect Email card */}
                 <button
@@ -476,12 +497,12 @@ export default function OnboardingPage() {
           {currentStep === 2 && (
             <div className="space-y-6">
               {(viewerOrg?.org?.agentHandle ?? viewer?.agentHandle) ? (
-                <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-4">
+                <div className="rounded-lg border border-[#A0D2FA]/40 bg-[#A0D2FA]/[0.06] p-4">
                   <div className="flex items-center gap-2 mb-1.5">
-                    <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <Asterisk className="w-4 h-4 text-[#A0D2FA] shrink-0" />
                     <p className="text-body-sm font-medium text-foreground">Agent email claimed</p>
                   </div>
-                  <p className="text-label-sm font-mono text-emerald-700 pl-6">
+                  <p className="text-label-sm font-mono text-[#6BB8F0] pl-6">
                     {viewerOrg?.org?.agentHandle ?? viewer?.agentHandle}@{AGENT_DOMAIN}
                   </p>
                 </div>
@@ -572,10 +593,129 @@ export default function OnboardingPage() {
             </div>
           )}
 
-          {/* Step 4: How It Works — Animated Demo */}
+          {/* Step 4: Invite Your Team */}
           {currentStep === 3 && (
+            <div className="space-y-4">
+              <div className="space-y-3">
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground/40" />
+                    <input
+                      type="email"
+                      value={inviteEmail}
+                      onChange={(e) => setInviteEmail(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && handleInvite()}
+                      placeholder="colleague@company.com"
+                      autoFocus
+                      className="w-full rounded-lg border border-foreground/8 bg-white pl-8.5 pr-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleInvite}
+                    disabled={inviting || !inviteEmail}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-foreground/8 bg-white text-label-sm font-medium text-muted-foreground hover:text-foreground hover:border-foreground/15 hover:bg-foreground/[0.02] transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+                  >
+                    {inviting ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <UserPlus className="w-3.5 h-3.5" />
+                    )}
+                    <span className="hidden sm:inline">Invite</span>
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-label-sm text-muted-foreground/50">Role:</span>
+                  <div className="flex rounded-lg border border-foreground/8 overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => setInviteRole("member")}
+                      className={`px-3 py-1 text-label-sm font-medium transition-colors cursor-pointer ${
+                        inviteRole === "member"
+                          ? "bg-foreground/5 text-foreground"
+                          : "text-muted-foreground/50 hover:text-muted-foreground"
+                      }`}
+                    >
+                      Member
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setInviteRole("admin")}
+                      className={`px-3 py-1 text-label-sm font-medium border-l border-foreground/8 transition-colors cursor-pointer ${
+                        inviteRole === "admin"
+                          ? "bg-foreground/5 text-foreground"
+                          : "text-muted-foreground/50 hover:text-muted-foreground"
+                      }`}
+                    >
+                      Admin
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {pendingInvitations.length > 0 && (
+                <div className="rounded-lg border border-foreground/6 bg-white/60 overflow-hidden">
+                  {pendingInvitations.map((inv, i) => (
+                    <div
+                      key={inv._id}
+                      className={`flex items-center gap-3 px-4 py-2.5 ${
+                        i > 0 ? "border-t border-foreground/4" : ""
+                      }`}
+                    >
+                      <Mail className="w-3.5 h-3.5 text-muted-foreground/40 shrink-0" />
+                      <span className="text-body-sm text-foreground flex-1 truncate">{inv.email}</span>
+                      <span className="text-label-sm text-muted-foreground/40 capitalize">{inv.role}</span>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          await cancelInvitation({ invitationId: inv._id });
+                          toast.success("Invitation cancelled");
+                        }}
+                        className="text-muted-foreground/30 hover:text-muted-foreground transition-colors cursor-pointer"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {pendingInvitations.length === 0 && (
+                <div className="rounded-lg border border-dashed border-foreground/8 bg-foreground/[0.01] p-6 text-center">
+                  <Users className="w-5 h-5 text-muted-foreground/30 mx-auto mb-2" />
+                  <p className="text-label-sm text-muted-foreground/50">
+                    Teammates will share your policy data and can use the AI agent
+                  </p>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between pt-2">
+                <PillButton variant="secondary" onClick={() => setCurrentStep(2)}>
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  Back
+                </PillButton>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setCurrentStep(4)}
+                    className="text-label-sm text-muted-foreground/50 hover:text-muted-foreground transition-colors cursor-pointer"
+                  >
+                    Skip for now
+                  </button>
+                  <PillButton onClick={() => setCurrentStep(4)}>
+                    Next
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </PillButton>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Step 5: How It Works — Animated Demo */}
+          {currentStep === 4 && (
             <HowItWorksDemo
-              onBack={() => setCurrentStep(2)}
+              onBack={() => setCurrentStep(3)}
               onFinish={handleFinish}
               finishing={finishing}
             />
@@ -619,9 +759,9 @@ const DEMO_STATUS = [
 ];
 
 const PHASE_DESCRIPTIONS: Record<DemoPhase, string> = {
-  scanning: "Connecting to your inbox and scanning for insurance emails.",
-  extracting: "Downloading attachments and extracting policy data with AI.",
-  analyzing: "Organizing coverages, limits, and key dates.",
+  scanning: "Clarity can connect to your inbox and scan for insurance emails.",
+  extracting: "Clarity can download attachments and extract policy data with AI.",
+  analyzing: "Clarity can organize coverages, limits, and key dates.",
   ready: "Your policies are organized and ready to explore.",
 };
 

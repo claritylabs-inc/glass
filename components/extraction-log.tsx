@@ -71,8 +71,8 @@ export function ExtractionLog({ entries }: { entries: LogEntry[] }) {
   if (!entries || entries.length === 0) {
     return (
       <FadeIn when={true} duration={0.6}>
-        <div className="rounded-lg border border-foreground/6 bg-white/60 px-6 py-12 text-center text-muted-foreground">
-          No completed extractions yet.
+        <div className="rounded-lg border border-foreground/6 bg-white/60 px-6 py-8 text-center">
+          <p className="text-body-sm text-muted-foreground/60">No completed extractions</p>
         </div>
       </FadeIn>
     );

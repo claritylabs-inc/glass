@@ -5,7 +5,7 @@ import { internalAction } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import { ImapFlow } from "imapflow";
 import Anthropic from "@anthropic-ai/sdk";
-import { applyExtracted, extractFromPdf } from "../lib/extraction";
+import { applyExtracted, applyExtractedQuote, extractFromPdf, extractQuoteFromPdf, classifyDocumentType } from "../lib/extraction";
 import { Id } from "../_generated/dataModel";
 
 export const extractPolicy = internalAction({
@@ -26,40 +26,9 @@ export const extractPolicy = internalAction({
     });
     if (!connection) throw new Error("Connection not found");
 
-    const log = async (policyId: Id<"policies">, message: string) => {
-      await ctx.runMutation(internal.policies.appendExtractionLog, { id: policyId, message });
-    };
-
-    // Create a pending policy record
-    const policyId = await ctx.runMutation(api.policies.insert, {
-      userId: args.userId,
-      orgId: args.orgId,
-      emailId: args.emailId,
-      carrier: "Extracting...",
-      policyNumber: "Extracting...",
-      policyTypes: ["other"],
-      documentType: "policy",
-      policyYear: new Date().getFullYear(),
-      effectiveDate: "Extracting...",
-      expirationDate: "Extracting...",
-      isRenewal: false,
-      coverages: [],
-      insuredName: "Extracting...",
-      extractionStatus: "extracting",
-    });
-
-    // Audit: extraction started
-    await ctx.runMutation(internal.policyAuditLog.append, {
-      policyId,
-      userId: args.userId,
-      orgId: args.orgId,
-      action: "extraction_started",
-    });
-
-    try {
-      await ctx.runMutation(internal.policies.clearExtractionLog, { id: policyId });
-      await log(policyId, "Connecting to email server...");
-      // Download PDF attachment via IMAP
+    // Download PDF attachment via IMAP
+    let pdfBuffer: Buffer;
+    {
       const client = new ImapFlow({
         host: connection.imapHost,
         port: connection.imapPort,
@@ -68,10 +37,8 @@ export const extractPolicy = internalAction({
         logger: false,
       });
 
-      let pdfBuffer: Buffer;
       try {
         await client.connect();
-        await log(policyId, "Downloading PDF attachment...");
         const lock = await client.getMailboxLock("INBOX");
         try {
           const { content } = await client.download(
@@ -96,73 +63,186 @@ export const extractPolicy = internalAction({
         }
         throw error;
       }
+    }
 
-      // Store in Convex file storage
-      const sizeKB = Math.round(pdfBuffer.length / 1024);
-      await log(policyId, `PDF stored (${sizeKB} KB)`);
-      const blob = new Blob([new Uint8Array(pdfBuffer)], {
-        type: "application/pdf",
-      });
-      const fileId = await ctx.storage.store(blob);
+    // Store in Convex file storage
+    const sizeKB = Math.round(pdfBuffer.length / 1024);
+    const blob = new Blob([new Uint8Array(pdfBuffer)], {
+      type: "application/pdf",
+    });
+    const fileId = await ctx.storage.store(blob);
+    const pdfBase64 = pdfBuffer.toString("base64");
+    const anthropic = new Anthropic();
 
-      // Extract with Claude
-      const pdfBase64 = pdfBuffer.toString("base64");
-      const anthropic = new Anthropic();
-      const { rawText, extracted } = await extractFromPdf(
-        anthropic, pdfBase64, (msg) => log(policyId, msg),
-        async (raw) => {
-          await ctx.runMutation(api.policies.updateExtraction, {
-            id: policyId,
-            rawMetadataResponse: raw,
-          });
-        },
-      );
+    // Pass 0: Classify document type
+    const { documentType } = await classifyDocumentType(anthropic, pdfBase64);
 
-      // Save raw response for retries
-      await ctx.runMutation(api.policies.updateExtraction, {
-        id: policyId,
-        rawExtractionResponse: rawText,
-      });
-
-      await ctx.runMutation(api.policies.updateExtraction, {
-        id: policyId,
+    if (documentType === "quote") {
+      // === QUOTE EXTRACTION PATH ===
+      const quoteId = await ctx.runMutation(api.quotes.insert, {
+        userId: args.userId,
+        orgId: args.orgId,
+        emailId: args.emailId,
         fileId,
-        fileName: `${(extracted.metadata ?? extracted).policyNumber || "policy"}.pdf`,
-        ...applyExtracted(extracted),
+        carrier: "Extracting...",
+        quoteNumber: "Extracting...",
+        quoteYear: new Date().getFullYear(),
+        isRenewal: false,
+        coverages: [],
+        insuredName: "Extracting...",
+        extractionStatus: "extracting",
       });
 
-      await log(policyId, "Extraction complete");
+      const log = async (message: string) => {
+        await ctx.runMutation(internal.quotes.appendExtractionLog, { id: quoteId, message });
+      };
 
-      // Audit: extraction complete
+      await ctx.runMutation(internal.policyAuditLog.append, {
+        quoteId,
+        userId: args.userId,
+        orgId: args.orgId,
+        action: "extraction_started",
+      });
+
+      try {
+        await ctx.runMutation(internal.quotes.clearExtractionLog, { id: quoteId });
+        await log(`PDF stored (${sizeKB} KB). Classified as quote.`);
+
+        const { rawText, extracted } = await extractQuoteFromPdf(
+          anthropic, pdfBase64, log,
+          async (raw) => {
+            await ctx.runMutation(api.quotes.updateExtraction, {
+              id: quoteId,
+              rawMetadataResponse: raw,
+            });
+          },
+        );
+
+        await ctx.runMutation(api.quotes.updateExtraction, {
+          id: quoteId,
+          rawExtractionResponse: rawText,
+        });
+
+        await ctx.runMutation(api.quotes.updateExtraction, {
+          id: quoteId,
+          fileName: `${(extracted.metadata ?? extracted).quoteNumber || (extracted.metadata ?? extracted).policyNumber || "quote"}.pdf`,
+          ...applyExtractedQuote(extracted),
+        });
+
+        await log("Quote extraction complete");
+
+        await ctx.runMutation(internal.policyAuditLog.append, {
+          quoteId,
+          userId: args.userId,
+          orgId: args.orgId,
+          action: "extraction_complete",
+        });
+
+        await incrementExtracted(ctx, args.connectionId);
+      } catch (error: any) {
+        await log(`Failed: ${error.message || "Extraction failed"}`);
+        await ctx.runMutation(api.quotes.updateExtraction, {
+          id: quoteId,
+          extractionStatus: "error",
+          extractionError: error.message || "Extraction failed",
+        });
+        console.error("Quote extraction failed:", error.message);
+
+        await ctx.runMutation(internal.policyAuditLog.append, {
+          quoteId,
+          userId: args.userId,
+          orgId: args.orgId,
+          action: "extraction_error",
+          detail: error.message || "Extraction failed",
+        });
+
+        await incrementExtracted(ctx, args.connectionId);
+      }
+    } else {
+      // === POLICY EXTRACTION PATH ===
+      const policyId = await ctx.runMutation(api.policies.insert, {
+        userId: args.userId,
+        orgId: args.orgId,
+        emailId: args.emailId,
+        fileId,
+        carrier: "Extracting...",
+        policyNumber: "Extracting...",
+        policyTypes: ["other"],
+        documentType: "policy",
+        policyYear: new Date().getFullYear(),
+        effectiveDate: "Extracting...",
+        expirationDate: "Extracting...",
+        isRenewal: false,
+        coverages: [],
+        insuredName: "Extracting...",
+        extractionStatus: "extracting",
+      });
+
+      const log = async (message: string) => {
+        await ctx.runMutation(internal.policies.appendExtractionLog, { id: policyId, message });
+      };
+
       await ctx.runMutation(internal.policyAuditLog.append, {
         policyId,
         userId: args.userId,
         orgId: args.orgId,
-        action: "extraction_complete",
+        action: "extraction_started",
       });
 
-      // Update extraction progress on connection
-      await incrementExtracted(ctx, args.connectionId);
-    } catch (error: any) {
-      await log(policyId, `Failed: ${error.message || "Extraction failed"}`);
-      await ctx.runMutation(api.policies.updateExtraction, {
-        id: policyId,
-        extractionStatus: "error",
-        extractionError: error.message || "Extraction failed",
-      });
-      console.error("Policy extraction failed:", error.message);
+      try {
+        await ctx.runMutation(internal.policies.clearExtractionLog, { id: policyId });
+        await log(`PDF stored (${sizeKB} KB). Classified as policy.`);
 
-      // Audit: extraction error
-      await ctx.runMutation(internal.policyAuditLog.append, {
-        policyId,
-        userId: args.userId,
-        orgId: args.orgId,
-        action: "extraction_error",
-        detail: error.message || "Extraction failed",
-      });
+        const { rawText, extracted } = await extractFromPdf(
+          anthropic, pdfBase64, log,
+          async (raw) => {
+            await ctx.runMutation(api.policies.updateExtraction, {
+              id: policyId,
+              rawMetadataResponse: raw,
+            });
+          },
+        );
 
-      // Still increment so progress completes
-      await incrementExtracted(ctx, args.connectionId);
+        await ctx.runMutation(api.policies.updateExtraction, {
+          id: policyId,
+          rawExtractionResponse: rawText,
+        });
+
+        await ctx.runMutation(api.policies.updateExtraction, {
+          id: policyId,
+          fileName: `${(extracted.metadata ?? extracted).policyNumber || "policy"}.pdf`,
+          ...applyExtracted(extracted),
+        });
+
+        await log("Extraction complete");
+
+        await ctx.runMutation(internal.policyAuditLog.append, {
+          policyId,
+          userId: args.userId,
+          orgId: args.orgId,
+          action: "extraction_complete",
+        });
+
+        await incrementExtracted(ctx, args.connectionId);
+      } catch (error: any) {
+        await log(`Failed: ${error.message || "Extraction failed"}`);
+        await ctx.runMutation(api.policies.updateExtraction, {
+          id: policyId,
+          extractionStatus: "error",
+          extractionError: error.message || "Extraction failed",
+        });
+        console.error("Policy extraction failed:", error.message);
+
+        await ctx.runMutation(internal.policyAuditLog.append, {
+          policyId,
+          userId: args.userId,
+          orgId: args.orgId,
+          action: "extraction_error",
+          detail: error.message || "Extraction failed",
+        });
+
+        await incrementExtracted(ctx, args.connectionId);
+      }
     }
   },
 });

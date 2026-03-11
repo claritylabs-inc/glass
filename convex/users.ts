@@ -159,6 +159,23 @@ export const claimAgentHandle = mutation({
   },
 });
 
+export const restartOnboarding = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
+    await ctx.db.patch(userId, { onboardingComplete: false });
+
+    const membership = await ctx.db
+      .query("orgMemberships")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .first();
+    if (membership) {
+      await ctx.db.patch(membership.orgId, { onboardingComplete: false });
+    }
+  },
+});
+
 export const getInternal = internalQuery({
   args: { id: v.id("users") },
   handler: async (ctx, args) => {

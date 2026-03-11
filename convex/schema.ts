@@ -263,14 +263,100 @@ export default defineSchema({
     .index("by_userId", ["userId"])
     .index("by_orgId", ["orgId"]),
 
+  quotes: defineTable({
+    userId: v.optional(v.id("users")),
+    orgId: v.optional(v.id("organizations")),
+    emailId: v.optional(v.id("emails")),
+    fileId: v.optional(v.id("_storage")),
+    fileName: v.optional(v.string()),
+    // Entity fields
+    carrier: v.string(),
+    security: v.optional(v.string()),
+    underwriter: v.optional(v.string()),
+    mga: v.optional(v.string()),
+    broker: v.optional(v.string()),
+    // Quote metadata
+    quoteNumber: v.string(),
+    policyTypes: v.optional(v.array(v.string())),
+    quoteYear: v.number(),
+    proposedEffectiveDate: v.optional(v.string()),
+    proposedExpirationDate: v.optional(v.string()),
+    quoteExpirationDate: v.optional(v.string()),
+    isRenewal: v.boolean(),
+    insuredName: v.string(),
+    summary: v.optional(v.string()),
+    premium: v.optional(v.string()),
+    premiumBreakdown: v.optional(v.array(v.object({ line: v.string(), amount: v.string() }))),
+    coverages: v.array(v.object({
+      name: v.string(),
+      proposedLimit: v.string(),
+      proposedDeductible: v.optional(v.string()),
+      pageNumber: v.optional(v.number()),
+      sectionRef: v.optional(v.string()),
+    })),
+    subjectivities: v.optional(v.array(v.object({
+      description: v.string(),
+      category: v.optional(v.string()),
+      pageNumber: v.optional(v.number()),
+    }))),
+    underwritingConditions: v.optional(v.array(v.object({
+      description: v.string(),
+      pageNumber: v.optional(v.number()),
+    }))),
+    document: v.optional(v.object({
+      sections: v.array(v.object({
+        title: v.string(),
+        sectionNumber: v.optional(v.string()),
+        pageStart: v.number(),
+        pageEnd: v.optional(v.number()),
+        type: v.string(),
+        coverageType: v.optional(v.string()),
+        content: v.string(),
+        subsections: v.optional(v.array(v.object({
+          title: v.string(),
+          sectionNumber: v.optional(v.string()),
+          pageNumber: v.optional(v.number()),
+          content: v.string(),
+        }))),
+      })),
+    })),
+    metadataSource: v.optional(v.object({
+      carrierPage: v.optional(v.number()),
+      quoteNumberPage: v.optional(v.number()),
+      premiumPage: v.optional(v.number()),
+      effectiveDatePage: v.optional(v.number()),
+    })),
+    // Extraction state
+    extractionStatus: v.union(
+      v.literal("pending"),
+      v.literal("extracting"),
+      v.literal("complete"),
+      v.literal("error"),
+      v.literal("not_insurance")
+    ),
+    extractionError: v.optional(v.string()),
+    extractionLog: v.optional(v.array(v.object({
+      timestamp: v.number(),
+      message: v.string(),
+    }))),
+    rawExtractionResponse: v.optional(v.string()),
+    rawMetadataResponse: v.optional(v.string()),
+    deletedAt: v.optional(v.number()),
+    isDemo: v.optional(v.boolean()),
+  }).index("by_orgId", ["orgId"])
+    .index("by_userId", ["userId"])
+    .index("by_carrier", ["carrier"]),
+
   policyAuditLog: defineTable({
-    policyId: v.id("policies"),
+    policyId: v.optional(v.id("policies")),
+    quoteId: v.optional(v.id("quotes")),
     userId: v.id("users"),
     orgId: v.optional(v.id("organizations")),
     action: v.string(),
     detail: v.optional(v.string()),
     metadata: v.optional(v.any()),
   }).index("by_policyId", ["policyId"])
+    .index("by_quoteId", ["quoteId"])
     .index("by_orgId", ["orgId"]),
 
   agentConversations: defineTable({
@@ -292,6 +378,7 @@ export default defineSchema({
     responseCc: v.optional(v.array(v.string())),
     responseSentAt: v.optional(v.number()),
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
+    referencedQuoteIds: v.optional(v.array(v.id("quotes"))),
     status: v.union(
       v.literal("received"),
       v.literal("processing"),

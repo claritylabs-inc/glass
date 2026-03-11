@@ -223,9 +223,8 @@ export function ExtractionTable({
   if (extractions.length === 0) {
     return (
       <FadeIn when={true} duration={0.6}>
-        <div className="rounded-lg border border-foreground/6 bg-white/60 px-6 py-12 text-center text-muted-foreground">
-          No pending extractions. Documents will appear here when email
-          attachments are being processed.
+        <div className="rounded-lg border border-foreground/6 bg-white/60 px-6 py-8 text-center">
+          <p className="text-body-sm text-muted-foreground/60">No pending extractions</p>
         </div>
       </FadeIn>
     );

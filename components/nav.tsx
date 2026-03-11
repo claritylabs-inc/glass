@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { useQuery } from "convex/react";
 import { useAuthActions } from "@convex-dev/auth/react";
 import { api } from "@/convex/_generated/api";
-import { LayoutDashboard, FileText, Mail, Asterisk, Menu, X, LogOut, Settings, User } from "lucide-react";
+import { LayoutDashboard, FileText, ClipboardList, Mail, Asterisk, Menu, X, LogOut, Settings, User } from "lucide-react";
 import { LogoIcon } from "@/components/ui/logo-icon";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -20,6 +20,7 @@ import {
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/policies", label: "Policies", icon: FileText },
+  { href: "/quotes", label: "Quotes", icon: ClipboardList },
   { href: "/connections", label: "Connections", icon: Mail },
   { href: "/agent", label: "Agent", icon: Asterisk },
 ];

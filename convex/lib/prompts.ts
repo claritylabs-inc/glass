@@ -94,7 +94,28 @@ IMPORTANT INSTRUCTIONS:
 - subsections within a section are optional — only include if the section has clearly defined subsections`;
 
 /**
+ * Pass 0: Document classification prompt (Haiku).
+ * Quick classification to determine if a document is a policy or a quote.
+ */
+export const CLASSIFY_DOCUMENT_PROMPT = `You are an expert insurance document analyst. Classify this document as either a bound insurance POLICY or a QUOTE/PROPOSAL.
+
+Respond with JSON only:
+
+{
+  "documentType": "policy" or "quote",
+  "confidence": number between 0 and 1,
+  "signals": ["signal 1", "signal 2"]
+}
+
+CLASSIFICATION SIGNALS:
+- POLICY signals: declarations page, ISO form numbers (e.g. CG 00 01), binding language ("This policy is issued to"), endorsement schedules, "Certificate of Insurance"
+- QUOTE signals: "quote", "proposal", "indication" wording, subjectivities, "subject to" conditions, quote expiration date, "proposed premium", "terms and conditions may vary"
+
+If uncertain, lean toward "policy" for documents with declarations pages and binding language, "quote" for everything else.`;
+
+/**
  * Chunked extraction: metadata-only prompt for the first pass on long documents.
+ * Used for both policy and quote extractions (documentType already known from pass 0).
  */
 export const METADATA_PROMPT = `You are an expert insurance document analyst. Extract ONLY the high-level metadata from this insurance document. Do NOT extract full section content — that will be done in a separate pass.
 
@@ -134,7 +155,62 @@ Respond with JSON only:
 }`;
 
 /**
- * Chunked extraction: sections prompt for a specific page range.
+ * Quote-specific metadata prompt (Sonnet).
+ * Extracts quote-specific fields like subjectivities, underwriting conditions, premium breakdown.
+ */
+export const QUOTE_METADATA_PROMPT = `You are an expert insurance document analyst. Extract ONLY the high-level metadata from this insurance QUOTE or PROPOSAL document. Do NOT extract full section content — that will be done in a separate pass.
+
+Respond with JSON only:
+
+{
+  "metadata": {
+    "carrier": "primary insurance company name",
+    "security": "insurer or underwriter entity providing coverage, or null",
+    "underwriter": "named individual underwriter, or null",
+    "mga": "MGA or Program Administrator, or null",
+    "broker": "insurance broker, or null",
+    "quoteNumber": "quote or proposal reference number",
+    "policyTypes": ["general_liability", ...],
+    "quoteYear": number,
+    "proposedEffectiveDate": "MM/DD/YYYY or null",
+    "proposedExpirationDate": "MM/DD/YYYY or null",
+    "quoteExpirationDate": "MM/DD/YYYY — when this quote offer expires, or null",
+    "isRenewal": boolean,
+    "premium": "$X,XXX — total proposed premium",
+    "insuredName": "name of insured party",
+    "summary": "1-2 sentence summary of the quote"
+  },
+  "metadataSource": {
+    "carrierPage": number or null,
+    "quoteNumberPage": number or null,
+    "premiumPage": number or null,
+    "effectiveDatePage": number or null
+  },
+  "coverages": [
+    { "name": "coverage name", "proposedLimit": "$X,XXX,XXX", "proposedDeductible": "$X,XXX or null", "pageNumber": number, "sectionRef": "section ref or null" }
+  ],
+  "premiumBreakdown": [
+    { "line": "coverage line name", "amount": "$X,XXX" }
+  ],
+  "subjectivities": [
+    { "description": "subjectivity description", "category": "pre_binding" or "post_binding" or "information" or null, "pageNumber": number or null }
+  ],
+  "underwritingConditions": [
+    { "description": "condition description", "pageNumber": number or null }
+  ],
+  "totalPages": number,
+  "tableOfContents": [
+    { "title": "section title", "pageStart": number, "pageEnd": number }
+  ]
+}
+
+IMPORTANT:
+- quoteExpirationDate is when the quote offer itself expires (not the proposed policy period)
+- subjectivities are conditions that must be met before or after binding (look for "subject to", "subjectivities", "conditions precedent")
+- premiumBreakdown should list each coverage line's individual premium if available`;
+
+/**
+ * Chunked extraction: sections prompt for a specific page range (policies).
  */
 export function buildSectionsPrompt(pageStart: number, pageEnd: number): string {
   return `You are an expert insurance document analyst. Extract ALL sections, clauses, endorsements, and schedules found on pages ${pageStart} through ${pageEnd} of this document. Preserve the original language verbatim.
@@ -148,7 +224,7 @@ Respond with JSON only:
       "sectionNumber": "section number or null",
       "pageStart": number,
       "pageEnd": number or null,
-      "type": "one of: declarations, insuring_agreement, exclusion, condition, definition, endorsement, schedule, subjectivity, warranty, notice, regulatory, other",
+      "type": "one of: declarations, insuring_agreement, policy_form, endorsement, application, exclusion, condition, definition, schedule, notice, regulatory, other",
       "coverageType": "policyTypes value if coverage-specific, or null",
       "content": "full verbatim text of the section",
       "subsections": [
@@ -161,6 +237,60 @@ Respond with JSON only:
   "costsAndFees": { "content": "verbatim text", "pageNumber": number } or null,
   "claimsContact": { "content": "verbatim text about how to report/file claims", "pageNumber": number } or null
 }
+
+SECTION TYPE GUIDANCE:
+- "declarations" — the declarations page(s) listing named insured, policy period, limits, premiums
+- "policy_form" — named ISO or proprietary forms (e.g. CG 00 01, IL 00 17). Sections within a named form should all be typed as "policy_form"
+- "endorsement" — standalone endorsements modifying the base policy
+- "application" — the insurance application or supplemental application
+- "insuring_agreement" — the insuring agreement clause (only if standalone, not inside a policy_form)
+- Other types for standalone sections only
+
+IMPORTANT: Only extract content from pages ${pageStart}-${pageEnd}. Preserve original language exactly.`;
+}
+
+/** Alias for backward compatibility */
+export const buildPolicySectionsPrompt = buildSectionsPrompt;
+
+/**
+ * Chunked extraction: sections prompt for quote documents.
+ */
+export function buildQuoteSectionsPrompt(pageStart: number, pageEnd: number): string {
+  return `You are an expert insurance document analyst. Extract ALL sections found on pages ${pageStart} through ${pageEnd} of this insurance QUOTE or PROPOSAL. Preserve the original language verbatim.
+
+Respond with JSON only:
+
+{
+  "sections": [
+    {
+      "title": "section title",
+      "sectionNumber": "section number or null",
+      "pageStart": number,
+      "pageEnd": number or null,
+      "type": "one of: terms_summary, premium_indication, underwriting_condition, subjectivity, coverage_summary, exclusion, other",
+      "coverageType": "policyTypes value if coverage-specific, or null",
+      "content": "full verbatim text of the section",
+      "subsections": [
+        { "title": "subsection title", "sectionNumber": "or null", "pageNumber": number, "content": "full verbatim text" }
+      ]
+    }
+  ],
+  "subjectivities": [
+    { "description": "subjectivity text", "category": "pre_binding" or "post_binding" or "information" or null, "pageNumber": number or null }
+  ],
+  "underwritingConditions": [
+    { "description": "condition text", "pageNumber": number or null }
+  ]
+}
+
+SECTION TYPE GUIDANCE:
+- "terms_summary" — overview of proposed terms, key conditions
+- "premium_indication" — premium tables, rate schedules, premium breakdown
+- "underwriting_condition" — conditions that must be met for coverage
+- "subjectivity" — items "subject to" that must be provided or completed
+- "coverage_summary" — proposed coverage limits, deductibles, coverage descriptions
+- "exclusion" — excluded coverages, limitations
+- "other" — anything else
 
 IMPORTANT: Only extract content from pages ${pageStart}-${pageEnd}. Preserve original language exactly.`;
 }

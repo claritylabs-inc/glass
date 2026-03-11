@@ -5,7 +5,113 @@ import { action } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import { ImapFlow } from "imapflow";
 import Anthropic from "@anthropic-ai/sdk";
-import { stripFences, applyExtracted, extractFromPdf, extractSectionsOnly, enrichSupplementaryFields, sanitizeNulls } from "../lib/extraction";
+import { stripFences, applyExtracted, applyExtractedQuote, extractFromPdf, extractQuoteFromPdf, extractSectionsOnly, enrichSupplementaryFields, sanitizeNulls } from "../lib/extraction";
+import { buildQuoteSectionsPrompt } from "../lib/prompts";
+
+export const retryQuoteExtraction = action({
+  args: {
+    quoteId: v.id("quotes"),
+    mode: v.optional(v.union(v.literal("reparse"), v.literal("full"))),
+  },
+  returns: v.any(),
+  handler: async (ctx, args) => {
+    const viewer = await ctx.runQuery(api.users.viewer);
+    if (!viewer) return { error: "Not authenticated" };
+
+    const quote = await ctx.runQuery(api.quotes.get, { id: args.quoteId });
+    if (!quote) return { error: "Quote not found" };
+
+    const log = async (message: string) => {
+      await ctx.runMutation(internal.quotes.appendExtractionLog, { id: args.quoteId, message });
+    };
+
+    const mode = args.mode ?? "auto";
+
+    await ctx.runMutation(internal.policyAuditLog.append, {
+      quoteId: args.quoteId,
+      userId: viewer._id,
+      action: "re_extraction",
+      detail: `Mode: ${mode}`,
+    });
+
+    // Reparse mode
+    if (mode === "reparse" || mode === "auto") {
+      if (quote.rawExtractionResponse) {
+        try {
+          await ctx.runMutation(internal.quotes.clearExtractionLog, { id: args.quoteId });
+          await log("Re-parsing saved extraction response...");
+          const responseText = stripFences(quote.rawExtractionResponse);
+          const extracted = JSON.parse(responseText);
+
+          await ctx.runMutation(api.quotes.updateExtraction, {
+            id: args.quoteId,
+            fileName: `${(extracted.metadata ?? extracted).quoteNumber || "quote"}.pdf`,
+            ...applyExtractedQuote(extracted),
+          });
+
+          await log("Extraction complete");
+          return { success: true, reused: true };
+        } catch {
+          if (mode === "reparse") {
+            await log("Failed: Could not parse saved AI response");
+            return { error: "Could not parse saved AI response" };
+          }
+        }
+      } else if (mode === "reparse") {
+        return { error: "No saved AI response to re-parse" };
+      }
+    }
+
+    // Full retry — need PDF from storage
+    if (!quote.fileId) return { error: "No PDF file stored — cannot retry" };
+
+    await ctx.runMutation(internal.quotes.clearExtractionLog, { id: args.quoteId });
+    await log("Starting full quote re-extraction...");
+    await ctx.runMutation(api.quotes.updateExtraction, {
+      id: args.quoteId,
+      extractionStatus: "extracting",
+      extractionError: "",
+    });
+
+    try {
+      const blob = await ctx.storage.get(quote.fileId);
+      if (!blob) throw new Error("Stored PDF not found");
+      const pdfBase64 = Buffer.from(await blob.arrayBuffer()).toString("base64");
+
+      const Anthropic = (await import("@anthropic-ai/sdk")).default;
+      const anthropic = new Anthropic();
+      const { rawText, extracted } = await extractQuoteFromPdf(
+        anthropic, pdfBase64, log,
+        async (raw) => {
+          await ctx.runMutation(api.quotes.updateExtraction, {
+            id: args.quoteId,
+            rawMetadataResponse: raw,
+          });
+        },
+      );
+
+      await ctx.runMutation(api.quotes.updateExtraction, {
+        id: args.quoteId,
+        rawExtractionResponse: rawText,
+      });
+      await ctx.runMutation(api.quotes.updateExtraction, {
+        id: args.quoteId,
+        fileName: `${(extracted.metadata ?? extracted).quoteNumber || "quote"}.pdf`,
+        ...applyExtractedQuote(extracted),
+      });
+      await log("Quote extraction complete");
+      return { success: true };
+    } catch (error: any) {
+      await log(`Failed: ${error.message || "Quote extraction failed"}`);
+      await ctx.runMutation(api.quotes.updateExtraction, {
+        id: args.quoteId,
+        extractionStatus: "error",
+        extractionError: error.message || "Quote extraction failed",
+      });
+      return { error: error.message || "Quote extraction failed" };
+    }
+  },
+});
 
 export const retryExtraction = action({
   args: {

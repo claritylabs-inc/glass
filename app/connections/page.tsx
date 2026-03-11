@@ -249,14 +249,9 @@ export default function ConnectionsPage() {
 
               {connections && connections.length === 0 && (
                 <FadeIn when={true} delay={0.2} duration={0.6}>
-                  <div className="rounded-lg border border-foreground/6 bg-white/60 px-6 py-12 text-center">
-                    <Mail className="w-10 h-10 text-muted-foreground/40 mx-auto mb-3" />
-                    <p className="text-body-sm text-muted-foreground mb-1">
+                  <div className="rounded-lg border border-foreground/6 bg-white/60 px-6 py-8 text-center">
+                    <p className="text-body-sm text-muted-foreground/60">
                       No email connections yet
-                    </p>
-                    <p className="text-label-sm text-muted-foreground/60">
-                      Add an IMAP connection to start scanning for insurance
-                      policies
                     </p>
                   </div>
                 </FadeIn>
@@ -265,6 +260,7 @@ export default function ConnectionsPage() {
               <div className="space-y-3">
                 {connections?.map((conn, i) => {
                   const isScanning = conn.scanProgress && conn.scanProgress.phase !== "complete";
+                  const isDemo = conn.isDemo === true;
 
                   return (
                     <FadeIn
@@ -273,48 +269,59 @@ export default function ConnectionsPage() {
                       staggerIndex={i + 2}
                       duration={0.6}
                     >
-                      <div className="rounded-lg border border-foreground/6 bg-white/60 px-4 py-3">
+                      <div className={`rounded-lg border bg-white/60 px-4 py-3 ${isDemo ? "border-amber-200/60" : "border-foreground/6"}`}>
                         {/* Desktop layout: single row */}
                         <div className="hidden md:flex items-center justify-between">
                           <div className="flex items-center gap-3 min-w-0">
                             <ConnectionIcon imapHost={conn.imapHost} className="w-8 h-8 shrink-0" />
                             <div className="min-w-0">
-                              <p className="text-body-sm font-medium text-foreground truncate">
-                                {conn.label}
-                              </p>
+                              <div className="flex items-center gap-2">
+                                <p className="text-body-sm font-medium text-foreground truncate">
+                                  {conn.label}
+                                </p>
+                                {isDemo && (
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium bg-amber-100 text-amber-700 shrink-0">
+                                    Demo
+                                  </span>
+                                )}
+                              </div>
                               <p className="text-label-sm text-muted-foreground/60 truncate">
                                 {conn.email} · {conn.imapHost}
                               </p>
                             </div>
                           </div>
                           <div className="flex items-center gap-3">
-                            <ScanStatus
-                              status={conn.lastScanStatus}
-                              error={conn.lastScanError}
-                              progress={conn.scanProgress}
-                            />
+                            {!isDemo && (
+                              <ScanStatus
+                                status={conn.lastScanStatus}
+                                error={conn.lastScanError}
+                                progress={conn.scanProgress}
+                              />
+                            )}
                             {conn.emailsFound != null && !isScanning && (
                               <span className="text-label-sm text-muted-foreground">
                                 {conn.emailsFound} emails ·{" "}
                                 {conn.policiesExtracted ?? 0} policies
                               </span>
                             )}
-                            {isScanning ? (
-                              <PillButton
-                                variant="destructive"
-                                onClick={() => stopScan({ id: conn._id })}
-                              >
-                                <Square className="w-3 h-3" />
-                                Stop
-                              </PillButton>
-                            ) : (
-                              <PillButton
-                                variant="secondary"
-                                onClick={() => openScanModal(conn)}
-                              >
-                                <Play className="w-3 h-3" />
-                                Scan
-                              </PillButton>
+                            {!isDemo && (
+                              isScanning ? (
+                                <PillButton
+                                  variant="destructive"
+                                  onClick={() => stopScan({ id: conn._id })}
+                                >
+                                  <Square className="w-3 h-3" />
+                                  Stop
+                                </PillButton>
+                              ) : (
+                                <PillButton
+                                  variant="secondary"
+                                  onClick={() => openScanModal(conn)}
+                                >
+                                  <Play className="w-3 h-3" />
+                                  Scan
+                                </PillButton>
+                              )
                             )}
                             <PillButton
                               variant="icon"
@@ -333,20 +340,29 @@ export default function ConnectionsPage() {
                           <div className="flex items-center gap-3">
                             <ConnectionIcon imapHost={conn.imapHost} className="w-8 h-8 shrink-0" />
                             <div className="min-w-0">
-                              <p className="text-body-sm font-medium text-foreground truncate">
-                                {conn.label}
-                              </p>
+                              <div className="flex items-center gap-2">
+                                <p className="text-body-sm font-medium text-foreground truncate">
+                                  {conn.label}
+                                </p>
+                                {isDemo && (
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium bg-amber-100 text-amber-700 shrink-0">
+                                    Demo
+                                  </span>
+                                )}
+                              </div>
                               <p className="text-label-sm text-muted-foreground/60 truncate">
                                 {conn.email} · {conn.imapHost}
                               </p>
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
-                            <ScanStatus
-                              status={conn.lastScanStatus}
-                              error={conn.lastScanError}
-                              progress={conn.scanProgress}
-                            />
+                            {!isDemo && (
+                              <ScanStatus
+                                status={conn.lastScanStatus}
+                                error={conn.lastScanError}
+                                progress={conn.scanProgress}
+                              />
+                            )}
                             {conn.emailsFound != null && !isScanning && (
                               <span className="text-label-sm text-muted-foreground">
                                 {conn.emailsFound} emails · {conn.policiesExtracted ?? 0} policies
@@ -354,22 +370,24 @@ export default function ConnectionsPage() {
                             )}
                           </div>
                           <div className="flex items-center gap-2">
-                            {isScanning ? (
-                              <PillButton
-                                variant="destructive"
-                                onClick={() => stopScan({ id: conn._id })}
-                              >
-                                <Square className="w-3 h-3" />
-                                Stop
-                              </PillButton>
-                            ) : (
-                              <PillButton
-                                variant="secondary"
-                                onClick={() => openScanModal(conn)}
-                              >
-                                <Play className="w-3 h-3" />
-                                Scan
-                              </PillButton>
+                            {!isDemo && (
+                              isScanning ? (
+                                <PillButton
+                                  variant="destructive"
+                                  onClick={() => stopScan({ id: conn._id })}
+                                >
+                                  <Square className="w-3 h-3" />
+                                  Stop
+                                </PillButton>
+                              ) : (
+                                <PillButton
+                                  variant="secondary"
+                                  onClick={() => openScanModal(conn)}
+                                >
+                                  <Play className="w-3 h-3" />
+                                  Scan
+                                </PillButton>
+                              )
                             )}
                             <PillButton
                               variant="icon"

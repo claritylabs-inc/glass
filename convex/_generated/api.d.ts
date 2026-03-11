@@ -32,10 +32,12 @@ import type * as lib_policyTypes from "../lib/policyTypes.js";
 import type * as lib_prompts from "../lib/prompts.js";
 import type * as migrations from "../migrations.js";
 import type * as migrations_migrateOnboarding from "../migrations/migrateOnboarding.js";
+import type * as migrations_migrateQuotesToTable from "../migrations/migrateQuotesToTable.js";
 import type * as migrations_migrateToOrgs from "../migrations/migrateToOrgs.js";
 import type * as orgs from "../orgs.js";
 import type * as policies from "../policies.js";
 import type * as policyAuditLog from "../policyAuditLog.js";
+import type * as quotes from "../quotes.js";
 import type * as seed from "../seed.js";
 import type * as users from "../users.js";
 
@@ -70,10 +72,12 @@ declare const fullApi: ApiFromModules<{
   "lib/prompts": typeof lib_prompts;
   migrations: typeof migrations;
   "migrations/migrateOnboarding": typeof migrations_migrateOnboarding;
+  "migrations/migrateQuotesToTable": typeof migrations_migrateQuotesToTable;
   "migrations/migrateToOrgs": typeof migrations_migrateToOrgs;
   orgs: typeof orgs;
   policies: typeof policies;
   policyAuditLog: typeof policyAuditLog;
+  quotes: typeof quotes;
   seed: typeof seed;
   users: typeof users;
 }>;

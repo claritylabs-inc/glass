@@ -4,14 +4,14 @@ import { useState, useMemo } from "react";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Nav } from "@/components/nav";
-import { PolicyTable } from "@/components/policy-table";
-import { PolicyGroupedView } from "@/components/policy-grouped-view";
-import { PolicyFilters } from "@/components/policy-filters";
 import { FadeIn } from "@/components/ui/fade-in";
 import { Skeleton } from "@/components/ui/skeleton";
+import { QuoteFilters } from "@/components/quote-filters";
+import { QuoteTable } from "@/components/quote-table";
+import { QuoteGroupedView } from "@/components/quote-grouped-view";
 
-export default function PoliciesPage() {
-  const policies = useQuery(api.policies.list, {});
+export default function QuotesPage() {
+  const quotes = useQuery(api.quotes.list, {});
 
   const [activeTab, setActiveTab] = useState("all");
   const [selectedType, setSelectedType] = useState("");
@@ -19,34 +19,32 @@ export default function PoliciesPage() {
   const [selectedYear, setSelectedYear] = useState("");
 
   const carriers = useMemo(() => {
-    if (!policies) return [];
-    return [...new Set(policies.map((p) => p.carrier))].sort();
-  }, [policies]);
+    if (!quotes) return [];
+    return [...new Set(quotes.map((q) => q.carrier))].sort();
+  }, [quotes]);
 
   const years = useMemo(() => {
-    if (!policies) return [];
-    return [...new Set(policies.map((p) => p.policyYear))].sort(
-      (a, b) => b - a
-    );
-  }, [policies]);
+    if (!quotes) return [];
+    return [...new Set(quotes.map((q) => q.quoteYear))].sort((a, b) => b - a);
+  }, [quotes]);
 
-  const filteredPolicies = useMemo(() => {
-    if (!policies) return undefined;
-    let result = policies;
+  const filteredQuotes = useMemo(() => {
+    if (!quotes) return undefined;
+    let result = quotes;
     if (selectedType) {
-      result = result.filter((p) => {
-        const types = (p as any).policyTypes ?? [(p as any).policyType ?? "other"];
+      result = result.filter((q) => {
+        const types = q.policyTypes ?? ["other"];
         return types.includes(selectedType);
       });
     }
     if (selectedCarrier) {
-      result = result.filter((p) => p.carrier === selectedCarrier);
+      result = result.filter((q) => q.carrier === selectedCarrier);
     }
     if (selectedYear) {
-      result = result.filter((p) => p.policyYear === Number(selectedYear));
+      result = result.filter((q) => q.quoteYear === Number(selectedYear));
     }
     return result;
-  }, [policies, selectedType, selectedCarrier, selectedYear]);
+  }, [quotes, selectedType, selectedCarrier, selectedYear]);
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -55,14 +53,14 @@ export default function PoliciesPage() {
         <div className="max-w-6xl mx-auto px-4 md:px-8 py-6">
           <FadeIn when={true} staggerIndex={0} duration={0.6}>
             <div className="mb-6">
-              <h1 className="!mb-1">Policies</h1>
+              <h1 className="!mb-1">Quotes</h1>
               <p className="text-body-sm text-muted-foreground">
-                Browse and filter all extracted insurance policies
+                Insurance quotes and proposals received
               </p>
             </div>
           </FadeIn>
 
-          {policies === undefined ? (
+          {quotes === undefined ? (
             <div className="space-y-3 mb-4">
               <div className="flex items-center gap-1 border-b border-foreground/6 pb-2">
                 <Skeleton className="h-5 w-20" />
@@ -76,7 +74,7 @@ export default function PoliciesPage() {
               </div>
             </div>
           ) : (
-            <PolicyFilters
+            <QuoteFilters
               activeTab={activeTab}
               onTabChange={setActiveTab}
               carriers={carriers}
@@ -91,10 +89,10 @@ export default function PoliciesPage() {
           )}
 
           {activeTab === "all" ? (
-            <PolicyTable policies={filteredPolicies as any} />
+            <QuoteTable quotes={filteredQuotes as any} />
           ) : (
-            <PolicyGroupedView
-              policies={policies as any}
+            <QuoteGroupedView
+              quotes={quotes as any}
               groupBy={activeTab as "type" | "year"}
             />
           )}

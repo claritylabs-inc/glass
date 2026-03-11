@@ -4,7 +4,7 @@ import { v } from "convex/values";
 import { action } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import Anthropic from "@anthropic-ai/sdk";
-import { applyExtracted, extractFromPdf } from "../lib/extraction";
+import { applyExtracted, applyExtractedQuote, extractFromPdf, extractQuoteFromPdf } from "../lib/extraction";
 
 export const reExtractFromFile = action({
   args: {
@@ -13,11 +13,9 @@ export const reExtractFromFile = action({
   },
   returns: v.any(),
   handler: async (ctx, args) => {
-    // Verify auth
     const viewer = await ctx.runQuery(api.users.viewer);
     if (!viewer) return { error: "Not authenticated" };
 
-    // Verify policy exists and belongs to user
     const policy = await ctx.runQuery(api.policies.get, { id: args.policyId });
     if (!policy) return { error: "Policy not found" };
 
@@ -25,14 +23,12 @@ export const reExtractFromFile = action({
       await ctx.runMutation(internal.policies.appendExtractionLog, { id: args.policyId, message });
     };
 
-    // Audit: pdf uploaded for re-extraction
     await ctx.runMutation(internal.policyAuditLog.append, {
       policyId: args.policyId,
       userId: viewer._id,
       action: "pdf_uploaded",
     });
 
-    // Set status to extracting
     await ctx.runMutation(internal.policies.clearExtractionLog, { id: args.policyId });
     await log("Reading uploaded PDF...");
     await ctx.runMutation(api.policies.updateExtraction, {
@@ -42,14 +38,12 @@ export const reExtractFromFile = action({
     });
 
     try {
-      // Read file from Convex storage
       const blob = await ctx.storage.get(args.fileId);
       if (!blob) throw new Error("File not found in storage");
 
       const arrayBuffer = await blob.arrayBuffer();
       const pdfBase64 = Buffer.from(arrayBuffer).toString("base64");
 
-      // Extract with Claude
       const anthropic = new Anthropic();
       const { rawText, extracted } = await extractFromPdf(
         anthropic, pdfBase64, log,
@@ -61,13 +55,11 @@ export const reExtractFromFile = action({
         },
       );
 
-      // Save raw response
       await ctx.runMutation(api.policies.updateExtraction, {
         id: args.policyId,
         rawExtractionResponse: rawText,
       });
 
-      // Apply extraction results with new file
       await ctx.runMutation(api.policies.updateExtraction, {
         id: args.policyId,
         fileId: args.fileId,
@@ -81,6 +73,80 @@ export const reExtractFromFile = action({
       await log(`Failed: ${error.message || "Re-extraction failed"}`);
       await ctx.runMutation(api.policies.updateExtraction, {
         id: args.policyId,
+        extractionStatus: "error",
+        extractionError: error.message || "Re-extraction failed",
+      });
+      return { error: error.message || "Re-extraction failed" };
+    }
+  },
+});
+
+export const reExtractQuoteFromFile = action({
+  args: {
+    quoteId: v.id("quotes"),
+    fileId: v.id("_storage"),
+  },
+  returns: v.any(),
+  handler: async (ctx, args) => {
+    const viewer = await ctx.runQuery(api.users.viewer);
+    if (!viewer) return { error: "Not authenticated" };
+
+    const quote = await ctx.runQuery(api.quotes.get, { id: args.quoteId });
+    if (!quote) return { error: "Quote not found" };
+
+    const log = async (message: string) => {
+      await ctx.runMutation(internal.quotes.appendExtractionLog, { id: args.quoteId, message });
+    };
+
+    await ctx.runMutation(internal.policyAuditLog.append, {
+      quoteId: args.quoteId,
+      userId: viewer._id,
+      action: "pdf_uploaded",
+    });
+
+    await ctx.runMutation(internal.quotes.clearExtractionLog, { id: args.quoteId });
+    await log("Reading uploaded PDF...");
+    await ctx.runMutation(api.quotes.updateExtraction, {
+      id: args.quoteId,
+      extractionStatus: "extracting",
+      extractionError: "",
+    });
+
+    try {
+      const blob = await ctx.storage.get(args.fileId);
+      if (!blob) throw new Error("File not found in storage");
+
+      const arrayBuffer = await blob.arrayBuffer();
+      const pdfBase64 = Buffer.from(arrayBuffer).toString("base64");
+
+      const anthropic = new Anthropic();
+      const { rawText, extracted } = await extractQuoteFromPdf(
+        anthropic, pdfBase64, log,
+        async (raw) => {
+          await ctx.runMutation(api.quotes.updateExtraction, {
+            id: args.quoteId,
+            rawMetadataResponse: raw,
+          });
+        },
+      );
+
+      await ctx.runMutation(api.quotes.updateExtraction, {
+        id: args.quoteId,
+        rawExtractionResponse: rawText,
+      });
+
+      await ctx.runMutation(api.quotes.updateExtraction, {
+        id: args.quoteId,
+        fileName: `${(extracted.metadata ?? extracted).quoteNumber || "quote"}.pdf`,
+        ...applyExtractedQuote(extracted),
+      });
+
+      await log("Quote extraction complete");
+      return { success: true };
+    } catch (error: any) {
+      await log(`Failed: ${error.message || "Re-extraction failed"}`);
+      await ctx.runMutation(api.quotes.updateExtraction, {
+        id: args.quoteId,
         extractionStatus: "error",
         extractionError: error.message || "Re-extraction failed",
       });

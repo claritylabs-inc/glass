@@ -1,6 +1,7 @@
 import { Doc, Id } from "../_generated/dataModel";
 
 type Policy = Doc<"policies">;
+type Quote = Doc<"quotes">;
 
 function buildCoverageGapGuidelines(userName?: string): string {
   const contactRef = userName ?? "our team";
@@ -101,22 +102,45 @@ ${buildCoverageGapGuidelines(userName)}`;
     coiInstructions = `\n\nCOI REQUESTS:\n- If a certificate of insurance (COI) is requested, tell them ${userName} (CC'd) can provide that directly.`;
   }
 
-  return base + context + modeInstructions + coiInstructions;
+  const quotesGuidance = `
+
+POLICIES vs QUOTES:
+- POLICIES = bound coverage currently in force. Use these when answering "what coverage do we have?", "what are our limits?", "are we covered for X?"
+- QUOTES = proposals or indications received but not yet bound. Use these when answering "what quotes have we received?", "what was quoted?", "what are the proposed terms?"
+- Always clearly label which you are referencing. Say "In your [carrier] policy..." or "In the [carrier] quote/proposal..."
+- NEVER present a quote as active coverage. A quote is a proposal only.
+- If asked about coverage, default to policies unless the question specifically asks about quotes or proposals.`;
+
+  return base + context + modeInstructions + coiInstructions + quotesGuidance;
 }
 
+/** @deprecated Use buildDocumentContext instead */
 export function buildPolicyContext(
   policies: Policy[],
   queryText: string,
 ): { context: string; relevantPolicyIds: Id<"policies">[] } {
-  if (policies.length === 0) {
+  const result = buildDocumentContext(policies, [], queryText);
+  return { context: result.context, relevantPolicyIds: result.relevantPolicyIds };
+}
+
+export function buildDocumentContext(
+  policies: Policy[],
+  quotes: Quote[],
+  queryText: string,
+): { context: string; relevantPolicyIds: Id<"policies">[]; relevantQuoteIds: Id<"quotes">[] } {
+  if (policies.length === 0 && quotes.length === 0) {
     return {
-      context: "NO POLICIES FOUND. The user has not imported any insurance policies yet.",
+      context: "NO POLICIES OR QUOTES FOUND. The user has not imported any insurance documents yet.",
       relevantPolicyIds: [],
+      relevantQuoteIds: [],
     };
   }
 
-  // Build compact index of all policies
-  const indexLines = policies.map((p, i) => {
+  const queryLower = queryText.toLowerCase();
+  const queryWords = queryLower.split(/\s+/).filter((w) => w.length > 2);
+
+  // Build policy index
+  const policyIndexLines = policies.map((p, i) => {
     const types = p.policyTypes?.join(", ") ?? p.policyType ?? "unknown";
     const carrier = p.security || p.carrier;
     const coverageSummary = p.coverages
@@ -129,90 +153,154 @@ export function buildPolicyContext(
     return `[${i + 1}] ID:${p._id} | ${carrier} | #${p.policyNumber} | Types: ${types} | ${p.effectiveDate} to ${p.expirationDate} | Insured: ${p.insuredName} | Premium: ${p.premium ?? "N/A"} | Coverages: ${coverageSummary} | Sections: ${sectionTitles}`;
   });
 
-  // Keyword match to find relevant policies for full section content
-  const queryLower = queryText.toLowerCase();
-  const queryWords = queryLower.split(/\s+/).filter((w) => w.length > 2);
+  // Build quote index
+  const quoteIndexLines = quotes.map((q, i) => {
+    const types = q.policyTypes?.join(", ") ?? "unknown";
+    const carrier = q.security || q.carrier;
+    const coverageSummary = q.coverages
+      .slice(0, 5)
+      .map((c) => `${c.name}: ${c.proposedLimit}`)
+      .join("; ");
+    const expiry = q.quoteExpirationDate ? ` | Quote expires: ${q.quoteExpirationDate}` : "";
+    return `[Q${i + 1}] ID:${q._id} | ${carrier} | #${q.quoteNumber} | Types: ${types} | Proposed: ${q.proposedEffectiveDate ?? "N/A"} to ${q.proposedExpirationDate ?? "N/A"}${expiry} | Insured: ${q.insuredName} | Premium: ${q.premium ?? "N/A"} | Coverages: ${coverageSummary}`;
+  });
 
+  // Score policies
   const scoredPolicies = policies.map((p) => {
     let score = 0;
     const searchText = [
-      p.carrier,
-      p.security,
-      p.policyNumber,
-      p.insuredName,
-      ...(p.policyTypes ?? []),
-      p.policyType,
-      ...p.coverages.map((c) => c.name),
-      p.summary,
+      p.carrier, p.security, p.policyNumber, p.insuredName,
+      ...(p.policyTypes ?? []), p.policyType,
+      ...p.coverages.map((c) => c.name), p.summary,
       ...(p.document?.sections?.map((s) => s.title) ?? []),
-    ]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase();
-
+    ].filter(Boolean).join(" ").toLowerCase();
     for (const word of queryWords) {
       if (searchText.includes(word)) score++;
     }
     return { policy: p, score };
   });
 
-  // Include top relevant policies' full sections (up to 5)
-  const relevant = scoredPolicies
+  // Score quotes
+  const scoredQuotes = quotes.map((q) => {
+    let score = 0;
+    const searchText = [
+      q.carrier, q.security, q.quoteNumber, q.insuredName,
+      ...(q.policyTypes ?? []),
+      ...q.coverages.map((c) => c.name), q.summary,
+      ...(q.subjectivities?.map((s) => s.description) ?? []),
+    ].filter(Boolean).join(" ").toLowerCase();
+    for (const word of queryWords) {
+      if (searchText.includes(word)) score++;
+    }
+    // Boost if query mentions quote/proposal
+    if (queryLower.includes("quote") || queryLower.includes("proposal") || queryLower.includes("indication")) {
+      score += 3;
+    }
+    return { quote: q, score };
+  });
+
+  // Select relevant policies
+  const relevantPolicies = scoredPolicies
     .filter((s) => s.score > 0)
     .sort((a, b) => b.score - a.score)
     .slice(0, 5);
-
-  // If no keyword matches, include all (up to 5) for broad questions
-  const toExpand = relevant.length > 0
-    ? relevant.map((r) => r.policy)
+  const policiesToExpand = relevantPolicies.length > 0
+    ? relevantPolicies.map((r) => r.policy)
     : policies.slice(0, 5);
+  const relevantPolicyIds = policiesToExpand.map((p) => p._id);
 
-  const relevantPolicyIds = toExpand.map((p) => p._id);
+  // Select relevant quotes
+  const relevantQuotes = scoredQuotes
+    .filter((s) => s.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5);
+  const quotesToExpand = relevantQuotes.length > 0
+    ? relevantQuotes.map((r) => r.quote)
+    : quotes.slice(0, 3);
+  const relevantQuoteIds = quotesToExpand.map((q) => q._id);
 
-  const expandedSections = toExpand.map((p) => {
+  // Expand policy sections
+  const expandedPolicySections = policiesToExpand.map((p) => {
     const carrier = p.security || p.carrier;
     let sections = `\n--- POLICY: ${carrier} #${p.policyNumber} (ID:${p._id}) ---`;
-
-    if (p.summary) {
-      sections += `\nSummary: ${p.summary}`;
-    }
-
+    if (p.summary) sections += `\nSummary: ${p.summary}`;
     if (p.coverages.length > 0) {
       sections += `\n\nCoverages:`;
       for (const c of p.coverages) {
         sections += `\n  - ${c.name}: Limit ${c.limit}${c.deductible ? `, Deductible ${c.deductible}` : ""}${c.pageNumber ? ` (p.${c.pageNumber})` : ""}`;
       }
     }
-
     if (p.document?.sections) {
-      // Include relevant sections based on keyword matching
       const relevantSections = p.document.sections.filter((s) => {
         const sectionText = (s.title + " " + s.content).toLowerCase();
         return queryWords.some((w) => sectionText.includes(w));
       });
-
       const sectionsToInclude = relevantSections.length > 0
         ? relevantSections
-        : p.document.sections.slice(0, 3); // fallback: first 3 sections
-
+        : p.document.sections.slice(0, 3);
       for (const s of sectionsToInclude) {
         sections += `\n\n## ${s.title}${s.sectionNumber ? ` (${s.sectionNumber})` : ""} [pages ${s.pageStart}${s.pageEnd ? `-${s.pageEnd}` : ""}] (${s.type})`;
-        // Truncate very long sections
         const content = s.content.length > 3000
           ? s.content.slice(0, 3000) + "\n... [truncated]"
           : s.content;
         sections += `\n${content}`;
       }
     }
-
     return sections;
   });
 
-  const context = `POLICY INDEX (${policies.length} total policies):
-${indexLines.join("\n")}
+  // Expand quote sections
+  const expandedQuoteSections = quotesToExpand.map((q) => {
+    const carrier = q.security || q.carrier;
+    let sections = `\n--- QUOTE: ${carrier} #${q.quoteNumber} (ID:${q._id}) ---`;
+    if (q.summary) sections += `\nSummary: ${q.summary}`;
+    if (q.quoteExpirationDate) sections += `\nQuote expires: ${q.quoteExpirationDate}`;
+    if (q.premium) sections += `\nProposed premium: ${q.premium}`;
+    if (q.coverages.length > 0) {
+      sections += `\n\nProposed Coverages:`;
+      for (const c of q.coverages) {
+        sections += `\n  - ${c.name}: Proposed Limit ${c.proposedLimit}${c.proposedDeductible ? `, Proposed Deductible ${c.proposedDeductible}` : ""}`;
+      }
+    }
+    if (q.subjectivities && q.subjectivities.length > 0) {
+      sections += `\n\nSubjectivities:`;
+      for (const s of q.subjectivities) {
+        sections += `\n  - ${s.description}${s.category ? ` (${s.category})` : ""}`;
+      }
+    }
+    if (q.underwritingConditions && q.underwritingConditions.length > 0) {
+      sections += `\n\nUnderwriting Conditions:`;
+      for (const uc of q.underwritingConditions) {
+        sections += `\n  - ${uc.description}`;
+      }
+    }
+    if (q.premiumBreakdown && q.premiumBreakdown.length > 0) {
+      sections += `\n\nPremium Breakdown:`;
+      for (const pb of q.premiumBreakdown) {
+        sections += `\n  - ${pb.line}: ${pb.amount}`;
+      }
+    }
+    return sections;
+  });
 
-DETAILED POLICY DATA:
-${expandedSections.join("\n")}`;
+  const parts: string[] = [];
 
-  return { context, relevantPolicyIds };
+  if (policies.length > 0) {
+    parts.push(`POLICY INDEX (${policies.length} bound policies):\n${policyIndexLines.join("\n")}`);
+  }
+  if (quotes.length > 0) {
+    parts.push(`QUOTE INDEX (${quotes.length} quotes/proposals):\n${quoteIndexLines.join("\n")}`);
+  }
+  if (expandedPolicySections.length > 0) {
+    parts.push(`DETAILED POLICY DATA:\n${expandedPolicySections.join("\n")}`);
+  }
+  if (expandedQuoteSections.length > 0) {
+    parts.push(`DETAILED QUOTE DATA:\n${expandedQuoteSections.join("\n")}`);
+  }
+
+  return {
+    context: parts.join("\n\n"),
+    relevantPolicyIds,
+    relevantQuoteIds,
+  };
 }
