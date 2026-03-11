@@ -5,7 +5,7 @@ import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import Anthropic from "@anthropic-ai/sdk";
 import { Webhook } from "svix";
-import { buildSystemPrompt, buildDocumentContext } from "../lib/agentPrompts";
+import { buildSystemPrompt, buildDocumentContext, buildConversationMemoryContext } from "../lib/agentPrompts";
 import { Id } from "../_generated/dataModel";
 
 const DEFAULT_AGENT_DOMAIN = "agent.claritylabs.inc";
@@ -579,6 +579,17 @@ export const processInbound = internalAction({
         subject + " " + body,
       );
 
+      // Search for relevant past conversations across the org
+      const pastConversations = await ctx.runQuery(
+        internal.agentConversations.searchOrgConversations,
+        {
+          orgId,
+          queryText: subject + " " + body,
+          excludeThreadId: threadId,
+        },
+      );
+      const memoryContext = buildConversationMemoryContext(pastConversations);
+
       // Build messages — include thread history for context
       const messages: Anthropic.MessageParam[] = [];
 
@@ -635,8 +646,8 @@ export const processInbound = internalAction({
         messages.push({ role: "user", content: emailText });
       }
 
-      // Build system context with optional attachment note
-      let systemContext = `${systemPrompt}\n\n${policyContext}`;
+      // Build system context with optional attachment note and conversation memory
+      let systemContext = `${systemPrompt}\n\n${policyContext}${memoryContext}`;
       if (claudeAttachments.length > 0) {
         const filenames = claudeAttachments.map((a) => a.filename).join(", ");
         systemContext += `\n\nATTACHMENTS: The user's email includes ${claudeAttachments.length} attachment(s): ${filenames}. The content has been provided to you. Reference relevant information from attachments in your response when applicable.`;

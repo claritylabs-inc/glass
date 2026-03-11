@@ -111,7 +111,16 @@ POLICIES vs QUOTES:
 - NEVER present a quote as active coverage. A quote is a proposal only.
 - If asked about coverage, default to policies unless the question specifically asks about quotes or proposals.`;
 
-  return base + context + modeInstructions + coiInstructions + quotesGuidance;
+  const memoryGuidance = `
+
+CONVERSATION MEMORY:
+- You may receive past conversation history from other threads in this organization.
+- Reference past conversations naturally, e.g. "Last week, [Name] asked about this..." or "As discussed with [Name] previously..."
+- Use memory to provide continuity and context, not to repeat full answers.
+- Always verify memory against current policy data -- memory may reference outdated info.
+- If memory conflicts with current policy data, trust the current data.`;
+
+  return base + context + modeInstructions + coiInstructions + quotesGuidance + memoryGuidance;
 }
 
 /** @deprecated Use buildDocumentContext instead */
@@ -303,4 +312,48 @@ export function buildDocumentContext(
     relevantPolicyIds,
     relevantQuoteIds,
   };
+}
+
+interface PastConversation {
+  fromName?: string;
+  fromEmail: string;
+  subject: string;
+  body: string;
+  responseBody: string;
+  _creationTime: number;
+  threadId?: string;
+}
+
+export function buildConversationMemoryContext(
+  conversations: PastConversation[],
+): string {
+  if (conversations.length === 0) return "";
+
+  const MAX_MEMORY_CHARS = 3000;
+  let total = 0;
+  const entries: string[] = [];
+
+  for (let i = 0; i < conversations.length; i++) {
+    const c = conversations[i];
+    const date = new Date(c._creationTime).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+    const who = c.fromName
+      ? `${c.fromName} (${c.fromEmail})`
+      : c.fromEmail;
+    const q = c.body.slice(0, 200).replace(/\n+/g, " ");
+    const a = c.responseBody.slice(0, 300).replace(/\n+/g, " ");
+
+    const entry = `[${i + 1}] "${c.subject}" -- Asked by ${who} on ${date}\nQ: ${q}\nA: ${a}`;
+
+    if (total + entry.length > MAX_MEMORY_CHARS) break;
+    entries.push(entry);
+    total += entry.length;
+  }
+
+  if (entries.length === 0) return "";
+
+  return `\n\nCONVERSATION MEMORY (past conversations from this organization):\n${entries.join("\n\n")}`;
 }

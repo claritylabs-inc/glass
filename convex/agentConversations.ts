@@ -272,6 +272,69 @@ export const getAttachmentUrl = query({
   },
 });
 
+export const searchOrgConversations = internalQuery({
+  args: {
+    orgId: v.id("organizations"),
+    queryText: v.string(),
+    excludeThreadId: v.optional(v.id("agentConversations")),
+  },
+  handler: async (ctx, args) => {
+    const all = await ctx.db
+      .query("agentConversations")
+      .withIndex("by_orgId", (q) => q.eq("orgId", args.orgId))
+      .order("desc")
+      .collect();
+
+    // Only include conversations that have a response (completed)
+    const replied = all.filter(
+      (c) => c.status === "replied" && c.responseBody,
+    );
+
+    // Exclude conversations from the current thread
+    const filtered = args.excludeThreadId
+      ? replied.filter(
+          (c) =>
+            c._id !== args.excludeThreadId &&
+            c.threadId !== args.excludeThreadId,
+        )
+      : replied;
+
+    // Score by keyword relevance
+    const queryWords = args.queryText
+      .toLowerCase()
+      .split(/\s+/)
+      .filter((w) => w.length > 3);
+
+    if (queryWords.length === 0) return [];
+
+    const scored = filtered.map((c) => {
+      const searchText = [c.subject, c.body, c.responseBody]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      let score = 0;
+      for (const word of queryWords) {
+        if (searchText.includes(word)) score++;
+      }
+      return { conv: c, score };
+    });
+
+    return scored
+      .filter((s) => s.score > 0)
+      .sort((a, b) => b.score - a.score || b.conv._creationTime - a.conv._creationTime)
+      .slice(0, 8)
+      .map((s) => ({
+        fromName: s.conv.fromName,
+        fromEmail: s.conv.fromEmail,
+        subject: s.conv.subject,
+        body: s.conv.body.slice(0, 500),
+        responseBody: (s.conv.responseBody ?? "").slice(0, 500),
+        _creationTime: s.conv._creationTime,
+        threadId: s.conv.threadId,
+      }));
+  },
+});
+
 export const stats = query({
   args: {},
   handler: async (ctx) => {
