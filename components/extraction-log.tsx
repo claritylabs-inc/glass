@@ -22,6 +22,7 @@ interface LogEntry {
   emailFrom?: string;
   hasRawResponse?: boolean;
   hasRawMetadata?: boolean;
+  isDemo?: boolean;
 }
 
 const TYPE_COLORS: Record<string, string> = {
@@ -164,23 +165,30 @@ export function ExtractionLog({ entries }: { entries: LogEntry[] }) {
                         </p>
                       </td>
                       <td className="px-4 py-2.5 whitespace-nowrap">
-                        {isComplete && (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium bg-green-100 text-green-700">
-                            Complete
-                          </span>
-                        )}
-                        {isDismissed && (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium bg-gray-100 text-gray-600">
-                            Dismissed
-                          </span>
-                        )}
+                        <div className="flex items-center gap-1.5">
+                          {isComplete && (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium bg-green-100 text-green-700">
+                              Complete
+                            </span>
+                          )}
+                          {isDismissed && (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium bg-gray-100 text-gray-600">
+                              Dismissed
+                            </span>
+                          )}
+                          {entry.isDemo && (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium bg-amber-100 text-amber-700">
+                              Demo
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-2.5 text-body-sm text-muted-foreground text-right hidden md:table-cell whitespace-nowrap">
                         {formatDate(entry._creationTime)}
                       </td>
                       <td className="px-4 py-2.5 text-right whitespace-nowrap hidden md:table-cell">
                         <div className="inline-flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                          {entry.emailId && (
+                          {entry.emailId && !entry.isDemo && (
                             <ReExtractButton entry={entry} />
                           )}
                           {isComplete && (

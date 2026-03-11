@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { useQuery } from "convex/react";
 import { useAuthActions } from "@convex-dev/auth/react";
 import { api } from "@/convex/_generated/api";
-import { LayoutDashboard, FileText, ClipboardList, Mail, Asterisk, Menu, X, LogOut, Settings, User } from "lucide-react";
+import { LayoutDashboard, FileText, ClipboardList, Mail, Asterisk, Menu, X, LogOut, Settings, User, ShieldCheck } from "lucide-react";
 import { LogoIcon } from "@/components/ui/logo-icon";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -95,15 +95,20 @@ export function Nav() {
                   initials
                 )}
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" sideOffset={8} className="min-w-[200px]">
-                <div className="px-2 py-2">
+              <DropdownMenuContent align="end" sideOffset={8} className="w-fit max-w-72">
+                <div className="px-2 py-2 space-y-1">
                   <div className="flex items-center gap-2">
                     <p className="text-body-sm font-medium text-foreground truncate">
                       {viewer.name || viewer.email}
                     </p>
                     {viewerOrg?.membership && (
-                      <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/50 bg-foreground/5 px-1.5 py-0.5 rounded">
-                        {viewerOrg.membership.role}
+                      <span className={`text-[11px] px-1.5 py-0.5 rounded flex items-center gap-1 shrink-0 ${
+                        viewerOrg.membership.role === "admin"
+                          ? "text-[#5BA4D9] bg-[#A0D2FA]/10"
+                          : "text-muted-foreground bg-foreground/5"
+                      }`}>
+                        {viewerOrg.membership.role === "admin" && <ShieldCheck className="w-3 h-3" />}
+                        {viewerOrg.membership.role === "admin" ? "Admin" : "Member"}
                       </span>
                     )}
                   </div>
@@ -113,7 +118,7 @@ export function Nav() {
                     </p>
                   )}
                   {viewerOrg?.org?.name && (
-                    <p className="text-label-sm text-muted-foreground/50 truncate mt-0.5">
+                    <p className="text-label-sm text-muted-foreground/50 truncate">
                       {viewerOrg.org.name}
                     </p>
                   )}

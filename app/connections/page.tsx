@@ -142,10 +142,13 @@ export default function ConnectionsPage() {
     };
   } | null>(null);
   const stopScan = useMutation(api.connections.stopScan);
+  const removeDemoData = useMutation(api.seed.removeDemoData);
   const [removeTarget, setRemoveTarget] = useState<{
     id: Id<"emailConnections">;
     label: string;
   } | null>(null);
+  const [showRemoveDemo, setShowRemoveDemo] = useState(false);
+  const [removingDemo, setRemovingDemo] = useState(false);
 
   const openScanModal = (conn: NonNullable<typeof connections>[number]) => {
     setScanTarget({
@@ -177,7 +180,7 @@ export default function ConnectionsPage() {
               <div>
                 <h1 className="!mb-1">Email Connections</h1>
                 <p className="text-body-sm text-muted-foreground">
-                  Manage connections, track processing, and review extraction history
+                  Email accounts linked for policy scanning
                 </p>
               </div>
               {activeTab === "connections" && (
@@ -269,11 +272,17 @@ export default function ConnectionsPage() {
                       staggerIndex={i + 2}
                       duration={0.6}
                     >
-                      <div className={`rounded-lg border bg-white/60 px-4 py-3 ${isDemo ? "border-amber-200/60" : "border-foreground/6"}`}>
+                      <div className={`rounded-lg border px-4 py-3 ${isDemo ? "border-amber-200/60 bg-amber-50/30" : "border-foreground/6 bg-white/60"}`}>
                         {/* Desktop layout: single row */}
                         <div className="hidden md:flex items-center justify-between">
                           <div className="flex items-center gap-3 min-w-0">
-                            <ConnectionIcon imapHost={conn.imapHost} className="w-8 h-8 shrink-0" />
+                            {isDemo ? (
+                              <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
+                                <Mail className="w-4 h-4 text-amber-500" />
+                              </div>
+                            ) : (
+                              <ConnectionIcon imapHost={conn.imapHost} className="w-8 h-8 shrink-0" />
+                            )}
                             <div className="min-w-0">
                               <div className="flex items-center gap-2">
                                 <p className="text-body-sm font-medium text-foreground truncate">
@@ -327,7 +336,9 @@ export default function ConnectionsPage() {
                               variant="icon"
                               label="Remove"
                               onClick={() =>
-                                setRemoveTarget({ id: conn._id, label: conn.label })
+                                isDemo
+                                  ? setShowRemoveDemo(true)
+                                  : setRemoveTarget({ id: conn._id, label: conn.label })
                               }
                             >
                               <Trash2 className="w-3.5 h-3.5" />
@@ -338,7 +349,13 @@ export default function ConnectionsPage() {
                         {/* Mobile layout: vertical stack */}
                         <div className="md:hidden space-y-3">
                           <div className="flex items-center gap-3">
-                            <ConnectionIcon imapHost={conn.imapHost} className="w-8 h-8 shrink-0" />
+                            {isDemo ? (
+                              <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
+                                <Mail className="w-4 h-4 text-amber-500" />
+                              </div>
+                            ) : (
+                              <ConnectionIcon imapHost={conn.imapHost} className="w-8 h-8 shrink-0" />
+                            )}
                             <div className="min-w-0">
                               <div className="flex items-center gap-2">
                                 <p className="text-body-sm font-medium text-foreground truncate">
@@ -392,7 +409,11 @@ export default function ConnectionsPage() {
                             <PillButton
                               variant="icon"
                               label="Remove"
-                              onClick={() => setRemoveTarget({ id: conn._id, label: conn.label })}
+                              onClick={() =>
+                                isDemo
+                                  ? setShowRemoveDemo(true)
+                                  : setRemoveTarget({ id: conn._id, label: conn.label })
+                              }
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </PillButton>
@@ -445,6 +466,41 @@ export default function ConnectionsPage() {
           onClose={() => setRemoveTarget(null)}
         />
       )}
+
+      <Dialog open={showRemoveDemo} onOpenChange={(v) => !v && setShowRemoveDemo(false)}>
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Remove Demo Data</DialogTitle>
+            <DialogDescription>
+              This will remove all demo connections, emails, policies, and quotes.
+              Your real data will not be affected.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <PillButton variant="secondary" onClick={() => setShowRemoveDemo(false)} disabled={removingDemo}>
+              Cancel
+            </PillButton>
+            <PillButton
+              variant="destructive"
+              disabled={removingDemo}
+              onClick={async () => {
+                setRemovingDemo(true);
+                try {
+                  await removeDemoData();
+                  setShowRemoveDemo(false);
+                  toast.success("Demo data removed");
+                } catch {
+                  toast.error("Failed to remove demo data");
+                } finally {
+                  setRemovingDemo(false);
+                }
+              }}
+            >
+              {removingDemo ? "Removing..." : "Remove demo data"}
+            </PillButton>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

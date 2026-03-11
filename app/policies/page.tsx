@@ -57,7 +57,7 @@ export default function PoliciesPage() {
             <div className="mb-6">
               <h1 className="!mb-1">Policies</h1>
               <p className="text-body-sm text-muted-foreground">
-                Browse and filter all extracted insurance policies
+                All your active and past insurance policies
               </p>
             </div>
           </FadeIn>

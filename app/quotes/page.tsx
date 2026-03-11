@@ -55,7 +55,7 @@ export default function QuotesPage() {
             <div className="mb-6">
               <h1 className="!mb-1">Quotes</h1>
               <p className="text-body-sm text-muted-foreground">
-                Insurance quotes and proposals received
+                Quotes and proposals you've received
               </p>
             </div>
           </FadeIn>

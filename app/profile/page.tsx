@@ -75,7 +75,7 @@ export default function ProfilePage() {
               <div>
                 <h1 className="!mb-1">Profile</h1>
                 <p className="text-body-sm text-muted-foreground">
-                  Your personal account information
+                  Your account and login details
                 </p>
               </div>
               <div className="hidden md:flex items-center gap-3">

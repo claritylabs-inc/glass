@@ -152,7 +152,7 @@ export default function DashboardPage() {
               <div>
                 <h1 className="!mb-1">Dashboard</h1>
                 <p className="text-body-sm text-muted-foreground">
-                  Overview of your insurance program
+                  Your policies, quotes, and coverage at a glance
                 </p>
               </div>
               {isEmpty && (

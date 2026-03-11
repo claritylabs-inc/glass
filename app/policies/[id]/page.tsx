@@ -6,7 +6,7 @@ import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
 import { Nav } from "@/components/nav";
 import { FadeIn } from "@/components/ui/fade-in";
-import { ArrowLeft, Download, FileText, Calendar, Shield, DollarSign, Trash2, Upload, ChevronDown, ChevronRight, Loader2, RotateCw, Scale, Phone, Receipt, AlertTriangle, Users, Eye, Mail, MessageSquare, Activity, CheckCircle, XCircle, RefreshCw, Bot, X } from "lucide-react";
+import { ArrowLeft, Download, FileText, Calendar, Shield, DollarSign, Trash2, Upload, ChevronDown, ChevronRight, Loader2, RotateCw, Scale, Phone, Receipt, AlertTriangle, Users, Eye, Mail, MessageSquare, Activity, CheckCircle, XCircle, RefreshCw, Asterisk, X } from "lucide-react";
 import { motion } from "framer-motion";
 import dayjs from "dayjs";
 import { ModeBadge } from "@/components/mode-badge";
@@ -681,7 +681,7 @@ const AUDIT_ACTION_CONFIG: Record<string, { icon: React.ElementType; dotColor: s
   deleted: { icon: Trash2, dotColor: "text-red-400", bgColor: "bg-red-50", title: "Policy deleted" },
   restored: { icon: Shield, dotColor: "text-emerald-500", bgColor: "bg-emerald-50", title: "Policy restored" },
   dismissed: { icon: XCircle, dotColor: "text-gray-500", bgColor: "bg-gray-50", title: "Policy dismissed" },
-  agent_referenced: { icon: Bot, dotColor: "text-indigo-500", bgColor: "bg-indigo-50", title: "Referenced by agent" },
+  agent_referenced: { icon: Asterisk, dotColor: "text-[#A0D2FA]", bgColor: "bg-[#A0D2FA]/10", title: "Referenced by Clarity Agent" },
 };
 
 function PolicyActivityTab({ policyId }: { policyId: string }) {

@@ -16,7 +16,7 @@ import {
   Users,
   UserPlus,
   Shield,
-  Crown,
+  ShieldCheck,
   X,
   Mail,
   RotateCcw,
@@ -239,7 +239,7 @@ export default function SettingsPage() {
               <div>
                 <h1 className="!mb-1">Organization Settings</h1>
                 <p className="text-body-sm text-muted-foreground">
-                  Manage your organization, team, and integrations
+                  Your organization, team, and preferences
                 </p>
               </div>
               <div className="hidden md:flex items-center gap-3">
@@ -409,7 +409,9 @@ export default function SettingsPage() {
                 {members?.map((member) => (
                   <div key={member.membershipId} className="px-5 py-3.5 flex items-center gap-3">
                     <div className="w-8 h-8 rounded-full bg-foreground/8 flex items-center justify-center text-label-sm font-medium text-foreground shrink-0">
-                      {member.name?.[0]?.toUpperCase() ?? member.email?.[0]?.toUpperCase() ?? "?"}
+                      {member.name
+                        ? member.name.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2)
+                        : member.email?.[0]?.toUpperCase() ?? "?"}
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-body-sm font-medium text-foreground truncate">
@@ -428,17 +430,13 @@ export default function SettingsPage() {
                           Primary Contact
                         </span>
                       )}
-                      <span className={`text-[11px] px-1.5 py-0.5 rounded ${
+                      <span className={`text-[11px] px-1.5 py-0.5 rounded flex items-center gap-1 ${
                         member.role === "admin"
-                          ? "text-violet-600 bg-violet-50"
+                          ? "text-[#5BA4D9] bg-[#A0D2FA]/10"
                           : "text-muted-foreground bg-foreground/5"
                       }`}>
-                        {member.role === "admin" ? (
-                          <span className="flex items-center gap-1">
-                            <Crown className="w-3 h-3" />
-                            Admin
-                          </span>
-                        ) : "Member"}
+                        {member.role === "admin" && <ShieldCheck className="w-3 h-3" />}
+                        {member.role === "admin" ? "Admin" : "Member"}
                       </span>
                       {member.userId !== viewer?._id && (
                         <div className="flex items-center gap-1">

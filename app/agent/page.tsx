@@ -634,7 +634,7 @@ export default function AgentPage() {
             <div className="mb-6">
               <h1 className="!mb-1">Clarity Agent</h1>
               <p className="text-body-sm text-muted-foreground">
-                Your personal AI assistant that answers policy questions via email
+                Get instant answers and actions on your policies by email
               </p>
             </div>
           </FadeIn>
