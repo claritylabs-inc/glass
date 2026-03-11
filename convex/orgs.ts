@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { query, mutation, internalQuery } from "./_generated/server";
-import { requireOrgAccess, requireOrgAdmin } from "./lib/orgAuth";
+import { requireOrgAccess, requireOrgAdmin, getOrgAccess } from "./lib/orgAuth";
 import { getAuthUserId } from "@convex-dev/auth/server";
 
 // ── Queries ──
@@ -56,7 +56,9 @@ export const listMembers = query({
 export const listInvitations = query({
   args: {},
   handler: async (ctx) => {
-    const { orgId } = await requireOrgAccess(ctx);
+    const access = await getOrgAccess(ctx);
+    if (!access) return [];
+    const { orgId } = access;
 
     return await ctx.db
       .query("orgInvitations")
