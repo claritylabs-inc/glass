@@ -1,10 +1,19 @@
 "use client";
 
 import { useState } from "react";
+import { useQuery } from "convex/react";
 import Markdown from "react-markdown";
 import dayjs from "dayjs";
-import { Asterisk, Loader2 } from "lucide-react";
+import { Asterisk, Loader2, Paperclip, FileText, Download } from "lucide-react";
 import { Id } from "@/convex/_generated/dataModel";
+import { api } from "@/convex/_generated/api";
+
+export type ConversationAttachment = {
+  filename: string;
+  contentType: string;
+  size: number;
+  fileId?: Id<"_storage">;
+};
 
 export type Conversation = {
   _id: Id<"agentConversations">;
@@ -24,6 +33,7 @@ export type Conversation = {
   error?: string;
   archivedAt?: number;
   threadId?: Id<"agentConversations">;
+  attachments?: ConversationAttachment[];
 };
 
 /**
@@ -172,8 +182,58 @@ function unwrapEmailText(text: string): string {
   return result.join("\n");
 }
 
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function AttachmentChip({
+  attachment,
+  onOpenPdf,
+}: {
+  attachment: ConversationAttachment;
+  onOpenPdf?: (url: string) => void;
+}) {
+  const url = useQuery(
+    api.agentConversations.getAttachmentUrl,
+    attachment.fileId ? { fileId: attachment.fileId } : "skip",
+  );
+  const isPdf = attachment.contentType === "application/pdf";
+
+  const handleClick = (e: React.MouseEvent) => {
+    if (isPdf && url && onOpenPdf) {
+      e.preventDefault();
+      onOpenPdf(url);
+    }
+  };
+
+  return (
+    <a
+      href={isPdf ? undefined : (url ?? undefined)}
+      target={isPdf ? undefined : "_blank"}
+      rel={isPdf ? undefined : "noopener noreferrer"}
+      onClick={handleClick}
+      className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-label-sm transition-colors ${
+        url
+          ? "border-foreground/10 bg-white/80 hover:bg-foreground/[0.03] hover:border-foreground/15 cursor-pointer"
+          : "border-foreground/6 bg-foreground/[0.02] text-muted-foreground/40 pointer-events-none"
+      }`}
+    >
+      {isPdf ? (
+        <FileText className="w-3.5 h-3.5 text-red-400 shrink-0" />
+      ) : (
+        <Paperclip className="w-3.5 h-3.5 text-muted-foreground/50 shrink-0" />
+      )}
+      <span className="truncate max-w-[180px] text-foreground/80">{attachment.filename}</span>
+      <span className="text-muted-foreground/40 shrink-0">{formatFileSize(attachment.size)}</span>
+      {url && !isPdf && <Download className="w-3 h-3 text-muted-foreground/30 shrink-0" />}
+    </a>
+  );
+}
+
 /* ── Single message bubble ── */
-export function MessageBubble({ conv }: { conv: Conversation }) {
+export function MessageBubble({ conv, onOpenPdf }: { conv: Conversation; onOpenPdf?: (url: string) => void }) {
   const [showQuoted, setShowQuoted] = useState(false);
   const { content: rawContent, quoted } = splitQuotedReply(conv.body || "");
   const content = rawContent ? unwrapEmailText(rawContent) : rawContent;
@@ -223,6 +283,13 @@ export function MessageBubble({ conv }: { conv: Conversation }) {
                 <QuotedContent text={quoted} />
               )}
             </>
+          )}
+          {conv.attachments && conv.attachments.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-foreground/6 flex flex-wrap gap-2">
+              {conv.attachments.map((att, i) => (
+                <AttachmentChip key={i} attachment={att} onOpenPdf={onOpenPdf ? (url) => onOpenPdf(url) : undefined} />
+              ))}
+            </div>
           )}
         </div>
       </div>
@@ -279,6 +346,7 @@ export function MessageBubble({ conv }: { conv: Conversation }) {
           </p>
         </div>
       )}
+
     </>
   );
 }

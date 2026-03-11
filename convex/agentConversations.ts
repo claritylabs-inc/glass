@@ -29,6 +29,12 @@ export const insertInbound = internalMutation({
     mode: v.union(v.literal("direct"), v.literal("cc"), v.literal("forward"), v.literal("unknown")),
     resendEmailId: v.optional(v.string()),
     threadId: v.optional(v.id("agentConversations")),
+    attachments: v.optional(v.array(v.object({
+      filename: v.string(),
+      contentType: v.string(),
+      size: v.number(),
+      fileId: v.optional(v.id("_storage")),
+    }))),
   },
   handler: async (ctx, args) => {
     return await ctx.db.insert("agentConversations", {
@@ -256,6 +262,13 @@ export const listByPolicyId = query({
     return all.filter(
       (c) => c.referencedPolicyIds?.includes(args.policyId),
     );
+  },
+});
+
+export const getAttachmentUrl = query({
+  args: { fileId: v.id("_storage") },
+  handler: async (ctx, args) => {
+    return await ctx.storage.getUrl(args.fileId);
   },
 });
 

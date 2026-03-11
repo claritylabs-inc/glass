@@ -84,7 +84,7 @@ export function CoverageByTypeSection({ data }: { data: CoverageByType[] | undef
     <FadeIn when={true} staggerIndex={1} duration={0.6}>
       <div className="mb-6">
         <div className="flex flex-col gap-0.5 md:flex-row md:items-center md:justify-between mb-3">
-          <h2 className="text-body-sm font-semibold text-foreground">Coverage by Risk Type</h2>
+          <p className="text-body-sm font-semibold text-foreground">Coverage by Risk Type</p>
           <span className="text-label-sm text-muted-foreground/50">active policies</span>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3">

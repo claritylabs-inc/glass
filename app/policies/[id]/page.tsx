@@ -1156,7 +1156,7 @@ export default function PolicyDetailPage({
                     },
                     {
                       icon: Shield,
-                      label: "Insurer",
+                      label: "Producer",
                       value: policy.carrier,
                       sub: `Status: ${policy.extractionStatus}`,
                     },
@@ -1269,7 +1269,7 @@ export default function PolicyDetailPage({
                       <tbody>
                         {[
                           { role: "Insured", value: policy.insuredName },
-                          { role: "Insurer", value: security || policy.carrier },
+                          { role: "Producer", value: security || policy.carrier },
                           underwriterName ? { role: "Underwriter", value: underwriterName } : null,
                           mga ? { role: "Program Administrator", value: mga } : null,
                           broker ? { role: "Broker", value: broker } : null,

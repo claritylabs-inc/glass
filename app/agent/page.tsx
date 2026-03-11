@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
@@ -27,10 +27,49 @@ import {
   Settings,
   HelpCircle,
   FileText,
+  Paperclip,
 } from "lucide-react";
 import { Id } from "@/convex/_generated/dataModel";
 import { ModeBadge } from "@/components/mode-badge";
 import { MessageBubble, type Conversation } from "@/components/conversation-message";
+import { PdfProvider, usePdf } from "@/components/pdf-context";
+import dynamic from "next/dynamic";
+
+const PdfPanel = dynamic(
+  () => import("@/components/ui/pdf-panel").then((m) => ({ default: m.PdfPanel })),
+  { ssr: false },
+);
+
+function AgentLayoutContainer({
+  children,
+  panel,
+  onPdfClosed,
+}: {
+  children: React.ReactNode;
+  panel: React.ReactNode;
+  onPdfClosed?: () => void;
+}) {
+  const { isPdfOpen, fileUrl } = usePdf();
+  const hasPdfPanel = isPdfOpen && !!fileUrl;
+
+  // Reset parent URL state when panel is closed so same attachment can reopen
+  const prevOpen = useRef(hasPdfPanel);
+  useEffect(() => {
+    if (prevOpen.current && !hasPdfPanel) {
+      onPdfClosed?.();
+    }
+    prevOpen.current = hasPdfPanel;
+  }, [hasPdfPanel, onPdfClosed]);
+
+  return (
+    <div className={`mx-auto px-4 md:px-8 py-6 ${hasPdfPanel ? "max-w-[108rem] flex gap-6 items-start" : "max-w-6xl"}`}>
+      <div className={hasPdfPanel ? "flex-1 min-w-0" : undefined}>
+        {children}
+      </div>
+      {panel}
+    </div>
+  );
+}
 
 dayjs.extend(relativeTime);
 
@@ -83,6 +122,9 @@ function ThreadItem({
           {root.subject}
         </span>
         <div className="flex items-center gap-1.5 shrink-0">
+          {thread.messages.some((m) => m.attachments && m.attachments.length > 0) && (
+            <Paperclip className="w-3 h-3 text-muted-foreground/40" />
+          )}
           <ModeBadge mode={root.mode} />
         </div>
       </div>
@@ -101,10 +143,12 @@ function ThreadDetail({
   thread,
   onBack,
   onClose,
+  onOpenPdf,
 }: {
   thread: Thread;
   onBack?: () => void;
   onClose?: () => void;
+  onOpenPdf?: (url: string) => void;
 }) {
   const archiveConv = useMutation(api.agentConversations.archive);
   const unarchiveConv = useMutation(api.agentConversations.unarchive);
@@ -172,7 +216,7 @@ function ThreadDetail({
       {/* Messages */}
       <div ref={messagesRef} className="flex-1 overflow-y-auto p-4 pr-5 pb-12 space-y-4">
         {thread.messages.map((msg) => (
-          <MessageBubble key={msg._id} conv={msg} />
+          <MessageBubble key={msg._id} conv={msg} onOpenPdf={onOpenPdf} />
         ))}
       </div>
     </div>
@@ -402,6 +446,7 @@ function ConversationsPanel({
   setShowArchived,
   agentEmail,
   tick,
+  onOpenPdf,
 }: {
   threads: Thread[] | undefined;
   selectedThread: Thread | undefined;
@@ -411,6 +456,7 @@ function ConversationsPanel({
   setShowArchived: (v: boolean) => void;
   agentEmail: string | null;
   tick: number;
+  onOpenPdf?: (url: string) => void;
 }) {
   return (
     <div className="rounded-lg border border-foreground/6 bg-white/60 overflow-hidden">
@@ -459,6 +505,7 @@ function ConversationsPanel({
             <ThreadDetail
               thread={selectedThread}
               onClose={() => setSelectedId(null)}
+              onOpenPdf={onOpenPdf}
             />
           ) : (
             <div className="flex items-center justify-center h-full">
@@ -480,6 +527,7 @@ function ConversationsPanel({
             <ThreadDetail
               thread={selectedThread}
               onBack={() => setSelectedId(null)}
+              onOpenPdf={onOpenPdf}
             />
           </div>
         ) : (
@@ -546,6 +594,8 @@ export default function AgentPage() {
   const conversations = useQuery(api.agentConversations.list, { archived: showArchived });
   const [selectedId, setSelectedId] = useState<Id<"agentConversations"> | null>(null);
   const [copied, setCopied] = useState(false);
+  const [attachmentPdfUrl, setAttachmentPdfUrl] = useState<string | null>(null);
+  const handlePdfClosed = useCallback(() => setAttachmentPdfUrl(null), []);
   const [activeTab, setActiveTab] = useState<AgentTab>("conversations");
   const [helpDismissed, setHelpDismissed] = useState(false);
   const tick = useTick(30_000);
@@ -626,10 +676,11 @@ export default function AgentPage() {
   );
 
   return (
+    <PdfProvider fileUrl={attachmentPdfUrl}>
     <div className="min-h-screen flex flex-col">
       <Nav />
       <main className="flex-1">
-        <div className="max-w-6xl mx-auto px-4 md:px-8 py-6">
+        <AgentLayoutContainer panel={<PdfPanel />} onPdfClosed={handlePdfClosed}>
           <FadeIn when={true} staggerIndex={0} duration={0.6}>
             <div className="mb-6">
               <h1 className="!mb-1">Clarity Agent</h1>
@@ -759,6 +810,7 @@ export default function AgentPage() {
                     setShowArchived={setShowArchived}
                     agentEmail={agentEmail}
                     tick={tick}
+                    onOpenPdf={setAttachmentPdfUrl}
                   />
                 ) : (
                   <div className="space-y-6">
@@ -779,8 +831,9 @@ export default function AgentPage() {
               </FadeIn>
             </>
           )}
-        </div>
+        </AgentLayoutContainer>
       </main>
     </div>
+    </PdfProvider>
   );
 }

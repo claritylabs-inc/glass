@@ -38,7 +38,7 @@ export function PdfPanel() {
                 <div className="flex items-center gap-2">
                   <FileText className="w-4 h-4 text-muted-foreground" />
                   <span className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">
-                    Policy PDF
+                    PDF Viewer
                   </span>
                 </div>
                 <div className="flex items-center gap-1">

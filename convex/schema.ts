@@ -390,6 +390,12 @@ export default defineSchema({
     threadId: v.optional(v.id("agentConversations")),
     responseMessageId: v.optional(v.string()),
     resendEmailId: v.optional(v.string()),
+    attachments: v.optional(v.array(v.object({
+      filename: v.string(),
+      contentType: v.string(),
+      size: v.number(),
+      fileId: v.optional(v.id("_storage")),
+    }))),
   }).index("by_userId", ["userId"])
     .index("by_orgId", ["orgId"])
     .index("by_messageId", ["messageId"])

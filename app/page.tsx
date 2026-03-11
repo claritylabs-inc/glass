@@ -266,7 +266,7 @@ export default function DashboardPage() {
             <FadeIn when={true} staggerIndex={3} duration={0.6}>
               <div className="mb-6">
                 <div className="flex flex-col gap-0.5 md:flex-row md:items-center md:justify-between mb-3">
-                  <h2 className="text-body-sm font-semibold text-foreground">Expiring Policies</h2>
+                  <p className="text-body-sm font-semibold text-foreground">Expiring Policies</p>
                   <span className="text-label-sm text-muted-foreground/50">next 90 days</span>
                 </div>
                 <div className="rounded-lg border border-foreground/6 bg-white/60 overflow-hidden">
@@ -311,7 +311,7 @@ export default function DashboardPage() {
             <FadeIn when={true} staggerIndex={4} duration={0.6}>
               <div className="mb-6">
                 <div className="flex flex-col gap-0.5 md:flex-row md:items-center md:justify-between mb-3">
-                  <h2 className="text-body-sm font-semibold text-foreground">Expiring Quotes</h2>
+                  <p className="text-body-sm font-semibold text-foreground">Expiring Quotes</p>
                   <span className="text-label-sm text-muted-foreground/50">next 30 days</span>
                 </div>
                 <div className="rounded-lg border border-foreground/6 bg-white/60 overflow-hidden">

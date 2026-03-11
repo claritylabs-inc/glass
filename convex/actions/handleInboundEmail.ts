@@ -145,11 +145,11 @@ interface AttachmentMeta {
   download_url: string;
 }
 
-interface ParsedAttachment {
+interface DownloadedAttachment {
   filename: string;
   content_type: string;
-  /** base64-encoded content for PDFs, or extracted text */
-  data: string;
+  size: number;
+  buffer: Buffer;
 }
 
 const SUPPORTED_ATTACHMENT_TYPES = new Set([
@@ -163,8 +163,8 @@ const SUPPORTED_ATTACHMENT_TYPES = new Set([
 
 const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024; // 10MB
 
-async function fetchAttachments(emailId: string): Promise<ParsedAttachment[]> {
-  const parsed: ParsedAttachment[] = [];
+async function fetchAttachments(emailId: string): Promise<DownloadedAttachment[]> {
+  const downloaded: DownloadedAttachment[] = [];
 
   try {
     const res = await fetch(
@@ -184,7 +184,6 @@ async function fetchAttachments(emailId: string): Promise<ParsedAttachment[]> {
     const attachments: AttachmentMeta[] = body.data ?? body ?? [];
 
     for (const att of attachments) {
-      if (!SUPPORTED_ATTACHMENT_TYPES.has(att.content_type)) continue;
       if (att.size > MAX_ATTACHMENT_SIZE) continue;
 
       try {
@@ -192,22 +191,12 @@ async function fetchAttachments(emailId: string): Promise<ParsedAttachment[]> {
         if (!dlRes.ok) continue;
 
         const buffer = Buffer.from(await dlRes.arrayBuffer());
-
-        if (att.content_type === "application/pdf") {
-          // Pass as base64 for Claude document parsing
-          parsed.push({
-            filename: att.filename,
-            content_type: att.content_type,
-            data: buffer.toString("base64"),
-          });
-        } else {
-          // Text-based: decode as UTF-8
-          parsed.push({
-            filename: att.filename,
-            content_type: att.content_type,
-            data: buffer.toString("utf-8"),
-          });
-        }
+        downloaded.push({
+          filename: att.filename,
+          content_type: att.content_type,
+          size: att.size,
+          buffer,
+        });
       } catch (err) {
         console.warn(`Failed to download attachment ${att.filename}:`, err);
       }
@@ -216,7 +205,7 @@ async function fetchAttachments(emailId: string): Promise<ParsedAttachment[]> {
     console.warn("Failed to fetch attachment list:", err);
   }
 
-  return parsed;
+  return downloaded;
 }
 
 async function fetchEmailContent(emailId: string): Promise<ReceivedEmailContent> {
@@ -415,6 +404,35 @@ export const processInbound = internalAction({
       effectiveMode = "unknown";
     }
 
+    // Store attachments in Convex file storage
+    const attachmentRecords: {
+      filename: string;
+      contentType: string;
+      size: number;
+      fileId?: string;
+    }[] = [];
+
+    for (const att of attachments) {
+      try {
+        const blob = new Blob([new Uint8Array(att.buffer)], { type: att.content_type });
+        const fileId = await ctx.storage.store(blob);
+        attachmentRecords.push({
+          filename: att.filename,
+          contentType: att.content_type,
+          size: att.size,
+          fileId,
+        });
+      } catch (err) {
+        console.warn(`Failed to store attachment ${att.filename}:`, err);
+        // Still record metadata even if storage fails
+        attachmentRecords.push({
+          filename: att.filename,
+          contentType: att.content_type,
+          size: att.size,
+        });
+      }
+    }
+
     // Create conversation record
     const conversationId = await ctx.runMutation(
       internal.agentConversations.insertInbound,
@@ -433,6 +451,7 @@ export const processInbound = internalAction({
         mode: effectiveMode,
         resendEmailId: resendEmailId || undefined,
         threadId,
+        attachments: attachmentRecords.length > 0 ? attachmentRecords as any : undefined,
       },
     );
 
@@ -583,24 +602,29 @@ export const processInbound = internalAction({
       // Build the current message — include attachments if present
       const emailText = `Subject: ${subject}\n\nFrom: ${fromName ? `${fromName} <${fromEmail}>` : fromEmail}\n\n${body}`;
 
-      if (attachments.length > 0) {
+      // Only include supported text/PDF attachments in Claude context
+      const claudeAttachments = attachments.filter(
+        (a) => SUPPORTED_ATTACHMENT_TYPES.has(a.content_type),
+      );
+
+      if (claudeAttachments.length > 0) {
         const contentBlocks: Anthropic.ContentBlockParam[] = [];
 
-        for (const att of attachments) {
+        for (const att of claudeAttachments) {
           if (att.content_type === "application/pdf") {
             contentBlocks.push({
               type: "document",
               source: {
                 type: "base64",
                 media_type: "application/pdf",
-                data: att.data,
+                data: att.buffer.toString("base64"),
               },
               title: att.filename,
             } as any);
           } else {
             contentBlocks.push({
               type: "text",
-              text: `--- Attachment: ${att.filename} ---\n${att.data}\n--- End attachment ---`,
+              text: `--- Attachment: ${att.filename} ---\n${att.buffer.toString("utf-8")}\n--- End attachment ---`,
             });
           }
         }
@@ -613,9 +637,9 @@ export const processInbound = internalAction({
 
       // Build system context with optional attachment note
       let systemContext = `${systemPrompt}\n\n${policyContext}`;
-      if (attachments.length > 0) {
-        const filenames = attachments.map((a) => a.filename).join(", ");
-        systemContext += `\n\nATTACHMENTS: The user's email includes ${attachments.length} attachment(s): ${filenames}. The content has been provided to you. Reference relevant information from attachments in your response when applicable.`;
+      if (claudeAttachments.length > 0) {
+        const filenames = claudeAttachments.map((a) => a.filename).join(", ");
+        systemContext += `\n\nATTACHMENTS: The user's email includes ${claudeAttachments.length} attachment(s): ${filenames}. The content has been provided to you. Reference relevant information from attachments in your response when applicable.`;
       }
 
       // Call Claude Haiku

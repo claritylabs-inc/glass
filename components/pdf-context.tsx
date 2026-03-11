@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, useCallback, useEffect, useRef } from "react";
+import { createContext, useContext, useState, useCallback, useEffect, useRef, useMemo } from "react";
 
 interface PdfContextValue {
   currentPage: number;
@@ -51,25 +51,36 @@ export function PdfProvider({
     }
   }, [initialPage, fileUrl, navigateToPage]);
 
+  // Auto-open when fileUrl changes from null/different to a new value
+  const prevFileUrl = useRef(fileUrl);
+  useEffect(() => {
+    if (fileUrl && fileUrl !== prevFileUrl.current) {
+      setIsPdfOpen(true);
+      setCurrentPage(1);
+      setHighlightedPage(null);
+    }
+    prevFileUrl.current = fileUrl;
+  }, [fileUrl]);
+
   const togglePdf = useCallback(() => setIsPdfOpen((v) => !v), []);
   const openPdf = useCallback(() => setIsPdfOpen(true), []);
   const closePdf = useCallback(() => setIsPdfOpen(false), []);
 
+  const value = useMemo(() => ({
+    currentPage,
+    numPages,
+    setNumPages,
+    navigateToPage,
+    isPdfOpen,
+    togglePdf,
+    openPdf,
+    closePdf,
+    fileUrl,
+    highlightedPage,
+  }), [currentPage, numPages, setNumPages, navigateToPage, isPdfOpen, togglePdf, openPdf, closePdf, fileUrl, highlightedPage]);
+
   return (
-    <PdfContext.Provider
-      value={{
-        currentPage,
-        numPages,
-        setNumPages,
-        navigateToPage,
-        isPdfOpen,
-        togglePdf,
-        openPdf,
-        closePdf,
-        fileUrl,
-        highlightedPage,
-      }}
-    >
+    <PdfContext.Provider value={value}>
       {children}
     </PdfContext.Provider>
   );

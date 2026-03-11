@@ -6,6 +6,7 @@ import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
 import { Nav } from "@/components/nav";
 import { FadeIn } from "@/components/ui/fade-in";
+import dynamic from "next/dynamic";
 import { ArrowLeft, Download, FileText, Calendar, Shield, DollarSign, Trash2, Upload, ChevronDown, ChevronRight, Loader2, RotateCw, AlertTriangle, Eye } from "lucide-react";
 import dayjs from "dayjs";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -14,6 +15,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { POLICY_TYPE_LABELS, QUOTE_SECTION_TYPE_LABELS, QUOTE_SECTION_TYPE_COLORS } from "@/convex/lib/policyTypes";
 import { Id } from "@/convex/_generated/dataModel";
 import { PillButton } from "@/components/ui/pill-button";
+import { PdfProvider, usePdf } from "@/components/pdf-context";
 import {
   Dialog,
   DialogContent,
@@ -23,12 +25,45 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 
+const PdfPanel = dynamic(
+  () => import("@/components/ui/pdf-panel").then((m) => ({ default: m.PdfPanel })),
+  { ssr: false },
+);
+
 function PageRef({ page }: { page: number | undefined }) {
+  const pdf = usePdf();
   if (!page) return null;
   return (
-    <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground/50 font-mono">
+    <button
+      type="button"
+      onClick={() => pdf.navigateToPage(page)}
+      className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground/50 font-mono hover:text-foreground/70 transition-colors cursor-pointer"
+    >
       p.{page}
-    </span>
+    </button>
+  );
+}
+
+function ViewPdfButton() {
+  const { fileUrl, togglePdf } = usePdf();
+  if (!fileUrl) return null;
+  return (
+    <PillButton variant="primary" onClick={togglePdf} className="hidden lg:inline-flex">
+      <Eye className="w-3.5 h-3.5" /> View PDF
+    </PillButton>
+  );
+}
+
+function QuoteLayoutContainer({ children, panel }: { children: React.ReactNode; panel: React.ReactNode }) {
+  const { isPdfOpen, fileUrl } = usePdf();
+  const hasPdfPanel = isPdfOpen && !!fileUrl;
+  return (
+    <div className={`mx-auto px-4 md:px-8 py-6 ${hasPdfPanel ? "max-w-[108rem] flex gap-6 items-start" : "max-w-6xl"}`}>
+      <div className={hasPdfPanel ? "flex-1 min-w-0" : undefined}>
+        {children}
+      </div>
+      {panel}
+    </div>
   );
 }
 
@@ -155,10 +190,11 @@ export default function QuoteDetailPage({ params }: { params: Promise<{ id: stri
   })();
 
   return (
+    <PdfProvider fileUrl={fileUrl ?? null}>
     <div className="min-h-screen flex flex-col">
       <Nav />
       <main className="flex-1">
-        <div className="max-w-6xl mx-auto px-4 md:px-8 py-6">
+        <QuoteLayoutContainer panel={<PdfPanel />}>
           {/* Header */}
           <FadeIn when={true} staggerIndex={0} duration={0.6}>
             <div className="flex items-start justify-between mb-6">
@@ -191,6 +227,7 @@ export default function QuoteDetailPage({ params }: { params: Promise<{ id: stri
                 </div>
               </div>
               <div className="flex items-center gap-2">
+                <ViewPdfButton />
                 {fileUrl && (
                   <a href={fileUrl} target="_blank" rel="noopener noreferrer">
                     <PillButton variant="secondary">
@@ -223,7 +260,7 @@ export default function QuoteDetailPage({ params }: { params: Promise<{ id: stri
               <div className="rounded-lg border border-foreground/6 bg-white/60 p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <Shield className="w-4 h-4 text-muted-foreground/40" />
-                  <span className="text-label-sm font-medium text-muted-foreground">Carrier</span>
+                  <span className="text-label-sm font-medium text-muted-foreground">Producer</span>
                 </div>
                 <p className="text-body-sm font-semibold">{carrier}</p>
                 {quote.mga && <p className="text-label-sm text-muted-foreground mt-0.5">MGA: {quote.mga}</p>}
@@ -438,7 +475,7 @@ export default function QuoteDetailPage({ params }: { params: Promise<{ id: stri
               </div>
             </FadeIn>
           )}
-        </div>
+        </QuoteLayoutContainer>
       </main>
 
       {/* Delete dialog */}
@@ -469,5 +506,6 @@ export default function QuoteDetailPage({ params }: { params: Promise<{ id: stri
         </DialogContent>
       </Dialog>
     </div>
+    </PdfProvider>
   );
 }
