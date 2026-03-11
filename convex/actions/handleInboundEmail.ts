@@ -137,6 +137,88 @@ function buildSignature(agentEmail: string, companyName?: string): { text: strin
   return { text, html };
 }
 
+interface AttachmentMeta {
+  id: string;
+  filename: string;
+  size: number;
+  content_type: string;
+  download_url: string;
+}
+
+interface ParsedAttachment {
+  filename: string;
+  content_type: string;
+  /** base64-encoded content for PDFs, or extracted text */
+  data: string;
+}
+
+const SUPPORTED_ATTACHMENT_TYPES = new Set([
+  "application/pdf",
+  "text/plain",
+  "text/csv",
+  "text/html",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/msword",
+]);
+
+const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024; // 10MB
+
+async function fetchAttachments(emailId: string): Promise<ParsedAttachment[]> {
+  const parsed: ParsedAttachment[] = [];
+
+  try {
+    const res = await fetch(
+      `https://api.resend.com/emails/receiving/${emailId}/attachments`,
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.AUTH_RESEND_KEY}`,
+        },
+      },
+    );
+    if (!res.ok) {
+      console.warn(`Failed to fetch attachments (${res.status})`);
+      return [];
+    }
+
+    const body = await res.json();
+    const attachments: AttachmentMeta[] = body.data ?? body ?? [];
+
+    for (const att of attachments) {
+      if (!SUPPORTED_ATTACHMENT_TYPES.has(att.content_type)) continue;
+      if (att.size > MAX_ATTACHMENT_SIZE) continue;
+
+      try {
+        const dlRes = await fetch(att.download_url);
+        if (!dlRes.ok) continue;
+
+        const buffer = Buffer.from(await dlRes.arrayBuffer());
+
+        if (att.content_type === "application/pdf") {
+          // Pass as base64 for Claude document parsing
+          parsed.push({
+            filename: att.filename,
+            content_type: att.content_type,
+            data: buffer.toString("base64"),
+          });
+        } else {
+          // Text-based: decode as UTF-8
+          parsed.push({
+            filename: att.filename,
+            content_type: att.content_type,
+            data: buffer.toString("utf-8"),
+          });
+        }
+      } catch (err) {
+        console.warn(`Failed to download attachment ${att.filename}:`, err);
+      }
+    }
+  } catch (err) {
+    console.warn("Failed to fetch attachment list:", err);
+  }
+
+  return parsed;
+}
+
 async function fetchEmailContent(emailId: string): Promise<ReceivedEmailContent> {
   const res = await fetch(`https://api.resend.com/emails/receiving/${emailId}`, {
     headers: {
@@ -248,11 +330,12 @@ export const processInbound = internalAction({
       return;
     }
 
-    // Fetch full email content from Resend API
+    // Fetch full email content and attachments from Resend API
     const emailContent = await fetchEmailContent(data.email_id);
     const rawBody = emailContent.text ?? "";
     const body = stripQuotedText(rawBody);
     const bodyHtml = emailContent.html ?? undefined;
+    const attachments = await fetchAttachments(data.email_id);
 
     // Detect mode
     const agentAddress = `${handle}@${getAgentDomain()}`;
@@ -478,7 +561,7 @@ export const processInbound = internalAction({
       );
 
       // Build messages — include thread history for context
-      const messages: { role: "user" | "assistant"; content: string }[] = [];
+      const messages: Anthropic.MessageParam[] = [];
 
       if (threadId) {
         const threadMessages = await ctx.runQuery(
@@ -497,17 +580,50 @@ export const processInbound = internalAction({
         }
       }
 
-      messages.push({
-        role: "user",
-        content: `Subject: ${subject}\n\nFrom: ${fromName ? `${fromName} <${fromEmail}>` : fromEmail}\n\n${body}`,
-      });
+      // Build the current message — include attachments if present
+      const emailText = `Subject: ${subject}\n\nFrom: ${fromName ? `${fromName} <${fromEmail}>` : fromEmail}\n\n${body}`;
+
+      if (attachments.length > 0) {
+        const contentBlocks: Anthropic.ContentBlockParam[] = [];
+
+        for (const att of attachments) {
+          if (att.content_type === "application/pdf") {
+            contentBlocks.push({
+              type: "document",
+              source: {
+                type: "base64",
+                media_type: "application/pdf",
+                data: att.data,
+              },
+              title: att.filename,
+            } as any);
+          } else {
+            contentBlocks.push({
+              type: "text",
+              text: `--- Attachment: ${att.filename} ---\n${att.data}\n--- End attachment ---`,
+            });
+          }
+        }
+
+        contentBlocks.push({ type: "text", text: emailText });
+        messages.push({ role: "user", content: contentBlocks });
+      } else {
+        messages.push({ role: "user", content: emailText });
+      }
+
+      // Build system context with optional attachment note
+      let systemContext = `${systemPrompt}\n\n${policyContext}`;
+      if (attachments.length > 0) {
+        const filenames = attachments.map((a) => a.filename).join(", ");
+        systemContext += `\n\nATTACHMENTS: The user's email includes ${attachments.length} attachment(s): ${filenames}. The content has been provided to you. Reference relevant information from attachments in your response when applicable.`;
+      }
 
       // Call Claude Haiku
       const anthropic = new Anthropic();
       const response = await anthropic.messages.create({
         model: "claude-haiku-4-5-20251001",
         max_tokens: 2048,
-        system: `${systemPrompt}\n\n${policyContext}`,
+        system: systemContext,
         messages,
       });
 
