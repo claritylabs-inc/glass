@@ -1,7 +1,6 @@
 "use client";
 
 import { motion, AnimatePresence } from "framer-motion";
-import { X, FileText, Download } from "lucide-react";
 import { usePdf } from "@/components/pdf-context";
 import { PdfViewer } from "@/components/ui/pdf-viewer";
 
@@ -21,54 +20,24 @@ export function PdfPanel() {
           animate={{ width: 540 }}
           exit={{ width: 0 }}
           transition={{ duration: 0.5, ease: EASE }}
-          className="hidden lg:flex shrink-0 sticky top-21 self-start overflow-hidden"
-          style={{ height: "calc(100vh - 6.8rem)" }}
+          className="flex shrink-0 overflow-hidden h-full"
         >
           <motion.div
-            initial={{ opacity: 0, x: 40, filter: "blur(4px)" }}
-            animate={{ opacity: 1, x: 0, filter: "blur(0px)" }}
-            exit={{ opacity: 0, x: 40, filter: "blur(4px)" }}
-            transition={{ duration: 0.5, ease: EASE, delay: 0.05 }}
-            className="flex flex-col flex-1 min-h-0 py-2 pr-1 pl-2"
+            initial={{ opacity: 0, x: 40 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 40 }}
+            transition={{ duration: 0.4, ease: EASE, delay: 0.05 }}
+            className="flex flex-col flex-1 min-h-0 border-l border-foreground/6 bg-background"
             style={{ width: 540 }}
           >
-            <div className="flex flex-col flex-1 min-h-0 border border-foreground/6 rounded-xl bg-white overflow-hidden">
-              {/* Header */}
-              <div className="flex items-center justify-between px-4 py-2 border-b border-foreground/4 bg-foreground/[0.02] shrink-0">
-                <div className="flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-muted-foreground" />
-                  <span className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">
-                    PDF Viewer
-                  </span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => window.open(fileUrl, "_blank")}
-                    className="p-1.5 rounded-lg hover:bg-foreground/5 transition-colors cursor-pointer"
-                    title="Download PDF"
-                  >
-                    <Download className="w-3.5 h-3.5 text-muted-foreground" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={closePdf}
-                    className="p-1.5 rounded-lg hover:bg-foreground/5 transition-colors cursor-pointer"
-                  >
-                    <X className="w-4 h-4 text-muted-foreground" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Viewer */}
-              <PdfViewer
-                fileUrl={fileUrl}
-                currentPage={currentPage}
-                highlightedPage={highlightedPage}
-                onPageChange={navigateToPage}
-                onDocumentLoad={setNumPages}
-              />
-            </div>
+            <PdfViewer
+              fileUrl={fileUrl}
+              currentPage={currentPage}
+              highlightedPage={highlightedPage}
+              onPageChange={navigateToPage}
+              onDocumentLoad={setNumPages}
+              onClose={closePdf}
+            />
           </motion.div>
         </motion.div>
       )}

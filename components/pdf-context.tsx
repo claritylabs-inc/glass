@@ -13,19 +13,18 @@ interface PdfContextValue {
   closePdf: () => void;
   fileUrl: string | null;
   highlightedPage: number | null;
+  /** Imperatively open a PDF by URL, optionally jumping to a page */
+  openWithUrl: (url: string, page?: number) => void;
 }
 
 const PdfContext = createContext<PdfContextValue | null>(null);
 
 export function PdfProvider({
-  fileUrl,
-  initialPage,
   children,
 }: {
-  fileUrl: string | null;
-  initialPage?: number;
   children: React.ReactNode;
 }) {
+  const [fileUrl, setFileUrl] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [numPages, setNumPages] = useState(0);
   const [isPdfOpen, setIsPdfOpen] = useState(false);
@@ -37,30 +36,18 @@ export function PdfProvider({
       const clamped = Math.max(1, Math.min(page, numPages || Infinity));
       setCurrentPage(clamped);
       setIsPdfOpen(true);
-      // Persist highlight until a different page is selected
       setHighlightedPage(clamped);
     },
     [fileUrl, numPages]
   );
 
-  const didAutoNav = useRef(false);
-  useEffect(() => {
-    if (initialPage && fileUrl && !didAutoNav.current) {
-      didAutoNav.current = true;
-      navigateToPage(initialPage);
-    }
-  }, [initialPage, fileUrl, navigateToPage]);
-
-  // Auto-open when fileUrl changes from null/different to a new value
-  const prevFileUrl = useRef(fileUrl);
-  useEffect(() => {
-    if (fileUrl && fileUrl !== prevFileUrl.current) {
-      setIsPdfOpen(true);
-      setCurrentPage(1);
-      setHighlightedPage(null);
-    }
-    prevFileUrl.current = fileUrl;
-  }, [fileUrl]);
+  const openWithUrl = useCallback((url: string, page?: number) => {
+    setFileUrl(url);
+    setIsPdfOpen(true);
+    setCurrentPage(page ?? 1);
+    setHighlightedPage(page ?? null);
+    setNumPages(0);
+  }, []);
 
   const togglePdf = useCallback(() => setIsPdfOpen((v) => !v), []);
   const openPdf = useCallback(() => setIsPdfOpen(true), []);
@@ -77,7 +64,8 @@ export function PdfProvider({
     closePdf,
     fileUrl,
     highlightedPage,
-  }), [currentPage, numPages, setNumPages, navigateToPage, isPdfOpen, togglePdf, openPdf, closePdf, fileUrl, highlightedPage]);
+    openWithUrl,
+  }), [currentPage, numPages, setNumPages, navigateToPage, isPdfOpen, togglePdf, openPdf, closePdf, fileUrl, highlightedPage, openWithUrl]);
 
   return (
     <PdfContext.Provider value={value}>
@@ -86,8 +74,21 @@ export function PdfProvider({
   );
 }
 
+const NOOP_PDF: PdfContextValue = {
+  currentPage: 1,
+  numPages: 0,
+  setNumPages: () => {},
+  navigateToPage: () => {},
+  isPdfOpen: false,
+  togglePdf: () => {},
+  openPdf: () => {},
+  closePdf: () => {},
+  fileUrl: null,
+  highlightedPage: null,
+  openWithUrl: () => {},
+};
+
 export function usePdf() {
   const ctx = useContext(PdfContext);
-  if (!ctx) throw new Error("usePdf must be used within PdfProvider");
-  return ctx;
+  return ctx ?? NOOP_PDF;
 }

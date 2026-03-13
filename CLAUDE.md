@@ -17,7 +17,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Architecture
 
-AI-powered insurance platform with policy extraction and application assistance. Emails are scanned via IMAP, classified using keyword heuristics + Claude Haiku, and policy data is extracted from PDF attachments using Claude Sonnet. The Clarity Agent handles policy/quote Q&A and insurance application form filling via email.
+AI-powered insurance platform with policy extraction and application assistance. Emails are scanned via IMAP, classified using keyword heuristics + Claude Haiku, and policy data is extracted from PDF attachments using Claude Sonnet. The Clarity Agent handles policy/quote Q&A and insurance application form filling via email and web chat.
 
 ### Tech Stack
 
@@ -101,6 +101,14 @@ Filled PDF stored as `filledFileId` on the session.
 
 **PDF flattening**: `app/api/flatten-pdf/route.ts` — Next.js API route using mupdf WASM. Authenticated via `FLATTEN_API_KEY` bearer token. Called from Convex `fillApplicationPdf` action when pdf-lib fails. Requires `FLATTEN_API_KEY` env var in both Vercel and Convex.
 
+### Data Flow — Web Chat
+
+1. User clicks "New Chat" on `/agent` → `create` mutation creates `webChats` record → chat selected in UI
+2. User sends message → `sendMessage` mutation inserts `webChatMessages` (role="user"), updates `lastMessageAt`, schedules `processWebChat` action
+3. `processWebChat` internal action: inserts processing placeholder → loads org, policies, quotes → builds system prompt (reuses `buildSystemPrompt` from `agentPrompts.ts` in direct mode + web-chat addendum) → loads document context + cross-thread email memory → calls Claude Haiku → updates agent message
+4. Auto-title: after first agent response, generates 3-6 word title via Haiku
+5. Real-time: Convex subscriptions update all connected clients instantly (multi-user collaboration)
+
 ### Data Flow — Business Context
 
 - `orgBusinessContext` table stores reusable org data (company info, operations, financial, coverage, etc.)
@@ -110,15 +118,17 @@ Filled PDF stored as `filledFileId` on the session.
 
 ### Key Backend Files (convex/)
 
-- `schema.ts` — Tables: `emailConnections`, `emails`, `policies`, `organizations`, `orgMemberships`, `orgInvitations`, `agentConversations`, `orgBusinessContext`, `applicationSessions`
+- `schema.ts` — Tables: `emailConnections`, `emails`, `policies`, `organizations`, `orgMemberships`, `orgInvitations`, `agentConversations`, `orgBusinessContext`, `applicationSessions`, `webChats`, `webChatMessages`
 - `policies.ts` — Queries (list, stats, getFileUrl, emailIdsWithPolicies) and mutations (insert, updateExtraction, softDelete, restore, generateUploadUrl)
 - `connections.ts` — CRUD + cascade delete with optional policy cleanup. Internal queries (`getInternal`) for scheduled actions
 - `emails.ts` — Insert with messageId dedup, classification, processing status. Internal queries (`getInternal`, `listByConnection`) for scheduled actions
 - `businessContext.ts` — CRUD for org business context (list grouped by category, upsert by key, bulk upsert). Public + internal variants
 - `applicationSessions.ts` — Application session lifecycle (list, get, stats, cancel). Internal: create, updateFields, updateStatus, findByThreadId, markComplete
+- `webChats.ts` — Web chat CRUD (list, get, messages, create, sendMessage, archive). Internal mutations for agent response (insertAgentMessage, updateAgentMessage, updateAgentError, touchChat, updateTitleInternal)
 - `agentConversations.ts` — Agent conversation records with cross-thread memory
 - `actions/handleInboundEmail.ts` — Inbound email routing: application detection, reply routing, agent Q&A
 - `actions/processApplication.ts` — Application workflow: field extraction, auto-fill, batched Q&A, confirmation, summary PDF generation
+- `actions/processWebChat.ts` — Web chat agent response: builds context from policies/quotes/email memory, calls Claude Haiku, auto-titles
 - `actions/` — Also: IMAP scanning, classification, extraction
 - `lib/prompts.ts` — Policy extraction prompts (EXTRACTION_PROMPT, METADATA_PROMPT, buildSectionsPrompt)
 - `lib/applicationPrompts.ts` — Application prompts (classify, extract fields, auto-fill, batch questions, parse answers, confirmation summary, batch email generation, reply intent classification, field explanation, lookup fill, AcroForm mapping)
@@ -129,6 +139,9 @@ Filled PDF stored as `filledFileId` on the session.
 
 ### Key Frontend Patterns
 
+- **App Shell layout**: All authenticated pages use `<AppShell>` which provides a persistent left sidebar (`AppSidebar`), top bar with breadcrumbs (`AppTopBar`), and "Ask Clarity" chat input at the bottom (`AskClarityInput`). Pages just render their content inside `<AppShell>`.
+- **Sidebar**: `components/app-sidebar.tsx` — collapsible (220px / 56px), persisted in localStorage, mobile overlay drawer. Sections: Insurance (Dashboard, Policies, Quotes, Applications), Tools (Connections, Clarity Agent), Chats (latest 5 web chats + new chat button), bottom links (Settings for admin, Profile, Sign out).
+- **Typography**: Headings use Geist Sans (semibold, -0.025em tracking) — no serif in-app. Instrument Serif available via `.serif` class for marketing only.
 - All pages are `"use client"` with Convex React hooks (`useQuery`, `useMutation`, `useAction`)
 - Path alias: `@/*` maps to project root
 - Filtering/aggregation done client-side with `useMemo` over Convex query results
@@ -153,6 +166,8 @@ Filled PDF stored as `filledFileId` on the session.
 - `applicationSessions.extractedFields` and `questionBatches` are JSON-serialized strings (Convex doesn't support deeply nested dynamic objects)
 - `applicationSessions.filledFileId` stores the filled PDF (generated on demand via AcroForm, overlay, or standalone mode)
 - `applicationSessions.status` lifecycle: extracting_fields → filling_known → asking_questions → pending_confirmation → confirmed → complete (or cancelled)
+- `webChats` stores org-scoped chat sessions with title, createdBy, lastMessageAt, optional archivedAt
+- `webChatMessages` stores chat messages with role (user/agent), denormalized userName, optional status (processing/error)
 
 ### Routes
 
@@ -170,7 +185,7 @@ All routes require authentication (redirect to `/login` if not logged in) except
 - `/applications/[id]` — Application detail: fields by section, batch timeline, progress, PDF download
 - `/connections` — IMAP connection management with scan modal and real-time progress
 - `/extractions` — Pending extraction queue + completed extraction log
-- `/agent` — Clarity Agent: conversations (with application badges), settings (email address, modes)
+- `/agent` — Clarity Agent: unified conversations (email threads + web chats with "New Chat" button, application badges), settings (email address, modes)
 - `/settings` — Organization settings with 3 tabs: Basic Information, Team Members, Business Context
 - `/profile` — User profile page
 - `/api/flatten-pdf` — POST: PDF flattening via mupdf WASM (bearer token auth, no user auth)

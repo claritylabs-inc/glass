@@ -5,7 +5,7 @@ import { useQuery, useMutation, useAction } from "convex/react";
 import { useRouter } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
-import { Nav } from "@/components/nav";
+import { AppShell } from "@/components/app-shell";
 import { FadeIn } from "@/components/ui/fade-in";
 import { motion } from "framer-motion";
 import {
@@ -28,7 +28,6 @@ import {
 import { INDUSTRIES } from "@/convex/lib/industries";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { PillButton } from "@/components/ui/pill-button";
-import { FixedMobileFooter } from "@/components/ui/fixed-mobile-footer";
 import { BusinessContextManager } from "@/components/business-context-manager";
 import {
   Dialog,
@@ -203,36 +202,30 @@ export default function SettingsPage() {
 
   if (viewer === undefined || orgData === undefined) {
     return (
-      <>
-        <Nav />
+      <AppShell>
         <div className="flex items-center justify-center h-64">
           <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
         </div>
-      </>
+      </AppShell>
     );
   }
 
   if (!isAdmin) {
     return (
-      <div className="min-h-screen flex flex-col">
-        <Nav />
-        <main className="flex-1">
-          <div className="max-w-6xl mx-auto px-4 md:px-8 py-6">
-            <div className="rounded-lg border border-foreground/6 bg-white/60 p-8 text-center">
-              <Shield className="w-8 h-8 text-muted-foreground/20 mx-auto mb-3" />
-              <h2 className="!mb-2 text-lg font-semibold">Admin Access Required</h2>
-              <p className="text-body-sm text-muted-foreground">
-                Only organization admins can access settings.
-              </p>
-            </div>
-          </div>
-        </main>
-      </div>
+      <AppShell>
+        <div className="rounded-lg border border-foreground/6 bg-white/60 p-8 text-center">
+          <Shield className="w-8 h-8 text-muted-foreground/20 mx-auto mb-3" />
+          <h2 className="!mb-2 text-lg font-semibold">Admin Access Required</h2>
+          <p className="text-body-sm text-muted-foreground">
+            Only organization admins can access settings.
+          </p>
+        </div>
+      </AppShell>
     );
   }
 
   const saveButton = (
-    <PillButton onClick={handleSave} disabled={saving}>
+    <PillButton size="compact" onClick={handleSave} disabled={saving}>
       {saving ? (
         <>
           <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -244,36 +237,26 @@ export default function SettingsPage() {
     </PillButton>
   );
 
+  const headerActions = (
+    <>
+      {activeTab === "info" && saveButton}
+      {activeTab === "team" && (
+        <PillButton size="compact" variant="secondary" onClick={() => setShowInviteDialog(true)}>
+          <UserPlus className="w-3.5 h-3.5" />
+          Invite Member
+        </PillButton>
+      )}
+      {activeTab === "context" && (
+        <PillButton size="compact" variant="secondary" onClick={() => setShowAddContextForm(!showAddContextForm)}>
+          <Plus className="w-3.5 h-3.5" />
+          Add Entry
+        </PillButton>
+      )}
+    </>
+  );
+
   return (
-    <div className="min-h-screen flex flex-col">
-      <Nav />
-      <main className="flex-1 pb-12 md:pb-0">
-        <div className="max-w-6xl mx-auto px-4 md:px-8 py-6">
-          <FadeIn when={true} staggerIndex={0} duration={0.6}>
-            <div className="flex items-start justify-between mb-6">
-              <div>
-                <h1 className="!mb-1">Organization Settings</h1>
-                <p className="text-body-sm text-muted-foreground">
-                  Your organization, team, and preferences
-                </p>
-              </div>
-              <div className="hidden md:flex items-center gap-3">
-                {activeTab === "info" && saveButton}
-                {activeTab === "team" && (
-                  <PillButton variant="secondary" onClick={() => setShowInviteDialog(true)}>
-                    <UserPlus className="w-3.5 h-3.5" />
-                    Invite Member
-                  </PillButton>
-                )}
-                {activeTab === "context" && (
-                  <PillButton variant="secondary" onClick={() => setShowAddContextForm(!showAddContextForm)}>
-                    <Plus className="w-3.5 h-3.5" />
-                    Add Entry
-                  </PillButton>
-                )}
-              </div>
-            </div>
-          </FadeIn>
+    <AppShell actions={headerActions}>
 
           {/* Tabs */}
           <FadeIn when={true} staggerIndex={1} duration={0.6}>
@@ -671,24 +654,6 @@ export default function SettingsPage() {
               />
             )}
           </FadeIn>
-        </div>
-      </main>
-
-      <FixedMobileFooter>
-        {activeTab === "info" && saveButton}
-        {activeTab === "team" && (
-          <PillButton variant="secondary" onClick={() => setShowInviteDialog(true)}>
-            <UserPlus className="w-3.5 h-3.5" />
-            Invite Member
-          </PillButton>
-        )}
-        {activeTab === "context" && (
-          <PillButton variant="secondary" onClick={() => setShowAddContextForm(!showAddContextForm)}>
-            <Plus className="w-3.5 h-3.5" />
-            Add Entry
-          </PillButton>
-        )}
-      </FixedMobileFooter>
 
       {/* Invite Dialog */}
       <Dialog open={showInviteDialog} onOpenChange={(v) => !v && setShowInviteDialog(false)}>
@@ -798,6 +763,6 @@ export default function SettingsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </AppShell>
   );
 }

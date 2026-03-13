@@ -1,16 +1,15 @@
 "use client";
 
-import { use } from "react";
+import { use, useEffect, useState, useRef } from "react";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
-import { Nav } from "@/components/nav";
+import { AppShell } from "@/components/app-shell";
 import { FadeIn } from "@/components/ui/fade-in";
 import { PillButton } from "@/components/ui/pill-button";
-import { FixedMobileFooter } from "@/components/ui/fixed-mobile-footer";
 import {
   ArrowLeft,
-  Download,
+  FileInput,
   FileText,
   FileCheck,
   Loader2,
@@ -21,8 +20,12 @@ import {
   CircleDot,
   Circle,
 } from "lucide-react";
-import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { usePdf } from "@/components/pdf-context";
+import { usePageContext } from "@/hooks/use-page-context";
+import { motion, AnimatePresence } from "framer-motion";
+import Link from "next/link";
+import { MessageSquare } from "lucide-react";
 import dayjs from "dayjs";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { FormField } from "@/convex/lib/applicationTypes";
@@ -46,103 +49,146 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-function SourceBadge({ source }: { source?: string }) {
-  if (!source) return null;
-  const colors: Record<string, string> = {
-    org_context: "bg-violet-50 text-violet-600",
-    user_answer: "bg-emerald-50 text-emerald-600",
-    inferred: "bg-amber-50 text-amber-600",
-  };
-  const labels: Record<string, string> = {
-    org_context: "auto-filled",
-    user_answer: "answered",
-    inferred: "inferred",
-  };
-  return (
-    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap shrink-0 ${colors[source] ?? "bg-gray-100 text-gray-500"}`}>
-      {labels[source] ?? source}
-    </span>
-  );
-}
+function EditableField({
+  field,
+  sessionId,
+}: {
+  field: FormField;
+  sessionId: Id<"applicationSessions">;
+}) {
+  const updateField = useMutation(api.applicationSessions.updateFieldValue);
+  const f = field as any;
+  const label = f.label ?? f.text ?? field.id;
+  const value = f.value ?? "";
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
 
-function FieldRow({ field }: { field: FormField }) {
+  useEffect(() => {
+    setDraft(value);
+  }, [value]);
+
+  useEffect(() => {
+    if (editing) inputRef.current?.focus();
+  }, [editing]);
+
+  async function save() {
+    const trimmed = draft.trim();
+    if (trimmed !== value) {
+      try {
+        await updateField({ id: sessionId, fieldId: field.id, value: trimmed });
+      } catch {
+        toast.error("Failed to save");
+        setDraft(value);
+      }
+    }
+    setEditing(false);
+  }
+
+  const isLong = value.length > 80 || field.fieldType === "declaration";
+
+  // Declaration fields
   if (field.fieldType === "declaration") {
-    const f = field as any;
     return (
-      <div className="py-2.5">
-        <p className="text-body-sm text-foreground">{f.text}</p>
-        <div className="flex items-center gap-2 mt-1">
-          {f.value ? (
-            <span className={`text-label-sm font-medium ${f.value === "yes" ? "text-amber-600" : "text-emerald-600"}`}>
-              {f.value.toUpperCase()}
-            </span>
-          ) : (
-            <span className="text-label-sm text-muted-foreground/30 italic">Pending</span>
-          )}
-          <SourceBadge source={f.source} />
-        </div>
+      <div className="py-3">
+        <p className="text-[11px] text-muted-foreground/50 leading-relaxed mb-1">{f.text}</p>
+        {editing ? (
+          <input
+            ref={inputRef as React.RefObject<HTMLInputElement>}
+            type="text"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={save}
+            onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") { setDraft(value); setEditing(false); } }}
+            placeholder="Yes / No"
+            className="w-full text-body-sm font-medium text-foreground bg-transparent border-b border-foreground/15 focus:border-foreground/30 outline-none pb-0.5 transition-colors"
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            className="text-left cursor-text"
+          >
+            {value ? (
+              <span className={`text-body-sm font-medium ${f.value === "yes" ? "text-amber-600" : f.value === "no" ? "text-emerald-600" : "text-foreground"}`}>
+                {value}
+              </span>
+            ) : (
+              <span className="text-body-sm text-muted-foreground/25 italic">Not answered</span>
+            )}
+          </button>
+        )}
         {f.explanation && (
-          <p className="text-label-sm text-muted-foreground/60 mt-1 pl-3 border-l-2 border-foreground/6">
-            {f.explanation}
-          </p>
+          <p className="text-[11px] text-muted-foreground/40 mt-1">{f.explanation}</p>
         )}
       </div>
     );
   }
 
+  // Table fields — show as sub-fields
   if (field.fieldType === "table") {
-    const f = field as any;
     return (
-      <div className="py-2.5">
-        <div className="flex items-center gap-2">
-          <p className="text-label-sm text-muted-foreground/60">{f.label}</p>
-          <SourceBadge source={f.source} />
-        </div>
+      <div className="py-3">
+        <p className="text-[11px] text-muted-foreground/50 mb-2">{label}</p>
         {f.rows && f.rows.length > 0 ? (
-          <div className="mt-1.5 overflow-x-auto">
-            <table className="w-full text-xs border border-foreground/6 rounded">
-              <thead>
-                <tr className="bg-foreground/[0.02]">
-                  {f.columns?.map((col: any) => (
-                    <th key={col.name} className="text-left px-2 py-1 text-muted-foreground/50 font-medium border-b border-foreground/6">
-                      {col.name}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {f.rows.map((row: Record<string, string>, i: number) => (
-                  <tr key={i} className="border-b border-foreground/6 last:border-0">
-                    {f.columns?.map((col: any) => (
-                      <td key={col.name} className="px-2 py-1">
-                        {row[col.name] ?? ""}
-                      </td>
-                    ))}
-                  </tr>
+          <div className="space-y-2">
+            {f.rows.map((row: Record<string, string>, i: number) => (
+              <div key={i} className="pl-3 border-l-2 border-foreground/6 space-y-1">
+                {f.columns?.map((col: any) => (
+                  <div key={col.name}>
+                    <span className="text-[10px] text-muted-foreground/35">{col.name}</span>
+                    <p className="text-body-sm text-foreground">{row[col.name] || "—"}</p>
+                  </div>
                 ))}
-              </tbody>
-            </table>
+              </div>
+            ))}
           </div>
         ) : (
-          <p className="text-label-sm text-muted-foreground/30 mt-1 italic">No data</p>
+          <span className="text-body-sm text-muted-foreground/25 italic">No data</span>
         )}
       </div>
     );
   }
 
-  // Simple field
-  const f = field as any;
+  // Simple field — Q&A text form style
   return (
-    <div className="flex items-baseline gap-6 py-2">
-      <span className="text-body-sm text-muted-foreground shrink-0 w-56 sm:w-64">{f.label}</span>
-      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 flex-1 min-w-0">
-        {f.value ? (
-          <span className="text-body-sm text-foreground">{f.value}</span>
+    <div className="py-3">
+      <p className="text-[11px] text-muted-foreground/50 mb-0.5">{label}</p>
+      {editing ? (
+        isLong ? (
+          <textarea
+            ref={inputRef as React.RefObject<HTMLTextAreaElement>}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={save}
+            onKeyDown={(e) => { if (e.key === "Escape") { setDraft(value); setEditing(false); } }}
+            rows={3}
+            className="w-full text-body-sm text-foreground bg-transparent border-b border-foreground/15 focus:border-foreground/30 outline-none pb-0.5 resize-none transition-colors"
+          />
         ) : (
-          <span className="text-body-sm text-muted-foreground/30 italic">Pending</span>
-        )}
-        <SourceBadge source={f.source} />
-      </div>
+          <input
+            ref={inputRef as React.RefObject<HTMLInputElement>}
+            type="text"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={save}
+            onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") { setDraft(value); setEditing(false); } }}
+            className="w-full text-body-sm text-foreground bg-transparent border-b border-foreground/15 focus:border-foreground/30 outline-none pb-0.5 transition-colors"
+          />
+        )
+      ) : (
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          className="text-left cursor-text w-full"
+        >
+          {value ? (
+            <p className="text-body-sm text-foreground">{value}</p>
+          ) : (
+            <p className="text-body-sm text-muted-foreground/25 italic">Not answered</p>
+          )}
+        </button>
+      )}
     </div>
   );
 }
@@ -170,37 +216,42 @@ function ActionButtons({
   onCancel: () => void;
   onFill: () => void;
 }) {
+  const { openWithUrl } = usePdf();
   return (
     <>
       {sourceFileUrl && (
         <PillButton
+          size="compact"
           variant="icon"
-          label="Source PDF"
-          onClick={() => window.open(sourceFileUrl, "_blank")}
+          label="Original Form"
+          onClick={() => sourceFileUrl && openWithUrl(sourceFileUrl)}
         >
-          <Download className="w-4 h-4" />
+          <FileInput className="w-4 h-4" />
         </PillButton>
       )}
       {summaryFileUrl && (
         <PillButton
+          size="compact"
           variant="icon"
-          label="Summary PDF"
-          onClick={() => window.open(summaryFileUrl, "_blank")}
+          label="Summary"
+          onClick={() => summaryFileUrl && openWithUrl(summaryFileUrl)}
         >
           <FileText className="w-4 h-4" />
         </PillButton>
       )}
       {filledFileUrl && (
         <PillButton
+          size="compact"
           variant="icon"
           label="Filled PDF"
-          onClick={() => window.open(filledFileUrl, "_blank")}
+          onClick={() => filledFileUrl && openWithUrl(filledFileUrl)}
         >
           <FileCheck className="w-4 h-4" />
         </PillButton>
       )}
       {canFill && (
         <PillButton
+          size="compact"
           variant="secondary"
           onClick={onFill}
           disabled={isFilling}
@@ -214,12 +265,12 @@ function ActionButtons({
         </PillButton>
       )}
       {hasError && (
-        <PillButton variant="icon" label="Retry" onClick={onRetry}>
+        <PillButton size="compact" variant="icon" label="Retry" onClick={onRetry}>
           <RotateCcw className="w-4 h-4" />
         </PillButton>
       )}
       {isActive && (
-        <PillButton variant="icon" label="Cancel" onClick={onCancel}>
+        <PillButton size="compact" variant="icon" label="Cancel" onClick={onCancel}>
           <X className="w-4 h-4" />
         </PillButton>
       )}
@@ -243,26 +294,36 @@ export default function ApplicationDetailPage({
   const retryApp = useAction(api.actions.processApplication.retryApplication);
   const fillApp = useAction(api.actions.processApplication.fillApplicationPdf);
   const [isFilling, setIsFilling] = useState(false);
+  const [activeTab, setActiveTab] = useState<"details" | "threads">("details");
+  const { setPageContext } = usePageContext();
+  useEffect(() => {
+    if (session) {
+      setPageContext({
+        pageType: "application",
+        entityId: session._id,
+        summary: `Application: ${session.applicationTitle ?? session.sourceFileName}`,
+      });
+    }
+    return () => setPageContext(null);
+  }, [session, setPageContext]);
 
   if (session === undefined) {
     return (
-      <div className="min-h-screen flex flex-col">
-        <Nav />
-        <div className="flex-1 flex items-center justify-center">
+      <AppShell>
+        <div className="flex items-center justify-center h-64">
           <Loader2 className="w-5 h-5 animate-spin text-muted-foreground/30" />
         </div>
-      </div>
+      </AppShell>
     );
   }
 
   if (session === null) {
     return (
-      <div className="min-h-screen flex flex-col">
-        <Nav />
-        <div className="flex-1 flex items-center justify-center">
+      <AppShell>
+        <div className="flex items-center justify-center h-64">
           <p className="text-body-sm text-muted-foreground/50">Application not found</p>
         </div>
-      </div>
+      </AppShell>
     );
   }
 
@@ -275,6 +336,20 @@ export default function ApplicationDetailPage({
     const existing = sections.get(field.section) ?? [];
     existing.push(field);
     sections.set(field.section, existing);
+  }
+
+  function getBatchTopic(batch: any): string {
+    const sectionCounts = new Map<string, number>();
+    for (const fid of batch.fieldIds) {
+      const f = fields.find((field) => field.id === fid);
+      if (f) sectionCounts.set(f.section, (sectionCounts.get(f.section) ?? 0) + 1);
+    }
+    let best = "";
+    let bestCount = 0;
+    for (const [sec, count] of sectionCounts) {
+      if (count > bestCount) { best = sec; bestCount = count; }
+    }
+    return best || `Batch ${batch.batchIndex + 1}`;
   }
 
   const filledCount = fields.filter((f) => {
@@ -323,53 +398,73 @@ export default function ApplicationDetailPage({
     }
   }
 
+  const headerActions = (
+    <ActionButtons
+      sourceFileUrl={sourceFileUrl}
+      summaryFileUrl={summaryFileUrl}
+      filledFileUrl={filledFileUrl}
+      hasError={!!session.error}
+      isActive={isActive}
+      canFill={!filledFileUrl && ["complete", "confirmed"].includes(session.status)}
+      isFilling={isFilling}
+      onRetry={handleRetry}
+      onCancel={handleCancel}
+      onFill={handleFill}
+    />
+  );
+
+  const threadId = session.threadId ?? session.conversationId;
+
   return (
-    <div className="min-h-screen flex flex-col">
-      <Nav />
-      <main className="flex-1">
-        <div className="max-w-6xl mx-auto px-4 md:px-8 py-6 pb-32 md:pb-6">
+    <AppShell breadcrumbDetail={session.applicationTitle ?? session.sourceFileName} actions={headerActions}>
           <FadeIn when={true} staggerIndex={0} duration={0.6}>
-            {/* Back + header */}
             <div className="mb-6">
-              <button
-                type="button"
-                onClick={() => router.push("/applications")}
-                className="inline-flex items-center gap-1 text-label-sm text-muted-foreground/50 hover:text-foreground mb-3 cursor-pointer"
+              <Link
+                href="/applications"
+                className="inline-flex items-center gap-1.5 text-body-sm text-muted-foreground hover:text-foreground transition-colors mb-4"
               >
                 <ArrowLeft className="w-3.5 h-3.5" />
-                Back to Applications
-              </button>
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0">
-                  <h1 className="!mb-1 truncate">
-                    {session.applicationTitle ?? session.sourceFileName}
-                  </h1>
-                  <div className="flex items-center gap-3 flex-wrap">
-                    <StatusBadge status={session.status} />
-                    <span className="text-label-sm text-muted-foreground/40">
-                      {dayjs(session._creationTime).format("MMM D, YYYY h:mm A")}
-                    </span>
-                  </div>
-                </div>
-                {/* Desktop action buttons */}
-                <div className="hidden md:flex items-center gap-2 shrink-0">
-                  <ActionButtons
-                    sourceFileUrl={sourceFileUrl}
-                    summaryFileUrl={summaryFileUrl}
-                    filledFileUrl={filledFileUrl}
-                    hasError={!!session.error}
-                    isActive={isActive}
-                    canFill={!filledFileUrl && ["complete", "confirmed"].includes(session.status)}
-                    isFilling={isFilling}
-                    onRetry={handleRetry}
-                    onCancel={handleCancel}
-                    onFill={handleFill}
-                  />
-                </div>
+                Back to applications
+              </Link>
+              <h1 className="!mb-0">{session.applicationTitle ?? session.sourceFileName}</h1>
+              <div className="flex items-center gap-3 flex-wrap mt-1">
+                <StatusBadge status={session.status} />
+                <span className="text-label-sm text-muted-foreground/40">
+                  {dayjs(session._creationTime).format("MMM D, YYYY h:mm A")}
+                </span>
               </div>
             </div>
           </FadeIn>
 
+          {/* Tab bar */}
+          <div className="flex items-center gap-1 border-b border-foreground/6 mb-6">
+            {([
+              { id: "details" as const, label: "Details" },
+              { id: "threads" as const, label: "Threads" },
+            ]).map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                className={`relative px-3 py-2 text-body-sm font-medium whitespace-nowrap transition-colors cursor-pointer ${
+                  activeTab === tab.id
+                    ? "text-foreground"
+                    : "text-muted-foreground hover:text-foreground/70"
+                }`}
+              >
+                {tab.label}
+                {activeTab === tab.id && (
+                  <motion.div
+                    layoutId="app-tab-indicator"
+                    className="absolute bottom-0 left-0 right-0 h-[2px] bg-foreground"
+                    transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                  />
+                )}
+              </button>
+            ))}
+          </div>
+
+          {activeTab === "details" && (<>
           {/* Progress + batch overview card */}
           <FadeIn when={true} staggerIndex={1} duration={0.6}>
             <div className="rounded-lg border border-foreground/6 bg-white/60 p-4 mb-6">
@@ -408,31 +503,43 @@ export default function ApplicationDetailPage({
                   <div className="flex items-center gap-1.5 flex-wrap">
                     {session.parsedBatches.map((batch: any, i: number) => {
                       const isCurrent = i === (session.currentBatchIndex ?? 0) && !batch.complete && session.status === "asking_questions";
+                      const topic = getBatchTopic(batch);
                       return (
-                        <div
+                        <motion.div
                           key={i}
-                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium transition-colors ${
+                          initial={false}
+                          whileHover="hover"
+                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium transition-colors cursor-default ${
                             batch.complete
                               ? "bg-emerald-50 text-emerald-600"
                               : isCurrent
                                 ? "bg-amber-50 text-amber-600 ring-1 ring-amber-200"
                                 : "bg-foreground/[0.03] text-muted-foreground/40"
                           }`}
+                          title={topic}
                         >
                           {batch.complete ? (
-                            <CheckCircle className="w-3 h-3" />
+                            <CheckCircle className="w-3 h-3 shrink-0" />
                           ) : isCurrent ? (
-                            <CircleDot className="w-3 h-3" />
+                            <CircleDot className="w-3 h-3 shrink-0" />
                           ) : (
-                            <Circle className="w-3 h-3" />
+                            <Circle className="w-3 h-3 shrink-0" />
                           )}
-                          <span>
+                          <span className="shrink-0">
                             {batch.fieldIds.length}
-                            {batch.complete && batch.answeredFieldIds.length < batch.fieldIds.length
-                              ? ` (${batch.answeredFieldIds.length})`
-                              : ""}
                           </span>
-                        </div>
+                          <AnimatePresence>
+                            <motion.span
+                              variants={{
+                                hover: { width: "auto", opacity: 1, marginLeft: 2 },
+                              }}
+                              initial={{ width: 0, opacity: 0, marginLeft: 0 }}
+                              className="overflow-hidden whitespace-nowrap"
+                            >
+                              {topic}
+                            </motion.span>
+                          </AnimatePresence>
+                        </motion.div>
                       );
                     })}
                     <span className="text-[11px] text-muted-foreground/30 ml-1">
@@ -460,11 +567,6 @@ export default function ApplicationDetailPage({
                     className="rounded-lg border border-foreground/6 bg-white/60 overflow-hidden"
                   >
                     <div className="flex items-center gap-2 px-4 py-3 bg-foreground/[0.015] border-b border-foreground/5">
-                      {sectionComplete ? (
-                        <CheckCircle className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                      ) : (
-                        <FileText className="w-3.5 h-3.5 text-muted-foreground/30 shrink-0" />
-                      )}
                       <h3 className="text-body-sm font-semibold !mb-0 flex-1">
                         {sectionName}
                       </h3>
@@ -476,7 +578,7 @@ export default function ApplicationDetailPage({
                     </div>
                     <div className="px-4 divide-y divide-foreground/5">
                       {sectionFields.map((field) => (
-                        <FieldRow key={field.id} field={field} />
+                        <EditableField key={field.id} field={field} sessionId={sessionId} />
                       ))}
                     </div>
                   </div>
@@ -484,24 +586,33 @@ export default function ApplicationDetailPage({
               })}
             </div>
           </FadeIn>
-        </div>
-      </main>
+          </>)}
 
-      {/* Mobile footer */}
-      <FixedMobileFooter>
-        <ActionButtons
-          sourceFileUrl={sourceFileUrl}
-          summaryFileUrl={summaryFileUrl}
-          filledFileUrl={filledFileUrl}
-          hasError={!!session.error}
-          isActive={isActive}
-          canFill={!filledFileUrl && ["complete", "confirmed"].includes(session.status)}
-          isFilling={isFilling}
-          onRetry={handleRetry}
-          onCancel={handleCancel}
-          onFill={handleFill}
-        />
-      </FixedMobileFooter>
-    </div>
+          {activeTab === "threads" && (
+            <div className="rounded-lg border border-foreground/6 bg-white/60 px-6 py-12 text-center">
+              {threadId ? (
+                <>
+                  <MessageSquare className="w-8 h-8 text-muted-foreground/15 mx-auto mb-3" />
+                  <p className="text-body-sm text-muted-foreground/50 mb-3">This application has an associated email thread.</p>
+                  <Link
+                    href={`/agent/thread/${threadId}`}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-foreground text-white text-body-sm font-medium hover:bg-foreground/90 transition-colors"
+                  >
+                    <MessageSquare className="w-3.5 h-3.5" />
+                    View Thread
+                  </Link>
+                </>
+              ) : (
+                <>
+                  <MessageSquare className="w-8 h-8 text-muted-foreground/15 mx-auto mb-3" />
+                  <p className="text-body-sm text-muted-foreground/50 mb-1">No threads for this application</p>
+                  <p className="text-label-sm text-muted-foreground/30">
+                    Email threads related to this application will appear here.
+                  </p>
+                </>
+              )}
+            </div>
+          )}
+    </AppShell>
   );
 }

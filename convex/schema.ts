@@ -53,6 +53,10 @@ export default defineSchema({
     agentHandle: v.optional(v.string()),
     // Primary insurance contact for the org
     primaryInsuranceContactId: v.optional(v.id("users")),
+    // Agent settings
+    chatEmailNotifications: v.optional(v.boolean()), // send email notifications for chat responses in email threads
+    autoSendEmails: v.optional(v.boolean()), // when false, drafted emails from chat require confirmation before sending
+    emailSendDelay: v.optional(v.number()), // seconds before sending emails (default 5, 0 = instant)
     // Onboarding
     onboardingComplete: v.optional(v.boolean()),
   }).index("by_agentHandle", ["agentHandle"]),
@@ -427,6 +431,37 @@ export default defineSchema({
     .index("by_quoteId", ["quoteId"])
     .index("by_orgId", ["orgId"]),
 
+  // Web chat sessions with Clarity Agent
+  webChats: defineTable({
+    orgId: v.id("organizations"),
+    title: v.string(),
+    createdBy: v.id("users"),
+    lastMessageAt: v.optional(v.number()),
+    archivedAt: v.optional(v.number()),
+    initialContext: v.optional(v.object({
+      pageType: v.string(),
+      entityId: v.optional(v.string()),
+      summary: v.optional(v.string()),
+    })),
+  })
+    .index("by_orgId", ["orgId"])
+    .index("by_orgId_lastMessageAt", ["orgId", "lastMessageAt"]),
+
+  // Messages within web chat sessions
+  webChatMessages: defineTable({
+    chatId: v.id("webChats"),
+    orgId: v.id("organizations"),
+    userId: v.optional(v.id("users")),
+    userName: v.optional(v.string()),
+    role: v.union(v.literal("user"), v.literal("agent")),
+    content: v.string(),
+    // Agent response metadata
+    referencedPolicyIds: v.optional(v.array(v.id("policies"))),
+    referencedQuoteIds: v.optional(v.array(v.id("quotes"))),
+    status: v.optional(v.union(v.literal("processing"), v.literal("error"))),
+    error: v.optional(v.string()),
+  }).index("by_chatId", ["chatId"]),
+
   agentConversations: defineTable({
     userId: v.id("users"),
     orgId: v.optional(v.id("organizations")),
@@ -468,4 +503,106 @@ export default defineSchema({
     .index("by_orgId", ["orgId"])
     .index("by_messageId", ["messageId"])
     .index("by_resendEmailId", ["resendEmailId"]),
+
+  // ── Unified Threads ──
+
+  threads: defineTable({
+    orgId: v.id("organizations"),
+    title: v.string(),
+    threadEmail: v.optional(v.string()),
+    createdBy: v.id("users"),
+    lastMessageAt: v.number(),
+    archivedAt: v.optional(v.number()),
+    initialContext: v.optional(v.object({
+      pageType: v.string(),
+      entityId: v.optional(v.string()),
+      summary: v.optional(v.string()),
+    })),
+    legacyConversationId: v.optional(v.id("agentConversations")),
+  })
+    .index("by_orgId", ["orgId"])
+    .index("by_orgId_lastMessageAt", ["orgId", "lastMessageAt"])
+    .index("by_threadEmail", ["threadEmail"])
+    .index("by_legacyConversationId", ["legacyConversationId"]),
+
+  threadMessages: defineTable({
+    threadId: v.id("threads"),
+    orgId: v.id("organizations"),
+    channel: v.union(v.literal("chat"), v.literal("email")),
+    role: v.union(v.literal("user"), v.literal("agent"), v.literal("system")),
+    // User messages
+    userId: v.optional(v.id("users")),
+    userName: v.optional(v.string()),
+    // Email messages
+    fromEmail: v.optional(v.string()),
+    fromName: v.optional(v.string()),
+    toAddresses: v.optional(v.array(v.string())),
+    ccAddresses: v.optional(v.array(v.string())),
+    subject: v.optional(v.string()),
+    messageId: v.optional(v.string()),
+    responseMessageId: v.optional(v.string()),
+    // Content
+    content: v.string(),
+    contentHtml: v.optional(v.string()),
+    // Attachments
+    attachments: v.optional(v.array(v.object({
+      filename: v.string(),
+      contentType: v.string(),
+      size: v.number(),
+      fileId: v.optional(v.id("_storage")),
+    }))),
+    // Agent response metadata
+    referencedPolicyIds: v.optional(v.array(v.id("policies"))),
+    referencedQuoteIds: v.optional(v.array(v.id("quotes"))),
+    // Status
+    status: v.optional(v.union(
+      v.literal("processing"),
+      v.literal("error"),
+      v.literal("pending_send"),
+    )),
+    error: v.optional(v.string()),
+    pendingEmailId: v.optional(v.id("pendingEmails")),
+    // Legacy link
+    legacyConversationId: v.optional(v.id("agentConversations")),
+    legacyChatMessageId: v.optional(v.id("webChatMessages")),
+  })
+    .index("by_threadId", ["threadId"])
+    .index("by_messageId", ["messageId"]),
+
+  // ── Pending Emails (send delay queue) ──
+
+  pendingEmails: defineTable({
+    orgId: v.id("organizations"),
+    threadId: v.optional(v.id("threads")),
+    status: v.union(v.literal("pending"), v.literal("sent"), v.literal("cancelled")),
+    emailPayload: v.string(), // JSON-serialized Resend payload
+    scheduledSendTime: v.number(), // timestamp when it should actually send
+    sentMessageId: v.optional(v.string()), // Resend message ID after send
+    // For updating the chat message after send
+    chatMessageId: v.optional(v.id("threadMessages")),
+    // For updating legacy conversation after send
+    legacyConversationId: v.optional(v.id("agentConversations")),
+    // Metadata for the sent email record
+    recipientEmail: v.string(),
+    ccAddresses: v.optional(v.array(v.string())),
+    subject: v.string(),
+    emailBody: v.string(), // plain content (for thread record)
+    // For unified thread dual-write
+    referencedPolicyIds: v.optional(v.array(v.id("policies"))),
+    referencedQuoteIds: v.optional(v.array(v.id("quotes"))),
+  })
+    .index("by_threadId", ["threadId"])
+    .index("by_status", ["status"]),
+
+  // ── Presence ──
+
+  presence: defineTable({
+    orgId: v.id("organizations"),
+    userId: v.id("users"),
+    pageKey: v.string(),
+    userName: v.optional(v.string()),
+    lastSeen: v.number(),
+  })
+    .index("by_pageKey", ["pageKey"])
+    .index("by_userId", ["userId"]),
 });

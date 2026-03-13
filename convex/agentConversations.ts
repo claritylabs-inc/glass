@@ -279,6 +279,21 @@ export const listByPolicyId = query({
   },
 });
 
+export const listByQuoteId = query({
+  args: { quoteId: v.id("quotes") },
+  handler: async (ctx, args) => {
+    const { orgId } = await requireOrgAccess(ctx);
+    const all = await ctx.db
+      .query("agentConversations")
+      .withIndex("by_orgId", (q) => q.eq("orgId", orgId))
+      .order("desc")
+      .collect();
+    return all.filter(
+      (c) => c.referencedQuoteIds?.includes(args.quoteId),
+    );
+  },
+});
+
 export const getAttachmentUrl = query({
   args: { fileId: v.id("_storage") },
   handler: async (ctx, args) => {

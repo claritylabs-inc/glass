@@ -5,7 +5,7 @@ import { useQuery, useMutation } from "convex/react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
-import { Nav } from "@/components/nav";
+import { AppShell } from "@/components/app-shell";
 import { ConnectionForm } from "@/components/connection-form";
 import { ScanModal } from "@/components/scan-modal";
 import { ScanStatus } from "@/components/scan-status";
@@ -26,7 +26,6 @@ import {
 import { PillButton } from "@/components/ui/pill-button";
 import { Mail, Trash2, Play, Square } from "lucide-react";
 import { ConnectionIcon } from "@/components/connection-icon";
-import { FixedMobileFooter } from "@/components/ui/fixed-mobile-footer";
 import { Id } from "@/convex/_generated/dataModel";
 
 const TABS = [
@@ -170,28 +169,14 @@ export default function ConnectionsPage() {
 
   const pendingCount = pending?.length ?? 0;
 
+  const headerActions = activeTab === "connections" ? (
+    <PillButton size="compact" onClick={() => setFormOpen(true)}>
+      Add Connection <ArrowRight className="w-3 h-3" />
+    </PillButton>
+  ) : undefined;
+
   return (
-    <div className="min-h-screen flex flex-col">
-      <Nav />
-      <main className="flex-1 pb-12 md:pb-0">
-        <div className="max-w-6xl mx-auto px-4 md:px-8 py-6">
-          <FadeIn when={true} staggerIndex={0} duration={0.6}>
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h1 className="!mb-1">Email Connections</h1>
-                <p className="text-body-sm text-muted-foreground">
-                  Email accounts linked for policy scanning
-                </p>
-              </div>
-              {activeTab === "connections" && (
-                <div className="hidden md:block">
-                  <PillButton onClick={() => setFormOpen(true)}>
-                    Add Connection <ArrowRight className="w-3 h-3" />
-                  </PillButton>
-                </div>
-              )}
-            </div>
-          </FadeIn>
+    <AppShell actions={headerActions}>
 
           {/* Tabs */}
           <FadeIn when={true} staggerIndex={1} duration={0.6}>
@@ -436,16 +421,6 @@ export default function ConnectionsPage() {
           {activeTab === "history" && (
             <ExtractionLog entries={log ?? []} />
           )}
-        </div>
-      </main>
-
-      {activeTab === "connections" && (
-        <FixedMobileFooter>
-          <PillButton onClick={() => setFormOpen(true)}>
-            Add Connection <ArrowRight className="w-3 h-3" />
-          </PillButton>
-        </FixedMobileFooter>
-      )}
 
       <ConnectionForm open={formOpen} onClose={() => setFormOpen(false)} />
 
@@ -501,6 +476,6 @@ export default function ConnectionsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </AppShell>
   );
 }

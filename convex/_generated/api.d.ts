@@ -13,9 +13,12 @@ import type * as actions_extractCompanyInfo from "../actions/extractCompanyInfo.
 import type * as actions_extractPolicy from "../actions/extractPolicy.js";
 import type * as actions_handleInboundEmail from "../actions/handleInboundEmail.js";
 import type * as actions_processApplication from "../actions/processApplication.js";
+import type * as actions_processThreadChat from "../actions/processThreadChat.js";
+import type * as actions_processWebChat from "../actions/processWebChat.js";
 import type * as actions_reExtractFromFile from "../actions/reExtractFromFile.js";
 import type * as actions_retryExtraction from "../actions/retryExtraction.js";
 import type * as actions_scanInbox from "../actions/scanInbox.js";
+import type * as actions_sendPendingEmail from "../actions/sendPendingEmail.js";
 import type * as agentConversations from "../agentConversations.js";
 import type * as applicationSessions from "../applicationSessions.js";
 import type * as auth from "../auth.js";
@@ -40,12 +43,17 @@ import type * as migrations from "../migrations.js";
 import type * as migrations_migrateOnboarding from "../migrations/migrateOnboarding.js";
 import type * as migrations_migrateQuotesToTable from "../migrations/migrateQuotesToTable.js";
 import type * as migrations_migrateToOrgs from "../migrations/migrateToOrgs.js";
+import type * as migrations_migrateToThreads from "../migrations/migrateToThreads.js";
 import type * as orgs from "../orgs.js";
+import type * as pendingEmails from "../pendingEmails.js";
 import type * as policies from "../policies.js";
 import type * as policyAuditLog from "../policyAuditLog.js";
+import type * as presence from "../presence.js";
 import type * as quotes from "../quotes.js";
 import type * as seed from "../seed.js";
+import type * as threads from "../threads.js";
 import type * as users from "../users.js";
+import type * as webChats from "../webChats.js";
 
 import type {
   ApiFromModules,
@@ -59,9 +67,12 @@ declare const fullApi: ApiFromModules<{
   "actions/extractPolicy": typeof actions_extractPolicy;
   "actions/handleInboundEmail": typeof actions_handleInboundEmail;
   "actions/processApplication": typeof actions_processApplication;
+  "actions/processThreadChat": typeof actions_processThreadChat;
+  "actions/processWebChat": typeof actions_processWebChat;
   "actions/reExtractFromFile": typeof actions_reExtractFromFile;
   "actions/retryExtraction": typeof actions_retryExtraction;
   "actions/scanInbox": typeof actions_scanInbox;
+  "actions/sendPendingEmail": typeof actions_sendPendingEmail;
   agentConversations: typeof agentConversations;
   applicationSessions: typeof applicationSessions;
   auth: typeof auth;
@@ -86,12 +97,17 @@ declare const fullApi: ApiFromModules<{
   "migrations/migrateOnboarding": typeof migrations_migrateOnboarding;
   "migrations/migrateQuotesToTable": typeof migrations_migrateQuotesToTable;
   "migrations/migrateToOrgs": typeof migrations_migrateToOrgs;
+  "migrations/migrateToThreads": typeof migrations_migrateToThreads;
   orgs: typeof orgs;
+  pendingEmails: typeof pendingEmails;
   policies: typeof policies;
   policyAuditLog: typeof policyAuditLog;
+  presence: typeof presence;
   quotes: typeof quotes;
   seed: typeof seed;
+  threads: typeof threads;
   users: typeof users;
+  webChats: typeof webChats;
 }>;
 
 /**

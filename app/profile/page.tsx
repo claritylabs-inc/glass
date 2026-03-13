@@ -4,11 +4,10 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
-import { Nav } from "@/components/nav";
+import { AppShell } from "@/components/app-shell";
 import { FadeIn } from "@/components/ui/fade-in";
 import { Loader2 } from "lucide-react";
 import { PillButton } from "@/components/ui/pill-button";
-import { FixedMobileFooter } from "@/components/ui/fixed-mobile-footer";
 
 export default function ProfilePage() {
   const viewer = useQuery(api.users.viewer);
@@ -43,17 +42,16 @@ export default function ProfilePage() {
 
   if (viewer === undefined) {
     return (
-      <>
-        <Nav />
+      <AppShell>
         <div className="flex items-center justify-center h-64">
           <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
         </div>
-      </>
+      </AppShell>
     );
   }
 
   const saveButton = (
-    <PillButton onClick={handleSave} disabled={saving}>
+    <PillButton size="compact" onClick={handleSave} disabled={saving}>
       {saving ? (
         <>
           <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -66,23 +64,7 @@ export default function ProfilePage() {
   );
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <Nav />
-      <main className="flex-1 pb-12 md:pb-0">
-        <div className="max-w-6xl mx-auto px-4 md:px-8 py-6">
-          <FadeIn when={true} staggerIndex={0} duration={0.6}>
-            <div className="flex items-start justify-between mb-6">
-              <div>
-                <h1 className="!mb-1">Profile</h1>
-                <p className="text-body-sm text-muted-foreground">
-                  Your account and login details
-                </p>
-              </div>
-              <div className="hidden md:flex items-center gap-3">
-                {saveButton}
-              </div>
-            </div>
-          </FadeIn>
+    <AppShell actions={saveButton}>
 
           <FadeIn when={true} staggerIndex={1} duration={0.6}>
             <form onSubmit={handleSave}>
@@ -152,12 +134,6 @@ export default function ProfilePage() {
               </p>
             </form>
           </FadeIn>
-        </div>
-      </main>
-
-      <FixedMobileFooter>
-        {saveButton}
-      </FixedMobileFooter>
-    </div>
+    </AppShell>
   );
 }

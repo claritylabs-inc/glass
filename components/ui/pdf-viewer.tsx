@@ -4,7 +4,8 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
-import { ChevronUp, ChevronDown, ZoomIn, ZoomOut, Loader2, AlertTriangle } from "lucide-react";
+import { ChevronUp, ChevronDown, ZoomIn, ZoomOut, Loader2, AlertTriangle, PanelRightClose, Download } from "lucide-react";
+import { PillButton } from "@/components/ui/pill-button";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
@@ -14,6 +15,8 @@ interface PdfViewerProps {
   highlightedPage: number | null;
   onPageChange: (page: number) => void;
   onDocumentLoad: (numPages: number) => void;
+  /** When provided, renders close + download buttons in the toolbar */
+  onClose?: () => void;
 }
 
 const RENDER_BUFFER = 2;
@@ -63,6 +66,7 @@ export function PdfViewer({
   highlightedPage,
   onPageChange,
   onDocumentLoad,
+  onClose,
 }: PdfViewerProps) {
   const [numPages, setNumPages] = useState(0);
   const [scale, setScale] = useState(1);
@@ -318,56 +322,54 @@ export function PdfViewer({
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
-      {/* Toolbar */}
-      <div className="flex items-center justify-between px-3 py-1.5 border-b border-foreground/6 bg-foreground/[0.02] shrink-0">
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => goToPage(displayPage - 1)}
-            disabled={displayPage <= 1}
-            className="p-1 rounded hover:bg-foreground/5 disabled:opacity-30 transition-colors cursor-pointer disabled:cursor-not-allowed"
-          >
-            <ChevronUp className="w-4 h-4" />
-          </button>
-          <button
-            type="button"
-            onClick={() => goToPage(displayPage + 1)}
-            disabled={displayPage >= numPages}
-            className="p-1 rounded hover:bg-foreground/5 disabled:opacity-30 transition-colors cursor-pointer disabled:cursor-not-allowed"
-          >
-            <ChevronDown className="w-4 h-4" />
-          </button>
-          <form onSubmit={handlePageInputSubmit} className="flex items-center gap-1 ml-1">
-            <input
-              type="text"
-              value={pageInput}
-              onChange={(e) => setPageInput(e.target.value)}
-              className="w-10 text-center text-label-sm border border-foreground/10 rounded px-1 py-0.5 bg-white focus:outline-none focus:border-foreground/20"
-            />
-            <span className="text-label-sm text-muted-foreground">/ {numPages || "—"}</span>
-          </form>
-        </div>
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={zoomOut}
-            disabled={scale <= 0.5}
-            className="p-1 rounded hover:bg-foreground/5 disabled:opacity-30 transition-colors cursor-pointer disabled:cursor-not-allowed"
-          >
-            <ZoomOut className="w-4 h-4" />
-          </button>
-          <span className="text-label-sm text-muted-foreground w-12 text-center">
-            {Math.round(scale * 100)}%
-          </span>
-          <button
-            type="button"
-            onClick={zoomIn}
-            disabled={scale >= 3}
-            className="p-1 rounded hover:bg-foreground/5 disabled:opacity-30 transition-colors cursor-pointer disabled:cursor-not-allowed"
-          >
-            <ZoomIn className="w-4 h-4" />
-          </button>
-        </div>
+      {/* Toolbar — single unified bar */}
+      <div className="flex items-center gap-0.5 px-2 h-12 border-b border-foreground/6 shrink-0">
+        {onClose && (
+          <PillButton size="compact" variant="icon" onClick={onClose} label="Close">
+            <PanelRightClose className="w-4 h-4" />
+          </PillButton>
+        )}
+
+        {onClose && <div className="w-px h-4 bg-foreground/8 mx-1" />}
+
+        {/* Page navigation */}
+        <PillButton size="compact" variant="icon" onClick={() => goToPage(displayPage - 1)} disabled={displayPage <= 1}>
+          <ChevronUp className="w-3.5 h-3.5" />
+        </PillButton>
+        <PillButton size="compact" variant="icon" onClick={() => goToPage(displayPage + 1)} disabled={displayPage >= numPages}>
+          <ChevronDown className="w-3.5 h-3.5" />
+        </PillButton>
+        <form onSubmit={handlePageInputSubmit} className="flex items-center gap-1 ml-0.5">
+          <input
+            type="text"
+            value={pageInput}
+            onChange={(e) => setPageInput(e.target.value)}
+            className="w-9 text-center text-label-sm border border-foreground/8 rounded px-1 py-0.5 bg-white focus:outline-none focus:border-foreground/20"
+          />
+          <span className="text-label-sm text-muted-foreground/40">/ {numPages || "—"}</span>
+        </form>
+
+        <div className="flex-1" />
+
+        {/* Zoom */}
+        <PillButton size="compact" variant="icon" onClick={zoomOut} disabled={scale <= 0.5}>
+          <ZoomOut className="w-3.5 h-3.5" />
+        </PillButton>
+        <span className="text-[11px] text-muted-foreground/40 w-10 text-center tabular-nums">
+          {Math.round(scale * 100)}%
+        </span>
+        <PillButton size="compact" variant="icon" onClick={zoomIn} disabled={scale >= 3}>
+          <ZoomIn className="w-3.5 h-3.5" />
+        </PillButton>
+
+        {onClose && (
+          <>
+            <div className="w-px h-4 bg-foreground/8 mx-1" />
+            <PillButton size="compact" variant="icon" onClick={() => window.open(fileUrl, "_blank")} label="Download">
+              <Download className="w-3.5 h-3.5" />
+            </PillButton>
+          </>
+        )}
       </div>
 
       {/* PDF content */}

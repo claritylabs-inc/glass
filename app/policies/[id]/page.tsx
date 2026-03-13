@@ -4,7 +4,7 @@ import { use, useState, useMemo, useRef, useEffect } from "react";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
-import { Nav } from "@/components/nav";
+import { AppShell } from "@/components/app-shell";
 import { FadeIn } from "@/components/ui/fade-in";
 import { ArrowLeft, Download, FileText, Calendar, Shield, DollarSign, Trash2, Upload, ChevronDown, ChevronRight, Loader2, RotateCw, Scale, Phone, Receipt, AlertTriangle, Users, Eye, Mail, MessageSquare, Activity, CheckCircle, XCircle, RefreshCw, Asterisk, X } from "lucide-react";
 import { motion } from "framer-motion";
@@ -12,7 +12,6 @@ import dayjs from "dayjs";
 import { ModeBadge } from "@/components/mode-badge";
 import { MessageBubble, type Conversation } from "@/components/conversation-message";
 import { Skeleton } from "@/components/ui/skeleton";
-import { FixedMobileFooter } from "@/components/ui/fixed-mobile-footer";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { POLICY_TYPE_LABELS } from "@/convex/lib/policyTypes";
@@ -28,13 +27,8 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { RetryExtractionModal } from "@/components/ui/retry-extraction-modal";
-import { PdfProvider, usePdf } from "@/components/pdf-context";
-import dynamic from "next/dynamic";
-
-const PdfPanel = dynamic(
-  () => import("@/components/ui/pdf-panel").then((m) => ({ default: m.PdfPanel })),
-  { ssr: false }
-);
+import { usePdf } from "@/components/pdf-context";
+import { usePageContext } from "@/hooks/use-page-context";
 
 const TYPE_COLORS: Record<string, string> = {
   general_liability: "bg-blue-100 text-blue-700",
@@ -411,14 +405,14 @@ function PolicyTypeTags({ types }: { types: string[] }) {
   );
 }
 
-function ViewPdfButton() {
-  const { fileUrl, isPdfOpen, togglePdf } = usePdf();
-  if (!fileUrl) return null;
+function ViewPdfButton({ url }: { url?: string | null }) {
+  const { isPdfOpen, togglePdf, openWithUrl } = usePdf();
+  if (!url) return null;
 
   return (
     <PillButton
       variant="primary"
-      onClick={togglePdf}
+      onClick={() => isPdfOpen ? togglePdf() : openWithUrl(url)}
       className="hidden lg:inline-flex"
     >
       <Eye className="w-3.5 h-3.5" />
@@ -435,104 +429,8 @@ type PolicyThread = {
   latestTime: number;
 };
 
-function PolicyThreadItem({
-  thread,
-  isSelected,
-  onSelect,
-}: {
-  thread: PolicyThread;
-  isSelected: boolean;
-  onSelect: () => void;
-}) {
-  const msgCount = thread.messages.reduce((n, m) => n + 1 + (m.responseBody ? 1 : 0), 0);
-
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className={`w-full text-left px-4 py-3 border-b border-foreground/4 transition-colors cursor-pointer ${
-        isSelected
-          ? "bg-foreground/[0.04]"
-          : "hover:bg-foreground/[0.02]"
-      }`}
-    >
-      <div className="flex items-center gap-2 mb-1">
-        <span className="text-body-sm font-medium text-foreground truncate flex-1">
-          {thread.root.subject}
-        </span>
-        <ModeBadge mode={thread.root.mode} />
-      </div>
-      <div className="flex items-center gap-2">
-        <span className="text-label-sm text-muted-foreground/50 truncate flex-1">
-          {thread.root.fromName ?? thread.root.fromEmail}
-        </span>
-        {msgCount > 1 && (
-          <span className="text-[10px] text-muted-foreground/30 shrink-0">
-            {msgCount} msgs
-          </span>
-        )}
-        <span className="text-[11px] text-muted-foreground/30 shrink-0">
-          {dayjs(thread.latestTime).format("MMM D")}
-        </span>
-      </div>
-    </button>
-  );
-}
-
-function PolicyThreadDetail({
-  thread,
-  onBack,
-}: {
-  thread: PolicyThread;
-  onBack: () => void;
-}) {
-  const messagesRef = useRef<HTMLDivElement>(null);
-  const prevThreadId = useRef<string | null>(null);
-
-  useEffect(() => {
-    const el = messagesRef.current;
-    if (!el) return;
-    const isNewThread = prevThreadId.current !== thread.root._id;
-    prevThreadId.current = thread.root._id;
-    el.scrollTo({ top: el.scrollHeight, behavior: isNewThread ? "instant" : "smooth" });
-  }, [thread.root._id, thread.messages.length]);
-
-  return (
-    <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-foreground/4 shrink-0">
-        <button
-          type="button"
-          onClick={onBack}
-          className="p-1 -ml-1 rounded hover:bg-foreground/5 transition-colors cursor-pointer"
-        >
-          <ArrowLeft className="w-4 h-4 text-muted-foreground" />
-        </button>
-        <div className="flex-1 min-w-0">
-          <h4 className="!mb-0 text-body-sm font-semibold truncate">{thread.root.subject}</h4>
-          <p className="text-label-sm text-muted-foreground/50 truncate">
-            {thread.root.fromName ? `${thread.root.fromName} <${thread.root.fromEmail}>` : thread.root.fromEmail}
-          </p>
-        </div>
-        <ModeBadge mode={thread.root.mode} />
-      </div>
-
-      {/* Messages */}
-      <div ref={messagesRef} className="flex-1 overflow-y-auto p-4 space-y-4">
-        {thread.messages.map((msg) => (
-          <MessageBubble key={msg._id} conv={msg} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-const CONVERSATIONS_HEIGHT_DESKTOP = "calc(100dvh - 10rem)";
-const CONVERSATIONS_HEIGHT_MOBILE = "calc(100dvh - 9rem)";
 
 function PolicyConversationsTab({ conversations }: { conversations: Conversation[] | undefined }) {
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-
   // Group into threads
   const threads = useMemo(() => {
     if (!conversations) return undefined;
@@ -556,17 +454,10 @@ function PolicyConversationsTab({ conversations }: { conversations: Conversation
 
     for (const thread of threadMap.values()) {
       thread.messages.sort((a, b) => a._creationTime - b._creationTime);
-      if (!thread.messages.find((m) => m._id === thread.root._id)) {
-        thread.messages.unshift(thread.root);
-      }
     }
 
     return Array.from(threadMap.values()).sort((a, b) => b.latestTime - a.latestTime);
   }, [conversations]);
-
-  const selectedThread = threads?.find(
-    (t) => t.root._id === selectedId || t.messages.some((m) => m._id === selectedId),
-  );
 
   if (conversations === undefined) {
     return (
@@ -590,82 +481,46 @@ function PolicyConversationsTab({ conversations }: { conversations: Conversation
 
   return (
     <div className="rounded-lg border border-foreground/6 bg-white/60 overflow-hidden">
-      {/* Desktop: sidebar + detail */}
-      <div className="hidden md:flex" style={{ height: CONVERSATIONS_HEIGHT_DESKTOP }}>
-        {/* Thread list */}
-        <div className="w-72 shrink-0 border-r border-foreground/4 flex flex-col">
-          <div className="px-4 py-2.5 bg-foreground/[0.02] border-b border-foreground/4 shrink-0">
-            <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">
-              Threads
-              <span className="ml-1.5 text-[10px] font-medium bg-foreground/8 text-muted-foreground px-1.5 py-0.5 rounded-full leading-none">
-                {threads.length}
-              </span>
-            </p>
-          </div>
-          <div className="flex-1 overflow-y-auto">
-            {threads.map((thread) => (
-              <PolicyThreadItem
-                key={thread.root._id}
-                thread={thread}
-                isSelected={selectedThread?.root._id === thread.root._id}
-                onSelect={() => setSelectedId(thread.root._id)}
-              />
-            ))}
-          </div>
-        </div>
-
-        {/* Detail panel */}
-        <div className="flex-1 min-w-0">
-          {selectedThread ? (
-            <PolicyThreadDetail
-              thread={selectedThread}
-              onBack={() => setSelectedId(null)}
-            />
-          ) : (
-            <div className="flex items-center justify-center h-full">
-              <div className="text-center">
-                <Mail className="w-8 h-8 text-muted-foreground/15 mx-auto mb-2" />
-                <p className="text-body-sm text-muted-foreground/40">
-                  Select a conversation
-                </p>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Mobile: stacked list or detail */}
-      <div className="md:hidden flex flex-col" style={{ height: CONVERSATIONS_HEIGHT_MOBILE }}>
-        {selectedThread ? (
-          <div className="flex-1 min-h-0">
-            <PolicyThreadDetail
-              thread={selectedThread}
-              onBack={() => setSelectedId(null)}
-            />
-          </div>
-        ) : (
-          <>
-            <div className="px-4 py-2.5 bg-foreground/[0.02] border-b border-foreground/4 shrink-0">
-              <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">
-                Threads
-                <span className="ml-1.5 text-[10px] font-medium bg-foreground/8 text-muted-foreground px-1.5 py-0.5 rounded-full leading-none">
-                  {threads.length}
-                </span>
-              </p>
-            </div>
-            <div className="flex-1 overflow-y-auto">
-              {threads.map((thread) => (
-                <PolicyThreadItem
-                  key={thread.root._id}
-                  thread={thread}
-                  isSelected={false}
-                  onSelect={() => setSelectedId(thread.root._id)}
-                />
-              ))}
-            </div>
-          </>
-        )}
-      </div>
+      <table className="w-full text-body-sm">
+        <thead>
+          <tr className="border-b border-foreground/6 bg-foreground/2">
+            <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Subject</th>
+            <th className="text-left px-4 py-2.5 font-medium text-muted-foreground hidden sm:table-cell">From</th>
+            <th className="text-left px-4 py-2.5 font-medium text-muted-foreground hidden md:table-cell">Mode</th>
+            <th className="text-right px-4 py-2.5 font-medium text-muted-foreground">Messages</th>
+          </tr>
+        </thead>
+        <tbody>
+          {threads.map((thread) => {
+            const root = thread.root;
+            const msgCount = thread.messages.reduce((n, m) => n + 1 + (m.responseBody ? 1 : 0), 0);
+            return (
+              <tr key={root._id} className="border-b border-foreground/4 last:border-0 hover:bg-foreground/[0.02] transition-colors">
+                <td className="px-4 py-2.5">
+                  <Link
+                    href={`/agent/thread/${root._id}`}
+                    className="text-foreground font-medium hover:underline"
+                  >
+                    {root.subject}
+                  </Link>
+                  <p className="text-label-sm text-muted-foreground/40 mt-0.5">
+                    {dayjs(thread.latestTime).format("MMM D, YYYY")}
+                  </p>
+                </td>
+                <td className="px-4 py-2.5 text-muted-foreground hidden sm:table-cell">
+                  {root.fromName ?? root.fromEmail}
+                </td>
+                <td className="px-4 py-2.5 hidden md:table-cell">
+                  <ModeBadge mode={root.mode} />
+                </td>
+                <td className="px-4 py-2.5 text-right text-muted-foreground/60 tabular-nums">
+                  {msgCount}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -780,19 +635,6 @@ function PolicyActivityTab({ policyId }: { policyId: string }) {
   );
 }
 
-function PolicyLayoutContainer({ children, panel }: { children: React.ReactNode; panel: React.ReactNode }) {
-  const { isPdfOpen, fileUrl } = usePdf();
-  const hasPdfPanel = isPdfOpen && !!fileUrl;
-
-  return (
-    <div className={`mx-auto px-4 md:px-8 py-6 ${hasPdfPanel ? "max-w-[108rem] flex gap-6 items-start" : "max-w-6xl"}`}>
-      <div className={hasPdfPanel ? "flex-1 min-w-0" : undefined}>
-        {children}
-      </div>
-      {panel}
-    </div>
-  );
-}
 
 export default function PolicyDetailPage({
   params,
@@ -823,6 +665,29 @@ export default function PolicyDetailPage({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [activeTab, setActiveTab] = useState<"details" | "conversations" | "activity">("details");
 
+  const { openWithUrl } = usePdf();
+  const { setPageContext } = usePageContext();
+  useEffect(() => {
+    if (policy) {
+      const types = policy.policyTypes ?? (policy.policyType ? [policy.policyType] : []);
+      setPageContext({
+        pageType: "policy",
+        entityId: policy._id,
+        summary: `${policy.carrier ?? "Unknown"} ${policy.policyNumber ?? ""} — ${types.join(", ")}`,
+      });
+    }
+    return () => setPageContext(null);
+  }, [policy, setPageContext]);
+  const didAutoOpen = useRef(false);
+  useEffect(() => {
+    if (fileUrl && !didAutoOpen.current) {
+      didAutoOpen.current = true;
+      if (initialPage) {
+        openWithUrl(fileUrl, initialPage);
+      }
+    }
+  }, [fileUrl, initialPage, openWithUrl]);
+
   const conversations = useQuery(
     api.agentConversations.listByPolicyId,
     policy ? { policyId: policy._id } : "skip",
@@ -830,96 +695,39 @@ export default function PolicyDetailPage({
 
   if (policy === undefined) {
     return (
-      <div className="min-h-screen flex flex-col">
-        <Nav />
-        <main className="flex-1">
-          <div className="max-w-6xl mx-auto px-4 md:px-8 py-6">
-            {/* Back link */}
-            <Skeleton className="h-4 w-28 mb-4" />
-
-            {/* Title + tags */}
-            <div className="flex items-start justify-between mb-6">
-              <div>
-                <Skeleton className="h-7 w-48 mb-2" />
-                <div className="flex gap-1.5">
-                  <Skeleton className="h-5 w-24 rounded-full" />
-                  <Skeleton className="h-5 w-20 rounded-full" />
-                </div>
-              </div>
-              <div className="hidden md:flex items-center gap-2">
-                <Skeleton className="h-8 w-8 rounded-md" />
-                <Skeleton className="h-8 w-8 rounded-md" />
-                <Skeleton className="h-8 w-8 rounded-md" />
-              </div>
-            </div>
-
-            {/* Info grid */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-              {Array.from({ length: 3 }).map((_, i) => (
-                <div key={i} className="rounded-lg border border-foreground/6 bg-white/60 px-4 py-3">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Skeleton className="h-4 w-4" />
-                    <Skeleton className="h-3 w-20" />
-                  </div>
-                  <Skeleton className="h-5 w-32 mb-1" />
-                  <Skeleton className="h-3 w-24" />
-                </div>
-              ))}
-            </div>
-
-            {/* Summary */}
-            <div className="rounded-lg border border-foreground/6 bg-white/60 px-4 py-3 mb-6">
-              <Skeleton className="h-3 w-16 mb-2" />
-              <Skeleton className="h-4 w-full mb-1.5" />
-              <Skeleton className="h-4 w-3/4" />
-            </div>
-
-            {/* Coverages table */}
-            <div className="rounded-lg border border-foreground/6 bg-white/60 overflow-hidden mb-6">
-              <div className="px-4 py-2.5 bg-foreground/[0.02] border-b border-foreground/4">
-                <Skeleton className="h-4 w-28" />
-              </div>
-              <table className="w-full text-left">
-                <thead>
-                  <tr className="bg-foreground/[0.02]">
-                    <th className="px-4 py-2.5"><Skeleton className="h-3 w-16" /></th>
-                    <th className="px-4 py-2.5 text-right"><Skeleton className="h-3 w-10 ml-auto" /></th>
-                    <th className="hidden sm:table-cell px-4 py-2.5 text-right"><Skeleton className="h-3 w-16 ml-auto" /></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {Array.from({ length: 4 }).map((_, i) => (
-                    <tr key={i} className="border-t border-foreground/4">
-                      <td className="px-4 py-2.5"><Skeleton className="h-4 w-36" /></td>
-                      <td className="px-4 py-2.5 text-right"><Skeleton className="h-4 w-20 ml-auto" /></td>
-                      <td className="hidden sm:table-cell px-4 py-2.5 text-right"><Skeleton className="h-4 w-16 ml-auto" /></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+      <AppShell>
+        <Skeleton className="h-4 w-28 mb-4" />
+        <div className="flex items-start justify-between mb-6">
+          <div>
+            <Skeleton className="h-7 w-48 mb-2" />
+            <div className="flex gap-1.5">
+              <Skeleton className="h-5 w-24 rounded-full" />
+              <Skeleton className="h-5 w-20 rounded-full" />
             </div>
           </div>
-        </main>
-      </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="rounded-lg border border-foreground/6 bg-white/60 px-4 py-3">
+              <Skeleton className="h-5 w-32 mb-1" />
+              <Skeleton className="h-3 w-24" />
+            </div>
+          ))}
+        </div>
+      </AppShell>
     );
   }
 
   if (policy === null) {
     return (
-      <div className="min-h-screen flex flex-col">
-        <Nav />
-        <main className="flex-1 flex items-center justify-center">
-          <div className="text-center">
-            <p className="text-muted-foreground mb-2">Policy not found</p>
-            <Link
-              href="/policies"
-              className="text-primary hover:underline text-body-sm"
-            >
-              Back to policies
-            </Link>
-          </div>
-        </main>
-      </div>
+      <AppShell>
+        <div className="text-center py-12">
+          <p className="text-muted-foreground mb-2">Policy not found</p>
+          <Link href="/policies" className="text-primary hover:underline text-body-sm">
+            Back to policies
+          </Link>
+        </div>
+      </AppShell>
     );
   }
 
@@ -970,12 +778,59 @@ export default function PolicyDetailPage({
     }
   };
 
+  const breadcrumbLabel = `${policy.carrier} ${policy.policyNumber}`;
+
+  const headerActions = (
+    <>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".pdf"
+        onChange={handleUpload}
+        className="hidden"
+      />
+      {!isDeleted && (
+        <PillButton
+          size="compact"
+          variant="icon"
+          label="Delete"
+          onClick={() => setShowDeleteDialog(true)}
+        >
+          <Trash2 className="w-4 h-4" />
+        </PillButton>
+      )}
+      {policy.emailId && (
+        <RetryExtractionModal
+          policyId={id}
+          hasRawResponse={!!policy.hasRawResponse}
+          hasRawMetadata={!!policy.hasRawMetadata}
+          hasDocument={!!policyDocument}
+          trigger={
+            <PillButton size="compact" variant="icon" label="Re-extract">
+              <RotateCw className="w-4 h-4" />
+            </PillButton>
+          }
+        />
+      )}
+      <PillButton
+        size="compact"
+        variant="icon"
+        label="Upload"
+        onClick={() => fileInputRef.current?.click()}
+        disabled={uploading}
+      >
+        {uploading ? (
+          <Loader2 className="w-4 h-4 animate-spin" />
+        ) : (
+          <Upload className="w-4 h-4" />
+        )}
+      </PillButton>
+      <ViewPdfButton url={fileUrl} />
+    </>
+  );
+
   return (
-    <PdfProvider fileUrl={fileUrl ?? null} initialPage={initialPage}>
-      <div className="min-h-screen flex flex-col">
-        <Nav />
-        <main className="flex-1 pb-12 md:pb-0">
-          <PolicyLayoutContainer panel={<PdfPanel />}>
+      <AppShell breadcrumbDetail={breadcrumbLabel} actions={headerActions}>
                 <FadeIn when={true} staggerIndex={0} duration={0.6}>
                   <Link
                     href="/policies"
@@ -998,66 +853,20 @@ export default function PolicyDetailPage({
                     </div>
                   )}
 
-                  <div className="flex items-start justify-between mb-6">
-                    <div className="min-w-0 flex-1 mr-4">
-                      <div className="flex items-center gap-3 mb-1">
-                        <h1 className="!mb-0 break-all">{policy.policyNumber}</h1>
-                        {documentType === "quote" && (
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-label-sm font-medium bg-yellow-100 text-yellow-800">
-                            Quote
-                          </span>
-                        )}
-                        {policy.isRenewal && (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium bg-amber-100 text-amber-700">
-                            Renewal
-                          </span>
-                        )}
-                      </div>
+                  <div className="mb-6">
+                    <h1 className="!mb-0 break-all">{policy.policyNumber}</h1>
+                    <div className="flex items-center gap-2 flex-wrap mt-1">
+                      {documentType === "quote" && (
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-label-sm font-medium bg-yellow-100 text-yellow-800">
+                          Quote
+                        </span>
+                      )}
+                      {policy.isRenewal && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium bg-amber-100 text-amber-700">
+                          Renewal
+                        </span>
+                      )}
                       <PolicyTypeTags types={policyTypes} />
-                    </div>
-                    <div className="hidden md:flex items-center gap-2">
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept=".pdf"
-                        onChange={handleUpload}
-                        className="hidden"
-                      />
-                      {!isDeleted && (
-                        <PillButton
-                          variant="icon"
-                          label="Delete"
-                          onClick={() => setShowDeleteDialog(true)}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </PillButton>
-                      )}
-                      {policy.emailId && (
-                        <RetryExtractionModal
-                          policyId={id}
-                          hasRawResponse={!!policy.hasRawResponse}
-                          hasRawMetadata={!!policy.hasRawMetadata}
-                          hasDocument={!!policyDocument}
-                          trigger={
-                            <PillButton variant="icon" label="Re-extract">
-                              <RotateCw className="w-4 h-4" />
-                            </PillButton>
-                          }
-                        />
-                      )}
-                      <PillButton
-                        variant="icon"
-                        label="Upload"
-                        onClick={() => fileInputRef.current?.click()}
-                        disabled={uploading}
-                      >
-                        {uploading ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <Upload className="w-4 h-4" />
-                        )}
-                      </PillButton>
-                      <ViewPdfButton />
                     </div>
                   </div>
                 </FadeIn>
@@ -1103,7 +912,7 @@ export default function PolicyDetailPage({
                 <div className="flex items-center gap-1 border-b border-foreground/6 mb-6">
                   {([
                     { id: "details" as const, label: "Details" },
-                    { id: "conversations" as const, label: "Conversations", count: conversations?.length },
+                    { id: "conversations" as const, label: "Threads", count: conversations?.length },
                     { id: "activity" as const, label: "Activity" },
                   ]).map((tab) => (
                     <button
@@ -1381,53 +1190,6 @@ export default function PolicyDetailPage({
                   <PolicyActivityTab policyId={id} />
                 )}
 
-          </PolicyLayoutContainer>
-        </main>
-
-        <FixedMobileFooter>
-          {!isDeleted && (
-            <PillButton
-              variant="icon"
-              onClick={() => setShowDeleteDialog(true)}
-            >
-              <Trash2 className="w-4 h-4" />
-            </PillButton>
-          )}
-          {policy.emailId && (
-            <RetryExtractionModal
-              policyId={id}
-              hasRawResponse={!!policy.hasRawResponse}
-              hasRawMetadata={!!policy.hasRawMetadata}
-              hasDocument={!!policyDocument}
-              trigger={
-                <PillButton variant="icon">
-                  <RotateCw className="w-4 h-4" />
-                </PillButton>
-              }
-            />
-          )}
-          <PillButton
-            variant="icon"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploading}
-          >
-            {uploading ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Upload className="w-4 h-4" />
-            )}
-          </PillButton>
-          {policy.fileId && fileUrl && (
-            <PillButton
-              variant="icon"
-              onClick={() => window.open(fileUrl, "_blank")}
-            >
-              <Download className="w-4 h-4" />
-            </PillButton>
-          )}
-        </FixedMobileFooter>
-
-      </div>
-    </PdfProvider>
+      </AppShell>
   );
 }

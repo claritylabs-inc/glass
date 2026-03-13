@@ -3,16 +3,15 @@
 import { useState, useMemo } from "react";
 import { useQuery, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { Nav } from "@/components/nav";
+import { AppShell } from "@/components/app-shell";
 import { FadeIn } from "@/components/ui/fade-in";
 import { PillButton } from "@/components/ui/pill-button";
-import { ArrowRight, Asterisk, Copy, Check, X, Loader2 } from "lucide-react";
+import { ArrowRight, Asterisk, Copy, Check, X, Loader2, Play, CheckCircle, FileInput } from "lucide-react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { toast } from "sonner";
-import { FixedMobileFooter } from "@/components/ui/fixed-mobile-footer";
 import { Skeleton } from "@/components/ui/skeleton";
-import { StatsCards } from "@/components/stats-cards";
+import { StatsCards, StatCard } from "@/components/stats-cards";
 import { CoverageByTypeSection, parseDollarAmount } from "@/components/coverage-by-type";
 import { POLICY_TYPE_LABELS } from "@/convex/lib/policyTypes";
 import dayjs from "dayjs";
@@ -46,6 +45,7 @@ export default function DashboardPage() {
   const quotes = useQuery(api.quotes.list, {});
   const viewer = useQuery(api.users.viewer);
   const agentStats = useQuery(api.agentConversations.stats);
+  const appStats = useQuery(api.applicationSessions.stats);
   const seedData = useAction(api.seed.seed);
   const hasDemoDataResult = useQuery(api.seed.hasDemoData);
   const [emailCopied, setEmailCopied] = useState(false);
@@ -142,30 +142,60 @@ export default function DashboardPage() {
 
   const isEmpty = policies && policies.length === 0 && quotes && quotes.length === 0;
 
+  const seedButton = isEmpty ? (
+    <PillButton size="compact" onClick={async () => { setSeeding(true); try { await seedData({}); } finally { setSeeding(false); } }} disabled={seeding}>
+      {seeding ? <><Loader2 className="w-3 h-3 animate-spin" /> Generating...</> : <>Seed Demo Data <ArrowRight className="w-3 h-3" /></>}
+    </PillButton>
+  ) : undefined;
+
   return (
-    <div className="min-h-screen flex flex-col">
-      <Nav />
-      <main className="flex-1">
-        <div className="max-w-6xl mx-auto px-4 md:px-8 py-6">
-          <FadeIn when={true} staggerIndex={0} duration={0.6}>
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h1 className="!mb-1">Dashboard</h1>
-                <p className="text-body-sm text-muted-foreground">
-                  Your policies, quotes, and coverage at a glance
-                </p>
-              </div>
-              {isEmpty && (
-                <div className="hidden md:block">
-                  <PillButton onClick={async () => { setSeeding(true); try { await seedData({}); } finally { setSeeding(false); } }} disabled={seeding}>
-                    {seeding ? <><Loader2 className="w-3 h-3 animate-spin" /> Generating...</> : <>Seed Demo Data <ArrowRight className="w-3 h-3" /></>}
-                  </PillButton>
-                </div>
-              )}
-            </div>
-          </FadeIn>
+    <AppShell actions={seedButton}>
+      <div className="max-w-5xl">
 
           <StatsCards stats={stats} quoteStats={quoteStats} />
+
+          {/* Application stats */}
+          {appStats && appStats.total > 0 && (
+            <FadeIn when={true} staggerIndex={1} duration={0.6}>
+              <Link href="/applications" className="block">
+                <motion.div
+                  whileHover={{
+                    scale: 1.01,
+                    boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.08), 0 2px 4px -4px rgb(0 0 0 / 0.08)",
+                    borderColor: "rgba(0,0,0,0.2)",
+                    backgroundColor: "white",
+                  }}
+                  whileTap={{ scale: 0.99 }}
+                  transition={{ type: "tween", duration: 0.2, ease: "easeOut" }}
+                  className="rounded-lg border border-foreground/6 bg-white/60 mb-6 cursor-pointer overflow-hidden"
+                >
+                  <div className="flex items-center justify-between px-4 py-2.5">
+                    <div className="flex items-center gap-2">
+                      <FileInput className="w-4 h-4 text-muted-foreground/50 shrink-0" />
+                      <span className="text-body-sm font-semibold text-foreground">Applications</span>
+                    </div>
+                    <span className="text-label-sm font-medium text-foreground flex items-center gap-1">
+                      View All <ArrowRight className="w-3 h-3" />
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-3 divide-x divide-foreground/6 border-t border-foreground/6">
+                    <div className="px-4 py-2.5">
+                      <p className="text-[11px] text-muted-foreground/50">Active</p>
+                      <p className="text-body-sm font-semibold text-foreground tabular-nums">{appStats.active}</p>
+                    </div>
+                    <div className="px-4 py-2.5">
+                      <p className="text-[11px] text-muted-foreground/50">Completed</p>
+                      <p className="text-body-sm font-semibold text-foreground tabular-nums">{appStats.completed}</p>
+                    </div>
+                    <div className="px-4 py-2.5">
+                      <p className="text-[11px] text-muted-foreground/50">Total</p>
+                      <p className="text-body-sm font-semibold text-foreground tabular-nums">{appStats.total}</p>
+                    </div>
+                  </div>
+                </motion.div>
+              </Link>
+            </FadeIn>
+          )}
 
           {/* Agent card */}
           {viewer && (
@@ -350,16 +380,8 @@ export default function DashboardPage() {
               </div>
             </FadeIn>
           )}
-        </div>
-      </main>
+      </div>
 
-      {isEmpty && (
-        <FixedMobileFooter>
-          <PillButton onClick={async () => { setSeeding(true); try { await seedData({}); } finally { setSeeding(false); } }} disabled={seeding}>
-            {seeding ? <><Loader2 className="w-3 h-3 animate-spin" /> Generating...</> : <>Seed Demo Data <ArrowRight className="w-3 h-3" /></>}
-          </PillButton>
-        </FixedMobileFooter>
-      )}
-    </div>
+    </AppShell>
   );
 }

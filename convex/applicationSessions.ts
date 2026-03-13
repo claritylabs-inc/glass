@@ -106,6 +106,33 @@ export const stats = query({
   },
 });
 
+/** Public mutation: update a single field's value by its ID. */
+export const updateFieldValue = mutation({
+  args: {
+    id: v.id("applicationSessions"),
+    fieldId: v.string(),
+    value: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const { orgId } = await requireOrgAccess(ctx);
+    const session = await ctx.db.get(args.id);
+    if (!session || session.orgId !== orgId) throw new Error("Not found");
+    const fields: FormField[] = parseFields(session.extractedFields);
+    const field = fields.find((f) => f.id === args.fieldId);
+    if (!field) throw new Error("Field not found");
+    (field as any).value = args.value || undefined;
+    if (args.value) (field as any).source = "manual";
+    const filledFields = fields.filter((f) => {
+      if (f.fieldType === "table") return ((f as any).rows?.length ?? 0) > 0;
+      return !!(f as any).value;
+    }).length;
+    await ctx.db.patch(args.id, {
+      extractedFields: JSON.stringify(fields),
+      filledFields,
+    });
+  },
+});
+
 export const cancel = mutation({
   args: { id: v.id("applicationSessions") },
   handler: async (ctx, args) => {
@@ -226,6 +253,31 @@ export const findActiveByOrg = internalQuery({
         (s) => !["complete", "cancelled"].includes(s.status) && s.status !== "extracting_fields" && s.status !== "filling_known",
       ) ?? null
     );
+  },
+});
+
+/** All application sessions for an org (used by agent for context) */
+export const listAllInternal = internalQuery({
+  args: { orgId: v.id("organizations") },
+  handler: async (ctx, args) => {
+    const sessions = await ctx.db
+      .query("applicationSessions")
+      .withIndex("by_orgId", (idx) => idx.eq("orgId", args.orgId))
+      .collect();
+    // Return lightweight summaries (no large JSON blobs)
+    return sessions.map((s) => ({
+      _id: s._id,
+      status: s.status,
+      applicationTitle: s.applicationTitle,
+      sourceFileName: s.sourceFileName,
+      totalFields: s.totalFields,
+      filledFields: s.filledFields,
+      confirmedFields: s.confirmedFields,
+      currentBatchIndex: s.currentBatchIndex,
+      completedAt: s.completedAt,
+      cancelledAt: s.cancelledAt,
+      _creationTime: s._creationTime,
+    }));
   },
 });
 

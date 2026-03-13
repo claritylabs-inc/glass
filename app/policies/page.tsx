@@ -3,7 +3,7 @@
 import { useState, useMemo } from "react";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { Nav } from "@/components/nav";
+import { AppShell } from "@/components/app-shell";
 import { PolicyTable } from "@/components/policy-table";
 import { PolicyGroupedView } from "@/components/policy-grouped-view";
 import { PolicyFilters } from "@/components/policy-filters";
@@ -49,19 +49,7 @@ export default function PoliciesPage() {
   }, [policies, selectedType, selectedCarrier, selectedYear]);
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <Nav />
-      <main className="flex-1">
-        <div className="max-w-6xl mx-auto px-4 md:px-8 py-6">
-          <FadeIn when={true} staggerIndex={0} duration={0.6}>
-            <div className="mb-6">
-              <h1 className="!mb-1">Policies</h1>
-              <p className="text-body-sm text-muted-foreground">
-                All your active and past insurance policies
-              </p>
-            </div>
-          </FadeIn>
-
+    <AppShell>
           {policies === undefined ? (
             <div className="space-y-3 mb-4">
               <div className="flex items-center gap-1 border-b border-foreground/6 pb-2">
@@ -98,8 +86,6 @@ export default function PoliciesPage() {
               groupBy={activeTab as "type" | "year"}
             />
           )}
-        </div>
-      </main>
-    </div>
+    </AppShell>
   );
 }

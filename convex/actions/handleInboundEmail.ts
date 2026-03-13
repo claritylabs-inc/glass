@@ -80,10 +80,19 @@ function parseAddressList(raw: string | string[] | undefined): string[] {
   return raw.split(",").map((a) => extractEmailAddress(a.trim())).filter(Boolean);
 }
 
-function findAgentHandle(addresses: string[]): string | null {
+function findAgentHandle(addresses: string[]): { handle: string; threadSuffix?: string } | null {
   for (const addr of addresses) {
     if (addr.endsWith(`@${getAgentDomain()}`)) {
-      return addr.split("@")[0];
+      const localPart = addr.split("@")[0];
+      // Parse handle+threadSuffix format (e.g. "company+abc12345@agent.domain")
+      const plusIdx = localPart.indexOf("+");
+      if (plusIdx !== -1) {
+        return {
+          handle: localPart.slice(0, plusIdx),
+          threadSuffix: localPart.slice(plusIdx + 1),
+        };
+      }
+      return { handle: localPart };
     }
   }
   return null;
@@ -290,12 +299,13 @@ export const processInbound = internalAction({
       return;
     }
 
-    // Find agent handle
-    const handle = findAgentHandle(allAddresses);
-    if (!handle) {
+    // Find agent handle (may include +threadSuffix for thread-specific routing)
+    const handleResult = findAgentHandle(allAddresses);
+    if (!handleResult) {
       console.log("No agent handle found in recipients:", allAddresses);
       return;
     }
+    const { handle, threadSuffix } = handleResult;
 
     // Resolve org by handle (org-first, then legacy user fallback)
     const org = await ctx.runQuery(internal.orgs.getByHandle, { handle });
@@ -312,7 +322,14 @@ export const processInbound = internalAction({
       .map((m: any) => m.user?.email)
       .filter(Boolean) as string[];
     const firstAdmin = orgMembers.find((m: any) => m.role === "admin");
-    const primaryUserId = org.primaryInsuranceContactId ?? firstAdmin?.userId;
+
+    // Match sender to an org member by email — so the right user is attributed
+    const senderMember = orgMembers.find(
+      (m: any) => m.user?.email?.toLowerCase() === fromEmail.toLowerCase(),
+    );
+    const primaryUserId = senderMember?.userId
+      ?? org.primaryInsuranceContactId
+      ?? firstAdmin?.userId;
 
     if (!primaryUserId) {
       console.log("No primary user found for org:", orgId);
@@ -327,10 +344,14 @@ export const processInbound = internalAction({
     const attachments = await fetchAttachments(data.email_id);
 
     // Detect mode
+    // agentAddress is the canonical address (without +suffix) — used for outbound from and reply-to
     const agentAddress = `${handle}@${getAgentDomain()}`;
-    const agentInTo = toAddresses.includes(agentAddress);
-    const agentInCc = ccAddresses.includes(agentAddress);
-    const otherToRecipients = toAddresses.filter((a) => a !== agentAddress);
+    // The actual recipient may include +threadSuffix, so also match that
+    const agentAddressWithSuffix = threadSuffix ? `${handle}+${threadSuffix}@${getAgentDomain()}` : null;
+    const isAgentAddr = (addr: string) => addr === agentAddress || addr === agentAddressWithSuffix;
+    const agentInTo = toAddresses.some(isAgentAddr);
+    const agentInCc = ccAddresses.some(isAgentAddr);
+    const otherToRecipients = toAddresses.filter((a) => !isAgentAddr(a));
 
     const senderDomain = fromEmail.split("@")[1]?.toLowerCase();
     const companyDomains = getCompanyDomains(org, memberEmails);
@@ -373,7 +394,34 @@ export const processInbound = internalAction({
     // Resolve thread
     let threadId: Id<"agentConversations"> | undefined;
     let threadRootMode: "direct" | "cc" | "forward" | "unknown" | undefined;
-    if (inReplyTo) {
+    // Track unified thread found via +suffix routing (may exist without legacy link)
+    let preResolvedUnifiedThreadId: Id<"threads"> | undefined;
+
+    // First: try resolving via +threadSuffix in the recipient address
+    // This is the most reliable method — the threadEmail is unique per thread
+    if (threadSuffix && agentAddressWithSuffix) {
+      const unifiedThread = await ctx.runQuery(
+        internal.threads.findByEmail,
+        { threadEmail: agentAddressWithSuffix },
+      );
+      if (unifiedThread) {
+        preResolvedUnifiedThreadId = unifiedThread._id;
+        if (unifiedThread.legacyConversationId) {
+          threadId = unifiedThread.legacyConversationId;
+          const legacyRoot = await ctx.runQuery(
+            internal.agentConversations.getById,
+            { id: unifiedThread.legacyConversationId },
+          );
+          threadRootMode = legacyRoot?.mode;
+        }
+        // If no legacyConversationId, this is a chat-originated thread.
+        // threadId stays undefined — we'll create a legacy conversation below
+        // but the unified thread is already resolved.
+      }
+    }
+
+    // Fallback: In-Reply-To header matching
+    if (!threadId && inReplyTo) {
       const parent = await ctx.runQuery(
         internal.agentConversations.findByMessageId,
         { messageId: inReplyTo },
@@ -402,6 +450,11 @@ export const processInbound = internalAction({
     let effectiveMode = threadRootMode ?? mode;
     if (effectiveMode === "direct" && !isInternal) {
       effectiveMode = "unknown";
+    }
+    // When an internal user replies to an unknown-mode thread, treat as direct.
+    // This lets the agent process their instruction instead of re-sending a notification.
+    if (effectiveMode === "unknown" && isInternal && threadId) {
+      effectiveMode = "direct";
     }
 
     // Store attachments in Convex file storage
@@ -459,6 +512,42 @@ export const processInbound = internalAction({
     await ctx.runMutation(internal.agentConversations.markProcessing, {
       id: conversationId,
     });
+
+    // ── Dual-write: unified threads table ──
+    let unifiedThreadId: Id<"threads"> | undefined = preResolvedUnifiedThreadId;
+    try {
+      if (!unifiedThreadId) {
+        unifiedThreadId = await ctx.runMutation(
+          internal.threads.findOrCreateForEmail,
+          {
+            orgId,
+            userId: primaryUserId,
+            subject,
+            legacyConversationId: threadId ?? conversationId,
+            mode: effectiveMode,
+            agentDomain: getAgentDomain(),
+          },
+        );
+      }
+
+      await ctx.runMutation(internal.threads.insertEmailMessage, {
+        threadId: unifiedThreadId,
+        orgId,
+        role: "user",
+        fromEmail,
+        fromName,
+        toAddresses,
+        ccAddresses: ccAddresses.length > 0 ? ccAddresses : undefined,
+        subject,
+        content: body,
+        contentHtml: bodyHtml,
+        messageId,
+        attachments: attachmentRecords.length > 0 ? attachmentRecords as any : undefined,
+        legacyConversationId: conversationId,
+      });
+    } catch (err) {
+      console.warn("Unified thread dual-write (inbound) failed:", err);
+    }
 
     // ── Application detection: reply to existing application thread ──
     // Try multiple strategies to find the active application session:
@@ -713,6 +802,22 @@ Respond with JSON only:
           responseTo: notifyEmail,
           responseMessageId: sentMessageId,
         });
+
+        // Dual-write: insert agent notification into unified thread
+        if (unifiedThreadId) {
+          try {
+            await ctx.runMutation(internal.threads.insertEmailMessage, {
+              threadId: unifiedThreadId,
+              orgId,
+              role: "agent",
+              content: notificationBody,
+              responseMessageId: sentMessageId,
+              legacyConversationId: conversationId,
+            });
+          } catch (err) {
+            console.warn("Unified thread dual-write (unknown-mode response) failed:", err);
+          }
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         console.error("Agent unknown-mode notification error:", message);
@@ -831,6 +936,24 @@ Respond with JSON only:
         systemContext += `\n\nATTACHMENTS: The user's email includes ${claudeAttachments.length} attachment(s): ${filenames}. The content has been provided to you. Reference relevant information from attachments in your response when applicable.`;
       }
 
+      // Email-sending instructions for internal users in direct mode
+      if (isInternal && effectiveMode === "direct") {
+        const autoSend = org.autoSendEmails === true;
+        systemContext += `\n\nEMAIL SENDING:
+You can send emails on behalf of team members. When a team member asks you to send/email/forward something to someone:
+${autoSend
+  ? `- Output ONLY "**Sending email to Name (email@example.com)...**" followed by a newline and then the final email body to send. Always include the recipient's email address in parentheses. Do NOT include any other text before or after.`
+  : `- ALWAYS draft first: show the email labeled as "**Draft email to Name (email@example.com):**" followed by the draft content. Then ask explicitly: "Ready to send?" Do NOT send without drafting first — even if the user says "send" or "email", always show the draft for review first.
+- Only after they explicitly approve the draft (e.g. "yes", "send it", "looks good", "go ahead"): output ONLY "**Sending email to Name (email@example.com)...**" followed by a newline and then the final email body to send. Always include the recipient's email address in parentheses. Do NOT include any other text before or after.`}
+
+For emails, compose a professional message that:
+- Addresses the recipient by name
+- Incorporates the team member's direction naturally
+- Maintains appropriate tone for the business relationship
+- References relevant policy/coverage data when applicable
+- Writes from Clarity Agent's perspective (third-person on behalf of the company). Do NOT sign off as the team member or impersonate them.`;
+      }
+
       // Call Claude Haiku
       const anthropic = new Anthropic();
       const response = await anthropic.messages.create({
@@ -842,6 +965,155 @@ Respond with JSON only:
 
       let responseBody =
         response.content[0].type === "text" ? response.content[0].text : "";
+
+      // ── Detect "Sending email to..." pattern for third-party sends ──
+      const sendMatch = responseBody.match(/\*?\*?Sending email to (.+?)\.\.\.\*?\*?\s*\n([\s\S]+)$/i);
+      if (isInternal && sendMatch) {
+        try {
+          const emailBody = sendMatch[2].trim();
+          const recipientHint = sendMatch[1].trim();
+          const hintEmailMatch = recipientHint.match(/[\w.+-]+@[\w.-]+\.\w+/);
+          const thirdPartyEmail = hintEmailMatch?.[0];
+          if (!thirdPartyEmail) throw new Error("No recipient email found in agent output");
+
+          const stripMd = (text: string) => {
+            let r = text;
+            r = r.replace(/^#{1,6}\s+(.+)$/gm, "$1");
+            r = r.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, "$1 ($2)");
+            r = r.replace(/\*\*(.+?)\*\*/g, "$1");
+            r = r.replace(/\*(.+?)\*/g, "$1");
+            return r;
+          };
+          const mdToHtml = (text: string) => {
+            const ls = 'style="color:#2563eb;text-decoration:underline"';
+            let r = text;
+            r = r.replace(/^#{1,6}\s+(.+)$/gm, "<strong>$1</strong>");
+            r = r.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, `<a href="$2" ${ls}>$1</a>`);
+            r = r.replace(/(?<!href=")(https?:\/\/[^\s<)]+)/g, `<a href="$1" ${ls}>$1</a>`);
+            r = r.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+            r = r.replace(/\*(.+?)\*/g, "<em>$1</em>");
+            return r;
+          };
+
+          const sig = buildSignature(agentAddress, org.name);
+          const plainText = stripMd(emailBody) + sig.text;
+          const htmlBody = emailBody
+            .split("\n\n")
+            .map((p) => `<p style="margin:0 0 12px;line-height:1.5">${mdToHtml(p.replace(/\n/g, "<br>"))}</p>`)
+            .join("\n") + sig.html;
+
+          const sendSubject = subject.replace(/^\[Clarity Agent\]\s*Help needed:\s*/i, "");
+          const replySub = sendSubject.startsWith("Re:") ? sendSubject : `Re: ${sendSubject}`;
+
+          const sendCc = [fromEmail]; // CC the internal user who gave the instruction
+
+          const sendPayload: Record<string, unknown> = {
+            from: `Clarity Agent <${agentAddress}>`,
+            to: thirdPartyEmail,
+            cc: sendCc,
+            subject: replySub,
+            text: plainText,
+            html: htmlBody,
+          };
+          if (messageId) {
+            sendPayload.headers = {
+              "In-Reply-To": messageId,
+              "References": messageId,
+            };
+          }
+
+          // Check send delay setting
+          const sendDelay = org?.emailSendDelay ?? 5; // default 5 seconds
+
+          if (sendDelay > 0 && unifiedThreadId) {
+            // Queue email with delay
+            const scheduledSendTime = Date.now() + sendDelay * 1000;
+            const pendingEmailId = await ctx.runMutation(internal.pendingEmails.create, {
+              orgId,
+              threadId: unifiedThreadId,
+              emailPayload: JSON.stringify(sendPayload),
+              scheduledSendTime,
+              legacyConversationId: conversationId,
+              recipientEmail: thirdPartyEmail,
+              ccAddresses: sendCc,
+              subject: replySub,
+              emailBody,
+              referencedPolicyIds: relevantPolicyIds.length > 0 ? (relevantPolicyIds as Id<"policies">[]) : undefined,
+              referencedQuoteIds: relevantQuoteIds.length > 0 ? (relevantQuoteIds as Id<"quotes">[]) : undefined,
+            });
+
+            // Update legacy conversation to pending state
+            await ctx.runMutation(internal.agentConversations.updateResponse, {
+              id: conversationId,
+              responseBody: `Sending email to ${thirdPartyEmail} (CC: ${fromEmail})...`,
+              responseTo: thirdPartyEmail,
+              responseCc: sendCc,
+              referencedPolicyIds: relevantPolicyIds.length > 0 ? (relevantPolicyIds as Id<"policies">[]) : undefined,
+              referencedQuoteIds: relevantQuoteIds.length > 0 ? (relevantQuoteIds as Id<"quotes">[]) : undefined,
+            });
+
+            // Schedule the actual send
+            await ctx.scheduler.runAfter(
+              sendDelay * 1000,
+              internal.actions.sendPendingEmail.sendPending,
+              { id: pendingEmailId },
+            );
+          } else {
+            // Send immediately (delay = 0 or no unified thread)
+            const sendRes = await fetch("https://api.resend.com/emails", {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${process.env.AUTH_RESEND_KEY}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify(sendPayload),
+            });
+            const sendResBody = await sendRes.text();
+            if (!sendRes.ok) throw new Error(`Failed to send email: ${sendResBody}`);
+
+            let sentMsgId: string | undefined;
+            try { sentMsgId = JSON.parse(sendResBody).id; } catch {}
+
+            const confirmText = `Email sent to ${thirdPartyEmail} (CC: ${fromEmail}).`;
+            await ctx.runMutation(internal.agentConversations.updateResponse, {
+              id: conversationId,
+              responseBody: confirmText,
+              responseTo: thirdPartyEmail,
+              responseCc: sendCc,
+              responseMessageId: sentMsgId,
+              referencedPolicyIds:
+                relevantPolicyIds.length > 0 ? (relevantPolicyIds as Id<"policies">[]) : undefined,
+              referencedQuoteIds:
+                relevantQuoteIds.length > 0 ? (relevantQuoteIds as Id<"quotes">[]) : undefined,
+            });
+
+            // Dual-write to unified thread
+            if (unifiedThreadId) {
+              try {
+                await ctx.runMutation(internal.threads.insertEmailMessage, {
+                  threadId: unifiedThreadId,
+                  orgId,
+                  role: "agent",
+                  content: emailBody,
+                  toAddresses: [thirdPartyEmail],
+                  ccAddresses: sendCc,
+                  subject: replySub,
+                  responseMessageId: sentMsgId,
+                  referencedPolicyIds: relevantPolicyIds.length > 0 ? (relevantPolicyIds as any) : undefined,
+                  referencedQuoteIds: relevantQuoteIds.length > 0 ? (relevantQuoteIds as any) : undefined,
+                  legacyConversationId: conversationId,
+                });
+              } catch (err) {
+                console.warn("Unified thread dual-write (third-party send) failed:", err);
+              }
+            }
+          }
+          return; // done — third-party send handled
+        } catch (err) {
+          console.error("Third-party email send failed:", err);
+          // Fall through to normal reply with the agent's response
+        }
+      }
 
       // Domain guard: strip internal URLs from customer-facing replies
       if (effectiveMode === "cc" || effectiveMode === "forward") {
@@ -902,7 +1174,7 @@ Respond with JSON only:
       } else if (effectiveMode === "cc") {
         replyTo = fromEmail;
         replyCc = [...toAddresses, ...ccAddresses].filter(
-          (a) => a !== agentAddress && a !== fromEmail,
+          (a) => !isAgentAddr(a) && a !== fromEmail,
         );
       } else {
         replyTo = fromEmail;
@@ -995,6 +1267,26 @@ Respond with JSON only:
             ? (relevantQuoteIds as Id<"quotes">[])
             : undefined,
       });
+
+      // Dual-write: insert agent response into unified thread
+      if (unifiedThreadId) {
+        try {
+          await ctx.runMutation(internal.threads.insertEmailMessage, {
+            threadId: unifiedThreadId,
+            orgId,
+            role: "agent",
+            content: responseBody,
+            toAddresses: [replyTo],
+            ccAddresses: replyCc.length > 0 ? replyCc : undefined,
+            responseMessageId: sentMessageId,
+            referencedPolicyIds: relevantPolicyIds.length > 0 ? (relevantPolicyIds as any) : undefined,
+            referencedQuoteIds: relevantQuoteIds.length > 0 ? (relevantQuoteIds as any) : undefined,
+            legacyConversationId: conversationId,
+          });
+        } catch (err) {
+          console.warn("Unified thread dual-write (agent response) failed:", err);
+        }
+      }
 
       // Audit: log agent references to policies
       for (const pId of relevantPolicyIds) {

@@ -3,8 +3,10 @@
 import { useState } from "react";
 import { useQuery } from "convex/react";
 import Markdown from "react-markdown";
+import remarkBreaks from "remark-breaks";
 import dayjs from "dayjs";
-import { Asterisk, Loader2, Paperclip, FileText, Download } from "lucide-react";
+import { Asterisk, Loader2, Paperclip, FileText, Download, Mail as MailIcon } from "lucide-react";
+import { ContextReferenceCard } from "@/components/context-reference-card";
 import { Id } from "@/convex/_generated/dataModel";
 import { api } from "@/convex/_generated/api";
 
@@ -76,7 +78,7 @@ export function stripAttribution(text: string): string {
   return text.replace(/^\s*On [\s\S]+?wrote:\s*\n?/, "").trimStart();
 }
 
-const QUOTED_MARKDOWN_STYLES = "[&_p]:my-1 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_strong]:font-semibold [&_ul]:my-1 [&_ul]:pl-5 [&_ul]:list-disc [&_ol]:my-1 [&_ol]:pl-5 [&_ol]:list-decimal [&_li]:my-0.5 [&_a]:text-blue-500/60 [&_a]:underline";
+const QUOTED_MARKDOWN_STYLES = "[&_p]:my-1 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_strong]:font-semibold [&_ul]:my-1 [&_ul]:pl-5 [&_ul]:list-disc [&_ol]:my-1 [&_ol]:pl-5 [&_ol]:list-decimal [&_li]:my-0.5 [&_a]:text-blue-500/60 [&_a]:underline [&_h1]:text-[0.875rem] [&_h1]:font-semibold [&_h1]:mt-2 [&_h1]:mb-0.5 [&_h2]:text-[0.875rem] [&_h2]:font-semibold [&_h2]:mt-2 [&_h2]:mb-0.5 [&_h3]:text-[0.875rem] [&_h3]:font-semibold [&_h3]:mt-1.5 [&_h3]:mb-0.5 [&_h4]:text-[0.875rem] [&_h4]:font-semibold [&_h4]:mt-1 [&_h4]:mb-0.5 [&_h5]:text-[0.875rem] [&_h5]:font-semibold [&_h6]:text-[0.875rem] [&_h6]:font-semibold [&_em]:text-body-sm [&_hr]:my-2 [&_hr]:border-foreground/8";
 
 export function QuotedContent({ text }: { text: string }) {
   const cleaned = stripAttribution(stripSignature(text));
@@ -233,24 +235,32 @@ function AttachmentChip({
 }
 
 /* ── Single message bubble ── */
-export function MessageBubble({ conv, onOpenPdf, onRetry }: { conv: Conversation; onOpenPdf?: (url: string) => void; onRetry?: (convId: Id<"agentConversations">) => void }) {
+export function MessageBubble({ conv, onOpenPdf, onRetry, viewerEmail }: { conv: Conversation; onOpenPdf?: (url: string) => void; onRetry?: (convId: Id<"agentConversations">) => void; viewerEmail?: string }) {
   const [showQuoted, setShowQuoted] = useState(false);
   const { content: rawContent, quoted } = splitQuotedReply(conv.body || "");
   const content = rawContent ? unwrapEmailText(rawContent) : rawContent;
 
+  const isViewerMessage = viewerEmail && conv.fromEmail?.toLowerCase() === viewerEmail.toLowerCase();
+
   return (
     <>
       {/* Inbound message */}
-      <div className="max-w-xl">
+      <div className={`max-w-lg ${isViewerMessage ? "ml-auto" : ""}`}>
         <div className="mb-2">
           <div className="flex items-center justify-between">
             <span className="text-label-sm font-medium text-muted-foreground">
               {conv.fromName ?? conv.fromEmail}
             </span>
-            <span className="text-[11px] text-muted-foreground/30 shrink-0">
-              {dayjs(conv._creationTime).format("MMM D, h:mm A")}
-            </span>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <MailIcon className="w-3 h-3 text-muted-foreground/30" />
+              <span className="text-[11px] text-muted-foreground/30">Email</span>
+              <span className="text-muted-foreground/20 mx-0.5">·</span>
+              <span className="text-[11px] text-muted-foreground/30">
+                {dayjs(conv._creationTime).format("MMM D, h:mm A")}
+              </span>
+            </div>
           </div>
+          {!isViewerMessage && (
           <div className="flex flex-wrap gap-x-3 text-[11px] text-muted-foreground/35 mt-0.5">
             <span className="truncate">
               <span className="text-muted-foreground/25">To:</span>{" "}
@@ -263,8 +273,9 @@ export function MessageBubble({ conv, onOpenPdf, onRetry }: { conv: Conversation
               </span>
             )}
           </div>
+          )}
         </div>
-        <div className="rounded-lg bg-foreground/[0.02] border border-foreground/6 p-4">
+        <div className={`rounded-lg border border-foreground/6 p-4 ${isViewerMessage ? "bg-foreground/[0.04]" : "bg-foreground/[0.02]"}`}>
           {content ? (
             <p className="text-body-sm text-foreground whitespace-pre-wrap">{content}</p>
           ) : (
@@ -275,9 +286,9 @@ export function MessageBubble({ conv, onOpenPdf, onRetry }: { conv: Conversation
               <button
                 type="button"
                 onClick={() => setShowQuoted(!showQuoted)}
-                className="mt-2 px-1.5 py-0.5 rounded bg-foreground/[0.04] border border-foreground/6 text-[11px] text-muted-foreground/40 hover:text-muted-foreground/60 hover:bg-foreground/[0.06] transition-colors cursor-pointer"
+                className="mt-1.5 text-[11px] text-muted-foreground/40 hover:text-muted-foreground/60 transition-colors cursor-pointer"
               >
-                {showQuoted ? "Hide quoted text" : "Show quoted text"}
+                {showQuoted ? "Hide quoted text \u25B4" : "Show quoted text \u25BE"}
               </button>
               {showQuoted && (
                 <QuotedContent text={quoted} />
@@ -303,7 +314,7 @@ export function MessageBubble({ conv, onOpenPdf, onRetry }: { conv: Conversation
       )}
 
       {conv.responseBody && (
-        <div className="max-w-xl ml-auto">
+        <div className="max-w-lg ml-auto">
           <div className="mb-2">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1">
@@ -312,11 +323,16 @@ export function MessageBubble({ conv, onOpenPdf, onRetry }: { conv: Conversation
                   Clarity Agent
                 </span>
               </div>
-              <span className="text-[11px] text-muted-foreground/30 shrink-0">
-                {conv.responseSentAt
-                  ? dayjs(conv.responseSentAt).format("MMM D, h:mm A")
-                  : ""}
-              </span>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <MailIcon className="w-3 h-3 text-muted-foreground/30" />
+                <span className="text-[11px] text-muted-foreground/30">Email</span>
+                <span className="text-muted-foreground/20 mx-0.5">·</span>
+                <span className="text-[11px] text-muted-foreground/30">
+                  {conv.responseSentAt
+                    ? dayjs(conv.responseSentAt).format("MMM D, h:mm A")
+                    : ""}
+                </span>
+              </div>
             </div>
             {conv.responseTo && (
               <div className="flex flex-wrap gap-x-3 text-[11px] text-muted-foreground/35 mt-0.5">
@@ -333,8 +349,15 @@ export function MessageBubble({ conv, onOpenPdf, onRetry }: { conv: Conversation
               </div>
             )}
           </div>
-          <div className="rounded-lg bg-white border border-foreground/6 p-4 text-body-sm text-foreground [&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_strong]:font-semibold [&_ul]:my-2 [&_ul]:pl-5 [&_ul]:list-disc [&_ol]:my-2 [&_ol]:pl-5 [&_ol]:list-decimal [&_li]:my-0.5 [&_a]:text-blue-600 [&_a]:underline [&_h1]:text-base [&_h1]:font-semibold [&_h1]:mt-3 [&_h1]:mb-1 [&_h2]:text-body-sm [&_h2]:font-semibold [&_h2]:mt-3 [&_h2]:mb-1 [&_h3]:text-body-sm [&_h3]:font-semibold [&_h3]:mt-2 [&_h3]:mb-1 leading-relaxed">
-              <Markdown>{conv.responseBody}</Markdown>
+          <div className="rounded-lg bg-white border border-foreground/6 p-4 text-body-sm text-foreground leading-relaxed [&_p]:my-3 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_strong]:font-semibold [&_ul]:my-3 [&_ul]:pl-5 [&_ul]:list-disc [&_ol]:my-3 [&_ol]:pl-5 [&_ol]:list-decimal [&_li]:my-0.5 [&_a]:text-blue-600 [&_a]:underline [&_h1]:text-[0.875rem] [&_h1]:font-semibold [&_h1]:mt-3 [&_h1]:mb-1 [&_h2]:text-[0.875rem] [&_h2]:font-semibold [&_h2]:mt-3 [&_h2]:mb-1 [&_h3]:text-[0.875rem] [&_h3]:font-semibold [&_h3]:mt-2.5 [&_h3]:mb-0.5 [&_h4]:text-[0.875rem] [&_h4]:font-semibold [&_h4]:mt-2 [&_h4]:mb-0.5 [&_h5]:text-[0.875rem] [&_h5]:font-semibold [&_h6]:text-[0.875rem] [&_h6]:font-semibold [&_hr]:my-3 [&_hr]:border-foreground/8 [&_code]:text-[12px] [&_code]:bg-foreground/[0.04] [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded">
+              <Markdown remarkPlugins={[remarkBreaks]} components={{
+                a: ({ href, children }) => {
+                  if (href?.startsWith("/policies/") || href?.startsWith("/quotes/")) {
+                    return <ContextReferenceCard href={href}>{children}</ContextReferenceCard>;
+                  }
+                  return <a href={href} className="text-blue-600 underline" target="_blank" rel="noopener noreferrer">{children}</a>;
+                },
+              }}>{conv.responseBody}</Markdown>
           </div>
         </div>
       )}

@@ -5,10 +5,12 @@ import { motion, type HTMLMotionProps } from "framer-motion";
 import { cn } from "@/lib/utils";
 
 type PillButtonVariant = "primary" | "secondary" | "destructive" | "ghost" | "icon";
+type PillButtonSize = "default" | "compact";
 
 interface PillButtonProps
   extends Omit<HTMLMotionProps<"button">, "ref" | "children"> {
   variant?: PillButtonVariant;
+  size?: PillButtonSize;
   /** For icon variant: hover label that expands from the icon */
   label?: string;
   children?: React.ReactNode;
@@ -55,17 +57,28 @@ const PAD_HOVER = 24;
 const GAP_REST = 8;
 const GAP_HOVER = 12;
 
+// Compact size constants
+const COMPACT_PAD_REST = 12;
+const COMPACT_PAD_HOVER = 16;
+const COMPACT_GAP_REST = 5;
+const COMPACT_GAP_HOVER = 7;
+
 // Icon expand constants
 const ICON_COLLAPSED = 32; // w-8
 const ICON_PAD_X = 14;
 const ICON_GAP = 8;
 const ICON_SIZE = 16; // w-4
 
+const COMPACT_ICON_COLLAPSED = 26;
+const COMPACT_ICON_PAD_X = 10;
+const COMPACT_ICON_GAP = 5;
+
 const PillButton = forwardRef<HTMLButtonElement, PillButtonProps>(
-  ({ variant = "primary", label, className, disabled, children, ...props }, ref) => {
+  ({ variant = "primary", size = "default", label, className, disabled, children, ...props }, ref) => {
     const [hovered, setHovered] = useState(false);
     const vc = variantConfig[variant];
     const isIcon = variant === "icon";
+    const isCompact = size === "compact";
     const hasLabel = isIcon && !!label;
 
     // Measure label text width for smooth expand
@@ -77,7 +90,15 @@ const PillButton = forwardRef<HTMLButtonElement, PillButtonProps>(
       }
     }, [label, hasLabel]);
 
-    const expandedWidth = ICON_PAD_X * 2 + ICON_SIZE + ICON_GAP + labelWidth;
+    const iconCollapsed = isCompact ? COMPACT_ICON_COLLAPSED : ICON_COLLAPSED;
+    const iconPadX = isCompact ? COMPACT_ICON_PAD_X : ICON_PAD_X;
+    const iconGap = isCompact ? COMPACT_ICON_GAP : ICON_GAP;
+    const expandedWidth = iconPadX * 2 + ICON_SIZE + iconGap + labelWidth;
+
+    const padRest = isCompact ? COMPACT_PAD_REST : PAD_REST;
+    const padHover = isCompact ? COMPACT_PAD_HOVER : PAD_HOVER;
+    const gapRest = isCompact ? COMPACT_GAP_REST : GAP_REST;
+    const gapHover = isCompact ? COMPACT_GAP_HOVER : GAP_HOVER;
 
     if (hasLabel) {
       return (
@@ -89,25 +110,26 @@ const PillButton = forwardRef<HTMLButtonElement, PillButtonProps>(
           onHoverEnd={() => setHovered(false)}
           initial={false}
           animate={{
-            width: hovered && !disabled ? expandedWidth : ICON_COLLAPSED,
+            width: hovered && !disabled ? expandedWidth : iconCollapsed,
             ...vc.rest,
           }}
           whileHover={disabled ? undefined : { scale: 1.02, ...vc.hover }}
           whileTap={disabled ? undefined : { scale: 0.98 }}
           transition={{ duration: DURATION, ease: EASE_OUT }}
           className={cn(
-            "inline-flex items-center justify-center rounded-full select-none outline-none overflow-hidden h-8",
+            "inline-flex items-center justify-center rounded-full select-none outline-none overflow-hidden",
+            isCompact ? "h-7" : "h-8",
             vc.classes,
             className,
           )}
-          style={{ fontSize: "var(--text-label)" }}
+          style={{ fontSize: isCompact ? "11px" : "var(--text-label)" }}
           aria-label={label}
           {...props}
         >
           <motion.span
             className="flex items-center min-w-0"
             initial={false}
-            animate={{ gap: hovered && !disabled ? `${ICON_GAP}px` : "0px" }}
+            animate={{ gap: hovered && !disabled ? `${iconGap}px` : "0px" }}
             transition={{ duration: DURATION, ease: EASE_OUT }}
           >
             {children}
@@ -141,24 +163,26 @@ const PillButton = forwardRef<HTMLButtonElement, PillButtonProps>(
         onHoverEnd={() => setHovered(false)}
         initial={false}
         animate={{
-          ...(isIcon ? {} : { paddingLeft: PAD_REST, paddingRight: PAD_REST }),
+          ...(isIcon ? {} : { paddingLeft: padRest, paddingRight: padRest }),
           ...vc.rest,
         }}
         whileHover={
           disabled
             ? undefined
             : {
-                ...(isIcon ? {} : { paddingLeft: PAD_HOVER, paddingRight: PAD_HOVER }),
+                ...(isIcon ? {} : { paddingLeft: padHover, paddingRight: padHover }),
                 scale: 1.02,
                 ...vc.hover,
               }
         }
         whileTap={disabled ? undefined : { scale: 0.98 }}
         transition={{ duration: DURATION, ease: EASE_OUT }}
-        style={isIcon ? undefined : { fontSize: "var(--text-label)" }}
+        style={isIcon ? undefined : { fontSize: isCompact ? "11px" : "var(--text-label)" }}
         className={cn(
           "inline-flex items-center justify-center rounded-full select-none outline-none overflow-hidden",
-          isIcon ? "w-8 h-8 p-0" : "py-2",
+          isIcon
+            ? isCompact ? "w-7 h-7 p-0" : "w-8 h-8 p-0"
+            : isCompact ? "py-1" : "py-2",
           vc.classes,
           className,
         )}
@@ -170,7 +194,7 @@ const PillButton = forwardRef<HTMLButtonElement, PillButtonProps>(
           <motion.span
             className="inline-flex items-center"
             initial={false}
-            animate={{ gap: `${hovered && !disabled ? GAP_HOVER : GAP_REST}px` }}
+            animate={{ gap: `${hovered && !disabled ? gapHover : gapRest}px` }}
             transition={{ duration: DURATION, ease: EASE_OUT }}
           >
             {children}
@@ -183,4 +207,4 @@ const PillButton = forwardRef<HTMLButtonElement, PillButtonProps>(
 
 PillButton.displayName = "PillButton";
 
-export { PillButton, type PillButtonProps, type PillButtonVariant };
+export { PillButton, type PillButtonProps, type PillButtonVariant, type PillButtonSize };

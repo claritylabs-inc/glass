@@ -4,10 +4,12 @@ import { use, useState, useMemo, useRef, useEffect } from "react";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
-import { Nav } from "@/components/nav";
+import { AppShell } from "@/components/app-shell";
 import { FadeIn } from "@/components/ui/fade-in";
-import dynamic from "next/dynamic";
-import { ArrowLeft, Download, FileText, Calendar, Shield, DollarSign, Trash2, Upload, ChevronDown, ChevronRight, Loader2, RotateCw, AlertTriangle, Eye } from "lucide-react";
+import { ArrowLeft, Download, FileText, Calendar, Shield, DollarSign, Trash2, Upload, ChevronDown, ChevronRight, Loader2, RotateCw, AlertTriangle, Eye, MessageSquare } from "lucide-react";
+import { motion } from "framer-motion";
+import { ModeBadge } from "@/components/mode-badge";
+import { type Conversation } from "@/components/conversation-message";
 import dayjs from "dayjs";
 import { Skeleton } from "@/components/ui/skeleton";
 import Link from "next/link";
@@ -15,7 +17,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { POLICY_TYPE_LABELS, QUOTE_SECTION_TYPE_LABELS, QUOTE_SECTION_TYPE_COLORS } from "@/convex/lib/policyTypes";
 import { Id } from "@/convex/_generated/dataModel";
 import { PillButton } from "@/components/ui/pill-button";
-import { PdfProvider, usePdf } from "@/components/pdf-context";
+import { usePdf } from "@/components/pdf-context";
+import { usePageContext } from "@/hooks/use-page-context";
 import {
   Dialog,
   DialogContent,
@@ -25,45 +28,30 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 
-const PdfPanel = dynamic(
-  () => import("@/components/ui/pdf-panel").then((m) => ({ default: m.PdfPanel })),
-  { ssr: false },
-);
 
 function PageRef({ page }: { page: number | undefined }) {
   const pdf = usePdf();
   if (!page) return null;
   return (
-    <button
-      type="button"
-      onClick={() => pdf.navigateToPage(page)}
+    <span
+      role="button"
+      tabIndex={0}
+      onClick={(e) => { e.stopPropagation(); pdf.navigateToPage(page); }}
+      onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); pdf.navigateToPage(page); } }}
       className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground/50 font-mono hover:text-foreground/70 transition-colors cursor-pointer"
     >
       p.{page}
-    </button>
+    </span>
   );
 }
 
-function ViewPdfButton() {
-  const { fileUrl, togglePdf } = usePdf();
-  if (!fileUrl) return null;
+function ViewPdfButton({ url }: { url?: string | null }) {
+  const { isPdfOpen, togglePdf, openWithUrl } = usePdf();
+  if (!url) return null;
   return (
-    <PillButton variant="primary" onClick={togglePdf} className="hidden lg:inline-flex">
-      <Eye className="w-3.5 h-3.5" /> View PDF
+    <PillButton variant="primary" onClick={() => isPdfOpen ? togglePdf() : openWithUrl(url)} className="hidden lg:inline-flex">
+      <Eye className="w-3.5 h-3.5" /> {isPdfOpen ? "Hide PDF" : "View PDF"}
     </PillButton>
-  );
-}
-
-function QuoteLayoutContainer({ children, panel }: { children: React.ReactNode; panel: React.ReactNode }) {
-  const { isPdfOpen, fileUrl } = usePdf();
-  const hasPdfPanel = isPdfOpen && !!fileUrl;
-  return (
-    <div className={`mx-auto px-4 md:px-8 py-6 ${hasPdfPanel ? "max-w-[108rem] flex gap-6 items-start" : "max-w-6xl"}`}>
-      <div className={hasPdfPanel ? "flex-1 min-w-0" : undefined}>
-        {children}
-      </div>
-      {panel}
-    </div>
   );
 }
 
@@ -133,6 +121,103 @@ function DocumentSection({ section, highlighted }: { section: any; highlighted?:
   );
 }
 
+type QuoteThread = {
+  root: Conversation;
+  messages: Conversation[];
+  latestTime: number;
+};
+
+function QuoteThreadsTab({ conversations }: { conversations: Conversation[] | undefined }) {
+  const threads = useMemo(() => {
+    if (!conversations) return undefined;
+    const convs = conversations as unknown as Conversation[];
+    const threadMap = new Map<string, QuoteThread>();
+    for (const conv of convs) {
+      const rootId = (conv.threadId ?? conv._id) as string;
+      const existing = threadMap.get(rootId);
+      if (existing) {
+        existing.messages.push(conv);
+        if (conv._creationTime > existing.latestTime) existing.latestTime = conv._creationTime;
+      } else {
+        threadMap.set(rootId, {
+          root: conv.threadId ? convs.find((c) => c._id === conv.threadId) ?? conv : conv,
+          messages: [conv],
+          latestTime: conv._creationTime,
+        });
+      }
+    }
+    for (const thread of threadMap.values()) {
+      thread.messages.sort((a, b) => a._creationTime - b._creationTime);
+    }
+    return Array.from(threadMap.values()).sort((a, b) => b.latestTime - a.latestTime);
+  }, [conversations]);
+
+  if (conversations === undefined) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="w-5 h-5 animate-spin text-muted-foreground/30" />
+      </div>
+    );
+  }
+
+  if (!threads || threads.length === 0) {
+    return (
+      <div className="rounded-lg border border-foreground/6 bg-white/60 px-6 py-12 text-center">
+        <MessageSquare className="w-8 h-8 text-muted-foreground/15 mx-auto mb-3" />
+        <p className="text-body-sm text-muted-foreground/50 mb-1">No threads about this quote</p>
+        <p className="text-label-sm text-muted-foreground/30">
+          When Clarity Agent references this quote in conversations, they&#39;ll appear here.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-lg border border-foreground/6 bg-white/60 overflow-hidden">
+      <table className="w-full text-body-sm">
+        <thead>
+          <tr className="border-b border-foreground/6 bg-foreground/2">
+            <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Subject</th>
+            <th className="text-left px-4 py-2.5 font-medium text-muted-foreground hidden sm:table-cell">From</th>
+            <th className="text-left px-4 py-2.5 font-medium text-muted-foreground hidden md:table-cell">Mode</th>
+            <th className="text-right px-4 py-2.5 font-medium text-muted-foreground">Messages</th>
+          </tr>
+        </thead>
+        <tbody>
+          {threads.map((thread) => {
+            const root = thread.root;
+            const msgCount = thread.messages.reduce((n, m) => n + 1 + (m.responseBody ? 1 : 0), 0);
+            return (
+              <tr key={root._id} className="border-b border-foreground/4 last:border-0 hover:bg-foreground/[0.02] transition-colors">
+                <td className="px-4 py-2.5">
+                  <Link
+                    href={`/agent/thread/${root._id}`}
+                    className="text-foreground font-medium hover:underline"
+                  >
+                    {root.subject}
+                  </Link>
+                  <p className="text-label-sm text-muted-foreground/40 mt-0.5">
+                    {dayjs(thread.latestTime).format("MMM D, YYYY")}
+                  </p>
+                </td>
+                <td className="px-4 py-2.5 text-muted-foreground hidden sm:table-cell">
+                  {root.fromName ?? root.fromEmail}
+                </td>
+                <td className="px-4 py-2.5 hidden md:table-cell">
+                  <ModeBadge mode={root.mode} />
+                </td>
+                <td className="px-4 py-2.5 text-right text-muted-foreground/60 tabular-nums">
+                  {msgCount}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export default function QuoteDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
@@ -148,36 +233,45 @@ export default function QuoteDetailPage({ params }: { params: Promise<{ id: stri
   const restore = useMutation(api.quotes.restore);
   const retryAction = useAction(api.actions.retryExtraction.retryQuoteExtraction);
 
+  const conversations = useQuery(
+    api.agentConversations.listByQuoteId,
+    quote ? { quoteId: quote._id } : "skip",
+  );
+  const { setPageContext } = usePageContext();
+  useEffect(() => {
+    if (quote) {
+      const types = quote.policyTypes ?? [];
+      setPageContext({
+        pageType: "quote",
+        entityId: quote._id,
+        summary: `${quote.security || quote.carrier} ${quote.quoteNumber ?? ""} — ${types.join(", ")}`,
+      });
+    }
+    return () => setPageContext(null);
+  }, [quote, setPageContext]);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  const [activeTab, setActiveTab] = useState<"details" | "threads">("details");
 
   if (quote === undefined) {
     return (
-      <div className="min-h-screen flex flex-col">
-        <Nav />
-        <main className="flex-1">
-          <div className="max-w-6xl mx-auto px-4 md:px-8 py-6">
-            <Skeleton className="h-8 w-48 mb-4" />
-            <Skeleton className="h-64 w-full" />
-          </div>
-        </main>
-      </div>
+      <AppShell>
+        <Skeleton className="h-8 w-48 mb-4" />
+        <Skeleton className="h-64 w-full" />
+      </AppShell>
     );
   }
 
   if (quote === null) {
     return (
-      <div className="min-h-screen flex flex-col">
-        <Nav />
-        <main className="flex-1">
-          <div className="max-w-6xl mx-auto px-4 md:px-8 py-6 text-center">
-            <h2 className="text-lg font-semibold">Quote not found</h2>
-            <Link href="/quotes" className="text-body-sm text-blue-600 hover:underline mt-2 inline-block">
-              Back to quotes
-            </Link>
-          </div>
-        </main>
-      </div>
+      <AppShell>
+        <div className="text-center">
+          <h2 className="text-lg font-semibold">Quote not found</h2>
+          <Link href="/quotes" className="text-body-sm text-blue-600 hover:underline mt-2 inline-block">
+            Back to quotes
+          </Link>
+        </div>
+      </AppShell>
     );
   }
 
@@ -189,71 +283,103 @@ export default function QuoteDetailPage({ params }: { params: Promise<{ id: stri
     return expDate.isValid() && expDate.isBefore(dayjs());
   })();
 
+  const headerActions = (
+    <>
+      <ViewPdfButton url={fileUrl} />
+      {fileUrl && (
+        <a href={fileUrl} target="_blank" rel="noopener noreferrer">
+          <PillButton size="compact" variant="secondary">
+            <Download className="w-3 h-3" /> PDF
+          </PillButton>
+        </a>
+      )}
+      {quote.deletedAt ? (
+        <PillButton
+          size="compact"
+          variant="secondary"
+          onClick={async () => {
+            await restore({ id: quote._id });
+            toast.success("Quote restored");
+          }}
+        >
+          Restore
+        </PillButton>
+      ) : (
+        <PillButton size="compact" variant="icon" onClick={() => setDeleteDialogOpen(true)} label="Delete">
+          <Trash2 className="w-4 h-4" />
+        </PillButton>
+      )}
+    </>
+  );
+
   return (
-    <PdfProvider fileUrl={fileUrl ?? null}>
-    <div className="min-h-screen flex flex-col">
-      <Nav />
-      <main className="flex-1">
-        <QuoteLayoutContainer panel={<PdfPanel />}>
+    <AppShell breadcrumbDetail={quote.quoteNumber} actions={headerActions}>
           {/* Header */}
           <FadeIn when={true} staggerIndex={0} duration={0.6}>
-            <div className="flex items-start justify-between mb-6">
-              <div>
-                <Link href="/quotes" className="inline-flex items-center gap-1 text-label-sm text-muted-foreground hover:text-foreground mb-2">
-                  <ArrowLeft className="w-3 h-3" /> Back to quotes
-                </Link>
-                <div className="flex items-center gap-2 mb-1">
-                  <h1 className="!mb-0">{quote.quoteNumber}</h1>
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-600 uppercase tracking-wider">
-                    Quote
+            <div className="mb-6">
+              <Link href="/quotes" className="inline-flex items-center gap-1.5 text-body-sm text-muted-foreground hover:text-foreground transition-colors mb-4">
+                <ArrowLeft className="w-3.5 h-3.5" /> Back to quotes
+              </Link>
+              <h1 className="!mb-0">{quote.quoteNumber}</h1>
+              <div className="flex items-center gap-2 flex-wrap mt-1">
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-600 uppercase tracking-wider">
+                  Quote
+                </span>
+                {isExpired && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-50 text-red-600 uppercase tracking-wider">
+                    <AlertTriangle className="w-3 h-3" /> Expired
                   </span>
-                  {isExpired && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-50 text-red-600 uppercase tracking-wider">
-                      <AlertTriangle className="w-3 h-3" /> Expired
-                    </span>
-                  )}
-                  {quote.deletedAt && (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-50 text-red-600 uppercase tracking-wider">
-                      Deleted
-                    </span>
-                  )}
-                </div>
-                <div className="flex flex-wrap gap-1 mt-1">
-                  {types.map((t) => (
-                    <span key={t} className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-foreground/5 text-muted-foreground">
-                      {POLICY_TYPE_LABELS[t] || t}
-                    </span>
-                  ))}
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <ViewPdfButton />
-                {fileUrl && (
-                  <a href={fileUrl} target="_blank" rel="noopener noreferrer">
-                    <PillButton variant="secondary">
-                      <Download className="w-3 h-3" /> PDF
-                    </PillButton>
-                  </a>
                 )}
-                {quote.deletedAt ? (
-                  <PillButton
-                    variant="secondary"
-                    onClick={async () => {
-                      await restore({ id: quote._id });
-                      toast.success("Quote restored");
-                    }}
-                  >
-                    Restore
-                  </PillButton>
-                ) : (
-                  <PillButton variant="destructive" onClick={() => setDeleteDialogOpen(true)}>
-                    <Trash2 className="w-3 h-3" />
-                  </PillButton>
+                {quote.deletedAt && (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-50 text-red-600 uppercase tracking-wider">
+                    Deleted
+                  </span>
                 )}
+                {types.map((t) => (
+                  <span key={t} className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-foreground/5 text-muted-foreground">
+                    {POLICY_TYPE_LABELS[t] || t}
+                  </span>
+                ))}
               </div>
             </div>
           </FadeIn>
 
+          {/* Tab bar */}
+          <div className="flex items-center gap-1 border-b border-foreground/6 mb-6">
+            {([
+              { id: "details" as const, label: "Details" },
+              { id: "threads" as const, label: "Threads", count: conversations?.length },
+            ]).map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                className={`relative px-3 py-2 text-body-sm font-medium whitespace-nowrap transition-colors cursor-pointer ${
+                  activeTab === tab.id
+                    ? "text-foreground"
+                    : "text-muted-foreground hover:text-foreground/70"
+                }`}
+              >
+                <span className="flex items-center gap-1.5">
+                  {tab.label}
+                  {tab.count != null && tab.count > 0 && (
+                    <span className="text-[10px] font-medium bg-foreground/8 text-muted-foreground px-1.5 py-0.5 rounded-full leading-none">
+                      {tab.count}
+                    </span>
+                  )}
+                </span>
+                {activeTab === tab.id && (
+                  <motion.div
+                    layoutId="quote-tab-indicator"
+                    className="absolute bottom-0 left-0 right-0 h-[2px] bg-foreground"
+                    transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                  />
+                )}
+              </button>
+            ))}
+          </div>
+
+          {activeTab === "details" && (<>
           {/* Info cards */}
           <FadeIn when={true} staggerIndex={1} duration={0.6}>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
@@ -475,8 +601,11 @@ export default function QuoteDetailPage({ params }: { params: Promise<{ id: stri
               </div>
             </FadeIn>
           )}
-        </QuoteLayoutContainer>
-      </main>
+          </>)}
+
+          {activeTab === "threads" && (
+            <QuoteThreadsTab conversations={conversations} />
+          )}
 
       {/* Delete dialog */}
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
@@ -505,7 +634,6 @@ export default function QuoteDetailPage({ params }: { params: Promise<{ id: stri
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
-    </PdfProvider>
+    </AppShell>
   );
 }
