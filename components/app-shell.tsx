@@ -34,7 +34,7 @@ function ShellContent({
   const hasEntityPanel = !!entityPreview;
 
   return (
-    <div className="h-screen flex overflow-hidden">
+    <div className="h-dvh flex overflow-hidden">
       <AppSidebar
         mobileOpen={mobileOpen}
         onMobileClose={() => setMobileOpen(false)}
