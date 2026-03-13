@@ -233,7 +233,7 @@ function AttachmentChip({
 }
 
 /* ── Single message bubble ── */
-export function MessageBubble({ conv, onOpenPdf }: { conv: Conversation; onOpenPdf?: (url: string) => void }) {
+export function MessageBubble({ conv, onOpenPdf, onRetry }: { conv: Conversation; onOpenPdf?: (url: string) => void; onRetry?: (convId: Id<"agentConversations">) => void }) {
   const [showQuoted, setShowQuoted] = useState(false);
   const { content: rawContent, quoted } = splitQuotedReply(conv.body || "");
   const content = rawContent ? unwrapEmailText(rawContent) : rawContent;
@@ -340,10 +340,19 @@ export function MessageBubble({ conv, onOpenPdf }: { conv: Conversation; onOpenP
       )}
 
       {conv.status === "error" && (
-        <div className="rounded-lg bg-red-50/50 border border-red-100 p-3">
+        <div className="rounded-lg bg-red-50/50 border border-red-100 p-3 flex items-start justify-between gap-3">
           <p className="text-label-sm text-red-600">
             {conv.error ?? "An error occurred processing this message."}
           </p>
+          {onRetry && (
+            <button
+              type="button"
+              onClick={() => onRetry(conv._id)}
+              className="shrink-0 text-label-sm font-medium text-red-600 hover:text-red-800 underline underline-offset-2 cursor-pointer"
+            >
+              Retry
+            </button>
+          )}
         </div>
       )}
 

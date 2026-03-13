@@ -42,6 +42,11 @@ export default function LoginPage() {
     api.users.checkEmail,
     emailToCheck ? { email: emailToCheck } : "skip"
   );
+  // Also check for pending invitation (so invited users can log in directly)
+  const invitationCheck = useQuery(
+    api.orgs.checkPendingInvitation,
+    emailToCheck ? { email: emailToCheck } : "skip"
+  );
 
   const sendOtp = useCallback(async (targetEmail: string) => {
     try {
@@ -57,17 +62,17 @@ export default function LoginPage() {
 
   // Handle email check result
   useEffect(() => {
-    if (!emailToCheck || emailCheck === undefined) return;
+    if (!emailToCheck || emailCheck === undefined || invitationCheck === undefined) return;
 
-    if (!emailCheck.exists) {
-      // Unknown email — redirect to signup
+    if (!emailCheck.exists && !invitationCheck.hasPendingInvitation) {
+      // Unknown email with no invitation — redirect to signup
       setSendingCode(false);
       router.replace(`/signup?email=${encodeURIComponent(emailToCheck)}`);
     } else {
-      // Known email — proceed with OTP
+      // Known email OR has pending invitation — proceed with OTP
       sendOtp(emailToCheck);
     }
-  }, [emailToCheck, emailCheck, router, sendOtp]);
+  }, [emailToCheck, emailCheck, invitationCheck, router, sendOtp]);
 
   useEffect(() => {
     if (isAuthenticated) router.replace("/");

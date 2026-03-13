@@ -67,6 +67,74 @@ export default defineSchema({
     .index("by_orgId", ["orgId"])
     .index("by_orgId_userId", ["orgId", "userId"]),
 
+  // Organization business context — reusable answers for application auto-fill
+  orgBusinessContext: defineTable({
+    orgId: v.id("organizations"),
+    category: v.string(), // company_info, operations, financial, coverage, loss_history
+    key: v.string(), // normalized field name
+    value: v.string(),
+    fieldType: v.optional(
+      v.union(
+        v.literal("text"),
+        v.literal("numeric"),
+        v.literal("currency"),
+        v.literal("date"),
+        v.literal("yes_no"),
+      ),
+    ),
+    source: v.union(
+      v.literal("onboarding"),
+      v.literal("application"),
+      v.literal("user_email"),
+      v.literal("manual"),
+    ),
+    confidence: v.union(v.literal("confirmed"), v.literal("inferred")),
+    sourceConversationId: v.optional(v.id("agentConversations")),
+    sourceSessionId: v.optional(v.id("applicationSessions")),
+    updatedAt: v.number(),
+  })
+    .index("by_orgId", ["orgId"])
+    .index("by_orgId_category", ["orgId", "category"])
+    .index("by_orgId_key", ["orgId", "key"]),
+
+  // Insurance application sessions — tracks multi-step form filling workflow
+  applicationSessions: defineTable({
+    orgId: v.id("organizations"),
+    userId: v.id("users"),
+    conversationId: v.id("agentConversations"), // root conversation
+    threadId: v.optional(v.id("agentConversations")), // thread root for reply routing
+    sourceFileId: v.id("_storage"),
+    sourceFileName: v.string(),
+    applicationTitle: v.optional(v.string()),
+    status: v.union(
+      v.literal("extracting_fields"),
+      v.literal("filling_known"),
+      v.literal("asking_questions"),
+      v.literal("pending_confirmation"),
+      v.literal("confirmed"),
+      v.literal("complete"),
+      v.literal("cancelled"),
+    ),
+    extractedFields: v.optional(v.string()), // JSON-serialized FormField[]
+    totalFields: v.optional(v.number()),
+    filledFields: v.optional(v.number()),
+    confirmedFields: v.optional(v.number()),
+    questionBatches: v.optional(v.string()), // JSON-serialized QuestionBatch[]
+    currentBatchIndex: v.optional(v.number()),
+    summaryFileId: v.optional(v.id("_storage")),
+    filledFileId: v.optional(v.id("_storage")),
+    completedAt: v.optional(v.number()),
+    cancelledAt: v.optional(v.number()),
+    rawExtractionResponse: v.optional(v.string()),
+    originalMessageId: v.optional(v.string()), // inbound Message-ID for threading
+    lastSentMessageId: v.optional(v.string()), // last outbound Message-ID for References chain
+    error: v.optional(v.string()),
+  })
+    .index("by_orgId", ["orgId"])
+    .index("by_conversationId", ["conversationId"])
+    .index("by_threadId", ["threadId"])
+    .index("by_status", ["status"]),
+
   // Org invitations — pending invites
   orgInvitations: defineTable({
     orgId: v.id("organizations"),

@@ -126,9 +126,11 @@ export async function callClaude(
   await log?.(`Calling Claude ${modelShort} (max ${maxTokens} tokens)...`);
   const start = Date.now();
 
+  const isSonnet = model.includes("sonnet");
   const response = await anthropic.messages.create({
     model,
     max_tokens: maxTokens,
+    ...(isSonnet ? { thinking: { type: "enabled", budget_tokens: 4096 } } : {}),
     messages: [
       {
         role: "user",
@@ -145,14 +147,18 @@ export async function callClaude(
         ],
       },
     ],
-  });
+  } as any);
 
   const elapsed = ((Date.now() - start) / 1000).toFixed(1);
   const inputTokens = response.usage?.input_tokens ?? 0;
   const outputTokens = response.usage?.output_tokens ?? 0;
-  await log?.(`${modelShort}: ${inputTokens} in / ${outputTokens} out tokens (${elapsed}s)`);
+  const thinkingTokens = (response.usage as any)?.thinking_tokens;
+  const thinkingInfo = thinkingTokens ? ` / ${thinkingTokens} thinking` : "";
+  await log?.(`${modelShort}: ${inputTokens} in / ${outputTokens} out${thinkingInfo} tokens (${elapsed}s)`);
 
-  return response.content[0].type === "text" ? response.content[0].text : "{}";
+  // With adaptive thinking, response may include thinking blocks before the text block
+  const textBlock = response.content.find((b: any) => b.type === "text");
+  return textBlock && textBlock.type === "text" ? textBlock.text : "{}";
 }
 
 /** Call Claude API with text-only prompt (no PDF). Used for pass 3 enrichment. */

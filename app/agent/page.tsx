@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
-import { useQuery, useMutation } from "convex/react";
+import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
 import { Nav } from "@/components/nav";
@@ -29,6 +29,7 @@ import {
   FileText,
   Paperclip,
 } from "lucide-react";
+import Link from "next/link";
 import { Id } from "@/convex/_generated/dataModel";
 import { ModeBadge } from "@/components/mode-badge";
 import { MessageBubble, type Conversation } from "@/components/conversation-message";
@@ -97,15 +98,18 @@ function ThreadItem({
   isSelected,
   onSelect,
   tick,
+  isApplication,
 }: {
   thread: Thread;
   isSelected: boolean;
   onSelect: () => void;
   tick: number;
+  isApplication?: boolean;
 }) {
   const root = thread.root;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const timeAgo = useMemo(() => dayjs(thread.latestTime).fromNow(), [thread.latestTime, tick]);
+  const displayMode = isApplication ? "application" : root.mode;
 
   return (
     <button
@@ -125,7 +129,7 @@ function ThreadItem({
           {thread.messages.some((m) => m.attachments && m.attachments.length > 0) && (
             <Paperclip className="w-3 h-3 text-muted-foreground/40" />
           )}
-          <ModeBadge mode={root.mode} />
+          <ModeBadge mode={displayMode} />
         </div>
       </div>
       <div className="flex items-center gap-2">
@@ -144,14 +148,17 @@ function ThreadDetail({
   onBack,
   onClose,
   onOpenPdf,
+  appThreadIds,
 }: {
   thread: Thread;
   onBack?: () => void;
   onClose?: () => void;
   onOpenPdf?: (url: string) => void;
+  appThreadIds?: Record<string, { sessionId: string; status: string; title?: string }>;
 }) {
   const archiveConv = useMutation(api.agentConversations.archive);
   const unarchiveConv = useMutation(api.agentConversations.unarchive);
+  const retryApp = useAction(api.actions.processApplication.retryApplication);
   const messagesRef = useRef<HTMLDivElement>(null);
   const prevThreadId = useRef<string | null>(null);
   const root = thread.root;
@@ -166,6 +173,8 @@ function ThreadDetail({
   }, [root._id, thread.messages.length]);
   const isArchived = !!root.archivedAt;
 
+  const appInfo = appThreadIds?.[String(root._id)];
+
   async function handleArchiveToggle() {
     for (const msg of thread.messages) {
       if (isArchived) {
@@ -175,6 +184,20 @@ function ThreadDetail({
       }
     }
     toast.success(isArchived ? "Unarchived" : "Archived");
+  }
+
+  async function handleRetry() {
+    if (!appInfo?.sessionId) return;
+    try {
+      const result = await retryApp({ sessionId: appInfo.sessionId as any });
+      if (result?.error) {
+        toast.error(result.error);
+      } else {
+        toast.success("Retrying application processing...");
+      }
+    } catch {
+      toast.error("Failed to retry");
+    }
   }
 
   return (
@@ -193,7 +216,15 @@ function ThreadDetail({
           </p>
         </div>
         <div className="flex items-center gap-2.5 shrink-0">
-          <ModeBadge mode={root.mode} />
+          {appInfo?.sessionId && (
+            <Link href={`/applications/${appInfo.sessionId}`}>
+              <PillButton variant="secondary" className="text-xs">
+                <FileText className="w-3.5 h-3.5 mr-1" />
+                View Application
+              </PillButton>
+            </Link>
+          )}
+          <ModeBadge mode={appInfo ? "application" : root.mode} />
           {(() => {
             const total = thread.messages.reduce((n, m) => n + 1 + (m.responseBody ? 1 : 0), 0);
             return total > 1 ? (
@@ -216,7 +247,7 @@ function ThreadDetail({
       {/* Messages */}
       <div ref={messagesRef} className="flex-1 overflow-y-auto p-4 pr-5 pb-12 space-y-4">
         {thread.messages.map((msg) => (
-          <MessageBubble key={msg._id} conv={msg} onOpenPdf={onOpenPdf} />
+          <MessageBubble key={msg._id} conv={msg} onOpenPdf={onOpenPdf} onRetry={appInfo ? handleRetry : undefined} />
         ))}
       </div>
     </div>
@@ -227,15 +258,16 @@ function ThreadDetail({
 function ModeExplainerCards({ companyDomains }: { companyDomains?: string[] }) {
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <div className="rounded-lg border border-foreground/6 bg-white/60 p-5">
           <div className="flex items-center gap-2 mb-2">
             <MessageSquare className="w-4 h-4 text-violet-600" />
             <h4 className="!mb-0 text-body-sm font-semibold">Direct Mode</h4>
           </div>
           <p className="text-label-sm text-muted-foreground/60">
-            Email the agent directly for internal policy questions.
-            Answers include links to policy sections in the app.
+            Email the agent directly for policy questions or to fill out
+            insurance applications. Attach a PDF application form and the
+            agent will walk you through it.
           </p>
         </div>
         <div className="rounded-lg border border-foreground/6 bg-white/60 p-5">
@@ -256,6 +288,16 @@ function ModeExplainerCards({ companyDomains }: { companyDomains?: string[] }) {
           <p className="text-label-sm text-muted-foreground/60">
             Forward a customer email to the agent. The agent replies directly
             to the original sender with you CC&#39;d.
+          </p>
+        </div>
+        <div className="rounded-lg border border-foreground/6 bg-white/60 p-5">
+          <div className="flex items-center gap-2 mb-2">
+            <FileText className="w-4 h-4 text-rose-600" />
+            <h4 className="!mb-0 text-body-sm font-semibold">Application Mode</h4>
+          </div>
+          <p className="text-label-sm text-muted-foreground/60">
+            Attach an insurance application PDF and the agent extracts fields,
+            auto-fills from saved context, and asks you the rest in batches.
           </p>
         </div>
         <div className="rounded-lg border border-foreground/6 bg-white/60 p-5">
@@ -323,6 +365,14 @@ function AgentHelpSection({ agentEmail }: { agentEmail: string }) {
     {
       q: "How does the agent know who is internal?",
       a: "It matches the sender's email domain against your company website domain. Set your company website in your profile to enable this. Consumer domains (gmail.com, outlook.com, etc.) are never treated as company domains.",
+    },
+    {
+      q: "How do I fill out an insurance application?",
+      a: "Email the agent directly with a PDF application form attached and mention that you need help filling it out. The agent will extract all fields, auto-fill what it already knows from your saved business context, and ask you the remaining questions in batches. Once complete, it generates a summary for your review.",
+    },
+    {
+      q: "What is Business Context?",
+      a: "Business Context stores reusable information about your company (name, revenue, operations, etc.) learned from past application answers. It's used to auto-fill future applications so you don't have to re-enter the same information. You can manage it from Organization Settings.",
     },
   ];
 
@@ -447,6 +497,7 @@ function ConversationsPanel({
   agentEmail,
   tick,
   onOpenPdf,
+  appThreadIds,
 }: {
   threads: Thread[] | undefined;
   selectedThread: Thread | undefined;
@@ -457,6 +508,7 @@ function ConversationsPanel({
   agentEmail: string | null;
   tick: number;
   onOpenPdf?: (url: string) => void;
+  appThreadIds?: Record<string, { sessionId: string; status: string; title?: string }>;
 }) {
   return (
     <div className="rounded-lg border border-foreground/6 bg-white/60 overflow-hidden">
@@ -493,6 +545,7 @@ function ConversationsPanel({
                   isSelected={selectedThread?.root._id === thread.root._id}
                   onSelect={() => setSelectedId(thread.root._id)}
                   tick={tick}
+                  isApplication={!!appThreadIds?.[String(thread.root._id)]}
                 />
               ))
             )}
@@ -506,6 +559,7 @@ function ConversationsPanel({
               thread={selectedThread}
               onClose={() => setSelectedId(null)}
               onOpenPdf={onOpenPdf}
+              appThreadIds={appThreadIds}
             />
           ) : (
             <div className="flex items-center justify-center h-full">
@@ -528,6 +582,7 @@ function ConversationsPanel({
               thread={selectedThread}
               onBack={() => setSelectedId(null)}
               onOpenPdf={onOpenPdf}
+              appThreadIds={appThreadIds}
             />
           </div>
         ) : (
@@ -567,6 +622,7 @@ function ConversationsPanel({
                     isSelected={false}
                     onSelect={() => setSelectedId(thread.root._id)}
                     tick={tick}
+                    isApplication={!!appThreadIds?.[String(thread.root._id)]}
                   />
                 ))}
               </div>
@@ -592,6 +648,7 @@ export default function AgentPage() {
   const viewerOrg = useQuery(api.orgs.viewerOrg);
   const [showArchived, setShowArchived] = useState(false);
   const conversations = useQuery(api.agentConversations.list, { archived: showArchived });
+  const appThreadIds = useQuery(api.applicationSessions.threadIds);
   const [selectedId, setSelectedId] = useState<Id<"agentConversations"> | null>(null);
   const [copied, setCopied] = useState(false);
   const [attachmentPdfUrl, setAttachmentPdfUrl] = useState<string | null>(null);
@@ -685,7 +742,7 @@ export default function AgentPage() {
             <div className="mb-6">
               <h1 className="!mb-1">Clarity Agent</h1>
               <p className="text-body-sm text-muted-foreground">
-                Get instant answers and actions on your policies by email
+                Policy Q&A, application assistance, and more — all by email
               </p>
             </div>
           </FadeIn>
@@ -811,6 +868,7 @@ export default function AgentPage() {
                     agentEmail={agentEmail}
                     tick={tick}
                     onOpenPdf={setAttachmentPdfUrl}
+                    appThreadIds={appThreadIds}
                   />
                 ) : (
                   <div className="space-y-6">

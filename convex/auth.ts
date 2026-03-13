@@ -9,7 +9,7 @@ const ResendOTP = Email({
     return Math.floor(100000 + Math.random() * 900000).toString();
   },
   async sendVerificationRequest({ identifier: email, token }: any) {
-    const siteUrl = process.env.SITE_URL ?? "http://localhost:3000";
+    const siteUrl = process.env.SITE_URL ?? "https://email.claritylabs.inc";
     const { html, text } = buildOtpEmail(token, siteUrl);
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",

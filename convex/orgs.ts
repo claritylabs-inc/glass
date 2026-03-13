@@ -92,6 +92,71 @@ export const checkHandleAvailability = query({
   },
 });
 
+/** Check if an email has a pending (non-expired) invitation. No auth required. */
+export const checkPendingInvitation = query({
+  args: { email: v.string() },
+  handler: async (ctx, args) => {
+    // Check both original case and lowercase since invitations may be stored either way
+    const byOriginal = await ctx.db
+      .query("orgInvitations")
+      .withIndex("by_email", (q) => q.eq("email", args.email))
+      .collect();
+    const byLower = args.email !== args.email.toLowerCase()
+      ? await ctx.db
+          .query("orgInvitations")
+          .withIndex("by_email", (q) => q.eq("email", args.email.toLowerCase()))
+          .collect()
+      : [];
+    const all = [...byOriginal, ...byLower];
+    const pending = all.find(
+      (i) => i.status === "pending" && i.expiresAt > Date.now(),
+    );
+    return { hasPendingInvitation: !!pending };
+  },
+});
+
+/** Get pending invitation details for the current user (with org info). */
+export const pendingInvitationForViewer = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) return null;
+
+    const user = await ctx.db.get(userId);
+    if (!user?.email) return null;
+
+    // Check both original case and lowercase
+    const byOriginal = await ctx.db
+      .query("orgInvitations")
+      .withIndex("by_email", (q) => q.eq("email", user.email!))
+      .collect();
+    const lowerEmail = user.email!.toLowerCase();
+    const byLower = user.email !== lowerEmail
+      ? await ctx.db
+          .query("orgInvitations")
+          .withIndex("by_email", (q) => q.eq("email", lowerEmail))
+          .collect()
+      : [];
+    const all = [...byOriginal, ...byLower];
+    const pending = all.find(
+      (i) => i.status === "pending" && i.expiresAt > Date.now(),
+    );
+    if (!pending) return null;
+
+    const org = await ctx.db.get(pending.orgId);
+    if (!org) return null;
+
+    const invitedBy = await ctx.db.get(pending.invitedBy);
+
+    return {
+      invitationId: pending._id,
+      orgName: org.name,
+      role: pending.role,
+      invitedByName: invitedBy?.name ?? invitedBy?.email ?? "a team member",
+    };
+  },
+});
+
 // ── Mutations ──
 
 export const createOrg = mutation({

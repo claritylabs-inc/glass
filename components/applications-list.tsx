@@ -1,0 +1,354 @@
+"use client";
+
+import { useState, useMemo } from "react";
+import { useQuery, useMutation, useAction } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import { toast } from "sonner";
+import { Loader2, FileText, X, AlertCircle, RotateCcw } from "lucide-react";
+import { PillButton } from "@/components/ui/pill-button";
+import { useRouter } from "next/navigation";
+import { motion } from "framer-motion";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import dayjs from "dayjs";
+import relativeTime from "dayjs/plugin/relativeTime";
+
+dayjs.extend(relativeTime);
+
+const STATUS_CONFIG: Record<
+  string,
+  { label: string; color: string }
+> = {
+  extracting_fields: { label: "Extracting", color: "bg-blue-50 text-blue-600" },
+  filling_known: { label: "Auto-filling", color: "bg-blue-50 text-blue-600" },
+  asking_questions: { label: "Asking Questions", color: "bg-amber-50 text-amber-600" },
+  pending_confirmation: { label: "Pending Confirmation", color: "bg-orange-50 text-orange-600" },
+  confirmed: { label: "Confirmed", color: "bg-emerald-50 text-emerald-600" },
+  complete: { label: "Complete", color: "bg-emerald-50 text-emerald-600" },
+  cancelled: { label: "Cancelled", color: "bg-gray-100 text-gray-500" },
+};
+
+type AppTab = "active" | "cancelled";
+
+function StatusBadge({ status }: { status: string }) {
+  const config = STATUS_CONFIG[status] ?? { label: status, color: "bg-gray-100 text-gray-500" };
+  return (
+    <span
+      className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${config.color}`}
+    >
+      {config.label}
+    </span>
+  );
+}
+
+function ProgressBar({ filled, total }: { filled?: number; total?: number }) {
+  if (!total || total === 0) return null;
+  const pct = Math.round(((filled ?? 0) / total) * 100);
+  return (
+    <div className="flex items-center gap-2">
+      <div className="flex-1 h-1.5 bg-foreground/5 rounded-full overflow-hidden">
+        <div
+          className="h-full bg-foreground/20 rounded-full transition-all"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <span className="text-[11px] text-muted-foreground/40 shrink-0">
+        {filled ?? 0}/{total}
+      </span>
+    </div>
+  );
+}
+
+function SessionTable({
+  sessions,
+  onCancel,
+  onRetry,
+  onShowError,
+}: {
+  sessions: any[];
+  onCancel: (id: any) => void;
+  onRetry: (id: any) => void;
+  onShowError: (session: any) => void;
+}) {
+  const router = useRouter();
+
+  if (sessions.length === 0) {
+    return (
+      <div className="p-8 text-center">
+        <FileText className="w-8 h-8 text-muted-foreground/15 mx-auto mb-2" />
+        <p className="text-body-sm text-muted-foreground/50">
+          No applications
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="overflow-x-auto scrollbar-hide">
+      <table className="w-full text-left">
+        <thead>
+          <tr className="bg-foreground/[0.02]">
+            <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">
+              Application
+            </th>
+            <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">
+              Status
+            </th>
+            <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap hidden sm:table-cell">
+              Progress
+            </th>
+            <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap hidden md:table-cell">
+              Created
+            </th>
+            <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap text-right hidden md:table-cell">
+              Actions
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {sessions.map((session: any) => {
+            const isActive = !["complete", "cancelled"].includes(session.status);
+            return (
+              <tr
+                key={session._id}
+                className="border-t border-foreground/4 hover:bg-foreground/[0.015] transition-colors cursor-pointer"
+                onClick={() => router.push(`/applications/${session._id}`)}
+              >
+                <td className="px-4 py-2.5 whitespace-nowrap">
+                  <p className="text-body-sm font-medium text-foreground">
+                    {session.applicationTitle ?? session.sourceFileName}
+                  </p>
+                  <p className="text-label-sm text-muted-foreground/60">
+                    {session.sourceFileName}
+                  </p>
+                </td>
+                <td className="px-4 py-2.5 whitespace-nowrap">
+                  {session.error ? (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onShowError(session);
+                      }}
+                      className="flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-red-50 text-red-600">
+                        <AlertCircle className="w-3 h-3" />
+                        Error
+                      </span>
+                    </button>
+                  ) : (
+                    <StatusBadge status={session.status} />
+                  )}
+                </td>
+                <td className="px-4 py-2.5 hidden sm:table-cell w-36">
+                  <ProgressBar
+                    filled={session.filledFields}
+                    total={session.totalFields}
+                  />
+                </td>
+                <td className="px-4 py-2.5 text-body-sm text-muted-foreground hidden md:table-cell whitespace-nowrap">
+                  {dayjs(session._creationTime).fromNow()}
+                </td>
+                <td className="px-4 py-2.5 text-right whitespace-nowrap hidden md:table-cell" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center justify-end gap-1">
+                    {session.error && (
+                      <PillButton
+                        variant="ghost"
+                        onClick={() => onRetry(session._id)}
+                        className="text-muted-foreground/40 hover:text-foreground"
+                        label="Retry"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                      </PillButton>
+                    )}
+                    {isActive && (
+                      <PillButton
+                        variant="ghost"
+                        onClick={() => onCancel(session._id)}
+                        className="text-muted-foreground/40 hover:text-red-500"
+                        label="Cancel"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </PillButton>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+export function ApplicationsList() {
+  const sessions = useQuery(api.applicationSessions.list);
+  const cancelSession = useMutation(api.applicationSessions.cancel);
+  const retryApp = useAction(api.actions.processApplication.retryApplication);
+  const [errorSession, setErrorSession] = useState<{ id: string; title: string; error: string } | null>(null);
+  const [retrying, setRetrying] = useState(false);
+  const [activeTab, setActiveTab] = useState<AppTab>("active");
+
+  const activeSessions = useMemo(
+    () => sessions?.filter((s: any) => s.status !== "cancelled") ?? [],
+    [sessions],
+  );
+  const cancelledSessions = useMemo(
+    () => sessions?.filter((s: any) => s.status === "cancelled") ?? [],
+    [sessions],
+  );
+
+  const displayedSessions = activeTab === "active" ? activeSessions : cancelledSessions;
+
+  async function handleCancel(id: any) {
+    try {
+      await cancelSession({ id });
+      toast.success("Application cancelled");
+    } catch {
+      toast.error("Failed to cancel");
+    }
+  }
+
+  async function handleRetry(sessionId: any) {
+    setRetrying(true);
+    try {
+      const result = await retryApp({ sessionId });
+      if (result?.error) {
+        toast.error(result.error);
+      } else {
+        toast.success("Retrying application processing...");
+        setErrorSession(null);
+      }
+    } catch {
+      toast.error("Failed to retry");
+    } finally {
+      setRetrying(false);
+    }
+  }
+
+  if (sessions === undefined) {
+    return (
+      <div className="flex justify-center py-12">
+        <Loader2 className="w-5 h-5 animate-spin text-muted-foreground/30" />
+      </div>
+    );
+  }
+
+  if (sessions.length === 0) {
+    return (
+      <div className="rounded-lg border border-foreground/6 bg-white/60 p-8 text-center">
+        <FileText className="w-8 h-8 text-muted-foreground/15 mx-auto mb-2" />
+        <p className="text-body-sm text-muted-foreground/50">
+          No applications yet
+        </p>
+        <p className="text-label-sm text-muted-foreground/30 mt-1">
+          Email an insurance application form to your agent to get started
+        </p>
+      </div>
+    );
+  }
+
+  const tabs: { id: AppTab; label: string; count: number }[] = [
+    { id: "active", label: "Active", count: activeSessions.length },
+    { id: "cancelled", label: "Cancelled", count: cancelledSessions.length },
+  ];
+
+  return (
+    <>
+      <div className="flex items-center gap-1 border-b border-foreground/6 mb-4">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => setActiveTab(tab.id)}
+            className={`relative px-3 py-2 text-body-sm font-medium whitespace-nowrap transition-colors cursor-pointer ${
+              activeTab === tab.id
+                ? "text-foreground"
+                : "text-muted-foreground hover:text-foreground/70"
+            }`}
+          >
+            {tab.label}
+            {tab.count > 0 && (
+              <span className={`ml-1.5 text-[11px] ${
+                activeTab === tab.id ? "text-muted-foreground/60" : "text-muted-foreground/30"
+              }`}>
+                {tab.count}
+              </span>
+            )}
+            {activeTab === tab.id && (
+              <motion.div
+                layoutId="app-tab-indicator"
+                className="absolute bottom-0 left-0 right-0 h-[2px] bg-foreground"
+                transition={{ type: "spring", stiffness: 400, damping: 30 }}
+              />
+            )}
+          </button>
+        ))}
+      </div>
+
+      <div className="rounded-lg border border-foreground/6 bg-white/60 overflow-hidden">
+        <SessionTable
+          sessions={displayedSessions}
+          onCancel={handleCancel}
+          onRetry={handleRetry}
+          onShowError={(session: any) =>
+            setErrorSession({
+              id: session._id,
+              title: session.applicationTitle ?? session.sourceFileName,
+              error: session.error,
+            })
+          }
+        />
+
+        {/* Error detail dialog */}
+        <Dialog open={!!errorSession} onOpenChange={(v) => !v && setErrorSession(null)}>
+          <DialogContent showCloseButton={false}>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <AlertCircle className="w-5 h-5 text-red-500" />
+                Application Error
+              </DialogTitle>
+              <DialogDescription>
+                {errorSession?.title ?? "Application"} failed to process.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="rounded-lg bg-red-50/50 border border-red-100 p-3 max-h-48 overflow-y-auto">
+              <p className="text-label-sm text-red-600 font-mono whitespace-pre-wrap break-all">
+                {errorSession?.error}
+              </p>
+            </div>
+            <DialogFooter>
+              <PillButton variant="secondary" onClick={() => setErrorSession(null)}>
+                Close
+              </PillButton>
+              <PillButton
+                onClick={() => errorSession && handleRetry(errorSession.id)}
+                disabled={retrying}
+              >
+                {retrying ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    Retrying...
+                  </>
+                ) : (
+                  <>
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    Retry
+                  </>
+                )}
+              </PillButton>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+    </>
+  );
+}

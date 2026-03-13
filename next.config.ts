@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ["canvas"],
+  serverExternalPackages: ["canvas", "mupdf"],
 };
 
 export default nextConfig;

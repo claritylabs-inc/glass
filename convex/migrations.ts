@@ -69,3 +69,38 @@ export const migrateUserId = mutation({
     return `Assigned userId to ${migrated} records`;
   },
 });
+
+/** Fix application sessions with invalid confidence values in extractedFields.
+ *  Normalizes any confidence value that isn't "confirmed" to "inferred".
+ *  Run: npx convex run migrations:fixApplicationConfidence */
+export const fixApplicationConfidence = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const sessions = await ctx.db.query("applicationSessions").collect();
+    let fixed = 0;
+
+    for (const session of sessions) {
+      if (!session.extractedFields) continue;
+      try {
+        const fields = JSON.parse(session.extractedFields);
+        let changed = false;
+        for (const field of fields) {
+          if (field.confidence && field.confidence !== "confirmed" && field.confidence !== "inferred") {
+            field.confidence = "inferred";
+            changed = true;
+          }
+        }
+        if (changed) {
+          await ctx.db.patch(session._id, {
+            extractedFields: JSON.stringify(fields),
+          });
+          fixed++;
+        }
+      } catch {
+        // skip unparseable
+      }
+    }
+
+    return `Fixed confidence values in ${fixed} of ${sessions.length} sessions`;
+  },
+});

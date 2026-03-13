@@ -39,11 +39,13 @@ export default function OnboardingPage() {
   const viewerOrg = useQuery(api.orgs.viewerOrg);
   const connections = useQuery(api.connections.list);
   const invitations = useQuery(api.orgs.listInvitations);
+  const pendingInvitation = useQuery(api.orgs.pendingInvitationForViewer);
   const updateProfile = useMutation(api.users.updateProfile);
   const createOrg = useMutation(api.orgs.createOrg);
   const updateOrg = useMutation(api.orgs.updateOrg);
   const inviteMember = useMutation(api.orgs.inviteMember);
   const cancelInvitation = useMutation(api.orgs.cancelInvitation);
+  const acceptInvitation = useMutation(api.orgs.acceptInvitation);
   const completeOnboarding = useMutation(api.users.completeOnboarding);
   const hasDemoData = useQuery(api.seed.hasDemoData);
   const seedData = useAction(api.seed.seed);
@@ -78,6 +80,10 @@ export default function OnboardingPage() {
 
   // Step 5 state
   const [finishing, setFinishing] = useState(false);
+
+  // Invitation acceptance state
+  const [acceptingInvite, setAcceptingInvite] = useState(false);
+  const [inviteName, setInviteName] = useState("");
 
   // Auto-resize textarea
   const contextRef = useRef<HTMLTextAreaElement>(null);
@@ -219,10 +225,92 @@ export default function OnboardingPage() {
     }
   }
 
-  if (viewer === undefined) {
+  async function handleAcceptInvitation() {
+    if (!pendingInvitation) return;
+    setAcceptingInvite(true);
+    try {
+      // Save name if provided
+      if (inviteName.trim()) {
+        await updateProfile({ name: inviteName.trim() });
+      }
+      await acceptInvitation({ invitationId: pendingInvitation.invitationId });
+      await completeOnboarding();
+      router.replace("/");
+    } catch (err: any) {
+      toast.error(err.message ?? "Failed to accept invitation");
+      setAcceptingInvite(false);
+    }
+  }
+
+  if (viewer === undefined || pendingInvitation === undefined) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  // Show invitation acceptance UI if user has a pending invitation and no org yet
+  if (pendingInvitation && !viewerOrg) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background px-4 py-12">
+        <FadeIn className="w-full max-w-sm">
+          <div className="p-2 sm:bg-white sm:rounded-xl sm:border sm:border-foreground/8 sm:p-8">
+            <div className="text-center mb-6">
+              <h3 className="!mb-0 flex items-center justify-center gap-1.5">
+                Clarity <LogoIcon size={22} className="shrink-0" /> Labs
+              </h3>
+              <p className="text-body-sm text-muted-foreground mt-2">
+                You&apos;ve been invited to join a team
+              </p>
+            </div>
+
+            <div className="bg-foreground/[0.03] border border-foreground/6 rounded-lg px-4 py-3 mb-6">
+              <p className="text-body-sm text-foreground font-medium">
+                {pendingInvitation.orgName}
+              </p>
+              <p className="text-label-sm text-muted-foreground mt-0.5">
+                Invited by {pendingInvitation.invitedByName} as {pendingInvitation.role}
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+                  Your Name
+                </label>
+                <input
+                  type="text"
+                  value={inviteName}
+                  onChange={(e) => setInviteName(e.target.value)}
+                  placeholder="Jane Smith"
+                  autoFocus
+                  className="w-full rounded-lg border border-foreground/8 bg-white px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                />
+              </div>
+
+              <div className="pt-1">
+                <PillButton
+                  onClick={handleAcceptInvitation}
+                  disabled={acceptingInvite}
+                  className="w-full"
+                >
+                  {acceptingInvite ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      Joining...
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-3.5 h-3.5" />
+                      Join {pendingInvitation.orgName}
+                    </>
+                  )}
+                </PillButton>
+              </div>
+            </div>
+          </div>
+        </FadeIn>
       </div>
     );
   }

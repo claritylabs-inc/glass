@@ -117,7 +117,7 @@ function extractForwardedSender(body: string): string | null {
 }
 
 function buildSignature(agentEmail: string, companyName?: string): { text: string; html: string } {
-  const siteUrl = process.env.SITE_URL ?? "https://claritylabs.inc";
+  const siteUrl = process.env.SITE_URL ?? "https://email.claritylabs.inc";
   const linkText = `Sent by Clarity Agent${companyName ? ` from ${companyName}` : ""}`;
   const text = [
     "",
@@ -460,6 +460,184 @@ export const processInbound = internalAction({
       id: conversationId,
     });
 
+    // ── Application detection: reply to existing application thread ──
+    // Try multiple strategies to find the active application session:
+    // 1. By threadId (resolved from In-Reply-To or subject matching)
+    // 2. By lastSentMessageId (the reply's In-Reply-To matches an outbound app email)
+    // 3. By orgId fallback (active session exists for this org in asking/pending state)
+    let activeSession: any = null;
+
+    if (threadId) {
+      activeSession = await ctx.runQuery(
+        internal.applicationSessions.findByThreadId,
+        { threadId },
+      );
+    }
+
+    if (!activeSession && inReplyTo) {
+      activeSession = await ctx.runQuery(
+        internal.applicationSessions.findBySentMessageId,
+        { messageId: inReplyTo },
+      );
+    }
+
+    if (!activeSession) {
+      activeSession = await ctx.runQuery(
+        internal.applicationSessions.findActiveByOrg,
+        { orgId },
+      );
+    }
+
+    if (
+      activeSession &&
+      !["complete", "cancelled"].includes(activeSession.status)
+    ) {
+      if (activeSession.status === "pending_confirmation") {
+        await ctx.scheduler.runAfter(
+          0,
+          internal.actions.processApplication.processConfirmationReply,
+          {
+            conversationId,
+            sessionId: activeSession._id,
+            body,
+            fromEmail,
+            agentAddress,
+            subject,
+            companyName: org.name,
+            messageId,
+          },
+        );
+      } else {
+        await ctx.scheduler.runAfter(
+          0,
+          internal.actions.processApplication.processApplicationReply,
+          {
+            conversationId,
+            sessionId: activeSession._id,
+            body,
+            fromEmail,
+            agentAddress,
+            subject,
+            companyName: org.name,
+            messageId,
+          },
+        );
+      }
+      return; // skip normal agent flow
+    }
+
+    // ── Application detection: new application (direct mode + PDF attachment) ──
+    if (effectiveMode === "direct" && attachments.length > 0) {
+      const pdfAttachments = attachments.filter(
+        (a) => a.content_type === "application/pdf",
+      );
+
+      if (pdfAttachments.length > 0) {
+        // Check email body for application intent keywords
+        const bodyLower = (body ?? "").toLowerCase();
+        const applicationKeywords = [
+          "application",
+          "apply",
+          "fill out",
+          "fill in",
+          "complete this form",
+          "help me fill",
+          "insurance form",
+          "acord",
+          "application form",
+        ];
+        const hasApplicationIntent = applicationKeywords.some((kw) =>
+          bodyLower.includes(kw),
+        );
+
+        if (hasApplicationIntent) {
+          // Classify the first PDF attachment via inline Haiku call
+          const pdfAtt = pdfAttachments[0];
+          const pdfBase64 = pdfAtt.buffer.toString("base64");
+
+          const classifyClient = new Anthropic();
+          const classifyResponse = await classifyClient.messages.create({
+            model: "claude-haiku-4-5-20251001",
+            max_tokens: 256,
+            messages: [
+              {
+                role: "user",
+                content: [
+                  {
+                    type: "document",
+                    source: {
+                      type: "base64",
+                      media_type: "application/pdf",
+                      data: pdfBase64,
+                    },
+                  } as any,
+                  {
+                    type: "text",
+                    text: `You are classifying a PDF document. Determine if this is an insurance APPLICATION FORM (a form to be filled out to apply for insurance) versus a policy document, quote, certificate, or other document.
+
+Respond with JSON only:
+{ "isApplication": boolean, "confidence": number, "applicationType": string | null }`,
+                  },
+                ],
+              },
+            ],
+          });
+
+          const classifyText =
+            classifyResponse.content[0].type === "text"
+              ? classifyResponse.content[0].text
+              : "";
+          let isApplication = false;
+          let confidence = 0;
+          let applicationType: string | null = null;
+          try {
+            const parsed = JSON.parse(
+              classifyText
+                .replace(/^```(?:json)?\s*\n?/i, "")
+                .replace(/\n?```\s*$/i, ""),
+            );
+            isApplication = parsed.isApplication;
+            confidence = parsed.confidence;
+            applicationType = parsed.applicationType;
+          } catch {
+            // Not an application
+          }
+
+          if (isApplication && confidence > 0.7) {
+            // Store PDF in file storage (already stored as attachmentRecords)
+            const storedRecord = attachmentRecords.find(
+              (r) =>
+                r.filename === pdfAtt.filename && r.fileId,
+            );
+            const fileId = storedRecord?.fileId;
+
+            if (fileId) {
+              await ctx.scheduler.runAfter(
+                0,
+                internal.actions.processApplication.startApplicationSession,
+                {
+                  conversationId,
+                  orgId,
+                  userId: primaryUserId,
+                  fileId: fileId as Id<"_storage">,
+                  fileName: pdfAtt.filename,
+                  pdfBase64,
+                  fromEmail,
+                  subject,
+                  agentAddress,
+                  threadId: threadId ?? conversationId,
+                  companyName: org.name,
+                  applicationTitle: applicationType ?? undefined,
+                  messageId,
+                },
+              );
+              return; // skip normal agent flow
+            }
+          }
+        }
+      }
+    }
+
     // Unknown mode: notify the primary insurance contact (or first admin)
     if (effectiveMode === "unknown") {
       try {
@@ -555,7 +733,7 @@ export const processInbound = internalAction({
         orgId,
       });
 
-      const siteUrl = process.env.SITE_URL ?? "http://localhost:3000";
+      const siteUrl = process.env.SITE_URL ?? "https://email.claritylabs.inc";
 
       // Get primary user profile for name reference
       const primaryUser = await ctx.runQuery(internal.users.getInternal, { id: primaryUserId });
@@ -680,7 +858,9 @@ export const processInbound = internalAction({
 
       // Build reply with signature
       const stripMarkdown = (text: string) => {
-        let result = text.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, "$1 ($2)");
+        let result = text;
+        result = result.replace(/^#{1,6}\s+(.+)$/gm, "$1");
+        result = result.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, "$1 ($2)");
         result = result.replace(/\*\*(.+?)\*\*/g, "$1");
         result = result.replace(/\*(.+?)\*/g, "$1");
         return result;
@@ -691,7 +871,9 @@ export const processInbound = internalAction({
 
       const linkStyle = 'style="color:#2563eb;text-decoration:underline"';
       const markdownToHtml = (text: string) => {
-        let result = text.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,
+        let result = text;
+        result = result.replace(/^#{1,6}\s+(.+)$/gm, "<strong>$1</strong>");
+        result = result.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,
           `<a href="$2" ${linkStyle}>$1</a>`);
         result = result.replace(/(?<!href=")(https?:\/\/[^\s<)]+)/g,
           `<a href="$1" ${linkStyle}>$1</a>`);

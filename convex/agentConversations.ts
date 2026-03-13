@@ -82,6 +82,20 @@ export const updateError = internalMutation({
   },
 });
 
+export const clearError = internalMutation({
+  args: { id: v.id("agentConversations") },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.id, { status: "processing", error: undefined });
+  },
+});
+
+export const getInternal = internalQuery({
+  args: { id: v.id("agentConversations") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.id);
+  },
+});
+
 /**
  * Normalize a Message-ID for comparison.
  */
