@@ -23,7 +23,7 @@ AI-powered insurance platform with policy extraction and application assistance.
 
 - **Frontend**: Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS 4
 - **Backend**: Convex (realtime serverless DB + functions)
-- **AI**: Anthropic Claude API (`@anthropic-ai/sdk`)
+- **AI**: Anthropic Claude API (`@anthropic-ai/sdk`), `@claritylabs-inc/cell` (shared prompts, extraction logic, PDF filling)
 - **Email**: imapflow for IMAP scanning, Resend for outbound agent emails
 - **PDF Generation**: pdfkit for application summary PDFs, mupdf (WASM) for flattening broken PDFs
 - **UI**: shadcn/ui (base-nova style) + Base-UI primitives, Framer Motion, Lucide icons
@@ -116,6 +116,19 @@ Filled PDF stored as `filledFileId` on the session.
 - Manually managed via Settings > Business Context tab
 - Used as primary auto-fill source for new applications
 
+### `@claritylabs-inc/cell` Package
+
+All prompts, AI extraction logic, PDF filling helpers, and agent prompt building have been extracted into the `@claritylabs-inc/cell` npm package (hosted on GitHub Package Registry via `.npmrc`). The local `convex/lib/` files now re-export from `@claritylabs-inc/cell`:
+
+- `lib/prompts.ts` — Re-exports extraction prompts (EXTRACTION_PROMPT, METADATA_PROMPT, buildSectionsPrompt, etc.)
+- `lib/extraction.ts` — Re-exports extraction helpers (stripFences, applyExtracted, callClaude, extractFromPdf, etc.) and types (LogFn, PromptBuilder)
+- `lib/applicationPrompts.ts` — Re-exports application prompts (classify, extract fields, auto-fill, batch questions, etc.)
+- `lib/pdfFiller.ts` — Re-exports PDF filling functions (getAcroFormFields, fillAcroForm, overlayTextOnPdf) and types
+- `lib/aiClassifier.ts` — Re-exports CLASSIFY_EMAIL_PROMPT
+- `lib/agentPrompts.ts` — Re-exports buildSystemPrompt, buildConversationMemoryContext + thin adapter functions (`buildDocumentContext`, `buildPolicyContext`) that map Convex `Doc` types to cell's framework-agnostic interfaces
+
+To modify prompts or extraction logic, update the `@claritylabs-inc/cell` package and bump the version.
+
 ### Key Backend Files (convex/)
 
 - `schema.ts` — Tables: `emailConnections`, `emails`, `policies`, `organizations`, `orgMemberships`, `orgInvitations`, `agentConversations`, `orgBusinessContext`, `applicationSessions`, `webChats`, `webChatMessages`
@@ -130,11 +143,7 @@ Filled PDF stored as `filledFileId` on the session.
 - `actions/processApplication.ts` — Application workflow: field extraction, auto-fill, batched Q&A, confirmation, summary PDF generation
 - `actions/processWebChat.ts` — Web chat agent response: builds context from policies/quotes/email memory, calls Claude Haiku, auto-titles
 - `actions/` — Also: IMAP scanning, classification, extraction
-- `lib/prompts.ts` — Policy extraction prompts (EXTRACTION_PROMPT, METADATA_PROMPT, buildSectionsPrompt)
-- `lib/applicationPrompts.ts` — Application prompts (classify, extract fields, auto-fill, batch questions, parse answers, confirmation summary, batch email generation, reply intent classification, field explanation, lookup fill, AcroForm mapping)
-- `lib/pdfFiller.ts` — AcroForm PDF filling: field enumeration (`getAcroFormFields`) and filling (`fillAcroForm`) using pdf-lib
 - `lib/applicationTypes.ts` — Types for form fields (SimpleField, TableField, DeclarationField), QuestionBatch
-- `lib/extraction.ts` — Shared extraction helpers (stripFences, applyExtracted, mergeChunkedSections, getPageChunks). Uses Sonnet with adaptive thinking + medium effort
 - `lib/policyTypes.ts` — Insurance keyword lists and policy type label map
 
 ### Key Frontend Patterns
