@@ -201,7 +201,7 @@ export function ChatInputOverlay({ children }: { children: React.ReactNode }) {
             "linear-gradient(to bottom, rgba(250,248,244,0) 0%, rgba(250,248,244,0.4) 50%, rgba(250,248,244,0.8) 100%)",
         }}
       />
-      <div className="pointer-events-auto bg-[rgba(250,248,244,0.8)] px-4 md:px-6 lg:px-8 pb-5 pt-2">
+      <div className="pointer-events-auto bg-[rgba(250,248,244,0.8)] px-4 md:px-6 lg:px-8 pt-2" style={{ paddingBottom: "calc(1.25rem + env(safe-area-inset-bottom, 0px))" }}>
         <div className="max-w-2xl mx-auto">{children}</div>
       </div>
     </div>
