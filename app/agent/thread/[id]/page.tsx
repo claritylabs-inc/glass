@@ -132,6 +132,19 @@ function UnifiedThreadActions({
   );
 }
 
+/**
+ * Fix legacy agent-generated links where quote IDs were placed under /policies/.
+ * Uses the message's referencedQuoteIds to detect and rewrite to /quotes/.
+ */
+function fixQuoteLinks(content: string, quoteIds?: Id<"quotes">[]): string {
+  if (!quoteIds || quoteIds.length === 0) return content;
+  const quoteIdSet = new Set<string>(quoteIds);
+  return content.replace(
+    /\/policies\/([a-z0-9]+)/g,
+    (match, id) => quoteIdSet.has(id) ? `/quotes/${id}` : match,
+  );
+}
+
 /* ── Shared markdown container styles ── */
 const MARKDOWN_STYLES = "max-w-none text-body-sm leading-relaxed [&_p]:my-3 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_strong]:font-semibold [&_ul]:my-3 [&_ul]:pl-5 [&_ul]:list-disc [&_ol]:my-3 [&_ol]:pl-5 [&_ol]:list-decimal [&_li]:my-0.5 [&_a]:text-blue-600 [&_a]:underline [&_h1]:text-[0.875rem] [&_h1]:font-semibold [&_h1]:mt-3 [&_h1]:mb-1 [&_h2]:text-[0.875rem] [&_h2]:font-semibold [&_h2]:mt-3 [&_h2]:mb-1 [&_h3]:text-[0.875rem] [&_h3]:font-semibold [&_h3]:mt-2.5 [&_h3]:mb-0.5 [&_h4]:text-[0.875rem] [&_h4]:font-semibold [&_h4]:mt-2 [&_h4]:mb-0.5 [&_h5]:text-[0.875rem] [&_h5]:font-semibold [&_h6]:text-[0.875rem] [&_h6]:font-semibold [&_hr]:my-3 [&_hr]:border-foreground/8 [&_code]:text-[12px] [&_code]:bg-foreground/[0.04] [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded";
 
@@ -274,7 +287,7 @@ function UnifiedMessageBubble({
           </div>
           {hasContent ? (
             <div className={`rounded-lg bg-white border border-foreground/6 px-3.5 py-2.5 ${MARKDOWN_STYLES}`}>
-              <Markdown remarkPlugins={[remarkBreaks]} components={markdownComponents}>{msg.content}</Markdown>
+              <Markdown remarkPlugins={[remarkBreaks]} components={markdownComponents}>{fixQuoteLinks(msg.content, msg.referencedQuoteIds)}</Markdown>
               <span className="inline-block w-1.5 h-4 bg-[#A0D2FA] rounded-sm animate-pulse ml-0.5 align-middle" />
             </div>
           ) : (
@@ -301,7 +314,8 @@ function UnifiedMessageBubble({
 
   // Agent message
   if (msg.role === "agent") {
-    const entityRefs = extractEntityRefs(msg.content);
+    const fixedContent = fixQuoteLinks(msg.content, msg.referencedQuoteIds);
+    const entityRefs = extractEntityRefs(fixedContent);
     return (
       <div>
         <div className="flex items-start gap-2.5 max-w-lg w-fit">
@@ -330,7 +344,7 @@ function UnifiedMessageBubble({
               </div>
             )}
             <div className={`rounded-lg bg-white border border-foreground/6 px-3.5 py-2.5 ${MARKDOWN_STYLES}`}>
-              <Markdown remarkPlugins={[remarkBreaks]} components={markdownComponents}>{msg.content}</Markdown>
+              <Markdown remarkPlugins={[remarkBreaks]} components={markdownComponents}>{fixedContent}</Markdown>
             </div>
             {msg.status === "pending_send" && msg.pendingEmailId && (
               <PendingSendCountdown pendingEmailId={msg.pendingEmailId} />
