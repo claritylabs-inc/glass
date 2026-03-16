@@ -20,7 +20,7 @@ const ResendOTP = Email({
       body: JSON.stringify({
         from: process.env.AUTH_EMAIL_FROM ?? "Clarity Labs <onboarding@resend.dev>",
         to: email,
-        subject: "Your Clarity Labs sign-in code",
+        subject: "Your Cell Email sign-in code",
         html,
         text,
       }),

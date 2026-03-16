@@ -473,7 +473,7 @@ function PolicyConversationsTab({ conversations }: { conversations: Conversation
         <MessageSquare className="w-8 h-8 text-muted-foreground/15 mx-auto mb-3" />
         <p className="text-body-sm text-muted-foreground/50 mb-1">No conversations about this policy</p>
         <p className="text-label-sm text-muted-foreground/30">
-          When Clarity Agent references this policy in email conversations, they&#39;ll appear here.
+          When Cell Agent references this policy in email conversations, they&#39;ll appear here.
         </p>
       </div>
     );
@@ -536,7 +536,7 @@ const AUDIT_ACTION_CONFIG: Record<string, { icon: React.ElementType; dotColor: s
   deleted: { icon: Trash2, dotColor: "text-red-400", bgColor: "bg-red-50", title: "Policy deleted" },
   restored: { icon: Shield, dotColor: "text-emerald-500", bgColor: "bg-emerald-50", title: "Policy restored" },
   dismissed: { icon: XCircle, dotColor: "text-gray-500", bgColor: "bg-gray-50", title: "Policy dismissed" },
-  agent_referenced: { icon: Asterisk, dotColor: "text-[#A0D2FA]", bgColor: "bg-[#A0D2FA]/10", title: "Referenced by Clarity Agent" },
+  agent_referenced: { icon: Asterisk, dotColor: "text-[#A0D2FA]", bgColor: "bg-[#A0D2FA]/10", title: "Referenced by Cell Agent" },
 };
 
 function PolicyActivityTab({ policyId }: { policyId: string }) {

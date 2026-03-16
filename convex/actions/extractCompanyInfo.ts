@@ -23,7 +23,7 @@ export const extractCompanyInfo = action({
     // Fetch the URL
     const response = await fetch(args.url, {
       headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; ClarityLabs/1.0)",
+        "User-Agent": "Mozilla/5.0 (compatible; CellEmail/1.0)",
       },
     });
     if (!response.ok) {

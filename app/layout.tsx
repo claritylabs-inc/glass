@@ -28,8 +28,8 @@ export const viewport: Viewport = {
 
 export const metadata: Metadata = {
   title: {
-    default: "Clarity Labs",
-    template: "%s | Clarity Labs",
+    default: "Cell Email",
+    template: "%s | Cell Email",
   },
   description: "AI-powered insurance policy extraction from email",
   openGraph: {

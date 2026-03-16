@@ -15,8 +15,8 @@ import {
 
 function buildSignature(): { text: string; html: string } {
   const siteUrl = process.env.SITE_URL ?? "https://email.claritylabs.inc";
-  const text = "\n\nsent with Clarity Agent";
-  const html = `<p style="font-size:12px;color:#999;margin:24px 0 0"><a href="${siteUrl}" style="color:#999;text-decoration:none">sent with Clarity Agent</a></p>`;
+  const text = "\n\nsent with Cell Agent";
+  const html = `<p style="font-size:12px;color:#999;margin:24px 0 0"><a href="${siteUrl}" style="color:#999;text-decoration:none">sent with Cell Agent</a></p>`;
   return { text, html };
 }
 
@@ -213,8 +213,8 @@ For email drafts, compose a professional email that:
 - Incorporates the team member's direction naturally
 - Maintains appropriate tone for the business relationship
 - References relevant policy/coverage data when applicable
-- Writes from Clarity Agent's perspective (third-person on behalf of the company, e.g. "on behalf of [company]"). Do NOT sign off as the team member or impersonate them. The "sent with Clarity Agent" signature is added automatically — do not add your own sign-off.
-- If a team member asks you to send the email "from them" or "as them", politely decline and explain that emails are always sent from Clarity Agent on behalf of the company.`
+- Writes from Cell Agent's perspective (third-person on behalf of the company, e.g. "on behalf of [company]"). Do NOT sign off as the team member or impersonate them. The "sent with Cell Agent" signature is added automatically — do not add your own sign-off.
+- If a team member asks you to send the email "from them" or "as them", politely decline and explain that emails are always sent from Cell Agent on behalf of the company.`
         : `
 
 WEB CHAT MODE:
@@ -235,7 +235,7 @@ For emails, compose a professional message that:
 - Incorporates the team member's direction naturally
 - Maintains appropriate tone for the business relationship
 - References relevant policy/coverage data when applicable
-- Writes from Clarity Agent's perspective (third-person on behalf of the company). Do NOT sign off as the team member or impersonate them. The "sent with Clarity Agent" signature is added automatically — do not add your own sign-off.` : ""}`;
+- Writes from Cell Agent's perspective (third-person on behalf of the company). Do NOT sign off as the team member or impersonate them. The "sent with Cell Agent" signature is added automatically — do not add your own sign-off.` : ""}`;
 
       // Page context
       let pageContextBlock = "";
@@ -361,7 +361,7 @@ For emails, compose a professional message that:
             const refMessageId = lastEmailMsg?.responseMessageId ?? lastEmailMsg?.messageId;
 
             const emailPayload: Record<string, unknown> = {
-              from: `Clarity Agent <${agentAddress}>`,
+              from: `Cell Agent <${agentAddress}>`,
               to: replyTo,
               subject: replySubject,
               text: plainText,

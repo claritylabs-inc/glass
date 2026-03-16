@@ -446,18 +446,18 @@ function buildSignature(
   companyName?: string,
 ): { text: string; html: string } {
   const siteUrl = process.env.SITE_URL ?? "https://email.claritylabs.inc";
-  const linkText = `Sent by Clarity Agent${companyName ? ` from ${companyName}` : ""}`;
+  const linkText = `Sent by Cell Agent${companyName ? ` from ${companyName}` : ""}`;
   const text = [
     "",
     "—",
-    `Clarity Agent${companyName ? ` for ${companyName}` : ""}`,
+    `Cell Agent${companyName ? ` for ${companyName}` : ""}`,
     agentEmail,
     `${linkText} - ${siteUrl}`,
   ].join("\n");
 
   const html = [
     `<br><p style="color:#999;font-size:13px;margin:0">—</p>`,
-    `<p style="font-size:13px;margin:4px 0 2px"><span style="color:#A0D2FA;font-size:13px;font-family:'Segoe UI Symbol','Apple Symbols',sans-serif">&#x2733;&#xFE0E;</span> <strong>Clarity Agent${companyName ? ` for ${companyName}` : ""}</strong></p>`,
+    `<p style="font-size:13px;margin:4px 0 2px"><span style="color:#A0D2FA;font-size:13px;font-family:'Segoe UI Symbol','Apple Symbols',sans-serif">&#x2733;&#xFE0E;</span> <strong>Cell Agent${companyName ? ` for ${companyName}` : ""}</strong></p>`,
     `<p style="font-size:12px;color:#999;margin:0">${agentEmail}</p>`,
     `<p style="font-size:12px;margin:12px 0 0"><a href="${siteUrl}" style="color:#A0D2FA;text-decoration:none">${linkText}</a></p>`,
   ].join("\n");
@@ -507,7 +507,7 @@ async function sendEmail(
   headers?: Record<string, string>,
 ): Promise<string | undefined> {
   const emailPayload: Record<string, unknown> = {
-    from: `Clarity Agent <${agentAddress}>`,
+    from: `Cell Agent <${agentAddress}>`,
     to,
     subject,
     text: bodyText,
@@ -770,7 +770,7 @@ async function loadLookupContext(
       try {
         const url = rawUrl.startsWith("http") ? rawUrl : `https://${rawUrl}`;
         const webRes = await fetch(url, {
-          headers: { "User-Agent": "ClarityAgent/1.0 (Insurance Application Assistant)" },
+          headers: { "User-Agent": "CellAgent/1.0 (Insurance Application Assistant)" },
           signal: AbortSignal.timeout(10000),
         });
         if (webRes.ok) {
@@ -1036,7 +1036,7 @@ export const startApplicationSession = internalAction({
         try {
           const websiteUrl = org.website.startsWith("http") ? org.website : `https://${org.website}`;
           const webRes = await fetch(websiteUrl, {
-            headers: { "User-Agent": "ClarityAgent/1.0 (Insurance Application Assistant)" },
+            headers: { "User-Agent": "CellAgent/1.0 (Insurance Application Assistant)" },
             signal: AbortSignal.timeout(10000),
           });
           if (webRes.ok) {

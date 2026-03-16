@@ -333,7 +333,7 @@ export default function OnboardingPage() {
           <div className="text-center mb-6">
             {currentStep === 2 ? (
               <h3 className="!mb-0 flex items-center justify-center gap-1.5">
-                <Asterisk className="w-5 h-5 text-[#A0D2FA] shrink-0" /> Clarity Agent
+                <Asterisk className="w-5 h-5 text-[#A0D2FA] shrink-0" /> Cell Agent
               </h3>
             ) : (
               <h3 className="!mb-0 flex items-center justify-center gap-1.5">
@@ -625,7 +625,7 @@ export default function OnboardingPage() {
 
               <div>
                 <p className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider mb-3">
-                  What Clarity Agent can do
+                  What Cell Agent can do
                 </p>
                 <div className="space-y-2">
                   <div className="flex items-center gap-3 p-3 rounded-lg bg-violet-50/60 border border-violet-100">

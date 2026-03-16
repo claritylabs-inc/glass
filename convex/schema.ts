@@ -431,7 +431,7 @@ export default defineSchema({
     .index("by_quoteId", ["quoteId"])
     .index("by_orgId", ["orgId"]),
 
-  // Web chat sessions with Clarity Agent
+  // Web chat sessions with Cell Agent
   webChats: defineTable({
     orgId: v.id("organizations"),
     title: v.string(),

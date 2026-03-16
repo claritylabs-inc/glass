@@ -68,7 +68,7 @@ export function buildOtpEmail(token: string, siteUrl: string): { html: string; t
 </body>
 </html>`;
 
-  const text = `Your Clarity Labs sign-in code is: ${token}\n\nEnter this code in the browser window where you started signing in. It expires in 15 minutes.\n\nIf you didn't request this code, you can safely ignore this email.`;
+  const text = `Your Cell Email sign-in code is: ${token}\n\nEnter this code in the browser window where you started signing in. It expires in 15 minutes.\n\nIf you didn't request this code, you can safely ignore this email.`;
 
   return { html, text };
 }
