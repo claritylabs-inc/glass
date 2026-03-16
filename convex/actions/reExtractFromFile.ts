@@ -3,7 +3,6 @@
 import { v } from "convex/values";
 import { action } from "../_generated/server";
 import { api, internal } from "../_generated/api";
-import Anthropic from "@anthropic-ai/sdk";
 import { applyExtracted, applyExtractedQuote, extractFromPdf, extractQuoteFromPdf } from "../lib/extraction";
 
 export const reExtractFromFile = action({
@@ -44,16 +43,16 @@ export const reExtractFromFile = action({
       const arrayBuffer = await blob.arrayBuffer();
       const pdfBase64 = Buffer.from(arrayBuffer).toString("base64");
 
-      const anthropic = new Anthropic();
       const { rawText, extracted } = await extractFromPdf(
-        anthropic, pdfBase64, log,
-        async (raw) => {
+        pdfBase64, {
+        log,
+        onMetadata: async (raw) => {
           await ctx.runMutation(api.policies.updateExtraction, {
             id: args.policyId,
             rawMetadataResponse: raw,
           });
         },
-      );
+      });
 
       await ctx.runMutation(api.policies.updateExtraction, {
         id: args.policyId,
@@ -119,16 +118,16 @@ export const reExtractQuoteFromFile = action({
       const arrayBuffer = await blob.arrayBuffer();
       const pdfBase64 = Buffer.from(arrayBuffer).toString("base64");
 
-      const anthropic = new Anthropic();
       const { rawText, extracted } = await extractQuoteFromPdf(
-        anthropic, pdfBase64, log,
-        async (raw) => {
+        pdfBase64, {
+        log,
+        onMetadata: async (raw) => {
           await ctx.runMutation(api.quotes.updateExtraction, {
             id: args.quoteId,
             rawMetadataResponse: raw,
           });
         },
-      );
+      });
 
       await ctx.runMutation(api.quotes.updateExtraction, {
         id: args.quoteId,

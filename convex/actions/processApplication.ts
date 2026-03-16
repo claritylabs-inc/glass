@@ -3,8 +3,9 @@
 import { v } from "convex/values";
 import { action, internalAction } from "../_generated/server";
 import { api, internal } from "../_generated/api";
-import Anthropic from "@anthropic-ai/sdk";
-import { HAIKU_MODEL, SONNET_MODEL, stripFences } from "../lib/extraction";
+import { generateText } from "ai";
+import { haikuModel, sonnetModel } from "../lib/ai";
+import { stripFences } from "../lib/extraction";
 import {
   APPLICATION_CLASSIFY_PROMPT,
   buildFieldExtractionPrompt,
@@ -28,7 +29,6 @@ const RELATIVE_DATE_PATTERN = /\b(today|tomorrow|yesterday|next\s+\w+|last\s+\w+
 
 /** Resolve relative date references in parsed answers using a Haiku call. */
 async function resolveRelativeDates(
-  anthropic: Anthropic,
   answers: { fieldId: string; value: string; explanation?: string }[],
   fields: FormField[],
 ): Promise<void> {
@@ -49,9 +49,9 @@ async function resolveRelativeDates(
     .map((a, i) => `${i + 1}. field="${a.fieldId}" value="${a.value}"`)
     .join("\n");
 
-  const response = await anthropic.messages.create({
-    model: HAIKU_MODEL,
-    max_tokens: 256,
+  const { text } = await generateText({
+    model: haikuModel,
+    maxOutputTokens: 256,
     messages: [{
       role: "user",
       content: `Today is ${today.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })} (${today.toISOString().slice(0, 10)}).
@@ -68,8 +68,6 @@ Respond with JSON only:
 }`,
     }],
   });
-
-  const text = response.content[0]?.type === "text" ? response.content[0].text : "";
   try {
     const { dates } = JSON.parse(stripFences(text));
     for (const d of dates ?? []) {
@@ -260,8 +258,6 @@ export const fillApplicationPdf = action({
         console.log("PDF incompatible with pdf-lib, using standalone fallback");
       }
     }
-    const anthropic = new Anthropic();
-
     let filledBytes: Uint8Array;
     let fieldsMapped: number;
     let mode: "acroform" | "overlay" | "standalone";
@@ -274,13 +270,11 @@ export const fillApplicationPdf = action({
         acroFields,
       );
 
-      const response = await anthropic.messages.create({
-        model: HAIKU_MODEL,
-        max_tokens: 4096,
+      const { text: responseText } = await generateText({
+        model: haikuModel,
+        maxOutputTokens: 4096,
         messages: [{ role: "user", content: mappingPrompt }],
       });
-
-      const responseText = response.content[0]?.type === "text" ? response.content[0].text : "";
       const parsed = JSON.parse(stripFences(responseText));
       const mappings: { acroFormName: string; value: string }[] = (parsed.mappings ?? []).map(
         (m: any) => ({ acroFormName: m.acroFormName, value: m.value }),
@@ -306,26 +300,21 @@ export const fillApplicationPdf = action({
         })),
       );
 
-      const response = await anthropic.messages.create({
-        model: HAIKU_MODEL,
-        max_tokens: 16384,
+      const { text: responseText } = await generateText({
+        model: haikuModel,
+        maxOutputTokens: 16384,
         messages: [{
           role: "user",
           content: [
             {
-              type: "document",
-              source: {
-                type: "base64",
-                media_type: "application/pdf",
-                data: pdfBase64,
-              },
+              type: "file",
+              data: pdfBase64,
+              mediaType: "application/pdf",
             },
             { type: "text", text: mappingPrompt },
           ],
         }],
       });
-
-      const responseText = response.content[0]?.type === "text" ? response.content[0].text : "";
       const parsed = JSON.parse(stripFences(responseText));
       const placements = parsed.placements ?? [];
 
@@ -557,7 +546,6 @@ function getFieldLabel(field: FormField): string {
 }
 
 async function generateBatchEmail(
-  anthropic: Anthropic,
   fields: FormField[],
   batchFieldIds: string[],
   batchIndex: number,
@@ -580,9 +568,9 @@ async function generateBatchEmail(
     condition: (f as any).condition as { dependsOn: string; whenValue: string } | undefined,
   }));
 
-  const response = await anthropic.messages.create({
-    model: HAIKU_MODEL,
-    max_tokens: 2048,
+  const { text: body } = await generateText({
+    model: haikuModel,
+    maxOutputTokens: 2048,
     messages: [
       {
         role: "user",
@@ -599,8 +587,6 @@ async function generateBatchEmail(
       },
     ],
   });
-
-  const body = response.content[0].type === "text" ? response.content[0].text : "";
   return {
     text: stripMarkdown(body),
     html: textToHtml(body),
@@ -642,7 +628,6 @@ type AutoFillResult = { fieldId: string; value: string; source: string };
  *  Returns fills with source attribution. */
 async function preFillFromPolicies(
   ctx: any,
-  anthropic: Anthropic,
   fields: FormField[],
   batchFieldIds: string[],
   orgId: any,
@@ -665,9 +650,9 @@ async function preFillFromPolicies(
   const lookupData = await loadLookupContext(ctx, orgId, userId, ["policy", "business_context"]);
   if (!lookupData) return [];
 
-  const response = await anthropic.messages.create({
-    model: HAIKU_MODEL,
-    max_tokens: 2048,
+  const { text } = await generateText({
+    model: haikuModel,
+    maxOutputTokens: 2048,
     messages: [
       {
         role: "user",
@@ -679,8 +664,6 @@ async function preFillFromPolicies(
       },
     ],
   });
-
-  const text = response.content[0].type === "text" ? response.content[0].text : "";
   const fills: AutoFillResult[] = [];
   try {
     const result = JSON.parse(stripFences(text));
@@ -835,30 +818,23 @@ function buildConfirmationEmail(
 export const classifyApplicationPdf = internalAction({
   args: { pdfBase64: v.string() },
   handler: async (_ctx, args) => {
-    const anthropic = new Anthropic();
-    const response = await anthropic.messages.create({
-      model: HAIKU_MODEL,
-      max_tokens: 256,
+    const { text } = await generateText({
+      model: haikuModel,
+      maxOutputTokens: 256,
       messages: [
         {
           role: "user",
           content: [
             {
-              type: "document",
-              source: {
-                type: "base64",
-                media_type: "application/pdf",
-                data: args.pdfBase64,
-              },
-            } as any,
+              type: "file",
+              data: args.pdfBase64,
+              mediaType: "application/pdf",
+            },
             { type: "text", text: APPLICATION_CLASSIFY_PROMPT },
           ],
         },
       ],
     });
-
-    const text =
-      response.content[0].type === "text" ? response.content[0].text : "";
     try {
       return JSON.parse(stripFences(text));
     } catch {
@@ -951,21 +927,17 @@ export const startApplicationSession = internalAction({
       }
 
       // 2. Extract fields from PDF using Sonnet with citations
-      const anthropic = new Anthropic();
-      const extractionResponse = await anthropic.messages.create({
-        model: SONNET_MODEL,
-        max_tokens: 16384,
+      const extractionResponse = await generateText({
+        model: sonnetModel,
+        maxOutputTokens: 16384,
         messages: [
           {
             role: "user",
             content: [
               {
-                type: "document",
-                source: {
-                  type: "base64",
-                  media_type: "application/pdf",
-                  data: args.pdfBase64,
-                },
+                type: "file",
+                data: args.pdfBase64,
+                mediaType: "application/pdf",
               },
               {
                 type: "text",
@@ -977,10 +949,7 @@ export const startApplicationSession = internalAction({
       });
 
       // Parse fields from response
-      const textBlock = extractionResponse.content.find(
-        (b) => b.type === "text",
-      );
-      const fieldsText = textBlock && "text" in textBlock ? textBlock.text : "";
+      const fieldsText = extractionResponse.text;
       const rawExtraction = fieldsText;
       const cleaned = stripFences(fieldsText).trim();
 
@@ -995,11 +964,11 @@ export const startApplicationSession = internalAction({
       if (!Array.isArray(fields) || fields.length === 0) {
         console.error("Field extraction raw (first 500 chars):", rawExtraction.slice(0, 500));
         throw new Error(
-          `Field extraction returned no parseable fields (stop_reason: ${extractionResponse.stop_reason}, ${rawExtraction.length} chars)`,
+          `Field extraction returned no parseable fields (finishReason: ${extractionResponse.finishReason}, ${rawExtraction.length} chars)`,
         );
       }
 
-      if (extractionResponse.stop_reason === "max_tokens") {
+      if (extractionResponse.finishReason === "length") {
         console.warn(`Field extraction truncated — salvaged ${fields.length} fields from partial output`);
       }
 
@@ -1083,9 +1052,9 @@ export const startApplicationSession = internalAction({
 
             if (textContent.length > 100) {
               // Use Haiku to extract relevant business info from website
-              const webInfoResponse = await anthropic.messages.create({
-                model: HAIKU_MODEL,
-                max_tokens: 1024,
+              const { text: webInfoText } = await generateText({
+                model: haikuModel,
+                maxOutputTokens: 1024,
                 messages: [
                   {
                     role: "user",
@@ -1106,7 +1075,6 @@ Only include facts you are confident about. Do not fabricate.`,
                 ],
               });
 
-              const webInfoText = webInfoResponse.content[0].type === "text" ? webInfoResponse.content[0].text : "";
               try {
                 const { facts } = JSON.parse(stripFences(webInfoText));
                 for (const fact of facts ?? []) {
@@ -1142,9 +1110,9 @@ Only include facts you are confident about. Do not fabricate.`,
             contextEntries.find((e) => e.key === "business_description")?.value,
           ].filter(Boolean).join(". ");
 
-          const naicsResponse = await anthropic.messages.create({
-            model: HAIKU_MODEL,
-            max_tokens: 256,
+          const { text: naicsText } = await generateText({
+            model: haikuModel,
+            maxOutputTokens: 256,
             messages: [{
               role: "user",
               content: `What is the most appropriate NAICS code and SIC code for this business?
@@ -1163,8 +1131,6 @@ Respond with JSON only:
 Use the most specific code that applies. Do not guess if the info is insufficient — omit codes you aren't confident about.`,
             }],
           });
-
-          const naicsText = naicsResponse.content[0]?.type === "text" ? naicsResponse.content[0].text : "";
           try {
             const codes = JSON.parse(stripFences(naicsText));
             if (codes.naics_code) {
@@ -1260,9 +1226,9 @@ Use the most specific code that applies. Do not guess if the info is insufficien
 
       let initialAutoFills: AutoFillResult[] = [];
       if (simpleFields.length > 0 && contextEntries.length > 0) {
-        const autoFillResponse = await anthropic.messages.create({
-          model: HAIKU_MODEL,
-          max_tokens: 4096,
+        const { text: autoFillText } = await generateText({
+          model: haikuModel,
+          maxOutputTokens: 4096,
           messages: [
             {
               role: "user",
@@ -1270,11 +1236,6 @@ Use the most specific code that applies. Do not guess if the info is insufficien
             },
           ],
         });
-
-        const autoFillText =
-          autoFillResponse.content[0].type === "text"
-            ? autoFillResponse.content[0].text
-            : "";
         try {
           const { matches } = JSON.parse(stripFences(autoFillText));
           for (const match of matches) {
@@ -1344,7 +1305,6 @@ Use the most specific code that applies. Do not guess if the info is insufficien
 
         // Send confirmation email (threaded)
         const summary = await generateConfirmationSummary(
-          anthropic,
           fields,
           args.applicationTitle ?? args.fileName,
         );
@@ -1375,9 +1335,9 @@ Use the most specific code that applies. Do not guess if the info is insufficien
           filledFields: postSkipFilledFields,
         });
 
-        const batchResponse = await anthropic.messages.create({
-          model: HAIKU_MODEL,
-          max_tokens: 2048,
+        const { text: batchText } = await generateText({
+          model: haikuModel,
+          maxOutputTokens: 2048,
           messages: [
             {
               role: "user",
@@ -1395,11 +1355,6 @@ Use the most specific code that applies. Do not guess if the info is insufficien
             },
           ],
         });
-
-        const batchText =
-          batchResponse.content[0].type === "text"
-            ? batchResponse.content[0].text
-            : "";
         let batchGroups: string[][];
         try {
           const parsed = JSON.parse(stripFences(batchText));
@@ -1428,7 +1383,6 @@ Use the most specific code that applies. Do not guess if the info is insufficien
           : undefined;
 
         const { text, html } = await generateBatchEmail(
-          anthropic,
           fields,
           firstBatch.fieldIds,
           0,
@@ -1541,15 +1495,14 @@ export const processApplicationReply = internalAction({
         .map((id) => fields.find((f) => f.id === id))
         .filter(Boolean) as FormField[];
 
-      const anthropic = new Anthropic();
       const replySubject = args.subject.startsWith("Re:") ? args.subject : `Re: ${args.subject}`;
       const signature = buildSignature(args.agentAddress, args.companyName);
       const totalFields = session.totalFields ?? fields.length;
 
       // 1. CLASSIFY INTENT
-      const intentResponse = await anthropic.messages.create({
-        model: HAIKU_MODEL,
-        max_tokens: 512,
+      const { text: intentText } = await generateText({
+        model: haikuModel,
+        maxOutputTokens: 512,
         messages: [
           {
             role: "user",
@@ -1560,8 +1513,6 @@ export const processApplicationReply = internalAction({
           },
         ],
       });
-
-      const intentText = intentResponse.content[0].type === "text" ? intentResponse.content[0].text : "";
       let intentResult: {
         primaryIntent: string;
         hasAnswers: boolean;
@@ -1582,9 +1533,9 @@ export const processApplicationReply = internalAction({
 
       // 2. HANDLE ANSWERS (answers_only or mixed)
       if (intentResult.hasAnswers || intentResult.primaryIntent === "answers_only" || intentResult.primaryIntent === "mixed") {
-        const parseResponse = await anthropic.messages.create({
-          model: HAIKU_MODEL,
-          max_tokens: 2048,
+        const { text: parseText } = await generateText({
+          model: haikuModel,
+          maxOutputTokens: 2048,
           messages: [
             {
               role: "user",
@@ -1600,8 +1551,6 @@ export const processApplicationReply = internalAction({
             },
           ],
         });
-
-        const parseText = parseResponse.content[0].type === "text" ? parseResponse.content[0].text : "";
         let answers: { fieldId: string; value: string; explanation?: string }[] = [];
 
         try {
@@ -1612,7 +1561,7 @@ export const processApplicationReply = internalAction({
         }
 
         // Resolve relative date references (e.g. "today", "tomorrow") to actual dates
-        await resolveRelativeDates(anthropic, answers, fields);
+        await resolveRelativeDates(answers, fields);
 
         // Apply answers to fields
         for (const answer of answers) {
@@ -1675,9 +1624,9 @@ export const processApplicationReply = internalAction({
           policyContext = await loadLookupContext(ctx, session.orgId, session.userId, ["policy"]);
         }
 
-        const explainResponse = await anthropic.messages.create({
-          model: HAIKU_MODEL,
-          max_tokens: 512,
+        const { text: explanationText } = await generateText({
+          model: haikuModel,
+          maxOutputTokens: 512,
           messages: [
             {
               role: "user",
@@ -1695,7 +1644,7 @@ export const processApplicationReply = internalAction({
           ],
         });
 
-        explanationPrefix = explainResponse.content[0].type === "text" ? explainResponse.content[0].text : "";
+        explanationPrefix = explanationText;
       }
 
       // 4. HANDLE LOOKUP REQUEST
@@ -1721,9 +1670,9 @@ export const processApplicationReply = internalAction({
         const lookupData = await loadLookupContext(ctx, session.orgId, session.userId, requestTypes, webUrls.length > 0 ? webUrls : undefined);
 
         if (lookupData && targetFields.length > 0) {
-          const fillResponse = await anthropic.messages.create({
-            model: HAIKU_MODEL,
-            max_tokens: 2048,
+          const { text: fillText } = await generateText({
+            model: haikuModel,
+            maxOutputTokens: 2048,
             messages: [
               {
                 role: "user",
@@ -1735,8 +1684,6 @@ export const processApplicationReply = internalAction({
               },
             ],
           });
-
-          const fillText = fillResponse.content[0].type === "text" ? fillResponse.content[0].text : "";
           try {
             const fillResult = JSON.parse(stripFences(fillText));
 
@@ -1839,7 +1786,7 @@ export const processApplicationReply = internalAction({
       }
 
       // Pre-fill any coverage/policy fields from existing policy data before sending
-      const preFilled = await preFillFromPolicies(ctx, anthropic, fields, batchUnanswered, session.orgId, session.userId);
+      const preFilled = await preFillFromPolicies(ctx, fields, batchUnanswered, session.orgId, session.userId);
       if (preFilled.length > 0) {
         for (const fill of preFilled) {
           if (!currentBatch.answeredFieldIds.includes(fill.fieldId)) {
@@ -1865,7 +1812,6 @@ export const processApplicationReply = internalAction({
       if (batchUnanswered.length > 0) {
         // Still have unanswered fields in this batch — re-send remaining
         const { text: batchText, html: batchHtml } = await generateBatchEmail(
-          anthropic,
           fields,
           batchUnanswered,
           currentBatchIndex,
@@ -1931,7 +1877,7 @@ export const processApplicationReply = internalAction({
           nextBatch.sentAt = Date.now();
 
           // Pre-fill coverage/policy fields from existing data before asking
-          const nextPreFilled = await preFillFromPolicies(ctx, anthropic, fields, nextBatch.fieldIds, session.orgId, session.userId);
+          const nextPreFilled = await preFillFromPolicies(ctx, fields, nextBatch.fieldIds, session.orgId, session.userId);
           let nextBatchFieldIds = nextBatch.fieldIds;
           if (nextPreFilled.length > 0) {
             const nextPreFilledIds = nextPreFilled.map((f) => f.fieldId);
@@ -1991,7 +1937,6 @@ export const processApplicationReply = internalAction({
           }
 
           const { text: batchText, html: batchHtml } = await generateBatchEmail(
-            anthropic,
             fields,
             nextBatchFieldIds,
             nextBatchIndex,
@@ -2055,7 +2000,6 @@ export const processApplicationReply = internalAction({
           });
 
           const summary = await generateConfirmationSummary(
-            anthropic,
             fields,
             session.applicationTitle ?? session.sourceFileName,
           );
@@ -2138,12 +2082,11 @@ export const processConfirmationReply = internalAction({
       if (!session) throw new Error("Session not found");
 
       const fields: FormField[] = session.parsedFields;
-      const anthropic = new Anthropic();
 
       // Classify the reply
-      const classifyResponse = await anthropic.messages.create({
-        model: HAIKU_MODEL,
-        max_tokens: 256,
+      const { text: classifyText } = await generateText({
+        model: haikuModel,
+        maxOutputTokens: 256,
         messages: [
           {
             role: "user",
@@ -2156,11 +2099,6 @@ Respond with JSON only:
           },
         ],
       });
-
-      const classifyText =
-        classifyResponse.content[0].type === "text"
-          ? classifyResponse.content[0].text
-          : "";
       let intent: "confirmed" | "changes_requested" | "cancelled" = "confirmed";
       try {
         const parsed = JSON.parse(stripFences(classifyText));
@@ -2236,9 +2174,9 @@ Respond with JSON only:
         });
       } else if (intent === "changes_requested") {
         // Parse changes and re-send confirmation
-        const parseResponse = await anthropic.messages.create({
-          model: HAIKU_MODEL,
-          max_tokens: 2048,
+        const { text: parseText } = await generateText({
+          model: haikuModel,
+          maxOutputTokens: 2048,
           messages: [
             {
               role: "user",
@@ -2254,16 +2192,11 @@ Respond with JSON only:
             },
           ],
         });
-
-        const parseText =
-          parseResponse.content[0].type === "text"
-            ? parseResponse.content[0].text
-            : "";
         try {
           const parsed = JSON.parse(stripFences(parseText));
           const changeAnswers = parsed.answers ?? [];
           // Resolve relative date references
-          await resolveRelativeDates(anthropic, changeAnswers, fields);
+          await resolveRelativeDates(changeAnswers, fields);
           for (const answer of changeAnswers) {
             const field = fields.find((f) => f.id === answer.fieldId);
             if (field) {
@@ -2279,7 +2212,6 @@ Respond with JSON only:
 
         // Re-generate and send updated confirmation
         const summary = await generateConfirmationSummary(
-          anthropic,
           fields,
           session.applicationTitle ?? session.sourceFileName,
         );
@@ -2410,13 +2342,12 @@ function sectionToCategory(section: string): string {
 }
 
 async function generateConfirmationSummary(
-  anthropic: Anthropic,
   fields: FormField[],
   applicationTitle: string,
 ): Promise<string> {
-  const summaryResponse = await anthropic.messages.create({
-    model: HAIKU_MODEL,
-    max_tokens: 4096,
+  const { text } = await generateText({
+    model: haikuModel,
+    maxOutputTokens: 4096,
     messages: [
       {
         role: "user",
@@ -2435,9 +2366,7 @@ async function generateConfirmationSummary(
     ],
   });
 
-  return summaryResponse.content[0].type === "text"
-    ? summaryResponse.content[0].text
-    : "";
+  return text;
 }
 
 async function generateAndStoreSummaryPdf(

@@ -28,6 +28,7 @@ import type * as emails from "../emails.js";
 import type * as http from "../http.js";
 import type * as lib_agentEmailTemplate from "../lib/agentEmailTemplate.js";
 import type * as lib_agentPrompts from "../lib/agentPrompts.js";
+import type * as lib_ai from "../lib/ai.js";
 import type * as lib_aiClassifier from "../lib/aiClassifier.js";
 import type * as lib_applicationPrompts from "../lib/applicationPrompts.js";
 import type * as lib_applicationTypes from "../lib/applicationTypes.js";
@@ -82,6 +83,7 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   "lib/agentEmailTemplate": typeof lib_agentEmailTemplate;
   "lib/agentPrompts": typeof lib_agentPrompts;
+  "lib/ai": typeof lib_ai;
   "lib/aiClassifier": typeof lib_aiClassifier;
   "lib/applicationPrompts": typeof lib_applicationPrompts;
   "lib/applicationTypes": typeof lib_applicationTypes;

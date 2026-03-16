@@ -3,7 +3,8 @@
 import { v } from "convex/values";
 import { action } from "../_generated/server";
 import { api } from "../_generated/api";
-import Anthropic from "@anthropic-ai/sdk";
+import { generateText } from "ai";
+import { haikuModel } from "../lib/ai";
 import { INDUSTRIES } from "../lib/industries";
 
 // Build a compact reference of valid industry/vertical values for the prompt
@@ -44,10 +45,9 @@ export const extractCompanyInfo = action({
       html = html.slice(0, 8000);
     }
 
-    const anthropic = new Anthropic();
-    const result = await anthropic.messages.create({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 1024,
+    const { text } = await generateText({
+      model: haikuModel,
+      maxOutputTokens: 1024,
       messages: [
         {
           role: "user",
@@ -67,9 +67,6 @@ ${html}`,
         },
       ],
     });
-
-    const text =
-      result.content[0].type === "text" ? result.content[0].text : "";
 
     // Parse JSON response
     let companyContext = text;

@@ -3,7 +3,8 @@
 import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
-import Anthropic from "@anthropic-ai/sdk";
+import { generateText, type ModelMessage } from "ai";
+import { haikuModel } from "../lib/ai";
 import { Webhook } from "svix";
 import { buildSystemPrompt, buildDocumentContext, buildConversationMemoryContext } from "../lib/agentPrompts";
 import { Id } from "../_generated/dataModel";
@@ -644,22 +645,18 @@ export const processInbound = internalAction({
           const pdfAtt = pdfAttachments[0];
           const pdfBase64 = pdfAtt.buffer.toString("base64");
 
-          const classifyClient = new Anthropic();
-          const classifyResponse = await classifyClient.messages.create({
-            model: "claude-haiku-4-5-20251001",
-            max_tokens: 256,
+          const { text: classifyText } = await generateText({
+            model: haikuModel,
+            maxOutputTokens: 256,
             messages: [
               {
                 role: "user",
                 content: [
                   {
-                    type: "document",
-                    source: {
-                      type: "base64",
-                      media_type: "application/pdf",
-                      data: pdfBase64,
-                    },
-                  } as any,
+                    type: "file",
+                    data: pdfBase64,
+                    mediaType: "application/pdf",
+                  },
                   {
                     type: "text",
                     text: `You are classifying a PDF document. Determine if this is an insurance APPLICATION FORM (a form to be filled out to apply for insurance) versus a policy document, quote, certificate, or other document.
@@ -671,11 +668,6 @@ Respond with JSON only:
               },
             ],
           });
-
-          const classifyText =
-            classifyResponse.content[0].type === "text"
-              ? classifyResponse.content[0].text
-              : "";
           let isApplication = false;
           let confidence = 0;
           let applicationType: string | null = null;
@@ -874,7 +866,7 @@ Respond with JSON only:
       const memoryContext = buildConversationMemoryContext(pastConversations);
 
       // Build messages — include thread history for context
-      const messages: Anthropic.MessageParam[] = [];
+      const messages: ModelMessage[] = [];
 
       if (threadId) {
         const threadMessages = await ctx.runQuery(
@@ -902,29 +894,25 @@ Respond with JSON only:
       );
 
       if (claudeAttachments.length > 0) {
-        const contentBlocks: Anthropic.ContentBlockParam[] = [];
+        const contentParts: Array<{ type: "text"; text: string } | { type: "file"; data: string; mediaType: string }> = [];
 
         for (const att of claudeAttachments) {
           if (att.content_type === "application/pdf") {
-            contentBlocks.push({
-              type: "document",
-              source: {
-                type: "base64",
-                media_type: "application/pdf",
-                data: att.buffer.toString("base64"),
-              },
-              title: att.filename,
-            } as any);
+            contentParts.push({
+              type: "file",
+              data: att.buffer.toString("base64"),
+              mediaType: "application/pdf",
+            });
           } else {
-            contentBlocks.push({
+            contentParts.push({
               type: "text",
               text: `--- Attachment: ${att.filename} ---\n${att.buffer.toString("utf-8")}\n--- End attachment ---`,
             });
           }
         }
 
-        contentBlocks.push({ type: "text", text: emailText });
-        messages.push({ role: "user", content: contentBlocks });
+        contentParts.push({ type: "text", text: emailText });
+        messages.push({ role: "user", content: contentParts });
       } else {
         messages.push({ role: "user", content: emailText });
       }
@@ -955,16 +943,14 @@ For emails, compose a professional message that:
       }
 
       // Call Claude Haiku
-      const anthropic = new Anthropic();
-      const response = await anthropic.messages.create({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 2048,
+      const { text: responseBody_ } = await generateText({
+        model: haikuModel,
+        maxOutputTokens: 2048,
         system: systemContext,
         messages,
       });
 
-      let responseBody =
-        response.content[0].type === "text" ? response.content[0].text : "";
+      let responseBody = responseBody_;
 
       // ── Detect "Sending email to..." pattern for third-party sends ──
       const sendMatch = responseBody.match(/\*?\*?Sending email to (.+?)\.\.\.\*?\*?\s*\n([\s\S]+)$/i);

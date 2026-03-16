@@ -4,7 +4,6 @@ import { v } from "convex/values";
 import { action } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import { ImapFlow } from "imapflow";
-import Anthropic from "@anthropic-ai/sdk";
 import { stripFences, applyExtracted, applyExtractedQuote, extractFromPdf, extractQuoteFromPdf, extractSectionsOnly, enrichSupplementaryFields, sanitizeNulls } from "../lib/extraction";
 import { buildQuoteSectionsPrompt } from "../lib/prompts";
 
@@ -78,17 +77,16 @@ export const retryQuoteExtraction = action({
       if (!blob) throw new Error("Stored PDF not found");
       const pdfBase64 = Buffer.from(await blob.arrayBuffer()).toString("base64");
 
-      const Anthropic = (await import("@anthropic-ai/sdk")).default;
-      const anthropic = new Anthropic();
       const { rawText, extracted } = await extractQuoteFromPdf(
-        anthropic, pdfBase64, log,
-        async (raw) => {
+        pdfBase64, {
+        log,
+        onMetadata: async (raw) => {
           await ctx.runMutation(api.quotes.updateExtraction, {
             id: args.quoteId,
             rawMetadataResponse: raw,
           });
         },
-      );
+      });
 
       await ctx.runMutation(api.quotes.updateExtraction, {
         id: args.quoteId,
@@ -180,9 +178,7 @@ export const retryExtraction = action({
       await log("Starting supplementary enrichment (pass 3 only)...");
 
       try {
-        const Anthropic = (await import("@anthropic-ai/sdk")).default;
-        const anthropic = new Anthropic();
-        const enriched = await enrichSupplementaryFields(anthropic, document, log);
+        const enriched = await enrichSupplementaryFields(document, undefined, log);
 
         await ctx.runMutation(api.policies.updateExtraction, {
           id: args.policyId,
@@ -237,9 +233,8 @@ export const retryExtraction = action({
           await client.logout();
         }
 
-        const anthropic = new Anthropic();
         const { rawText, extracted } = await extractSectionsOnly(
-          anthropic, pdfBase64, policy.rawMetadataResponse, log,
+          pdfBase64, policy.rawMetadataResponse, { log },
         );
 
         await ctx.runMutation(api.policies.updateExtraction, {
@@ -333,16 +328,16 @@ export const retryExtraction = action({
 
       // Extract with Claude
       const pdfBase64 = pdfBuffer.toString("base64");
-      const anthropic = new Anthropic();
       const { rawText, extracted } = await extractFromPdf(
-        anthropic, pdfBase64, log,
-        async (raw) => {
+        pdfBase64, {
+        log,
+        onMetadata: async (raw) => {
           await ctx.runMutation(api.policies.updateExtraction, {
             id: args.policyId,
             rawMetadataResponse: raw,
           });
         },
-      );
+      });
 
       // Save raw response for future retries
       await ctx.runMutation(api.policies.updateExtraction, {

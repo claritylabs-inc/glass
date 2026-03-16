@@ -4,7 +4,8 @@ import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import { INSURANCE_KEYWORDS, INSURANCE_SENDER_PATTERNS } from "../lib/policyTypes";
-import Anthropic from "@anthropic-ai/sdk";
+import { generateText } from "ai";
+import { haikuModel } from "../lib/ai";
 
 export const classifyEmails = internalAction({
   args: {
@@ -30,7 +31,6 @@ export const classifyEmails = internalAction({
         : []
     );
 
-    const anthropic = new Anthropic();
     let policiesFound = 0;
     let processed = 0;
     const total = unprocessed.length;
@@ -70,9 +70,9 @@ export const classifyEmails = internalAction({
           confidence = 0.95;
         } else if (keywordMatch || senderMatch) {
           try {
-            const response = await anthropic.messages.create({
-              model: "claude-haiku-4-5-20251001",
-              max_tokens: 256,
+            const { text: rawText } = await generateText({
+              model: haikuModel,
+              maxOutputTokens: 256,
               messages: [
                 {
                   role: "user",
@@ -85,8 +85,6 @@ Date: ${email.date}`,
               ],
             });
 
-            const rawText =
-              response.content[0].type === "text" ? response.content[0].text : "";
             const text = rawText.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?```\s*$/i, "");
             const parsed = JSON.parse(text);
             isInsurance = parsed.isInsurance;

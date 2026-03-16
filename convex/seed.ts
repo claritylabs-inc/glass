@@ -4,7 +4,8 @@ import { api, internal } from "./_generated/api";
 import { requireAuth } from "./lib/auth";
 import { requireOrgAccess, getOrgAccess } from "./lib/orgAuth";
 import { getAuthUserId } from "@convex-dev/auth/server";
-import Anthropic from "@anthropic-ai/sdk";
+import { generateText } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
 import { Id } from "./_generated/dataModel";
 
 // ── Public action: generate and insert demo data ──
@@ -341,8 +342,6 @@ async function generateWithHaiku(ctx: {
   industry: string;
   industryVertical: string;
 }): Promise<SeedPayload> {
-  const client = new Anthropic();
-
   const prompt = `Generate realistic demo insurance data for a company. Return ONLY valid JSON, no markdown fences.
 
 Company: ${ctx.companyName}
@@ -411,13 +410,11 @@ Important:
 - Do NOT include document sections — only metadata and coverages
 - The relationship between expiring policies and renewal quotes is critical — make it logical`;
 
-  const response = await client.messages.create({
-    model: "claude-haiku-4-5-20251001",
-    max_tokens: 4096,
+  const { text } = await generateText({
+    model: anthropic("claude-haiku-4-5-20251001"),
+    maxOutputTokens: 4096,
     messages: [{ role: "user", content: prompt }],
   });
-
-  const text = response.content[0].type === "text" ? response.content[0].text : "";
   // Strip potential markdown fences
   const cleaned = text.replace(/^```(?:json)?\s*\n?/m, "").replace(/\n?```\s*$/m, "").trim();
   const parsed = JSON.parse(cleaned) as SeedPayload;

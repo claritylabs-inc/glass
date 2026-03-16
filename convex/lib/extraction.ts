@@ -8,8 +8,6 @@ export {
   mergeChunkedSections,
   mergeChunkedQuoteSections,
   getPageChunks,
-  callClaude,
-  callClaudeText,
   enrichSupplementaryFields,
   classifyDocumentType,
   extractFromPdf,

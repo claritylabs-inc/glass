@@ -3,7 +3,8 @@
 import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
-import Anthropic from "@anthropic-ai/sdk";
+import { streamText, generateText, type ModelMessage } from "ai";
+import { haikuModel } from "../lib/ai";
 import {
   buildSystemPrompt,
   buildDocumentContext,
@@ -162,7 +163,7 @@ export const run = internalAction({
       const memoryContext = buildConversationMemoryContext(pastConversations);
 
       // Build message history (skip processing placeholders)
-      const messageHistory: Anthropic.MessageParam[] = [];
+      const messageHistory: ModelMessage[] = [];
       for (const msg of allMessages) {
         if (msg.status === "processing") continue;
         if (msg.role === "user") {
@@ -270,32 +271,26 @@ For emails, compose a professional message that:
         memoryContext;
 
       // Call Claude with streaming
-      const client = new Anthropic();
       let content = "";
       let lastFlush = 0;
       const FLUSH_INTERVAL = 150; // ms between DB updates
 
-      const stream = await client.messages.stream({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 2048,
+      const result = streamText({
+        model: haikuModel,
+        maxOutputTokens: 2048,
         system: fullSystemPrompt,
         messages: messageHistory,
       });
 
-      for await (const event of stream) {
-        if (
-          event.type === "content_block_delta" &&
-          event.delta.type === "text_delta"
-        ) {
-          content += event.delta.text;
-          const now = Date.now();
-          if (now - lastFlush >= FLUSH_INTERVAL) {
-            lastFlush = now;
-            await ctx.runMutation(internal.threads.streamAgentMessage, {
-              id: agentMsgId,
-              content,
-            });
-          }
+      for await (const chunk of result.textStream) {
+        content += chunk;
+        const now = Date.now();
+        if (now - lastFlush >= FLUSH_INTERVAL) {
+          lastFlush = now;
+          await ctx.runMutation(internal.threads.streamAgentMessage, {
+            id: agentMsgId,
+            content,
+          });
         }
       }
 
@@ -468,9 +463,9 @@ For emails, compose a professional message that:
       const userMessages = allMessages.filter((m) => m.role === "user");
       if (userMessages.length === 1) {
         try {
-          const titleResponse = await client.messages.create({
-            model: "claude-haiku-4-5-20251001",
-            max_tokens: 12,
+          const { text: titleText } = await generateText({
+            model: haikuModel,
+            maxOutputTokens: 12,
             system:
               "You are a title generator. Given a user question and an assistant reply, output a short 2-4 word title that captures the topic. Rules:\n- Output ONLY the title, no quotes, no punctuation, no explanation\n- Use title case\n- Examples: \"GL Coverage Limits\", \"Cyber Liability Quotes\", \"Workers Comp App\", \"Renewal Timeline\"",
             messages: [
@@ -480,10 +475,7 @@ For emails, compose a professional message that:
               },
             ],
           });
-          const title = titleResponse.content
-            .filter((b): b is Anthropic.TextBlock => b.type === "text")
-            .map((b) => b.text)
-            .join("")
+          const title = titleText
             .trim()
             .replace(/^["']|["']$/g, "")
             .split("\n")[0]; // take only first line

@@ -4,7 +4,6 @@ import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import { ImapFlow } from "imapflow";
-import Anthropic from "@anthropic-ai/sdk";
 import { applyExtracted, applyExtractedQuote, extractFromPdf, extractQuoteFromPdf, classifyDocumentType } from "../lib/extraction";
 import { Id } from "../_generated/dataModel";
 
@@ -72,10 +71,9 @@ export const extractPolicy = internalAction({
     });
     const fileId = await ctx.storage.store(blob);
     const pdfBase64 = pdfBuffer.toString("base64");
-    const anthropic = new Anthropic();
 
     // Pass 0: Classify document type
-    const { documentType } = await classifyDocumentType(anthropic, pdfBase64);
+    const { documentType } = await classifyDocumentType(pdfBase64);
 
     if (documentType === "quote") {
       // === QUOTE EXTRACTION PATH ===
@@ -109,14 +107,15 @@ export const extractPolicy = internalAction({
         await log(`PDF stored (${sizeKB} KB). Classified as quote.`);
 
         const { rawText, extracted } = await extractQuoteFromPdf(
-          anthropic, pdfBase64, log,
-          async (raw) => {
+          pdfBase64, {
+          log,
+          onMetadata: async (raw) => {
             await ctx.runMutation(api.quotes.updateExtraction, {
               id: quoteId,
               rawMetadataResponse: raw,
             });
           },
-        );
+        });
 
         await ctx.runMutation(api.quotes.updateExtraction, {
           id: quoteId,
@@ -194,14 +193,15 @@ export const extractPolicy = internalAction({
         await log(`PDF stored (${sizeKB} KB). Classified as policy.`);
 
         const { rawText, extracted } = await extractFromPdf(
-          anthropic, pdfBase64, log,
-          async (raw) => {
+          pdfBase64, {
+          log,
+          onMetadata: async (raw) => {
             await ctx.runMutation(api.policies.updateExtraction, {
               id: policyId,
               rawMetadataResponse: raw,
             });
           },
-        );
+        });
 
         await ctx.runMutation(api.policies.updateExtraction, {
           id: policyId,

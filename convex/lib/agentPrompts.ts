@@ -7,11 +7,11 @@ import { buildDocumentContext as _buildDocumentContext, buildPolicyContext as _b
 import type { PolicyDocument, QuoteDocument } from "@claritylabs-inc/cell";
 
 function toPolicy(p: Doc<"policies">): PolicyDocument {
-  return { ...p, id: p._id };
+  return { ...p, id: p._id, type: "policy" };
 }
 
 function toQuote(q: Doc<"quotes">): QuoteDocument {
-  return { ...q, id: q._id };
+  return { ...q, id: q._id, type: "quote" } as unknown as QuoteDocument;
 }
 
 export function buildDocumentContext(
