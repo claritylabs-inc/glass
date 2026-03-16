@@ -257,7 +257,7 @@ export default function OnboardingPage() {
         <FadeIn className="w-full max-w-sm">
           <div className="p-2 sm:bg-white sm:rounded-xl sm:border sm:border-foreground/8 sm:p-8">
             <div className="text-center mb-6">
-              <h3 className="!mb-0 flex items-center justify-center gap-1.5">
+              <h3 className="!mb-0 flex items-center justify-center gap-1.5 serif">
                 Clarity <LogoIcon size={22} className="shrink-0" /> Labs
               </h3>
               <p className="text-body-sm text-muted-foreground mt-2">
@@ -336,7 +336,7 @@ export default function OnboardingPage() {
                 <Asterisk className="w-5 h-5 text-[#A0D2FA] shrink-0" /> Cell Agent
               </h3>
             ) : (
-              <h3 className="!mb-0 flex items-center justify-center gap-1.5">
+              <h3 className="!mb-0 flex items-center justify-center gap-1.5 serif">
                 Clarity <LogoIcon size={22} className="shrink-0" /> Labs
               </h3>
             )}
