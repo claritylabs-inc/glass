@@ -32,6 +32,12 @@ export const metadata: Metadata = {
     template: "%s | Cell Email",
   },
   description: "AI-powered insurance policy extraction from email",
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/icon.svg", type: "image/svg+xml" },
+    ],
+  },
   openGraph: {
     title: "Clarity Labs",
     description: "AI-powered insurance policy extraction from email",
