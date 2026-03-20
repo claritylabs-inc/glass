@@ -163,11 +163,11 @@ export default function LoginPage() {
           ) : (
             <form onSubmit={handleCodeSubmit} className="space-y-4">
               <div>
-                <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+                <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-2">
                   Verification Code
                 </label>
                 <div
-                  className="relative flex justify-center gap-2 cursor-text"
+                  className="relative flex gap-2 cursor-text"
                   onClick={() => {
                     const el = document.getElementById("otp-input") as HTMLInputElement | null;
                     el?.focus();
@@ -176,7 +176,7 @@ export default function LoginPage() {
                   {Array.from({ length: 6 }).map((_, i) => (
                     <div
                       key={i}
-                      className={`w-10 h-12 rounded-lg border bg-muted/40 flex items-center justify-center text-lg font-semibold font-mono transition-colors ${
+                      className={`flex-1 aspect-square max-h-14 rounded-lg border bg-muted/40 flex items-center justify-center text-xl font-semibold font-mono transition-colors ${
                         code.length === i
                           ? "border-foreground/30 ring-1 ring-foreground/10"
                           : "border-foreground/8"
@@ -200,7 +200,7 @@ export default function LoginPage() {
                     aria-label="Verification code"
                   />
                 </div>
-                <p className="text-label-sm text-muted-foreground/50 mt-1.5">
+                <p className="text-label-sm text-muted-foreground/50 mt-2">
                   We sent a 6-digit code to{" "}
                   <span className="text-foreground font-medium">{email}</span>
                 </p>
