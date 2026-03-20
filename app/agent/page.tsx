@@ -495,7 +495,7 @@ export default function AgentPage() {
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <Asterisk className="w-4 h-4 text-[#A0D2FA] shrink-0" />
-                  <span className="text-sm font-semibold text-foreground shrink-0">Cell Agent</span>
+                  <span className="text-sm font-semibold text-foreground shrink-0">Clarity Agent</span>
                 </div>
                 <button
                   type="button"

@@ -47,7 +47,7 @@ export function ChatMessageBubble({ message, viewerId }: { message: WebChatMessa
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <p className="text-[11px] font-medium text-muted-foreground/50">Cell Agent</p>
+            <p className="text-[11px] font-medium text-muted-foreground/50">Clarity Agent</p>
             <MessageSquare className="w-3 h-3 text-muted-foreground/30" />
             <span className="text-[11px] text-muted-foreground/30">Chat</span>
           </div>
@@ -82,7 +82,7 @@ export function ChatMessageBubble({ message, viewerId }: { message: WebChatMessa
           <AlertCircle className="w-3.5 h-3.5 text-red-500" />
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-[11px] font-medium text-muted-foreground/50 mb-1">Cell Agent</p>
+          <p className="text-[11px] font-medium text-muted-foreground/50 mb-1">Clarity Agent</p>
           <p className="text-body-sm text-red-600">
             {message.error ?? "Something went wrong. Please try again."}
           </p>
@@ -100,7 +100,7 @@ export function ChatMessageBubble({ message, viewerId }: { message: WebChatMessa
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <p className="text-[11px] font-medium text-muted-foreground/50">Cell Agent</p>
+            <p className="text-[11px] font-medium text-muted-foreground/50">Clarity Agent</p>
             <MessageSquare className="w-3 h-3 text-muted-foreground/30" />
             <span className="text-[11px] text-muted-foreground/30">Chat</span>
             <span className="text-muted-foreground/20">·</span>

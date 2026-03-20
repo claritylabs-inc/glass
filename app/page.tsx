@@ -150,7 +150,7 @@ export default function DashboardPage() {
 
   return (
     <AppShell actions={seedButton}>
-      <div className="max-w-5xl">
+      <div>
 
           <StatsCards stats={stats} quoteStats={quoteStats} />
 
@@ -217,7 +217,7 @@ export default function DashboardPage() {
                       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 md:gap-2 min-w-0">
                         <div className="flex items-center gap-2">
                           <Asterisk className="w-4 h-4 text-[#A0D2FA] shrink-0" />
-                          <span className="text-sm font-semibold text-foreground shrink-0">Cell Agent</span>
+                          <span className="text-sm font-semibold text-foreground shrink-0">Clarity Agent</span>
                         </div>
                         <button
                           type="button"
@@ -255,7 +255,7 @@ export default function DashboardPage() {
                       <Asterisk className="w-4 h-4 text-[#A0D2FA] shrink-0" />
                       <div className="flex-1 min-w-0">
                         <p className="text-body-sm font-medium text-foreground">
-                          Set Up Cell Agent
+                          Set Up Clarity Agent
                         </p>
                         <p className="text-label-sm text-muted-foreground/40">
                           Get a dedicated email for policy questions

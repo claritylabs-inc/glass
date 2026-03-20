@@ -38,7 +38,7 @@ const INSURANCE_ITEMS = [
 
 const TOOLS_ITEMS = [
   { href: "/connections", label: "Connections", icon: Mail, shortcut: "C" },
-  { href: "/agent", label: "Cell Agent", icon: Asterisk, shortcut: "G" },
+  { href: "/agent", label: "Clarity Agent", icon: Asterisk, shortcut: "G" },
 ];
 
 const ALL_NAV_ITEMS = [...INSURANCE_ITEMS, ...TOOLS_ITEMS];
@@ -284,7 +284,7 @@ export function AppSidebar({
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Ask Cell..."
+                placeholder="Ask Clarity..."
                 className="flex-1 bg-transparent outline-none text-label-sm text-foreground placeholder:text-muted-foreground/40 min-w-0"
               />
             </div>

@@ -28,8 +28,8 @@ export const viewport: Viewport = {
 
 export const metadata: Metadata = {
   title: {
-    default: "Cell Email",
-    template: "%s | Cell Email",
+    default: "Clarity Agent",
+    template: "%s | Clarity Agent",
   },
   description: "AI-powered insurance policy extraction from email",
   icons: {
@@ -39,14 +39,14 @@ export const metadata: Metadata = {
     ],
   },
   openGraph: {
-    title: "Clarity Labs",
+    title: "Clarity Agent",
     description: "AI-powered insurance policy extraction from email",
-    siteName: "Clarity Labs",
+    siteName: "Clarity Agent",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Clarity Labs",
+    title: "Clarity Agent",
     description: "AI-powered insurance policy extraction from email",
   },
 };

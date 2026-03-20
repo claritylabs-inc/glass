@@ -1,6 +1,6 @@
-# Cell Email — Insurance Policy Platform
+# Clarity Agent — Insurance Intelligence Platform
 
-AI-powered insurance platform with policy extraction, quote management, and application assistance. Connects to IMAP email accounts, scans for insurance-related emails, extracts structured policy data from PDFs, and provides an AI agent (Cell Agent) that handles policy Q&A and insurance application form filling via email.
+AI-powered insurance platform with policy extraction, quote management, and application assistance. Connects to IMAP email accounts, scans for insurance-related emails, extracts structured policy data from PDFs, and provides an AI agent (Clarity Agent) that handles policy Q&A and insurance application form filling via email and web chat.
 
 ## Getting Started
 
@@ -21,7 +21,7 @@ Requires a Convex project and API keys:
 - `AUTH_RESEND_KEY` — Resend API key for outbound agent emails + OTP auth
 - `RESEND_WEBHOOK_SECRET` — Resend webhook verification secret
 - `AGENT_DOMAIN` — Domain for agent email addresses (default: `agent.claritylabs.inc`)
-- `SITE_URL` — Public URL for the app (used in email signatures/links)
+- `SITE_URL` — Public URL for the app (default: `https://agent.claritylabs.inc`)
 
 ## Architecture
 
@@ -54,7 +54,7 @@ Internal functions must use internal query variants (e.g., `internal.emails.getI
 3. **Extract** — Insurance emails with PDF attachments sent to Claude Sonnet for structured extraction with page-level provenance
 4. **Review** — Users review extracted policies, coverages, and document sections with references back to source PDF pages
 
-### Cell Agent — Email Q&A
+### Clarity Agent — Email Q&A
 
 1. **Inbound routing** — Resend webhook → verify signature → dedup → resolve org by agent handle → detect mode (direct/cc/forward/unknown) → resolve thread
 2. **Policy/Quote Q&A** — Builds system prompt with org context, loads matching policies/quotes, searches cross-thread conversation memory → Haiku generates response → sends reply with threading headers
@@ -62,7 +62,7 @@ Internal functions must use internal query variants (e.g., `internal.emails.getI
 
 ### Application Processing
 
-The Cell Agent can help users fill out insurance application forms (PDFs). The full workflow:
+Clarity Agent can help users fill out insurance application forms (PDFs). The full workflow:
 
 #### Detection
 - **Trigger**: Direct email to agent with PDF attachment + application intent keywords ("help fill out", "application", "acord", etc.)
@@ -150,7 +150,7 @@ Failed application sessions can be retried from the frontend (Applications list,
 | `/applications/[id]` | Yes | Application detail — fields by section, batch timeline, PDF download |
 | `/connections` | Yes | IMAP connection management, scan config, real-time progress |
 | `/extractions` | Yes | Extraction queue + completed log |
-| `/agent` | Yes | Cell Agent — conversations, settings |
+| `/agent` | Yes | Clarity Agent — conversations, settings |
 | `/settings` | Yes | Org settings: info, team members, business context |
 | `/profile` | Yes | User profile |
 

@@ -23,7 +23,7 @@ const PAGE_LABELS: Record<string, string> = {
 
 const HIDDEN_PATHS = ["/agent", "/settings", "/profile"];
 
-export function AskCellInput() {
+export function AskClarityInput() {
   const pathname = usePathname();
   const router = useRouter();
   const createThread = useMutation(api.threads.create);
@@ -57,7 +57,7 @@ export function AskCellInput() {
     <ChatInputOverlay>
       <ChatInput
         onSend={handleSend}
-        placeholder="Ask Cell..."
+        placeholder="Ask Clarity..."
         contextLabel={contextLabel}
         showAttach={false}
       />

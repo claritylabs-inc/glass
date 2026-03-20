@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { AppTopBar, type PresenceUser } from "@/components/app-top-bar";
-import { AskCellInput } from "@/components/ask-cell-input";
+import { AskClarityInput } from "@/components/ask-clarity-input";
 import { PdfProvider, usePdf } from "@/components/pdf-context";
 import { PageContextProvider } from "@/hooks/use-page-context";
 import { EntityPreviewProvider, useEntityPreview } from "@/hooks/use-entity-preview";
@@ -49,11 +49,11 @@ function ShellContent({
         />
         <div className="flex-1 relative min-w-0 overflow-hidden">
           <main className="absolute inset-0 overflow-y-auto">
-            <div className="px-6 lg:px-8 py-6 pb-24">
+            <div className="max-w-7xl mx-auto px-6 lg:px-8 py-6 pb-24">
               {children}
             </div>
           </main>
-          <AskCellInput />
+          <AskClarityInput />
           <CommandPalette />
         </div>
       </div>

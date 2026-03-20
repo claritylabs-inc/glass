@@ -127,19 +127,19 @@ function extractForwardedSender(body: string): string | null {
 }
 
 function buildSignature(agentEmail: string, companyName?: string): { text: string; html: string } {
-  const siteUrl = process.env.SITE_URL ?? "https://email.claritylabs.inc";
-  const linkText = `Sent by Cell Agent${companyName ? ` from ${companyName}` : ""}`;
+  const siteUrl = process.env.SITE_URL ?? "https://agent.claritylabs.inc";
+  const linkText = `Sent by Clarity Agent${companyName ? ` from ${companyName}` : ""}`;
   const text = [
     "",
     "—",
-    `Cell Agent${companyName ? ` for ${companyName}` : ""}`,
+    `Clarity Agent${companyName ? ` for ${companyName}` : ""}`,
     agentEmail,
     `${linkText} - ${siteUrl}`,
   ].join("\n");
 
   const html = [
     `<br><p style="color:#999;font-size:13px;margin:0">—</p>`,
-    `<p style="font-size:13px;margin:4px 0 2px"><span style="color:#A0D2FA;font-size:13px;font-family:'Segoe UI Symbol','Apple Symbols',sans-serif">&#x2733;&#xFE0E;</span> <strong>Cell Agent${companyName ? ` for ${companyName}` : ""}</strong></p>`,
+    `<p style="font-size:13px;margin:4px 0 2px"><span style="color:#A0D2FA;font-size:13px;font-family:'Segoe UI Symbol','Apple Symbols',sans-serif">&#x2733;&#xFE0E;</span> <strong>Clarity Agent${companyName ? ` for ${companyName}` : ""}</strong></p>`,
     `<p style="font-size:12px;color:#999;margin:0">${agentEmail}</p>`,
     `<p style="font-size:12px;margin:12px 0 0"><a href="${siteUrl}" style="color:#A0D2FA;text-decoration:none">${linkText}</a></p>`,
   ].join("\n");
@@ -733,7 +733,7 @@ Respond with JSON only:
         }
 
         const notificationBody = [
-          `Your Cell Agent received an email it couldn't confidently classify, so it's forwarding it to you for review.`,
+          `Your Clarity Agent received an email it couldn't confidently classify, so it's forwarding it to you for review.`,
           ``,
           `**From:** ${fromName ? `${fromName} <${fromEmail}>` : fromEmail}`,
           `**Subject:** ${subject}`,
@@ -758,10 +758,10 @@ Respond with JSON only:
           .join("\n");
         const fullHtml = htmlBody + signature.html;
 
-        const notifSubject = `[Cell Agent] Help needed: ${subject}`;
+        const notifSubject = `[Clarity Agent] Help needed: ${subject}`;
 
         const emailPayload: Record<string, unknown> = {
-          from: `Cell Agent <${agentAddress}>`,
+          from: `Clarity Agent <${agentAddress}>`,
           to: notifyEmail,
           subject: notifSubject,
           text: fullText,
@@ -830,7 +830,7 @@ Respond with JSON only:
         orgId,
       });
 
-      const siteUrl = process.env.SITE_URL ?? "https://email.claritylabs.inc";
+      const siteUrl = process.env.SITE_URL ?? "https://agent.claritylabs.inc";
 
       // Get primary user profile for name reference
       const primaryUser = await ctx.runQuery(internal.users.getInternal, { id: primaryUserId });
@@ -939,7 +939,7 @@ For emails, compose a professional message that:
 - Incorporates the team member's direction naturally
 - Maintains appropriate tone for the business relationship
 - References relevant policy/coverage data when applicable
-- Writes from Cell Agent's perspective (third-person on behalf of the company). Do NOT sign off as the team member or impersonate them.`;
+- Writes from Clarity Agent's perspective (third-person on behalf of the company). Do NOT sign off as the team member or impersonate them.`;
       }
 
       // Call Claude Haiku
@@ -988,13 +988,13 @@ For emails, compose a professional message that:
             .map((p) => `<p style="margin:0 0 12px;line-height:1.5">${mdToHtml(p.replace(/\n/g, "<br>"))}</p>`)
             .join("\n") + sig.html;
 
-          const sendSubject = subject.replace(/^\[Cell Agent\]\s*Help needed:\s*/i, "");
+          const sendSubject = subject.replace(/^\[Clarity Agent\]\s*Help needed:\s*/i, "");
           const replySub = sendSubject.startsWith("Re:") ? sendSubject : `Re: ${sendSubject}`;
 
           const sendCc = [fromEmail]; // CC the internal user who gave the instruction
 
           const sendPayload: Record<string, unknown> = {
-            from: `Cell Agent <${agentAddress}>`,
+            from: `Clarity Agent <${agentAddress}>`,
             to: thirdPartyEmail,
             cc: sendCc,
             subject: replySub,
@@ -1182,7 +1182,7 @@ For emails, compose a professional message that:
         : `Re: ${cleanSubject}`;
 
       const emailPayload: Record<string, unknown> = {
-        from: `Cell Agent <${agentAddress}>`,
+        from: `Clarity Agent <${agentAddress}>`,
         to: replyTo,
         subject: replySubject,
         text: fullReplyText,
