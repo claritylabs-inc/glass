@@ -111,7 +111,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
       )}
 
       {/* Input container */}
-      <div className="rounded-xl border border-white/40 bg-white/30 backdrop-blur-xl backdrop-saturate-150 focus-within:border-foreground/15 focus-within:bg-white/50 shadow-[0_2px_12px_rgba(0,0,0,0.06),0_0_0_1px_rgba(255,255,255,0.4)_inset] transition-all">
+      <div className="rounded-xl border border-foreground/8 bg-white focus-within:border-foreground/15 shadow-[0_2px_12px_rgba(0,0,0,0.06)] transition-all">
         {/* Row 1: textarea */}
         <div className="px-3 pt-2.5 pb-1">
           <textarea

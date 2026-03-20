@@ -163,23 +163,44 @@ export default function LoginPage() {
           ) : (
             <form onSubmit={handleCodeSubmit} className="space-y-4">
               <div>
-                <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+                <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-2">
                   Verification Code
                 </label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  maxLength={6}
-                  value={code}
-                  onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
-                  placeholder="123456"
-                  required
-                  autoFocus
-                  autoComplete="one-time-code"
-                  className="w-full rounded-lg border border-foreground/8 bg-white px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors tracking-[0.3em] text-center font-mono"
-                />
-                <p className="text-label-sm text-muted-foreground/50 mt-1.5">
+                <div
+                  className="relative flex gap-2 cursor-text"
+                  onClick={() => {
+                    const el = document.getElementById("otp-input") as HTMLInputElement | null;
+                    el?.focus();
+                  }}
+                >
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <div
+                      key={i}
+                      className={`flex-1 aspect-square max-h-14 rounded-lg border bg-muted/40 flex items-center justify-center text-xl font-semibold font-mono transition-colors ${
+                        code.length === i
+                          ? "border-foreground/30 ring-1 ring-foreground/10"
+                          : "border-foreground/8"
+                      }`}
+                    >
+                      {code[i] ?? ""}
+                    </div>
+                  ))}
+                  <input
+                    id="otp-input"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength={6}
+                    value={code}
+                    onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+                    required
+                    autoFocus
+                    autoComplete="one-time-code"
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-text"
+                    aria-label="Verification code"
+                  />
+                </div>
+                <p className="text-label-sm text-muted-foreground/50 mt-2">
                   We sent a 6-digit code to{" "}
                   <span className="text-foreground font-medium">{email}</span>
                 </p>
