@@ -23,7 +23,7 @@ AI-powered insurance platform with policy extraction and application assistance.
 
 - **Frontend**: Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS 4
 - **Backend**: Convex (realtime serverless DB + functions)
-- **AI**: Anthropic Claude API (`@anthropic-ai/sdk`), `@claritylabs-inc/cell` (shared prompts, extraction logic, PDF filling)
+- **AI**: Anthropic Claude API (`@anthropic-ai/sdk`), `@claritylabs-inc/cl-sdk` (shared prompts, extraction logic, PDF filling)
 - **Email**: imapflow for IMAP scanning, Resend for outbound agent emails
 - **PDF Generation**: pdfkit for application summary PDFs, mupdf (WASM) for flattening broken PDFs
 - **UI**: shadcn/ui (base-nova style) + Base-UI primitives, Framer Motion, Lucide icons
@@ -116,9 +116,9 @@ Filled PDF stored as `filledFileId` on the session.
 - Manually managed via Settings > Business Context tab
 - Used as primary auto-fill source for new applications
 
-### `@claritylabs-inc/cell` Package
+### `@claritylabs-inc/cl-sdk` Package
 
-All prompts, AI extraction logic, PDF filling helpers, and agent prompt building have been extracted into the `@claritylabs-inc/cell` npm package (hosted on GitHub Package Registry via `.npmrc`). The local `convex/lib/` files now re-export from `@claritylabs-inc/cell`:
+All prompts, AI extraction logic, PDF filling helpers, and agent prompt building have been extracted into the `@claritylabs-inc/cl-sdk` npm package (hosted on GitHub Package Registry via `.npmrc`). The local `convex/lib/` files now re-export from `@claritylabs-inc/cl-sdk`:
 
 - `lib/prompts.ts` — Re-exports extraction prompts (EXTRACTION_PROMPT, METADATA_PROMPT, buildSectionsPrompt, etc.)
 - `lib/extraction.ts` — Re-exports extraction helpers (stripFences, applyExtracted, callClaude, extractFromPdf, etc.) and types (LogFn, PromptBuilder)
@@ -127,7 +127,7 @@ All prompts, AI extraction logic, PDF filling helpers, and agent prompt building
 - `lib/aiClassifier.ts` — Re-exports CLASSIFY_EMAIL_PROMPT
 - `lib/agentPrompts.ts` — Re-exports buildSystemPrompt, buildConversationMemoryContext + thin adapter functions (`buildDocumentContext`, `buildPolicyContext`) that map Convex `Doc` types to cell's framework-agnostic interfaces
 
-To modify prompts or extraction logic, update the `@claritylabs-inc/cell` package and bump the version.
+To modify prompts or extraction logic, update the `@claritylabs-inc/cl-sdk` package and bump the version.
 
 ### Key Backend Files (convex/)
 

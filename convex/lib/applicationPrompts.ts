@@ -11,4 +11,4 @@ export {
   buildFlatPdfMappingPrompt,
   buildAcroFormMappingPrompt,
   buildLookupFillPrompt,
-} from "@claritylabs-inc/cell";
+} from "@claritylabs-inc/cl-sdk";

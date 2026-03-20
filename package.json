@@ -12,7 +12,7 @@
     "@ai-sdk/anthropic": "^3.0.58",
     "@auth/core": "^0.37.4",
     "@base-ui/react": "^1.2.0",
-    "@claritylabs-inc/cell": "^0.2.4",
+    "@claritylabs-inc/cl-sdk": "^0.3.0",
     "@convex-dev/auth": "^0.0.91",
     "@types/pdfkit": "^0.17.5",
     "ai": "^6.0.116",

@@ -7,4 +7,4 @@ export {
   buildPolicySectionsPrompt,
   buildQuoteSectionsPrompt,
   buildSupplementaryEnrichmentPrompt,
-} from "@claritylabs-inc/cell";
+} from "@claritylabs-inc/cl-sdk";
