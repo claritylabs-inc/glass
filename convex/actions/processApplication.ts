@@ -88,6 +88,46 @@ function getAgentDomain(): string {
 function getAppUrl(): string {
   return process.env.SITE_URL ?? "https://agent.claritylabs.inc";
 }
+/**
+ * Resolve the unified thread for a legacy conversation and return a helper
+ * to dual-write agent email messages into the unified thread.
+ */
+async function createThreadWriter(
+  ctx: any,
+  conversationId: any,
+  orgId: any,
+  agentAddress: string,
+) {
+  let unifiedThreadId: any = null;
+  try {
+    const thread = await ctx.runQuery(internal.threads.findByLegacyId, {
+      legacyConversationId: conversationId,
+    });
+    if (thread) unifiedThreadId = thread._id;
+  } catch {
+    // Non-critical — thread may not exist yet
+  }
+
+  return async (content: string, responseMessageId?: string) => {
+    if (!unifiedThreadId) return;
+    try {
+      await ctx.runMutation(internal.threads.insertEmailMessage, {
+        threadId: unifiedThreadId,
+        orgId,
+        role: "agent" as const,
+        fromEmail: agentAddress,
+        content,
+        responseMessageId,
+        legacyConversationId: conversationId,
+      });
+    } catch (err) {
+      console.warn("Application thread dual-write failed:", err);
+    }
+  };
+}
+
+/** Type for the thread writer function */
+type ThreadWriter = (content: string, responseMessageId?: string) => Promise<void>;
 
 /**
  * Attempt to parse a truncated JSON array by finding the last complete object.
@@ -894,6 +934,9 @@ export const startApplicationSession = internalAction({
     // Track latest sent messageId for threading chain
     let lastSentId: string | undefined;
 
+    // Resolve unified thread for dual-writing agent messages
+    const writeToThread = await createThreadWriter(ctx, args.conversationId, args.orgId, args.agentAddress);
+
     try {
       // 1b. Send immediate acknowledgment email
       if (args.fromEmail) {
@@ -924,6 +967,8 @@ export const startApplicationSession = internalAction({
           responseTo: args.fromEmail,
           responseMessageId: ackSentId,
         });
+
+        await writeToThread(ackText, ackSentId);
       }
 
       // 2. Extract fields from PDF using Sonnet with citations
@@ -1326,6 +1371,7 @@ Use the most specific code that applies. Do not guess if the info is insufficien
             id: sessionId, lastSentMessageId: sentMessageId,
           });
         }
+        await writeToThread(stripMarkdown(text), sentMessageId);
       } else {
         // Generate batches
         await ctx.runMutation(internal.applicationSessions.updateStatus, {
@@ -1407,6 +1453,7 @@ Use the most specific code that applies. Do not guess if the info is insufficien
             id: sessionId, lastSentMessageId: sentMessageId,
           });
         }
+        await writeToThread(stripMarkdown(text), sentMessageId);
 
         await ctx.runMutation(internal.applicationSessions.updateBatches, {
           id: sessionId,
@@ -1490,6 +1537,9 @@ export const processApplicationReply = internalAction({
         }
         return headers;
       };
+
+      // Resolve unified thread for dual-writing
+      const writeToThread = await createThreadWriter(ctx, args.conversationId, session.orgId, args.agentAddress);
 
       const batchFields = currentBatch.fieldIds
         .map((id) => fields.find((f) => f.id === id))
@@ -1846,6 +1896,7 @@ export const processApplicationReply = internalAction({
             id: args.sessionId, lastSentMessageId: sentMessageId,
           });
         }
+        await writeToThread(stripMarkdown(combinedText), sentMessageId);
 
         await ctx.runMutation(internal.applicationSessions.updateFields, {
           id: args.sessionId,
@@ -1926,6 +1977,7 @@ export const processApplicationReply = internalAction({
                 id: args.sessionId, lastSentMessageId: sentMessageId,
               });
             }
+            await writeToThread(ackText, sentMessageId);
             // Recursion not possible here, but we've saved state. Next inbound or scheduled run will advance.
             await ctx.runMutation(internal.agentConversations.updateResponse, {
               id: args.conversationId,
@@ -1971,6 +2023,7 @@ export const processApplicationReply = internalAction({
               id: args.sessionId, lastSentMessageId: sentMessageId,
             });
           }
+          await writeToThread(stripMarkdown(combinedText), sentMessageId);
 
           await ctx.runMutation(internal.applicationSessions.updateFields, {
             id: args.sessionId,
@@ -2030,6 +2083,7 @@ export const processApplicationReply = internalAction({
               id: args.sessionId, lastSentMessageId: sentMessageId,
             });
           }
+          await writeToThread(stripMarkdown(combinedText), sentMessageId);
 
           await ctx.runMutation(internal.applicationSessions.updateBatches, {
             id: args.sessionId,
@@ -2114,6 +2168,9 @@ Respond with JSON only:
       const signature = buildSignature(args.agentAddress, args.companyName);
       const replySubject = args.subject.startsWith("Re:") ? args.subject : `Re: ${args.subject}`;
 
+      // Resolve unified thread for dual-writing
+      const writeToThread = await createThreadWriter(ctx, args.conversationId, session.orgId, args.agentAddress);
+
       // Threading helper using session's stored message IDs
       const origMsgId = session.originalMessageId ?? args.messageId;
       let lastSentId = session.lastSentMessageId;
@@ -2165,6 +2222,7 @@ Respond with JSON only:
             id: args.sessionId, lastSentMessageId: sentMessageId,
           });
         }
+        await writeToThread(stripMarkdown(responseBody), sentMessageId);
 
         await ctx.runMutation(internal.agentConversations.updateResponse, {
           id: args.conversationId,
@@ -2246,6 +2304,7 @@ Respond with JSON only:
             id: args.sessionId, lastSentMessageId: sentMessageId,
           });
         }
+        await writeToThread(stripMarkdown(text), sentMessageId);
 
         await ctx.runMutation(internal.agentConversations.updateResponse, {
           id: args.conversationId,
@@ -2283,6 +2342,7 @@ Respond with JSON only:
             id: args.sessionId, lastSentMessageId: sentMessageId,
           });
         }
+        await writeToThread(stripMarkdown(responseBody), sentMessageId);
 
         await ctx.runMutation(internal.agentConversations.updateResponse, {
           id: args.conversationId,

@@ -23,7 +23,7 @@ AI-powered insurance platform with policy extraction and application assistance.
 
 - **Frontend**: Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS 4
 - **Backend**: Convex (realtime serverless DB + functions)
-- **AI**: Anthropic Claude API (`@anthropic-ai/sdk`), `@claritylabs-inc/cl-sdk` (shared prompts, extraction logic, PDF filling)
+- **AI**: Anthropic Claude API (`@anthropic-ai/sdk`), Vercel AI SDK (`ai`, `@ai-sdk/react`, `@ai-sdk/anthropic`), `@claritylabs-inc/cl-sdk` (shared prompts, extraction logic, PDF filling)
 - **Email**: imapflow for IMAP scanning, Resend for outbound agent emails
 - **PDF Generation**: pdfkit for application summary PDFs, mupdf (WASM) for flattening broken PDFs
 - **UI**: shadcn/ui (base-nova style) + Base-UI primitives, Framer Motion, Lucide icons
@@ -101,13 +101,17 @@ Filled PDF stored as `filledFileId` on the session.
 
 **PDF flattening**: `app/api/flatten-pdf/route.ts` — Next.js API route using mupdf WASM. Authenticated via `FLATTEN_API_KEY` bearer token. Called from Convex `fillApplicationPdf` action when pdf-lib fails. Requires `FLATTEN_API_KEY` env var in both Vercel and Convex.
 
-### Data Flow — Web Chat
 
-1. User clicks "New Chat" on `/agent` → `create` mutation creates `webChats` record → chat selected in UI
-2. User sends message → `sendMessage` mutation inserts `webChatMessages` (role="user"), updates `lastMessageAt`, schedules `processWebChat` action
-3. `processWebChat` internal action: inserts processing placeholder → loads org, policies, quotes → builds system prompt (reuses `buildSystemPrompt` from `agentPrompts.ts` in direct mode + web-chat addendum) → loads document context + cross-thread email memory → calls Claude Haiku → updates agent message
-4. Auto-title: after first agent response, generates 3-6 word title via Haiku
-5. Real-time: Convex subscriptions update all connected clients instantly (multi-user collaboration)
+### Data Flow — Web Chat (Streaming)
+
+Web chat uses a hybrid architecture: `useChat` from `@ai-sdk/react` handles streaming via `/api/chat`, while Convex subscriptions provide the persisted message history.
+
+1. User clicks "New Chat" on `/agent` → `create` mutation creates thread → navigated to thread page
+2. User sends message → `sendMessage` mutation inserts message (with `skipAgentResponse: true`) → `useChat.sendMessage()` calls `/api/chat` streaming route
+3. **Streaming route** (`app/api/chat/route.ts`): validates auth via Convex token in `Authorization` header → loads org, policies, quotes, thread messages → builds system prompt (`@claritylabs-inc/cl-sdk`) → `streamText()` with Claude Haiku → returns `toUIMessageStreamResponse()`
+4. `onFinish`: persists final message to Convex via `threads.updateAgentResponse`, auto-titles on first message
+5. **Hybrid rendering**: Thread page shows Convex subscription messages for full history + overlays `useChat` streaming message at bottom during generation. Deduplicates when persisted message appears in subscription.
+6. **Email-triggered flows**: `processThreadChat.ts` still handles inbound email → agent response (with 150ms DB flush for real-time display)
 
 ### Data Flow — Business Context
 
@@ -141,7 +145,7 @@ To modify prompts or extraction logic, update the `@claritylabs-inc/cl-sdk` pack
 - `agentConversations.ts` — Agent conversation records with cross-thread memory
 - `actions/handleInboundEmail.ts` — Inbound email routing: application detection, reply routing, agent Q&A
 - `actions/processApplication.ts` — Application workflow: field extraction, auto-fill, batched Q&A, confirmation, summary PDF generation
-- `actions/processWebChat.ts` — Web chat agent response: builds context from policies/quotes/email memory, calls Claude Haiku, auto-titles
+- `actions/processThreadChat.ts` — Agent response for email-triggered flows (kept for inbound email → agent response with 150ms DB flush)
 - `actions/` — Also: IMAP scanning, classification, extraction
 - `lib/applicationTypes.ts` — Types for form fields (SimpleField, TableField, DeclarationField), QuestionBatch
 - `lib/policyTypes.ts` — Insurance keyword lists and policy type label map
@@ -160,6 +164,8 @@ To modify prompts or extraction logic, update the `@claritylabs-inc/cl-sdk` pack
 - StatCard component for consistent metric cards across pages (dashboard, applications)
 - SearchableSelect component for styled dropdowns (used in settings, business context)
 - ModeBadge component for conversation type indicators (direct, cc, forward, application)
+- **AI SDK Elements** (`components/ai-elements/`): Scaffolded PromptInput, Message, Conversation components from `ai-elements` CLI. Used via `ClarityPromptInput` wrapper (`components/clarity-prompt-input.tsx`) for branded chat input.
+- **Streaming chat**: `useChat` from `@ai-sdk/react` with `DefaultChatTransport` pointed at `/api/chat`. Auth token passed via `useAuthToken()` from `@convex-dev/auth/react`.
 
 ### Schema Notes
 
@@ -197,4 +203,5 @@ All routes require authentication (redirect to `/login` if not logged in) except
 - `/agent` — Clarity Agent: unified conversations (email threads + web chats with "New Chat" button, application badges), settings (email address, modes)
 - `/settings` — Organization settings with 3 tabs: Basic Information, Team Members, Business Context
 - `/profile` — User profile page
+- `/api/chat` — POST: Streaming chat API route for `useChat` (auth via Convex token in Authorization header)
 - `/api/flatten-pdf` — POST: PDF flattening via mupdf WASM (bearer token auth, no user auth)

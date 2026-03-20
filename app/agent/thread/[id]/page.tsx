@@ -2,6 +2,9 @@
 
 import { use, useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useQuery, useMutation, useAction } from "convex/react";
+import { useChat } from "@ai-sdk/react";
+import { DefaultChatTransport } from "ai";
+import { useAuthToken } from "@convex-dev/auth/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { AppShell } from "@/components/app-shell";
@@ -15,6 +18,9 @@ import { usePdf } from "@/components/pdf-context";
 import { usePresence } from "@/hooks/use-presence";
 import { ContextReferenceCard, extractEntityRefs, ReferenceCardStrip } from "@/components/context-reference-card";
 import { ChatInput, ChatInputOverlay, type ChatInputHandle } from "@/components/chat-input";
+import { ClarityPromptInput, type ClarityPromptInputHandle } from "@/components/clarity-prompt-input";
+import { MessageResponse } from "@/components/ai-elements/message";
+import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
 import Link from "next/link";
 import Markdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
@@ -539,6 +545,48 @@ function ThreadEmailLink({ threadEmail, subject }: { threadEmail?: string; subje
   );
 }
 
+/* ── Streaming agent message bubble (for useChat streaming) ── */
+function StreamingAgentBubble({ content, isAnimating }: { content: string; isAnimating: boolean }) {
+  const time = dayjs().format("h:mm A");
+  return (
+    <div className="flex items-start gap-2.5 max-w-lg animate-in fade-in duration-300">
+      <div className="w-7 h-7 rounded-full bg-[#A0D2FA]/15 flex items-center justify-center shrink-0">
+        <Asterisk className="w-3.5 h-3.5 text-[#A0D2FA]" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 mb-1">
+          <p className="text-[11px] font-medium text-muted-foreground/50">Clarity Agent</p>
+          <MessageSquare className="w-3 h-3 text-muted-foreground/30" />
+          <span className="text-[11px] text-muted-foreground/30">Chat</span>
+          <span className="text-muted-foreground/20">·</span>
+          <span className="text-[10px] text-muted-foreground/25">{time}</span>
+        </div>
+        <div className="rounded-lg bg-white border border-foreground/6 px-3.5 py-2.5 transition-all duration-300">
+          {content ? (
+            <MessageResponse isAnimating={isAnimating}>{content}</MessageResponse>
+          ) : (
+            <ThinkingIndicator />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Pulsing thinking indicator ── */
+function ThinkingIndicator() {
+  return (
+    <div className="flex items-center gap-1.5 py-0.5">
+      <div className="flex items-center gap-1">
+        <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/30 animate-pulse [animation-delay:0ms]" />
+        <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/30 animate-pulse [animation-delay:150ms]" />
+        <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/30 animate-pulse [animation-delay:300ms]" />
+      </div>
+      <span className="text-[12px] text-muted-foreground/40 ml-1">Thinking</span>
+    </div>
+  );
+}
+
 /* ── Unified thread content ── */
 function UnifiedThreadContent({
   threadId,
@@ -557,13 +605,84 @@ function UnifiedThreadContent({
   const messages = useQuery(api.threads.messages, { threadId }) as ThreadMessage[] | undefined;
   const sendMessage = useMutation(api.threads.sendMessage);
   const updateTitle = useMutation(api.threads.updateTitle);
+  const authToken = useAuthToken();
 
   const generateUploadUrl = useMutation(api.threads.generateUploadUrl);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const messagesRef = useRef<HTMLDivElement>(null);
-  const chatInputRef = useRef<ChatInputHandle>(null);
+  const chatInputRef = useRef<ClarityPromptInputHandle>(null);
   const prevThreadId = useRef<string | null>(null);
+
+  // Build transport for useChat (memoized to avoid re-creating on every render)
+  const chatTransport = useMemo(() => {
+    return new DefaultChatTransport({
+      api: "/api/chat",
+      headers: authToken ? { Authorization: `Bearer ${authToken}` } : undefined,
+      body: { threadId: threadId as string },
+    });
+  }, [authToken, threadId]);
+
+  // useChat for streaming responses
+  const {
+    messages: chatMessages,
+    status: chatStatus,
+    sendMessage: sendChatMessage,
+    stop,
+    setMessages: setChatMessages,
+  } = useChat({
+    transport: chatTransport,
+    messages: [],
+  });
+
+  // Reset useChat messages when thread changes
+  useEffect(() => {
+    setChatMessages([]);
+  }, [threadId, setChatMessages]);
+
+  // Get the streaming assistant message from useChat (if any)
+  const streamingMessage = useMemo(() => {
+    if (chatStatus !== "streaming" && chatStatus !== "submitted") return null;
+    const lastMsg = chatMessages[chatMessages.length - 1];
+    if (lastMsg?.role === "assistant") return lastMsg;
+    return null;
+  }, [chatMessages, chatStatus]);
+
+  // Extract text content from UIMessage parts
+  const streamingText = useMemo(() => {
+    if (!streamingMessage) return "";
+    return streamingMessage.parts
+      .filter((p) => p.type === "text")
+      .map((p) => (p as { type: "text"; text: string }).text)
+      .join("");
+  }, [streamingMessage]);
+
+  // Check if the streaming message has been persisted to Convex
+  const rawStreamingPersisted = useMemo(() => {
+    if (!streamingMessage || !messages) return false;
+    const lastConvexMsg = messages[messages.length - 1];
+    if (!lastConvexMsg) return false;
+    return (
+      lastConvexMsg.role === "agent" &&
+      !lastConvexMsg.status &&
+      lastConvexMsg.content.length > 0
+    );
+  }, [streamingMessage, messages]);
+
+  // Debounce the transition from streaming→persisted to avoid jarring swap
+  const [isStreamingPersisted, setIsStreamingPersisted] = useState(false);
+  useEffect(() => {
+    if (rawStreamingPersisted) {
+      // Small delay so the persisted message renders before we hide the stream
+      const timer = setTimeout(() => {
+        setIsStreamingPersisted(true);
+        // Clear useChat messages once persisted to Convex
+        setChatMessages([]);
+      }, 150);
+      return () => clearTimeout(timer);
+    }
+    setIsStreamingPersisted(false);
+  }, [rawStreamingPersisted, setChatMessages]);
 
   // Push title + actions to parent for AppShell header
   useEffect(() => {
@@ -584,6 +703,7 @@ function UnifiedThreadContent({
     });
   }, [thread, threadId, onMeta]);
 
+  // Scroll to bottom when messages change or thread switches
   useEffect(() => {
     const el = messagesRef.current;
     if (!el) return;
@@ -592,30 +712,63 @@ function UnifiedThreadContent({
     el.scrollTo({ top: el.scrollHeight, behavior: isNew ? "instant" : "smooth" });
   }, [threadId, messages?.length]);
 
-  const handleSend = useCallback(async (text: string, files?: File[]) => {
-    // Upload files first
+  // Auto-scroll during streaming (keep pinned to bottom as tokens arrive)
+  useEffect(() => {
+    if (!streamingMessage) return;
+    const el = messagesRef.current;
+    if (!el) return;
+    // Only auto-scroll if user is near the bottom (within 200px)
+    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 200;
+    if (isNearBottom) {
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    }
+  }, [streamingText, streamingMessage]);
+
+  const handleSend = useCallback(async (message: PromptInputMessage) => {
+    const text = message.text.trim();
+    if (!text && message.files.length === 0) return;
+
+    // Upload files first if any
     const attachments: { filename: string; contentType: string; size: number; fileId: Id<"_storage"> }[] = [];
-    if (files) {
-      for (const file of files) {
+    if (message.files.length > 0) {
+      for (const file of message.files) {
         const url = await generateUploadUrl();
         const res = await fetch(url, {
           method: "POST",
-          headers: { "Content-Type": file.type || "application/octet-stream" },
-          body: file,
+          headers: { "Content-Type": file.mediaType || "application/octet-stream" },
+          body: await fetch(file.url).then((r) => r.blob()),
         });
         if (res.ok) {
           const { storageId } = await res.json();
           attachments.push({
-            filename: file.name,
-            contentType: file.type || "application/octet-stream",
-            size: file.size,
+            filename: file.filename ?? "file",
+            contentType: file.mediaType || "application/octet-stream",
+            size: 0,
             fileId: storageId as Id<"_storage">,
           });
         }
       }
     }
-    await sendMessage({ threadId, content: text || "(attached files)", attachments: attachments.length > 0 ? attachments : undefined });
-  }, [sendMessage, threadId, generateUploadUrl]);
+
+    // If there are attachments, use mutation-based flow (backend handles response)
+    if (attachments.length > 0) {
+      await sendMessage({
+        threadId,
+        content: text || "(attached files)",
+        attachments,
+      });
+      return;
+    }
+
+    // For text-only messages, use streaming via useChat
+    // Persist user message to Convex but skip backend agent response
+    // (the streaming API route will handle the response)
+    await sendMessage({ threadId, content: text, skipAgentResponse: true });
+
+    // Trigger streaming via useChat (the API route will handle the response)
+    setChatMessages([]);
+    await sendChatMessage({ text });
+  }, [sendMessage, threadId, generateUploadUrl, sendChatMessage, setChatMessages]);
 
   // Detect if thread has both chat and email messages (mixed thread)
   const isMixedThread = useMemo(() => {
@@ -709,6 +862,13 @@ function UnifiedThreadContent({
               isMixedThread={isMixedThread}
             />
           ))}
+          {/* Streaming message from useChat (shown during generation, hidden once persisted) */}
+          {streamingMessage && !isStreamingPersisted && (
+            <StreamingAgentBubble
+              content={streamingText}
+              isAnimating={chatStatus === "streaming"}
+            />
+          )}
           {/* Padding so last message clears the input overlay */}
           {messages && messages.length > 0 && <div className="h-40" />}
         </div>
@@ -719,12 +879,13 @@ function UnifiedThreadContent({
         {messages && messages.length > 0 && thread.threadEmail && (
           <ThreadEmailLink threadEmail={thread.threadEmail} subject={thread.title !== "New chat" ? thread.title : undefined} />
         )}
-        <ChatInput
+        <ClarityPromptInput
           ref={chatInputRef}
-          onSend={handleSend}
+          onSubmit={handleSend}
           placeholder="Reply to this thread..."
           showAttach
-          autoFocus
+          status={chatStatus === "streaming" || chatStatus === "submitted" ? chatStatus : undefined}
+          onStop={stop}
         />
       </ChatInputOverlay>
     </div>

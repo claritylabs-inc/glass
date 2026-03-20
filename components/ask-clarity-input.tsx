@@ -6,7 +6,9 @@ import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
 import { usePageContext } from "@/hooks/use-page-context";
-import { ChatInput, ChatInputOverlay } from "@/components/chat-input";
+import { ClarityPromptInput } from "@/components/clarity-prompt-input";
+import { ChatInputOverlay } from "@/components/chat-input";
+import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
 
 const AGENT_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "agent.claritylabs.inc";
 
@@ -35,7 +37,9 @@ export function AskClarityInput() {
   const basePath = segments.length > 0 ? "/" + segments[0] : "/";
   const contextLabel = PAGE_LABELS[basePath] ?? "Page";
 
-  const handleSend = useCallback(async (content: string) => {
+  const handleSubmit = useCallback(async (message: PromptInputMessage) => {
+    const content = message.text.trim();
+    if (!content) return;
     try {
       const threadId = await createThread({
         initialContext: pageContext ?? undefined,
@@ -55,8 +59,8 @@ export function AskClarityInput() {
 
   return (
     <ChatInputOverlay>
-      <ChatInput
-        onSend={handleSend}
+      <ClarityPromptInput
+        onSubmit={handleSubmit}
         placeholder="Ask Clarity..."
         contextLabel={contextLabel}
         showAttach={false}

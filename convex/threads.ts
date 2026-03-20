@@ -131,6 +131,7 @@ export const sendMessage = mutation({
         })
       )
     ),
+    skipAgentResponse: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const { userId, orgId } = await requireOrgAccess(ctx);
@@ -153,13 +154,15 @@ export const sendMessage = mutation({
 
     await ctx.db.patch(args.threadId, { lastMessageAt: Date.now() });
 
-    // Schedule agent response
-    await ctx.scheduler.runAfter(0, internal.actions.processThreadChat.run, {
-      threadId: args.threadId,
-      orgId,
-      userId,
-      userMessageId: messageId,
-    });
+    // Schedule agent response (skip when streaming API route handles it)
+    if (!args.skipAgentResponse) {
+      await ctx.scheduler.runAfter(0, internal.actions.processThreadChat.run, {
+        threadId: args.threadId,
+        orgId,
+        userId,
+        userMessageId: messageId,
+      });
+    }
 
     return messageId;
   },
@@ -192,6 +195,68 @@ export const updateTitle = mutation({
     const thread = await ctx.db.get(args.id);
     if (!thread || thread.orgId !== orgId) throw new Error("Not found");
     await ctx.db.patch(args.id, { title: args.title });
+  },
+});
+
+// ── Public mutations for streaming API route ──
+// These are thin auth-checked wrappers around internal mutations,
+// callable via ConvexHttpClient from the Next.js streaming API route.
+
+export const insertProcessingMessage = mutation({
+  args: { threadId: v.id("threads") },
+  handler: async (ctx, args) => {
+    const { orgId } = await requireOrgAccess(ctx);
+    const thread = await ctx.db.get(args.threadId);
+    if (!thread || thread.orgId !== orgId) throw new Error("Not found");
+    return await ctx.db.insert("threadMessages", {
+      threadId: args.threadId,
+      orgId,
+      channel: "chat",
+      role: "agent",
+      content: "",
+      status: "processing",
+    });
+  },
+});
+
+export const updateAgentResponse = mutation({
+  args: {
+    messageId: v.id("threadMessages"),
+    content: v.string(),
+    referencedPolicyIds: v.optional(v.array(v.id("policies"))),
+    referencedQuoteIds: v.optional(v.array(v.id("quotes"))),
+  },
+  handler: async (ctx, args) => {
+    const { orgId } = await requireOrgAccess(ctx);
+    const msg = await ctx.db.get(args.messageId);
+    if (!msg || msg.orgId !== orgId) throw new Error("Not found");
+    await ctx.db.patch(args.messageId, {
+      content: args.content,
+      status: undefined,
+      referencedPolicyIds: args.referencedPolicyIds,
+      referencedQuoteIds: args.referencedQuoteIds,
+    });
+    await ctx.db.patch(msg.threadId, { lastMessageAt: Date.now() });
+  },
+});
+
+export const streamContent = mutation({
+  args: { messageId: v.id("threadMessages"), content: v.string() },
+  handler: async (ctx, args) => {
+    const { orgId } = await requireOrgAccess(ctx);
+    const msg = await ctx.db.get(args.messageId);
+    if (!msg || msg.orgId !== orgId) throw new Error("Not found");
+    await ctx.db.patch(args.messageId, { content: args.content });
+  },
+});
+
+export const setMessageError = mutation({
+  args: { messageId: v.id("threadMessages"), error: v.string() },
+  handler: async (ctx, args) => {
+    const { orgId } = await requireOrgAccess(ctx);
+    const msg = await ctx.db.get(args.messageId);
+    if (!msg || msg.orgId !== orgId) throw new Error("Not found");
+    await ctx.db.patch(args.messageId, { status: "error", error: args.error });
   },
 });
 

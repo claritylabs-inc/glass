@@ -1,0 +1,243 @@
+import { NextRequest } from "next/server";
+import { streamText, generateText, type ModelMessage } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
+import { ConvexHttpClient } from "convex/browser";
+import { api } from "@/convex/_generated/api";
+import {
+  buildSystemPrompt,
+  buildDocumentContext,
+} from "@claritylabs-inc/cl-sdk";
+
+export const maxDuration = 60;
+
+const HAIKU_MODEL = "claude-haiku-4-5-20251001";
+const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL!;
+
+export async function POST(req: NextRequest) {
+  const convex = new ConvexHttpClient(convexUrl);
+
+  // Extract Convex auth token from request
+  const authToken = req.headers.get("Authorization")?.replace("Bearer ", "");
+  if (!authToken) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+  convex.setAuth(authToken);
+
+  // Validate user
+  const user = await convex.query(api.users.viewer, {});
+  if (!user) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+
+  const body = await req.json();
+  const { messages: chatMessages, threadId } = body as {
+    messages: Array<{ role: string; content: string }>;
+    threadId?: string;
+  };
+
+  if (!threadId) {
+    return new Response("threadId required", { status: 400 });
+  }
+
+  // Load thread
+  const thread = await convex.query(api.threads.get, {
+    id: threadId as any,
+  });
+  if (!thread) {
+    return new Response("Thread not found", { status: 404 });
+  }
+
+  // Load org
+  const orgData = await convex.query(api.orgs.viewerOrg, {});
+  if (!orgData) {
+    return new Response("Organization not found", { status: 404 });
+  }
+  const { org } = orgData;
+
+  // Insert processing placeholder
+  const agentMsgId = await convex.mutation(
+    api.threads.insertProcessingMessage,
+    { threadId: threadId as any },
+  );
+
+  try {
+    // Load policies, quotes, and thread messages in parallel
+    const [policies, quotes, threadMessages] = await Promise.all([
+      convex.query(api.policies.list, {}),
+      convex.query(api.quotes.list, {}),
+      convex.query(api.threads.messages, { threadId: threadId as any }),
+    ]);
+
+    const userName = user.name?.split(/\s+/)[0];
+    const siteUrl = process.env.SITE_URL ?? "https://agent.claritylabs.inc";
+
+    // Build system prompt
+    const systemPrompt = buildSystemPrompt(
+      "direct",
+      org.context,
+      siteUrl,
+      org.name,
+      userName,
+      org.coiHandling as any,
+      org.insuranceBroker,
+      org.brokerContactName,
+      org.brokerContactEmail,
+    );
+
+    // Find latest user message content for document context matching
+    const latestUserContent =
+      chatMessages?.filter((m: any) => m.role === "user").pop()?.content ?? "";
+
+    // Build document context (maps Convex types to SDK interfaces)
+    const policyDocs = policies.map((p: any) => ({
+      ...p,
+      id: p._id,
+      type: "policy" as const,
+    }));
+    const quoteDocs = quotes.map((q: any) => ({
+      ...q,
+      id: q._id,
+      type: "quote" as const,
+    }));
+    const { context: docContext, relevantPolicyIds, relevantQuoteIds } =
+      buildDocumentContext(policyDocs, quoteDocs, latestUserContent);
+
+    // Build message history from thread messages (not just chatMessages from useChat)
+    const messageHistory: ModelMessage[] = [];
+    for (const msg of threadMessages) {
+      if (msg.status === "processing") continue;
+      if (msg.role === "user") {
+        messageHistory.push({
+          role: "user",
+          content: msg.userName
+            ? `[${msg.userName}]: ${msg.content}`
+            : msg.content,
+        });
+      } else if (msg.role === "agent" && msg.content) {
+        messageHistory.push({ role: "assistant", content: msg.content });
+      }
+    }
+
+    // Add the latest user message from useChat if not already in thread
+    // (it may not be persisted yet when the API is called)
+    const lastChat = chatMessages?.[chatMessages.length - 1];
+    if (lastChat?.role === "user") {
+      const lastThreadMsg = threadMessages[threadMessages.length - 1];
+      if (
+        !lastThreadMsg ||
+        lastThreadMsg.content !== lastChat.content ||
+        lastThreadMsg.role !== "user"
+      ) {
+        messageHistory.push({
+          role: "user",
+          content: `[${user.name ?? "User"}]: ${lastChat.content}`,
+        });
+      }
+    }
+
+    // Web chat addendum
+    const hasEmailMessages = threadMessages.some(
+      (m: any) => m.channel === "email",
+    );
+    const isMixedThread =
+      hasEmailMessages || !!(thread as any).legacyConversationId;
+
+    const webChatAddendum = isMixedThread
+      ? `\n\nMIXED THREAD MODE:\n- This thread includes both web chat messages (visible only to the team) and email messages (visible to external participants).\n- Use markdown freely.\n- Multiple team members may participate. Their name appears in brackets before their message.\n- Do NOT include email-style sign-offs or greetings.`
+      : `\n\nWEB CHAT MODE:\n- This is a web chat conversation, not email. Use markdown freely.\n- Keep the conversational style but you can use richer formatting.\n- Multiple team members may participate. Their name appears in brackets before their message.\n- Do NOT include email-style sign-offs or greetings.`;
+
+    // Page context
+    let pageContextBlock = "";
+    if ((thread as any).initialContext) {
+      const ic = (thread as any).initialContext;
+      if (ic.summary) {
+        pageContextBlock = `\n\nFOCUSED CONTEXT — The user started this chat from the ${ic.pageType} detail page:\n- ${ic.summary}\n- Prioritize answering questions about this specific ${ic.pageType}.\n`;
+      } else if (ic.pageType) {
+        pageContextBlock = `\n\nFOCUSED CONTEXT — The user started this chat from the ${ic.pageType} page.\n`;
+      }
+    }
+
+    const fullSystemPrompt =
+      systemPrompt + webChatAddendum + pageContextBlock + "\n\n" + docContext;
+
+    // Stream response
+    const result = streamText({
+      model: anthropic(HAIKU_MODEL),
+      maxOutputTokens: 2048,
+      system: fullSystemPrompt,
+      messages: messageHistory,
+      onFinish: async ({ text }) => {
+        try {
+          // Persist final message to Convex
+          await convex.mutation(api.threads.updateAgentResponse, {
+            messageId: agentMsgId,
+            content: text,
+            referencedPolicyIds:
+              relevantPolicyIds.length > 0
+                ? (relevantPolicyIds as any)
+                : undefined,
+            referencedQuoteIds:
+              relevantQuoteIds.length > 0
+                ? (relevantQuoteIds as any)
+                : undefined,
+          });
+
+          // Auto-title on first user message
+          const userMessages = threadMessages.filter(
+            (m: any) => m.role === "user",
+          );
+          if (userMessages.length <= 1) {
+            try {
+              const { text: titleText } = await generateText({
+                model: anthropic(HAIKU_MODEL),
+                maxOutputTokens: 12,
+                system:
+                  'You are a title generator. Given a user question and an assistant reply, output a short 2-4 word title that captures the topic. Rules:\n- Output ONLY the title, no quotes, no punctuation, no explanation\n- Use title case\n- Examples: "GL Coverage Limits", "Cyber Liability Quotes", "Workers Comp App", "Renewal Timeline"',
+                messages: [
+                  {
+                    role: "user",
+                    content: `User: ${latestUserContent}\n\nAssistant: ${text.slice(0, 200)}`,
+                  },
+                ],
+              });
+              const title = titleText
+                .trim()
+                .replace(/^["']|["']$/g, "")
+                .split("\n")[0];
+              if (title && title.length <= 40) {
+                await convex.mutation(api.threads.updateTitle, {
+                  id: threadId as any,
+                  title,
+                });
+              }
+            } catch {
+              // Non-critical
+            }
+          }
+        } catch (err) {
+          console.error("Failed to persist agent response:", err);
+        }
+      },
+    });
+
+    return result.toUIMessageStreamResponse();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("Chat API error:", message);
+
+    // Mark the processing message as error
+    try {
+      await convex.mutation(api.threads.setMessageError, {
+        messageId: agentMsgId,
+        error: message,
+      });
+    } catch {
+      // Best effort
+    }
+
+    return new Response(JSON.stringify({ error: message }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+}
