@@ -1,7 +1,7 @@
 import { ImageResponse } from "next/og";
 
 export const runtime = "edge";
-export const alt = "Clarity Agent";
+export const alt = "Prism";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -56,7 +56,7 @@ export default async function Image() {
               fontFamily: "Georgia, serif",
             }}
           >
-            Clarity Agent
+            Prism
           </span>
         </div>
         <span

@@ -18,7 +18,7 @@ import { usePdf } from "@/components/pdf-context";
 import { usePresence } from "@/hooks/use-presence";
 import { ContextReferenceCard, extractEntityRefs, ReferenceCardStrip } from "@/components/context-reference-card";
 import { ChatInput, ChatInputOverlay, type ChatInputHandle } from "@/components/chat-input";
-import { ClarityPromptInput, type ClarityPromptInputHandle } from "@/components/clarity-prompt-input";
+import { PrismPromptInput, type PrismPromptInputHandle } from "@/components/prism-prompt-input";
 import { MessageResponse } from "@/components/ai-elements/message";
 import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
 import Link from "next/link";
@@ -102,7 +102,7 @@ function UnifiedThreadActions({
       if (msg.status === "processing") continue;
       const time = dayjs(msg._creationTime).format("MMM D, YYYY h:mm A");
       const sender = msg.role === "agent"
-        ? "Clarity Agent"
+        ? "Prism"
         : msg.userName ?? msg.fromName ?? msg.fromEmail ?? "User";
       const channel = msg.channel === "email" ? " [Email]" : " [Chat]";
       lines.push("");
@@ -288,7 +288,7 @@ function UnifiedMessageBubble({
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <p className="text-[11px] font-medium text-muted-foreground/50">Clarity Agent</p>
+            <p className="text-[11px] font-medium text-muted-foreground/50">Prism</p>
             {channelIcon}
           </div>
           {hasContent ? (
@@ -330,7 +330,7 @@ function UnifiedMessageBubble({
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
-              <p className="text-[11px] font-medium text-muted-foreground/50">Clarity Agent</p>
+              <p className="text-[11px] font-medium text-muted-foreground/50">Prism</p>
               {channelIcon}
               <span className="text-muted-foreground/20">·</span>
               <span className="text-[10px] text-muted-foreground/25">{time.format("MMM D, h:mm A")}</span>
@@ -451,7 +451,7 @@ function UnifiedMessageBubble({
   );
 }
 
-const AGENT_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "agent.claritylabs.inc";
+const AGENT_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "prism.claritylabs.inc";
 
 const EXAMPLE_PROMPTS_UNIFIED = [
   {
@@ -555,7 +555,7 @@ function StreamingAgentBubble({ content, isAnimating }: { content: string; isAni
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-1">
-          <p className="text-[11px] font-medium text-muted-foreground/50">Clarity Agent</p>
+          <p className="text-[11px] font-medium text-muted-foreground/50">Prism</p>
           <MessageSquare className="w-3 h-3 text-muted-foreground/30" />
           <span className="text-[11px] text-muted-foreground/30">Chat</span>
           <span className="text-muted-foreground/20">·</span>
@@ -611,7 +611,7 @@ function UnifiedThreadContent({
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const messagesRef = useRef<HTMLDivElement>(null);
-  const chatInputRef = useRef<ClarityPromptInputHandle>(null);
+  const chatInputRef = useRef<PrismPromptInputHandle>(null);
   const prevThreadId = useRef<string | null>(null);
 
   // Build transport for useChat (memoized to avoid re-creating on every render)
@@ -831,7 +831,7 @@ function UnifiedThreadContent({
               <div className="w-10 h-10 rounded-full bg-[#A0D2FA]/15 flex items-center justify-center mb-4">
                 <Asterisk className="w-5 h-5 text-[#A0D2FA]" />
               </div>
-              <h3 className="text-body-sm font-semibold text-foreground mb-1">Ask Clarity anything</h3>
+              <h3 className="text-body-sm font-semibold text-foreground mb-1">Ask Prism anything</h3>
               <p className="text-label-sm text-muted-foreground/50 mb-6 text-center max-w-sm">
                 I can help with your policies, quotes, applications, and general insurance questions.
               </p>
@@ -879,7 +879,7 @@ function UnifiedThreadContent({
         {messages && messages.length > 0 && thread.threadEmail && (
           <ThreadEmailLink threadEmail={thread.threadEmail} subject={thread.title !== "New chat" ? thread.title : undefined} />
         )}
-        <ClarityPromptInput
+        <PrismPromptInput
           ref={chatInputRef}
           onSubmit={handleSend}
           placeholder="Reply to this thread..."
@@ -934,7 +934,7 @@ function EmailThreadActions({
     for (const msg of thread.messages) {
       const time = dayjs(msg._creationTime).format("MMM D, YYYY h:mm A");
       const sender = msg.responseBody
-        ? "Clarity Agent"
+        ? "Prism"
         : msg.fromName ?? msg.fromEmail ?? "Unknown";
       lines.push("");
       lines.push(`${sender} — ${time}`);
@@ -1140,7 +1140,7 @@ function WebChatActions({
     for (const msg of messages) {
       if (msg.status === "processing") continue;
       const time = dayjs(msg._creationTime).format("MMM D, YYYY h:mm A");
-      const sender = msg.role === "agent" ? "Clarity Agent" : (msg.userName ?? "User");
+      const sender = msg.role === "agent" ? "Prism" : (msg.userName ?? "User");
       lines.push("");
       lines.push(`${sender} — ${time}`);
       lines.push("");
@@ -1296,7 +1296,7 @@ function WebChatContent({
               <div className="w-10 h-10 rounded-full bg-[#A0D2FA]/15 flex items-center justify-center mb-4">
                 <Asterisk className="w-5 h-5 text-[#A0D2FA]" />
               </div>
-              <h3 className="text-body-sm font-semibold text-foreground mb-1">Ask Clarity anything</h3>
+              <h3 className="text-body-sm font-semibold text-foreground mb-1">Ask Prism anything</h3>
               <p className="text-label-sm text-muted-foreground/50 mb-6 text-center max-w-sm">
                 I can help with your policies, quotes, applications, and general insurance questions.
               </p>

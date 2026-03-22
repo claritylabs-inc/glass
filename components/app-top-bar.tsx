@@ -20,7 +20,7 @@ const BREADCRUMB_MAP: Record<string, { icon: React.ComponentType<{ className?: s
   "/quotes": { icon: ClipboardList, label: "Quotes" },
   "/applications": { icon: FileInput, label: "Applications" },
   "/connections": { icon: Mail, label: "Connections" },
-  "/agent": { icon: Asterisk, label: "Clarity Agent" },
+  "/agent": { icon: Asterisk, label: "Prism" },
   "/settings": { icon: Settings, label: "Settings" },
   "/profile": { icon: User, label: "Profile" },
 };

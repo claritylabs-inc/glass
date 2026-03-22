@@ -9,7 +9,7 @@ const ResendOTP = Email({
     return Math.floor(100000 + Math.random() * 900000).toString();
   },
   async sendVerificationRequest({ identifier: email, token }: any) {
-    const siteUrl = process.env.SITE_URL ?? "https://agent.claritylabs.inc";
+    const siteUrl = process.env.SITE_URL ?? "https://prism.claritylabs.inc";
     const { html, text } = buildOtpEmail(token, siteUrl);
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -20,7 +20,7 @@ const ResendOTP = Email({
       body: JSON.stringify({
         from: process.env.AUTH_EMAIL_FROM ?? "Clarity Labs <onboarding@resend.dev>",
         to: email,
-        subject: "Your Clarity Agent sign-in code",
+        subject: "Your Prism sign-in code",
         html,
         text,
       }),

@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
     ]);
 
     const userName = user.name?.split(/\s+/)[0];
-    const siteUrl = process.env.SITE_URL ?? "https://agent.claritylabs.inc";
+    const siteUrl = process.env.SITE_URL ?? "https://prism.claritylabs.inc";
 
     // Build system prompt
     const systemPrompt = buildSystemPrompt(

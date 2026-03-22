@@ -12,11 +12,11 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import type { ChatStatus } from "ai";
 
-export interface ClarityPromptInputHandle {
+export interface PrismPromptInputHandle {
   setValueAndFocus: (value: string) => void;
 }
 
-export interface ClarityPromptInputProps {
+export interface PrismPromptInputProps {
   onSubmit: (message: PromptInputMessage) => void | Promise<void>;
   placeholder?: string;
   contextLabel?: string;
@@ -26,13 +26,13 @@ export interface ClarityPromptInputProps {
   onStop?: () => void;
 }
 
-export const ClarityPromptInput = forwardRef<
-  ClarityPromptInputHandle,
-  ClarityPromptInputProps
->(function ClarityPromptInput(
+export const PrismPromptInput = forwardRef<
+  PrismPromptInputHandle,
+  PrismPromptInputProps
+>(function PrismPromptInput(
   {
     onSubmit,
-    placeholder = "Ask Clarity...",
+    placeholder = "Ask Prism...",
     contextLabel,
     showAttach = true,
     disabled = false,
@@ -96,7 +96,7 @@ export const ClarityPromptInput = forwardRef<
             <div className="flex items-center gap-1.5 ml-1">
               <Asterisk className="w-3.5 h-3.5 text-[#A0D2FA]" />
               <span className="hidden sm:inline text-[11px] font-medium text-muted-foreground/40">
-                Clarity Agent
+                Prism
               </span>
               {contextLabel && (
                 <span className="text-[10px] font-medium text-muted-foreground/30 bg-foreground/[0.03] px-1.5 py-0.5 rounded">

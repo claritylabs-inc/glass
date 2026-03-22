@@ -8,7 +8,7 @@ import { useAuthActions } from "@convex-dev/auth/react";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
 
-const AGENT_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "agent.claritylabs.inc";
+const AGENT_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "prism.claritylabs.inc";
 import {
   LayoutDashboard,
   FileText,
@@ -38,7 +38,7 @@ const INSURANCE_ITEMS = [
 
 const TOOLS_ITEMS = [
   { href: "/connections", label: "Connections", icon: Mail, shortcut: "C" },
-  { href: "/agent", label: "Clarity Agent", icon: Asterisk, shortcut: "G" },
+  { href: "/agent", label: "Prism", icon: Asterisk, shortcut: "G" },
 ];
 
 const ALL_NAV_ITEMS = [...INSURANCE_ITEMS, ...TOOLS_ITEMS];
@@ -284,7 +284,7 @@ export function AppSidebar({
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Ask Clarity..."
+                placeholder="Ask Prism..."
                 className="flex-1 bg-transparent outline-none text-label-sm text-foreground placeholder:text-muted-foreground/40 min-w-0"
               />
             </div>

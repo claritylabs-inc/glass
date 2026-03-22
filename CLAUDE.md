@@ -17,7 +17,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Architecture
 
-AI-powered insurance platform with policy extraction and application assistance. Emails are scanned via IMAP, classified using keyword heuristics + Claude Haiku, and policy data is extracted from PDF attachments using Claude Sonnet. Clarity Agent handles policy/quote Q&A and insurance application form filling via email and web chat.
+AI-powered insurance platform with policy extraction and application assistance. Emails are scanned via IMAP, classified using keyword heuristics + Claude Haiku, and policy data is extracted from PDF attachments using Claude Sonnet. Prism handles policy/quote Q&A and insurance application form filling via email and web chat.
 
 ### Tech Stack
 
@@ -54,7 +54,7 @@ Auth is handled by `@convex-dev/auth` with email OTP (one-time password) login. 
 4. `retryExtraction` action (public) → re-parses saved raw response first, falls back to full API call
 5. `reExtractFromFile` action (public) → re-extracts from an uploaded replacement PDF
 
-### Data Flow — Clarity Agent (Email)
+### Data Flow — Prism (Email)
 
 1. **Inbound routing** (`handleInboundEmail.ts`): Resend webhook → verify signature → dedup by email_id → resolve org by agent handle → detect mode (direct/cc/forward/unknown) → resolve thread via `In-Reply-To` or subject matching
 2. **Application reply routing** (before normal agent flow): checks for active application session by threadId → fallback by `lastSentMessageId` → fallback by orgId. Routes to `processApplicationReply` or `processConfirmationReply` based on session status
@@ -152,8 +152,8 @@ To modify prompts or extraction logic, update the `@claritylabs-inc/cl-sdk` pack
 
 ### Key Frontend Patterns
 
-- **App Shell layout**: All authenticated pages use `<AppShell>` which provides a persistent left sidebar (`AppSidebar`), top bar with breadcrumbs (`AppTopBar`), and "Ask Clarity" chat input at the bottom (`AskClarityInput`). Pages just render their content inside `<AppShell>`.
-- **Sidebar**: `components/app-sidebar.tsx` — collapsible (220px / 56px), persisted in localStorage, mobile overlay drawer. Sections: Insurance (Dashboard, Policies, Quotes, Applications), Tools (Connections, Clarity Agent), Chats (latest 5 web chats + new chat button), bottom links (Settings for admin, Profile, Sign out).
+- **App Shell layout**: All authenticated pages use `<AppShell>` which provides a persistent left sidebar (`AppSidebar`), top bar with breadcrumbs (`AppTopBar`), and "Ask Prism" chat input at the bottom (`AskPrismInput`). Pages just render their content inside `<AppShell>`.
+- **Sidebar**: `components/app-sidebar.tsx` — collapsible (220px / 56px), persisted in localStorage, mobile overlay drawer. Sections: Insurance (Dashboard, Policies, Quotes, Applications), Tools (Connections, Prism), Chats (latest 5 web chats + new chat button), bottom links (Settings for admin, Profile, Sign out).
 - **Typography**: Headings use Geist Sans (semibold, -0.025em tracking) — no serif in-app. Instrument Serif available via `.serif` class for marketing only.
 - All pages are `"use client"` with Convex React hooks (`useQuery`, `useMutation`, `useAction`)
 - Path alias: `@/*` maps to project root
@@ -164,7 +164,7 @@ To modify prompts or extraction logic, update the `@claritylabs-inc/cl-sdk` pack
 - StatCard component for consistent metric cards across pages (dashboard, applications)
 - SearchableSelect component for styled dropdowns (used in settings, business context)
 - ModeBadge component for conversation type indicators (direct, cc, forward, application)
-- **AI SDK Elements** (`components/ai-elements/`): Scaffolded PromptInput, Message, Conversation components from `ai-elements` CLI. Used via `ClarityPromptInput` wrapper (`components/clarity-prompt-input.tsx`) for branded chat input.
+- **AI SDK Elements** (`components/ai-elements/`): Scaffolded PromptInput, Message, Conversation components from `ai-elements` CLI. Used via `PrismPromptInput` wrapper (`components/prism-prompt-input.tsx`) for branded chat input.
 - **Streaming chat**: `useChat` from `@ai-sdk/react` with `DefaultChatTransport` pointed at `/api/chat`. Auth token passed via `useAuthToken()` from `@convex-dev/auth/react`.
 
 ### Schema Notes
@@ -200,7 +200,7 @@ All routes require authentication (redirect to `/login` if not logged in) except
 - `/applications/[id]` — Application detail: fields by section, batch timeline, progress, PDF download
 - `/connections` — IMAP connection management with scan modal and real-time progress
 - `/extractions` — Pending extraction queue + completed extraction log
-- `/agent` — Clarity Agent: unified conversations (email threads + web chats with "New Chat" button, application badges), settings (email address, modes)
+- `/agent` — Prism: unified conversations (email threads + web chats with "New Chat" button, application badges), settings (email address, modes)
 - `/settings` — Organization settings with 3 tabs: Basic Information, Team Members, Business Context
 - `/profile` — User profile page
 - `/api/chat` — POST: Streaming chat API route for `useChat` (auth via Convex token in Authorization header)

@@ -16,7 +16,7 @@ import { CoverageByTypeSection, parseDollarAmount } from "@/components/coverage-
 import { POLICY_TYPE_LABELS } from "@/convex/lib/policyTypes";
 import dayjs from "dayjs";
 
-const AGENT_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "agent.claritylabs.inc";
+const AGENT_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "prism.claritylabs.inc";
 
 function parseDate(dateStr: string | undefined, format = "MM/DD/YYYY") {
   if (!dateStr || dateStr === "Unknown") return null;
@@ -217,7 +217,7 @@ export default function DashboardPage() {
                       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 md:gap-2 min-w-0">
                         <div className="flex items-center gap-2">
                           <Asterisk className="w-4 h-4 text-[#A0D2FA] shrink-0" />
-                          <span className="text-sm font-semibold text-foreground shrink-0">Clarity Agent</span>
+                          <span className="text-sm font-semibold text-foreground shrink-0">Prism</span>
                         </div>
                         <button
                           type="button"
@@ -255,7 +255,7 @@ export default function DashboardPage() {
                       <Asterisk className="w-4 h-4 text-[#A0D2FA] shrink-0" />
                       <div className="flex-1 min-w-0">
                         <p className="text-body-sm font-medium text-foreground">
-                          Set Up Clarity Agent
+                          Set Up Prism
                         </p>
                         <p className="text-label-sm text-muted-foreground/40">
                           Get a dedicated email for policy questions

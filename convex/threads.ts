@@ -5,7 +5,7 @@ import { requireOrgAccess, getOrgAccess } from "./lib/orgAuth";
 
 // Note: mutations/queries don't have process.env
 // The domain is stored on the org via setAgentDomain action, or passed by the client
-const FALLBACK_AGENT_DOMAIN = "agent.claritylabs.inc";
+const FALLBACK_AGENT_DOMAIN = "prism.claritylabs.inc";
 
 /** Generate a short alphanumeric ID for thread email addresses */
 function shortId(): string {

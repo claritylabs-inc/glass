@@ -31,7 +31,7 @@ const AGENT_TABS = [
 
 type AgentTab = typeof AGENT_TABS[number]["id"];
 
-const AGENT_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "agent.claritylabs.inc";
+const AGENT_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "prism.claritylabs.inc";
 
 /* ── Mode explainer cards ── */
 function ModeExplainerCards({ companyDomains }: { companyDomains?: string[] }) {
@@ -495,7 +495,7 @@ export default function AgentPage() {
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <Asterisk className="w-4 h-4 text-[#A0D2FA] shrink-0" />
-                  <span className="text-sm font-semibold text-foreground shrink-0">Clarity Agent</span>
+                  <span className="text-sm font-semibold text-foreground shrink-0">Prism</span>
                 </div>
                 <button
                   type="button"

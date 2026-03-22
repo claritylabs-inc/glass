@@ -68,7 +68,7 @@ export function buildOtpEmail(token: string, siteUrl: string): { html: string; t
 </body>
 </html>`;
 
-  const text = `Your Clarity Agent sign-in code is: ${token}\n\nEnter this code in the browser window where you started signing in. It expires in 15 minutes.\n\nIf you didn't request this code, you can safely ignore this email.`;
+  const text = `Your Prism sign-in code is: ${token}\n\nEnter this code in the browser window where you started signing in. It expires in 15 minutes.\n\nIf you didn't request this code, you can safely ignore this email.`;
 
   return { html, text };
 }

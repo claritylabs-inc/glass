@@ -166,7 +166,7 @@ function QuoteThreadsTab({ conversations }: { conversations: Conversation[] | un
         <MessageSquare className="w-8 h-8 text-muted-foreground/15 mx-auto mb-3" />
         <p className="text-body-sm text-muted-foreground/50 mb-1">No threads about this quote</p>
         <p className="text-label-sm text-muted-foreground/30">
-          When Clarity Agent references this quote in conversations, they&#39;ll appear here.
+          When Prism references this quote in conversations, they&#39;ll appear here.
         </p>
       </div>
     );

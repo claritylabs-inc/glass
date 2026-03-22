@@ -53,7 +53,7 @@ export const run = internalAction({
       const userName = user?.name?.split(/\s+/)[0];
 
       const siteUrl =
-        process.env.SITE_URL ?? "https://agent.claritylabs.inc";
+        process.env.SITE_URL ?? "https://prism.claritylabs.inc";
 
       // Build system prompt (reuse direct mode)
       const systemPrompt = buildSystemPrompt(

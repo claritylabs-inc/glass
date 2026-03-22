@@ -6,11 +6,11 @@ import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
 import { usePageContext } from "@/hooks/use-page-context";
-import { ClarityPromptInput } from "@/components/clarity-prompt-input";
+import { PrismPromptInput } from "@/components/prism-prompt-input";
 import { ChatInputOverlay } from "@/components/chat-input";
 import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
 
-const AGENT_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "agent.claritylabs.inc";
+const AGENT_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "prism.claritylabs.inc";
 
 const PAGE_LABELS: Record<string, string> = {
   "/": "Dashboard",
@@ -25,7 +25,7 @@ const PAGE_LABELS: Record<string, string> = {
 
 const HIDDEN_PATHS = ["/agent", "/settings", "/profile"];
 
-export function AskClarityInput() {
+export function AskPrismInput() {
   const pathname = usePathname();
   const router = useRouter();
   const createThread = useMutation(api.threads.create);
@@ -59,9 +59,9 @@ export function AskClarityInput() {
 
   return (
     <ChatInputOverlay>
-      <ClarityPromptInput
+      <PrismPromptInput
         onSubmit={handleSubmit}
-        placeholder="Ask Clarity..."
+        placeholder="Ask Prism..."
         contextLabel={contextLabel}
         showAttach={false}
       />
