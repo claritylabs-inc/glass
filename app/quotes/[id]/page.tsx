@@ -49,7 +49,7 @@ function ViewPdfButton({ url }: { url?: string | null }) {
   const { isPdfOpen, togglePdf, openWithUrl } = usePdf();
   if (!url) return null;
   return (
-    <PillButton variant="primary" onClick={() => isPdfOpen ? togglePdf() : openWithUrl(url)} className="hidden lg:inline-flex">
+    <PillButton variant="primary" size="compact" onClick={() => isPdfOpen ? togglePdf() : openWithUrl(url)} className="hidden lg:inline-flex">
       <Eye className="w-3.5 h-3.5" /> {isPdfOpen ? "Hide PDF" : "View PDF"}
     </PillButton>
   );
@@ -70,7 +70,7 @@ function DocumentSection({ section, highlighted }: { section: any; highlighted?:
   return (
     <div
       ref={sectionRef}
-      className={`border border-foreground/6 rounded-lg overflow-hidden transition-colors ${highlighted ? "ring-2 ring-blue-300 bg-blue-50/30" : ""}`}
+      className={`border border-foreground/6 rounded-lg overflow-hidden transition-colors ${highlighted ? "ring-2 ring-blue-300 dark:ring-blue-700 bg-blue-50/30 dark:bg-blue-950/20" : ""}`}
     >
       <button
         type="button"
@@ -162,7 +162,7 @@ function QuoteThreadsTab({ conversations }: { conversations: Conversation[] | un
 
   if (!threads || threads.length === 0) {
     return (
-      <div className="rounded-lg border border-foreground/6 bg-white/60 px-6 py-12 text-center">
+      <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-6 py-12 text-center">
         <MessageSquare className="w-8 h-8 text-muted-foreground/15 mx-auto mb-3" />
         <p className="text-body-sm text-muted-foreground/50 mb-1">No threads about this quote</p>
         <p className="text-label-sm text-muted-foreground/30">
@@ -173,7 +173,7 @@ function QuoteThreadsTab({ conversations }: { conversations: Conversation[] | un
   }
 
   return (
-    <div className="rounded-lg border border-foreground/6 bg-white/60 overflow-hidden">
+    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
       <table className="w-full text-body-sm">
         <thead>
           <tr className="border-b border-foreground/6 bg-foreground/2">
@@ -322,16 +322,16 @@ export default function QuoteDetailPage({ params }: { params: Promise<{ id: stri
               </Link>
               <h1 className="!mb-0">{quote.quoteNumber}</h1>
               <div className="flex items-center gap-2 flex-wrap mt-1">
-                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-600 uppercase tracking-wider">
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 uppercase tracking-wider">
                   Quote
                 </span>
                 {isExpired && (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-50 text-red-600 uppercase tracking-wider">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 uppercase tracking-wider">
                     <AlertTriangle className="w-3 h-3" /> Expired
                   </span>
                 )}
                 {quote.deletedAt && (
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-50 text-red-600 uppercase tracking-wider">
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 uppercase tracking-wider">
                     Deleted
                   </span>
                 )}
@@ -383,7 +383,7 @@ export default function QuoteDetailPage({ params }: { params: Promise<{ id: stri
           {/* Info cards */}
           <FadeIn when={true} staggerIndex={1} duration={0.6}>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-              <div className="rounded-lg border border-foreground/6 bg-white/60 p-4">
+              <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <Shield className="w-4 h-4 text-muted-foreground/40" />
                   <span className="text-label-sm font-medium text-muted-foreground">Producer</span>
@@ -393,7 +393,7 @@ export default function QuoteDetailPage({ params }: { params: Promise<{ id: stri
                 {quote.broker && <p className="text-label-sm text-muted-foreground mt-0.5">Broker: {quote.broker}</p>}
               </div>
 
-              <div className="rounded-lg border border-foreground/6 bg-white/60 p-4">
+              <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <Calendar className="w-4 h-4 text-muted-foreground/40" />
                   <span className="text-label-sm font-medium text-muted-foreground">Proposed Period</span>
@@ -408,14 +408,14 @@ export default function QuoteDetailPage({ params }: { params: Promise<{ id: stri
                 )}
               </div>
 
-              <div className="rounded-lg border border-foreground/6 bg-white/60 p-4">
+              <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <DollarSign className="w-4 h-4 text-muted-foreground/40" />
                   <span className="text-label-sm font-medium text-muted-foreground">Premium Indication</span>
                 </div>
                 <p className="text-body-sm font-semibold font-mono">{quote.premium ?? "—"}</p>
                 {quote.isRenewal && (
-                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-600 mt-1">
+                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 mt-1">
                     Renewal
                   </span>
                 )}
@@ -488,15 +488,15 @@ export default function QuoteDetailPage({ params }: { params: Promise<{ id: stri
                 <h3 className="text-body-sm font-semibold mb-3">Subjectivities</h3>
                 <div className="space-y-2">
                   {quote.subjectivities.map((s, i) => (
-                    <div key={i} className="flex items-start gap-3 px-4 py-3 rounded-lg border border-foreground/6 bg-white/60">
+                    <div key={i} className="flex items-start gap-3 px-4 py-3 rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04]">
                       <AlertTriangle className="w-3.5 h-3.5 text-orange-500 mt-0.5 shrink-0" />
                       <div className="flex-1 min-w-0">
                         <p className="text-body-sm text-foreground">{s.description}</p>
                         {s.category && (
                           <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium mt-1 ${
-                            s.category === "pre_binding" ? "bg-red-50 text-red-600" :
-                            s.category === "post_binding" ? "bg-amber-50 text-amber-600" :
-                            "bg-blue-50 text-blue-600"
+                            s.category === "pre_binding" ? "bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400" :
+                            s.category === "post_binding" ? "bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400" :
+                            "bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400"
                           }`}>
                             {s.category === "pre_binding" ? "Pre-Binding" :
                              s.category === "post_binding" ? "Post-Binding" :
@@ -519,7 +519,7 @@ export default function QuoteDetailPage({ params }: { params: Promise<{ id: stri
                 <h3 className="text-body-sm font-semibold mb-3">Underwriting Conditions</h3>
                 <div className="space-y-2">
                   {quote.underwritingConditions.map((uc, i) => (
-                    <div key={i} className="flex items-start gap-3 px-4 py-3 rounded-lg border border-foreground/6 bg-white/60">
+                    <div key={i} className="flex items-start gap-3 px-4 py-3 rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04]">
                       <Eye className="w-3.5 h-3.5 text-amber-500 mt-0.5 shrink-0" />
                       <p className="text-body-sm text-foreground flex-1">{uc.description}</p>
                       <PageRef page={uc.pageNumber} />

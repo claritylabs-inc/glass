@@ -31,17 +31,17 @@ import { usePdf } from "@/components/pdf-context";
 import { usePageContext } from "@/hooks/use-page-context";
 
 const TYPE_COLORS: Record<string, string> = {
-  general_liability: "bg-blue-100 text-blue-700",
-  workers_comp: "bg-orange-100 text-orange-700",
-  commercial_auto: "bg-purple-100 text-purple-700",
-  non_owned_auto: "bg-violet-100 text-violet-700",
-  property: "bg-green-100 text-green-700",
-  umbrella: "bg-sky-100 text-sky-700",
-  professional_liability: "bg-amber-100 text-amber-700",
-  cyber: "bg-red-100 text-red-700",
-  epli: "bg-pink-100 text-pink-700",
-  directors_officers: "bg-indigo-100 text-indigo-700",
-  other: "bg-gray-100 text-gray-700",
+  general_liability: "bg-blue-100 dark:bg-blue-950/40 text-blue-700 dark:text-blue-400",
+  workers_comp: "bg-orange-100 dark:bg-orange-950/40 text-orange-700 dark:text-orange-400",
+  commercial_auto: "bg-purple-100 dark:bg-purple-950/40 text-purple-700 dark:text-purple-400",
+  non_owned_auto: "bg-violet-100 dark:bg-violet-950/40 text-violet-700 dark:text-violet-400",
+  property: "bg-green-100 dark:bg-green-950/40 text-green-700 dark:text-green-400",
+  umbrella: "bg-sky-100 dark:bg-sky-950/40 text-sky-700 dark:text-sky-400",
+  professional_liability: "bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400",
+  cyber: "bg-red-100 dark:bg-red-950/40 text-red-700 dark:text-red-400",
+  epli: "bg-pink-100 dark:bg-pink-950/40 text-pink-700 dark:text-pink-400",
+  directors_officers: "bg-indigo-100 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-400",
+  other: "bg-gray-100 dark:bg-gray-800/40 text-gray-700 dark:text-gray-400",
 };
 
 function PageRef({ page }: { page: number }) {
@@ -95,20 +95,20 @@ const SECTION_TYPE_LABELS: Record<string, string> = {
 };
 
 const SECTION_TYPE_COLORS: Record<string, string> = {
-  declarations: "bg-blue-50 text-blue-600",
-  insuring_agreement: "bg-green-50 text-green-600",
-  policy_form: "bg-cyan-50 text-cyan-600",
-  endorsement: "bg-sky-50 text-sky-600",
-  application: "bg-lime-50 text-lime-600",
-  exclusion: "bg-red-50 text-red-600",
-  condition: "bg-amber-50 text-amber-600",
-  definition: "bg-purple-50 text-purple-600",
-  schedule: "bg-indigo-50 text-indigo-600",
-  subjectivity: "bg-orange-50 text-orange-600",
-  warranty: "bg-pink-50 text-pink-600",
-  notice: "bg-teal-50 text-teal-600",
-  regulatory: "bg-yellow-50 text-yellow-700",
-  other: "bg-gray-50 text-gray-600",
+  declarations: "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400",
+  insuring_agreement: "bg-green-50 text-green-600 dark:bg-green-950/40 dark:text-green-400",
+  policy_form: "bg-cyan-50 text-cyan-600 dark:bg-cyan-950/40 dark:text-cyan-400",
+  endorsement: "bg-sky-50 text-sky-600 dark:bg-sky-950/40 dark:text-sky-400",
+  application: "bg-lime-50 text-lime-600 dark:bg-lime-950/40 dark:text-lime-400",
+  exclusion: "bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400",
+  condition: "bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400",
+  definition: "bg-purple-50 text-purple-600 dark:bg-purple-950/40 dark:text-purple-400",
+  schedule: "bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-400",
+  subjectivity: "bg-orange-50 text-orange-600 dark:bg-orange-950/40 dark:text-orange-400",
+  warranty: "bg-pink-50 text-pink-600 dark:bg-pink-950/40 dark:text-pink-400",
+  notice: "bg-teal-50 text-teal-600 dark:bg-teal-950/40 dark:text-teal-400",
+  regulatory: "bg-yellow-50 text-yellow-700 dark:bg-yellow-950/40 dark:text-yellow-400",
+  other: "bg-gray-50 text-gray-600 dark:bg-gray-800/40 dark:text-gray-400",
 };
 
 function DocumentSection({ section, highlighted }: { section: any; highlighted?: boolean }) {
@@ -128,7 +128,7 @@ function DocumentSection({ section, highlighted }: { section: any; highlighted?:
   }, [highlighted]);
 
   return (
-    <div ref={sectionRef} className={`border-t border-foreground/4 transition-colors duration-700 ${highlighted ? "bg-blue-50/60" : ""}`}>
+    <div ref={sectionRef} className={`border-t border-foreground/4 transition-colors duration-700 ${highlighted ? "bg-blue-50/60 dark:bg-blue-950/30" : ""}`}>
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}
@@ -189,7 +189,7 @@ function SupplementaryCard({
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-lg border border-foreground/6 bg-white/60 overflow-hidden">
+    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
       <div className="px-4 py-2.5 bg-foreground/[0.02] border-b border-foreground/4">
         <div className="flex items-center gap-2">
           <Icon className="w-4 h-4 text-muted-foreground" />
@@ -381,7 +381,7 @@ function PolicyTypeTags({ types }: { types: string[] }) {
   const overflow = types.length - MAX_VISIBLE_TAGS;
 
   return (
-    <div className="flex flex-wrap gap-1.5 mt-2 max-w-xl items-center">
+    <div className="flex flex-wrap gap-1.5 max-w-xl items-center">
       {visible.map((t) => (
         <span
           key={t}
@@ -412,6 +412,7 @@ function ViewPdfButton({ url }: { url?: string | null }) {
   return (
     <PillButton
       variant="primary"
+      size="compact"
       onClick={() => isPdfOpen ? togglePdf() : openWithUrl(url)}
       className="hidden lg:inline-flex"
     >
@@ -469,7 +470,7 @@ function PolicyConversationsTab({ conversations }: { conversations: Conversation
 
   if (!threads || threads.length === 0) {
     return (
-      <div className="rounded-lg border border-foreground/6 bg-white/60 px-6 py-12 text-center">
+      <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-6 py-12 text-center">
         <MessageSquare className="w-8 h-8 text-muted-foreground/15 mx-auto mb-3" />
         <p className="text-body-sm text-muted-foreground/50 mb-1">No conversations about this policy</p>
         <p className="text-label-sm text-muted-foreground/30">
@@ -480,7 +481,7 @@ function PolicyConversationsTab({ conversations }: { conversations: Conversation
   }
 
   return (
-    <div className="rounded-lg border border-foreground/6 bg-white/60 overflow-hidden">
+    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
       <table className="w-full text-body-sm">
         <thead>
           <tr className="border-b border-foreground/6 bg-foreground/2">
@@ -527,15 +528,15 @@ function PolicyConversationsTab({ conversations }: { conversations: Conversation
 
 /* ── Activity Tab (Audit Log) ── */
 const AUDIT_ACTION_CONFIG: Record<string, { icon: React.ElementType; dotColor: string; bgColor: string; title: string }> = {
-  created: { icon: FileText, dotColor: "text-blue-500", bgColor: "bg-blue-50", title: "Policy created" },
-  extraction_started: { icon: Loader2, dotColor: "text-amber-500", bgColor: "bg-amber-50", title: "Extraction started" },
-  extraction_complete: { icon: CheckCircle, dotColor: "text-emerald-500", bgColor: "bg-emerald-50", title: "Extraction complete" },
-  extraction_error: { icon: XCircle, dotColor: "text-red-500", bgColor: "bg-red-50", title: "Extraction failed" },
-  re_extraction: { icon: RefreshCw, dotColor: "text-violet-500", bgColor: "bg-violet-50", title: "Re-extraction triggered" },
-  pdf_uploaded: { icon: Upload, dotColor: "text-sky-500", bgColor: "bg-sky-50", title: "PDF uploaded" },
-  deleted: { icon: Trash2, dotColor: "text-red-400", bgColor: "bg-red-50", title: "Policy deleted" },
-  restored: { icon: Shield, dotColor: "text-emerald-500", bgColor: "bg-emerald-50", title: "Policy restored" },
-  dismissed: { icon: XCircle, dotColor: "text-gray-500", bgColor: "bg-gray-50", title: "Policy dismissed" },
+  created: { icon: FileText, dotColor: "text-blue-500", bgColor: "bg-blue-50 dark:bg-blue-950/40", title: "Policy created" },
+  extraction_started: { icon: Loader2, dotColor: "text-amber-500", bgColor: "bg-amber-50 dark:bg-amber-950/40", title: "Extraction started" },
+  extraction_complete: { icon: CheckCircle, dotColor: "text-emerald-500", bgColor: "bg-emerald-50 dark:bg-emerald-950/40", title: "Extraction complete" },
+  extraction_error: { icon: XCircle, dotColor: "text-red-500", bgColor: "bg-red-50 dark:bg-red-950/40", title: "Extraction failed" },
+  re_extraction: { icon: RefreshCw, dotColor: "text-violet-500", bgColor: "bg-violet-50 dark:bg-violet-950/40", title: "Re-extraction triggered" },
+  pdf_uploaded: { icon: Upload, dotColor: "text-sky-500", bgColor: "bg-sky-50 dark:bg-sky-950/40", title: "PDF uploaded" },
+  deleted: { icon: Trash2, dotColor: "text-red-400", bgColor: "bg-red-50 dark:bg-red-950/40", title: "Policy deleted" },
+  restored: { icon: Shield, dotColor: "text-emerald-500", bgColor: "bg-emerald-50 dark:bg-emerald-950/40", title: "Policy restored" },
+  dismissed: { icon: XCircle, dotColor: "text-gray-500", bgColor: "bg-gray-50 dark:bg-gray-800/40", title: "Policy dismissed" },
   agent_referenced: { icon: Asterisk, dotColor: "text-[#A0D2FA]", bgColor: "bg-[#A0D2FA]/10", title: "Referenced by Prism" },
 };
 
@@ -546,7 +547,7 @@ function PolicyActivityTab({ policyId }: { policyId: string }) {
 
   if (entries === undefined) {
     return (
-      <div className="rounded-lg border border-foreground/6 bg-white/60 overflow-hidden">
+      <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
         <div className="px-4 py-2.5 bg-foreground/[0.02] border-b border-foreground/4">
           <div className="h-4 w-24 bg-foreground/5 rounded animate-pulse" />
         </div>
@@ -565,7 +566,7 @@ function PolicyActivityTab({ policyId }: { policyId: string }) {
 
   if (entries.length === 0) {
     return (
-      <div className="rounded-lg border border-foreground/6 bg-white/60 px-6 py-12 text-center">
+      <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-6 py-12 text-center">
         <Activity className="w-8 h-8 text-muted-foreground/15 mx-auto mb-3" />
         <p className="text-body-sm text-muted-foreground/50">No activity recorded yet</p>
       </div>
@@ -585,7 +586,7 @@ function PolicyActivityTab({ policyId }: { policyId: string }) {
   }
 
   return (
-    <div className="rounded-lg border border-foreground/6 bg-white/60 overflow-hidden">
+    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
       {groups.map((group, gi) => {
         const config = AUDIT_ACTION_CONFIG;
         return (
@@ -708,7 +709,7 @@ export default function PolicyDetailPage({
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="rounded-lg border border-foreground/6 bg-white/60 px-4 py-3">
+            <div key={i} className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-4 py-3">
               <Skeleton className="h-5 w-32 mb-1" />
               <Skeleton className="h-3 w-24" />
             </div>
@@ -841,8 +842,8 @@ export default function PolicyDetailPage({
                   </Link>
 
                   {isDeleted && (
-                    <div className="flex items-center gap-3 mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-2.5">
-                      <p className="text-body-sm text-red-700 flex-1">This policy has been deleted.</p>
+                    <div className="flex items-center gap-3 mb-4 rounded-lg border border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-950/40 px-4 py-2.5">
+                      <p className="text-body-sm text-red-700 dark:text-red-400 flex-1">This policy has been deleted.</p>
                       <Button
                         variant="outline"
                         onClick={() => restorePolicy({ id: policy._id })}
@@ -857,12 +858,12 @@ export default function PolicyDetailPage({
                     <h1 className="!mb-0 break-all">{policy.policyNumber}</h1>
                     <div className="flex items-center gap-2 flex-wrap mt-1">
                       {documentType === "quote" && (
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-label-sm font-medium bg-yellow-100 text-yellow-800">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-label-sm font-medium bg-yellow-100 dark:bg-yellow-950/40 text-yellow-800 dark:text-yellow-400">
                           Quote
                         </span>
                       )}
                       {policy.isRenewal && (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium bg-amber-100 text-amber-700">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400">
                           Renewal
                         </span>
                       )}
@@ -892,8 +893,8 @@ export default function PolicyDetailPage({
 
                 {/* Demo data banner */}
                 {(policy as any).isDemo && !demoBannerDismissed && (
-                  <div className="flex items-center gap-3 px-4 py-2.5 rounded-lg border border-amber-200 bg-amber-50/60 mb-4">
-                    <p className="text-label-sm text-amber-700 flex-1">
+                  <div className="flex items-center gap-3 px-4 py-2.5 rounded-lg border border-amber-200 dark:border-amber-900/50 bg-amber-50/60 dark:bg-amber-950/30 mb-4">
+                    <p className="text-label-sm text-amber-700 dark:text-amber-400 flex-1">
                       You&apos;re viewing demo data.{" "}
                       <Link href="/profile" className="underline font-medium hover:text-amber-900">Remove demo data</Link>{" "}
                       from Settings when you&apos;re ready.
@@ -971,7 +972,7 @@ export default function PolicyDetailPage({
                     },
                   ].map((card, i) => (
                     <FadeIn key={card.label} when={true} staggerIndex={i + 1} duration={0.6}>
-                      <div className="rounded-lg border border-foreground/6 bg-white/60 px-4 py-3 h-full">
+                      <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-4 py-3 h-full">
                         <div className="flex items-center gap-2 mb-2">
                           <card.icon className="w-4 h-4 text-muted-foreground" />
                           <p className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider">
@@ -994,7 +995,7 @@ export default function PolicyDetailPage({
                 {/* Summary */}
                 {policy.summary && (
                   <FadeIn when={true} delay={0.5} duration={0.6}>
-                    <div className="rounded-lg border border-foreground/6 bg-white/60 px-4 py-3 mb-6">
+                    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-4 py-3 mb-6">
                       <p className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider mb-2">
                         Summary
                       </p>
@@ -1007,7 +1008,7 @@ export default function PolicyDetailPage({
 
                 {/* Coverages table */}
                 <FadeIn when={true} delay={0.6} duration={0.6}>
-                  <div className="rounded-lg border border-foreground/6 bg-white/60 overflow-hidden mb-6">
+                  <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden mb-6">
                     <div className="px-4 py-2.5 bg-foreground/[0.02] border-b border-foreground/4">
                       <div className="flex items-center gap-2">
                         <FileText className="w-4 h-4 text-muted-foreground" />
@@ -1064,7 +1065,7 @@ export default function PolicyDetailPage({
 
                 {/* Parties */}
                 <FadeIn when={true} delay={0.65} duration={0.6}>
-                  <div className="rounded-lg border border-foreground/6 bg-white/60 overflow-hidden mb-6">
+                  <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden mb-6">
                     <div className="px-4 py-2.5 bg-foreground/[0.02] border-b border-foreground/4">
                       <div className="flex items-center gap-2">
                         <Users className="w-4 h-4 text-muted-foreground" />
@@ -1096,7 +1097,7 @@ export default function PolicyDetailPage({
                 {/* Document Sections */}
                 {policyDocument?.sections?.length > 0 && (
                   <FadeIn when={true} delay={0.7} duration={0.6}>
-                    <div className="rounded-lg border border-foreground/6 bg-white/60 overflow-hidden mb-6">
+                    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden mb-6">
                       <div className="px-4 py-2.5 bg-foreground/[0.02] border-b border-foreground/4">
                         <div className="flex items-center gap-2">
                           <FileText className="w-4 h-4 text-muted-foreground" />
