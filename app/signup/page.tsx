@@ -7,6 +7,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { FadeIn } from "@/components/ui/fade-in";
 import { LogoIcon } from "@/components/ui/logo-icon";
+import { AuthHeroBackground, PrismHeroLogo } from "@/components/auth-hero-background";
 import { PillButton } from "@/components/ui/pill-button";
 import { Loader2, ArrowLeft, ArrowRight } from "lucide-react";
 
@@ -77,22 +78,21 @@ export default function SignupPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <FadeIn className="w-full max-w-sm">
-        <div className="p-2 sm:bg-white sm:rounded-xl sm:border sm:border-foreground/8 sm:p-8">
-          <div className="text-center mb-6">
-            <h3 className="!mb-0 flex items-center justify-center gap-2 serif text-2xl">
-              Clarity <LogoIcon size={28} className="shrink-0" /> Labs
-            </h3>
-            <p className="text-body-sm text-muted-foreground mt-2">
-              Get started with AI-powered policy extraction
-            </p>
-          </div>
+    <div className="relative flex min-h-screen items-center justify-center px-4 overflow-hidden">
+      <AuthHeroBackground />
+
+      <FadeIn className="relative z-10 w-full max-w-sm">
+        <PrismHeroLogo />
+
+        <div className="rounded-xl border border-foreground/8 bg-[#faf8f4] p-6 sm:p-8">
+          <p className="text-body-sm text-foreground/50 text-center mb-5">
+            Get started with AI-powered policy extraction
+          </p>
 
           {step === "email" ? (
             <form onSubmit={handleEmailSubmit} className="space-y-4">
               <div>
-                <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+                <label className="text-label-sm font-medium text-foreground/50 uppercase tracking-wider block mb-1.5">
                   Email Address
                 </label>
                 <input
@@ -102,12 +102,12 @@ export default function SignupPage() {
                   placeholder="you@company.com"
                   required
                   autoFocus
-                  className="w-full rounded-lg border border-foreground/8 bg-white px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                  className="w-full rounded-lg border border-foreground/10 bg-white/80 px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
                 />
               </div>
 
               {error && (
-                <p className="text-body-sm text-muted-foreground bg-foreground/[0.03] border border-foreground/6 rounded-lg px-3 py-2">
+                <p className="text-body-sm text-muted-foreground bg-white/50 border border-foreground/6 rounded-lg px-3 py-2">
                   {error}
                 </p>
               )}
@@ -132,9 +132,9 @@ export default function SignupPage() {
                 </PillButton>
               </div>
 
-              <p className="text-center text-label-sm text-muted-foreground/60">
+              <p className="text-center text-label-sm text-foreground/40">
                 Already have an account?{" "}
-                <Link href="/login" className="text-foreground font-medium hover:underline">
+                <Link href="/login" className="text-foreground/70 font-medium hover:underline">
                   Sign in
                 </Link>
               </p>
@@ -142,30 +142,51 @@ export default function SignupPage() {
           ) : (
             <form onSubmit={handleCodeSubmit} className="space-y-4">
               <div>
-                <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+                <label className="text-label-sm font-medium text-foreground/50 uppercase tracking-wider block mb-2">
                   Verification Code
                 </label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  maxLength={6}
-                  value={code}
-                  onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
-                  placeholder="123456"
-                  required
-                  autoFocus
-                  autoComplete="one-time-code"
-                  className="w-full rounded-lg border border-foreground/8 bg-white px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors tracking-[0.3em] text-center font-mono"
-                />
-                <p className="text-label-sm text-muted-foreground/50 mt-1.5">
+                <div
+                  className="relative flex gap-2 cursor-text"
+                  onClick={() => {
+                    const el = document.getElementById("otp-input") as HTMLInputElement | null;
+                    el?.focus();
+                  }}
+                >
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <div
+                      key={i}
+                      className={`flex-1 aspect-square max-h-14 rounded-lg border bg-white/60 flex items-center justify-center text-xl font-semibold font-mono transition-colors ${
+                        code.length === i
+                          ? "border-foreground/30 ring-1 ring-foreground/10"
+                          : "border-foreground/10"
+                      }`}
+                    >
+                      {code[i] ?? ""}
+                    </div>
+                  ))}
+                  <input
+                    id="otp-input"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength={6}
+                    value={code}
+                    onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+                    required
+                    autoFocus
+                    autoComplete="one-time-code"
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-text"
+                    aria-label="Verification code"
+                  />
+                </div>
+                <p className="text-label-sm text-foreground/40 mt-2">
                   We sent a 6-digit code to{" "}
-                  <span className="text-foreground font-medium">{email}</span>
+                  <span className="text-foreground/70 font-medium">{email}</span>
                 </p>
               </div>
 
               {error && (
-                <p className="text-body-sm text-muted-foreground bg-foreground/[0.03] border border-foreground/6 rounded-lg px-3 py-2">
+                <p className="text-body-sm text-muted-foreground bg-white/50 border border-foreground/6 rounded-lg px-3 py-2">
                   {error}
                 </p>
               )}
@@ -204,6 +225,13 @@ export default function SignupPage() {
             </form>
           )}
         </div>
+
+        <p className="text-center mt-5">
+          <a href="https://claritylabs.inc" target="_blank" rel="noopener noreferrer" className="inline-flex flex-col items-center gap-0.5 hover:opacity-80 transition-opacity">
+            <span className="text-[11px] text-white/40">from</span>
+            <span className="inline-flex items-center gap-1 serif text-[18px] text-white/70">clarity <LogoIcon size={16} color="#ffffff" static className="shrink-0" /> labs</span>
+          </a>
+        </p>
       </FadeIn>
     </div>
   );

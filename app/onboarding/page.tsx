@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import { FadeIn } from "@/components/ui/fade-in";
 import { LogoIcon } from "@/components/ui/logo-icon";
+import { AuthHeroBackground, PrismHeroLogo } from "@/components/auth-hero-background";
 import { PillButton } from "@/components/ui/pill-button";
 import { ConnectionForm } from "@/components/connection-form";
 import {
@@ -244,8 +245,9 @@ export default function OnboardingPage() {
 
   if (viewer === undefined || pendingInvitation === undefined) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+      <div className="relative flex min-h-screen items-center justify-center overflow-hidden">
+        <AuthHeroBackground />
+        <Loader2 className="relative z-10 w-6 h-6 animate-spin text-white/60" />
       </div>
     );
   }
@@ -253,17 +255,14 @@ export default function OnboardingPage() {
   // Show invitation acceptance UI if user has a pending invitation and no org yet
   if (pendingInvitation && !viewerOrg) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background px-4 py-12">
-        <FadeIn className="w-full max-w-sm">
-          <div className="p-2 sm:bg-white sm:rounded-xl sm:border sm:border-foreground/8 sm:p-8">
-            <div className="text-center mb-6">
-              <h3 className="!mb-0 flex items-center justify-center gap-2 serif text-2xl">
-                Clarity <LogoIcon size={28} className="shrink-0" /> Labs
-              </h3>
-              <p className="text-body-sm text-muted-foreground mt-2">
-                You&apos;ve been invited to join a team
-              </p>
-            </div>
+      <div className="relative flex min-h-screen items-center justify-center px-4 py-12 overflow-hidden">
+        <AuthHeroBackground />
+        <FadeIn className="relative z-10 w-full max-w-sm">
+          <PrismHeroLogo />
+          <div className="rounded-xl border border-foreground/8 bg-[#faf8f4] p-6 sm:p-8">
+            <p className="text-body-sm text-foreground/50 text-center mb-5">
+              You&apos;ve been invited to join a team
+            </p>
 
             <div className="bg-foreground/[0.03] border border-foreground/6 rounded-lg px-4 py-3 mb-6">
               <p className="text-body-sm text-foreground font-medium">
@@ -276,7 +275,7 @@ export default function OnboardingPage() {
 
             <div className="space-y-4">
               <div>
-                <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+                <label className="text-label-sm font-medium text-foreground/50 uppercase tracking-wider block mb-1.5">
                   Your Name
                 </label>
                 <input
@@ -285,7 +284,7 @@ export default function OnboardingPage() {
                   onChange={(e) => setInviteName(e.target.value)}
                   placeholder="Jane Smith"
                   autoFocus
-                  className="w-full rounded-lg border border-foreground/8 bg-white px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                  className="w-full rounded-lg border border-foreground/10 bg-white/80 px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
                 />
               </div>
 
@@ -310,6 +309,12 @@ export default function OnboardingPage() {
               </div>
             </div>
           </div>
+          <p className="text-center mt-5">
+            <a href="https://claritylabs.inc" target="_blank" rel="noopener noreferrer" className="inline-flex flex-col items-center gap-0.5 hover:opacity-80 transition-opacity">
+              <span className="text-[11px] text-white/40">from</span>
+              <span className="inline-flex items-center gap-1 serif text-[18px] text-white/70">clarity <LogoIcon size={16} color="#ffffff" static className="shrink-0" /> labs</span>
+            </a>
+          </p>
         </FadeIn>
       </div>
     );
@@ -326,40 +331,31 @@ export default function OnboardingPage() {
   const pendingInvitations = invitations?.filter((inv) => inv.status === "pending") ?? [];
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4 py-12">
-      <FadeIn className="w-full max-w-lg">
-        <div className="p-2 sm:bg-white sm:rounded-xl sm:border sm:border-foreground/8 sm:p-8">
+    <div className="relative flex min-h-screen items-center justify-center px-4 py-12 overflow-hidden">
+      <AuthHeroBackground />
+      <FadeIn className="relative z-10 w-full max-w-lg">
+        <PrismHeroLogo />
+        <div className="rounded-xl border border-foreground/8 bg-[#faf8f4] p-6 sm:p-8">
           {/* Header */}
           <div className="text-center mb-6">
-            {currentStep === 2 ? (
-              <h3 className="!mb-0 flex items-center justify-center gap-1.5">
-                <Asterisk className="w-5 h-5 text-[#A0D2FA] shrink-0" /> Prism
-              </h3>
-            ) : (
-              <h3 className="!mb-0 flex items-center justify-center gap-2 serif text-2xl">
-                Clarity <LogoIcon size={28} className="shrink-0" /> Labs
-              </h3>
-            )}
-            <p className="text-body-sm text-muted-foreground mt-2">
+            <p className="text-body-sm text-foreground/50">
               {steps[currentStep].subtitle}
             </p>
           </div>
 
           {/* Step indicator */}
-          <div className="flex items-center justify-center gap-2 mb-8">
+          <div className="flex items-center justify-center gap-1 mb-8">
             {steps.map((s, i) => (
-              <div key={s.label} className="flex items-center gap-2">
-                <div
-                  className={`w-2 h-2 rounded-full transition-colors ${
-                    i <= currentStep ? "bg-foreground" : "bg-foreground/15"
-                  }`}
-                />
-                {i < steps.length - 1 && (
-                  <div className={`w-8 h-px transition-colors ${
-                    i < currentStep ? "bg-foreground/30" : "bg-foreground/10"
-                  }`} />
-                )}
-              </div>
+              <div
+                key={s.label}
+                className={`h-1 rounded-full transition-all duration-300 ${
+                  i === currentStep
+                    ? "w-8 bg-[#A0D2FA]"
+                    : i < currentStep
+                      ? "w-4 bg-[#A0D2FA]/40"
+                      : "w-4 bg-foreground/10"
+                }`}
+              />
             ))}
           </div>
 
@@ -818,6 +814,12 @@ export default function OnboardingPage() {
             />
           )}
         </div>
+        <p className="text-center mt-5">
+          <a href="https://claritylabs.inc" target="_blank" rel="noopener noreferrer" className="inline-flex flex-col items-center gap-0.5 hover:opacity-80 transition-opacity">
+            <span className="text-[11px] text-white/40">from</span>
+            <span className="inline-flex items-center gap-1 serif text-[18px] text-white/70">clarity <LogoIcon size={16} color="#ffffff" static className="shrink-0" /> labs</span>
+          </a>
+        </p>
       </FadeIn>
 
       <ConnectionForm
