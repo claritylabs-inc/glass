@@ -13,6 +13,6 @@ export {
   extractFromPdf,
   extractSectionsOnly,
   extractQuoteFromPdf,
-} from "@claritylabs-inc/cl-sdk";
+} from "@claritylabs/cl-sdk";
 
-export type { LogFn, PromptBuilder } from "@claritylabs-inc/cl-sdk";
+export type { LogFn, PromptBuilder } from "@claritylabs/cl-sdk";

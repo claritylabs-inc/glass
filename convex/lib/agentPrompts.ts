@@ -1,10 +1,10 @@
-export { buildSystemPrompt, buildConversationMemoryContext } from "@claritylabs-inc/cl-sdk";
-export type { PolicyDocument, QuoteDocument } from "@claritylabs-inc/cl-sdk";
+export { buildSystemPrompt, buildConversationMemoryContext } from "@claritylabs/cl-sdk";
+export type { PolicyDocument, QuoteDocument } from "@claritylabs/cl-sdk";
 
 // Adapter: map Convex Doc types to cell's framework-agnostic interfaces
 import { Doc, Id } from "../_generated/dataModel";
-import { buildDocumentContext as _buildDocumentContext, buildPolicyContext as _buildPolicyContext } from "@claritylabs-inc/cl-sdk";
-import type { PolicyDocument, QuoteDocument } from "@claritylabs-inc/cl-sdk";
+import { buildDocumentContext as _buildDocumentContext, buildPolicyContext as _buildPolicyContext } from "@claritylabs/cl-sdk";
+import type { PolicyDocument, QuoteDocument } from "@claritylabs/cl-sdk";
 
 function toPolicy(p: Doc<"policies">): PolicyDocument {
   return { ...p, id: p._id, type: "policy" };

@@ -6,7 +6,7 @@ import { api } from "@/convex/_generated/api";
 import {
   buildSystemPrompt,
   buildDocumentContext,
-} from "@claritylabs-inc/cl-sdk";
+} from "@claritylabs/cl-sdk";
 
 export const maxDuration = 60;
 

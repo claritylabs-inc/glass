@@ -23,7 +23,7 @@ AI-powered insurance platform with policy extraction and application assistance.
 
 - **Frontend**: Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS 4
 - **Backend**: Convex (realtime serverless DB + functions)
-- **AI**: Anthropic Claude API (`@anthropic-ai/sdk`), Vercel AI SDK (`ai`, `@ai-sdk/react`, `@ai-sdk/anthropic`), `@claritylabs-inc/cl-sdk` (shared prompts, extraction logic, PDF filling)
+- **AI**: Anthropic Claude API (`@anthropic-ai/sdk`), Vercel AI SDK (`ai`, `@ai-sdk/react`, `@ai-sdk/anthropic`), `@claritylabs/cl-sdk` (shared prompts, extraction logic, PDF filling)
 - **Email**: imapflow for IMAP scanning, Resend for outbound agent emails
 - **PDF Generation**: pdfkit for application summary PDFs, mupdf (WASM) for flattening broken PDFs
 - **UI**: shadcn/ui (base-nova style) + Base-UI primitives, Framer Motion, Lucide icons
@@ -108,7 +108,7 @@ Web chat uses a hybrid architecture: `useChat` from `@ai-sdk/react` handles stre
 
 1. User clicks "New Chat" on `/agent` → `create` mutation creates thread → navigated to thread page
 2. User sends message → `sendMessage` mutation inserts message (with `skipAgentResponse: true`) → `useChat.sendMessage()` calls `/api/chat` streaming route
-3. **Streaming route** (`app/api/chat/route.ts`): validates auth via Convex token in `Authorization` header → loads org, policies, quotes, thread messages → builds system prompt (`@claritylabs-inc/cl-sdk`) → `streamText()` with Claude Haiku → returns `toUIMessageStreamResponse()`
+3. **Streaming route** (`app/api/chat/route.ts`): validates auth via Convex token in `Authorization` header → loads org, policies, quotes, thread messages → builds system prompt (`@claritylabs/cl-sdk`) → `streamText()` with Claude Haiku → returns `toUIMessageStreamResponse()`
 4. `onFinish`: persists final message to Convex via `threads.updateAgentResponse`, auto-titles on first message
 5. **Hybrid rendering**: Thread page shows Convex subscription messages for full history + overlays `useChat` streaming message at bottom during generation. Deduplicates when persisted message appears in subscription.
 6. **Email-triggered flows**: `processThreadChat.ts` still handles inbound email → agent response (with 150ms DB flush for real-time display)
@@ -120,9 +120,9 @@ Web chat uses a hybrid architecture: `useChat` from `@ai-sdk/react` handles stre
 - Manually managed via Settings > Business Context tab
 - Used as primary auto-fill source for new applications
 
-### `@claritylabs-inc/cl-sdk` Package
+### `@claritylabs/cl-sdk` Package
 
-All prompts, AI extraction logic, PDF filling helpers, and agent prompt building have been extracted into the `@claritylabs-inc/cl-sdk` npm package (hosted on GitHub Package Registry via `.npmrc`). The local `convex/lib/` files now re-export from `@claritylabs-inc/cl-sdk`:
+All prompts, AI extraction logic, PDF filling helpers, and agent prompt building have been extracted into the `@claritylabs/cl-sdk` npm package (hosted on GitHub Package Registry via `.npmrc`). The local `convex/lib/` files now re-export from `@claritylabs/cl-sdk`:
 
 - `lib/prompts.ts` — Re-exports extraction prompts (EXTRACTION_PROMPT, METADATA_PROMPT, buildSectionsPrompt, etc.)
 - `lib/extraction.ts` — Re-exports extraction helpers (stripFences, applyExtracted, callClaude, extractFromPdf, etc.) and types (LogFn, PromptBuilder)
@@ -131,7 +131,7 @@ All prompts, AI extraction logic, PDF filling helpers, and agent prompt building
 - `lib/aiClassifier.ts` — Re-exports CLASSIFY_EMAIL_PROMPT
 - `lib/agentPrompts.ts` — Re-exports buildSystemPrompt, buildConversationMemoryContext + thin adapter functions (`buildDocumentContext`, `buildPolicyContext`) that map Convex `Doc` types to cell's framework-agnostic interfaces
 
-To modify prompts or extraction logic, update the `@claritylabs-inc/cl-sdk` package and bump the version.
+To modify prompts or extraction logic, update the `@claritylabs/cl-sdk` package and bump the version.
 
 ### Key Backend Files (convex/)
 
