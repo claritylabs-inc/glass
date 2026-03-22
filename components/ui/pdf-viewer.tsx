@@ -344,7 +344,7 @@ export function PdfViewer({
             type="text"
             value={pageInput}
             onChange={(e) => setPageInput(e.target.value)}
-            className="w-9 text-center text-label-sm border border-foreground/8 rounded px-1 py-0.5 bg-white focus:outline-none focus:border-foreground/20"
+            className="w-9 text-center text-label-sm border border-foreground/8 rounded px-1 py-0.5 bg-popover focus:outline-none focus:border-foreground/20"
           />
           <span className="text-label-sm text-muted-foreground/40">/ {numPages || "—"}</span>
         </form>
@@ -415,7 +415,7 @@ export function PdfViewer({
                   {/* Highlight overlay */}
                   {highlightedPage === page && (
                     <div
-                      className="absolute inset-0 z-10 pointer-events-none rounded-sm"
+                      className="absolute inset-0 z-10 pointer-events-none"
                       style={{
                         boxShadow: "inset 0 0 0 2px rgba(59, 130, 246, 0.5)",
                         backgroundColor: "rgba(59, 130, 246, 0.04)",

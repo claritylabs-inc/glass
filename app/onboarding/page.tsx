@@ -259,7 +259,7 @@ export default function OnboardingPage() {
         <AuthHeroBackground />
         <FadeIn className="relative z-10 w-full max-w-sm">
           <PrismHeroLogo />
-          <div className="rounded-xl border border-foreground/8 bg-[#faf8f4] p-6 sm:p-8">
+          <div className="rounded-xl border border-foreground/8 bg-background p-6 sm:p-8">
             <p className="text-body-sm text-foreground/50 text-center mb-5">
               You&apos;ve been invited to join a team
             </p>
@@ -284,7 +284,7 @@ export default function OnboardingPage() {
                   onChange={(e) => setInviteName(e.target.value)}
                   placeholder="Jane Smith"
                   autoFocus
-                  className="w-full rounded-lg border border-foreground/10 bg-white/80 px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                  className="w-full rounded-lg border border-foreground/10 bg-white/80 dark:bg-white/[0.06] px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
                 />
               </div>
 
@@ -335,7 +335,7 @@ export default function OnboardingPage() {
       <AuthHeroBackground />
       <FadeIn className="relative z-10 w-full max-w-lg">
         <PrismHeroLogo />
-        <div className="rounded-xl border border-foreground/8 bg-[#faf8f4] p-6 sm:p-8">
+        <div className="rounded-xl border border-foreground/8 bg-background p-6 sm:p-8">
           {/* Header */}
           <div className="text-center mb-6">
             <p className="text-body-sm text-foreground/50">
@@ -372,7 +372,7 @@ export default function OnboardingPage() {
                   onChange={(e) => setName(e.target.value)}
                   placeholder="Jane Smith"
                   autoFocus
-                  className="w-full rounded-lg border border-foreground/8 bg-white px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                  className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
                 />
               </div>
 
@@ -385,7 +385,7 @@ export default function OnboardingPage() {
                   value={companyName}
                   onChange={(e) => setCompanyName(e.target.value)}
                   placeholder="Acme Insurance Brokerage"
-                  className="w-full rounded-lg border border-foreground/8 bg-white px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                  className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
                 />
               </div>
 
@@ -401,14 +401,14 @@ export default function OnboardingPage() {
                       value={companyWebsite}
                       onChange={(e) => setCompanyWebsite(e.target.value)}
                       placeholder="https://yourcompany.com"
-                      className="w-full rounded-lg border border-foreground/8 bg-white pl-8.5 pr-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                      className="w-full rounded-lg border border-foreground/8 bg-popover pl-8.5 pr-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
                     />
                   </div>
                   <button
                     type="button"
                     onClick={handleExtract}
                     disabled={extracting || !companyWebsite}
-                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-foreground/8 bg-white text-label-sm font-medium text-muted-foreground hover:text-foreground hover:border-foreground/15 hover:bg-foreground/[0.02] transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-foreground/8 bg-popover text-label-sm font-medium text-muted-foreground hover:text-foreground hover:border-foreground/15 hover:bg-foreground/[0.02] transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
                   >
                     {extracting ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -460,7 +460,7 @@ export default function OnboardingPage() {
                   onInput={autoResize}
                   placeholder="Brief description of your company, industry, and insurance needs..."
                   rows={3}
-                  className="w-full rounded-lg border border-foreground/8 bg-white px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors resize-none overflow-hidden"
+                  className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors resize-none overflow-hidden"
                 />
                 <p className="text-label-sm text-muted-foreground/50 mt-1">
                   Used to provide context to the AI during policy extraction
@@ -624,7 +624,7 @@ export default function OnboardingPage() {
                   What Prism can do
                 </p>
                 <div className="space-y-2">
-                  <div className="flex items-center gap-3 p-3 rounded-lg bg-violet-50/60 border border-violet-100">
+                  <div className="flex items-center gap-3 p-3 rounded-lg bg-violet-50/60 dark:bg-violet-950/30 border border-violet-100 dark:border-violet-900/50">
                     <MessageSquare className="w-4 h-4 text-violet-500 shrink-0" />
                     <div className="min-w-0">
                       <p className="text-body-sm font-medium text-foreground">Direct: ask policy questions</p>
@@ -633,7 +633,7 @@ export default function OnboardingPage() {
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3 p-3 rounded-lg bg-sky-50/60 border border-sky-100">
+                  <div className="flex items-center gap-3 p-3 rounded-lg bg-sky-50/60 dark:bg-sky-950/30 border border-sky-100 dark:border-sky-900/50">
                     <Users className="w-4 h-4 text-sky-500 shrink-0" />
                     <div className="min-w-0">
                       <p className="text-body-sm font-medium text-foreground">CC: reply-all with policy info</p>
@@ -642,7 +642,7 @@ export default function OnboardingPage() {
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3 p-3 rounded-lg bg-teal-50/60 border border-teal-100">
+                  <div className="flex items-center gap-3 p-3 rounded-lg bg-teal-50/60 dark:bg-teal-950/30 border border-teal-100 dark:border-teal-900/50">
                     <Forward className="w-4 h-4 text-teal-500 shrink-0" />
                     <div className="min-w-0">
                       <p className="text-body-sm font-medium text-foreground">Forward: auto-reply to customers</p>
@@ -700,14 +700,14 @@ export default function OnboardingPage() {
                       onKeyDown={(e) => e.key === "Enter" && handleInvite()}
                       placeholder="colleague@company.com"
                       autoFocus
-                      className="w-full rounded-lg border border-foreground/8 bg-white pl-8.5 pr-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                      className="w-full rounded-lg border border-foreground/8 bg-popover pl-8.5 pr-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
                     />
                   </div>
                   <button
                     type="button"
                     onClick={handleInvite}
                     disabled={inviting || !inviteEmail}
-                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-foreground/8 bg-white text-label-sm font-medium text-muted-foreground hover:text-foreground hover:border-foreground/15 hover:bg-foreground/[0.02] transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-foreground/8 bg-popover text-label-sm font-medium text-muted-foreground hover:text-foreground hover:border-foreground/15 hover:bg-foreground/[0.02] transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
                   >
                     {inviting ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -748,7 +748,7 @@ export default function OnboardingPage() {
               </div>
 
               {pendingInvitations.length > 0 && (
-                <div className="rounded-lg border border-foreground/6 bg-white/60 overflow-hidden">
+                <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
                   {pendingInvitations.map((inv, i) => (
                     <div
                       key={inv._id}
@@ -911,7 +911,7 @@ function CollapsedStep({ stepNumber, label, summary }: { stepNumber: number; lab
 function StepLabel({ stepNumber, label }: { stepNumber: number; label: string }) {
   return (
     <div className="flex items-center gap-2 mb-3 shrink-0">
-      <span className="w-5 h-5 rounded-full bg-foreground text-white text-[10px] font-bold flex items-center justify-center shrink-0">
+      <span className="w-5 h-5 rounded-full bg-foreground text-background text-[10px] font-bold flex items-center justify-center shrink-0">
         {stepNumber}
       </span>
       <span className="text-label-sm font-medium text-foreground/70">

@@ -67,7 +67,7 @@ export function SearchableSelect({
           if (!disabled) setOpen(!open);
         }}
         disabled={disabled}
-        className="w-full flex items-center justify-between rounded-lg border border-foreground/8 bg-white px-3 py-2 text-body-sm text-left transition-colors focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+        className="w-full flex items-center justify-between rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm text-left transition-colors focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
       >
         <span className={selectedLabel ? "text-foreground" : "text-muted-foreground/40"}>
           {selectedLabel || placeholder}
@@ -76,7 +76,7 @@ export function SearchableSelect({
       </button>
 
       {open && (
-        <div className="absolute z-50 top-full left-0 right-0 mt-1 rounded-lg border border-foreground/10 bg-white shadow-md overflow-hidden">
+        <div className="absolute z-50 top-full left-0 right-0 mt-1 rounded-lg border border-foreground/10 bg-popover shadow-md overflow-hidden">
           <div className="p-1.5 border-b border-foreground/6">
             <div className="relative">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground/40" />

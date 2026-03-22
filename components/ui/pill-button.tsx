@@ -22,15 +22,15 @@ const DURATION = 0.32;
 const variantConfig = {
   primary: {
     classes:
-      "text-white font-medium shadow-lg shadow-black/10 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed",
-    rest: { backgroundColor: "var(--foreground)" },
-    hover: { backgroundColor: "#2d3748" },
+      "font-medium shadow-lg shadow-black/10 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed",
+    rest: { backgroundColor: "var(--foreground)", color: "var(--background)" },
+    hover: { filter: "brightness(1.15)" },
   },
   secondary: {
     classes:
-      "border border-foreground/8 bg-white font-medium text-muted-foreground cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed",
+      "border border-foreground/8 bg-popover font-medium text-muted-foreground cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed",
     rest: {},
-    hover: { borderColor: "rgba(17,24,39,0.15)" },
+    hover: { borderColor: "var(--input)" },
   },
   destructive: {
     classes:
@@ -42,13 +42,13 @@ const variantConfig = {
     classes:
       "font-medium text-muted-foreground cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed",
     rest: { backgroundColor: "transparent" },
-    hover: { backgroundColor: "rgba(17,24,39,0.05)" },
+    hover: { backgroundColor: "var(--accent)" },
   },
   icon: {
     classes:
       "text-muted-foreground cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed",
     rest: { backgroundColor: "transparent" },
-    hover: { backgroundColor: "rgba(17,24,39,0.06)" },
+    hover: { backgroundColor: "var(--accent)" },
   },
 };
 

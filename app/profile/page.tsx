@@ -6,13 +6,15 @@ import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
 import { FadeIn } from "@/components/ui/fade-in";
-import { Loader2 } from "lucide-react";
+import { Loader2, Sun, Moon, Monitor } from "lucide-react";
 import { PillButton } from "@/components/ui/pill-button";
+import { useTheme } from "@/hooks/use-theme";
 
 export default function ProfilePage() {
   const viewer = useQuery(api.users.viewer);
   const updateProfile = useMutation(api.users.updateProfile);
 
+  const { theme, setTheme } = useTheme();
   const [name, setName] = useState("");
   const [title, setTitle] = useState("");
   const [saving, setSaving] = useState(false);
@@ -68,7 +70,7 @@ export default function ProfilePage() {
 
           <FadeIn when={true} staggerIndex={1} duration={0.6}>
             <form onSubmit={handleSave}>
-              <div className="rounded-lg border border-foreground/6 bg-white/60 mb-4">
+              <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] mb-4">
                 <div className="px-5 py-3.5 border-b border-foreground/6">
                   <h3 className="!mb-0 text-sm font-medium text-foreground">Account</h3>
                 </div>
@@ -83,7 +85,7 @@ export default function ProfilePage() {
                         value={name}
                         onChange={(e) => setName(e.target.value)}
                         placeholder="Your name"
-                        className="w-full rounded-lg border border-foreground/8 bg-white px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                        className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
                       />
                     </div>
                     <div>
@@ -108,7 +110,7 @@ export default function ProfilePage() {
                         value={title}
                         onChange={(e) => setTitle(e.target.value)}
                         placeholder="e.g. Risk Manager, CFO"
-                        className="w-full rounded-lg border border-foreground/8 bg-white px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                        className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
                       />
                     </div>
                     <div>
@@ -133,6 +135,37 @@ export default function ProfilePage() {
                 </a>.
               </p>
             </form>
+          </FadeIn>
+
+          <FadeIn when={true} staggerIndex={2} duration={0.6}>
+            <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] mt-4">
+              <div className="px-5 py-3.5 border-b border-foreground/6">
+                <h3 className="!mb-0 text-sm font-medium text-foreground">Appearance</h3>
+              </div>
+              <div className="px-5 py-5">
+                <div className="flex gap-2">
+                  {([
+                    { value: "light" as const, label: "Light", icon: Sun },
+                    { value: "dark" as const, label: "Dark", icon: Moon },
+                    { value: "system" as const, label: "System", icon: Monitor },
+                  ]).map(({ value, label, icon: Icon }) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setTheme(value)}
+                      className={`flex items-center gap-2 px-4 py-2 rounded-lg text-body-sm font-medium transition-colors cursor-pointer ${
+                        theme === value
+                          ? "bg-foreground/[0.07] text-foreground"
+                          : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground"
+                      }`}
+                    >
+                      <Icon className="w-4 h-4" />
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
           </FadeIn>
     </AppShell>
   );

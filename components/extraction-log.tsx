@@ -26,17 +26,17 @@ interface LogEntry {
 }
 
 const TYPE_COLORS: Record<string, string> = {
-  general_liability: "bg-blue-100 text-blue-700",
-  workers_comp: "bg-orange-100 text-orange-700",
-  commercial_auto: "bg-purple-100 text-purple-700",
-  non_owned_auto: "bg-violet-100 text-violet-700",
-  property: "bg-green-100 text-green-700",
-  umbrella: "bg-sky-100 text-sky-700",
-  professional_liability: "bg-amber-100 text-amber-700",
-  cyber: "bg-red-100 text-red-700",
-  epli: "bg-pink-100 text-pink-700",
-  directors_officers: "bg-indigo-100 text-indigo-700",
-  other: "bg-gray-100 text-gray-700",
+  general_liability: "bg-blue-100 dark:bg-blue-950/40 text-blue-700 dark:text-blue-400",
+  workers_comp: "bg-orange-100 dark:bg-orange-950/40 text-orange-700 dark:text-orange-400",
+  commercial_auto: "bg-purple-100 dark:bg-purple-950/40 text-purple-700 dark:text-purple-400",
+  non_owned_auto: "bg-violet-100 dark:bg-violet-950/40 text-violet-700 dark:text-violet-400",
+  property: "bg-green-100 dark:bg-green-950/40 text-green-700 dark:text-green-400",
+  umbrella: "bg-sky-100 dark:bg-sky-950/40 text-sky-700 dark:text-sky-400",
+  professional_liability: "bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400",
+  cyber: "bg-red-100 dark:bg-red-950/40 text-red-700 dark:text-red-400",
+  epli: "bg-pink-100 dark:bg-pink-950/40 text-pink-700 dark:text-pink-400",
+  directors_officers: "bg-indigo-100 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-400",
+  other: "bg-gray-100 dark:bg-gray-800/40 text-gray-700 dark:text-gray-400",
 };
 
 function formatDate(timestamp: number): string {
@@ -57,7 +57,7 @@ function ReExtractButton({ entry }: { entry: LogEntry }) {
       trigger={
         <button
           type="button"
-          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-foreground/12 bg-white/80 text-label-sm font-medium text-muted-foreground hover:border-foreground/20 hover:bg-foreground/[0.03] transition-colors cursor-pointer"
+          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-foreground/12 bg-white/80 dark:bg-white/[0.06] text-label-sm font-medium text-muted-foreground hover:border-foreground/20 hover:bg-foreground/[0.03] transition-colors cursor-pointer"
         >
           <RotateCw className="w-3 h-3" />
           Re-extract
@@ -72,7 +72,7 @@ export function ExtractionLog({ entries }: { entries: LogEntry[] }) {
   if (!entries || entries.length === 0) {
     return (
       <FadeIn when={true} duration={0.6}>
-        <div className="rounded-lg border border-foreground/6 bg-white/60 px-6 py-8 text-center">
+        <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-6 py-8 text-center">
           <p className="text-body-sm text-muted-foreground/60">No completed extractions</p>
         </div>
       </FadeIn>
@@ -81,7 +81,7 @@ export function ExtractionLog({ entries }: { entries: LogEntry[] }) {
 
   return (
     <FadeIn when={true} delay={0.2} duration={0.6}>
-      <div className="rounded-lg border border-foreground/6 bg-white/60 overflow-hidden">
+      <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
         <div className="overflow-x-auto scrollbar-hide">
           <table className="w-full text-left md:min-w-[700px]">
             <thead>
@@ -141,7 +141,7 @@ export function ExtractionLog({ entries }: { entries: LogEntry[] }) {
                       <td className="px-4 py-2.5 whitespace-nowrap">
                         <div className="flex items-center gap-1">
                           {entry.documentType === "quote" && (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium bg-yellow-100 text-yellow-800">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium bg-yellow-100 dark:bg-yellow-950/40 text-yellow-800 dark:text-yellow-400">
                               Quote
                             </span>
                           )}
@@ -153,7 +153,7 @@ export function ExtractionLog({ entries }: { entries: LogEntry[] }) {
                             {POLICY_TYPE_LABELS[firstType] || firstType}
                           </span>
                           {types.length > 1 && (
-                            <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-label-sm font-medium bg-gray-100 text-gray-600">
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-label-sm font-medium bg-gray-100 dark:bg-gray-800/40 text-gray-600 dark:text-gray-400">
                               +{types.length - 1}
                             </span>
                           )}
@@ -167,17 +167,17 @@ export function ExtractionLog({ entries }: { entries: LogEntry[] }) {
                       <td className="px-4 py-2.5 whitespace-nowrap">
                         <div className="flex items-center gap-1.5">
                           {isComplete && (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium bg-green-100 text-green-700">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium bg-green-100 dark:bg-green-950/40 text-green-700 dark:text-green-400">
                               Complete
                             </span>
                           )}
                           {isDismissed && (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium bg-gray-100 text-gray-600">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium bg-gray-100 dark:bg-gray-800/40 text-gray-600 dark:text-gray-400">
                               Dismissed
                             </span>
                           )}
                           {entry.isDemo && (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium bg-amber-100 text-amber-700">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400">
                               Demo
                             </span>
                           )}
@@ -194,7 +194,7 @@ export function ExtractionLog({ entries }: { entries: LogEntry[] }) {
                           {isComplete && (
                             <Link
                               href={`/policies/${entry._id}`}
-                              className="px-2.5 py-1 rounded-md border border-foreground/12 bg-white/80 text-label-sm font-medium text-foreground hover:border-foreground/20 hover:bg-foreground/[0.03] transition-colors"
+                              className="px-2.5 py-1 rounded-md border border-foreground/12 bg-white/80 dark:bg-white/[0.06] text-label-sm font-medium text-foreground hover:border-foreground/20 hover:bg-foreground/[0.03] transition-colors"
                             >
                               View
                             </Link>

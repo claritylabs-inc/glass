@@ -9,7 +9,7 @@ export function AppToaster() {
       gap={8}
       toastOptions={{
         className:
-          "!bg-white/60 !backdrop-blur-xl !border !border-foreground/8 !shadow-lg !shadow-black/[0.08] !rounded-xl !text-foreground !text-body-sm !font-[var(--font-geist-sans)]",
+          "!bg-white/60 dark:!bg-[#242220]/80 !backdrop-blur-xl !border !border-foreground/8 !shadow-lg !shadow-black/[0.08] !rounded-xl !text-foreground !text-body-sm !font-[var(--font-geist-sans)]",
         descriptionClassName: "!text-muted-foreground !text-label-sm",
       }}
     />

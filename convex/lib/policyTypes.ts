@@ -64,20 +64,20 @@ export const POLICY_SECTION_TYPE_LABELS: Record<string, string> = {
 };
 
 export const POLICY_SECTION_TYPE_COLORS: Record<string, string> = {
-  declarations: "bg-blue-50 text-blue-600",
-  insuring_agreement: "bg-green-50 text-green-600",
-  policy_form: "bg-cyan-50 text-cyan-600",
-  endorsement: "bg-sky-50 text-sky-600",
-  application: "bg-lime-50 text-lime-600",
-  exclusion: "bg-red-50 text-red-600",
-  condition: "bg-amber-50 text-amber-600",
-  definition: "bg-purple-50 text-purple-600",
-  schedule: "bg-indigo-50 text-indigo-600",
-  subjectivity: "bg-orange-50 text-orange-600",
-  warranty: "bg-pink-50 text-pink-600",
-  notice: "bg-teal-50 text-teal-600",
-  regulatory: "bg-yellow-50 text-yellow-700",
-  other: "bg-gray-50 text-gray-600",
+  declarations: "bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400",
+  insuring_agreement: "bg-green-50 dark:bg-green-950/40 text-green-600 dark:text-green-400",
+  policy_form: "bg-cyan-50 dark:bg-cyan-950/40 text-cyan-600 dark:text-cyan-400",
+  endorsement: "bg-sky-50 dark:bg-sky-950/40 text-sky-600 dark:text-sky-400",
+  application: "bg-lime-50 dark:bg-lime-950/40 text-lime-600 dark:text-lime-400",
+  exclusion: "bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400",
+  condition: "bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400",
+  definition: "bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400",
+  schedule: "bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400",
+  subjectivity: "bg-orange-50 dark:bg-orange-950/40 text-orange-600 dark:text-orange-400",
+  warranty: "bg-pink-50 dark:bg-pink-950/40 text-pink-600 dark:text-pink-400",
+  notice: "bg-teal-50 dark:bg-teal-950/40 text-teal-600 dark:text-teal-400",
+  regulatory: "bg-yellow-50 dark:bg-yellow-950/40 text-yellow-700 dark:text-yellow-400",
+  other: "bg-gray-50 dark:bg-gray-800/40 text-gray-600 dark:text-gray-400",
 };
 
 // Quote section type labels and colors
@@ -92,13 +92,13 @@ export const QUOTE_SECTION_TYPE_LABELS: Record<string, string> = {
 };
 
 export const QUOTE_SECTION_TYPE_COLORS: Record<string, string> = {
-  terms_summary: "bg-blue-50 text-blue-600",
-  premium_indication: "bg-emerald-50 text-emerald-600",
-  underwriting_condition: "bg-amber-50 text-amber-600",
-  subjectivity: "bg-orange-50 text-orange-600",
-  coverage_summary: "bg-green-50 text-green-600",
-  exclusion: "bg-red-50 text-red-600",
-  other: "bg-gray-50 text-gray-600",
+  terms_summary: "bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400",
+  premium_indication: "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400",
+  underwriting_condition: "bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400",
+  subjectivity: "bg-orange-50 dark:bg-orange-950/40 text-orange-600 dark:text-orange-400",
+  coverage_summary: "bg-green-50 dark:bg-green-950/40 text-green-600 dark:text-green-400",
+  exclusion: "bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400",
+  other: "bg-gray-50 dark:bg-gray-800/40 text-gray-600 dark:text-gray-400",
 };
 
 export const INSURANCE_SENDER_PATTERNS = [

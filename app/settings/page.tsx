@@ -213,7 +213,7 @@ export default function SettingsPage() {
   if (!isAdmin) {
     return (
       <AppShell>
-        <div className="rounded-lg border border-foreground/6 bg-white/60 p-8 text-center">
+        <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-8 text-center">
           <Shield className="w-8 h-8 text-muted-foreground/20 mx-auto mb-3" />
           <h2 className="!mb-2 text-lg font-semibold">Admin Access Required</h2>
           <p className="text-body-sm text-muted-foreground">
@@ -291,7 +291,7 @@ export default function SettingsPage() {
               <div className="space-y-4">
                 {/* Organization info */}
                 <form onSubmit={handleSave}>
-                  <div className="rounded-lg border border-foreground/6 bg-white/60 mb-4">
+                  <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] mb-4">
                     <div className="px-5 py-3.5 border-b border-foreground/6">
                       <h3 className="!mb-0 text-sm font-medium text-foreground">Organization</h3>
                     </div>
@@ -305,7 +305,7 @@ export default function SettingsPage() {
                           value={name}
                           onChange={(e) => setName(e.target.value)}
                           placeholder="Acme Corp"
-                          className="w-full rounded-lg border border-foreground/8 bg-white px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                          className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
                         />
                       </div>
 
@@ -321,14 +321,14 @@ export default function SettingsPage() {
                               value={website}
                               onChange={(e) => setWebsite(e.target.value)}
                               placeholder="https://yourcompany.com"
-                              className="w-full rounded-lg border border-foreground/8 bg-white pl-8.5 pr-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                              className="w-full rounded-lg border border-foreground/8 bg-popover pl-8.5 pr-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
                             />
                           </div>
                           <button
                             type="button"
                             onClick={handleExtract}
                             disabled={extracting || !website}
-                            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-foreground/8 bg-white text-label-sm font-medium text-muted-foreground hover:text-foreground hover:border-foreground/15 hover:bg-foreground/[0.02] transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+                            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-foreground/8 bg-popover text-label-sm font-medium text-muted-foreground hover:text-foreground hover:border-foreground/15 hover:bg-foreground/[0.02] transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
                           >
                             {extracting ? (
                               <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -380,14 +380,14 @@ export default function SettingsPage() {
                           onInput={autoResize}
                           placeholder="Brief description of your company, industry, and insurance needs..."
                           rows={4}
-                          className="w-full rounded-lg border border-foreground/8 bg-white px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors resize-none overflow-hidden"
+                          className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors resize-none overflow-hidden"
                         />
                       </div>
                     </div>
                   </div>
 
                   {/* Insurance Broker section */}
-                  <div className="rounded-lg border border-foreground/6 bg-white/60 mb-4">
+                  <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] mb-4">
                     <div className="px-5 py-3.5 border-b border-foreground/6">
                       <h3 className="!mb-0 text-sm font-medium text-foreground">Insurance Broker</h3>
                     </div>
@@ -402,7 +402,7 @@ export default function SettingsPage() {
                             value={insuranceBroker}
                             onChange={(e) => setInsuranceBroker(e.target.value)}
                             placeholder="Marsh McLennan"
-                            className="w-full rounded-lg border border-foreground/8 bg-white px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                            className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
                           />
                         </div>
                         <div>
@@ -414,7 +414,7 @@ export default function SettingsPage() {
                             value={brokerContactName}
                             onChange={(e) => setBrokerContactName(e.target.value)}
                             placeholder="Jane Smith"
-                            className="w-full rounded-lg border border-foreground/8 bg-white px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                            className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
                           />
                         </div>
                         <div>
@@ -426,7 +426,7 @@ export default function SettingsPage() {
                             value={brokerContactEmail}
                             onChange={(e) => setBrokerContactEmail(e.target.value)}
                             placeholder="jane@broker.com"
-                            className="w-full rounded-lg border border-foreground/8 bg-white px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                            className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
                           />
                         </div>
                       </div>
@@ -435,7 +435,7 @@ export default function SettingsPage() {
                 </form>
 
                 {/* Onboarding section */}
-                <div className="rounded-lg border border-foreground/6 bg-white/60">
+                <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04]">
                   <div className="px-5 py-3.5 border-b border-foreground/6">
                     <h3 className="!mb-0 text-sm font-medium text-foreground">Onboarding</h3>
                   </div>
@@ -468,9 +468,9 @@ export default function SettingsPage() {
 
                 {/* Demo Data section */}
                 {hasDemo && (
-                  <div className="rounded-lg border border-amber-200 bg-amber-50/50">
-                    <div className="px-5 py-3.5 border-b border-amber-200">
-                      <h3 className="!mb-0 text-sm font-medium text-amber-900">Demo Data</h3>
+                  <div className="rounded-lg border border-amber-200 dark:border-amber-900/50 bg-amber-50/50 dark:bg-amber-950/30">
+                    <div className="px-5 py-3.5 border-b border-amber-200 dark:border-amber-900/50">
+                      <h3 className="!mb-0 text-sm font-medium text-amber-900 dark:text-amber-400">Demo Data</h3>
                     </div>
                     <div className="px-5 py-5">
                       <div className="flex items-center justify-between">
@@ -495,9 +495,9 @@ export default function SettingsPage() {
                 {/* Danger Zone */}
                 {viewer?.isAdmin && (
                   <div className="mt-4">
-                    <div className="rounded-lg border border-red-200 bg-red-50/50">
-                      <div className="px-5 py-3.5 border-b border-red-200">
-                        <h3 className="!mb-0 text-sm font-medium text-red-900">Danger Zone</h3>
+                    <div className="rounded-lg border border-red-200 dark:border-red-900/50 bg-red-50/50 dark:bg-red-950/30">
+                      <div className="px-5 py-3.5 border-b border-red-200 dark:border-red-900/50">
+                        <h3 className="!mb-0 text-sm font-medium text-red-900 dark:text-red-400">Danger Zone</h3>
                       </div>
                       <div className="px-5 py-5">
                         <div className="flex items-center justify-between">
@@ -520,7 +520,7 @@ export default function SettingsPage() {
                 )}
               </div>
             ) : activeTab === "team" ? (
-              <div className="rounded-lg border border-foreground/6 bg-white/60">
+              <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04]">
                 <div className="px-5 py-3.5 border-b border-foreground/6">
                   <h3 className="!mb-0 text-sm font-medium text-foreground">Team Members</h3>
                 </div>
@@ -545,7 +545,7 @@ export default function SettingsPage() {
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         {member.userId === org?.primaryInsuranceContactId && (
-                          <span className="text-[11px] text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">
+                          <span className="text-[11px] text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 rounded">
                             Primary Contact
                           </span>
                         )}
@@ -677,7 +677,7 @@ export default function SettingsPage() {
                 value={inviteEmail}
                 onChange={(e) => setInviteEmail(e.target.value)}
                 placeholder="colleague@company.com"
-                className="w-full rounded-lg border border-foreground/8 bg-white px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
               />
             </div>
             <div>

@@ -111,7 +111,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
       )}
 
       {/* Input container */}
-      <div className="rounded-xl border border-foreground/8 bg-white focus-within:border-foreground/15 shadow-[0_2px_12px_rgba(0,0,0,0.06)] transition-all">
+      <div className="rounded-xl border border-foreground/8 bg-popover focus-within:border-foreground/15 shadow-[0_2px_12px_rgba(0,0,0,0.06)] transition-all">
         {/* Row 1: textarea */}
         <div className="px-3 pt-2.5 pb-1">
           <textarea
@@ -172,7 +172,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
               type="button"
               onClick={handleSend}
               disabled={!canSend}
-              className="w-6 h-6 flex items-center justify-center rounded-md bg-foreground text-white disabled:opacity-20 transition-opacity cursor-pointer"
+              className="w-6 h-6 flex items-center justify-center rounded-md bg-foreground text-background disabled:opacity-20 transition-opacity cursor-pointer"
             >
               {sending ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -198,10 +198,10 @@ export function ChatInputOverlay({ children }: { children: React.ReactNode }) {
         className="h-16"
         style={{
           background:
-            "linear-gradient(to bottom, rgba(250,248,244,0) 0%, rgba(250,248,244,0.4) 50%, rgba(250,248,244,0.8) 100%)",
+            "linear-gradient(to bottom, color-mix(in srgb, var(--background) 0%, transparent) 0%, color-mix(in srgb, var(--background) 40%, transparent) 50%, color-mix(in srgb, var(--background) 80%, transparent) 100%)",
         }}
       />
-      <div className="pointer-events-auto bg-[rgba(250,248,244,0.8)] px-4 md:px-6 lg:px-8 pt-2" style={{ paddingBottom: "calc(1.25rem + env(safe-area-inset-bottom, 0px))" }}>
+      <div className="pointer-events-auto bg-background/80 px-4 md:px-6 lg:px-8 pt-2" style={{ paddingBottom: "calc(1.25rem + env(safe-area-inset-bottom, 0px))" }}>
         <div className="max-w-2xl mx-auto">{children}</div>
       </div>
     </div>

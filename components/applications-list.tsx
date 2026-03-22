@@ -25,13 +25,13 @@ const STATUS_CONFIG: Record<
   string,
   { label: string; color: string }
 > = {
-  extracting_fields: { label: "Extracting", color: "bg-blue-50 text-blue-600" },
-  filling_known: { label: "Auto-filling", color: "bg-blue-50 text-blue-600" },
-  asking_questions: { label: "Asking Questions", color: "bg-amber-50 text-amber-600" },
-  pending_confirmation: { label: "Pending Confirmation", color: "bg-orange-50 text-orange-600" },
-  confirmed: { label: "Confirmed", color: "bg-emerald-50 text-emerald-600" },
-  complete: { label: "Complete", color: "bg-emerald-50 text-emerald-600" },
-  cancelled: { label: "Cancelled", color: "bg-gray-100 text-gray-500" },
+  extracting_fields: { label: "Extracting", color: "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400" },
+  filling_known: { label: "Auto-filling", color: "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400" },
+  asking_questions: { label: "Asking Questions", color: "bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400" },
+  pending_confirmation: { label: "Pending Confirmation", color: "bg-orange-50 text-orange-600 dark:bg-orange-950/40 dark:text-orange-400" },
+  confirmed: { label: "Confirmed", color: "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400" },
+  complete: { label: "Complete", color: "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400" },
+  cancelled: { label: "Cancelled", color: "bg-gray-100 text-gray-500 dark:bg-gray-800/40 dark:text-gray-400" },
 };
 
 type AppTab = "active" | "cancelled";
@@ -138,7 +138,7 @@ function SessionTable({
                       }}
                       className="flex items-center gap-1.5 cursor-pointer"
                     >
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-red-50 text-red-600">
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400">
                         <AlertCircle className="w-3 h-3" />
                         Error
                       </span>
@@ -244,7 +244,7 @@ export function ApplicationsList() {
 
   if (sessions.length === 0) {
     return (
-      <div className="rounded-lg border border-foreground/6 bg-white/60 p-8 text-center">
+      <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-8 text-center">
         <FileText className="w-8 h-8 text-muted-foreground/15 mx-auto mb-2" />
         <p className="text-body-sm text-muted-foreground/50">
           No applications yet
@@ -294,7 +294,7 @@ export function ApplicationsList() {
         ))}
       </div>
 
-      <div className="rounded-lg border border-foreground/6 bg-white/60 overflow-hidden">
+      <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
         <SessionTable
           sessions={displayedSessions}
           onCancel={handleCancel}
@@ -320,8 +320,8 @@ export function ApplicationsList() {
                 {errorSession?.title ?? "Application"} failed to process.
               </DialogDescription>
             </DialogHeader>
-            <div className="rounded-lg bg-red-50/50 border border-red-100 p-3 max-h-48 overflow-y-auto">
-              <p className="text-label-sm text-red-600 font-mono whitespace-pre-wrap break-all">
+            <div className="rounded-lg bg-red-50/50 dark:bg-red-950/30 border border-red-100 dark:border-red-900/50 p-3 max-h-48 overflow-y-auto">
+              <p className="text-label-sm text-red-600 dark:text-red-400 font-mono whitespace-pre-wrap break-all">
                 {errorSession?.error}
               </p>
             </div>

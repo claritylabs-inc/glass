@@ -82,7 +82,7 @@ export const PrismPromptInput = forwardRef<
     <div className="w-full">
       <PromptInput
         onSubmit={handleSubmit}
-        className="rounded-xl border-foreground/8 bg-white shadow-[0_2px_12px_rgba(0,0,0,0.06)] focus-within:border-foreground/15 transition-all overflow-hidden [&_[data-slot=input-group]]:border-0 [&_[data-slot=input-group]]:rounded-xl [&_[data-slot=input-group]]:shadow-none"
+        className="rounded-xl border border-transparent bg-popover shadow-[0_2px_12px_rgba(0,0,0,0.06)] focus-within:border-foreground/15 dark:focus-within:border-[#3a3a3a] transition-all overflow-hidden [&_[data-slot=input-group]]:border-0 [&_[data-slot=input-group]]:rounded-none [&_[data-slot=input-group]]:shadow-none"
       >
         <PromptInputTextarea
           ref={textareaRef}
@@ -130,7 +130,7 @@ export const PrismPromptInput = forwardRef<
                 <button
                   type="button"
                   onClick={handleStopClick}
-                  className="w-6 h-6 flex items-center justify-center rounded-md bg-foreground text-white transition-opacity cursor-pointer"
+                  className="w-6 h-6 flex items-center justify-center rounded-md bg-foreground text-background transition-opacity cursor-pointer"
                 >
                   <Square className="w-3 h-3 fill-current" />
                 </button>
@@ -138,7 +138,7 @@ export const PrismPromptInput = forwardRef<
                 <button
                   type="submit"
                   disabled={disabled || isGenerating}
-                  className="w-6 h-6 flex items-center justify-center rounded-md bg-foreground text-white disabled:opacity-20 transition-opacity cursor-pointer"
+                  className="w-6 h-6 flex items-center justify-center rounded-md bg-foreground text-background disabled:opacity-20 transition-opacity cursor-pointer"
                 >
                   {status === "submitted" ? (
                     <Spinner className="w-3.5 h-3.5" />

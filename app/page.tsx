@@ -25,17 +25,17 @@ function parseDate(dateStr: string | undefined, format = "MM/DD/YYYY") {
 }
 
 const TYPE_COLORS: Record<string, string> = {
-  general_liability: "bg-blue-100 text-blue-700",
-  workers_comp: "bg-orange-100 text-orange-700",
-  commercial_auto: "bg-purple-100 text-purple-700",
-  non_owned_auto: "bg-violet-100 text-violet-700",
-  property: "bg-green-100 text-green-700",
-  umbrella: "bg-sky-100 text-sky-700",
-  professional_liability: "bg-amber-100 text-amber-700",
-  cyber: "bg-red-100 text-red-700",
-  epli: "bg-pink-100 text-pink-700",
-  directors_officers: "bg-indigo-100 text-indigo-700",
-  other: "bg-gray-100 text-gray-700",
+  general_liability: "bg-blue-100 dark:bg-blue-950/40 text-blue-700 dark:text-blue-400",
+  workers_comp: "bg-orange-100 dark:bg-orange-950/40 text-orange-700 dark:text-orange-400",
+  commercial_auto: "bg-purple-100 dark:bg-purple-950/40 text-purple-700 dark:text-purple-400",
+  non_owned_auto: "bg-violet-100 dark:bg-violet-950/40 text-violet-700 dark:text-violet-400",
+  property: "bg-green-100 dark:bg-green-950/40 text-green-700 dark:text-green-400",
+  umbrella: "bg-sky-100 dark:bg-sky-950/40 text-sky-700 dark:text-sky-400",
+  professional_liability: "bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400",
+  cyber: "bg-red-100 dark:bg-red-950/40 text-red-700 dark:text-red-400",
+  epli: "bg-pink-100 dark:bg-pink-950/40 text-pink-700 dark:text-pink-400",
+  directors_officers: "bg-indigo-100 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-400",
+  other: "bg-gray-100 dark:bg-gray-800/40 text-gray-700 dark:text-gray-400",
 };
 
 export default function DashboardPage() {
@@ -162,12 +162,12 @@ export default function DashboardPage() {
                   whileHover={{
                     scale: 1.01,
                     boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.08), 0 2px 4px -4px rgb(0 0 0 / 0.08)",
-                    borderColor: "rgba(0,0,0,0.2)",
-                    backgroundColor: "white",
+                    borderColor: "var(--input)",
+                    backgroundColor: "var(--popover)",
                   }}
                   whileTap={{ scale: 0.99 }}
                   transition={{ type: "tween", duration: 0.2, ease: "easeOut" }}
-                  className="rounded-lg border border-foreground/6 bg-white/60 mb-6 cursor-pointer overflow-hidden"
+                  className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] mb-6 cursor-pointer overflow-hidden"
                 >
                   <div className="flex items-center justify-between px-4 py-2.5">
                     <div className="flex items-center gap-2">
@@ -205,12 +205,12 @@ export default function DashboardPage() {
                   whileHover={{
                     scale: 1.01,
                     boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.08), 0 2px 4px -4px rgb(0 0 0 / 0.08)",
-                    borderColor: "rgba(0,0,0,0.2)",
-                    backgroundColor: "white",
+                    borderColor: "var(--input)",
+                    backgroundColor: "var(--popover)",
                   }}
                   whileTap={{ scale: 0.99 }}
                   transition={{ type: "tween", duration: 0.2, ease: "easeOut" }}
-                  className="rounded-lg border border-foreground/6 bg-white/60 p-4 mb-6 cursor-pointer"
+                  className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-4 mb-6 cursor-pointer"
                 >
                   {viewer.agentHandle ? (
                     <div className="space-y-4">
@@ -274,8 +274,8 @@ export default function DashboardPage() {
           {/* Demo data banner */}
           {hasDemo && !demoBannerDismissed && (
             <FadeIn when={true} staggerIndex={0} duration={0.4}>
-              <div className="flex items-center gap-3 px-4 py-2.5 rounded-lg border border-amber-200 bg-amber-50/60 mb-6">
-                <p className="text-label-sm text-amber-700 flex-1">
+              <div className="flex items-center gap-3 px-4 py-2.5 rounded-lg border border-amber-200 dark:border-amber-900/50 bg-amber-50/60 dark:bg-amber-950/30 mb-6">
+                <p className="text-label-sm text-amber-700 dark:text-amber-400 flex-1">
                   You&apos;re viewing demo data.{" "}
                   <Link href="/profile" className="underline font-medium hover:text-amber-900">Remove demo data</Link>{" "}
                   from Settings when you&apos;re ready.
@@ -299,7 +299,7 @@ export default function DashboardPage() {
                   <p className="text-body-sm font-semibold text-foreground">Expiring Policies</p>
                   <span className="text-label-sm text-muted-foreground/50">next 90 days</span>
                 </div>
-                <div className="rounded-lg border border-foreground/6 bg-white/60 overflow-hidden">
+                <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
                   {expiringPolicies.map((p, i) => {
                     const exp = parseDate(p.expirationDate)!;
                     const daysLeft = exp.diff(today, "day");
@@ -344,7 +344,7 @@ export default function DashboardPage() {
                   <p className="text-body-sm font-semibold text-foreground">Expiring Quotes</p>
                   <span className="text-label-sm text-muted-foreground/50">next 30 days</span>
                 </div>
-                <div className="rounded-lg border border-foreground/6 bg-white/60 overflow-hidden">
+                <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
                   {expiringQuotes.map((q, i) => {
                     const exp = parseDate(q.quoteExpirationDate)!;
                     const daysLeft = exp.diff(today, "day");

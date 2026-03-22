@@ -51,7 +51,7 @@ export function Nav() {
       : "?";
 
   return (
-    <nav className="sticky top-0 z-50 shrink-0 border-b border-foreground/6 bg-white/60 backdrop-blur-sm">
+    <nav className="sticky top-0 z-50 shrink-0 border-b border-foreground/6 bg-background/60 backdrop-blur-sm">
       <div className="max-w-6xl mx-auto px-4 md:px-8 flex items-center justify-between h-14">
         <div className="flex items-center gap-6">
           <Link href="/" className="flex items-center">
@@ -176,7 +176,7 @@ export function Nav() {
               animate={{ height: "auto" }}
               exit={{ height: 0 }}
               transition={{ duration: 0.2 }}
-              className="sm:hidden overflow-hidden border-t border-foreground/6 bg-white relative z-50"
+              className="sm:hidden overflow-hidden border-t border-foreground/6 bg-background relative z-50"
             >
               <div className="px-4 py-2 space-y-1">
                 {NAV_ITEMS.map((item) => {

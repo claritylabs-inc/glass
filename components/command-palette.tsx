@@ -102,7 +102,7 @@ export function CommandPalette() {
             transition={{ duration: 0.25, ease: [0.32, 0.72, 0, 1] }}
           >
             <form onSubmit={handleSubmit}>
-              <div className="rounded-xl overflow-hidden shadow-2xl bg-white/95 backdrop-blur-sm border border-black/8">
+              <div className="rounded-xl overflow-hidden shadow-2xl bg-white/95 dark:bg-popover/95 backdrop-blur-sm border border-black/8 dark:border-[#3a3a3a]">
                 {/* Input row */}
                 <div className="px-4 pt-3.5 pb-1.5">
                   <input
@@ -128,7 +128,7 @@ export function CommandPalette() {
                     <button
                       type="submit"
                       disabled={!value.trim() || sending}
-                      className="w-6 h-6 flex items-center justify-center rounded-md bg-foreground text-white disabled:opacity-20 transition-opacity cursor-pointer"
+                      className="w-6 h-6 flex items-center justify-center rounded-md bg-foreground text-background disabled:opacity-20 transition-opacity cursor-pointer"
                     >
                       {sending ? (
                         <Loader2 className="w-3.5 h-3.5 animate-spin" />

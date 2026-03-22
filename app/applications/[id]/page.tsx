@@ -31,17 +31,17 @@ import type { Id } from "@/convex/_generated/dataModel";
 import type { FormField } from "@/convex/lib/applicationTypes";
 
 const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
-  extracting_fields: { label: "Extracting Fields", color: "bg-blue-50 text-blue-600" },
-  filling_known: { label: "Auto-filling", color: "bg-blue-50 text-blue-600" },
-  asking_questions: { label: "Asking Questions", color: "bg-amber-50 text-amber-600" },
-  pending_confirmation: { label: "Pending Confirmation", color: "bg-orange-50 text-orange-600" },
-  confirmed: { label: "Confirmed", color: "bg-emerald-50 text-emerald-600" },
-  complete: { label: "Complete", color: "bg-emerald-50 text-emerald-600" },
-  cancelled: { label: "Cancelled", color: "bg-gray-100 text-gray-500" },
+  extracting_fields: { label: "Extracting Fields", color: "bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400" },
+  filling_known: { label: "Auto-filling", color: "bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400" },
+  asking_questions: { label: "Asking Questions", color: "bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400" },
+  pending_confirmation: { label: "Pending Confirmation", color: "bg-orange-50 dark:bg-orange-950/40 text-orange-600 dark:text-orange-400" },
+  confirmed: { label: "Confirmed", color: "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400" },
+  complete: { label: "Complete", color: "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400" },
+  cancelled: { label: "Cancelled", color: "bg-gray-100 dark:bg-gray-800/40 text-gray-500 dark:text-gray-400" },
 };
 
 function StatusBadge({ status }: { status: string }) {
-  const config = STATUS_CONFIG[status] ?? { label: status, color: "bg-gray-100 text-gray-500" };
+  const config = STATUS_CONFIG[status] ?? { label: status, color: "bg-gray-100 dark:bg-gray-800/40 text-gray-500 dark:text-gray-400" };
   return (
     <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${config.color}`}>
       {config.label}
@@ -467,7 +467,7 @@ export default function ApplicationDetailPage({
           {activeTab === "details" && (<>
           {/* Progress + batch overview card */}
           <FadeIn when={true} staggerIndex={1} duration={0.6}>
-            <div className="rounded-lg border border-foreground/6 bg-white/60 p-4 mb-6">
+            <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-4 mb-6">
               {/* Progress bar */}
               <div className="flex items-center justify-between mb-2">
                 <span className="text-label-sm text-muted-foreground/60">
@@ -511,9 +511,9 @@ export default function ApplicationDetailPage({
                           whileHover="hover"
                           className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium transition-colors cursor-default ${
                             batch.complete
-                              ? "bg-emerald-50 text-emerald-600"
+                              ? "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400"
                               : isCurrent
-                                ? "bg-amber-50 text-amber-600 ring-1 ring-amber-200"
+                                ? "bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 ring-1 ring-amber-200 dark:ring-amber-900/50"
                                 : "bg-foreground/[0.03] text-muted-foreground/40"
                           }`}
                           title={topic}
@@ -564,7 +564,7 @@ export default function ApplicationDetailPage({
                 return (
                   <div
                     key={sectionName}
-                    className="rounded-lg border border-foreground/6 bg-white/60 overflow-hidden"
+                    className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden"
                   >
                     <div className="flex items-center gap-2 px-4 py-3 bg-foreground/[0.015] border-b border-foreground/5">
                       <h3 className="text-body-sm font-semibold !mb-0 flex-1">
@@ -589,14 +589,14 @@ export default function ApplicationDetailPage({
           </>)}
 
           {activeTab === "threads" && (
-            <div className="rounded-lg border border-foreground/6 bg-white/60 px-6 py-12 text-center">
+            <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-6 py-12 text-center">
               {threadId ? (
                 <>
                   <MessageSquare className="w-8 h-8 text-muted-foreground/15 mx-auto mb-3" />
                   <p className="text-body-sm text-muted-foreground/50 mb-3">This application has an associated email thread.</p>
                   <Link
                     href={`/agent/thread/${threadId}`}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-foreground text-white text-body-sm font-medium hover:bg-foreground/90 transition-colors"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-foreground text-background text-body-sm font-medium hover:bg-foreground/90 transition-colors"
                   >
                     <MessageSquare className="w-3.5 h-3.5" />
                     View Thread

@@ -80,7 +80,7 @@ export function ConnectionForm({ open, onClose }: ConnectionFormProps) {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.96, y: 8 }}
             transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-            className="relative bg-white rounded-xl border border-foreground/8 shadow-xl max-w-md w-full mx-4 p-6"
+            className="relative bg-popover rounded-xl border border-foreground/8 shadow-xl max-w-md w-full mx-4 p-6"
           >
             <div className="flex items-center justify-between mb-5">
               <h3 className="!mb-0">Add Email Connection</h3>
@@ -109,7 +109,7 @@ export function ConnectionForm({ open, onClose }: ConnectionFormProps) {
                         className={`flex flex-col items-center gap-1.5 px-3 py-2.5 rounded-lg text-label-sm font-medium transition-all cursor-pointer ${
                           isActive
                             ? "bg-foreground text-background shadow-sm"
-                            : "border border-foreground/8 bg-white text-muted-foreground hover:border-foreground/15 hover:text-foreground hover:bg-foreground/[0.02]"
+                            : "border border-foreground/8 bg-popover text-muted-foreground hover:border-foreground/15 hover:text-foreground hover:bg-foreground/[0.02]"
                         }`}
                       >
                         {config.icon}
@@ -129,7 +129,7 @@ export function ConnectionForm({ open, onClose }: ConnectionFormProps) {
                   value={label}
                   onChange={(e) => setLabel(e.target.value)}
                   placeholder="e.g. Business Email"
-                  className="w-full rounded-lg border border-foreground/8 bg-white px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                  className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
                 />
               </div>
 
@@ -144,7 +144,7 @@ export function ConnectionForm({ open, onClose }: ConnectionFormProps) {
                       value={host}
                       onChange={(e) => setHost(e.target.value)}
                       required
-                      className="w-full rounded-lg border border-foreground/8 bg-white px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                      className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
                     />
                   </div>
                   <div>
@@ -156,7 +156,7 @@ export function ConnectionForm({ open, onClose }: ConnectionFormProps) {
                       value={port}
                       onChange={(e) => setPort(Number(e.target.value))}
                       required
-                      className="w-full rounded-lg border border-foreground/8 bg-white px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                      className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
                     />
                   </div>
                 </div>
@@ -172,7 +172,7 @@ export function ConnectionForm({ open, onClose }: ConnectionFormProps) {
                   onChange={(e) => setEmail(e.target.value)}
                   required
                   placeholder="you@example.com"
-                  className="w-full rounded-lg border border-foreground/8 bg-white px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                  className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
                 />
               </div>
 
@@ -186,7 +186,7 @@ export function ConnectionForm({ open, onClose }: ConnectionFormProps) {
                   onChange={(e) => setPassword(e.target.value)}
                   required
                   placeholder="App-specific password"
-                  className="w-full rounded-lg border border-foreground/8 bg-white px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                  className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
                 />
                 {preset === "Gmail" && (
                   <p className="text-label-sm text-muted-foreground/50 mt-1.5">

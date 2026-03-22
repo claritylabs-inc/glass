@@ -38,7 +38,7 @@ function ModeExplainerCards({ companyDomains }: { companyDomains?: string[] }) {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        <div className="rounded-lg border border-foreground/6 bg-white/60 p-5">
+        <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-5">
           <div className="flex items-center gap-2 mb-2">
             <MessageSquare className="w-4 h-4 text-violet-600" />
             <h4 className="!mb-0 text-body-sm font-semibold">Direct Mode</h4>
@@ -49,7 +49,7 @@ function ModeExplainerCards({ companyDomains }: { companyDomains?: string[] }) {
             agent will walk you through it.
           </p>
         </div>
-        <div className="rounded-lg border border-foreground/6 bg-white/60 p-5">
+        <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-5">
           <div className="flex items-center gap-2 mb-2">
             <Users className="w-4 h-4 text-sky-600" />
             <h4 className="!mb-0 text-body-sm font-semibold">CC Mode</h4>
@@ -59,7 +59,7 @@ function ModeExplainerCards({ companyDomains }: { companyDomains?: string[] }) {
             participants in a professional, customer-facing tone.
           </p>
         </div>
-        <div className="rounded-lg border border-foreground/6 bg-white/60 p-5">
+        <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-5">
           <div className="flex items-center gap-2 mb-2">
             <Forward className="w-4 h-4 text-teal-600" />
             <h4 className="!mb-0 text-body-sm font-semibold">Forward Mode</h4>
@@ -69,7 +69,7 @@ function ModeExplainerCards({ companyDomains }: { companyDomains?: string[] }) {
             to the original sender with you CC&#39;d.
           </p>
         </div>
-        <div className="rounded-lg border border-foreground/6 bg-white/60 p-5">
+        <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-5">
           <div className="flex items-center gap-2 mb-2">
             <FileText className="w-4 h-4 text-rose-600" />
             <h4 className="!mb-0 text-body-sm font-semibold">Application Mode</h4>
@@ -79,7 +79,7 @@ function ModeExplainerCards({ companyDomains }: { companyDomains?: string[] }) {
             auto-fills from saved context, and asks you the rest in batches.
           </p>
         </div>
-        <div className="rounded-lg border border-foreground/6 bg-white/60 p-5">
+        <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-5">
           <div className="flex items-center gap-2 mb-2">
             <HelpCircle className="w-4 h-4 text-amber-600" />
             <h4 className="!mb-0 text-body-sm font-semibold">Unknown Mode</h4>
@@ -160,7 +160,7 @@ function CoiSettingsCard({
   ];
 
   return (
-    <div className="rounded-lg border border-foreground/6 bg-white/60 p-5">
+    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-5">
       <h4 className="!mb-4 text-body-sm font-semibold">COI Request Handling</h4>
       <p className="text-label-sm text-muted-foreground/60 mb-4">
         How should the agent respond when someone requests a Certificate of Insurance?
@@ -222,7 +222,7 @@ function AgentHelpSection({ agentEmail }: { agentEmail: string }) {
   ];
 
   return (
-    <div className="rounded-lg border border-foreground/6 bg-white/60 p-5">
+    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-5">
       <h4 className="!mb-4 text-body-sm font-semibold">How it works</h4>
       <div className="space-y-4">
         {faqs.map((faq, i) => (
@@ -261,7 +261,7 @@ function ChatEmailNotificationsToggle() {
   if (!isAdmin) return null;
 
   return (
-    <div className="rounded-lg border border-foreground/6 bg-white/60 p-5">
+    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-5">
       <div className="flex items-center justify-between">
         <div>
           <p className="text-body-sm font-medium text-foreground">Email notifications for chat responses</p>
@@ -307,7 +307,7 @@ function AutoSendEmailsToggle() {
   if (!isAdmin) return null;
 
   return (
-    <div className="rounded-lg border border-foreground/6 bg-white/60 p-5">
+    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-5">
       <div className="flex items-center justify-between">
         <div>
           <p className="text-body-sm font-medium text-foreground">Auto-send emails from chat</p>
@@ -377,7 +377,7 @@ function EmailSendDelaySetting() {
   if (!isAdmin) return null;
 
   return (
-    <div className="rounded-lg border border-foreground/6 bg-white/60 p-5">
+    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-5">
       <div className="flex items-center justify-between">
         <div>
           <p className="text-body-sm font-medium text-foreground">Email send delay</p>
@@ -389,13 +389,13 @@ function EmailSendDelaySetting() {
           <button
             type="button"
             onClick={() => setOpen(!open)}
-            className="flex items-center gap-1.5 rounded-lg border border-foreground/8 bg-white px-3 py-1.5 text-body-sm text-foreground transition-colors hover:border-foreground/15 cursor-pointer"
+            className="flex items-center gap-1.5 rounded-lg border border-foreground/8 bg-popover px-3 py-1.5 text-body-sm text-foreground transition-colors hover:border-foreground/15 cursor-pointer"
           >
             <span>{selectedLabel}</span>
             <ChevronDown className="w-3 h-3 text-muted-foreground/50" />
           </button>
           {open && (
-            <div className="absolute z-50 top-full right-0 mt-1 rounded-lg border border-foreground/10 bg-white shadow-md overflow-hidden min-w-[100px]">
+            <div className="absolute z-50 top-full right-0 mt-1 rounded-lg border border-foreground/10 bg-popover shadow-md overflow-hidden min-w-[100px]">
               <div className="py-1">
                 {options.map((opt) => (
                   <button
@@ -462,7 +462,7 @@ export default function AgentPage() {
         /* ── No handle: show setup form + explainers ── */
         <>
           <FadeIn when={viewer !== undefined} staggerIndex={0} duration={0.6}>
-            <div className="rounded-lg border border-foreground/6 bg-white/60 p-5 mb-6">
+            <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-5 mb-6">
               <AgentHandleForm
                 suggestedHandle={
                   (org?.name ?? viewer?.companyName)
@@ -491,7 +491,7 @@ export default function AgentPage() {
         <>
           {/* Agent email card */}
           <FadeIn when={true} staggerIndex={0} duration={0.6}>
-            <div className="rounded-lg border border-foreground/6 bg-white/60 p-4 mb-6">
+            <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-4 mb-6">
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <Asterisk className="w-4 h-4 text-[#A0D2FA] shrink-0" />

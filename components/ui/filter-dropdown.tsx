@@ -41,7 +41,7 @@ export function FilterDropdown({
         className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-body-sm font-medium transition-all cursor-pointer max-w-[200px] ${
           value
             ? "border-foreground/15 bg-foreground/5 text-foreground"
-            : "border-foreground/8 bg-white/80 text-muted-foreground hover:border-foreground/15 hover:text-foreground/80"
+            : "border-foreground/8 bg-white/80 dark:bg-white/[0.06] text-muted-foreground hover:border-foreground/15 hover:text-foreground/80"
         }`}
       >
         <span className="truncate">{selectedLabel}</span>
@@ -57,7 +57,7 @@ export function FilterDropdown({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 4, scale: 0.97 }}
             transition={{ duration: 0.15 }}
-            className="absolute top-full mt-1.5 left-0 min-w-[160px] max-w-[240px] rounded-lg border border-foreground/6 bg-white/55 backdrop-blur-xl shadow-lg shadow-black/[0.08] py-1 z-50"
+            className="absolute top-full mt-1.5 left-0 min-w-[160px] max-w-[240px] rounded-lg border border-foreground/6 bg-popover/90 backdrop-blur-xl shadow-lg shadow-black/[0.08] py-1 z-50"
           >
             <button
               type="button"

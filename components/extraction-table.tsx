@@ -38,15 +38,15 @@ interface Extraction {
 const STATUS_BADGES: Record<string, { label: string; className: string }> = {
   extracting: {
     label: "Extracting",
-    className: "bg-amber-100 text-amber-700 animate-pulse",
+    className: "bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 animate-pulse",
   },
   error: {
     label: "Error",
-    className: "bg-red-100 text-red-700",
+    className: "bg-red-100 dark:bg-red-950/40 text-red-700 dark:text-red-400",
   },
   pending: {
     label: "Pending",
-    className: "bg-gray-100 text-gray-600",
+    className: "bg-gray-100 dark:bg-gray-800/40 text-gray-600 dark:text-gray-400",
   },
 };
 
@@ -60,7 +60,7 @@ function RetryButton({ extraction }: { extraction: Extraction }) {
       trigger={
         <button
           type="button"
-          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-amber-200 bg-amber-50 text-label-sm font-medium text-amber-700 hover:border-amber-300 hover:bg-amber-100 transition-colors cursor-pointer disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/40 text-label-sm font-medium text-amber-700 dark:text-amber-400 hover:border-amber-300 hover:bg-amber-100 dark:hover:bg-amber-950/60 transition-colors cursor-pointer disabled:opacity-50"
         >
           <RotateCw className="w-3 h-3" />
           Retry
@@ -86,7 +86,7 @@ function DismissButton({ policyId }: { policyId: string }) {
           setDismissing(false);
         }
       }}
-      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-foreground/12 bg-white/80 text-label-sm font-medium text-muted-foreground hover:border-red-200 hover:bg-red-50 hover:text-red-600 transition-colors cursor-pointer disabled:opacity-50"
+      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-foreground/12 bg-white/80 dark:bg-white/[0.06] text-label-sm font-medium text-muted-foreground hover:border-red-200 dark:hover:border-red-900/50 hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-600 dark:hover:text-red-400 transition-colors cursor-pointer disabled:opacity-50"
     >
       <X className="w-3 h-3" />
       Dismiss
@@ -101,7 +101,7 @@ function ViewErrorButton({ error }: { error: string }) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-label-sm font-medium text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-label-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors cursor-pointer"
       >
         View error
       </button>
@@ -110,7 +110,7 @@ function ViewErrorButton({ error }: { error: string }) {
           <DialogHeader>
             <DialogTitle>Error Log</DialogTitle>
           </DialogHeader>
-          <pre className="text-label-sm text-red-600 bg-red-50 border border-red-100 rounded-md p-3 whitespace-pre-wrap break-words font-mono max-h-[300px] overflow-y-auto">
+          <pre className="text-label-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 border border-red-100 dark:border-red-900/50 rounded-md p-3 whitespace-pre-wrap break-words font-mono max-h-[300px] overflow-y-auto">
             {error}
           </pre>
           <DialogFooter>
@@ -147,8 +147,8 @@ function ExtractionLogRow({ log, isExpanded }: { log: ExtractionLogEntry[]; isEx
     <tr>
       <td colSpan={5} className="px-4 py-0">
         <div className="relative py-2 ml-1 mb-2">
-          <div className="pointer-events-none absolute inset-x-0 top-2 h-4 bg-gradient-to-b from-white to-transparent z-10" />
-          <div className="pointer-events-none absolute inset-x-0 bottom-2 h-4 bg-gradient-to-t from-white to-transparent z-10" />
+          <div className="pointer-events-none absolute inset-x-0 top-2 h-4 bg-gradient-to-b from-background to-transparent z-10" />
+          <div className="pointer-events-none absolute inset-x-0 bottom-2 h-4 bg-gradient-to-t from-background to-transparent z-10" />
           <div className="max-h-[200px] overflow-y-auto scrollbar-hide pl-2 border-l-2 border-foreground/6">
             {log.map((entry, i) => (
               <div key={i} className="flex items-baseline gap-2 py-0.5">
@@ -201,7 +201,7 @@ export function ExtractionTable({
 }) {
   if (extractions === undefined) {
     return (
-      <div className="rounded-lg border border-foreground/6 bg-white/60 overflow-hidden">
+      <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
         <div className="overflow-x-auto scrollbar-hide">
           <table className="w-full text-left md:min-w-[700px]">
             <thead>
@@ -223,7 +223,7 @@ export function ExtractionTable({
   if (extractions.length === 0) {
     return (
       <FadeIn when={true} duration={0.6}>
-        <div className="rounded-lg border border-foreground/6 bg-white/60 px-6 py-8 text-center">
+        <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-6 py-8 text-center">
           <p className="text-body-sm text-muted-foreground/60">No pending extractions</p>
         </div>
       </FadeIn>
@@ -232,7 +232,7 @@ export function ExtractionTable({
 
   return (
     <FadeIn when={true} delay={0.2} duration={0.6}>
-      <div className="rounded-lg border border-foreground/6 bg-white/60 overflow-hidden">
+      <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
         <div className="overflow-x-auto scrollbar-hide">
           <table className="w-full text-left md:min-w-[700px]">
             <thead>

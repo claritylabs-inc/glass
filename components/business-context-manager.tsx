@@ -20,10 +20,10 @@ const CATEGORIES = [
 ] as const;
 
 const SOURCE_COLORS: Record<string, string> = {
-  manual: "bg-gray-100 text-gray-600",
-  onboarding: "bg-blue-50 text-blue-600",
-  application: "bg-violet-50 text-violet-600",
-  user_email: "bg-amber-50 text-amber-600",
+  manual: "bg-gray-100 text-gray-600 dark:bg-gray-800/40 dark:text-gray-400",
+  onboarding: "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400",
+  application: "bg-violet-50 text-violet-600 dark:bg-violet-950/40 dark:text-violet-400",
+  user_email: "bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400",
 };
 
 function SourceBadge({ source }: { source: string }) {
@@ -41,8 +41,8 @@ function ConfidenceBadge({ confidence }: { confidence: string }) {
     <span
       className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${
         confidence === "confirmed"
-          ? "bg-emerald-50 text-emerald-600"
-          : "bg-amber-50 text-amber-600"
+          ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400"
+          : "bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400"
       }`}
     >
       {confidence}
@@ -171,7 +171,7 @@ function CategorySection({
   const [expanded, setExpanded] = useState(true);
 
   return (
-    <div className="rounded-lg border border-foreground/6 bg-white/60 overflow-hidden">
+    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
       <div className="overflow-x-auto scrollbar-hide">
         <table className="w-full text-left table-fixed">
           <colgroup>
@@ -278,7 +278,7 @@ export function BusinessContextManager({
       </p>
 
       {showAddForm && (
-        <div className="rounded-lg border border-foreground/6 bg-white/60 p-4 space-y-3">
+        <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-4 space-y-3">
           <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="text-label-sm text-muted-foreground/60 mb-1 block">
@@ -331,7 +331,7 @@ export function BusinessContextManager({
       )}
 
       {allEntries.length === 0 && !showAddForm ? (
-        <div className="rounded-lg border border-foreground/6 bg-white/60 p-8 text-center">
+        <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-8 text-center">
           <p className="text-body-sm text-muted-foreground/50">
             No business context saved yet. Context is automatically learned from application answers,
             or you can add entries manually.

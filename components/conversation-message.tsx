@@ -218,7 +218,7 @@ function AttachmentChip({
       onClick={handleClick}
       className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-label-sm transition-colors ${
         url
-          ? "border-foreground/10 bg-white/80 hover:bg-foreground/[0.03] hover:border-foreground/15 cursor-pointer"
+          ? "border-foreground/10 bg-white/80 dark:bg-white/[0.04] hover:bg-foreground/[0.03] hover:border-foreground/15 cursor-pointer"
           : "border-foreground/6 bg-foreground/[0.02] text-muted-foreground/40 pointer-events-none"
       }`}
     >
@@ -349,7 +349,7 @@ export function MessageBubble({ conv, onOpenPdf, onRetry, viewerEmail }: { conv:
               </div>
             )}
           </div>
-          <div className="rounded-lg bg-white border border-foreground/6 p-4 text-body-sm text-foreground leading-relaxed [&_p]:my-3 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_strong]:font-semibold [&_ul]:my-3 [&_ul]:pl-5 [&_ul]:list-disc [&_ol]:my-3 [&_ol]:pl-5 [&_ol]:list-decimal [&_li]:my-0.5 [&_a]:text-blue-600 [&_a]:underline [&_h1]:text-[0.875rem] [&_h1]:font-semibold [&_h1]:mt-3 [&_h1]:mb-1 [&_h2]:text-[0.875rem] [&_h2]:font-semibold [&_h2]:mt-3 [&_h2]:mb-1 [&_h3]:text-[0.875rem] [&_h3]:font-semibold [&_h3]:mt-2.5 [&_h3]:mb-0.5 [&_h4]:text-[0.875rem] [&_h4]:font-semibold [&_h4]:mt-2 [&_h4]:mb-0.5 [&_h5]:text-[0.875rem] [&_h5]:font-semibold [&_h6]:text-[0.875rem] [&_h6]:font-semibold [&_hr]:my-3 [&_hr]:border-foreground/8 [&_code]:text-[12px] [&_code]:bg-foreground/[0.04] [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded">
+          <div className="rounded-lg bg-popover border border-foreground/6 p-4 text-body-sm text-foreground leading-relaxed [&_p]:my-3 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_strong]:font-semibold [&_ul]:my-3 [&_ul]:pl-5 [&_ul]:list-disc [&_ol]:my-3 [&_ol]:pl-5 [&_ol]:list-decimal [&_li]:my-0.5 [&_a]:text-blue-600 [&_a]:underline [&_h1]:text-[0.875rem] [&_h1]:font-semibold [&_h1]:mt-3 [&_h1]:mb-1 [&_h2]:text-[0.875rem] [&_h2]:font-semibold [&_h2]:mt-3 [&_h2]:mb-1 [&_h3]:text-[0.875rem] [&_h3]:font-semibold [&_h3]:mt-2.5 [&_h3]:mb-0.5 [&_h4]:text-[0.875rem] [&_h4]:font-semibold [&_h4]:mt-2 [&_h4]:mb-0.5 [&_h5]:text-[0.875rem] [&_h5]:font-semibold [&_h6]:text-[0.875rem] [&_h6]:font-semibold [&_hr]:my-3 [&_hr]:border-foreground/8 [&_code]:text-[12px] [&_code]:bg-foreground/[0.04] [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded">
               <Markdown remarkPlugins={[remarkBreaks]} components={{
                 a: ({ href, children }) => {
                   if (href?.startsWith("/policies/") || href?.startsWith("/quotes/")) {
@@ -363,8 +363,8 @@ export function MessageBubble({ conv, onOpenPdf, onRetry, viewerEmail }: { conv:
       )}
 
       {conv.status === "error" && (
-        <div className="rounded-lg bg-red-50/50 border border-red-100 p-3 flex items-start justify-between gap-3">
-          <p className="text-label-sm text-red-600">
+        <div className="rounded-lg bg-red-50/50 dark:bg-red-950/30 border border-red-100 dark:border-red-900/50 p-3 flex items-start justify-between gap-3">
+          <p className="text-label-sm text-red-600 dark:text-red-400">
             {conv.error ?? "An error occurred processing this message."}
           </p>
           {onRetry && (

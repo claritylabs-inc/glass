@@ -25,9 +25,13 @@ import {
   User,
   MessageSquare,
   Archive,
+  Sun,
+  Moon,
+  Monitor,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { usePageContext } from "@/hooks/use-page-context";
+import { useTheme } from "@/hooks/use-theme";
 
 const INSURANCE_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard, shortcut: "D" },
@@ -83,6 +87,9 @@ export function AppSidebar({
   const sendThreadMessage = useMutation(api.threads.sendMessage);
   const { signOut } = useAuthActions();
   const { context: pageContext } = usePageContext();
+  const { theme, cycle: cycleTheme } = useTheme();
+  const ThemeIcon = theme === "light" ? Sun : theme === "dark" ? Moon : Monitor;
+  const themeLabel = theme === "light" ? "Light" : theme === "dark" ? "Dark" : "System";
 
   const isAdmin = viewerOrg?.membership?.role === "admin";
   const [collapsed, setCollapsed] = useState(false);
@@ -427,6 +434,17 @@ export function AppSidebar({
 
       {/* Bottom section */}
       <div className="border-t border-foreground/6 px-2 py-2 space-y-0.5">
+        <button
+          type="button"
+          onClick={cycleTheme}
+          className={`w-full flex items-center gap-2.5 px-3 py-1.5 rounded-md text-body-sm text-muted-foreground hover:bg-foreground/[0.04] transition-colors cursor-pointer ${
+            collapsed ? "justify-center" : ""
+          }`}
+          title={`Theme: ${themeLabel}`}
+        >
+          <ThemeIcon className="w-4 h-4 shrink-0" />
+          {!collapsed && <span>{themeLabel}</span>}
+        </button>
         {isAdmin && (
           <NavItem
             href="/settings"

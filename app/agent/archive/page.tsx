@@ -48,7 +48,7 @@ export default function ArchivePage() {
             {threads.map((thread) => (
               <div
                 key={thread._id}
-                className="flex items-center gap-3 px-4 py-3 rounded-lg border border-foreground/6 bg-white/60 hover:bg-foreground/[0.02] transition-colors group"
+                className="flex items-center gap-3 px-4 py-3 rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] hover:bg-foreground/[0.02] transition-colors group"
               >
                 <div className="shrink-0 text-muted-foreground/30">
                   {thread.legacyConversationId ? (

@@ -194,7 +194,7 @@ export default function ConnectionsPage() {
                 >
                   {tab.label}
                   {tab.id === "processing" && pendingCount > 0 && (
-                    <span className="ml-1.5 inline-flex items-center justify-center px-1.5 py-0.5 rounded-full text-label-sm font-medium bg-amber-100 text-amber-700">
+                    <span className="ml-1.5 inline-flex items-center justify-center px-1.5 py-0.5 rounded-full text-label-sm font-medium bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400">
                       {pendingCount}
                     </span>
                   )}
@@ -216,7 +216,7 @@ export default function ConnectionsPage() {
               {connections === undefined && (
                 <div className="space-y-3">
                   {Array.from({ length: 2 }).map((_, i) => (
-                    <div key={i} className="rounded-lg border border-foreground/6 bg-white/60 px-4 py-3">
+                    <div key={i} className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-4 py-3">
                       <div className="flex items-center gap-3">
                         <Skeleton className="w-8 h-8 rounded-md shrink-0" />
                         <div className="flex-1 min-w-0">
@@ -237,7 +237,7 @@ export default function ConnectionsPage() {
 
               {connections && connections.length === 0 && (
                 <FadeIn when={true} delay={0.2} duration={0.6}>
-                  <div className="rounded-lg border border-foreground/6 bg-white/60 px-6 py-8 text-center">
+                  <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-6 py-8 text-center">
                     <p className="text-body-sm text-muted-foreground/60">
                       No email connections yet
                     </p>
@@ -257,12 +257,12 @@ export default function ConnectionsPage() {
                       staggerIndex={i + 2}
                       duration={0.6}
                     >
-                      <div className={`rounded-lg border px-4 py-3 ${isDemo ? "border-amber-200/60 bg-amber-50/30" : "border-foreground/6 bg-white/60"}`}>
+                      <div className={`rounded-lg border px-4 py-3 ${isDemo ? "border-amber-200/60 dark:border-amber-900/40 bg-amber-50/30 dark:bg-amber-950/20" : "border-foreground/6 bg-white/60 dark:bg-white/[0.04]"}`}>
                         {/* Desktop layout: single row */}
                         <div className="hidden md:flex items-center justify-between">
                           <div className="flex items-center gap-3 min-w-0">
                             {isDemo ? (
-                              <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
+                              <div className="w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-950/40 flex items-center justify-center shrink-0">
                                 <Mail className="w-4 h-4 text-amber-500" />
                               </div>
                             ) : (
@@ -274,7 +274,7 @@ export default function ConnectionsPage() {
                                   {conn.label}
                                 </p>
                                 {isDemo && (
-                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium bg-amber-100 text-amber-700 shrink-0">
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 shrink-0">
                                     Demo
                                   </span>
                                 )}
@@ -335,7 +335,7 @@ export default function ConnectionsPage() {
                         <div className="md:hidden space-y-3">
                           <div className="flex items-center gap-3">
                             {isDemo ? (
-                              <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
+                              <div className="w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-950/40 flex items-center justify-center shrink-0">
                                 <Mail className="w-4 h-4 text-amber-500" />
                               </div>
                             ) : (
@@ -347,7 +347,7 @@ export default function ConnectionsPage() {
                                   {conn.label}
                                 </p>
                                 {isDemo && (
-                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium bg-amber-100 text-amber-700 shrink-0">
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 shrink-0">
                                     Demo
                                   </span>
                                 )}

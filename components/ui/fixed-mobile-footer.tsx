@@ -11,7 +11,7 @@ export function FixedMobileFooter({ children }: { children: ReactNode }) {
         className="h-24"
         style={{
           background:
-            "linear-gradient(to bottom, rgba(250,248,244,0) 0%, rgba(250,248,244,0.7) 40%, rgba(250,248,244,1) 70%)",
+            "linear-gradient(to bottom, color-mix(in srgb, var(--background) 0%, transparent) 0%, color-mix(in srgb, var(--background) 70%, transparent) 40%, var(--background) 70%)",
         }}
       />
       {/* Buttons floating on the gradient */}

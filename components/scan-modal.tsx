@@ -82,7 +82,7 @@ export function ScanModal({ open, onClose, connectionId, defaults }: ScanModalPr
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.96, y: 8 }}
             transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-            className="relative bg-white rounded-xl border border-foreground/8 shadow-xl max-w-md w-full mx-4 p-6"
+            className="relative bg-popover rounded-xl border border-foreground/8 shadow-xl max-w-md w-full mx-4 p-6"
           >
             <div className="flex items-center justify-between mb-5">
               <h3 className="!mb-0">Scan Inbox</h3>
@@ -110,7 +110,7 @@ export function ScanModal({ open, onClose, connectionId, defaults }: ScanModalPr
                       type="date"
                       value={sinceDate}
                       onChange={(e) => setSinceDate(e.target.value)}
-                      className="w-full rounded-lg border border-foreground/8 bg-white px-3 py-2 text-body-sm focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                      className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
                     />
                   </div>
                   <div>
@@ -121,7 +121,7 @@ export function ScanModal({ open, onClose, connectionId, defaults }: ScanModalPr
                       type="date"
                       value={untilDate}
                       onChange={(e) => setUntilDate(e.target.value)}
-                      className="w-full rounded-lg border border-foreground/8 bg-white px-3 py-2 text-body-sm focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                      className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
                     />
                   </div>
                 </div>
@@ -137,7 +137,7 @@ export function ScanModal({ open, onClose, connectionId, defaults }: ScanModalPr
                   value={senderDomains}
                   onChange={(e) => setSenderDomains(e.target.value)}
                   placeholder="@ajg.com, @marsh.com"
-                  className="w-full rounded-lg border border-foreground/8 bg-white px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                  className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
                 />
                 <p className="text-label-sm text-muted-foreground/50 mt-1.5">
                   Only scan emails from these domains. Leave blank for all.

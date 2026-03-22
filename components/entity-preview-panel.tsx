@@ -145,7 +145,7 @@ function PolicyPreview({ id, page }: { id: string; page?: number }) {
               openWithUrl(fileUrl, page);
               closePreview();
             }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-foreground/8 bg-white/80 hover:bg-foreground/[0.03] transition-colors text-body-sm font-medium cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-foreground/8 bg-white/80 dark:bg-white/[0.06] hover:bg-foreground/[0.03] transition-colors text-body-sm font-medium cursor-pointer"
           >
             <FileText className="w-3.5 h-3.5 text-muted-foreground/50" />
             View PDF
@@ -153,7 +153,7 @@ function PolicyPreview({ id, page }: { id: string; page?: number }) {
         )}
         <Link
           href={`/policies/${id}`}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-foreground/8 bg-white/80 hover:bg-foreground/[0.03] transition-colors text-body-sm font-medium no-underline"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-foreground/8 bg-white/80 dark:bg-white/[0.06] hover:bg-foreground/[0.03] transition-colors text-body-sm font-medium no-underline"
         >
           <ExternalLink className="w-3.5 h-3.5 text-muted-foreground/50" />
           Full details
@@ -294,7 +294,7 @@ function QuotePreview({ id, page }: { id: string; page?: number }) {
               openWithUrl(fileUrl, page);
               closePreview();
             }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-foreground/8 bg-white/80 hover:bg-foreground/[0.03] transition-colors text-body-sm font-medium cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-foreground/8 bg-white/80 dark:bg-white/[0.06] hover:bg-foreground/[0.03] transition-colors text-body-sm font-medium cursor-pointer"
           >
             <FileText className="w-3.5 h-3.5 text-muted-foreground/50" />
             View PDF
@@ -302,7 +302,7 @@ function QuotePreview({ id, page }: { id: string; page?: number }) {
         )}
         <Link
           href={`/quotes/${id}`}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-foreground/8 bg-white/80 hover:bg-foreground/[0.03] transition-colors text-body-sm font-medium no-underline"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-foreground/8 bg-white/80 dark:bg-white/[0.06] hover:bg-foreground/[0.03] transition-colors text-body-sm font-medium no-underline"
         >
           <ExternalLink className="w-3.5 h-3.5 text-muted-foreground/50" />
           Full details

@@ -86,7 +86,7 @@ export function AgentHandleForm({ suggestedHandle, onClaimed, claimLabel = "Clai
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="your-handle"
-            className="flex-1 min-w-0 rounded-l-lg border border-r-0 border-foreground/8 bg-white px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+            className="flex-1 min-w-0 rounded-l-lg border border-r-0 border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
           />
           <div className="flex items-center rounded-r-lg border border-l-0 border-foreground/8 bg-foreground/[0.02] px-3 py-2 text-label-sm text-muted-foreground/60 select-none whitespace-nowrap">
             @{AGENT_DOMAIN}

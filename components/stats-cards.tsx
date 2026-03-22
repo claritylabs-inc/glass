@@ -24,12 +24,12 @@ export function StatCard({
         scale: 1.02,
         boxShadow:
           "0 4px 6px -1px rgb(0 0 0 / 0.08), 0 2px 4px -4px rgb(0 0 0 / 0.08)",
-        borderColor: "rgba(0,0,0,0.2)",
-        backgroundColor: "white",
+        borderColor: "var(--input)",
+        backgroundColor: "var(--popover)",
       }}
       whileTap={{ scale: 0.98 }}
       transition={{ type: "tween", duration: 0.2, ease: "easeOut" }}
-      className="group rounded-lg border border-foreground/6 bg-white/60 px-3 py-2.5 sm:px-4 sm:py-3 cursor-pointer"
+      className="group rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-3 py-2.5 sm:px-4 sm:py-3 cursor-pointer"
     >
       <div className="flex items-start justify-between gap-2">
         <div>
