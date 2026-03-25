@@ -760,7 +760,7 @@ export default function SettingsPage() {
                       </p>
                       <div className="flex items-center gap-2">
                         <code className="flex-1 text-[12px] bg-foreground/[0.03] border border-foreground/6 rounded-lg px-3 py-2 text-muted-foreground select-all">
-                          {process.env.NEXT_PUBLIC_CONVEX_SITE_URL ?? `https://<deployment>.convex.site`}/mcp
+                          {(process.env.NEXT_PUBLIC_CONVEX_URL ?? "").replace(".cloud", ".site")}/mcp
                         </code>
                       </div>
                     </div>
@@ -770,18 +770,18 @@ export default function SettingsPage() {
                         Add this to your MCP config (<code className="text-[12px] bg-foreground/5 px-1 py-0.5 rounded">~/.claude/mcp.json</code>):
                       </p>
                       <pre className="text-[12px] bg-foreground/[0.03] border border-foreground/6 rounded-lg p-4 overflow-x-auto text-muted-foreground">
-{`{
-  "mcpServers": {
-    "prism": {
-      "command": "node",
-      "args": ["<path-to-prism>/mcp-server/dist/index.js"],
-      "env": {
-        "PRISM_CONVEX_SITE_URL": "${process.env.NEXT_PUBLIC_CONVEX_SITE_URL ?? `https://<deployment>.convex.site`}",
-        "PRISM_API_KEY": "prism_..."
-      }
-    }
-  }
-}`}
+{JSON.stringify({
+  mcpServers: {
+    prism: {
+      command: "node",
+      args: ["<path-to-prism>/mcp-server/dist/index.js"],
+      env: {
+        PRISM_CONVEX_SITE_URL: (process.env.NEXT_PUBLIC_CONVEX_URL ?? "").replace(".cloud", ".site"),
+        PRISM_API_KEY: "prism_...",
+      },
+    },
+  },
+}, null, 2)}
                       </pre>
                     </div>
                   </div>
