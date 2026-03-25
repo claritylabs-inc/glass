@@ -48,7 +48,8 @@ const SETTINGS_TABS = [
   { id: "info", label: "Basic Information", icon: Building2 },
   { id: "team", label: "Team Members", icon: Users },
   { id: "context", label: "Business Context", icon: Database },
-  { id: "apikeys", label: "API Keys", icon: Key },
+  { id: "connected", label: "Connected Apps", icon: Globe },
+  { id: "apikeys", label: "API Keys (Local)", icon: Key },
 ] as const;
 
 type SettingsTab = typeof SETTINGS_TABS[number]["id"];
@@ -106,6 +107,10 @@ export default function SettingsPage() {
   const [generatedKey, setGeneratedKey] = useState<string | null>(null);
   const [copiedKey, setCopiedKey] = useState(false);
   const [showRevokeDialog, setShowRevokeDialog] = useState<string | null>(null);
+  // Connected Apps (OAuth) state
+  const connectedApps = useQuery(api.oauth.listConnectedApps);
+  const revokeApp = useMutation(api.oauth.revokeApp);
+  const [revokingApp, setRevokingApp] = useState<string | null>(null);
 
   const contextRef = useRef<HTMLTextAreaElement>(null);
   const autoResize = useCallback(() => {
@@ -675,14 +680,91 @@ export default function SettingsPage() {
                 showAddForm={showAddContextForm}
                 onShowAddFormChange={setShowAddContextForm}
               />
+            ) : activeTab === "connected" ? (
+              /* Connected Apps tab */
+              <div className="space-y-4">
+                <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04]">
+                  <div className="px-5 py-3.5 border-b border-foreground/6">
+                    <h3 className="!mb-0 text-sm font-medium text-foreground">Connected Apps</h3>
+                    <p className="text-label-sm text-muted-foreground mt-0.5">
+                      Applications connected to your Prism account via OAuth.
+                    </p>
+                  </div>
+                  {connectedApps && connectedApps.length > 0 ? (
+                    <div className="divide-y divide-foreground/6">
+                      {connectedApps.map((app) => (
+                        <div key={app.clientId} className="px-5 py-3.5 flex items-center gap-3">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-body-sm font-medium text-foreground">
+                              {app.clientName}
+                            </p>
+                            <p className="text-[11px] text-muted-foreground/50 mt-0.5">
+                              Connected {new Date(app.connectedAt).toLocaleDateString()}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              setRevokingApp(app.clientId);
+                              try {
+                                await revokeApp({ clientId: app.clientId });
+                                toast.success(`Disconnected ${app.clientName}`);
+                              } catch {
+                                toast.error("Failed to disconnect app");
+                              } finally {
+                                setRevokingApp(null);
+                              }
+                            }}
+                            disabled={revokingApp === app.clientId}
+                            className="text-[11px] text-red-400 hover:text-red-600 transition-colors cursor-pointer disabled:opacity-50"
+                          >
+                            {revokingApp === app.clientId ? "Disconnecting..." : "Disconnect"}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="px-5 py-8 text-center">
+                      <Globe className="w-6 h-6 text-muted-foreground/20 mx-auto mb-2" />
+                      <p className="text-body-sm text-muted-foreground">No connected apps</p>
+                      <p className="text-label-sm text-muted-foreground/50 mt-0.5">
+                        When you connect Prism to Claude.ai or other AI tools, they&apos;ll appear here.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Remote MCP Setup */}
+                <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04]">
+                  <div className="px-5 py-3.5 border-b border-foreground/6">
+                    <h3 className="!mb-0 text-sm font-medium text-foreground">Remote MCP Setup</h3>
+                    <p className="text-label-sm text-muted-foreground mt-0.5">
+                      Connect AI tools like Claude.ai or ChatGPT to your Prism account.
+                    </p>
+                  </div>
+                  <div className="px-5 py-5 space-y-3">
+                    <div>
+                      <p className="text-body-sm font-medium text-foreground mb-1">MCP Server URL</p>
+                      <p className="text-body-sm text-muted-foreground mb-2">
+                        Add this URL as a Remote MCP server in your connector settings. You&apos;ll be prompted to sign in with your Prism account.
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <code className="flex-1 text-[12px] bg-foreground/[0.03] border border-foreground/6 rounded-lg px-3 py-2 text-muted-foreground select-all">
+                          {(process.env.NEXT_PUBLIC_CONVEX_URL ?? "").replace(".cloud", ".site")}/mcp
+                        </code>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
             ) : (
-              /* API Keys tab */
+              /* API Keys tab (Local MCP) */
               <div className="space-y-4">
                 <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04]">
                   <div className="px-5 py-3.5 border-b border-foreground/6">
                     <h3 className="!mb-0 text-sm font-medium text-foreground">API Keys</h3>
                     <p className="text-label-sm text-muted-foreground mt-0.5">
-                      Manage API keys for MCP server and programmatic access to Prism.
+                      API keys for local MCP servers (Claude Code, Cursor) and programmatic access.
                     </p>
                   </div>
                   {apiKeys && apiKeys.length > 0 ? (
@@ -747,29 +829,19 @@ export default function SettingsPage() {
                   )}
                 </div>
 
-                {/* MCP Setup Instructions */}
+                {/* Local MCP Setup Instructions */}
                 <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04]">
                   <div className="px-5 py-3.5 border-b border-foreground/6">
-                    <h3 className="!mb-0 text-sm font-medium text-foreground">MCP Server Setup</h3>
+                    <h3 className="!mb-0 text-sm font-medium text-foreground">Local MCP Setup</h3>
+                    <p className="text-label-sm text-muted-foreground mt-0.5">
+                      For local tools like Claude Code and Cursor. For remote tools (Claude.ai, ChatGPT), use the Connected Apps tab instead.
+                    </p>
                   </div>
-                  <div className="px-5 py-5 space-y-5">
-                    <div>
-                      <p className="text-body-sm font-medium text-foreground mb-1">Remote URL (Claude.ai, ChatGPT, etc.)</p>
-                      <p className="text-body-sm text-muted-foreground mb-2">
-                        Use this URL as the Remote MCP server URL in your connector settings. Pass your API key as a Bearer token in the Authorization header.
-                      </p>
-                      <div className="flex items-center gap-2">
-                        <code className="flex-1 text-[12px] bg-foreground/[0.03] border border-foreground/6 rounded-lg px-3 py-2 text-muted-foreground select-all">
-                          {(process.env.NEXT_PUBLIC_CONVEX_URL ?? "").replace(".cloud", ".site")}/mcp
-                        </code>
-                      </div>
-                    </div>
-                    <div className="border-t border-foreground/6 pt-4">
-                      <p className="text-body-sm font-medium text-foreground mb-1">Local stdio (Claude Code, Cursor, etc.)</p>
-                      <p className="text-body-sm text-muted-foreground mb-2">
-                        Add this to your MCP config (<code className="text-[12px] bg-foreground/5 px-1 py-0.5 rounded">~/.claude/mcp.json</code>):
-                      </p>
-                      <pre className="text-[12px] bg-foreground/[0.03] border border-foreground/6 rounded-lg p-4 overflow-x-auto text-muted-foreground">
+                  <div className="px-5 py-5">
+                    <p className="text-body-sm text-muted-foreground mb-2">
+                      Add this to your MCP config (<code className="text-[12px] bg-foreground/5 px-1 py-0.5 rounded">~/.claude/mcp.json</code>):
+                    </p>
+                    <pre className="text-[12px] bg-foreground/[0.03] border border-foreground/6 rounded-lg p-4 overflow-x-auto text-muted-foreground">
 {JSON.stringify({
   mcpServers: {
     prism: {
@@ -782,8 +854,7 @@ export default function SettingsPage() {
     },
   },
 }, null, 2)}
-                      </pre>
-                    </div>
+                    </pre>
                   </div>
                 </div>
               </div>

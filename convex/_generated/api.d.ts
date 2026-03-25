@@ -48,6 +48,7 @@ import type * as migrations_migrateOnboarding from "../migrations/migrateOnboard
 import type * as migrations_migrateQuotesToTable from "../migrations/migrateQuotesToTable.js";
 import type * as migrations_migrateToOrgs from "../migrations/migrateToOrgs.js";
 import type * as migrations_migrateToThreads from "../migrations/migrateToThreads.js";
+import type * as oauth from "../oauth.js";
 import type * as orgs from "../orgs.js";
 import type * as pendingEmails from "../pendingEmails.js";
 import type * as policies from "../policies.js";
@@ -106,6 +107,7 @@ declare const fullApi: ApiFromModules<{
   "migrations/migrateQuotesToTable": typeof migrations_migrateQuotesToTable;
   "migrations/migrateToOrgs": typeof migrations_migrateToOrgs;
   "migrations/migrateToThreads": typeof migrations_migrateToThreads;
+  oauth: typeof oauth;
   orgs: typeof orgs;
   pendingEmails: typeof pendingEmails;
   policies: typeof policies;

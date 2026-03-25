@@ -610,6 +610,44 @@ export default defineSchema({
     .index("by_keyHash", ["keyHash"])
     .index("by_orgId", ["orgId"]),
 
+  // ── OAuth (MCP remote clients) ──
+
+  oauthClients: defineTable({
+    clientId: v.string(),
+    clientName: v.string(),
+    redirectUris: v.array(v.string()),
+    tokenEndpointAuthMethod: v.string(), // "none" for public clients
+    createdAt: v.number(),
+  }).index("by_clientId", ["clientId"]),
+
+  oauthAuthCodes: defineTable({
+    codeHash: v.string(),
+    clientId: v.string(),
+    userId: v.id("users"),
+    orgId: v.id("organizations"),
+    redirectUri: v.string(),
+    codeChallenge: v.string(),
+    scope: v.optional(v.string()),
+    expiresAt: v.number(),
+    usedAt: v.optional(v.number()),
+  }).index("by_codeHash", ["codeHash"]),
+
+  oauthTokens: defineTable({
+    tokenHash: v.string(),
+    refreshTokenHash: v.optional(v.string()),
+    clientId: v.string(),
+    userId: v.id("users"),
+    orgId: v.id("organizations"),
+    scope: v.optional(v.string()),
+    expiresAt: v.number(),
+    refreshExpiresAt: v.optional(v.number()),
+    revokedAt: v.optional(v.number()),
+    createdAt: v.number(),
+  })
+    .index("by_tokenHash", ["tokenHash"])
+    .index("by_refreshTokenHash", ["refreshTokenHash"])
+    .index("by_userId", ["userId"]),
+
   // ── Presence ──
 
   presence: defineTable({

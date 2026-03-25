@@ -26,55 +26,310 @@ http.route({
   }),
 });
 
+// ── OAuth 2.1 Routes ──
+
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+};
+
+// GET /.well-known/oauth-authorization-server
+http.route({
+  path: "/.well-known/oauth-authorization-server",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const url = new URL(request.url);
+    const issuer = url.origin;
+    const siteUrl = process.env.SITE_URL ?? "https://prism.claritylabs.inc";
+
+    return new Response(
+      JSON.stringify({
+        issuer,
+        authorization_endpoint: `${siteUrl}/oauth/authorize`,
+        token_endpoint: `${issuer}/oauth/token`,
+        registration_endpoint: `${issuer}/oauth/register`,
+        response_types_supported: ["code"],
+        grant_types_supported: ["authorization_code", "refresh_token"],
+        code_challenge_methods_supported: ["S256"],
+        token_endpoint_auth_methods_supported: ["none"],
+      }),
+      { headers: { "Content-Type": "application/json" } },
+    );
+  }),
+});
+
+// OPTIONS /oauth/register (CORS preflight)
+http.route({
+  path: "/oauth/register",
+  method: "OPTIONS",
+  handler: httpAction(async () => {
+    return new Response(null, { status: 204, headers: CORS_HEADERS });
+  }),
+});
+
+// POST /oauth/register — Dynamic Client Registration (RFC 7591)
+http.route({
+  path: "/oauth/register",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const body = await request.json();
+      const { client_name, redirect_uris, token_endpoint_auth_method } = body;
+
+      if (!client_name || !redirect_uris || !Array.isArray(redirect_uris) || redirect_uris.length === 0) {
+        return new Response(
+          JSON.stringify({ error: "invalid_client_metadata", error_description: "client_name and redirect_uris are required" }),
+          { status: 400, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
+        );
+      }
+
+      // Validate redirect URIs (HTTPS or localhost)
+      for (const uri of redirect_uris) {
+        try {
+          const parsed = new URL(uri);
+          const isLocalhost = parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
+          if (parsed.protocol !== "https:" && !isLocalhost) {
+            return new Response(
+              JSON.stringify({ error: "invalid_redirect_uri", error_description: "Redirect URIs must use HTTPS or localhost" }),
+              { status: 400, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
+            );
+          }
+        } catch {
+          return new Response(
+            JSON.stringify({ error: "invalid_redirect_uri", error_description: `Invalid URI: ${uri}` }),
+            { status: 400, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
+          );
+        }
+      }
+
+      const result = await ctx.runMutation(internal.oauth.registerClient, {
+        clientName: client_name,
+        redirectUris: redirect_uris,
+        tokenEndpointAuthMethod: token_endpoint_auth_method,
+      });
+
+      return new Response(JSON.stringify(result), {
+        status: 201,
+        headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+      });
+    } catch (e) {
+      return new Response(
+        JSON.stringify({ error: "server_error", error_description: String(e) }),
+        { status: 500, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
+      );
+    }
+  }),
+});
+
+// OPTIONS /oauth/token (CORS preflight)
+http.route({
+  path: "/oauth/token",
+  method: "OPTIONS",
+  handler: httpAction(async () => {
+    return new Response(null, { status: 204, headers: CORS_HEADERS });
+  }),
+});
+
+// POST /oauth/token — Token exchange
+http.route({
+  path: "/oauth/token",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const contentType = request.headers.get("Content-Type") ?? "";
+    let params: URLSearchParams;
+
+    if (contentType.includes("application/x-www-form-urlencoded")) {
+      params = new URLSearchParams(await request.text());
+    } else if (contentType.includes("application/json")) {
+      const body = await request.json();
+      params = new URLSearchParams(body);
+    } else {
+      params = new URLSearchParams(await request.text());
+    }
+
+    const grantType = params.get("grant_type");
+    const responseHeaders = { ...CORS_HEADERS, "Content-Type": "application/json" };
+
+    try {
+      if (grantType === "authorization_code") {
+        const code = params.get("code");
+        const clientId = params.get("client_id");
+        const redirectUri = params.get("redirect_uri");
+        const codeVerifier = params.get("code_verifier");
+
+        if (!code || !clientId || !redirectUri || !codeVerifier) {
+          return new Response(
+            JSON.stringify({ error: "invalid_request", error_description: "Missing required parameters" }),
+            { status: 400, headers: responseHeaders },
+          );
+        }
+
+        const result = await ctx.runMutation(internal.oauth.exchangeAuthCode, {
+          codeRaw: code,
+          clientId,
+          redirectUri,
+          codeVerifier,
+        });
+
+        return new Response(JSON.stringify(result), {
+          status: 200,
+          headers: responseHeaders,
+        });
+      } else if (grantType === "refresh_token") {
+        const refreshToken = params.get("refresh_token");
+        const clientId = params.get("client_id");
+
+        if (!refreshToken || !clientId) {
+          return new Response(
+            JSON.stringify({ error: "invalid_request", error_description: "Missing required parameters" }),
+            { status: 400, headers: responseHeaders },
+          );
+        }
+
+        const result = await ctx.runMutation(internal.oauth.refreshAccessToken, {
+          refreshTokenRaw: refreshToken,
+          clientId,
+        });
+
+        return new Response(JSON.stringify(result), {
+          status: 200,
+          headers: responseHeaders,
+        });
+      } else {
+        return new Response(
+          JSON.stringify({ error: "unsupported_grant_type" }),
+          { status: 400, headers: responseHeaders },
+        );
+      }
+    } catch (e: any) {
+      const message = e?.message ?? String(e);
+      if (message === "invalid_grant") {
+        return new Response(
+          JSON.stringify({ error: "invalid_grant" }),
+          { status: 400, headers: responseHeaders },
+        );
+      }
+      return new Response(
+        JSON.stringify({ error: "server_error", error_description: message }),
+        { status: 500, headers: responseHeaders },
+      );
+    }
+  }),
+});
+
+// POST /oauth/revoke — Token revocation
+http.route({
+  path: "/oauth/revoke",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const authHeader = request.headers.get("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return new Response(JSON.stringify({ error: "unauthorized" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const rawToken = authHeader.slice(7);
+    const encoder = new TextEncoder();
+    const hashBuffer = await crypto.subtle.digest("SHA-256", encoder.encode(rawToken));
+    const tokenHash = Array.from(new Uint8Array(hashBuffer))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+
+    await ctx.runMutation(internal.oauth.revokeTokenInternal, { tokenHash });
+    return new Response(null, { status: 200 });
+  }),
+});
+
 // ── MCP API Routes ──
 
 const JSON_HEADERS = { "Content-Type": "application/json" };
 
-type ApiKeyIdentity = {
+type McpIdentity = {
   userId: string;
   orgId: string;
-  keyId: string;
+  source: "api_key" | "oauth";
+  keyId?: string;
 };
 
-async function requireApiKey(
-  ctx: { runQuery: any; runMutation: any },
-  request: Request,
-): Promise<ApiKeyIdentity> {
-  const authHeader = request.headers.get("Authorization");
-  if (!authHeader?.startsWith("Bearer ")) {
-    throw new Response("Missing or invalid Authorization header", {
-      status: 401,
-      headers: JSON_HEADERS,
-    });
-  }
-
-  const rawKey = authHeader.slice(7);
-  if (!rawKey.startsWith("prism_")) {
-    throw new Response("Invalid API key format", {
-      status: 401,
-      headers: JSON_HEADERS,
-    });
-  }
-
+async function sha256Hex(input: string): Promise<string> {
   const encoder = new TextEncoder();
-  const data = encoder.encode(rawKey);
+  const data = encoder.encode(input);
   const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-  const keyHash = Array.from(new Uint8Array(hashBuffer))
+  return Array.from(new Uint8Array(hashBuffer))
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
-  const result = await ctx.runQuery(internal.apiKeys.validateKey, { keyHash });
+}
 
-  if (!result) {
-    throw new Response("Invalid or revoked API key", {
-      status: 403,
-      headers: JSON_HEADERS,
-    });
+/**
+ * Authenticate MCP requests. Tries API key first (prism_ prefix), then OAuth token (prsm_at_ prefix).
+ * Returns 401 with WWW-Authenticate: Bearer when no auth (triggers OAuth flow in MCP clients).
+ */
+async function requireMcpAuth(
+  ctx: { runQuery: any; runMutation: any },
+  request: Request,
+): Promise<McpIdentity> {
+  const authHeader = request.headers.get("Authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
+    throw new Response(
+      JSON.stringify({ error: "unauthorized" }),
+      {
+        status: 401,
+        headers: {
+          ...JSON_HEADERS,
+          "WWW-Authenticate": 'Bearer resource_metadata="/.well-known/oauth-authorization-server"',
+        },
+      },
+    );
   }
 
-  // Update last used timestamp
-  await ctx.runMutation(internal.apiKeys.touchLastUsed, { id: result.keyId });
+  const rawToken = authHeader.slice(7);
 
-  return result;
+  // Try API key auth (prism_ prefix)
+  if (rawToken.startsWith("prism_")) {
+    const keyHash = await sha256Hex(rawToken);
+    const result = await ctx.runQuery(internal.apiKeys.validateKey, { keyHash });
+    if (!result) {
+      throw new Response("Invalid or revoked API key", {
+        status: 403,
+        headers: JSON_HEADERS,
+      });
+    }
+    await ctx.runMutation(internal.apiKeys.touchLastUsed, { id: result.keyId });
+    return { ...result, source: "api_key" };
+  }
+
+  // Try OAuth token auth (prsm_at_ prefix)
+  if (rawToken.startsWith("prsm_at_")) {
+    const tokenHash = await sha256Hex(rawToken);
+    const result = await ctx.runQuery(internal.oauth.validateAccessToken, {
+      tokenHash,
+    });
+    if (!result) {
+      throw new Response("Invalid or expired token", {
+        status: 401,
+        headers: {
+          ...JSON_HEADERS,
+          "WWW-Authenticate": 'Bearer error="invalid_token"',
+        },
+      });
+    }
+    return {
+      userId: result.userId,
+      orgId: result.orgId,
+      source: "oauth",
+    };
+  }
+
+  throw new Response("Invalid token format", {
+    status: 401,
+    headers: {
+      ...JSON_HEADERS,
+      "WWW-Authenticate": 'Bearer resource_metadata="/.well-known/oauth-authorization-server"',
+    },
+  });
 }
 
 function jsonResponse(data: unknown, status = 200): Response {
@@ -92,7 +347,7 @@ http.route({
   method: "GET",
   handler: httpAction(async (ctx, request) => {
     try {
-      const identity = await requireApiKey(ctx, request);
+      const identity = await requireMcpAuth(ctx, request);
       const policies = await ctx.runQuery(internal.policies.listAllInternal, {
         orgId: identity.orgId as any,
       });
@@ -141,7 +396,7 @@ http.route({
   method: "GET",
   handler: httpAction(async (ctx, request) => {
     try {
-      const identity = await requireApiKey(ctx, request);
+      const identity = await requireMcpAuth(ctx, request);
       const id = getQueryParam(request, "id");
       if (!id) return jsonResponse({ error: "Missing id parameter" }, 400);
 
@@ -167,7 +422,7 @@ http.route({
   method: "GET",
   handler: httpAction(async (ctx, request) => {
     try {
-      const identity = await requireApiKey(ctx, request);
+      const identity = await requireMcpAuth(ctx, request);
       const q = getQueryParam(request, "q");
       if (!q) return jsonResponse({ error: "Missing q parameter" }, 400);
 
@@ -219,7 +474,7 @@ http.route({
   method: "GET",
   handler: httpAction(async (ctx, request) => {
     try {
-      const identity = await requireApiKey(ctx, request);
+      const identity = await requireMcpAuth(ctx, request);
       const policies = await ctx.runQuery(internal.policies.listAllInternal, {
         orgId: identity.orgId as any,
       });
@@ -256,7 +511,7 @@ http.route({
   method: "GET",
   handler: httpAction(async (ctx, request) => {
     try {
-      const identity = await requireApiKey(ctx, request);
+      const identity = await requireMcpAuth(ctx, request);
       const quotes = await ctx.runQuery(internal.quotes.listAllInternal, {
         orgId: identity.orgId as any,
       });
@@ -302,7 +557,7 @@ http.route({
   method: "GET",
   handler: httpAction(async (ctx, request) => {
     try {
-      const identity = await requireApiKey(ctx, request);
+      const identity = await requireMcpAuth(ctx, request);
       const id = getQueryParam(request, "id");
       if (!id) return jsonResponse({ error: "Missing id parameter" }, 400);
 
@@ -327,7 +582,7 @@ http.route({
   method: "GET",
   handler: httpAction(async (ctx, request) => {
     try {
-      const identity = await requireApiKey(ctx, request);
+      const identity = await requireMcpAuth(ctx, request);
       const sessions = await ctx.runQuery(
         internal.applicationSessions.listAllInternal,
         { orgId: identity.orgId as any },
@@ -346,7 +601,7 @@ http.route({
   method: "GET",
   handler: httpAction(async (ctx, request) => {
     try {
-      const identity = await requireApiKey(ctx, request);
+      const identity = await requireMcpAuth(ctx, request);
       const id = getQueryParam(request, "id");
       if (!id) return jsonResponse({ error: "Missing id parameter" }, 400);
 
@@ -371,7 +626,7 @@ http.route({
   method: "GET",
   handler: httpAction(async (ctx, request) => {
     try {
-      const identity = await requireApiKey(ctx, request);
+      const identity = await requireMcpAuth(ctx, request);
       const threads = await ctx.runQuery(internal.threads.listByOrg, {
         orgId: identity.orgId as any,
       });
@@ -397,7 +652,7 @@ http.route({
   method: "GET",
   handler: httpAction(async (ctx, request) => {
     try {
-      const identity = await requireApiKey(ctx, request);
+      const identity = await requireMcpAuth(ctx, request);
       const threadId = getQueryParam(request, "threadId");
       if (!threadId) return jsonResponse({ error: "Missing threadId parameter" }, 400);
 
@@ -436,7 +691,7 @@ http.route({
   method: "GET",
   handler: httpAction(async (ctx, request) => {
     try {
-      const identity = await requireApiKey(ctx, request);
+      const identity = await requireMcpAuth(ctx, request);
       const entries = await ctx.runQuery(internal.businessContext.listInternal, {
         orgId: identity.orgId as any,
       });
@@ -454,7 +709,7 @@ http.route({
   method: "GET",
   handler: httpAction(async (ctx, request) => {
     try {
-      const identity = await requireApiKey(ctx, request);
+      const identity = await requireMcpAuth(ctx, request);
       const org = await ctx.runQuery(internal.orgs.getInternal, {
         id: identity.orgId as any,
       });
@@ -483,7 +738,7 @@ http.route({
   method: "POST",
   handler: httpAction(async (ctx, request) => {
     try {
-      const identity = await requireApiKey(ctx, request);
+      const identity = await requireMcpAuth(ctx, request);
       const body = await request.json();
       const { category, key, value } = body;
       if (!category || !key || !value) {
@@ -512,7 +767,7 @@ http.route({
   method: "POST",
   handler: httpAction(async (ctx, request) => {
     try {
-      const identity = await requireApiKey(ctx, request);
+      const identity = await requireMcpAuth(ctx, request);
       const body = await request.json();
       const { id } = body;
       if (!id) return jsonResponse({ error: "Missing id" }, 400);
@@ -681,7 +936,7 @@ function jsonRpcError(id: string | number | null, code: number, message: string)
 
 async function handleToolCall(
   ctx: { runQuery: any; runMutation: any; runAction: any },
-  identity: ApiKeyIdentity,
+  identity: McpIdentity,
   name: string,
   args: Record<string, unknown>,
 ): Promise<{ content: Array<{ type: "text"; text: string }> }> {
@@ -825,7 +1080,7 @@ http.route({
   method: "POST",
   handler: httpAction(async (ctx, request) => {
     try {
-      const identity = await requireApiKey(ctx, request);
+      const identity = await requireMcpAuth(ctx, request);
       const body = await request.json();
 
       // Handle JSON-RPC 2.0
@@ -895,7 +1150,7 @@ http.route({
   method: "POST",
   handler: httpAction(async (ctx, request) => {
     try {
-      const identity = await requireApiKey(ctx, request);
+      const identity = await requireMcpAuth(ctx, request);
       const body = await request.json();
       const { message, threadId } = body;
       if (!message) return jsonResponse({ error: "Missing message" }, 400);

@@ -147,6 +147,7 @@ To modify prompts or extraction logic, update the `@claritylabs/cl-sdk` package 
 - `actions/processApplication.ts` — Application workflow: field extraction, auto-fill, batched Q&A, confirmation, summary PDF generation
 - `actions/processThreadChat.ts` — Agent response for email-triggered flows (kept for inbound email → agent response with 150ms DB flush)
 - `apiKeys.ts` — API key management: generate (with Web Crypto), revoke, remove, list. Internal: validateKey (hash lookup), touchLastUsed
+- `oauth.ts` — OAuth 2.1 logic: client registration, auth code creation/exchange, token validation/refresh/revocation, connected apps listing
 - `actions/mcpChat.ts` — Simplified chat action for MCP: non-streaming, generates response via `generateText`, persists to thread, auto-titles
 - `actions/` — Also: IMAP scanning, classification, extraction
 - `lib/applicationTypes.ts` — Types for form fields (SimpleField, TableField, DeclarationField), QuestionBatch
@@ -186,6 +187,9 @@ To modify prompts or extraction logic, update the `@claritylabs/cl-sdk` package 
 - `webChats` stores org-scoped chat sessions with title, createdBy, lastMessageAt, optional archivedAt
 - `webChatMessages` stores chat messages with role (user/agent), denormalized userName, optional status (processing/error)
 - `apiKeys` stores org-scoped API keys for MCP auth: SHA-256 hash of key, prefix for display, lastUsedAt, revokedAt for soft revoke
+- `oauthClients` stores dynamically registered OAuth clients (clientId, clientName, redirectUris)
+- `oauthAuthCodes` stores authorization codes with PKCE challenge, 10-minute expiry, used-once tracking
+- `oauthTokens` stores access tokens (1-hour expiry) and refresh tokens (30-day expiry), indexed by hash for validation
 
 ### Routes
 
@@ -204,19 +208,25 @@ All routes require authentication (redirect to `/login` if not logged in) except
 - `/connections` — IMAP connection management with scan modal and real-time progress
 - `/extractions` — Pending extraction queue + completed extraction log
 - `/agent` — Prism: unified conversations (email threads + web chats with "New Chat" button, application badges), settings (email address, modes)
-- `/settings` — Organization settings with 4 tabs: Basic Information, Team Members, Business Context, API Keys
+- `/settings` — Organization settings with 5 tabs: Basic Information, Team Members, Business Context, Connected Apps, API Keys (Local)
+- `/oauth/authorize` — OAuth 2.1 authorization page (login + consent for MCP remote clients)
 - `/profile` — User profile page
 - `/api/chat` — POST: Streaming chat API route for `useChat` (auth via Convex token in Authorization header)
 - `/api/flatten-pdf` — POST: PDF flattening via mupdf WASM (bearer token auth, no user auth)
-- `/mcp/*` — HTTP action routes for MCP data API (API key auth via Bearer token)
+- `/mcp/*` — HTTP action routes for MCP data API (API key or OAuth auth via Bearer token)
 - `/mcp` — POST: MCP Streamable HTTP transport endpoint (JSON-RPC 2.0, for Claude.ai/ChatGPT connectors)
+- `/oauth/authorize` — OAuth 2.1 authorization page (Next.js, login + consent)
+- `/.well-known/oauth-authorization-server` — GET: OAuth authorization server metadata
+- `/oauth/register` — POST: Dynamic Client Registration (RFC 7591)
+- `/oauth/token` — POST: Token exchange (authorization_code, refresh_token)
+- `/oauth/revoke` — POST: Token revocation
 
 ### MCP Server
 
 Exposes Prism functionality to AI agents via the Model Context Protocol. Supports two transports:
 
-1. **Remote (Streamable HTTP)** — Single `POST /mcp` endpoint in `convex/http.ts` implementing MCP JSON-RPC 2.0 protocol. Used by Claude.ai connectors, ChatGPT, and other remote MCP clients. URL: `https://<deployment>.convex.site/mcp`. Auth via `Authorization: Bearer prism_...` header.
-2. **Local (stdio)** — `mcp-server/` Node.js package for local tools (Claude Code, Cursor). Translates MCP tool calls into HTTP requests to `/mcp/*` data routes.
+1. **Remote (Streamable HTTP)** — Single `POST /mcp` endpoint in `convex/http.ts` implementing MCP JSON-RPC 2.0 protocol. Used by Claude.ai connectors, ChatGPT, and other remote MCP clients. URL: `https://<deployment>.convex.site/mcp`. Auth via OAuth 2.1 (browser-based login) or API key.
+2. **Local (stdio)** — `mcp-server/` Node.js package for local tools (Claude Code, Cursor). Translates MCP tool calls into HTTP requests to `/mcp/*` data routes. Auth via API key.
 
 **Architecture**:
 ```
@@ -224,13 +234,18 @@ Remote clients (Claude.ai)         Local clients (Claude Code)
   ↕ HTTP POST (JSON-RPC 2.0)        ↕ stdio (MCP protocol)
   POST /mcp endpoint               MCP Server (mcp-server/)
   (convex/http.ts)                    ↕ HTTP with Bearer API key
-  ↕                                 GET/POST /mcp/* data routes
+  ↕ OAuth 2.1 or API key auth      GET/POST /mcp/* data routes
   internal queries/mutations        (convex/http.ts)
   ↕                                   ↕ internal queries/mutations
   Convex Database                   Convex Database
 ```
 
-**Auth**: User generates API key in Settings > API Keys. Key is `prism_` + 64 hex chars. Stored as SHA-256 hash in `apiKeys` table. HTTP actions validate via `by_keyHash` index.
+**Auth (dual mode)**:
+- **Remote (OAuth 2.1)**: MCP client discovers OAuth endpoints via `/.well-known/oauth-authorization-server`, dynamically registers via `/oauth/register`, opens browser to `/oauth/authorize` (Next.js page where user logs in via Email OTP), user clicks "Allow", auth code exchanged for tokens via `/oauth/token`. Access tokens: `prsm_at_` prefix, 1-hour expiry. Refresh tokens: `prsm_rt_` prefix, 30-day expiry. PKCE (S256) required.
+- **Local (API key)**: User generates API key in Settings > API Keys. Key is `prism_` + 64 hex chars. Stored as SHA-256 hash in `apiKeys` table.
+- `requireMcpAuth` in `http.ts` tries API key first (if `prism_` prefix), then OAuth token (if `prsm_at_` prefix). Returns 401 with `WWW-Authenticate: Bearer` when no auth (triggers OAuth flow).
+
+**OAuth tables**: `oauthClients` (dynamic registration), `oauthAuthCodes` (PKCE codes, 10-min expiry), `oauthTokens` (access + refresh, revocable)
 
 **Remote MCP endpoint** (`POST /mcp`):
 - Implements MCP Streamable HTTP transport (JSON-RPC 2.0 over HTTP POST)
@@ -246,17 +261,19 @@ Remote clients (Claude.ai)         Local clients (Claude Code)
 **14 MCP Tools**: `list_policies`, `get_policy`, `search_policies`, `get_policy_stats`, `list_quotes`, `get_quote`, `list_applications`, `get_application`, `list_threads`, `get_thread_messages`, `get_business_context`, `get_org_info`, `ask_prism`, `update_business_context`
 
 **Key files**:
-- `convex/apiKeys.ts` — Key CRUD + internal validation
-- `convex/lib/mcpAuth.ts` — Shared `requireApiKey` helper (Web Crypto SHA-256)
+- `convex/oauth.ts` — OAuth logic: client registration, code exchange, token validation/refresh/revocation, connected apps listing
+- `convex/apiKeys.ts` — API key CRUD + internal validation
+- `convex/lib/mcpAuth.ts` — Legacy `requireApiKey` helper (now superseded by `requireMcpAuth` in http.ts)
 - `convex/actions/mcpChat.ts` — Non-streaming chat action for `ask_prism` tool
-- `convex/http.ts` — Remote MCP endpoint (`/mcp`) + data API routes (`/mcp/*`)
+- `convex/http.ts` — OAuth endpoints + remote MCP endpoint (`/mcp`) + data API routes (`/mcp/*`)
+- `app/oauth/authorize/page.tsx` — OAuth authorization page (login + consent UI)
 
 **Setup (Remote — Claude.ai, ChatGPT)**:
-1. Generate an API key in Settings > API Keys
-2. In Claude.ai: Settings > Connectors > Add custom connector
+1. In Claude.ai: Settings > Connectors > Add custom connector
    - Name: `Prism`
    - Remote MCP server URL: `https://<deployment>.convex.site/mcp`
-   - (Auth: pass API key as Bearer token via connector config)
+2. Claude.ai auto-discovers OAuth, opens browser for login, user signs in and clicks "Allow"
+3. Connected apps appear in Settings > Connected Apps and can be revoked
 
 **Setup (Local — Claude Code, Cursor)**:
 Build with `cd mcp-server && npm install && npm run build`. Configure in `~/.claude/mcp.json`:

@@ -151,7 +151,8 @@ Failed application sessions can be retried from the frontend (Applications list,
 | `/connections` | Yes | IMAP connection management, scan config, real-time progress |
 | `/extractions` | Yes | Extraction queue + completed log |
 | `/agent` | Yes | Prism — conversations, settings |
-| `/settings` | Yes | Org settings: info, team members, business context |
+| `/settings` | Yes | Org settings: info, team, context, connected apps, API keys |
+| `/oauth/authorize` | No* | OAuth 2.1 authorization page (login + consent for MCP remote clients) |
 | `/profile` | Yes | User profile |
 
 ## Key Files
@@ -180,6 +181,8 @@ Failed application sessions can be retried from the frontend (Applications list,
 | `lib/extraction.ts` | Extraction helpers (parsing, merging, chunking) |
 | `lib/agentPrompts.ts` | Agent system prompts, document context builder, memory context |
 | `lib/auth.ts` | `requireAuth()` helper |
+| `oauth.ts` | OAuth 2.1: client registration, auth code, token exchange/refresh/revocation |
+| `apiKeys.ts` | API key management for local MCP servers |
 
 ### Frontend
 
