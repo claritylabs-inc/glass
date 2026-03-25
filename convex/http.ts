@@ -34,6 +34,25 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
 };
 
+// GET /.well-known/oauth-protected-resource (RFC 9728 — tells MCP clients where to find the auth server)
+http.route({
+  path: "/.well-known/oauth-protected-resource",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const url = new URL(request.url);
+    const issuer = url.origin;
+
+    return new Response(
+      JSON.stringify({
+        resource: `${issuer}/mcp`,
+        authorization_servers: [issuer],
+        scopes_supported: [],
+      }),
+      { headers: { "Content-Type": "application/json" } },
+    );
+  }),
+});
+
 // GET /.well-known/oauth-authorization-server
 http.route({
   path: "/.well-known/oauth-authorization-server",
@@ -49,10 +68,12 @@ http.route({
         authorization_endpoint: `${siteUrl}/oauth/authorize`,
         token_endpoint: `${issuer}/oauth/token`,
         registration_endpoint: `${issuer}/oauth/register`,
+        revocation_endpoint: `${issuer}/oauth/revoke`,
         response_types_supported: ["code"],
         grant_types_supported: ["authorization_code", "refresh_token"],
         code_challenge_methods_supported: ["S256"],
         token_endpoint_auth_methods_supported: ["none"],
+        service_documentation: `${siteUrl}`,
       }),
       { headers: { "Content-Type": "application/json" } },
     );
@@ -1100,10 +1121,28 @@ http.route({
 
       switch (method) {
         case "initialize": {
+          const siteUrl = process.env.SITE_URL ?? "https://prism.claritylabs.inc";
           return jsonRpcResponse(id, {
             protocolVersion: "2025-03-26",
             capabilities: { tools: {} },
-            serverInfo: { name: "prism", version: "1.0.0" },
+            serverInfo: {
+              name: "Prism",
+              version: "1.0.0",
+              icons: [
+                {
+                  src: `${siteUrl}/prism-icon.svg`,
+                  mimeType: "image/svg+xml",
+                  sizes: ["any"],
+                },
+                {
+                  src: `${siteUrl}/logo-bimi.svg`,
+                  mimeType: "image/svg+xml",
+                  sizes: ["any"],
+                  theme: "light",
+                },
+              ],
+            },
+            instructions: "Prism is an insurance intelligence platform. Use Prism tools to look up policies, quotes, applications, and business context for the connected organization. Use ask_prism for complex insurance questions.",
           });
         }
         case "tools/list": {

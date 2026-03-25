@@ -35,26 +35,41 @@ import { useTheme } from "@/hooks/use-theme";
 
 const INSURANCE_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard, shortcut: "D" },
-  { href: "/policies", label: "Policies", icon: FileText, shortcut: "P" },
-  { href: "/quotes", label: "Quotes", icon: ClipboardList, shortcut: "Q" },
-  { href: "/applications", label: "Applications", icon: FileInput, shortcut: "A" },
+  { href: "/policies", label: "Policies", icon: FileText, shortcut: "O" },
+  { href: "/quotes", label: "Quotes", icon: ClipboardList, shortcut: "U" },
+  { href: "/applications", label: "Applications", icon: FileInput, shortcut: "Y" },
 ];
 
 const TOOLS_ITEMS = [
-  { href: "/connections", label: "Connections", icon: Mail, shortcut: "C" },
+  { href: "/connections", label: "Connections", icon: Mail, shortcut: "E" },
   { href: "/agent", label: "Prism", icon: Asterisk, shortcut: "G" },
 ];
 
 const ALL_NAV_ITEMS = [...INSURANCE_ITEMS, ...TOOLS_ITEMS];
 
-/** Map from lowercase key to href for page shortcuts */
+/** Map from lowercase key to href for page shortcuts.
+ * Avoids: A (select all), C (copy), V (paste), X (cut), S (save),
+ * P (print), I (italic/devtools), Z (undo), F (find), R (reload),
+ * N (new window), T (new tab), W (close tab), Q (quit), L (address bar),
+ * B (bold), H (history)
+ */
 const PAGE_SHORTCUT_MAP: Record<string, string> = {
   ...Object.fromEntries(
     ALL_NAV_ITEMS.map((item) => [item.shortcut.toLowerCase(), item.href]),
   ),
-  s: "/settings",
-  i: "/profile",
+  j: "/settings",
+  // /profile accessible via sidebar only (no shortcut)
 };
+
+/** Returns true if focus is inside an editable element */
+function isEditableTarget(e: KeyboardEvent): boolean {
+  const el = e.target;
+  if (!(el instanceof HTMLElement)) return false;
+  const tag = el.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+  if (el.isContentEditable) return true;
+  return false;
+}
 
 function getInitials(name?: string | null, email?: string | null) {
   if (name) {
@@ -199,6 +214,9 @@ export function AppSidebar({
           setCmdHeld(true);
           cmdTimerRef.current = setTimeout(() => setShowShortcuts(true), 500);
         }
+
+        // Skip navigation shortcuts when focus is in an editable element
+        if (isEditableTarget(e)) return;
 
         // Cmd+K — focus search
         if (e.key === "k") {
@@ -452,7 +470,7 @@ export function AppSidebar({
             icon={Settings}
             active={isActive("/settings")}
             collapsed={collapsed}
-            shortcut="S"
+            shortcut="J"
             cmdHeld={showShortcuts}
           />
         )}
@@ -462,7 +480,6 @@ export function AppSidebar({
           icon={User}
           active={isActive("/profile")}
           collapsed={collapsed}
-          shortcut="I"
           cmdHeld={showShortcuts}
         />
         <button

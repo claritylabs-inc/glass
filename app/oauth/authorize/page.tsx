@@ -49,6 +49,8 @@ export default function OAuthAuthorizePage() {
 
   // Consent state
   const [authorizing, setAuthorizing] = useState(false);
+  const [redirecting, setRedirecting] = useState(false);
+  const [redirectUrl, setRedirectUrl] = useState("");
 
   // Load client info (only when authenticated)
   const clientInfo = useQuery(
@@ -113,9 +115,14 @@ export default function OAuthAuthorizePage() {
       const url = new URL(redirectUri);
       url.searchParams.set("code", authCode);
       if (state) url.searchParams.set("state", state);
-      window.location.href = url.toString();
+      const target = url.toString();
+      setRedirectUrl(target);
+      setRedirecting(true);
+      window.location.href = target;
     } catch (err: any) {
-      setError(err.message || "Failed to authorize");
+      const message = typeof err === "string" ? err
+        : err?.data ?? err?.message ?? "Failed to authorize";
+      setError(String(message));
       setAuthorizing(false);
     }
   }
@@ -307,6 +314,23 @@ export default function OAuthAuthorizePage() {
                 This application is not registered or the redirect URI doesn&apos;t match.
               </p>
             </div>
+          ) : redirecting ? (
+            <div className="text-center py-6 space-y-3">
+              <Loader2 className="w-6 h-6 animate-spin text-muted-foreground mx-auto" />
+              <div>
+                <h2 className="text-body-lg font-semibold text-foreground">Connected</h2>
+                <p className="text-body-sm text-muted-foreground mt-1">
+                  Redirecting you back to {clientInfo.clientName}...
+                </p>
+              </div>
+              <p className="text-label-sm text-muted-foreground/50 mt-4">
+                If you&apos;re not redirected automatically,{" "}
+                <a href={redirectUrl} className="underline text-foreground/60 hover:text-foreground/80">
+                  click here
+                </a>
+                . You can also close this window.
+              </p>
+            </div>
           ) : (
             <div className="space-y-5">
               <div className="text-center">
@@ -344,7 +368,7 @@ export default function OAuthAuthorizePage() {
               </div>
 
               {error && (
-                <p className="text-body-sm text-muted-foreground bg-white/50 dark:bg-white/[0.04] border border-foreground/6 rounded-lg px-3 py-2">
+                <p className="text-body-sm text-red-500/80 bg-red-50 dark:bg-red-950/30 border border-red-200/30 rounded-lg px-3 py-2">
                   {error}
                 </p>
               )}
