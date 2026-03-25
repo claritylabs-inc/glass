@@ -24,6 +24,11 @@ import {
   Database,
   Building2,
   Plus,
+  Key,
+  Copy,
+  Check,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { INDUSTRIES } from "@/convex/lib/industries";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -43,6 +48,7 @@ const SETTINGS_TABS = [
   { id: "info", label: "Basic Information", icon: Building2 },
   { id: "team", label: "Team Members", icon: Users },
   { id: "context", label: "Business Context", icon: Database },
+  { id: "apikeys", label: "API Keys", icon: Key },
 ] as const;
 
 type SettingsTab = typeof SETTINGS_TABS[number]["id"];
@@ -89,6 +95,17 @@ export default function SettingsPage() {
   const [inviting, setInviting] = useState(false);
   const [showInviteDialog, setShowInviteDialog] = useState(false);
   const [showAddContextForm, setShowAddContextForm] = useState(false);
+  // API Keys state
+  const apiKeys = useQuery(api.apiKeys.list);
+  const generateApiKey = useMutation(api.apiKeys.generate);
+  const revokeApiKey = useMutation(api.apiKeys.revoke);
+  const removeApiKey = useMutation(api.apiKeys.remove);
+  const [showGenerateKeyDialog, setShowGenerateKeyDialog] = useState(false);
+  const [newKeyName, setNewKeyName] = useState("");
+  const [generatingKey, setGeneratingKey] = useState(false);
+  const [generatedKey, setGeneratedKey] = useState<string | null>(null);
+  const [copiedKey, setCopiedKey] = useState(false);
+  const [showRevokeDialog, setShowRevokeDialog] = useState<string | null>(null);
 
   const contextRef = useRef<HTMLTextAreaElement>(null);
   const autoResize = useCallback(() => {
@@ -250,6 +267,12 @@ export default function SettingsPage() {
         <PillButton size="compact" variant="secondary" onClick={() => setShowAddContextForm(!showAddContextForm)}>
           <Plus className="w-3.5 h-3.5" />
           Add Entry
+        </PillButton>
+      )}
+      {activeTab === "apikeys" && (
+        <PillButton size="compact" variant="secondary" onClick={() => { setShowGenerateKeyDialog(true); setGeneratedKey(null); setNewKeyName(""); }}>
+          <Plus className="w-3.5 h-3.5" />
+          Generate Key
         </PillButton>
       )}
     </>
@@ -646,12 +669,124 @@ export default function SettingsPage() {
                   ))}
                 </div>
               </div>
-            ) : (
+            ) : activeTab === "context" ? (
               /* Business Context tab */
               <BusinessContextManager
                 showAddForm={showAddContextForm}
                 onShowAddFormChange={setShowAddContextForm}
               />
+            ) : (
+              /* API Keys tab */
+              <div className="space-y-4">
+                <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04]">
+                  <div className="px-5 py-3.5 border-b border-foreground/6">
+                    <h3 className="!mb-0 text-sm font-medium text-foreground">API Keys</h3>
+                    <p className="text-label-sm text-muted-foreground mt-0.5">
+                      Manage API keys for MCP server and programmatic access to Prism.
+                    </p>
+                  </div>
+                  {apiKeys && apiKeys.length > 0 ? (
+                    <div className="divide-y divide-foreground/6">
+                      {apiKeys.map((key) => (
+                        <div key={key._id} className="px-5 py-3.5 flex items-center gap-3">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-body-sm font-medium text-foreground">
+                              {key.name}
+                              {key.revokedAt && (
+                                <span className="text-[11px] text-red-400 bg-red-50 dark:bg-red-950/40 px-1.5 py-0.5 rounded ml-2">
+                                  Revoked
+                                </span>
+                              )}
+                            </p>
+                            <p className="text-label-sm text-muted-foreground font-mono mt-0.5">
+                              {key.keyPrefix}{"••••••••"}
+                            </p>
+                            {key.lastUsedAt && (
+                              <p className="text-[11px] text-muted-foreground/50 mt-0.5">
+                                Last used {new Date(key.lastUsedAt).toLocaleDateString()}
+                              </p>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            {!key.revokedAt ? (
+                              <button
+                                type="button"
+                                onClick={() => setShowRevokeDialog(key._id)}
+                                className="text-[11px] text-red-400 hover:text-red-600 transition-colors cursor-pointer"
+                              >
+                                Revoke
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  try {
+                                    await removeApiKey({ id: key._id as Id<"apiKeys"> });
+                                    toast.success("Key removed");
+                                  } catch {
+                                    toast.error("Failed to remove key");
+                                  }
+                                }}
+                                className="text-[11px] text-muted-foreground/40 hover:text-foreground transition-colors cursor-pointer"
+                              >
+                                Delete
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="px-5 py-8 text-center">
+                      <Key className="w-6 h-6 text-muted-foreground/20 mx-auto mb-2" />
+                      <p className="text-body-sm text-muted-foreground">No API keys yet</p>
+                      <p className="text-label-sm text-muted-foreground/50 mt-0.5">
+                        Generate a key to connect AI agents via MCP.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* MCP Setup Instructions */}
+                <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04]">
+                  <div className="px-5 py-3.5 border-b border-foreground/6">
+                    <h3 className="!mb-0 text-sm font-medium text-foreground">MCP Server Setup</h3>
+                  </div>
+                  <div className="px-5 py-5 space-y-5">
+                    <div>
+                      <p className="text-body-sm font-medium text-foreground mb-1">Remote URL (Claude.ai, ChatGPT, etc.)</p>
+                      <p className="text-body-sm text-muted-foreground mb-2">
+                        Use this URL as the Remote MCP server URL in your connector settings. Pass your API key as a Bearer token in the Authorization header.
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <code className="flex-1 text-[12px] bg-foreground/[0.03] border border-foreground/6 rounded-lg px-3 py-2 text-muted-foreground select-all">
+                          {process.env.NEXT_PUBLIC_CONVEX_SITE_URL ?? `https://<deployment>.convex.site`}/mcp
+                        </code>
+                      </div>
+                    </div>
+                    <div className="border-t border-foreground/6 pt-4">
+                      <p className="text-body-sm font-medium text-foreground mb-1">Local stdio (Claude Code, Cursor, etc.)</p>
+                      <p className="text-body-sm text-muted-foreground mb-2">
+                        Add this to your MCP config (<code className="text-[12px] bg-foreground/5 px-1 py-0.5 rounded">~/.claude/mcp.json</code>):
+                      </p>
+                      <pre className="text-[12px] bg-foreground/[0.03] border border-foreground/6 rounded-lg p-4 overflow-x-auto text-muted-foreground">
+{`{
+  "mcpServers": {
+    "prism": {
+      "command": "node",
+      "args": ["<path-to-prism>/mcp-server/dist/index.js"],
+      "env": {
+        "PRISM_CONVEX_SITE_URL": "${process.env.NEXT_PUBLIC_CONVEX_SITE_URL ?? `https://<deployment>.convex.site`}",
+        "PRISM_API_KEY": "prism_..."
+      }
+    }
+  }
+}`}
+                      </pre>
+                    </div>
+                  </div>
+                </div>
+              </div>
             )}
           </FadeIn>
 
@@ -736,6 +871,120 @@ export default function SettingsPage() {
             </PillButton>
             <PillButton variant="destructive" onClick={handleRemoveDemo} disabled={removingDemo}>
               {removingDemo ? "Removing..." : "Yes, Remove Demo Data"}
+            </PillButton>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Generate API Key Dialog */}
+      <Dialog open={showGenerateKeyDialog} onOpenChange={(v) => { if (!v) { setShowGenerateKeyDialog(false); setGeneratedKey(null); } }}>
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Key className="w-5 h-5 text-muted-foreground" />
+              {generatedKey ? "API Key Generated" : "Generate API Key"}
+            </DialogTitle>
+            <DialogDescription>
+              {generatedKey
+                ? "Copy this key now. You won't be able to see it again."
+                : "Create a new API key for MCP server or programmatic access."}
+            </DialogDescription>
+          </DialogHeader>
+          {generatedKey ? (
+            <div className="py-2">
+              <div className="flex items-center gap-2 bg-foreground/[0.03] border border-foreground/6 rounded-lg p-3">
+                <code className="text-[12px] font-mono text-foreground flex-1 break-all select-all">
+                  {generatedKey}
+                </code>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(generatedKey);
+                    setCopiedKey(true);
+                    setTimeout(() => setCopiedKey(false), 2000);
+                  }}
+                  className="shrink-0 p-1.5 rounded hover:bg-foreground/5 transition-colors cursor-pointer"
+                >
+                  {copiedKey ? (
+                    <Check className="w-4 h-4 text-green-500" />
+                  ) : (
+                    <Copy className="w-4 h-4 text-muted-foreground" />
+                  )}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="py-2">
+              <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+                Key Name
+              </label>
+              <input
+                type="text"
+                value={newKeyName}
+                onChange={(e) => setNewKeyName(e.target.value)}
+                placeholder="e.g. Claude Code, Cursor"
+                className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+              />
+            </div>
+          )}
+          <DialogFooter>
+            <PillButton variant="secondary" onClick={() => { setShowGenerateKeyDialog(false); setGeneratedKey(null); }} disabled={generatingKey}>
+              {generatedKey ? "Done" : "Cancel"}
+            </PillButton>
+            {!generatedKey && (
+              <PillButton
+                onClick={async () => {
+                  if (!newKeyName) return;
+                  setGeneratingKey(true);
+                  try {
+                    const key = await generateApiKey({ name: newKeyName });
+                    setGeneratedKey(key);
+                    toast.success("API key generated");
+                  } catch {
+                    toast.error("Failed to generate key");
+                  } finally {
+                    setGeneratingKey(false);
+                  }
+                }}
+                disabled={generatingKey || !newKeyName}
+              >
+                {generatingKey ? "Generating..." : "Generate"}
+              </PillButton>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Revoke API Key Dialog */}
+      <Dialog open={!!showRevokeDialog} onOpenChange={(v) => !v && setShowRevokeDialog(null)}>
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-red-500" />
+              Revoke API Key
+            </DialogTitle>
+            <DialogDescription>
+              This key will immediately stop working. Any MCP servers or integrations using it will lose access.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <PillButton variant="secondary" onClick={() => setShowRevokeDialog(null)}>
+              Cancel
+            </PillButton>
+            <PillButton
+              variant="destructive"
+              onClick={async () => {
+                if (!showRevokeDialog) return;
+                try {
+                  await revokeApiKey({ id: showRevokeDialog as Id<"apiKeys"> });
+                  setShowRevokeDialog(null);
+                  toast.success("API key revoked");
+                } catch {
+                  toast.error("Failed to revoke key");
+                }
+              }}
+            >
+              Yes, Revoke
             </PillButton>
           </DialogFooter>
         </DialogContent>

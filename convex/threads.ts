@@ -349,6 +349,56 @@ export const updateTitleInternal = internalMutation({
   },
 });
 
+export const listByOrg = internalQuery({
+  args: { orgId: v.id("organizations") },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("threads")
+      .withIndex("by_orgId_lastMessageAt", (q) => q.eq("orgId", args.orgId))
+      .order("desc")
+      .take(50);
+  },
+});
+
+export const createInternal = internalMutation({
+  args: {
+    orgId: v.id("organizations"),
+    userId: v.id("users"),
+    title: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db.insert("threads", {
+      orgId: args.orgId,
+      title: args.title ?? "New chat",
+      createdBy: args.userId,
+      lastMessageAt: Date.now(),
+    });
+  },
+});
+
+export const insertUserMessageInternal = internalMutation({
+  args: {
+    threadId: v.id("threads"),
+    orgId: v.id("organizations"),
+    userId: v.id("users"),
+    userName: v.optional(v.string()),
+    content: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const messageId = await ctx.db.insert("threadMessages", {
+      threadId: args.threadId,
+      orgId: args.orgId,
+      channel: "chat",
+      role: "user",
+      userId: args.userId,
+      userName: args.userName,
+      content: args.content,
+    });
+    await ctx.db.patch(args.threadId, { lastMessageAt: Date.now() });
+    return messageId;
+  },
+});
+
 export const findByEmail = internalQuery({
   args: { threadEmail: v.string() },
   handler: async (ctx, args) => {

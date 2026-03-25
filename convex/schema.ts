@@ -596,6 +596,22 @@ export default defineSchema({
 
   // ── Presence ──
 
+  // API keys for MCP server authentication
+  apiKeys: defineTable({
+    orgId: v.id("organizations"),
+    userId: v.id("users"),
+    name: v.string(),
+    keyHash: v.string(),
+    keyPrefix: v.string(), // first 14 chars of key for display
+    lastUsedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    revokedAt: v.optional(v.number()),
+  })
+    .index("by_keyHash", ["keyHash"])
+    .index("by_orgId", ["orgId"]),
+
+  // ── Presence ──
+
   presence: defineTable({
     orgId: v.id("organizations"),
     userId: v.id("users"),
