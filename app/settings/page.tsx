@@ -588,8 +588,9 @@ export default function SettingsPage() {
                         {member.userId !== viewer?._id && (
                           <div className="flex items-center gap-1">
                             {member.userId !== org?.primaryInsuranceContactId && (
-                              <button
-                                type="button"
+                              <PillButton
+                                variant="ghost"
+                                size="compact"
                                 onClick={async () => {
                                   try {
                                     await setPrimaryContact({ userId: member.userId });
@@ -598,14 +599,14 @@ export default function SettingsPage() {
                                     toast.error(e.message || "Failed to update");
                                   }
                                 }}
-                                className="text-[11px] text-muted-foreground/40 hover:text-foreground transition-colors cursor-pointer"
                                 title="Set as primary insurance contact"
                               >
                                 Set Primary
-                              </button>
+                              </PillButton>
                             )}
-                            <button
-                              type="button"
+                            <PillButton
+                              variant="ghost"
+                              size="compact"
                               onClick={async () => {
                                 try {
                                   await updateMemberRole({
@@ -617,12 +618,12 @@ export default function SettingsPage() {
                                   toast.error(e.message || "Failed to update role");
                                 }
                               }}
-                              className="text-[11px] text-muted-foreground/40 hover:text-foreground transition-colors cursor-pointer"
                             >
                               {member.role === "admin" ? "Demote" : "Promote"}
-                            </button>
-                            <button
-                              type="button"
+                            </PillButton>
+                            <PillButton
+                              variant="destructive"
+                              size="compact"
                               onClick={async () => {
                                 try {
                                   await removeMember({ membershipId: member.membershipId });
@@ -631,10 +632,9 @@ export default function SettingsPage() {
                                   toast.error(e.message || "Failed to remove member");
                                 }
                               }}
-                              className="text-[11px] text-red-400 hover:text-red-600 transition-colors cursor-pointer"
                             >
                               Remove
-                            </button>
+                            </PillButton>
                           </div>
                         )}
                       </div>
@@ -655,8 +655,9 @@ export default function SettingsPage() {
                         <span className="text-[11px] text-muted-foreground bg-foreground/5 px-1.5 py-0.5 rounded">
                           {inv.role}
                         </span>
-                        <button
-                          type="button"
+                        <PillButton
+                          variant="destructive"
+                          size="compact"
                           onClick={async () => {
                             try {
                               await cancelInvitation({ invitationId: inv._id });
@@ -665,10 +666,9 @@ export default function SettingsPage() {
                               toast.error("Failed to cancel invitation");
                             }
                           }}
-                          className="text-[11px] text-red-400 hover:text-red-600 transition-colors cursor-pointer"
                         >
                           Cancel
-                        </button>
+                        </PillButton>
                       </div>
                     </div>
                   ))}
@@ -702,8 +702,9 @@ export default function SettingsPage() {
                               Connected {new Date(app.connectedAt).toLocaleDateString()}
                             </p>
                           </div>
-                          <button
-                            type="button"
+                          <PillButton
+                            variant="destructive"
+                            size="compact"
                             onClick={async () => {
                               setRevokingApp(app.clientId);
                               try {
@@ -716,10 +717,9 @@ export default function SettingsPage() {
                               }
                             }}
                             disabled={revokingApp === app.clientId}
-                            className="text-[11px] text-red-400 hover:text-red-600 transition-colors cursor-pointer disabled:opacity-50"
                           >
                             {revokingApp === app.clientId ? "Disconnecting..." : "Disconnect"}
-                          </button>
+                          </PillButton>
                         </div>
                       ))}
                     </div>
@@ -791,16 +791,17 @@ export default function SettingsPage() {
                           </div>
                           <div className="flex items-center gap-1 shrink-0">
                             {!key.revokedAt ? (
-                              <button
-                                type="button"
+                              <PillButton
+                                variant="destructive"
+                                size="compact"
                                 onClick={() => setShowRevokeDialog(key._id)}
-                                className="text-[11px] text-red-400 hover:text-red-600 transition-colors cursor-pointer"
                               >
                                 Revoke
-                              </button>
+                              </PillButton>
                             ) : (
-                              <button
-                                type="button"
+                              <PillButton
+                                variant="ghost"
+                                size="compact"
                                 onClick={async () => {
                                   try {
                                     await removeApiKey({ id: key._id as Id<"apiKeys"> });
@@ -809,10 +810,9 @@ export default function SettingsPage() {
                                     toast.error("Failed to remove key");
                                   }
                                 }}
-                                className="text-[11px] text-muted-foreground/40 hover:text-foreground transition-colors cursor-pointer"
                               >
                                 Delete
-                              </button>
+                              </PillButton>
                             )}
                           </div>
                         </div>
