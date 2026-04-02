@@ -26,10 +26,12 @@ import {
 import { PillButton } from "@/components/ui/pill-button";
 import { Mail, Trash2, Play, Square } from "lucide-react";
 import { ConnectionIcon } from "@/components/connection-icon";
+import { EmailReviewTable } from "@/components/email-review-table";
 import { Id } from "@/convex/_generated/dataModel";
 
 const TABS = [
   { id: "connections", label: "Connections" },
+  { id: "emails", label: "Emails" },
   { id: "processing", label: "Processing" },
   { id: "history", label: "History" },
 ] as const;
@@ -129,6 +131,12 @@ export default function ConnectionsPage() {
     api.policies.listExtractionLog,
     activeTab === "history" ? {} : "skip"
   );
+
+  const [selectedConnectionId, setSelectedConnectionId] = useState<Id<"emailConnections"> | null>(null);
+
+  // Auto-select first connection for Emails tab
+  const firstConnectionId = connections?.[0]?._id ?? null;
+  const emailsConnectionId = selectedConnectionId ?? firstConnectionId;
 
   const [formOpen, setFormOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -468,6 +476,43 @@ export default function ConnectionsPage() {
                 })}
               </div>
             </>
+          )}
+
+          {/* Emails tab */}
+          {activeTab === "emails" && (
+            <div className="space-y-4">
+              {connections && connections.length > 0 && (
+                <div className="flex items-center gap-3">
+                  <label className="text-label-sm text-muted-foreground whitespace-nowrap">
+                    Connection:
+                  </label>
+                  <select
+                    value={emailsConnectionId ?? ""}
+                    onChange={(e) =>
+                      setSelectedConnectionId(
+                        e.target.value as Id<"emailConnections">
+                      )
+                    }
+                    className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-3 py-1.5 text-body-sm focus:outline-none focus:ring-1 focus:ring-foreground/20"
+                  >
+                    {connections.map((conn) => (
+                      <option key={conn._id} value={conn._id}>
+                        {conn.label} ({conn.email})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {emailsConnectionId ? (
+                <EmailReviewTable connectionId={emailsConnectionId} />
+              ) : (
+                <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-6 py-8 text-center">
+                  <p className="text-body-sm text-muted-foreground/60">
+                    No connections available. Add a connection first.
+                  </p>
+                </div>
+              )}
+            </div>
           )}
 
           {/* Processing tab */}

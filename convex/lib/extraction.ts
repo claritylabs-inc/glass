@@ -1,6 +1,7 @@
 export {
   SONNET_MODEL,
   HAIKU_MODEL,
+  createUniformModelConfig,
   stripFences,
   sanitizeNulls,
   applyExtracted,

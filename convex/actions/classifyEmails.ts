@@ -136,8 +136,10 @@ Respond with JSON only: {"isInsurance": boolean, "reason": "brief explanation", 
         });
 
         // If insurance email with attachments, schedule extraction
+        // Stagger by 30s per extraction to avoid Anthropic API rate limits
         if (isInsurance && email.hasAttachments) {
-          await ctx.scheduler.runAfter(0, internal.actions.extractPolicy.extractPolicy, {
+          const staggerDelay = policiesFound * 60_000; // 60s between extractions (Tier 1: 30K input tokens/min for Sonnet)
+          await ctx.scheduler.runAfter(staggerDelay, internal.actions.extractPolicy.extractPolicy, {
             emailId: email._id,
             connectionId: args.connectionId,
             userId: args.userId,

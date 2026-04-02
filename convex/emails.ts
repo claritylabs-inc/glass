@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query, internalQuery } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { requireOrgAccess, getOrgAccess } from "./lib/orgAuth";
 
 export const list = query({
@@ -78,6 +79,63 @@ export const markClassified = mutation({
 export const markProcessed = mutation({
   args: { id: v.id("emails") },
   handler: async (ctx, args) => {
+    await ctx.db.patch(args.id, { processed: true });
+  },
+});
+
+export const updateClassification = mutation({
+  args: {
+    id: v.id("emails"),
+    isInsuranceRelated: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const { orgId } = await requireOrgAccess(ctx);
+    const email = await ctx.db.get(args.id);
+    if (!email || email.orgId !== orgId) {
+      throw new Error("Email not found");
+    }
+    await ctx.db.patch(args.id, {
+      isInsuranceRelated: args.isInsuranceRelated,
+      classificationReason: "Manual override",
+      classificationConfidence: 1.0,
+    });
+  },
+});
+
+export const resetProcessed = mutation({
+  args: { id: v.id("emails") },
+  handler: async (ctx, args) => {
+    const { orgId } = await requireOrgAccess(ctx);
+    const email = await ctx.db.get(args.id);
+    if (!email || email.orgId !== orgId) {
+      throw new Error("Email not found");
+    }
+    await ctx.db.patch(args.id, {
+      processed: false,
+      isInsuranceRelated: undefined,
+      classificationReason: undefined,
+      classificationConfidence: undefined,
+    });
+  },
+});
+
+export const triggerExtraction = mutation({
+  args: { id: v.id("emails") },
+  handler: async (ctx, args) => {
+    const { userId, orgId } = await requireOrgAccess(ctx);
+    const email = await ctx.db.get(args.id);
+    if (!email || email.orgId !== orgId) {
+      throw new Error("Email not found");
+    }
+    if (!email.hasAttachments) {
+      throw new Error("Email has no attachments");
+    }
+    await ctx.scheduler.runAfter(0, internal.actions.extractPolicy.extractPolicy, {
+      emailId: args.id,
+      connectionId: email.connectionId,
+      userId,
+      orgId,
+    });
     await ctx.db.patch(args.id, { processed: true });
   },
 });

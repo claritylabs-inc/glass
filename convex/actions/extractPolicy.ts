@@ -4,7 +4,8 @@ import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import { ImapFlow } from "imapflow";
-import { applyExtracted, applyExtractedQuote, extractFromPdf, extractQuoteFromPdf, classifyDocumentType } from "../lib/extraction";
+import { applyExtracted, applyExtractedQuote, extractFromPdf, extractQuoteFromPdf, classifyDocumentType, createUniformModelConfig } from "../lib/extraction";
+import { haikuModel } from "../lib/ai";
 import { Id } from "../_generated/dataModel";
 
 export const extractPolicy = internalAction({
@@ -72,8 +73,11 @@ export const extractPolicy = internalAction({
     const fileId = await ctx.storage.store(blob);
     const pdfBase64 = pdfBuffer.toString("base64");
 
+    // Use all-Haiku to stay within Tier 1 rate limits (50K input tokens/min vs Sonnet's 30K)
+    const models = createUniformModelConfig(haikuModel);
+
     // Pass 0: Classify document type
-    const { documentType } = await classifyDocumentType(pdfBase64);
+    const { documentType } = await classifyDocumentType(pdfBase64, { models });
 
     if (documentType === "quote") {
       // === QUOTE EXTRACTION PATH ===
@@ -109,7 +113,8 @@ export const extractPolicy = internalAction({
         const { rawText, extracted } = await extractQuoteFromPdf(
           pdfBase64, {
           log,
-          concurrency: 3,
+          models,
+          concurrency: 1,
           onMetadata: async (raw) => {
             await ctx.runMutation(api.quotes.updateExtraction, {
               id: quoteId,
@@ -196,7 +201,8 @@ export const extractPolicy = internalAction({
         const { rawText, extracted } = await extractFromPdf(
           pdfBase64, {
           log,
-          concurrency: 3,
+          models,
+          concurrency: 1,
           onMetadata: async (raw) => {
             await ctx.runMutation(api.policies.updateExtraction, {
               id: policyId,
