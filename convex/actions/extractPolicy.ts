@@ -251,20 +251,8 @@ export const extractPolicy = internalAction({
 
 async function incrementExtracted(ctx: any, connectionId: any) {
   try {
-    const conn = await ctx.runQuery(internal.connections.getInternal, { id: connectionId });
-    if (!conn?.scanProgress) return;
-
-    const progress = { ...conn.scanProgress };
-    progress.extracted = (progress.extracted ?? 0) + 1;
-
-    // If all extractions done, mark complete
-    if (progress.extracted >= (progress.extracting ?? 0)) {
-      progress.phase = "complete";
-    }
-
-    await ctx.runMutation(api.connections.updateScanProgress, {
+    await ctx.runMutation(internal.connections.incrementExtracted, {
       id: connectionId,
-      scanProgress: progress,
     });
   } catch {
     // Non-critical — don't fail extraction over progress tracking

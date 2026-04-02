@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query, internalQuery } from "./_generated/server";
+import { mutation, query, internalQuery, internalMutation } from "./_generated/server";
 import { requireOrgAccess, requireOrgAdmin, getOrgAccess } from "./lib/orgAuth";
 
 export const list = query({
@@ -83,6 +83,30 @@ export const updateScanProgress = mutation({
   },
   handler: async (ctx, args) => {
     await ctx.db.patch(args.id, { scanProgress: args.scanProgress });
+  },
+});
+
+/**
+ * Atomically increment the extracted counter on scanProgress.
+ * Runs inside a single Convex mutation (transaction) so concurrent calls
+ * are serialized — no lost increments.
+ */
+export const incrementExtracted = internalMutation({
+  args: { id: v.id("emailConnections") },
+  handler: async (ctx, args) => {
+    const conn = await ctx.db.get(args.id);
+    if (!conn?.scanProgress) return;
+
+    const extracted = (conn.scanProgress.extracted ?? 0) + 1;
+    const extracting = conn.scanProgress.extracting ?? 0;
+
+    await ctx.db.patch(args.id, {
+      scanProgress: {
+        ...conn.scanProgress,
+        extracted,
+        phase: extracted >= extracting ? "complete" : conn.scanProgress.phase,
+      },
+    });
   },
 });
 

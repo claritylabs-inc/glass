@@ -143,7 +143,8 @@ Respond with JSON only: {"isInsurance": boolean, "reason": "brief explanation", 
         await ctx.runMutation(api.emails.markProcessed, { id: email._id });
         processed++;
 
-        // Update progress every email
+        // Update progress every email (don't set extracting/extracted here —
+        // that's managed by the extracting phase to avoid clobbering concurrent updates)
         await ctx.runMutation(api.connections.updateScanProgress, {
           id: args.connectionId,
           scanProgress: {
@@ -151,8 +152,6 @@ Respond with JSON only: {"isInsurance": boolean, "reason": "brief explanation", 
             totalEmails: total,
             processedEmails: processed,
             insuranceFound: policiesFound,
-            extracting: policiesFound,
-            extracted: 0,
           },
         });
       }
