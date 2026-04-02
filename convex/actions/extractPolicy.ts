@@ -109,6 +109,7 @@ export const extractPolicy = internalAction({
         const { rawText, extracted } = await extractQuoteFromPdf(
           pdfBase64, {
           log,
+          concurrency: 3,
           onMetadata: async (raw) => {
             await ctx.runMutation(api.quotes.updateExtraction, {
               id: quoteId,
@@ -195,6 +196,7 @@ export const extractPolicy = internalAction({
         const { rawText, extracted } = await extractFromPdf(
           pdfBase64, {
           log,
+          concurrency: 3,
           onMetadata: async (raw) => {
             await ctx.runMutation(api.policies.updateExtraction, {
               id: policyId,

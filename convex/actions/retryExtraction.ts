@@ -80,6 +80,7 @@ export const retryQuoteExtraction = action({
       const { rawText, extracted } = await extractQuoteFromPdf(
         pdfBase64, {
         log,
+        concurrency: 3,
         onMetadata: async (raw) => {
           await ctx.runMutation(api.quotes.updateExtraction, {
             id: args.quoteId,
@@ -124,8 +125,6 @@ export const retryExtraction = action({
 
     const policy = await ctx.runQuery(api.policies.get, { id: args.policyId });
     if (!policy) return { error: "Policy not found" };
-    if (!policy.emailId) return { error: "No linked email — cannot retry" };
-
     const log = async (message: string) => {
       await ctx.runMutation(internal.policies.appendExtractionLog, { id: args.policyId, message });
     };
@@ -234,7 +233,7 @@ export const retryExtraction = action({
         }
 
         const { rawText, extracted } = await extractSectionsOnly(
-          pdfBase64, policy.rawMetadataResponse, { log },
+          pdfBase64, policy.rawMetadataResponse, { log, concurrency: 3 },
         );
 
         await ctx.runMutation(api.policies.updateExtraction, {
@@ -259,17 +258,7 @@ export const retryExtraction = action({
       }
     }
 
-    // Full retry with API call
-    const emails = await ctx.runQuery(api.emails.list, {});
-    const email = emails.find((e: any) => e._id === policy.emailId);
-    if (!email) return { error: "Linked email not found" };
-
-    const connection = await ctx.runQuery(api.connections.get, {
-      id: email.connectionId,
-    });
-    if (!connection) return { error: "Email connection not found" };
-
-    // Reset status to extracting
+    // Full retry — prefer stored file, fall back to IMAP
     await ctx.runMutation(internal.policies.clearExtractionLog, { id: args.policyId });
     await log("Starting full re-extraction...");
     await ctx.runMutation(api.policies.updateExtraction, {
@@ -279,58 +268,81 @@ export const retryExtraction = action({
     });
 
     try {
-      // Download PDF attachment via IMAP
-      await log("Connecting to email server...");
-      const client = new ImapFlow({
-        host: connection.imapHost,
-        port: connection.imapPort,
-        secure: true,
-        auth: { user: connection.email, pass: connection.password },
-        logger: false,
-      });
+      let pdfBase64: string;
+      let fileId = policy.fileId;
 
-      let pdfBuffer: Buffer;
-      try {
-        await client.connect();
-        await log("Downloading PDF attachment...");
-        const lock = await client.getMailboxLock("INBOX");
+      if (policy.fileId) {
+        // Load from Convex storage
+        await log("Loading PDF from storage...");
+        const blob = await ctx.storage.get(policy.fileId);
+        if (!blob) throw new Error("Stored PDF not found");
+        pdfBase64 = Buffer.from(await blob.arrayBuffer()).toString("base64");
+      } else if (policy.emailId) {
+        // Fall back to IMAP download
+        const emails = await ctx.runQuery(api.emails.list, {});
+        const email = emails.find((e: any) => e._id === policy.emailId);
+        if (!email) throw new Error("Linked email not found");
+
+        const connection = await ctx.runQuery(api.connections.get, {
+          id: email.connectionId,
+        });
+        if (!connection) throw new Error("Email connection not found");
+
+        await log("Connecting to email server...");
+        const client = new ImapFlow({
+          host: connection.imapHost,
+          port: connection.imapPort,
+          secure: true,
+          auth: { user: connection.email, pass: connection.password },
+          logger: false,
+        });
+
+        let pdfBuffer: Buffer;
         try {
-          const { content } = await client.download(
-            String(email.uid ?? 0),
-            "2",
-            { uid: true }
-          );
-          const chunks: Buffer[] = [];
-          for await (const chunk of content) {
-            chunks.push(Buffer.from(chunk));
+          await client.connect();
+          await log("Downloading PDF attachment...");
+          const lock = await client.getMailboxLock("INBOX");
+          try {
+            const { content } = await client.download(
+              String(email.uid ?? 0),
+              "2",
+              { uid: true }
+            );
+            const chunks: Buffer[] = [];
+            for await (const chunk of content) {
+              chunks.push(Buffer.from(chunk));
+            }
+            pdfBuffer = Buffer.concat(chunks);
+          } finally {
+            lock.release();
           }
-          pdfBuffer = Buffer.concat(chunks);
-        } finally {
-          lock.release();
-        }
-        await client.logout();
-      } catch (error) {
-        try {
           await client.logout();
-        } catch {
-          /* ignore */
+        } catch (error) {
+          try {
+            await client.logout();
+          } catch {
+            /* ignore */
+          }
+          throw error;
         }
-        throw error;
+
+        // Store in Convex file storage
+        const sizeKB = Math.round(pdfBuffer.length / 1024);
+        await log(`PDF stored (${sizeKB} KB)`);
+        const storageBlob = new Blob([new Uint8Array(pdfBuffer)], {
+          type: "application/pdf",
+        });
+        fileId = await ctx.storage.store(storageBlob);
+        pdfBase64 = pdfBuffer.toString("base64");
+      } else {
+        return { error: "No PDF file or linked email — cannot retry" };
       }
 
-      // Store in Convex file storage
-      const sizeKB = Math.round(pdfBuffer.length / 1024);
-      await log(`PDF stored (${sizeKB} KB)`);
-      const blob = new Blob([new Uint8Array(pdfBuffer)], {
-        type: "application/pdf",
-      });
-      const fileId = await ctx.storage.store(blob);
-
       // Extract with Claude
-      const pdfBase64 = pdfBuffer.toString("base64");
       const { rawText, extracted } = await extractFromPdf(
         pdfBase64, {
         log,
+        concurrency: 3,
         onMetadata: async (raw) => {
           await ctx.runMutation(api.policies.updateExtraction, {
             id: args.policyId,
@@ -347,7 +359,7 @@ export const retryExtraction = action({
 
       await ctx.runMutation(api.policies.updateExtraction, {
         id: args.policyId,
-        fileId,
+        ...(fileId ? { fileId } : {}),
         fileName: `${(extracted.metadata ?? extracted).policyNumber || "policy"}.pdf`,
         ...applyExtracted(extracted),
       });
