@@ -6,7 +6,30 @@ import { api, internal } from "../_generated/api";
 import { ImapFlow } from "imapflow";
 import { applyExtracted, applyExtractedQuote, extractFromPdf, extractQuoteFromPdf, classifyDocumentType, createUniformModelConfig } from "../lib/extraction";
 import { sonnetModel } from "../lib/ai";
+import { PDFDocument } from "pdf-lib";
 import { Id } from "../_generated/dataModel";
+
+/**
+ * Extract a page range from a PDF and return as base64.
+ * Used to reduce token count by only sending relevant pages to the API.
+ */
+async function extractPageRange(pdfBase64: string, startPage: number, endPage: number): Promise<string> {
+  const srcDoc = await PDFDocument.load(Buffer.from(pdfBase64, "base64"));
+  const totalPages = srcDoc.getPageCount();
+  const end = Math.min(endPage, totalPages) - 1; // 0-indexed
+  const start = Math.max(startPage - 1, 0); // 0-indexed
+
+  if (start === 0 && end >= totalPages - 1) {
+    return pdfBase64; // No point splitting if we want all pages
+  }
+
+  const newDoc = await PDFDocument.create();
+  const indices = Array.from({ length: end - start + 1 }, (_, i) => start + i);
+  const pages = await newDoc.copyPages(srcDoc, indices);
+  pages.forEach((page) => newDoc.addPage(page));
+  const bytes = await newDoc.save();
+  return Buffer.from(bytes).toString("base64");
+}
 
 export const extractPolicy = internalAction({
   args: {
@@ -76,8 +99,9 @@ export const extractPolicy = internalAction({
     // Use all-Sonnet — Haiku hits rate limits more easily
     const models = createUniformModelConfig(sonnetModel);
 
-    // Pass 0: Classify document type
-    const { documentType } = await classifyDocumentType(pdfBase64, { models });
+    // Pass 0: Classify document type (only send first 3 pages to save tokens)
+    const classifyPdf = await extractPageRange(pdfBase64, 1, 3);
+    const { documentType } = await classifyDocumentType(classifyPdf, { models });
 
     if (documentType === "quote") {
       // === QUOTE EXTRACTION PATH ===
