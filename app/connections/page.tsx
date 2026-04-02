@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useQuery, useMutation } from "convex/react";
+import { useState, useRef } from "react";
+import { useQuery, useMutation, useAction } from "convex/react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
@@ -13,7 +13,7 @@ import { ExtractionTable } from "@/components/extraction-table";
 import { ExtractionLog } from "@/components/extraction-log";
 import { FadeIn } from "@/components/ui/fade-in";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Upload } from "lucide-react";
 import { motion } from "framer-motion";
 import {
   Dialog,
@@ -131,6 +131,44 @@ export default function ConnectionsPage() {
   );
 
   const [formOpen, setFormOpen] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const generateUploadUrl = useMutation(api.policies.generateUploadUrl);
+  const extractFromUpload = useAction(api.actions.extractFromUpload.extractFromUpload);
+
+  const handleUploadPdf = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.type !== "application/pdf") {
+      toast.error("Please upload a PDF file");
+      return;
+    }
+    setUploading(true);
+    try {
+      const url = await generateUploadUrl();
+      const result = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": file.type },
+        body: file,
+      });
+      const { storageId } = await result.json();
+      toast.success("PDF uploaded, extracting...");
+      // Switch to processing tab to show progress
+      handleTabChange("processing");
+      const outcome = await extractFromUpload({ fileId: storageId, fileName: file.name });
+      if ("error" in outcome) {
+        toast.error(outcome.error);
+      } else {
+        toast.success(`${outcome.type === "quote" ? "Quote" : "Policy"} extracted successfully`);
+      }
+    } catch {
+      toast.error("Upload failed");
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
   const [scanTarget, setScanTarget] = useState<{
     id: Id<"emailConnections">;
     defaults?: {
@@ -169,11 +207,31 @@ export default function ConnectionsPage() {
 
   const pendingCount = pending?.length ?? 0;
 
-  const headerActions = activeTab === "connections" ? (
-    <PillButton size="compact" onClick={() => setFormOpen(true)}>
-      Add Connection <ArrowRight className="w-3 h-3" />
-    </PillButton>
-  ) : undefined;
+  const headerActions = (
+    <div className="flex items-center gap-2">
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".pdf"
+        className="hidden"
+        onChange={handleUploadPdf}
+      />
+      <PillButton
+        size="compact"
+        variant="secondary"
+        onClick={() => fileInputRef.current?.click()}
+        disabled={uploading}
+      >
+        <Upload className="w-3 h-3" />
+        {uploading ? "Uploading..." : "Upload PDF"}
+      </PillButton>
+      {activeTab === "connections" && (
+        <PillButton size="compact" onClick={() => setFormOpen(true)}>
+          Add Connection <ArrowRight className="w-3 h-3" />
+        </PillButton>
+      )}
+    </div>
+  );
 
   return (
     <AppShell actions={headerActions}>

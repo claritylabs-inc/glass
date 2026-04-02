@@ -31,6 +31,14 @@ export const classifyEmails = internalAction({
         : []
     );
 
+    // Include user-specified broker domains as additional sender patterns
+    const connection = await ctx.runQuery(internal.connections.getInternal, {
+      id: args.connectionId,
+    });
+    const brokerDomains = (connection?.lastScanParams?.senderDomains ?? [])
+      .map((d: string) => d.replace(/^@/, "").toLowerCase())
+      .filter(Boolean);
+
     let policiesFound = 0;
     let processed = 0;
     const total = unprocessed.length;
@@ -58,6 +66,8 @@ export const classifyEmails = internalAction({
         );
         const senderMatch = INSURANCE_SENDER_PATTERNS.some(
           (pat) => fromLower.includes(pat.toLowerCase())
+        ) || brokerDomains.some(
+          (domain: string) => fromLower.includes(domain)
         );
 
         let isInsurance = false;
@@ -69,6 +79,7 @@ export const classifyEmails = internalAction({
           reason = "Keyword + sender match";
           confidence = 0.95;
         } else if (keywordMatch || senderMatch) {
+          // One signal matched — use AI to confirm, but bias toward insurance
           try {
             const { text: rawText } = await generateText({
               model: haikuModel,
@@ -76,11 +87,18 @@ export const classifyEmails = internalAction({
               messages: [
                 {
                   role: "user",
-                  content: `Is this email about insurance policies? Respond with JSON only: {"isInsurance": boolean, "reason": "brief explanation", "confidence": number 0-1}
+                  content: `You are classifying emails for an insurance brokerage platform. Determine if this email is related to insurance (policies, quotes, certificates, renewals, endorsements, binders, premium notices, claims, proposals, or any insurance documents).
+
+IMPORTANT: When in doubt, classify as insurance-related. Missing a real insurance email is much worse than a false positive. Words like "policy", "coverage", "certificate", "renewal" in a business email context almost always refer to insurance. An email with PDF attachments mentioning "policy" is very likely an insurance document, not a "company policy".
+
+This email's subject already matched an insurance keyword or its sender matched an insurance pattern — only override this if you are very confident it is NOT about insurance.
 
 Subject: ${email.subject}
 From: ${email.from}
-Date: ${email.date}`,
+Date: ${email.date}
+Has attachments: ${email.hasAttachments ? "Yes" : "No"}
+
+Respond with JSON only: {"isInsurance": boolean, "reason": "brief explanation", "confidence": number 0-1}`,
                 },
               ],
             });
@@ -91,8 +109,9 @@ Date: ${email.date}`,
             reason = parsed.reason;
             confidence = parsed.confidence;
           } catch {
-            isInsurance = keywordMatch || senderMatch;
-            reason = "AI classification failed, using heuristic";
+            // AI failed — heuristic already matched, so default to insurance
+            isInsurance = true;
+            reason = "AI classification failed, heuristic match used";
             confidence = 0.6;
           }
         } else {
