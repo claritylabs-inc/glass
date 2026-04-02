@@ -20,7 +20,14 @@ export const classifyEmails = internalAction({
     });
     const unprocessed = emails.filter((e: any) => !e.processed);
 
-    if (unprocessed.length === 0) return;
+    if (unprocessed.length === 0) {
+      // All emails already processed — mark scan complete so UI doesn't stay stuck
+      await ctx.runMutation(api.connections.updateScanProgress, {
+        id: args.connectionId,
+        scanProgress: { phase: "complete", totalEmails: emails.length, processedEmails: emails.length },
+      });
+      return;
+    }
 
     // Get email IDs that already have policies so we can skip them
     const emailIdsWithPolicies = new Set(
