@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, Fragment } from "react";
+import { useState, Fragment, useRef, useEffect } from "react";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { motion, AnimatePresence } from "framer-motion";
 import { PillButton } from "@/components/ui/pill-button";
-import { RotateCw, X } from "lucide-react";
+import { RotateCw, X, Terminal } from "lucide-react";
 import { FadeIn } from "@/components/ui/fade-in";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RetryExtractionModal } from "@/components/ui/retry-extraction-modal";
@@ -141,25 +141,74 @@ function formatDate(timestamp: number): string {
   });
 }
 
-function ExtractionLogRow({ log, isExpanded }: { log: ExtractionLogEntry[]; isExpanded: boolean }) {
+function ExtractionLogRow({ log, isExpanded, isExtracting }: { log: ExtractionLogEntry[]; isExpanded: boolean; isExtracting: boolean }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const prevLengthRef = useRef(0);
+
+  // Auto-scroll to bottom when new entries appear
+  useEffect(() => {
+    if (log.length > prevLengthRef.current && scrollRef.current) {
+      scrollRef.current.scrollTo({
+        top: scrollRef.current.scrollHeight,
+        behavior: log.length === 1 ? "instant" : "smooth",
+      });
+    }
+    prevLengthRef.current = log.length;
+  }, [log.length]);
+
   if (!log.length || !isExpanded) return null;
+
   return (
     <tr>
-      <td colSpan={5} className="px-4 py-0">
-        <div className="relative py-2 ml-1 mb-2">
-          <div className="pointer-events-none absolute inset-x-0 top-2 h-4 bg-gradient-to-b from-background to-transparent z-10" />
-          <div className="pointer-events-none absolute inset-x-0 bottom-2 h-4 bg-gradient-to-t from-background to-transparent z-10" />
-          <div className="max-h-[200px] overflow-y-auto scrollbar-hide pl-2 border-l-2 border-foreground/6">
-            {log.map((entry, i) => (
-              <div key={i} className="flex items-baseline gap-2 py-0.5">
-                <span className="text-[10px] tabular-nums text-muted-foreground/40 shrink-0 w-12 text-right">
-                  {formatRelativeTime(entry.timestamp)}
+      <td colSpan={5} className="px-4 pt-0 pb-3">
+        <div className="rounded-lg bg-zinc-950 dark:bg-zinc-950/80 border border-zinc-800/60 overflow-hidden">
+          {/* Header bar */}
+          <div className="flex items-center gap-2 px-3 py-1.5 border-b border-zinc-800/60 bg-zinc-900/60">
+            <Terminal className="w-3 h-3 text-zinc-500" />
+            <span className="text-[11px] font-medium text-zinc-500 font-mono">
+              Extraction Log
+            </span>
+            {isExtracting && (
+              <span className="ml-auto flex items-center gap-1.5">
+                <span className="relative flex h-1.5 w-1.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" />
                 </span>
-                <span className="text-label-sm text-muted-foreground">
-                  {entry.message}
-                </span>
-              </div>
-            ))}
+                <span className="text-[10px] font-mono text-emerald-500/70">live</span>
+              </span>
+            )}
+          </div>
+          {/* Log entries */}
+          <div
+            ref={scrollRef}
+            className="max-h-[180px] overflow-y-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-zinc-700/50 p-3 space-y-0.5"
+          >
+            {log.map((entry, i) => {
+              const isLatest = i === log.length - 1 && isExtracting;
+              return (
+                <motion.div
+                  key={i}
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="flex items-baseline gap-2.5 py-[1px]"
+                >
+                  <span className="text-[10px] tabular-nums text-zinc-600 shrink-0 w-11 text-right font-mono">
+                    {formatRelativeTime(entry.timestamp)}
+                  </span>
+                  <span className={`text-[12px] font-mono leading-relaxed ${
+                    isLatest
+                      ? "text-zinc-200"
+                      : "text-zinc-400"
+                  }`}>
+                    {isLatest && (
+                      <span className="text-emerald-500 mr-1.5">{">"}</span>
+                    )}
+                    {entry.message}
+                  </span>
+                </motion.div>
+              );
+            })}
           </div>
         </div>
       </td>
@@ -313,6 +362,7 @@ export function ExtractionTable({
                         <ExtractionLogRow
                           log={extraction.extractionLog!}
                           isExpanded={true}
+                          isExtracting={extraction.extractionStatus === "extracting"}
                         />
                       )}
                     </Fragment>
