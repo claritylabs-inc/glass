@@ -265,6 +265,102 @@ const coverageValidator = v.object({
   sectionRef: v.optional(v.string()),
 });
 
+const addressValidator = v.object({
+  street1: v.string(),
+  street2: v.optional(v.string()),
+  city: v.string(),
+  state: v.string(),
+  zip: v.string(),
+  country: v.optional(v.string()),
+});
+
+const limitsValidator = v.object({
+  perOccurrence: v.optional(v.string()),
+  generalAggregate: v.optional(v.string()),
+  productsCompletedOpsAggregate: v.optional(v.string()),
+  personalAdvertisingInjury: v.optional(v.string()),
+  eachEmployee: v.optional(v.string()),
+  fireDamage: v.optional(v.string()),
+  medicalExpense: v.optional(v.string()),
+  combinedSingleLimit: v.optional(v.string()),
+  bodilyInjuryPerPerson: v.optional(v.string()),
+  bodilyInjuryPerAccident: v.optional(v.string()),
+  propertyDamage: v.optional(v.string()),
+  eachOccurrenceUmbrella: v.optional(v.string()),
+  umbrellaAggregate: v.optional(v.string()),
+  umbrellaRetention: v.optional(v.string()),
+  statutory: v.optional(v.boolean()),
+  employersLiability: v.optional(v.object({
+    eachAccident: v.string(),
+    diseasePolicyLimit: v.string(),
+    diseaseEachEmployee: v.string(),
+  })),
+  defenseCostTreatment: v.optional(v.string()),
+});
+
+const deductiblesValidator = v.object({
+  perClaim: v.optional(v.string()),
+  perOccurrence: v.optional(v.string()),
+  aggregateDeductible: v.optional(v.string()),
+  selfInsuredRetention: v.optional(v.string()),
+  corridorDeductible: v.optional(v.string()),
+  waitingPeriod: v.optional(v.string()),
+  appliesTo: v.optional(v.string()),
+});
+
+const locationValidator = v.object({
+  number: v.number(),
+  address: addressValidator,
+  description: v.optional(v.string()),
+  buildingValue: v.optional(v.string()),
+  contentsValue: v.optional(v.string()),
+  businessIncomeValue: v.optional(v.string()),
+  constructionType: v.optional(v.string()),
+  yearBuilt: v.optional(v.number()),
+  squareFootage: v.optional(v.number()),
+  protectionClass: v.optional(v.string()),
+  sprinklered: v.optional(v.boolean()),
+  alarmType: v.optional(v.string()),
+  occupancy: v.optional(v.string()),
+});
+
+const vehicleValidator = v.object({
+  number: v.number(),
+  year: v.number(),
+  make: v.string(),
+  model: v.string(),
+  vin: v.string(),
+  costNew: v.optional(v.string()),
+  statedValue: v.optional(v.string()),
+  garageLocation: v.optional(v.number()),
+  radius: v.optional(v.string()),
+  vehicleType: v.optional(v.string()),
+});
+
+const classificationValidator = v.object({
+  code: v.string(),
+  description: v.string(),
+  premiumBasis: v.string(),
+  basisAmount: v.optional(v.string()),
+  rate: v.optional(v.string()),
+  premium: v.optional(v.string()),
+  locationNumber: v.optional(v.number()),
+});
+
+const formReferenceValidator = v.object({
+  formNumber: v.string(),
+  editionDate: v.optional(v.string()),
+  title: v.optional(v.string()),
+  formType: v.string(),
+});
+
+const taxFeeValidator = v.object({
+  name: v.string(),
+  amount: v.string(),
+  type: v.optional(v.string()),
+  description: v.optional(v.string()),
+});
+
 const documentValidator = v.object({
   sections: v.array(v.object({
     title: v.string(),
@@ -384,6 +480,39 @@ export const updateExtraction = mutation({
     underwriter: v.optional(v.string()),
     mga: v.optional(v.string()),
     broker: v.optional(v.string()),
+    // Enriched entity fields (cl-sdk 1.2+)
+    carrierLegalName: v.optional(v.string()),
+    carrierNaicNumber: v.optional(v.string()),
+    carrierAmBestRating: v.optional(v.string()),
+    carrierAdmittedStatus: v.optional(v.string()),
+    brokerAgency: v.optional(v.string()),
+    brokerContactName: v.optional(v.string()),
+    brokerLicenseNumber: v.optional(v.string()),
+    priorPolicyNumber: v.optional(v.string()),
+    programName: v.optional(v.string()),
+    isPackage: v.optional(v.boolean()),
+    // Insured details
+    insuredDba: v.optional(v.string()),
+    insuredAddress: v.optional(addressValidator),
+    insuredEntityType: v.optional(v.string()),
+    insuredFein: v.optional(v.string()),
+    additionalNamedInsureds: v.optional(v.array(v.object({
+      name: v.string(),
+      relationship: v.optional(v.string()),
+    }))),
+    // Coverage structure
+    coverageForm: v.optional(v.string()),
+    retroactiveDate: v.optional(v.string()),
+    effectiveTime: v.optional(v.string()),
+    limits: v.optional(limitsValidator),
+    deductibles: v.optional(deductiblesValidator),
+    // Locations, vehicles, classifications
+    locations: v.optional(v.array(locationValidator)),
+    vehicles: v.optional(v.array(vehicleValidator)),
+    classifications: v.optional(v.array(classificationValidator)),
+    formInventory: v.optional(v.array(formReferenceValidator)),
+    taxesAndFees: v.optional(v.array(taxFeeValidator)),
+    // Standard fields
     policyNumber: v.optional(v.string()),
     policyTypes: v.optional(v.array(v.string())),
     documentType: v.optional(v.union(v.literal("policy"), v.literal("quote"))),
