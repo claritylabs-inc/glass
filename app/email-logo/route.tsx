@@ -7,7 +7,7 @@ const GLOBE_PATH =
 
 export async function GET() {
   const instrumentSerifFont = await fetch(
-    "https://fonts.gstatic.com/s/instrumentserif/v4/jizBRFtNs2ka5fXjeivQ4LroWlx-2zIZhA.woff2",
+    "https://fonts.gstatic.com/s/instrumentserif/v5/jizBRFtNs2ka5fXjeivQ4LroWlx-6zUTjnTLgNs.woff2",
   ).then((r) => r.arrayBuffer());
 
   return new ImageResponse(
