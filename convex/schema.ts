@@ -447,6 +447,8 @@ export default defineSchema({
     }))),
     rawExtractionResponse: v.optional(v.string()),
     rawMetadataResponse: v.optional(v.string()),
+    // Typed declarations (cl-sdk 1.4+) — line-specific structured data
+    declarations: v.optional(v.any()),
     deletedAt: v.optional(v.number()),
     isDemo: v.optional(v.boolean()),
   }).index("by_carrier", ["carrier"])
@@ -575,6 +577,8 @@ export default defineSchema({
     }))),
     rawExtractionResponse: v.optional(v.string()),
     rawMetadataResponse: v.optional(v.string()),
+    // Typed declarations (cl-sdk 1.4+) — line-specific structured data
+    declarations: v.optional(v.any()),
     deletedAt: v.optional(v.number()),
     isDemo: v.optional(v.boolean()),
   }).index("by_orgId", ["orgId"])

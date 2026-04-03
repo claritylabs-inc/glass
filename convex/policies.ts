@@ -540,6 +540,8 @@ export const updateExtraction = mutation({
     extractionError: v.optional(v.string()),
     rawExtractionResponse: v.optional(v.string()),
     rawMetadataResponse: v.optional(v.string()),
+    // Typed declarations (cl-sdk 1.4+)
+    declarations: v.optional(v.any()),
   },
   handler: async (ctx, args) => {
     const { id, ...fields } = args;
