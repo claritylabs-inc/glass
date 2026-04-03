@@ -7,7 +7,7 @@ import { buildDocumentContext as _buildDocumentContext, buildPolicyContext as _b
 import type { PolicyDocument, QuoteDocument } from "@claritylabs/cl-sdk";
 
 function toPolicy(p: Doc<"policies">): PolicyDocument {
-  return { ...p, id: p._id, type: "policy" };
+  return { ...p, id: p._id, type: "policy" } as unknown as PolicyDocument;
 }
 
 function toQuote(q: Doc<"quotes">): QuoteDocument {

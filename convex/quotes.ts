@@ -271,6 +271,34 @@ export const insert = mutation({
   },
 });
 
+const addressValidator = v.object({
+  street1: v.string(),
+  street2: v.optional(v.string()),
+  city: v.string(),
+  state: v.string(),
+  zip: v.string(),
+  country: v.optional(v.string()),
+});
+
+const quoteLimitsValidator = v.object({
+  perOccurrence: v.optional(v.string()),
+  generalAggregate: v.optional(v.string()),
+  defenseCostTreatment: v.optional(v.string()),
+});
+
+const quoteDeductiblesValidator = v.object({
+  perClaim: v.optional(v.string()),
+  perOccurrence: v.optional(v.string()),
+  selfInsuredRetention: v.optional(v.string()),
+  waitingPeriod: v.optional(v.string()),
+});
+
+const taxFeeValidator = v.object({
+  name: v.string(),
+  amount: v.string(),
+  type: v.optional(v.string()),
+});
+
 export const updateExtraction = mutation({
   args: {
     id: v.id("quotes"),
@@ -279,6 +307,29 @@ export const updateExtraction = mutation({
     underwriter: v.optional(v.string()),
     mga: v.optional(v.string()),
     broker: v.optional(v.string()),
+    // Enriched entity fields (cl-sdk 1.2+)
+    carrierLegalName: v.optional(v.string()),
+    carrierNaicNumber: v.optional(v.string()),
+    carrierAdmittedStatus: v.optional(v.string()),
+    coverageForm: v.optional(v.string()),
+    retroactiveDate: v.optional(v.string()),
+    insuredAddress: v.optional(addressValidator),
+    limits: v.optional(quoteLimitsValidator),
+    deductibles: v.optional(quoteDeductiblesValidator),
+    warrantyRequirements: v.optional(v.array(v.string())),
+    taxesAndFees: v.optional(v.array(taxFeeValidator)),
+    enrichedSubjectivities: v.optional(v.array(v.object({
+      description: v.string(),
+      category: v.optional(v.string()),
+      dueDate: v.optional(v.string()),
+      pageNumber: v.optional(v.number()),
+    }))),
+    enrichedUnderwritingConditions: v.optional(v.array(v.object({
+      description: v.string(),
+      category: v.optional(v.string()),
+      pageNumber: v.optional(v.number()),
+    }))),
+    // Standard fields
     quoteNumber: v.optional(v.string()),
     policyTypes: v.optional(v.array(v.string())),
     quoteYear: v.optional(v.number()),

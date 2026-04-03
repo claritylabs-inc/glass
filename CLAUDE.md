@@ -125,7 +125,7 @@ Web chat uses a hybrid architecture: `useChat` from `@ai-sdk/react` handles stre
 All prompts, AI extraction logic, PDF filling helpers, and agent prompt building have been extracted into the `@claritylabs/cl-sdk` npm package (hosted on GitHub Package Registry via `.npmrc`). The local `convex/lib/` files now re-export from `@claritylabs/cl-sdk`:
 
 - `lib/prompts.ts` — Re-exports extraction prompts (EXTRACTION_PROMPT, METADATA_PROMPT, buildSectionsPrompt, etc.)
-- `lib/extraction.ts` — Re-exports extraction helpers (stripFences, applyExtracted, callClaude, extractFromPdf, etc.) and types (LogFn, PromptBuilder)
+- `lib/extraction.ts` — Re-exports extraction helpers (stripFences, applyExtracted, extractFromPdf, extractPageRange, getPdfPageCount, etc.), constants (POLICY_TYPES, CONTEXT_KEY_MAP), and types (LogFn, PromptBuilder, PolicyType, ContextKeyMapping, TokenUsage)
 - `lib/applicationPrompts.ts` — Re-exports application prompts (classify, extract fields, auto-fill, batch questions, etc.)
 - `lib/pdfFiller.ts` — Re-exports PDF filling functions (getAcroFormFields, fillAcroForm, overlayTextOnPdf) and types
 - `lib/aiClassifier.ts` — Re-exports CLASSIFY_EMAIL_PROMPT
@@ -151,7 +151,7 @@ To modify prompts or extraction logic, update the `@claritylabs/cl-sdk` package 
 - `actions/mcpChat.ts` — Simplified chat action for MCP: non-streaming, generates response via `generateText`, persists to thread, auto-titles
 - `actions/` — Also: IMAP scanning, classification, extraction
 - `lib/applicationTypes.ts` — Types for form fields (SimpleField, TableField, DeclarationField), QuestionBatch
-- `lib/policyTypes.ts` — Insurance keyword lists and policy type label map
+- `lib/policyTypes.ts` — Insurance keyword lists, policy type label map (22 types), section type labels/colors
 
 ### Key Frontend Patterns
 
@@ -178,6 +178,12 @@ To modify prompts or extraction logic, update the `@claritylabs/cl-sdk` package 
 - `policies.rawExtractionResponse` stores Claude's raw output for retry without API call
 - `policies.document` stores structured sections with provenance (page numbers, section references)
 - Entity fields: `security` (insurer), `underwriter`, `mga` (program administrator), `broker`
+- Enriched entity fields (cl-sdk 1.2+): `carrierLegalName`, `carrierNaicNumber`, `carrierAmBestRating`, `carrierAdmittedStatus`, `brokerAgency`, `brokerContactName`, `brokerLicenseNumber`, `priorPolicyNumber`, `programName`, `isPackage`
+- Insured details: `insuredDba`, `insuredAddress`, `insuredEntityType`, `insuredFein`, `additionalNamedInsureds`
+- Structured limits/deductibles: `limits` (LimitSchedule), `deductibles` (DeductibleSchedule), `coverageForm`, `retroactiveDate`, `effectiveTime`
+- Schedules: `locations` (InsuredLocation[]), `vehicles` (InsuredVehicle[]), `classifications` (ClassificationCode[]), `formInventory` (FormReference[]), `taxesAndFees` (TaxFeeItem[])
+- Quotes enriched fields: `enrichedSubjectivities`, `enrichedUnderwritingConditions`, `warrantyRequirements`, `limits`, `deductibles`, `taxesAndFees`
+- PolicyType expanded to 22 values (cl-sdk 1.2+): general_liability, commercial_property, commercial_auto, non_owned_auto, workers_comp, umbrella, excess_liability, professional_liability, cyber, epli, directors_officers, fiduciary_liability, crime_fidelity, inland_marine, builders_risk, environmental, ocean_marine, surety, product_liability, bop, management_liability_package, property, other
 - `emailConnections.scanProgress` tracks real-time scan progress (phase, counts)
 - `emailConnections.lastScanParams` stores last scan configuration for modal defaults
 - `orgBusinessContext` stores reusable org data keyed by category + key, with source tracking (manual, onboarding, application, user_email) and confidence (confirmed, inferred)

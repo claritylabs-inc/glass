@@ -219,6 +219,125 @@ export default defineSchema({
     underwriter: v.optional(v.string()), // named individual underwriter (e.g. "Libby Rudd")
     mga: v.optional(v.string()), // MGA / Program Administrator (e.g. "CFC Tech")
     broker: v.optional(v.string()),
+    // Enriched entity fields (cl-sdk 1.2+)
+    carrierLegalName: v.optional(v.string()),
+    carrierNaicNumber: v.optional(v.string()),
+    carrierAmBestRating: v.optional(v.string()),
+    carrierAdmittedStatus: v.optional(v.string()), // admitted, non_admitted, surplus_lines
+    brokerAgency: v.optional(v.string()),
+    brokerContactName: v.optional(v.string()),
+    brokerLicenseNumber: v.optional(v.string()),
+    priorPolicyNumber: v.optional(v.string()),
+    programName: v.optional(v.string()),
+    isPackage: v.optional(v.boolean()),
+    // Insured details (cl-sdk 1.2+)
+    insuredDba: v.optional(v.string()),
+    insuredAddress: v.optional(v.object({
+      street1: v.string(),
+      street2: v.optional(v.string()),
+      city: v.string(),
+      state: v.string(),
+      zip: v.string(),
+      country: v.optional(v.string()),
+    })),
+    insuredEntityType: v.optional(v.string()), // corporation, llc, partnership, etc.
+    insuredFein: v.optional(v.string()),
+    additionalNamedInsureds: v.optional(v.array(v.object({
+      name: v.string(),
+      relationship: v.optional(v.string()),
+    }))),
+    // Coverage structure (cl-sdk 1.2+)
+    coverageForm: v.optional(v.string()), // occurrence, claims_made, accident
+    retroactiveDate: v.optional(v.string()),
+    effectiveTime: v.optional(v.string()),
+    limits: v.optional(v.object({
+      perOccurrence: v.optional(v.string()),
+      generalAggregate: v.optional(v.string()),
+      productsCompletedOpsAggregate: v.optional(v.string()),
+      personalAdvertisingInjury: v.optional(v.string()),
+      eachEmployee: v.optional(v.string()),
+      fireDamage: v.optional(v.string()),
+      medicalExpense: v.optional(v.string()),
+      combinedSingleLimit: v.optional(v.string()),
+      bodilyInjuryPerPerson: v.optional(v.string()),
+      bodilyInjuryPerAccident: v.optional(v.string()),
+      propertyDamage: v.optional(v.string()),
+      eachOccurrenceUmbrella: v.optional(v.string()),
+      umbrellaAggregate: v.optional(v.string()),
+      umbrellaRetention: v.optional(v.string()),
+      statutory: v.optional(v.boolean()),
+      employersLiability: v.optional(v.object({
+        eachAccident: v.string(),
+        diseasePolicyLimit: v.string(),
+        diseaseEachEmployee: v.string(),
+      })),
+      defenseCostTreatment: v.optional(v.string()), // inside_limits, outside_limits, supplementary
+    })),
+    deductibles: v.optional(v.object({
+      perClaim: v.optional(v.string()),
+      perOccurrence: v.optional(v.string()),
+      aggregateDeductible: v.optional(v.string()),
+      selfInsuredRetention: v.optional(v.string()),
+      corridorDeductible: v.optional(v.string()),
+      waitingPeriod: v.optional(v.string()),
+      appliesTo: v.optional(v.string()),
+    })),
+    // Locations, vehicles, classifications (cl-sdk 1.2+)
+    locations: v.optional(v.array(v.object({
+      number: v.number(),
+      address: v.object({
+        street1: v.string(),
+        street2: v.optional(v.string()),
+        city: v.string(),
+        state: v.string(),
+        zip: v.string(),
+        country: v.optional(v.string()),
+      }),
+      description: v.optional(v.string()),
+      buildingValue: v.optional(v.string()),
+      contentsValue: v.optional(v.string()),
+      businessIncomeValue: v.optional(v.string()),
+      constructionType: v.optional(v.string()),
+      yearBuilt: v.optional(v.number()),
+      squareFootage: v.optional(v.number()),
+      protectionClass: v.optional(v.string()),
+      sprinklered: v.optional(v.boolean()),
+      alarmType: v.optional(v.string()),
+      occupancy: v.optional(v.string()),
+    }))),
+    vehicles: v.optional(v.array(v.object({
+      number: v.number(),
+      year: v.number(),
+      make: v.string(),
+      model: v.string(),
+      vin: v.string(),
+      costNew: v.optional(v.string()),
+      statedValue: v.optional(v.string()),
+      garageLocation: v.optional(v.number()),
+      radius: v.optional(v.string()),
+      vehicleType: v.optional(v.string()),
+    }))),
+    classifications: v.optional(v.array(v.object({
+      code: v.string(),
+      description: v.string(),
+      premiumBasis: v.string(),
+      basisAmount: v.optional(v.string()),
+      rate: v.optional(v.string()),
+      premium: v.optional(v.string()),
+      locationNumber: v.optional(v.number()),
+    }))),
+    formInventory: v.optional(v.array(v.object({
+      formNumber: v.string(),
+      editionDate: v.optional(v.string()),
+      title: v.optional(v.string()),
+      formType: v.string(), // coverage, endorsement, declarations, application, notice, other
+    }))),
+    taxesAndFees: v.optional(v.array(v.object({
+      name: v.string(),
+      amount: v.string(),
+      type: v.optional(v.string()), // tax, fee, surcharge, assessment
+      description: v.optional(v.string()),
+    }))),
     // Policy metadata
     policyNumber: v.string(),
     policyType: v.optional(v.string()), // legacy single type
@@ -347,6 +466,49 @@ export default defineSchema({
     underwriter: v.optional(v.string()),
     mga: v.optional(v.string()),
     broker: v.optional(v.string()),
+    // Enriched entity fields (cl-sdk 1.2+)
+    carrierLegalName: v.optional(v.string()),
+    carrierNaicNumber: v.optional(v.string()),
+    carrierAdmittedStatus: v.optional(v.string()),
+    coverageForm: v.optional(v.string()),
+    retroactiveDate: v.optional(v.string()),
+    insuredAddress: v.optional(v.object({
+      street1: v.string(),
+      street2: v.optional(v.string()),
+      city: v.string(),
+      state: v.string(),
+      zip: v.string(),
+      country: v.optional(v.string()),
+    })),
+    limits: v.optional(v.object({
+      perOccurrence: v.optional(v.string()),
+      generalAggregate: v.optional(v.string()),
+      defenseCostTreatment: v.optional(v.string()),
+    })),
+    deductibles: v.optional(v.object({
+      perClaim: v.optional(v.string()),
+      perOccurrence: v.optional(v.string()),
+      selfInsuredRetention: v.optional(v.string()),
+      waitingPeriod: v.optional(v.string()),
+    })),
+    warrantyRequirements: v.optional(v.array(v.string())),
+    taxesAndFees: v.optional(v.array(v.object({
+      name: v.string(),
+      amount: v.string(),
+      type: v.optional(v.string()),
+    }))),
+    // Enriched subjectivities/conditions (cl-sdk 1.2+)
+    enrichedSubjectivities: v.optional(v.array(v.object({
+      description: v.string(),
+      category: v.optional(v.string()),
+      dueDate: v.optional(v.string()),
+      pageNumber: v.optional(v.number()),
+    }))),
+    enrichedUnderwritingConditions: v.optional(v.array(v.object({
+      description: v.string(),
+      category: v.optional(v.string()),
+      pageNumber: v.optional(v.number()),
+    }))),
     // Quote metadata
     quoteNumber: v.string(),
     policyTypes: v.optional(v.array(v.string())),

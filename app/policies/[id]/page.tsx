@@ -32,15 +32,27 @@ import { usePageContext } from "@/hooks/use-page-context";
 
 const TYPE_COLORS: Record<string, string> = {
   general_liability: "bg-blue-100 dark:bg-blue-950/40 text-blue-700 dark:text-blue-400",
-  workers_comp: "bg-orange-100 dark:bg-orange-950/40 text-orange-700 dark:text-orange-400",
+  commercial_property: "bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400",
   commercial_auto: "bg-purple-100 dark:bg-purple-950/40 text-purple-700 dark:text-purple-400",
   non_owned_auto: "bg-violet-100 dark:bg-violet-950/40 text-violet-700 dark:text-violet-400",
-  property: "bg-green-100 dark:bg-green-950/40 text-green-700 dark:text-green-400",
+  workers_comp: "bg-orange-100 dark:bg-orange-950/40 text-orange-700 dark:text-orange-400",
   umbrella: "bg-sky-100 dark:bg-sky-950/40 text-sky-700 dark:text-sky-400",
+  excess_liability: "bg-cyan-100 dark:bg-cyan-950/40 text-cyan-700 dark:text-cyan-400",
   professional_liability: "bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400",
   cyber: "bg-red-100 dark:bg-red-950/40 text-red-700 dark:text-red-400",
   epli: "bg-pink-100 dark:bg-pink-950/40 text-pink-700 dark:text-pink-400",
   directors_officers: "bg-indigo-100 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-400",
+  fiduciary_liability: "bg-fuchsia-100 dark:bg-fuchsia-950/40 text-fuchsia-700 dark:text-fuchsia-400",
+  crime_fidelity: "bg-rose-100 dark:bg-rose-950/40 text-rose-700 dark:text-rose-400",
+  inland_marine: "bg-teal-100 dark:bg-teal-950/40 text-teal-700 dark:text-teal-400",
+  builders_risk: "bg-yellow-100 dark:bg-yellow-950/40 text-yellow-700 dark:text-yellow-400",
+  environmental: "bg-lime-100 dark:bg-lime-950/40 text-lime-700 dark:text-lime-400",
+  ocean_marine: "bg-blue-100 dark:bg-blue-950/40 text-blue-700 dark:text-blue-400",
+  surety: "bg-stone-100 dark:bg-stone-950/40 text-stone-700 dark:text-stone-400",
+  product_liability: "bg-orange-100 dark:bg-orange-950/40 text-orange-700 dark:text-orange-400",
+  bop: "bg-slate-100 dark:bg-slate-950/40 text-slate-700 dark:text-slate-400",
+  management_liability_package: "bg-indigo-100 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-400",
+  property: "bg-green-100 dark:bg-green-950/40 text-green-700 dark:text-green-400",
   other: "bg-gray-100 dark:bg-gray-800/40 text-gray-700 dark:text-gray-400",
 };
 
@@ -741,6 +753,32 @@ export default function PolicyDetailPage({
   const isDeleted = !!(policy as any).deletedAt;
   const policyDocument: any = (policy as any).document;
   const metadataSource: any = (policy as any).metadataSource;
+  // Enriched fields (cl-sdk 1.2+)
+  const carrierLegalName: string | undefined = (policy as any).carrierLegalName;
+  const carrierNaicNumber: string | undefined = (policy as any).carrierNaicNumber;
+  const carrierAmBestRating: string | undefined = (policy as any).carrierAmBestRating;
+  const carrierAdmittedStatus: string | undefined = (policy as any).carrierAdmittedStatus;
+  const brokerAgency: string | undefined = (policy as any).brokerAgency;
+  const brokerContactName: string | undefined = (policy as any).brokerContactName;
+  const brokerLicenseNumber: string | undefined = (policy as any).brokerLicenseNumber;
+  const priorPolicyNumber: string | undefined = (policy as any).priorPolicyNumber;
+  const programName: string | undefined = (policy as any).programName;
+  const isPackage: boolean | undefined = (policy as any).isPackage;
+  const insuredDba: string | undefined = (policy as any).insuredDba;
+  const insuredAddress: any = (policy as any).insuredAddress;
+  const insuredEntityType: string | undefined = (policy as any).insuredEntityType;
+  const insuredFein: string | undefined = (policy as any).insuredFein;
+  const additionalNamedInsureds: any[] | undefined = (policy as any).additionalNamedInsureds;
+  const coverageForm: string | undefined = (policy as any).coverageForm;
+  const retroactiveDate: string | undefined = (policy as any).retroactiveDate;
+  const effectiveTime: string | undefined = (policy as any).effectiveTime;
+  const limits: any = (policy as any).limits;
+  const deductibles: any = (policy as any).deductibles;
+  const locations: any[] | undefined = (policy as any).locations;
+  const vehicles: any[] | undefined = (policy as any).vehicles;
+  const classifications: any[] | undefined = (policy as any).classifications;
+  const formInventory: any[] | undefined = (policy as any).formInventory;
+  const taxesAndFees: any[] | undefined = (policy as any).taxesAndFees;
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1079,10 +1117,25 @@ export default function PolicyDetailPage({
                       <tbody>
                         {[
                           { role: "Insured", value: policy.insuredName },
-                          { role: "Producer", value: security || policy.carrier },
+                          insuredDba ? { role: "DBA", value: insuredDba } : null,
+                          insuredEntityType ? { role: "Entity Type", value: insuredEntityType.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase()) } : null,
+                          insuredAddress ? { role: "Address", value: [insuredAddress.street1, insuredAddress.street2, `${insuredAddress.city}, ${insuredAddress.state} ${insuredAddress.zip}`].filter(Boolean).join(", ") } : null,
+                          insuredFein ? { role: "FEIN", value: insuredFein } : null,
+                          { role: "Carrier", value: carrierLegalName || security || policy.carrier },
+                          carrierNaicNumber ? { role: "NAIC #", value: carrierNaicNumber } : null,
+                          carrierAmBestRating ? { role: "AM Best Rating", value: carrierAmBestRating } : null,
+                          carrierAdmittedStatus ? { role: "Status", value: carrierAdmittedStatus.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase()) } : null,
                           underwriterName ? { role: "Underwriter", value: underwriterName } : null,
                           mga ? { role: "Program Administrator", value: mga } : null,
-                          broker ? { role: "Broker", value: broker } : null,
+                          brokerAgency || broker ? { role: "Broker", value: brokerAgency || broker } : null,
+                          brokerContactName ? { role: "Producer Contact", value: brokerContactName } : null,
+                          brokerLicenseNumber ? { role: "License #", value: brokerLicenseNumber } : null,
+                          programName ? { role: "Program", value: programName } : null,
+                          priorPolicyNumber ? { role: "Prior Policy #", value: priorPolicyNumber } : null,
+                          coverageForm ? { role: "Coverage Form", value: coverageForm.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase()) } : null,
+                          retroactiveDate ? { role: "Retroactive Date", value: retroactiveDate } : null,
+                          effectiveTime ? { role: "Effective Time", value: effectiveTime } : null,
+                          isPackage ? { role: "Package Policy", value: "Yes" } : null,
                         ].filter(Boolean).map((party: any, i: number) => (
                           <tr key={party.role} className="border-t border-foreground/4 first:border-t-0 hover:bg-foreground/[0.015] transition-colors">
                             <td className="px-4 py-2.5 text-body-sm text-muted-foreground w-32 sm:w-48">{party.role}</td>
@@ -1091,8 +1144,272 @@ export default function PolicyDetailPage({
                         ))}
                       </tbody>
                     </table>
+                    {additionalNamedInsureds && additionalNamedInsureds.length > 0 && (
+                      <div className="px-4 py-2.5 border-t border-foreground/4">
+                        <p className="text-label-sm text-muted-foreground mb-1">Additional Named Insureds</p>
+                        <ul className="space-y-0.5">
+                          {additionalNamedInsureds.map((ai: any, i: number) => (
+                            <li key={i} className="text-body-sm text-foreground">
+                              {ai.name}{ai.relationship ? ` (${ai.relationship})` : ""}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                   </div>
                 </FadeIn>
+
+                {/* Limits Schedule */}
+                {limits && (
+                  <FadeIn when={true} delay={0.67} duration={0.6}>
+                    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden mb-6">
+                      <div className="px-4 py-2.5 bg-foreground/[0.02] border-b border-foreground/4">
+                        <div className="flex items-center gap-2">
+                          <Shield className="w-4 h-4 text-muted-foreground" />
+                          <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                            Limits Schedule
+                          </p>
+                        </div>
+                      </div>
+                      <table className="w-full text-left">
+                        <tbody>
+                          {[
+                            limits.perOccurrence ? { label: "Per Occurrence", value: limits.perOccurrence } : null,
+                            limits.generalAggregate ? { label: "General Aggregate", value: limits.generalAggregate } : null,
+                            limits.productsCompletedOpsAggregate ? { label: "Products/Completed Ops Aggregate", value: limits.productsCompletedOpsAggregate } : null,
+                            limits.personalAdvertisingInjury ? { label: "Personal & Advertising Injury", value: limits.personalAdvertisingInjury } : null,
+                            limits.fireDamage ? { label: "Fire Damage", value: limits.fireDamage } : null,
+                            limits.medicalExpense ? { label: "Medical Expense", value: limits.medicalExpense } : null,
+                            limits.combinedSingleLimit ? { label: "Combined Single Limit", value: limits.combinedSingleLimit } : null,
+                            limits.bodilyInjuryPerPerson ? { label: "Bodily Injury (Per Person)", value: limits.bodilyInjuryPerPerson } : null,
+                            limits.bodilyInjuryPerAccident ? { label: "Bodily Injury (Per Accident)", value: limits.bodilyInjuryPerAccident } : null,
+                            limits.propertyDamage ? { label: "Property Damage", value: limits.propertyDamage } : null,
+                            limits.eachOccurrenceUmbrella ? { label: "Umbrella (Each Occurrence)", value: limits.eachOccurrenceUmbrella } : null,
+                            limits.umbrellaAggregate ? { label: "Umbrella Aggregate", value: limits.umbrellaAggregate } : null,
+                            limits.umbrellaRetention ? { label: "Umbrella Retention", value: limits.umbrellaRetention } : null,
+                            limits.statutory ? { label: "Statutory", value: "Yes" } : null,
+                            limits.defenseCostTreatment ? { label: "Defense Costs", value: limits.defenseCostTreatment.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase()) } : null,
+                          ].filter(Boolean).map((item: any) => (
+                            <tr key={item.label} className="border-t border-foreground/4 first:border-t-0 hover:bg-foreground/[0.015] transition-colors">
+                              <td className="px-4 py-2 text-body-sm text-muted-foreground w-48">{item.label}</td>
+                              <td className="px-4 py-2 text-body-sm font-mono font-medium text-foreground text-right">{item.value}</td>
+                            </tr>
+                          ))}
+                          {limits.employersLiability && (
+                            <>
+                              <tr className="border-t border-foreground/4 hover:bg-foreground/[0.015] transition-colors">
+                                <td className="px-4 py-2 text-body-sm text-muted-foreground w-48">EL - Each Accident</td>
+                                <td className="px-4 py-2 text-body-sm font-mono font-medium text-foreground text-right">{limits.employersLiability.eachAccident}</td>
+                              </tr>
+                              <tr className="border-t border-foreground/4 hover:bg-foreground/[0.015] transition-colors">
+                                <td className="px-4 py-2 text-body-sm text-muted-foreground w-48">EL - Disease Policy Limit</td>
+                                <td className="px-4 py-2 text-body-sm font-mono font-medium text-foreground text-right">{limits.employersLiability.diseasePolicyLimit}</td>
+                              </tr>
+                              <tr className="border-t border-foreground/4 hover:bg-foreground/[0.015] transition-colors">
+                                <td className="px-4 py-2 text-body-sm text-muted-foreground w-48">EL - Disease Each Employee</td>
+                                <td className="px-4 py-2 text-body-sm font-mono font-medium text-foreground text-right">{limits.employersLiability.diseaseEachEmployee}</td>
+                              </tr>
+                            </>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </FadeIn>
+                )}
+
+                {/* Deductibles */}
+                {deductibles && (
+                  <FadeIn when={true} delay={0.68} duration={0.6}>
+                    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden mb-6">
+                      <div className="px-4 py-2.5 bg-foreground/[0.02] border-b border-foreground/4">
+                        <div className="flex items-center gap-2">
+                          <DollarSign className="w-4 h-4 text-muted-foreground" />
+                          <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                            Deductibles
+                          </p>
+                        </div>
+                      </div>
+                      <table className="w-full text-left">
+                        <tbody>
+                          {[
+                            deductibles.perOccurrence ? { label: "Per Occurrence", value: deductibles.perOccurrence } : null,
+                            deductibles.perClaim ? { label: "Per Claim", value: deductibles.perClaim } : null,
+                            deductibles.aggregateDeductible ? { label: "Aggregate", value: deductibles.aggregateDeductible } : null,
+                            deductibles.selfInsuredRetention ? { label: "Self-Insured Retention", value: deductibles.selfInsuredRetention } : null,
+                            deductibles.corridorDeductible ? { label: "Corridor", value: deductibles.corridorDeductible } : null,
+                            deductibles.waitingPeriod ? { label: "Waiting Period", value: deductibles.waitingPeriod } : null,
+                            deductibles.appliesTo ? { label: "Applies To", value: deductibles.appliesTo.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase()) } : null,
+                          ].filter(Boolean).map((item: any) => (
+                            <tr key={item.label} className="border-t border-foreground/4 first:border-t-0 hover:bg-foreground/[0.015] transition-colors">
+                              <td className="px-4 py-2 text-body-sm text-muted-foreground w-48">{item.label}</td>
+                              <td className="px-4 py-2 text-body-sm font-mono font-medium text-foreground text-right">{item.value}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </FadeIn>
+                )}
+
+                {/* Locations */}
+                {locations && locations.length > 0 && (
+                  <FadeIn when={true} delay={0.69} duration={0.6}>
+                    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden mb-6">
+                      <div className="px-4 py-2.5 bg-foreground/[0.02] border-b border-foreground/4">
+                        <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                          Insured Locations ({locations.length})
+                        </p>
+                      </div>
+                      {locations.map((loc: any, i: number) => (
+                        <div key={i} className="px-4 py-2.5 border-t border-foreground/4 first:border-t-0">
+                          <p className="text-body-sm font-medium text-foreground">
+                            #{loc.number} — {loc.address.street1}, {loc.address.city}, {loc.address.state} {loc.address.zip}
+                          </p>
+                          {loc.description && <p className="text-body-sm text-muted-foreground mt-0.5">{loc.description}</p>}
+                          {(loc.buildingValue || loc.contentsValue) && (
+                            <p className="text-body-sm text-muted-foreground mt-0.5 font-mono">
+                              {loc.buildingValue && `Building: ${loc.buildingValue}`}
+                              {loc.buildingValue && loc.contentsValue && " | "}
+                              {loc.contentsValue && `Contents: ${loc.contentsValue}`}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </FadeIn>
+                )}
+
+                {/* Vehicles */}
+                {vehicles && vehicles.length > 0 && (
+                  <FadeIn when={true} delay={0.69} duration={0.6}>
+                    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden mb-6">
+                      <div className="px-4 py-2.5 bg-foreground/[0.02] border-b border-foreground/4">
+                        <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                          Insured Vehicles ({vehicles.length})
+                        </p>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left">
+                          <thead>
+                            <tr className="border-t border-foreground/4">
+                              <th className="px-4 py-2 text-label-sm text-muted-foreground">#</th>
+                              <th className="px-4 py-2 text-label-sm text-muted-foreground">Year</th>
+                              <th className="px-4 py-2 text-label-sm text-muted-foreground">Make/Model</th>
+                              <th className="px-4 py-2 text-label-sm text-muted-foreground">VIN</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {vehicles.map((v: any, i: number) => (
+                              <tr key={i} className="border-t border-foreground/4 hover:bg-foreground/[0.015] transition-colors">
+                                <td className="px-4 py-2 text-body-sm text-muted-foreground">{v.number}</td>
+                                <td className="px-4 py-2 text-body-sm text-foreground">{v.year}</td>
+                                <td className="px-4 py-2 text-body-sm text-foreground font-medium">{v.make} {v.model}</td>
+                                <td className="px-4 py-2 text-body-sm font-mono text-muted-foreground">{v.vin}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </FadeIn>
+                )}
+
+                {/* Classification Codes */}
+                {classifications && classifications.length > 0 && (
+                  <FadeIn when={true} delay={0.69} duration={0.6}>
+                    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden mb-6">
+                      <div className="px-4 py-2.5 bg-foreground/[0.02] border-b border-foreground/4">
+                        <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                          Classification Codes ({classifications.length})
+                        </p>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left">
+                          <thead>
+                            <tr className="border-t border-foreground/4">
+                              <th className="px-4 py-2 text-label-sm text-muted-foreground">Code</th>
+                              <th className="px-4 py-2 text-label-sm text-muted-foreground">Description</th>
+                              <th className="px-4 py-2 text-label-sm text-muted-foreground text-right">Basis</th>
+                              <th className="px-4 py-2 text-label-sm text-muted-foreground text-right">Premium</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {classifications.map((cls: any, i: number) => (
+                              <tr key={i} className="border-t border-foreground/4 hover:bg-foreground/[0.015] transition-colors">
+                                <td className="px-4 py-2 text-body-sm font-mono text-foreground">{cls.code}</td>
+                                <td className="px-4 py-2 text-body-sm text-foreground">{cls.description}</td>
+                                <td className="px-4 py-2 text-body-sm text-muted-foreground text-right">{cls.premiumBasis}{cls.basisAmount ? `: ${cls.basisAmount}` : ""}</td>
+                                <td className="px-4 py-2 text-body-sm font-mono font-medium text-foreground text-right">{cls.premium || "—"}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </FadeIn>
+                )}
+
+                {/* Taxes & Fees */}
+                {taxesAndFees && taxesAndFees.length > 0 && (
+                  <FadeIn when={true} delay={0.69} duration={0.6}>
+                    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden mb-6">
+                      <div className="px-4 py-2.5 bg-foreground/[0.02] border-b border-foreground/4">
+                        <div className="flex items-center gap-2">
+                          <Receipt className="w-4 h-4 text-muted-foreground" />
+                          <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                            Taxes & Fees
+                          </p>
+                        </div>
+                      </div>
+                      <table className="w-full text-left">
+                        <tbody>
+                          {taxesAndFees.map((tf: any, i: number) => (
+                            <tr key={i} className="border-t border-foreground/4 first:border-t-0 hover:bg-foreground/[0.015] transition-colors">
+                              <td className="px-4 py-2 text-body-sm text-foreground">{tf.name}</td>
+                              {tf.type && <td className="px-4 py-2 text-body-sm text-muted-foreground">{tf.type}</td>}
+                              <td className="px-4 py-2 text-body-sm font-mono font-medium text-foreground text-right">{tf.amount}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </FadeIn>
+                )}
+
+                {/* Form Inventory */}
+                {formInventory && formInventory.length > 0 && (
+                  <FadeIn when={true} delay={0.69} duration={0.6}>
+                    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden mb-6">
+                      <div className="px-4 py-2.5 bg-foreground/[0.02] border-b border-foreground/4">
+                        <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                          Form Inventory ({formInventory.length})
+                        </p>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left">
+                          <thead>
+                            <tr className="border-t border-foreground/4">
+                              <th className="px-4 py-2 text-label-sm text-muted-foreground">Form #</th>
+                              <th className="px-4 py-2 text-label-sm text-muted-foreground">Edition</th>
+                              <th className="px-4 py-2 text-label-sm text-muted-foreground">Title</th>
+                              <th className="px-4 py-2 text-label-sm text-muted-foreground">Type</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {formInventory.map((f: any, i: number) => (
+                              <tr key={i} className="border-t border-foreground/4 hover:bg-foreground/[0.015] transition-colors">
+                                <td className="px-4 py-2 text-body-sm font-mono text-foreground">{f.formNumber}</td>
+                                <td className="px-4 py-2 text-body-sm text-muted-foreground">{f.editionDate || "—"}</td>
+                                <td className="px-4 py-2 text-body-sm text-foreground">{f.title || "—"}</td>
+                                <td className="px-4 py-2 text-body-sm text-muted-foreground">{f.formType}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </FadeIn>
+                )}
 
                 {/* Document Sections */}
                 {policyDocument?.sections?.length > 0 && (
