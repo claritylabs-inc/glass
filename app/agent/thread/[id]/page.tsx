@@ -624,6 +624,8 @@ function UnifiedThreadContent({
   }, [authToken, threadId]);
 
   // useChat for streaming responses
+  const [chatError, setChatError] = useState<string | null>(null);
+
   const {
     messages: chatMessages,
     status: chatStatus,
@@ -633,11 +635,20 @@ function UnifiedThreadContent({
   } = useChat({
     transport: chatTransport,
     messages: [],
+    onError: (error) => {
+      console.error("Chat stream error:", error);
+      setChatError(
+        error.message.includes("Unauthorized")
+          ? "Session expired. Please refresh the page."
+          : "Failed to get a response. Please try again.",
+      );
+    },
   });
 
   // Reset useChat messages when thread changes
   useEffect(() => {
     setChatMessages([]);
+    setChatError(null);
   }, [threadId, setChatMessages]);
 
   // Get the streaming assistant message from useChat (if any)
@@ -761,11 +772,18 @@ function UnifiedThreadContent({
     }
 
     // For text-only messages, use streaming via useChat
+    if (!authToken) {
+      toast.error("Session expired. Please refresh the page.");
+      return;
+    }
+
+    // Clear any previous error
+    setChatError(null);
+
     // Persist user message to Convex but skip backend agent response
-    // (the streaming API route will handle the response)
     await sendMessage({ threadId, content: text, skipAgentResponse: true });
 
-    // Trigger streaming via useChat (the API route will handle the response)
+    // Trigger streaming via useChat
     setChatMessages([]);
     await sendChatMessage({ text });
   }, [sendMessage, threadId, generateUploadUrl, sendChatMessage, setChatMessages]);
@@ -868,6 +886,11 @@ function UnifiedThreadContent({
               content={streamingText}
               isAnimating={chatStatus === "streaming"}
             />
+          )}
+          {chatError && !streamingMessage && (
+            <div className="mx-4 mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {chatError}
+            </div>
           )}
           {/* Padding so last message clears the input overlay */}
           {messages && messages.length > 0 && <div className="h-40" />}
