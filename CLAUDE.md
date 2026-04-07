@@ -17,7 +17,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Architecture
 
-AI-powered insurance platform with policy extraction and application assistance. Emails are scanned via IMAP, classified using keyword heuristics + Claude Haiku, and policy data is extracted from PDF attachments using Claude Sonnet. Prism handles policy/quote Q&A and insurance application form filling via email and web chat.
+AI-powered insurance platform with policy extraction, proactive intelligence, and application assistance. Emails are scanned via IMAP, classified using keyword heuristics + Claude Haiku, and policy data is extracted from PDF attachments using Claude Sonnet. Prism handles policy/quote Q&A and insurance application form filling via email and web chat. Multi-model architecture routes tasks to DeepSeek V3 (chat/tools), Kimi K2.5 (analysis/email), Claude Haiku (classification), and Claude Sonnet (extraction), with automatic fallback. Agentic chat supports tool use (policy lookup, COI generation, email drafting). Per-org memory persists AI-extracted knowledge across sessions. Post-extraction analysis runs automatically to identify coverage gaps and portfolio risks.
 
 ### Tech Stack
 
@@ -113,6 +113,16 @@ Web chat uses a hybrid architecture: `useChat` from `@ai-sdk/react` handles stre
 5. **Hybrid rendering**: Thread page shows Convex subscription messages for full history + overlays `useChat` streaming message at bottom during generation. Deduplicates when persisted message appears in subscription.
 6. **Email-triggered flows**: `processThreadChat.ts` still handles inbound email → agent response (with 150ms DB flush for real-time display)
 
+### Data Flow — Proactive Intelligence
+
+1. Policy extracted successfully → `analyzePolicy` scheduled immediately via `ctx.scheduler.runAfter(0, ...)`
+2. `analyzePolicy` generates structured health check (overallScore, strengths, gaps, recommendations, limitAssessment, deductibleAssessment, notableExclusions) using `getModel("analysis")` → stored on `policies.analysis`
+3. Key facts and risk notes saved to `orgMemory` table (carrier + type → "fact" and coverage gaps → "risk_note")
+4. If org has 2+ policies → `analyzePortfolio` scheduled (5s delay) — cross-policy gap identification, overlap detection → stored on `organizations.portfolioAnalysis`
+5. If extracted policy has `priorPolicyNumber` matching an existing policy → `compareRenewal` scheduled — premium/limit/deductible/coverage diff → saved as observation in `orgMemory`
+6. All analysis uses `generateTextWithFallback` for automatic Claude Sonnet fallback if primary model (Kimi K2.5) fails
+7. Org memories loaded into system prompt for all chat pathways (web, email, MCP) via `buildMemoryContext()`
+
 ### Data Flow — Business Context
 
 - `orgBusinessContext` table stores reusable org data (company info, operations, financial, coverage, etc.)
@@ -152,6 +162,15 @@ To modify prompts or extraction logic, update the `@claritylabs/cl-sdk` package 
 - `actions/` — Also: IMAP scanning, classification, extraction
 - `lib/applicationTypes.ts` — Types for form fields (SimpleField, TableField, DeclarationField), QuestionBatch
 - `lib/policyTypes.ts` — Insurance keyword lists, policy type label map (22 types), section type labels/colors
+- `lib/models.ts` — Multi-model architecture: task-based routing (DeepSeek V3, Kimi K2.5, Claude Haiku/Sonnet) with automatic fallback via `generateTextWithFallback`
+- `lib/aiUtils.ts` — Centralized AI utilities: `stripMarkdown`, `markdownToHtml`, `buildSignature`, `buildMessageHistory`, `buildSystemPromptForContext` (with prompt injection fencing), `logAiError` (with secret redaction)
+- `lib/chatTools.ts` — AI SDK v6 tool definitions for agentic chat (`lookupPolicy`, `compareCoverages`, `sendEmail`, `checkApplicationStatus`, `saveNote`, `generateCoi`)
+- `lib/orgMemoryContext.ts` — `buildMemoryContext()`: formats org memories into grouped system prompt block
+- `lib/coiGenerator.ts` — COI PDF generator with ACORD-style layout using pdfkit (`CoiData`, `policyToCoiData`, `generateCoiPdf`)
+- `orgMemory.ts` — Org memory CRUD: facts, preferences, risk notes, observations. Content-hash dedup, expiry, scoped to orgId
+- `actions/proactiveAnalysis.ts` — `analyzePolicy` (health check), `analyzePortfolio` (cross-policy gaps), `compareRenewal` (premium/limit diff). Triggered post-extraction.
+- `actions/generateEmailBody.ts` — AI-written email body via `getModel("email_draft")` (Kimi K2.5)
+- `actions/generateCoi.ts` — COI generation: maps policy → CoiData → PDF → Convex file storage, returns storageId
 
 ### Key Frontend Patterns
 
@@ -196,6 +215,10 @@ To modify prompts or extraction logic, update the `@claritylabs/cl-sdk` package 
 - `oauthClients` stores dynamically registered OAuth clients (clientId, clientName, redirectUris)
 - `oauthAuthCodes` stores authorization codes with PKCE challenge, 10-minute expiry, used-once tracking
 - `oauthTokens` stores access tokens (1-hour expiry) and refresh tokens (30-day expiry), indexed by hash for validation
+- `orgMemory` stores org-scoped AI knowledge (type: fact/preference/risk_note/observation) with source (extraction/analysis/chat/email), optional policyId link, and optional expiresAt. Indexed by `by_org` and `by_org_type`. Content-hash deduplication via `upsert`.
+- `policies.analysis` stores AI-generated health check (structured JSON: overallScore, strengths, gaps, recommendations, limitAssessment, deductibleAssessment, notableExclusions)
+- `organizations.portfolioAnalysis` stores cross-policy portfolio analysis (overallHealth, coverageGaps, overlaps, recommendations, totalPremium, keyRisks)
+- `applicationSessions.status` includes `"failed"` for timeout/error cases; `failureReason: v.optional(v.string())` holds the reason; `lastProgressAt: v.optional(v.number())` tracks last state change for stale detection (cron checks every 2min, marks stale after 5min)
 
 ### Routes
 
