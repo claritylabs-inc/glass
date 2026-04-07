@@ -109,6 +109,7 @@ export const listPending = query({
         !q.deletedAt &&
         (q.extractionStatus === "pending" ||
         q.extractionStatus === "extracting" ||
+        q.extractionStatus === "paused" ||
         q.extractionStatus === "error")
     );
 

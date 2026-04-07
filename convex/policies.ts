@@ -41,6 +41,7 @@ export const listPending = query({
         !p.deletedAt &&
         (p.extractionStatus === "pending" ||
         p.extractionStatus === "extracting" ||
+        p.extractionStatus === "paused" ||
         p.extractionStatus === "error")
     );
 
