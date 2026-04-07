@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { useQuery } from "convex/react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import { AppShell } from "@/components/app-shell";
 import { PolicyTable } from "@/components/policy-table";
@@ -26,9 +26,19 @@ export default function PoliciesPage() {
   const policies = useQuery(api.policies.list, {});
   const quotes = useQuery(api.policies.listQuotes, {});
   const searchParams = useSearchParams();
+  const router = useRouter();
 
   const documentView: DocumentView = (searchParams.get("view") as DocumentView) || "active";
   const [activeTab, setActiveTab] = useState("all");
+
+  function handleViewChange(view: DocumentView) {
+    setSelectedType("");
+    setSelectedCarrier("");
+    setSelectedYear("");
+    setActiveTab("all");
+    const url = view === "active" ? "/policies" : `/policies?view=${view}`;
+    router.replace(url, { scroll: false });
+  }
   const [selectedType, setSelectedType] = useState("");
   const [selectedCarrier, setSelectedCarrier] = useState("");
   const [selectedYear, setSelectedYear] = useState("");
@@ -106,6 +116,8 @@ export default function PoliciesPage() {
             </div>
           ) : (
             <PolicyFilters
+              documentView={documentView}
+              onDocumentViewChange={handleViewChange}
               activeTab={activeTab}
               onTabChange={setActiveTab}
               carriers={carriers}
