@@ -164,6 +164,9 @@ export function PolicyTable({ policies }: { policies: Policy[] | undefined }) {
                     <td className="px-4 py-2.5 whitespace-nowrap">
                       <p className="text-body-sm text-foreground font-medium flex items-center gap-1.5">
                         {policy.policyNumber}
+                        {policy.documentType === "quote" && (
+                          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-yellow-100 dark:bg-yellow-950/40 text-yellow-800 dark:text-yellow-400">Quote</span>
+                        )}
                         {policy.isDemo && (
                           <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400">Demo</span>
                         )}
@@ -174,11 +177,6 @@ export function PolicyTable({ policies }: { policies: Policy[] | undefined }) {
                     </td>
                     <td className="px-4 py-2.5 whitespace-nowrap hidden sm:table-cell">
                       <div className="flex items-center gap-1">
-                        {policy.documentType === "quote" && (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium bg-yellow-100 dark:bg-yellow-950/40 text-yellow-800 dark:text-yellow-400">
-                            Quote
-                          </span>
-                        )}
                         {(() => {
                           const types = policy.policyTypes ?? [policy.policyType ?? "other"];
                           const first = types[0];

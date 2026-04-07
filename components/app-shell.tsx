@@ -24,7 +24,7 @@ function ShellContent({
 }: {
   children: React.ReactNode;
   actions?: React.ReactNode;
-  breadcrumbDetail?: string;
+  breadcrumbDetail?: React.ReactNode;
   presenceUsers?: PresenceUser[];
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -80,7 +80,7 @@ export function AppShell({
 }: {
   children: React.ReactNode;
   actions?: React.ReactNode;
-  breadcrumbDetail?: string;
+  breadcrumbDetail?: React.ReactNode;
   presenceUsers?: PresenceUser[];
 }) {
   return (

@@ -818,7 +818,14 @@ export default function PolicyDetailPage({
     }
   };
 
-  const breadcrumbLabel = `${policy.carrier} ${policy.policyNumber}`;
+  const breadcrumbLabel = (
+    <>
+      {policy.carrier} {policy.policyNumber}
+      {documentType === "quote" && (
+        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-yellow-100 dark:bg-yellow-950/40 text-yellow-800 dark:text-yellow-400 ml-1.5">Quote</span>
+      )}
+    </>
+  );
 
   const headerActions = (
     <>
@@ -901,11 +908,6 @@ export default function PolicyDetailPage({
                   <div className="mb-6">
                     <h1 className="!mb-0 break-all">{policy.policyNumber}</h1>
                     <div className="flex items-center gap-2 flex-wrap mt-1">
-                      {documentType === "quote" && (
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-label-sm font-medium bg-yellow-100 dark:bg-yellow-950/40 text-yellow-800 dark:text-yellow-400">
-                          Quote
-                        </span>
-                      )}
                       {policy.isRenewal && (
                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400">
                           Renewal
@@ -991,16 +993,11 @@ export default function PolicyDetailPage({
 
                 {activeTab === "details" && (<>
                 {/* Info grid */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
                   {/* Policy Period */}
                   <FadeIn when={true} staggerIndex={1} duration={0.6}>
-                    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-4 py-3 h-full">
-                      <div className="flex items-center gap-2 mb-2">
-                        <Calendar className="w-4 h-4 text-muted-foreground" />
-                        <p className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider">
-                          Policy Period
-                        </p>
-                      </div>
+                    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-4 py-3">
+                      <p className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider mb-1.5">Policy Period</p>
                       <p className="text-body-sm font-medium text-foreground">
                         {policy.effectiveDate === "Unknown" && !policy.expirationDate
                           ? (documentType === "quote" ? "Quote" : "Unknown")
@@ -1008,112 +1005,43 @@ export default function PolicyDetailPage({
                             ? `${policy.effectiveDate} — Until Cancelled`
                             : `${policy.effectiveDate} – ${policy.expirationDate ?? "—"}`}
                       </p>
-                      <p className="text-label-sm text-muted-foreground/60 mt-1">
-                        Policy Year: {policy.policyYear}
-                        {effectiveTime ? ` · Eff: ${effectiveTime}` : ""}
-                      </p>
-                      {(policy as any).nextReviewDate && (
-                        <p className="text-label-sm text-muted-foreground/60">Next review: {(policy as any).nextReviewDate}</p>
-                      )}
-                      {coverageForm && (
-                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-foreground/[0.04] text-muted-foreground mt-1.5">
-                          {coverageForm === "claims_made" ? "Claims-Made" : coverageForm === "occurrence" ? "Occurrence" : coverageForm}
-                        </span>
-                      )}
-                      {retroactiveDate && <p className="text-label-sm text-muted-foreground/50">Retro date: {retroactiveDate}</p>}
                     </div>
                   </FadeIn>
 
                   {/* Premium */}
                   <FadeIn when={true} staggerIndex={2} duration={0.6}>
-                    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-4 py-3 h-full">
-                      <div className="flex items-center gap-2 mb-2">
-                        <DollarSign className="w-4 h-4 text-muted-foreground" />
-                        <p className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider">
-                          Premium
-                        </p>
-                      </div>
+                    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-4 py-3">
+                      <p className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider mb-1.5">Premium</p>
                       <p className="text-body-sm font-medium text-foreground font-mono">{policy.premium || "—"}</p>
-                      {(policy as any).totalCost && (policy as any).totalCost !== policy.premium && (
-                        <p className="text-label-sm text-muted-foreground/60 mt-1 font-mono">Total: {(policy as any).totalCost}</p>
-                      )}
-                      {(policy as any).minimumPremium && (
-                        <p className="text-label-sm text-muted-foreground/50">Min: {(policy as any).minimumPremium}</p>
-                      )}
-                      {(policy as any).depositPremium && (
-                        <p className="text-label-sm text-muted-foreground/50">Deposit: {(policy as any).depositPremium}</p>
-                      )}
                     </div>
                   </FadeIn>
 
-                  {/* Insurer / Producer */}
+                  {/* Insurer */}
                   <FadeIn when={true} staggerIndex={3} duration={0.6}>
-                    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-4 py-3 h-full">
-                      <div className="flex items-center gap-2 mb-2">
-                        <Shield className="w-4 h-4 text-muted-foreground" />
-                        <p className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider">
-                          Insurer
-                        </p>
-                      </div>
+                    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-4 py-3">
+                      <p className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider mb-1.5">Insurer</p>
                       <p className="text-body-sm font-medium text-foreground">{carrierLegalName || security || policy.carrier}</p>
-                      {carrierNaicNumber && <p className="text-label-sm text-muted-foreground/60 mt-0.5">NAIC: {carrierNaicNumber}</p>}
-                      {carrierAmBestRating && <p className="text-label-sm text-muted-foreground/60">AM Best: {carrierAmBestRating}</p>}
-                      {carrierAdmittedStatus && (
-                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium mt-1 ${
-                          carrierAdmittedStatus === "admitted" ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"
-                          : carrierAdmittedStatus === "surplus_lines" ? "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400"
-                          : "bg-foreground/[0.04] text-muted-foreground"
-                        }`}>
-                          {carrierAdmittedStatus === "non_admitted" ? "Non-Admitted" : carrierAdmittedStatus === "surplus_lines" ? "Surplus Lines" : "Admitted"}
-                        </span>
-                      )}
                     </div>
                   </FadeIn>
-                </div>
 
-                {/* Second row: Insured + Broker + Program */}
-                {(policy.insuredName || brokerAgency || programName) && (
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                    {/* Insured */}
+                  {/* Insured */}
+                  <FadeIn when={true} staggerIndex={4} duration={0.6}>
                     <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-4 py-3">
                       <p className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider mb-1.5">Insured</p>
-                      <p className="text-body-sm font-medium">{policy.insuredName}</p>
-                      {insuredDba && <p className="text-label-sm text-muted-foreground/60">DBA: {insuredDba}</p>}
-                      {insuredAddress && (
-                        <p className="text-label-sm text-muted-foreground/50 mt-0.5">
-                          {typeof insuredAddress === "string" ? insuredAddress : [insuredAddress.street1, insuredAddress.city, insuredAddress.state, insuredAddress.zip].filter(Boolean).join(", ")}
-                        </p>
-                      )}
-                      {insuredFein && <p className="text-label-sm text-muted-foreground/50">FEIN: {insuredFein}</p>}
-                      {insuredEntityType && <p className="text-label-sm text-muted-foreground/50 capitalize">{insuredEntityType.replace(/_/g, " ")}</p>}
+                      <p className="text-body-sm font-medium text-foreground">{policy.insuredName}</p>
                     </div>
+                  </FadeIn>
 
-                    {/* Broker */}
-                    {(brokerAgency || broker) && (
+                  {/* Broker */}
+                  {(brokerAgency || broker) && (
+                    <FadeIn when={true} staggerIndex={5} duration={0.6}>
                       <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-4 py-3">
                         <p className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider mb-1.5">Broker</p>
-                        <p className="text-body-sm font-medium">{brokerAgency || broker}</p>
-                        {brokerContactName && <p className="text-label-sm text-muted-foreground/60">{brokerContactName}</p>}
-                        {brokerLicenseNumber && <p className="text-label-sm text-muted-foreground/50">License: {brokerLicenseNumber}</p>}
+                        <p className="text-body-sm font-medium text-foreground">{brokerAgency || broker}</p>
                       </div>
-                    )}
-
-                    {/* Program / Underwriter / MGA */}
-                    {(programName || underwriterName || mga) && (
-                      <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-4 py-3">
-                        <p className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider mb-1.5">Program</p>
-                        {programName && <p className="text-body-sm font-medium">{programName}</p>}
-                        {underwriterName && <p className="text-label-sm text-muted-foreground/60">Underwriter: {underwriterName}</p>}
-                        {mga && <p className="text-label-sm text-muted-foreground/60">MGA: {mga}</p>}
-                        {isPackage && (
-                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400 mt-1">
-                            Package Policy
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
+                    </FadeIn>
+                  )}
+                </div>
 
                 {/* Summary */}
                 {policy.summary && (
@@ -1128,6 +1056,40 @@ export default function PolicyDetailPage({
                     </div>
                   </FadeIn>
                 )}
+
+                {/* Policy Period */}
+                <FadeIn when={true} delay={0.55} duration={0.6}>
+                  <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden mb-6">
+                    <div className="px-4 py-2.5 bg-foreground/[0.02] border-b border-foreground/4">
+                      <div className="flex items-center gap-2">
+                        <Calendar className="w-4 h-4 text-muted-foreground" />
+                        <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                          Policy Period
+                        </p>
+                        {metadataSource?.effectiveDatePage != null && <PageRef page={metadataSource.effectiveDatePage} />}
+                      </div>
+                    </div>
+                    <table className="w-full text-left">
+                      <tbody>
+                        {[
+                          { label: "Effective Date", value: policy.effectiveDate },
+                          { label: "Expiration Date", value: policy.expirationDate ?? "—" },
+                          { label: "Policy Year", value: String(policy.policyYear) },
+                          effectiveTime ? { label: "Effective Time", value: effectiveTime } : null,
+                          (policy as any).policyTermType ? { label: "Term Type", value: (policy as any).policyTermType.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase()) } : null,
+                          coverageForm ? { label: "Coverage Form", value: coverageForm === "claims_made" ? "Claims-Made" : coverageForm === "occurrence" ? "Occurrence" : coverageForm } : null,
+                          retroactiveDate ? { label: "Retroactive Date", value: retroactiveDate } : null,
+                          (policy as any).nextReviewDate ? { label: "Next Review", value: (policy as any).nextReviewDate } : null,
+                        ].filter(Boolean).map((item: any) => (
+                          <tr key={item.label} className="border-t border-foreground/4 first:border-t-0 hover:bg-foreground/[0.015] transition-colors">
+                            <td className="px-4 py-2 text-body-sm text-muted-foreground w-32 sm:w-48">{item.label}</td>
+                            <td className="px-4 py-2 text-body-sm text-foreground font-medium">{item.value}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </FadeIn>
 
                 {/* Coverages table */}
                 <FadeIn when={true} delay={0.6} duration={0.6}>
@@ -1217,9 +1179,6 @@ export default function PolicyDetailPage({
                           brokerLicenseNumber ? { role: "License #", value: brokerLicenseNumber } : null,
                           programName ? { role: "Program", value: programName } : null,
                           priorPolicyNumber ? { role: "Prior Policy #", value: priorPolicyNumber } : null,
-                          coverageForm ? { role: "Coverage Form", value: coverageForm.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase()) } : null,
-                          retroactiveDate ? { role: "Retroactive Date", value: retroactiveDate } : null,
-                          effectiveTime ? { role: "Effective Time", value: effectiveTime } : null,
                           isPackage ? { role: "Package Policy", value: "Yes" } : null,
                         ].filter(Boolean).map((party: any, i: number) => (
                           <tr key={party.role} className="border-t border-foreground/4 first:border-t-0 hover:bg-foreground/[0.015] transition-colors">
@@ -1434,27 +1393,68 @@ export default function PolicyDetailPage({
                   </FadeIn>
                 )}
 
-                {/* Taxes & Fees */}
-                {taxesAndFees && taxesAndFees.length > 0 && (
+                {/* Premiums and Fees */}
+                {(policy.premium || (policy as any).totalCost || (policy as any).minimumPremium || (policy as any).depositPremium || (taxesAndFees && taxesAndFees.length > 0) || policyDocument?.costsAndFees) && (
                   <FadeIn when={true} delay={0.69} duration={0.6}>
                     <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden mb-6">
                       <div className="px-4 py-2.5 bg-foreground/[0.02] border-b border-foreground/4">
                         <div className="flex items-center gap-2">
-                          <Receipt className="w-4 h-4 text-muted-foreground" />
+                          <DollarSign className="w-4 h-4 text-muted-foreground" />
                           <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">
-                            Taxes & Fees
+                            Premiums and Fees
                           </p>
+                          {metadataSource?.premiumPage != null && <PageRef page={metadataSource.premiumPage} />}
                         </div>
                       </div>
                       <table className="w-full text-left">
                         <tbody>
-                          {taxesAndFees.map((tf: any, i: number) => (
-                            <tr key={i} className="border-t border-foreground/4 first:border-t-0 hover:bg-foreground/[0.015] transition-colors">
-                              <td className="px-4 py-2 text-body-sm text-foreground">{tf.name}</td>
-                              {tf.type && <td className="px-4 py-2 text-body-sm text-muted-foreground">{tf.type}</td>}
-                              <td className="px-4 py-2 text-body-sm font-mono font-medium text-foreground text-right">{tf.amount}</td>
+                          {[
+                            policy.premium ? { label: "Premium", value: policy.premium } : null,
+                            (policy as any).totalCost && (policy as any).totalCost !== policy.premium ? { label: "Total Cost", value: (policy as any).totalCost } : null,
+                            (policy as any).minimumPremium ? { label: "Minimum Premium", value: (policy as any).minimumPremium } : null,
+                            (policy as any).depositPremium ? { label: "Deposit Premium", value: (policy as any).depositPremium } : null,
+                          ].filter(Boolean).map((item: any) => (
+                            <tr key={item.label} className="border-t border-foreground/4 first:border-t-0 hover:bg-foreground/[0.015] transition-colors">
+                              <td className="px-4 py-2 text-body-sm text-muted-foreground w-32 sm:w-48">{item.label}</td>
+                              <td className="px-4 py-2 text-body-sm font-mono font-medium text-foreground text-right">{item.value}</td>
                             </tr>
                           ))}
+                          {taxesAndFees && taxesAndFees.length > 0 && (
+                            <>
+                              <tr className="border-t border-foreground/6 bg-foreground/[0.02]">
+                                <td colSpan={2} className="px-4 py-1.5 text-label-sm font-medium text-muted-foreground uppercase tracking-wider">Taxes & Fees</td>
+                              </tr>
+                              {taxesAndFees.map((tf: any, i: number) => (
+                                <tr key={i} className="border-t border-foreground/4 hover:bg-foreground/[0.015] transition-colors">
+                                  <td className="px-4 py-2 text-body-sm text-foreground">{tf.name}{tf.type ? ` (${tf.type})` : ""}</td>
+                                  <td className="px-4 py-2 text-body-sm font-mono font-medium text-foreground text-right">{tf.amount}</td>
+                                </tr>
+                              ))}
+                            </>
+                          )}
+                          {policyDocument?.costsAndFees?.fees?.length > 0 && (
+                            <>
+                              <tr className="border-t border-foreground/6 bg-foreground/[0.02]">
+                                <td colSpan={2} className="px-4 py-1.5 text-label-sm font-medium text-muted-foreground uppercase tracking-wider">
+                                  Costs & Fees
+                                  {policyDocument.costsAndFees.pageNumber != null && (
+                                    <span className="ml-2"><PageRef page={policyDocument.costsAndFees.pageNumber} /></span>
+                                  )}
+                                </td>
+                              </tr>
+                              {policyDocument.costsAndFees.fees.map((f: any, i: number) => (
+                                <tr key={`cf-${i}`} className="border-t border-foreground/4 hover:bg-foreground/[0.015] transition-colors">
+                                  <td className="px-4 py-2 text-body-sm text-foreground">{f.name}{f.type ? ` (${f.type})` : ""}{f.description ? ` — ${f.description}` : ""}</td>
+                                  <td className="px-4 py-2 text-body-sm font-mono font-medium text-foreground text-right">{f.amount || "—"}</td>
+                                </tr>
+                              ))}
+                            </>
+                          )}
+                          {policyDocument?.costsAndFees?.content && !policyDocument?.costsAndFees?.fees?.length && (
+                            <tr className="border-t border-foreground/4">
+                              <td colSpan={2} className="px-4 py-2.5 text-body-sm text-foreground whitespace-pre-wrap">{policyDocument.costsAndFees.content}</td>
+                            </tr>
+                          )}
                         </tbody>
                       </table>
                     </div>
@@ -1526,8 +1526,8 @@ export default function PolicyDetailPage({
                   </FadeIn>
                 )}
 
-                {/* Regulatory Context / Complaint Contact / Costs & Fees / Claims Contact */}
-                {(policyDocument?.regulatoryContext || policyDocument?.complaintContact || policyDocument?.costsAndFees || policyDocument?.claimsContact) && (
+                {/* Regulatory Context / Complaint Contact / Claims Contact */}
+                {(policyDocument?.regulatoryContext || policyDocument?.complaintContact || policyDocument?.claimsContact) && (
                   <div className="grid grid-cols-1 gap-4 mb-6">
                     {policyDocument.regulatoryContext && (
                       <FadeIn when={true} delay={0.75} duration={0.6}>
@@ -1552,19 +1552,6 @@ export default function PolicyDetailPage({
                           hasStructured={!!policyDocument.complaintContact.contacts?.length}
                         >
                           <ComplaintContactStructured contacts={policyDocument.complaintContact.contacts} />
-                        </SupplementaryCard>
-                      </FadeIn>
-                    )}
-                    {policyDocument.costsAndFees && (
-                      <FadeIn when={true} delay={0.85} duration={0.6}>
-                        <SupplementaryCard
-                          title="Costs & Fees"
-                          icon={Receipt}
-                          pageNumber={policyDocument.costsAndFees.pageNumber}
-                          content={policyDocument.costsAndFees.content}
-                          hasStructured={!!policyDocument.costsAndFees.fees?.length}
-                        >
-                          <CostsAndFeesStructured fees={policyDocument.costsAndFees.fees} />
                         </SupplementaryCard>
                       </FadeIn>
                     )}

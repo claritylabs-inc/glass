@@ -72,7 +72,7 @@ export function AppTopBar({
   presenceUsers,
 }: {
   actions?: React.ReactNode;
-  breadcrumbDetail?: string;
+  breadcrumbDetail?: React.ReactNode;
   onMobileMenuToggle?: () => void;
   presenceUsers?: PresenceUser[];
 }) {
