@@ -11,6 +11,7 @@ import { ScanModal } from "@/components/scan-modal";
 import { ScanStatus } from "@/components/scan-status";
 import { ExtractionTable } from "@/components/extraction-table";
 import { ExtractionLog } from "@/components/extraction-log";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { FadeIn } from "@/components/ui/fade-in";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowRight, Upload } from "lucide-react";
@@ -486,21 +487,17 @@ export default function ConnectionsPage() {
                   <label className="text-label-sm text-muted-foreground whitespace-nowrap">
                     Connection:
                   </label>
-                  <select
+                  <SearchableSelect
+                    options={connections.map((conn) => ({
+                      value: conn._id,
+                      label: `${conn.label} (${conn.email})`,
+                    }))}
                     value={emailsConnectionId ?? ""}
-                    onChange={(e) =>
-                      setSelectedConnectionId(
-                        e.target.value as Id<"emailConnections">
-                      )
+                    onChange={(val) =>
+                      setSelectedConnectionId(val as Id<"emailConnections">)
                     }
-                    className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-3 py-1.5 text-body-sm focus:outline-none focus:ring-1 focus:ring-foreground/20"
-                  >
-                    {connections.map((conn) => (
-                      <option key={conn._id} value={conn._id}>
-                        {conn.label} ({conn.email})
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="Select connection..."
+                  />
                 </div>
               )}
               {emailsConnectionId ? (

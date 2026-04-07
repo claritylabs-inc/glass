@@ -559,6 +559,7 @@ export const updateExtraction = mutation({
     declarations: v.optional(v.any()),
     // cl-sdk 3.0+ fields
     policyTermType: v.optional(v.string()),
+    nextReviewDate: v.optional(v.string()),
     minPremium: v.optional(v.string()),
     depositPremium: v.optional(v.string()),
     auditProvision: v.optional(v.boolean()),

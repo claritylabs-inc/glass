@@ -6,10 +6,9 @@ import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { motion, AnimatePresence } from "framer-motion";
 import { PillButton } from "@/components/ui/pill-button";
-import { RotateCw, X, Terminal, Pause, Play } from "lucide-react";
+import { Terminal, Pause, Play, X, RotateCw, Trash2 } from "lucide-react";
 import { FadeIn } from "@/components/ui/fade-in";
 import { Skeleton } from "@/components/ui/skeleton";
-import { RetryExtractionModal } from "@/components/ui/retry-extraction-modal";
 import {
   Dialog,
   DialogContent,
@@ -130,36 +129,28 @@ function CancelButton({ policyId, isQuote }: { policyId: string; isQuote?: boole
   );
 }
 
-// Restart button - shown when paused or error (restarts extraction)
+// Restart button - shown when paused or error (full re-extraction)
 function RestartButton({ extraction, isQuote }: { extraction: Extraction; isQuote?: boolean }) {
   const restart = useMutation(isQuote ? api.quotes.restartExtraction : api.policies.restartExtraction);
   const [restarting, setRestarting] = useState(false);
 
   return (
-    <RetryExtractionModal
-      policyId={extraction._id}
-      hasRawResponse={!!extraction.hasRawResponse}
-      hasRawMetadata={!!extraction.hasRawMetadata}
-      hasDocument={false}
-      trigger={
-        <button
-          type="button"
-          disabled={restarting}
-          onClick={async () => {
-            setRestarting(true);
-            try {
-              await restart({ id: extraction._id as unknown as Id<"policies"> });
-            } finally {
-              setRestarting(false);
-            }
-          }}
-          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/40 text-label-sm font-medium text-amber-700 dark:text-amber-400 hover:border-amber-300 hover:bg-amber-100 dark:hover:bg-amber-950/60 transition-colors cursor-pointer disabled:opacity-50"
-        >
-          <RotateCw className="w-3 h-3" />
-          {restarting ? "Restarting..." : "Restart"}
-        </button>
-      }
-    />
+    <button
+      type="button"
+      disabled={restarting}
+      onClick={async () => {
+        setRestarting(true);
+        try {
+          await restart({ id: extraction._id as unknown as Id<"policies"> });
+        } finally {
+          setRestarting(false);
+        }
+      }}
+      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/40 text-label-sm font-medium text-amber-700 dark:text-amber-400 hover:border-amber-300 hover:bg-amber-100 dark:hover:bg-amber-950/60 transition-colors cursor-pointer disabled:opacity-50"
+    >
+      <RotateCw className="w-3 h-3" />
+      {restarting ? "Restarting..." : "Restart"}
+    </button>
   );
 }
 
@@ -182,7 +173,7 @@ function DismissButton({ policyId, isQuote }: { policyId: string; isQuote?: bool
       }}
       className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-foreground/12 bg-white/80 dark:bg-white/[0.06] text-label-sm font-medium text-muted-foreground hover:border-red-200 dark:hover:border-red-900/50 hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-600 dark:hover:text-red-400 transition-colors cursor-pointer disabled:opacity-50"
     >
-      <X className="w-3 h-3" />
+      <Trash2 className="w-3 h-3" />
       Dismiss
     </button>
   );

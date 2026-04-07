@@ -6,7 +6,7 @@ import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
 import { FadeIn } from "@/components/ui/fade-in";
-import { ArrowLeft, Download, FileText, Calendar, Shield, DollarSign, Trash2, Upload, ChevronDown, ChevronRight, Loader2, RotateCw, Scale, Phone, Receipt, AlertTriangle, Users, Eye, Mail, MessageSquare, Activity, CheckCircle, XCircle, RefreshCw, Asterisk, X } from "lucide-react";
+import { ArrowLeft, Download, FileText, Calendar, Shield, DollarSign, Trash2, Upload, ChevronDown, ChevronRight, Loader2, Scale, Phone, Receipt, AlertTriangle, Users, Eye, Mail, MessageSquare, Activity, CheckCircle, XCircle, RefreshCw, Asterisk, X } from "lucide-react";
 import { motion } from "framer-motion";
 import dayjs from "dayjs";
 import { ModeBadge } from "@/components/mode-badge";
@@ -26,7 +26,6 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { RetryExtractionModal } from "@/components/ui/retry-extraction-modal";
 import { usePdf } from "@/components/pdf-context";
 import { usePageContext } from "@/hooks/use-page-context";
 
@@ -668,6 +667,8 @@ export default function PolicyDetailPage({
   const restorePolicy = useMutation(api.policies.restore);
   const generateUploadUrl = useMutation(api.policies.generateUploadUrl);
   const reExtract = useAction(api.actions.reExtractFromFile.reExtractFromFile);
+  const retryExtraction = useAction(api.actions.retryExtraction.retryExtraction);
+  const [reExtracting, setReExtracting] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialPage = Number(searchParams.get("page")) || undefined;
@@ -839,17 +840,22 @@ export default function PolicyDetailPage({
         </PillButton>
       )}
       {policy.emailId && (
-        <RetryExtractionModal
-          policyId={id}
-          hasRawResponse={!!policy.hasRawResponse}
-          hasRawMetadata={!!policy.hasRawMetadata}
-          hasDocument={!!policyDocument}
-          trigger={
-            <PillButton size="compact" variant="icon" label="Re-extract">
-              <RotateCw className="w-4 h-4" />
-            </PillButton>
-          }
-        />
+        <PillButton
+          size="compact"
+          variant="icon"
+          label="Re-extract"
+          disabled={reExtracting}
+          onClick={async () => {
+            setReExtracting(true);
+            try {
+              await retryExtraction({ policyId: id as any, mode: "full" });
+            } finally {
+              setReExtracting(false);
+            }
+          }}
+        >
+          <RefreshCw className={`w-4 h-4 ${reExtracting ? "animate-spin" : ""}`} />
+        </PillButton>
       )}
       <PillButton
         size="compact"

@@ -6,7 +6,10 @@ import { motion, AnimatePresence } from "framer-motion";
 import { RotateCw } from "lucide-react";
 import { POLICY_TYPE_LABELS } from "@/convex/lib/policyTypes";
 import { FadeIn } from "@/components/ui/fade-in";
-import { RetryExtractionModal } from "@/components/ui/retry-extraction-modal";
+import { useAction } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import { Id } from "@/convex/_generated/dataModel";
+import { useState } from "react";
 
 interface LogEntry {
   _id: string;
@@ -60,22 +63,26 @@ function formatDate(timestamp: number): string {
 }
 
 function ReExtractButton({ entry }: { entry: LogEntry }) {
+  const retryExtraction = useAction(api.actions.retryExtraction.retryExtraction);
+  const [running, setRunning] = useState(false);
+
   return (
-    <RetryExtractionModal
-      policyId={entry._id}
-      hasRawResponse={!!entry.hasRawResponse}
-      hasRawMetadata={!!entry.hasRawMetadata}
-      hasDocument={false}
-      trigger={
-        <button
-          type="button"
-          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-foreground/12 bg-white/80 dark:bg-white/[0.06] text-label-sm font-medium text-muted-foreground hover:border-foreground/20 hover:bg-foreground/[0.03] transition-colors cursor-pointer"
-        >
-          <RotateCw className="w-3 h-3" />
-          Re-extract
-        </button>
-      }
-    />
+    <button
+      type="button"
+      disabled={running}
+      onClick={async () => {
+        setRunning(true);
+        try {
+          await retryExtraction({ policyId: entry._id as Id<"policies">, mode: "full" });
+        } finally {
+          setRunning(false);
+        }
+      }}
+      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-foreground/12 bg-white/80 dark:bg-white/[0.06] text-label-sm font-medium text-muted-foreground hover:border-foreground/20 hover:bg-foreground/[0.03] transition-colors cursor-pointer disabled:opacity-50"
+    >
+      <RotateCw className="w-3 h-3" />
+      {running ? "Re-extracting..." : "Re-extract"}
+    </button>
   );
 }
 
