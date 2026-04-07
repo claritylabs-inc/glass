@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query, internalQuery, internalMutation } from "./_generated/server";
-import { internal } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import { requireAuth } from "./lib/auth";
 import { requireOrgAccess, getOrgAccess } from "./lib/orgAuth";
 
@@ -681,8 +681,13 @@ export const restartExtraction = mutation({
       extractionLog: undefined,
     });
 
-    // Schedule fresh extraction
-    if (policy.emailId) {
+    // Schedule fresh extraction — use stored file if available, fall back to IMAP
+    if (policy.fileId) {
+      await ctx.scheduler.runAfter(0, api.actions.retryExtraction.retryExtraction, {
+        policyId: args.id,
+        mode: "full" as const,
+      });
+    } else if (policy.emailId) {
       const email = await ctx.db.get(policy.emailId);
       if (email) {
         await ctx.scheduler.runAfter(0, internal.actions.extractPolicy.extractPolicy, {
