@@ -447,6 +447,8 @@ For emails, compose a professional message that:
         stopWhen: stepCountIs(5),
       });
 
+      let usedTools = false;
+
       for await (const part of result.fullStream) {
         if (part.type === "text-delta") {
           content += part.text;
@@ -459,22 +461,20 @@ For emails, compose a professional message that:
             });
           }
         } else if (part.type === "tool-call") {
-          // Show what tool is being used while content is still empty
+          usedTools = true;
+          // Reset pre-tool "thinking" text — only the final response matters
+          content = "";
           const label = TOOL_LABELS[part.toolName] ?? `Using ${part.toolName}...`;
-          if (!content) {
-            await ctx.runMutation(internal.threads.streamAgentMessage, {
-              id: agentMsgId,
-              content: `*${label}*`,
-            });
-          }
+          await ctx.runMutation(internal.threads.streamAgentMessage, {
+            id: agentMsgId,
+            content: `*${label}*`,
+          });
         } else if (part.type === "tool-result") {
-          // After a tool completes, clear the status if no text yet
-          if (!content) {
-            await ctx.runMutation(internal.threads.streamAgentMessage, {
-              id: agentMsgId,
-              content: "",
-            });
-          }
+          // Clear status, text will start streaming next
+          await ctx.runMutation(internal.threads.streamAgentMessage, {
+            id: agentMsgId,
+            content: "",
+          });
         }
       }
 

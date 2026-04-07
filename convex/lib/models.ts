@@ -50,15 +50,15 @@ export type ModelTask =
   | "summary";
 
 /**
- * Model routing — optimized for latency and cost.
+ * Model routing.
  *
- * Claude Haiku: fast Q&A, tool calling, classification (~2-5s responses)
- * Kimi K2.5: deeper reasoning — analysis, email composition (acceptable latency)
- * Claude Sonnet: extraction (required by cl-sdk quality)
+ * Kimi K2.5: primary for chat, tools, analysis, email (good quality + 256K context)
+ * Claude Haiku: classification, summary (fast, cheap)
+ * Kimi K2.5: extraction (better quality per user feedback)
  */
 const MODEL_CONFIG: Record<ModelTask, () => any> = {
-  chat:             () => anthropic()("claude-haiku-4-5-20251001"),
-  chat_with_tools:  () => anthropic()("claude-haiku-4-5-20251001"),
+  chat:             () => moonshot()("kimi-k2.5"),
+  chat_with_tools:  () => moonshot()("kimi-k2.5"),
   email_draft:      () => moonshot()("kimi-k2.5"),
   email_reply:      () => moonshot()("kimi-k2.5"),
   analysis:         () => moonshot()("kimi-k2.5"),
