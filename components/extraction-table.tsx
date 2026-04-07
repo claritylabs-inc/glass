@@ -444,15 +444,11 @@ export function ExtractionTable({
                             {extraction.extractionStatus === "paused" && (
                               <>
                                 <ResumeButton policyId={extraction._id} />
-                                <RestartButton extraction={extraction} />
                                 <CancelButton policyId={extraction._id} />
                               </>
                             )}
                             {(extraction.extractionStatus === "error" || extraction.extractionStatus === "pending") && (
-                              <>
-                                <RestartButton extraction={extraction} />
-                                <CancelButton policyId={extraction._id} />
-                              </>
+                              <CancelButton policyId={extraction._id} />
                             )}
                           </div>
                         </td>
