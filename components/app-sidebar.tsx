@@ -98,6 +98,7 @@ export function AppSidebar({
   const emailConvs = useQuery(api.agentConversations.list, { archived: false });
   const createThread = useMutation(api.threads.create);
   const sendThreadMessage = useMutation(api.threads.sendMessage);
+  const archiveThread = useMutation(api.threads.archive);
   const { signOut } = useAuthActions();
   const { context: pageContext } = usePageContext();
   const { theme, cycle: cycleTheme } = useTheme();
@@ -381,27 +382,48 @@ export function AppSidebar({
             {conversations.map((item, idx) => {
               const isConvActive = pathname === `/agent/thread/${item.id}`;
               return (
-              <Link
+              <div
                 key={`${item.kind}-${item.id}`}
-                href={`/agent/thread/${item.id}`}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-body-sm transition-colors ${
-                  isConvActive
-                    ? "text-foreground bg-foreground/[0.05]"
-                    : "text-muted-foreground hover:bg-foreground/[0.04]"
-                }`}
+                className="group relative"
               >
-                {item.kind === "chat" ? (
-                  <MessageSquare className="w-3.5 h-3.5 shrink-0" />
-                ) : (
-                  <Mail className="w-3.5 h-3.5 shrink-0" />
-                )}
-                <span className="truncate flex-1">{item.label}</span>
-                {showShortcuts && idx < 9 && (
-                  <kbd className="text-[10px] min-w-[18px] text-center px-1 py-0.5 rounded bg-foreground/[0.06] text-muted-foreground/50 border border-foreground/6 leading-none animate-in fade-in duration-150">
-                    {idx + 1}
-                  </kbd>
-                )}
-              </Link>
+                <Link
+                  href={`/agent/thread/${item.id}`}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-body-sm transition-colors ${
+                    isConvActive
+                      ? "text-foreground bg-foreground/[0.05]"
+                      : "text-muted-foreground hover:bg-foreground/[0.04]"
+                  }`}
+                >
+                  {item.kind === "chat" ? (
+                    <MessageSquare className="w-3.5 h-3.5 shrink-0" />
+                  ) : (
+                    <Mail className="w-3.5 h-3.5 shrink-0" />
+                  )}
+                  <span className="truncate flex-1">{item.label}</span>
+                  {showShortcuts && idx < 9 && (
+                    <kbd className="text-[10px] min-w-[18px] text-center px-1 py-0.5 rounded bg-foreground/[0.06] text-muted-foreground/50 border border-foreground/6 leading-none animate-in fade-in duration-150">
+                      {idx + 1}
+                    </kbd>
+                  )}
+                </Link>
+                <button
+                  type="button"
+                  onClick={async (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    await archiveThread({ id: item.id as any });
+                    // If archiving the active thread, navigate to next available
+                    if (isConvActive) {
+                      const next = conversations.find((c) => c.id !== item.id);
+                      router.push(next ? `/agent/thread/${next.id}` : "/agent");
+                    }
+                  }}
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1 rounded-md text-muted-foreground/30 hover:text-muted-foreground hover:bg-foreground/[0.06] transition-all opacity-0 group-hover:opacity-100 cursor-pointer"
+                  title="Archive"
+                >
+                  <Archive className="w-3 h-3" />
+                </button>
+              </div>
               );
             })}
             <Link
