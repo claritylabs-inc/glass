@@ -34,7 +34,9 @@ import { useTheme } from "@/hooks/use-theme";
 
 const INSURANCE_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard, shortcut: "D" },
-  { href: "/policies", label: "Policies", icon: FileText, shortcut: "O" },
+  { href: "/policies", label: "Active Policies", icon: FileText, shortcut: "O" },
+  { href: "/policies?view=expired", label: "Expired Policies", icon: FileText, shortcut: null },
+  { href: "/policies?view=quotes", label: "Quotes", icon: FileText, shortcut: null },
   { href: "/applications", label: "Applications", icon: FileInput, shortcut: "Y" },
 ];
 
@@ -53,7 +55,7 @@ const ALL_NAV_ITEMS = [...INSURANCE_ITEMS, ...TOOLS_ITEMS];
  */
 const PAGE_SHORTCUT_MAP: Record<string, string> = {
   ...Object.fromEntries(
-    ALL_NAV_ITEMS.map((item) => [item.shortcut.toLowerCase(), item.href]),
+    ALL_NAV_ITEMS.filter((item) => item.shortcut).map((item) => [item.shortcut!.toLowerCase(), item.href]),
   ),
   j: "/settings",
   // /profile accessible via sidebar only (no shortcut)
@@ -91,6 +93,11 @@ export function AppSidebar({
 }) {
   const pathname = usePathname();
   const router = useRouter();
+  // Read search params from window.location to avoid useSearchParams() Suspense requirement
+  const getSearchParam = (key: string) => {
+    if (typeof window === "undefined") return null;
+    return new URLSearchParams(window.location.search).get(key);
+  };
   const viewer = useQuery(api.users.viewer);
   const viewerOrg = useQuery(api.orgs.viewerOrg);
   const unifiedThreads = useQuery(api.threads.list, { archived: false });
@@ -175,6 +182,20 @@ export function AppSidebar({
   function isActive(href: string) {
     if (href === "/") return pathname === "/";
     if (href === "/agent") return pathname === "/agent";
+    // Handle query param routes like /policies?view=quotes
+    if (href.includes("?")) {
+      const [path, query] = href.split("?");
+      if (!pathname.startsWith(path)) return false;
+      const params = new URLSearchParams(query);
+      for (const [key, val] of params) {
+        if (getSearchParam(key) !== val) return false;
+      }
+      return true;
+    }
+    // For /policies without query params, only match when no view param is set
+    if (href === "/policies") {
+      return pathname.startsWith("/policies") && !getSearchParam("view");
+    }
     return pathname.startsWith(href);
   }
 
@@ -338,7 +359,7 @@ export function AppSidebar({
             icon={item.icon}
             active={isActive(item.href)}
             collapsed={collapsed}
-            shortcut={item.shortcut}
+            shortcut={item.shortcut ?? undefined}
             cmdHeld={showShortcuts}
           />
         ))}
@@ -353,7 +374,7 @@ export function AppSidebar({
             icon={item.icon}
             active={isActive(item.href)}
             collapsed={collapsed}
-            shortcut={item.shortcut}
+            shortcut={item.shortcut ?? undefined}
             cmdHeld={showShortcuts}
           />
         ))}

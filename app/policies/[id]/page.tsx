@@ -1011,8 +1011,8 @@ export default function PolicyDetailPage({
                   {/* Premium */}
                   <FadeIn when={true} staggerIndex={2} duration={0.6}>
                     <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-4 py-3">
-                      <p className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider mb-1.5">Premium</p>
-                      <p className="text-body-sm font-medium text-foreground font-mono">{policy.premium || "—"}</p>
+                      <p className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider mb-1.5">Total Cost</p>
+                      <p className="text-body-sm font-medium text-foreground font-mono">{(policy as any).totalCost || policy.premium || "—"}</p>
                     </div>
                   </FadeIn>
 
@@ -1435,9 +1435,11 @@ export default function PolicyDetailPage({
                           {policyDocument?.costsAndFees?.fees?.length > 0 && (
                             <>
                               <tr className="border-t border-foreground/6 bg-foreground/[0.02]">
-                                <td colSpan={2} className="px-4 py-1.5 flex items-center gap-2">
-                                  <span className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider">Cost Breakdown</span>
-                                  {policyDocument.costsAndFees.pageNumber != null && <PageRef page={policyDocument.costsAndFees.pageNumber} />}
+                                <td colSpan={2} className="px-4 py-1.5">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider">Cost Breakdown</span>
+                                    {policyDocument.costsAndFees.pageNumber != null && <PageRef page={policyDocument.costsAndFees.pageNumber} />}
+                                  </div>
                                 </td>
                               </tr>
                               {policyDocument.costsAndFees.fees.map((f: any, i: number) => (

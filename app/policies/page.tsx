@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { useQuery } from "convex/react";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import { AppShell } from "@/components/app-shell";
 import { PolicyTable } from "@/components/policy-table";
@@ -26,10 +26,8 @@ export default function PoliciesPage() {
   const policies = useQuery(api.policies.list, {});
   const quotes = useQuery(api.policies.listQuotes, {});
   const searchParams = useSearchParams();
-  const router = useRouter();
 
-  const initialView = (searchParams.get("view") as DocumentView) || "active";
-  const [documentView, setDocumentView] = useState<DocumentView>(initialView);
+  const documentView: DocumentView = (searchParams.get("view") as DocumentView) || "active";
   const [activeTab, setActiveTab] = useState("all");
   const [selectedType, setSelectedType] = useState("");
   const [selectedCarrier, setSelectedCarrier] = useState("");
@@ -88,16 +86,6 @@ export default function PoliciesPage() {
     return result;
   }, [viewFilteredDocs, selectedType, selectedCarrier, selectedYear]);
 
-  function handleViewChange(view: DocumentView) {
-    setDocumentView(view);
-    setSelectedType("");
-    setSelectedCarrier("");
-    setSelectedYear("");
-    setActiveTab("all");
-    // Update URL without navigation
-    const url = view === "active" ? "/policies" : `/policies?view=${view}`;
-    router.replace(url, { scroll: false });
-  }
 
   const isLoading = policies === undefined || quotes === undefined;
 
@@ -118,8 +106,6 @@ export default function PoliciesPage() {
             </div>
           ) : (
             <PolicyFilters
-              documentView={documentView}
-              onDocumentViewChange={handleViewChange}
               activeTab={activeTab}
               onTabChange={setActiveTab}
               carriers={carriers}
