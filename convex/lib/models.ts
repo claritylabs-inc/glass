@@ -116,6 +116,6 @@ export function availableProviders(): string[] {
   const providers: string[] = [];
   if (process.env.ANTHROPIC_API_KEY) providers.push("anthropic");
   if (process.env.DEEPSEEK_API_KEY) providers.push("deepseek");
-  if (process.env.MOONSHOTAI_API_KEY) providers.push("moonshot");
+  if (process.env.MOONSHOT_API_KEY) providers.push("moonshot");
   return providers;
 }
