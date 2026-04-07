@@ -3,8 +3,15 @@
 import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
-import { streamText, generateText } from "ai";
-import { getModel } from "../lib/models";
+import { streamText, generateText, stepCountIs } from "ai";
+import { getModel, generateTextWithFallback } from "../lib/models";
+import {
+  lookupPolicy,
+  compareCoverages,
+  checkApplicationStatus,
+  saveNote,
+  generateCoi,
+} from "../lib/chatTools";
 import { buildDocumentContext } from "../lib/agentPrompts";
 import {
   buildSystemPromptForContext,
@@ -15,6 +22,96 @@ import {
   buildConversationMemoryContext,
   logAiError,
 } from "../lib/aiUtils";
+
+/** Build executable tools with Convex context wired in. */
+function buildTools(ctx: any, args: { orgId: any; threadId: any }) {
+  return {
+    lookup_policy: {
+      ...lookupPolicy,
+      execute: async (params: { query: string; policyType?: string; carrier?: string }) => {
+        const policies = await ctx.runQuery(
+          internal.policies.listAllInternal,
+          { orgId: args.orgId },
+        );
+        const q = params.query.toLowerCase();
+        const matches = policies.filter((p: any) => {
+          const matchesQuery =
+            p.insuredName?.toLowerCase().includes(q) ||
+            p.security?.toLowerCase().includes(q) ||
+            p.policyNumber?.toLowerCase().includes(q) ||
+            p.policyTypes?.some((t: string) => t.toLowerCase().includes(q));
+          const matchesType = !params.policyType || p.policyTypes?.includes(params.policyType);
+          const matchesCarrier = !params.carrier ||
+            p.security?.toLowerCase().includes(params.carrier.toLowerCase());
+          return matchesQuery && matchesType && matchesCarrier;
+        });
+        if (matches.length === 0) return "No matching policies found.";
+        return matches.slice(0, 5).map((p: any) => ({
+          id: p._id,
+          insured: p.insuredName,
+          carrier: p.security,
+          type: p.policyTypes?.join(", "),
+          number: p.policyNumber,
+          effective: p.effectiveDate,
+          expiration: p.expirationDate,
+          premium: p.premium,
+        }));
+      },
+    },
+    compare_coverages: {
+      ...compareCoverages,
+      execute: async (params: { policyId1: string; policyId2: string }) => {
+        const policies = await ctx.runQuery(
+          internal.policies.listAllInternal,
+          { orgId: args.orgId },
+        );
+        const p1 = policies.find((p: any) => p._id === params.policyId1);
+        const p2 = policies.find((p: any) => p._id === params.policyId2);
+        if (!p1 || !p2) return "One or both policies not found.";
+        return {
+          policy1: { id: p1._id, carrier: p1.security, type: p1.policyTypes, limits: p1.limits, deductibles: p1.deductibles, premium: p1.premium },
+          policy2: { id: p2._id, carrier: p2.security, type: p2.policyTypes, limits: p2.limits, deductibles: p2.deductibles, premium: p2.premium },
+        };
+      },
+    },
+    check_application_status: {
+      ...checkApplicationStatus,
+      execute: async (params: { applicationId?: string; query?: string }) => {
+        const apps = await ctx.runQuery(
+          internal.applicationSessions.listAllInternal,
+          { orgId: args.orgId },
+        );
+        if (params.applicationId) {
+          const match = apps.find((a: any) => a._id === params.applicationId);
+          return match ?? "Application not found.";
+        }
+        if (params.query) {
+          const q = params.query.toLowerCase();
+          const matches = apps.filter((a: any) =>
+            a.applicationTitle?.toLowerCase().includes(q) ||
+            a.sourceFileName?.toLowerCase().includes(q),
+          );
+          return matches.length > 0 ? matches : "No matching applications found.";
+        }
+        return apps.slice(0, 5);
+      },
+    },
+    save_note: {
+      ...saveNote,
+      execute: async (_params: { content: string; type: string; policyId?: string }) => {
+        // Phase 3 will wire this to orgMemory — placeholder for now
+        return "Note saved. (Memory system coming soon.)";
+      },
+    },
+    generate_coi: {
+      ...generateCoi,
+      execute: async (_params: { policyId: string; certificateHolder?: string }) => {
+        // Phase 4 will implement this — placeholder for now
+        return "COI generation coming soon.";
+      },
+    },
+  };
+}
 
 export const run = internalAction({
   args: {
@@ -226,37 +323,64 @@ For emails, compose a professional message that:
         applicationContext +
         memoryContext;
 
-      // Call Claude with streaming
-      let content = "";
-      let lastFlush = 0;
-      const FLUSH_INTERVAL = 150; // ms between DB updates
+      // Detect if user message needs tools (action keywords)
+      const actionKeywords = /\b(look\s*up|find|search|compare|send\s*email|check\s*application|check\s*status|generate\s*coi|create\s*coi|save\s*note|remember)\b/i;
+      const needsTools = actionKeywords.test(latestUserContent);
 
-      const result = streamText({
-        model: getModel("chat"),
-        maxOutputTokens: 2048,
-        system: fullSystemPrompt,
-        messages: messageHistory,
-      });
+      let content: string;
 
-      for await (const chunk of result.textStream) {
-        content += chunk;
-        const now = Date.now();
-        if (now - lastFlush >= FLUSH_INTERVAL) {
-          lastFlush = now;
-          await ctx.runMutation(internal.threads.streamAgentMessage, {
-            id: agentMsgId,
-            content,
-          });
+      if (needsTools) {
+        // Agentic mode — generateText with tools
+        const tools = buildTools(ctx, { orgId: args.orgId, threadId: args.threadId });
+        const { text } = await generateTextWithFallback({
+          model: getModel("chat_with_tools"),
+          maxOutputTokens: 2048,
+          system: fullSystemPrompt,
+          messages: messageHistory,
+          tools,
+          stopWhen: stepCountIs(5),
+        });
+        content = text;
+
+        await ctx.runMutation(internal.threads.updateAgentMessage, {
+          id: agentMsgId,
+          content,
+          referencedPolicyIds: relevantPolicyIds.length > 0 ? relevantPolicyIds : undefined,
+          referencedQuoteIds: relevantQuoteIds.length > 0 ? relevantQuoteIds : undefined,
+        });
+      } else {
+        // Q&A mode — streamText for smooth UX
+        content = "";
+        let lastFlush = 0;
+        const FLUSH_INTERVAL = 150;
+
+        const result = streamText({
+          model: getModel("chat"),
+          maxOutputTokens: 2048,
+          system: fullSystemPrompt,
+          messages: messageHistory,
+        });
+
+        for await (const chunk of result.textStream) {
+          content += chunk;
+          const now = Date.now();
+          if (now - lastFlush >= FLUSH_INTERVAL) {
+            lastFlush = now;
+            await ctx.runMutation(internal.threads.streamAgentMessage, {
+              id: agentMsgId,
+              content,
+            });
+          }
         }
+
+        await ctx.runMutation(internal.threads.updateAgentMessage, {
+          id: agentMsgId,
+          content,
+          referencedPolicyIds: relevantPolicyIds.length > 0 ? relevantPolicyIds : undefined,
+          referencedQuoteIds: relevantQuoteIds.length > 0 ? relevantQuoteIds : undefined,
+        });
       }
 
-      // Final update — clears processing status, saves provenance
-      await ctx.runMutation(internal.threads.updateAgentMessage, {
-        id: agentMsgId,
-        content,
-        referencedPolicyIds: relevantPolicyIds.length > 0 ? relevantPolicyIds : undefined,
-        referencedQuoteIds: relevantQuoteIds.length > 0 ? relevantQuoteIds : undefined,
-      });
       await ctx.runMutation(internal.threads.touchThread, {
         threadId: args.threadId,
       });
