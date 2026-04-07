@@ -118,7 +118,10 @@ export default defineSchema({
       v.literal("confirmed"),
       v.literal("complete"),
       v.literal("cancelled"),
+      v.literal("failed"),
     ),
+    failureReason: v.optional(v.string()),
+    lastProgressAt: v.optional(v.number()),
     extractedFields: v.optional(v.string()), // JSON-serialized FormField[]
     totalFields: v.optional(v.number()),
     filledFields: v.optional(v.number()),

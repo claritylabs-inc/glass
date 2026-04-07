@@ -332,6 +332,7 @@ export const updateStatus = internalMutation({
       v.literal("confirmed"),
       v.literal("complete"),
       v.literal("cancelled"),
+      v.literal("failed"),
     ),
     extractedFields: v.optional(v.string()),
     filledFields: v.optional(v.number()),
@@ -377,6 +378,58 @@ export const updateError = internalMutation({
   },
   handler: async (ctx, args) => {
     await ctx.db.patch(args.id, { error: args.error });
+  },
+});
+
+export const markFailed = internalMutation({
+  args: {
+    id: v.id("applicationSessions"),
+    failureReason: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.id, {
+      status: "failed",
+      failureReason: args.failureReason,
+    });
+  },
+});
+
+export const updateProgress = internalMutation({
+  args: {
+    id: v.id("applicationSessions"),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.id, { lastProgressAt: Date.now() });
+  },
+});
+
+/** Marks application sessions stuck for >5 minutes as failed */
+export const checkStaleAndFail = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const staleThreshold = 5 * 60 * 1000; // 5 minutes
+    const now = Date.now();
+    const activeStatuses = ["extracting_fields", "filling_known"] as const;
+
+    let failedCount = 0;
+    for (const status of activeStatuses) {
+      const sessions = await ctx.db
+        .query("applicationSessions")
+        .withIndex("by_status", (q) => q.eq("status", status))
+        .collect();
+
+      for (const session of sessions) {
+        const lastActivity = session.lastProgressAt ?? session._creationTime;
+        if (now - lastActivity > staleThreshold) {
+          await ctx.db.patch(session._id, {
+            status: "failed",
+            failureReason: `Processing timed out after ${Math.round((now - lastActivity) / 60000)} minutes in "${status}" phase. Use the retry button to try again.`,
+          });
+          failedCount++;
+        }
+      }
+    }
+    return failedCount;
   },
 });
 
