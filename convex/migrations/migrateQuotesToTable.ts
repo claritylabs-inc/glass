@@ -19,7 +19,7 @@ export const migrateQuotesToTable = internalMutation({
       // Map policy coverages to quote coverages
       const coverages = p.coverages.map((c) => ({
         name: c.name,
-        proposedLimit: c.limit,
+        proposedLimit: c.limit ?? "N/A",
         proposedDeductible: c.deductible,
         pageNumber: c.pageNumber,
         sectionRef: c.sectionRef,

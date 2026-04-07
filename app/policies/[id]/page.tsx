@@ -992,49 +992,128 @@ export default function PolicyDetailPage({
                 {activeTab === "details" && (<>
                 {/* Info grid */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                  {[
-                    {
-                      icon: Calendar,
-                      label: "Policy Period",
-                      value: policy.effectiveDate === "Unknown" && policy.expirationDate === "Unknown"
-                        ? (documentType === "quote" ? "Quote" : "Unknown")
-                        : `${policy.effectiveDate} – ${policy.expirationDate}`,
-                      sub: `Policy Year: ${policy.policyYear}`,
-                    },
-                    {
-                      icon: DollarSign,
-                      label: "Premium",
-                      value: policy.premium || "—",
-                      sub: "Annual premium",
-                      mono: true,
-                    },
-                    {
-                      icon: Shield,
-                      label: "Producer",
-                      value: policy.carrier,
-                      sub: `Status: ${policy.extractionStatus}`,
-                    },
-                  ].map((card, i) => (
-                    <FadeIn key={card.label} when={true} staggerIndex={i + 1} duration={0.6}>
-                      <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-4 py-3 h-full">
-                        <div className="flex items-center gap-2 mb-2">
-                          <card.icon className="w-4 h-4 text-muted-foreground" />
-                          <p className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider">
-                            {card.label}
-                          </p>
-                        </div>
-                        <p
-                          className={`text-body-sm font-medium text-foreground ${card.mono ? "font-mono" : ""}`}
-                        >
-                          {card.value}
-                        </p>
-                        <p className="text-label-sm text-muted-foreground/60 mt-1">
-                          {card.sub}
+                  {/* Policy Period */}
+                  <FadeIn when={true} staggerIndex={1} duration={0.6}>
+                    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-4 py-3 h-full">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Calendar className="w-4 h-4 text-muted-foreground" />
+                        <p className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider">
+                          Policy Period
                         </p>
                       </div>
-                    </FadeIn>
-                  ))}
+                      <p className="text-body-sm font-medium text-foreground">
+                        {policy.effectiveDate === "Unknown" && !policy.expirationDate
+                          ? (documentType === "quote" ? "Quote" : "Unknown")
+                          : (policy as any).policyTermType === "continuous"
+                            ? `${policy.effectiveDate} — Until Cancelled`
+                            : `${policy.effectiveDate} – ${policy.expirationDate ?? "—"}`}
+                      </p>
+                      <p className="text-label-sm text-muted-foreground/60 mt-1">
+                        Policy Year: {policy.policyYear}
+                        {effectiveTime ? ` · Eff: ${effectiveTime}` : ""}
+                      </p>
+                      {(policy as any).nextReviewDate && (
+                        <p className="text-label-sm text-muted-foreground/60">Next review: {(policy as any).nextReviewDate}</p>
+                      )}
+                      {coverageForm && (
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-foreground/[0.04] text-muted-foreground mt-1.5">
+                          {coverageForm === "claims_made" ? "Claims-Made" : coverageForm === "occurrence" ? "Occurrence" : coverageForm}
+                        </span>
+                      )}
+                      {retroactiveDate && <p className="text-label-sm text-muted-foreground/50">Retro date: {retroactiveDate}</p>}
+                    </div>
+                  </FadeIn>
+
+                  {/* Premium */}
+                  <FadeIn when={true} staggerIndex={2} duration={0.6}>
+                    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-4 py-3 h-full">
+                      <div className="flex items-center gap-2 mb-2">
+                        <DollarSign className="w-4 h-4 text-muted-foreground" />
+                        <p className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider">
+                          Premium
+                        </p>
+                      </div>
+                      <p className="text-body-sm font-medium text-foreground font-mono">{policy.premium || "—"}</p>
+                      {(policy as any).totalCost && (policy as any).totalCost !== policy.premium && (
+                        <p className="text-label-sm text-muted-foreground/60 mt-1 font-mono">Total: {(policy as any).totalCost}</p>
+                      )}
+                      {(policy as any).minimumPremium && (
+                        <p className="text-label-sm text-muted-foreground/50">Min: {(policy as any).minimumPremium}</p>
+                      )}
+                      {(policy as any).depositPremium && (
+                        <p className="text-label-sm text-muted-foreground/50">Deposit: {(policy as any).depositPremium}</p>
+                      )}
+                    </div>
+                  </FadeIn>
+
+                  {/* Insurer / Producer */}
+                  <FadeIn when={true} staggerIndex={3} duration={0.6}>
+                    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-4 py-3 h-full">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Shield className="w-4 h-4 text-muted-foreground" />
+                        <p className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider">
+                          Insurer
+                        </p>
+                      </div>
+                      <p className="text-body-sm font-medium text-foreground">{carrierLegalName || security || policy.carrier}</p>
+                      {carrierNaicNumber && <p className="text-label-sm text-muted-foreground/60 mt-0.5">NAIC: {carrierNaicNumber}</p>}
+                      {carrierAmBestRating && <p className="text-label-sm text-muted-foreground/60">AM Best: {carrierAmBestRating}</p>}
+                      {carrierAdmittedStatus && (
+                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium mt-1 ${
+                          carrierAdmittedStatus === "admitted" ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"
+                          : carrierAdmittedStatus === "surplus_lines" ? "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400"
+                          : "bg-foreground/[0.04] text-muted-foreground"
+                        }`}>
+                          {carrierAdmittedStatus === "non_admitted" ? "Non-Admitted" : carrierAdmittedStatus === "surplus_lines" ? "Surplus Lines" : "Admitted"}
+                        </span>
+                      )}
+                    </div>
+                  </FadeIn>
                 </div>
+
+                {/* Second row: Insured + Broker + Program */}
+                {(policy.insuredName || brokerAgency || programName) && (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                    {/* Insured */}
+                    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-4 py-3">
+                      <p className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider mb-1.5">Insured</p>
+                      <p className="text-body-sm font-medium">{policy.insuredName}</p>
+                      {insuredDba && <p className="text-label-sm text-muted-foreground/60">DBA: {insuredDba}</p>}
+                      {insuredAddress && (
+                        <p className="text-label-sm text-muted-foreground/50 mt-0.5">
+                          {typeof insuredAddress === "string" ? insuredAddress : [insuredAddress.street1, insuredAddress.city, insuredAddress.state, insuredAddress.zip].filter(Boolean).join(", ")}
+                        </p>
+                      )}
+                      {insuredFein && <p className="text-label-sm text-muted-foreground/50">FEIN: {insuredFein}</p>}
+                      {insuredEntityType && <p className="text-label-sm text-muted-foreground/50 capitalize">{insuredEntityType.replace(/_/g, " ")}</p>}
+                    </div>
+
+                    {/* Broker */}
+                    {(brokerAgency || broker) && (
+                      <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-4 py-3">
+                        <p className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider mb-1.5">Broker</p>
+                        <p className="text-body-sm font-medium">{brokerAgency || broker}</p>
+                        {brokerContactName && <p className="text-label-sm text-muted-foreground/60">{brokerContactName}</p>}
+                        {brokerLicenseNumber && <p className="text-label-sm text-muted-foreground/50">License: {brokerLicenseNumber}</p>}
+                      </div>
+                    )}
+
+                    {/* Program / Underwriter / MGA */}
+                    {(programName || underwriterName || mga) && (
+                      <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-4 py-3">
+                        <p className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider mb-1.5">Program</p>
+                        {programName && <p className="text-body-sm font-medium">{programName}</p>}
+                        {underwriterName && <p className="text-label-sm text-muted-foreground/60">Underwriter: {underwriterName}</p>}
+                        {mga && <p className="text-label-sm text-muted-foreground/60">MGA: {mga}</p>}
+                        {isPackage && (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400 mt-1">
+                            Package Policy
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Summary */}
                 {policy.summary && (

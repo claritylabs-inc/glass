@@ -260,7 +260,7 @@ export const stats = query({
 // Shared validators for coverages and document structure
 const coverageValidator = v.object({
   name: v.string(),
-  limit: v.string(),
+  limit: v.optional(v.string()),
   deductible: v.optional(v.string()),
   pageNumber: v.optional(v.number()),
   sectionRef: v.optional(v.string()),

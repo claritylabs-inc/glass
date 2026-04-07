@@ -383,35 +383,51 @@ export default function QuoteDetailPage({ params }: { params: Promise<{ id: stri
           {/* Info cards */}
           <FadeIn when={true} staggerIndex={1} duration={0.6}>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+              {/* Insurer */}
               <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <Shield className="w-4 h-4 text-muted-foreground/40" />
-                  <span className="text-label-sm font-medium text-muted-foreground">Producer</span>
+                  <span className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider">Insurer</span>
                 </div>
-                <p className="text-body-sm font-semibold">{carrier}</p>
-                {quote.mga && <p className="text-label-sm text-muted-foreground mt-0.5">MGA: {quote.mga}</p>}
-                {quote.broker && <p className="text-label-sm text-muted-foreground mt-0.5">Broker: {quote.broker}</p>}
+                <p className="text-body-sm font-semibold">{(quote as any).carrierLegalName || (quote as any).security || carrier}</p>
+                {(quote as any).carrierNaicNumber && <p className="text-label-sm text-muted-foreground/60 mt-0.5">NAIC: {(quote as any).carrierNaicNumber}</p>}
+                {(quote as any).carrierAdmittedStatus && (
+                  <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium mt-1 ${
+                    (quote as any).carrierAdmittedStatus === "admitted" ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400" : "bg-foreground/[0.04] text-muted-foreground"
+                  }`}>
+                    {(quote as any).carrierAdmittedStatus === "non_admitted" ? "Non-Admitted" : (quote as any).carrierAdmittedStatus === "surplus_lines" ? "Surplus Lines" : "Admitted"}
+                  </span>
+                )}
+                {quote.mga && <p className="text-label-sm text-muted-foreground/50 mt-0.5">MGA: {quote.mga}</p>}
+                {quote.broker && <p className="text-label-sm text-muted-foreground/50 mt-0.5">Broker: {quote.broker}</p>}
               </div>
 
+              {/* Proposed Period */}
               <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <Calendar className="w-4 h-4 text-muted-foreground/40" />
-                  <span className="text-label-sm font-medium text-muted-foreground">Proposed Period</span>
+                  <span className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider">Proposed Period</span>
                 </div>
                 <p className="text-body-sm font-semibold">
                   {quote.proposedEffectiveDate ?? "—"} to {quote.proposedExpirationDate ?? "—"}
                 </p>
+                {(quote as any).coverageForm && (
+                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-foreground/[0.04] text-muted-foreground mt-1">
+                    {(quote as any).coverageForm === "claims_made" ? "Claims-Made" : (quote as any).coverageForm === "occurrence" ? "Occurrence" : (quote as any).coverageForm}
+                  </span>
+                )}
                 {quote.quoteExpirationDate && (
-                  <p className={`text-label-sm mt-0.5 ${isExpired ? "text-red-500 font-medium" : "text-muted-foreground"}`}>
-                    Quote expires: {quote.quoteExpirationDate}
+                  <p className={`text-label-sm mt-1 ${isExpired ? "text-red-500 font-medium" : "text-muted-foreground/60"}`}>
+                    {isExpired ? "Expired" : "Quote expires"}: {quote.quoteExpirationDate}
                   </p>
                 )}
               </div>
 
+              {/* Premium */}
               <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <DollarSign className="w-4 h-4 text-muted-foreground/40" />
-                  <span className="text-label-sm font-medium text-muted-foreground">Premium Indication</span>
+                  <span className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider">Premium Indication</span>
                 </div>
                 <p className="text-body-sm font-semibold font-mono">{quote.premium ?? "—"}</p>
                 {quote.isRenewal && (
@@ -419,8 +435,43 @@ export default function QuoteDetailPage({ params }: { params: Promise<{ id: stri
                     Renewal
                   </span>
                 )}
+                {(quote as any).premiumBreakdown?.length > 0 && (
+                  <div className="mt-1.5 space-y-0.5">
+                    {(quote as any).premiumBreakdown.slice(0, 3).map((pb: any, i: number) => (
+                      <p key={i} className="text-label-sm text-muted-foreground/50 font-mono">{pb.line}: {pb.amount}</p>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
+
+            {/* Second row: Insured + Subjectivities count */}
+            {(quote.insuredName || (quote as any).enrichedSubjectivities?.length > 0) && (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+                <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-4">
+                  <p className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider mb-1.5">Insured</p>
+                  <p className="text-body-sm font-semibold">{quote.insuredName}</p>
+                  {(quote as any).insuredAddress && (
+                    <p className="text-label-sm text-muted-foreground/50 mt-0.5">
+                      {typeof (quote as any).insuredAddress === "string" ? (quote as any).insuredAddress : [(quote as any).insuredAddress.street1, (quote as any).insuredAddress.city, (quote as any).insuredAddress.state, (quote as any).insuredAddress.zip].filter(Boolean).join(", ")}
+                    </p>
+                  )}
+                </div>
+                {(quote as any).enrichedSubjectivities?.length > 0 && (
+                  <div className="rounded-lg border border-amber-100 dark:border-amber-900/30 bg-amber-50/50 dark:bg-amber-950/20 p-4">
+                    <p className="text-label-sm font-medium text-amber-700 dark:text-amber-400 uppercase tracking-wider mb-1.5">Subjectivities</p>
+                    <p className="text-body-sm font-semibold text-amber-800 dark:text-amber-300">{(quote as any).enrichedSubjectivities.length} conditions</p>
+                    <p className="text-label-sm text-amber-600/60 dark:text-amber-400/60 mt-0.5">Review before binding</p>
+                  </div>
+                )}
+                {(quote as any).warrantyRequirements?.length > 0 && (
+                  <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-4">
+                    <p className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider mb-1.5">Warranties</p>
+                    <p className="text-body-sm font-semibold">{(quote as any).warrantyRequirements.length} requirements</p>
+                  </div>
+                )}
+              </div>
+            )}
           </FadeIn>
 
           {/* Proposed Coverages */}

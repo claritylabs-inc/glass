@@ -381,7 +381,7 @@ export default defineSchema({
     coverages: v.array(
       v.object({
         name: v.string(),
-        limit: v.string(),
+        limit: v.optional(v.string()),
         deductible: v.optional(v.string()),
         pageNumber: v.optional(v.number()),
         sectionRef: v.optional(v.string()),

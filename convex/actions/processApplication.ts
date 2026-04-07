@@ -1232,7 +1232,7 @@ Use the most specific code that applies. Do not guess if the info is insufficien
         for (const cov of policy.coverages ?? []) {
           const covKey = `${prefix}_${cov.name.toLowerCase().replace(/[^a-z0-9]+/g, "_")}_limit`;
           if (!contextEntries.some((e) => e.key === covKey)) {
-            contextEntries.push({ key: covKey, value: cov.limit, category: "current_insurance" });
+            contextEntries.push({ key: covKey, value: cov.limit ?? "N/A", category: "current_insurance" });
             if (cov.deductible) {
               contextEntries.push({
                 key: covKey.replace("_limit", "_deductible"),
