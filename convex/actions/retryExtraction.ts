@@ -83,7 +83,7 @@ export const retryQuoteExtraction = action({
         log,
         models,
         concurrency: 3,
-        onMetadata: async (raw) => {
+        onMetadata: async (raw: string) => {
           await ctx.runMutation(api.quotes.updateExtraction, {
             id: args.quoteId,
             rawMetadataResponse: raw,
@@ -348,7 +348,7 @@ export const retryExtraction = action({
         log,
         models,
         concurrency: 3,
-        onMetadata: async (raw) => {
+        onMetadata: async (raw: string) => {
           await ctx.runMutation(api.policies.updateExtraction, {
             id: args.policyId,
             rawMetadataResponse: raw,

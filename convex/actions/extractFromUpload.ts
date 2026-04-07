@@ -72,7 +72,7 @@ export const extractFromUpload = action({
           log,
           models,
           concurrency: 3,
-          onMetadata: async (raw) => {
+          onMetadata: async (raw: string) => {
             await ctx.runMutation(api.quotes.updateExtraction, {
               id: quoteId,
               rawMetadataResponse: raw,
@@ -149,7 +149,7 @@ export const extractFromUpload = action({
           log,
           models,
           concurrency: 3,
-          onMetadata: async (raw) => {
+          onMetadata: async (raw: string) => {
             await ctx.runMutation(api.policies.updateExtraction, {
               id: policyId,
               rawMetadataResponse: raw,

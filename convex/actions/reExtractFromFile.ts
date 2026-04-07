@@ -48,7 +48,7 @@ export const reExtractFromFile = action({
         pdfBase64, {
         log,
         models,
-        onMetadata: async (raw) => {
+        onMetadata: async (raw: string) => {
           await ctx.runMutation(api.policies.updateExtraction, {
             id: args.policyId,
             rawMetadataResponse: raw,
@@ -125,7 +125,7 @@ export const reExtractQuoteFromFile = action({
         pdfBase64, {
         log,
         models,
-        onMetadata: async (raw) => {
+        onMetadata: async (raw: string) => {
           await ctx.runMutation(api.quotes.updateExtraction, {
             id: args.quoteId,
             rawMetadataResponse: raw,

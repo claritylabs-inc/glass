@@ -113,7 +113,7 @@ export const extractPolicy = internalAction({
           log,
           models,
           concurrency: 1,
-          onMetadata: async (raw) => {
+          onMetadata: async (raw: string) => {
             await ctx.runMutation(api.quotes.updateExtraction, {
               id: quoteId,
               rawMetadataResponse: raw,
@@ -201,7 +201,7 @@ export const extractPolicy = internalAction({
           log,
           models,
           concurrency: 1,
-          onMetadata: async (raw) => {
+          onMetadata: async (raw: string) => {
             await ctx.runMutation(api.policies.updateExtraction, {
               id: policyId,
               rawMetadataResponse: raw,
