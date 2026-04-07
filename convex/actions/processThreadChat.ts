@@ -3,44 +3,18 @@
 import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
-import { streamText, generateText, type ModelMessage } from "ai";
-import { haikuModel } from "../lib/ai";
+import { streamText, generateText } from "ai";
+import { getModel } from "../lib/models";
+import { buildDocumentContext } from "../lib/agentPrompts";
 import {
-  buildSystemPrompt,
-  buildDocumentContext,
+  buildSystemPromptForContext,
+  buildMessageHistory,
+  buildSignature,
+  stripMarkdown,
+  markdownToHtml,
   buildConversationMemoryContext,
-} from "../lib/agentPrompts";
-
-/* ── Email helpers (shared with handleInboundEmail) ── */
-
-function buildSignature(): { text: string; html: string } {
-  const siteUrl = process.env.SITE_URL ?? "https://prism.claritylabs.inc";
-  const text = "\n\nsent with Prism";
-  const html = `<p style="font-size:12px;color:#999;margin:24px 0 0"><a href="${siteUrl}" style="color:#999;text-decoration:none">sent with Prism</a></p>`;
-  return { text, html };
-}
-
-function stripMarkdown(text: string) {
-  let result = text;
-  result = result.replace(/^#{1,6}\s+(.+)$/gm, "$1");
-  result = result.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, "$1 ($2)");
-  result = result.replace(/\*\*(.+?)\*\*/g, "$1");
-  result = result.replace(/\*(.+?)\*/g, "$1");
-  return result;
-}
-
-function markdownToHtml(text: string) {
-  const linkStyle = 'style="color:#2563eb;text-decoration:underline"';
-  let result = text;
-  result = result.replace(/^#{1,6}\s+(.+)$/gm, "<strong>$1</strong>");
-  result = result.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,
-    `<a href="$2" ${linkStyle}>$1</a>`);
-  result = result.replace(/(?<!href=")(https?:\/\/[^\s<)]+)/g,
-    `<a href="$1" ${linkStyle}>$1</a>`);
-  result = result.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
-  result = result.replace(/\*(.+?)\*/g, "<em>$1</em>");
-  return result;
-}
+  logAiError,
+} from "../lib/aiUtils";
 
 export const run = internalAction({
   args: {
@@ -121,17 +95,12 @@ export const run = internalAction({
         process.env.SITE_URL ?? "https://prism.claritylabs.inc";
 
       // Build system prompt (reuse direct mode)
-      const systemPrompt = buildSystemPrompt(
-        "direct",
-        org.context,
-        siteUrl,
-        org.name,
+      const systemPrompt = buildSystemPromptForContext({
+        org,
+        mode: "direct",
         userName,
-        org.coiHandling as any,
-        org.insuranceBroker,
-        org.brokerContactName,
-        org.brokerContactEmail,
-      );
+        siteUrl,
+      });
 
       // Load thread messages for history
       const allMessages = await ctx.runQuery(
@@ -163,20 +132,7 @@ export const run = internalAction({
       const memoryContext = buildConversationMemoryContext(pastConversations);
 
       // Build message history (skip processing placeholders)
-      const messageHistory: ModelMessage[] = [];
-      for (const msg of allMessages) {
-        if (msg.status === "processing") continue;
-        if (msg.role === "user") {
-          messageHistory.push({
-            role: "user",
-            content: msg.userName
-              ? `[${msg.userName}]: ${msg.content}`
-              : msg.content,
-          });
-        } else if (msg.role === "agent" && msg.content) {
-          messageHistory.push({ role: "assistant", content: msg.content });
-        }
-      }
+      const messageHistory = buildMessageHistory(allMessages);
 
       // Detect thread type
       const thread = await ctx.runQuery(internal.threads.getInternal, { id: args.threadId });
@@ -276,7 +232,7 @@ For emails, compose a professional message that:
       const FLUSH_INTERVAL = 150; // ms between DB updates
 
       const result = streamText({
-        model: haikuModel,
+        model: getModel("chat"),
         maxOutputTokens: 2048,
         system: fullSystemPrompt,
         messages: messageHistory,
@@ -448,7 +404,7 @@ For emails, compose a professional message that:
               });
             }
           } catch (err) {
-            console.error("Failed to send email from chat:", err);
+            logAiError("processThreadChat.sendEmail", err, { threadId: args.threadId });
             // Update chat message with error but don't fail the whole action
             const errMsg = err instanceof Error ? err.message : String(err);
             await ctx.runMutation(internal.threads.updateAgentMessage, {
@@ -464,7 +420,7 @@ For emails, compose a professional message that:
       if (userMessages.length === 1) {
         try {
           const { text: titleText } = await generateText({
-            model: haikuModel,
+            model: getModel("summary"),
             maxOutputTokens: 12,
             system:
               "You are a title generator. Given a user question and an assistant reply, output a short 2-4 word title that captures the topic. Rules:\n- Output ONLY the title, no quotes, no punctuation, no explanation\n- Use title case\n- Examples: \"GL Coverage Limits\", \"Cyber Liability Quotes\", \"Workers Comp App\", \"Renewal Timeline\"",
@@ -492,7 +448,7 @@ For emails, compose a professional message that:
     } catch (error) {
       const message =
         error instanceof Error ? error.message : String(error);
-      console.error("Thread chat agent error:", message);
+      logAiError("processThreadChat", error, { threadId: args.threadId, orgId: args.orgId });
       await ctx.runMutation(internal.threads.updateAgentError, {
         id: agentMsgId,
         error: message,
