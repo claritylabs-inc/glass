@@ -3,13 +3,15 @@
 import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
-import { generateText, type ModelMessage } from "ai";
-import { haikuModel } from "../lib/ai";
+import { generateText } from "ai";
+import { getModel } from "../lib/models";
+import { buildDocumentContext } from "../lib/agentPrompts";
 import {
-  buildSystemPrompt,
-  buildDocumentContext,
+  buildSystemPromptForContext,
+  buildMessageHistory,
   buildConversationMemoryContext,
-} from "../lib/agentPrompts";
+  logAiError,
+} from "../lib/aiUtils";
 
 /**
  * Simplified chat action for MCP — no streaming, no email sending.
@@ -61,17 +63,12 @@ export const run = internalAction({
     const siteUrl = process.env.SITE_URL ?? "https://prism.claritylabs.inc";
 
     // Build system prompt
-    const systemPrompt = buildSystemPrompt(
-      "direct",
-      org.context,
-      siteUrl,
-      org.name,
+    const systemPrompt = buildSystemPromptForContext({
+      org,
+      mode: "direct",
       userName,
-      org.coiHandling as any,
-      org.insuranceBroker,
-      org.brokerContactName,
-      org.brokerContactEmail,
-    );
+      siteUrl,
+    });
 
     // Document context
     const { context: docContext, relevantPolicyIds, relevantQuoteIds } =
@@ -114,24 +111,11 @@ MCP MODE:
       memoryContext;
 
     // Build message history (skip processing placeholders)
-    const messageHistory: ModelMessage[] = [];
-    for (const msg of allMessages) {
-      if (msg.status === "processing") continue;
-      if (msg.role === "user") {
-        messageHistory.push({
-          role: "user",
-          content: msg.userName
-            ? `[${msg.userName}]: ${msg.content}`
-            : msg.content,
-        });
-      } else if (msg.role === "agent" && msg.content) {
-        messageHistory.push({ role: "assistant", content: msg.content });
-      }
-    }
+    const messageHistory = buildMessageHistory(allMessages);
 
     // Generate response (non-streaming)
     const { text: content } = await generateText({
-      model: haikuModel,
+      model: getModel("chat"),
       maxOutputTokens: 2048,
       system: fullSystemPrompt,
       messages: messageHistory,
@@ -155,7 +139,7 @@ MCP MODE:
     if (userMessages.length <= 1) {
       try {
         const { text: titleText } = await generateText({
-          model: haikuModel,
+          model: getModel("summary"),
           maxOutputTokens: 12,
           system:
             "You are a title generator. Given a user question and an assistant reply, output a short 2-4 word title that captures the topic. Rules:\n- Output ONLY the title, no quotes, no punctuation, no explanation\n- Use title case\n- Examples: \"GL Coverage Limits\", \"Cyber Liability Quotes\", \"Workers Comp App\", \"Renewal Timeline\"",
