@@ -64,7 +64,7 @@ const MODEL_CONFIG: Record<ModelTask, () => any> = {
   analysis:         () => moonshot()("kimi-k2.5"),
   summary:          () => anthropic()("claude-haiku-4-5-20251001"),
   classification:   () => anthropic()("claude-haiku-4-5-20251001"),
-  extraction:       () => anthropic()("claude-sonnet-4-6"),
+  extraction:       () => moonshot()("kimi-k2.5"),
 };
 
 export function getModel(task: ModelTask) {
