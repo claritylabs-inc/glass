@@ -9,6 +9,7 @@ import {
   buildMessageHistory,
   logAiError,
 } from "@/convex/lib/aiUtils";
+import { buildMemoryContext } from "@/convex/lib/orgMemoryContext";
 
 export const maxDuration = 60;
 const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL!;
@@ -101,25 +102,7 @@ export async function POST(req: NextRequest) {
     let orgMemoryBlock = "";
     try {
       const memories = await convex.query(api.orgMemory.list, {});
-      if (memories.length > 0) {
-        const grouped: Record<string, string[]> = {};
-        for (const m of memories) {
-          if (!grouped[m.type]) grouped[m.type] = [];
-          grouped[m.type].push(m.content);
-        }
-        const typeLabels: Record<string, string> = {
-          fact: "Known facts",
-          preference: "Client preferences",
-          risk_note: "Risk observations",
-          observation: "General observations",
-        };
-        const sections: string[] = [];
-        for (const [type, items] of Object.entries(grouped)) {
-          const label = typeLabels[type] || type;
-          sections.push(`${label}:\n${items.map((i: string) => `- ${i}`).join("\n")}`);
-        }
-        orgMemoryBlock = `\n\nORG KNOWLEDGE:\n${sections.join("\n\n")}`;
-      }
+      orgMemoryBlock = buildMemoryContext(memories);
     } catch {
       // Non-critical — proceed without memory
     }

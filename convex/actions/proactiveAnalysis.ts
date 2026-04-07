@@ -117,7 +117,8 @@ Respond with a JSON object:
 
       let analysis: any;
       try {
-        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        const cleaned = text.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
+        const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
         analysis = jsonMatch ? JSON.parse(jsonMatch[0]) : { raw: text };
       } catch {
         analysis = { raw: text };
@@ -129,18 +130,20 @@ Respond with a JSON object:
       });
 
       // Save key facts/risk notes to org memory
+      const carrier = policy.security ?? "unknown carrier";
+      const policyType = policy.policyTypes?.[0] ?? "policy";
       const items: Array<{ content: string; type: "fact" | "risk_note" }> = [];
       if (analysis.gaps?.length) {
         for (const gap of analysis.gaps.slice(0, 3)) {
           items.push({
-            content: `Coverage gap (${policy.security} ${policy.policyTypes?.[0]}): ${gap}`,
+            content: `Coverage gap (${carrier} ${policyType}): ${gap}`,
             type: "risk_note",
           });
         }
       }
       if (analysis.strengths?.length) {
         items.push({
-          content: `${policy.security} ${policy.policyTypes?.[0]}: ${analysis.overallScore} — ${analysis.strengths[0]}`,
+          content: `${carrier} ${policyType}: ${analysis.overallScore} — ${analysis.strengths[0]}`,
           type: "fact",
         });
       }
@@ -172,7 +175,6 @@ export const analyzePortfolio = internalAction({
       ]);
 
       if (policies.length < 2) return;
-      if (org?.portfolioAnalysis) return;
 
       const memoryBlock = buildMemoryContext(orgMemories);
       const policySummaries = policies.map((p: any) => ({
@@ -208,7 +210,8 @@ Provide a portfolio-level assessment as JSON:
 
       let analysis: any;
       try {
-        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        const cleaned = text.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
+        const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
         analysis = jsonMatch ? JSON.parse(jsonMatch[0]) : { raw: text };
       } catch {
         analysis = { raw: text };
@@ -275,7 +278,8 @@ Provide a comparison as JSON:
 
       let comparison: any;
       try {
-        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        const cleaned = text.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
+        const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
         comparison = jsonMatch ? JSON.parse(jsonMatch[0]) : { raw: text };
       } catch {
         comparison = { raw: text };
