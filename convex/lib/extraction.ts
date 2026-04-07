@@ -18,7 +18,7 @@ export {
   CONTEXT_KEY_MAP,
 } from "@claritylabs/cl-sdk";
 
-export type { LogFn, PromptBuilder, PolicyType, ContextKeyMapping, TokenUsage, ModelConfig } from "@claritylabs/cl-sdk";
+export type { LogFn, PromptBuilder, PolicyType, ContextKeyMapping, TokenUsage, ModelConfig, PdfContentFormat, ConvertPdfToImagesFn } from "@claritylabs/cl-sdk";
 
 import { getModel } from "./models";
 import type { ModelConfig } from "@claritylabs/cl-sdk";

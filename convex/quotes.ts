@@ -26,6 +26,42 @@ const documentValidator = v.object({
       content: v.string(),
     }))),
   })),
+  // Quote conditions/subjectivities (cl-sdk 3.0+)
+  conditions: v.optional(v.array(v.object({
+    title: v.string(),
+    content: v.string(),
+    pageNumber: v.optional(v.number()),
+  }))),
+  // Endorsements/forms attached to the quote (cl-sdk 3.0+)
+  endorsements: v.optional(v.array(v.object({
+    title: v.string(),
+    content: v.string(),
+    pageStart: v.optional(v.number()),
+    effectType: v.optional(v.string()),
+  }))),
+  // Costs and fees breakdown (cl-sdk 3.0+)
+  costsAndFees: v.optional(v.object({
+    content: v.string(),
+    pageNumber: v.optional(v.number()),
+    fees: v.optional(v.array(v.object({
+      name: v.string(),
+      amount: v.optional(v.string()),
+      description: v.optional(v.string()),
+      type: v.optional(v.string()),
+    }))),
+  })),
+  // Regulatory context (cl-sdk 3.0+)
+  regulatoryContext: v.optional(v.object({
+    content: v.string(),
+    pageNumber: v.optional(v.number()),
+    jurisdiction: v.optional(v.string()),
+    regulatoryBody: v.optional(v.string()),
+    governingLaw: v.optional(v.string()),
+    details: v.optional(v.array(v.object({
+      label: v.string(),
+      value: v.string(),
+    }))),
+  })),
 });
 
 const metadataSourceValidator = v.object({
@@ -261,6 +297,7 @@ export const insert = mutation({
     extractionStatus: v.union(
       v.literal("pending"),
       v.literal("extracting"),
+      v.literal("paused"),
       v.literal("complete"),
       v.literal("error"),
       v.literal("not_insurance")
@@ -357,6 +394,7 @@ export const updateExtraction = mutation({
       v.union(
         v.literal("pending"),
         v.literal("extracting"),
+        v.literal("paused"),
         v.literal("complete"),
         v.literal("error"),
         v.literal("not_insurance")
@@ -369,6 +407,15 @@ export const updateExtraction = mutation({
     rawMetadataResponse: v.optional(v.string()),
     // Typed declarations (cl-sdk 1.4+)
     declarations: v.optional(v.any()),
+    // cl-sdk 3.0+ fields
+    quoteTermType: v.optional(v.string()),
+    proposedTerm: v.optional(v.string()),
+    minPremium: v.optional(v.string()),
+    depositPremium: v.optional(v.string()),
+    paymentTerms: v.optional(v.string()),
+    auditProvision: v.optional(v.boolean()),
+    cancellationProvisions: v.optional(v.string()),
+    nonQuoteProvisions: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const { id, ...fields } = args;
@@ -398,6 +445,81 @@ export const dismiss = mutation({
       userId,
       orgId,
       action: "dismissed",
+    });
+  },
+});
+
+export const pauseExtraction = mutation({
+  args: { id: v.id("quotes") },
+  handler: async (ctx, args) => {
+    const { userId, orgId } = await requireOrgAccess(ctx);
+    const quote = await ctx.db.get(args.id);
+    if (!quote || quote.orgId !== orgId) throw new Error("Not found");
+    if (quote.extractionStatus !== "extracting") throw new Error("Can only pause extracting quotes");
+    await ctx.db.patch(args.id, { extractionStatus: "paused" });
+    await ctx.db.insert("policyAuditLog", {
+      quoteId: args.id,
+      userId,
+      orgId,
+      action: "paused",
+    });
+  },
+});
+
+export const resumeExtraction = mutation({
+  args: { id: v.id("quotes") },
+  handler: async (ctx, args) => {
+    const { userId, orgId } = await requireOrgAccess(ctx);
+    const quote = await ctx.db.get(args.id);
+    if (!quote || quote.orgId !== orgId) throw new Error("Not found");
+    if (quote.extractionStatus !== "paused") throw new Error("Can only resume paused quotes");
+    await ctx.db.patch(args.id, { extractionStatus: "extracting" });
+    await ctx.db.insert("policyAuditLog", {
+      quoteId: args.id,
+      userId,
+      orgId,
+      action: "resumed",
+    });
+  },
+});
+
+export const cancelExtraction = mutation({
+  args: { id: v.id("quotes") },
+  handler: async (ctx, args) => {
+    const { userId, orgId } = await requireOrgAccess(ctx);
+    const quote = await ctx.db.get(args.id);
+    if (!quote || quote.orgId !== orgId) throw new Error("Not found");
+    if (quote.extractionStatus !== "paused" && quote.extractionStatus !== "extracting") {
+      throw new Error("Can only cancel extracting or paused quotes");
+    }
+    await ctx.db.patch(args.id, { extractionStatus: "error", extractionError: "Cancelled by user" });
+    await ctx.db.insert("policyAuditLog", {
+      quoteId: args.id,
+      userId,
+      orgId,
+      action: "cancelled",
+    });
+  },
+});
+
+export const restartExtraction = mutation({
+  args: { id: v.id("quotes") },
+  handler: async (ctx, args) => {
+    const { userId, orgId } = await requireOrgAccess(ctx);
+    const quote = await ctx.db.get(args.id);
+    if (!quote || quote.orgId !== orgId) throw new Error("Not found");
+    if (quote.extractionStatus !== "paused" && quote.extractionStatus !== "error") {
+      throw new Error("Can only restart paused or error quotes");
+    }
+    await ctx.db.patch(args.id, {
+      extractionStatus: "extracting",
+      extractionError: undefined,
+    });
+    await ctx.db.insert("policyAuditLog", {
+      quoteId: args.id,
+      userId,
+      orgId,
+      action: "restarted",
     });
   },
 });

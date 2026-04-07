@@ -203,6 +203,11 @@ To modify prompts or extraction logic, update the `@claritylabs/cl-sdk` package 
 - Schedules: `locations` (InsuredLocation[]), `vehicles` (InsuredVehicle[]), `classifications` (ClassificationCode[]), `formInventory` (FormReference[]), `taxesAndFees` (TaxFeeItem[])
 - Quotes enriched fields: `enrichedSubjectivities`, `enrichedUnderwritingConditions`, `warrantyRequirements`, `limits`, `deductibles`, `taxesAndFees`
 - PolicyType expanded to 22 values (cl-sdk 1.2+): general_liability, commercial_property, commercial_auto, non_owned_auto, workers_comp, umbrella, excess_liability, professional_liability, cyber, epli, directors_officers, fiduciary_liability, crime_fidelity, inland_marine, builders_risk, environmental, ocean_marine, surety, product_liability, bop, management_liability_package, property, other
+- `policies.document.conditions` (cl-sdk 3.0+): array of policy conditions/subjectivities with title, content, pageNumber
+- `policies.document.endorsements` (cl-sdk 3.0+): array of endorsements with title, content, pageStart, effectType (informational/restrictive)
+- `quotes.document.conditions`, `quotes.document.endorsements`, `quotes.document.costsAndFees`, `quotes.document.regulatoryContext` (cl-sdk 3.0+) — same structure as policies for quote documents
+- `policies.policyTermType`, `policies.minPremium`, `policies.depositPremium`, `policies.auditProvision`, `policies.cancellationProvisions`, `policies.nonRenewalProvisions`, `policies.assignmentClause`, `policies.subrogationClause`, `policies.otherInsuranceClause` (cl-sdk 3.0+)
+- `quotes.quoteTermType`, `quotes.proposedTerm`, `quotes.minPremium`, `quotes.depositPremium`, `quotes.paymentTerms`, `quotes.auditProvision`, `quotes.cancellationProvisions`, `quotes.nonQuoteProvisions` (cl-sdk 3.0+)
 - `emailConnections.scanProgress` tracks real-time scan progress (phase, counts)
 - `emailConnections.lastScanParams` stores last scan configuration for modal defaults
 - `orgBusinessContext` stores reusable org data keyed by category + key, with source tracking (manual, onboarding, application, user_email) and confidence (confirmed, inferred)

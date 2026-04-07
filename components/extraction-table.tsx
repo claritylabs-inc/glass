@@ -3,9 +3,10 @@
 import { useState, Fragment, useRef, useEffect } from "react";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { Id } from "@/convex/_generated/dataModel";
 import { motion, AnimatePresence } from "framer-motion";
 import { PillButton } from "@/components/ui/pill-button";
-import { RotateCw, X, Terminal } from "lucide-react";
+import { RotateCw, X, Terminal, Pause, Play } from "lucide-react";
 import { FadeIn } from "@/components/ui/fade-in";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RetryExtractionModal } from "@/components/ui/retry-extraction-modal";
@@ -40,6 +41,10 @@ const STATUS_BADGES: Record<string, { label: string; className: string }> = {
     label: "Extracting",
     className: "bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 animate-pulse",
   },
+  paused: {
+    label: "Paused",
+    className: "bg-yellow-100 dark:bg-yellow-950/40 text-yellow-700 dark:text-yellow-400",
+  },
   error: {
     label: "Error",
     className: "bg-red-100 dark:bg-red-950/40 text-red-700 dark:text-red-400",
@@ -50,7 +55,86 @@ const STATUS_BADGES: Record<string, { label: string; className: string }> = {
   },
 };
 
-function RetryButton({ extraction }: { extraction: Extraction }) {
+// Pause button - only shown when extracting
+function PauseButton({ policyId, isQuote }: { policyId: string; isQuote?: boolean }) {
+  const pause = useMutation(isQuote ? api.quotes.pauseExtraction : api.policies.pauseExtraction);
+  const [pausing, setPausing] = useState(false);
+
+  return (
+    <button
+      type="button"
+      disabled={pausing}
+      onClick={async () => {
+        setPausing(true);
+        try {
+          await pause({ id: policyId as unknown as Id<"policies"> });
+        } finally {
+          setPausing(false);
+        }
+      }}
+      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/40 text-label-sm font-medium text-amber-700 dark:text-amber-400 hover:border-amber-300 hover:bg-amber-100 dark:hover:bg-amber-950/60 transition-colors cursor-pointer disabled:opacity-50"
+    >
+      <Pause className="w-3 h-3" />
+      {pausing ? "Pausing..." : "Pause"}
+    </button>
+  );
+}
+
+// Resume button - shown when paused
+function ResumeButton({ policyId, isQuote }: { policyId: string; isQuote?: boolean }) {
+  const resume = useMutation(isQuote ? api.quotes.resumeExtraction : api.policies.resumeExtraction);
+  const [resuming, setResuming] = useState(false);
+
+  return (
+    <button
+      type="button"
+      disabled={resuming}
+      onClick={async () => {
+        setResuming(true);
+        try {
+          await resume({ id: policyId as unknown as Id<"policies"> });
+        } finally {
+          setResuming(false);
+        }
+      }}
+      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50 dark:bg-emerald-950/40 text-label-sm font-medium text-emerald-700 dark:text-emerald-400 hover:border-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-950/60 transition-colors cursor-pointer disabled:opacity-50"
+    >
+      <Play className="w-3 h-3" />
+      {resuming ? "Resuming..." : "Resume"}
+    </button>
+  );
+}
+
+// Cancel button - shown when paused (stops extraction)
+function CancelButton({ policyId, isQuote }: { policyId: string; isQuote?: boolean }) {
+  const cancel = useMutation(isQuote ? api.quotes.cancelExtraction : api.policies.cancelExtraction);
+  const [cancelling, setCancelling] = useState(false);
+
+  return (
+    <button
+      type="button"
+      disabled={cancelling}
+      onClick={async () => {
+        setCancelling(true);
+        try {
+          await cancel({ id: policyId as unknown as Id<"policies"> });
+        } finally {
+          setCancelling(false);
+        }
+      }}
+      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-950/40 text-label-sm font-medium text-red-700 dark:text-red-400 hover:border-red-300 hover:bg-red-100 dark:hover:bg-red-950/60 transition-colors cursor-pointer disabled:opacity-50"
+    >
+      <X className="w-3 h-3" />
+      {cancelling ? "Cancelling..." : "Cancel"}
+    </button>
+  );
+}
+
+// Restart button - shown when paused or error (restarts extraction)
+function RestartButton({ extraction, isQuote }: { extraction: Extraction; isQuote?: boolean }) {
+  const restart = useMutation(isQuote ? api.quotes.restartExtraction : api.policies.restartExtraction);
+  const [restarting, setRestarting] = useState(false);
+
   return (
     <RetryExtractionModal
       policyId={extraction._id}
@@ -60,18 +144,28 @@ function RetryButton({ extraction }: { extraction: Extraction }) {
       trigger={
         <button
           type="button"
+          disabled={restarting}
+          onClick={async () => {
+            setRestarting(true);
+            try {
+              await restart({ id: extraction._id as unknown as Id<"policies"> });
+            } finally {
+              setRestarting(false);
+            }
+          }}
           className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/40 text-label-sm font-medium text-amber-700 dark:text-amber-400 hover:border-amber-300 hover:bg-amber-100 dark:hover:bg-amber-950/60 transition-colors cursor-pointer disabled:opacity-50"
         >
           <RotateCw className="w-3 h-3" />
-          Retry
+          {restarting ? "Restarting..." : "Restart"}
         </button>
       }
     />
   );
 }
 
-function DismissButton({ policyId }: { policyId: string }) {
-  const dismiss = useMutation(api.policies.dismiss);
+// Dismiss button - shown for error/not_insurance (marks as not insurance)
+function DismissButton({ policyId, isQuote }: { policyId: string; isQuote?: boolean }) {
+  const dismiss = useMutation(isQuote ? api.quotes.dismiss : api.policies.dismiss);
   const [dismissing, setDismissing] = useState(false);
 
   return (
@@ -81,7 +175,7 @@ function DismissButton({ policyId }: { policyId: string }) {
       onClick={async () => {
         setDismissing(true);
         try {
-          await dismiss({ id: policyId as any });
+          await dismiss({ id: policyId as unknown as Id<"policies"> });
         } finally {
           setDismissing(false);
         }
@@ -353,8 +447,22 @@ export function ExtractionTable({
                         </td>
                         <td className="px-4 py-2.5 text-right whitespace-nowrap hidden md:table-cell">
                           <div className="inline-flex items-center gap-2">
-                            <RetryButton extraction={extraction} />
-                            <DismissButton policyId={extraction._id} />
+                            {extraction.extractionStatus === "extracting" && (
+                              <PauseButton policyId={extraction._id} />
+                            )}
+                            {extraction.extractionStatus === "paused" && (
+                              <>
+                                <ResumeButton policyId={extraction._id} />
+                                <RestartButton extraction={extraction} />
+                                <CancelButton policyId={extraction._id} />
+                              </>
+                            )}
+                            {(extraction.extractionStatus === "error" || extraction.extractionStatus === "pending") && (
+                              <>
+                                <RestartButton extraction={extraction} />
+                                <DismissButton policyId={extraction._id} />
+                              </>
+                            )}
                           </div>
                         </td>
                       </FadeIn>

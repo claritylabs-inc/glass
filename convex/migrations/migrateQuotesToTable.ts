@@ -54,7 +54,7 @@ export const migrateQuotesToTable = internalMutation({
           effectiveDatePage: p.metadataSource.effectiveDatePage,
         } : undefined,
         document: p.document ? { sections: p.document.sections } : undefined,
-        extractionStatus: p.extractionStatus,
+        extractionStatus: p.extractionStatus as any,
         extractionError: p.extractionError,
         extractionLog: p.extractionLog,
         rawExtractionResponse: p.rawExtractionResponse,

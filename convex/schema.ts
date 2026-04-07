@@ -462,11 +462,25 @@ export default defineSchema({
         processSteps: v.optional(v.array(v.string())),
         reportingTimeLimit: v.optional(v.string()),
       })),
+      // Policy conditions/subjectivities (e.g., "Signed application required")
+      conditions: v.optional(v.array(v.object({
+        title: v.string(),
+        content: v.string(),
+        pageNumber: v.optional(v.number()),
+      }))),
+      // Endorsements/forms attached to the policy
+      endorsements: v.optional(v.array(v.object({
+        title: v.string(),
+        content: v.string(),
+        pageStart: v.optional(v.number()),
+        effectType: v.optional(v.string()), // informational, restrictive, etc.
+      }))),
     })),
     // Extraction state
     extractionStatus: v.union(
       v.literal("pending"),
       v.literal("extracting"),
+      v.literal("paused"),
       v.literal("complete"),
       v.literal("error"),
       v.literal("not_insurance")
@@ -482,6 +496,16 @@ export default defineSchema({
     declarations: v.optional(v.any()),
     // AI analysis results (risk notes, observations, key findings)
     analysis: v.optional(v.any()),
+    // cl-sdk 3.0+ fields
+    policyTermType: v.optional(v.string()),
+    minPremium: v.optional(v.string()),
+    depositPremium: v.optional(v.string()),
+    auditProvision: v.optional(v.boolean()),
+    cancellationProvisions: v.optional(v.string()),
+    nonRenewalProvisions: v.optional(v.string()),
+    assignmentClause: v.optional(v.string()),
+    subrogationClause: v.optional(v.string()),
+    otherInsuranceClause: v.optional(v.string()),
     deletedAt: v.optional(v.number()),
     isDemo: v.optional(v.boolean()),
   }).index("by_carrier", ["carrier"])
@@ -588,6 +612,42 @@ export default defineSchema({
           content: v.string(),
         }))),
       })),
+      // Quote conditions/subjectivities
+      conditions: v.optional(v.array(v.object({
+        title: v.string(),
+        content: v.string(),
+        pageNumber: v.optional(v.number()),
+      }))),
+      // Endorsements/forms attached to the quote
+      endorsements: v.optional(v.array(v.object({
+        title: v.string(),
+        content: v.string(),
+        pageStart: v.optional(v.number()),
+        effectType: v.optional(v.string()),
+      }))),
+      // Costs and fees breakdown
+      costsAndFees: v.optional(v.object({
+        content: v.string(),
+        pageNumber: v.optional(v.number()),
+        fees: v.optional(v.array(v.object({
+          name: v.string(),
+          amount: v.optional(v.string()),
+          description: v.optional(v.string()),
+          type: v.optional(v.string()),
+        }))),
+      })),
+      // Regulatory context
+      regulatoryContext: v.optional(v.object({
+        content: v.string(),
+        pageNumber: v.optional(v.number()),
+        jurisdiction: v.optional(v.string()),
+        regulatoryBody: v.optional(v.string()),
+        governingLaw: v.optional(v.string()),
+        details: v.optional(v.array(v.object({
+          label: v.string(),
+          value: v.string(),
+        }))),
+      })),
     })),
     metadataSource: v.optional(v.object({
       carrierPage: v.optional(v.number()),
@@ -599,6 +659,7 @@ export default defineSchema({
     extractionStatus: v.union(
       v.literal("pending"),
       v.literal("extracting"),
+      v.literal("paused"),
       v.literal("complete"),
       v.literal("error"),
       v.literal("not_insurance")
@@ -612,6 +673,15 @@ export default defineSchema({
     rawMetadataResponse: v.optional(v.string()),
     // Typed declarations (cl-sdk 1.4+) — line-specific structured data
     declarations: v.optional(v.any()),
+    // cl-sdk 3.0+ fields
+    quoteTermType: v.optional(v.string()),
+    proposedTerm: v.optional(v.string()),
+    minPremium: v.optional(v.string()),
+    depositPremium: v.optional(v.string()),
+    paymentTerms: v.optional(v.string()),
+    auditProvision: v.optional(v.boolean()),
+    cancellationProvisions: v.optional(v.string()),
+    nonQuoteProvisions: v.optional(v.string()),
     deletedAt: v.optional(v.number()),
     isDemo: v.optional(v.boolean()),
   }).index("by_orgId", ["orgId"])
@@ -743,6 +813,8 @@ export default defineSchema({
     // Content
     content: v.string(),
     contentHtml: v.optional(v.string()),
+    // Reasoning / thinking content (for models that support it)
+    reasoning: v.optional(v.string()),
     // Attachments
     attachments: v.optional(v.array(v.object({
       filename: v.string(),

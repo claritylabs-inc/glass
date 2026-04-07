@@ -376,6 +376,14 @@ export const streamAgentMessage = internalMutation({
   },
 });
 
+/** Update agent reasoning while streaming (for models that support reasoning) */
+export const streamReasoning = internalMutation({
+  args: { id: v.id("threadMessages"), reasoning: v.string() },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.id, { reasoning: args.reasoning });
+  },
+});
+
 export const updateAgentError = internalMutation({
   args: { id: v.id("threadMessages"), error: v.string() },
   handler: async (ctx, args) => {

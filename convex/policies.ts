@@ -425,6 +425,19 @@ const documentValidator = v.object({
     processSteps: v.optional(v.array(v.string())),
     reportingTimeLimit: v.optional(v.string()),
   })),
+  // Policy conditions/subjectivities (cl-sdk 3.0+)
+  conditions: v.optional(v.array(v.object({
+    title: v.string(),
+    content: v.string(),
+    pageNumber: v.optional(v.number()),
+  }))),
+  // Endorsements/forms attached to the policy (cl-sdk 3.0+)
+  endorsements: v.optional(v.array(v.object({
+    title: v.string(),
+    content: v.string(),
+    pageStart: v.optional(v.number()),
+    effectType: v.optional(v.string()),
+  }))),
 });
 
 const metadataSourceValidator = v.object({
@@ -462,6 +475,7 @@ export const insert = mutation({
     extractionStatus: v.union(
       v.literal("pending"),
       v.literal("extracting"),
+      v.literal("paused"),
       v.literal("complete"),
       v.literal("error"),
       v.literal("not_insurance")
@@ -530,6 +544,7 @@ export const updateExtraction = mutation({
       v.union(
         v.literal("pending"),
         v.literal("extracting"),
+        v.literal("paused"),
         v.literal("complete"),
         v.literal("error"),
         v.literal("not_insurance")
@@ -542,6 +557,16 @@ export const updateExtraction = mutation({
     rawMetadataResponse: v.optional(v.string()),
     // Typed declarations (cl-sdk 1.4+)
     declarations: v.optional(v.any()),
+    // cl-sdk 3.0+ fields
+    policyTermType: v.optional(v.string()),
+    minPremium: v.optional(v.string()),
+    depositPremium: v.optional(v.string()),
+    auditProvision: v.optional(v.boolean()),
+    cancellationProvisions: v.optional(v.string()),
+    nonRenewalProvisions: v.optional(v.string()),
+    assignmentClause: v.optional(v.string()),
+    subrogationClause: v.optional(v.string()),
+    otherInsuranceClause: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const { id, ...fields } = args;
@@ -571,6 +596,82 @@ export const dismiss = mutation({
       userId,
       orgId,
       action: "dismissed",
+    });
+  },
+});
+
+export const pauseExtraction = mutation({
+  args: { id: v.id("policies") },
+  handler: async (ctx, args) => {
+    const { userId, orgId } = await requireOrgAccess(ctx);
+    const policy = await ctx.db.get(args.id);
+    if (!policy || policy.orgId !== orgId) throw new Error("Not found");
+    if (policy.extractionStatus !== "extracting") throw new Error("Can only pause extracting policies");
+    await ctx.db.patch(args.id, { extractionStatus: "paused" });
+    await ctx.db.insert("policyAuditLog", {
+      policyId: args.id,
+      userId,
+      orgId,
+      action: "paused",
+    });
+  },
+});
+
+export const resumeExtraction = mutation({
+  args: { id: v.id("policies") },
+  handler: async (ctx, args) => {
+    const { userId, orgId } = await requireOrgAccess(ctx);
+    const policy = await ctx.db.get(args.id);
+    if (!policy || policy.orgId !== orgId) throw new Error("Not found");
+    if (policy.extractionStatus !== "paused") throw new Error("Can only resume paused policies");
+    await ctx.db.patch(args.id, { extractionStatus: "extracting" });
+    await ctx.db.insert("policyAuditLog", {
+      policyId: args.id,
+      userId,
+      orgId,
+      action: "resumed",
+    });
+  },
+});
+
+export const cancelExtraction = mutation({
+  args: { id: v.id("policies") },
+  handler: async (ctx, args) => {
+    const { userId, orgId } = await requireOrgAccess(ctx);
+    const policy = await ctx.db.get(args.id);
+    if (!policy || policy.orgId !== orgId) throw new Error("Not found");
+    // Can cancel paused or extracting policies
+    if (policy.extractionStatus !== "paused" && policy.extractionStatus !== "extracting") {
+      throw new Error("Can only cancel extracting or paused policies");
+    }
+    await ctx.db.patch(args.id, { extractionStatus: "error", extractionError: "Cancelled by user" });
+    await ctx.db.insert("policyAuditLog", {
+      policyId: args.id,
+      userId,
+      orgId,
+      action: "cancelled",
+    });
+  },
+});
+
+export const restartExtraction = mutation({
+  args: { id: v.id("policies") },
+  handler: async (ctx, args) => {
+    const { userId, orgId } = await requireOrgAccess(ctx);
+    const policy = await ctx.db.get(args.id);
+    if (!policy || policy.orgId !== orgId) throw new Error("Not found");
+    if (policy.extractionStatus !== "paused" && policy.extractionStatus !== "error") {
+      throw new Error("Can only restart paused or error policies");
+    }
+    await ctx.db.patch(args.id, {
+      extractionStatus: "extracting",
+      extractionError: undefined,
+    });
+    await ctx.db.insert("policyAuditLog", {
+      policyId: args.id,
+      userId,
+      orgId,
+      action: "restarted",
     });
   },
 });

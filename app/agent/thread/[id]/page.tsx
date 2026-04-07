@@ -17,6 +17,7 @@ import { ContextReferenceCard, extractEntityRefs, ReferenceCardStrip } from "@/c
 import { ChatInput, ChatInputOverlay, type ChatInputHandle } from "@/components/chat-input";
 import { PrismPromptInput, type PrismPromptInputHandle } from "@/components/prism-prompt-input";
 import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
+import { CollapsibleReasoning } from "@/components/collapsible-reasoning";
 import Link from "next/link";
 import Markdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
@@ -42,6 +43,7 @@ type ThreadMessage = {
   subject?: string;
   content: string;
   contentHtml?: string;
+  reasoning?: string;
   messageId?: string;
   responseMessageId?: string;
   attachments?: { filename: string; contentType: string; size: number; fileId?: Id<"_storage"> }[];
@@ -283,11 +285,12 @@ function UnifiedMessageBubble({
   // Processing state — show streaming content if available
   if (msg.role === "agent" && msg.status === "processing") {
     const hasContent = msg.content && msg.content.length > 0;
+    const hasReasoning = msg.reasoning && msg.reasoning.length > 0;
     const ageMs = Date.now() - msg._creationTime;
     const isStale = ageMs > 60_000;
     const isToolStatus = hasContent && /^\*[^*]+\.\.\.\*$/.test(msg.content.trim());
     const toolLabel = isToolStatus ? msg.content.trim().replace(/^\*|\*$/g, "") : null;
-    const showThinking = !hasContent || isToolStatus;
+    const showThinking = !hasContent && !hasReasoning || isToolStatus;
 
     return (
       <div className="space-y-3">
@@ -306,6 +309,13 @@ function UnifiedMessageBubble({
                 <Markdown remarkPlugins={[remarkBreaks]} components={markdownComponents}>{fixQuoteLinks(msg.content, msg.referencedQuoteIds)}</Markdown>
                 <span className="inline-block w-1.5 h-4 bg-[#A0D2FA] rounded-sm animate-pulse ml-0.5 align-middle" />
               </div>
+              {/* Show reasoning while streaming if available */}
+              {hasReasoning && (
+                <CollapsibleReasoning 
+                  reasoning={msg.reasoning ?? ""} 
+                  isStreaming={true}
+                />
+              )}
             </div>
           </div>
         )}
@@ -322,6 +332,25 @@ function UnifiedMessageBubble({
               {toolLabel ?? (isStale ? "Taking longer than expected" : "Prism is thinking")}
             </span>
             <CancelButton messageId={msg._id} show />
+          </div>
+        )}
+
+        {/* Show reasoning even when no content yet */}
+        {!hasContent && hasReasoning && (
+          <div className="flex items-start gap-2.5 max-w-lg">
+            <div className="w-7 h-7 rounded-full bg-[#A0D2FA]/15 flex items-center justify-center shrink-0">
+              <Asterisk className="w-3.5 h-3.5 text-[#A0D2FA]" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1">
+                <p className="text-[11px] font-medium text-muted-foreground/50">Prism</p>
+                {channelIcon}
+              </div>
+              <CollapsibleReasoning 
+                reasoning={msg.reasoning ?? ""} 
+                isStreaming={true}
+              />
+            </div>
           </div>
         )}
       </div>
@@ -374,6 +403,11 @@ function UnifiedMessageBubble({
             <div className={`rounded-lg bg-popover border border-foreground/6 px-3.5 py-2.5 ${MARKDOWN_STYLES}`}>
               <Markdown remarkPlugins={[remarkBreaks]} components={markdownComponents}>{fixedContent}</Markdown>
             </div>
+            {/* Reasoning / chain of thought */}
+            <CollapsibleReasoning 
+              reasoning={msg.reasoning ?? ""} 
+              isStreaming={msg.status === "processing" && !!msg.reasoning}
+            />
             {msg.status === "pending_send" && msg.pendingEmailId && (
               <PendingSendCountdown pendingEmailId={msg.pendingEmailId} />
             )}

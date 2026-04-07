@@ -480,25 +480,24 @@ The policy index above shows section titles. Use lookup_policy_section with the 
       });
 
       let reasoning = "";
+      let hasStartedReasoning = false;
+      let lastReasoningFlush = Date.now();
 
       for await (const part of result.fullStream) {
         if (part.type === "reasoning-delta") {
-          // Stream reasoning as thinking status
+          // Stream reasoning separately from content
           reasoning += (part as any).text ?? (part as any).delta ?? "";
+          if (!hasStartedReasoning) {
+            hasStartedReasoning = true;
+          }
+          // Flush reasoning periodically
           const now = Date.now();
-          if (now - lastFlush >= FLUSH_INTERVAL) {
-            lastFlush = now;
-            // Show last ~80 chars of reasoning as the thinking label
-            const snippet = reasoning.length > 80
-              ? "..." + reasoning.slice(-77)
-              : reasoning;
-            const cleanSnippet = snippet.replace(/\n/g, " ").trim();
-            if (cleanSnippet) {
-              await ctx.runMutation(internal.threads.streamAgentMessage, {
-                id: agentMsgId,
-                content: `*${cleanSnippet}*`,
-              });
-            }
+          if (now - lastReasoningFlush >= FLUSH_INTERVAL) {
+            lastReasoningFlush = now;
+            await ctx.runMutation(internal.threads.streamReasoning, {
+              id: agentMsgId,
+              reasoning,
+            });
           }
         } else if (part.type === "text-delta") {
           content += part.text;
@@ -514,6 +513,7 @@ The policy index above shows section titles. Use lookup_policy_section with the 
           // Reset pre-tool text — only the final response matters
           content = "";
           reasoning = "";
+          hasStartedReasoning = false;
           const label = TOOL_LABELS[part.toolName] ?? `Using ${part.toolName}...`;
           await ctx.runMutation(internal.threads.streamAgentMessage, {
             id: agentMsgId,
@@ -527,12 +527,20 @@ The policy index above shows section titles. Use lookup_policy_section with the 
         }
       }
 
+      // Final update — save both content and reasoning
       await ctx.runMutation(internal.threads.updateAgentMessage, {
         id: agentMsgId,
         content,
         referencedPolicyIds: relevantPolicyIds.length > 0 ? relevantPolicyIds : undefined,
         referencedQuoteIds: relevantQuoteIds.length > 0 ? relevantQuoteIds : undefined,
       });
+      // Save final reasoning if any
+      if (reasoning) {
+        await ctx.runMutation(internal.threads.streamReasoning, {
+          id: agentMsgId,
+          reasoning,
+        });
+      }
 
       await ctx.runMutation(internal.threads.touchThread, {
         threadId: args.threadId,
