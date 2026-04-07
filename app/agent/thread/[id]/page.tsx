@@ -2,9 +2,6 @@
 
 import { use, useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useQuery, useMutation, useAction } from "convex/react";
-import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport } from "ai";
-import { useAuthToken } from "@convex-dev/auth/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { AppShell } from "@/components/app-shell";
@@ -19,7 +16,6 @@ import { usePresence } from "@/hooks/use-presence";
 import { ContextReferenceCard, extractEntityRefs, ReferenceCardStrip } from "@/components/context-reference-card";
 import { ChatInput, ChatInputOverlay, type ChatInputHandle } from "@/components/chat-input";
 import { PrismPromptInput, type PrismPromptInputHandle } from "@/components/prism-prompt-input";
-import { MessageResponse } from "@/components/ai-elements/message";
 import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
 import Link from "next/link";
 import Markdown from "react-markdown";
@@ -545,48 +541,6 @@ function ThreadEmailLink({ threadEmail, subject }: { threadEmail?: string; subje
   );
 }
 
-/* ── Streaming agent message bubble (for useChat streaming) ── */
-function StreamingAgentBubble({ content, isAnimating }: { content: string; isAnimating: boolean }) {
-  const time = dayjs().format("h:mm A");
-  return (
-    <div className="flex items-start gap-2.5 max-w-lg animate-in fade-in duration-300">
-      <div className="w-7 h-7 rounded-full bg-[#A0D2FA]/15 flex items-center justify-center shrink-0">
-        <Asterisk className="w-3.5 h-3.5 text-[#A0D2FA]" />
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 mb-1">
-          <p className="text-[11px] font-medium text-muted-foreground/50">Prism</p>
-          <MessageSquare className="w-3 h-3 text-muted-foreground/30" />
-          <span className="text-[11px] text-muted-foreground/30">Chat</span>
-          <span className="text-muted-foreground/20">·</span>
-          <span className="text-[10px] text-muted-foreground/25">{time}</span>
-        </div>
-        <div className="rounded-lg bg-popover border border-foreground/6 px-3.5 py-2.5 transition-all duration-300">
-          {content ? (
-            <MessageResponse isAnimating={isAnimating}>{content}</MessageResponse>
-          ) : (
-            <ThinkingIndicator />
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ── Pulsing thinking indicator ── */
-function ThinkingIndicator() {
-  return (
-    <div className="flex items-center gap-1.5 py-0.5">
-      <div className="flex items-center gap-1">
-        <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/30 animate-pulse [animation-delay:0ms]" />
-        <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/30 animate-pulse [animation-delay:150ms]" />
-        <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/30 animate-pulse [animation-delay:300ms]" />
-      </div>
-      <span className="text-[12px] text-muted-foreground/40 ml-1">Thinking</span>
-    </div>
-  );
-}
-
 /* ── Unified thread content ── */
 function UnifiedThreadContent({
   threadId,
@@ -605,8 +559,6 @@ function UnifiedThreadContent({
   const messages = useQuery(api.threads.messages, { threadId }) as ThreadMessage[] | undefined;
   const sendMessage = useMutation(api.threads.sendMessage);
   const updateTitle = useMutation(api.threads.updateTitle);
-  const authToken = useAuthToken();
-
   const generateUploadUrl = useMutation(api.threads.generateUploadUrl);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
@@ -614,86 +566,13 @@ function UnifiedThreadContent({
   const chatInputRef = useRef<PrismPromptInputHandle>(null);
   const prevThreadId = useRef<string | null>(null);
 
-  // Build transport for useChat (memoized to avoid re-creating on every render)
-  const chatTransport = useMemo(() => {
-    return new DefaultChatTransport({
-      api: "/api/chat",
-      headers: authToken ? { Authorization: `Bearer ${authToken}` } : undefined,
-      body: { threadId: threadId as string },
-    });
-  }, [authToken, threadId]);
-
-  // useChat for streaming responses
+  // Error state for chat
   const [chatError, setChatError] = useState<string | null>(null);
 
-  const {
-    messages: chatMessages,
-    status: chatStatus,
-    sendMessage: sendChatMessage,
-    stop,
-    setMessages: setChatMessages,
-  } = useChat({
-    transport: chatTransport,
-    messages: [],
-    onError: (error) => {
-      console.error("Chat stream error:", error);
-      setChatError(
-        error.message.includes("Unauthorized")
-          ? "Session expired. Please refresh the page."
-          : "Failed to get a response. Please try again.",
-      );
-    },
-  });
-
-  // Reset useChat messages when thread changes
+  // Reset error when thread changes
   useEffect(() => {
-    setChatMessages([]);
     setChatError(null);
-  }, [threadId, setChatMessages]);
-
-  // Get the streaming assistant message from useChat (if any)
-  const streamingMessage = useMemo(() => {
-    if (chatStatus !== "streaming" && chatStatus !== "submitted") return null;
-    const lastMsg = chatMessages[chatMessages.length - 1];
-    if (lastMsg?.role === "assistant") return lastMsg;
-    return null;
-  }, [chatMessages, chatStatus]);
-
-  // Extract text content from UIMessage parts
-  const streamingText = useMemo(() => {
-    if (!streamingMessage) return "";
-    return streamingMessage.parts
-      .filter((p) => p.type === "text")
-      .map((p) => (p as { type: "text"; text: string }).text)
-      .join("");
-  }, [streamingMessage]);
-
-  // Check if the streaming message has been persisted to Convex
-  const rawStreamingPersisted = useMemo(() => {
-    if (!streamingMessage || !messages) return false;
-    const lastConvexMsg = messages[messages.length - 1];
-    if (!lastConvexMsg) return false;
-    return (
-      lastConvexMsg.role === "agent" &&
-      !lastConvexMsg.status &&
-      lastConvexMsg.content.length > 0
-    );
-  }, [streamingMessage, messages]);
-
-  // Debounce the transition from streaming→persisted to avoid jarring swap
-  const [isStreamingPersisted, setIsStreamingPersisted] = useState(false);
-  useEffect(() => {
-    if (rawStreamingPersisted) {
-      // Small delay so the persisted message renders before we hide the stream
-      const timer = setTimeout(() => {
-        setIsStreamingPersisted(true);
-        // Clear useChat messages once persisted to Convex
-        setChatMessages([]);
-      }, 150);
-      return () => clearTimeout(timer);
-    }
-    setIsStreamingPersisted(false);
-  }, [rawStreamingPersisted, setChatMessages]);
+  }, [threadId]);
 
   // Push title + actions to parent for AppShell header
   useEffect(() => {
@@ -723,17 +602,17 @@ function UnifiedThreadContent({
     el.scrollTo({ top: el.scrollHeight, behavior: isNew ? "instant" : "smooth" });
   }, [threadId, messages?.length]);
 
-  // Auto-scroll during streaming (keep pinned to bottom as tokens arrive)
+  // Auto-scroll when new messages arrive (agent streaming via Convex subscription)
   useEffect(() => {
-    if (!streamingMessage) return;
     const el = messagesRef.current;
-    if (!el) return;
-    // Only auto-scroll if user is near the bottom (within 200px)
+    if (!el || !messages) return;
+    const lastMsg = messages[messages.length - 1];
+    if (!lastMsg || lastMsg.role !== "agent") return;
     const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 200;
     if (isNearBottom) {
       el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
     }
-  }, [streamingText, streamingMessage]);
+  }, [messages]);
 
   const handleSend = useCallback(async (message: PromptInputMessage) => {
     const text = message.text.trim();
@@ -771,22 +650,10 @@ function UnifiedThreadContent({
       return;
     }
 
-    // For text-only messages, use streaming via useChat
-    if (!authToken) {
-      toast.error("Session expired. Please refresh the page.");
-      return;
-    }
-
-    // Clear any previous error
+    // For text-only messages, send via Convex (processThreadChat handles the response)
     setChatError(null);
-
-    // Persist user message to Convex but skip backend agent response
-    await sendMessage({ threadId, content: text, skipAgentResponse: true });
-
-    // Trigger streaming via useChat
-    setChatMessages([]);
-    await sendChatMessage({ text });
-  }, [sendMessage, threadId, generateUploadUrl, sendChatMessage, setChatMessages]);
+    await sendMessage({ threadId, content: text });
+  }, [sendMessage, threadId, generateUploadUrl]);
 
   // Detect if thread has both chat and email messages (mixed thread)
   const isMixedThread = useMemo(() => {
@@ -880,14 +747,7 @@ function UnifiedThreadContent({
               isMixedThread={isMixedThread}
             />
           ))}
-          {/* Streaming message from useChat (shown during generation, hidden once persisted) */}
-          {streamingMessage && !isStreamingPersisted && (
-            <StreamingAgentBubble
-              content={streamingText}
-              isAnimating={chatStatus === "streaming"}
-            />
-          )}
-          {chatError && !streamingMessage && (
+          {chatError && (
             <div className="mx-4 mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
               {chatError}
             </div>
@@ -907,8 +767,7 @@ function UnifiedThreadContent({
           onSubmit={handleSend}
           placeholder="Reply to this thread..."
           showAttach
-          status={chatStatus === "streaming" || chatStatus === "submitted" ? chatStatus : undefined}
-          onStop={stop}
+          status={messages?.some((m) => m.role === "agent" && m.status === "processing") ? "submitted" : undefined}
         />
       </ChatInputOverlay>
     </div>
