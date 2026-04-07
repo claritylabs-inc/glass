@@ -290,20 +290,7 @@ function UnifiedMessageBubble({
     const showThinking = !hasContent || isToolStatus;
 
     return (
-      <div className="space-y-2">
-        {/* Thinking/tool status — separate from message bubble */}
-        {showThinking && (
-          <div className="flex items-center gap-2 ml-9.5">
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#A0D2FA]/8 border border-[#A0D2FA]/15">
-              <Loader2 className="w-3 h-3 animate-spin text-[#A0D2FA]" />
-              <span className="text-[11px] text-[#A0D2FA]/80 font-medium">
-                {toolLabel ?? (isStale ? "Taking longer than expected..." : "Thinking...")}
-              </span>
-            </div>
-            <CancelButton messageId={msg._id} show />
-          </div>
-        )}
-
+      <div className="space-y-3">
         {/* Streaming message bubble — only when real content is flowing */}
         {hasContent && !isToolStatus && (
           <div className="flex items-start gap-2.5 max-w-lg">
@@ -320,6 +307,21 @@ function UnifiedMessageBubble({
                 <span className="inline-block w-1.5 h-4 bg-[#A0D2FA] rounded-sm animate-pulse ml-0.5 align-middle" />
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Thinking/tool status — minimal inline indicator, not a message */}
+        {showThinking && (
+          <div className="flex items-center gap-1.5 ml-9.5 h-5">
+            <span className="flex gap-0.5">
+              <span className="w-1 h-1 rounded-full bg-[#A0D2FA]/60 animate-pulse" />
+              <span className="w-1 h-1 rounded-full bg-[#A0D2FA]/60 animate-pulse [animation-delay:150ms]" />
+              <span className="w-1 h-1 rounded-full bg-[#A0D2FA]/60 animate-pulse [animation-delay:300ms]" />
+            </span>
+            <span className="text-[11px] text-muted-foreground/35 select-none">
+              {toolLabel ?? (isStale ? "Taking longer than expected" : "Prism is thinking")}
+            </span>
+            <CancelButton messageId={msg._id} show />
           </div>
         )}
       </div>
