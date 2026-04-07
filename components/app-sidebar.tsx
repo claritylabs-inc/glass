@@ -412,7 +412,13 @@ export function AppSidebar({
                     await archiveThread({ id: item.id as any });
                     if (isConvActive) {
                       const next = conversations.find((c) => c.id !== item.id);
-                      router.push(next ? `/agent/thread/${next.id}` : "/agent");
+                      if (next) {
+                        router.push(`/agent/thread/${next.id}`);
+                      } else {
+                        // No unarchived threads left — start a new one
+                        const threadId = await createThread({ agentDomain: AGENT_DOMAIN });
+                        router.push(`/agent/thread/${threadId}`);
+                      }
                     }
                   }}
                   className="hidden group-hover:flex w-5 h-5 items-center justify-center rounded text-muted-foreground/30 hover:text-foreground hover:bg-foreground/[0.06] transition-colors cursor-pointer shrink-0"
