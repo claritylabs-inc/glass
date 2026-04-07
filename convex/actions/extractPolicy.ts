@@ -231,6 +231,50 @@ export const extractPolicy = internalAction({
           action: "extraction_complete",
         });
 
+        // Schedule proactive analysis
+        if (args.orgId) {
+          await ctx.scheduler.runAfter(
+            0,
+            internal.actions.proactiveAnalysis.analyzePolicy,
+            { policyId, orgId: args.orgId },
+          );
+
+          // Schedule portfolio analysis if org has multiple policies
+          const orgPolicies = await ctx.runQuery(
+            internal.policies.listAllInternal,
+            { orgId: args.orgId },
+          );
+          if (orgPolicies.length >= 2) {
+            await ctx.scheduler.runAfter(
+              5000,
+              internal.actions.proactiveAnalysis.analyzePortfolio,
+              { orgId: args.orgId },
+            );
+          }
+
+          // Check for renewal match via priorPolicyNumber
+          const appliedFields = applyExtracted(extracted);
+          const priorPolicyNumber = (appliedFields as any).priorPolicyNumber;
+          if (priorPolicyNumber) {
+            const priorMatch = orgPolicies.find(
+              (p: any) =>
+                p.policyNumber === priorPolicyNumber &&
+                p._id !== policyId,
+            );
+            if (priorMatch) {
+              await ctx.scheduler.runAfter(
+                0,
+                internal.actions.proactiveAnalysis.compareRenewal,
+                {
+                  newPolicyId: policyId,
+                  priorPolicyId: priorMatch._id,
+                  orgId: args.orgId,
+                },
+              );
+            }
+          }
+        }
+
         await incrementExtracted(ctx, args.connectionId);
       } catch (error: any) {
         await log(`Failed: ${error.message || "Extraction failed"}`);
