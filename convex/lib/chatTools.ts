@@ -56,6 +56,15 @@ export const saveNote = tool({
   }),
 });
 
+export const lookupPolicySection = tool({
+  description:
+    "Search within a specific policy's document sections for detailed content about a topic. Use this when the user asks about specific coverage details, exclusions, conditions, endorsements, or policy language that isn't in the summary data. Returns matching section content.",
+  inputSchema: z.object({
+    policyId: z.string().describe("The policy ID to search within"),
+    query: z.string().describe("What to search for — coverage name, section title, topic, or keywords"),
+  }),
+});
+
 export const generateCoi = tool({
   description:
     "Generate a Certificate of Insurance (COI) PDF for a specific policy.",

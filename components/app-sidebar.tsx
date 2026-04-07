@@ -182,7 +182,7 @@ export function AppSidebar({
 
   async function handleNewChat() {
     try {
-      const threadId = await createThread({ agentDomain: AGENT_DOMAIN });
+      const threadId = await createThread({ initialContext: pageContext ?? undefined, agentDomain: AGENT_DOMAIN });
       router.push(`/agent/thread/${threadId}`);
     } catch {
       toast.error("Failed to create chat");

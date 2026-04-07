@@ -3,10 +3,11 @@
 import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
-import { streamText, generateText, stepCountIs } from "ai";
+import { generateText, stepCountIs } from "ai";
 import { getModel, generateTextWithFallback } from "../lib/models";
 import {
   lookupPolicy,
+  lookupPolicySection,
   compareCoverages,
   checkApplicationStatus,
   saveNote,
@@ -73,6 +74,45 @@ function buildTools(ctx: any, args: { orgId: any; threadId: any }, org?: any) {
           policy1: { id: p1._id, carrier: p1.security, type: p1.policyTypes, limits: p1.limits, deductibles: p1.deductibles, premium: p1.premium },
           policy2: { id: p2._id, carrier: p2.security, type: p2.policyTypes, limits: p2.limits, deductibles: p2.deductibles, premium: p2.premium },
         };
+      },
+    },
+    lookup_policy_section: {
+      ...lookupPolicySection,
+      execute: async (params: { policyId: string; query: string }) => {
+        const policy = await ctx.runQuery(
+          internal.policies.getInternal,
+          { id: params.policyId as any },
+        );
+        if (!policy) return "Policy not found.";
+        if (!policy.document?.sections || policy.document.sections.length === 0) {
+          return "No document sections available for this policy. The full document content may not have been extracted.";
+        }
+        const q = params.query.toLowerCase();
+        const queryWords = q.split(/\s+/).filter((w: string) => w.length > 2);
+        const scored = policy.document.sections.map((s: any) => {
+          const text = ((s.title ?? "") + " " + (s.content ?? "")).toLowerCase();
+          let score = 0;
+          for (const w of queryWords) {
+            if (text.includes(w)) score++;
+          }
+          // Boost exact phrase match
+          if (text.includes(q)) score += 3;
+          return { section: s, score };
+        });
+        const matches = scored
+          .filter((s: any) => s.score > 0)
+          .sort((a: any, b: any) => b.score - a.score)
+          .slice(0, 3);
+        if (matches.length === 0) {
+          const titles = policy.document.sections.map((s: any) => s.title).join(", ");
+          return `No sections matched "${params.query}". Available sections: ${titles}`;
+        }
+        return matches.map((m: any) => ({
+          title: m.section.title,
+          type: m.section.type,
+          pages: `${m.section.pageStart}${m.section.pageEnd ? `-${m.section.pageEnd}` : ""}`,
+          content: m.section.content?.slice(0, 4000) ?? "",
+        }));
       },
     },
     check_application_status: {
@@ -362,56 +402,19 @@ For emails, compose a professional message that:
         memoryContext +
         orgMemoryBlock;
 
-      // Detect if user message needs tools (action keywords)
-      const actionKeywords = /\b(look\s*up|find|search|compare|send\s*email|check\s*application|check\s*status|generate\s*coi|create\s*coi|save\s*note|remember)\b/i;
-      const needsTools = actionKeywords.test(latestUserContent);
+      // All chat uses generateText with tools available.
+      // The model decides when to use tools vs answer directly.
+      const tools = buildTools(ctx, { orgId: args.orgId, threadId: args.threadId }, org);
+      const { text: content } = await generateTextWithFallback({
+        model: getModel("chat_with_tools"),
+        maxOutputTokens: 2048,
+        system: fullSystemPrompt,
+        messages: messageHistory,
+        tools,
+        stopWhen: stepCountIs(5),
+      });
 
-      let content: string;
-
-      if (needsTools) {
-        // Agentic mode — generateText with tools
-        const tools = buildTools(ctx, { orgId: args.orgId, threadId: args.threadId }, org);
-        const { text } = await generateTextWithFallback({
-          model: getModel("chat_with_tools"),
-          maxOutputTokens: 2048,
-          system: fullSystemPrompt,
-          messages: messageHistory,
-          tools,
-          stopWhen: stepCountIs(5),
-        });
-        content = text;
-
-        await ctx.runMutation(internal.threads.updateAgentMessage, {
-          id: agentMsgId,
-          content,
-          referencedPolicyIds: relevantPolicyIds.length > 0 ? relevantPolicyIds : undefined,
-          referencedQuoteIds: relevantQuoteIds.length > 0 ? relevantQuoteIds : undefined,
-        });
-      } else {
-        // Q&A mode — streamText for smooth UX
-        content = "";
-        let lastFlush = 0;
-        const FLUSH_INTERVAL = 150;
-
-        const result = streamText({
-          model: getModel("chat"),
-          maxOutputTokens: 2048,
-          system: fullSystemPrompt,
-          messages: messageHistory,
-        });
-
-        for await (const chunk of result.textStream) {
-          content += chunk;
-          const now = Date.now();
-          if (now - lastFlush >= FLUSH_INTERVAL) {
-            lastFlush = now;
-            await ctx.runMutation(internal.threads.streamAgentMessage, {
-              id: agentMsgId,
-              content,
-            });
-          }
-        }
-
+      {
         await ctx.runMutation(internal.threads.updateAgentMessage, {
           id: agentMsgId,
           content,
