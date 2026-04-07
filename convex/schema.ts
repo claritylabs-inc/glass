@@ -121,7 +121,7 @@ export default defineSchema({
       v.literal("email"),
     ),
     policyId: v.optional(v.id("policies")),
-    quoteId: v.optional(v.id("policies")), // quotes now stored in policies table with documentType="quote"
+    quoteId: v.optional(v.any()), // legacy: may contain old quotes table IDs // quotes now stored in policies table with documentType="quote"
     expiresAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -453,7 +453,7 @@ export default defineSchema({
 
   policyAuditLog: defineTable({
     policyId: v.optional(v.id("policies")),
-    quoteId: v.optional(v.id("policies")),
+    quoteId: v.optional(v.any()), // legacy: may contain old quotes table IDs
     userId: v.id("users"),
     orgId: v.optional(v.id("organizations")),
     action: v.string(),
@@ -488,7 +488,7 @@ export default defineSchema({
     content: v.string(),
     // Agent response metadata
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
-    referencedQuoteIds: v.optional(v.array(v.id("policies"))),
+    referencedQuoteIds: v.optional(v.any()), // legacy: may contain old quotes table IDs
     status: v.optional(v.union(v.literal("processing"), v.literal("error"))),
     error: v.optional(v.string()),
   }).index("by_chatId", ["chatId"]),
@@ -512,7 +512,7 @@ export default defineSchema({
     responseCc: v.optional(v.array(v.string())),
     responseSentAt: v.optional(v.number()),
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
-    referencedQuoteIds: v.optional(v.array(v.id("policies"))),
+    referencedQuoteIds: v.optional(v.any()), // legacy: may contain old quotes table IDs
     status: v.union(
       v.literal("received"),
       v.literal("processing"),
@@ -586,7 +586,7 @@ export default defineSchema({
     }))),
     // Agent response metadata
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
-    referencedQuoteIds: v.optional(v.array(v.id("policies"))),
+    referencedQuoteIds: v.optional(v.any()), // legacy: may contain old quotes table IDs
     // Status
     status: v.optional(v.union(
       v.literal("processing"),
@@ -622,7 +622,7 @@ export default defineSchema({
     emailBody: v.string(), // plain content (for thread record)
     // For unified thread dual-write
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
-    referencedQuoteIds: v.optional(v.array(v.id("policies"))),
+    referencedQuoteIds: v.optional(v.any()), // legacy: may contain old quotes table IDs
   })
     .index("by_threadId", ["threadId"])
     .index("by_status", ["status"]),

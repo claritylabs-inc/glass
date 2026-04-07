@@ -1415,8 +1415,8 @@ export default function PolicyDetailPage({
                             (policy as any).depositPremium ? { label: "Deposit Premium", value: (policy as any).depositPremium } : null,
                           ].filter(Boolean).map((item: any) => (
                             <tr key={item.label} className="border-t border-foreground/4 first:border-t-0 hover:bg-foreground/[0.015] transition-colors">
-                              <td className="px-4 py-2 text-body-sm text-muted-foreground w-32 sm:w-48">{item.label}</td>
-                              <td className="px-4 py-2 text-body-sm font-mono font-medium text-foreground text-right">{item.value}</td>
+                              <td className="px-4 py-2 text-body-sm text-muted-foreground">{item.label}</td>
+                              <td className="px-4 py-2 text-body-sm font-mono font-medium text-foreground text-right whitespace-nowrap">{item.value}</td>
                             </tr>
                           ))}
                           {taxesAndFees && taxesAndFees.length > 0 && (
@@ -1427,7 +1427,7 @@ export default function PolicyDetailPage({
                               {taxesAndFees.map((tf: any, i: number) => (
                                 <tr key={i} className="border-t border-foreground/4 hover:bg-foreground/[0.015] transition-colors">
                                   <td className="px-4 py-2 text-body-sm text-foreground">{tf.name}{tf.type ? ` (${tf.type})` : ""}</td>
-                                  <td className="px-4 py-2 text-body-sm font-mono font-medium text-foreground text-right">{tf.amount}</td>
+                                  <td className="px-4 py-2 text-body-sm font-mono font-medium text-foreground text-right whitespace-nowrap">{tf.amount}</td>
                                 </tr>
                               ))}
                             </>
@@ -1435,17 +1435,23 @@ export default function PolicyDetailPage({
                           {policyDocument?.costsAndFees?.fees?.length > 0 && (
                             <>
                               <tr className="border-t border-foreground/6 bg-foreground/[0.02]">
-                                <td colSpan={2} className="px-4 py-1.5 text-label-sm font-medium text-muted-foreground uppercase tracking-wider">
-                                  Costs & Fees
-                                  {policyDocument.costsAndFees.pageNumber != null && (
-                                    <span className="ml-2"><PageRef page={policyDocument.costsAndFees.pageNumber} /></span>
-                                  )}
+                                <td colSpan={2} className="px-4 py-1.5 flex items-center gap-2">
+                                  <span className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider">Cost Breakdown</span>
+                                  {policyDocument.costsAndFees.pageNumber != null && <PageRef page={policyDocument.costsAndFees.pageNumber} />}
                                 </td>
                               </tr>
                               {policyDocument.costsAndFees.fees.map((f: any, i: number) => (
                                 <tr key={`cf-${i}`} className="border-t border-foreground/4 hover:bg-foreground/[0.015] transition-colors">
-                                  <td className="px-4 py-2 text-body-sm text-foreground">{f.name}{f.type ? ` (${f.type})` : ""}{f.description ? ` — ${f.description}` : ""}</td>
-                                  <td className="px-4 py-2 text-body-sm font-mono font-medium text-foreground text-right">{f.amount || "—"}</td>
+                                  <td className="px-4 py-2 text-body-sm">
+                                    <span className="text-foreground font-medium">{f.name}</span>
+                                    {f.type && (
+                                      <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-foreground/[0.04] text-muted-foreground">{f.type}</span>
+                                    )}
+                                    {f.description && (
+                                      <p className="text-muted-foreground/60 text-label-sm mt-0.5">{f.description}</p>
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-2 text-body-sm font-mono font-medium text-foreground text-right align-top whitespace-nowrap">{f.amount || "—"}</td>
                                 </tr>
                               ))}
                             </>
