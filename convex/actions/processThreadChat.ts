@@ -411,12 +411,24 @@ For emails, compose a professional message that:
         applicationContext = `\n\nAPPLICATION SESSIONS (${applications.length}):\n${appLines.join("\n")}`;
       }
 
+      const toolInstructions = `
+
+TOOLS AVAILABLE:
+You have tools to search and retrieve detailed policy information. ALWAYS use them when:
+- The user asks about specific coverages, sections, endorsements, exclusions, or policy language
+- The user asks "do we have X coverage" — use lookup_policy_section to check the document sections, not just the coverage summary
+- The user asks about limits, deductibles, or conditions for a specific coverage type
+- You're not sure if a coverage exists — search the sections before saying "no"
+
+The policy index above shows section titles. Use lookup_policy_section with the policy ID and a search query to read the full section content including subsections. Do NOT assume a coverage doesn't exist just because it's not in the coverage summary — check the document sections.`;
+
       const fullSystemPrompt =
         systemPrompt +
         webChatAddendum +
         pageContextBlock +
         "\n\n" +
         docContext +
+        toolInstructions +
         applicationContext +
         memoryContext +
         orgMemoryBlock;
@@ -424,8 +436,14 @@ For emails, compose a professional message that:
       // streamText with tools — supports both streaming Q&A and tool calls
       const tools = buildTools(ctx, { orgId: args.orgId, threadId: args.threadId }, org);
       let content = "";
-      let lastFlush = 0;
+      let lastFlush = Date.now();
       const FLUSH_INTERVAL = 150;
+
+      // Immediately show "Thinking..." by ensuring processing message is visible
+      await ctx.runMutation(internal.threads.streamAgentMessage, {
+        id: agentMsgId,
+        content: "",
+      });
 
       // Tool call display names for the "thinking" UI
       const TOOL_LABELS: Record<string, string> = {
