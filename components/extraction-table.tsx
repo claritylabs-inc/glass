@@ -124,7 +124,7 @@ function CancelButton({ policyId, isQuote }: { policyId: string; isQuote?: boole
       className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-950/40 text-label-sm font-medium text-red-700 dark:text-red-400 hover:border-red-300 hover:bg-red-100 dark:hover:bg-red-950/60 transition-colors cursor-pointer disabled:opacity-50"
     >
       <X className="w-3 h-3" />
-      {cancelling ? "Cancelling..." : "Cancel"}
+      {cancelling ? "Dismissing..." : "Dismiss"}
     </button>
   );
 }
