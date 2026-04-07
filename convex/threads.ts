@@ -260,6 +260,43 @@ export const setMessageError = mutation({
   },
 });
 
+export const retryAgentResponse = mutation({
+  args: { messageId: v.id("threadMessages") },
+  handler: async (ctx, args) => {
+    const { userId, orgId } = await requireOrgAccess(ctx);
+    const msg = await ctx.db.get(args.messageId);
+    if (!msg || msg.orgId !== orgId || msg.role !== "agent") throw new Error("Not found");
+
+    // Find the user message that triggered this agent response
+    // (the most recent user message before this agent message)
+    const threadMessages = await ctx.db
+      .query("threadMessages")
+      .withIndex("by_threadId", (q) => q.eq("threadId", msg.threadId))
+      .order("asc")
+      .collect();
+    const msgIndex = threadMessages.findIndex((m) => m._id === args.messageId);
+    let userMessageId: typeof msg._id | undefined;
+    for (let i = msgIndex - 1; i >= 0; i--) {
+      if (threadMessages[i].role === "user") {
+        userMessageId = threadMessages[i]._id;
+        break;
+      }
+    }
+    if (!userMessageId) throw new Error("No user message found to retry");
+
+    // Delete the failed agent message
+    await ctx.db.delete(args.messageId);
+
+    // Re-schedule processThreadChat
+    await ctx.scheduler.runAfter(0, internal.actions.processThreadChat.run, {
+      threadId: msg.threadId,
+      orgId,
+      userId,
+      userMessageId,
+    });
+  },
+});
+
 // ── Internal (for actions) ──
 
 export const getInternal = internalQuery({

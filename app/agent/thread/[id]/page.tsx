@@ -10,7 +10,7 @@ import { ModeBadge } from "@/components/mode-badge";
 import { MessageBubble, splitQuotedReply, QuotedContent, type Conversation } from "@/components/conversation-message";
 import { ChatMessageBubble, type WebChatMessage } from "@/components/chat-message-bubble";
 import { toast } from "sonner";
-import { Loader2, Archive, ArchiveRestore, FileText, FileInput, Pencil, Check, Shield, Search, ClipboardList, HelpCircle, Asterisk, Mail as MailIcon, MessageSquare, Paperclip, Download, Copy, Lock } from "lucide-react";
+import { Loader2, Archive, ArchiveRestore, FileText, FileInput, Pencil, Check, Shield, Search, ClipboardList, HelpCircle, Asterisk, Mail as MailIcon, MessageSquare, Paperclip, Download, Copy, Lock, RotateCcw } from "lucide-react";
 import { usePdf } from "@/components/pdf-context";
 import { usePresence } from "@/hooks/use-presence";
 import { ContextReferenceCard, extractEntityRefs, ReferenceCardStrip } from "@/components/context-reference-card";
@@ -262,11 +262,17 @@ function UnifiedMessageBubble({
   viewerId,
   viewerEmail,
   isMixedThread,
+  isLastAgentMessage,
+  isFirstUserMessage,
+  threadContext,
 }: {
   msg: ThreadMessage;
   viewerId?: string;
   viewerEmail?: string;
   isMixedThread?: boolean;
+  isLastAgentMessage?: boolean;
+  isFirstUserMessage?: boolean;
+  threadContext?: { pageType: string; entityId?: string; summary?: string };
 }) {
   const [showQuoted, setShowQuoted] = useState(false);
   const time = dayjs(msg._creationTime);
@@ -310,6 +316,7 @@ function UnifiedMessageBubble({
         <p className="text-label-sm text-red-600 dark:text-red-400">
           {msg.error ?? "An error occurred processing this message."}
         </p>
+        <RetryButton messageId={msg._id} />
       </div>
     );
   }
@@ -360,6 +367,9 @@ function UnifiedMessageBubble({
           </div>
         </div>
         <ReferenceCardStrip refs={entityRefs} />
+        {isLastAgentMessage && (!msg.content || msg.content.trim().length === 0) && (
+          <RetryButton messageId={msg._id} />
+        )}
       </div>
     );
   }
@@ -436,6 +446,11 @@ function UnifiedMessageBubble({
           </div>
         )}
         </div>
+        {isFirstUserMessage && threadContext && (
+          <div className="mt-2">
+            <ThreadContextLink context={threadContext} />
+          </div>
+        )}
         {isMixedThread && msg.channel === "chat" && (
           <div className={`flex items-center gap-1 mt-1 ${isOwnMessage ? "justify-end mr-0.5" : "ml-0.5"}`}>
             <Lock className="w-2.5 h-2.5 text-muted-foreground/25" />
@@ -444,6 +459,33 @@ function UnifiedMessageBubble({
         )}
       </div>
     </div>
+  );
+}
+
+/* ── Retry button for failed/blank agent messages ── */
+function RetryButton({ messageId }: { messageId: string }) {
+  const retry = useMutation(api.threads.retryAgentResponse);
+  const [retrying, setRetrying] = useState(false);
+
+  return (
+    <button
+      type="button"
+      disabled={retrying}
+      onClick={async () => {
+        setRetrying(true);
+        try {
+          await retry({ messageId: messageId as any });
+        } catch {
+          toast.error("Failed to retry");
+        } finally {
+          setRetrying(false);
+        }
+      }}
+      className="inline-flex items-center gap-1.5 mt-2 ml-9.5 text-[11px] text-muted-foreground/40 hover:text-muted-foreground/70 transition-colors cursor-pointer disabled:opacity-50"
+    >
+      <RotateCcw className={`w-3 h-3 ${retrying ? "animate-spin" : ""}`} />
+      {retrying ? "Retrying..." : "Retry response"}
+    </button>
   );
 }
 
@@ -706,11 +748,6 @@ function UnifiedThreadContent({
       {/* Messages — full height, content scrolls under the input overlay */}
       <div ref={messagesRef} className="absolute inset-0 overflow-y-auto p-4 pr-5">
         <div className="max-w-2xl mx-auto space-y-4">
-          {/* Context link — shows which entity this chat was started from */}
-          {thread.initialContext && (
-            <ThreadContextLink context={thread.initialContext} />
-          )}
-
           {(!messages || messages.length === 0) && (
             <div className="flex flex-col items-center justify-center pt-16 pb-8">
               <div className="w-10 h-10 rounded-full bg-[#A0D2FA]/15 flex items-center justify-center mb-4">
@@ -738,15 +775,22 @@ function UnifiedThreadContent({
               </div>
             </div>
           )}
-          {messages?.map((msg) => (
-            <UnifiedMessageBubble
-              key={msg._id}
-              msg={msg}
-              viewerId={viewerId}
-              viewerEmail={viewerEmail}
-              isMixedThread={isMixedThread}
-            />
-          ))}
+          {(() => {
+            const lastAgentIdx = messages?.reduce((acc, m, i) => m.role === "agent" ? i : acc, -1) ?? -1;
+            const firstUserIdx = messages?.findIndex((m) => m.role === "user") ?? -1;
+            return messages?.map((msg, idx) => (
+              <UnifiedMessageBubble
+                key={msg._id}
+                msg={msg}
+                viewerId={viewerId}
+                viewerEmail={viewerEmail}
+                isMixedThread={isMixedThread}
+                isLastAgentMessage={idx === lastAgentIdx}
+                isFirstUserMessage={idx === firstUserIdx}
+                threadContext={thread.initialContext}
+              />
+            ));
+          })()}
           {chatError && (
             <div className="mx-4 mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
               {chatError}
