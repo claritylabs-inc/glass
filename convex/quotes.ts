@@ -10,59 +10,8 @@ const coverageValidator = v.object({
   sectionRef: v.optional(v.string()),
 });
 
-const documentValidator = v.object({
-  sections: v.array(v.object({
-    title: v.string(),
-    sectionNumber: v.optional(v.string()),
-    pageStart: v.number(),
-    pageEnd: v.optional(v.number()),
-    type: v.string(),
-    coverageType: v.optional(v.string()),
-    content: v.string(),
-    subsections: v.optional(v.array(v.object({
-      title: v.string(),
-      sectionNumber: v.optional(v.string()),
-      pageNumber: v.optional(v.number()),
-      content: v.string(),
-    }))),
-  })),
-  // Quote conditions/subjectivities (cl-sdk 3.0+)
-  conditions: v.optional(v.array(v.object({
-    title: v.string(),
-    content: v.string(),
-    pageNumber: v.optional(v.number()),
-  }))),
-  // Endorsements/forms attached to the quote (cl-sdk 3.0+)
-  endorsements: v.optional(v.array(v.object({
-    title: v.string(),
-    content: v.string(),
-    pageStart: v.optional(v.number()),
-    effectType: v.optional(v.string()),
-  }))),
-  // Costs and fees breakdown (cl-sdk 3.0+)
-  costsAndFees: v.optional(v.object({
-    content: v.string(),
-    pageNumber: v.optional(v.number()),
-    fees: v.optional(v.array(v.object({
-      name: v.string(),
-      amount: v.optional(v.string()),
-      description: v.optional(v.string()),
-      type: v.optional(v.string()),
-    }))),
-  })),
-  // Regulatory context (cl-sdk 3.0+)
-  regulatoryContext: v.optional(v.object({
-    content: v.string(),
-    pageNumber: v.optional(v.number()),
-    jurisdiction: v.optional(v.string()),
-    regulatoryBody: v.optional(v.string()),
-    governingLaw: v.optional(v.string()),
-    details: v.optional(v.array(v.object({
-      label: v.string(),
-      value: v.string(),
-    }))),
-  })),
-});
+// Document structure from cl-sdk — uses v.any() because the schema evolves with cl-sdk versions.
+const documentValidator = v.any();
 
 const metadataSourceValidator = v.object({
   carrierPage: v.optional(v.number()),

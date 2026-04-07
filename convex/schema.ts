@@ -398,84 +398,9 @@ export default defineSchema({
       effectiveDatePage: v.optional(v.number()),
     })),
     // Full document structure with provenance
-    document: v.optional(v.object({
-      sections: v.array(v.object({
-        title: v.string(),
-        sectionNumber: v.optional(v.string()),
-        pageStart: v.number(),
-        pageEnd: v.optional(v.number()),
-        type: v.string(), // declarations, insuring_agreement, exclusion, condition, definition, endorsement, schedule, subjectivity, warranty, notice, regulatory, other
-        coverageType: v.optional(v.string()), // links to policyTypes value
-        content: v.string(), // full text — preserve original language
-        subsections: v.optional(v.array(v.object({
-          title: v.string(),
-          sectionNumber: v.optional(v.string()),
-          pageNumber: v.optional(v.number()),
-          content: v.string(),
-        }))),
-      })),
-      regulatoryContext: v.optional(v.object({
-        content: v.string(),
-        pageNumber: v.optional(v.number()),
-        jurisdiction: v.optional(v.string()),
-        regulatoryBody: v.optional(v.string()),
-        governingLaw: v.optional(v.string()),
-        details: v.optional(v.array(v.object({
-          label: v.string(),
-          value: v.string(),
-        }))),
-      })),
-      complaintContact: v.optional(v.object({
-        content: v.string(),
-        pageNumber: v.optional(v.number()),
-        contacts: v.optional(v.array(v.object({
-          name: v.optional(v.string()),
-          type: v.optional(v.string()),
-          phone: v.optional(v.string()),
-          fax: v.optional(v.string()),
-          email: v.optional(v.string()),
-          title: v.optional(v.string()),
-          address: v.optional(v.string()),
-        }))),
-      })),
-      costsAndFees: v.optional(v.object({
-        content: v.string(),
-        pageNumber: v.optional(v.number()),
-        fees: v.optional(v.array(v.object({
-          name: v.string(),
-          amount: v.optional(v.string()),
-          description: v.optional(v.string()),
-          type: v.optional(v.string()),
-        }))),
-      })),
-      claimsContact: v.optional(v.object({
-        content: v.string(),
-        pageNumber: v.optional(v.number()),
-        contacts: v.optional(v.array(v.object({
-          name: v.optional(v.string()),
-          phone: v.optional(v.string()),
-          fax: v.optional(v.string()),
-          email: v.optional(v.string()),
-          address: v.optional(v.string()),
-          hours: v.optional(v.string()),
-        }))),
-        processSteps: v.optional(v.array(v.string())),
-        reportingTimeLimit: v.optional(v.string()),
-      })),
-      // Policy conditions/subjectivities (e.g., "Signed application required")
-      conditions: v.optional(v.array(v.object({
-        title: v.string(),
-        content: v.string(),
-        pageNumber: v.optional(v.number()),
-      }))),
-      // Endorsements/forms attached to the policy
-      endorsements: v.optional(v.array(v.object({
-        title: v.string(),
-        content: v.string(),
-        pageStart: v.optional(v.number()),
-        effectType: v.optional(v.string()), // informational, restrictive, etc.
-      }))),
-    })),
+    // Extracted document structure (sections, endorsements, conditions, etc.)
+    // Uses v.any() because the cl-sdk document schema evolves frequently
+    document: v.optional(v.any()),
     // Extraction state
     extractionStatus: v.union(
       v.literal("pending"),
@@ -597,59 +522,8 @@ export default defineSchema({
       description: v.string(),
       pageNumber: v.optional(v.number()),
     }))),
-    document: v.optional(v.object({
-      sections: v.array(v.object({
-        title: v.string(),
-        sectionNumber: v.optional(v.string()),
-        pageStart: v.number(),
-        pageEnd: v.optional(v.number()),
-        type: v.string(),
-        coverageType: v.optional(v.string()),
-        content: v.string(),
-        subsections: v.optional(v.array(v.object({
-          title: v.string(),
-          sectionNumber: v.optional(v.string()),
-          pageNumber: v.optional(v.number()),
-          content: v.string(),
-        }))),
-      })),
-      // Quote conditions/subjectivities
-      conditions: v.optional(v.array(v.object({
-        title: v.string(),
-        content: v.string(),
-        pageNumber: v.optional(v.number()),
-      }))),
-      // Endorsements/forms attached to the quote
-      endorsements: v.optional(v.array(v.object({
-        title: v.string(),
-        content: v.string(),
-        pageStart: v.optional(v.number()),
-        effectType: v.optional(v.string()),
-      }))),
-      // Costs and fees breakdown
-      costsAndFees: v.optional(v.object({
-        content: v.string(),
-        pageNumber: v.optional(v.number()),
-        fees: v.optional(v.array(v.object({
-          name: v.string(),
-          amount: v.optional(v.string()),
-          description: v.optional(v.string()),
-          type: v.optional(v.string()),
-        }))),
-      })),
-      // Regulatory context
-      regulatoryContext: v.optional(v.object({
-        content: v.string(),
-        pageNumber: v.optional(v.number()),
-        jurisdiction: v.optional(v.string()),
-        regulatoryBody: v.optional(v.string()),
-        governingLaw: v.optional(v.string()),
-        details: v.optional(v.array(v.object({
-          label: v.string(),
-          value: v.string(),
-        }))),
-      })),
-    })),
+    // Extracted document structure (sections, endorsements, conditions, etc.)
+    document: v.optional(v.any()),
     metadataSource: v.optional(v.object({
       carrierPage: v.optional(v.number()),
       quoteNumberPage: v.optional(v.number()),
