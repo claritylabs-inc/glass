@@ -50,12 +50,12 @@ export type ModelTask =
   | "summary";
 
 const MODEL_CONFIG: Record<ModelTask, () => any> = {
-  chat:             () => deepseek()("deepseek-chat"),
-  chat_with_tools:  () => deepseek()("deepseek-chat"),
+  chat:             () => moonshot()("kimi-k2.5"),
+  chat_with_tools:  () => moonshot()("kimi-k2.5"),
   email_draft:      () => moonshot()("kimi-k2.5"),
   email_reply:      () => moonshot()("kimi-k2.5"),
   analysis:         () => moonshot()("kimi-k2.5"),
-  summary:          () => deepseek()("deepseek-chat"),
+  summary:          () => moonshot()("kimi-k2.5"),
   classification:   () => anthropic()("claude-haiku-4-5-20251001"),
   extraction:       () => anthropic()("claude-sonnet-4-6"),
 };
