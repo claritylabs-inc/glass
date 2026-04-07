@@ -283,6 +283,8 @@ function UnifiedMessageBubble({
   // Processing state — show streaming content if available
   if (msg.role === "agent" && msg.status === "processing") {
     const hasContent = msg.content && msg.content.length > 0;
+    const ageMs = Date.now() - msg._creationTime;
+    const isStale = ageMs > 60_000; // 1 min without content = likely stuck
     return (
       <div className="flex items-start gap-2.5 max-w-lg">
         <div className="w-7 h-7 rounded-full bg-[#A0D2FA]/15 flex items-center justify-center shrink-0">
@@ -301,9 +303,10 @@ function UnifiedMessageBubble({
           ) : (
             <div className="flex items-center gap-2 text-muted-foreground/40 text-body-sm">
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              <span>Thinking...</span>
+              <span>{isStale ? "Taking longer than expected..." : "Thinking..."}</span>
             </div>
           )}
+          <CancelButton messageId={msg._id} show={!hasContent} />
         </div>
       </div>
     );
@@ -459,6 +462,33 @@ function UnifiedMessageBubble({
         )}
       </div>
     </div>
+  );
+}
+
+/* ── Cancel button for stuck processing messages ── */
+function CancelButton({ messageId, show }: { messageId: string; show: boolean }) {
+  const cancel = useMutation(api.threads.cancelProcessing);
+  const [cancelling, setCancelling] = useState(false);
+  if (!show) return null;
+
+  return (
+    <button
+      type="button"
+      disabled={cancelling}
+      onClick={async () => {
+        setCancelling(true);
+        try {
+          await cancel({ messageId: messageId as any });
+        } catch {
+          toast.error("Failed to cancel");
+        } finally {
+          setCancelling(false);
+        }
+      }}
+      className="inline-flex items-center gap-1.5 mt-1.5 text-[11px] text-muted-foreground/35 hover:text-muted-foreground/60 transition-colors cursor-pointer disabled:opacity-50"
+    >
+      {cancelling ? "Cancelling..." : "Cancel"}
+    </button>
   );
 }
 

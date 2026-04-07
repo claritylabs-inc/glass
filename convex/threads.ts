@@ -260,6 +260,17 @@ export const setMessageError = mutation({
   },
 });
 
+export const cancelProcessing = mutation({
+  args: { messageId: v.id("threadMessages") },
+  handler: async (ctx, args) => {
+    const { orgId } = await requireOrgAccess(ctx);
+    const msg = await ctx.db.get(args.messageId);
+    if (!msg || msg.orgId !== orgId || msg.role !== "agent") throw new Error("Not found");
+    if (msg.status !== "processing") return; // already finished
+    await ctx.db.delete(args.messageId);
+  },
+});
+
 export const retryAgentResponse = mutation({
   args: { messageId: v.id("threadMessages") },
   handler: async (ctx, args) => {
