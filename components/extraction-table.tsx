@@ -451,7 +451,7 @@ export function ExtractionTable({
                             {(extraction.extractionStatus === "error" || extraction.extractionStatus === "pending") && (
                               <>
                                 <RestartButton extraction={extraction} />
-                                <DismissButton policyId={extraction._id} />
+                                <CancelButton policyId={extraction._id} />
                               </>
                             )}
                           </div>

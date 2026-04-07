@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query, internalQuery, internalMutation } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { requireAuth } from "./lib/auth";
 import { requireOrgAccess, getOrgAccess } from "./lib/orgAuth";
 
@@ -642,11 +643,12 @@ export const cancelExtraction = mutation({
     const { userId, orgId } = await requireOrgAccess(ctx);
     const policy = await ctx.db.get(args.id);
     if (!policy || policy.orgId !== orgId) throw new Error("Not found");
-    // Can cancel paused or extracting policies
-    if (policy.extractionStatus !== "paused" && policy.extractionStatus !== "extracting") {
-      throw new Error("Can only cancel extracting or paused policies");
+    // Allow cancel from any non-complete status
+    const cancelable = ["pending", "extracting", "paused", "error"];
+    if (!cancelable.includes(policy.extractionStatus)) {
+      throw new Error("Cannot cancel a completed extraction");
     }
-    await ctx.db.patch(args.id, { extractionStatus: "error", extractionError: "Cancelled by user" });
+    await ctx.db.patch(args.id, { extractionStatus: "not_insurance" as any, extractionError: "Cancelled by user" });
     await ctx.db.insert("policyAuditLog", {
       policyId: args.id,
       userId,
@@ -662,13 +664,36 @@ export const restartExtraction = mutation({
     const { userId, orgId } = await requireOrgAccess(ctx);
     const policy = await ctx.db.get(args.id);
     if (!policy || policy.orgId !== orgId) throw new Error("Not found");
-    if (policy.extractionStatus !== "paused" && policy.extractionStatus !== "error") {
-      throw new Error("Can only restart paused or error policies");
-    }
+
+    // Clear all extracted data for a fresh start
     await ctx.db.patch(args.id, {
-      extractionStatus: "extracting",
+      extractionStatus: "pending",
       extractionError: undefined,
+      carrier: "Extracting...",
+      policyNumber: "Extracting...",
+      insuredName: "Extracting...",
+      summary: undefined,
+      coverages: [],
+      rawExtractionResponse: undefined,
+      rawMetadataResponse: undefined,
+      document: undefined,
+      metadataSource: undefined,
+      extractionLog: undefined,
     });
+
+    // Schedule fresh extraction
+    if (policy.emailId) {
+      const email = await ctx.db.get(policy.emailId);
+      if (email) {
+        await ctx.scheduler.runAfter(0, internal.actions.extractPolicy.extractPolicy, {
+          emailId: policy.emailId,
+          connectionId: email.connectionId,
+          userId,
+          orgId,
+        });
+      }
+    }
+
     await ctx.db.insert("policyAuditLog", {
       policyId: args.id,
       userId,
