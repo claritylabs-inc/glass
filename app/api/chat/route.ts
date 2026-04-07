@@ -97,6 +97,33 @@ export async function POST(req: NextRequest) {
     const { context: docContext, relevantPolicyIds, relevantQuoteIds } =
       buildDocumentContext(policyDocs, quoteDocs, latestUserContent);
 
+    // Load org memory (public query, scoped to viewer's org)
+    let orgMemoryBlock = "";
+    try {
+      const memories = await convex.query(api.orgMemory.list, {});
+      if (memories.length > 0) {
+        const grouped: Record<string, string[]> = {};
+        for (const m of memories) {
+          if (!grouped[m.type]) grouped[m.type] = [];
+          grouped[m.type].push(m.content);
+        }
+        const typeLabels: Record<string, string> = {
+          fact: "Known facts",
+          preference: "Client preferences",
+          risk_note: "Risk observations",
+          observation: "General observations",
+        };
+        const sections: string[] = [];
+        for (const [type, items] of Object.entries(grouped)) {
+          const label = typeLabels[type] || type;
+          sections.push(`${label}:\n${items.map((i: string) => `- ${i}`).join("\n")}`);
+        }
+        orgMemoryBlock = `\n\nORG KNOWLEDGE:\n${sections.join("\n\n")}`;
+      }
+    } catch {
+      // Non-critical — proceed without memory
+    }
+
     // Build message history from thread messages
     const messageHistory = buildMessageHistory(threadMessages);
 
@@ -139,7 +166,7 @@ export async function POST(req: NextRequest) {
     }
 
     const fullSystemPrompt =
-      systemPrompt + webChatAddendum + pageContextBlock + "\n\n" + docContext;
+      systemPrompt + webChatAddendum + pageContextBlock + "\n\n" + docContext + orgMemoryBlock;
 
     // Stream response
     let result;

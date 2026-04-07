@@ -22,6 +22,7 @@ import {
   buildConversationMemoryContext,
   logAiError,
 } from "../lib/aiUtils";
+import { buildMemoryContext } from "../lib/orgMemoryContext";
 
 /** Build executable tools with Convex context wired in. */
 function buildTools(ctx: any, args: { orgId: any; threadId: any }) {
@@ -98,9 +99,15 @@ function buildTools(ctx: any, args: { orgId: any; threadId: any }) {
     },
     save_note: {
       ...saveNote,
-      execute: async (_params: { content: string; type: string; policyId?: string }) => {
-        // Phase 3 will wire this to orgMemory — placeholder for now
-        return "Note saved. (Memory system coming soon.)";
+      execute: async (params: { content: string; type: string; policyId?: string }) => {
+        await ctx.runMutation(internal.orgMemory.upsert, {
+          orgId: args.orgId,
+          type: params.type as any,
+          content: params.content,
+          source: "chat",
+          policyId: params.policyId as any,
+        });
+        return "Note saved to organization memory.";
       },
     },
     generate_coi: {
@@ -228,6 +235,13 @@ export const run = internalAction({
       );
       const memoryContext = buildConversationMemoryContext(pastConversations);
 
+      // Load org memory
+      const orgMemories = await ctx.runQuery(
+        internal.orgMemory.listByOrg,
+        { orgId: args.orgId, limit: 30 },
+      );
+      const orgMemoryBlock = buildMemoryContext(orgMemories);
+
       // Build message history (skip processing placeholders)
       const messageHistory = buildMessageHistory(allMessages);
 
@@ -321,7 +335,8 @@ For emails, compose a professional message that:
         "\n\n" +
         docContext +
         applicationContext +
-        memoryContext;
+        memoryContext +
+        orgMemoryBlock;
 
       // Detect if user message needs tools (action keywords)
       const actionKeywords = /\b(look\s*up|find|search|compare|send\s*email|check\s*application|check\s*status|generate\s*coi|create\s*coi|save\s*note|remember)\b/i;

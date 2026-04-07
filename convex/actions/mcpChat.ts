@@ -12,6 +12,7 @@ import {
   buildConversationMemoryContext,
   logAiError,
 } from "../lib/aiUtils";
+import { buildMemoryContext } from "../lib/orgMemoryContext";
 
 /**
  * Simplified chat action for MCP — no streaming, no email sending.
@@ -81,6 +82,13 @@ export const run = internalAction({
     );
     const memoryContext = buildConversationMemoryContext(pastConversations);
 
+    // Load org memory
+    const orgMemories = await ctx.runQuery(
+      internal.orgMemory.listByOrg,
+      { orgId: args.orgId, limit: 30 },
+    );
+    const orgMemoryBlock = buildMemoryContext(orgMemories);
+
     // Application context
     let applicationContext = "";
     if (applications.length > 0) {
@@ -108,7 +116,8 @@ MCP MODE:
       "\n\n" +
       docContext +
       applicationContext +
-      memoryContext;
+      memoryContext +
+      orgMemoryBlock;
 
     // Build message history (skip processing placeholders)
     const messageHistory = buildMessageHistory(allMessages);
