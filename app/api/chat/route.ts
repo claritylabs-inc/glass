@@ -1,13 +1,14 @@
 import { NextRequest } from "next/server";
-import { streamText, generateText, type ModelMessage } from "ai";
-import { anthropic } from "@ai-sdk/anthropic";
+import { streamText, generateText } from "ai";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
+import { buildDocumentContext } from "@claritylabs/cl-sdk";
+import { getModel } from "@/convex/lib/models";
 import {
-  buildSystemPrompt,
-  buildDocumentContext,
-  HAIKU_MODEL,
-} from "@claritylabs/cl-sdk";
+  buildSystemPromptForContext,
+  buildMessageHistory,
+  logAiError,
+} from "@/convex/lib/aiUtils";
 
 export const maxDuration = 60;
 const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL!;
@@ -71,17 +72,12 @@ export async function POST(req: NextRequest) {
     const siteUrl = process.env.SITE_URL ?? "https://prism.claritylabs.inc";
 
     // Build system prompt
-    const systemPrompt = buildSystemPrompt(
-      "direct",
-      org.context,
-      siteUrl,
-      org.name,
+    const systemPrompt = buildSystemPromptForContext({
+      org,
+      mode: "direct",
       userName,
-      org.coiHandling as any,
-      org.insuranceBroker,
-      org.brokerContactName,
-      org.brokerContactEmail,
-    );
+      siteUrl,
+    });
 
     // Find latest user message content for document context matching
     const latestUserContent =
@@ -101,24 +97,10 @@ export async function POST(req: NextRequest) {
     const { context: docContext, relevantPolicyIds, relevantQuoteIds } =
       buildDocumentContext(policyDocs, quoteDocs, latestUserContent);
 
-    // Build message history from thread messages (not just chatMessages from useChat)
-    const messageHistory: ModelMessage[] = [];
-    for (const msg of threadMessages) {
-      if (msg.status === "processing") continue;
-      if (msg.role === "user") {
-        messageHistory.push({
-          role: "user",
-          content: msg.userName
-            ? `[${msg.userName}]: ${msg.content}`
-            : msg.content,
-        });
-      } else if (msg.role === "agent" && msg.content) {
-        messageHistory.push({ role: "assistant", content: msg.content });
-      }
-    }
+    // Build message history from thread messages
+    const messageHistory = buildMessageHistory(threadMessages);
 
     // Add the latest user message from useChat if not already in thread
-    // (it may not be persisted yet when the API is called)
     const lastChat = chatMessages?.[chatMessages.length - 1];
     if (lastChat?.role === "user") {
       const lastThreadMsg = threadMessages[threadMessages.length - 1];
@@ -163,7 +145,7 @@ export async function POST(req: NextRequest) {
     let result;
     try {
       result = streamText({
-        model: anthropic(HAIKU_MODEL),
+        model: getModel("chat"),
         maxOutputTokens: 2048,
         system: fullSystemPrompt,
         messages: messageHistory,
@@ -209,7 +191,7 @@ export async function POST(req: NextRequest) {
           if (userMessages.length <= 1) {
             try {
               const { text: titleText } = await generateText({
-                model: anthropic(HAIKU_MODEL),
+                model: getModel("summary"),
                 maxOutputTokens: 12,
                 system:
                   'You are a title generator. Given a user question and an assistant reply, output a short 2-4 word title that captures the topic. Rules:\n- Output ONLY the title, no quotes, no punctuation, no explanation\n- Use title case\n- Examples: "GL Coverage Limits", "Cyber Liability Quotes", "Workers Comp App", "Renewal Timeline"',
@@ -257,7 +239,7 @@ export async function POST(req: NextRequest) {
     return result.toUIMessageStreamResponse();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    console.error("Chat API error:", message);
+    logAiError("chatApiRoute", error, { threadId });
 
     // Mark the processing message as error
     try {
