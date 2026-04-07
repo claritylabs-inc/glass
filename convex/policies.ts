@@ -612,6 +612,23 @@ export const clearExtractionLog = internalMutation({
   },
 });
 
+export const getInternal = internalQuery({
+  args: { id: v.id("policies") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.id);
+  },
+});
+
+export const updateAnalysis = internalMutation({
+  args: {
+    id: v.id("policies"),
+    analysis: v.any(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.id, { analysis: args.analysis });
+  },
+});
+
 export const restore = mutation({
   args: { id: v.id("policies") },
   handler: async (ctx, args) => {

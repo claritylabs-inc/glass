@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { query, mutation, internalQuery } from "./_generated/server";
+import { query, mutation, internalQuery, internalMutation } from "./_generated/server";
 import { requireOrgAccess, requireOrgAdmin, getOrgAccess } from "./lib/orgAuth";
 import { getAuthUserId } from "@convex-dev/auth/server";
 
@@ -455,5 +455,15 @@ export const getMembersInternal = internalQuery({
         return { ...m, user };
       }),
     );
+  },
+});
+
+export const updatePortfolioAnalysis = internalMutation({
+  args: {
+    id: v.id("organizations"),
+    portfolioAnalysis: v.any(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.id, { portfolioAnalysis: args.portfolioAnalysis });
   },
 });
