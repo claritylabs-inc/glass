@@ -456,6 +456,19 @@ The policy index above shows section titles. Use lookup_policy_section with the 
         generate_coi: "Generating COI...",
       };
 
+      // Detect provider for reasoning support
+      const modelId = (getModel("chat") as any)?.modelId ?? "";
+      const isDeepSeek = modelId.includes("deepseek");
+      const isKimi = modelId.includes("kimi");
+
+      // Enable reasoning for providers that support it
+      const providerOptions: Record<string, any> = {};
+      if (isDeepSeek) {
+        providerOptions.deepseek = { thinking: { type: "enabled" } };
+      } else if (isKimi) {
+        providerOptions.moonshotai = { thinking: { type: "enabled", budgetTokens: 4096 } };
+      }
+
       const result = streamText({
         model: getModel("chat"),
         maxOutputTokens: 2048,
@@ -463,12 +476,31 @@ The policy index above shows section titles. Use lookup_policy_section with the 
         messages: messageHistory,
         tools,
         stopWhen: stepCountIs(5),
+        providerOptions,
       });
 
-      let usedTools = false;
+      let reasoning = "";
 
       for await (const part of result.fullStream) {
-        if (part.type === "text-delta") {
+        if (part.type === "reasoning-delta") {
+          // Stream reasoning as thinking status
+          reasoning += (part as any).text ?? (part as any).delta ?? "";
+          const now = Date.now();
+          if (now - lastFlush >= FLUSH_INTERVAL) {
+            lastFlush = now;
+            // Show last ~80 chars of reasoning as the thinking label
+            const snippet = reasoning.length > 80
+              ? "..." + reasoning.slice(-77)
+              : reasoning;
+            const cleanSnippet = snippet.replace(/\n/g, " ").trim();
+            if (cleanSnippet) {
+              await ctx.runMutation(internal.threads.streamAgentMessage, {
+                id: agentMsgId,
+                content: `*${cleanSnippet}*`,
+              });
+            }
+          }
+        } else if (part.type === "text-delta") {
           content += part.text;
           const now = Date.now();
           if (now - lastFlush >= FLUSH_INTERVAL) {
@@ -479,16 +511,15 @@ The policy index above shows section titles. Use lookup_policy_section with the 
             });
           }
         } else if (part.type === "tool-call") {
-          usedTools = true;
-          // Reset pre-tool "thinking" text — only the final response matters
+          // Reset pre-tool text — only the final response matters
           content = "";
+          reasoning = "";
           const label = TOOL_LABELS[part.toolName] ?? `Using ${part.toolName}...`;
           await ctx.runMutation(internal.threads.streamAgentMessage, {
             id: agentMsgId,
             content: `*${label}*`,
           });
         } else if (part.type === "tool-result") {
-          // Clear status, text will start streaming next
           await ctx.runMutation(internal.threads.streamAgentMessage, {
             id: agentMsgId,
             content: "",
