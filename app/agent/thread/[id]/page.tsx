@@ -48,7 +48,7 @@ type ThreadMessage = {
   responseMessageId?: string;
   attachments?: { filename: string; contentType: string; size: number; fileId?: Id<"_storage"> }[];
   referencedPolicyIds?: Id<"policies">[];
-  referencedQuoteIds?: Id<"quotes">[];
+  referencedQuoteIds?: Id<"policies">[];
   status?: "processing" | "error" | "pending_send";
   error?: string;
   pendingEmailId?: Id<"pendingEmails">;
@@ -140,7 +140,7 @@ function UnifiedThreadActions({
  * Fix legacy agent-generated links where quote IDs were placed under /policies/.
  * Uses the message's referencedQuoteIds to detect and rewrite to /quotes/.
  */
-function fixQuoteLinks(content: string, quoteIds?: Id<"quotes">[]): string {
+function fixQuoteLinks(content: string, quoteIds?: Id<"policies">[]): string {
   if (!quoteIds || quoteIds.length === 0) return content;
   const quoteIdSet = new Set<string>(quoteIds);
   return content.replace(

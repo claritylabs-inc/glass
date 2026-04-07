@@ -11,9 +11,11 @@ import dayjs from "dayjs";
 interface Quote {
   _id: string;
   carrier: string;
-  quoteNumber: string;
+  policyNumber: string;
+  quoteNumber?: string;
   policyTypes?: string[];
-  quoteYear: number;
+  policyYear: number;
+  quoteYear?: number;
   proposedEffectiveDate?: string;
   proposedExpirationDate?: string;
   quoteExpirationDate?: string;
@@ -160,7 +162,7 @@ export function QuoteTable({ quotes }: { quotes: Quote[] | undefined }) {
                     >
                       <td className="px-4 py-2.5 whitespace-nowrap">
                         <p className="text-body-sm text-foreground font-medium flex items-center gap-1.5">
-                          {quote.quoteNumber}
+                          {quote.quoteNumber ?? quote.policyNumber}
                           {quote.isDemo && (
                             <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400">Demo</span>
                           )}

@@ -15,7 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { POLICY_TYPE_LABELS, QUOTE_SECTION_TYPE_LABELS, QUOTE_SECTION_TYPE_COLORS } from "@/convex/lib/policyTypes";
-import { Id } from "@/convex/_generated/dataModel";
+import type { Id } from "@/convex/_generated/dataModel";
 import { PillButton } from "@/components/ui/pill-button";
 import { usePdf } from "@/components/pdf-context";
 import { usePageContext } from "@/hooks/use-page-context";
@@ -224,18 +224,18 @@ export default function QuoteDetailPage({ params }: { params: Promise<{ id: stri
   const searchParams = useSearchParams();
   const highlightSection = searchParams.get("section");
 
-  const quote = useQuery(api.quotes.get, { id: id as Id<"quotes"> });
+  const quote = useQuery(api.policies.get, { id: id as Id<"policies"> });
   const fileUrl = useQuery(
-    api.quotes.getFileUrl,
+    api.policies.getFileUrl,
     quote?.fileId ? { fileId: quote.fileId } : "skip"
   );
-  const softDelete = useMutation(api.quotes.softDelete);
-  const restore = useMutation(api.quotes.restore);
+  const softDelete = useMutation(api.policies.softDelete);
+  const restore = useMutation(api.policies.restore);
   const retryAction = useAction(api.actions.retryExtraction.retryQuoteExtraction);
 
   const conversations = useQuery(
-    api.agentConversations.listByQuoteId,
-    quote ? { quoteId: quote._id } : "skip",
+    api.agentConversations.listByPolicyId,
+    quote ? { policyId: quote._id } : "skip",
   );
   const { setPageContext } = usePageContext();
   useEffect(() => {
@@ -244,7 +244,7 @@ export default function QuoteDetailPage({ params }: { params: Promise<{ id: stri
       setPageContext({
         pageType: "quote",
         entityId: quote._id,
-        summary: `${quote.security || quote.carrier} ${quote.quoteNumber ?? ""} — ${types.join(", ")}`,
+        summary: `${quote.security || quote.carrier} ${(quote as any).quoteNumber ?? ""} — ${types.join(", ")}`,
       });
     }
     return () => setPageContext(null);
@@ -278,8 +278,8 @@ export default function QuoteDetailPage({ params }: { params: Promise<{ id: stri
   const types = quote.policyTypes ?? ["other"];
   const carrier = quote.security || quote.carrier;
   const isExpired = (() => {
-    if (!quote.quoteExpirationDate) return false;
-    const expDate = dayjs(quote.quoteExpirationDate, "MM/DD/YYYY");
+    if (!(quote as any).quoteExpirationDate) return false;
+    const expDate = dayjs((quote as any).quoteExpirationDate, "MM/DD/YYYY");
     return expDate.isValid() && expDate.isBefore(dayjs());
   })();
 
@@ -313,14 +313,14 @@ export default function QuoteDetailPage({ params }: { params: Promise<{ id: stri
   );
 
   return (
-    <AppShell breadcrumbDetail={quote.quoteNumber} actions={headerActions}>
+    <AppShell breadcrumbDetail={(quote as any).quoteNumber} actions={headerActions}>
           {/* Header */}
           <FadeIn when={true} staggerIndex={0} duration={0.6}>
             <div className="mb-6">
               <Link href="/quotes" className="inline-flex items-center gap-1.5 text-body-sm text-muted-foreground hover:text-foreground transition-colors mb-4">
                 <ArrowLeft className="w-3.5 h-3.5" /> Back to quotes
               </Link>
-              <h1 className="!mb-0">{quote.quoteNumber}</h1>
+              <h1 className="!mb-0">{(quote as any).quoteNumber}</h1>
               <div className="flex items-center gap-2 flex-wrap mt-1">
                 <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 uppercase tracking-wider">
                   Quote
@@ -409,16 +409,16 @@ export default function QuoteDetailPage({ params }: { params: Promise<{ id: stri
                   <span className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider">Proposed Period</span>
                 </div>
                 <p className="text-body-sm font-semibold">
-                  {quote.proposedEffectiveDate ?? "—"} to {quote.proposedExpirationDate ?? "—"}
+                  {(quote as any).proposedEffectiveDate ?? "—"} to {(quote as any).proposedExpirationDate ?? "—"}
                 </p>
                 {(quote as any).coverageForm && (
                   <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-foreground/[0.04] text-muted-foreground mt-1">
                     {(quote as any).coverageForm === "claims_made" ? "Claims-Made" : (quote as any).coverageForm === "occurrence" ? "Occurrence" : (quote as any).coverageForm}
                   </span>
                 )}
-                {quote.quoteExpirationDate && (
+                {(quote as any).quoteExpirationDate && (
                   <p className={`text-label-sm mt-1 ${isExpired ? "text-red-500 font-medium" : "text-muted-foreground/60"}`}>
-                    {isExpired ? "Expired" : "Quote expires"}: {quote.quoteExpirationDate}
+                    {isExpired ? "Expired" : "Quote expires"}: {(quote as any).quoteExpirationDate}
                   </p>
                 )}
               </div>
@@ -489,12 +489,12 @@ export default function QuoteDetailPage({ params }: { params: Promise<{ id: stri
                       </tr>
                     </thead>
                     <tbody>
-                      {quote.coverages.map((c, i) => (
+                      {quote.coverages.map((c: any, i: number) => (
                         <tr key={i} className="border-b border-foreground/4 last:border-0">
                           <td className="px-4 py-2.5 font-medium">{c.name}</td>
-                          <td className="px-4 py-2.5 font-mono text-xs">{c.proposedLimit}</td>
+                          <td className="px-4 py-2.5 font-mono text-xs">{(c as any).proposedLimit ?? (c as any).limit ?? "—"}</td>
                           <td className="px-4 py-2.5 font-mono text-xs text-muted-foreground hidden sm:table-cell">
-                            {c.proposedDeductible ?? "—"}
+                            {(c as any).proposedDeductible ?? (c as any).deductible ?? "—"}
                           </td>
                         </tr>
                       ))}
@@ -506,7 +506,7 @@ export default function QuoteDetailPage({ params }: { params: Promise<{ id: stri
           )}
 
           {/* Premium Breakdown */}
-          {quote.premiumBreakdown && quote.premiumBreakdown.length > 0 && (
+          {(quote as any).premiumBreakdown && (quote as any).premiumBreakdown.length > 0 && (
             <FadeIn when={true} staggerIndex={3} duration={0.6}>
               <div className="mb-6">
                 <h3 className="text-body-sm font-semibold mb-3">Premium Breakdown</h3>
@@ -519,7 +519,7 @@ export default function QuoteDetailPage({ params }: { params: Promise<{ id: stri
                       </tr>
                     </thead>
                     <tbody>
-                      {quote.premiumBreakdown.map((pb, i) => (
+                      {(quote as any).premiumBreakdown.map((pb: any, i: number) => (
                         <tr key={i} className="border-b border-foreground/4 last:border-0">
                           <td className="px-4 py-2.5">{pb.line}</td>
                           <td className="px-4 py-2.5 text-right font-mono text-xs">{pb.amount}</td>
@@ -533,12 +533,12 @@ export default function QuoteDetailPage({ params }: { params: Promise<{ id: stri
           )}
 
           {/* Subjectivities */}
-          {quote.subjectivities && quote.subjectivities.length > 0 && (
+          {(quote as any).subjectivities && (quote as any).subjectivities.length > 0 && (
             <FadeIn when={true} staggerIndex={4} duration={0.6}>
               <div className="mb-6">
                 <h3 className="text-body-sm font-semibold mb-3">Subjectivities</h3>
                 <div className="space-y-2">
-                  {quote.subjectivities.map((s, i) => (
+                  {(quote as any).subjectivities.map((s: any, i: number) => (
                     <div key={i} className="flex items-start gap-3 px-4 py-3 rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04]">
                       <AlertTriangle className="w-3.5 h-3.5 text-orange-500 mt-0.5 shrink-0" />
                       <div className="flex-1 min-w-0">
@@ -564,12 +564,12 @@ export default function QuoteDetailPage({ params }: { params: Promise<{ id: stri
           )}
 
           {/* Underwriting Conditions */}
-          {quote.underwritingConditions && quote.underwritingConditions.length > 0 && (
+          {(quote as any).underwritingConditions && (quote as any).underwritingConditions.length > 0 && (
             <FadeIn when={true} staggerIndex={5} duration={0.6}>
               <div className="mb-6">
                 <h3 className="text-body-sm font-semibold mb-3">Underwriting Conditions</h3>
                 <div className="space-y-2">
-                  {quote.underwritingConditions.map((uc, i) => (
+                  {(quote as any).underwritingConditions.map((uc: any, i: number) => (
                     <div key={i} className="flex items-start gap-3 px-4 py-3 rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04]">
                       <Eye className="w-3.5 h-3.5 text-amber-500 mt-0.5 shrink-0" />
                       <p className="text-body-sm text-foreground flex-1">{uc.description}</p>

@@ -121,7 +121,7 @@ export default defineSchema({
       v.literal("email"),
     ),
     policyId: v.optional(v.id("policies")),
-    quoteId: v.optional(v.id("policies")),
+    quoteId: v.optional(v.id("policies")), // quotes now stored in policies table with documentType="quote"
     expiresAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -432,6 +432,18 @@ export default defineSchema({
     assignmentClause: v.optional(v.string()),
     subrogationClause: v.optional(v.string()),
     otherInsuranceClause: v.optional(v.string()),
+    // Quote-specific fields (for documentType === "quote")
+    quoteNumber: v.optional(v.string()),
+    quoteYear: v.optional(v.number()),
+    proposedEffectiveDate: v.optional(v.string()),
+    proposedExpirationDate: v.optional(v.string()),
+    quoteExpirationDate: v.optional(v.string()),
+    subjectivities: v.optional(v.any()),
+    underwritingConditions: v.optional(v.any()),
+    premiumBreakdown: v.optional(v.any()),
+    enrichedSubjectivities: v.optional(v.any()),
+    enrichedUnderwritingConditions: v.optional(v.any()),
+    warrantyRequirements: v.optional(v.any()),
     deletedAt: v.optional(v.number()),
     isDemo: v.optional(v.boolean()),
   }).index("by_carrier", ["carrier"])
@@ -439,140 +451,15 @@ export default defineSchema({
     .index("by_userId", ["userId"])
     .index("by_orgId", ["orgId"]),
 
-  quotes: defineTable({
-    userId: v.optional(v.id("users")),
-    orgId: v.optional(v.id("organizations")),
-    emailId: v.optional(v.id("emails")),
-    fileId: v.optional(v.id("_storage")),
-    fileName: v.optional(v.string()),
-    // Entity fields
-    carrier: v.string(),
-    security: v.optional(v.string()),
-    underwriter: v.optional(v.string()),
-    mga: v.optional(v.string()),
-    broker: v.optional(v.string()),
-    // Enriched entity fields (cl-sdk 1.2+)
-    carrierLegalName: v.optional(v.string()),
-    carrierNaicNumber: v.optional(v.string()),
-    carrierAdmittedStatus: v.optional(v.string()),
-    coverageForm: v.optional(v.string()),
-    retroactiveDate: v.optional(v.string()),
-    insuredAddress: v.optional(v.object({
-      street1: v.string(),
-      street2: v.optional(v.string()),
-      city: v.string(),
-      state: v.string(),
-      zip: v.string(),
-      country: v.optional(v.string()),
-    })),
-    limits: v.optional(v.object({
-      perOccurrence: v.optional(v.string()),
-      generalAggregate: v.optional(v.string()),
-      defenseCostTreatment: v.optional(v.string()),
-    })),
-    deductibles: v.optional(v.object({
-      perClaim: v.optional(v.string()),
-      perOccurrence: v.optional(v.string()),
-      selfInsuredRetention: v.optional(v.string()),
-      waitingPeriod: v.optional(v.string()),
-    })),
-    warrantyRequirements: v.optional(v.array(v.string())),
-    taxesAndFees: v.optional(v.array(v.object({
-      name: v.string(),
-      amount: v.string(),
-      type: v.optional(v.string()),
-    }))),
-    // Enriched subjectivities/conditions (cl-sdk 1.2+)
-    enrichedSubjectivities: v.optional(v.array(v.object({
-      description: v.string(),
-      category: v.optional(v.string()),
-      dueDate: v.optional(v.string()),
-      pageNumber: v.optional(v.number()),
-    }))),
-    enrichedUnderwritingConditions: v.optional(v.array(v.object({
-      description: v.string(),
-      category: v.optional(v.string()),
-      pageNumber: v.optional(v.number()),
-    }))),
-    // Quote metadata
-    quoteNumber: v.string(),
-    policyTypes: v.optional(v.array(v.string())),
-    quoteYear: v.number(),
-    proposedEffectiveDate: v.optional(v.string()),
-    proposedExpirationDate: v.optional(v.string()),
-    quoteExpirationDate: v.optional(v.string()),
-    isRenewal: v.boolean(),
-    insuredName: v.string(),
-    summary: v.optional(v.string()),
-    premium: v.optional(v.string()),
-    premiumBreakdown: v.optional(v.array(v.object({ line: v.string(), amount: v.string() }))),
-    coverages: v.array(v.object({
-      name: v.string(),
-      proposedLimit: v.string(),
-      proposedDeductible: v.optional(v.string()),
-      pageNumber: v.optional(v.number()),
-      sectionRef: v.optional(v.string()),
-    })),
-    subjectivities: v.optional(v.array(v.object({
-      description: v.string(),
-      category: v.optional(v.string()),
-      pageNumber: v.optional(v.number()),
-    }))),
-    underwritingConditions: v.optional(v.array(v.object({
-      description: v.string(),
-      pageNumber: v.optional(v.number()),
-    }))),
-    // Extracted document structure (sections, endorsements, conditions, etc.)
-    document: v.optional(v.any()),
-    metadataSource: v.optional(v.object({
-      carrierPage: v.optional(v.number()),
-      quoteNumberPage: v.optional(v.number()),
-      premiumPage: v.optional(v.number()),
-      effectiveDatePage: v.optional(v.number()),
-    })),
-    // Extraction state
-    extractionStatus: v.union(
-      v.literal("pending"),
-      v.literal("extracting"),
-      v.literal("paused"),
-      v.literal("complete"),
-      v.literal("error"),
-      v.literal("not_insurance")
-    ),
-    extractionError: v.optional(v.string()),
-    extractionLog: v.optional(v.array(v.object({
-      timestamp: v.number(),
-      message: v.string(),
-    }))),
-    rawExtractionResponse: v.optional(v.string()),
-    rawMetadataResponse: v.optional(v.string()),
-    // Typed declarations (cl-sdk 1.4+) — line-specific structured data
-    declarations: v.optional(v.any()),
-    // cl-sdk 3.0+ fields
-    quoteTermType: v.optional(v.string()),
-    proposedTerm: v.optional(v.string()),
-    minPremium: v.optional(v.string()),
-    depositPremium: v.optional(v.string()),
-    paymentTerms: v.optional(v.string()),
-    auditProvision: v.optional(v.boolean()),
-    cancellationProvisions: v.optional(v.string()),
-    nonQuoteProvisions: v.optional(v.string()),
-    deletedAt: v.optional(v.number()),
-    isDemo: v.optional(v.boolean()),
-  }).index("by_orgId", ["orgId"])
-    .index("by_userId", ["userId"])
-    .index("by_carrier", ["carrier"]),
-
   policyAuditLog: defineTable({
     policyId: v.optional(v.id("policies")),
-    quoteId: v.optional(v.id("quotes")),
+    quoteId: v.optional(v.id("policies")),
     userId: v.id("users"),
     orgId: v.optional(v.id("organizations")),
     action: v.string(),
     detail: v.optional(v.string()),
     metadata: v.optional(v.any()),
   }).index("by_policyId", ["policyId"])
-    .index("by_quoteId", ["quoteId"])
     .index("by_orgId", ["orgId"]),
 
   // Web chat sessions with Prism
@@ -601,7 +488,7 @@ export default defineSchema({
     content: v.string(),
     // Agent response metadata
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
-    referencedQuoteIds: v.optional(v.array(v.id("quotes"))),
+    referencedQuoteIds: v.optional(v.array(v.id("policies"))),
     status: v.optional(v.union(v.literal("processing"), v.literal("error"))),
     error: v.optional(v.string()),
   }).index("by_chatId", ["chatId"]),
@@ -625,7 +512,7 @@ export default defineSchema({
     responseCc: v.optional(v.array(v.string())),
     responseSentAt: v.optional(v.number()),
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
-    referencedQuoteIds: v.optional(v.array(v.id("quotes"))),
+    referencedQuoteIds: v.optional(v.array(v.id("policies"))),
     status: v.union(
       v.literal("received"),
       v.literal("processing"),
@@ -699,7 +586,7 @@ export default defineSchema({
     }))),
     // Agent response metadata
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
-    referencedQuoteIds: v.optional(v.array(v.id("quotes"))),
+    referencedQuoteIds: v.optional(v.array(v.id("policies"))),
     // Status
     status: v.optional(v.union(
       v.literal("processing"),
@@ -735,7 +622,7 @@ export default defineSchema({
     emailBody: v.string(), // plain content (for thread record)
     // For unified thread dual-write
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
-    referencedQuoteIds: v.optional(v.array(v.id("quotes"))),
+    referencedQuoteIds: v.optional(v.array(v.id("policies"))),
   })
     .index("by_threadId", ["threadId"])
     .index("by_status", ["status"]),

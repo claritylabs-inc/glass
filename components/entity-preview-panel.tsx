@@ -164,9 +164,9 @@ function PolicyPreview({ id, page }: { id: string; page?: number }) {
 }
 
 function QuotePreview({ id, page }: { id: string; page?: number }) {
-  const quote = useQuery(api.quotes.get, { id: id as Id<"quotes"> });
+  const quote = useQuery(api.policies.get, { id: id as Id<"policies"> });
   const fileUrl = useQuery(
-    api.quotes.getFileUrl,
+    api.policies.getFileUrl,
     quote?.fileId ? { fileId: quote.fileId } : "skip",
   );
   const { openWithUrl } = usePdf();
@@ -181,7 +181,7 @@ function QuotePreview({ id, page }: { id: string; page?: number }) {
   }
 
   const carrier = quote.carrier ?? "Unknown carrier";
-  const quoteNum = quote.quoteNumber;
+  const quoteNum = (quote as any).quoteNumber ?? quote.policyNumber;
   const types = quote.policyTypes ?? [];
 
   return (
@@ -213,15 +213,15 @@ function QuotePreview({ id, page }: { id: string; page?: number }) {
 
       {/* Key details */}
       <div className="space-y-2.5">
-        {(quote.proposedEffectiveDate || quote.proposedExpirationDate) && (
+        {((quote as any).proposedEffectiveDate || (quote as any).proposedExpirationDate) && (
           <div className="flex items-start gap-2.5">
             <Calendar className="w-3.5 h-3.5 text-muted-foreground/40 mt-0.5 shrink-0" />
             <div className="text-body-sm">
               <p className="text-muted-foreground/50 text-[11px] font-medium">Proposed period</p>
               <p className="text-foreground">
-                {quote.proposedEffectiveDate ? dayjs(quote.proposedEffectiveDate).format("MMM D, YYYY") : "—"}
+                {(quote as any).proposedEffectiveDate ? dayjs((quote as any).proposedEffectiveDate).format("MMM D, YYYY") : "—"}
                 {" — "}
-                {quote.proposedExpirationDate ? dayjs(quote.proposedExpirationDate).format("MMM D, YYYY") : "—"}
+                {(quote as any).proposedExpirationDate ? dayjs((quote as any).proposedExpirationDate).format("MMM D, YYYY") : "—"}
               </p>
             </div>
           </div>
@@ -255,14 +255,14 @@ function QuotePreview({ id, page }: { id: string; page?: number }) {
             Coverages
           </p>
           <div className="space-y-1.5">
-            {quote.coverages.slice(0, 5).map((cov, i) => (
+            {quote.coverages.slice(0, 5).map((cov: any, i: number) => (
               <div
                 key={i}
                 className="flex items-center justify-between text-body-sm py-1 px-2.5 rounded-md bg-foreground/[0.02]"
               >
                 <span className="text-foreground truncate mr-3">{cov.name}</span>
                 <span className="text-muted-foreground/60 shrink-0 font-mono text-[11px]">
-                  {cov.proposedLimit}
+                  {cov.proposedLimit ?? cov.limit}
                 </span>
               </div>
             ))}
@@ -301,7 +301,7 @@ function QuotePreview({ id, page }: { id: string; page?: number }) {
           </button>
         )}
         <Link
-          href={`/quotes/${id}`}
+          href={`/policies/${id}`}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-foreground/8 bg-white/80 dark:bg-white/[0.06] hover:bg-foreground/[0.03] transition-colors text-body-sm font-medium no-underline"
         >
           <ExternalLink className="w-3.5 h-3.5 text-muted-foreground/50" />

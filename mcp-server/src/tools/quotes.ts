@@ -18,9 +18,9 @@ export function registerQuoteTools(server: McpServer, client: PrismClient) {
 
   server.tool(
     "get_quote",
-    "Get full details of a specific insurance quote by ID, including proposed coverages and terms.",
+    "Get full details of a specific insurance quote by ID, including proposed coverages and terms. Quotes are stored in the policies table with documentType='quote'.",
     {
-      id: z.string().describe("The quote ID"),
+      id: z.string().describe("The quote ID (a policies table ID)"),
     },
     async ({ id }) => {
       const result = await client.getQuote(id);

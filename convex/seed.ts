@@ -87,19 +87,6 @@ export const removeDemoData = mutation({
       }
     }
 
-    // Delete demo quotes + their stored files
-    const quotes = await ctx.db
-      .query("quotes")
-      .withIndex("by_orgId", (q) => q.eq("orgId", orgId))
-      .collect();
-    for (const quote of quotes) {
-      if (quote.isDemo) {
-        if (quote.fileId) await ctx.storage.delete(quote.fileId);
-        await ctx.db.delete(quote._id);
-        removed++;
-      }
-    }
-
     // Delete demo emails
     const emails = await ctx.db
       .query("emails")
@@ -142,9 +129,9 @@ export const hasDemoData = query({
       .first();
     if (policy) return true;
     const quote = await ctx.db
-      .query("quotes")
+      .query("policies")
       .withIndex("by_orgId", (q) => q.eq("orgId", orgId))
-      .filter((q) => q.eq(q.field("isDemo"), true))
+      .filter((q) => q.and(q.eq(q.field("isDemo"), true), q.eq(q.field("documentType"), "quote")))
       .first();
     return !!quote;
   },
@@ -226,23 +213,36 @@ export const insertSeedData = internalMutation({
       });
     }
 
-    // Insert quotes
+    // Insert quotes (stored in policies table with documentType: "quote")
     for (const q of seedData.quotes) {
-      await ctx.db.insert("quotes", {
+      // Map quote coverages to policy coverage format (proposedLimit -> limit)
+      const mappedCoverages = q.coverages.map((c: any) => ({
+        name: c.name,
+        limit: c.proposedLimit ?? c.limit,
+        deductible: c.proposedDeductible ?? c.deductible,
+        pageNumber: c.pageNumber,
+        sectionRef: c.sectionRef,
+      }));
+      await ctx.db.insert("policies", {
         userId,
         orgId,
         emailId: emailIds[q.emailIdx],
         carrier: q.carrier,
         ...(q.mga ? { mga: q.mga } : {}),
         ...(q.broker ? { broker: q.broker } : {}),
+        policyNumber: q.quoteNumber,
         quoteNumber: q.quoteNumber,
         policyTypes: q.policyTypes,
+        documentType: "quote",
+        policyYear: q.quoteYear,
         quoteYear: q.quoteYear,
+        effectiveDate: q.proposedEffectiveDate ?? "Unknown",
+        expirationDate: q.proposedExpirationDate ?? "Unknown",
         proposedEffectiveDate: q.proposedEffectiveDate,
         proposedExpirationDate: q.proposedExpirationDate,
         quoteExpirationDate: q.quoteExpirationDate,
         isRenewal: q.isRenewal,
-        coverages: q.coverages,
+        coverages: mappedCoverages,
         premium: q.premium,
         insuredName: q.insuredName,
         summary: q.summary,

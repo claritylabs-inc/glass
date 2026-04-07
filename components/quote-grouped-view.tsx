@@ -10,9 +10,11 @@ import dayjs from "dayjs";
 interface Quote {
   _id: string;
   carrier: string;
-  quoteNumber: string;
+  policyNumber: string;
+  quoteNumber?: string;
   policyTypes?: string[];
-  quoteYear: number;
+  policyYear: number;
+  quoteYear?: number;
   proposedEffectiveDate?: string;
   quoteExpirationDate?: string;
   isRenewal: boolean;
@@ -77,7 +79,7 @@ export function QuoteGroupedView({ quotes, groupBy }: { quotes: Quote[] | undefi
       }
     } else {
       for (const quote of quotes) {
-        const key = String(quote.quoteYear);
+        const key = String((quote.quoteYear ?? quote.policyYear));
         const existing = map.get(key) ?? [];
         existing.push(quote);
         map.set(key, existing);
@@ -213,7 +215,7 @@ export function QuoteGroupedView({ quotes, groupBy }: { quotes: Quote[] | undefi
                             >
                               <td className="px-4 py-2.5 whitespace-nowrap">
                                 <p className="text-body-sm text-foreground font-medium">
-                                  {quote.quoteNumber}
+                                  {(quote.quoteNumber ?? quote.policyNumber)}
                                 </p>
                                 <p className="text-label-sm text-muted-foreground/60">
                                   {quote.insuredName}

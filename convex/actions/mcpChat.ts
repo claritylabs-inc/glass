@@ -54,9 +54,8 @@ export const run = internalAction({
     });
 
     // Load data for context
-    const [policies, quotes, applications, allMessages] = await Promise.all([
+    const [policies, applications, allMessages] = await Promise.all([
       ctx.runQuery(internal.policies.listAllInternal, { orgId: args.orgId }),
-      ctx.runQuery(internal.quotes.listAllInternal, { orgId: args.orgId }),
       ctx.runQuery(internal.applicationSessions.listAllInternal, { orgId: args.orgId }),
       ctx.runQuery(internal.threads.messagesInternal, { threadId }),
     ]);
@@ -73,7 +72,7 @@ export const run = internalAction({
 
     // Document context
     const { context: docContext, relevantPolicyIds, relevantQuoteIds } =
-      buildDocumentContext(policies, quotes, args.message);
+      buildDocumentContext(policies, [], args.message);
 
     // Cross-thread conversation memory
     const pastConversations = await ctx.runQuery(

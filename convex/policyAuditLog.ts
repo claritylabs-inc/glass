@@ -5,7 +5,7 @@ import { requireOrgAccess } from "./lib/orgAuth";
 export const append = internalMutation({
   args: {
     policyId: v.optional(v.id("policies")),
-    quoteId: v.optional(v.id("quotes")),
+    quoteId: v.optional(v.id("policies")),
     userId: v.id("users"),
     orgId: v.optional(v.id("organizations")),
     action: v.string(),
@@ -20,7 +20,7 @@ export const append = internalMutation({
 export const appendPublic = mutation({
   args: {
     policyId: v.optional(v.id("policies")),
-    quoteId: v.optional(v.id("quotes")),
+    quoteId: v.optional(v.id("policies")),
     action: v.string(),
     detail: v.optional(v.string()),
     metadata: v.optional(v.any()),

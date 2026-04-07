@@ -52,9 +52,9 @@ const TYPE_COLORS: Record<string, string> = {
 
 export default function DashboardPage() {
   const stats = useQuery(api.policies.stats);
-  const quoteStats = useQuery(api.quotes.stats);
+  const quoteStats = useQuery(api.policies.quoteStats);
   const policies = useQuery(api.policies.list, {});
-  const quotes = useQuery(api.quotes.list, {});
+  const quotes = useQuery(api.policies.listQuotes, {});
   const viewer = useQuery(api.users.viewer);
   const agentStats = useQuery(api.agentConversations.stats);
   const appStats = useQuery(api.applicationSessions.stats);
@@ -83,7 +83,7 @@ export default function DashboardPage() {
   const activeQuotes = useMemo(() => {
     if (!quotes) return undefined;
     return quotes.filter((q) => {
-      const exp = parseDate(q.quoteExpirationDate);
+      const exp = parseDate((q as any).quoteExpirationDate);
       // Active if no expiration or not yet expired
       if (!exp) return true;
       return today.isBefore(exp.add(1, "day"));
@@ -141,13 +141,13 @@ export default function DashboardPage() {
     const cutoff = today.add(30, "day");
     return quotes
       .filter((q) => {
-        const exp = parseDate(q.quoteExpirationDate);
+        const exp = parseDate((q as any).quoteExpirationDate);
         if (!exp) return false;
         return exp.isAfter(today.subtract(1, "day")) && exp.isBefore(cutoff);
       })
       .sort((a, b) => {
-        const aExp = parseDate(a.quoteExpirationDate)!;
-        const bExp = parseDate(b.quoteExpirationDate)!;
+        const aExp = parseDate((a as any).quoteExpirationDate)!;
+        const bExp = parseDate((b as any).quoteExpirationDate)!;
         return aExp.diff(bExp);
       });
   }, [quotes, today]);
@@ -372,7 +372,7 @@ export default function DashboardPage() {
                       >
                         <div className="flex-1 min-w-0">
                           <div className="flex flex-col md:flex-row md:items-center gap-1 md:gap-2 mb-1.5 md:mb-0">
-                            <span className="text-body-sm font-medium text-foreground">{q.quoteNumber}</span>
+                            <span className="text-body-sm font-medium text-foreground">{(q as any).quoteNumber ?? q.policyNumber}</span>
                             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium w-fit truncate max-w-full ${TYPE_COLORS[firstType] || TYPE_COLORS.other}`}>
                               {POLICY_TYPE_LABELS[firstType] || firstType}
                             </span>
@@ -383,7 +383,7 @@ export default function DashboardPage() {
                           <p className={`text-body-sm font-medium ${daysLeft <= 7 ? "text-red-600" : "text-orange-600"}`}>
                             {daysLeft <= 0 ? "Expires today" : `${daysLeft}d left`}
                           </p>
-                          <p className="text-label-sm text-muted-foreground/50">{q.quoteExpirationDate}</p>
+                          <p className="text-label-sm text-muted-foreground/50">{(q as any).quoteExpirationDate}</p>
                         </div>
                       </Link>
                     );

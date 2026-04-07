@@ -533,7 +533,7 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     try {
       const identity = await requireMcpAuth(ctx, request);
-      const quotes = await ctx.runQuery(internal.quotes.listAllInternal, {
+      const quotes = await ctx.runQuery(internal.policies.listAllQuotesInternal, {
         orgId: identity.orgId as any,
       });
 
@@ -542,7 +542,7 @@ http.route({
 
       const filtered = quotes.filter((q: any) => {
         if (carrier && q.carrier !== carrier) return false;
-        if (year && q.quoteYear !== parseInt(year)) return false;
+        if (year && q.policyYear !== parseInt(year)) return false;
         return true;
       });
 
@@ -582,7 +582,7 @@ http.route({
       const id = getQueryParam(request, "id");
       if (!id) return jsonResponse({ error: "Missing id parameter" }, 400);
 
-      const quotes = await ctx.runQuery(internal.quotes.listAllInternal, {
+      const quotes = await ctx.runQuery(internal.policies.listAllQuotesInternal, {
         orgId: identity.orgId as any,
       });
       const found = quotes.find((q: any) => q._id === id);
@@ -1015,10 +1015,10 @@ async function handleToolCall(
       return { content: [{ type: "text", text: JSON.stringify({ totalPolicies: policies.length, byType, byCarrier, byYear }, null, 2) }] };
     }
     case "list_quotes": {
-      const quotes = await ctx.runQuery(internal.quotes.listAllInternal, { orgId });
+      const quotes = await ctx.runQuery(internal.policies.listAllQuotesInternal, { orgId });
       const filtered = quotes.filter((q: any) => {
         if (args.carrier && q.carrier !== args.carrier) return false;
-        if (args.year && q.quoteYear !== parseInt(args.year as string)) return false;
+        if (args.year && q.policyYear !== parseInt(args.year as string)) return false;
         return true;
       });
       return { content: [{ type: "text", text: JSON.stringify(filtered.map((q: any) => ({
@@ -1031,7 +1031,7 @@ async function handleToolCall(
     }
     case "get_quote": {
       if (!args.id) throw new Error("Missing id parameter");
-      const quotes = await ctx.runQuery(internal.quotes.listAllInternal, { orgId });
+      const quotes = await ctx.runQuery(internal.policies.listAllQuotesInternal, { orgId });
       const found = quotes.find((q: any) => q._id === args.id);
       if (!found) throw new Error("Not found");
       const { rawExtractionResponse, rawMetadataResponse, ...rest } = found as any;

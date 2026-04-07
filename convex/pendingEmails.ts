@@ -57,7 +57,7 @@ export const create = internalMutation({
     subject: v.string(),
     emailBody: v.string(),
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
-    referencedQuoteIds: v.optional(v.array(v.id("quotes"))),
+    referencedQuoteIds: v.optional(v.array(v.id("policies"))),
   },
   handler: async (ctx, args) => {
     return await ctx.db.insert("pendingEmails", {

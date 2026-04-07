@@ -11,7 +11,7 @@ import { QuoteTable } from "@/components/quote-table";
 import { QuoteGroupedView } from "@/components/quote-grouped-view";
 
 export default function QuotesPage() {
-  const quotes = useQuery(api.quotes.list, {});
+  const quotes = useQuery(api.policies.listQuotes, {});
 
   const [activeTab, setActiveTab] = useState("all");
   const [selectedType, setSelectedType] = useState("");
@@ -25,7 +25,7 @@ export default function QuotesPage() {
 
   const years = useMemo(() => {
     if (!quotes) return [];
-    return [...new Set(quotes.map((q) => q.quoteYear))].sort((a, b) => b - a);
+    return [...new Set(quotes.map((q) => q.policyYear))].sort((a, b) => b - a);
   }, [quotes]);
 
   const filteredQuotes = useMemo(() => {
@@ -41,7 +41,7 @@ export default function QuotesPage() {
       result = result.filter((q) => q.carrier === selectedCarrier);
     }
     if (selectedYear) {
-      result = result.filter((q) => q.quoteYear === Number(selectedYear));
+      result = result.filter((q) => q.policyYear === Number(selectedYear));
     }
     return result;
   }, [quotes, selectedType, selectedCarrier, selectedYear]);

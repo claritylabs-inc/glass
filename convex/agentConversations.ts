@@ -59,7 +59,7 @@ export const updateResponse = internalMutation({
     responseTo: v.optional(v.string()),
     responseCc: v.optional(v.array(v.string())),
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
-    referencedQuoteIds: v.optional(v.array(v.id("quotes"))),
+    referencedQuoteIds: v.optional(v.array(v.id("policies"))),
     responseMessageId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -280,7 +280,7 @@ export const listByPolicyId = query({
 });
 
 export const listByQuoteId = query({
-  args: { quoteId: v.id("quotes") },
+  args: { quoteId: v.id("policies") },
   handler: async (ctx, args) => {
     const { orgId } = await requireOrgAccess(ctx);
     const all = await ctx.db

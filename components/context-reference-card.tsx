@@ -92,7 +92,7 @@ function PolicyReferenceCard({ id, page }: { id: string; page?: number }) {
 }
 
 function QuoteReferenceCard({ id, page }: { id: string; page?: number }) {
-  const quote = useQuery(api.quotes.get, { id: id as Id<"quotes"> });
+  const quote = useQuery(api.policies.get, { id: id as Id<"policies"> });
   const { openPreview } = useEntityPreview();
 
   if (!quote) {
@@ -104,7 +104,7 @@ function QuoteReferenceCard({ id, page }: { id: string; page?: number }) {
   }
 
   const carrier = quote.carrier ?? "Unknown carrier";
-  const quoteNum = quote.quoteNumber;
+  const quoteNum = (quote as any).quoteNumber ?? quote.policyNumber;
   const types = quote.policyTypes ?? [];
 
   return (

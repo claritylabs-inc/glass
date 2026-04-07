@@ -224,7 +224,7 @@ export const updateAgentResponse = mutation({
     messageId: v.id("threadMessages"),
     content: v.string(),
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
-    referencedQuoteIds: v.optional(v.array(v.id("quotes"))),
+    referencedQuoteIds: v.optional(v.array(v.id("policies"))),
   },
   handler: async (ctx, args) => {
     const { orgId } = await requireOrgAccess(ctx);
@@ -353,7 +353,7 @@ export const updateAgentMessage = internalMutation({
     id: v.id("threadMessages"),
     content: v.string(),
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
-    referencedQuoteIds: v.optional(v.array(v.id("quotes"))),
+    referencedQuoteIds: v.optional(v.array(v.id("policies"))),
     pendingEmailId: v.optional(v.id("pendingEmails")),
     status: v.optional(v.union(v.literal("pending_send"), v.literal("processing"), v.literal("error"))),
   },
@@ -550,7 +550,7 @@ export const insertEmailMessage = internalMutation({
       )
     ),
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
-    referencedQuoteIds: v.optional(v.array(v.id("quotes"))),
+    referencedQuoteIds: v.optional(v.array(v.id("policies"))),
     legacyConversationId: v.optional(v.id("agentConversations")),
   },
   handler: async (ctx, args) => {

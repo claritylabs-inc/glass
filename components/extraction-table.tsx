@@ -55,8 +55,8 @@ const STATUS_BADGES: Record<string, { label: string; className: string }> = {
 };
 
 // Pause button - only shown when extracting
-function PauseButton({ policyId, isQuote }: { policyId: string; isQuote?: boolean }) {
-  const pause = useMutation(isQuote ? api.quotes.pauseExtraction : api.policies.pauseExtraction);
+function PauseButton({ policyId }: { policyId: string }) {
+  const pause = useMutation(api.policies.pauseExtraction);
   const [pausing, setPausing] = useState(false);
 
   return (
@@ -80,8 +80,8 @@ function PauseButton({ policyId, isQuote }: { policyId: string; isQuote?: boolea
 }
 
 // Resume button - shown when paused
-function ResumeButton({ policyId, isQuote }: { policyId: string; isQuote?: boolean }) {
-  const resume = useMutation(isQuote ? api.quotes.resumeExtraction : api.policies.resumeExtraction);
+function ResumeButton({ policyId }: { policyId: string }) {
+  const resume = useMutation(api.policies.resumeExtraction);
   const [resuming, setResuming] = useState(false);
 
   return (
@@ -105,8 +105,8 @@ function ResumeButton({ policyId, isQuote }: { policyId: string; isQuote?: boole
 }
 
 // Cancel button - shown when paused (stops extraction)
-function CancelButton({ policyId, isQuote }: { policyId: string; isQuote?: boolean }) {
-  const cancel = useMutation(isQuote ? api.quotes.cancelExtraction : api.policies.cancelExtraction);
+function CancelButton({ policyId }: { policyId: string }) {
+  const cancel = useMutation(api.policies.cancelExtraction);
   const [cancelling, setCancelling] = useState(false);
 
   return (
@@ -130,8 +130,8 @@ function CancelButton({ policyId, isQuote }: { policyId: string; isQuote?: boole
 }
 
 // Restart button - shown when paused or error (full re-extraction)
-function RestartButton({ extraction, isQuote }: { extraction: Extraction; isQuote?: boolean }) {
-  const restart = useMutation(isQuote ? api.quotes.restartExtraction : api.policies.restartExtraction);
+function RestartButton({ extraction }: { extraction: Extraction }) {
+  const restart = useMutation(api.policies.restartExtraction);
   const [restarting, setRestarting] = useState(false);
 
   return (
@@ -155,8 +155,8 @@ function RestartButton({ extraction, isQuote }: { extraction: Extraction; isQuot
 }
 
 // Dismiss button - shown for error/not_insurance (marks as not insurance)
-function DismissButton({ policyId, isQuote }: { policyId: string; isQuote?: boolean }) {
-  const dismiss = useMutation(isQuote ? api.quotes.dismiss : api.policies.dismiss);
+function DismissButton({ policyId }: { policyId: string }) {
+  const dismiss = useMutation(api.policies.dismiss);
   const [dismissing, setDismissing] = useState(false);
 
   return (

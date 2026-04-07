@@ -263,10 +263,6 @@ export const run = internalAction({
         internal.policies.listAllInternal,
         { orgId: args.orgId },
       );
-      const quotes = await ctx.runQuery(
-        internal.quotes.listAllInternal,
-        { orgId: args.orgId },
-      );
       const applications = await ctx.runQuery(
         internal.applicationSessions.listAllInternal,
         { orgId: args.orgId },
@@ -304,7 +300,7 @@ export const run = internalAction({
       // Build document context
       const { context: docContext, relevantPolicyIds, relevantQuoteIds } = buildDocumentContext(
         policies,
-        quotes,
+        [],
         latestUserContent,
       );
 

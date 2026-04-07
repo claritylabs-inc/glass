@@ -38,15 +38,19 @@ export const extractFromUpload = action({
     const { documentType } = await classifyDocumentType(pdfBase64, { models });
 
     if (documentType === "quote") {
-      // === QUOTE EXTRACTION ===
-      const quoteId: Id<"quotes"> = await ctx.runMutation(api.quotes.insert, {
+      // === QUOTE EXTRACTION (stored in policies table with documentType: "quote") ===
+      const policyId: Id<"policies"> = await ctx.runMutation(api.policies.insert, {
         userId,
         orgId,
         fileId: args.fileId,
         fileName: args.fileName,
         carrier: "Extracting...",
-        quoteNumber: "Extracting...",
-        quoteYear: new Date().getFullYear(),
+        policyNumber: "Extracting...",
+        policyTypes: ["other"],
+        documentType: "quote",
+        policyYear: new Date().getFullYear(),
+        effectiveDate: "Extracting...",
+        expirationDate: "Extracting...",
         isRenewal: false,
         coverages: [],
         insuredName: "Extracting...",
@@ -54,18 +58,18 @@ export const extractFromUpload = action({
       });
 
       const log = async (message: string) => {
-        await ctx.runMutation(internal.quotes.appendExtractionLog, { id: quoteId, message });
+        await ctx.runMutation(internal.policies.appendExtractionLog, { id: policyId, message });
       };
 
       await ctx.runMutation(internal.policyAuditLog.append, {
-        quoteId,
+        policyId,
         userId,
         orgId,
         action: "extraction_started",
       });
 
       try {
-        await ctx.runMutation(internal.quotes.clearExtractionLog, { id: quoteId });
+        await ctx.runMutation(internal.policies.clearExtractionLog, { id: policyId });
         await log(`Uploaded PDF (${sizeKB} KB). Classified as quote.`);
 
         const { rawText, extracted } = await extractQuoteFromPdf(pdfBase64, {
@@ -73,20 +77,20 @@ export const extractFromUpload = action({
           models,
           concurrency: 3,
           onMetadata: async (raw: string) => {
-            await ctx.runMutation(api.quotes.updateExtraction, {
-              id: quoteId,
+            await ctx.runMutation(api.policies.updateExtraction, {
+              id: policyId,
               rawMetadataResponse: raw,
             });
           },
         });
 
-        await ctx.runMutation(api.quotes.updateExtraction, {
-          id: quoteId,
+        await ctx.runMutation(api.policies.updateExtraction, {
+          id: policyId,
           rawExtractionResponse: rawText,
         });
 
-        await ctx.runMutation(api.quotes.updateExtraction, {
-          id: quoteId,
+        await ctx.runMutation(api.policies.updateExtraction, {
+          id: policyId,
           fileName: args.fileName || `${(extracted.metadata ?? extracted).quoteNumber || "quote"}.pdf`,
           ...applyExtractedQuote(extracted),
         });
@@ -94,17 +98,17 @@ export const extractFromUpload = action({
         await log("Quote extraction complete");
 
         await ctx.runMutation(internal.policyAuditLog.append, {
-          quoteId,
+          policyId,
           userId,
           orgId,
           action: "extraction_complete",
         });
 
-        return { success: true, type: "quote", id: quoteId };
+        return { success: true, type: "quote", id: policyId };
       } catch (error: any) {
         await log(`Failed: ${error.message || "Extraction failed"}`);
-        await ctx.runMutation(api.quotes.updateExtraction, {
-          id: quoteId,
+        await ctx.runMutation(api.policies.updateExtraction, {
+          id: policyId,
           extractionStatus: "error",
           extractionError: error.message || "Extraction failed",
         });

@@ -27,6 +27,74 @@ export const list = query({
   },
 });
 
+export const listQuotes = query({
+  args: {
+    carrier: v.optional(v.string()),
+    quoteYear: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const access = await getOrgAccess(ctx);
+    if (!access) return [];
+    const { orgId } = access;
+    const all = await ctx.db
+      .query("policies")
+      .withIndex("by_orgId", (idx) => idx.eq("orgId", orgId))
+      .collect();
+    return all.filter(
+      (p) =>
+        p.documentType === "quote" &&
+        p.extractionStatus === "complete" &&
+        !p.deletedAt &&
+        (!args.carrier || p.carrier === args.carrier) &&
+        (!args.quoteYear || p.policyYear === args.quoteYear)
+    );
+  },
+});
+
+export const quoteStats = query({
+  args: {},
+  handler: async (ctx) => {
+    const access = await getOrgAccess(ctx);
+    if (!access) return { totalQuotes: 0, pendingExtractions: 0, byType: {}, byCarrier: {}, byYear: {} };
+    const { orgId } = access;
+    const allPolicies = await ctx.db
+      .query("policies")
+      .withIndex("by_orgId", (idx) => idx.eq("orgId", orgId))
+      .collect();
+
+    const quotes = allPolicies.filter((p) => p.documentType === "quote" && p.extractionStatus === "complete" && !p.deletedAt);
+    const pendingExtractions = allPolicies.filter(
+      (p) =>
+        p.documentType === "quote" &&
+        !p.deletedAt &&
+        (p.extractionStatus === "pending" ||
+        p.extractionStatus === "extracting" ||
+        p.extractionStatus === "error")
+    ).length;
+
+    const byType: Record<string, number> = {};
+    const byCarrier: Record<string, number> = {};
+    const byYear: Record<string, number> = {};
+
+    for (const q of quotes) {
+      const types = q.policyTypes ?? ["other"];
+      for (const t of types) {
+        byType[t] = (byType[t] || 0) + 1;
+      }
+      byCarrier[q.carrier] = (byCarrier[q.carrier] || 0) + 1;
+      byYear[q.policyYear] = (byYear[q.policyYear] || 0) + 1;
+    }
+
+    return {
+      totalQuotes: quotes.length,
+      pendingExtractions,
+      byType,
+      byCarrier,
+      byYear,
+    };
+  },
+});
+
 export const listPending = query({
   args: {},
   handler: async (ctx) => {
@@ -168,6 +236,20 @@ export const listAllInternal = internalQuery({
       .collect();
     return all.filter(
       (p) => p.extractionStatus === "complete" && !p.deletedAt
+    );
+  },
+});
+
+// All complete, non-deleted quotes for an org (used by agent action)
+export const listAllQuotesInternal = internalQuery({
+  args: { orgId: v.id("organizations") },
+  handler: async (ctx, args) => {
+    const all = await ctx.db
+      .query("policies")
+      .withIndex("by_orgId", (idx) => idx.eq("orgId", args.orgId))
+      .collect();
+    return all.filter(
+      (p) => p.documentType === "quote" && p.extractionStatus === "complete" && !p.deletedAt
     );
   },
 });
@@ -495,6 +577,18 @@ export const updateExtraction = mutation({
     assignmentClause: v.optional(v.string()),
     subrogationClause: v.optional(v.string()),
     otherInsuranceClause: v.optional(v.string()),
+    // Quote-specific fields (for documentType === "quote")
+    quoteNumber: v.optional(v.string()),
+    quoteYear: v.optional(v.number()),
+    proposedEffectiveDate: v.optional(v.string()),
+    proposedExpirationDate: v.optional(v.string()),
+    quoteExpirationDate: v.optional(v.string()),
+    subjectivities: v.optional(v.any()),
+    underwritingConditions: v.optional(v.any()),
+    premiumBreakdown: v.optional(v.any()),
+    enrichedSubjectivities: v.optional(v.any()),
+    enrichedUnderwritingConditions: v.optional(v.any()),
+    warrantyRequirements: v.optional(v.any()),
   },
   handler: async (ctx, args) => {
     const { id, ...fields } = args;

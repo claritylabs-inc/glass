@@ -9,7 +9,7 @@ import { buildQuoteSectionsPrompt } from "../lib/prompts";
 
 export const retryQuoteExtraction = action({
   args: {
-    quoteId: v.id("quotes"),
+    quoteId: v.id("policies"),
     mode: v.optional(v.union(v.literal("reparse"), v.literal("full"))),
   },
   returns: v.any(),
@@ -17,17 +17,17 @@ export const retryQuoteExtraction = action({
     const viewer = await ctx.runQuery(api.users.viewer);
     if (!viewer) return { error: "Not authenticated" };
 
-    const quote = await ctx.runQuery(api.quotes.get, { id: args.quoteId });
+    const quote = await ctx.runQuery(api.policies.get, { id: args.quoteId });
     if (!quote) return { error: "Quote not found" };
 
     const log = async (message: string) => {
-      await ctx.runMutation(internal.quotes.appendExtractionLog, { id: args.quoteId, message });
+      await ctx.runMutation(internal.policies.appendExtractionLog, { id: args.quoteId, message });
     };
 
     const mode = args.mode ?? "auto";
 
     await ctx.runMutation(internal.policyAuditLog.append, {
-      quoteId: args.quoteId,
+      policyId: args.quoteId,
       userId: viewer._id,
       action: "re_extraction",
       detail: `Mode: ${mode}`,
@@ -37,12 +37,12 @@ export const retryQuoteExtraction = action({
     if (mode === "reparse" || mode === "auto") {
       if (quote.rawExtractionResponse) {
         try {
-          await ctx.runMutation(internal.quotes.clearExtractionLog, { id: args.quoteId });
+          await ctx.runMutation(internal.policies.clearExtractionLog, { id: args.quoteId });
           await log("Re-parsing saved extraction response...");
           const responseText = stripFences(quote.rawExtractionResponse);
           const extracted = JSON.parse(responseText);
 
-          await ctx.runMutation(api.quotes.updateExtraction, {
+          await ctx.runMutation(api.policies.updateExtraction, {
             id: args.quoteId,
             fileName: `${(extracted.metadata ?? extracted).quoteNumber || "quote"}.pdf`,
             ...applyExtractedQuote(extracted),
@@ -64,9 +64,9 @@ export const retryQuoteExtraction = action({
     // Full retry — need PDF from storage
     if (!quote.fileId) return { error: "No PDF file stored — cannot retry" };
 
-    await ctx.runMutation(internal.quotes.clearExtractionLog, { id: args.quoteId });
+    await ctx.runMutation(internal.policies.clearExtractionLog, { id: args.quoteId });
     await log("Starting full quote re-extraction...");
-    await ctx.runMutation(api.quotes.updateExtraction, {
+    await ctx.runMutation(api.policies.updateExtraction, {
       id: args.quoteId,
       extractionStatus: "extracting",
       extractionError: "",
@@ -84,18 +84,18 @@ export const retryQuoteExtraction = action({
         models,
         concurrency: 3,
         onMetadata: async (raw: string) => {
-          await ctx.runMutation(api.quotes.updateExtraction, {
+          await ctx.runMutation(api.policies.updateExtraction, {
             id: args.quoteId,
             rawMetadataResponse: raw,
           });
         },
       });
 
-      await ctx.runMutation(api.quotes.updateExtraction, {
+      await ctx.runMutation(api.policies.updateExtraction, {
         id: args.quoteId,
         rawExtractionResponse: rawText,
       });
-      await ctx.runMutation(api.quotes.updateExtraction, {
+      await ctx.runMutation(api.policies.updateExtraction, {
         id: args.quoteId,
         fileName: `${(extracted.metadata ?? extracted).quoteNumber || "quote"}.pdf`,
         ...applyExtractedQuote(extracted),
@@ -104,7 +104,7 @@ export const retryQuoteExtraction = action({
       return { success: true };
     } catch (error: any) {
       await log(`Failed: ${error.message || "Quote extraction failed"}`);
-      await ctx.runMutation(api.quotes.updateExtraction, {
+      await ctx.runMutation(api.policies.updateExtraction, {
         id: args.quoteId,
         extractionStatus: "error",
         extractionError: error.message || "Quote extraction failed",

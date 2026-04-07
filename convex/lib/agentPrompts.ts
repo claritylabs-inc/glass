@@ -10,20 +10,20 @@ function toPolicy(p: Doc<"policies">): PolicyDocument {
   return { ...p, id: p._id, type: "policy" } as unknown as PolicyDocument;
 }
 
-function toQuote(q: Doc<"quotes">): QuoteDocument {
+function toQuote(q: Doc<"policies">): QuoteDocument {
   return { ...q, id: q._id, type: "quote" } as unknown as QuoteDocument;
 }
 
 export function buildDocumentContext(
   policies: Doc<"policies">[],
-  quotes: Doc<"quotes">[],
+  quotes: Doc<"policies">[],
   queryText: string,
-): { context: string; relevantPolicyIds: Id<"policies">[]; relevantQuoteIds: Id<"quotes">[] } {
+): { context: string; relevantPolicyIds: Id<"policies">[]; relevantQuoteIds: Id<"policies">[] } {
   const result = _buildDocumentContext(policies.map(toPolicy), quotes.map(toQuote), queryText);
   return {
     context: result.context,
     relevantPolicyIds: result.relevantPolicyIds as Id<"policies">[],
-    relevantQuoteIds: result.relevantQuoteIds as Id<"quotes">[],
+    relevantQuoteIds: result.relevantQuoteIds as Id<"policies">[],
   };
 }
 

@@ -826,10 +826,6 @@ Respond with JSON only:
       const policies = await ctx.runQuery(internal.policies.listAllInternal, {
         orgId,
       });
-      const quotes = await ctx.runQuery(internal.quotes.listAllInternal, {
-        orgId,
-      });
-
       const siteUrl = process.env.SITE_URL ?? "https://prism.claritylabs.inc";
 
       // Get primary user profile for name reference
@@ -850,7 +846,7 @@ Respond with JSON only:
       );
       const { context: policyContext, relevantPolicyIds, relevantQuoteIds } = buildDocumentContext(
         policies,
-        quotes,
+        [],
         subject + " " + body,
       );
 
@@ -1025,7 +1021,7 @@ For emails, compose a professional message that:
               subject: replySub,
               emailBody,
               referencedPolicyIds: relevantPolicyIds.length > 0 ? (relevantPolicyIds as Id<"policies">[]) : undefined,
-              referencedQuoteIds: relevantQuoteIds.length > 0 ? (relevantQuoteIds as Id<"quotes">[]) : undefined,
+              referencedQuoteIds: relevantQuoteIds.length > 0 ? (relevantQuoteIds as Id<"policies">[]) : undefined,
             });
 
             // Update legacy conversation to pending state
@@ -1035,7 +1031,7 @@ For emails, compose a professional message that:
               responseTo: thirdPartyEmail,
               responseCc: sendCc,
               referencedPolicyIds: relevantPolicyIds.length > 0 ? (relevantPolicyIds as Id<"policies">[]) : undefined,
-              referencedQuoteIds: relevantQuoteIds.length > 0 ? (relevantQuoteIds as Id<"quotes">[]) : undefined,
+              referencedQuoteIds: relevantQuoteIds.length > 0 ? (relevantQuoteIds as Id<"policies">[]) : undefined,
             });
 
             // Schedule the actual send
@@ -1070,7 +1066,7 @@ For emails, compose a professional message that:
               referencedPolicyIds:
                 relevantPolicyIds.length > 0 ? (relevantPolicyIds as Id<"policies">[]) : undefined,
               referencedQuoteIds:
-                relevantQuoteIds.length > 0 ? (relevantQuoteIds as Id<"quotes">[]) : undefined,
+                relevantQuoteIds.length > 0 ? (relevantQuoteIds as Id<"policies">[]) : undefined,
             });
 
             // Dual-write to unified thread
@@ -1250,7 +1246,7 @@ For emails, compose a professional message that:
             : undefined,
         referencedQuoteIds:
           relevantQuoteIds.length > 0
-            ? (relevantQuoteIds as Id<"quotes">[])
+            ? (relevantQuoteIds as Id<"policies">[])
             : undefined,
       });
 

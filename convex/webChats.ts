@@ -192,7 +192,7 @@ export const updateAgentMessage = internalMutation({
     id: v.id("webChatMessages"),
     content: v.string(),
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
-    referencedQuoteIds: v.optional(v.array(v.id("quotes"))),
+    referencedQuoteIds: v.optional(v.array(v.id("policies"))),
   },
   handler: async (ctx, args) => {
     await ctx.db.patch(args.id, {
