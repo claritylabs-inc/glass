@@ -99,8 +99,27 @@ export default function PoliciesPage() {
 
   const isLoading = policies === undefined || quotes === undefined;
 
+  const viewToggle = (
+    <div className="inline-flex items-center rounded-lg border border-foreground/8 bg-foreground/[0.02] p-0.5">
+      {(["active", "expired", "quotes"] as const).map((view) => (
+        <button
+          key={view}
+          type="button"
+          onClick={() => handleViewChange(view)}
+          className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-all cursor-pointer ${
+            documentView === view
+              ? "text-foreground bg-white dark:bg-white/10 shadow-sm"
+              : "text-muted-foreground/60 hover:text-muted-foreground"
+          }`}
+        >
+          {view === "active" ? "Active" : view === "expired" ? "Expired" : "Quotes"}
+        </button>
+      ))}
+    </div>
+  );
+
   return (
-    <AppShell>
+    <AppShell actions={viewToggle}>
           {isLoading ? (
             <div className="space-y-3 mb-4">
               <div className="flex items-center gap-1 border-b border-foreground/6 pb-2">
@@ -116,8 +135,6 @@ export default function PoliciesPage() {
             </div>
           ) : (
             <PolicyFilters
-              documentView={documentView}
-              onDocumentViewChange={handleViewChange}
               activeTab={activeTab}
               onTabChange={setActiveTab}
               carriers={carriers}
