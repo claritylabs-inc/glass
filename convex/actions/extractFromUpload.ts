@@ -3,7 +3,7 @@
 import { v } from "convex/values";
 import { action } from "../_generated/server";
 import { api, internal } from "../_generated/api";
-import { applyExtracted, applyExtractedQuote, extractFromPdf, extractQuoteFromPdf, classifyDocumentType } from "../lib/extraction";
+import { applyExtracted, applyExtractedQuote, extractFromPdf, extractQuoteFromPdf, classifyDocumentType, buildExtractionModels } from "../lib/extraction";
 import { Id } from "../_generated/dataModel";
 
 /**
@@ -34,7 +34,8 @@ export const extractFromUpload = action({
     const sizeKB = Math.round(arrayBuffer.byteLength / 1024);
 
     // Classify document type (policy vs quote)
-    const { documentType } = await classifyDocumentType(pdfBase64);
+    const models = buildExtractionModels();
+    const { documentType } = await classifyDocumentType(pdfBase64, { models });
 
     if (documentType === "quote") {
       // === QUOTE EXTRACTION ===
@@ -69,6 +70,7 @@ export const extractFromUpload = action({
 
         const { rawText, extracted } = await extractQuoteFromPdf(pdfBase64, {
           log,
+          models,
           concurrency: 3,
           onMetadata: async (raw) => {
             await ctx.runMutation(api.quotes.updateExtraction, {
@@ -145,6 +147,7 @@ export const extractFromUpload = action({
 
         const { rawText, extracted } = await extractFromPdf(pdfBase64, {
           log,
+          models,
           concurrency: 3,
           onMetadata: async (raw) => {
             await ctx.runMutation(api.policies.updateExtraction, {

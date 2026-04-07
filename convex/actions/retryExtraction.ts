@@ -4,7 +4,7 @@ import { v } from "convex/values";
 import { action } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import { ImapFlow } from "imapflow";
-import { stripFences, applyExtracted, applyExtractedQuote, extractFromPdf, extractQuoteFromPdf, extractSectionsOnly, enrichSupplementaryFields, sanitizeNulls } from "../lib/extraction";
+import { stripFences, applyExtracted, applyExtractedQuote, extractFromPdf, extractQuoteFromPdf, extractSectionsOnly, enrichSupplementaryFields, sanitizeNulls, buildExtractionModels } from "../lib/extraction";
 import { buildQuoteSectionsPrompt } from "../lib/prompts";
 
 export const retryQuoteExtraction = action({
@@ -77,9 +77,11 @@ export const retryQuoteExtraction = action({
       if (!blob) throw new Error("Stored PDF not found");
       const pdfBase64 = Buffer.from(await blob.arrayBuffer()).toString("base64");
 
+      const models = buildExtractionModels();
       const { rawText, extracted } = await extractQuoteFromPdf(
         pdfBase64, {
         log,
+        models,
         concurrency: 3,
         onMetadata: async (raw) => {
           await ctx.runMutation(api.quotes.updateExtraction, {
@@ -177,7 +179,8 @@ export const retryExtraction = action({
       await log("Starting supplementary enrichment (pass 3 only)...");
 
       try {
-        const enriched = await enrichSupplementaryFields(document, undefined, log);
+        const enrichModels = buildExtractionModels();
+        const enriched = await enrichSupplementaryFields(document, enrichModels, log);
 
         await ctx.runMutation(api.policies.updateExtraction, {
           id: args.policyId,
@@ -232,8 +235,9 @@ export const retryExtraction = action({
           await client.logout();
         }
 
+        const models = buildExtractionModels();
         const { rawText, extracted } = await extractSectionsOnly(
-          pdfBase64, policy.rawMetadataResponse, { log, concurrency: 3 },
+          pdfBase64, policy.rawMetadataResponse, { log, models, concurrency: 3 },
         );
 
         await ctx.runMutation(api.policies.updateExtraction, {
@@ -338,10 +342,11 @@ export const retryExtraction = action({
         return { error: "No PDF file or linked email — cannot retry" };
       }
 
-      // Extract with Claude
+      const models = buildExtractionModels();
       const { rawText, extracted } = await extractFromPdf(
         pdfBase64, {
         log,
+        models,
         concurrency: 3,
         onMetadata: async (raw) => {
           await ctx.runMutation(api.policies.updateExtraction, {

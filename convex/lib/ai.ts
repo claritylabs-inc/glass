@@ -1,8 +1,4 @@
 import { getModel } from "./models";
-import { HAIKU_MODEL, SONNET_MODEL } from "./extraction";
-
-// Re-export model constants for backward compat
-export { HAIKU_MODEL, SONNET_MODEL };
 
 /**
  * @deprecated Use `getModel("classification")` from `./models` instead.

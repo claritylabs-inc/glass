@@ -3,7 +3,7 @@
 import { v } from "convex/values";
 import { action } from "../_generated/server";
 import { api, internal } from "../_generated/api";
-import { applyExtracted, applyExtractedQuote, extractFromPdf, extractQuoteFromPdf } from "../lib/extraction";
+import { applyExtracted, applyExtractedQuote, extractFromPdf, extractQuoteFromPdf, buildExtractionModels } from "../lib/extraction";
 
 export const reExtractFromFile = action({
   args: {
@@ -43,9 +43,11 @@ export const reExtractFromFile = action({
       const arrayBuffer = await blob.arrayBuffer();
       const pdfBase64 = Buffer.from(arrayBuffer).toString("base64");
 
+      const models = buildExtractionModels();
       const { rawText, extracted } = await extractFromPdf(
         pdfBase64, {
         log,
+        models,
         onMetadata: async (raw) => {
           await ctx.runMutation(api.policies.updateExtraction, {
             id: args.policyId,
@@ -118,9 +120,11 @@ export const reExtractQuoteFromFile = action({
       const arrayBuffer = await blob.arrayBuffer();
       const pdfBase64 = Buffer.from(arrayBuffer).toString("base64");
 
+      const models = buildExtractionModels();
       const { rawText, extracted } = await extractQuoteFromPdf(
         pdfBase64, {
         log,
+        models,
         onMetadata: async (raw) => {
           await ctx.runMutation(api.quotes.updateExtraction, {
             id: args.quoteId,

@@ -10,10 +10,10 @@
 
 import type * as actions_classifyEmails from "../actions/classifyEmails.js";
 import type * as actions_extractCompanyInfo from "../actions/extractCompanyInfo.js";
-import type * as actions_generateCoi from "../actions/generateCoi.js";
-import type * as actions_generateEmailBody from "../actions/generateEmailBody.js";
 import type * as actions_extractFromUpload from "../actions/extractFromUpload.js";
 import type * as actions_extractPolicy from "../actions/extractPolicy.js";
+import type * as actions_generateCoi from "../actions/generateCoi.js";
+import type * as actions_generateEmailBody from "../actions/generateEmailBody.js";
 import type * as actions_handleInboundEmail from "../actions/handleInboundEmail.js";
 import type * as actions_mcpChat from "../actions/mcpChat.js";
 import type * as actions_proactiveAnalysis from "../actions/proactiveAnalysis.js";
@@ -42,6 +42,7 @@ import type * as lib_applicationPrompts from "../lib/applicationPrompts.js";
 import type * as lib_applicationTypes from "../lib/applicationTypes.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_chatTools from "../lib/chatTools.js";
+import type * as lib_coiGenerator from "../lib/coiGenerator.js";
 import type * as lib_emailTemplate from "../lib/emailTemplate.js";
 import type * as lib_extraction from "../lib/extraction.js";
 import type * as lib_industries from "../lib/industries.js";
@@ -79,10 +80,10 @@ import type {
 declare const fullApi: ApiFromModules<{
   "actions/classifyEmails": typeof actions_classifyEmails;
   "actions/extractCompanyInfo": typeof actions_extractCompanyInfo;
-  "actions/generateCoi": typeof actions_generateCoi;
-  "actions/generateEmailBody": typeof actions_generateEmailBody;
   "actions/extractFromUpload": typeof actions_extractFromUpload;
   "actions/extractPolicy": typeof actions_extractPolicy;
+  "actions/generateCoi": typeof actions_generateCoi;
+  "actions/generateEmailBody": typeof actions_generateEmailBody;
   "actions/handleInboundEmail": typeof actions_handleInboundEmail;
   "actions/mcpChat": typeof actions_mcpChat;
   "actions/proactiveAnalysis": typeof actions_proactiveAnalysis;
@@ -111,6 +112,7 @@ declare const fullApi: ApiFromModules<{
   "lib/applicationTypes": typeof lib_applicationTypes;
   "lib/auth": typeof lib_auth;
   "lib/chatTools": typeof lib_chatTools;
+  "lib/coiGenerator": typeof lib_coiGenerator;
   "lib/emailTemplate": typeof lib_emailTemplate;
   "lib/extraction": typeof lib_extraction;
   "lib/industries": typeof lib_industries;

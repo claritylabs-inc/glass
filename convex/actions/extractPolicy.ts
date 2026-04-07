@@ -4,8 +4,7 @@ import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import { ImapFlow } from "imapflow";
-import { applyExtracted, applyExtractedQuote, extractFromPdf, extractQuoteFromPdf, classifyDocumentType, createUniformModelConfig } from "../lib/extraction";
-import { sonnetModel } from "../lib/ai";
+import { applyExtracted, applyExtractedQuote, extractFromPdf, extractQuoteFromPdf, classifyDocumentType, buildExtractionModels } from "../lib/extraction";
 import { Id } from "../_generated/dataModel";
 
 export const extractPolicy = internalAction({
@@ -73,8 +72,7 @@ export const extractPolicy = internalAction({
     const fileId = await ctx.storage.store(blob);
     const pdfBase64 = pdfBuffer.toString("base64");
 
-    // Use all-Sonnet — Haiku hits rate limits more easily
-    const models = createUniformModelConfig(sonnetModel);
+    const models = buildExtractionModels();
 
     // Pass 0: Classify document type (SDK trims to first 3 pages internally)
     const { documentType } = await classifyDocumentType(pdfBase64, { models });
