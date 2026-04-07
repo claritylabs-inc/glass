@@ -295,17 +295,33 @@ function UnifiedMessageBubble({
             <p className="text-[11px] font-medium text-muted-foreground/50">Prism</p>
             {channelIcon}
           </div>
-          {hasContent ? (
-            <div className={`rounded-lg bg-popover border border-foreground/6 px-3.5 py-2.5 ${MARKDOWN_STYLES}`}>
-              <Markdown remarkPlugins={[remarkBreaks]} components={markdownComponents}>{fixQuoteLinks(msg.content, msg.referencedQuoteIds)}</Markdown>
-              <span className="inline-block w-1.5 h-4 bg-[#A0D2FA] rounded-sm animate-pulse ml-0.5 align-middle" />
-            </div>
-          ) : (
-            <div className="flex items-center gap-2 text-muted-foreground/40 text-body-sm">
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              <span>{isStale ? "Taking longer than expected..." : "Thinking..."}</span>
-            </div>
-          )}
+          {(() => {
+            // Tool status messages are italic single-line: *Searching policies...*
+            const isToolStatus = hasContent && /^\*[^*]+\.\.\.\*$/.test(msg.content.trim());
+            if (isToolStatus) {
+              const label = msg.content.trim().replace(/^\*|\*$/g, "");
+              return (
+                <div className="flex items-center gap-2 text-muted-foreground/50 text-body-sm">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-[#A0D2FA]" />
+                  <span>{label}</span>
+                </div>
+              );
+            }
+            if (hasContent) {
+              return (
+                <div className={`rounded-lg bg-popover border border-foreground/6 px-3.5 py-2.5 ${MARKDOWN_STYLES}`}>
+                  <Markdown remarkPlugins={[remarkBreaks]} components={markdownComponents}>{fixQuoteLinks(msg.content, msg.referencedQuoteIds)}</Markdown>
+                  <span className="inline-block w-1.5 h-4 bg-[#A0D2FA] rounded-sm animate-pulse ml-0.5 align-middle" />
+                </div>
+              );
+            }
+            return (
+              <div className="flex items-center gap-2 text-muted-foreground/40 text-body-sm">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <span>{isStale ? "Taking longer than expected..." : "Thinking..."}</span>
+              </div>
+            );
+          })()}
           <CancelButton messageId={msg._id} show={!hasContent} />
         </div>
       </div>

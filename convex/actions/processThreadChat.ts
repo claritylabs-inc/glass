@@ -3,7 +3,7 @@
 import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
-import { generateText, stepCountIs } from "ai";
+import { generateText, streamText, stepCountIs } from "ai";
 import { getModel, generateTextWithFallback } from "../lib/models";
 import {
   lookupPolicy,
@@ -85,34 +85,53 @@ function buildTools(ctx: any, args: { orgId: any; threadId: any }, org?: any) {
         );
         if (!policy) return "Policy not found.";
         if (!policy.document?.sections || policy.document.sections.length === 0) {
-          return "No document sections available for this policy. The full document content may not have been extracted.";
+          return "No document sections available for this policy.";
         }
         const q = params.query.toLowerCase();
         const queryWords = q.split(/\s+/).filter((w: string) => w.length > 2);
+
+        // Build full text for each section including subsections
         const scored = policy.document.sections.map((s: any) => {
-          const text = ((s.title ?? "") + " " + (s.content ?? "")).toLowerCase();
+          const subsectionText = (s.subsections ?? [])
+            .map((sub: any) => `${sub.title ?? ""} ${sub.content ?? ""}`)
+            .join(" ");
+          const fullText = `${s.title ?? ""} ${s.content ?? ""} ${subsectionText}`.toLowerCase();
           let score = 0;
           for (const w of queryWords) {
-            if (text.includes(w)) score++;
+            if (fullText.includes(w)) score++;
           }
-          // Boost exact phrase match
-          if (text.includes(q)) score += 3;
+          if (fullText.includes(q)) score += 3;
           return { section: s, score };
         });
+
         const matches = scored
           .filter((s: any) => s.score > 0)
           .sort((a: any, b: any) => b.score - a.score)
           .slice(0, 3);
+
         if (matches.length === 0) {
           const titles = policy.document.sections.map((s: any) => s.title).join(", ");
           return `No sections matched "${params.query}". Available sections: ${titles}`;
         }
-        return matches.map((m: any) => ({
-          title: m.section.title,
-          type: m.section.type,
-          pages: `${m.section.pageStart}${m.section.pageEnd ? `-${m.section.pageEnd}` : ""}`,
-          content: m.section.content?.slice(0, 4000) ?? "",
-        }));
+
+        // Return section with full subsection content
+        return matches.map((m: any) => {
+          const s = m.section;
+          let fullContent = s.content ?? "";
+          if (s.subsections?.length) {
+            for (const sub of s.subsections) {
+              fullContent += `\n\n### ${sub.title ?? ""}`;
+              if (sub.content) fullContent += `\n${sub.content}`;
+            }
+          }
+          return {
+            title: s.title,
+            type: s.type,
+            coverageType: s.coverageType,
+            pages: `${s.pageStart}${s.pageEnd ? `-${s.pageEnd}` : ""}`,
+            content: fullContent.slice(0, 6000),
+          };
+        });
       },
     },
     check_application_status: {
@@ -402,11 +421,25 @@ For emails, compose a professional message that:
         memoryContext +
         orgMemoryBlock;
 
-      // All chat uses generateText with tools available.
-      // The model decides when to use tools vs answer directly.
+      // streamText with tools — supports both streaming Q&A and tool calls
       const tools = buildTools(ctx, { orgId: args.orgId, threadId: args.threadId }, org);
-      const { text: content } = await generateTextWithFallback({
-        model: getModel("chat_with_tools"),
+      let content = "";
+      let lastFlush = 0;
+      const FLUSH_INTERVAL = 150;
+
+      // Tool call display names for the "thinking" UI
+      const TOOL_LABELS: Record<string, string> = {
+        lookup_policy: "Searching policies...",
+        lookup_policy_section: "Reading policy sections...",
+        compare_coverages: "Comparing coverages...",
+        check_application_status: "Checking application...",
+        send_email: "Drafting email...",
+        save_note: "Saving note...",
+        generate_coi: "Generating COI...",
+      };
+
+      const result = streamText({
+        model: getModel("chat"),
         maxOutputTokens: 2048,
         system: fullSystemPrompt,
         messages: messageHistory,
@@ -414,14 +447,43 @@ For emails, compose a professional message that:
         stopWhen: stepCountIs(5),
       });
 
-      {
-        await ctx.runMutation(internal.threads.updateAgentMessage, {
-          id: agentMsgId,
-          content,
-          referencedPolicyIds: relevantPolicyIds.length > 0 ? relevantPolicyIds : undefined,
-          referencedQuoteIds: relevantQuoteIds.length > 0 ? relevantQuoteIds : undefined,
-        });
+      for await (const part of result.fullStream) {
+        if (part.type === "text-delta") {
+          content += part.text;
+          const now = Date.now();
+          if (now - lastFlush >= FLUSH_INTERVAL) {
+            lastFlush = now;
+            await ctx.runMutation(internal.threads.streamAgentMessage, {
+              id: agentMsgId,
+              content,
+            });
+          }
+        } else if (part.type === "tool-call") {
+          // Show what tool is being used while content is still empty
+          const label = TOOL_LABELS[part.toolName] ?? `Using ${part.toolName}...`;
+          if (!content) {
+            await ctx.runMutation(internal.threads.streamAgentMessage, {
+              id: agentMsgId,
+              content: `*${label}*`,
+            });
+          }
+        } else if (part.type === "tool-result") {
+          // After a tool completes, clear the status if no text yet
+          if (!content) {
+            await ctx.runMutation(internal.threads.streamAgentMessage, {
+              id: agentMsgId,
+              content: "",
+            });
+          }
+        }
       }
+
+      await ctx.runMutation(internal.threads.updateAgentMessage, {
+        id: agentMsgId,
+        content,
+        referencedPolicyIds: relevantPolicyIds.length > 0 ? relevantPolicyIds : undefined,
+        referencedQuoteIds: relevantQuoteIds.length > 0 ? relevantQuoteIds : undefined,
+      });
 
       await ctx.runMutation(internal.threads.touchThread, {
         threadId: args.threadId,
