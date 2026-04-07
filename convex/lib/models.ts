@@ -57,8 +57,8 @@ export type ModelTask =
  * Kimi K2.5: extraction (better quality per user feedback)
  */
 const MODEL_CONFIG: Record<ModelTask, () => any> = {
-  chat:             () => moonshot()("kimi-k2.5"),
-  chat_with_tools:  () => moonshot()("kimi-k2.5"),
+  chat:             () => deepseek()("deepseek-chat"),
+  chat_with_tools:  () => deepseek()("deepseek-chat"),
   email_draft:      () => moonshot()("kimi-k2.5"),
   email_reply:      () => moonshot()("kimi-k2.5"),
   analysis:         () => moonshot()("kimi-k2.5"),
