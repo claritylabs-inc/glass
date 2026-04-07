@@ -809,16 +809,22 @@ function UnifiedThreadContent({
             const lastAgentIdx = messages?.reduce((acc, m, i) => m.role === "agent" ? i : acc, -1) ?? -1;
             const firstUserIdx = messages?.findIndex((m) => m.role === "user") ?? -1;
             return messages?.map((msg, idx) => (
-              <UnifiedMessageBubble
-                key={msg._id}
-                msg={msg}
-                viewerId={viewerId}
-                viewerEmail={viewerEmail}
-                isMixedThread={isMixedThread}
-                isLastAgentMessage={idx === lastAgentIdx}
-                isFirstUserMessage={idx === firstUserIdx}
-                threadContext={thread.initialContext}
-              />
+              <div key={msg._id}>
+                <UnifiedMessageBubble
+                  msg={msg}
+                  viewerId={viewerId}
+                  viewerEmail={viewerEmail}
+                  isMixedThread={isMixedThread}
+                  isLastAgentMessage={idx === lastAgentIdx}
+                  isFirstUserMessage={false}
+                  threadContext={undefined}
+                />
+                {idx === firstUserIdx && thread?.initialContext && (
+                  <div className="mt-2 ml-9.5">
+                    <ThreadContextLink context={thread.initialContext} />
+                  </div>
+                )}
+              </div>
             ));
           })()}
           {chatError && (
