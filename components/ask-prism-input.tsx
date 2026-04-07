@@ -15,7 +15,6 @@ const AGENT_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "prism.claritylabs.
 const PAGE_LABELS: Record<string, string> = {
   "/": "Dashboard",
   "/policies": "Policies",
-  "/quotes": "Quotes",
   "/applications": "Applications",
   "/connections": "Connections",
   "/agent": "Agent",

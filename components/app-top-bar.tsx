@@ -5,7 +5,6 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   FileText,
-  ClipboardList,
   FileInput,
   Mail,
   Asterisk,
@@ -17,7 +16,6 @@ import {
 const BREADCRUMB_MAP: Record<string, { icon: React.ComponentType<{ className?: string }>; label: string }> = {
   "/": { icon: LayoutDashboard, label: "Dashboard" },
   "/policies": { icon: FileText, label: "Policies" },
-  "/quotes": { icon: ClipboardList, label: "Quotes" },
   "/applications": { icon: FileInput, label: "Applications" },
   "/connections": { icon: Mail, label: "Connections" },
   "/agent": { icon: Asterisk, label: "Prism" },

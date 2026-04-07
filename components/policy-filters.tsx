@@ -4,7 +4,11 @@ import { motion } from "framer-motion";
 import { POLICY_TYPE_LABELS } from "@/convex/lib/policyTypes";
 import { FilterDropdown } from "@/components/ui/filter-dropdown";
 
+type DocumentView = "active" | "expired" | "quotes";
+
 interface PolicyFiltersProps {
+  documentView: DocumentView;
+  onDocumentViewChange: (view: DocumentView) => void;
   activeTab: string;
   onTabChange: (tab: string) => void;
   carriers: string[];
@@ -17,13 +21,21 @@ interface PolicyFiltersProps {
   onYearChange: (year: string) => void;
 }
 
+const DOCUMENT_VIEWS: { id: DocumentView; label: string }[] = [
+  { id: "active", label: "Active Policies" },
+  { id: "expired", label: "Expired Policies" },
+  { id: "quotes", label: "Quotes" },
+];
+
 const TABS = [
-  { id: "all", label: "Policies" },
+  { id: "all", label: "All" },
   { id: "type", label: "By Type" },
   { id: "year", label: "By Year" },
 ];
 
 export function PolicyFilters({
+  documentView,
+  onDocumentViewChange,
   activeTab,
   onTabChange,
   carriers,
@@ -37,6 +49,25 @@ export function PolicyFilters({
 }: PolicyFiltersProps) {
   return (
     <div className="space-y-3 mb-4">
+      {/* Document view pills */}
+      <div className="flex items-center gap-1.5">
+        {DOCUMENT_VIEWS.map((view) => (
+          <button
+            key={view.id}
+            type="button"
+            onClick={() => onDocumentViewChange(view.id)}
+            className={`px-3 py-1.5 rounded-full text-label-sm font-medium transition-colors cursor-pointer ${
+              documentView === view.id
+                ? "bg-foreground text-background"
+                : "bg-foreground/[0.05] text-muted-foreground hover:bg-foreground/[0.08] hover:text-foreground"
+            }`}
+          >
+            {view.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Sub-tabs */}
       <div className="flex items-center gap-1 border-b border-foreground/6 overflow-x-auto scrollbar-hide">
         {TABS.map((tab) => (
           <button

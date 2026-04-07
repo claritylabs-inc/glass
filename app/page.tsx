@@ -365,7 +365,7 @@ export default function DashboardPage() {
                     return (
                       <Link
                         key={q._id}
-                        href={`/quotes/${q._id}`}
+                        href={`/policies/${q._id}`}
                         className={`flex items-center gap-3 px-4 py-3 hover:bg-foreground/[0.02] transition-colors ${
                           i > 0 ? "border-t border-foreground/4" : ""
                         }`}

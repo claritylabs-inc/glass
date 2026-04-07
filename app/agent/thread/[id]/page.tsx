@@ -137,16 +137,11 @@ function UnifiedThreadActions({
 }
 
 /**
- * Fix legacy agent-generated links where quote IDs were placed under /policies/.
- * Uses the message's referencedQuoteIds to detect and rewrite to /quotes/.
+ * Legacy no-op: quote IDs now use /policies/ routes like policies do.
+ * Kept for call-site compatibility.
  */
-function fixQuoteLinks(content: string, quoteIds?: Id<"policies">[]): string {
-  if (!quoteIds || quoteIds.length === 0) return content;
-  const quoteIdSet = new Set<string>(quoteIds);
-  return content.replace(
-    /\/policies\/([a-z0-9]+)/g,
-    (match, id) => quoteIdSet.has(id) ? `/quotes/${id}` : match,
-  );
+function fixQuoteLinks(content: string, _quoteIds?: Id<"policies">[]): string {
+  return content;
 }
 
 /* ── Shared markdown container styles ── */
@@ -608,7 +603,7 @@ function ThreadContextLink({
 
   const routeMap: Record<string, string> = {
     policy: "/policies",
-    quote: "/quotes",
+    quote: "/policies",
     application: "/applications",
   };
   const base = routeMap[context.pageType];

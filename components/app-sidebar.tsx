@@ -12,7 +12,6 @@ const AGENT_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "prism.claritylabs.
 import {
   LayoutDashboard,
   FileText,
-  ClipboardList,
   FileInput,
   Mail,
   Asterisk,
@@ -36,7 +35,6 @@ import { useTheme } from "@/hooks/use-theme";
 const INSURANCE_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard, shortcut: "D" },
   { href: "/policies", label: "Policies", icon: FileText, shortcut: "O" },
-  { href: "/quotes", label: "Quotes", icon: ClipboardList, shortcut: "U" },
   { href: "/applications", label: "Applications", icon: FileInput, shortcut: "Y" },
 ];
 

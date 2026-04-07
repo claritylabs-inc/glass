@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { FileText, ClipboardList, Mail, Clock, type LucideIcon } from "lucide-react";
+import { FileText, Mail, Clock, type LucideIcon } from "lucide-react";
 import { FadeIn } from "@/components/ui/fade-in";
 
 export function StatCard({
@@ -68,18 +68,13 @@ interface QuoteStatsData {
 }
 
 export function StatsCards({ stats, quoteStats }: { stats: StatsData | undefined; quoteStats?: QuoteStatsData | undefined }) {
+  const totalDocs = (stats?.totalPolicies ?? 0) + (quoteStats?.totalQuotes ?? 0);
   const items = [
     {
-      label: "Policies",
-      value: stats?.totalPolicies ?? "—",
+      label: "Documents",
+      value: stats !== undefined && quoteStats !== undefined ? totalDocs : "—",
       icon: FileText,
       href: "/policies",
-    },
-    {
-      label: "Quotes",
-      value: quoteStats?.totalQuotes ?? "—",
-      icon: ClipboardList,
-      href: "/quotes",
     },
     {
       label: "Connections",
@@ -96,7 +91,7 @@ export function StatsCards({ stats, quoteStats }: { stats: StatsData | undefined
   ];
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4 mb-6">
+    <div className="grid grid-cols-2 md:grid-cols-3 gap-2 sm:gap-4 mb-6">
       {items.map((stat, i) => (
         <StatCard
           key={stat.label}
