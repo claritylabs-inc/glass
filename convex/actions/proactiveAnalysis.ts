@@ -46,6 +46,13 @@ const POLICY_TYPE_GUIDANCE: Record<string, string> = {
 - Following form vs stand-alone — following form is broader
 - Drop-down provision when underlying is exhausted
 - Scheduling all underlying policies — verify no gaps`,
+
+  directors_officers: `D&O analysis:
+- Side A (individual directors) — most critical
+- Side B (company reimbursement) and Side C (entity coverage)
+- Insured vs Insured exclusion — watch for overly broad version
+- Prior acts coverage and retroactive date
+- Securities claim definition breadth`,
 };
 
 function getGuidance(policyTypes?: string[]): string {
@@ -189,6 +196,7 @@ Provide a portfolio-level assessment as JSON:
   "coverageGaps": ["missing coverage types or inadequate limits"],
   "overlaps": ["areas where coverage overlaps"],
   "recommendations": ["actionable recommendations"],
+  "totalPremium": number,
   "keyRisks": ["top risks not adequately addressed"]
 }`;
 
@@ -238,6 +246,7 @@ PRIOR POLICY:
 - Type: ${priorPolicy.policyTypes?.join(", ")}
 - Premium: ${priorPolicy.premium}
 - Limits: ${JSON.stringify(priorPolicy.limits ?? {})}
+- Deductibles: ${JSON.stringify(priorPolicy.deductibles ?? {})}
 - Period: ${priorPolicy.effectiveDate} to ${priorPolicy.expirationDate}
 
 RENEWAL POLICY:
@@ -245,12 +254,14 @@ RENEWAL POLICY:
 - Type: ${newPolicy.policyTypes?.join(", ")}
 - Premium: ${newPolicy.premium}
 - Limits: ${JSON.stringify(newPolicy.limits ?? {})}
+- Deductibles: ${JSON.stringify(newPolicy.deductibles ?? {})}
 - Period: ${newPolicy.effectiveDate} to ${newPolicy.expirationDate}
 
 Provide a comparison as JSON:
 {
   "premiumChange": { "amount": number, "percentage": number, "direction": "increase" | "decrease" | "unchanged" },
   "limitChanges": ["description of each limit change"],
+  "deductibleChanges": ["description of each deductible change"],
   "coverageChanges": ["added or removed coverages"],
   "overallAssessment": "brief assessment",
   "actionItems": ["things to review or discuss with the client"]
