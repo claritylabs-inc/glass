@@ -112,9 +112,21 @@ function buildTools(ctx: any, args: { orgId: any; threadId: any }) {
     },
     generate_coi: {
       ...generateCoi,
-      execute: async (_params: { policyId: string; certificateHolder?: string }) => {
-        // Phase 4 will implement this — placeholder for now
-        return "COI generation coming soon.";
+      execute: async (input: { policyId: string; certificateHolder?: string }) => {
+        try {
+          await ctx.scheduler.runAfter(
+            0,
+            internal.actions.generateCoi.run,
+            {
+              policyId: input.policyId as any,
+              orgId: args.orgId,
+              certificateHolder: input.certificateHolder,
+            },
+          );
+          return "COI generation started. It will be available for download shortly.";
+        } catch (err) {
+          return `Failed to generate COI: ${err instanceof Error ? err.message : String(err)}`;
+        }
       },
     },
   };
