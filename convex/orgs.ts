@@ -207,6 +207,7 @@ export const updateOrg = mutation({
     brokerContactName: v.optional(v.string()),
     brokerContactEmail: v.optional(v.string()),
     coiHandling: v.optional(v.union(v.literal("broker"), v.literal("member"), v.literal("ignore"))),
+    autoGenerateCoi: v.optional(v.boolean()),
     chatEmailNotifications: v.optional(v.boolean()),
     autoSendEmails: v.optional(v.boolean()),
     emailSendDelay: v.optional(v.number()),

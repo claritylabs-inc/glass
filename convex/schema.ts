@@ -49,6 +49,7 @@ export default defineSchema({
     brokerContactEmail: v.optional(v.string()),
     // COI handling preference
     coiHandling: v.optional(v.union(v.literal("broker"), v.literal("member"), v.literal("ignore"))),
+    autoGenerateCoi: v.optional(v.boolean()), // when true, generate COI PDFs automatically on request
     // Agent
     agentHandle: v.optional(v.string()),
     // Primary insurance contact for the org

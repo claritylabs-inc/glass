@@ -113,15 +113,18 @@ function ModeExplainerCards({ companyDomains }: { companyDomains?: string[] }) {
 /* ── COI Request Handling settings ── */
 function CoiSettingsCard({
   coiHandling,
+  autoGenerateCoi,
   hasBroker,
 }: {
   coiHandling: "broker" | "member" | "user" | "ignore" | undefined;
+  autoGenerateCoi: boolean | undefined;
   hasBroker: boolean;
 }) {
   const updateOrg = useMutation(api.orgs.updateOrg);
   const updateProfile = useMutation(api.users.updateProfile);
   const viewerOrg = useQuery(api.orgs.viewerOrg);
   const current = coiHandling === "member" ? "user" : (coiHandling ?? "ignore");
+  const autoGenerate = autoGenerateCoi !== false; // default on
 
   async function handleChange(value: "broker" | "user" | "ignore") {
     try {
@@ -137,51 +140,88 @@ function CoiSettingsCard({
     }
   }
 
+  async function handleAutoGenerateToggle() {
+    try {
+      if (viewerOrg?.org) {
+        await updateOrg({ autoGenerateCoi: !autoGenerate });
+      }
+      toast.success("COI auto-generation " + (!autoGenerate ? "enabled" : "disabled"));
+    } catch {
+      toast.error("Failed to update COI settings");
+    }
+  }
+
   const options: { value: "broker" | "user" | "ignore"; label: string; description: string; icon: typeof FileText; disabled?: boolean }[] = [
     {
       value: "broker",
-      label: "Include broker contact",
-      description: hasBroker ? "Direct COI requests to your broker" : "Set up your broker in Profile first",
+      label: "Refer to broker",
+      description: hasBroker ? "Route COI requests to your broker" : "Set up your broker in Profile first",
       icon: Users,
       disabled: !hasBroker,
     },
     {
       value: "user",
-      label: "Include your contact",
-      description: "Direct COI requests to you",
+      label: "Refer to PoC",
+      description: "Route COI requests to your primary insurance contact",
       icon: MessageSquare,
     },
     {
       value: "ignore",
-      label: "Ignore",
-      description: "No special COI handling",
+      label: "No referral",
+      description: "No special routing for COI requests",
       icon: X,
     },
   ];
 
   return (
     <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-5">
-      <h4 className="!mb-4 text-body-sm font-semibold">COI Request Handling</h4>
-      <p className="text-label-sm text-muted-foreground/60 mb-4">
-        How should the agent respond when someone requests a Certificate of Insurance?
+      <h4 className="!mb-4 text-body-sm font-semibold">COI Settings</h4>
+
+      {/* Auto-generate toggle */}
+      <div className="flex items-center justify-between mb-4 pb-4 border-b border-foreground/6">
+        <div>
+          <p className="text-body-sm font-medium text-foreground">Auto-generate COI</p>
+          <p className="text-label-sm text-muted-foreground/50">
+            Prism generates ACORD 25-style COI PDFs when requested
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={handleAutoGenerateToggle}
+          className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${
+            autoGenerate ? "bg-foreground" : "bg-foreground/15"
+          }`}
+          role="switch"
+          aria-checked={autoGenerate}
+        >
+          <span
+            className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${
+              autoGenerate ? "translate-x-4" : "translate-x-0"
+            }`}
+          />
+        </button>
+      </div>
+
+      <p className="text-label-sm text-muted-foreground/60 mb-3">
+        When not auto-generating, route COI requests to:
       </p>
       <div className="space-y-2">
         {options.map((opt) => (
           <button
             key={opt.value}
             type="button"
-            disabled={opt.disabled}
+            disabled={opt.disabled || autoGenerate}
             onClick={() => handleChange(opt.value)}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg border transition-colors text-left cursor-pointer ${
-              current === opt.value
+              current === opt.value && !autoGenerate
                 ? "border-foreground/15 bg-foreground/[0.03]"
                 : "border-foreground/6 hover:border-foreground/10 hover:bg-foreground/[0.01]"
-            } ${opt.disabled ? "opacity-40 cursor-not-allowed" : ""}`}
+            } ${opt.disabled || autoGenerate ? "opacity-40 cursor-not-allowed" : ""}`}
           >
             <div className={`w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center ${
-              current === opt.value ? "border-foreground" : "border-foreground/20"
+              current === opt.value && !autoGenerate ? "border-foreground" : "border-foreground/20"
             }`}>
-              {current === opt.value && (
+              {current === opt.value && !autoGenerate && (
                 <div className="w-2 h-2 rounded-full bg-foreground" />
               )}
             </div>
@@ -556,6 +596,7 @@ export default function AgentPage() {
               <div className="space-y-6">
                 <CoiSettingsCard
                   coiHandling={(org?.coiHandling ?? viewer?.coiHandling) as "broker" | "user" | "ignore" | undefined}
+                  autoGenerateCoi={org?.autoGenerateCoi}
                   hasBroker={!!(org?.insuranceBroker ?? viewer?.insuranceBroker)}
                 />
                 <ChatEmailNotificationsToggle />

@@ -25,7 +25,7 @@ import {
 import { buildMemoryContext } from "../lib/orgMemoryContext";
 
 /** Build executable tools with Convex context wired in. */
-function buildTools(ctx: any, args: { orgId: any; threadId: any }) {
+function buildTools(ctx: any, args: { orgId: any; threadId: any }, org?: any) {
   return {
     lookup_policy: {
       ...lookupPolicy,
@@ -113,6 +113,18 @@ function buildTools(ctx: any, args: { orgId: any; threadId: any }) {
     generate_coi: {
       ...generateCoi,
       execute: async (input: { policyId: string; certificateHolder?: string }) => {
+        // Check org settings — autoGenerateCoi defaults to true if not set
+        const autoGenerate = org?.autoGenerateCoi !== false;
+        if (!autoGenerate) {
+          const handling = org?.coiHandling ?? "ignore";
+          if (handling === "broker" && org?.brokerContactName) {
+            return `COI auto-generation is off. Please contact your broker, ${org.brokerContactName}${org.brokerContactEmail ? ` (${org.brokerContactEmail})` : ""}, to obtain this certificate.`;
+          }
+          if (handling === "member") {
+            return `COI auto-generation is off. Please route this COI request to your primary insurance contact.`;
+          }
+          return `COI auto-generation is disabled for this organization.`;
+        }
         try {
           await ctx.scheduler.runAfter(
             0,
@@ -358,7 +370,7 @@ For emails, compose a professional message that:
 
       if (needsTools) {
         // Agentic mode — generateText with tools
-        const tools = buildTools(ctx, { orgId: args.orgId, threadId: args.threadId });
+        const tools = buildTools(ctx, { orgId: args.orgId, threadId: args.threadId }, org);
         const { text } = await generateTextWithFallback({
           model: getModel("chat_with_tools"),
           maxOutputTokens: 2048,
