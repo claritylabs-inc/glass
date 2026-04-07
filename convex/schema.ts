@@ -59,6 +59,8 @@ export default defineSchema({
     emailSendDelay: v.optional(v.number()), // seconds before sending emails (default 5, 0 = instant)
     // Onboarding
     onboardingComplete: v.optional(v.boolean()),
+    // Portfolio-level AI analysis
+    portfolioAnalysis: v.optional(v.any()),
   }).index("by_agentHandle", ["agentHandle"]),
 
   // Org memberships — links users to orgs
@@ -100,6 +102,31 @@ export default defineSchema({
     .index("by_orgId", ["orgId"])
     .index("by_orgId_category", ["orgId", "category"])
     .index("by_orgId_key", ["orgId", "key"]),
+
+  // Org memory — persistent AI knowledge (facts, preferences, risk notes, observations)
+  orgMemory: defineTable({
+    orgId: v.id("organizations"),
+    type: v.union(
+      v.literal("fact"),
+      v.literal("preference"),
+      v.literal("risk_note"),
+      v.literal("observation"),
+    ),
+    content: v.string(),
+    source: v.union(
+      v.literal("extraction"),
+      v.literal("analysis"),
+      v.literal("chat"),
+      v.literal("email"),
+    ),
+    policyId: v.optional(v.id("policies")),
+    quoteId: v.optional(v.id("policies")),
+    expiresAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_org", ["orgId"])
+    .index("by_org_type", ["orgId", "type"]),
 
   // Insurance application sessions — tracks multi-step form filling workflow
   applicationSessions: defineTable({
@@ -452,6 +479,8 @@ export default defineSchema({
     rawMetadataResponse: v.optional(v.string()),
     // Typed declarations (cl-sdk 1.4+) — line-specific structured data
     declarations: v.optional(v.any()),
+    // AI analysis results (risk notes, observations, key findings)
+    analysis: v.optional(v.any()),
     deletedAt: v.optional(v.number()),
     isDemo: v.optional(v.boolean()),
   }).index("by_carrier", ["carrier"])
