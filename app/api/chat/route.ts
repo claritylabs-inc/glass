@@ -6,11 +6,10 @@ import { api } from "@/convex/_generated/api";
 import {
   buildSystemPrompt,
   buildDocumentContext,
+  HAIKU_MODEL,
 } from "@claritylabs/cl-sdk";
 
 export const maxDuration = 60;
-
-const HAIKU_MODEL = "claude-haiku-4-5-20251001";
 const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL!;
 
 export async function POST(req: NextRequest) {
@@ -161,26 +160,47 @@ export async function POST(req: NextRequest) {
       systemPrompt + webChatAddendum + pageContextBlock + "\n\n" + docContext;
 
     // Stream response
-    const result = streamText({
-      model: anthropic(HAIKU_MODEL),
-      maxOutputTokens: 2048,
-      system: fullSystemPrompt,
-      messages: messageHistory,
-      onFinish: async ({ text }) => {
-        try {
-          // Persist final message to Convex
-          await convex.mutation(api.threads.updateAgentResponse, {
-            messageId: agentMsgId,
-            content: text,
-            referencedPolicyIds:
-              relevantPolicyIds.length > 0
-                ? (relevantPolicyIds as any)
-                : undefined,
-            referencedQuoteIds:
-              relevantQuoteIds.length > 0
-                ? (relevantQuoteIds as any)
-                : undefined,
-          });
+    let result;
+    try {
+      result = streamText({
+        model: anthropic(HAIKU_MODEL),
+        maxOutputTokens: 2048,
+        system: fullSystemPrompt,
+        messages: messageHistory,
+        onFinish: async ({ text }) => {
+          // Persist final message — retry once on failure
+          for (let attempt = 0; attempt < 2; attempt++) {
+            try {
+              await convex.mutation(api.threads.updateAgentResponse, {
+                messageId: agentMsgId,
+                content: text,
+                referencedPolicyIds:
+                  relevantPolicyIds.length > 0
+                    ? (relevantPolicyIds as any)
+                    : undefined,
+                referencedQuoteIds:
+                  relevantQuoteIds.length > 0
+                    ? (relevantQuoteIds as any)
+                    : undefined,
+              });
+              break; // success
+            } catch (persistErr) {
+              if (attempt === 0) {
+                console.warn("Failed to persist agent response, retrying:", persistErr);
+                continue;
+              }
+              console.error("Failed to persist agent response after retry:", persistErr);
+              // Mark the message as error so UI shows something
+              try {
+                await convex.mutation(api.threads.setMessageError, {
+                  messageId: agentMsgId,
+                  error: "Response generated but failed to save. Please try again.",
+                });
+              } catch {
+                // Best effort
+              }
+            }
+          }
 
           // Auto-title on first user message
           const userMessages = threadMessages.filter(
@@ -214,11 +234,25 @@ export async function POST(req: NextRequest) {
               // Non-critical
             }
           }
-        } catch (err) {
-          console.error("Failed to persist agent response:", err);
-        }
-      },
-    });
+        },
+      });
+    } catch (streamError) {
+      // streamText setup failed (bad model config, auth issue, etc.)
+      const msg = streamError instanceof Error ? streamError.message : String(streamError);
+      console.error("streamText initialization failed:", msg);
+      try {
+        await convex.mutation(api.threads.setMessageError, {
+          messageId: agentMsgId,
+          error: "Failed to start response. Please try again.",
+        });
+      } catch {
+        // Best effort
+      }
+      return new Response(JSON.stringify({ error: msg }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
 
     return result.toUIMessageStreamResponse();
   } catch (error) {
