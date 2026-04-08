@@ -412,10 +412,10 @@ export function ExtractionTable({
                       >
                         <td className="px-4 py-2.5 whitespace-nowrap">
                           <p className="text-body-sm text-foreground font-medium truncate max-w-[250px]">
-                            {extraction.emailSubject || "—"}
+                            {extraction.emailSubject || (extraction.emailFrom ? "—" : (extraction.fileName ?? "Manual Upload"))}
                           </p>
                           <p className="text-label-sm text-muted-foreground/60 truncate max-w-[250px]">
-                            {extraction.emailFrom || "Unknown sender"}
+                            {extraction.emailFrom || (extraction.emailSubject ? "Unknown sender" : "Uploaded file")}
                           </p>
                         </td>
                         <td className="px-4 py-2.5 text-body-sm text-muted-foreground whitespace-nowrap hidden sm:table-cell">
