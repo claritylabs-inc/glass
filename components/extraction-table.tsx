@@ -246,11 +246,11 @@ function ExtractionLogRow({ log, isExpanded, isExtracting }: { log: ExtractionLo
   return (
     <tr>
       <td colSpan={5} className="px-4 pt-0 pb-3">
-        <div className="rounded-lg bg-zinc-950 dark:bg-zinc-950/80 border border-zinc-800/60 overflow-hidden">
+        <div className="rounded-lg border border-foreground/8 bg-foreground/[0.02] dark:bg-foreground/[0.04] overflow-hidden">
           {/* Header bar */}
-          <div className="flex items-center gap-2 px-3 py-1.5 border-b border-zinc-800/60 bg-zinc-900/60">
-            <Terminal className="w-3 h-3 text-zinc-500" />
-            <span className="text-[11px] font-medium text-zinc-500 font-mono">
+          <div className="flex items-center gap-2 px-3 py-1.5 border-b border-foreground/6 bg-foreground/[0.02]">
+            <Terminal className="w-3 h-3 text-muted-foreground/40" />
+            <span className="text-[11px] font-medium text-muted-foreground/50 font-mono">
               Extraction Log
             </span>
             {isExtracting && (
@@ -259,14 +259,14 @@ function ExtractionLogRow({ log, isExpanded, isExtracting }: { log: ExtractionLo
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
                   <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" />
                 </span>
-                <span className="text-[10px] font-mono text-emerald-500/70">live</span>
+                <span className="text-[10px] font-mono text-emerald-600/70 dark:text-emerald-500/70">live</span>
               </span>
             )}
           </div>
           {/* Log entries */}
           <div
             ref={scrollRef}
-            className="max-h-[180px] overflow-y-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-zinc-700/50 p-3 space-y-0.5"
+            className="max-h-[180px] overflow-y-auto p-3 space-y-0.5"
           >
             {log.map((entry, i) => {
               const isLatest = i === log.length - 1 && isExtracting;
@@ -278,16 +278,16 @@ function ExtractionLogRow({ log, isExpanded, isExtracting }: { log: ExtractionLo
                   transition={{ duration: 0.2 }}
                   className="flex items-baseline gap-2.5 py-[1px]"
                 >
-                  <span className="text-[10px] tabular-nums text-zinc-600 shrink-0 w-11 text-right font-mono">
+                  <span className="text-[10px] tabular-nums text-muted-foreground/35 shrink-0 w-11 text-right font-mono">
                     {formatRelativeTime(entry.timestamp)}
                   </span>
                   <span className={`text-[12px] font-mono leading-relaxed ${
                     isLatest
-                      ? "text-zinc-200"
-                      : "text-zinc-400"
+                      ? "text-foreground"
+                      : "text-muted-foreground/70"
                   }`}>
                     {isLatest && (
-                      <span className="text-emerald-500 mr-1.5">{">"}</span>
+                      <span className="text-emerald-600 dark:text-emerald-500 mr-1.5">{">"}</span>
                     )}
                     {entry.message}
                   </span>

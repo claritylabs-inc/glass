@@ -29,13 +29,14 @@ import type { ModelConfig } from "@claritylabs/cl-sdk";
  * Metadata + sectionsFallback → extraction model (Kimi K2.5 or Sonnet)
  */
 export function buildExtractionModels(): ModelConfig {
-  const pdfModel = getModel("extraction");    // Sonnet — needs to read PDF files natively
-  const textModel = getModel("analysis");     // Kimi K2.5 — text-only passes (sections, enrichment)
+  const haiku = getModel("classification");   // Claude Haiku — fast classification
+  const kimi = getModel("analysis");          // Kimi K2.5 — reliable JSON, good quality
+  const sonnet = getModel("extraction");      // Claude Sonnet — fallback only
   return {
-    classification: pdfModel,   // Pass 0: reads PDF pages → needs PDF support
-    metadata: pdfModel,         // Pass 1: reads PDF pages → needs PDF support
-    sections: textModel,        // Pass 2: text-only chunked extraction
-    sectionsFallback: pdfModel, // Pass 2 fallback: retry with Sonnet if Kimi truncates
-    enrichment: textModel,      // Pass 3: text-only enrichment
+    classification: haiku,      // Pass 0: quick policy/quote detection
+    metadata: kimi,             // Pass 1: metadata extraction (Kimi better JSON than Sonnet)
+    sections: kimi,             // Pass 2: text-only chunked extraction
+    sectionsFallback: sonnet,   // Pass 2 fallback: retry with Sonnet if Kimi truncates
+    enrichment: kimi,           // Pass 3: text-only enrichment
   };
 }
