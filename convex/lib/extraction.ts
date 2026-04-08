@@ -29,13 +29,13 @@ import type { ModelConfig } from "@claritylabs/cl-sdk";
  * Metadata + sectionsFallback → extraction model (Kimi K2.5 or Sonnet)
  */
 export function buildExtractionModels(): ModelConfig {
-  const fast = getModel("classification");
-  const capable = getModel("extraction");
+  const pdfModel = getModel("extraction");    // Sonnet — needs to read PDF files natively
+  const textModel = getModel("analysis");     // Kimi K2.5 — text-only passes (sections, enrichment)
   return {
-    classification: fast,
-    metadata: capable,
-    sections: fast,
-    sectionsFallback: capable,
-    enrichment: fast,
+    classification: pdfModel,   // Pass 0: reads PDF pages → needs PDF support
+    metadata: pdfModel,         // Pass 1: reads PDF pages → needs PDF support
+    sections: textModel,        // Pass 2: text-only chunked extraction
+    sectionsFallback: pdfModel, // Pass 2 fallback: retry with Sonnet if Kimi truncates
+    enrichment: textModel,      // Pass 3: text-only enrichment
   };
 }
