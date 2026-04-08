@@ -14,12 +14,17 @@ import { useState } from "react";
 interface LogEntry {
   _id: string;
   emailId?: string;
+  fileId?: string;
+  fileName?: string;
   carrier: string;
   policyNumber: string;
+  insuredName?: string;
+  summary?: string;
   policyTypes?: string[];
   policyType?: string;
   documentType?: string;
   extractionStatus: string;
+  extractionError?: string;
   _creationTime: number;
   emailSubject?: string;
   emailFrom?: string;
@@ -112,7 +117,7 @@ export function ExtractionLog({ entries }: { entries: LogEntry[] }) {
                   Type
                 </th>
                 <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap hidden md:table-cell">
-                  Source Email
+                  Source
                 </th>
                 <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">
                   Status
@@ -150,11 +155,15 @@ export function ExtractionLog({ entries }: { entries: LogEntry[] }) {
                       onClick={() => isComplete && router.push(`/policies/${entry._id}`)}
                     >
                       <td className="px-4 py-2.5 whitespace-nowrap">
-                        <p className="text-body-sm text-foreground font-medium">
-                          {entry.policyNumber}
+                        <p className="text-body-sm text-foreground font-medium truncate max-w-[250px]">
+                          {entry.carrier === "Extracting..."
+                            ? (entry.fileName ?? entry.emailSubject ?? "Unknown document")
+                            : `${entry.carrier} ${entry.policyNumber !== "Extracting..." ? entry.policyNumber : ""}`}
                         </p>
-                        <p className="text-label-sm text-muted-foreground/60">
-                          {entry.carrier}
+                        <p className="text-label-sm text-muted-foreground/60 truncate max-w-[250px]">
+                          {entry.carrier === "Extracting..."
+                            ? (entry.emailFrom ?? "Dismissed before extraction completed")
+                            : (entry.insuredName ?? entry.emailFrom ?? (entry.fileName ? "Uploaded file" : ""))}
                         </p>
                       </td>
                       <td className="px-4 py-2.5 whitespace-nowrap">
@@ -180,8 +189,11 @@ export function ExtractionLog({ entries }: { entries: LogEntry[] }) {
                       </td>
                       <td className="px-4 py-2.5 hidden md:table-cell whitespace-nowrap">
                         <p className="text-body-sm text-muted-foreground truncate max-w-[200px]">
-                          {entry.emailSubject || "—"}
+                          {entry.emailSubject || entry.fileName || "—"}
                         </p>
+                        {entry.emailFrom && (
+                          <p className="text-label-sm text-muted-foreground/40 truncate max-w-[200px]">{entry.emailFrom}</p>
+                        )}
                       </td>
                       <td className="px-4 py-2.5 whitespace-nowrap">
                         <div className="flex items-center gap-1.5">
@@ -207,7 +219,7 @@ export function ExtractionLog({ entries }: { entries: LogEntry[] }) {
                       </td>
                       <td className="px-4 py-2.5 text-right whitespace-nowrap hidden md:table-cell">
                         <div className="inline-flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                          {entry.emailId && !entry.isDemo && (
+                          {(entry.fileId || entry.emailId) && !entry.isDemo && (
                             <ReExtractButton entry={entry} />
                           )}
                           {isComplete && (
