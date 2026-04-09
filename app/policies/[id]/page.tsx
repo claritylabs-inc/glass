@@ -1388,54 +1388,26 @@ export default function PolicyDetailPage({
 
                 {/* Info grid */}
                 <div id="section-overview" />
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
-                  {/* Policy Period */}
-                  <FadeIn when={true} staggerIndex={1} duration={0.6}>
-                    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-4 py-3">
-                      <p className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider mb-1.5">Policy Period</p>
-                      <p className="text-body-sm font-medium text-foreground">
-                        {policy.effectiveDate === "Unknown" && !policy.expirationDate
-                          ? (documentType === "quote" ? "Quote" : "Unknown")
-                          : (policy as any).policyTermType === "continuous"
-                            ? `${policy.effectiveDate} — Until Cancelled`
-                            : `${policy.effectiveDate} – ${policy.expirationDate ?? "—"}`}
-                      </p>
-                    </div>
-                  </FadeIn>
-
-                  {/* Premium */}
-                  <FadeIn when={true} staggerIndex={2} duration={0.6}>
-                    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-4 py-3">
-                      <p className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider mb-1.5">Total Cost</p>
-                      <p className="text-body-sm font-medium text-foreground font-mono">{(policy as any).totalCost || policy.premium || "—"}</p>
-                    </div>
-                  </FadeIn>
-
-                  {/* Insurer */}
-                  <FadeIn when={true} staggerIndex={3} duration={0.6}>
-                    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-4 py-3">
-                      <p className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider mb-1.5">Insurer</p>
-                      <p className="text-body-sm font-medium text-foreground">{carrierLegalName || security || policy.carrier}</p>
-                    </div>
-                  </FadeIn>
-
-                  {/* Insured */}
-                  <FadeIn when={true} staggerIndex={4} duration={0.6}>
-                    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-4 py-3">
-                      <p className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider mb-1.5">Insured</p>
-                      <p className="text-body-sm font-medium text-foreground">{policy.insuredName}</p>
-                    </div>
-                  </FadeIn>
-
-                  {/* Broker */}
-                  {(brokerAgency || broker) && (
-                    <FadeIn when={true} staggerIndex={5} duration={0.6}>
-                      <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-4 py-3">
-                        <p className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider mb-1.5">Broker</p>
-                        <p className="text-body-sm font-medium text-foreground">{brokerAgency || broker}</p>
+                <div className="flex gap-4 mb-6">
+                  {[
+                    { label: "Policy Period", value: policy.effectiveDate === "Unknown" && !policy.expirationDate
+                        ? (documentType === "quote" ? "Quote" : "Unknown")
+                        : (policy as any).policyTermType === "continuous"
+                          ? `${policy.effectiveDate} — Until Cancelled`
+                          : `${policy.effectiveDate} – ${policy.expirationDate ?? "—"}`,
+                      mono: false },
+                    { label: "Total Cost", value: (policy as any).totalCost || policy.premium, mono: true },
+                    { label: "Insurer", value: carrierLegalName || security || policy.carrier, mono: false },
+                    { label: "Insured", value: policy.insuredName, mono: false },
+                    { label: "Broker", value: brokerAgency || broker, mono: false },
+                  ].filter((c) => c.value).map((c, i) => (
+                    <FadeIn key={c.label} when={true} staggerIndex={i + 1} duration={0.6} className="flex-1 min-w-0">
+                      <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-4 py-3 h-full">
+                        <p className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider mb-1.5">{c.label}</p>
+                        <p className={`text-body-sm font-medium text-foreground ${c.mono ? "font-mono" : ""}`}>{c.value}</p>
                       </div>
                     </FadeIn>
-                  )}
+                  ))}
                 </div>
 
                 {/* Summary */}
