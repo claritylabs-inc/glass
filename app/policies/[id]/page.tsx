@@ -389,6 +389,9 @@ function ClaimsContactStructured({ data }: { data: any }) {
 function SectionOutline({ sections }: { sections: Array<{ id: string; label: string; count?: number }> }) {
   const visible = sections.filter((s) => s.count === undefined || s.count > 0);
   const [activeId, setActiveId] = useState(visible[0]?.id ?? "");
+  const [expanded, setExpanded] = useState(false);
+  const [scrollExpanded, setScrollExpanded] = useState(false);
+  const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -408,27 +411,71 @@ function SectionOutline({ sections }: { sections: Array<{ id: string; label: str
     return () => observer.disconnect();
   }, [visible]);
 
+  // Expand on scroll, collapse after idle
+  useEffect(() => {
+    const handleScroll = () => {
+      setScrollExpanded(true);
+      if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
+      scrollTimerRef.current = setTimeout(() => setScrollExpanded(false), 1500);
+    };
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+      if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
+    };
+  }, []);
+
   if (visible.length <= 1) return null;
 
+  const isExpanded = expanded || scrollExpanded;
+
   return (
-    <nav className="hidden xl:block w-44 shrink-0">
-      <div className="sticky top-16 space-y-0.5">
-        <p className="text-[10px] font-medium text-muted-foreground/40 uppercase tracking-wider mb-2 px-2">On this page</p>
-        {visible.map((s) => (
-          <button
-            key={s.id}
-            type="button"
-            onClick={() => document.getElementById(s.id)?.scrollIntoView({ behavior: "smooth", block: "start" })}
-            className={`w-full text-left px-2 py-1 rounded-md text-[11px] transition-colors cursor-pointer ${
-              activeId === s.id
-                ? "text-foreground font-medium bg-foreground/[0.04]"
-                : "text-muted-foreground/50 hover:text-muted-foreground hover:bg-foreground/[0.02]"
-            }`}
-          >
-            {s.label}
-            {s.count != null && <span className="text-muted-foreground/30 ml-1">{s.count}</span>}
-          </button>
-        ))}
+    <nav
+      className="hidden xl:block shrink-0"
+      style={{ width: isExpanded ? "176px" : "20px", transition: "width 200ms ease" }}
+      onMouseEnter={() => setExpanded(true)}
+      onMouseLeave={() => setExpanded(false)}
+    >
+      <div className="sticky top-4">
+        {isExpanded ? (
+          <div className="space-y-0.5">
+            <p className="text-[10px] font-medium text-muted-foreground/40 uppercase tracking-wider mb-2 px-2">On this page</p>
+            {visible.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => document.getElementById(s.id)?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                className={`w-full text-left px-2 py-1 rounded-md text-[11px] cursor-pointer transition-colors duration-150 ${
+                  activeId === s.id
+                    ? "text-foreground font-medium bg-foreground/[0.04]"
+                    : "text-muted-foreground/50 hover:text-muted-foreground hover:bg-foreground/[0.02]"
+                }`}
+              >
+                {s.label}
+                {s.count != null && <span className="text-muted-foreground/30 ml-1">{s.count}</span>}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="flex flex-col items-center gap-[6px] pt-6">
+            {visible.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => document.getElementById(s.id)?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                className="cursor-pointer p-0 border-0 bg-transparent"
+              >
+                <span
+                  className={`block rounded-full transition-all duration-200 ${
+                    activeId === s.id
+                      ? "w-[5px] h-[5px] bg-foreground/50"
+                      : "w-[3px] h-[3px] bg-foreground/15"
+                  }`}
+                />
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </nav>
   );
