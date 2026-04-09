@@ -384,157 +384,116 @@ function ClaimsContactStructured({ data }: { data: any }) {
   );
 }
 
+/* ── Section Jump Nav ── */
+
+function SectionJumpNav({ sections }: { sections: Array<{ id: string; label: string; count?: number }> }) {
+  const visible = sections.filter((s) => s.count === undefined || s.count > 0);
+  if (visible.length <= 1) return null;
+
+  return (
+    <div className="flex items-center gap-1 flex-wrap mb-4">
+      {visible.map((s) => (
+        <button
+          key={s.id}
+          type="button"
+          onClick={() => document.getElementById(s.id)?.scrollIntoView({ behavior: "smooth", block: "start" })}
+          className="px-2.5 py-1 rounded-md text-[11px] font-medium text-muted-foreground/60 hover:text-foreground hover:bg-foreground/[0.04] transition-colors cursor-pointer"
+        >
+          {s.label}{s.count != null ? ` (${s.count})` : ""}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /* ── Document Structured Cards ── */
 
-function ExclusionsCard({ exclusions }: { exclusions: string[] }) {
+function ExclusionsCard({ exclusions }: { exclusions: any[] }) {
   if (!exclusions?.length) return null;
 
   return (
-    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
-      <div className="px-4 py-2.5 bg-red-50/60 dark:bg-red-950/20 border-b border-foreground/4">
-        <div className="flex items-center gap-2">
-          <Ban className="w-4 h-4 text-red-500 dark:text-red-400" />
-          <p className="text-label-sm font-semibold text-red-700 dark:text-red-400 uppercase tracking-wider">
-            Exclusions
-          </p>
-          <span className="text-label-sm text-red-500/50 dark:text-red-400/50">
-            ({exclusions.length})
-          </span>
-        </div>
+    <div id="section-exclusions" className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
+      <div className="px-4 py-2.5 bg-foreground/[0.02] border-b border-foreground/4">
+        <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">
+          Exclusions ({exclusions.length})
+        </p>
       </div>
       <ul className="divide-y divide-foreground/4">
-        {exclusions.map((ex, i) => (
-          <li key={i} className="px-4 py-2.5 text-body-sm text-foreground leading-relaxed hover:bg-foreground/[0.015] transition-colors">
-            <span className="text-muted-foreground/50 font-mono text-label-sm mr-2">{i + 1}.</span>
-            {typeof ex === "string" ? ex : ((ex as any)?.content ?? (ex as any)?.title ?? JSON.stringify(ex))}
-          </li>
-        ))}
+        {exclusions.map((ex, i) => {
+          const text = typeof ex === "string" ? ex : ((ex as any)?.content ?? (ex as any)?.title ?? "");
+          const page = typeof ex === "object" ? (ex as any)?.pageNumber ?? (ex as any)?.pageStart : undefined;
+          return (
+            <li key={i} className="flex items-start gap-2 px-4 py-2 text-body-sm text-foreground leading-relaxed hover:bg-foreground/[0.01] transition-colors">
+              <span className="text-muted-foreground/40 font-mono text-label-sm mt-0.5 shrink-0 w-5 text-right">{i + 1}.</span>
+              <span className="flex-1 min-w-0">{text}</span>
+              {page != null && <PageRef page={page} />}
+            </li>
+          );
+        })}
       </ul>
     </div>
   );
 }
 
-function ConditionsCard({ conditions }: { conditions: any[] }) {
-  if (!conditions?.length) return null;
+function CollapsibleListCard({ id, title, items, getTitle, getContent, getPage, getBadge }: {
+  id: string;
+  title: string;
+  items: any[];
+  getTitle: (item: any) => string;
+  getContent: (item: any) => string;
+  getPage?: (item: any) => number | undefined;
+  getBadge?: (item: any) => { label: string; className: string } | undefined;
+}) {
+  if (!items?.length) return null;
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
-
-  const toggle = (i: number) => {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(i)) next.delete(i);
-      else next.add(i);
-      return next;
-    });
-  };
+  const toggle = (i: number) => setExpanded((prev) => {
+    const next = new Set(prev);
+    next.has(i) ? next.delete(i) : next.add(i);
+    return next;
+  });
 
   return (
-    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
-      <div className="px-4 py-2.5 bg-amber-50/60 dark:bg-amber-950/20 border-b border-foreground/4">
-        <div className="flex items-center gap-2">
-          <BookOpen className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-          <p className="text-label-sm font-semibold text-amber-700 dark:text-amber-400 uppercase tracking-wider">
-            Conditions
-          </p>
-          <span className="text-label-sm text-amber-500/50 dark:text-amber-400/50">
-            ({conditions.length})
-          </span>
-        </div>
+    <div id={id} className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
+      <div className="px-4 py-2.5 bg-foreground/[0.02] border-b border-foreground/4">
+        <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">
+          {title} ({items.length})
+        </p>
       </div>
-      {conditions.map((cond, i) => (
-        <div key={i} className="border-t border-foreground/4 first:border-t-0">
-          <button
-            type="button"
-            onClick={() => toggle(i)}
-            className="w-full flex items-center gap-2 px-4 py-2.5 text-left hover:bg-foreground/[0.015] transition-colors cursor-pointer"
-          >
-            {expanded.has(i) ? (
-              <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-            ) : (
-              <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-            )}
-            <span className="text-body-sm font-medium text-foreground flex-1 min-w-0 truncate">
-              {cond.title}
-            </span>
-            {cond.pageNumber != null && <PageRef page={cond.pageNumber} />}
-          </button>
-          {expanded.has(i) && (
-            <div className="px-4 pb-3 pl-10">
-              <p className="text-body-sm text-foreground whitespace-pre-wrap leading-relaxed">
-                {cond.content}
-              </p>
-            </div>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function EndorsementsCard({ endorsements }: { endorsements: any[] }) {
-  if (!endorsements?.length) return null;
-  const [expanded, setExpanded] = useState<Set<number>>(new Set());
-
-  const toggle = (i: number) => {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(i)) next.delete(i);
-      else next.add(i);
-      return next;
-    });
-  };
-
-  const EFFECT_COLORS: Record<string, string> = {
-    broadens: "bg-green-50 text-green-600 dark:bg-green-950/40 dark:text-green-400",
-    restricts: "bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400",
-    replaces: "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400",
-    adds: "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400",
-    removes: "bg-orange-50 text-orange-600 dark:bg-orange-950/40 dark:text-orange-400",
-  };
-
-  return (
-    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
-      <div className="px-4 py-2.5 bg-sky-50/60 dark:bg-sky-950/20 border-b border-foreground/4">
-        <div className="flex items-center gap-2">
-          <Stamp className="w-4 h-4 text-sky-600 dark:text-sky-400" />
-          <p className="text-label-sm font-semibold text-sky-700 dark:text-sky-400 uppercase tracking-wider">
-            Endorsements
-          </p>
-          <span className="text-label-sm text-sky-500/50 dark:text-sky-400/50">
-            ({endorsements.length})
-          </span>
-        </div>
-      </div>
-      {endorsements.map((end, i) => (
-        <div key={i} className="border-t border-foreground/4 first:border-t-0">
-          <button
-            type="button"
-            onClick={() => toggle(i)}
-            className="w-full flex items-center gap-2 px-4 py-2.5 text-left hover:bg-foreground/[0.015] transition-colors cursor-pointer"
-          >
-            {expanded.has(i) ? (
-              <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-            ) : (
-              <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-            )}
-            <span className="text-body-sm font-medium text-foreground flex-1 min-w-0 truncate">
-              {end.title}
-            </span>
-            {end.effectType && (
-              <span className={`shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${EFFECT_COLORS[end.effectType] || "bg-foreground/5 text-muted-foreground"}`}>
-                {end.effectType}
+      {items.map((item, i) => {
+        const badge = getBadge?.(item);
+        const page = getPage?.(item);
+        return (
+          <div key={i} className="border-t border-foreground/4 first:border-t-0">
+            <button
+              type="button"
+              onClick={() => toggle(i)}
+              className="w-full flex items-center gap-2 px-4 py-2.5 text-left hover:bg-foreground/[0.01] transition-colors cursor-pointer"
+            >
+              {expanded.has(i) ? (
+                <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+              ) : (
+                <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+              )}
+              <span className="text-body-sm font-medium text-foreground flex-1 min-w-0 truncate">
+                {getTitle(item)}
               </span>
+              {badge && (
+                <span className={`shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${badge.className}`}>
+                  {badge.label}
+                </span>
+              )}
+              {page != null && <PageRef page={page} />}
+            </button>
+            {expanded.has(i) && (
+              <div className="px-4 pb-3 pl-10">
+                <p className="text-body-sm text-foreground whitespace-pre-wrap leading-relaxed">
+                  {getContent(item)}
+                </p>
+              </div>
             )}
-            {end.pageStart != null && <PageRef page={end.pageStart} />}
-          </button>
-          {expanded.has(i) && (
-            <div className="px-4 pb-3 pl-10">
-              <p className="text-body-sm text-foreground whitespace-pre-wrap leading-relaxed">
-                {end.content}
-              </p>
-            </div>
-          )}
-        </div>
-      ))}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -1349,7 +1308,18 @@ export default function PolicyDetailPage({
                 </div>
 
                 {activeTab === "details" && (<>
+                {/* Section jump nav */}
+                <SectionJumpNav sections={[
+                  { id: "section-overview", label: "Overview" },
+                  { id: "section-coverages", label: "Coverages", count: policy.coverages?.length },
+                  { id: "section-document", label: "Sections", count: policyDocument?.sections?.length },
+                  { id: "section-exclusions", label: "Exclusions", count: policyDocument?.exclusions?.length },
+                  { id: "section-conditions", label: "Conditions", count: policyDocument?.conditions?.length },
+                  { id: "section-endorsements", label: "Endorsements", count: policyDocument?.endorsements?.length },
+                ]} />
+
                 {/* Info grid */}
+                <div id="section-overview" />
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
                   {/* Policy Period */}
                   <FadeIn when={true} staggerIndex={1} duration={0.6}>
@@ -1450,7 +1420,7 @@ export default function PolicyDetailPage({
 
                 {/* Coverages table */}
                 <FadeIn when={true} delay={0.6} duration={0.6}>
-                  <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden mb-6">
+                  <div id="section-coverages" className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden mb-6">
                     <div className="px-4 py-2.5 bg-foreground/[0.02] border-b border-foreground/4">
                       <div className="flex items-center gap-2">
                         <FileText className="w-4 h-4 text-muted-foreground" />
@@ -1864,7 +1834,7 @@ export default function PolicyDetailPage({
                 {/* Document Sections */}
                 {policyDocument?.sections?.length > 0 && (
                   <FadeIn when={true} delay={0.7} duration={0.6}>
-                    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden mb-6">
+                    <div id="section-document" className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden mb-6">
                       <div className="px-4 py-2.5 bg-foreground/[0.02] border-b border-foreground/4">
                         <div className="flex items-center gap-2">
                           <FileText className="w-4 h-4 text-muted-foreground" />
@@ -1949,7 +1919,14 @@ export default function PolicyDetailPage({
                 {policyDocument?.conditions?.length > 0 && (
                   <FadeIn when={true} delay={0.9} duration={0.6}>
                     <div className="mb-6">
-                      <ConditionsCard conditions={policyDocument.conditions} />
+                      <CollapsibleListCard
+                        id="section-conditions"
+                        title="Conditions"
+                        items={policyDocument.conditions}
+                        getTitle={(c) => c.title}
+                        getContent={(c) => c.content}
+                        getPage={(c) => c.pageNumber}
+                      />
                     </div>
                   </FadeIn>
                 )}
@@ -1958,7 +1935,20 @@ export default function PolicyDetailPage({
                 {policyDocument?.endorsements?.length > 0 && (
                   <FadeIn when={true} delay={0.95} duration={0.6}>
                     <div className="mb-6">
-                      <EndorsementsCard endorsements={policyDocument.endorsements} />
+                      <CollapsibleListCard
+                        id="section-endorsements"
+                        title="Endorsements"
+                        items={policyDocument.endorsements}
+                        getTitle={(e) => e.title}
+                        getContent={(e) => e.content}
+                        getPage={(e) => e.pageStart}
+                        getBadge={(e) => e.effectType ? {
+                          label: e.effectType,
+                          className: e.effectType === "restricts" ? "bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400"
+                            : e.effectType === "broadens" ? "bg-green-50 text-green-600 dark:bg-green-950/40 dark:text-green-400"
+                            : "bg-foreground/5 text-muted-foreground"
+                        } : undefined}
+                      />
                     </div>
                   </FadeIn>
                 )}

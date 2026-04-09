@@ -4,7 +4,7 @@ import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import { ImapFlow } from "imapflow";
-import { applyExtracted, applyExtractedQuote, extractFromPdf, extractQuoteFromPdf, classifyDocumentType, buildExtractionModels } from "../lib/extraction";
+import { applyExtracted, applyExtractedQuote, extractFromPdf, extractQuoteFromPdf, classifyDocumentType, buildExtractionModels, PRISM_TOKEN_LIMITS } from "../lib/extraction";
 import { Id } from "../_generated/dataModel";
 
 export const extractPolicy = internalAction({
@@ -75,7 +75,7 @@ export const extractPolicy = internalAction({
     const models = buildExtractionModels();
 
     // Pass 0: Classify document type (SDK trims to first 3 pages internally)
-    const { documentType } = await classifyDocumentType(pdfBase64, { models });
+    const { documentType } = await classifyDocumentType(pdfBase64, { models, tokenLimits: PRISM_TOKEN_LIMITS });
 
     if (documentType === "quote") {
       // === QUOTE EXTRACTION PATH (stored in policies table with documentType: "quote") ===
@@ -116,6 +116,7 @@ export const extractPolicy = internalAction({
           pdfBase64, {
           log,
           models,
+          tokenLimits: PRISM_TOKEN_LIMITS,
           concurrency: 1,
           onMetadata: async (raw: string) => {
             await ctx.runMutation(api.policies.updateExtraction, {
@@ -204,6 +205,7 @@ export const extractPolicy = internalAction({
           pdfBase64, {
           log,
           models,
+          tokenLimits: PRISM_TOKEN_LIMITS,
           concurrency: 1,
           onMetadata: async (raw: string) => {
             await ctx.runMutation(api.policies.updateExtraction, {

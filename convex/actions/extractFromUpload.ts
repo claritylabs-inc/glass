@@ -3,7 +3,7 @@
 import { v } from "convex/values";
 import { action } from "../_generated/server";
 import { api, internal } from "../_generated/api";
-import { applyExtracted, applyExtractedQuote, extractFromPdf, extractQuoteFromPdf, classifyDocumentType, buildExtractionModels } from "../lib/extraction";
+import { applyExtracted, applyExtractedQuote, extractFromPdf, extractQuoteFromPdf, classifyDocumentType, buildExtractionModels, PRISM_TOKEN_LIMITS } from "../lib/extraction";
 import { Id } from "../_generated/dataModel";
 
 /**
@@ -35,7 +35,7 @@ export const extractFromUpload = action({
 
     // Classify document type (policy vs quote)
     const models = buildExtractionModels();
-    const { documentType } = await classifyDocumentType(pdfBase64, { models });
+    const { documentType } = await classifyDocumentType(pdfBase64, { models, tokenLimits: PRISM_TOKEN_LIMITS });
 
     if (documentType === "quote") {
       // === QUOTE EXTRACTION (stored in policies table with documentType: "quote") ===
@@ -75,6 +75,7 @@ export const extractFromUpload = action({
         const { rawText, extracted } = await extractQuoteFromPdf(pdfBase64, {
           log,
           models,
+          tokenLimits: PRISM_TOKEN_LIMITS,
           concurrency: 3,
           onMetadata: async (raw: string) => {
             await ctx.runMutation(api.policies.updateExtraction, {
@@ -152,6 +153,7 @@ export const extractFromUpload = action({
         const { rawText, extracted } = await extractFromPdf(pdfBase64, {
           log,
           models,
+          tokenLimits: PRISM_TOKEN_LIMITS,
           concurrency: 3,
           onMetadata: async (raw: string) => {
             await ctx.runMutation(api.policies.updateExtraction, {

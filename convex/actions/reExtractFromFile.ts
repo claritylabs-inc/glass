@@ -3,7 +3,7 @@
 import { v } from "convex/values";
 import { action } from "../_generated/server";
 import { api, internal } from "../_generated/api";
-import { applyExtracted, applyExtractedQuote, extractFromPdf, extractQuoteFromPdf, buildExtractionModels } from "../lib/extraction";
+import { applyExtracted, applyExtractedQuote, extractFromPdf, extractQuoteFromPdf, buildExtractionModels, PRISM_TOKEN_LIMITS } from "../lib/extraction";
 
 export const reExtractFromFile = action({
   args: {
@@ -53,6 +53,7 @@ export const reExtractFromFile = action({
           pdfBase64, {
           log,
           models,
+          tokenLimits: PRISM_TOKEN_LIMITS,
           onMetadata: async (raw: string) => {
             await ctx.runMutation(api.policies.updateExtraction, {
               id: args.policyId,
@@ -79,6 +80,7 @@ export const reExtractFromFile = action({
           pdfBase64, {
           log,
           models,
+          tokenLimits: PRISM_TOKEN_LIMITS,
           onMetadata: async (raw: string) => {
             await ctx.runMutation(api.policies.updateExtraction, {
               id: args.policyId,

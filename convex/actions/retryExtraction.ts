@@ -4,7 +4,7 @@ import { v } from "convex/values";
 import { action } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import { ImapFlow } from "imapflow";
-import { stripFences, applyExtracted, applyExtractedQuote, extractFromPdf, extractQuoteFromPdf, extractSectionsOnly, enrichSupplementaryFields, sanitizeNulls, buildExtractionModels } from "../lib/extraction";
+import { stripFences, applyExtracted, applyExtractedQuote, extractFromPdf, extractQuoteFromPdf, extractSectionsOnly, enrichSupplementaryFields, sanitizeNulls, buildExtractionModels, PRISM_TOKEN_LIMITS } from "../lib/extraction";
 import { buildQuoteSectionsPrompt } from "../lib/prompts";
 
 export const retryQuoteExtraction = action({
@@ -82,6 +82,7 @@ export const retryQuoteExtraction = action({
         pdfBase64, {
         log,
         models,
+          tokenLimits: PRISM_TOKEN_LIMITS,
         concurrency: 3,
         onMetadata: async (raw: string) => {
           await ctx.runMutation(api.policies.updateExtraction, {
@@ -347,6 +348,7 @@ export const retryExtraction = action({
         pdfBase64, {
         log,
         models,
+          tokenLimits: PRISM_TOKEN_LIMITS,
         concurrency: 3,
         onMetadata: async (raw: string) => {
           await ctx.runMutation(api.policies.updateExtraction, {
