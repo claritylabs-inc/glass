@@ -406,7 +406,7 @@ function ExclusionsCard({ exclusions }: { exclusions: string[] }) {
         {exclusions.map((ex, i) => (
           <li key={i} className="px-4 py-2.5 text-body-sm text-foreground leading-relaxed hover:bg-foreground/[0.015] transition-colors">
             <span className="text-muted-foreground/50 font-mono text-label-sm mr-2">{i + 1}.</span>
-            {ex}
+            {typeof ex === "string" ? ex : ((ex as any)?.content ?? (ex as any)?.title ?? JSON.stringify(ex))}
           </li>
         ))}
       </ul>
