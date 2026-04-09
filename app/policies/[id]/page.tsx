@@ -384,25 +384,53 @@ function ClaimsContactStructured({ data }: { data: any }) {
   );
 }
 
-/* ── Section Jump Nav ── */
+/* ── Section Outline Sidebar ── */
 
-function SectionJumpNav({ sections }: { sections: Array<{ id: string; label: string; count?: number }> }) {
+function SectionOutline({ sections }: { sections: Array<{ id: string; label: string; count?: number }> }) {
   const visible = sections.filter((s) => s.count === undefined || s.count > 0);
+  const [activeId, setActiveId] = useState(visible[0]?.id ?? "");
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            setActiveId(entry.target.id);
+          }
+        }
+      },
+      { rootMargin: "-80px 0px -60% 0px", threshold: 0.1 },
+    );
+    for (const s of visible) {
+      const el = document.getElementById(s.id);
+      if (el) observer.observe(el);
+    }
+    return () => observer.disconnect();
+  }, [visible]);
+
   if (visible.length <= 1) return null;
 
   return (
-    <div className="flex items-center gap-1 flex-wrap mb-4">
-      {visible.map((s) => (
-        <button
-          key={s.id}
-          type="button"
-          onClick={() => document.getElementById(s.id)?.scrollIntoView({ behavior: "smooth", block: "start" })}
-          className="px-2.5 py-1 rounded-md text-[11px] font-medium text-muted-foreground/60 hover:text-foreground hover:bg-foreground/[0.04] transition-colors cursor-pointer"
-        >
-          {s.label}{s.count != null ? ` (${s.count})` : ""}
-        </button>
-      ))}
-    </div>
+    <nav className="hidden xl:block w-44 shrink-0">
+      <div className="sticky top-16 space-y-0.5">
+        <p className="text-[10px] font-medium text-muted-foreground/40 uppercase tracking-wider mb-2 px-2">On this page</p>
+        {visible.map((s) => (
+          <button
+            key={s.id}
+            type="button"
+            onClick={() => document.getElementById(s.id)?.scrollIntoView({ behavior: "smooth", block: "start" })}
+            className={`w-full text-left px-2 py-1 rounded-md text-[11px] transition-colors cursor-pointer ${
+              activeId === s.id
+                ? "text-foreground font-medium bg-foreground/[0.04]"
+                : "text-muted-foreground/50 hover:text-muted-foreground hover:bg-foreground/[0.02]"
+            }`}
+          >
+            {s.label}
+            {s.count != null && <span className="text-muted-foreground/30 ml-1">{s.count}</span>}
+          </button>
+        ))}
+      </div>
+    </nav>
   );
 }
 
@@ -1308,15 +1336,8 @@ export default function PolicyDetailPage({
                 </div>
 
                 {activeTab === "details" && (<>
-                {/* Section jump nav */}
-                <SectionJumpNav sections={[
-                  { id: "section-overview", label: "Overview" },
-                  { id: "section-coverages", label: "Coverages", count: policy.coverages?.length },
-                  { id: "section-document", label: "Sections", count: policyDocument?.sections?.length },
-                  { id: "section-exclusions", label: "Exclusions", count: policyDocument?.exclusions?.length },
-                  { id: "section-conditions", label: "Conditions", count: policyDocument?.conditions?.length },
-                  { id: "section-endorsements", label: "Endorsements", count: policyDocument?.endorsements?.length },
-                ]} />
+                <div className="flex gap-6">
+                <div className="flex-1 min-w-0">
 
                 {/* Info grid */}
                 <div id="section-overview" />
@@ -1952,6 +1973,17 @@ export default function PolicyDetailPage({
                     </div>
                   </FadeIn>
                 )}
+                </div>{/* end flex-1 */}
+
+                <SectionOutline sections={[
+                  { id: "section-overview", label: "Overview" },
+                  { id: "section-coverages", label: "Coverages", count: policy.coverages?.length },
+                  { id: "section-document", label: "Sections", count: policyDocument?.sections?.length },
+                  { id: "section-exclusions", label: "Exclusions", count: policyDocument?.exclusions?.length },
+                  { id: "section-conditions", label: "Conditions", count: policyDocument?.conditions?.length },
+                  { id: "section-endorsements", label: "Endorsements", count: policyDocument?.endorsements?.length },
+                ]} />
+                </div>{/* end flex */}
                 </>)}
 
                 {activeTab === "conversations" && (
