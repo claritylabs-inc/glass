@@ -30,11 +30,11 @@ import type { ModelConfig } from "@claritylabs/cl-sdk";
  */
 export function buildExtractionModels(): ModelConfig {
   const haiku = getModel("classification");   // Claude Haiku — fast classification
-  const kimi = getModel("analysis");          // Kimi K2.5 — reliable JSON, good quality
-  const sonnet = getModel("extraction");      // Claude Sonnet — fallback only
+  const kimi = getModel("analysis");          // Kimi K2.5 — text-only passes
+  const sonnet = getModel("extraction");      // Claude Sonnet — PDF reading
   return {
-    classification: haiku,      // Pass 0: quick policy/quote detection
-    metadata: kimi,             // Pass 1: metadata extraction (Kimi better JSON than Sonnet)
+    classification: haiku,      // Pass 0: reads PDF pages → needs native PDF support
+    metadata: sonnet,           // Pass 1: reads PDF pages → needs native PDF support
     sections: kimi,             // Pass 2: text-only chunked extraction
     sectionsFallback: sonnet,   // Pass 2 fallback: retry with Sonnet if Kimi truncates
     enrichment: kimi,           // Pass 3: text-only enrichment
