@@ -6,7 +6,7 @@ import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
 import { FadeIn } from "@/components/ui/fade-in";
-import { ArrowLeft, Download, FileText, Calendar, Shield, DollarSign, Trash2, Upload, ChevronDown, ChevronRight, Loader2, Scale, Phone, Receipt, AlertTriangle, Users, Eye, Mail, MessageSquare, Activity, CheckCircle, XCircle, RefreshCw, Asterisk, X } from "lucide-react";
+import { ArrowLeft, Download, FileText, Calendar, Shield, DollarSign, Trash2, Upload, ChevronDown, ChevronRight, Loader2, Scale, Phone, Receipt, AlertTriangle, Users, Eye, Mail, MessageSquare, Activity, CheckCircle, XCircle, RefreshCw, Asterisk, X, Ban, BookOpen, Stamp, Clock, Code, Play } from "lucide-react";
 import { motion } from "framer-motion";
 import dayjs from "dayjs";
 import { ModeBadge } from "@/components/mode-badge";
@@ -384,6 +384,362 @@ function ClaimsContactStructured({ data }: { data: any }) {
   );
 }
 
+/* ── Document Structured Cards ── */
+
+function ExclusionsCard({ exclusions }: { exclusions: string[] }) {
+  if (!exclusions?.length) return null;
+
+  return (
+    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
+      <div className="px-4 py-2.5 bg-red-50/60 dark:bg-red-950/20 border-b border-foreground/4">
+        <div className="flex items-center gap-2">
+          <Ban className="w-4 h-4 text-red-500 dark:text-red-400" />
+          <p className="text-label-sm font-semibold text-red-700 dark:text-red-400 uppercase tracking-wider">
+            Exclusions
+          </p>
+          <span className="text-label-sm text-red-500/50 dark:text-red-400/50">
+            ({exclusions.length})
+          </span>
+        </div>
+      </div>
+      <ul className="divide-y divide-foreground/4">
+        {exclusions.map((ex, i) => (
+          <li key={i} className="px-4 py-2.5 text-body-sm text-foreground leading-relaxed hover:bg-foreground/[0.015] transition-colors">
+            <span className="text-muted-foreground/50 font-mono text-label-sm mr-2">{i + 1}.</span>
+            {ex}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function ConditionsCard({ conditions }: { conditions: any[] }) {
+  if (!conditions?.length) return null;
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+
+  const toggle = (i: number) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i);
+      else next.add(i);
+      return next;
+    });
+  };
+
+  return (
+    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
+      <div className="px-4 py-2.5 bg-amber-50/60 dark:bg-amber-950/20 border-b border-foreground/4">
+        <div className="flex items-center gap-2">
+          <BookOpen className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+          <p className="text-label-sm font-semibold text-amber-700 dark:text-amber-400 uppercase tracking-wider">
+            Conditions
+          </p>
+          <span className="text-label-sm text-amber-500/50 dark:text-amber-400/50">
+            ({conditions.length})
+          </span>
+        </div>
+      </div>
+      {conditions.map((cond, i) => (
+        <div key={i} className="border-t border-foreground/4 first:border-t-0">
+          <button
+            type="button"
+            onClick={() => toggle(i)}
+            className="w-full flex items-center gap-2 px-4 py-2.5 text-left hover:bg-foreground/[0.015] transition-colors cursor-pointer"
+          >
+            {expanded.has(i) ? (
+              <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+            ) : (
+              <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+            )}
+            <span className="text-body-sm font-medium text-foreground flex-1 min-w-0 truncate">
+              {cond.title}
+            </span>
+            {cond.pageNumber != null && <PageRef page={cond.pageNumber} />}
+          </button>
+          {expanded.has(i) && (
+            <div className="px-4 pb-3 pl-10">
+              <p className="text-body-sm text-foreground whitespace-pre-wrap leading-relaxed">
+                {cond.content}
+              </p>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function EndorsementsCard({ endorsements }: { endorsements: any[] }) {
+  if (!endorsements?.length) return null;
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+
+  const toggle = (i: number) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i);
+      else next.add(i);
+      return next;
+    });
+  };
+
+  const EFFECT_COLORS: Record<string, string> = {
+    broadens: "bg-green-50 text-green-600 dark:bg-green-950/40 dark:text-green-400",
+    restricts: "bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400",
+    replaces: "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400",
+    adds: "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400",
+    removes: "bg-orange-50 text-orange-600 dark:bg-orange-950/40 dark:text-orange-400",
+  };
+
+  return (
+    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
+      <div className="px-4 py-2.5 bg-sky-50/60 dark:bg-sky-950/20 border-b border-foreground/4">
+        <div className="flex items-center gap-2">
+          <Stamp className="w-4 h-4 text-sky-600 dark:text-sky-400" />
+          <p className="text-label-sm font-semibold text-sky-700 dark:text-sky-400 uppercase tracking-wider">
+            Endorsements
+          </p>
+          <span className="text-label-sm text-sky-500/50 dark:text-sky-400/50">
+            ({endorsements.length})
+          </span>
+        </div>
+      </div>
+      {endorsements.map((end, i) => (
+        <div key={i} className="border-t border-foreground/4 first:border-t-0">
+          <button
+            type="button"
+            onClick={() => toggle(i)}
+            className="w-full flex items-center gap-2 px-4 py-2.5 text-left hover:bg-foreground/[0.015] transition-colors cursor-pointer"
+          >
+            {expanded.has(i) ? (
+              <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+            ) : (
+              <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+            )}
+            <span className="text-body-sm font-medium text-foreground flex-1 min-w-0 truncate">
+              {end.title}
+            </span>
+            {end.effectType && (
+              <span className={`shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${EFFECT_COLORS[end.effectType] || "bg-foreground/5 text-muted-foreground"}`}>
+                {end.effectType}
+              </span>
+            )}
+            {end.pageStart != null && <PageRef page={end.pageStart} />}
+          </button>
+          {expanded.has(i) && (
+            <div className="px-4 pb-3 pl-10">
+              <p className="text-body-sm text-foreground whitespace-pre-wrap leading-relaxed">
+                {end.content}
+              </p>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+
+/* ── Extraction Tab ── */
+
+const EXTRACTION_STATUS_CONFIG: Record<string, { label: string; color: string }> = {
+  pending: { label: "Pending", color: "bg-gray-100 text-gray-700 dark:bg-gray-800/40 dark:text-gray-400" },
+  extracting: { label: "Extracting", color: "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400" },
+  paused: { label: "Paused", color: "bg-yellow-100 text-yellow-700 dark:bg-yellow-950/40 dark:text-yellow-400" },
+  complete: { label: "Complete", color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400" },
+  error: { label: "Error", color: "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400" },
+  not_insurance: { label: "Not Insurance", color: "bg-gray-100 text-gray-700 dark:bg-gray-800/40 dark:text-gray-400" },
+};
+
+function ExtractionTab({ policy }: { policy: any }) {
+  const retryExtraction = useAction(api.actions.retryExtraction.retryExtraction);
+  const [runningMode, setRunningMode] = useState<string | null>(null);
+
+  const extractionLog: { timestamp: number; message: string }[] = policy.extractionLog ?? [];
+  const statusCfg = EXTRACTION_STATUS_CONFIG[policy.extractionStatus] ?? EXTRACTION_STATUS_CONFIG.pending;
+  const rawMetadata: string | undefined = policy.rawMetadataResponse;
+  const rawExtraction: string | undefined = policy.rawExtractionResponse;
+  const hasDocument = !!(policy as any).document;
+
+  const handleRetry = async (mode: "reparse" | "sections_only" | "full" | "enrich_only") => {
+    setRunningMode(mode);
+    try {
+      const result = await retryExtraction({ policyId: policy._id, mode });
+      if (result?.error) {
+        toast.error(result.error);
+      } else {
+        toast.success("Re-extraction started");
+      }
+    } catch {
+      toast.error("Re-extraction failed");
+    } finally {
+      setRunningMode(null);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Status + Controls */}
+      <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
+        <div className="px-4 py-2.5 bg-foreground/[0.02] border-b border-foreground/4">
+          <div className="flex items-center gap-2">
+            <Activity className="w-4 h-4 text-muted-foreground" />
+            <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">
+              Extraction Status
+            </p>
+          </div>
+        </div>
+        <div className="px-4 py-3">
+          <div className="flex items-center gap-3 mb-4">
+            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-label-sm font-medium ${statusCfg.color}`}>
+              {statusCfg.label}
+            </span>
+            {policy.extractionError && (
+              <span className="text-body-sm text-red-600 dark:text-red-400">{policy.extractionError}</span>
+            )}
+          </div>
+
+          <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+            Re-extraction Controls
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {rawExtraction && (
+              <PillButton
+                variant="secondary"
+                size="compact"
+                disabled={runningMode !== null}
+                onClick={() => handleRetry("reparse")}
+              >
+                {runningMode === "reparse" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Code className="w-3.5 h-3.5" />}
+                Re-parse saved output
+              </PillButton>
+            )}
+            {rawMetadata && (
+              <PillButton
+                variant="secondary"
+                size="compact"
+                disabled={runningMode !== null}
+                onClick={() => handleRetry("sections_only")}
+              >
+                {runningMode === "sections_only" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
+                Re-extract sections
+              </PillButton>
+            )}
+            <PillButton
+              variant="secondary"
+              size="compact"
+              disabled={runningMode !== null}
+              onClick={() => handleRetry("full")}
+            >
+              {runningMode === "full" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+              Full re-extraction
+            </PillButton>
+            {hasDocument && (
+              <PillButton
+                variant="secondary"
+                size="compact"
+                disabled={runningMode !== null}
+                onClick={() => handleRetry("enrich_only")}
+              >
+                {runningMode === "enrich_only" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
+                Enrich only
+              </PillButton>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Extraction Log */}
+      <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
+        <div className="px-4 py-2.5 bg-foreground/[0.02] border-b border-foreground/4">
+          <div className="flex items-center gap-2">
+            <Clock className="w-4 h-4 text-muted-foreground" />
+            <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">
+              Extraction Log
+            </p>
+            {extractionLog.length > 0 && (
+              <span className="text-label-sm text-muted-foreground/50">
+                ({extractionLog.length})
+              </span>
+            )}
+          </div>
+        </div>
+        {extractionLog.length === 0 ? (
+          <div className="px-4 py-8 text-center">
+            <FileText className="w-7 h-7 text-muted-foreground/15 mx-auto mb-2" />
+            <p className="text-body-sm text-muted-foreground/50">No extraction log entries</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-foreground/4">
+            {extractionLog.map((entry, i) => {
+              const isError = entry.message.toLowerCase().startsWith("failed") || entry.message.toLowerCase().startsWith("error");
+              const isSuccess = entry.message.toLowerCase().includes("complete") || entry.message.toLowerCase().includes("success");
+              return (
+                <div key={i} className="flex items-start gap-3 px-4 py-2.5 hover:bg-foreground/[0.015] transition-colors">
+                  <div className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${
+                    isError ? "bg-red-500" : isSuccess ? "bg-emerald-500" : "bg-foreground/20"
+                  }`} />
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-body-sm ${isError ? "text-red-600 dark:text-red-400" : "text-foreground"}`}>
+                      {entry.message}
+                    </p>
+                  </div>
+                  <span className="text-[11px] text-muted-foreground/35 shrink-0 tabular-nums whitespace-nowrap">
+                    {dayjs(entry.timestamp).format("MMM D, h:mm:ss A")}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Raw Data */}
+      {(rawExtraction || rawMetadata) && (
+        <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
+          <div className="px-4 py-2.5 bg-foreground/[0.02] border-b border-foreground/4">
+            <div className="flex items-center gap-2">
+              <Code className="w-4 h-4 text-muted-foreground" />
+              <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                Raw Data
+              </p>
+            </div>
+          </div>
+          {rawExtraction && (
+            <details className="group/raw">
+              <summary className="flex items-center gap-2 px-4 py-2.5 text-body-sm text-muted-foreground cursor-pointer hover:bg-foreground/[0.015] transition-colors select-none [&::-webkit-details-marker]:hidden [&::marker]:hidden list-none">
+                <ChevronRight className="w-3.5 h-3.5 shrink-0 transition-transform duration-200 group-open/raw:rotate-90" />
+                Raw extraction response ({(rawExtraction.length / 1024).toFixed(1)} KB)
+              </summary>
+              <div className="px-4 pb-3 max-h-64 overflow-y-auto">
+                <pre className="text-[11px] font-mono text-muted-foreground whitespace-pre-wrap break-all leading-relaxed">
+                  {rawExtraction.slice(0, 5000)}
+                  {rawExtraction.length > 5000 && "\n\n... truncated ..."}
+                </pre>
+              </div>
+            </details>
+          )}
+          {rawMetadata && (
+            <details className="group/rawmeta border-t border-foreground/4">
+              <summary className="flex items-center gap-2 px-4 py-2.5 text-body-sm text-muted-foreground cursor-pointer hover:bg-foreground/[0.015] transition-colors select-none [&::-webkit-details-marker]:hidden [&::marker]:hidden list-none">
+                <ChevronRight className="w-3.5 h-3.5 shrink-0 transition-transform duration-200 group-open/rawmeta:rotate-90" />
+                Raw metadata response ({(rawMetadata.length / 1024).toFixed(1)} KB)
+              </summary>
+              <div className="px-4 pb-3 max-h-64 overflow-y-auto">
+                <pre className="text-[11px] font-mono text-muted-foreground whitespace-pre-wrap break-all leading-relaxed">
+                  {rawMetadata.slice(0, 5000)}
+                  {rawMetadata.length > 5000 && "\n\n... truncated ..."}
+                </pre>
+              </div>
+            </details>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 const MAX_VISIBLE_TAGS = 3;
 
 function PolicyTypeTags({ types }: { types: string[] }) {
@@ -677,7 +1033,7 @@ export default function PolicyDetailPage({
   const [uploading, setUploading] = useState(false);
   const [demoBannerDismissed, setDemoBannerDismissed] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [activeTab, setActiveTab] = useState<"details" | "conversations" | "activity">("details");
+  const [activeTab, setActiveTab] = useState<"details" | "conversations" | "activity" | "extraction">("details");
 
   const { openWithUrl } = usePdf();
   const { setPageContext } = usePageContext();
@@ -961,6 +1317,7 @@ export default function PolicyDetailPage({
                     { id: "details" as const, label: "Details" },
                     { id: "conversations" as const, label: "Threads", count: conversations?.length },
                     { id: "activity" as const, label: "Activity" },
+                    { id: "extraction" as const, label: "Extraction" },
                   ]).map((tab) => (
                     <button
                       key={tab.id}
@@ -1578,6 +1935,33 @@ export default function PolicyDetailPage({
                     )}
                   </div>
                 )}
+
+                {/* Exclusions */}
+                {policyDocument?.exclusions?.length > 0 && (
+                  <FadeIn when={true} delay={0.85} duration={0.6}>
+                    <div className="mb-6">
+                      <ExclusionsCard exclusions={policyDocument.exclusions} />
+                    </div>
+                  </FadeIn>
+                )}
+
+                {/* Conditions */}
+                {policyDocument?.conditions?.length > 0 && (
+                  <FadeIn when={true} delay={0.9} duration={0.6}>
+                    <div className="mb-6">
+                      <ConditionsCard conditions={policyDocument.conditions} />
+                    </div>
+                  </FadeIn>
+                )}
+
+                {/* Endorsements */}
+                {policyDocument?.endorsements?.length > 0 && (
+                  <FadeIn when={true} delay={0.95} duration={0.6}>
+                    <div className="mb-6">
+                      <EndorsementsCard endorsements={policyDocument.endorsements} />
+                    </div>
+                  </FadeIn>
+                )}
                 </>)}
 
                 {activeTab === "conversations" && (
@@ -1586,6 +1970,10 @@ export default function PolicyDetailPage({
 
                 {activeTab === "activity" && (
                   <PolicyActivityTab policyId={id} />
+                )}
+
+                {activeTab === "extraction" && (
+                  <ExtractionTab policy={policy} />
                 )}
 
       </AppShell>
