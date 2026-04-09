@@ -1384,11 +1384,11 @@ export default function PolicyDetailPage({
 
                 {activeTab === "details" && (<>
                 <div className="flex gap-6">
-                <div className="flex-1 min-w-0">
+                <div className="flex-1 min-w-0 @container">
 
                 {/* Info grid */}
                 <div id="section-overview" />
-                <div className="flex flex-col sm:flex-row gap-4 mb-6">
+                <div className="flex flex-col @lg:grid @lg:grid-cols-2 @4xl:flex @4xl:flex-row gap-4 mb-6">
                   {[
                     { label: "Policy Period", value: policy.effectiveDate === "Unknown" && !policy.expirationDate
                         ? (documentType === "quote" ? "Quote" : "Unknown")
@@ -1401,7 +1401,7 @@ export default function PolicyDetailPage({
                     { label: "Insured", value: policy.insuredName, mono: false },
                     { label: "Broker", value: brokerAgency || broker, mono: false },
                   ].filter((c) => c.value).map((c, i) => (
-                    <FadeIn key={c.label} when={true} staggerIndex={i + 1} duration={0.6} className="flex-1 min-w-0">
+                    <FadeIn key={c.label} when={true} staggerIndex={i + 1} duration={0.6} className="@4xl:flex-1 min-w-0">
                       <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-4 py-3 h-full">
                         <p className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider mb-1.5">{c.label}</p>
                         <p className={`text-body-sm font-medium text-foreground ${c.mono ? "font-mono" : ""}`}>{c.value}</p>
