@@ -1388,7 +1388,7 @@ export default function PolicyDetailPage({
 
                 {/* Info grid */}
                 <div id="section-overview" />
-                <div className="flex gap-4 mb-6">
+                <div className="flex flex-col sm:flex-row gap-4 mb-6">
                   {[
                     { label: "Policy Period", value: policy.effectiveDate === "Unknown" && !policy.expirationDate
                         ? (documentType === "quote" ? "Quote" : "Unknown")
