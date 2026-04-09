@@ -42,13 +42,13 @@ import type { ModelConfig } from "@claritylabs/cl-sdk";
  */
 export function buildExtractionModels(): ModelConfig {
   const haiku = getModel("classification");   // Claude Haiku — fast classification
-  const kimi = getModel("analysis");          // Kimi K2.5 — text-only passes
-  const sonnet = getModel("extraction");      // Claude Sonnet — PDF reading
+  const kimi = getModel("analysis");          // Kimi K2.5 — text-only (no PDF via AI SDK)
+  const sonnet = getModel("extraction");      // Claude Sonnet — native PDF reading
   return {
-    classification: haiku,      // Pass 0: reads PDF pages → needs native PDF support
-    metadata: sonnet,           // Pass 1: reads PDF pages → needs native PDF support
-    sections: kimi,             // Pass 2: text-only chunked extraction
-    sectionsFallback: sonnet,   // Pass 2 fallback: retry with Sonnet if Kimi truncates
-    enrichment: kimi,           // Pass 3: text-only enrichment
+    classification: haiku,      // Pass 0: reads PDF → needs native support
+    metadata: sonnet,           // Pass 1: reads PDF → needs native support
+    sections: sonnet,           // Pass 2: reads PDF → Kimi can't read PDFs via AI SDK
+    sectionsFallback: sonnet,   // Pass 2 fallback
+    enrichment: kimi,           // Pass 3: text-only enrichment (no PDF needed)
   };
 }
