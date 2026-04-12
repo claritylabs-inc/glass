@@ -13,6 +13,7 @@ import { ModeBadge } from "@/components/mode-badge";
 import { MessageBubble, type Conversation } from "@/components/conversation-message";
 import { Skeleton } from "@/components/ui/skeleton";
 import Link from "next/link";
+import { TerminalLog } from "@/components/terminal-log";
 import { useRouter, useSearchParams } from "next/navigation";
 import { POLICY_TYPE_LABELS } from "@/convex/lib/policyTypes";
 import { Id } from "@/convex/_generated/dataModel";
@@ -662,49 +663,7 @@ function ExtractionTab({ policy }: { policy: any }) {
       </div>
 
       {/* Extraction Log */}
-      <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
-        <div className="px-4 py-2.5 bg-foreground/[0.02] border-b border-foreground/4">
-          <div className="flex items-center gap-2">
-            <Clock className="w-4 h-4 text-muted-foreground" />
-            <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">
-              Extraction Log
-            </p>
-            {extractionLog.length > 0 && (
-              <span className="text-label-sm text-muted-foreground/50">
-                ({extractionLog.length})
-              </span>
-            )}
-          </div>
-        </div>
-        {extractionLog.length === 0 ? (
-          <div className="px-4 py-8 text-center">
-            <FileText className="w-7 h-7 text-muted-foreground/15 mx-auto mb-2" />
-            <p className="text-body-sm text-muted-foreground/50">No extraction log entries</p>
-          </div>
-        ) : (
-          <div className="divide-y divide-foreground/4">
-            {extractionLog.map((entry, i) => {
-              const isError = entry.message.toLowerCase().startsWith("failed") || entry.message.toLowerCase().startsWith("error");
-              const isSuccess = entry.message.toLowerCase().includes("complete") || entry.message.toLowerCase().includes("success");
-              return (
-                <div key={i} className="flex items-start gap-3 px-4 py-2.5 hover:bg-foreground/[0.015] transition-colors">
-                  <div className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${
-                    isError ? "bg-red-500" : isSuccess ? "bg-emerald-500" : "bg-foreground/20"
-                  }`} />
-                  <div className="flex-1 min-w-0">
-                    <p className={`text-body-sm ${isError ? "text-red-600 dark:text-red-400" : "text-foreground"}`}>
-                      {entry.message}
-                    </p>
-                  </div>
-                  <span className="text-[11px] text-muted-foreground/35 shrink-0 tabular-nums whitespace-nowrap">
-                    {dayjs(entry.timestamp).format("MMM D, h:mm:ss A")}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+      <TerminalLog entries={extractionLog} />
 
       {/* Raw Data */}
       {(rawExtraction || rawMetadata) && (
