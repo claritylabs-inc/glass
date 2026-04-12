@@ -465,7 +465,7 @@ The policy index above shows section titles. Use lookup_policy_section with the 
         system: fullSystemPrompt,
         messages: messageHistory,
         tools,
-        stopWhen: stepCountIs(5),
+        stopWhen: stepCountIs(8),
         providerOptions,
       });
 
@@ -500,19 +500,19 @@ The policy index above shows section titles. Use lookup_policy_section with the 
             });
           }
         } else if (part.type === "tool-call") {
-          // Reset pre-tool text — only the final response matters
-          content = "";
-          reasoning = "";
-          hasStartedReasoning = false;
+          // Preserve any pre-tool text — the model may produce partial responses
+          // between tool calls, and clearing would lose the final answer if
+          // the model hits the step limit during tool use.
           const label = TOOL_LABELS[part.toolName] ?? `Using ${part.toolName}...`;
           await ctx.runMutation(internal.threads.streamAgentMessage, {
             id: agentMsgId,
-            content: `*${label}*`,
+            content: content ? content + `\n\n*${label}*` : `*${label}*`,
           });
         } else if (part.type === "tool-result") {
+          // Clear the tool label but keep accumulated content
           await ctx.runMutation(internal.threads.streamAgentMessage, {
             id: agentMsgId,
-            content: "",
+            content: content || "",
           });
         }
       }
