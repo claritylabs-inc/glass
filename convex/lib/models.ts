@@ -59,10 +59,9 @@ export type ModelTask =
 /**
  * Model routing.
  *
- * GPT-5.4 mini: primary for chat, tools (strong reasoning + tool use)
+ * GPT-5.4 mini: chat, tools, extraction (strong structured output + no grammar compilation issues)
  * Kimi K2.5: analysis, email drafting (good quality + 256K context)
- * Claude Haiku: classification, summary (fast, cheap)
- * Claude Sonnet: extraction (quality)
+ * Claude Haiku: classification, summary (fast, cheap) + extraction fallback
  */
 const MODEL_CONFIG: Record<ModelTask, () => any> = {
   chat:             () => openai()("gpt-5.4-mini"),
@@ -72,7 +71,7 @@ const MODEL_CONFIG: Record<ModelTask, () => any> = {
   analysis:         () => moonshot()("kimi-k2.5"),
   summary:          () => anthropic()("claude-haiku-4-5-20251001"),
   classification:   () => anthropic()("claude-haiku-4-5-20251001"),
-  extraction:       () => anthropic()("claude-sonnet-4-6"),
+  extraction:       () => openai()("gpt-5.4-mini"),
 };
 
 export function getModel(task: ModelTask) {
@@ -84,8 +83,8 @@ export function getModel(task: ModelTask) {
   try {
     return factory();
   } catch (err) {
-    console.warn(`Provider for task "${task}" not available, falling back to Claude Sonnet`);
-    return anthropic()("claude-sonnet-4-6");
+    console.warn(`Provider for task "${task}" not available, falling back to Claude Haiku`);
+    return anthropic()("claude-haiku-4-5-20251001");
   }
 }
 
@@ -97,13 +96,13 @@ export async function generateTextWithFallback(
     return await generateText(options);
   } catch (err: any) {
     const modelId = (options.model as any)?.modelId || "unknown";
-    if (modelId.includes("claude-sonnet")) throw err;
+    if (modelId.includes("claude-haiku")) throw err;
     console.warn(
-      `Primary model (${modelId}) failed: ${err.message || err}. Retrying with Claude Sonnet.`,
+      `Primary model (${modelId}) failed: ${err.message || err}. Retrying with Claude Haiku.`,
     );
     return await generateText({
       ...options,
-      model: anthropic()("claude-sonnet-4-6"),
+      model: anthropic()("claude-haiku-4-5-20251001"),
     });
   }
 }
@@ -116,13 +115,13 @@ export async function generateStructuredWithFallback(
     return await generateText(options);
   } catch (err: any) {
     const modelId = (options.model as any)?.modelId || "unknown";
-    if (modelId.includes("claude-sonnet")) throw err;
+    if (modelId.includes("claude-haiku")) throw err;
     console.warn(
-      `Primary model (${modelId}) failed for structured output: ${err.message || err}. Retrying with Claude Sonnet.`,
+      `Primary model (${modelId}) failed for structured output: ${err.message || err}. Retrying with Claude Haiku.`,
     );
     return await generateText({
       ...options,
-      model: anthropic()("claude-sonnet-4-6"),
+      model: anthropic()("claude-haiku-4-5-20251001"),
     });
   }
 }
