@@ -35,6 +35,9 @@ const EXTRACTION_MAX_TOKEN_OVERRIDES: Record<string, number> = {
   exclusions: 8192,
 };
 
+const SECTIONS_EXTRACTOR_PROMPT_MARKER =
+  "Extract ALL sections, clauses, endorsements, and schedules from this document";
+
 function getEffectiveMaxTokens(
   task: ModelTask,
   prompt: string,
@@ -124,18 +127,33 @@ export function makeGenerateText(task: ModelTask = "extraction"): GenerateText {
 export function makeGenerateObject(task: ModelTask = "extraction"): GenerateObject {
   return async ({ prompt, system, schema, maxTokens, providerOptions }) => {
     const effectiveMaxTokens = getEffectiveMaxTokens(task, prompt, maxTokens);
-    const result = await generateText({
-      model: getModel(task),
-      system,
-      ...buildPromptInput(prompt, providerOptions),
-      output: Output.object({ schema }),
-      maxOutputTokens: effectiveMaxTokens,
-      providerOptions: providerOptions as ProviderOptions,
-    });
-    return {
-      object: result.output!,
-      usage: mapUsage(result.usage),
-    };
+    try {
+      const result = await generateText({
+        model: getModel(task),
+        system,
+        ...buildPromptInput(prompt, providerOptions),
+        output: Output.object({ schema }),
+        maxOutputTokens: effectiveMaxTokens,
+        providerOptions: providerOptions as ProviderOptions,
+      });
+      return {
+        object: result.output!,
+        usage: mapUsage(result.usage),
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const isSectionsExtractor =
+        task === "extraction" && prompt.includes(SECTIONS_EXTRACTOR_PROMPT_MARKER);
+
+      if (isSectionsExtractor && message.includes("No output generated")) {
+        return {
+          object: { sections: [] } as unknown,
+          usage: undefined,
+        };
+      }
+
+      throw error;
+    }
   };
 }
 

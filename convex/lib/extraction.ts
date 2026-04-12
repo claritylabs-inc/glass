@@ -24,7 +24,7 @@ export { insuranceDocToPolicy, policyToInsuranceDoc } from "./documentMapping";
 
 // ── Prism extraction factory ──
 import { createExtractor } from "@claritylabs/cl-sdk";
-import type { LogFn, TokenUsage } from "@claritylabs/cl-sdk";
+import type { ExtractionResult, LogFn, TokenUsage } from "@claritylabs/cl-sdk";
 import { makeGenerateText, makeGenerateObject } from "./sdkCallbacks";
 
 /**
@@ -48,4 +48,37 @@ export function buildExtractor(opts?: {
     onProgress: opts?.onProgress,
     onTokenUsage: opts?.onTokenUsage,
   });
+}
+
+export function summarizeExtractionCheckpoint(
+  result: { checkpoint?: ExtractionResult["checkpoint"] },
+): string[] {
+  const state = result.checkpoint?.state as
+    | {
+        pageAssignments?: Array<{ localPageNumber: number; extractorNames?: string[] }>;
+        plan?: { tasks?: Array<{ extractorName: string; startPage: number; endPage: number }> };
+      }
+    | undefined;
+
+  if (!state) return [];
+
+  const lines: string[] = [];
+
+  if (state.pageAssignments?.length) {
+    const pageMap = state.pageAssignments
+      .filter((assignment) => assignment.extractorNames?.length)
+      .map((assignment) => `${assignment.localPageNumber}:${assignment.extractorNames!.join("|")}`)
+      .join(", ");
+
+    if (pageMap) lines.push(`Checkpoint page map: ${pageMap}`);
+  }
+
+  if (state.plan?.tasks?.length) {
+    const taskSummary = state.plan.tasks
+      .map((task) => `${task.extractorName} ${task.startPage}-${task.endPage}`)
+      .join(", ");
+    lines.push(`Checkpoint task plan: ${taskSummary}`);
+  }
+
+  return lines;
 }

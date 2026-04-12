@@ -4,7 +4,7 @@ import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import { ImapFlow } from "imapflow";
-import { buildExtractor, insuranceDocToPolicy } from "../lib/extraction";
+import { buildExtractor, insuranceDocToPolicy, summarizeExtractionCheckpoint } from "../lib/extraction";
 import { makeEmbedText } from "../lib/sdkCallbacks";
 import { Id } from "../_generated/dataModel";
 
@@ -122,6 +122,9 @@ export const extractPolicy = internalAction({
       const tokenUsage = result.tokenUsage;
 
       await log(`Extraction complete. Type: ${doc.type}. ${chunks.length} chunks. Tokens: ${tokenUsage.inputTokens}in/${tokenUsage.outputTokens}out`);
+      for (const line of summarizeExtractionCheckpoint(result)) {
+        await log(line);
+      }
 
       // Map InsuranceDocument → Prism policy fields
       const fields = insuranceDocToPolicy(result.document);

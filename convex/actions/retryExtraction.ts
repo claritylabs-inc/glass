@@ -4,7 +4,7 @@ import { v } from "convex/values";
 import { action } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import { ImapFlow } from "imapflow";
-import { stripFences, buildExtractor, insuranceDocToPolicy } from "../lib/extraction";
+import { stripFences, buildExtractor, insuranceDocToPolicy, summarizeExtractionCheckpoint } from "../lib/extraction";
 import { makeEmbedText } from "../lib/sdkCallbacks";
 
 export const retryQuoteExtraction = action({
@@ -95,6 +95,9 @@ export const retryQuoteExtraction = action({
       const tokenUsage = quoteResult.tokenUsage;
 
       await log(`Extraction complete. Type: ${doc.type}. ${chunks.length} chunks. Tokens: ${tokenUsage.inputTokens}in/${tokenUsage.outputTokens}out`);
+      for (const line of summarizeExtractionCheckpoint(quoteResult)) {
+        await log(line);
+      }
 
       const fields = insuranceDocToPolicy(quoteResult.document);
       const docName = doc.type === "quote"
@@ -307,6 +310,9 @@ export const retryExtraction = action({
       const tokenUsage = policyResult.tokenUsage;
 
       await log(`Extraction complete. Type: ${pDoc.type}. ${chunks.length} chunks. Tokens: ${tokenUsage.inputTokens}in/${tokenUsage.outputTokens}out`);
+      for (const line of summarizeExtractionCheckpoint(policyResult)) {
+        await log(line);
+      }
 
       const fields = insuranceDocToPolicy(policyResult.document);
       const docName = pDoc.type === "quote"

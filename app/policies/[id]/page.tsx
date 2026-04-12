@@ -6,7 +6,7 @@ import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
 import { FadeIn } from "@/components/ui/fade-in";
-import { ArrowLeft, Download, FileText, Calendar, Shield, DollarSign, Trash2, Upload, ChevronDown, ChevronRight, Loader2, Scale, Phone, Receipt, AlertTriangle, Users, Eye, Mail, MessageSquare, Activity, CheckCircle, XCircle, RefreshCw, Asterisk, X, Ban, BookOpen, Stamp, Clock, Code, Play } from "lucide-react";
+import { ArrowLeft, Download, FileText, Calendar, Shield, DollarSign, Trash2, Upload, ChevronDown, ChevronRight, Loader2, Scale, Phone, Receipt, AlertTriangle, Users, Eye, Mail, MessageSquare, Activity, CheckCircle, XCircle, RefreshCw, Asterisk, X, Ban, BookOpen, Stamp, Clock, Code, Play, Copy, Check } from "lucide-react";
 import { motion } from "framer-motion";
 import dayjs from "dayjs";
 import { ModeBadge } from "@/components/mode-badge";
@@ -122,6 +122,16 @@ const SECTION_TYPE_COLORS: Record<string, string> = {
   regulatory: "bg-yellow-50 text-yellow-700 dark:bg-yellow-950/40 dark:text-yellow-400",
   other: "bg-gray-50 text-gray-600 dark:bg-gray-800/40 dark:text-gray-400",
 };
+
+function formatJsonForDisplay(value?: string): string | null {
+  if (!value) return null;
+
+  try {
+    return JSON.stringify(JSON.parse(value), null, 2);
+  } catch {
+    return value;
+  }
+}
 
 function DocumentSection({ section, highlighted }: { section: any; highlighted?: boolean }) {
   const [expanded, setExpanded] = useState(false);
@@ -485,43 +495,177 @@ function SectionOutline({ sections }: { sections: Array<{ id: string; label: str
 /* ── Document Structured Cards ── */
 
 function ExclusionsCard({ exclusions }: { exclusions: any[] }) {
-  if (!exclusions?.length) return null;
+  return (
+    <StructuredItemsCard
+      id="section-exclusions"
+      title="Exclusions"
+      items={exclusions}
+      getTitle={(ex) => typeof ex === "string" ? ex : (ex?.name ?? ex?.title ?? "Unnamed exclusion")}
+      getPage={(ex) => ex?.pageNumber ?? ex?.pageStart}
+      getBadges={(ex) => {
+        if (typeof ex === "string") return [];
+        return [
+          ex?.isAbsolute ? {
+            label: "Absolute",
+            className: "bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400",
+          } : {
+            label: "Limited",
+            className: "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400",
+          },
+          ex?.buybackAvailable ? {
+            label: "Buyback Available",
+            className: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400",
+          } : undefined,
+        ].filter(Boolean) as { label: string; className: string }[];
+      }}
+      renderBody={(ex) => {
+        if (typeof ex === "string") {
+          return <StructuredRawText content={ex} />;
+        }
+
+        return (
+          <>
+            <StructuredFieldGrid
+              fields={[
+                { label: "Name", value: ex?.name },
+                { label: "Form Number", value: ex?.formNumber },
+                { label: "Excluded Perils", value: ex?.excludedPerils },
+                { label: "Applies To", value: ex?.appliesTo },
+                { label: "Exceptions", value: ex?.exceptions },
+                { label: "Absolute Exclusion", value: formatBooleanValue(ex?.isAbsolute) },
+                { label: "Buyback Available", value: formatBooleanValue(ex?.buybackAvailable) },
+                { label: "Buyback Endorsement", value: ex?.buybackEndorsement },
+              ]}
+            />
+            <StructuredRawText content={ex?.content} />
+            <StructuredJsonDetails item={ex} />
+          </>
+        );
+      }}
+    />
+  );
+}
+
+function formatStructuredLabel(value?: string | null) {
+  if (!value) return null;
+  return value
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function formatBooleanValue(value: unknown) {
+  return typeof value === "boolean" ? (value ? "Yes" : "No") : null;
+}
+
+function normalizeStructuredValue(value: unknown): string[] | string | null {
+  if (value == null) return null;
+  if (Array.isArray(value)) {
+    const items = value
+      .flatMap((item) => {
+        if (item == null) return [];
+        if (typeof item === "string") return [item];
+        if (typeof item === "number" || typeof item === "boolean") return [String(item)];
+        return [JSON.stringify(item)];
+      })
+      .filter(Boolean);
+    return items.length > 0 ? items : null;
+  }
+  if (typeof value === "string") return value.trim() ? value : null;
+  if (typeof value === "number") return String(value);
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  return JSON.stringify(value, null, 2);
+}
+
+function StructuredFieldGrid({
+  fields,
+}: {
+  fields: { label: string; value: unknown }[];
+}) {
+  const visibleFields = fields
+    .map((field) => ({
+      label: field.label,
+      value: normalizeStructuredValue(field.value),
+    }))
+    .filter((field) => field.value !== null);
+
+  if (visibleFields.length === 0) return null;
 
   return (
-    <div id="section-exclusions" className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
-      <div className="px-4 py-2.5 bg-foreground/[0.02] border-b border-foreground/4">
-        <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">
-          Exclusions ({exclusions.length})
-        </p>
-      </div>
-      <ul className="divide-y divide-foreground/4">
-        {exclusions.map((ex, i) => {
-          const text = typeof ex === "string" ? ex : ((ex as any)?.content ?? (ex as any)?.title ?? "");
-          const page = typeof ex === "object" ? (ex as any)?.pageNumber ?? (ex as any)?.pageStart : undefined;
-          return (
-            <li key={i} className="flex items-start gap-2 px-4 py-2 text-body-sm text-foreground leading-relaxed hover:bg-foreground/[0.01] transition-colors">
-              <span className="text-muted-foreground/40 font-mono text-label-sm mt-0.5 shrink-0 w-5 text-right">{i + 1}.</span>
-              <span className="flex-1 min-w-0">{text}</span>
-              {page != null && <PageRef page={page} />}
-            </li>
-          );
-        })}
-      </ul>
+    <div className="grid gap-3 sm:grid-cols-2">
+      {visibleFields.map((field) => (
+        <div key={field.label} className="rounded-md border border-foreground/6 bg-foreground/[0.015] px-3 py-2">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+            {field.label}
+          </p>
+          {Array.isArray(field.value) ? (
+            <div className="mt-1 flex flex-wrap gap-1.5">
+              {field.value.map((item) => (
+                <span
+                  key={item}
+                  className="inline-flex rounded-full bg-white/80 px-2 py-0.5 text-label-sm text-foreground dark:bg-white/[0.06]"
+                >
+                  {item}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-1 text-body-sm text-foreground whitespace-pre-wrap break-words">
+              {field.value}
+            </p>
+          )}
+        </div>
+      ))}
     </div>
   );
 }
 
-function CollapsibleListCard({ id, title, items, getTitle, getContent, getPage, getBadge }: {
+function StructuredRawText({ content }: { content?: string | null }) {
+  if (!content?.trim()) return null;
+
+  return (
+    <details className="group/raw rounded-md border border-foreground/6 bg-foreground/[0.015]">
+      <summary className="flex items-center gap-2 px-3 py-2 text-label-sm text-muted-foreground/70 cursor-pointer hover:text-muted-foreground transition-colors select-none [&::-webkit-details-marker]:hidden [&::marker]:hidden list-none">
+        <ChevronRight className="w-3.5 h-3.5 shrink-0 transition-transform duration-200 group-open/raw:rotate-90" />
+        Source text
+      </summary>
+      <div className="border-t border-foreground/6 px-3 py-3">
+        <p className="text-body-sm text-foreground whitespace-pre-wrap leading-relaxed">
+          {content}
+        </p>
+      </div>
+    </details>
+  );
+}
+
+function StructuredJsonDetails({ item }: { item: unknown }) {
+  if (!item || typeof item !== "object") return null;
+
+  return (
+    <details className="group/json rounded-md border border-foreground/6 bg-foreground/[0.015]">
+      <summary className="flex items-center gap-2 px-3 py-2 text-label-sm text-muted-foreground/70 cursor-pointer hover:text-muted-foreground transition-colors select-none [&::-webkit-details-marker]:hidden [&::marker]:hidden list-none">
+        <ChevronRight className="w-3.5 h-3.5 shrink-0 transition-transform duration-200 group-open/json:rotate-90" />
+        Extracted object
+      </summary>
+      <div className="border-t border-foreground/6 px-3 py-3">
+        <pre className="overflow-x-auto text-label-sm text-foreground whitespace-pre-wrap break-words">
+          {JSON.stringify(item, null, 2)}
+        </pre>
+      </div>
+    </details>
+  );
+}
+
+function StructuredItemsCard({ id, title, items, getTitle, getPage, getBadges, renderBody }: {
   id: string;
   title: string;
   items: any[];
   getTitle: (item: any) => string;
-  getContent: (item: any) => string;
   getPage?: (item: any) => number | undefined;
-  getBadge?: (item: any) => { label: string; className: string } | undefined;
+  getBadges?: (item: any) => { label: string; className: string }[];
+  renderBody: (item: any) => React.ReactNode;
 }) {
-  if (!items?.length) return null;
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  if (!items?.length) return null;
   const toggle = (i: number) => setExpanded((prev) => {
     const next = new Set(prev);
     next.has(i) ? next.delete(i) : next.add(i);
@@ -536,7 +680,7 @@ function CollapsibleListCard({ id, title, items, getTitle, getContent, getPage, 
         </p>
       </div>
       {items.map((item, i) => {
-        const badge = getBadge?.(item);
+        const badges = getBadges?.(item) ?? [];
         const page = getPage?.(item);
         return (
           <div key={i} className="border-t border-foreground/4 first:border-t-0">
@@ -553,18 +697,29 @@ function CollapsibleListCard({ id, title, items, getTitle, getContent, getPage, 
               <span className="text-body-sm font-medium text-foreground flex-1 min-w-0 truncate">
                 {getTitle(item)}
               </span>
-              {badge && (
-                <span className={`shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${badge.className}`}>
-                  {badge.label}
-                </span>
+              {badges.length > 0 && (
+                <div className="hidden md:flex items-center gap-1.5 shrink-0">
+                  {badges.map((badge) => (
+                    <span key={badge.label} className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${badge.className}`}>
+                      {badge.label}
+                    </span>
+                  ))}
+                </div>
               )}
               {page != null && <PageRef page={page} />}
             </button>
             {expanded.has(i) && (
-              <div className="px-4 pb-3 pl-10">
-                <p className="text-body-sm text-foreground whitespace-pre-wrap leading-relaxed">
-                  {getContent(item)}
-                </p>
+              <div className="space-y-3 px-4 pb-3 pl-10">
+                {badges.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 md:hidden">
+                    {badges.map((badge) => (
+                      <span key={badge.label} className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${badge.className}`}>
+                        {badge.label}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {renderBody(item)}
               </div>
             )}
           </div>
@@ -589,11 +744,14 @@ const EXTRACTION_STATUS_CONFIG: Record<string, { label: string; color: string }>
 function ExtractionTab({ policy }: { policy: any }) {
   const retryExtraction = useAction(api.actions.retryExtraction.retryExtraction);
   const [runningMode, setRunningMode] = useState<string | null>(null);
+  const [copiedBlock, setCopiedBlock] = useState<"rawExtraction" | "rawMetadata" | null>(null);
 
   const extractionLog: { timestamp: number; message: string }[] = policy.extractionLog ?? [];
   const statusCfg = EXTRACTION_STATUS_CONFIG[policy.extractionStatus] ?? EXTRACTION_STATUS_CONFIG.pending;
   const rawMetadata: string | undefined = policy.rawMetadataResponse;
   const rawExtraction: string | undefined = policy.rawExtractionResponse;
+  const formattedRawMetadata = useMemo(() => formatJsonForDisplay(rawMetadata), [rawMetadata]);
+  const formattedRawExtraction = useMemo(() => formatJsonForDisplay(rawExtraction), [rawExtraction]);
   const hasDocument = !!(policy as any).document;
 
   const handleRetry = async (mode: "reparse" | "full") => {
@@ -610,6 +768,17 @@ function ExtractionTab({ policy }: { policy: any }) {
     } finally {
       setRunningMode(null);
     }
+  };
+
+  const handleCopyBlock = async (
+    block: "rawExtraction" | "rawMetadata",
+    content: string | null,
+  ) => {
+    if (!content) return;
+    await navigator.clipboard.writeText(content);
+    setCopiedBlock(block);
+    toast.success(`${block === "rawExtraction" ? "Raw extraction" : "Raw metadata"} copied`);
+    window.setTimeout(() => setCopiedBlock((current) => (current === block ? null : current)), 1200);
   };
 
   return (
@@ -684,12 +853,22 @@ function ExtractionTab({ policy }: { policy: any }) {
             <details className="group/raw">
               <summary className="flex items-center gap-2 px-4 py-2.5 text-body-sm text-muted-foreground cursor-pointer hover:bg-foreground/[0.015] transition-colors select-none [&::-webkit-details-marker]:hidden [&::marker]:hidden list-none">
                 <ChevronRight className="w-3.5 h-3.5 shrink-0 transition-transform duration-200 group-open/raw:rotate-90" />
-                Raw extraction response ({(rawExtraction.length / 1024).toFixed(1)} KB)
+                <span className="flex-1">Raw extraction response ({(rawExtraction.length / 1024).toFixed(1)} KB)</span>
+                <span
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    void handleCopyBlock("rawExtraction", formattedRawExtraction);
+                  }}
+                >
+                  <PillButton size="compact" variant="icon" label="Copy JSON">
+                    {copiedBlock === "rawExtraction" ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                  </PillButton>
+                </span>
               </summary>
-              <div className="px-4 pb-3 max-h-64 overflow-y-auto">
-                <pre className="text-[11px] font-mono text-muted-foreground whitespace-pre-wrap break-all leading-relaxed">
-                  {rawExtraction.slice(0, 5000)}
-                  {rawExtraction.length > 5000 && "\n\n... truncated ..."}
+              <div className="px-4 pb-3 max-h-[32rem] overflow-y-auto overflow-x-hidden">
+                <pre className="text-[11px] font-mono text-muted-foreground whitespace-pre-wrap break-words leading-relaxed">
+                  {formattedRawExtraction}
                 </pre>
               </div>
             </details>
@@ -698,12 +877,22 @@ function ExtractionTab({ policy }: { policy: any }) {
             <details className="group/rawmeta border-t border-foreground/4">
               <summary className="flex items-center gap-2 px-4 py-2.5 text-body-sm text-muted-foreground cursor-pointer hover:bg-foreground/[0.015] transition-colors select-none [&::-webkit-details-marker]:hidden [&::marker]:hidden list-none">
                 <ChevronRight className="w-3.5 h-3.5 shrink-0 transition-transform duration-200 group-open/rawmeta:rotate-90" />
-                Raw metadata response ({(rawMetadata.length / 1024).toFixed(1)} KB)
+                <span className="flex-1">Raw metadata response ({(rawMetadata.length / 1024).toFixed(1)} KB)</span>
+                <span
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    void handleCopyBlock("rawMetadata", formattedRawMetadata);
+                  }}
+                >
+                  <PillButton size="compact" variant="icon" label="Copy JSON">
+                    {copiedBlock === "rawMetadata" ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                  </PillButton>
+                </span>
               </summary>
-              <div className="px-4 pb-3 max-h-64 overflow-y-auto">
-                <pre className="text-[11px] font-mono text-muted-foreground whitespace-pre-wrap break-all leading-relaxed">
-                  {rawMetadata.slice(0, 5000)}
-                  {rawMetadata.length > 5000 && "\n\n... truncated ..."}
+              <div className="px-4 pb-3 max-h-[32rem] overflow-y-auto overflow-x-hidden">
+                <pre className="text-[11px] font-mono text-muted-foreground whitespace-pre-wrap break-words leading-relaxed">
+                  {formattedRawMetadata}
                 </pre>
               </div>
             </details>
@@ -1900,13 +2089,29 @@ export default function PolicyDetailPage({
                 {policyDocument?.conditions?.length > 0 && (
                   <FadeIn when={true} delay={0.9} duration={0.6}>
                     <div className="mb-6">
-                      <CollapsibleListCard
+                      <StructuredItemsCard
                         id="section-conditions"
                         title="Conditions"
                         items={policyDocument.conditions}
-                        getTitle={(c) => c.title}
-                        getContent={(c) => c.content}
+                        getTitle={(c) => c.name ?? c.title ?? "Unnamed condition"}
                         getPage={(c) => c.pageNumber}
+                        getBadges={(c) => c?.conditionType ? [{
+                          label: formatStructuredLabel(c.conditionType) ?? c.conditionType,
+                          className: "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400",
+                        }] : []}
+                        renderBody={(c) => (
+                          <>
+                            <StructuredFieldGrid
+                              fields={[
+                                { label: "Name", value: c?.name },
+                                { label: "Condition Type", value: formatStructuredLabel(c?.conditionType) },
+                                { label: "Structured Terms", value: c?.keyValues?.map((entry: any) => `${entry.key}: ${entry.value}`) },
+                              ]}
+                            />
+                            <StructuredRawText content={c?.content} />
+                            <StructuredJsonDetails item={c} />
+                          </>
+                        )}
                       />
                     </div>
                   </FadeIn>
@@ -1916,19 +2121,54 @@ export default function PolicyDetailPage({
                 {policyDocument?.endorsements?.length > 0 && (
                   <FadeIn when={true} delay={0.95} duration={0.6}>
                     <div className="mb-6">
-                      <CollapsibleListCard
+                      <StructuredItemsCard
                         id="section-endorsements"
                         title="Endorsements"
                         items={policyDocument.endorsements}
-                        getTitle={(e) => e.title}
-                        getContent={(e) => e.content}
+                        getTitle={(e) => e.title ?? e.name ?? e.formNumber ?? "Unnamed endorsement"}
                         getPage={(e) => e.pageStart}
-                        getBadge={(e) => e.effectType ? {
-                          label: e.effectType,
-                          className: e.effectType === "restricts" ? "bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400"
-                            : e.effectType === "broadens" ? "bg-green-50 text-green-600 dark:bg-green-950/40 dark:text-green-400"
-                            : "bg-foreground/5 text-muted-foreground"
-                        } : undefined}
+                        getBadges={(e) => [
+                          e?.endorsementType ? {
+                            label: formatStructuredLabel(e.endorsementType) ?? e.endorsementType,
+                            className:
+                              e.endorsementType === "restriction" || e.endorsementType === "exclusion"
+                                ? "bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400"
+                                : e.endorsementType === "broadening"
+                                  ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"
+                                  : "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400",
+                          } : undefined,
+                          e?.effectiveDate ? {
+                            label: `Eff. ${e.effectiveDate}`,
+                            className: "bg-foreground/5 text-muted-foreground",
+                          } : undefined,
+                        ].filter(Boolean) as { label: string; className: string }[]}
+                        renderBody={(e) => (
+                          <>
+                            <StructuredFieldGrid
+                              fields={[
+                                { label: "Title", value: e?.title },
+                                { label: "Form Number", value: e?.formNumber },
+                                { label: "Edition Date", value: e?.editionDate },
+                                { label: "Effective Date", value: e?.effectiveDate },
+                                { label: "Endorsement Type", value: formatStructuredLabel(e?.endorsementType) },
+                                { label: "Affected Coverage Parts", value: e?.affectedCoverageParts },
+                                {
+                                  label: "Named Parties",
+                                  value: e?.namedParties?.map((party: any) => {
+                                    const role = formatStructuredLabel(party.role);
+                                    const relationship = party.relationship ? ` (${party.relationship})` : "";
+                                    const scope = party.scope ? ` - ${party.scope}` : "";
+                                    return `${party.name}${role ? ` [${role}]` : ""}${relationship}${scope}`;
+                                  }),
+                                },
+                                { label: "Key Terms", value: e?.keyTerms },
+                                { label: "Premium Impact", value: e?.premiumImpact },
+                              ]}
+                            />
+                            <StructuredRawText content={e?.content} />
+                            <StructuredJsonDetails item={e} />
+                          </>
+                        )}
                       />
                     </div>
                   </FadeIn>

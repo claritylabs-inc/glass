@@ -3,7 +3,9 @@
 import { useRef, useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import dayjs from "dayjs";
-import { Terminal } from "lucide-react";
+import { Terminal, Copy, Check } from "lucide-react";
+import { toast } from "sonner";
+import { PillButton } from "@/components/ui/pill-button";
 
 interface LogEntry {
   timestamp: number;
@@ -28,6 +30,18 @@ export function TerminalLog({
   const scrollRef = useRef<HTMLDivElement>(null);
   const prevLengthRef = useRef(0);
   const [now, setNow] = useState(() => dayjs().valueOf());
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    const text = entries
+      .map((entry) => `[${dayjs(entry.timestamp).format("YYYY-MM-DD HH:mm:ss")}] ${entry.message}`)
+      .join("\n");
+
+    await navigator.clipboard.writeText(text);
+    setCopied(true);
+    toast.success("Extraction log copied");
+    window.setTimeout(() => setCopied(false), 1200);
+  };
 
   useEffect(() => {
     if (entries.length > prevLengthRef.current && scrollRef.current) {
@@ -56,6 +70,11 @@ export function TerminalLog({
         <div className="flex items-center gap-2 px-3 py-1.5 border-b border-foreground/6 bg-foreground/[0.02]">
           <Terminal className="w-3 h-3 text-muted-foreground/40" />
           <span className="text-xs font-medium text-muted-foreground/50 font-mono">{title}</span>
+          <div className="ml-auto">
+            <PillButton size="compact" variant="icon" onClick={handleCopy} label="Copy log">
+              {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+            </PillButton>
+          </div>
         </div>
         <div className="px-4 py-6 text-center">
           <p className="text-label-sm text-muted-foreground/50 font-mono">{emptyMessage}</p>
@@ -74,8 +93,11 @@ export function TerminalLog({
       <div className="flex items-center gap-2 px-3 py-1.5 border-b border-foreground/6 bg-foreground/[0.02]">
         <Terminal className="w-3 h-3 text-muted-foreground/40" />
         <span className="text-xs font-medium text-muted-foreground/50 font-mono">{title}</span>
+        <PillButton size="compact" variant="icon" onClick={handleCopy} label="Copy log" className="ml-auto">
+          {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+        </PillButton>
         {live && (
-          <span className="ml-auto flex items-center gap-1.5">
+          <span className="flex items-center gap-1.5">
             <span className="relative flex h-1.5 w-1.5">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
               <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" />
