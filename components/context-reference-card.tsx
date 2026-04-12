@@ -50,7 +50,7 @@ function PolicyReferenceCard({ id, page }: { id: string; page?: number }) {
     );
   }
 
-  const carrier = policy.carrier ?? "Unknown carrier";
+  const carrier = policy.security || policy.carrier || "Unknown carrier";
   const policyNum = policy.policyNumber;
   const types = policy.policyTypes ?? (policy.policyType ? [policy.policyType] : []);
   const isQuoteDoc = policy.documentType === "quote";
@@ -59,34 +59,36 @@ function PolicyReferenceCard({ id, page }: { id: string; page?: number }) {
     <button
       type="button"
       onClick={() => openPreview({ type: "policy", id, page })}
-      className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-foreground/8 bg-white/80 dark:bg-white/[0.06] hover:bg-foreground/[0.02] hover:border-foreground/12 transition-colors cursor-pointer text-left group max-w-[320px] shrink-0"
+      className="flex items-start gap-2.5 px-3 py-2.5 rounded-lg border border-foreground/8 bg-white/80 dark:bg-white/[0.06] hover:bg-foreground/[0.03] hover:border-foreground/12 transition-colors cursor-pointer text-left group w-[260px] shrink-0"
     >
-      <div className="w-8 h-8 rounded-md bg-foreground/[0.04] flex items-center justify-center shrink-0">
+      <div className="w-7 h-7 rounded-md bg-foreground/[0.04] flex items-center justify-center shrink-0 mt-0.5">
         {isQuoteDoc ? (
-          <ClipboardList className="w-4 h-4 text-muted-foreground/50" />
+          <ClipboardList className="w-3.5 h-3.5 text-muted-foreground/40" />
         ) : (
-          <FileText className="w-4 h-4 text-muted-foreground/50" />
+          <FileText className="w-3.5 h-3.5 text-muted-foreground/40" />
         )}
       </div>
-      <div className="min-w-0 flex-1">
-        <p className="text-body-sm font-medium text-foreground truncate !my-0">
+      <div className="min-w-0 flex-1 space-y-0.5">
+        <p className="text-[13px] font-medium text-foreground leading-tight truncate !my-0">
           {carrier}
         </p>
-        <div className="flex items-center gap-1.5 !my-0">
-          {policyNum && (
-            <span className="text-[11px] text-muted-foreground/50 truncate">{policyNum}</span>
-          )}
-          {types.length > 0 && policyNum && (
-            <span className="text-muted-foreground/20">·</span>
-          )}
-          {types.slice(0, 2).map((t) => (
-            <span key={t} className="text-[10px] text-muted-foreground/50">
-              {POLICY_TYPE_LABELS[t] ?? t}
-            </span>
-          ))}
-        </div>
+        <p className="text-[11px] text-muted-foreground/50 truncate !my-0">
+          #{policyNum}
+        </p>
+        {types.length > 0 && (
+          <div className="flex flex-wrap gap-1 pt-0.5 !my-0">
+            {types.slice(0, 3).map((t) => (
+              <span
+                key={t}
+                className="inline-block px-1.5 py-px rounded text-[10px] text-muted-foreground/60 bg-foreground/[0.04] leading-tight"
+              >
+                {POLICY_TYPE_LABELS[t] ?? t}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
-      <ArrowRight className="w-3.5 h-3.5 text-muted-foreground/20 group-hover:text-muted-foreground/50 transition-colors shrink-0" />
+      <ArrowRight className="w-3.5 h-3.5 text-muted-foreground/15 group-hover:text-muted-foreground/40 transition-colors shrink-0 mt-1" />
     </button>
   );
 }
@@ -103,7 +105,7 @@ function QuoteReferenceCard({ id, page }: { id: string; page?: number }) {
     );
   }
 
-  const carrier = quote.carrier ?? "Unknown carrier";
+  const carrier = quote.security || quote.carrier || "Unknown carrier";
   const quoteNum = (quote as any).quoteNumber ?? quote.policyNumber;
   const types = quote.policyTypes ?? [];
 
@@ -111,30 +113,32 @@ function QuoteReferenceCard({ id, page }: { id: string; page?: number }) {
     <button
       type="button"
       onClick={() => openPreview({ type: "quote", id, page })}
-      className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-foreground/8 bg-white/80 dark:bg-white/[0.06] hover:bg-foreground/[0.02] hover:border-foreground/12 transition-colors cursor-pointer text-left group max-w-[320px] shrink-0"
+      className="flex items-start gap-2.5 px-3 py-2.5 rounded-lg border border-foreground/8 bg-white/80 dark:bg-white/[0.06] hover:bg-foreground/[0.03] hover:border-foreground/12 transition-colors cursor-pointer text-left group w-[260px] shrink-0"
     >
-      <div className="w-8 h-8 rounded-md bg-foreground/[0.04] flex items-center justify-center shrink-0">
-        <ClipboardList className="w-4 h-4 text-muted-foreground/50" />
+      <div className="w-7 h-7 rounded-md bg-foreground/[0.04] flex items-center justify-center shrink-0 mt-0.5">
+        <ClipboardList className="w-3.5 h-3.5 text-muted-foreground/40" />
       </div>
-      <div className="min-w-0 flex-1">
-        <p className="text-body-sm font-medium text-foreground truncate !my-0">
+      <div className="min-w-0 flex-1 space-y-0.5">
+        <p className="text-[13px] font-medium text-foreground leading-tight truncate !my-0">
           {carrier}
         </p>
-        <div className="flex items-center gap-1.5 !my-0">
-          {quoteNum && (
-            <span className="text-[11px] text-muted-foreground/50 truncate">{quoteNum}</span>
-          )}
-          {types.length > 0 && quoteNum && (
-            <span className="text-muted-foreground/20">·</span>
-          )}
-          {types.slice(0, 2).map((t) => (
-            <span key={t} className="text-[10px] text-muted-foreground/50">
-              {POLICY_TYPE_LABELS[t] ?? t}
-            </span>
-          ))}
-        </div>
+        <p className="text-[11px] text-muted-foreground/50 truncate !my-0">
+          #{quoteNum}
+        </p>
+        {types.length > 0 && (
+          <div className="flex flex-wrap gap-1 pt-0.5 !my-0">
+            {types.slice(0, 3).map((t) => (
+              <span
+                key={t}
+                className="inline-block px-1.5 py-px rounded text-[10px] text-muted-foreground/60 bg-foreground/[0.04] leading-tight"
+              >
+                {POLICY_TYPE_LABELS[t] ?? t}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
-      <ArrowRight className="w-3.5 h-3.5 text-muted-foreground/20 group-hover:text-muted-foreground/50 transition-colors shrink-0" />
+      <ArrowRight className="w-3.5 h-3.5 text-muted-foreground/15 group-hover:text-muted-foreground/40 transition-colors shrink-0 mt-1" />
     </button>
   );
 }
@@ -169,10 +173,8 @@ export function ReferenceCardStrip({ refs }: { refs: { type: "policy" | "quote";
   if (refs.length === 0) return null;
 
   return (
-    <div
-      className="flex gap-2 overflow-x-auto scrollbar-hide mt-2 ml-9 -mx-2 px-2"
-      style={{ maskImage: "linear-gradient(to right, transparent, black 16px, black calc(100% - 24px), transparent)", WebkitMaskImage: "linear-gradient(to right, transparent, black 16px, black calc(100% - 24px), transparent)" }}
-    >
+    <div className="flex gap-2 flex-wrap mt-2 ml-[38px]">
+
       {refs.map((ref) =>
         ref.type === "quote" ? (
           <QuoteReferenceCard key={`${ref.type}:${ref.id}`} id={ref.id} page={ref.page} />
