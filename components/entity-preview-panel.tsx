@@ -71,10 +71,8 @@ function DocSection({
         />
       </button>
       {open && (
-        <div className="px-3 pb-3 border-t border-foreground/4">
-          <p className="text-body-sm text-foreground/80 leading-relaxed whitespace-pre-wrap pt-2.5">
-            {content}
-          </p>
+        <div className="px-3 pb-3 border-t border-foreground/4 pt-2.5">
+          <FormattedSectionContent content={content} />
         </div>
       )}
     </div>
@@ -479,6 +477,89 @@ function ShowAllSections({
 }
 
 /* ── Helpers ── */
+/**
+ * Renders section content with auto-detection of pipe-delimited tables.
+ * Lines with 2+ pipe characters are grouped into tables; everything else is plain text.
+ */
+function FormattedSectionContent({ content }: { content: string }) {
+  const lines = content.split("\n");
+  const blocks: Array<{ type: "text"; lines: string[] } | { type: "table"; rows: string[][] }> = [];
+
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    // Detect pipe-delimited rows (at least 2 pipes, not just a single pipe in prose)
+    if ((line.match(/\|/g) || []).length >= 2) {
+      // Start collecting table rows
+      const rows: string[][] = [];
+      while (i < lines.length && (lines[i].match(/\|/g) || []).length >= 2) {
+        const cells = lines[i].split("|").map((c) => c.trim()).filter((c) => c.length > 0);
+        if (cells.length > 0) rows.push(cells);
+        i++;
+      }
+      if (rows.length > 0) blocks.push({ type: "table", rows });
+    } else {
+      // Collect text lines
+      const textLines: string[] = [];
+      while (i < lines.length && (lines[i].match(/\|/g) || []).length < 2) {
+        textLines.push(lines[i]);
+        i++;
+      }
+      if (textLines.some((l) => l.trim().length > 0)) {
+        blocks.push({ type: "text", lines: textLines });
+      }
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      {blocks.map((block, bi) => {
+        if (block.type === "text") {
+          return (
+            <p key={bi} className="text-body-sm text-foreground/80 leading-relaxed whitespace-pre-wrap">
+              {block.lines.join("\n")}
+            </p>
+          );
+        }
+        // Table block
+        const isFirstRowHeader = block.rows.length > 1 && block.rows[0].every((c) => c === c.toUpperCase() && c.length > 1);
+        const headerRow = isFirstRowHeader ? block.rows[0] : null;
+        const dataRows = isFirstRowHeader ? block.rows.slice(1) : block.rows;
+        const colCount = Math.max(...block.rows.map((r) => r.length));
+
+        return (
+          <div key={bi} className="overflow-x-auto rounded border border-foreground/6">
+            <table className="w-full text-body-sm">
+              {headerRow && (
+                <thead>
+                  <tr className="border-b border-foreground/8 bg-foreground/[0.03]">
+                    {headerRow.map((cell, ci) => (
+                      <th key={ci} className="px-2.5 py-1.5 text-left text-label-sm font-medium text-muted-foreground/60 whitespace-nowrap">
+                        {cell}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+              )}
+              <tbody>
+                {dataRows.map((row, ri) => (
+                  <tr key={ri} className={ri < dataRows.length - 1 ? "border-b border-foreground/4" : ""}>
+                    {Array.from({ length: colCount }, (_, ci) => (
+                      <td key={ci} className="px-2.5 py-1.5 text-foreground/80 whitespace-nowrap">
+                        {row[ci] ?? ""}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function buildSectionContent(s: any): string {
   let content = s.content ?? "";
   if (s.subsections?.length) {
