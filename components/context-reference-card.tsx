@@ -155,7 +155,7 @@ export function ContextReferenceCard({
 
   if (!match) {
     return (
-      <a href={href} className="text-blue-600 underline" target="_blank" rel="noopener noreferrer">
+      <a href={href} className="text-[#A0D2FA] underline" target="_blank" rel="noopener noreferrer">
         {children}
       </a>
     );
