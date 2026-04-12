@@ -362,6 +362,8 @@ export default defineSchema({
       editionDate: v.optional(v.string()),
       title: v.optional(v.string()),
       formType: v.string(), // coverage, endorsement, declarations, application, notice, other
+      pageStart: v.optional(v.number()),
+      pageEnd: v.optional(v.number()),
     }))),
     taxesAndFees: v.optional(v.array(v.object({
       name: v.string(),
@@ -381,11 +383,15 @@ export default defineSchema({
     coverages: v.array(
       v.object({
         name: v.string(),
+        coverageCode: v.optional(v.string()),
         limit: v.optional(v.string()),
+        limitValueType: v.optional(v.string()),
         deductible: v.optional(v.string()),
+        deductibleValueType: v.optional(v.string()),
         formNumber: v.optional(v.string()),
         pageNumber: v.optional(v.number()),
         sectionRef: v.optional(v.string()),
+        originalContent: v.optional(v.string()),
       })
     ),
     premium: v.optional(v.string()),

@@ -28,7 +28,7 @@ Core layers:
 - Frontend: Next.js 16 App Router, React 19, Tailwind 4
 - Backend: Convex queries, mutations, actions, scheduler, file storage, vector search
 - AI runtime: Vercel AI SDK (`ai`)
-- Extraction and prompts: `@claritylabs/cl-sdk@0.9.x`
+- Extraction and prompts: `@claritylabs/cl-sdk@0.10.x`
 - Providers: OpenAI, MoonshotAI, Anthropic
 - Email: IMAP scanning via `imapflow`, outbound/inbound flows via Resend
 
@@ -59,7 +59,7 @@ The Prism-specific `cl-sdk` wiring lives under `convex/lib/`.
 
 ### Callback Contract
 
-`cl-sdk v0.9` passes document content through callback `providerOptions`.
+`cl-sdk v0.10` passes document content through callback `providerOptions`.
 
 - `providerOptions.pdfBase64` carries the PDF for classification, planning, review, and page-scoped extraction calls.
 - `providerOptions.images` carries page images when PDF-to-image conversion is used.
