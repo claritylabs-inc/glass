@@ -7,8 +7,7 @@
  * simple callback interfaces the new SDK expects: GenerateText, GenerateObject, EmbedText.
  */
 
-import { generateText, embed } from "ai";
-import { stripFences } from "@claritylabs/cl-sdk";
+import { generateText, Output, embed } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import { getModel, type ModelTask } from "./models";
 import type { GenerateText, GenerateObject, EmbedText, TokenUsage } from "@claritylabs/cl-sdk";
@@ -42,35 +41,20 @@ export function makeGenerateText(task: ModelTask = "extraction"): GenerateText {
 
 /**
  * Create a GenerateObject callback backed by Prism's model router.
- *
- * Uses text generation + JSON parsing instead of Output.object() structured output.
- * Output.object() forces the provider to compile Zod schemas into constrained grammars,
- * which times out on complex insurance schemas (coverage_limits, endorsements, declarations)
- * causing "Grammar compilation timed out" errors and incomplete extractions.
- *
- * The cl-sdk prompts already instruct the model to return JSON — the Zod schema
- * validates the response, it doesn't need to constrain generation.
+ * Uses AI SDK v6's generateText + Output.object() for structured output.
  */
 export function makeGenerateObject(task: ModelTask = "extraction"): GenerateObject {
   return async ({ prompt, system, schema, maxTokens, providerOptions }) => {
-    const jsonSystem = system
-      ? `${system}\n\nRespond with valid JSON only. No markdown fences, no prose before or after.`
-      : "Respond with valid JSON only. No markdown fences, no prose before or after.";
-
     const result = await generateText({
       model: getModel(task),
-      system: jsonSystem,
+      system,
       prompt,
+      output: Output.object({ schema }),
       maxOutputTokens: maxTokens,
       providerOptions: providerOptions as any,
     });
-
-    const cleaned = stripFences(result.text).trim();
-    const parsed = JSON.parse(cleaned);
-    const validated = schema.parse(parsed);
-
     return {
-      object: validated,
+      object: result.output!,
       usage: mapUsage(result.usage),
     };
   };
