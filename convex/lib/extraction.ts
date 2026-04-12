@@ -1,54 +1,51 @@
-export {
-  createUniformModelConfig,
-  stripFences,
-  sanitizeNulls,
-  applyExtracted,
-  applyExtractedQuote,
-  mergeChunkedSections,
-  mergeChunkedQuoteSections,
-  getPageChunks,
-  enrichSupplementaryFields,
-  classifyDocumentType,
-  extractFromPdf,
-  extractSectionsOnly,
-  extractQuoteFromPdf,
-  extractPageRange,
-  getPdfPageCount,
-  POLICY_TYPES,
-  CONTEXT_KEY_MAP,
-} from "@claritylabs/cl-sdk";
-
-export type { LogFn, PromptBuilder, PolicyType, ContextKeyMapping, TokenUsage, ModelConfig, PdfContentFormat, ConvertPdfToImagesFn, TokenLimits } from "@claritylabs/cl-sdk";
+"use node";
 
 /**
- * Prism's token limit overrides — more generous than cl-sdk defaults
- * to handle complex commercial policies with many coverages/schedules.
+ * Extraction pipeline — cl-sdk v0.5.0
+ *
+ * Replaces the old multi-pass extraction (classifyDocumentType → extractFromPdf/extractQuoteFromPdf → applyExtracted)
+ * with the new coordinator/worker pipeline: createExtractor(config).extract(pdfBase64).
+ *
+ * The new SDK handles classification, extraction, and assembly internally.
+ * It returns a validated InsuranceDocument + retrieval-friendly DocumentChunks.
  */
-export const PRISM_TOKEN_LIMITS = {
-  classification: 1024,
-  metadata: 32768,
-  sections: 16384,
-  sectionsFallback: 32768,
-  enrichment: 8192,
-};
 
-import { getModel } from "./models";
-import type { ModelConfig } from "@claritylabs/cl-sdk";
+// ── Still exported from SDK ──
+export { stripFences, sanitizeNulls, extractPageRange, getPdfPageCount } from "@claritylabs/cl-sdk";
+export { POLICY_TYPES, CONTEXT_KEY_MAP } from "@claritylabs/cl-sdk";
+export { chunkDocument, createExtractor } from "@claritylabs/cl-sdk";
+
+// ── Types ──
+export type { LogFn, PolicyType, ContextKeyMapping, TokenUsage, ConvertPdfToImagesFn } from "@claritylabs/cl-sdk";
+export type { ExtractorConfig, ExtractionResult, InsuranceDocument, DocumentChunk } from "@claritylabs/cl-sdk";
+
+// ── Local re-exports ──
+export { insuranceDocToPolicy, policyToInsuranceDoc } from "./documentMapping";
+
+// ── Prism extraction factory ──
+import { createExtractor } from "@claritylabs/cl-sdk";
+import type { LogFn, TokenUsage } from "@claritylabs/cl-sdk";
+import { makeGenerateText, makeGenerateObject } from "./sdkCallbacks";
 
 /**
- * Build Prism's extraction ModelConfig using the centralized model router.
- * Classification + sections + enrichment → Haiku (fast)
- * Metadata + sectionsFallback → extraction model (Kimi K2.5 or Sonnet)
+ * Build an extractor pre-configured with Prism's model routing.
+ *
+ * The SDK's coordinator uses generateText for classification and planning,
+ * and generateObject for focused extraction workers. Prism routes both
+ * through its multi-model config (Sonnet for extraction, Haiku for classification).
  */
-export function buildExtractionModels(): ModelConfig {
-  const haiku = getModel("classification");   // Claude Haiku — fast, reads PDF
-  const sonnet = getModel("extraction");      // Claude Sonnet — quality, reads PDF
-  const kimi = getModel("analysis");          // Kimi K2.5 — no PDF via AI SDK, text-only
-  return {
-    classification: haiku,      // Pass 0: reads PDF file
-    metadata: sonnet,           // Pass 1: reads PDF file (needs quality for complex docs)
-    sections: haiku,            // Pass 2: reads PDF file (fast, chunked)
-    sectionsFallback: sonnet,   // Pass 2 fallback: quality retry when Haiku truncates
-    enrichment: kimi,           // Pass 3: text-only (receives extracted text, no PDF)
-  };
+export function buildExtractor(opts?: {
+  log?: LogFn;
+  onProgress?: (message: string) => void;
+  onTokenUsage?: (usage: TokenUsage) => void;
+}) {
+  return createExtractor({
+    generateText: makeGenerateText("extraction"),
+    generateObject: makeGenerateObject("extraction"),
+    concurrency: 2,
+    maxReviewRounds: 2,
+    log: opts?.log,
+    onProgress: opts?.onProgress,
+    onTokenUsage: opts?.onTokenUsage,
+  });
 }

@@ -6,10 +6,10 @@ import { internal } from "../_generated/api";
 import { streamText, generateText, type ModelMessage } from "ai";
 import { haikuModel } from "../lib/ai";
 import {
-  buildSystemPrompt,
   buildDocumentContext,
   buildConversationMemoryContext,
 } from "../lib/agentPrompts";
+import { buildSystemPromptForContext } from "../lib/aiUtils";
 
 export const run = internalAction({
   args: {
@@ -52,17 +52,12 @@ export const run = internalAction({
         process.env.SITE_URL ?? "https://prism.claritylabs.inc";
 
       // Build system prompt (reuse direct mode)
-      const systemPrompt = buildSystemPrompt(
-        "direct",
-        org.context,
-        siteUrl,
-        org.name,
+      const systemPrompt = buildSystemPromptForContext({
+        org,
+        mode: "direct",
         userName,
-        org.coiHandling as any,
-        org.insuranceBroker,
-        org.brokerContactName,
-        org.brokerContactEmail,
-      );
+        siteUrl,
+      });
 
       // Load chat messages for history
       const allMessages = await ctx.runQuery(
@@ -76,22 +71,17 @@ export const run = internalAction({
         .pop();
       const latestUserContent = latestUserMsg?.content ?? "";
 
-      // Build document context
-      const { context: docContext, relevantPolicyIds, relevantQuoteIds } = buildDocumentContext(
+      // Build document context (vector search with fallback)
+      const { context: docContext, relevantPolicyIds, relevantQuoteIds } = await buildDocumentContext(
+        ctx,
+        args.orgId,
         policies,
         [],
         latestUserContent,
       );
 
-      // Cross-thread conversation memory
-      const pastConversations = await ctx.runQuery(
-        internal.agentConversations.searchOrgConversations,
-        {
-          orgId: args.orgId,
-          queryText: latestUserContent,
-        },
-      );
-      const memoryContext = buildConversationMemoryContext(pastConversations);
+      // Cross-thread conversation memory (vector search)
+      const memoryContext = await buildConversationMemoryContext(ctx, args.orgId, latestUserContent);
 
       // Build message history (skip processing placeholders)
       const messageHistory: ModelMessage[] = [];

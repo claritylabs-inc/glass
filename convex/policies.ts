@@ -771,6 +771,36 @@ export const getInternal = internalQuery({
   },
 });
 
+// All complete, non-deleted policies+quotes for an org (used by DocumentStore)
+export const listByOrgInternal = internalQuery({
+  args: { orgId: v.id("organizations") },
+  handler: async (ctx, args) => {
+    return ctx.db
+      .query("policies")
+      .withIndex("by_orgId", (idx) => idx.eq("orgId", args.orgId))
+      .collect();
+  },
+});
+
+// Internal update extraction (no auth check — used by DocumentStore.save and extraction pipeline)
+export const updateExtractionInternal = internalMutation({
+  args: {
+    id: v.id("policies"),
+    fields: v.any(), // Accept any policy fields from insuranceDocToPolicy
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.id, args.fields);
+  },
+});
+
+// Internal soft delete (no auth check — used by DocumentStore.delete)
+export const softDeleteInternal = internalMutation({
+  args: { id: v.id("policies") },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.id, { deletedAt: Date.now() });
+  },
+});
+
 export const updateAnalysis = internalMutation({
   args: {
     id: v.id("policies"),

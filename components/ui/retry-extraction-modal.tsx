@@ -36,7 +36,7 @@ export function RetryExtractionModal({
   const [open, setOpen] = useState(false);
   const [running, setRunning] = useState(false);
 
-  const handleRetry = async (mode: "reparse" | "enrich_only" | "sections_only" | "full") => {
+  const handleRetry = async (mode: "reparse" | "full") => {
     setOpen(false);
     setRunning(true);
     try {
@@ -48,7 +48,7 @@ export function RetryExtractionModal({
   };
 
   const options: Array<{
-    mode: "reparse" | "enrich_only" | "sections_only" | "full";
+    mode: "reparse" | "full";
     icon: typeof FileText;
     title: string;
     description: string;
@@ -62,24 +62,10 @@ export function RetryExtractionModal({
       show: hasRawResponse,
     },
     {
-      mode: "enrich_only",
-      icon: Wand2,
-      title: "Enrich details only",
-      description: "Structure regulatory, complaint, fees, and claims fields from existing text.",
-      show: hasDocument,
-    },
-    {
-      mode: "sections_only",
-      icon: RotateCw,
-      title: "Re-extract sections",
-      description: "Re-run section extraction and enrichment, keeping existing metadata.",
-      show: hasRawMetadata,
-    },
-    {
       mode: "full",
       icon: Sparkles,
       title: "Full re-extraction",
-      description: "Re-download the PDF and re-run the entire extraction pipeline.",
+      description: "Re-run the entire extraction pipeline with the new coordinator/worker architecture.",
       show: true,
     },
   ];

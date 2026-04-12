@@ -13,14 +13,13 @@ import {
   saveNote,
   generateCoi,
 } from "../lib/chatTools";
-import { buildDocumentContext } from "../lib/agentPrompts";
+import { buildDocumentContext, buildConversationMemoryContext } from "../lib/agentPrompts";
 import {
   buildSystemPromptForContext,
   buildMessageHistory,
   buildSignature,
   stripMarkdown,
   markdownToHtml,
-  buildConversationMemoryContext,
   logAiError,
 } from "../lib/aiUtils";
 import { buildMemoryContext } from "../lib/orgMemoryContext";
@@ -297,22 +296,17 @@ export const run = internalAction({
         .pop();
       const latestUserContent = latestUserMsg?.content ?? "";
 
-      // Build document context
-      const { context: docContext, relevantPolicyIds, relevantQuoteIds } = buildDocumentContext(
+      // Build document context (vector search with fallback)
+      const { context: docContext, relevantPolicyIds, relevantQuoteIds } = await buildDocumentContext(
+        ctx,
+        args.orgId,
         policies,
         [],
         latestUserContent,
       );
 
-      // Cross-thread conversation memory
-      const pastConversations = await ctx.runQuery(
-        internal.agentConversations.searchOrgConversations,
-        {
-          orgId: args.orgId,
-          queryText: latestUserContent,
-        },
-      );
-      const memoryContext = buildConversationMemoryContext(pastConversations);
+      // Cross-thread conversation memory (vector search)
+      const memoryContext = await buildConversationMemoryContext(ctx, args.orgId, latestUserContent);
 
       // Load org memory
       const orgMemories = await ctx.runQuery(

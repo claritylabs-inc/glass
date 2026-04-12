@@ -1,7 +1,7 @@
 import type { ModelMessage } from "ai";
-import { buildSystemPrompt } from "@claritylabs/cl-sdk";
+import { buildAgentSystemPrompt, type AgentContext } from "@claritylabs/cl-sdk";
 
-export { buildConversationMemoryContext } from "@claritylabs/cl-sdk";
+export { buildConversationMemoryContext, buildConversationMemoryFromList, buildDocumentContext } from "./agentPrompts";
 
 /* ── Markdown processing ── */
 
@@ -92,17 +92,24 @@ export function buildSystemPromptForContext(params: {
     ? `<org_context>${org.context}</org_context>`
     : undefined;
 
-  return buildSystemPrompt(
-    mode,
-    safeContext,
+  // Map mode to intent
+  const intent = mode === "direct" ? "direct" : mode === "cc" ? "mediated" : "observed";
+
+  const agentCtx: AgentContext = {
+    platform: "email",
+    intent,
+    companyName: org.name,
+    companyContext: safeContext,
     siteUrl,
-    org.name,
     userName,
-    org.coiHandling as any,
-    org.insuranceBroker,
-    org.brokerContactName,
-    org.brokerContactEmail,
-  );
+    coiHandling: org.coiHandling as any,
+    brokerName: org.insuranceBroker,
+    brokerContactName: org.brokerContactName,
+    brokerContactEmail: org.brokerContactEmail,
+    agentName: "Prism",
+  };
+
+  return buildAgentSystemPrompt(agentCtx);
 }
 
 /* ── Structured error logging ── */

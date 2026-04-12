@@ -3,7 +3,8 @@
 import { v } from "convex/values";
 import { action } from "../_generated/server";
 import { api, internal } from "../_generated/api";
-import { applyExtracted, applyExtractedQuote, extractFromPdf, extractQuoteFromPdf, buildExtractionModels, PRISM_TOKEN_LIMITS } from "../lib/extraction";
+import { buildExtractor, insuranceDocToPolicy } from "../lib/extraction";
+import { makeEmbedText } from "../lib/sdkCallbacks";
 
 export const reExtractFromFile = action({
   args: {
@@ -43,66 +44,63 @@ export const reExtractFromFile = action({
       const arrayBuffer = await blob.arrayBuffer();
       const pdfBase64 = Buffer.from(arrayBuffer).toString("base64");
 
-      const models = buildExtractionModels();
+      // Delete old chunks before re-extracting
+      await ctx.runMutation(internal.documentChunks.deleteByPolicy, { policyId: args.policyId });
 
-      // Use quote extraction if this is a quote document
-      const isQuote = policy.documentType === "quote";
+      // Unified extraction — SDK handles classification, extraction, and assembly
+      const extractor = buildExtractor({
+        log,
+        onProgress: async (msg) => { await log(msg); },
+      });
 
-      if (isQuote) {
-        const { rawText, extracted } = await extractQuoteFromPdf(
-          pdfBase64, {
-          log,
-          models,
-          tokenLimits: PRISM_TOKEN_LIMITS,
-          onMetadata: async (raw: string) => {
-            await ctx.runMutation(api.policies.updateExtraction, {
-              id: args.policyId,
-              rawMetadataResponse: raw,
+      const result = await extractor.extract(
+        pdfBase64,
+        args.policyId as string,
+      );
+      const doc = result.document as any;
+      const chunks = result.chunks;
+      const tokenUsage = result.tokenUsage;
+
+      await log(`Extraction complete. Type: ${doc.type}. ${chunks.length} chunks. Tokens: ${tokenUsage.inputTokens}in/${tokenUsage.outputTokens}out`);
+
+      // Map InsuranceDocument → Prism policy fields
+      const fields = insuranceDocToPolicy(result.document);
+      const docName = doc.type === "quote"
+        ? (doc.quoteNumber || "quote")
+        : (doc.policyNumber || "policy");
+
+      await ctx.runMutation(api.policies.updateExtraction, {
+        id: args.policyId,
+        fileId: args.fileId,
+        fileName: `${docName}.pdf`,
+        ...fields,
+      });
+
+      // Store document chunks for vector search
+      const orgId = (policy as any).orgId;
+      if (chunks.length > 0 && orgId) {
+        const embed = makeEmbedText();
+        for (const chunk of chunks) {
+          try {
+            const embedding = await embed(chunk.text);
+            await ctx.runMutation(internal.documentChunks.insert, {
+              orgId,
+              policyId: args.policyId,
+              chunkId: chunk.id,
+              chunkType: chunk.type,
+              text: chunk.text,
+              metadata: chunk.metadata,
+              embedding,
+              createdAt: Date.now(),
             });
-          },
-        });
-
-        await ctx.runMutation(api.policies.updateExtraction, {
-          id: args.policyId,
-          rawExtractionResponse: rawText,
-        });
-
-        await ctx.runMutation(api.policies.updateExtraction, {
-          id: args.policyId,
-          fileId: args.fileId,
-          fileName: `${(extracted.metadata ?? extracted).quoteNumber || "quote"}.pdf`,
-          ...applyExtractedQuote(extracted),
-        });
-
-        await log("Quote extraction complete");
-      } else {
-        const { rawText, extracted } = await extractFromPdf(
-          pdfBase64, {
-          log,
-          models,
-          tokenLimits: PRISM_TOKEN_LIMITS,
-          onMetadata: async (raw: string) => {
-            await ctx.runMutation(api.policies.updateExtraction, {
-              id: args.policyId,
-              rawMetadataResponse: raw,
-            });
-          },
-        });
-
-        await ctx.runMutation(api.policies.updateExtraction, {
-          id: args.policyId,
-          rawExtractionResponse: rawText,
-        });
-
-        await ctx.runMutation(api.policies.updateExtraction, {
-          id: args.policyId,
-          fileId: args.fileId,
-          fileName: `${(extracted.metadata ?? extracted).policyNumber || "policy"}.pdf`,
-          ...applyExtracted(extracted),
-        });
-
-        await log("Extraction complete");
+          } catch (err: any) {
+            await log(`Warning: failed to embed chunk ${chunk.id}: ${err.message}`);
+          }
+        }
+        await log(`Stored ${chunks.length} chunks for vector search.`);
       }
+
+      await log("Re-extraction complete");
       return { success: true };
     } catch (error: any) {
       await log(`Failed: ${error.message || "Re-extraction failed"}`);
@@ -115,4 +113,3 @@ export const reExtractFromFile = action({
     }
   },
 });
-

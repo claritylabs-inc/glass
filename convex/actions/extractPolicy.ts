@@ -4,7 +4,8 @@ import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import { ImapFlow } from "imapflow";
-import { applyExtracted, applyExtractedQuote, extractFromPdf, extractQuoteFromPdf, classifyDocumentType, buildExtractionModels, PRISM_TOKEN_LIMITS } from "../lib/extraction";
+import { buildExtractor, insuranceDocToPolicy } from "../lib/extraction";
+import { makeEmbedText } from "../lib/sdkCallbacks";
 import { Id } from "../_generated/dataModel";
 
 export const extractPolicy = internalAction({
@@ -72,262 +73,160 @@ export const extractPolicy = internalAction({
     const fileId = await ctx.storage.store(blob);
     const pdfBase64 = pdfBuffer.toString("base64");
 
-    const models = buildExtractionModels();
+    // Create placeholder policy record (type determined by extraction)
+    const policyId = await ctx.runMutation(api.policies.insert, {
+      userId: args.userId,
+      orgId: args.orgId,
+      emailId: args.emailId,
+      fileId,
+      carrier: "Extracting...",
+      policyNumber: "Extracting...",
+      policyTypes: ["other"],
+      documentType: "policy",
+      policyYear: new Date().getFullYear(),
+      effectiveDate: "Extracting...",
+      expirationDate: "Extracting...",
+      isRenewal: false,
+      coverages: [],
+      insuredName: "Extracting...",
+      extractionStatus: "extracting",
+    });
 
-    // Pass 0: Classify document type (SDK trims to first 3 pages internally)
-    const { documentType } = await classifyDocumentType(pdfBase64, { models, tokenLimits: PRISM_TOKEN_LIMITS });
+    const log = async (message: string) => {
+      await ctx.runMutation(internal.policies.appendExtractionLog, { id: policyId, message });
+    };
 
-    if (documentType === "quote") {
-      // === QUOTE EXTRACTION PATH (stored in policies table with documentType: "quote") ===
-      const policyId = await ctx.runMutation(api.policies.insert, {
-        userId: args.userId,
-        orgId: args.orgId,
-        emailId: args.emailId,
-        fileId,
-        carrier: "Extracting...",
-        policyNumber: "Extracting...",
-        policyTypes: ["other"],
-        documentType: "quote",
-        policyYear: new Date().getFullYear(),
-        effectiveDate: "Extracting...",
-        expirationDate: "Extracting...",
-        isRenewal: false,
-        coverages: [],
-        insuredName: "Extracting...",
-        extractionStatus: "extracting",
+    await ctx.runMutation(internal.policyAuditLog.append, {
+      policyId,
+      userId: args.userId,
+      orgId: args.orgId,
+      action: "extraction_started",
+    });
+
+    try {
+      await ctx.runMutation(internal.policies.clearExtractionLog, { id: policyId });
+      await log(`PDF stored (${sizeKB} KB). Starting extraction pipeline.`);
+
+      // Unified extraction — SDK handles classification, extraction, and assembly
+      const extractor = buildExtractor({
+        log,
+        onProgress: async (msg) => { await log(msg); },
       });
 
-      const log = async (message: string) => {
-        await ctx.runMutation(internal.policies.appendExtractionLog, { id: policyId, message });
-      };
+      const result = await extractor.extract(
+        pdfBase64,
+        policyId as string,
+      );
+      const doc = result.document as any;
+      const chunks = result.chunks;
+      const tokenUsage = result.tokenUsage;
 
-      await ctx.runMutation(internal.policyAuditLog.append, {
-        policyId,
-        userId: args.userId,
-        orgId: args.orgId,
-        action: "extraction_started",
+      await log(`Extraction complete. Type: ${doc.type}. ${chunks.length} chunks. Tokens: ${tokenUsage.inputTokens}in/${tokenUsage.outputTokens}out`);
+
+      // Map InsuranceDocument → Prism policy fields
+      const fields = insuranceDocToPolicy(result.document);
+      const docName = doc.type === "quote"
+        ? (doc.quoteNumber || "quote")
+        : (doc.policyNumber || "policy");
+
+      await ctx.runMutation(api.policies.updateExtraction, {
+        id: policyId,
+        fileName: `${docName}.pdf`,
+        ...fields,
       });
 
-      try {
-        await ctx.runMutation(internal.policies.clearExtractionLog, { id: policyId });
-        await log(`PDF stored (${sizeKB} KB). Classified as quote.`);
-
-        const { rawText, extracted } = await extractQuoteFromPdf(
-          pdfBase64, {
-          log,
-          models,
-          tokenLimits: PRISM_TOKEN_LIMITS,
-          concurrency: 1,
-          onMetadata: async (raw: string) => {
-            await ctx.runMutation(api.policies.updateExtraction, {
-              id: policyId,
-              rawMetadataResponse: raw,
+      // Store document chunks for vector search
+      if (chunks.length > 0 && args.orgId) {
+        const embed = makeEmbedText();
+        for (const chunk of chunks) {
+          try {
+            const embedding = await embed(chunk.text);
+            await ctx.runMutation(internal.documentChunks.insert, {
+              orgId: args.orgId,
+              policyId,
+              chunkId: chunk.id,
+              chunkType: chunk.type,
+              text: chunk.text,
+              metadata: chunk.metadata,
+              embedding,
+              createdAt: Date.now(),
             });
-          },
-        });
-
-        await ctx.runMutation(api.policies.updateExtraction, {
-          id: policyId,
-          rawExtractionResponse: rawText,
-        });
-
-        await ctx.runMutation(api.policies.updateExtraction, {
-          id: policyId,
-          fileName: `${(extracted.metadata ?? extracted).quoteNumber || (extracted.metadata ?? extracted).policyNumber || "quote"}.pdf`,
-          ...applyExtractedQuote(extracted),
-        });
-
-        await log("Quote extraction complete");
-
-        await ctx.runMutation(internal.policyAuditLog.append, {
-          policyId,
-          userId: args.userId,
-          orgId: args.orgId,
-          action: "extraction_complete",
-        });
-
-        await incrementExtracted(ctx, args.connectionId);
-      } catch (error: any) {
-        await log(`Failed: ${error.message || "Extraction failed"}`);
-        await ctx.runMutation(api.policies.updateExtraction, {
-          id: policyId,
-          extractionStatus: "error",
-          extractionError: error.message || "Extraction failed",
-        });
-        console.error("Quote extraction failed:", error.message);
-
-        await ctx.runMutation(internal.policyAuditLog.append, {
-          policyId,
-          userId: args.userId,
-          orgId: args.orgId,
-          action: "extraction_error",
-          detail: error.message || "Extraction failed",
-        });
-
-        await incrementExtracted(ctx, args.connectionId);
-      }
-    } else {
-      // === POLICY EXTRACTION PATH ===
-      const policyId = await ctx.runMutation(api.policies.insert, {
-        userId: args.userId,
-        orgId: args.orgId,
-        emailId: args.emailId,
-        fileId,
-        carrier: "Extracting...",
-        policyNumber: "Extracting...",
-        policyTypes: ["other"],
-        documentType: "policy",
-        policyYear: new Date().getFullYear(),
-        effectiveDate: "Extracting...",
-        expirationDate: "Extracting...",
-        isRenewal: false,
-        coverages: [],
-        insuredName: "Extracting...",
-        extractionStatus: "extracting",
-      });
-
-      const log = async (message: string) => {
-        await ctx.runMutation(internal.policies.appendExtractionLog, { id: policyId, message });
-      };
-
-      await ctx.runMutation(internal.policyAuditLog.append, {
-        policyId,
-        userId: args.userId,
-        orgId: args.orgId,
-        action: "extraction_started",
-      });
-
-      try {
-        await ctx.runMutation(internal.policies.clearExtractionLog, { id: policyId });
-        await log(`PDF stored (${sizeKB} KB). Classified as policy.`);
-
-        const { rawText, extracted } = await extractFromPdf(
-          pdfBase64, {
-          log,
-          models,
-          tokenLimits: PRISM_TOKEN_LIMITS,
-          concurrency: 1,
-          onMetadata: async (raw: string) => {
-            await ctx.runMutation(api.policies.updateExtraction, {
-              id: policyId,
-              rawMetadataResponse: raw,
-            });
-          },
-        });
-
-        await ctx.runMutation(api.policies.updateExtraction, {
-          id: policyId,
-          rawExtractionResponse: rawText,
-        });
-
-        // Check if metadata says this is actually a quote (Pass 0 misclassified)
-        const meta = extracted.metadata ?? extracted;
-        if (meta.documentType === "quote") {
-          await log("Document is actually a quote — updating documentType.");
-          // Re-extract as quote using the same policy record
-          const { rawText: quoteRaw, extracted: quoteExtracted } = await extractQuoteFromPdf(
-            pdfBase64, { log, models, concurrency: 1,
-              onMetadata: async (raw: string) => {
-                await ctx.runMutation(api.policies.updateExtraction, {
-                  id: policyId,
-                  rawMetadataResponse: raw,
-                });
-              },
-            },
-          );
-          await ctx.runMutation(api.policies.updateExtraction, {
-            id: policyId,
-            rawExtractionResponse: quoteRaw,
-            documentType: "quote",
-          });
-          await ctx.runMutation(api.policies.updateExtraction, {
-            id: policyId,
-            ...applyExtractedQuote(quoteExtracted),
-          });
-          await log("Quote extraction complete (reclassified from policy).");
-          await incrementExtracted(ctx, args.connectionId);
-          return;
+          } catch (err: any) {
+            await log(`Warning: failed to embed chunk ${chunk.id}: ${err.message}`);
+          }
         }
+        await log(`Stored ${chunks.length} chunks for vector search.`);
+      }
 
-        await ctx.runMutation(api.policies.updateExtraction, {
-          id: policyId,
-          fileName: `${meta.policyNumber || "policy"}.pdf`,
-          ...applyExtracted(extracted),
-        });
+      await ctx.runMutation(internal.policyAuditLog.append, {
+        policyId,
+        userId: args.userId,
+        orgId: args.orgId,
+        action: "extraction_complete",
+      });
 
-        await log("Extraction complete");
+      // Schedule proactive analysis
+      if (args.orgId) {
+        await ctx.scheduler.runAfter(
+          0,
+          internal.actions.proactiveAnalysis.analyzePolicy,
+          { policyId, orgId: args.orgId },
+        );
 
-        await ctx.runMutation(internal.policyAuditLog.append, {
-          policyId,
-          userId: args.userId,
-          orgId: args.orgId,
-          action: "extraction_complete",
-        });
-
-        // Schedule proactive analysis
-        if (args.orgId) {
+        // Schedule portfolio analysis if org has multiple policies
+        const orgPolicies = await ctx.runQuery(
+          internal.policies.listAllInternal,
+          { orgId: args.orgId },
+        );
+        if (orgPolicies.length >= 2) {
           await ctx.scheduler.runAfter(
-            0,
-            internal.actions.proactiveAnalysis.analyzePolicy,
-            { policyId, orgId: args.orgId },
-          );
-
-          // Schedule portfolio analysis if org has multiple policies
-          const orgPolicies = await ctx.runQuery(
-            internal.policies.listAllInternal,
+            5000,
+            internal.actions.proactiveAnalysis.analyzePortfolio,
             { orgId: args.orgId },
           );
-          if (orgPolicies.length >= 2) {
-            await ctx.scheduler.runAfter(
-              5000,
-              internal.actions.proactiveAnalysis.analyzePortfolio,
-              { orgId: args.orgId },
-            );
-          }
-
-          // Check for renewal match via priorPolicyNumber
-          const appliedFields = applyExtracted(extracted);
-          const priorPolicyNumber = (appliedFields as any).priorPolicyNumber;
-          if (priorPolicyNumber) {
-            const priorMatch = orgPolicies.find(
-              (p: any) =>
-                p.policyNumber === priorPolicyNumber &&
-                p._id !== policyId,
-            );
-            if (priorMatch) {
-              await ctx.scheduler.runAfter(
-                0,
-                internal.actions.proactiveAnalysis.compareRenewal,
-                {
-                  newPolicyId: policyId,
-                  priorPolicyId: priorMatch._id,
-                  orgId: args.orgId,
-                },
-              );
-            }
-          }
         }
 
-        await incrementExtracted(ctx, args.connectionId);
-      } catch (error: any) {
-        await log(`Failed: ${error.message || "Extraction failed"}`);
-        await ctx.runMutation(api.policies.updateExtraction, {
-          id: policyId,
-          extractionStatus: "error",
-          extractionError: error.message || "Extraction failed",
-        });
-        console.error("Policy extraction failed:", error.message);
-
-        await ctx.runMutation(internal.policyAuditLog.append, {
-          policyId,
-          userId: args.userId,
-          orgId: args.orgId,
-          action: "extraction_error",
-          detail: error.message || "Extraction failed",
-        });
-
-        await incrementExtracted(ctx, args.connectionId);
+        // Check for renewal match via priorPolicyNumber
+        const priorPolicyNumber = fields.priorPolicyNumber;
+        if (priorPolicyNumber) {
+          const priorMatch = orgPolicies.find(
+            (p: any) =>
+              p.policyNumber === priorPolicyNumber &&
+              p._id !== policyId,
+          );
+          if (priorMatch) {
+            await ctx.scheduler.runAfter(
+              0,
+              internal.actions.proactiveAnalysis.compareRenewal,
+              {
+                newPolicyId: policyId,
+                priorPolicyId: priorMatch._id,
+                orgId: args.orgId,
+              },
+            );
+          }
+        }
       }
+
+      await incrementExtracted(ctx, args.connectionId);
+    } catch (error: any) {
+      await log(`Failed: ${error.message || "Extraction failed"}`);
+      await ctx.runMutation(api.policies.updateExtraction, {
+        id: policyId,
+        extractionStatus: "error",
+        extractionError: error.message || "Extraction failed",
+      });
+      console.error("Extraction failed:", error.message);
+
+      await ctx.runMutation(internal.policyAuditLog.append, {
+        policyId,
+        userId: args.userId,
+        orgId: args.orgId,
+        action: "extraction_error",
+        detail: error.message || "Extraction failed",
+      });
+
+      await incrementExtracted(ctx, args.connectionId);
     }
   },
 });

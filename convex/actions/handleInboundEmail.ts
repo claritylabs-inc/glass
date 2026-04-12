@@ -6,7 +6,7 @@ import { internal } from "../_generated/api";
 import { generateText, type ModelMessage } from "ai";
 import { haikuModel } from "../lib/ai";
 import { Webhook } from "svix";
-import { buildSystemPrompt, buildDocumentContext, buildConversationMemoryContext } from "../lib/agentPrompts";
+import { buildAgentSystemPrompt, buildDocumentContext, buildConversationMemoryContext, type AgentContext } from "../lib/agentPrompts";
 import { Id } from "../_generated/dataModel";
 
 const DEFAULT_AGENT_DOMAIN = "prism.claritylabs.inc";
@@ -833,33 +833,30 @@ Respond with JSON only:
       const userName = primaryUser?.name?.split(/\s+/)[0];
 
       // Build prompt using org fields
-      const systemPrompt = buildSystemPrompt(
-        effectiveMode,
-        org.context,
+      const agentCtx: AgentContext = {
+        platform: "email",
+        intent: effectiveMode === "direct" ? "direct" : effectiveMode === "cc" ? "mediated" : "observed",
+        companyName: org.name,
+        companyContext: org.context,
         siteUrl,
-        org.name,
         userName,
-        org.coiHandling as any,
-        org.insuranceBroker,
-        org.brokerContactName,
-        org.brokerContactEmail,
-      );
-      const { context: policyContext, relevantPolicyIds, relevantQuoteIds } = buildDocumentContext(
+        coiHandling: org.coiHandling as any,
+        brokerName: org.insuranceBroker,
+        brokerContactName: org.brokerContactName,
+        brokerContactEmail: org.brokerContactEmail,
+        agentName: "Prism",
+      };
+      const systemPrompt = buildAgentSystemPrompt(agentCtx);
+      const { context: policyContext, relevantPolicyIds, relevantQuoteIds } = await buildDocumentContext(
+        ctx,
+        orgId,
         policies,
         [],
         subject + " " + body,
       );
 
-      // Search for relevant past conversations across the org
-      const pastConversations = await ctx.runQuery(
-        internal.agentConversations.searchOrgConversations,
-        {
-          orgId,
-          queryText: subject + " " + body,
-          excludeThreadId: threadId,
-        },
-      );
-      const memoryContext = buildConversationMemoryContext(pastConversations);
+      // Cross-thread conversation memory (vector search)
+      const memoryContext = await buildConversationMemoryContext(ctx, orgId, subject + " " + body);
 
       // Build messages — include thread history for context
       const messages: ModelMessage[] = [];

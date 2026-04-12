@@ -14,6 +14,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `npx convex dev` — Start Convex dev backend (runs alongside Next.js dev)
 - `npx convex run seed:seed` — Seed demo data
 - `npx convex run migrations:migratePolicies` — Backfill old policy records
+- `npx convex run actions/backfillChunks:backfill --args '{"orgId":"..."}' ` — Embed existing policies for vector search
 
 ## Architecture
 
@@ -23,7 +24,7 @@ AI-powered insurance platform with policy extraction, proactive intelligence, an
 
 - **Frontend**: Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS 4
 - **Backend**: Convex (realtime serverless DB + functions)
-- **AI**: Anthropic Claude API (`@anthropic-ai/sdk`), Vercel AI SDK (`ai`, `@ai-sdk/react`, `@ai-sdk/anthropic`), `@claritylabs/cl-sdk` (shared prompts, extraction logic, PDF filling)
+- **AI**: Anthropic Claude API (`@anthropic-ai/sdk`), Vercel AI SDK (`ai`, `@ai-sdk/react`, `@ai-sdk/anthropic`, `@ai-sdk/openai`), `@claritylabs/cl-sdk` v0.5.0 (coordinator/worker extraction, document chunking, vector storage interfaces, query agent, application pipeline, agent prompts, PDF filling)
 - **Email**: imapflow for IMAP scanning, Resend for outbound agent emails
 - **PDF Generation**: pdfkit for application summary PDFs, mupdf (WASM) for flattening broken PDFs
 - **UI**: shadcn/ui (base-nova style) + Base-UI primitives, Framer Motion, Lucide icons
@@ -50,9 +51,9 @@ Auth is handled by `@convex-dev/auth` with email OTP (one-time password) login. 
 
 1. `scanInbox` action (public) → fetches emails via IMAP with date range + sender domain filters, deduplicates by messageId, saves scan params
 2. `classifyEmails` internal action (scheduled) → keyword matching + Claude Haiku for ambiguous cases, skips emails that already have policies, tracks progress
-3. `extractPolicy` internal action (scheduled) → downloads PDF, stores in Convex file storage, sends to Claude Sonnet for structured extraction with provenance tracking
-4. `retryExtraction` action (public) → re-parses saved raw response first, falls back to full API call
-5. `reExtractFromFile` action (public) → re-extracts from an uploaded replacement PDF
+3. `extractPolicy` internal action (scheduled) → downloads PDF, stores in Convex file storage, runs cl-sdk coordinator/worker extraction pipeline (`createExtractor` with 11 focused extractors, review loop, parallel dispatch). Returns `InsuranceDocument` + `DocumentChunk[]`. Chunks embedded via OpenAI text-embedding-3-small and stored in `documentChunks` table for vector search.
+4. `retryExtraction` action (public) → `reparse` mode re-parses saved raw response via `insuranceDocToPolicy()`; `full` mode re-runs entire extraction pipeline + re-embeds chunks
+5. `reExtractFromFile` action (public) → re-extracts from an uploaded replacement PDF using unified pipeline
 
 ### Data Flow — Prism (Email)
 
@@ -132,20 +133,26 @@ Web chat uses a hybrid architecture: `useChat` from `@ai-sdk/react` handles stre
 
 ### `@claritylabs/cl-sdk` Package
 
-All prompts, AI extraction logic, PDF filling helpers, and agent prompt building have been extracted into the `@claritylabs/cl-sdk` npm package (hosted on GitHub Package Registry via `.npmrc`). The local `convex/lib/` files now re-export from `@claritylabs/cl-sdk`:
+cl-sdk v0.5.0 is a provider-agnostic platform with coordinator/worker extraction, document chunking, vector storage interfaces, query agent, and application pipeline. The local `convex/lib/` files provide Prism-specific wiring:
 
-- `lib/prompts.ts` — Re-exports extraction prompts (EXTRACTION_PROMPT, METADATA_PROMPT, buildSectionsPrompt, etc.)
-- `lib/extraction.ts` — Re-exports extraction helpers (stripFences, applyExtracted, extractFromPdf, extractPageRange, getPdfPageCount, etc.), constants (POLICY_TYPES, CONTEXT_KEY_MAP), and types (LogFn, PromptBuilder, PolicyType, ContextKeyMapping, TokenUsage)
+- `lib/sdkCallbacks.ts` — Adapts Prism's AI SDK model routing into cl-sdk's provider-agnostic callbacks (`GenerateText`, `GenerateObject`, `EmbedText`). Embeddings via OpenAI `text-embedding-3-small` (1536 dims).
+- `lib/documentMapping.ts` — Maps between cl-sdk `InsuranceDocument` and Prism's `policies` table schema. `insuranceDocToPolicy()` (extraction → Convex) and `policyToInsuranceDoc()` (Convex → SDK).
+- `lib/extraction.ts` — Re-exports `createExtractor`, `chunkDocument`, `stripFences`, `sanitizeNulls`, `POLICY_TYPES`, `CONTEXT_KEY_MAP`, PDF operations. Provides `buildExtractor()` factory pre-configured with Prism's model routing.
+- `lib/convexDocumentStore.ts` — Implements cl-sdk `DocumentStore` interface on Convex's `policies` table.
+- `lib/convexMemoryStore.ts` — Implements cl-sdk `MemoryStore` interface using Convex vector search over `documentChunks` and `conversationTurns` tables.
+- `lib/queryAgent.ts` — Wraps cl-sdk `createQueryAgent` with Prism's model routing and Convex storage. Provides citation-backed Q&A.
+- `lib/agentPrompts.ts` — Re-exports `buildAgentSystemPrompt`, `buildConversationMemoryGuidance`. Provides async `buildDocumentContext()` (vector search with keyword fallback) and `buildConversationMemoryContext()` (vector search over conversation turns).
 - `lib/applicationPrompts.ts` — Re-exports application prompts (classify, extract fields, auto-fill, batch questions, etc.)
 - `lib/pdfFiller.ts` — Re-exports PDF filling functions (getAcroFormFields, fillAcroForm, overlayTextOnPdf) and types
-- `lib/aiClassifier.ts` — Re-exports CLASSIFY_EMAIL_PROMPT
-- `lib/agentPrompts.ts` — Re-exports buildSystemPrompt, buildConversationMemoryContext + thin adapter functions (`buildDocumentContext`, `buildPolicyContext`) that map Convex `Doc` types to cell's framework-agnostic interfaces
+- `lib/aiClassifier.ts` — Re-exports `buildClassifyMessagePrompt(platform: Platform)`
 
 To modify prompts or extraction logic, update the `@claritylabs/cl-sdk` package and bump the version.
 
 ### Key Backend Files (convex/)
 
-- `schema.ts` — Tables: `emailConnections`, `emails`, `policies`, `organizations`, `orgMemberships`, `orgInvitations`, `agentConversations`, `orgBusinessContext`, `applicationSessions`, `webChats`, `webChatMessages`, `apiKeys`
+- `schema.ts` — Tables: `emailConnections`, `emails`, `policies`, `organizations`, `orgMemberships`, `orgInvitations`, `agentConversations`, `orgBusinessContext`, `applicationSessions`, `webChats`, `webChatMessages`, `apiKeys`, `documentChunks` (vector search), `conversationTurns` (vector search)
+- `documentChunks.ts` — CRUD for document chunks (get, listByPolicy, hasChunksForOrg, insert, deleteByPolicy). Supports vector search via `by_embedding` index (1536-dim, org-scoped).
+- `conversationTurns.ts` — CRUD for conversation turns (get, listByConversation, insert). Supports vector search via `by_embedding` index (1536-dim, org-scoped).
 - `policies.ts` — Queries (list, stats, getFileUrl, emailIdsWithPolicies) and mutations (insert, updateExtraction, softDelete, restore, generateUploadUrl)
 - `connections.ts` — CRUD + cascade delete with optional policy cleanup. Internal queries (`getInternal`) for scheduled actions
 - `emails.ts` — Insert with messageId dedup, classification, processing status. Internal queries (`getInternal`, `listByConnection`) for scheduled actions
@@ -169,6 +176,7 @@ To modify prompts or extraction logic, update the `@claritylabs/cl-sdk` package 
 - `lib/coiGenerator.ts` — COI PDF generator with ACORD-style layout using pdfkit (`CoiData`, `policyToCoiData`, `generateCoiPdf`)
 - `orgMemory.ts` — Org memory CRUD: facts, preferences, risk notes, observations. Content-hash dedup, expiry, scoped to orgId
 - `actions/proactiveAnalysis.ts` — `analyzePolicy` (health check), `analyzePortfolio` (cross-policy gaps), `compareRenewal` (premium/limit diff). Triggered post-extraction.
+- `actions/backfillChunks.ts` — One-time migration to embed and chunk existing policies for vector search. Run per-org via `npx convex run actions/backfillChunks:backfill`.
 - `actions/generateEmailBody.ts` — AI-written email body via `getModel("email_draft")` (Kimi K2.5)
 - `actions/generateCoi.ts` — COI generation: maps policy → CoiData → PDF → Convex file storage, returns storageId
 
@@ -224,6 +232,8 @@ To modify prompts or extraction logic, update the `@claritylabs/cl-sdk` package 
 - `policies.analysis` stores AI-generated health check (structured JSON: overallScore, strengths, gaps, recommendations, limitAssessment, deductibleAssessment, notableExclusions)
 - `organizations.portfolioAnalysis` stores cross-policy portfolio analysis (overallHealth, coverageGaps, overlaps, recommendations, totalPremium, keyRisks)
 - `applicationSessions.status` includes `"failed"` for timeout/error cases; `failureReason: v.optional(v.string())` holds the reason; `lastProgressAt: v.optional(v.number())` tracks last state change for stale detection (cron checks every 2min, marks stale after 5min)
+- `documentChunks` stores org-scoped, policy-linked document chunks for vector search. Fields: orgId, policyId, chunkId (SDK-assigned `${docId}:${type}:${index}`), chunkType (carrier_info, named_insured, coverage, endorsement, etc.), text, metadata, embedding (1536-dim float64 array). Vector index `by_embedding` with orgId filter.
+- `conversationTurns` stores org-scoped conversation turns for cross-thread memory search. Fields: orgId, conversationId, role, content, embedding (1536-dim float64 array). Vector index `by_embedding` with orgId filter.
 
 ### Routes
 

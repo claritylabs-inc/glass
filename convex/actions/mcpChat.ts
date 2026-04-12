@@ -5,11 +5,10 @@ import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { generateText } from "ai";
 import { getModel } from "../lib/models";
-import { buildDocumentContext } from "../lib/agentPrompts";
+import { buildDocumentContext, buildConversationMemoryContext } from "../lib/agentPrompts";
 import {
   buildSystemPromptForContext,
   buildMessageHistory,
-  buildConversationMemoryContext,
   logAiError,
 } from "../lib/aiUtils";
 import { buildMemoryContext } from "../lib/orgMemoryContext";
@@ -70,16 +69,12 @@ export const run = internalAction({
       siteUrl,
     });
 
-    // Document context
+    // Document context (vector search with fallback)
     const { context: docContext, relevantPolicyIds, relevantQuoteIds } =
-      buildDocumentContext(policies, [], args.message);
+      await buildDocumentContext(ctx, args.orgId, policies, [], args.message);
 
-    // Cross-thread conversation memory
-    const pastConversations = await ctx.runQuery(
-      internal.agentConversations.searchOrgConversations,
-      { orgId: args.orgId, queryText: args.message },
-    );
-    const memoryContext = buildConversationMemoryContext(pastConversations);
+    // Cross-thread conversation memory (vector search)
+    const memoryContext = await buildConversationMemoryContext(ctx, args.orgId, args.message);
 
     // Load org memory
     const orgMemories = await ctx.runQuery(

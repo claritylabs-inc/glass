@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as actions_backfillChunks from "../actions/backfillChunks.js";
 import type * as actions_classifyEmails from "../actions/classifyEmails.js";
 import type * as actions_extractCompanyInfo from "../actions/extractCompanyInfo.js";
 import type * as actions_extractFromUpload from "../actions/extractFromUpload.js";
@@ -30,7 +31,9 @@ import type * as applicationSessions from "../applicationSessions.js";
 import type * as auth from "../auth.js";
 import type * as businessContext from "../businessContext.js";
 import type * as connections from "../connections.js";
+import type * as conversationTurns from "../conversationTurns.js";
 import type * as crons from "../crons.js";
+import type * as documentChunks from "../documentChunks.js";
 import type * as emails from "../emails.js";
 import type * as http from "../http.js";
 import type * as lib_agentEmailTemplate from "../lib/agentEmailTemplate.js";
@@ -43,6 +46,9 @@ import type * as lib_applicationTypes from "../lib/applicationTypes.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_chatTools from "../lib/chatTools.js";
 import type * as lib_coiGenerator from "../lib/coiGenerator.js";
+import type * as lib_convexDocumentStore from "../lib/convexDocumentStore.js";
+import type * as lib_convexMemoryStore from "../lib/convexMemoryStore.js";
+import type * as lib_documentMapping from "../lib/documentMapping.js";
 import type * as lib_emailTemplate from "../lib/emailTemplate.js";
 import type * as lib_extraction from "../lib/extraction.js";
 import type * as lib_industries from "../lib/industries.js";
@@ -52,7 +58,8 @@ import type * as lib_orgAuth from "../lib/orgAuth.js";
 import type * as lib_orgMemoryContext from "../lib/orgMemoryContext.js";
 import type * as lib_pdfFiller from "../lib/pdfFiller.js";
 import type * as lib_policyTypes from "../lib/policyTypes.js";
-import type * as lib_prompts from "../lib/prompts.js";
+import type * as lib_queryAgent from "../lib/queryAgent.js";
+import type * as lib_sdkCallbacks from "../lib/sdkCallbacks.js";
 import type * as migrations from "../migrations.js";
 import type * as migrations_migrateOnboarding from "../migrations/migrateOnboarding.js";
 import type * as migrations_migrateToOrgs from "../migrations/migrateToOrgs.js";
@@ -76,6 +83,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  "actions/backfillChunks": typeof actions_backfillChunks;
   "actions/classifyEmails": typeof actions_classifyEmails;
   "actions/extractCompanyInfo": typeof actions_extractCompanyInfo;
   "actions/extractFromUpload": typeof actions_extractFromUpload;
@@ -98,7 +106,9 @@ declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   businessContext: typeof businessContext;
   connections: typeof connections;
+  conversationTurns: typeof conversationTurns;
   crons: typeof crons;
+  documentChunks: typeof documentChunks;
   emails: typeof emails;
   http: typeof http;
   "lib/agentEmailTemplate": typeof lib_agentEmailTemplate;
@@ -111,6 +121,9 @@ declare const fullApi: ApiFromModules<{
   "lib/auth": typeof lib_auth;
   "lib/chatTools": typeof lib_chatTools;
   "lib/coiGenerator": typeof lib_coiGenerator;
+  "lib/convexDocumentStore": typeof lib_convexDocumentStore;
+  "lib/convexMemoryStore": typeof lib_convexMemoryStore;
+  "lib/documentMapping": typeof lib_documentMapping;
   "lib/emailTemplate": typeof lib_emailTemplate;
   "lib/extraction": typeof lib_extraction;
   "lib/industries": typeof lib_industries;
@@ -120,7 +133,8 @@ declare const fullApi: ApiFromModules<{
   "lib/orgMemoryContext": typeof lib_orgMemoryContext;
   "lib/pdfFiller": typeof lib_pdfFiller;
   "lib/policyTypes": typeof lib_policyTypes;
-  "lib/prompts": typeof lib_prompts;
+  "lib/queryAgent": typeof lib_queryAgent;
+  "lib/sdkCallbacks": typeof lib_sdkCallbacks;
   migrations: typeof migrations;
   "migrations/migrateOnboarding": typeof migrations_migrateOnboarding;
   "migrations/migrateToOrgs": typeof migrations_migrateToOrgs;

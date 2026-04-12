@@ -595,7 +595,7 @@ function ExtractionTab({ policy }: { policy: any }) {
   const rawExtraction: string | undefined = policy.rawExtractionResponse;
   const hasDocument = !!(policy as any).document;
 
-  const handleRetry = async (mode: "reparse" | "sections_only" | "full" | "enrich_only") => {
+  const handleRetry = async (mode: "reparse" | "full") => {
     setRunningMode(mode);
     try {
       const result = await retryExtraction({ policyId: policy._id, mode });
@@ -648,17 +648,6 @@ function ExtractionTab({ policy }: { policy: any }) {
                 Re-parse saved output
               </PillButton>
             )}
-            {rawMetadata && (
-              <PillButton
-                variant="secondary"
-                size="compact"
-                disabled={runningMode !== null}
-                onClick={() => handleRetry("sections_only")}
-              >
-                {runningMode === "sections_only" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
-                Re-extract sections
-              </PillButton>
-            )}
             <PillButton
               variant="secondary"
               size="compact"
@@ -668,17 +657,6 @@ function ExtractionTab({ policy }: { policy: any }) {
               {runningMode === "full" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
               Full re-extraction
             </PillButton>
-            {hasDocument && (
-              <PillButton
-                variant="secondary"
-                size="compact"
-                disabled={runningMode !== null}
-                onClick={() => handleRetry("enrich_only")}
-              >
-                {runningMode === "enrich_only" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
-                Enrich only
-              </PillButton>
-            )}
           </div>
         </div>
       </div>

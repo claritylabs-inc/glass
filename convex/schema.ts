@@ -451,6 +451,45 @@ export default defineSchema({
     .index("by_userId", ["userId"])
     .index("by_orgId", ["orgId"]),
 
+  // ── Vector Search (cl-sdk 0.5.0+) ──
+
+  // Document chunks for semantic search over extracted policy/quote content
+  documentChunks: defineTable({
+    orgId: v.id("organizations"),
+    policyId: v.id("policies"),
+    chunkId: v.string(), // SDK-assigned: "${docId}:${type}:${index}"
+    chunkType: v.string(), // carrier_info, named_insured, coverage, endorsement, etc.
+    text: v.string(), // chunk content for embedding + display
+    metadata: v.optional(v.any()), // SDK metadata for filtering
+    embedding: v.array(v.float64()), // 1536-dim vector (text-embedding-3-small)
+    createdAt: v.number(),
+  })
+    .index("by_policyId", ["policyId"])
+    .index("by_orgId", ["orgId"])
+    .index("by_chunkId", ["chunkId"])
+    .vectorIndex("by_embedding", {
+      vectorField: "embedding",
+      dimensions: 1536,
+      filterFields: ["orgId"],
+    }),
+
+  // Conversation turns for cross-thread memory search
+  conversationTurns: defineTable({
+    orgId: v.id("organizations"),
+    conversationId: v.string(), // thread ID or conversation ID
+    role: v.string(), // user, assistant, tool
+    content: v.string(),
+    embedding: v.array(v.float64()), // 1536-dim vector
+    createdAt: v.number(),
+  })
+    .index("by_conversationId", ["conversationId"])
+    .index("by_orgId", ["orgId"])
+    .vectorIndex("by_embedding", {
+      vectorField: "embedding",
+      dimensions: 1536,
+      filterFields: ["orgId"],
+    }),
+
   policyAuditLog: defineTable({
     policyId: v.optional(v.id("policies")),
     quoteId: v.optional(v.any()), // legacy: may contain old quotes table IDs
