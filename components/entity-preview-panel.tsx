@@ -73,7 +73,7 @@ function DocSection({
       {open && (
         <div className="px-3 pb-3 border-t border-foreground/4">
           <p className="text-body-sm text-foreground/80 leading-relaxed whitespace-pre-wrap pt-2.5">
-            {content.length > 4000 ? content.slice(0, 4000) + "\n\n[truncated]" : content}
+            {content}
           </p>
         </div>
       )}
@@ -190,6 +190,30 @@ function PolicyPreview({ id, page, citedSections }: { id: string; page?: number;
         )}
       </div>
 
+      {/* Actions — at the top so they don't get lost */}
+      <div className="flex gap-2">
+        {fileUrl && (
+          <button
+            type="button"
+            onClick={() => {
+              openWithUrl(fileUrl, page);
+              closePreview();
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-foreground/8 bg-white/80 dark:bg-white/[0.06] hover:bg-foreground/[0.03] transition-colors text-label font-medium cursor-pointer"
+          >
+            <FileText className="w-3 h-3 text-muted-foreground/50" />
+            View PDF
+          </button>
+        )}
+        <Link
+          href={`/policies/${id}`}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-foreground/8 bg-white/80 dark:bg-white/[0.06] hover:bg-foreground/[0.03] transition-colors text-label font-medium no-underline"
+        >
+          <ExternalLink className="w-3 h-3 text-muted-foreground/50" />
+          Full details
+        </Link>
+      </div>
+
       {/* Document sections — filtered to cited ones when available */}
       {hasSections && (
         <div>
@@ -286,29 +310,6 @@ function PolicyPreview({ id, page, citedSections }: { id: string; page?: number;
         </CollapsibleBlock>
       )}
 
-      {/* Actions */}
-      <div className="flex gap-2 pt-1">
-        {fileUrl && (
-          <button
-            type="button"
-            onClick={() => {
-              openWithUrl(fileUrl, page);
-              closePreview();
-            }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-foreground/8 bg-white/80 dark:bg-white/[0.06] hover:bg-foreground/[0.03] transition-colors text-label font-medium cursor-pointer"
-          >
-            <FileText className="w-3 h-3 text-muted-foreground/50" />
-            View PDF
-          </button>
-        )}
-        <Link
-          href={`/policies/${id}`}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-foreground/8 bg-white/80 dark:bg-white/[0.06] hover:bg-foreground/[0.03] transition-colors text-label font-medium no-underline"
-        >
-          <ExternalLink className="w-3 h-3 text-muted-foreground/50" />
-          Full details
-        </Link>
-      </div>
     </div>
   );
 }
@@ -367,6 +368,30 @@ function QuotePreview({ id, page, citedSections }: { id: string; page?: number; 
         )}
       </div>
 
+      {/* Actions — at the top */}
+      <div className="flex gap-2">
+        {fileUrl && (
+          <button
+            type="button"
+            onClick={() => {
+              openWithUrl(fileUrl, page);
+              closePreview();
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-foreground/8 bg-white/80 dark:bg-white/[0.06] hover:bg-foreground/[0.03] transition-colors text-label font-medium cursor-pointer"
+          >
+            <FileText className="w-3 h-3 text-muted-foreground/50" />
+            View PDF
+          </button>
+        )}
+        <Link
+          href={`/policies/${id}`}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-foreground/8 bg-white/80 dark:bg-white/[0.06] hover:bg-foreground/[0.03] transition-colors text-label font-medium no-underline"
+        >
+          <ExternalLink className="w-3 h-3 text-muted-foreground/50" />
+          Full details
+        </Link>
+      </div>
+
       {/* Sections */}
       {hasSections && (
         <div>
@@ -404,30 +429,6 @@ function QuotePreview({ id, page, citedSections }: { id: string; page?: number; 
           <p className="text-label-sm text-muted-foreground/60 leading-relaxed">{quote.summary}</p>
         </CollapsibleBlock>
       )}
-
-      {/* Actions */}
-      <div className="flex gap-2 pt-1">
-        {fileUrl && (
-          <button
-            type="button"
-            onClick={() => {
-              openWithUrl(fileUrl, page);
-              closePreview();
-            }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-foreground/8 bg-white/80 dark:bg-white/[0.06] hover:bg-foreground/[0.03] transition-colors text-label font-medium cursor-pointer"
-          >
-            <FileText className="w-3 h-3 text-muted-foreground/50" />
-            View PDF
-          </button>
-        )}
-        <Link
-          href={`/policies/${id}`}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-foreground/8 bg-white/80 dark:bg-white/[0.06] hover:bg-foreground/[0.03] transition-colors text-label font-medium no-underline"
-        >
-          <ExternalLink className="w-3 h-3 text-muted-foreground/50" />
-          Full details
-        </Link>
-      </div>
     </div>
   );
 }
