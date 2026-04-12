@@ -41,11 +41,9 @@ export function TerminalLog({
   return (
     <div className={cn("rounded-lg bg-neutral-950 border border-neutral-800 overflow-hidden", className)}>
       {/* Title bar */}
-      <div className="flex items-center gap-1.5 px-3 py-1.5 bg-neutral-900/80 border-b border-neutral-800">
-        <span className="w-2.5 h-2.5 rounded-full bg-red-500/60" />
-        <span className="w-2.5 h-2.5 rounded-full bg-yellow-500/60" />
-        <span className="w-2.5 h-2.5 rounded-full bg-green-500/60" />
-        <span className="text-label-sm text-neutral-500 font-mono ml-2">extraction</span>
+      <div className="flex items-center gap-2 px-3 py-1.5 bg-neutral-900/80 border-b border-neutral-800">
+        <span className="text-label-sm text-neutral-600 font-mono select-none">$</span>
+        <span className="text-label-sm text-neutral-500 font-mono">extraction</span>
       </div>
 
       {/* Log content */}
