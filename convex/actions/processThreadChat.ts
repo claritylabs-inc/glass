@@ -83,54 +83,169 @@ function buildTools(ctx: any, args: { orgId: any; threadId: any }, org?: any) {
           { id: params.policyId as any },
         );
         if (!policy) return "Policy not found.";
-        if (!policy.document?.sections || policy.document.sections.length === 0) {
-          return "No document sections available for this policy.";
-        }
+        const doc = policy.document as any;
+        if (!doc) return "No document data available for this policy.";
+
         const q = params.query.toLowerCase();
         const queryWords = q.split(/\s+/).filter((w: string) => w.length > 2);
 
-        // Build full text for each section including subsections
-        const scored = policy.document.sections.map((s: any) => {
-          const subsectionText = (s.subsections ?? [])
-            .map((sub: any) => `${sub.title ?? ""} ${sub.content ?? ""}`)
-            .join(" ");
-          const fullText = `${s.title ?? ""} ${s.content ?? ""} ${subsectionText}`.toLowerCase();
+        function scoreText(text: string): number {
+          const lower = text.toLowerCase();
           let score = 0;
           for (const w of queryWords) {
-            if (fullText.includes(w)) score++;
+            if (lower.includes(w)) score++;
           }
-          if (fullText.includes(q)) score += 3;
-          return { section: s, score };
-        });
-
-        const matches = scored
-          .filter((s: any) => s.score > 0)
-          .sort((a: any, b: any) => b.score - a.score)
-          .slice(0, 3);
-
-        if (matches.length === 0) {
-          const titles = policy.document.sections.map((s: any) => s.title).join(", ");
-          return `No sections matched "${params.query}". Available sections: ${titles}`;
+          if (lower.includes(q)) score += 3;
+          return score;
         }
 
-        // Return section with full subsection content
-        return matches.map((m: any) => {
-          const s = m.section;
-          let fullContent = s.content ?? "";
-          if (s.subsections?.length) {
-            for (const sub of s.subsections) {
-              fullContent += `\n\n### ${sub.title ?? ""}`;
-              if (sub.content) fullContent += `\n${sub.content}`;
+        type ScoredResult = { source: string; title: string; score: number; data: any };
+        const results: ScoredResult[] = [];
+
+        // Search sections (with subsections)
+        if (doc.sections?.length) {
+          for (const s of doc.sections) {
+            const subsectionText = (s.subsections ?? [])
+              .map((sub: any) => `${sub.title ?? ""} ${sub.content ?? ""}`)
+              .join(" ");
+            const fullText = `${s.title ?? ""} ${s.content ?? ""} ${subsectionText}`;
+            const score = scoreText(fullText);
+            if (score > 0) {
+              let fullContent = s.content ?? "";
+              if (s.subsections?.length) {
+                for (const sub of s.subsections) {
+                  fullContent += `\n\n### ${sub.title ?? ""}`;
+                  if (sub.content) fullContent += `\n${sub.content}`;
+                }
+              }
+              results.push({
+                source: "section",
+                title: s.title,
+                score,
+                data: {
+                  title: s.title,
+                  type: s.type,
+                  coverageType: s.coverageType,
+                  pages: `${s.pageStart}${s.pageEnd ? `-${s.pageEnd}` : ""}`,
+                  content: fullContent.slice(0, 6000),
+                },
+              });
             }
           }
-          return {
-            title: s.title,
-            type: s.type,
-            coverageType: s.coverageType,
-            pages: `${s.pageStart}${s.pageEnd ? `-${s.pageEnd}` : ""}`,
-            content: fullContent.slice(0, 6000),
-          };
-        });
+        }
+
+        // Search endorsements
+        if (doc.endorsements?.length) {
+          for (const e of doc.endorsements) {
+            const text = `${e.title ?? ""} ${e.content ?? ""} ${e.effectType ?? ""}`;
+            const score = scoreText(text);
+            if (score > 0) {
+              results.push({
+                source: "endorsement",
+                title: e.title,
+                score,
+                data: {
+                  title: e.title,
+                  type: "endorsement",
+                  effectType: e.effectType,
+                  pages: e.pageStart ? `${e.pageStart}` : undefined,
+                  content: (e.content ?? "").slice(0, 6000),
+                },
+              });
+            }
+          }
+        }
+
+        // Search conditions
+        if (doc.conditions?.length) {
+          for (const c of doc.conditions) {
+            const text = `${c.title ?? ""} ${c.content ?? ""}`;
+            const score = scoreText(text);
+            if (score > 0) {
+              results.push({
+                source: "condition",
+                title: c.title,
+                score,
+                data: {
+                  title: c.title,
+                  type: "condition",
+                  pages: c.pageNumber ? `${c.pageNumber}` : undefined,
+                  content: (c.content ?? "").slice(0, 4000),
+                },
+              });
+            }
+          }
+        }
+
+        // Search exclusions
+        if (doc.exclusions?.length) {
+          for (const ex of doc.exclusions) {
+            const text = `${ex.title ?? ""} ${ex.content ?? ""} ${ex.description ?? ""}`;
+            const score = scoreText(text);
+            if (score > 0) {
+              results.push({
+                source: "exclusion",
+                title: ex.title,
+                score,
+                data: {
+                  title: ex.title,
+                  type: "exclusion",
+                  content: (ex.content ?? ex.description ?? "").slice(0, 4000),
+                },
+              });
+            }
+          }
+        }
+
+        // Search declarations (structured data — serialize matching entries)
+        if (policy.declarations) {
+          const declStr = JSON.stringify(policy.declarations);
+          const score = scoreText(declStr);
+          if (score > 0) {
+            results.push({
+              source: "declarations",
+              title: "Declarations",
+              score,
+              data: {
+                title: "Declarations",
+                type: "declarations",
+                content: declStr.slice(0, 6000),
+              },
+            });
+          }
+        }
+
+        // Also surface key policy-level fields for coverage analysis
+        if (q.includes("coinsurance") || q.includes("valuation") || q.includes("limit")) {
+          const policyMeta: Record<string, any> = {};
+          if (policy.limits) policyMeta.limits = policy.limits;
+          if (policy.deductibles) policyMeta.deductibles = policy.deductibles;
+          if (policy.coverageForm) policyMeta.coverageForm = policy.coverageForm;
+          if (Object.keys(policyMeta).length > 0) {
+            results.push({
+              source: "policy_metadata",
+              title: "Policy Limits & Structure",
+              score: 2,
+              data: {
+                title: "Policy Limits & Structure",
+                type: "metadata",
+                content: JSON.stringify(policyMeta, null, 2).slice(0, 4000),
+              },
+            });
+          }
+        }
+
+        // Sort by score, return top 5
+        results.sort((a, b) => b.score - a.score);
+        const top = results.slice(0, 5);
+
+        if (top.length === 0) {
+          const sectionTitles = (doc.sections ?? []).map((s: any) => s.title).join(", ");
+          const endorsementTitles = (doc.endorsements ?? []).map((e: any) => e.title).join(", ");
+          return `No matches for "${params.query}". Available sections: ${sectionTitles || "none"}. Endorsements: ${endorsementTitles || "none"}.`;
+        }
+
+        return top.map((r) => r.data);
       },
     },
     check_application_status: {
@@ -403,14 +518,22 @@ For emails, compose a professional message that:
 
       const toolInstructions = `
 
-TOOLS AVAILABLE:
-You have tools to search and retrieve detailed policy information. ALWAYS use them when:
-- The user asks about specific coverages, sections, endorsements, exclusions, or policy language
-- The user asks "do we have X coverage" — use lookup_policy_section to check the document sections, not just the coverage summary
-- The user asks about limits, deductibles, or conditions for a specific coverage type
-- You're not sure if a coverage exists — search the sections before saying "no"
+TOOLS — POLICY LOOKUP:
+You have tools to search and retrieve detailed policy information. You MUST use them aggressively:
+- ALWAYS look up the actual policy/endorsement wording before answering coverage questions. NEVER say "I can't confirm without the wording" or "I'd need the endorsement text" — you HAVE the text, use lookup_policy_section to find it.
+- When asked about a specific endorsement (e.g. PR650END, PR091END), search for it by form number, title, AND related keywords. Try multiple searches if the first doesn't return what you need.
+- When asked about exclusions or conditions, search for the specific exclusion clause (e.g. "B.2" or "Electrical Damage") to get the full text.
+- Search for related sections too — e.g. if asked about Equipment Breakdown, also check the base form exclusions that the endorsement might override.
+- You have up to 25 tool calls per response. Use as many as needed to give a thorough, wording-backed answer.
 
-The policy index above shows section titles. Use lookup_policy_section with the policy ID and a search query to read the full section content including subsections. Do NOT assume a coverage doesn't exist just because it's not in the coverage summary — check the document sections.`;
+ANALYTICAL STANDARDS:
+When answering coverage questions, you are an expert insurance analyst, not a disclaimer machine:
+- Be assertive about industry practice. If a coverage pattern is standard (e.g. Equipment Breakdown endorsements are designed to override base form electrical damage exclusions), say so clearly rather than treating it as unknowable.
+- ALWAYS check for coinsurance provisions. Coinsurance penalties are one of the most common and impactful coverage traps. If BPP or building coverage has 80%/90%/100% coinsurance, flag the potential penalty and explain how it applies.
+- Flag coverage adequacy issues proactively. If a sublimit seems low for the insured's business type (e.g. $25,000 spoilage for a full-service restaurant), call it out as a potential gap worth reviewing.
+- When analyzing overlapping coverages, explain the hierarchy clearly: which coverage responds first, whether limits stack or erode each other, and how deductibles interact.
+- Distinguish between what the policy text says vs. what would require carrier confirmation. Some things genuinely need the carrier (e.g. ambiguous manuscripted endorsements), but standard ISO/AAIS forms have well-understood interpretations.
+- When a coverage question involves the physical cause of loss, analyze the causal chain: where did the loss originate, what's the proximate cause, and how does that interact with each relevant coverage grant and exclusion.`;
 
       const fullSystemPrompt =
         systemPrompt +
