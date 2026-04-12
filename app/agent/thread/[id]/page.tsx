@@ -347,7 +347,28 @@ function UnifiedMessageBubble({
   // Agent message
   if (msg.role === "agent") {
     const fixedContent = fixQuoteLinks(msg.content, msg.referencedQuoteIds);
-    const entityRefs = extractEntityRefs(fixedContent);
+    // Merge citation sources: inline links + referencedPolicyIds/QuoteIds from context
+    const inlineRefs = extractEntityRefs(fixedContent);
+    const seen = new Set(inlineRefs.map((r) => `${r.type}:${r.id}`));
+    const allRefs = [...inlineRefs];
+    if (msg.referencedPolicyIds) {
+      for (const pid of msg.referencedPolicyIds) {
+        const key = `policy:${pid}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          allRefs.push({ type: "policy", id: pid as string });
+        }
+      }
+    }
+    if (msg.referencedQuoteIds && Array.isArray(msg.referencedQuoteIds)) {
+      for (const qid of msg.referencedQuoteIds) {
+        const key = `quote:${qid}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          allRefs.push({ type: "quote", id: qid as string });
+        }
+      }
+    }
     return (
       <div>
         <div className="flex items-start gap-2.5 max-w-lg w-fit">
@@ -394,7 +415,7 @@ function UnifiedMessageBubble({
             )}
           </div>
         </div>
-        <ReferenceCardStrip refs={entityRefs} />
+        <ReferenceCardStrip refs={allRefs} />
         {isLastAgentMessage && (!msg.content || msg.content.trim().length === 0) && (
           <RetryButton messageId={msg._id} />
         )}
