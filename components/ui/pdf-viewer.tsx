@@ -373,7 +373,7 @@ export function PdfViewer({
       </div>
 
       {/* PDF content */}
-      <div ref={containerRef} className="flex-1 min-h-0 overflow-auto bg-neutral-100/80 p-3 -webkit-overflow-scrolling-touch" style={{ overscrollBehavior: "contain", WebkitOverflowScrolling: "touch", touchAction: "pan-y" }}>
+      <div ref={containerRef} className="flex-1 min-h-0 overflow-auto bg-neutral-100/80 dark:bg-neutral-900/80 p-3 -webkit-overflow-scrolling-touch" style={{ overscrollBehavior: "contain", WebkitOverflowScrolling: "touch", touchAction: "pan-y" }}>
         {error ? (
           <div className="flex flex-col items-center justify-center h-full gap-3 text-muted-foreground">
             <AlertTriangle className="w-8 h-8 text-red-400" />
