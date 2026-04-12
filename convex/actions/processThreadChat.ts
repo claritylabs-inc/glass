@@ -446,27 +446,13 @@ The policy index above shows section titles. Use lookup_policy_section with the 
         generate_coi: "Generating COI...",
       };
 
-      // Detect provider for reasoning support
-      const modelId = (getModel("chat") as any)?.modelId ?? "";
-      const isDeepSeek = modelId.includes("deepseek");
-      const isKimi = modelId.includes("kimi");
-
-      // Enable reasoning for providers that support it
-      const providerOptions: Record<string, any> = {};
-      if (isDeepSeek) {
-        providerOptions.deepseek = { thinking: { type: "enabled" } };
-      } else if (isKimi) {
-        providerOptions.moonshotai = { thinking: { type: "enabled", budgetTokens: 4096 } };
-      }
-
       const result = streamText({
         model: getModel("chat"),
-        maxOutputTokens: 2048,
+        maxOutputTokens: 4096,
         system: fullSystemPrompt,
         messages: messageHistory,
         tools,
-        stopWhen: stepCountIs(8),
-        providerOptions,
+        stopWhen: stepCountIs(25),
       });
 
       let reasoning = "";

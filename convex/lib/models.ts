@@ -1,6 +1,7 @@
 "use node";
 
 import { createAnthropic } from "@ai-sdk/anthropic";
+import { createOpenAI } from "@ai-sdk/openai";
 import { createMoonshotAI } from "@ai-sdk/moonshotai";
 import { createDeepSeek } from "@ai-sdk/deepseek";
 
@@ -18,12 +19,18 @@ import { createDeepSeek } from "@ai-sdk/deepseek";
 
 // Lazy provider factories
 let _anthropic: ReturnType<typeof createAnthropic> | null = null;
+let _openai: ReturnType<typeof createOpenAI> | null = null;
 let _moonshot: ReturnType<typeof createMoonshotAI> | null = null;
 let _deepseek: ReturnType<typeof createDeepSeek> | null = null;
 
 function anthropic() {
   if (!_anthropic) _anthropic = createAnthropic();
   return _anthropic;
+}
+
+function openai() {
+  if (!_openai) _openai = createOpenAI();
+  return _openai;
 }
 
 function moonshot() {
@@ -52,13 +59,14 @@ export type ModelTask =
 /**
  * Model routing.
  *
- * Kimi K2.5: primary for chat, tools, analysis, email (good quality + 256K context)
+ * GPT-5.4 mini: primary for chat, tools (strong reasoning + tool use)
+ * Kimi K2.5: analysis, email drafting (good quality + 256K context)
  * Claude Haiku: classification, summary (fast, cheap)
- * Kimi K2.5: extraction (better quality per user feedback)
+ * Claude Sonnet: extraction (quality)
  */
 const MODEL_CONFIG: Record<ModelTask, () => any> = {
-  chat:             () => deepseek()("deepseek-chat"),
-  chat_with_tools:  () => deepseek()("deepseek-chat"),
+  chat:             () => openai()("gpt-5.4-mini"),
+  chat_with_tools:  () => openai()("gpt-5.4-mini"),
   email_draft:      () => moonshot()("kimi-k2.5"),
   email_reply:      () => moonshot()("kimi-k2.5"),
   analysis:         () => moonshot()("kimi-k2.5"),
