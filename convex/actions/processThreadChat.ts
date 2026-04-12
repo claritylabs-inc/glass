@@ -582,6 +582,8 @@ When answering coverage questions, you are an expert insurance analyst, not a di
       let reasoning = "";
       let hasStartedReasoning = false;
       let lastReasoningFlush = Date.now();
+      const citedSections = new Set<string>(); // titles from lookup_policy_section results
+      let lastToolName = "";
 
       for await (const part of result.fullStream) {
         if (part.type === "reasoning-delta") {
@@ -610,15 +612,23 @@ When answering coverage questions, you are an expert insurance analyst, not a di
             });
           }
         } else if (part.type === "tool-call") {
-          // Preserve any pre-tool text — the model may produce partial responses
-          // between tool calls, and clearing would lose the final answer if
-          // the model hits the step limit during tool use.
+          lastToolName = part.toolName;
           const label = TOOL_LABELS[part.toolName] ?? `Using ${part.toolName}...`;
           await ctx.runMutation(internal.threads.streamAgentMessage, {
             id: agentMsgId,
             content: content ? content + `\n\n*${label}*` : `*${label}*`,
           });
         } else if (part.type === "tool-result") {
+          // Capture cited section titles from lookup_policy_section results
+          if (lastToolName === "lookup_policy_section" && (part as any).output) {
+            const output = (part as any).output;
+            const results = Array.isArray(output) ? output : [output];
+            for (const r of results) {
+              if (r && typeof r === "object" && r.title) {
+                citedSections.add(r.title);
+              }
+            }
+          }
           // Clear the tool label but keep accumulated content
           await ctx.runMutation(internal.threads.streamAgentMessage, {
             id: agentMsgId,
@@ -627,12 +637,13 @@ When answering coverage questions, you are an expert insurance analyst, not a di
         }
       }
 
-      // Final update — save both content and reasoning
+      // Final update — save content, reasoning, and cited sections
       await ctx.runMutation(internal.threads.updateAgentMessage, {
         id: agentMsgId,
         content,
         referencedPolicyIds: relevantPolicyIds.length > 0 ? relevantPolicyIds : undefined,
         referencedQuoteIds: relevantQuoteIds.length > 0 ? relevantQuoteIds : undefined,
+        citedSections: citedSections.size > 0 ? [...citedSections] : undefined,
       });
       // Save final reasoning if any
       if (reasoning) {

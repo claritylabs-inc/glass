@@ -49,6 +49,7 @@ type ThreadMessage = {
   attachments?: { filename: string; contentType: string; size: number; fileId?: Id<"_storage"> }[];
   referencedPolicyIds?: Id<"policies">[];
   referencedQuoteIds?: Id<"policies">[];
+  citedSections?: string[];
   status?: "processing" | "error" | "pending_send";
   error?: string;
   pendingEmailId?: Id<"pendingEmails">;
@@ -142,31 +143,6 @@ function UnifiedThreadActions({
  */
 function fixQuoteLinks(content: string, _quoteIds?: Id<"policies">[]): string {
   return content;
-}
-
-/** Extract form numbers and section references cited in agent response text */
-function extractCitedSections(content: string): string[] {
-  const refs = new Set<string>();
-  // Match form numbers like PR650END, PR091END, PR5070CF, CR4070CF, PR214END
-  const formRegex = /\b([A-Z]{2}\d{3,4}(?:END|CF|GF))\b/g;
-  let match;
-  while ((match = formRegex.exec(content)) !== null) {
-    refs.add(match[1]);
-  }
-  // Match clause references like B.2.c, B.2, Section II
-  const clauseRegex = /\b(B\.\d+(?:\.[a-z])?|Section\s+[IVX]+)\b/gi;
-  while ((match = clauseRegex.exec(content)) !== null) {
-    refs.add(match[1]);
-  }
-  // Match key coverage terms mentioned with specific context
-  const coverageTerms = [
-    "Equipment Breakdown", "Spoilage", "Business Income", "Utility Services",
-    "Overhead Transmission", "Electrical Damage", "Coinsurance",
-  ];
-  for (const term of coverageTerms) {
-    if (content.includes(term)) refs.add(term);
-  }
-  return [...refs];
 }
 
 /* ── Shared markdown container styles ── */
@@ -373,8 +349,8 @@ function UnifiedMessageBubble({
   if (msg.role === "agent") {
     const fixedContent = fixQuoteLinks(msg.content, msg.referencedQuoteIds);
 
-    // Extract cited section references from agent response (form numbers, endorsement refs)
-    const citedSections = extractCitedSections(fixedContent);
+    // Cited sections from tool results (stored on message by processThreadChat)
+    const citedSections = msg.citedSections;
 
     // Merge citation sources: inline links + referencedPolicyIds/QuoteIds from context
     const inlineRefs = extractEntityRefs(fixedContent);

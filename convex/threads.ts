@@ -354,6 +354,7 @@ export const updateAgentMessage = internalMutation({
     content: v.string(),
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
     referencedQuoteIds: v.optional(v.array(v.id("policies"))),
+    citedSections: v.optional(v.array(v.string())),
     pendingEmailId: v.optional(v.id("pendingEmails")),
     status: v.optional(v.union(v.literal("pending_send"), v.literal("processing"), v.literal("error"))),
   },
@@ -363,6 +364,7 @@ export const updateAgentMessage = internalMutation({
       status: args.status ?? undefined,
       referencedPolicyIds: args.referencedPolicyIds,
       referencedQuoteIds: args.referencedQuoteIds,
+      citedSections: args.citedSections,
       pendingEmailId: args.pendingEmailId,
     });
   },

@@ -626,6 +626,8 @@ export default defineSchema({
     // Agent response metadata
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
     referencedQuoteIds: v.optional(v.any()), // legacy: may contain old quotes table IDs
+    // Sections cited by the agent (titles captured from lookup_policy_section tool results)
+    citedSections: v.optional(v.array(v.string())),
     // Status
     status: v.optional(v.union(
       v.literal("processing"),
