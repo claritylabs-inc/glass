@@ -1,7 +1,7 @@
 "use node";
 
 /**
- * Agent prompts and context building — cl-sdk v0.5.0
+ * Agent prompts and context building — cl-sdk
  *
  * SDK exports (unchanged): buildAgentSystemPrompt, buildConversationMemoryGuidance
  * Local implementations: buildDocumentContext (vector search), buildConversationMemoryContext (vector search)

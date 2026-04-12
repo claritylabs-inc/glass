@@ -1,14 +1,16 @@
 "use client";
 
-import { useState, Fragment, useRef, useEffect } from "react";
+import { useState, Fragment } from "react";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { motion, AnimatePresence } from "framer-motion";
+import dayjs from "dayjs";
 import { PillButton } from "@/components/ui/pill-button";
-import { Terminal, Pause, Play, X, RotateCw, Trash2 } from "lucide-react";
+import { Pause, Play, X, RotateCw, Trash2 } from "lucide-react";
 import { FadeIn } from "@/components/ui/fade-in";
 import { Skeleton } from "@/components/ui/skeleton";
+import { TerminalLog } from "@/components/terminal-log";
 import {
   Dialog,
   DialogContent,
@@ -209,93 +211,17 @@ function ViewErrorButton({ error }: { error: string }) {
   );
 }
 
-function formatRelativeTime(timestamp: number): string {
-  const seconds = Math.round((Date.now() - timestamp) / 1000);
-  if (seconds < 5) return "just now";
-  if (seconds < 60) return `${seconds}s ago`;
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  return `${Math.round(minutes / 60)}h ago`;
-}
-
 function formatDate(timestamp: number): string {
-  return new Date(timestamp).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+  return dayjs(timestamp).format("MMM D, YYYY");
 }
 
 function ExtractionLogRow({ log, isExpanded, isExtracting }: { log: ExtractionLogEntry[]; isExpanded: boolean; isExtracting: boolean }) {
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const prevLengthRef = useRef(0);
-
-  // Auto-scroll to bottom when new entries appear
-  useEffect(() => {
-    if (log.length > prevLengthRef.current && scrollRef.current) {
-      scrollRef.current.scrollTo({
-        top: scrollRef.current.scrollHeight,
-        behavior: log.length === 1 ? "instant" : "smooth",
-      });
-    }
-    prevLengthRef.current = log.length;
-  }, [log.length]);
-
   if (!log.length || !isExpanded) return null;
 
   return (
     <tr>
       <td colSpan={5} className="px-4 pt-0 pb-3">
-        <div className="rounded-lg border border-foreground/8 bg-foreground/[0.02] dark:bg-foreground/[0.04] overflow-hidden">
-          {/* Header bar */}
-          <div className="flex items-center gap-2 px-3 py-1.5 border-b border-foreground/6 bg-foreground/[0.02]">
-            <Terminal className="w-3 h-3 text-muted-foreground/40" />
-            <span className="text-[11px] font-medium text-muted-foreground/50 font-mono">
-              Extraction Log
-            </span>
-            {isExtracting && (
-              <span className="ml-auto flex items-center gap-1.5">
-                <span className="relative flex h-1.5 w-1.5">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" />
-                </span>
-                <span className="text-[10px] font-mono text-emerald-600/70 dark:text-emerald-500/70">live</span>
-              </span>
-            )}
-          </div>
-          {/* Log entries */}
-          <div
-            ref={scrollRef}
-            className="max-h-[180px] overflow-y-auto p-3 space-y-0.5"
-          >
-            {log.map((entry, i) => {
-              const isLatest = i === log.length - 1 && isExtracting;
-              return (
-                <motion.div
-                  key={i}
-                  initial={{ opacity: 0, y: 4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.2 }}
-                  className="flex items-baseline gap-2.5 py-[1px]"
-                >
-                  <span className="text-[10px] tabular-nums text-muted-foreground/35 shrink-0 w-11 text-right font-mono">
-                    {formatRelativeTime(entry.timestamp)}
-                  </span>
-                  <span className={`text-[12px] font-mono leading-relaxed ${
-                    isLatest
-                      ? "text-foreground"
-                      : "text-muted-foreground/70"
-                  }`}>
-                    {isLatest && (
-                      <span className="text-emerald-600 dark:text-emerald-500 mr-1.5">{">"}</span>
-                    )}
-                    {entry.message}
-                  </span>
-                </motion.div>
-              );
-            })}
-          </div>
-        </div>
+        <TerminalLog entries={log} live={isExtracting} maxHeight={180} />
       </td>
     </tr>
   );

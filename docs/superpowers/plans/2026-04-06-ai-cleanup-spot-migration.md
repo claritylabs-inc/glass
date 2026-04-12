@@ -2895,10 +2895,10 @@ git commit -m "feat: add COI generation action and wire save_note/generate_coi t
 
 ---
 
-### Task 21: Final verification and CLAUDE.md update
+### Task 21: Final verification and AGENTS.md update
 
 **Files:**
-- Modify: `CLAUDE.md`
+- Modify: `AGENTS.md`
 
 - [ ] **Step 1: Run full build**
 
@@ -2918,9 +2918,9 @@ Run: `cd /Users/terrywang/Repos/prism && npm run lint 2>&1 | tail -20`
 
 Expected: No critical errors (warnings are OK).
 
-- [ ] **Step 4: Update CLAUDE.md with new architecture**
+- [ ] **Step 4: Update AGENTS.md with new architecture**
 
-Add or update these sections in `CLAUDE.md`:
+Add or update these sections in `AGENTS.md`:
 
 Under "### Key Backend Files (convex/)":
 ```
@@ -2962,6 +2962,6 @@ Add:
 - [ ] **Step 5: Commit**
 
 ```bash
-git add CLAUDE.md
-git commit -m "docs: update CLAUDE.md with new AI architecture, models, tools, and memory system"
+git add AGENTS.md
+git commit -m "docs: update AGENTS.md with new AI architecture, models, tools, and memory system"
 ```

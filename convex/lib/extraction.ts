@@ -1,7 +1,7 @@
 "use node";
 
 /**
- * Extraction pipeline — cl-sdk v0.5.0
+ * Extraction pipeline — cl-sdk
  *
  * Replaces the old multi-pass extraction (classifyDocumentType → extractFromPdf/extractQuoteFromPdf → applyExtracted)
  * with the new coordinator/worker pipeline: createExtractor(config).extract(pdfBase64).
@@ -32,7 +32,7 @@ import { makeGenerateText, makeGenerateObject } from "./sdkCallbacks";
  *
  * The SDK's coordinator uses generateText for classification and planning,
  * and generateObject for focused extraction workers. Prism routes both
- * through its multi-model config (Sonnet for extraction, Haiku for classification).
+ * through its multi-model config.
  */
 export function buildExtractor(opts?: {
   log?: LogFn;

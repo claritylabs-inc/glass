@@ -1,214 +1,137 @@
-# Prism — Insurance Intelligence Platform
+# Prism
 
-AI-powered insurance platform with policy extraction, quote management, and application assistance. Connects to IMAP email accounts, scans for insurance-related emails, extracts structured policy data from PDFs, and provides an AI agent (Prism) that handles policy Q&A and insurance application form filling via email and web chat.
+Prism is an insurance intelligence platform for ingesting policy and quote documents, extracting structured insurance data, and using that data in agent workflows for Q&A, application assistance, COI generation, and MCP integrations.
+
+For contributor-facing architecture notes, see [AGENTS.md](/Users/terrywang/Repos/prism/AGENTS.md).
 
 ## Getting Started
 
 ```bash
 npm install
-npm run dev          # Start Next.js dev server (Turbopack)
-npx convex dev       # Start Convex backend (separate terminal)
+npm run dev
+npx convex dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) to view the app.
+Open `http://localhost:3000`.
 
-### Environment Setup
+## Environment
 
-Requires a Convex project and API keys:
+Common environment variables:
 
-- `CONVEX_DEPLOYMENT` — Convex project URL (set via `npx convex dev`)
-- `ANTHROPIC_API_KEY` — Set in Convex dashboard environment variables
-- `AUTH_RESEND_KEY` — Resend API key for outbound agent emails + OTP auth
-- `RESEND_WEBHOOK_SECRET` — Resend webhook verification secret
-- `AGENT_DOMAIN` — Domain for agent email addresses (default: `prism.claritylabs.inc`)
-- `SITE_URL` — Public URL for the app (default: `https://prism.claritylabs.inc`)
+- `CONVEX_DEPLOYMENT`
+- `ANTHROPIC_API_KEY`
+- `OPENAI_API_KEY`
+- `MOONSHOTAI_API_KEY`
+- `DEEPSEEK_API_KEY`
+- `AUTH_RESEND_KEY`
+- `RESEND_WEBHOOK_SECRET`
+- `AGENT_DOMAIN`
+- `SITE_URL`
+- `FLATTEN_API_KEY`
+
+Exact requirements depend on which workflows you are exercising.
 
 ## Architecture
 
-### Tech Stack
+Prism is built with:
 
-- **Frontend**: Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS 4
-- **Backend**: [Convex](https://convex.dev) — realtime serverless database + functions
-- **AI**: Anthropic Claude API — Haiku for classification/routing, Sonnet for extraction
-- **Email Inbound**: ImapFlow for IMAP inbox scanning, Resend webhooks for agent inbound
-- **Email Outbound**: Resend API for agent replies + auth OTP
-- **PDF Generation**: pdfkit for application summary PDFs
-- **UI**: shadcn/ui (base-nova style), Framer Motion, Lucide icons
+- Next.js 16 + React 19 for the app UI
+- Convex for database, actions, scheduler, file storage, and vector search
+- Vercel AI SDK for model calls
+- `@claritylabs/cl-sdk@0.9.x` for document extraction, query-agent primitives, insurance prompts, chunking, and PDF helpers
+- Resend + IMAP for inbound and outbound email workflows
 
-### Authentication
+### Current Model Routing
 
-Auth uses `@convex-dev/auth` with email OTP (one-time password). All routes except `/login` require authentication.
+Model routing is centralized in [convex/lib/models.ts](/Users/terrywang/Repos/prism/convex/lib/models.ts).
 
-**Important for backend development**: Convex has two function contexts:
-- **Public functions** (`query`, `mutation`, `action`) — called from the browser, have user auth context
-- **Internal functions** (`internalQuery`, `internalMutation`, `internalAction`) — called via scheduler or `internal.*`, run **without auth context**
+- `gpt-5.4-mini` handles chat, tool chat, and extraction
+- `kimi-k2.5` handles email drafting, reply writing, and analysis
+- `claude-haiku-4-5-20251001` handles classification and summary tasks
 
-Internal functions must use internal query variants (e.g., `internal.emails.getInternal`) instead of public queries that call `requireAuth`. See `convex/lib/auth.ts`.
+If a configured provider is unavailable, Prism falls back to Claude Haiku for protected fallback paths.
 
-## Data Flows
+## Core Flows
 
-### Policy Extraction
+### Policy And Quote Extraction
 
-1. **Scan** — User configures date range + sender domain filters, triggers IMAP scan
-2. **Classify** — Emails classified using keyword heuristics + Claude Haiku for ambiguous cases
-3. **Extract** — Insurance emails with PDF attachments sent to Claude Sonnet for structured extraction with page-level provenance
-4. **Review** — Users review extracted policies, coverages, and document sections with references back to source PDF pages
+1. Fetch a PDF from IMAP or upload flow.
+2. Store the original file in Convex storage.
+3. Run `buildExtractor()` from [convex/lib/extraction.ts](/Users/terrywang/Repos/prism/convex/lib/extraction.ts).
+4. Let `cl-sdk` classify, plan, extract, review, and assemble the final `InsuranceDocument`.
+5. Map the SDK document into Prism’s policy schema.
+6. Chunk the document and embed those chunks for semantic retrieval.
 
-### Prism — Email Q&A
+### cl-sdk Callback Wiring
 
-1. **Inbound routing** — Resend webhook → verify signature → dedup → resolve org by agent handle → detect mode (direct/cc/forward/unknown) → resolve thread
-2. **Policy/Quote Q&A** — Builds system prompt with org context, loads matching policies/quotes, searches cross-thread conversation memory → Haiku generates response → sends reply with threading headers
-3. **Unknown mode** — Forwards unclassifiable emails to org admin for manual review
+Prism’s `cl-sdk` adapter lives in [convex/lib/sdkCallbacks.ts](/Users/terrywang/Repos/prism/convex/lib/sdkCallbacks.ts).
 
-### Application Processing
+`cl-sdk v0.9` passes document content through callback `providerOptions`:
 
-Prism can help users fill out insurance application forms (PDFs). The full workflow:
+- `providerOptions.pdfBase64`
+- `providerOptions.images`
 
-#### Detection
-- **Trigger**: Direct email to agent with PDF attachment + application intent keywords ("help fill out", "application", "acord", etc.)
-- **Classification**: Claude Haiku classifies the PDF as an application form (vs policy/quote/certificate). Requires confidence > 0.7
-- **Immediate ack**: Sends "reviewing your application" email before extraction begins (threaded to original)
+Prism converts those into AI SDK multipart content:
 
-#### Step 1: Field Extraction (Claude Sonnet)
-- Extracts all fillable fields from the PDF as structured JSON
-- Field types: `text`, `numeric`, `currency`, `date`, `yes_no`, `table`, `declaration`
-- Handles grouped checkbox/radio fields as single fields with `options` array (e.g., "Business Type" with options [Corporation, Partnership, LLC, ...])
-- `max_tokens: 16384` for large forms; falls back to `salvageTruncatedJsonArray` if response is truncated
-- Stores raw extraction response for retry capability
+- PDFs become file parts
+- images become image parts
 
-#### Step 2: Auto-Fill (Claude Haiku)
-Gathers context from 5 sources and matches to extracted fields:
+Prism also preserves a higher token ceiling for exclusion-heavy extraction prompts.
 
-| Source | Data |
-|--------|------|
-| **Org business context** | Saved answers from previous applications (`orgBusinessContext` table) |
-| **Org details** | Company name, website, industry, industry vertical, business description, broker info |
-| **User contact info** | Name, email, title, phone |
-| **Existing policies** | Carrier, policy number, effective/expiry dates, premium, coverage limits, deductibles — from the `policies` table |
-| **Web research** | Fetches org website → Haiku extracts business facts (services, years in business, employees, certifications) |
+### Retrieval And Agent Context
 
-If no matching current policy exists for the application type, a note is included so the agent asks the user if they have a current policy.
+Prism stores semantic context in:
 
-#### Step 3: Question Batching (Claude Haiku)
-- Groups unfilled fields by **topic** (Company Info, Operations, Financial, Coverage, Declarations, etc.)
-- No fixed batch size — each topic gets its own email, aiming for 3-8 total batches
-- Questions formatted with numbered list, field-type hints (dollar amounts, dates, options), and table column specs
-- Sends first batch email (threaded to ack)
+- `documentChunks` for extracted document content
+- `conversationTurns` for conversation memory
 
-#### Step 4: Answer Parsing (Claude Haiku)
-- Parses user's email reply to extract answers for the current batch
-- Handles: numbered answers, inline references, table data, yes/no with explanations, partial responses
-- Updates field values + marks answered in batch
-- Saves non-transient answers to `orgBusinessContext` for future applications
-- **Transient filter**: Date fields and time-specific values (effective dates, expiry, quote-required-by, signatures) are NOT saved to persistent context
-- If unanswered questions remain: re-asks just those. If batch complete: sends next batch or moves to confirmation
+[convex/lib/agentPrompts.ts](/Users/terrywang/Repos/prism/convex/lib/agentPrompts.ts) builds retrieval-backed policy and quote context. When chunks are unavailable, it falls back to a keyword-scored summary.
 
-#### Step 5: Confirmation
-- Generates readable summary grouped by section (Claude Haiku)
-- Sends confirmation email: "Reply 'Looks good' to confirm, or describe any changes needed"
-- Status: `pending_confirmation`
+### Application Assistance
 
-#### Step 6: Completion
-- **Confirmed**: Generates summary PDF (pdfkit), stores in file storage, marks complete
-- **Changes requested**: Parses changes, updates fields, re-sends updated confirmation
-- **Cancelled**: Marks session cancelled, sends acknowledgment
+Application workflows live primarily in [convex/actions/processApplication.ts](/Users/terrywang/Repos/prism/convex/actions/processApplication.ts).
 
-#### Email Threading
-All application emails are threaded via `In-Reply-To` and `References` headers. The session stores `originalMessageId` (from inbound) and `lastSentMessageId` (from latest outbound) for chain continuity.
+High-level flow:
 
-#### Reply Routing
-Replies to application emails are detected via 3 fallback strategies:
-1. **By threadId** — standard email threading resolution (In-Reply-To → findByMessageId)
-2. **By lastSentMessageId** — matches reply's In-Reply-To against `applicationSessions.lastSentMessageId`
-3. **By orgId** — finds any active application session in asking/pending state for the org
+1. Detect likely insurance application forms.
+2. Extract fillable fields from the PDF.
+3. Auto-fill from org context, user data, prior policies, and saved answers.
+4. Ask the user for remaining data in batches.
+5. Parse replies and update the application session.
+6. Generate confirmation output and optionally a filled PDF.
 
-#### Retry
-Failed application sessions can be retried from the frontend (Applications list, application detail page, or conversation thread). Resets session state and re-schedules from field extraction.
+### Proactive Analysis
 
-### Business Context
+After extraction, Prism can schedule follow-up analysis to:
 
-- `orgBusinessContext` table stores reusable org data keyed by category + key
-- Categories: company_info, operations, financial, coverage, loss_history, declarations, other
-- Source tracking: manual, onboarding, application, user_email
-- Confidence: confirmed, inferred
-- Auto-saved from application answers (excluding transient fields)
-- Managed via Settings > Business Context tab (table UI grouped by category)
+- score a policy
+- identify risks and gaps
+- compare renewals
+- produce portfolio-level observations
 
-## Routes
+## Important Convex Rule
 
-| Route | Auth | Description |
-|-------|:---:|-------------|
-| `/login` | No | Email OTP authentication |
-| `/signup` | No | New user registration |
-| `/onboarding` | Yes | Post-signup onboarding wizard |
-| `/` | Yes | Dashboard — stats cards, filters, policy table |
-| `/policies` | Yes | Policy list with type/carrier/year filters |
-| `/policies/[id]` | Yes | Policy detail — sections, coverages, PDF viewer |
-| `/quotes` | Yes | Quote list with filters |
-| `/quotes/[id]` | Yes | Quote detail page |
-| `/applications` | Yes | Application sessions — stats, status, progress |
-| `/applications/[id]` | Yes | Application detail — fields by section, batch timeline, PDF download |
-| `/connections` | Yes | IMAP connection management, scan config, real-time progress |
-| `/extractions` | Yes | Extraction queue + completed log |
-| `/agent` | Yes | Prism — conversations, settings |
-| `/settings` | Yes | Org settings: info, team, context, connected apps, API keys |
-| `/oauth/authorize` | No* | OAuth 2.1 authorization page (login + consent for MCP remote clients) |
-| `/profile` | Yes | User profile |
+Internal Convex actions do not run with user auth context.
 
-## Key Files
+- Public functions can use auth helpers like `requireAuth()`.
+- Internal functions must use internal query and mutation variants.
+- Do not call public auth-dependent functions from internal actions.
 
-### Backend (`convex/`)
+## Main Files
 
-| File | Purpose |
-|------|---------|
-| `schema.ts` | Database schema — all tables and indexes |
-| `policies.ts` | Policy CRUD, stats, file storage, extraction updates |
-| `quotes.ts` | Quote CRUD (similar to policies) |
-| `connections.ts` | IMAP connection CRUD, scan progress, cascade delete |
-| `emails.ts` | Email insert (dedup), classification, processing status |
-| `orgs.ts` | Organization CRUD, member management, agent handle |
-| `businessContext.ts` | Business context CRUD (grouped by category, upsert by key, bulk upsert) |
-| `applicationSessions.ts` | Application session lifecycle (create → complete/cancel) |
-| `agentConversations.ts` | Agent conversation records, thread resolution, cross-thread memory |
-| `actions/handleInboundEmail.ts` | Inbound email routing — application detection, reply routing, Q&A |
-| `actions/processApplication.ts` | Full application workflow — extraction, auto-fill, Q&A, confirmation, PDF |
-| `actions/scanInbox.ts` | IMAP email fetching with date/sender filters |
-| `actions/classifyEmails.ts` | Email classification (keywords + AI) |
-| `actions/extractPolicy.ts` | PDF extraction via Claude Sonnet |
-| `lib/applicationPrompts.ts` | Application prompts (classify, extract, auto-fill, batch, parse, summary) |
-| `lib/applicationTypes.ts` | Types: FormField (Simple/Table/Declaration), QuestionBatch |
-| `lib/prompts.ts` | Policy extraction prompts |
-| `lib/extraction.ts` | Extraction helpers (parsing, merging, chunking) |
-| `lib/agentPrompts.ts` | Agent system prompts, document context builder, memory context |
-| `lib/auth.ts` | `requireAuth()` helper |
-| `oauth.ts` | OAuth 2.1: client registration, auth code, token exchange/refresh/revocation |
-| `apiKeys.ts` | API key management for local MCP servers |
+- [convex/lib/models.ts](/Users/terrywang/Repos/prism/convex/lib/models.ts): model routing
+- [convex/lib/sdkCallbacks.ts](/Users/terrywang/Repos/prism/convex/lib/sdkCallbacks.ts): `cl-sdk` callback adapter
+- [convex/lib/extraction.ts](/Users/terrywang/Repos/prism/convex/lib/extraction.ts): extractor factory
+- [convex/lib/agentPrompts.ts](/Users/terrywang/Repos/prism/convex/lib/agentPrompts.ts): retrieval-backed prompt context
+- [convex/actions/extractPolicy.ts](/Users/terrywang/Repos/prism/convex/actions/extractPolicy.ts): IMAP-backed extraction entrypoint
+- [convex/actions/processApplication.ts](/Users/terrywang/Repos/prism/convex/actions/processApplication.ts): application workflow
+- [convex/http.ts](/Users/terrywang/Repos/prism/convex/http.ts): HTTP and MCP surface area
 
-### Frontend
+## Validation
 
-| File | Purpose |
-|------|---------|
-| `components/policy-table.tsx` | Policy list table with sorting, filters |
-| `components/applications-list.tsx` | Application sessions table with error dialog, retry |
-| `components/business-context-manager.tsx` | Business context table UI grouped by category |
-| `components/stats-cards.tsx` | Reusable StatCard component for metric displays |
-| `components/conversation-message.tsx` | Agent conversation message bubbles |
-| `components/scan-modal.tsx` | IMAP scan configuration modal |
-| `components/ui/pill-button.tsx` | Primary button (primary/secondary/destructive/ghost/icon) |
-| `components/ui/searchable-select.tsx` | Styled searchable dropdown |
+Useful checks while working:
 
-## Commands
+- `npx tsc --noEmit`
+- `npm run lint`
 
-| Command | Description |
-|---------|-------------|
-| `npm run dev` | Start Next.js dev server |
-| `npm run build` | Production build |
-| `npm run lint` | Run ESLint |
-| `npx convex dev` | Start Convex dev backend |
-| `npx convex run seed:seed` | Seed demo data |
-| `npx convex run migrations:migratePolicies` | Backfill old policy records |
-
-## Deployment
-
-- **Frontend**: Deployed on [Vercel](https://vercel.com)
-- **Backend**: Deployed on [Convex](https://convex.dev) (auto-deploys via GitHub Action when `convex/` changes)
+Repo-wide lint currently includes unrelated legacy issues, so targeted validation is often more useful when working on a specific area.

@@ -663,7 +663,11 @@ function ExtractionTab({ policy }: { policy: any }) {
       </div>
 
       {/* Extraction Log */}
-      <TerminalLog entries={extractionLog} />
+      <TerminalLog
+        entries={extractionLog}
+        live={policy.extractionStatus === "extracting"}
+        emptyMessage="No extraction events recorded"
+      />
 
       {/* Raw Data */}
       {(rawExtraction || rawMetadata) && (

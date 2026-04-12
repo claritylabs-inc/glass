@@ -1,21 +1,98 @@
 "use node";
 
 /**
- * Provider-agnostic callback adapters for cl-sdk v0.5.0.
+ * Provider-agnostic callback adapters for cl-sdk.
  *
  * Wraps Prism's existing AI SDK model routing (lib/models.ts) into the
  * simple callback interfaces the new SDK expects: GenerateText, GenerateObject, EmbedText.
  */
 
 import { generateText, Output, embed } from "ai";
+import type { LanguageModelUsage } from "ai";
+import type { ProviderOptions } from "@ai-sdk/provider-utils";
 import { createOpenAI } from "@ai-sdk/openai";
 import { getModel, type ModelTask } from "./models";
 import type { GenerateText, GenerateObject, EmbedText, TokenUsage } from "@claritylabs/cl-sdk";
 
-function mapUsage(aiSdkUsage: Record<string, any>): TokenUsage {
+function mapUsage(aiSdkUsage?: LanguageModelUsage): TokenUsage {
   return {
-    inputTokens: aiSdkUsage.promptTokens ?? 0,
-    outputTokens: aiSdkUsage.completionTokens ?? 0,
+    inputTokens: aiSdkUsage?.inputTokens ?? 0,
+    outputTokens: aiSdkUsage?.outputTokens ?? 0,
+  };
+}
+
+type ExtractionImage = {
+  imageBase64: string;
+  mimeType: string;
+};
+
+type ExtractionProviderOptions = ProviderOptions & {
+  pdfBase64?: string;
+  images?: ExtractionImage[];
+};
+
+const EXTRACTION_MAX_TOKEN_OVERRIDES: Record<string, number> = {
+  exclusions: 8192,
+};
+
+function getEffectiveMaxTokens(
+  task: ModelTask,
+  prompt: string,
+  maxTokens: number,
+): number {
+  if (task !== "extraction") return maxTokens;
+  if (prompt.includes("Extract ALL exclusions from this document")) {
+    return Math.max(maxTokens, EXTRACTION_MAX_TOKEN_OVERRIDES.exclusions);
+  }
+  return maxTokens;
+}
+
+function buildPromptInput(
+  prompt: string,
+  providerOptions?: Record<string, unknown>,
+) {
+  const options = providerOptions as ExtractionProviderOptions | undefined;
+
+  const pdfBase64 = options?.pdfBase64;
+  const images = options?.images;
+
+  if (images?.length) {
+    return {
+      messages: [
+        {
+          role: "user" as const,
+          content: [
+            ...images.map((img: ExtractionImage) => ({
+              type: "image" as const,
+              image: img.imageBase64,
+              mediaType: img.mimeType,
+            })),
+            { type: "text" as const, text: prompt },
+          ],
+        },
+      ],
+    };
+  }
+
+  if (!pdfBase64) {
+    return { prompt };
+  }
+
+  return {
+    messages: [
+      {
+        role: "user" as const,
+        content: [
+          { type: "text" as const, text: prompt },
+          {
+            type: "file" as const,
+            data: pdfBase64,
+            mediaType: "application/pdf",
+            filename: "document.pdf",
+          },
+        ],
+      },
+    ],
   };
 }
 
@@ -25,12 +102,13 @@ function mapUsage(aiSdkUsage: Record<string, any>): TokenUsage {
  */
 export function makeGenerateText(task: ModelTask = "extraction"): GenerateText {
   return async ({ prompt, system, maxTokens, providerOptions }) => {
+    const effectiveMaxTokens = getEffectiveMaxTokens(task, prompt, maxTokens);
     const result = await generateText({
       model: getModel(task),
       system,
-      prompt,
-      maxOutputTokens: maxTokens,
-      providerOptions: providerOptions as any,
+      ...buildPromptInput(prompt, providerOptions),
+      maxOutputTokens: effectiveMaxTokens,
+      providerOptions: providerOptions as ProviderOptions,
     });
     return {
       text: result.text,
@@ -45,13 +123,14 @@ export function makeGenerateText(task: ModelTask = "extraction"): GenerateText {
  */
 export function makeGenerateObject(task: ModelTask = "extraction"): GenerateObject {
   return async ({ prompt, system, schema, maxTokens, providerOptions }) => {
+    const effectiveMaxTokens = getEffectiveMaxTokens(task, prompt, maxTokens);
     const result = await generateText({
       model: getModel(task),
       system,
-      prompt,
+      ...buildPromptInput(prompt, providerOptions),
       output: Output.object({ schema }),
-      maxOutputTokens: maxTokens,
-      providerOptions: providerOptions as any,
+      maxOutputTokens: effectiveMaxTokens,
+      providerOptions: providerOptions as ProviderOptions,
     });
     return {
       object: result.output!,

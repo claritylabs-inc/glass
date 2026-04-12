@@ -383,6 +383,7 @@ export default defineSchema({
         name: v.string(),
         limit: v.optional(v.string()),
         deductible: v.optional(v.string()),
+        formNumber: v.optional(v.string()),
         pageNumber: v.optional(v.number()),
         sectionRef: v.optional(v.string()),
       })

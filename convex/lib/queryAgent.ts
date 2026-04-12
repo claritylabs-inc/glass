@@ -1,14 +1,14 @@
 "use node";
 
 /**
- * Query agent — cl-sdk v0.5.0
+ * Query agent — cl-sdk
  *
  * Wraps createQueryAgent with Prism's model routing and Convex storage.
  * Provides citation-backed Q&A over policy/quote documents.
  */
 
 import { createQueryAgent } from "@claritylabs/cl-sdk";
-import type { QueryConfig, QueryInput, QueryOutput } from "@claritylabs/cl-sdk";
+import type { QueryInput, QueryOutput } from "@claritylabs/cl-sdk";
 import type { ActionCtx } from "../_generated/server";
 import type { Id } from "../_generated/dataModel";
 import { makeGenerateText, makeGenerateObject, makeEmbedText } from "./sdkCallbacks";
