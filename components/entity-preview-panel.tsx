@@ -5,14 +5,98 @@ import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { useEntityPreview } from "@/hooks/use-entity-preview";
 import { usePdf } from "@/components/pdf-context";
-import { X, ExternalLink, FileText, Calendar, DollarSign, Shield, Loader2 } from "lucide-react";
+import {
+  X,
+  ExternalLink,
+  FileText,
+  Calendar,
+  Shield,
+  ChevronDown,
+  BookOpen,
+  ScrollText,
+  AlertTriangle,
+  Loader2,
+} from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useState } from "react";
 import dayjs from "dayjs";
 import Link from "next/link";
 import { POLICY_TYPE_LABELS } from "@/convex/lib/policyTypes";
+import { cn } from "@/lib/utils";
 
 const EASE = [0.16, 1, 0.3, 1] as const;
 
+/* ── Collapsible section component ── */
+function DocSection({
+  title,
+  type,
+  pages,
+  content,
+  defaultOpen = false,
+}: {
+  title: string;
+  type?: string;
+  pages?: string;
+  content: string;
+  defaultOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+
+  const icon =
+    type === "endorsement" ? <ScrollText className="w-3 h-3" /> :
+    type === "exclusion" ? <AlertTriangle className="w-3 h-3" /> :
+    <BookOpen className="w-3 h-3" />;
+
+  return (
+    <div className="border border-foreground/6 rounded-lg overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-2 w-full px-3 py-2 text-left hover:bg-foreground/[0.02] transition-colors cursor-pointer"
+      >
+        <span className="text-muted-foreground/40">{icon}</span>
+        <span className="text-[12px] font-medium text-foreground flex-1 truncate">
+          {title}
+        </span>
+        {pages && (
+          <span className="text-[10px] text-muted-foreground/30 shrink-0">
+            p.{pages}
+          </span>
+        )}
+        <ChevronDown
+          className={cn(
+            "w-3 h-3 text-muted-foreground/30 transition-transform duration-150 shrink-0",
+            open && "rotate-180"
+          )}
+        />
+      </button>
+      {open && (
+        <div className="px-3 pb-2.5 border-t border-foreground/4">
+          <p className="text-[11px] text-muted-foreground/60 leading-relaxed whitespace-pre-wrap pt-2">
+            {content.length > 3000 ? content.slice(0, 3000) + "\n\n[truncated]" : content}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Coverage row ── */
+function CoverageRow({ name, limit, deductible }: { name: string; limit?: string; deductible?: string }) {
+  return (
+    <div className="flex items-baseline justify-between py-1 px-2 rounded bg-foreground/[0.02] text-[12px]">
+      <span className="text-foreground truncate mr-2">{name}</span>
+      <div className="flex items-baseline gap-2 shrink-0">
+        {limit && <span className="text-muted-foreground/60 font-mono text-[11px]">{limit}</span>}
+        {deductible && (
+          <span className="text-muted-foreground/35 font-mono text-[10px]">ded {deductible}</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── Policy Preview (redesigned) ── */
 function PolicyPreview({ id, page }: { id: string; page?: number }) {
   const policy = useQuery(api.policies.get, { id: id as Id<"policies"> });
   const fileUrl = useQuery(
@@ -30,114 +114,149 @@ function PolicyPreview({ id, page }: { id: string; page?: number }) {
     );
   }
 
-  const carrier = policy.carrier ?? "Unknown carrier";
+  const carrier = policy.security || policy.carrier || "Unknown carrier";
   const policyNum = policy.policyNumber;
   const types = policy.policyTypes ?? (policy.policyType ? [policy.policyType] : []);
   const isQuoteDoc = policy.documentType === "quote";
+  const doc = policy.document as any;
+
+  // Gather document sections for display
+  const sections = doc?.sections ?? [];
+  const endorsements = doc?.endorsements ?? [];
+  const conditions = doc?.conditions ?? [];
+  const exclusions = doc?.exclusions ?? [];
+  const hasSections = sections.length > 0 || endorsements.length > 0 || conditions.length > 0 || exclusions.length > 0;
 
   return (
     <div className="space-y-4">
-      {/* Header */}
+      {/* Header — compact */}
       <div>
-        <p className="text-[11px] font-medium text-muted-foreground/50 uppercase tracking-wider mb-1">
-          {isQuoteDoc ? "Quote" : "Policy"}
-        </p>
-        <h3 className="text-sm font-semibold text-foreground">{carrier}</h3>
-        {policyNum && (
-          <p className="text-body-sm text-muted-foreground/60 font-mono mt-0.5">{policyNum}</p>
-        )}
-      </div>
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <p className="text-[10px] font-medium text-muted-foreground/40 uppercase tracking-wider">
+              {isQuoteDoc ? "Quote" : "Policy"}
+            </p>
+            <h3 className="text-[14px] font-semibold text-foreground leading-tight mt-0.5">{carrier}</h3>
+            {policyNum && (
+              <p className="text-[12px] text-muted-foreground/50 font-mono mt-0.5">#{policyNum}</p>
+            )}
+          </div>
+        </div>
 
-      {/* Types */}
-      {types.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
+        {/* Types + period inline */}
+        <div className="flex flex-wrap items-center gap-1.5 mt-2">
           {types.map((t) => (
             <span
               key={t}
-              className="text-[11px] px-2 py-0.5 rounded-full bg-foreground/[0.04] text-muted-foreground/60 font-medium"
+              className="text-[10px] px-1.5 py-px rounded bg-foreground/[0.04] text-muted-foreground/50"
             >
               {POLICY_TYPE_LABELS[t] ?? t}
             </span>
           ))}
-        </div>
-      )}
-
-      {/* Key details */}
-      <div className="space-y-2.5">
-        {(policy.effectiveDate || policy.expirationDate) && (
-          <div className="flex items-start gap-2.5">
-            <Calendar className="w-3.5 h-3.5 text-muted-foreground/40 mt-0.5 shrink-0" />
-            <div className="text-body-sm">
-              <p className="text-muted-foreground/50 text-[11px] font-medium">Period</p>
-              <p className="text-foreground">
+          {(policy.effectiveDate || policy.expirationDate) && (
+            <>
+              {types.length > 0 && <span className="text-muted-foreground/15">|</span>}
+              <span className="text-[10px] text-muted-foreground/40 flex items-center gap-1">
+                <Calendar className="w-2.5 h-2.5" />
                 {policy.effectiveDate ? dayjs(policy.effectiveDate).format("MMM D, YYYY") : "—"}
                 {" — "}
                 {policy.expirationDate ? dayjs(policy.expirationDate).format("MMM D, YYYY") : "—"}
-              </p>
-            </div>
-          </div>
-        )}
-
-        {policy.premium && (
-          <div className="flex items-start gap-2.5">
-            <DollarSign className="w-3.5 h-3.5 text-muted-foreground/40 mt-0.5 shrink-0" />
-            <div className="text-body-sm">
-              <p className="text-muted-foreground/50 text-[11px] font-medium">Premium</p>
-              <p className="text-foreground">{policy.premium}</p>
-            </div>
-          </div>
-        )}
+              </span>
+            </>
+          )}
+        </div>
 
         {policy.insuredName && (
-          <div className="flex items-start gap-2.5">
-            <Shield className="w-3.5 h-3.5 text-muted-foreground/40 mt-0.5 shrink-0" />
-            <div className="text-body-sm">
-              <p className="text-muted-foreground/50 text-[11px] font-medium">Insured</p>
-              <p className="text-foreground">{policy.insuredName}</p>
-            </div>
+          <div className="flex items-center gap-1.5 mt-1.5 text-[11px] text-muted-foreground/40">
+            <Shield className="w-2.5 h-2.5" />
+            <span>{policy.insuredName}</span>
           </div>
         )}
       </div>
 
-      {/* Coverages summary */}
-      {policy.coverages && policy.coverages.length > 0 && (
+      {/* Document sections — the main value of the preview */}
+      {hasSections && (
         <div>
-          <p className="text-[11px] font-medium text-muted-foreground/50 uppercase tracking-wider mb-2">
-            Coverages
+          <p className="text-[10px] font-medium text-muted-foreground/40 uppercase tracking-wider mb-2">
+            Document sections
           </p>
           <div className="space-y-1.5">
-            {policy.coverages.slice(0, 5).map((cov, i) => (
-              <div
-                key={i}
-                className="flex items-center justify-between text-body-sm py-1 px-2.5 rounded-md bg-foreground/[0.02]"
-              >
-                <span className="text-foreground truncate mr-3">{cov.name}</span>
-                <span className="text-muted-foreground/60 shrink-0 font-mono text-[11px]">
-                  {cov.limit}
-                </span>
-              </div>
+            {/* Show sections */}
+            {sections.slice(0, 15).map((s: any, i: number) => (
+              <DocSection
+                key={`s-${i}`}
+                title={s.title}
+                type={s.type}
+                pages={`${s.pageStart}${s.pageEnd ? `-${s.pageEnd}` : ""}`}
+                content={buildSectionContent(s)}
+              />
             ))}
-            {policy.coverages.length > 5 && (
-              <p className="text-[11px] text-muted-foreground/40 pl-2.5">
-                +{policy.coverages.length - 5} more
+            {sections.length > 15 && (
+              <p className="text-[10px] text-muted-foreground/30 pl-2">
+                +{sections.length - 15} more sections
               </p>
             )}
+
+            {/* Show endorsements */}
+            {endorsements.map((e: any, i: number) => (
+              <DocSection
+                key={`e-${i}`}
+                title={e.title}
+                type="endorsement"
+                pages={e.pageStart ? `${e.pageStart}` : undefined}
+                content={e.content || "No content extracted"}
+              />
+            ))}
+
+            {/* Show conditions */}
+            {conditions.map((c: any, i: number) => (
+              <DocSection
+                key={`c-${i}`}
+                title={c.title}
+                type="condition"
+                pages={c.pageNumber ? `${c.pageNumber}` : undefined}
+                content={c.content || "No content extracted"}
+              />
+            ))}
+
+            {/* Show exclusions */}
+            {exclusions.map((ex: any, i: number) => (
+              <DocSection
+                key={`ex-${i}`}
+                title={ex.title}
+                type="exclusion"
+                content={ex.content || ex.description || "No content extracted"}
+              />
+            ))}
           </div>
         </div>
       )}
 
-      {/* Summary */}
+      {/* Key coverages — collapsed */}
+      {policy.coverages && policy.coverages.length > 0 && (
+        <CollapsibleBlock title="Coverages" count={policy.coverages.length}>
+          <div className="space-y-1">
+            {policy.coverages.slice(0, 10).map((cov: any, i: number) => (
+              <CoverageRow key={i} name={cov.name} limit={cov.limit} deductible={cov.deductible} />
+            ))}
+            {policy.coverages.length > 10 && (
+              <p className="text-[10px] text-muted-foreground/30 pl-2">
+                +{policy.coverages.length - 10} more
+              </p>
+            )}
+          </div>
+        </CollapsibleBlock>
+      )}
+
+      {/* Summary — collapsed */}
       {policy.summary && (
-        <div>
-          <p className="text-[11px] font-medium text-muted-foreground/50 uppercase tracking-wider mb-1">
-            Summary
-          </p>
-          <p className="text-body-sm text-muted-foreground/70 leading-relaxed">{policy.summary}</p>
-        </div>
+        <CollapsibleBlock title="Summary">
+          <p className="text-[11px] text-muted-foreground/60 leading-relaxed">{policy.summary}</p>
+        </CollapsibleBlock>
       )}
 
       {/* Actions */}
-      <div className="flex gap-2 pt-2">
+      <div className="flex gap-2 pt-1">
         {fileUrl && (
           <button
             type="button"
@@ -145,17 +264,17 @@ function PolicyPreview({ id, page }: { id: string; page?: number }) {
               openWithUrl(fileUrl, page);
               closePreview();
             }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-foreground/8 bg-white/80 dark:bg-white/[0.06] hover:bg-foreground/[0.03] transition-colors text-body-sm font-medium cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-foreground/8 bg-white/80 dark:bg-white/[0.06] hover:bg-foreground/[0.03] transition-colors text-[12px] font-medium cursor-pointer"
           >
-            <FileText className="w-3.5 h-3.5 text-muted-foreground/50" />
+            <FileText className="w-3 h-3 text-muted-foreground/50" />
             View PDF
           </button>
         )}
         <Link
           href={`/policies/${id}`}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-foreground/8 bg-white/80 dark:bg-white/[0.06] hover:bg-foreground/[0.03] transition-colors text-body-sm font-medium no-underline"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-foreground/8 bg-white/80 dark:bg-white/[0.06] hover:bg-foreground/[0.03] transition-colors text-[12px] font-medium no-underline"
         >
-          <ExternalLink className="w-3.5 h-3.5 text-muted-foreground/50" />
+          <ExternalLink className="w-3 h-3 text-muted-foreground/50" />
           Full details
         </Link>
       </div>
@@ -163,6 +282,7 @@ function PolicyPreview({ id, page }: { id: string; page?: number }) {
   );
 }
 
+/* ── Quote Preview ── */
 function QuotePreview({ id, page }: { id: string; page?: number }) {
   const quote = useQuery(api.policies.get, { id: id as Id<"policies"> });
   const fileUrl = useQuery(
@@ -180,113 +300,82 @@ function QuotePreview({ id, page }: { id: string; page?: number }) {
     );
   }
 
-  const carrier = quote.carrier ?? "Unknown carrier";
+  const carrier = quote.security || quote.carrier || "Unknown carrier";
   const quoteNum = (quote as any).quoteNumber ?? quote.policyNumber;
   const types = quote.policyTypes ?? [];
+  const doc = quote.document as any;
+  const sections = doc?.sections ?? [];
+  const hasSections = sections.length > 0;
 
   return (
     <div className="space-y-4">
       {/* Header */}
       <div>
-        <p className="text-[11px] font-medium text-muted-foreground/50 uppercase tracking-wider mb-1">
+        <p className="text-[10px] font-medium text-muted-foreground/40 uppercase tracking-wider">
           Quote
         </p>
-        <h3 className="text-sm font-semibold text-foreground">{carrier}</h3>
+        <h3 className="text-[14px] font-semibold text-foreground leading-tight mt-0.5">{carrier}</h3>
         {quoteNum && (
-          <p className="text-body-sm text-muted-foreground/60 font-mono mt-0.5">{quoteNum}</p>
+          <p className="text-[12px] text-muted-foreground/50 font-mono mt-0.5">#{quoteNum}</p>
         )}
-      </div>
-
-      {/* Types */}
-      {types.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5 mt-2">
           {types.map((t) => (
             <span
               key={t}
-              className="text-[11px] px-2 py-0.5 rounded-full bg-foreground/[0.04] text-muted-foreground/60 font-medium"
+              className="text-[10px] px-1.5 py-px rounded bg-foreground/[0.04] text-muted-foreground/50"
             >
               {POLICY_TYPE_LABELS[t] ?? t}
             </span>
           ))}
         </div>
-      )}
-
-      {/* Key details */}
-      <div className="space-y-2.5">
-        {((quote as any).proposedEffectiveDate || (quote as any).proposedExpirationDate) && (
-          <div className="flex items-start gap-2.5">
-            <Calendar className="w-3.5 h-3.5 text-muted-foreground/40 mt-0.5 shrink-0" />
-            <div className="text-body-sm">
-              <p className="text-muted-foreground/50 text-[11px] font-medium">Proposed period</p>
-              <p className="text-foreground">
-                {(quote as any).proposedEffectiveDate ? dayjs((quote as any).proposedEffectiveDate).format("MMM D, YYYY") : "—"}
-                {" — "}
-                {(quote as any).proposedExpirationDate ? dayjs((quote as any).proposedExpirationDate).format("MMM D, YYYY") : "—"}
-              </p>
-            </div>
-          </div>
-        )}
-
-        {quote.premium && (
-          <div className="flex items-start gap-2.5">
-            <DollarSign className="w-3.5 h-3.5 text-muted-foreground/40 mt-0.5 shrink-0" />
-            <div className="text-body-sm">
-              <p className="text-muted-foreground/50 text-[11px] font-medium">Premium</p>
-              <p className="text-foreground">{quote.premium}</p>
-            </div>
-          </div>
-        )}
-
         {quote.insuredName && (
-          <div className="flex items-start gap-2.5">
-            <Shield className="w-3.5 h-3.5 text-muted-foreground/40 mt-0.5 shrink-0" />
-            <div className="text-body-sm">
-              <p className="text-muted-foreground/50 text-[11px] font-medium">Insured</p>
-              <p className="text-foreground">{quote.insuredName}</p>
-            </div>
+          <div className="flex items-center gap-1.5 mt-1.5 text-[11px] text-muted-foreground/40">
+            <Shield className="w-2.5 h-2.5" />
+            <span>{quote.insuredName}</span>
           </div>
         )}
       </div>
 
-      {/* Coverages summary */}
-      {quote.coverages && quote.coverages.length > 0 && (
+      {/* Sections */}
+      {hasSections && (
         <div>
-          <p className="text-[11px] font-medium text-muted-foreground/50 uppercase tracking-wider mb-2">
-            Coverages
+          <p className="text-[10px] font-medium text-muted-foreground/40 uppercase tracking-wider mb-2">
+            Document sections
           </p>
           <div className="space-y-1.5">
-            {quote.coverages.slice(0, 5).map((cov: any, i: number) => (
-              <div
-                key={i}
-                className="flex items-center justify-between text-body-sm py-1 px-2.5 rounded-md bg-foreground/[0.02]"
-              >
-                <span className="text-foreground truncate mr-3">{cov.name}</span>
-                <span className="text-muted-foreground/60 shrink-0 font-mono text-[11px]">
-                  {cov.proposedLimit ?? cov.limit}
-                </span>
-              </div>
+            {sections.slice(0, 15).map((s: any, i: number) => (
+              <DocSection
+                key={`s-${i}`}
+                title={s.title}
+                type={s.type}
+                pages={`${s.pageStart}${s.pageEnd ? `-${s.pageEnd}` : ""}`}
+                content={buildSectionContent(s)}
+              />
             ))}
-            {quote.coverages.length > 5 && (
-              <p className="text-[11px] text-muted-foreground/40 pl-2.5">
-                +{quote.coverages.length - 5} more
-              </p>
-            )}
           </div>
         </div>
       )}
 
+      {/* Coverages */}
+      {quote.coverages && quote.coverages.length > 0 && (
+        <CollapsibleBlock title="Coverages" count={quote.coverages.length}>
+          <div className="space-y-1">
+            {quote.coverages.slice(0, 10).map((cov: any, i: number) => (
+              <CoverageRow key={i} name={cov.name} limit={cov.proposedLimit ?? cov.limit} deductible={cov.deductible} />
+            ))}
+          </div>
+        </CollapsibleBlock>
+      )}
+
       {/* Summary */}
       {quote.summary && (
-        <div>
-          <p className="text-[11px] font-medium text-muted-foreground/50 uppercase tracking-wider mb-1">
-            Summary
-          </p>
-          <p className="text-body-sm text-muted-foreground/70 leading-relaxed">{quote.summary}</p>
-        </div>
+        <CollapsibleBlock title="Summary">
+          <p className="text-[11px] text-muted-foreground/60 leading-relaxed">{quote.summary}</p>
+        </CollapsibleBlock>
       )}
 
       {/* Actions */}
-      <div className="flex gap-2 pt-2">
+      <div className="flex gap-2 pt-1">
         {fileUrl && (
           <button
             type="button"
@@ -294,17 +383,17 @@ function QuotePreview({ id, page }: { id: string; page?: number }) {
               openWithUrl(fileUrl, page);
               closePreview();
             }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-foreground/8 bg-white/80 dark:bg-white/[0.06] hover:bg-foreground/[0.03] transition-colors text-body-sm font-medium cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-foreground/8 bg-white/80 dark:bg-white/[0.06] hover:bg-foreground/[0.03] transition-colors text-[12px] font-medium cursor-pointer"
           >
-            <FileText className="w-3.5 h-3.5 text-muted-foreground/50" />
+            <FileText className="w-3 h-3 text-muted-foreground/50" />
             View PDF
           </button>
         )}
         <Link
           href={`/policies/${id}`}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-foreground/8 bg-white/80 dark:bg-white/[0.06] hover:bg-foreground/[0.03] transition-colors text-body-sm font-medium no-underline"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-foreground/8 bg-white/80 dark:bg-white/[0.06] hover:bg-foreground/[0.03] transition-colors text-[12px] font-medium no-underline"
         >
-          <ExternalLink className="w-3.5 h-3.5 text-muted-foreground/50" />
+          <ExternalLink className="w-3 h-3 text-muted-foreground/50" />
           Full details
         </Link>
       </div>
@@ -312,6 +401,55 @@ function QuotePreview({ id, page }: { id: string; page?: number }) {
   );
 }
 
+/* ── Helpers ── */
+function buildSectionContent(s: any): string {
+  let content = s.content ?? "";
+  if (s.subsections?.length) {
+    for (const sub of s.subsections) {
+      content += `\n\n${sub.title ?? ""}`;
+      if (sub.content) content += `\n${sub.content}`;
+    }
+  }
+  return content;
+}
+
+function CollapsibleBlock({
+  title,
+  count,
+  children,
+}: {
+  title: string;
+  count?: number;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1.5 w-full group cursor-pointer"
+      >
+        <ChevronDown
+          className={cn(
+            "w-3 h-3 text-muted-foreground/30 transition-transform duration-150",
+            open && "rotate-180"
+          )}
+        />
+        <span className="text-[10px] font-medium text-muted-foreground/40 uppercase tracking-wider">
+          {title}
+        </span>
+        {count != null && (
+          <span className="text-[10px] text-muted-foreground/25">{count}</span>
+        )}
+      </button>
+      {open && <div className="mt-2">{children}</div>}
+    </div>
+  );
+}
+
+/* ── Panel Shell ── */
 export function EntityPreviewPanel() {
   const { preview, closePreview } = useEntityPreview();
 
@@ -336,7 +474,7 @@ export function EntityPreviewPanel() {
           >
             {/* Toolbar */}
             <div className="h-12 flex items-center justify-between px-4 border-b border-foreground/6 shrink-0">
-              <span className="text-body-sm font-medium text-foreground">
+              <span className="text-[13px] font-medium text-foreground">
                 {preview.type === "policy" ? "Policy" : "Quote"} Preview
               </span>
               <button
