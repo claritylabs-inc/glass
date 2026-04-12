@@ -55,11 +55,11 @@ function DocSection({
         className="flex items-center gap-2 w-full px-3 py-2 text-left hover:bg-foreground/[0.02] transition-colors cursor-pointer"
       >
         <span className="text-muted-foreground/40">{icon}</span>
-        <span className="text-[12px] font-medium text-foreground flex-1 truncate">
+        <span className="text-label font-medium text-foreground flex-1 truncate">
           {title}
         </span>
         {pages && (
-          <span className="text-[10px] text-muted-foreground/30 shrink-0">
+          <span className="text-label-sm text-muted-foreground/30 shrink-0">
             p.{pages}
           </span>
         )}
@@ -72,7 +72,7 @@ function DocSection({
       </button>
       {open && (
         <div className="px-3 pb-2.5 border-t border-foreground/4">
-          <p className="text-[11px] text-muted-foreground/60 leading-relaxed whitespace-pre-wrap pt-2">
+          <p className="text-label-sm text-muted-foreground/60 leading-relaxed whitespace-pre-wrap pt-2">
             {content.length > 3000 ? content.slice(0, 3000) + "\n\n[truncated]" : content}
           </p>
         </div>
@@ -84,12 +84,12 @@ function DocSection({
 /* ── Coverage row ── */
 function CoverageRow({ name, limit, deductible }: { name: string; limit?: string; deductible?: string }) {
   return (
-    <div className="flex items-baseline justify-between py-1 px-2 rounded bg-foreground/[0.02] text-[12px]">
+    <div className="flex items-baseline justify-between py-1 px-2 rounded bg-foreground/[0.02] text-label">
       <span className="text-foreground truncate mr-2">{name}</span>
       <div className="flex items-baseline gap-2 shrink-0">
-        {limit && <span className="text-muted-foreground/60 font-mono text-[11px]">{limit}</span>}
+        {limit && <span className="text-muted-foreground/60 font-mono text-label-sm">{limit}</span>}
         {deductible && (
-          <span className="text-muted-foreground/35 font-mono text-[10px]">ded {deductible}</span>
+          <span className="text-muted-foreground/35 font-mono text-label-sm">ded {deductible}</span>
         )}
       </div>
     </div>
@@ -97,7 +97,7 @@ function CoverageRow({ name, limit, deductible }: { name: string; limit?: string
 }
 
 /* ── Policy Preview (redesigned) ── */
-function PolicyPreview({ id, page }: { id: string; page?: number }) {
+function PolicyPreview({ id, page, citedSections }: { id: string; page?: number; citedSections?: string[] }) {
   const policy = useQuery(api.policies.get, { id: id as Id<"policies"> });
   const fileUrl = useQuery(
     api.policies.getFileUrl,
@@ -120,12 +120,28 @@ function PolicyPreview({ id, page }: { id: string; page?: number }) {
   const isQuoteDoc = policy.documentType === "quote";
   const doc = policy.document as any;
 
-  // Gather document sections for display
-  const sections = doc?.sections ?? [];
-  const endorsements = doc?.endorsements ?? [];
-  const conditions = doc?.conditions ?? [];
-  const exclusions = doc?.exclusions ?? [];
-  const hasSections = sections.length > 0 || endorsements.length > 0 || conditions.length > 0 || exclusions.length > 0;
+  // Gather document sections — filter to cited ones if we have citation context
+  const allSections = doc?.sections ?? [];
+  const allEndorsements = doc?.endorsements ?? [];
+  const allConditions = doc?.conditions ?? [];
+  const allExclusions = doc?.exclusions ?? [];
+
+  const hasCitations = citedSections && citedSections.length > 0;
+
+  function matchesCitation(title: string, content?: string): boolean {
+    if (!hasCitations) return true; // no filter — show all
+    const text = `${title} ${content ?? ""}`.toLowerCase();
+    return citedSections!.some((ref) => text.includes(ref.toLowerCase()));
+  }
+
+  const sections = allSections.filter((s: any) => matchesCitation(s.title, s.content));
+  const endorsements = allEndorsements.filter((e: any) => matchesCitation(e.title, e.content));
+  const conditions = allConditions.filter((c: any) => matchesCitation(c.title, c.content));
+  const exclusions = allExclusions.filter((ex: any) => matchesCitation(ex.title, ex.content ?? ex.description));
+
+  const citedCount = sections.length + endorsements.length + conditions.length + exclusions.length;
+  const totalCount = allSections.length + allEndorsements.length + allConditions.length + allExclusions.length;
+  const hasSections = citedCount > 0 || totalCount > 0;
 
   return (
     <div className="space-y-4">
@@ -133,12 +149,12 @@ function PolicyPreview({ id, page }: { id: string; page?: number }) {
       <div>
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
-            <p className="text-[10px] font-medium text-muted-foreground/40 uppercase tracking-wider">
+            <p className="text-label-sm font-medium text-muted-foreground/40 uppercase tracking-wider">
               {isQuoteDoc ? "Quote" : "Policy"}
             </p>
-            <h3 className="text-[14px] font-semibold text-foreground leading-tight mt-0.5">{carrier}</h3>
+            <h3 className="text-sm font-semibold text-foreground leading-tight mt-0.5">{carrier}</h3>
             {policyNum && (
-              <p className="text-[12px] text-muted-foreground/50 font-mono mt-0.5">#{policyNum}</p>
+              <p className="text-label text-muted-foreground/50 font-mono mt-0.5">#{policyNum}</p>
             )}
           </div>
         </div>
@@ -148,7 +164,7 @@ function PolicyPreview({ id, page }: { id: string; page?: number }) {
           {types.map((t) => (
             <span
               key={t}
-              className="text-[10px] px-1.5 py-px rounded bg-foreground/[0.04] text-muted-foreground/50"
+              className="text-label-sm px-1.5 py-px rounded bg-foreground/[0.04] text-muted-foreground/50"
             >
               {POLICY_TYPE_LABELS[t] ?? t}
             </span>
@@ -156,7 +172,7 @@ function PolicyPreview({ id, page }: { id: string; page?: number }) {
           {(policy.effectiveDate || policy.expirationDate) && (
             <>
               {types.length > 0 && <span className="text-muted-foreground/15">|</span>}
-              <span className="text-[10px] text-muted-foreground/40 flex items-center gap-1">
+              <span className="text-label-sm text-muted-foreground/40 flex items-center gap-1">
                 <Calendar className="w-2.5 h-2.5" />
                 {policy.effectiveDate ? dayjs(policy.effectiveDate).format("MMM D, YYYY") : "—"}
                 {" — "}
@@ -167,37 +183,38 @@ function PolicyPreview({ id, page }: { id: string; page?: number }) {
         </div>
 
         {policy.insuredName && (
-          <div className="flex items-center gap-1.5 mt-1.5 text-[11px] text-muted-foreground/40">
+          <div className="flex items-center gap-1.5 mt-1.5 text-label-sm text-muted-foreground/40">
             <Shield className="w-2.5 h-2.5" />
             <span>{policy.insuredName}</span>
           </div>
         )}
       </div>
 
-      {/* Document sections — the main value of the preview */}
+      {/* Document sections — filtered to cited ones when available */}
       {hasSections && (
         <div>
-          <p className="text-[10px] font-medium text-muted-foreground/40 uppercase tracking-wider mb-2">
-            Document sections
+          <p className="text-label-sm font-medium text-muted-foreground/40 uppercase tracking-wider mb-2">
+            {hasCitations ? `Cited sections` : "Document sections"}
+            {hasCitations && totalCount > citedCount && (
+              <span className="text-muted-foreground/25 font-normal ml-1">
+                {citedCount} of {totalCount}
+              </span>
+            )}
           </p>
           <div className="space-y-1.5">
-            {/* Show sections */}
-            {sections.slice(0, 15).map((s: any, i: number) => (
+            {/* Show matching sections — default open when cited */}
+            {sections.map((s: any, i: number) => (
               <DocSection
                 key={`s-${i}`}
                 title={s.title}
                 type={s.type}
                 pages={`${s.pageStart}${s.pageEnd ? `-${s.pageEnd}` : ""}`}
                 content={buildSectionContent(s)}
+                defaultOpen={hasCitations}
               />
             ))}
-            {sections.length > 15 && (
-              <p className="text-[10px] text-muted-foreground/30 pl-2">
-                +{sections.length - 15} more sections
-              </p>
-            )}
 
-            {/* Show endorsements */}
+            {/* Show matching endorsements — default open when cited */}
             {endorsements.map((e: any, i: number) => (
               <DocSection
                 key={`e-${i}`}
@@ -205,6 +222,7 @@ function PolicyPreview({ id, page }: { id: string; page?: number }) {
                 type="endorsement"
                 pages={e.pageStart ? `${e.pageStart}` : undefined}
                 content={e.content || "No content extracted"}
+                defaultOpen={hasCitations}
               />
             ))}
 
@@ -216,6 +234,7 @@ function PolicyPreview({ id, page }: { id: string; page?: number }) {
                 type="condition"
                 pages={c.pageNumber ? `${c.pageNumber}` : undefined}
                 content={c.content || "No content extracted"}
+                defaultOpen={hasCitations}
               />
             ))}
 
@@ -226,8 +245,20 @@ function PolicyPreview({ id, page }: { id: string; page?: number }) {
                 title={ex.title}
                 type="exclusion"
                 content={ex.content || ex.description || "No content extracted"}
+                defaultOpen={hasCitations}
               />
             ))}
+
+            {/* Show all sections toggle when filtered */}
+            {hasCitations && totalCount > citedCount && (
+              <ShowAllSections
+                policyId={id}
+                allSections={allSections}
+                allEndorsements={allEndorsements}
+                allConditions={allConditions}
+                allExclusions={allExclusions}
+              />
+            )}
           </div>
         </div>
       )}
@@ -240,7 +271,7 @@ function PolicyPreview({ id, page }: { id: string; page?: number }) {
               <CoverageRow key={i} name={cov.name} limit={cov.limit} deductible={cov.deductible} />
             ))}
             {policy.coverages.length > 10 && (
-              <p className="text-[10px] text-muted-foreground/30 pl-2">
+              <p className="text-label-sm text-muted-foreground/30 pl-2">
                 +{policy.coverages.length - 10} more
               </p>
             )}
@@ -251,7 +282,7 @@ function PolicyPreview({ id, page }: { id: string; page?: number }) {
       {/* Summary — collapsed */}
       {policy.summary && (
         <CollapsibleBlock title="Summary">
-          <p className="text-[11px] text-muted-foreground/60 leading-relaxed">{policy.summary}</p>
+          <p className="text-label-sm text-muted-foreground/60 leading-relaxed">{policy.summary}</p>
         </CollapsibleBlock>
       )}
 
@@ -264,7 +295,7 @@ function PolicyPreview({ id, page }: { id: string; page?: number }) {
               openWithUrl(fileUrl, page);
               closePreview();
             }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-foreground/8 bg-white/80 dark:bg-white/[0.06] hover:bg-foreground/[0.03] transition-colors text-[12px] font-medium cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-foreground/8 bg-white/80 dark:bg-white/[0.06] hover:bg-foreground/[0.03] transition-colors text-label font-medium cursor-pointer"
           >
             <FileText className="w-3 h-3 text-muted-foreground/50" />
             View PDF
@@ -272,7 +303,7 @@ function PolicyPreview({ id, page }: { id: string; page?: number }) {
         )}
         <Link
           href={`/policies/${id}`}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-foreground/8 bg-white/80 dark:bg-white/[0.06] hover:bg-foreground/[0.03] transition-colors text-[12px] font-medium no-underline"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-foreground/8 bg-white/80 dark:bg-white/[0.06] hover:bg-foreground/[0.03] transition-colors text-label font-medium no-underline"
         >
           <ExternalLink className="w-3 h-3 text-muted-foreground/50" />
           Full details
@@ -283,7 +314,7 @@ function PolicyPreview({ id, page }: { id: string; page?: number }) {
 }
 
 /* ── Quote Preview ── */
-function QuotePreview({ id, page }: { id: string; page?: number }) {
+function QuotePreview({ id, page, citedSections }: { id: string; page?: number; citedSections?: string[] }) {
   const quote = useQuery(api.policies.get, { id: id as Id<"policies"> });
   const fileUrl = useQuery(
     api.policies.getFileUrl,
@@ -311,25 +342,25 @@ function QuotePreview({ id, page }: { id: string; page?: number }) {
     <div className="space-y-4">
       {/* Header */}
       <div>
-        <p className="text-[10px] font-medium text-muted-foreground/40 uppercase tracking-wider">
+        <p className="text-label-sm font-medium text-muted-foreground/40 uppercase tracking-wider">
           Quote
         </p>
-        <h3 className="text-[14px] font-semibold text-foreground leading-tight mt-0.5">{carrier}</h3>
+        <h3 className="text-sm font-semibold text-foreground leading-tight mt-0.5">{carrier}</h3>
         {quoteNum && (
-          <p className="text-[12px] text-muted-foreground/50 font-mono mt-0.5">#{quoteNum}</p>
+          <p className="text-label text-muted-foreground/50 font-mono mt-0.5">#{quoteNum}</p>
         )}
         <div className="flex flex-wrap items-center gap-1.5 mt-2">
           {types.map((t) => (
             <span
               key={t}
-              className="text-[10px] px-1.5 py-px rounded bg-foreground/[0.04] text-muted-foreground/50"
+              className="text-label-sm px-1.5 py-px rounded bg-foreground/[0.04] text-muted-foreground/50"
             >
               {POLICY_TYPE_LABELS[t] ?? t}
             </span>
           ))}
         </div>
         {quote.insuredName && (
-          <div className="flex items-center gap-1.5 mt-1.5 text-[11px] text-muted-foreground/40">
+          <div className="flex items-center gap-1.5 mt-1.5 text-label-sm text-muted-foreground/40">
             <Shield className="w-2.5 h-2.5" />
             <span>{quote.insuredName}</span>
           </div>
@@ -339,7 +370,7 @@ function QuotePreview({ id, page }: { id: string; page?: number }) {
       {/* Sections */}
       {hasSections && (
         <div>
-          <p className="text-[10px] font-medium text-muted-foreground/40 uppercase tracking-wider mb-2">
+          <p className="text-label-sm font-medium text-muted-foreground/40 uppercase tracking-wider mb-2">
             Document sections
           </p>
           <div className="space-y-1.5">
@@ -370,7 +401,7 @@ function QuotePreview({ id, page }: { id: string; page?: number }) {
       {/* Summary */}
       {quote.summary && (
         <CollapsibleBlock title="Summary">
-          <p className="text-[11px] text-muted-foreground/60 leading-relaxed">{quote.summary}</p>
+          <p className="text-label-sm text-muted-foreground/60 leading-relaxed">{quote.summary}</p>
         </CollapsibleBlock>
       )}
 
@@ -383,7 +414,7 @@ function QuotePreview({ id, page }: { id: string; page?: number }) {
               openWithUrl(fileUrl, page);
               closePreview();
             }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-foreground/8 bg-white/80 dark:bg-white/[0.06] hover:bg-foreground/[0.03] transition-colors text-[12px] font-medium cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-foreground/8 bg-white/80 dark:bg-white/[0.06] hover:bg-foreground/[0.03] transition-colors text-label font-medium cursor-pointer"
           >
             <FileText className="w-3 h-3 text-muted-foreground/50" />
             View PDF
@@ -391,12 +422,57 @@ function QuotePreview({ id, page }: { id: string; page?: number }) {
         )}
         <Link
           href={`/policies/${id}`}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-foreground/8 bg-white/80 dark:bg-white/[0.06] hover:bg-foreground/[0.03] transition-colors text-[12px] font-medium no-underline"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-foreground/8 bg-white/80 dark:bg-white/[0.06] hover:bg-foreground/[0.03] transition-colors text-label font-medium no-underline"
         >
           <ExternalLink className="w-3 h-3 text-muted-foreground/50" />
           Full details
         </Link>
       </div>
+    </div>
+  );
+}
+
+function ShowAllSections({
+  policyId,
+  allSections,
+  allEndorsements,
+  allConditions,
+  allExclusions,
+}: {
+  policyId: string;
+  allSections: any[];
+  allEndorsements: any[];
+  allConditions: any[];
+  allExclusions: any[];
+}) {
+  const [expanded, setExpanded] = useState(false);
+  if (!expanded) {
+    const total = allSections.length + allEndorsements.length + allConditions.length + allExclusions.length;
+    return (
+      <button
+        type="button"
+        onClick={() => setExpanded(true)}
+        className="text-label-sm text-muted-foreground/40 hover:text-muted-foreground/60 transition-colors cursor-pointer pl-1"
+      >
+        Show all {total} sections
+      </button>
+    );
+  }
+  return (
+    <div className="space-y-1.5 pt-1 border-t border-foreground/4">
+      <p className="text-label-sm text-muted-foreground/30 uppercase tracking-wider font-medium pt-1">All sections</p>
+      {allSections.map((s: any, i: number) => (
+        <DocSection key={`all-s-${i}`} title={s.title} type={s.type} pages={`${s.pageStart}${s.pageEnd ? `-${s.pageEnd}` : ""}`} content={buildSectionContent(s)} />
+      ))}
+      {allEndorsements.map((e: any, i: number) => (
+        <DocSection key={`all-e-${i}`} title={e.title} type="endorsement" pages={e.pageStart ? `${e.pageStart}` : undefined} content={e.content || "No content extracted"} />
+      ))}
+      {allConditions.map((c: any, i: number) => (
+        <DocSection key={`all-c-${i}`} title={c.title} type="condition" pages={c.pageNumber ? `${c.pageNumber}` : undefined} content={c.content || "No content extracted"} />
+      ))}
+      {allExclusions.map((ex: any, i: number) => (
+        <DocSection key={`all-ex-${i}`} title={ex.title} type="exclusion" content={ex.content || ex.description || "No content extracted"} />
+      ))}
     </div>
   );
 }
@@ -437,11 +513,11 @@ function CollapsibleBlock({
             open && "rotate-180"
           )}
         />
-        <span className="text-[10px] font-medium text-muted-foreground/40 uppercase tracking-wider">
+        <span className="text-label-sm font-medium text-muted-foreground/40 uppercase tracking-wider">
           {title}
         </span>
         {count != null && (
-          <span className="text-[10px] text-muted-foreground/25">{count}</span>
+          <span className="text-label-sm text-muted-foreground/25">{count}</span>
         )}
       </button>
       {open && <div className="mt-2">{children}</div>}
@@ -474,7 +550,7 @@ export function EntityPreviewPanel() {
           >
             {/* Toolbar */}
             <div className="h-12 flex items-center justify-between px-4 border-b border-foreground/6 shrink-0">
-              <span className="text-[13px] font-medium text-foreground">
+              <span className="text-body-sm font-medium text-foreground">
                 {preview.type === "policy" ? "Policy" : "Quote"} Preview
               </span>
               <button
@@ -489,10 +565,10 @@ export function EntityPreviewPanel() {
             {/* Content */}
             <div className="flex-1 overflow-y-auto p-4">
               {preview.type === "policy" && (
-                <PolicyPreview id={preview.id} page={preview.page} />
+                <PolicyPreview id={preview.id} page={preview.page} citedSections={preview.citedSections} />
               )}
               {preview.type === "quote" && (
-                <QuotePreview id={preview.id} page={preview.page} />
+                <QuotePreview id={preview.id} page={preview.page} citedSections={preview.citedSections} />
               )}
             </div>
           </motion.div>

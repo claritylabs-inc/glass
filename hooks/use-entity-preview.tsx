@@ -6,6 +6,7 @@ export interface EntityPreview {
   type: "policy" | "quote";
   id: string;
   page?: number; // optional page from ?page= param
+  citedSections?: string[]; // section/endorsement titles or form numbers referenced in the agent answer
 }
 
 interface EntityPreviewContextValue {

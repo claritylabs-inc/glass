@@ -38,7 +38,7 @@ export function extractEntityRefs(content: string): { type: "policy" | "quote"; 
   return refs;
 }
 
-function PolicyReferenceCard({ id, page }: { id: string; page?: number }) {
+function PolicyReferenceCard({ id, page, citedSections }: { id: string; page?: number; citedSections?: string[] }) {
   const policy = useQuery(api.policies.get, { id: id as Id<"policies"> });
   const { openPreview } = useEntityPreview();
 
@@ -58,7 +58,7 @@ function PolicyReferenceCard({ id, page }: { id: string; page?: number }) {
   return (
     <button
       type="button"
-      onClick={() => openPreview({ type: "policy", id, page })}
+      onClick={() => openPreview({ type: "policy", id, page, citedSections })}
       className="flex items-start gap-2.5 px-3 py-2.5 rounded-lg border border-foreground/8 bg-white/80 dark:bg-white/[0.06] hover:bg-foreground/[0.03] hover:border-foreground/12 transition-colors cursor-pointer text-left group w-[260px] shrink-0"
     >
       <div className="w-7 h-7 rounded-md bg-foreground/[0.04] flex items-center justify-center shrink-0 mt-0.5">
@@ -69,10 +69,10 @@ function PolicyReferenceCard({ id, page }: { id: string; page?: number }) {
         )}
       </div>
       <div className="min-w-0 flex-1 space-y-0.5">
-        <p className="text-[13px] font-medium text-foreground leading-tight truncate !my-0">
+        <p className="text-body-sm font-medium text-foreground leading-tight truncate !my-0">
           {carrier}
         </p>
-        <p className="text-[11px] text-muted-foreground/50 truncate !my-0">
+        <p className="text-label-sm text-muted-foreground/50 truncate !my-0">
           #{policyNum}
         </p>
         {types.length > 0 && (
@@ -80,7 +80,7 @@ function PolicyReferenceCard({ id, page }: { id: string; page?: number }) {
             {types.slice(0, 3).map((t) => (
               <span
                 key={t}
-                className="inline-block px-1.5 py-px rounded text-[10px] text-muted-foreground/60 bg-foreground/[0.04] leading-tight"
+                className="inline-block px-1.5 py-px rounded text-label-sm text-muted-foreground/60 bg-foreground/[0.04] leading-tight"
               >
                 {POLICY_TYPE_LABELS[t] ?? t}
               </span>
@@ -93,7 +93,7 @@ function PolicyReferenceCard({ id, page }: { id: string; page?: number }) {
   );
 }
 
-function QuoteReferenceCard({ id, page }: { id: string; page?: number }) {
+function QuoteReferenceCard({ id, page, citedSections }: { id: string; page?: number; citedSections?: string[] }) {
   const quote = useQuery(api.policies.get, { id: id as Id<"policies"> });
   const { openPreview } = useEntityPreview();
 
@@ -112,17 +112,17 @@ function QuoteReferenceCard({ id, page }: { id: string; page?: number }) {
   return (
     <button
       type="button"
-      onClick={() => openPreview({ type: "quote", id, page })}
+      onClick={() => openPreview({ type: "quote", id, page, citedSections })}
       className="flex items-start gap-2.5 px-3 py-2.5 rounded-lg border border-foreground/8 bg-white/80 dark:bg-white/[0.06] hover:bg-foreground/[0.03] hover:border-foreground/12 transition-colors cursor-pointer text-left group w-[260px] shrink-0"
     >
       <div className="w-7 h-7 rounded-md bg-foreground/[0.04] flex items-center justify-center shrink-0 mt-0.5">
         <ClipboardList className="w-3.5 h-3.5 text-muted-foreground/40" />
       </div>
       <div className="min-w-0 flex-1 space-y-0.5">
-        <p className="text-[13px] font-medium text-foreground leading-tight truncate !my-0">
+        <p className="text-body-sm font-medium text-foreground leading-tight truncate !my-0">
           {carrier}
         </p>
-        <p className="text-[11px] text-muted-foreground/50 truncate !my-0">
+        <p className="text-label-sm text-muted-foreground/50 truncate !my-0">
           #{quoteNum}
         </p>
         {types.length > 0 && (
@@ -130,7 +130,7 @@ function QuoteReferenceCard({ id, page }: { id: string; page?: number }) {
             {types.slice(0, 3).map((t) => (
               <span
                 key={t}
-                className="inline-block px-1.5 py-px rounded text-[10px] text-muted-foreground/60 bg-foreground/[0.04] leading-tight"
+                className="inline-block px-1.5 py-px rounded text-label-sm text-muted-foreground/60 bg-foreground/[0.04] leading-tight"
               >
                 {POLICY_TYPE_LABELS[t] ?? t}
               </span>
@@ -169,17 +169,22 @@ export function ContextReferenceCard({
 }
 
 /** Standalone reference card strip — renders below agent messages */
-export function ReferenceCardStrip({ refs }: { refs: { type: "policy" | "quote"; id: string; page?: number }[] }) {
+export function ReferenceCardStrip({
+  refs,
+  citedSections,
+}: {
+  refs: { type: "policy" | "quote"; id: string; page?: number }[];
+  citedSections?: string[];
+}) {
   if (refs.length === 0) return null;
 
   return (
     <div className="flex gap-2 flex-wrap mt-2 ml-[38px]">
-
       {refs.map((ref) =>
         ref.type === "quote" ? (
-          <QuoteReferenceCard key={`${ref.type}:${ref.id}`} id={ref.id} page={ref.page} />
+          <QuoteReferenceCard key={`${ref.type}:${ref.id}`} id={ref.id} page={ref.page} citedSections={citedSections} />
         ) : (
-          <PolicyReferenceCard key={`${ref.type}:${ref.id}`} id={ref.id} page={ref.page} />
+          <PolicyReferenceCard key={`${ref.type}:${ref.id}`} id={ref.id} page={ref.page} citedSections={citedSections} />
         ),
       )}
     </div>

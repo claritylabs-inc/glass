@@ -144,6 +144,31 @@ function fixQuoteLinks(content: string, _quoteIds?: Id<"policies">[]): string {
   return content;
 }
 
+/** Extract form numbers and section references cited in agent response text */
+function extractCitedSections(content: string): string[] {
+  const refs = new Set<string>();
+  // Match form numbers like PR650END, PR091END, PR5070CF, CR4070CF, PR214END
+  const formRegex = /\b([A-Z]{2}\d{3,4}(?:END|CF|GF))\b/g;
+  let match;
+  while ((match = formRegex.exec(content)) !== null) {
+    refs.add(match[1]);
+  }
+  // Match clause references like B.2.c, B.2, Section II
+  const clauseRegex = /\b(B\.\d+(?:\.[a-z])?|Section\s+[IVX]+)\b/gi;
+  while ((match = clauseRegex.exec(content)) !== null) {
+    refs.add(match[1]);
+  }
+  // Match key coverage terms mentioned with specific context
+  const coverageTerms = [
+    "Equipment Breakdown", "Spoilage", "Business Income", "Utility Services",
+    "Overhead Transmission", "Electrical Damage", "Coinsurance",
+  ];
+  for (const term of coverageTerms) {
+    if (content.includes(term)) refs.add(term);
+  }
+  return [...refs];
+}
+
 /* ── Shared markdown container styles ── */
 const MARKDOWN_STYLES = "max-w-none text-body-sm leading-relaxed [&_p]:my-3 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_strong]:font-semibold [&_ul]:my-3 [&_ul]:pl-5 [&_ul]:list-disc [&_ol]:my-3 [&_ol]:pl-5 [&_ol]:list-decimal [&_li]:my-0.5 [&_a]:text-blue-600 [&_a]:underline [&_h1]:text-[0.875rem] [&_h1]:font-semibold [&_h1]:mt-3 [&_h1]:mb-1 [&_h2]:text-[0.875rem] [&_h2]:font-semibold [&_h2]:mt-3 [&_h2]:mb-1 [&_h3]:text-[0.875rem] [&_h3]:font-semibold [&_h3]:mt-2.5 [&_h3]:mb-0.5 [&_h4]:text-[0.875rem] [&_h4]:font-semibold [&_h4]:mt-2 [&_h4]:mb-0.5 [&_h5]:text-[0.875rem] [&_h5]:font-semibold [&_h6]:text-[0.875rem] [&_h6]:font-semibold [&_hr]:my-3 [&_hr]:border-foreground/8 [&_code]:text-[12px] [&_code]:bg-foreground/[0.04] [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded";
 
@@ -232,7 +257,7 @@ function PendingSendCountdown({ pendingEmailId }: { pendingEmailId: Id<"pendingE
 
   return (
     <div className="flex items-center gap-2 mt-1.5">
-      <span className="text-[11px] text-muted-foreground/50">
+      <span className="text-label-sm text-muted-foreground/50">
         Sending in {remaining}s...
       </span>
       <button
@@ -245,7 +270,7 @@ function PendingSendCountdown({ pendingEmailId }: { pendingEmailId: Id<"pendingE
             toast.error("Failed to cancel");
           }
         }}
-        className="text-[11px] font-medium text-red-500 hover:text-red-600 transition-colors cursor-pointer"
+        className="text-label-sm font-medium text-red-500 hover:text-red-600 transition-colors cursor-pointer"
       >
         Cancel
       </button>
@@ -296,7 +321,7 @@ function UnifiedMessageBubble({
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <p className="text-[11px] font-medium text-muted-foreground/50">Prism</p>
+            <p className="text-label-sm font-medium text-muted-foreground/50">Prism</p>
             {channelIcon}
             <CancelButton messageId={msg._id} show />
           </div>
@@ -322,7 +347,7 @@ function UnifiedMessageBubble({
                 <span className="w-1 h-1 rounded-full bg-[#A0D2FA]/60 animate-pulse [animation-delay:150ms]" />
                 <span className="w-1 h-1 rounded-full bg-[#A0D2FA]/60 animate-pulse [animation-delay:300ms]" />
               </span>
-              <span className="text-[11px] text-muted-foreground/40 select-none">
+              <span className="text-label-sm text-muted-foreground/40 select-none">
                 {toolLabel ?? (isStale ? "Taking longer than expected" : "Thinking")}
               </span>
             </div>
@@ -347,6 +372,10 @@ function UnifiedMessageBubble({
   // Agent message
   if (msg.role === "agent") {
     const fixedContent = fixQuoteLinks(msg.content, msg.referencedQuoteIds);
+
+    // Extract cited section references from agent response (form numbers, endorsement refs)
+    const citedSections = extractCitedSections(fixedContent);
+
     // Merge citation sources: inline links + referencedPolicyIds/QuoteIds from context
     const inlineRefs = extractEntityRefs(fixedContent);
     const seen = new Set(inlineRefs.map((r) => `${r.type}:${r.id}`));
@@ -377,13 +406,13 @@ function UnifiedMessageBubble({
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
-              <p className="text-[11px] font-medium text-muted-foreground/50">Prism</p>
+              <p className="text-label-sm font-medium text-muted-foreground/50">Prism</p>
               {channelIcon}
               <span className="text-muted-foreground/20">·</span>
-              <span className="text-[10px] text-muted-foreground/25">{time.format("MMM D, h:mm A")}</span>
+              <span className="text-label-sm text-muted-foreground/25">{time.format("MMM D, h:mm A")}</span>
             </div>
             {msg.channel === "email" && msg.toAddresses && (
-              <div className="flex flex-wrap gap-x-3 text-[11px] text-muted-foreground/35 mb-1">
+              <div className="flex flex-wrap gap-x-3 text-label-sm text-muted-foreground/35 mb-1">
                 <span className="truncate">
                   <span className="text-muted-foreground/25">To:</span>{" "}
                   {msg.toAddresses.join(", ")}
@@ -410,12 +439,12 @@ function UnifiedMessageBubble({
             {isMixedThread && msg.channel === "chat" && (
               <div className="flex items-center gap-1 mt-1 ml-0.5">
                 <Lock className="w-2.5 h-2.5 text-muted-foreground/25" />
-                <span className="text-[10px] text-muted-foreground/30">Only visible to your team</span>
+                <span className="text-label-sm text-muted-foreground/30">Only visible to your team</span>
               </div>
             )}
           </div>
         </div>
-        <ReferenceCardStrip refs={allRefs} />
+        <ReferenceCardStrip refs={allRefs} citedSections={citedSections} />
         {isLastAgentMessage && (!msg.content || msg.content.trim().length === 0) && (
           <RetryButton messageId={msg._id} />
         )}
@@ -446,17 +475,17 @@ function UnifiedMessageBubble({
   return (
     <div className={`flex items-start gap-2.5 max-w-lg w-fit ${isOwnMessage ? "ml-auto flex-row-reverse" : ""}`}>
       <div className="w-7 h-7 rounded-full bg-foreground/8 flex items-center justify-center shrink-0">
-        <span className="text-[10px] font-semibold text-foreground/60">{initials}</span>
+        <span className="text-label-sm font-semibold text-foreground/60">{initials}</span>
       </div>
       <div className="flex-1 min-w-0">
         <div className={`flex items-center gap-2 mb-1 ${isOwnMessage ? "justify-end" : ""}`}>
-          <p className="text-[11px] font-medium text-muted-foreground/50">{displayName}</p>
+          <p className="text-label-sm font-medium text-muted-foreground/50">{displayName}</p>
           {channelIcon}
           <span className="text-muted-foreground/20">·</span>
-          <span className="text-[10px] text-muted-foreground/25">{time.format("MMM D, h:mm A")}</span>
+          <span className="text-label-sm text-muted-foreground/25">{time.format("MMM D, h:mm A")}</span>
         </div>
         {isEmail && msg.toAddresses && (
-          <div className="flex flex-wrap gap-x-3 text-[11px] text-muted-foreground/35 mb-1">
+          <div className="flex flex-wrap gap-x-3 text-label-sm text-muted-foreground/35 mb-1">
             <span className="truncate">
               <span className="text-muted-foreground/25">To:</span>{" "}
               {msg.toAddresses.join(", ")}
@@ -480,7 +509,7 @@ function UnifiedMessageBubble({
             <button
               type="button"
               onClick={() => setShowQuoted(!showQuoted)}
-              className="mt-1.5 text-[11px] text-muted-foreground/40 hover:text-muted-foreground/60 transition-colors cursor-pointer"
+              className="mt-1.5 text-label-sm text-muted-foreground/40 hover:text-muted-foreground/60 transition-colors cursor-pointer"
             >
               {showQuoted ? "Hide quoted text ▴" : "Show quoted text ▾"}
             </button>
@@ -503,7 +532,7 @@ function UnifiedMessageBubble({
         {isMixedThread && msg.channel === "chat" && (
           <div className={`flex items-center gap-1 mt-1 ${isOwnMessage ? "justify-end mr-0.5" : "ml-0.5"}`}>
             <Lock className="w-2.5 h-2.5 text-muted-foreground/25" />
-            <span className="text-[10px] text-muted-foreground/30">Only visible to your team</span>
+            <span className="text-label-sm text-muted-foreground/30">Only visible to your team</span>
           </div>
         )}
       </div>
@@ -531,7 +560,7 @@ function CancelButton({ messageId, show }: { messageId: string; show: boolean })
           setCancelling(false);
         }
       }}
-      className="inline-flex items-center gap-1.5 mt-1.5 text-[11px] text-muted-foreground/35 hover:text-muted-foreground/60 transition-colors cursor-pointer disabled:opacity-50"
+      className="inline-flex items-center gap-1.5 mt-1.5 text-label-sm text-muted-foreground/35 hover:text-muted-foreground/60 transition-colors cursor-pointer disabled:opacity-50"
     >
       {cancelling ? "Cancelling..." : "Cancel"}
     </button>
@@ -557,7 +586,7 @@ function RetryButton({ messageId }: { messageId: string }) {
           setRetrying(false);
         }
       }}
-      className="inline-flex items-center gap-1.5 mt-2 ml-9.5 text-[11px] text-muted-foreground/40 hover:text-muted-foreground/70 transition-colors cursor-pointer disabled:opacity-50"
+      className="inline-flex items-center gap-1.5 mt-2 ml-9.5 text-label-sm text-muted-foreground/40 hover:text-muted-foreground/70 transition-colors cursor-pointer disabled:opacity-50"
     >
       <RotateCcw className={`w-3 h-3 ${retrying ? "animate-spin" : ""}`} />
       {retrying ? "Retrying..." : "Retry response"}
@@ -634,7 +663,7 @@ function ThreadContextLink({
         <Icon className="w-3.5 h-3.5 text-muted-foreground/50" />
       </div>
       <div className="min-w-0 flex-1">
-        <p className="text-[10px] text-muted-foreground/40 uppercase tracking-wider font-medium leading-none mb-0.5">{typeLabel}</p>
+        <p className="text-label-sm text-muted-foreground/40 uppercase tracking-wider font-medium leading-none mb-0.5">{typeLabel}</p>
         <p className="text-label-sm text-foreground truncate">{context.summary}</p>
       </div>
     </Link>
@@ -649,7 +678,7 @@ function ThreadEmailLink({ threadEmail, subject }: { threadEmail?: string; subje
     <div className="flex items-center justify-center pb-2">
       <a
         href={`mailto:${threadEmail}${subjectParam}`}
-        className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground/40 hover:text-muted-foreground/60 transition-colors no-underline flex-wrap justify-center"
+        className="inline-flex items-center gap-1.5 text-label-sm text-muted-foreground/40 hover:text-muted-foreground/60 transition-colors no-underline flex-wrap justify-center"
       >
         <MailIcon className="w-3 h-3 shrink-0" />
         <span>Continue via email —</span>
@@ -844,7 +873,7 @@ function UnifiedThreadContent({
                     <item.icon className="w-3.5 h-3.5 text-muted-foreground/40 mt-0.5 shrink-0" />
                     <div className="min-w-0">
                       <p className="text-body-sm font-medium text-foreground">{item.label}</p>
-                      <p className="text-[11px] text-muted-foreground/40 line-clamp-2">{item.description}</p>
+                      <p className="text-label-sm text-muted-foreground/40 line-clamp-2">{item.description}</p>
                     </div>
                   </button>
                 ))}
@@ -1319,7 +1348,7 @@ function WebChatContent({
                     <item.icon className="w-3.5 h-3.5 text-muted-foreground/40 mt-0.5 shrink-0" />
                     <div className="min-w-0">
                       <p className="text-body-sm font-medium text-foreground">{item.label}</p>
-                      <p className="text-[11px] text-muted-foreground/40 line-clamp-2">{item.description}</p>
+                      <p className="text-label-sm text-muted-foreground/40 line-clamp-2">{item.description}</p>
                     </div>
                   </button>
                 ))}

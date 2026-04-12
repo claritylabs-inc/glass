@@ -39,7 +39,7 @@ export function CollapsibleReasoning({
         onClick={() => setIsOpen(!isOpen)}
         className={cn(
           "inline-flex items-center gap-1 px-2 py-0.5 rounded-md transition-colors",
-          "text-[11px] text-muted-foreground/50 hover:text-muted-foreground/70",
+          "text-label-sm text-muted-foreground/50 hover:text-muted-foreground/70",
           "hover:bg-foreground/[0.03]",
           isOpen && "bg-foreground/[0.02]"
         )}
@@ -73,7 +73,7 @@ export function CollapsibleReasoning({
         )}
       >
         <div className="ml-2 pl-3 border-l-2 border-foreground/[0.06]">
-          <p className="text-[12px] text-muted-foreground/50 leading-relaxed whitespace-pre-wrap">
+          <p className="text-label text-muted-foreground/50 leading-relaxed whitespace-pre-wrap">
             {reasoning}
             {isStreaming && (
               <span className="inline-block w-[3px] h-[14px] bg-muted-foreground/30 rounded-[1px] animate-pulse ml-0.5 align-middle" />
