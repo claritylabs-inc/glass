@@ -38,7 +38,7 @@ export function FormattedSectionContent({ content }: { content: string }) {
         remarkPlugins={[remarkGfm]}
         components={{
           table: ({ children }) => (
-            <div className="overflow-x-auto my-2 rounded border border-foreground/6">
+            <div className="overflow-x-auto rounded border border-foreground/6">
               <table className="w-full text-body-sm">{children}</table>
             </div>
           ),
