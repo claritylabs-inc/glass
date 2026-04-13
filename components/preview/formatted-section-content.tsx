@@ -39,7 +39,7 @@ export function FormattedSectionContent({ content }: { content: string }) {
         components={{
           table: ({ children }) => (
             <div className="overflow-x-auto rounded border border-foreground/6">
-              <table className="w-full text-body-sm">{children}</table>
+              <table className="!my-0 w-full text-body-sm">{children}</table>
             </div>
           ),
           th: ({ children }) => (
