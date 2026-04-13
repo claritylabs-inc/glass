@@ -169,6 +169,10 @@ const SUPPORTED_ATTACHMENT_TYPES = new Set([
   "text/html",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "application/msword",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
 ]);
 
 const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024; // 10MB
@@ -887,7 +891,11 @@ Respond with JSON only:
       );
 
       if (claudeAttachments.length > 0) {
-        const contentParts: Array<{ type: "text"; text: string } | { type: "file"; data: string; mediaType: string }> = [];
+        const contentParts: Array<
+          | { type: "text"; text: string }
+          | { type: "file"; data: string; mediaType: string }
+          | { type: "image"; image: string; mediaType: string }
+        > = [];
 
         for (const att of claudeAttachments) {
           if (att.content_type === "application/pdf") {
@@ -895,6 +903,12 @@ Respond with JSON only:
               type: "file",
               data: att.buffer.toString("base64"),
               mediaType: "application/pdf",
+            });
+          } else if (att.content_type.startsWith("image/")) {
+            contentParts.push({
+              type: "image",
+              image: att.buffer.toString("base64"),
+              mediaType: att.content_type,
             });
           } else {
             contentParts.push({

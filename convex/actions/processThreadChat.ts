@@ -433,6 +433,72 @@ export const run = internalAction({
       // Build message history (skip processing placeholders)
       const messageHistory = buildMessageHistory(allMessages);
 
+      // ── Enrich last user message with file/image attachments ──
+      if (latestUserMsg?.attachments?.length) {
+        const contentParts: Array<
+          | { type: "text"; text: string }
+          | { type: "image"; image: string; mediaType: string }
+          | { type: "file"; data: string; mediaType: string }
+        > = [];
+        const attachmentNames: string[] = [];
+
+        for (const att of latestUserMsg.attachments as Array<{
+          filename: string;
+          contentType: string;
+          size: number;
+          fileId?: string;
+        }>) {
+          if (!att.fileId) continue;
+          try {
+            const blob = await ctx.storage.get(att.fileId as any);
+            if (!blob) continue;
+            const buffer = Buffer.from(await blob.arrayBuffer());
+
+            if (att.contentType === "application/pdf") {
+              contentParts.push({
+                type: "file",
+                data: buffer.toString("base64"),
+                mediaType: "application/pdf",
+              });
+              attachmentNames.push(att.filename);
+            } else if (att.contentType.startsWith("image/")) {
+              contentParts.push({
+                type: "image",
+                image: buffer.toString("base64"),
+                mediaType: att.contentType,
+              });
+              attachmentNames.push(att.filename);
+            } else if (att.contentType.startsWith("text/") || att.contentType === "application/json") {
+              contentParts.push({
+                type: "text",
+                text: `--- Attachment: ${att.filename} ---\n${buffer.toString("utf-8")}\n--- End attachment ---`,
+              });
+              attachmentNames.push(att.filename);
+            }
+          } catch (err) {
+            console.warn(`Failed to read attachment ${att.filename}:`, err);
+          }
+        }
+
+        if (contentParts.length > 0) {
+          // Replace the last user message with multipart content
+          const lastUserIdx = messageHistory.findLastIndex(
+            (m) => m.role === "user",
+          );
+          if (lastUserIdx !== -1) {
+            const existingText =
+              typeof messageHistory[lastUserIdx].content === "string"
+                ? (messageHistory[lastUserIdx].content as string)
+                : "";
+            contentParts.push({ type: "text", text: existingText });
+            messageHistory[lastUserIdx] = {
+              role: "user",
+              content: contentParts,
+            };
+          }
+        }
+      }
+
       // Detect thread type
       const thread = await ctx.runQuery(internal.threads.getInternal, { id: args.threadId });
       const hasEmailMessages = allMessages.some((m) => m.channel === "email");
@@ -536,6 +602,15 @@ When answering coverage questions, you are an expert insurance analyst, not a di
 - Distinguish between what the policy text says vs. what would require carrier confirmation. Some things genuinely need the carrier (e.g. ambiguous manuscripted endorsements), but standard ISO/AAIS forms have well-understood interpretations.
 - When a coverage question involves the physical cause of loss, analyze the causal chain: where did the loss originate, what's the proximate cause, and how does that interact with each relevant coverage grant and exclusion. Be direct about the most likely outcome — don't present it as a coin flip when industry practice strongly favors one reading.`;
 
+      // Attachment context note
+      let attachmentNote = "";
+      if (latestUserMsg?.attachments?.length) {
+        const filenames = (latestUserMsg.attachments as Array<{ filename: string }>)
+          .map((a) => a.filename)
+          .join(", ");
+        attachmentNote = `\n\nATTACHMENTS: The user's message includes ${latestUserMsg.attachments.length} attachment(s): ${filenames}. The content has been provided to you as file/image content parts. Reference relevant information from attachments in your response when applicable.`;
+      }
+
       const fullSystemPrompt =
         systemPrompt +
         webChatAddendum +
@@ -545,7 +620,8 @@ When answering coverage questions, you are an expert insurance analyst, not a di
         toolInstructions +
         applicationContext +
         memoryContext +
-        orgMemoryBlock;
+        orgMemoryBlock +
+        attachmentNote;
 
       // streamText with tools — supports both streaming Q&A and tool calls
       const tools = buildTools(ctx, { orgId: args.orgId, threadId: args.threadId }, org);

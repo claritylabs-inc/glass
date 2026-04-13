@@ -28,7 +28,7 @@ Core layers:
 - Frontend: Next.js 16 App Router, React 19, Tailwind 4
 - Backend: Convex queries, mutations, actions, scheduler, file storage, vector search
 - AI runtime: Vercel AI SDK (`ai`)
-- Extraction and prompts: `@claritylabs/cl-sdk@0.11.x`
+- Extraction, query agent, and prompts: `@claritylabs/cl-sdk@0.12.x`
 - Providers: OpenAI, MoonshotAI, Anthropic
 - Email: IMAP scanning via `imapflow`, outbound/inbound flows via Resend
 
@@ -144,8 +144,14 @@ Storage and retrieval pattern:
 
 1. Load org context, policies, quotes, and memory.
 2. Build retrieval-backed document context.
-3. Run the selected chat model.
-4. Persist conversation state and any relevant memory.
+3. If the user message has attachments (images, PDFs, text), read them from Convex storage and include as AI SDK multipart content parts in the user message.
+4. Run the selected chat model via `streamText` with tools (`lookup_policy`, `lookup_policy_section`, `compare_coverages`, `check_application_status`, `save_note`, `generate_coi`).
+5. Persist conversation state and any relevant memory.
+
+Multimodal attachment support:
+- Chat: files uploaded via Convex storage are read back, converted to base64, and injected as `image`/`file`/`text` content parts in the last user message.
+- Email: attachments downloaded from Resend are converted to AI SDK content parts inline.
+- Supported types: images (jpeg, png, webp, gif), PDFs, text (plain, csv, html, json).
 
 ### Application Assistance
 
