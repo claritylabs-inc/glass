@@ -494,6 +494,39 @@ function SectionOutline({ sections }: { sections: Array<{ id: string; label: str
 
 /* ── Document Structured Cards ── */
 
+function ExclusionBody({ ex }: { ex: any }) {
+  const metaItems = [
+    ex?.formNumber && { label: "Form", value: ex.formNumber },
+    ex?.appliesTo && { label: "Applies to", value: ex.appliesTo },
+    ex?.excludedPerils && { label: "Perils", value: ex.excludedPerils },
+    ex?.buybackAvailable && ex?.buybackEndorsement && { label: "Buyback", value: ex.buybackEndorsement },
+  ].filter(Boolean) as { label: string; value: string }[];
+
+  return (
+    <div className="space-y-2">
+      {/* Inline metadata chips */}
+      {metaItems.length > 0 && (
+        <div className="flex flex-wrap gap-x-3 gap-y-1 text-label-sm text-muted-foreground">
+          {metaItems.map((m) => (
+            <span key={m.label}>
+              <span className="text-muted-foreground/60">{m.label}:</span>{" "}
+              <span className="text-foreground">{m.value}</span>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Exceptions */}
+      {ex?.exceptions && (
+        <p className="text-body-sm text-foreground leading-relaxed">{ex.exceptions}</p>
+      )}
+
+      <StructuredRawText content={ex?.content} />
+      <StructuredJsonDetails item={ex} />
+    </div>
+  );
+}
+
 function ExclusionsCard({ exclusions }: { exclusions: any[] }) {
   return (
     <StructuredItemsCard
@@ -513,7 +546,7 @@ function ExclusionsCard({ exclusions }: { exclusions: any[] }) {
             className: "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400",
           },
           ex?.buybackAvailable ? {
-            label: "Buyback Available",
+            label: "Buyback",
             className: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400",
           } : undefined,
         ].filter(Boolean) as { label: string; className: string }[];
@@ -522,25 +555,7 @@ function ExclusionsCard({ exclusions }: { exclusions: any[] }) {
         if (typeof ex === "string") {
           return <StructuredRawText content={ex} />;
         }
-
-        return (
-          <>
-            <StructuredFieldGrid
-              fields={[
-                { label: "Name", value: ex?.name },
-                { label: "Form Number", value: ex?.formNumber },
-                { label: "Excluded Perils", value: ex?.excludedPerils },
-                { label: "Applies To", value: ex?.appliesTo },
-                { label: "Exceptions", value: ex?.exceptions },
-                { label: "Absolute Exclusion", value: formatBooleanValue(ex?.isAbsolute) },
-                { label: "Buyback Available", value: formatBooleanValue(ex?.buybackAvailable) },
-                { label: "Buyback Endorsement", value: ex?.buybackEndorsement },
-              ]}
-            />
-            <StructuredRawText content={ex?.content} />
-            <StructuredJsonDetails item={ex} />
-          </>
-        );
+        return <ExclusionBody ex={ex} />;
       }}
     />
   );
@@ -1616,30 +1631,51 @@ export default function PolicyDetailPage({
                         </tr>
                       </thead>
                       <tbody>
-                        {policy.coverages.map((cov, i) => (
-                          <FadeIn
-                            key={i}
-                            as="tr"
-                            when={true}
-                            delay={0.65 + i * 0.02}
-                            duration={0.35}
-                            direction="none"
-                            className="border-t border-foreground/4 hover:bg-foreground/[0.015] transition-colors"
-                          >
-                            <td className="px-4 py-2.5 text-body-sm text-foreground">
-                              {cov.name}
-                            </td>
-                            <td className="px-4 py-2.5 text-body-sm font-mono font-medium text-foreground text-right">
-                              {cov.limit}
-                            </td>
-                            <td className="hidden sm:table-cell px-4 py-2.5 text-body-sm font-mono text-muted-foreground text-right">
-                              {cov.deductible || "—"}
-                            </td>
-                            <td className="hidden sm:table-cell px-4 py-2.5 text-right">
-                              {(cov as any).pageNumber != null && <PageRef page={(cov as any).pageNumber} />}
-                            </td>
-                          </FadeIn>
-                        ))}
+                        {policy.coverages.map((cov, i) => {
+                          const c = cov as any;
+                          const hasDetails = c.formNumber || c.sectionRef || c.originalContent || c.limitValueType || c.deductibleValueType;
+                          return (
+                            <FadeIn
+                              key={i}
+                              as="tr"
+                              when={true}
+                              delay={0.65 + i * 0.02}
+                              duration={0.35}
+                              direction="none"
+                              className="border-t border-foreground/4 group/cov hover:bg-foreground/[0.015] transition-colors align-top"
+                            >
+                              <td className="px-4 py-2.5 text-body-sm text-foreground">
+                                <span>{cov.name}</span>
+                                {hasDetails && (
+                                  <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1 text-label-sm text-muted-foreground/70">
+                                    {c.formNumber && <span>Form {c.formNumber}</span>}
+                                    {c.sectionRef && <span>Ref {c.sectionRef}</span>}
+                                    {c.limitValueType && c.limitValueType !== "numeric" && (
+                                      <span className="text-muted-foreground/50">Limit: {c.limitValueType.replace(/_/g, " ")}</span>
+                                    )}
+                                    {c.deductibleValueType && c.deductibleValueType !== "numeric" && (
+                                      <span className="text-muted-foreground/50">Ded: {c.deductibleValueType.replace(/_/g, " ")}</span>
+                                    )}
+                                  </div>
+                                )}
+                                {c.originalContent && (
+                                  <p className="mt-1 text-label-sm text-muted-foreground/60 line-clamp-2 max-w-md">
+                                    {c.originalContent}
+                                  </p>
+                                )}
+                              </td>
+                              <td className="px-4 py-2.5 text-body-sm font-mono font-medium text-foreground text-right">
+                                {cov.limit}
+                              </td>
+                              <td className="hidden sm:table-cell px-4 py-2.5 text-body-sm font-mono text-muted-foreground text-right">
+                                {cov.deductible || "—"}
+                              </td>
+                              <td className="hidden sm:table-cell px-4 py-2.5 text-right">
+                                {c.pageNumber != null && <PageRef page={c.pageNumber} />}
+                              </td>
+                            </FadeIn>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>

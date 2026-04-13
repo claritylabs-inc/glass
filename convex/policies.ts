@@ -345,10 +345,13 @@ const coverageValidator = v.object({
   name: v.string(),
   coverageCode: v.optional(v.string()),
   limit: v.optional(v.string()),
+  limitValueType: v.optional(v.string()),
   deductible: v.optional(v.string()),
+  deductibleValueType: v.optional(v.string()),
   formNumber: v.optional(v.string()),
   pageNumber: v.optional(v.number()),
   sectionRef: v.optional(v.string()),
+  originalContent: v.optional(v.string()),
 });
 
 const addressValidator = v.object({
@@ -381,6 +384,17 @@ const limitsValidator = v.object({
     diseasePolicyLimit: v.string(),
     diseaseEachEmployee: v.string(),
   })),
+  sublimits: v.optional(v.array(v.object({
+    name: v.string(),
+    limit: v.string(),
+    appliesTo: v.optional(v.string()),
+    deductible: v.optional(v.string()),
+  }))),
+  sharedLimits: v.optional(v.array(v.object({
+    description: v.string(),
+    limit: v.string(),
+    coverageParts: v.array(v.string()),
+  }))),
   defenseCostTreatment: v.optional(v.string()),
 });
 
@@ -419,6 +433,12 @@ const vehicleValidator = v.object({
   costNew: v.optional(v.string()),
   statedValue: v.optional(v.string()),
   garageLocation: v.optional(v.number()),
+  coverages: v.optional(v.array(v.object({
+    type: v.string(),
+    limit: v.optional(v.string()),
+    deductible: v.optional(v.string()),
+    included: v.boolean(),
+  }))),
   radius: v.optional(v.string()),
   vehicleType: v.optional(v.string()),
 });
@@ -438,6 +458,8 @@ const formReferenceValidator = v.object({
   editionDate: v.optional(v.string()),
   title: v.optional(v.string()),
   formType: v.string(),
+  pageStart: v.optional(v.number()),
+  pageEnd: v.optional(v.number()),
 });
 
 const taxFeeValidator = v.object({
@@ -524,6 +546,7 @@ export const updateExtraction = mutation({
     additionalNamedInsureds: v.optional(v.array(v.object({
       name: v.string(),
       relationship: v.optional(v.string()),
+      address: v.optional(addressValidator),
     }))),
     // Coverage structure
     coverageForm: v.optional(v.string()),
