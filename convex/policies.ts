@@ -345,6 +345,7 @@ const coverageValidator = v.object({
   name: v.string(),
   coverageCode: v.optional(v.string()),
   limit: v.optional(v.string()),
+  limitType: v.optional(v.string()),
   limitValueType: v.optional(v.string()),
   deductible: v.optional(v.string()),
   deductibleValueType: v.optional(v.string()),
@@ -357,9 +358,9 @@ const coverageValidator = v.object({
 const addressValidator = v.object({
   street1: v.string(),
   street2: v.optional(v.string()),
-  city: v.string(),
-  state: v.string(),
-  zip: v.string(),
+  city: v.optional(v.string()),
+  state: v.optional(v.string()),
+  zip: v.optional(v.string()),
   country: v.optional(v.string()),
 });
 
@@ -535,6 +536,37 @@ export const updateExtraction = mutation({
     brokerAgency: v.optional(v.string()),
     brokerContactName: v.optional(v.string()),
     brokerLicenseNumber: v.optional(v.string()),
+    // Structured entity objects (cl-sdk 0.11+)
+    insurer: v.optional(v.object({
+      legalName: v.string(),
+      naicNumber: v.optional(v.string()),
+      amBestRating: v.optional(v.string()),
+      amBestNumber: v.optional(v.string()),
+      admittedStatus: v.optional(v.string()),
+      stateOfDomicile: v.optional(v.string()),
+    })),
+    producer: v.optional(v.object({
+      agencyName: v.string(),
+      contactName: v.optional(v.string()),
+      licenseNumber: v.optional(v.string()),
+      phone: v.optional(v.string()),
+      email: v.optional(v.string()),
+      address: v.optional(addressValidator),
+    })),
+    lossPayees: v.optional(v.array(v.object({
+      name: v.string(),
+      role: v.string(),
+      address: v.optional(addressValidator),
+      relationship: v.optional(v.string()),
+      scope: v.optional(v.string()),
+    }))),
+    mortgageHolders: v.optional(v.array(v.object({
+      name: v.string(),
+      role: v.string(),
+      address: v.optional(addressValidator),
+      relationship: v.optional(v.string()),
+      scope: v.optional(v.string()),
+    }))),
     priorPolicyNumber: v.optional(v.string()),
     programName: v.optional(v.string()),
     isPackage: v.optional(v.boolean()),
@@ -587,6 +619,7 @@ export const updateExtraction = mutation({
     fileId: v.optional(v.id("_storage")),
     fileName: v.optional(v.string()),
     extractionError: v.optional(v.string()),
+    extractionCheckpoint: v.optional(v.any()),
     rawExtractionResponse: v.optional(v.string()),
     rawMetadataResponse: v.optional(v.string()),
     // Typed declarations (cl-sdk 1.4+)

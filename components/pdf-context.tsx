@@ -12,6 +12,8 @@ interface PdfContextValue {
   openPdf: () => void;
   closePdf: () => void;
   fileUrl: string | null;
+  /** Pre-load a URL without opening the viewer */
+  setFileUrl: (url: string) => void;
   highlightedPage: number | null;
   /** Imperatively open a PDF by URL, optionally jumping to a page */
   openWithUrl: (url: string, page?: number) => void;
@@ -24,11 +26,15 @@ export function PdfProvider({
 }: {
   children: React.ReactNode;
 }) {
-  const [fileUrl, setFileUrl] = useState<string | null>(null);
+  const [fileUrl, setFileUrlState] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [numPages, setNumPages] = useState(0);
   const [isPdfOpen, setIsPdfOpen] = useState(false);
   const [highlightedPage, setHighlightedPage] = useState<number | null>(null);
+
+  const setFileUrl = useCallback((url: string) => {
+    setFileUrlState(url);
+  }, []);
 
   const navigateToPage = useCallback(
     (page: number) => {
@@ -42,7 +48,7 @@ export function PdfProvider({
   );
 
   const openWithUrl = useCallback((url: string, page?: number) => {
-    setFileUrl(url);
+    setFileUrlState(url);
     setIsPdfOpen(true);
     setCurrentPage(page ?? 1);
     setHighlightedPage(page ?? null);
@@ -63,9 +69,10 @@ export function PdfProvider({
     openPdf,
     closePdf,
     fileUrl,
+    setFileUrl,
     highlightedPage,
     openWithUrl,
-  }), [currentPage, numPages, setNumPages, navigateToPage, isPdfOpen, togglePdf, openPdf, closePdf, fileUrl, highlightedPage, openWithUrl]);
+  }), [currentPage, numPages, setNumPages, navigateToPage, isPdfOpen, togglePdf, openPdf, closePdf, fileUrl, setFileUrl, highlightedPage, openWithUrl]);
 
   return (
     <PdfContext.Provider value={value}>
@@ -84,6 +91,7 @@ const NOOP_PDF: PdfContextValue = {
   openPdf: () => {},
   closePdf: () => {},
   fileUrl: null,
+  setFileUrl: () => {},
   highlightedPage: null,
   openWithUrl: () => {},
 };

@@ -17,14 +17,14 @@ export { chunkDocument, createExtractor } from "@claritylabs/cl-sdk";
 
 // ── Types ──
 export type { LogFn, PolicyType, ContextKeyMapping, TokenUsage, ConvertPdfToImagesFn } from "@claritylabs/cl-sdk";
-export type { ExtractorConfig, ExtractionResult, InsuranceDocument, DocumentChunk } from "@claritylabs/cl-sdk";
+export type { ExtractorConfig, ExtractionResult, ExtractionState, ExtractOptions, InsuranceDocument, DocumentChunk, PipelineCheckpoint } from "@claritylabs/cl-sdk";
 
 // ── Local re-exports ──
 export { insuranceDocToPolicy, policyToInsuranceDoc } from "./documentMapping";
 
 // ── Prism extraction factory ──
 import { createExtractor } from "@claritylabs/cl-sdk";
-import type { ExtractionResult, LogFn, TokenUsage } from "@claritylabs/cl-sdk";
+import type { ExtractionResult, ExtractionState, LogFn, PipelineCheckpoint, TokenUsage } from "@claritylabs/cl-sdk";
 import { makeGenerateText, makeGenerateObject } from "./sdkCallbacks";
 
 /**
@@ -38,6 +38,7 @@ export function buildExtractor(opts?: {
   log?: LogFn;
   onProgress?: (message: string) => void;
   onTokenUsage?: (usage: TokenUsage) => void;
+  onCheckpointSave?: (checkpoint: PipelineCheckpoint<ExtractionState>) => Promise<void>;
 }) {
   return createExtractor({
     generateText: makeGenerateText("extraction"),
@@ -47,6 +48,7 @@ export function buildExtractor(opts?: {
     log: opts?.log,
     onProgress: opts?.onProgress,
     onTokenUsage: opts?.onTokenUsage,
+    onCheckpointSave: opts?.onCheckpointSave,
   });
 }
 

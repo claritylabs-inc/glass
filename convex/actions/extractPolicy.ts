@@ -111,6 +111,12 @@ export const extractPolicy = internalAction({
       const extractor = buildExtractor({
         log,
         onProgress: async (msg) => { await log(msg); },
+        onCheckpointSave: async (cp) => {
+          await ctx.runMutation(api.policies.updateExtraction, {
+            id: policyId,
+            extractionCheckpoint: cp,
+          });
+        },
       });
 
       const result = await extractor.extract(
@@ -135,6 +141,7 @@ export const extractPolicy = internalAction({
       await ctx.runMutation(api.policies.updateExtraction, {
         id: policyId,
         fileName: `${docName}.pdf`,
+        extractionCheckpoint: undefined, // Clear checkpoint on success
         ...fields,
       });
 

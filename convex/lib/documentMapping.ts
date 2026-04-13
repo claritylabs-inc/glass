@@ -57,6 +57,11 @@ export function insuranceDocToPolicy(doc: InsuranceDocument): Record<string, any
   if (d.brokerAgency) fields.brokerAgency = d.brokerAgency;
   if (d.brokerContactName) fields.brokerContactName = d.brokerContactName;
   if (d.brokerLicenseNumber) fields.brokerLicenseNumber = d.brokerLicenseNumber;
+  // Structured entity objects (cl-sdk 0.11+)
+  if (d.insurer) fields.insurer = sanitizeNulls(d.insurer);
+  if (d.producer) fields.producer = sanitizeNulls(d.producer);
+  if (d.lossPayees?.length) fields.lossPayees = sanitizeNulls(d.lossPayees);
+  if (d.mortgageHolders?.length) fields.mortgageHolders = sanitizeNulls(d.mortgageHolders);
   if (d.priorPolicyNumber) fields.priorPolicyNumber = d.priorPolicyNumber;
   if (d.programName) fields.programName = d.programName;
   if (d.isPackage != null) fields.isPackage = d.isPackage;
@@ -149,6 +154,11 @@ export function policyToInsuranceDoc(p: Doc<"policies">): InsuranceDocument {
     programName: p.programName,
     isRenewal: p.isRenewal,
     isPackage: p.isPackage,
+    // Structured entities (cl-sdk 0.11+)
+    insurer: p.insurer as any,
+    producer: p.producer as any,
+    lossPayees: p.lossPayees as any,
+    mortgageHolders: p.mortgageHolders as any,
     // Insured details
     insuredDba: p.insuredDba,
     insuredAddress: p.insuredAddress as any,

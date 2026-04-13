@@ -406,8 +406,9 @@ function UnifiedMessageBubble({
               reasoning={msg.reasoning ?? ""}
               isStreaming={false}
             />
-            <div className={`rounded-lg bg-popover border border-foreground/6 px-3.5 py-2.5 ${msg.reasoning ? "mt-1" : ""} ${MARKDOWN_STYLES}`}>
+            <div className={`group/agent-msg relative rounded-lg bg-popover border border-foreground/6 px-3.5 py-2.5 ${msg.reasoning ? "mt-1" : ""} ${MARKDOWN_STYLES}`}>
               <Markdown remarkPlugins={[remarkBreaks]} components={markdownComponents}>{fixedContent}</Markdown>
+              <CopyMessageButton content={msg.content} />
             </div>
             {msg.status === "pending_send" && msg.pendingEmailId && (
               <PendingSendCountdown pendingEmailId={msg.pendingEmailId} />
@@ -539,6 +540,28 @@ function CancelButton({ messageId, show }: { messageId: string; show: boolean })
       className="inline-flex items-center gap-1.5 mt-1.5 text-label-sm text-muted-foreground/35 hover:text-muted-foreground/60 transition-colors cursor-pointer disabled:opacity-50"
     >
       {cancelling ? "Cancelling..." : "Cancel"}
+    </button>
+  );
+}
+
+/* ── Copy button for agent messages ── */
+function CopyMessageButton({ content }: { content: string }) {
+  const [copied, setCopied] = useState(false);
+
+  if (!content?.trim()) return null;
+
+  return (
+    <button
+      type="button"
+      onClick={async () => {
+        await navigator.clipboard.writeText(content);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      }}
+      className="absolute top-1.5 right-1.5 w-6 h-6 flex items-center justify-center rounded-md text-muted-foreground/30 hover:text-muted-foreground/60 hover:bg-foreground/[0.04] opacity-0 group-hover/agent-msg:opacity-100 transition-all cursor-pointer"
+      title="Copy response"
+    >
+      {copied ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
     </button>
   );
 }

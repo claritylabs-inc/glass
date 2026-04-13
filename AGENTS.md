@@ -28,7 +28,7 @@ Core layers:
 - Frontend: Next.js 16 App Router, React 19, Tailwind 4
 - Backend: Convex queries, mutations, actions, scheduler, file storage, vector search
 - AI runtime: Vercel AI SDK (`ai`)
-- Extraction and prompts: `@claritylabs/cl-sdk@0.10.x`
+- Extraction and prompts: `@claritylabs/cl-sdk@0.11.x`
 - Providers: OpenAI, MoonshotAI, Anthropic
 - Email: IMAP scanning via `imapflow`, outbound/inbound flows via Resend
 

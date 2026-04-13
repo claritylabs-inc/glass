@@ -5,15 +5,111 @@ import { action } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import { ImapFlow } from "imapflow";
 import { stripFences, buildExtractor, insuranceDocToPolicy, summarizeExtractionCheckpoint } from "../lib/extraction";
+import type { ExtractionState, PipelineCheckpoint } from "../lib/extraction";
 import { makeEmbedText } from "../lib/sdkCallbacks";
+
+/**
+ * Shared extraction runner used by both policy and quote retry actions.
+ * Supports resuming from a saved checkpoint or running a full extraction.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function runExtraction(
+  ctx: any,
+  opts: {
+    policyId: any;
+    pdfBase64: string;
+    orgId?: any;
+    checkpoint?: PipelineCheckpoint<ExtractionState>;
+    log: (message: string) => Promise<void>;
+  },
+) {
+  const { policyId, pdfBase64, orgId, checkpoint, log } = opts;
+
+  // Track latest checkpoint for persistence on success or failure
+  let latestCheckpoint: PipelineCheckpoint<ExtractionState> | undefined = checkpoint;
+
+  const extractor = buildExtractor({
+    log,
+    onProgress: async (msg) => { await log(msg); },
+    onCheckpointSave: async (cp) => {
+      latestCheckpoint = cp;
+      // Persist checkpoint incrementally so we can resume if the action crashes
+      await ctx.runMutation(api.policies.updateExtraction, {
+        id: policyId,
+        extractionCheckpoint: cp,
+      });
+    },
+  });
+
+  const extractOptions = checkpoint ? { resumeFrom: checkpoint } : undefined;
+
+  const result = await extractor.extract(
+    pdfBase64,
+    policyId as string,
+    extractOptions,
+  );
+  const doc = result.document as any;
+  const chunks = result.chunks;
+  const tokenUsage = result.tokenUsage;
+
+  await log(`Extraction complete. Type: ${doc.type}. ${chunks.length} chunks. Tokens: ${tokenUsage.inputTokens}in/${tokenUsage.outputTokens}out`);
+  for (const line of summarizeExtractionCheckpoint(result)) {
+    await log(line);
+  }
+
+  const fields = insuranceDocToPolicy(result.document);
+  const docName = doc.type === "quote"
+    ? (doc.quoteNumber || "quote")
+    : (doc.policyNumber || "policy");
+
+  // Save raw response for debugging
+  await ctx.runMutation(api.policies.updateExtraction, {
+    id: policyId,
+    rawExtractionResponse: JSON.stringify(result.document),
+  });
+
+  await ctx.runMutation(api.policies.updateExtraction, {
+    id: policyId,
+    fileName: `${docName}.pdf`,
+    // Clear checkpoint on success — extraction is complete
+    extractionCheckpoint: undefined,
+    ...fields,
+  });
+
+  // Store document chunks for vector search
+  if (chunks.length > 0 && orgId) {
+    await ctx.runMutation(internal.documentChunks.deleteByPolicy, { policyId });
+    const embed = makeEmbedText();
+    for (const chunk of chunks) {
+      try {
+        const embedding = await embed(chunk.text);
+        await ctx.runMutation(internal.documentChunks.insert, {
+          orgId,
+          policyId,
+          chunkId: chunk.id,
+          chunkType: chunk.type,
+          text: chunk.text,
+          metadata: chunk.metadata,
+          embedding,
+          createdAt: Date.now(),
+        });
+      } catch (err: any) {
+        await log(`Warning: failed to embed chunk ${chunk.id}: ${err.message}`);
+      }
+    }
+    await log(`Stored ${chunks.length} chunks for vector search.`);
+  }
+
+  return { latestCheckpoint } as { latestCheckpoint: PipelineCheckpoint<ExtractionState> | undefined };
+}
 
 export const retryQuoteExtraction = action({
   args: {
     quoteId: v.id("policies"),
-    mode: v.optional(v.union(v.literal("reparse"), v.literal("full"))),
+    mode: v.optional(v.union(v.literal("resume"), v.literal("full"))),
   },
   returns: v.any(),
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<{ error: string } | { success: boolean; resumed?: boolean }> => {
     const viewer = await ctx.runQuery(api.users.viewer);
     if (!viewer) return { error: "Not authenticated" };
 
@@ -24,7 +120,7 @@ export const retryQuoteExtraction = action({
       await ctx.runMutation(internal.policies.appendExtractionLog, { id: args.quoteId, message });
     };
 
-    const mode = args.mode ?? "auto";
+    const mode = args.mode ?? "resume";
 
     await ctx.runMutation(internal.policyAuditLog.append, {
       policyId: args.quoteId,
@@ -33,125 +129,46 @@ export const retryQuoteExtraction = action({
       detail: `Mode: ${mode}`,
     });
 
-    // Reparse mode
-    if (mode === "reparse" || mode === "auto") {
-      if (quote.rawExtractionResponse) {
-        try {
-          await ctx.runMutation(internal.policies.clearExtractionLog, { id: args.quoteId });
-          await log("Re-parsing saved extraction response...");
-          const responseText = stripFences(quote.rawExtractionResponse);
-          const parsed = JSON.parse(responseText);
-
-          // Map via insuranceDocToPolicy — ensure type is set for correct mapping
-          const doc = { type: "quote" as const, ...parsed };
-          const fields = insuranceDocToPolicy(doc);
-
-          await ctx.runMutation(api.policies.updateExtraction, {
-            id: args.quoteId,
-            fileName: `${(parsed.metadata ?? parsed).quoteNumber || "quote"}.pdf`,
-            ...fields,
-          });
-
-          await log("Extraction complete");
-          return { success: true, reused: true };
-        } catch {
-          if (mode === "reparse") {
-            await log("Failed: Could not parse saved AI response");
-            return { error: "Could not parse saved AI response" };
-          }
-        }
-      } else if (mode === "reparse") {
-        return { error: "No saved AI response to re-parse" };
-      }
-    }
-
-    // Full retry — need PDF from storage
     if (!quote.fileId) return { error: "No PDF file stored — cannot retry" };
 
     await ctx.runMutation(internal.policies.clearExtractionLog, { id: args.quoteId });
-    await log("Starting full quote re-extraction...");
     await ctx.runMutation(api.policies.updateExtraction, {
       id: args.quoteId,
       extractionStatus: "extracting",
       extractionError: "",
     });
 
+    // Load checkpoint for resume mode
+    const checkpoint = mode === "resume" ? (quote as any).extractionCheckpoint : undefined;
+    if (checkpoint) {
+      await log(`Resuming extraction from phase "${checkpoint.phase}"...`);
+    } else {
+      await log("Starting full extraction...");
+    }
+
     try {
       const blob = await ctx.storage.get(quote.fileId);
       if (!blob) throw new Error("Stored PDF not found");
       const pdfBase64 = Buffer.from(await blob.arrayBuffer()).toString("base64");
 
-      const extractor = buildExtractor({
-        log,
-        onProgress: async (msg) => { await log(msg); },
-      });
-
-      const quoteResult = await extractor.extract(
+      await runExtraction(ctx, {
+        policyId: args.quoteId,
         pdfBase64,
-        args.quoteId as string,
-      );
-      const doc = quoteResult.document as any;
-      const chunks = quoteResult.chunks;
-      const tokenUsage = quoteResult.tokenUsage;
-
-      await log(`Extraction complete. Type: ${doc.type}. ${chunks.length} chunks. Tokens: ${tokenUsage.inputTokens}in/${tokenUsage.outputTokens}out`);
-      for (const line of summarizeExtractionCheckpoint(quoteResult)) {
-        await log(line);
-      }
-
-      const fields = insuranceDocToPolicy(quoteResult.document);
-      const docName = doc.type === "quote"
-        ? (doc.quoteNumber || "quote")
-        : (doc.policyNumber || "policy");
-
-      // Save raw response for future retries
-      await ctx.runMutation(api.policies.updateExtraction, {
-        id: args.quoteId,
-        rawExtractionResponse: JSON.stringify(quoteResult.document),
+        orgId: (quote as any).orgId,
+        checkpoint,
+        log,
       });
 
-      await ctx.runMutation(api.policies.updateExtraction, {
-        id: args.quoteId,
-        fileName: `${docName}.pdf`,
-        ...fields,
-      });
-
-      // Store document chunks for vector search
-      const orgId = (quote as any).orgId;
-      if (chunks.length > 0 && orgId) {
-        // Clear old chunks first
-        await ctx.runMutation(internal.documentChunks.deleteByPolicy, { policyId: args.quoteId });
-        const embed = makeEmbedText();
-        for (const chunk of chunks) {
-          try {
-            const embedding = await embed(chunk.text);
-            await ctx.runMutation(internal.documentChunks.insert, {
-              orgId,
-              policyId: args.quoteId,
-              chunkId: chunk.id,
-              chunkType: chunk.type,
-              text: chunk.text,
-              metadata: chunk.metadata,
-              embedding,
-              createdAt: Date.now(),
-            });
-          } catch (err: any) {
-            await log(`Warning: failed to embed chunk ${chunk.id}: ${err.message}`);
-          }
-        }
-        await log(`Stored ${chunks.length} chunks for vector search.`);
-      }
-
-      await log("Quote extraction complete");
-      return { success: true };
+      await log("Extraction complete");
+      return { success: true, resumed: !!checkpoint };
     } catch (error: any) {
-      await log(`Failed: ${error.message || "Quote extraction failed"}`);
+      await log(`Failed: ${error.message || "Extraction failed"}`);
       await ctx.runMutation(api.policies.updateExtraction, {
         id: args.quoteId,
         extractionStatus: "error",
-        extractionError: error.message || "Quote extraction failed",
+        extractionError: error.message || "Extraction failed",
       });
-      return { error: error.message || "Quote extraction failed" };
+      return { error: error.message || "Extraction failed" };
     }
   },
 });
@@ -159,11 +176,10 @@ export const retryQuoteExtraction = action({
 export const retryExtraction = action({
   args: {
     policyId: v.id("policies"),
-    mode: v.optional(v.union(v.literal("reparse"), v.literal("full"))),
+    mode: v.optional(v.union(v.literal("resume"), v.literal("full"))),
   },
   returns: v.any(),
-  handler: async (ctx, args) => {
-    // Verify auth
+  handler: async (ctx, args): Promise<{ error: string } | { success: boolean; resumed?: boolean }> => {
     const viewer = await ctx.runQuery(api.users.viewer);
     if (!viewer) return { error: "Not authenticated" };
 
@@ -173,9 +189,8 @@ export const retryExtraction = action({
       await ctx.runMutation(internal.policies.appendExtractionLog, { id: args.policyId, message });
     };
 
-    const mode = args.mode ?? "auto";
+    const mode = args.mode ?? "resume";
 
-    // Audit: re-extraction triggered
     await ctx.runMutation(internal.policyAuditLog.append, {
       policyId: args.policyId,
       userId: viewer._id,
@@ -183,60 +198,31 @@ export const retryExtraction = action({
       detail: `Mode: ${mode}`,
     });
 
-    // Reparse mode: only re-parse the saved raw response
-    if (mode === "reparse" || mode === "auto") {
-      if (policy.rawExtractionResponse) {
-        try {
-          await ctx.runMutation(internal.policies.clearExtractionLog, { id: args.policyId });
-          await log("Re-parsing saved extraction response...");
-          const responseText = stripFences(policy.rawExtractionResponse);
-          const parsed = JSON.parse(responseText);
-
-          // Map via insuranceDocToPolicy — ensure type is set for correct mapping
-          const doc = { type: "policy" as const, ...parsed };
-          const fields = insuranceDocToPolicy(doc);
-
-          await ctx.runMutation(api.policies.updateExtraction, {
-            id: args.policyId,
-            fileName: `${(parsed.metadata ?? parsed).policyNumber || "policy"}.pdf`,
-            ...fields,
-          });
-
-          await log("Extraction complete");
-          return { success: true, reused: true };
-        } catch {
-          if (mode === "reparse") {
-            await log("Failed: Could not parse saved AI response");
-            return { error: "Could not parse saved AI response" };
-          }
-          // auto mode: fall through to full retry
-        }
-      } else if (mode === "reparse") {
-        return { error: "No saved AI response to re-parse" };
-      }
-    }
-
-    // Full retry — prefer stored file, fall back to IMAP
     await ctx.runMutation(internal.policies.clearExtractionLog, { id: args.policyId });
-    await log("Starting full re-extraction...");
     await ctx.runMutation(api.policies.updateExtraction, {
       id: args.policyId,
       extractionStatus: "extracting",
       extractionError: "",
     });
 
+    // Load checkpoint for resume mode
+    const checkpoint = mode === "resume" ? (policy as any).extractionCheckpoint : undefined;
+    if (checkpoint) {
+      await log(`Resuming extraction from phase "${checkpoint.phase}"...`);
+    } else {
+      await log("Starting full re-extraction...");
+    }
+
     try {
       let pdfBase64: string;
       let fileId = policy.fileId;
 
       if (policy.fileId) {
-        // Load from Convex storage
         await log("Loading PDF from storage...");
         const blob = await ctx.storage.get(policy.fileId);
         if (!blob) throw new Error("Stored PDF not found");
         pdfBase64 = Buffer.from(await blob.arrayBuffer()).toString("base64");
       } else if (policy.emailId) {
-        // Fall back to IMAP download
         const emails = await ctx.runQuery(api.emails.list, {});
         const email = emails.find((e: any) => e._id === policy.emailId);
         if (!email) throw new Error("Linked email not found");
@@ -284,7 +270,6 @@ export const retryExtraction = action({
           throw error;
         }
 
-        // Store in Convex file storage
         const sizeKB = Math.round(pdfBuffer.length / 1024);
         await log(`PDF stored (${sizeKB} KB)`);
         const storageBlob = new Blob([new Uint8Array(pdfBuffer)], {
@@ -296,70 +281,23 @@ export const retryExtraction = action({
         return { error: "No PDF file or linked email — cannot retry" };
       }
 
-      const extractor = buildExtractor({
-        log,
-        onProgress: async (msg) => { await log(msg); },
-      });
+      if (fileId && fileId !== policy.fileId) {
+        await ctx.runMutation(api.policies.updateExtraction, {
+          id: args.policyId,
+          fileId,
+        });
+      }
 
-      const policyResult = await extractor.extract(
+      await runExtraction(ctx, {
+        policyId: args.policyId,
         pdfBase64,
-        args.policyId as string,
-      );
-      const pDoc = policyResult.document as any;
-      const chunks = policyResult.chunks;
-      const tokenUsage = policyResult.tokenUsage;
-
-      await log(`Extraction complete. Type: ${pDoc.type}. ${chunks.length} chunks. Tokens: ${tokenUsage.inputTokens}in/${tokenUsage.outputTokens}out`);
-      for (const line of summarizeExtractionCheckpoint(policyResult)) {
-        await log(line);
-      }
-
-      const fields = insuranceDocToPolicy(policyResult.document);
-      const docName = pDoc.type === "quote"
-        ? (pDoc.quoteNumber || "quote")
-        : (pDoc.policyNumber || "policy");
-
-      // Save raw response for future retries
-      await ctx.runMutation(api.policies.updateExtraction, {
-        id: args.policyId,
-        rawExtractionResponse: JSON.stringify(policyResult.document),
+        orgId: (policy as any).orgId,
+        checkpoint,
+        log,
       });
-
-      await ctx.runMutation(api.policies.updateExtraction, {
-        id: args.policyId,
-        ...(fileId ? { fileId } : {}),
-        fileName: `${docName}.pdf`,
-        ...fields,
-      });
-
-      // Store document chunks for vector search
-      const orgId = (policy as any).orgId;
-      if (chunks.length > 0 && orgId) {
-        // Clear old chunks first
-        await ctx.runMutation(internal.documentChunks.deleteByPolicy, { policyId: args.policyId });
-        const embed = makeEmbedText();
-        for (const chunk of chunks) {
-          try {
-            const embedding = await embed(chunk.text);
-            await ctx.runMutation(internal.documentChunks.insert, {
-              orgId,
-              policyId: args.policyId,
-              chunkId: chunk.id,
-              chunkType: chunk.type,
-              text: chunk.text,
-              metadata: chunk.metadata,
-              embedding,
-              createdAt: Date.now(),
-            });
-          } catch (err: any) {
-            await log(`Warning: failed to embed chunk ${chunk.id}: ${err.message}`);
-          }
-        }
-        await log(`Stored ${chunks.length} chunks for vector search.`);
-      }
 
       await log("Extraction complete");
-      return { success: true };
+      return { success: true, resumed: !!checkpoint };
     } catch (error: any) {
       await log(`Failed: ${error.message || "Extraction failed"}`);
       await ctx.runMutation(api.policies.updateExtraction, {

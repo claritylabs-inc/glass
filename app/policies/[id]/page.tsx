@@ -29,6 +29,8 @@ import {
 } from "@/components/ui/dialog";
 import { usePdf } from "@/components/pdf-context";
 import { usePageContext } from "@/hooks/use-page-context";
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 const TYPE_COLORS: Record<string, string> = {
   general_liability: "bg-blue-100 dark:bg-blue-950/40 text-blue-700 dark:text-blue-400",
@@ -123,6 +125,29 @@ const SECTION_TYPE_COLORS: Record<string, string> = {
   other: "bg-gray-50 text-gray-600 dark:bg-gray-800/40 dark:text-gray-400",
 };
 
+function DocContent({ children }: { children: string }) {
+  return (
+    <div className="text-body-sm text-foreground leading-relaxed prose prose-sm dark:prose-invert max-w-none prose-p:my-3 prose-headings:text-foreground prose-headings:font-semibold prose-headings:mt-4 prose-headings:mb-2 prose-ul:my-2 prose-ol:my-2 prose-li:my-0.5">
+      <Markdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          table: ({ children: c }) => (
+            <div className="overflow-x-auto my-4 rounded-md border border-foreground/6">
+              <table className="w-full text-body-sm">{c}</table>
+            </div>
+          ),
+          th: ({ children: c }) => (
+            <th className="px-3 py-1.5 text-left text-label-sm font-semibold text-muted-foreground bg-foreground/[0.02] border-b border-foreground/8 whitespace-nowrap">{c}</th>
+          ),
+          td: ({ children: c }) => (
+            <td className="px-3 py-1.5 border-b border-foreground/4 whitespace-nowrap">{c}</td>
+          ),
+        }}
+      >{children}</Markdown>
+    </div>
+  );
+}
+
 function formatJsonForDisplay(value?: string): string | null {
   if (!value) return null;
 
@@ -174,9 +199,7 @@ function DocumentSection({ section, highlighted }: { section: any; highlighted?:
       </button>
       {expanded && (
         <div className="px-4 pb-3 pl-10">
-          <p className="text-body-sm text-foreground whitespace-pre-wrap leading-relaxed">
-            {section.content}
-          </p>
+          <DocContent>{section.content}</DocContent>
           {section.subsections?.map((sub: any, i: number) => (
             <div key={i} className="mt-3 pl-3 border-l-2 border-foreground/6">
               <p className="text-body-sm font-medium text-foreground mb-1">
@@ -184,9 +207,7 @@ function DocumentSection({ section, highlighted }: { section: any; highlighted?:
                 {sub.title}
                 {sub.pageNumber != null && <PageRef page={sub.pageNumber} />}
               </p>
-              <p className="text-body-sm text-foreground whitespace-pre-wrap leading-relaxed">
-                {sub.content}
-              </p>
+              <DocContent>{sub.content}</DocContent>
             </div>
           ))}
         </div>
@@ -498,7 +519,6 @@ function ExclusionBody({ ex }: { ex: any }) {
   const metaItems = [
     ex?.formNumber && { label: "Form", value: ex.formNumber },
     ex?.appliesTo && { label: "Applies to", value: ex.appliesTo },
-    ex?.excludedPerils && { label: "Perils", value: ex.excludedPerils },
     ex?.buybackAvailable && ex?.buybackEndorsement && { label: "Buyback", value: ex.buybackEndorsement },
   ].filter(Boolean) as { label: string; value: string }[];
 
@@ -516,14 +536,164 @@ function ExclusionBody({ ex }: { ex: any }) {
         </div>
       )}
 
+      {/* Excluded perils */}
+      {ex?.excludedPerils && (
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60 mb-0.5">Excluded Perils</p>
+          <p className="text-body-sm text-foreground leading-relaxed">{ex.excludedPerils}</p>
+        </div>
+      )}
+
       {/* Exceptions */}
       {ex?.exceptions && (
-        <p className="text-body-sm text-foreground leading-relaxed">{ex.exceptions}</p>
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60 mb-0.5">Exceptions</p>
+          <p className="text-body-sm text-foreground leading-relaxed">{ex.exceptions}</p>
+        </div>
       )}
 
       <StructuredRawText content={ex?.content} />
       <StructuredJsonDetails item={ex} />
     </div>
+  );
+}
+
+function ConditionBody({ c }: { c: any }) {
+  const keyValues = c?.keyValues as { key: string; value: string }[] | undefined;
+
+  return (
+    <div className="space-y-2">
+      {/* Key-value terms */}
+      {keyValues && keyValues.length > 0 && (
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60 mb-0.5">Terms</p>
+          <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-body-sm">
+            {keyValues.map((entry, i) => (
+              <span key={i} className="text-foreground">
+                <span className="text-muted-foreground/60">{entry.key}:</span> {entry.value}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <StructuredRawText content={c?.content} />
+      <StructuredJsonDetails item={c} />
+    </div>
+  );
+}
+
+function ConditionsCard({ conditions }: { conditions: any[] }) {
+  return (
+    <StructuredItemsCard
+      id="section-conditions"
+      title="Conditions"
+      items={conditions}
+      getTitle={(c) => c.name ?? c.title ?? "Unnamed condition"}
+      getPage={(c) => c.pageNumber}
+      getBadges={(c) => c?.conditionType ? [{
+        label: formatStructuredLabel(c.conditionType) ?? c.conditionType,
+        className: "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400",
+      }] : []}
+      renderBody={(c) => <ConditionBody c={c} />}
+    />
+  );
+}
+
+function EndorsementBody({ e }: { e: any }) {
+  const metaItems = [
+    e?.formNumber && { label: "Form", value: e.formNumber },
+    e?.editionDate && { label: "Edition", value: e.editionDate },
+    e?.effectiveDate && { label: "Effective", value: e.effectiveDate },
+    e?.premiumImpact && { label: "Premium", value: e.premiumImpact },
+  ].filter(Boolean) as { label: string; value: string }[];
+
+  const namedParties = e?.namedParties as any[] | undefined;
+
+  return (
+    <div className="space-y-2">
+      {/* Inline metadata */}
+      {metaItems.length > 0 && (
+        <div className="flex flex-wrap gap-x-3 gap-y-1 text-label-sm text-muted-foreground">
+          {metaItems.map((m) => (
+            <span key={m.label}>
+              <span className="text-muted-foreground/60">{m.label}:</span>{" "}
+              <span className="text-foreground">{m.value}</span>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Affected coverage parts */}
+      {e?.affectedCoverageParts && (
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60 mb-0.5">Affected Coverage Parts</p>
+          <p className="text-body-sm text-foreground leading-relaxed">
+            {Array.isArray(e.affectedCoverageParts) ? e.affectedCoverageParts.join(", ") : e.affectedCoverageParts}
+          </p>
+        </div>
+      )}
+
+      {/* Named parties */}
+      {namedParties && namedParties.length > 0 && (
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60 mb-0.5">Named Parties</p>
+          <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-body-sm">
+            {namedParties.map((party, i) => {
+              const role = formatStructuredLabel(party.role);
+              const detail = [party.relationship, party.scope].filter(Boolean).join(" — ");
+              return (
+                <span key={i} className="text-foreground">
+                  {party.name}{role && <span className="text-muted-foreground/60"> [{role}]</span>}
+                  {detail && <span className="text-muted-foreground/60"> ({detail})</span>}
+                </span>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Key terms */}
+      {e?.keyTerms && (
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60 mb-0.5">Key Terms</p>
+          <p className="text-body-sm text-foreground leading-relaxed">
+            {Array.isArray(e.keyTerms) ? e.keyTerms.join(", ") : e.keyTerms}
+          </p>
+        </div>
+      )}
+
+      <StructuredRawText content={e?.content} />
+      <StructuredJsonDetails item={e} />
+    </div>
+  );
+}
+
+function EndorsementsCard({ endorsements }: { endorsements: any[] }) {
+  return (
+    <StructuredItemsCard
+      id="section-endorsements"
+      title="Endorsements"
+      items={endorsements}
+      getTitle={(e) => e.title ?? e.name ?? e.formNumber ?? "Unnamed endorsement"}
+      getPage={(e) => e.pageStart}
+      getBadges={(e) => [
+        e?.endorsementType ? {
+          label: formatStructuredLabel(e.endorsementType) ?? e.endorsementType,
+          className:
+            e.endorsementType === "restriction" || e.endorsementType === "exclusion"
+              ? "bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400"
+              : e.endorsementType === "broadening"
+                ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"
+                : "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400",
+        } : undefined,
+        e?.effectiveDate ? {
+          label: `Eff. ${e.effectiveDate}`,
+          className: "bg-foreground/5 text-muted-foreground",
+        } : undefined,
+      ].filter(Boolean) as { label: string; className: string }[]}
+      renderBody={(e) => <EndorsementBody e={e} />}
+    />
   );
 }
 
@@ -644,9 +814,7 @@ function StructuredRawText({ content }: { content?: string | null }) {
         Source text
       </summary>
       <div className="border-t border-foreground/6 px-3 py-3">
-        <p className="text-body-sm text-foreground whitespace-pre-wrap leading-relaxed">
-          {content}
-        </p>
+        <DocContent>{content}</DocContent>
       </div>
     </details>
   );
@@ -769,14 +937,16 @@ function ExtractionTab({ policy }: { policy: any }) {
   const formattedRawExtraction = useMemo(() => formatJsonForDisplay(rawExtraction), [rawExtraction]);
   const hasDocument = !!(policy as any).document;
 
-  const handleRetry = async (mode: "reparse" | "full") => {
+  const hasCheckpoint = !!(policy as any).extractionCheckpoint;
+
+  const handleRetry = async (mode: "resume" | "full") => {
     setRunningMode(mode);
     try {
-      const result = await retryExtraction({ policyId: policy._id, mode });
+      const result = await retryExtraction({ policyId: policy._id, mode }) as any;
       if (result?.error) {
-        toast.error(result.error);
+        toast.error(result.error as string);
       } else {
-        toast.success("Re-extraction started");
+        toast.success(mode === "resume" ? "Resuming extraction" : "Re-extraction started");
       }
     } catch {
       toast.error("Re-extraction failed");
@@ -798,51 +968,35 @@ function ExtractionTab({ policy }: { policy: any }) {
 
   return (
     <div className="space-y-4">
-      {/* Status + Controls */}
-      <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
-        <div className="px-4 py-2.5 bg-foreground/[0.02] border-b border-foreground/4">
-          <div className="flex items-center gap-2">
-            <Activity className="w-4 h-4 text-muted-foreground" />
-            <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">
-              Extraction Status
-            </p>
-          </div>
-        </div>
-        <div className="px-4 py-3">
-          <div className="flex items-center gap-3 mb-4">
-            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-label-sm font-medium ${statusCfg.color}`}>
-              {statusCfg.label}
-            </span>
-            {policy.extractionError && (
-              <span className="text-body-sm text-red-600 dark:text-red-400">{policy.extractionError}</span>
-            )}
-          </div>
-
-          <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-            Re-extraction Controls
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {rawExtraction && (
-              <PillButton
-                variant="secondary"
-                size="compact"
-                disabled={runningMode !== null}
-                onClick={() => handleRetry("reparse")}
-              >
-                {runningMode === "reparse" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Code className="w-3.5 h-3.5" />}
-                Re-parse saved output
-              </PillButton>
-            )}
+      {/* Status bar */}
+      <div className="flex items-center gap-3">
+        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-label-sm font-medium ${statusCfg.color}`}>
+          {statusCfg.label}
+        </span>
+        {policy.extractionError && (
+          <span className="text-body-sm text-red-600 dark:text-red-400 flex-1 min-w-0 truncate">{policy.extractionError}</span>
+        )}
+        <div className="flex items-center gap-2 ml-auto shrink-0">
+          {hasCheckpoint && (
             <PillButton
-              variant="secondary"
+              variant="primary"
               size="compact"
               disabled={runningMode !== null}
-              onClick={() => handleRetry("full")}
+              onClick={() => handleRetry("resume")}
             >
-              {runningMode === "full" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-              Full re-extraction
+              {runningMode === "resume" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+              Restart from checkpoint
             </PillButton>
-          </div>
+          )}
+          <PillButton
+            variant="secondary"
+            size="compact"
+            disabled={runningMode !== null}
+            onClick={() => handleRetry("full")}
+          >
+            {runningMode === "full" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+            Re-extract
+          </PillButton>
         </div>
       </div>
 
@@ -1073,17 +1227,17 @@ function PolicyConversationsTab({ conversations }: { conversations: Conversation
 }
 
 /* ── Activity Tab (Audit Log) ── */
-const AUDIT_ACTION_CONFIG: Record<string, { icon: React.ElementType; dotColor: string; bgColor: string; title: string }> = {
-  created: { icon: FileText, dotColor: "text-blue-500", bgColor: "bg-blue-50 dark:bg-blue-950/40", title: "Policy created" },
-  extraction_started: { icon: Loader2, dotColor: "text-amber-500", bgColor: "bg-amber-50 dark:bg-amber-950/40", title: "Extraction started" },
-  extraction_complete: { icon: CheckCircle, dotColor: "text-emerald-500", bgColor: "bg-emerald-50 dark:bg-emerald-950/40", title: "Extraction complete" },
-  extraction_error: { icon: XCircle, dotColor: "text-red-500", bgColor: "bg-red-50 dark:bg-red-950/40", title: "Extraction failed" },
-  re_extraction: { icon: RefreshCw, dotColor: "text-violet-500", bgColor: "bg-violet-50 dark:bg-violet-950/40", title: "Re-extraction triggered" },
-  pdf_uploaded: { icon: Upload, dotColor: "text-sky-500", bgColor: "bg-sky-50 dark:bg-sky-950/40", title: "PDF uploaded" },
-  deleted: { icon: Trash2, dotColor: "text-red-400", bgColor: "bg-red-50 dark:bg-red-950/40", title: "Policy deleted" },
-  restored: { icon: Shield, dotColor: "text-emerald-500", bgColor: "bg-emerald-50 dark:bg-emerald-950/40", title: "Policy restored" },
-  dismissed: { icon: XCircle, dotColor: "text-gray-500", bgColor: "bg-gray-50 dark:bg-gray-800/40", title: "Policy dismissed" },
-  agent_referenced: { icon: Asterisk, dotColor: "text-[#A0D2FA]", bgColor: "bg-[#A0D2FA]/10", title: "Referenced by Prism" },
+const AUDIT_ACTION_CONFIG: Record<string, { dotColor: string; title: string }> = {
+  created: { dotColor: "bg-blue-500", title: "Policy created" },
+  extraction_started: { dotColor: "bg-amber-500", title: "Extraction started" },
+  extraction_complete: { dotColor: "bg-emerald-500", title: "Extraction complete" },
+  extraction_error: { dotColor: "bg-red-500", title: "Extraction failed" },
+  re_extraction: { dotColor: "bg-violet-500", title: "Re-extraction triggered" },
+  pdf_uploaded: { dotColor: "bg-sky-500", title: "PDF uploaded" },
+  deleted: { dotColor: "bg-red-400", title: "Policy deleted" },
+  restored: { dotColor: "bg-emerald-500", title: "Policy restored" },
+  dismissed: { dotColor: "bg-gray-400", title: "Policy dismissed" },
+  agent_referenced: { dotColor: "bg-[#A0D2FA]", title: "Referenced by Prism" },
 };
 
 function PolicyActivityTab({ policyId }: { policyId: string }) {
@@ -1093,17 +1247,11 @@ function PolicyActivityTab({ policyId }: { policyId: string }) {
 
   if (entries === undefined) {
     return (
-      <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
-        <div className="px-4 py-2.5 bg-foreground/[0.02] border-b border-foreground/4">
-          <div className="h-4 w-24 bg-foreground/5 rounded animate-pulse" />
-        </div>
-        {Array.from({ length: 3 }).map((_, i) => (
-          <div key={i} className="flex items-center gap-3 px-4 py-3 border-b border-foreground/4 last:border-b-0">
-            <div className="w-7 h-7 rounded-full bg-foreground/5 animate-pulse" />
-            <div className="flex-1">
-              <div className="h-4 w-32 bg-foreground/5 rounded animate-pulse" />
-            </div>
-            <div className="h-3 w-16 bg-foreground/5 rounded animate-pulse" />
+      <div className="space-y-2 py-2">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="flex items-center gap-2.5">
+            <div className="w-1.5 h-1.5 rounded-full bg-foreground/5 animate-pulse" />
+            <div className="h-3.5 w-40 bg-foreground/5 rounded animate-pulse" />
           </div>
         ))}
       </div>
@@ -1112,17 +1260,14 @@ function PolicyActivityTab({ policyId }: { policyId: string }) {
 
   if (entries.length === 0) {
     return (
-      <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-6 py-12 text-center">
-        <Activity className="w-8 h-8 text-muted-foreground/15 mx-auto mb-3" />
-        <p className="text-body-sm text-muted-foreground/50">No activity recorded yet</p>
-      </div>
+      <p className="text-body-sm text-muted-foreground/50 py-8 text-center">No activity recorded yet</p>
     );
   }
 
   // Group entries by date
   const groups: { label: string; entries: typeof entries }[] = [];
   for (const entry of entries) {
-    const label = dayjs(entry._creationTime).format("MMMM D, YYYY");
+    const label = dayjs(entry._creationTime).format("MMM D, YYYY");
     const last = groups[groups.length - 1];
     if (last && last.label === label) {
       last.entries.push(entry);
@@ -1132,52 +1277,38 @@ function PolicyActivityTab({ policyId }: { policyId: string }) {
   }
 
   return (
-    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
-      {groups.map((group, gi) => {
-        const config = AUDIT_ACTION_CONFIG;
-        return (
-          <div key={group.label}>
-            {/* Date header */}
-            <div className={`px-4 py-2 bg-foreground/[0.02] ${gi > 0 ? "border-t border-foreground/6" : ""} border-b border-foreground/4`}>
-              <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">
-                {group.label}
-              </p>
-            </div>
-
-            {/* Entries */}
-            {group.entries.map((entry, ei) => {
-              const cfg = config[entry.action] ?? {
-                icon: Activity,
-                dotColor: "text-gray-500",
-                bgColor: "bg-gray-50",
+    <div className="space-y-4">
+      {groups.map((group) => (
+        <div key={group.label}>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50 mb-1.5">
+            {group.label}
+          </p>
+          <div className="space-y-0">
+            {group.entries.map((entry) => {
+              const cfg = AUDIT_ACTION_CONFIG[entry.action] ?? {
+                dotColor: "bg-gray-400",
                 title: entry.action,
               };
-              const Icon = cfg.icon;
-              const isLast = ei === group.entries.length - 1 && gi === groups.length - 1;
 
               return (
                 <div
                   key={entry._id}
-                  className={`flex items-start gap-3 px-4 py-3 ${!isLast ? "border-b border-foreground/4" : ""}`}
+                  className="flex items-baseline gap-2.5 py-1"
                 >
-                  <div className={`w-7 h-7 rounded-full ${cfg.bgColor} flex items-center justify-center shrink-0 mt-0.5`}>
-                    <Icon className={`w-3.5 h-3.5 ${cfg.dotColor}`} />
-                  </div>
-                  <div className="min-w-0 flex-1 pt-0.5">
-                    <p className="text-body-sm font-medium text-foreground">{cfg.title}</p>
-                    {entry.detail && (
-                      <p className="text-label-sm text-muted-foreground/50 mt-0.5 line-clamp-1">{entry.detail}</p>
-                    )}
-                  </div>
-                  <span className="text-[11px] text-muted-foreground/35 shrink-0 pt-1 tabular-nums">
+                  <span className={`w-1.5 h-1.5 rounded-full ${cfg.dotColor} shrink-0 translate-y-[-1px]`} />
+                  <span className="text-body-sm text-foreground">{cfg.title}</span>
+                  {entry.detail && (
+                    <span className="text-label-sm text-muted-foreground/40 truncate min-w-0">{entry.detail}</span>
+                  )}
+                  <span className="text-[10px] text-muted-foreground/30 shrink-0 ml-auto tabular-nums">
                     {dayjs(entry._creationTime).format("h:mm A")}
                   </span>
                 </div>
               );
             })}
           </div>
-        );
-      })}
+        </div>
+      ))}
     </div>
   );
 }
@@ -1214,7 +1345,7 @@ export default function PolicyDetailPage({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [activeTab, setActiveTab] = useState<"details" | "conversations" | "activity" | "extraction">("details");
 
-  const { openWithUrl } = usePdf();
+  const { openWithUrl, setFileUrl: preloadPdfUrl } = usePdf();
   const { setPageContext } = usePageContext();
   useEffect(() => {
     if (policy) {
@@ -1231,11 +1362,13 @@ export default function PolicyDetailPage({
   useEffect(() => {
     if (fileUrl && !didAutoOpen.current) {
       didAutoOpen.current = true;
+      // Pre-load URL so PageRef links work immediately
+      preloadPdfUrl(fileUrl);
       if (initialPage) {
         openWithUrl(fileUrl, initialPage);
       }
     }
-  }, [fileUrl, initialPage, openWithUrl]);
+  }, [fileUrl, initialPage, openWithUrl, preloadPdfUrl]);
 
   const conversations = useQuery(
     api.agentConversations.listByPolicyId,
@@ -1614,7 +1747,13 @@ export default function PolicyDetailPage({
                         </p>
                       </div>
                     </div>
-                    <table className="w-full text-left">
+                    <table className="w-full text-left table-fixed">
+                      <colgroup>
+                        <col className="w-[50%]" />
+                        <col className="w-[20%]" />
+                        <col className="hidden sm:table-column w-[20%]" />
+                        <col className="hidden sm:table-column w-[10%]" />
+                      </colgroup>
                       <thead>
                         <tr className="bg-foreground/[0.02]">
                           <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">
@@ -1626,14 +1765,20 @@ export default function PolicyDetailPage({
                           <th className="hidden sm:table-cell px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider text-right">
                             Deductible
                           </th>
-                          <th className="hidden sm:table-cell px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider text-right w-12">
+                          <th className="hidden sm:table-cell px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider text-right">
                           </th>
                         </tr>
                       </thead>
                       <tbody>
                         {policy.coverages.map((cov, i) => {
                           const c = cov as any;
-                          const hasDetails = c.formNumber || c.sectionRef || c.originalContent || c.limitValueType || c.deductibleValueType;
+                          const skipValueTypes = new Set(["numeric", "waiting_period"]);
+                          const tags = [
+                            c.formNumber,
+                            c.sectionRef,
+                            c.limitValueType && !skipValueTypes.has(c.limitValueType) && c.limitValueType.replace(/_/g, " "),
+                            c.deductibleValueType && !skipValueTypes.has(c.deductibleValueType) && `ded: ${c.deductibleValueType.replace(/_/g, " ")}`,
+                          ].filter(Boolean) as string[];
                           return (
                             <FadeIn
                               key={i}
@@ -1646,28 +1791,20 @@ export default function PolicyDetailPage({
                             >
                               <td className="px-4 py-2.5 text-body-sm text-foreground">
                                 <span>{cov.name}</span>
-                                {hasDetails && (
-                                  <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1 text-label-sm text-muted-foreground/70">
-                                    {c.formNumber && <span>Form {c.formNumber}</span>}
-                                    {c.sectionRef && <span>Ref {c.sectionRef}</span>}
-                                    {c.limitValueType && c.limitValueType !== "numeric" && (
-                                      <span className="text-muted-foreground/50">Limit: {c.limitValueType.replace(/_/g, " ")}</span>
-                                    )}
-                                    {c.deductibleValueType && c.deductibleValueType !== "numeric" && (
-                                      <span className="text-muted-foreground/50">Ded: {c.deductibleValueType.replace(/_/g, " ")}</span>
-                                    )}
+                                {tags.length > 0 && (
+                                  <div className="flex flex-wrap gap-1 mt-1">
+                                    {tags.map((tag) => (
+                                      <span key={tag} className="inline-flex items-center rounded-full bg-foreground/[0.04] px-1.5 py-px text-[10px] text-muted-foreground/70">
+                                        {tag}
+                                      </span>
+                                    ))}
                                   </div>
                                 )}
-                                {c.originalContent && (
-                                  <p className="mt-1 text-label-sm text-muted-foreground/60 line-clamp-2 max-w-md">
-                                    {c.originalContent}
-                                  </p>
-                                )}
                               </td>
-                              <td className="px-4 py-2.5 text-body-sm font-mono font-medium text-foreground text-right">
+                              <td className="px-4 py-2.5 text-body-sm font-mono font-medium text-foreground text-right whitespace-nowrap">
                                 {cov.limit}
                               </td>
-                              <td className="hidden sm:table-cell px-4 py-2.5 text-body-sm font-mono text-muted-foreground text-right">
+                              <td className="hidden sm:table-cell px-4 py-2.5 text-body-sm font-mono text-muted-foreground text-right whitespace-nowrap">
                                 {cov.deductible || "—"}
                               </td>
                               <td className="hidden sm:table-cell px-4 py-2.5 text-right">
@@ -1736,97 +1873,7 @@ export default function PolicyDetailPage({
                   </div>
                 </FadeIn>
 
-                {/* Limits Schedule */}
-                {limits && (
-                  <FadeIn when={true} delay={0.67} duration={0.6}>
-                    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden mb-6">
-                      <div className="px-4 py-2.5 bg-foreground/[0.02] border-b border-foreground/4">
-                        <div className="flex items-center gap-2">
-                          <Shield className="w-4 h-4 text-muted-foreground" />
-                          <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">
-                            Limits Schedule
-                          </p>
-                        </div>
-                      </div>
-                      <table className="w-full text-left">
-                        <tbody>
-                          {[
-                            limits.perOccurrence ? { label: "Per Occurrence", value: limits.perOccurrence } : null,
-                            limits.generalAggregate ? { label: "General Aggregate", value: limits.generalAggregate } : null,
-                            limits.productsCompletedOpsAggregate ? { label: "Products/Completed Ops Aggregate", value: limits.productsCompletedOpsAggregate } : null,
-                            limits.personalAdvertisingInjury ? { label: "Personal & Advertising Injury", value: limits.personalAdvertisingInjury } : null,
-                            limits.fireDamage ? { label: "Fire Damage", value: limits.fireDamage } : null,
-                            limits.medicalExpense ? { label: "Medical Expense", value: limits.medicalExpense } : null,
-                            limits.combinedSingleLimit ? { label: "Combined Single Limit", value: limits.combinedSingleLimit } : null,
-                            limits.bodilyInjuryPerPerson ? { label: "Bodily Injury (Per Person)", value: limits.bodilyInjuryPerPerson } : null,
-                            limits.bodilyInjuryPerAccident ? { label: "Bodily Injury (Per Accident)", value: limits.bodilyInjuryPerAccident } : null,
-                            limits.propertyDamage ? { label: "Property Damage", value: limits.propertyDamage } : null,
-                            limits.eachOccurrenceUmbrella ? { label: "Umbrella (Each Occurrence)", value: limits.eachOccurrenceUmbrella } : null,
-                            limits.umbrellaAggregate ? { label: "Umbrella Aggregate", value: limits.umbrellaAggregate } : null,
-                            limits.umbrellaRetention ? { label: "Umbrella Retention", value: limits.umbrellaRetention } : null,
-                            limits.statutory ? { label: "Statutory", value: "Yes" } : null,
-                            limits.defenseCostTreatment ? { label: "Defense Costs", value: limits.defenseCostTreatment.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase()) } : null,
-                          ].filter(Boolean).map((item: any) => (
-                            <tr key={item.label} className="border-t border-foreground/4 first:border-t-0 hover:bg-foreground/[0.015] transition-colors">
-                              <td className="px-4 py-2 text-body-sm text-muted-foreground w-48">{item.label}</td>
-                              <td className="px-4 py-2 text-body-sm font-mono font-medium text-foreground text-right">{item.value}</td>
-                            </tr>
-                          ))}
-                          {limits.employersLiability && (
-                            <>
-                              <tr className="border-t border-foreground/4 hover:bg-foreground/[0.015] transition-colors">
-                                <td className="px-4 py-2 text-body-sm text-muted-foreground w-48">EL - Each Accident</td>
-                                <td className="px-4 py-2 text-body-sm font-mono font-medium text-foreground text-right">{limits.employersLiability.eachAccident}</td>
-                              </tr>
-                              <tr className="border-t border-foreground/4 hover:bg-foreground/[0.015] transition-colors">
-                                <td className="px-4 py-2 text-body-sm text-muted-foreground w-48">EL - Disease Policy Limit</td>
-                                <td className="px-4 py-2 text-body-sm font-mono font-medium text-foreground text-right">{limits.employersLiability.diseasePolicyLimit}</td>
-                              </tr>
-                              <tr className="border-t border-foreground/4 hover:bg-foreground/[0.015] transition-colors">
-                                <td className="px-4 py-2 text-body-sm text-muted-foreground w-48">EL - Disease Each Employee</td>
-                                <td className="px-4 py-2 text-body-sm font-mono font-medium text-foreground text-right">{limits.employersLiability.diseaseEachEmployee}</td>
-                              </tr>
-                            </>
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                  </FadeIn>
-                )}
-
-                {/* Deductibles */}
-                {deductibles && (
-                  <FadeIn when={true} delay={0.68} duration={0.6}>
-                    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden mb-6">
-                      <div className="px-4 py-2.5 bg-foreground/[0.02] border-b border-foreground/4">
-                        <div className="flex items-center gap-2">
-                          <DollarSign className="w-4 h-4 text-muted-foreground" />
-                          <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">
-                            Deductibles
-                          </p>
-                        </div>
-                      </div>
-                      <table className="w-full text-left">
-                        <tbody>
-                          {[
-                            deductibles.perOccurrence ? { label: "Per Occurrence", value: deductibles.perOccurrence } : null,
-                            deductibles.perClaim ? { label: "Per Claim", value: deductibles.perClaim } : null,
-                            deductibles.aggregateDeductible ? { label: "Aggregate", value: deductibles.aggregateDeductible } : null,
-                            deductibles.selfInsuredRetention ? { label: "Self-Insured Retention", value: deductibles.selfInsuredRetention } : null,
-                            deductibles.corridorDeductible ? { label: "Corridor", value: deductibles.corridorDeductible } : null,
-                            deductibles.waitingPeriod ? { label: "Waiting Period", value: deductibles.waitingPeriod } : null,
-                            deductibles.appliesTo ? { label: "Applies To", value: deductibles.appliesTo.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase()) } : null,
-                          ].filter(Boolean).map((item: any) => (
-                            <tr key={item.label} className="border-t border-foreground/4 first:border-t-0 hover:bg-foreground/[0.015] transition-colors">
-                              <td className="px-4 py-2 text-body-sm text-muted-foreground w-48">{item.label}</td>
-                              <td className="px-4 py-2 text-body-sm font-mono font-medium text-foreground text-right">{item.value}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </FadeIn>
-                )}
+                {/* Limits & deductibles removed — the coverage table shows this data in context */}
 
                 {/* Locations */}
                 {locations && locations.length > 0 && (
@@ -2125,30 +2172,7 @@ export default function PolicyDetailPage({
                 {policyDocument?.conditions?.length > 0 && (
                   <FadeIn when={true} delay={0.9} duration={0.6}>
                     <div className="mb-6">
-                      <StructuredItemsCard
-                        id="section-conditions"
-                        title="Conditions"
-                        items={policyDocument.conditions}
-                        getTitle={(c) => c.name ?? c.title ?? "Unnamed condition"}
-                        getPage={(c) => c.pageNumber}
-                        getBadges={(c) => c?.conditionType ? [{
-                          label: formatStructuredLabel(c.conditionType) ?? c.conditionType,
-                          className: "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400",
-                        }] : []}
-                        renderBody={(c) => (
-                          <>
-                            <StructuredFieldGrid
-                              fields={[
-                                { label: "Name", value: c?.name },
-                                { label: "Condition Type", value: formatStructuredLabel(c?.conditionType) },
-                                { label: "Structured Terms", value: c?.keyValues?.map((entry: any) => `${entry.key}: ${entry.value}`) },
-                              ]}
-                            />
-                            <StructuredRawText content={c?.content} />
-                            <StructuredJsonDetails item={c} />
-                          </>
-                        )}
-                      />
+                      <ConditionsCard conditions={policyDocument.conditions} />
                     </div>
                   </FadeIn>
                 )}
@@ -2157,55 +2181,7 @@ export default function PolicyDetailPage({
                 {policyDocument?.endorsements?.length > 0 && (
                   <FadeIn when={true} delay={0.95} duration={0.6}>
                     <div className="mb-6">
-                      <StructuredItemsCard
-                        id="section-endorsements"
-                        title="Endorsements"
-                        items={policyDocument.endorsements}
-                        getTitle={(e) => e.title ?? e.name ?? e.formNumber ?? "Unnamed endorsement"}
-                        getPage={(e) => e.pageStart}
-                        getBadges={(e) => [
-                          e?.endorsementType ? {
-                            label: formatStructuredLabel(e.endorsementType) ?? e.endorsementType,
-                            className:
-                              e.endorsementType === "restriction" || e.endorsementType === "exclusion"
-                                ? "bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400"
-                                : e.endorsementType === "broadening"
-                                  ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"
-                                  : "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400",
-                          } : undefined,
-                          e?.effectiveDate ? {
-                            label: `Eff. ${e.effectiveDate}`,
-                            className: "bg-foreground/5 text-muted-foreground",
-                          } : undefined,
-                        ].filter(Boolean) as { label: string; className: string }[]}
-                        renderBody={(e) => (
-                          <>
-                            <StructuredFieldGrid
-                              fields={[
-                                { label: "Title", value: e?.title },
-                                { label: "Form Number", value: e?.formNumber },
-                                { label: "Edition Date", value: e?.editionDate },
-                                { label: "Effective Date", value: e?.effectiveDate },
-                                { label: "Endorsement Type", value: formatStructuredLabel(e?.endorsementType) },
-                                { label: "Affected Coverage Parts", value: e?.affectedCoverageParts },
-                                {
-                                  label: "Named Parties",
-                                  value: e?.namedParties?.map((party: any) => {
-                                    const role = formatStructuredLabel(party.role);
-                                    const relationship = party.relationship ? ` (${party.relationship})` : "";
-                                    const scope = party.scope ? ` - ${party.scope}` : "";
-                                    return `${party.name}${role ? ` [${role}]` : ""}${relationship}${scope}`;
-                                  }),
-                                },
-                                { label: "Key Terms", value: e?.keyTerms },
-                                { label: "Premium Impact", value: e?.premiumImpact },
-                              ]}
-                            />
-                            <StructuredRawText content={e?.content} />
-                            <StructuredJsonDetails item={e} />
-                          </>
-                        )}
-                      />
+                      <EndorsementsCard endorsements={policyDocument.endorsements} />
                     </div>
                   </FadeIn>
                 )}

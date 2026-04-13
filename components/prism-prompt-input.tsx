@@ -99,7 +99,7 @@ export const PrismPromptInput = forwardRef<
                 Prism
               </span>
               {contextLabel && (
-                <span className="text-[10px] font-medium text-muted-foreground/30 bg-foreground/[0.03] px-1.5 py-0.5 rounded">
+                <span className="text-[10px] font-medium text-muted-foreground/30 bg-foreground/[0.03] px-1.5 py-0.5 rounded max-w-[200px] truncate inline-block align-middle" title={contextLabel}>
                   {contextLabel}
                 </span>
               )}

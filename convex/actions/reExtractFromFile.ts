@@ -51,6 +51,12 @@ export const reExtractFromFile = action({
       const extractor = buildExtractor({
         log,
         onProgress: async (msg) => { await log(msg); },
+        onCheckpointSave: async (cp) => {
+          await ctx.runMutation(api.policies.updateExtraction, {
+            id: args.policyId,
+            extractionCheckpoint: cp,
+          });
+        },
       });
 
       const result = await extractor.extract(
@@ -73,6 +79,7 @@ export const reExtractFromFile = action({
         id: args.policyId,
         fileId: args.fileId,
         fileName: `${docName}.pdf`,
+        extractionCheckpoint: undefined,
         ...fields,
       });
 
