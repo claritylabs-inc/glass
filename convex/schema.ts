@@ -530,8 +530,17 @@ export default defineSchema({
     enrichedSubjectivities: v.optional(v.any()),
     enrichedUnderwritingConditions: v.optional(v.any()),
     warrantyRequirements: v.optional(v.any()),
+    // Supplementary extraction (cl-sdk 0.13+) — extra facts not captured by structured extractors
+    supplementaryFacts: v.optional(v.array(v.object({
+      key: v.string(),
+      value: v.string(),
+      subject: v.optional(v.string()),
+      context: v.optional(v.string()),
+    }))),
     deletedAt: v.optional(v.number()),
     isDemo: v.optional(v.boolean()),
+    // When true, this policy's chunks are excluded from vector search results
+    excludeFromSearch: v.optional(v.boolean()),
   }).index("by_carrier", ["carrier"])
     .index("by_policyYear", ["policyYear"])
     .index("by_userId", ["userId"])

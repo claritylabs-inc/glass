@@ -68,6 +68,12 @@ export function createConvexMemoryStore(
         });
         if (!doc) continue;
 
+        // Check if the parent policy is excluded from search
+        const policy = await ctx.runQuery(internal.policies.getInternal, {
+          id: doc.policyId,
+        });
+        if (!policy || policy.excludeFromSearch) continue;
+
         // Apply additional filters if specified
         if (options?.filter) {
           if (options.filter.documentId && doc.policyId !== options.filter.documentId) continue;
@@ -110,7 +116,7 @@ export function createConvexMemoryStore(
         },
       );
 
-      return turns.map((t) => ({
+      return turns.map((t: any) => ({
         id: t._id as string,
         conversationId: t.conversationId,
         role: t.role as ConversationTurn["role"],

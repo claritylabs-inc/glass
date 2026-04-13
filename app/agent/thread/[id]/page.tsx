@@ -19,6 +19,7 @@ import { PrismPromptInput, type PrismPromptInputHandle } from "@/components/pris
 import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
 import { CollapsibleReasoning } from "@/components/collapsible-reasoning";
 import Link from "next/link";
+import { PROSE_MARKDOWN_STYLES } from "@/components/prose-markdown";
 import Markdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
@@ -147,7 +148,7 @@ function fixQuoteLinks(content: string, _quoteIds?: Id<"policies">[]): string {
 }
 
 /* ── Shared markdown container styles ── */
-const MARKDOWN_STYLES = "max-w-none text-body-sm leading-relaxed [&_p]:my-3 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_strong]:font-semibold [&_ul]:my-3 [&_ul]:pl-5 [&_ul]:list-disc [&_ol]:my-3 [&_ol]:pl-5 [&_ol]:list-decimal [&_li]:my-0.5 [&_a]:text-[#A0D2FA] [&_a]:underline [&_h1]:text-[0.875rem] [&_h1]:font-semibold [&_h1]:mt-3 [&_h1]:mb-1 [&_h2]:text-[0.875rem] [&_h2]:font-semibold [&_h2]:mt-3 [&_h2]:mb-1 [&_h3]:text-[0.875rem] [&_h3]:font-semibold [&_h3]:mt-2.5 [&_h3]:mb-0.5 [&_h4]:text-[0.875rem] [&_h4]:font-semibold [&_h4]:mt-2 [&_h4]:mb-0.5 [&_h5]:text-[0.875rem] [&_h5]:font-semibold [&_h6]:text-[0.875rem] [&_h6]:font-semibold [&_hr]:my-3 [&_hr]:border-foreground/8 [&_code]:text-[12px] [&_code]:bg-foreground/[0.04] [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_table]:my-3 [&_table]:w-full [&_table]:text-body-sm [&_table]:border-collapse [&_th]:text-left [&_th]:font-semibold [&_th]:px-3 [&_th]:py-1.5 [&_th]:border-b [&_th]:border-foreground/10 [&_th]:bg-foreground/[0.03] [&_td]:px-3 [&_td]:py-1.5 [&_td]:border-b [&_td]:border-foreground/6 [&_thead]:align-bottom";
+const MARKDOWN_STYLES = PROSE_MARKDOWN_STYLES + " [&_a]:text-[#A0D2FA] [&_a]:underline";
 
 const markdownComponents = {
   a: ({ href, children }: { href?: string; children?: React.ReactNode }) => {
@@ -156,11 +157,6 @@ const markdownComponents = {
     }
     return <a href={href} className="text-[#A0D2FA] underline" target="_blank" rel="noopener noreferrer">{children}</a>;
   },
-  table: ({ children }: { children?: React.ReactNode }) => (
-    <div className="overflow-x-auto my-3 rounded-md border border-foreground/8">
-      <table className="w-full text-body-sm border-collapse">{children}</table>
-    </div>
-  ),
 };
 
 /* ── Attachment chip for unified thread messages ── */

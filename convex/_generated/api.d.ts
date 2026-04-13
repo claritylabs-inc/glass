@@ -13,6 +13,7 @@ import type * as actions_classifyEmails from "../actions/classifyEmails.js";
 import type * as actions_extractCompanyInfo from "../actions/extractCompanyInfo.js";
 import type * as actions_extractFromUpload from "../actions/extractFromUpload.js";
 import type * as actions_extractPolicy from "../actions/extractPolicy.js";
+import type * as actions_extractSupplementary from "../actions/extractSupplementary.js";
 import type * as actions_generateCoi from "../actions/generateCoi.js";
 import type * as actions_generateEmailBody from "../actions/generateEmailBody.js";
 import type * as actions_handleInboundEmail from "../actions/handleInboundEmail.js";
@@ -88,6 +89,7 @@ declare const fullApi: ApiFromModules<{
   "actions/extractCompanyInfo": typeof actions_extractCompanyInfo;
   "actions/extractFromUpload": typeof actions_extractFromUpload;
   "actions/extractPolicy": typeof actions_extractPolicy;
+  "actions/extractSupplementary": typeof actions_extractSupplementary;
   "actions/generateCoi": typeof actions_generateCoi;
   "actions/generateEmailBody": typeof actions_generateEmailBody;
   "actions/handleInboundEmail": typeof actions_handleInboundEmail;

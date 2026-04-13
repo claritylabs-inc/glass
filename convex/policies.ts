@@ -647,6 +647,13 @@ export const updateExtraction = mutation({
     enrichedSubjectivities: v.optional(v.any()),
     enrichedUnderwritingConditions: v.optional(v.any()),
     warrantyRequirements: v.optional(v.any()),
+    // Supplementary extraction (cl-sdk 0.13+)
+    supplementaryFacts: v.optional(v.array(v.object({
+      key: v.string(),
+      value: v.string(),
+      subject: v.optional(v.string()),
+      context: v.optional(v.string()),
+    }))),
   },
   handler: async (ctx, args) => {
     const { id, ...fields } = args;
@@ -676,6 +683,25 @@ export const dismiss = mutation({
       userId,
       orgId,
       action: "dismissed",
+    });
+  },
+});
+
+export const setExcludeFromSearch = mutation({
+  args: {
+    id: v.id("policies"),
+    exclude: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const { userId, orgId } = await requireOrgAccess(ctx);
+    const policy = await ctx.db.get(args.id);
+    if (!policy || policy.orgId !== orgId) throw new Error("Not found");
+    await ctx.db.patch(args.id, { excludeFromSearch: args.exclude });
+    await ctx.db.insert("policyAuditLog", {
+      policyId: args.id,
+      userId,
+      orgId,
+      action: args.exclude ? "excluded_from_search" : "included_in_search",
     });
   },
 });

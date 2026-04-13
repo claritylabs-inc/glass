@@ -49,6 +49,14 @@ export const insert = internalMutation({
   },
 });
 
+/** Delete a single chunk by ID. */
+export const deleteOne = internalMutation({
+  args: { id: v.id("documentChunks") },
+  handler: async (ctx, args) => {
+    await ctx.db.delete(args.id);
+  },
+});
+
 /** Delete all chunks for a policy (used when re-extracting). */
 export const deleteByPolicy = internalMutation({
   args: { policyId: v.id("policies") },

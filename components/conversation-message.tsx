@@ -7,6 +7,7 @@ import remarkBreaks from "remark-breaks";
 import dayjs from "dayjs";
 import { Asterisk, Loader2, Paperclip, FileText, Download, Mail as MailIcon } from "lucide-react";
 import { ContextReferenceCard } from "@/components/context-reference-card";
+import { PROSE_MARKDOWN_STYLES, PROSE_MARKDOWN_COMPACT_STYLES } from "@/components/prose-markdown";
 import { Id } from "@/convex/_generated/dataModel";
 import { api } from "@/convex/_generated/api";
 
@@ -78,7 +79,7 @@ export function stripAttribution(text: string): string {
   return text.replace(/^\s*On [\s\S]+?wrote:\s*\n?/, "").trimStart();
 }
 
-const QUOTED_MARKDOWN_STYLES = "[&_p]:my-1 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_strong]:font-semibold [&_ul]:my-1 [&_ul]:pl-5 [&_ul]:list-disc [&_ol]:my-1 [&_ol]:pl-5 [&_ol]:list-decimal [&_li]:my-0.5 [&_a]:text-blue-500/60 [&_a]:underline [&_h1]:text-[0.875rem] [&_h1]:font-semibold [&_h1]:mt-2 [&_h1]:mb-0.5 [&_h2]:text-[0.875rem] [&_h2]:font-semibold [&_h2]:mt-2 [&_h2]:mb-0.5 [&_h3]:text-[0.875rem] [&_h3]:font-semibold [&_h3]:mt-1.5 [&_h3]:mb-0.5 [&_h4]:text-[0.875rem] [&_h4]:font-semibold [&_h4]:mt-1 [&_h4]:mb-0.5 [&_h5]:text-[0.875rem] [&_h5]:font-semibold [&_h6]:text-[0.875rem] [&_h6]:font-semibold [&_em]:text-body-sm [&_hr]:my-2 [&_hr]:border-foreground/8";
+const QUOTED_MARKDOWN_STYLES = PROSE_MARKDOWN_COMPACT_STYLES + " [&_a]:text-blue-500/60 [&_a]:underline";
 
 export function QuotedContent({ text }: { text: string }) {
   const cleaned = stripAttribution(stripSignature(text));
@@ -349,7 +350,7 @@ export function MessageBubble({ conv, onOpenPdf, onRetry, viewerEmail }: { conv:
               </div>
             )}
           </div>
-          <div className="rounded-lg bg-popover border border-foreground/6 p-4 text-body-sm text-foreground leading-relaxed [&_p]:my-3 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_strong]:font-semibold [&_ul]:my-3 [&_ul]:pl-5 [&_ul]:list-disc [&_ol]:my-3 [&_ol]:pl-5 [&_ol]:list-decimal [&_li]:my-0.5 [&_a]:text-blue-600 [&_a]:underline [&_h1]:text-[0.875rem] [&_h1]:font-semibold [&_h1]:mt-3 [&_h1]:mb-1 [&_h2]:text-[0.875rem] [&_h2]:font-semibold [&_h2]:mt-3 [&_h2]:mb-1 [&_h3]:text-[0.875rem] [&_h3]:font-semibold [&_h3]:mt-2.5 [&_h3]:mb-0.5 [&_h4]:text-[0.875rem] [&_h4]:font-semibold [&_h4]:mt-2 [&_h4]:mb-0.5 [&_h5]:text-[0.875rem] [&_h5]:font-semibold [&_h6]:text-[0.875rem] [&_h6]:font-semibold [&_hr]:my-3 [&_hr]:border-foreground/8 [&_code]:text-[12px] [&_code]:bg-foreground/[0.04] [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded">
+          <div className={`rounded-lg bg-popover border border-foreground/6 p-4 text-foreground ${PROSE_MARKDOWN_STYLES} [&_a]:text-blue-600 [&_a]:underline`}>
               <Markdown remarkPlugins={[remarkBreaks]} components={{
                 a: ({ href, children }) => {
                   if (href?.startsWith("/policies/") || href?.startsWith("/quotes/")) {

@@ -74,7 +74,7 @@ export function PolicyFilters({
           />
 
           <FilterDropdown
-            label="All Producers"
+            label="All Carriers"
             value={selectedCarrier}
             onChange={onCarrierChange}
             options={carriers.map((c) => ({ value: c, label: c }))}

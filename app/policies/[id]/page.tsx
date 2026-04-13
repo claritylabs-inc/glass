@@ -6,7 +6,7 @@ import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
 import { FadeIn } from "@/components/ui/fade-in";
-import { ArrowLeft, Download, FileText, Calendar, Shield, DollarSign, Trash2, Upload, ChevronDown, ChevronRight, Loader2, Scale, Phone, Receipt, AlertTriangle, Users, Eye, Mail, MessageSquare, Activity, CheckCircle, XCircle, RefreshCw, Asterisk, X, Ban, BookOpen, Stamp, Clock, Code, Play, Copy, Check } from "lucide-react";
+import { ArrowLeft, Download, FileText, Calendar, Shield, DollarSign, Trash2, Upload, ChevronDown, ChevronRight, Loader2, Scale, Phone, Receipt, AlertTriangle, Users, Eye, Mail, MessageSquare, Activity, CheckCircle, XCircle, RefreshCw, Asterisk, X, Ban, BookOpen, Stamp, Clock, Code, Play, Copy, Check, Search } from "lucide-react";
 import { motion } from "framer-motion";
 import dayjs from "dayjs";
 import { ModeBadge } from "@/components/mode-badge";
@@ -29,8 +29,7 @@ import {
 } from "@/components/ui/dialog";
 import { usePdf } from "@/components/pdf-context";
 import { usePageContext } from "@/hooks/use-page-context";
-import Markdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { ProseMarkdown } from "@/components/prose-markdown";
 
 const TYPE_COLORS: Record<string, string> = {
   general_liability: "bg-blue-100 dark:bg-blue-950/40 text-blue-700 dark:text-blue-400",
@@ -127,24 +126,9 @@ const SECTION_TYPE_COLORS: Record<string, string> = {
 
 function DocContent({ children }: { children: string }) {
   return (
-    <div className="text-body-sm text-foreground leading-relaxed prose prose-sm dark:prose-invert max-w-none prose-p:my-3 prose-headings:text-foreground prose-headings:font-semibold prose-headings:mt-4 prose-headings:mb-2 prose-ul:my-2 prose-ol:my-2 prose-li:my-0.5">
-      <Markdown
-        remarkPlugins={[remarkGfm]}
-        components={{
-          table: ({ children: c }) => (
-            <div className="overflow-x-auto my-4 rounded-md border border-foreground/6">
-              <table className="w-full text-body-sm">{c}</table>
-            </div>
-          ),
-          th: ({ children: c }) => (
-            <th className="px-3 py-1.5 text-left text-label-sm font-semibold text-muted-foreground bg-foreground/[0.02] border-b border-foreground/8 whitespace-nowrap">{c}</th>
-          ),
-          td: ({ children: c }) => (
-            <td className="px-3 py-1.5 border-b border-foreground/4 whitespace-nowrap">{c}</td>
-          ),
-        }}
-      >{children}</Markdown>
-    </div>
+    <ProseMarkdown gfm className="text-foreground">
+      {children}
+    </ProseMarkdown>
   );
 }
 
@@ -926,6 +910,7 @@ const EXTRACTION_STATUS_CONFIG: Record<string, { label: string; color: string }>
 
 function ExtractionTab({ policy }: { policy: any }) {
   const retryExtraction = useAction(api.actions.retryExtraction.retryExtraction);
+  const runSupplementary = useAction(api.actions.extractSupplementary.runSupplementary);
   const [runningMode, setRunningMode] = useState<string | null>(null);
   const [copiedBlock, setCopiedBlock] = useState<"rawExtraction" | "rawMetadata" | null>(null);
 
@@ -1006,6 +991,72 @@ function ExtractionTab({ policy }: { policy: any }) {
         live={policy.extractionStatus === "extracting"}
         emptyMessage="No extraction events recorded"
       />
+
+      {/* Supplementary Extraction */}
+      {policy.extractionStatus === "complete" && (
+        <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
+          <div className="px-4 py-2.5 bg-foreground/[0.02] border-b border-foreground/4">
+            <div className="flex items-center gap-2">
+              <Search className="w-4 h-4 text-muted-foreground" />
+              <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider flex-1">
+                Additional Details
+              </p>
+              {policy.supplementaryFacts?.length > 0 && (
+                <span className="text-label-sm text-emerald-600 dark:text-emerald-400 font-medium">
+                  {policy.supplementaryFacts.length} details extracted
+                </span>
+              )}
+              <PillButton
+                variant="secondary"
+                size="compact"
+                disabled={runningMode !== null}
+                onClick={async () => {
+                  setRunningMode("supplementary");
+                  try {
+                    const result = await runSupplementary({
+                      policyId: policy._id,
+                      force: !!policy.supplementaryFacts?.length,
+                    }) as any;
+                    if (result?.error) {
+                      toast.error(result.error);
+                    } else {
+                      toast.success(`Extracted ${result.facts ?? 0} additional details`);
+                    }
+                  } catch {
+                    toast.error("Supplementary extraction failed");
+                  } finally {
+                    setRunningMode(null);
+                  }
+                }}
+              >
+                {runningMode === "supplementary" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : policy.supplementaryFacts?.length ? <RefreshCw className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+                {policy.supplementaryFacts?.length ? "Re-extract" : "Extract additional details"}
+              </PillButton>
+            </div>
+          </div>
+          {policy.supplementaryFacts?.length > 0 && (
+            <div className="divide-y divide-foreground/4">
+              {policy.supplementaryFacts.map((fact: any, i: number) => (
+                <div key={i} className="px-4 py-2 grid grid-cols-[1fr_1fr] gap-x-4">
+                  <span className="text-body-sm text-muted-foreground break-words">
+                    {fact.key}
+                    {fact.subject && <span className="block text-label-sm text-muted-foreground/40">{fact.subject}</span>}
+                  </span>
+                  <span className="text-body-sm text-foreground break-words">
+                    {fact.value}
+                    {fact.context && <span className="block text-label-sm text-muted-foreground/40">{fact.context}</span>}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+          {!policy.supplementaryFacts?.length && (
+            <div className="px-4 py-3 text-body-sm text-muted-foreground/50">
+              No additional details extracted yet. Run extraction to capture extra policy information for better querying.
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Raw Data */}
       {(rawExtraction || rawMetadata) && (
@@ -1448,6 +1499,7 @@ export default function PolicyDetailPage({
   const classifications: any[] | undefined = (policy as any).classifications;
   const formInventory: any[] | undefined = (policy as any).formInventory;
   const taxesAndFees: any[] | undefined = (policy as any).taxesAndFees;
+  const supplementaryFacts: { key: string; value: string; subject?: string; context?: string }[] | undefined = (policy as any).supplementaryFacts;
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -2185,6 +2237,40 @@ export default function PolicyDetailPage({
                     </div>
                   </FadeIn>
                 )}
+                {/* Supplementary Facts */}
+                {supplementaryFacts && supplementaryFacts.length > 0 && (
+                  <FadeIn when={true} delay={1.0} duration={0.6}>
+                    <div id="section-supplementary" className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden mb-6">
+                      <div className="px-4 py-2.5 bg-foreground/[0.02] border-b border-foreground/4">
+                        <div className="flex items-center gap-2">
+                          <Search className="w-4 h-4 text-muted-foreground" />
+                          <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                            Additional Details ({supplementaryFacts.length})
+                          </p>
+                        </div>
+                      </div>
+                      <div className="divide-y divide-foreground/4">
+                        {supplementaryFacts.map((fact, i) => (
+                          <div key={i} className="px-4 py-2.5 grid grid-cols-[1fr_1fr] gap-x-4 hover:bg-foreground/[0.015] transition-colors">
+                            <span className="text-body-sm text-muted-foreground break-words">
+                              {fact.key}
+                              {fact.subject && (
+                                <span className="block text-label-sm text-muted-foreground/40 mt-0.5">{fact.subject}</span>
+                              )}
+                            </span>
+                            <span className="text-body-sm text-foreground break-words">
+                              {fact.value}
+                              {fact.context && (
+                                <span className="block text-label-sm text-muted-foreground/40 mt-0.5">{fact.context}</span>
+                              )}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </FadeIn>
+                )}
+
                 </div>{/* end flex-1 */}
 
                 <SectionOutline sections={[
@@ -2194,6 +2280,7 @@ export default function PolicyDetailPage({
                   { id: "section-exclusions", label: "Exclusions", count: policyDocument?.exclusions?.length },
                   { id: "section-conditions", label: "Conditions", count: policyDocument?.conditions?.length },
                   { id: "section-endorsements", label: "Endorsements", count: policyDocument?.endorsements?.length },
+                  ...(supplementaryFacts?.length ? [{ id: "section-supplementary", label: "Additional Details", count: supplementaryFacts.length }] : []),
                 ]} />
                 </div>{/* end flex */}
                 </>)}

@@ -100,6 +100,9 @@ export function insuranceDocToPolicy(doc: InsuranceDocument): Record<string, any
   // Declarations
   if (d.declarations) fields.declarations = sanitizeNulls(d.declarations);
 
+  // Supplementary facts (cl-sdk 0.13+)
+  if (d.supplementaryFacts?.length) fields.supplementaryFacts = sanitizeNulls(d.supplementaryFacts);
+
   // Policy-specific fields
   if (!isQuote) {
     if (d.policyTermType) fields.policyTermType = d.policyTermType;
@@ -184,6 +187,8 @@ export function policyToInsuranceDoc(p: Doc<"policies">): InsuranceDocument {
     conditions: (p.document as any)?.conditions,
     // Declarations
     declarations: p.declarations as any,
+    // Supplementary facts (cl-sdk 0.13+)
+    supplementaryFacts: p.supplementaryFacts as any,
   };
 
   if (isQuote) {

@@ -50,7 +50,7 @@ export function DocSection({
         />
       </button>
       {open && (
-        <div className="px-3 pb-3 border-t border-foreground/4 pt-2.5">
+        <div className="px-3 pb-3 pt-2.5 border-t border-foreground/4">
           <FormattedSectionContent content={content} />
         </div>
       )}
