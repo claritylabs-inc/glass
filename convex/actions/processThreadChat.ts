@@ -482,9 +482,10 @@ export const run = internalAction({
 
         if (contentParts.length > 0) {
           // Replace the last user message with multipart content
-          const lastUserIdx = messageHistory.findLastIndex(
-            (m) => m.role === "user",
-          );
+          let lastUserIdx = -1;
+          for (let i = messageHistory.length - 1; i >= 0; i--) {
+            if (messageHistory[i].role === "user") { lastUserIdx = i; break; }
+          }
           if (lastUserIdx !== -1) {
             const existingText =
               typeof messageHistory[lastUserIdx].content === "string"
