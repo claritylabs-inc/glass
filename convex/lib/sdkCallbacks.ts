@@ -78,6 +78,28 @@ function buildPromptInput(
   }
 
   if (!pdfBase64) {
+    // cl-sdk's application pipeline embeds base64 PDF directly in the prompt
+    // text instead of using providerOptions.pdfBase64. Detect this and convert
+    // to a proper file content part so the model can actually read the PDF.
+    const extracted = extractEmbeddedPdf(prompt);
+    if (extracted) {
+      return {
+        messages: [
+          {
+            role: "user" as const,
+            content: [
+              { type: "text" as const, text: extracted.text },
+              {
+                type: "file" as const,
+                data: extracted.pdfBase64,
+                mediaType: "application/pdf",
+                filename: "document.pdf",
+              },
+            ],
+          },
+        ],
+      };
+    }
     return { prompt };
   }
 
@@ -97,6 +119,25 @@ function buildPromptInput(
       },
     ],
   };
+}
+
+/**
+ * Detect base64 PDF content embedded directly in prompt text.
+ * The cl-sdk application pipeline concatenates raw pdfBase64 into prompts
+ * (e.g. "Extract fields from this application:\n{base64}").
+ * We detect this by looking for the PDF magic bytes in base64 ("JVBER" = "%PDF").
+ */
+function extractEmbeddedPdf(
+  prompt: string,
+): { text: string; pdfBase64: string } | null {
+  // Match a long base64 PDF blob at the end of the prompt (after a newline)
+  const match = prompt.match(
+    /^([\s\S]+?\n)(JVBER[A-Za-z0-9+/=\s]{200,})$/,
+  );
+  if (!match) return null;
+  const text = match[1].trim();
+  const pdfBase64 = match[2].replace(/\s/g, "");
+  return { text, pdfBase64 };
 }
 
 /**

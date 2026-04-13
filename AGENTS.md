@@ -69,10 +69,11 @@ Prism translates those into AI SDK multipart message content in `sdkCallbacks.ts
 - PDFs become `{ type: "file", data, mediaType: "application/pdf" }`
 - images become `{ type: "image", image, mediaType }`
 
-Important detail:
+Important details:
 
 - The `providerOptions.images` items from `cl-sdk` do not carry a `type` field.
 - The AI SDK message parts created from them must carry `type: "image"`.
+- The application pipeline (`createApplicationPipeline`) embeds raw base64 PDF content directly in the prompt text instead of using `providerOptions.pdfBase64`. `sdkCallbacks.ts` detects this (via the `%PDF` magic bytes in base64: `JVBER`) and converts it to a proper file content part so the model can read the PDF.
 
 ### Token Limits
 
