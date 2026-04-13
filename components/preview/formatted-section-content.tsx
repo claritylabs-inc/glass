@@ -33,7 +33,7 @@ function stripEmptyTableRows(md: string): string {
 
 export function FormattedSectionContent({ content }: { content: string }) {
   return (
-    <div className="text-body-sm text-foreground/80 leading-relaxed prose prose-sm dark:prose-invert max-w-none prose-p:my-2 prose-headings:text-foreground prose-headings:font-semibold prose-headings:mt-3 prose-headings:mb-1 prose-ul:my-1.5 prose-ol:my-1.5 prose-li:my-0.5 prose-table:my-0">
+    <div className="text-body-sm text-foreground/80 leading-relaxed prose prose-sm dark:prose-invert max-w-none prose-p:my-2 prose-headings:text-foreground prose-headings:font-semibold prose-headings:mt-3 prose-headings:mb-1 prose-ul:my-1.5 prose-ol:my-1.5 prose-li:my-0.5 prose-table:my-0 prose-thead:border-0 prose-tr:border-0 prose-th:p-0 prose-td:p-0">
       <Markdown
         remarkPlugins={[remarkGfm]}
         components={{
