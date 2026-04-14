@@ -23,9 +23,11 @@ import type * as actions_processApplication from "../actions/processApplication.
 import type * as actions_processThreadChat from "../actions/processThreadChat.js";
 import type * as actions_processWebChat from "../actions/processWebChat.js";
 import type * as actions_reExtractFromFile from "../actions/reExtractFromFile.js";
+import type * as actions_rechunkPolicy from "../actions/rechunkPolicy.js";
 import type * as actions_retryExtraction from "../actions/retryExtraction.js";
 import type * as actions_scanInbox from "../actions/scanInbox.js";
 import type * as actions_sendPendingEmail from "../actions/sendPendingEmail.js";
+import type * as actions_vectorProjection from "../actions/vectorProjection.js";
 import type * as agentConversations from "../agentConversations.js";
 import type * as apiKeys from "../apiKeys.js";
 import type * as applicationSessions from "../applicationSessions.js";
@@ -99,9 +101,11 @@ declare const fullApi: ApiFromModules<{
   "actions/processThreadChat": typeof actions_processThreadChat;
   "actions/processWebChat": typeof actions_processWebChat;
   "actions/reExtractFromFile": typeof actions_reExtractFromFile;
+  "actions/rechunkPolicy": typeof actions_rechunkPolicy;
   "actions/retryExtraction": typeof actions_retryExtraction;
   "actions/scanInbox": typeof actions_scanInbox;
   "actions/sendPendingEmail": typeof actions_sendPendingEmail;
+  "actions/vectorProjection": typeof actions_vectorProjection;
   agentConversations: typeof agentConversations;
   apiKeys: typeof apiKeys;
   applicationSessions: typeof applicationSessions;

@@ -29,11 +29,14 @@ import {
   Check,
   Eye,
   EyeOff,
+  Search,
+  RefreshCw,
 } from "lucide-react";
 import { INDUSTRIES } from "@/convex/lib/industries";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { PillButton } from "@/components/ui/pill-button";
 import { BusinessContextManager } from "@/components/business-context-manager";
+import { VectorSpace } from "@/components/vector-space";
 import {
   Dialog,
   DialogContent,
@@ -48,6 +51,7 @@ const SETTINGS_TABS = [
   { id: "info", label: "Basic Information", icon: Building2 },
   { id: "team", label: "Team Members", icon: Users },
   { id: "context", label: "Business Context", icon: Database },
+  { id: "search", label: "Search Index", icon: Search },
   { id: "connected", label: "Connected Apps", icon: Globe },
   { id: "apikeys", label: "API Keys (Local)", icon: Key },
 ] as const;
@@ -680,6 +684,9 @@ export default function SettingsPage() {
                 showAddForm={showAddContextForm}
                 onShowAddFormChange={setShowAddContextForm}
               />
+            ) : activeTab === "search" ? (
+              /* Search Index tab */
+              <SearchIndexTab />
             ) : activeTab === "connected" ? (
               /* Connected Apps tab */
               <div className="space-y-4">
@@ -1084,5 +1091,149 @@ export default function SettingsPage() {
         </DialogContent>
       </Dialog>
     </AppShell>
+  );
+}
+
+/* ── Search Index Tab ── */
+
+function SearchIndexTab() {
+  const stats = useQuery(api.documentChunks.stats);
+  const projectVectors = useAction(api.actions.vectorProjection.project);
+  const rechunkAction = useAction(api.actions.rechunkPolicy.rechunk);
+  const [reindexingId, setReindexingId] = useState<string | null>(null);
+  const [vectorData, setVectorData] = useState<{ points: any[]; totalChunks: number } | null>(null);
+  const [loadingVectors, setLoadingVectors] = useState(false);
+
+  // Load vector projection on mount when stats are available
+  useEffect(() => {
+    if (stats && stats.totalChunks > 0 && !vectorData && !loadingVectors) {
+      setLoadingVectors(true);
+      projectVectors()
+        .then((result: any) => {
+          if (result?.points) setVectorData(result);
+        })
+        .catch(() => {})
+        .finally(() => setLoadingVectors(false));
+    }
+  }, [stats, vectorData, loadingVectors, projectVectors]);
+
+  if (!stats) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="w-5 h-5 animate-spin text-muted-foreground/30" />
+      </div>
+    );
+  }
+
+  const maxPolicyCount = Math.max(...stats.byPolicy.map((p) => p.count), 1);
+
+  return (
+    <div className="space-y-5">
+      {/* Overview stats */}
+      <div className="grid grid-cols-2 gap-4">
+        <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-5 py-4">
+          <p className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider">Total Vectors</p>
+          <p className="text-2xl font-semibold text-foreground mt-1 font-mono">{stats.totalChunks.toLocaleString()}</p>
+        </div>
+        <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-5 py-4">
+          <p className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider">Indexed Policies</p>
+          <p className="text-2xl font-semibold text-foreground mt-1 font-mono">{stats.totalPolicies.toLocaleString()}</p>
+        </div>
+      </div>
+
+      {/* 3D Vector Space */}
+      {vectorData && vectorData.points.length > 0 ? (
+        <VectorSpace points={vectorData.points} totalChunks={vectorData.totalChunks} />
+      ) : loadingVectors ? (
+        <div className="rounded-lg border border-foreground/6 bg-background flex items-center justify-center" style={{ height: 520 }}>
+          <div className="text-center">
+            <Loader2 className="w-5 h-5 animate-spin text-muted-foreground/30 mx-auto mb-2" />
+            <p className="text-label-sm text-muted-foreground/30">Computing vector projections...</p>
+          </div>
+        </div>
+      ) : stats.totalChunks > 0 ? (
+        <div className="rounded-lg border border-foreground/6 bg-background flex items-center justify-center" style={{ height: 520 }}>
+          <button
+            type="button"
+            onClick={() => {
+              setLoadingVectors(true);
+              projectVectors()
+                .then((result: any) => { if (result?.points) setVectorData(result); })
+                .catch(() => {})
+                .finally(() => setLoadingVectors(false));
+            }}
+            className="text-center cursor-pointer group"
+          >
+            <Search className="w-6 h-6 text-muted-foreground/20 mx-auto mb-2 group-hover:text-muted-foreground/40 transition-colors" />
+            <p className="text-body-sm text-muted-foreground/40 group-hover:text-muted-foreground/60 transition-colors">Load vector space</p>
+          </button>
+        </div>
+      ) : null}
+
+      {/* Per-policy breakdown */}
+      {stats.byPolicy.length > 0 && (
+        <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
+          <div className="px-5 py-3.5 border-b border-foreground/6">
+            <h3 className="!mb-0 text-sm font-medium text-foreground">Index by Policy</h3>
+            <p className="text-label-sm text-muted-foreground mt-0.5">
+              Search vectors per policy. Reindex individual policies to update their search data.
+            </p>
+          </div>
+          <div className="divide-y divide-foreground/4">
+            {stats.byPolicy.map(({ id, carrier, policyNumber, count }) => (
+              <div key={id} className="px-5 py-2.5 flex items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <p className="text-body-sm font-medium text-foreground truncate">{carrier}</p>
+                  <p className="text-label-sm text-muted-foreground/50 font-mono">{policyNumber}</p>
+                </div>
+                <div className="w-32 shrink-0">
+                  <div className="h-2 bg-foreground/[0.03] rounded-full overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-blue-500/60 transition-all"
+                      style={{ width: `${(count / maxPolicyCount) * 100}%` }}
+                    />
+                  </div>
+                </div>
+                <span className="text-label-sm text-muted-foreground font-mono w-8 text-right shrink-0">
+                  {count}
+                </span>
+                <PillButton
+                  variant="secondary"
+                  size="compact"
+                  disabled={reindexingId !== null}
+                  onClick={async () => {
+                    setReindexingId(id);
+                    try {
+                      const result = await rechunkAction({ policyId: id as any }) as any;
+                      if (result?.error) {
+                        toast.error(result.error);
+                      } else {
+                        toast.success(`Reindexed: ${result.newChunks} chunks`);
+                      }
+                    } catch {
+                      toast.error("Reindexing failed");
+                    } finally {
+                      setReindexingId(null);
+                    }
+                  }}
+                >
+                  {reindexingId === id ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                </PillButton>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {stats.totalChunks === 0 && (
+        <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-5 py-8 text-center">
+          <Search className="w-6 h-6 text-muted-foreground/20 mx-auto mb-2" />
+          <p className="text-body-sm text-muted-foreground">No search index data</p>
+          <p className="text-label-sm text-muted-foreground/50 mt-0.5">
+            Extract policies to populate the search index.
+          </p>
+        </div>
+      )}
+    </div>
   );
 }

@@ -911,6 +911,7 @@ const EXTRACTION_STATUS_CONFIG: Record<string, { label: string; color: string }>
 function ExtractionTab({ policy }: { policy: any }) {
   const retryExtraction = useAction(api.actions.retryExtraction.retryExtraction);
   const runSupplementary = useAction(api.actions.extractSupplementary.runSupplementary);
+  const rechunk = useAction(api.actions.rechunkPolicy.rechunk);
   const [runningMode, setRunningMode] = useState<string | null>(null);
   const [copiedBlock, setCopiedBlock] = useState<"rawExtraction" | "rawMetadata" | null>(null);
 
@@ -982,6 +983,31 @@ function ExtractionTab({ policy }: { policy: any }) {
             {runningMode === "full" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
             Re-extract
           </PillButton>
+          {policy.extractionStatus === "complete" && (
+            <PillButton
+              variant="secondary"
+              size="compact"
+              disabled={runningMode !== null}
+              onClick={async () => {
+                setRunningMode("rechunk");
+                try {
+                  const result = await rechunk({ policyId: policy._id }) as any;
+                  if (result?.error) {
+                    toast.error(result.error);
+                  } else {
+                    toast.success(`Reindexed: ${result.newChunks} search chunks updated`);
+                  }
+                } catch {
+                  toast.error("Reindexing failed");
+                } finally {
+                  setRunningMode(null);
+                }
+              }}
+            >
+              {runningMode === "rechunk" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+              Reindex for search
+            </PillButton>
+          )}
         </div>
       </div>
 
