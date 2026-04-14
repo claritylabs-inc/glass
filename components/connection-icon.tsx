@@ -10,8 +10,22 @@ const HOST_ICONS: Record<string, IconType> = {
   "imap.mail.yahoo.com": FaYahoo,
 };
 
-export function ConnectionIcon({ imapHost, className = "" }: { imapHost: string; className?: string }) {
-  const Icon = HOST_ICONS[imapHost];
+interface ConnectionIconProps {
+  imapHost?: string;
+  provider?: "google" | "imap";
+  className?: string;
+}
+
+export function ConnectionIcon({ imapHost, provider, className = "" }: ConnectionIconProps) {
+  if (provider === "google") {
+    return (
+      <div className={`rounded-full bg-primary/10 flex items-center justify-center ${className}`}>
+        <FaGoogle className="text-primary" size={16} />
+      </div>
+    );
+  }
+
+  const Icon = imapHost ? HOST_ICONS[imapHost] : undefined;
   if (Icon) {
     return (
       <div className={`rounded-full bg-primary/10 flex items-center justify-center ${className}`}>

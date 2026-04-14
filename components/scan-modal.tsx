@@ -13,6 +13,7 @@ interface ScanModalProps {
   open: boolean;
   onClose: () => void;
   connectionId: Id<"emailConnections">;
+  provider?: "google" | "imap";
   defaults?: {
     sinceDate?: string;
     untilDate?: string;
@@ -25,8 +26,9 @@ function formatDate(d: Date): string {
   return d.toISOString().split("T")[0];
 }
 
-export function ScanModal({ open, onClose, connectionId, defaults }: ScanModalProps) {
+export function ScanModal({ open, onClose, connectionId, provider, defaults }: ScanModalProps) {
   const scanInbox = useAction(api.actions.scanInbox.scanInbox);
+  const scanGmail = useAction(api.actions.scanGmail.scanGmail);
 
   const defaultSince = defaults?.sinceDate
     ?? (defaults?.lastScanAt
@@ -50,12 +52,17 @@ export function ScanModal({ open, onClose, connectionId, defaults }: ScanModalPr
         .map((d) => d.trim())
         .filter(Boolean);
 
-      await scanInbox({
+      const scanArgs = {
         connectionId,
         sinceDate: sinceDate || undefined,
         untilDate: untilDate || undefined,
         senderDomains: domains.length > 0 ? domains : undefined,
-      });
+      };
+      if (provider === "google") {
+        await scanGmail(scanArgs);
+      } else {
+        await scanInbox(scanArgs);
+      }
       onClose();
       toast.success("Inbox scan started");
     } catch {

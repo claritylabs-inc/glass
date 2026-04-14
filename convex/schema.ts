@@ -185,17 +185,24 @@ export default defineSchema({
   emailConnections: defineTable({
     userId: v.optional(v.id("users")),
     orgId: v.optional(v.id("organizations")),
+    provider: v.optional(v.union(v.literal("google"), v.literal("imap"))),
     label: v.string(),
-    imapHost: v.string(),
-    imapPort: v.number(),
+    // IMAP fields (optional — only for provider: "imap")
+    imapHost: v.optional(v.string()),
+    imapPort: v.optional(v.number()),
     email: v.string(),
-    password: v.string(),
+    password: v.optional(v.string()),
+    // Google OAuth fields (optional — only for provider: "google")
+    accessToken: v.optional(v.string()),
+    refreshToken: v.optional(v.string()),
+    tokenExpiry: v.optional(v.number()),
     lastScanAt: v.optional(v.number()),
     lastScanStatus: v.optional(
       v.union(
         v.literal("scanning"),
         v.literal("success"),
-        v.literal("error")
+        v.literal("error"),
+        v.literal("disconnected")
       )
     ),
     lastScanError: v.optional(v.string()),
@@ -216,7 +223,16 @@ export default defineSchema({
     })),
     isDemo: v.optional(v.boolean()),
   }).index("by_userId", ["userId"])
-    .index("by_orgId", ["orgId"]),
+    .index("by_orgId", ["orgId"])
+    .index("by_email_orgId_provider", ["email", "orgId", "provider"]),
+
+  // Temporary OAuth state for CSRF validation during Google OAuth flow
+  oauthStates: defineTable({
+    state: v.string(),
+    userId: v.id("users"),
+    orgId: v.id("organizations"),
+    createdAt: v.number(),
+  }).index("by_state", ["state"]),
 
   emails: defineTable({
     userId: v.optional(v.id("users")),

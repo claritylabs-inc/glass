@@ -25,6 +25,7 @@ import type * as actions_processWebChat from "../actions/processWebChat.js";
 import type * as actions_reExtractFromFile from "../actions/reExtractFromFile.js";
 import type * as actions_rechunkPolicy from "../actions/rechunkPolicy.js";
 import type * as actions_retryExtraction from "../actions/retryExtraction.js";
+import type * as actions_scanGmail from "../actions/scanGmail.js";
 import type * as actions_scanInbox from "../actions/scanInbox.js";
 import type * as actions_sendPendingEmail from "../actions/sendPendingEmail.js";
 import type * as actions_vectorProjection from "../actions/vectorProjection.js";
@@ -103,6 +104,7 @@ declare const fullApi: ApiFromModules<{
   "actions/reExtractFromFile": typeof actions_reExtractFromFile;
   "actions/rechunkPolicy": typeof actions_rechunkPolicy;
   "actions/retryExtraction": typeof actions_retryExtraction;
+  "actions/scanGmail": typeof actions_scanGmail;
   "actions/scanInbox": typeof actions_scanInbox;
   "actions/sendPendingEmail": typeof actions_sendPendingEmail;
   "actions/vectorProjection": typeof actions_vectorProjection;

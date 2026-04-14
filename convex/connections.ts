@@ -44,8 +44,150 @@ export const create = mutation({
     const { userId, orgId } = await requireOrgAdmin(ctx);
     return await ctx.db.insert("emailConnections", {
       ...args,
+      provider: "imap",
       userId,
       orgId,
+    });
+  },
+});
+
+export const createGoogle = internalMutation({
+  args: {
+    userId: v.id("users"),
+    orgId: v.id("organizations"),
+    email: v.string(),
+    accessToken: v.string(),
+    refreshToken: v.string(),
+    tokenExpiry: v.number(),
+  },
+  handler: async (ctx, args) => {
+    // Check for existing Google connection with same email + org (upsert)
+    const existing = await ctx.db
+      .query("emailConnections")
+      .withIndex("by_email_orgId_provider", (idx) =>
+        idx.eq("email", args.email).eq("orgId", args.orgId).eq("provider", "google")
+      )
+      .first();
+
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        accessToken: args.accessToken,
+        refreshToken: args.refreshToken,
+        tokenExpiry: args.tokenExpiry,
+        lastScanStatus: undefined,
+        lastScanError: undefined,
+      });
+      return existing._id;
+    }
+
+    return await ctx.db.insert("emailConnections", {
+      provider: "google",
+      userId: args.userId,
+      orgId: args.orgId,
+      label: args.email,
+      email: args.email,
+      accessToken: args.accessToken,
+      refreshToken: args.refreshToken,
+      tokenExpiry: args.tokenExpiry,
+    });
+  },
+});
+
+export const updateTokens = internalMutation({
+  args: {
+    id: v.id("emailConnections"),
+    accessToken: v.string(),
+    tokenExpiry: v.number(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.id, {
+      accessToken: args.accessToken,
+      tokenExpiry: args.tokenExpiry,
+    });
+  },
+});
+
+// OAuth state management
+export const createOAuthState = internalMutation({
+  args: {
+    state: v.string(),
+    userId: v.id("users"),
+    orgId: v.id("organizations"),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db.insert("oauthStates", {
+      ...args,
+      createdAt: Date.now(),
+    });
+  },
+});
+
+export const consumeOAuthState = internalMutation({
+  args: { state: v.string() },
+  handler: async (ctx, args) => {
+    const record = await ctx.db
+      .query("oauthStates")
+      .withIndex("by_state", (idx) => idx.eq("state", args.state))
+      .first();
+
+    if (!record) return null;
+
+    // Expire after 10 minutes
+    if (Date.now() - record.createdAt > 10 * 60 * 1000) {
+      await ctx.db.delete(record._id);
+      return null;
+    }
+
+    await ctx.db.delete(record._id);
+    return { userId: record.userId, orgId: record.orgId };
+  },
+});
+
+// Public mutation for Google OAuth callback (no user auth context — uses server secret)
+export const connectGoogle = mutation({
+  args: {
+    serverSecret: v.string(),
+    orgId: v.string(),
+    email: v.string(),
+    accessToken: v.string(),
+    refreshToken: v.string(),
+    tokenExpiry: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const expected = process.env.GOOGLE_OAUTH_SERVER_SECRET;
+    if (!expected || args.serverSecret !== expected) {
+      throw new Error("Unauthorized");
+    }
+
+    const orgId = args.orgId as any; // from URL state, already validated
+
+    // Upsert: update existing Google connection or create new one
+    const existing = await ctx.db
+      .query("emailConnections")
+      .withIndex("by_email_orgId_provider", (idx) =>
+        idx.eq("email", args.email).eq("orgId", orgId).eq("provider", "google")
+      )
+      .first();
+
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        accessToken: args.accessToken,
+        refreshToken: args.refreshToken,
+        tokenExpiry: args.tokenExpiry,
+        lastScanStatus: undefined,
+        lastScanError: undefined,
+      });
+      return existing._id;
+    }
+
+    return await ctx.db.insert("emailConnections", {
+      provider: "google",
+      orgId,
+      label: args.email,
+      email: args.email,
+      accessToken: args.accessToken,
+      refreshToken: args.refreshToken,
+      tokenExpiry: args.tokenExpiry,
     });
   },
 });
@@ -56,7 +198,8 @@ export const updateScanStatus = mutation({
     lastScanStatus: v.union(
       v.literal("scanning"),
       v.literal("success"),
-      v.literal("error")
+      v.literal("error"),
+      v.literal("disconnected")
     ),
     lastScanAt: v.optional(v.number()),
     lastScanError: v.optional(v.string()),
