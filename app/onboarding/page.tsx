@@ -26,6 +26,10 @@ import {
   Forward,
   UserPlus,
   X,
+  Search,
+  Brain,
+  RefreshCw,
+  Shield,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AgentHandleForm } from "@/components/agent-handle-form";
@@ -557,6 +561,39 @@ export default function OnboardingPage() {
                 </button>
               </div>
 
+              {/* Intelligence pipeline explanation */}
+              <div className="rounded-lg border border-foreground/6 bg-foreground/[0.015] px-4 py-3">
+                <p className="text-label-sm font-medium text-foreground/70 mb-2.5">
+                  What happens after you connect
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div className="flex items-start gap-2.5">
+                    <Search className="w-3.5 h-3.5 text-muted-foreground/50 mt-0.5 shrink-0" />
+                    <p className="text-[11px] leading-relaxed text-muted-foreground/60">
+                      Scan for insurance-related emails daily
+                    </p>
+                  </div>
+                  <div className="flex items-start gap-2.5">
+                    <Brain className="w-3.5 h-3.5 text-muted-foreground/50 mt-0.5 shrink-0" />
+                    <p className="text-[11px] leading-relaxed text-muted-foreground/60">
+                      Extract company details, operations, and risk signals
+                    </p>
+                  </div>
+                  <div className="flex items-start gap-2.5">
+                    <Shield className="w-3.5 h-3.5 text-muted-foreground/50 mt-0.5 shrink-0" />
+                    <p className="text-[11px] leading-relaxed text-muted-foreground/60">
+                      Build an intelligence profile to auto-fill applications
+                    </p>
+                  </div>
+                  <div className="flex items-start gap-2.5">
+                    <RefreshCw className="w-3.5 h-3.5 text-muted-foreground/50 mt-0.5 shrink-0" />
+                    <p className="text-[11px] leading-relaxed text-muted-foreground/60">
+                      Continuously improve as more emails arrive
+                    </p>
+                  </div>
+                </div>
+              </div>
+
               <div className="flex items-center justify-between pt-2">
                 <PillButton
                   variant="secondary"
@@ -854,13 +891,14 @@ const DEMO_STATUS = [
   { id: "policies", label: "4 policies extracted" },
   { id: "coverages", label: "12 coverages identified" },
   { id: "dates", label: "Effective dates & limits mapped" },
+  { id: "intel", label: "Business intelligence profile built" },
   { id: "ready", label: "Ready to explore" },
 ];
 
 const PHASE_DESCRIPTIONS: Record<DemoPhase, string> = {
   scanning: "Clarity can connect to your inbox and scan for insurance emails.",
   extracting: "Clarity can download attachments and extract policy data with AI.",
-  analyzing: "Clarity can organize coverages, limits, and key dates.",
+  analyzing: "Clarity organizes coverages and builds a business intelligence profile.",
   ready: "Your policies are organized and ready to explore.",
 };
 
@@ -980,15 +1018,15 @@ function HowItWorksDemo({
       timers.push(setTimeout(() => setExtractedPolicies((prev) => [...prev, i]), 4000 + i * 650));
     });
 
-    // Phase 3: Analyzing (7s–10s)
+    // Phase 3: Analyzing (7s–11s)
     timers.push(setTimeout(() => setPhase("analyzing"), 7000));
     DEMO_STATUS.forEach((item, i) => {
-      timers.push(setTimeout(() => setStatusItems((prev) => [...prev, item]), 7400 + i * 750));
+      timers.push(setTimeout(() => setStatusItems((prev) => [...prev, item]), 7400 + i * 700));
     });
 
-    // Phase 4: Ready (10s), loop after 6s pause
-    timers.push(setTimeout(() => setPhase("ready"), 10200));
-    timers.push(setTimeout(() => setCycle((c) => c + 1), 16200));
+    // Phase 4: Ready (11s), loop after 6s pause
+    timers.push(setTimeout(() => setPhase("ready"), 11000));
+    timers.push(setTimeout(() => setCycle((c) => c + 1), 17000));
 
     return () => timers.forEach(clearTimeout);
   }, [cycle]);

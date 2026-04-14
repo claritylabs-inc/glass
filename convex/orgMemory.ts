@@ -2,6 +2,13 @@ import { v } from "convex/values";
 import { internalMutation, internalQuery, query } from "./_generated/server";
 import { requireAuth } from "./lib/auth";
 
+export const listAllInternal = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    return await ctx.db.query("orgMemory").collect();
+  },
+});
+
 // ── Internal queries ──
 
 export const listByOrg = internalQuery({

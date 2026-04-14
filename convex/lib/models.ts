@@ -54,7 +54,9 @@ export type ModelTask =
   | "extraction"
   | "classification"
   | "analysis"
-  | "summary";
+  | "summary"
+  | "triage"
+  | "email_extraction";
 
 /**
  * Model routing.
@@ -72,6 +74,8 @@ const MODEL_CONFIG: Record<ModelTask, () => any> = {
   summary:          () => anthropic()("claude-haiku-4-5-20251001"),
   classification:   () => anthropic()("claude-haiku-4-5-20251001"),
   extraction:       () => openai()("gpt-5.4-mini"),
+  triage:           () => deepseek()("deepseek-chat"),
+  email_extraction: () => deepseek()("deepseek-chat"),
 };
 
 export function getModel(task: ModelTask) {

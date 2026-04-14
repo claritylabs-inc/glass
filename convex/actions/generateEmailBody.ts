@@ -4,7 +4,7 @@ import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { getModel, generateTextWithFallback } from "../lib/models";
-import { buildMemoryContext } from "../lib/orgMemoryContext";
+import { buildIntelligenceContext } from "../lib/agentPrompts";
 import { logAiError } from "../lib/aiUtils";
 
 /**
@@ -20,14 +20,10 @@ export const run = internalAction({
     tone: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<{ subject: string; body: string }> => {
-    const [org, orgMemories] = await Promise.all([
-      ctx.runQuery(internal.orgs.getInternal, { id: args.orgId }),
-      ctx.runQuery(internal.orgMemory.listByOrg, { orgId: args.orgId, limit: 20 }),
-    ]);
-
+    const org = await ctx.runQuery(internal.orgs.getInternal, { id: args.orgId });
     if (!org) throw new Error("Organization not found");
 
-    const memoryBlock = buildMemoryContext(orgMemories);
+    const memoryBlock = await buildIntelligenceContext(ctx, args.orgId, args.intent);
     const tone = args.tone ?? "professional";
 
     const prompt = `Write an email for a commercial insurance context.

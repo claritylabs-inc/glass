@@ -22,7 +22,7 @@ import {
   markdownToHtml,
   logAiError,
 } from "../lib/aiUtils";
-import { buildMemoryContext } from "../lib/orgMemoryContext";
+import { buildIntelligenceContext } from "../lib/agentPrompts";
 
 /** Build executable tools with Convex context wired in. */
 function buildTools(ctx: any, args: { orgId: any; threadId: any }, org?: any) {
@@ -423,12 +423,8 @@ export const run = internalAction({
       // Cross-thread conversation memory (vector search)
       const memoryContext = await buildConversationMemoryContext(ctx, args.orgId, latestUserContent);
 
-      // Load org memory
-      const orgMemories = await ctx.runQuery(
-        internal.orgMemory.listByOrg,
-        { orgId: args.orgId, limit: 30 },
-      );
-      const orgMemoryBlock = buildMemoryContext(orgMemories);
+      // Load business intelligence (vector search)
+      const orgMemoryBlock = await buildIntelligenceContext(ctx, args.orgId, latestUserContent);
 
       // Build message history (skip processing placeholders)
       const messageHistory = buildMessageHistory(allMessages);

@@ -23,6 +23,7 @@ import {
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { getAcroFormFields, fillAcroForm, overlayTextOnPdf } from "../lib/pdfFiller";
 import type { FormField, QuestionBatch } from "../lib/applicationTypes";
+import { makeEmbedText } from "../lib/sdkCallbacks";
 
 /** Detect if a value contains a relative date reference. */
 const RELATIVE_DATE_PATTERN = /\b(today|tomorrow|yesterday|next\s+\w+|last\s+\w+|this\s+\w+|in\s+\d+\s+\w+|\d+\s+\w+\s+(?:from|ago)|end\s+of\s+\w+|beginning\s+of\s+\w+|now|current\s+date|today'?s?\s+date)\b/i;
@@ -786,16 +787,16 @@ async function loadLookupContext(
   }
 
   if (requestTypes.includes("business_context")) {
-    const context = await ctx.runQuery(
-      internal.businessContext.listInternal,
+    const intelEntries = await ctx.runQuery(
+      internal.intelligence.listActiveByOrg,
       { orgId },
     );
-    if (context.length > 0) {
+    if (intelEntries.length > 0) {
       const grouped = new Map<string, string[]>();
-      for (const c of context) {
-        const cat = grouped.get(c.category) ?? [];
-        cat.push(`${c.key}: ${c.value}`);
-        grouped.set(c.category, cat);
+      for (const entry of intelEntries) {
+        const cat = grouped.get(entry.category) ?? [];
+        cat.push(entry.content);
+        grouped.set(entry.category, cat);
       }
       const contextLines = Array.from(grouped.entries())
         .map(([cat, items]) => `[${cat}]\n${items.join("\n")}`)
@@ -1037,15 +1038,15 @@ export const startApplicationSession = internalAction({
       });
 
       // Gather all available context sources
-      const orgContext = await ctx.runQuery(
-        internal.businessContext.listInternal,
+      const intelligenceEntries = await ctx.runQuery(
+        internal.intelligence.listActiveByOrg,
         { orgId: args.orgId },
       );
 
       const org = await ctx.runQuery(internal.orgs.getInternal, { id: args.orgId });
       const user = await ctx.runQuery(internal.users.getInternal, { id: args.userId });
 
-      // Build enriched context from org details, user info, and business context
+      // Build enriched context from org details, user info, and orgIntelligence
       const contextEntries: { key: string; value: string; category: string }[] = [];
 
       // Add org details
@@ -1068,12 +1069,13 @@ export const startApplicationSession = internalAction({
         if (user.phone) contextEntries.push({ key: "contact_phone", value: user.phone, category: "contact_info" });
       }
 
-      // Add existing business context entries
-      for (const c of orgContext) {
-        // Avoid duplicates with org-level entries
-        if (!contextEntries.some((e) => e.key === c.key)) {
-          contextEntries.push({ key: c.key, value: c.value, category: c.category });
-        }
+      // Add orgIntelligence entries as context
+      for (const entry of intelligenceEntries) {
+        contextEntries.push({
+          key: `intel_${entry._id}`,
+          value: entry.content,
+          category: entry.category,
+        });
       }
 
       // Web research on org website for additional context
@@ -1462,24 +1464,32 @@ Use the most specific code that applies. Do not guess if the info is insufficien
         });
       }
 
-      // Save new auto-filled values to org context (skip transient/date fields)
-      const autoFilledEntries = fields
+      // Save new auto-filled values to orgIntelligence (skip transient/date fields)
+      const autoFilledFields = fields
         .filter((f) => (f as any).source === "org_context" || (f as any).source === "inferred")
         .filter((f) => (f as any).value)
-        .filter((f) => !isTransientField({ id: f.id, label: (f as any).label, text: (f as any).text, fieldType: f.fieldType }))
-        .map((f) => ({
-          category: sectionToCategory(f.section),
-          key: f.id,
-          value: String((f as any).value),
-          source: "application" as const,
-          confidence: (f as any).confidence === "confirmed" ? "confirmed" as const : "inferred" as const,
-          sourceSessionId: sessionId,
-        }));
+        .filter((f) => !isTransientField({ id: f.id, label: (f as any).label, text: (f as any).text, fieldType: f.fieldType }));
 
-      if (autoFilledEntries.length > 0) {
-        await ctx.runMutation(internal.businessContext.bulkUpsertInternal, {
-          orgId: args.orgId,
-          entries: autoFilledEntries,
+      if (autoFilledFields.length > 0) {
+        const embedText = makeEmbedText();
+        const intelEntries = await Promise.all(
+          autoFilledFields.map(async (f) => {
+            const label = getFieldLabel(f);
+            const content = `${label}: ${(f as any).value}`;
+            const embedding = await embedText(content);
+            return {
+              orgId: args.orgId,
+              content,
+              category: sectionToCategory(f.section),
+              confidence: (f as any).confidence === "confirmed" ? "confirmed" : "inferred",
+              source: "application",
+              sourceRef: sessionId,
+              embedding,
+            };
+          }),
+        );
+        await ctx.runMutation(internal.intelligence.bulkInsert, {
+          entries: intelEntries,
         });
       }
     } catch (error) {
@@ -1632,29 +1642,35 @@ export const processApplicationReply = internalAction({
           }
         }
 
-        // Save answers to org context (skip transient/date fields)
-        const contextEntries = answers
+        // Save answers to orgIntelligence (skip transient/date fields)
+        const answerFields = answers
           .filter((a) => a.value)
           .filter((a) => {
             const field = fields.find((f) => f.id === a.fieldId);
             return field ? !isTransientField({ id: field.id, label: (field as any).label, text: (field as any).text, fieldType: field.fieldType }) : true;
-          })
-          .map((a) => {
-            const field = fields.find((f) => f.id === a.fieldId);
-            return {
-              category: field ? sectionToCategory(field.section) : "other",
-              key: a.fieldId,
-              value: String(a.value),
-              source: "application" as const,
-              confidence: "confirmed" as const,
-              sourceSessionId: args.sessionId,
-            };
           });
 
-        if (contextEntries.length > 0) {
-          await ctx.runMutation(internal.businessContext.bulkUpsertInternal, {
-            orgId: session.orgId,
-            entries: contextEntries,
+        if (answerFields.length > 0) {
+          const embedText = makeEmbedText();
+          const intelEntries = await Promise.all(
+            answerFields.map(async (a) => {
+              const field = fields.find((f) => f.id === a.fieldId);
+              const label = field ? getFieldLabel(field) : a.fieldId;
+              const content = `${label}: ${a.value}`;
+              const embedding = await embedText(content);
+              return {
+                orgId: session.orgId,
+                content,
+                category: field ? sectionToCategory(field.section) : "other",
+                confidence: "confirmed",
+                source: "application",
+                sourceRef: args.sessionId,
+                embedding,
+              };
+            }),
+          );
+          await ctx.runMutation(internal.intelligence.bulkInsert, {
+            entries: intelEntries,
           });
         }
       }
@@ -1754,29 +1770,35 @@ export const processApplicationReply = internalAction({
               }
             }
 
-            // Save filled values to business context
-            const lookupContextEntries = (fillResult.fills ?? [])
+            // Save filled values to orgIntelligence
+            const lookupFillFields = (fillResult.fills ?? [])
               .filter((f: any) => f.value)
               .filter((f: any) => {
                 const field = fields.find((fd) => fd.id === f.fieldId);
                 return field ? !isTransientField({ id: field.id, label: (field as any).label, text: (field as any).text, fieldType: field.fieldType }) : true;
-              })
-              .map((f: any) => {
-                const field = fields.find((fd) => fd.id === f.fieldId);
-                return {
-                  category: field ? sectionToCategory(field.section) : "other",
-                  key: f.fieldId,
-                  value: String(f.value),
-                  source: "application" as const,
-                  confidence: "confirmed" as const,
-                  sourceSessionId: args.sessionId,
-                };
               });
 
-            if (lookupContextEntries.length > 0) {
-              await ctx.runMutation(internal.businessContext.bulkUpsertInternal, {
-                orgId: session.orgId,
-                entries: lookupContextEntries,
+            if (lookupFillFields.length > 0) {
+              const embedText = makeEmbedText();
+              const lookupIntelEntries = await Promise.all(
+                lookupFillFields.map(async (f: any) => {
+                  const field = fields.find((fd) => fd.id === f.fieldId);
+                  const label = field ? getFieldLabel(field) : f.fieldId;
+                  const content = `${label}: ${f.value}`;
+                  const embedding = await embedText(content);
+                  return {
+                    orgId: session.orgId,
+                    content,
+                    category: field ? sectionToCategory(field.section) : "other",
+                    confidence: "confirmed",
+                    source: "application",
+                    sourceRef: args.sessionId,
+                    embedding,
+                  };
+                }),
+              );
+              await ctx.runMutation(internal.intelligence.bulkInsert, {
+                entries: lookupIntelEntries,
               });
             }
 

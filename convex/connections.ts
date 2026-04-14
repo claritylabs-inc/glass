@@ -24,6 +24,14 @@ export const get = query({
   },
 });
 
+// Internal query to list all connections (for cron jobs, no auth context)
+export const listAllInternal = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    return await ctx.db.query("emailConnections").collect();
+  },
+});
+
 // Internal query for use by scheduled actions (no auth context)
 export const getInternal = internalQuery({
   args: { id: v.id("emailConnections") },

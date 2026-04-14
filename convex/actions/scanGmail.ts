@@ -116,7 +116,7 @@ export const scanGmail = action({
         ? new Date(args.sinceDate)
         : connection.lastScanAt
           ? new Date(connection.lastScanAt)
-          : new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+          : new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
 
       const before = args.untilDate
         ? new Date(new Date(args.untilDate).getTime() + 24 * 60 * 60 * 1000)

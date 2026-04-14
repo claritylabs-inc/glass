@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { useQuery, useMutation } from "convex/react";
+import { useState, useMemo, useRef, useEffect } from "react";
+import { usePaginatedQuery, useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
@@ -15,16 +15,24 @@ import {
   ShieldX,
   RotateCcw,
   FileDown,
+  Loader2,
 } from "lucide-react";
 
 type ClassificationFilter = "all" | "insurance" | "not_insurance" | "unclassified";
+
+const PAGE_SIZE = 50;
 
 export function EmailReviewTable({
   connectionId,
 }: {
   connectionId: Id<"emailConnections">;
 }) {
-  const emails = useQuery(api.emails.list, { connectionId });
+  const { results, status, loadMore } = usePaginatedQuery(
+    api.emails.listPaginated,
+    { connectionId },
+    { initialNumItems: PAGE_SIZE }
+  );
+  const totalCount = useQuery(api.emails.count, { connectionId });
   const emailIdsWithPolicies = useQuery(api.policies.emailIdsWithPolicies);
   const updateClassification = useMutation(api.emails.updateClassification);
   const resetProcessed = useMutation(api.emails.resetProcessed);
@@ -39,32 +47,49 @@ export function EmailReviewTable({
   );
 
   const filtered = useMemo(() => {
-    if (!emails) return [];
-    let result = [...emails].sort(
-      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-    );
+    if (!results) return [];
+    let list = results;
 
     if (filter === "insurance") {
-      result = result.filter((e) => e.isInsuranceRelated === true);
+      list = list.filter((e) => e.isInsuranceRelated === true);
     } else if (filter === "not_insurance") {
-      result = result.filter((e) => e.isInsuranceRelated === false);
+      list = list.filter((e) => e.isInsuranceRelated === false);
     } else if (filter === "unclassified") {
-      result = result.filter(
+      list = list.filter(
         (e) => e.isInsuranceRelated === undefined || e.isInsuranceRelated === null
       );
     }
 
     if (search.trim()) {
       const q = search.toLowerCase();
-      result = result.filter(
+      list = list.filter(
         (e) =>
           e.subject.toLowerCase().includes(q) ||
           e.from.toLowerCase().includes(q)
       );
     }
 
-    return result;
-  }, [emails, filter, search]);
+    return list;
+  }, [results, filter, search]);
+
+  // Infinite scroll sentinel — only trigger when CanLoadMore (not while loading)
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (status !== "CanLoadMore") return;
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && status === "CanLoadMore") {
+          loadMore(PAGE_SIZE);
+        }
+      },
+      { rootMargin: "400px" }
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [status, loadMore]);
 
   const handleClassify = async (
     id: Id<"emails">,
@@ -105,7 +130,7 @@ export function EmailReviewTable({
     { value: "unclassified", label: "Unclassified" },
   ];
 
-  if (emails === undefined) {
+  if (status === "LoadingFirstPage") {
     return (
       <div className="space-y-3">
         {Array.from({ length: 5 }).map((_, i) => (
@@ -147,12 +172,13 @@ export function EmailReviewTable({
 
       {/* Summary */}
       <p className="text-label-sm text-muted-foreground">
-        {filtered.length} email{filtered.length !== 1 ? "s" : ""}
-        {filter !== "all" && ` (${filter.replace("_", " ")})`}
+        {filter !== "all" || search
+          ? `${filtered.length} of ${totalCount ?? "..."} emails (${filter.replace("_", " ")})`
+          : `${totalCount ?? "..."} emails`}
       </p>
 
       {/* Table */}
-      {filtered.length === 0 ? (
+      {filtered.length === 0 && status !== "CanLoadMore" ? (
         <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-6 py-8 text-center">
           <p className="text-body-sm text-muted-foreground/60">
             {search ? "No emails match your search" : "No emails found"}
@@ -202,7 +228,7 @@ export function EmailReviewTable({
                     <FadeIn
                       key={email._id}
                       when={true}
-                      staggerIndex={i}
+                      staggerIndex={i % PAGE_SIZE}
                       duration={0.3}
                       as="tr"
                       className="border-b border-foreground/4 last:border-b-0 hover:bg-foreground/[0.02] transition-colors"
@@ -305,6 +331,15 @@ export function EmailReviewTable({
               </tbody>
             </table>
           </div>
+
+          {/* Infinite scroll sentinel + loading indicator */}
+          <div ref={sentinelRef} className="h-1" />
+          {status === "LoadingMore" && (
+            <div className="flex items-center justify-center gap-2 py-4 text-muted-foreground">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span className="text-label-sm">Loading more emails...</span>
+            </div>
+          )}
         </div>
       )}
     </div>

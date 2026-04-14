@@ -62,6 +62,9 @@ export default defineSchema({
     onboardingComplete: v.optional(v.boolean()),
     // Portfolio-level AI analysis
     portfolioAnalysis: v.optional(v.any()),
+    // Intelligence pipeline
+    intelligenceSummary: v.optional(v.string()),
+    lastDreamAt: v.optional(v.number()),
   }).index("by_agentHandle", ["agentHandle"]),
 
   // Org memberships — links users to orgs
@@ -234,6 +237,47 @@ export default defineSchema({
     createdAt: v.number(),
   }).index("by_state", ["state"]),
 
+  // Unified business intelligence store — replaces orgBusinessContext + orgMemory
+  orgIntelligence: defineTable({
+    orgId: v.id("organizations"),
+    content: v.string(),
+    category: v.union(
+      v.literal("company_info"),
+      v.literal("operations"),
+      v.literal("financial"),
+      v.literal("coverage"),
+      v.literal("risk"),
+      v.literal("relationship"),
+      v.literal("observation"),
+    ),
+    confidence: v.union(
+      v.literal("confirmed"),
+      v.literal("inferred"),
+      v.literal("stale"),
+    ),
+    source: v.union(
+      v.literal("email"),
+      v.literal("application"),
+      v.literal("chat"),
+      v.literal("extraction"),
+      v.literal("dream"),
+      v.literal("manual"),
+    ),
+    sourceRef: v.optional(v.string()),
+    embedding: v.optional(v.array(v.float64())),
+    supersededBy: v.optional(v.id("orgIntelligence")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_orgId", ["orgId"])
+    .index("by_orgId_category", ["orgId", "category"])
+    .index("by_orgId_source", ["orgId", "source"])
+    .vectorIndex("by_embedding", {
+      vectorField: "embedding",
+      dimensions: 1536,
+      filterFields: ["orgId"],
+    }),
+
   emails: defineTable({
     userId: v.optional(v.id("users")),
     orgId: v.optional(v.id("organizations")),
@@ -249,6 +293,14 @@ export default defineSchema({
     classificationConfidence: v.optional(v.number()),
     processed: v.boolean(),
     isDemo: v.optional(v.boolean()),
+    // Intelligence extraction tracking
+    intelligenceStatus: v.optional(v.union(
+      v.literal("pending"),
+      v.literal("skipped"),
+      v.literal("extracted"),
+      v.literal("error"),
+    )),
+    intelligenceExtractedAt: v.optional(v.number()),
   }).index("by_messageId", ["messageId"])
     .index("by_connection_processed", ["connectionId", "processed"])
     .index("by_userId", ["userId"])

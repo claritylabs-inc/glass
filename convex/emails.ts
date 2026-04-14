@@ -1,7 +1,41 @@
 import { v } from "convex/values";
-import { mutation, query, internalQuery } from "./_generated/server";
+import { paginationOptsValidator } from "convex/server";
+import { mutation, query, internalQuery, internalMutation } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { requireOrgAccess, getOrgAccess } from "./lib/orgAuth";
+
+export const count = query({
+  args: { connectionId: v.id("emailConnections") },
+  handler: async (ctx, args) => {
+    const access = await getOrgAccess(ctx);
+    if (!access) return 0;
+    const emails = await ctx.db
+      .query("emails")
+      .withIndex("by_connection_processed", (q) =>
+        q.eq("connectionId", args.connectionId)
+      )
+      .collect();
+    return emails.length;
+  },
+});
+
+export const listPaginated = query({
+  args: {
+    connectionId: v.id("emailConnections"),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    const access = await getOrgAccess(ctx);
+    if (!access) return { page: [], isDone: true, continueCursor: "" };
+    return await ctx.db
+      .query("emails")
+      .withIndex("by_connection_processed", (q) =>
+        q.eq("connectionId", args.connectionId)
+      )
+      .order("desc")
+      .paginate(args.paginationOpts);
+  },
+});
 
 export const list = query({
   args: { connectionId: v.optional(v.id("emailConnections")) },
@@ -157,5 +191,22 @@ export const getInternal = internalQuery({
   args: { id: v.id("emails") },
   handler: async (ctx, args) => {
     return await ctx.db.get(args.id);
+  },
+});
+
+export const updateIntelligenceStatus = internalMutation({
+  args: {
+    id: v.id("emails"),
+    intelligenceStatus: v.union(
+      v.literal("pending"),
+      v.literal("skipped"),
+      v.literal("extracted"),
+      v.literal("error")
+    ),
+    intelligenceExtractedAt: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const { id, ...fields } = args;
+    await ctx.db.patch(id, fields);
   },
 });

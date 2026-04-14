@@ -9,4 +9,16 @@ crons.interval(
   internal.applicationSessions.checkStaleAndFail,
 );
 
+crons.daily(
+  "daily email scan",
+  { hourUTC: 9, minuteUTC: 0 },
+  internal.actions.dailyScan.runDailyScan,
+);
+
+crons.weekly(
+  "weekly dream consolidation",
+  { dayOfWeek: "sunday", hourUTC: 10, minuteUTC: 0 },
+  internal.actions.dreamConsolidation.runDreamForAllOrgs,
+);
+
 export default crons;

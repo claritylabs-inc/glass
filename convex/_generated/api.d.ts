@@ -10,7 +10,10 @@
 
 import type * as actions_backfillChunks from "../actions/backfillChunks.js";
 import type * as actions_classifyEmails from "../actions/classifyEmails.js";
+import type * as actions_dailyScan from "../actions/dailyScan.js";
+import type * as actions_dreamConsolidation from "../actions/dreamConsolidation.js";
 import type * as actions_extractCompanyInfo from "../actions/extractCompanyInfo.js";
+import type * as actions_extractEmailIntelligence from "../actions/extractEmailIntelligence.js";
 import type * as actions_extractFromUpload from "../actions/extractFromUpload.js";
 import type * as actions_extractPolicy from "../actions/extractPolicy.js";
 import type * as actions_extractSupplementary from "../actions/extractSupplementary.js";
@@ -18,6 +21,7 @@ import type * as actions_generateCoi from "../actions/generateCoi.js";
 import type * as actions_generateEmailBody from "../actions/generateEmailBody.js";
 import type * as actions_handleInboundEmail from "../actions/handleInboundEmail.js";
 import type * as actions_mcpChat from "../actions/mcpChat.js";
+import type * as actions_migrateIntelligence from "../actions/migrateIntelligence.js";
 import type * as actions_proactiveAnalysis from "../actions/proactiveAnalysis.js";
 import type * as actions_processApplication from "../actions/processApplication.js";
 import type * as actions_processThreadChat from "../actions/processThreadChat.js";
@@ -28,6 +32,7 @@ import type * as actions_retryExtraction from "../actions/retryExtraction.js";
 import type * as actions_scanGmail from "../actions/scanGmail.js";
 import type * as actions_scanInbox from "../actions/scanInbox.js";
 import type * as actions_sendPendingEmail from "../actions/sendPendingEmail.js";
+import type * as actions_triageEmails from "../actions/triageEmails.js";
 import type * as actions_vectorProjection from "../actions/vectorProjection.js";
 import type * as agentConversations from "../agentConversations.js";
 import type * as apiKeys from "../apiKeys.js";
@@ -40,6 +45,7 @@ import type * as crons from "../crons.js";
 import type * as documentChunks from "../documentChunks.js";
 import type * as emails from "../emails.js";
 import type * as http from "../http.js";
+import type * as intelligence from "../intelligence.js";
 import type * as lib_agentEmailTemplate from "../lib/agentEmailTemplate.js";
 import type * as lib_agentPrompts from "../lib/agentPrompts.js";
 import type * as lib_ai from "../lib/ai.js";
@@ -89,7 +95,10 @@ import type {
 declare const fullApi: ApiFromModules<{
   "actions/backfillChunks": typeof actions_backfillChunks;
   "actions/classifyEmails": typeof actions_classifyEmails;
+  "actions/dailyScan": typeof actions_dailyScan;
+  "actions/dreamConsolidation": typeof actions_dreamConsolidation;
   "actions/extractCompanyInfo": typeof actions_extractCompanyInfo;
+  "actions/extractEmailIntelligence": typeof actions_extractEmailIntelligence;
   "actions/extractFromUpload": typeof actions_extractFromUpload;
   "actions/extractPolicy": typeof actions_extractPolicy;
   "actions/extractSupplementary": typeof actions_extractSupplementary;
@@ -97,6 +106,7 @@ declare const fullApi: ApiFromModules<{
   "actions/generateEmailBody": typeof actions_generateEmailBody;
   "actions/handleInboundEmail": typeof actions_handleInboundEmail;
   "actions/mcpChat": typeof actions_mcpChat;
+  "actions/migrateIntelligence": typeof actions_migrateIntelligence;
   "actions/proactiveAnalysis": typeof actions_proactiveAnalysis;
   "actions/processApplication": typeof actions_processApplication;
   "actions/processThreadChat": typeof actions_processThreadChat;
@@ -107,6 +117,7 @@ declare const fullApi: ApiFromModules<{
   "actions/scanGmail": typeof actions_scanGmail;
   "actions/scanInbox": typeof actions_scanInbox;
   "actions/sendPendingEmail": typeof actions_sendPendingEmail;
+  "actions/triageEmails": typeof actions_triageEmails;
   "actions/vectorProjection": typeof actions_vectorProjection;
   agentConversations: typeof agentConversations;
   apiKeys: typeof apiKeys;
@@ -119,6 +130,7 @@ declare const fullApi: ApiFromModules<{
   documentChunks: typeof documentChunks;
   emails: typeof emails;
   http: typeof http;
+  intelligence: typeof intelligence;
   "lib/agentEmailTemplate": typeof lib_agentEmailTemplate;
   "lib/agentPrompts": typeof lib_agentPrompts;
   "lib/ai": typeof lib_ai;

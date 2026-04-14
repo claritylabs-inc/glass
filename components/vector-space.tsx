@@ -28,6 +28,13 @@ const CHUNK_COLORS: Record<string, string> = {
   loss_history: "#fb7185",
   premium: "#6366f1",
   supplementary: "#06b6d4",
+  // Intelligence categories
+  company_info: "#3b82f6",
+  operations: "#8b5cf6",
+  financial: "#10b981",
+  risk: "#ef4444",
+  relationship: "#f59e0b",
+  observation: "#6b7280",
 };
 
 const CHUNK_LABELS: Record<string, string> = {
@@ -42,6 +49,13 @@ const CHUNK_LABELS: Record<string, string> = {
   loss_history: "Loss History",
   premium: "Premium",
   supplementary: "Additional Details",
+  // Intelligence categories
+  company_info: "Company Info",
+  operations: "Operations",
+  financial: "Financial",
+  risk: "Risk",
+  relationship: "Relationship",
+  observation: "Observation",
 };
 
 /** Instanced point cloud — uses meshBasicMaterial so colors are always visible */

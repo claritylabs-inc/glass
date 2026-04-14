@@ -88,6 +88,67 @@ function pca3(vectors: number[][]): number[][] {
   });
 }
 
+export const projectIntelligence = action({
+  args: {},
+  returns: undefined as any,
+  handler: async (ctx): Promise<any> => {
+    const viewer = await ctx.runQuery(api.users.viewer) as any;
+    if (!viewer) return { error: "Not authenticated" };
+    const orgData = await ctx.runQuery(api.orgs.viewerOrg) as any;
+    if (!orgData) return { error: "No organization" };
+
+    const orgId = orgData.membership.orgId;
+    const entries = await ctx.runQuery(internal.intelligence.listByOrg, { orgId }) as any[];
+
+    if (entries.length === 0) return { points: [], totalEntries: 0 };
+
+    // Extract embeddings and metadata
+    const embeddings: number[][] = [];
+    const meta: { id: string; category: string; content: string; source: string; confidence: string }[] = [];
+
+    for (const entry of entries) {
+      if (entry.embedding?.length) {
+        embeddings.push(entry.embedding);
+        meta.push({
+          id: entry._id,
+          category: entry.category,
+          content: entry.content.slice(0, 100),
+          source: entry.source,
+          confidence: entry.confidence,
+        });
+      }
+    }
+
+    if (embeddings.length === 0) return { points: [], totalEntries: entries.length };
+
+    // Run PCA
+    const projected = pca3(embeddings);
+
+    // Normalize to [-1, 1] range for the scene
+    let maxAbs = 0;
+    for (const p of projected) {
+      for (const v of p) {
+        if (Math.abs(v) > maxAbs) maxAbs = Math.abs(v);
+      }
+    }
+    const scale = maxAbs > 0 ? 1 / maxAbs : 1;
+
+    // Map to VectorPoint shape for reuse with VectorSpace component
+    const points = projected.map((p, i) => ({
+      x: p[0] * scale * 5,
+      y: p[1] * scale * 5,
+      z: p[2] * scale * 5,
+      chunkType: meta[i].category,
+      policyId: meta[i].id,
+      carrier: meta[i].source,
+      policyNumber: meta[i].confidence,
+      text: meta[i].content,
+    }));
+
+    return { points, totalEntries: entries.length };
+  },
+});
+
 export const project = action({
   args: {},
   returns: undefined as any,

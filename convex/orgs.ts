@@ -468,3 +468,24 @@ export const updatePortfolioAnalysis = internalMutation({
     await ctx.db.patch(args.id, { portfolioAnalysis: args.portfolioAnalysis });
   },
 });
+
+export const listAllInternal = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    return await ctx.db.query("organizations").collect();
+  },
+});
+
+export const updateDreamResults = internalMutation({
+  args: {
+    orgId: v.id("organizations"),
+    intelligenceSummary: v.string(),
+    lastDreamAt: v.number(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.orgId, {
+      intelligenceSummary: args.intelligenceSummary,
+      lastDreamAt: args.lastDreamAt,
+    });
+  },
+});

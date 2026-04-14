@@ -165,6 +165,13 @@ export const bulkUpsert = mutation({
   },
 });
 
+export const listAllInternal = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    return await ctx.db.query("orgBusinessContext").collect();
+  },
+});
+
 // ── Internal (for agent actions) ──
 
 export const listInternal = internalQuery({

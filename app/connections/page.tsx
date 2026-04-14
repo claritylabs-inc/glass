@@ -11,7 +11,6 @@ import { ScanModal } from "@/components/scan-modal";
 import { ScanStatus } from "@/components/scan-status";
 import { ExtractionTable } from "@/components/extraction-table";
 import { ExtractionLog } from "@/components/extraction-log";
-import { SearchableSelect } from "@/components/ui/searchable-select";
 import { FadeIn } from "@/components/ui/fade-in";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowRight, Upload, RefreshCw } from "lucide-react";
@@ -25,8 +24,9 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { PillButton } from "@/components/ui/pill-button";
-import { Mail, Trash2, Play, Square } from "lucide-react";
+import { Mail, Trash2, Square, BadgeCheck, RefreshCw as RescanIcon } from "lucide-react";
 import { ConnectionIcon } from "@/components/connection-icon";
+import { PullMoreDropdown, getScanCoverageLabel } from "@/components/pull-more-dropdown";
 import { EmailReviewTable } from "@/components/email-review-table";
 import { Id } from "@/convex/_generated/dataModel";
 
@@ -372,6 +372,12 @@ export default function ConnectionsPage() {
                                     Demo
                                   </span>
                                 )}
+                                {!isDemo && conn.provider === "google" && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-label-sm font-medium bg-blue-50 dark:bg-blue-950/30 text-blue-600 dark:text-blue-400 shrink-0">
+                                    <BadgeCheck className="w-3 h-3" />
+                                    OAuth
+                                  </span>
+                                )}
                               </div>
                               <p className="text-label-sm text-muted-foreground/60 truncate">
                                 {conn.provider === "google"
@@ -394,6 +400,11 @@ export default function ConnectionsPage() {
                                 {conn.policiesExtracted ?? 0} policies
                               </span>
                             )}
+                            {!isDemo && !isScanning && conn.lastScanAt && (
+                              <span className="text-label-sm text-muted-foreground/50">
+                                {getScanCoverageLabel(conn.lastScanParams?.sinceDate, conn.lastScanAt)}
+                              </span>
+                            )}
                             {!isDemo && conn.provider === "google" && conn.lastScanStatus === "disconnected" && (
                               <a href={`/api/auth/google/start${orgId ? `?orgId=${orgId}` : ""}`}>
                                 <PillButton variant="secondary">
@@ -412,13 +423,21 @@ export default function ConnectionsPage() {
                                   Stop
                                 </PillButton>
                               ) : (
-                                <PillButton
-                                  variant="secondary"
-                                  onClick={() => openScanModal(conn)}
-                                >
-                                  <Play className="w-3 h-3" />
-                                  Scan
-                                </PillButton>
+                                <>
+                                  <PillButton
+                                    variant="secondary"
+                                    onClick={() => openScanModal(conn)}
+                                  >
+                                    <RescanIcon className="w-3 h-3" />
+                                    Rescan
+                                  </PillButton>
+                                  <PullMoreDropdown
+                                    connectionId={conn._id}
+                                    provider={conn.provider as "google" | "imap" | undefined}
+                                    lastScanParams={conn.lastScanParams}
+                                    onCustomRange={() => openScanModal(conn)}
+                                  />
+                                </>
                               )
                             )}
                             <PillButton
@@ -455,6 +474,12 @@ export default function ConnectionsPage() {
                                     Demo
                                   </span>
                                 )}
+                                {!isDemo && conn.provider === "google" && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-label-sm font-medium bg-blue-50 dark:bg-blue-950/30 text-blue-600 dark:text-blue-400 shrink-0">
+                                    <BadgeCheck className="w-3 h-3" />
+                                    OAuth
+                                  </span>
+                                )}
                               </div>
                               <p className="text-label-sm text-muted-foreground/60 truncate">
                                 {conn.provider === "google"
@@ -463,7 +488,7 @@ export default function ConnectionsPage() {
                               </p>
                             </div>
                           </div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             {!isDemo && (
                               <ScanStatus
                                 status={conn.lastScanStatus}
@@ -474,6 +499,11 @@ export default function ConnectionsPage() {
                             {conn.emailsFound != null && !isScanning && (
                               <span className="text-label-sm text-muted-foreground">
                                 {conn.emailsFound} emails · {conn.policiesExtracted ?? 0} policies
+                              </span>
+                            )}
+                            {!isDemo && !isScanning && conn.lastScanAt && (
+                              <span className="text-label-sm text-muted-foreground/50">
+                                · {getScanCoverageLabel(conn.lastScanParams?.sinceDate, conn.lastScanAt)}
                               </span>
                             )}
                           </div>
@@ -496,13 +526,21 @@ export default function ConnectionsPage() {
                                   Stop
                                 </PillButton>
                               ) : (
-                                <PillButton
-                                  variant="secondary"
-                                  onClick={() => openScanModal(conn)}
-                                >
-                                  <Play className="w-3 h-3" />
-                                  Scan
-                                </PillButton>
+                                <>
+                                  <PillButton
+                                    variant="secondary"
+                                    onClick={() => openScanModal(conn)}
+                                  >
+                                    <RescanIcon className="w-3 h-3" />
+                                    Rescan
+                                  </PillButton>
+                                  <PullMoreDropdown
+                                    connectionId={conn._id}
+                                    provider={conn.provider as "google" | "imap" | undefined}
+                                    lastScanParams={conn.lastScanParams}
+                                    onCustomRange={() => openScanModal(conn)}
+                                  />
+                                </>
                               )
                             )}
                             <PillButton
@@ -530,21 +568,36 @@ export default function ConnectionsPage() {
           {activeTab === "emails" && (
             <div className="space-y-4">
               {connections && connections.length > 0 && (
-                <div className="flex items-center gap-3">
-                  <label className="text-label-sm text-muted-foreground whitespace-nowrap">
-                    Connection:
-                  </label>
-                  <SearchableSelect
-                    options={connections.map((conn) => ({
-                      value: conn._id,
-                      label: `${conn.label} (${conn.email})`,
-                    }))}
-                    value={emailsConnectionId ?? ""}
-                    onChange={(val) =>
-                      setSelectedConnectionId(val as Id<"emailConnections">)
-                    }
-                    placeholder="Select connection..."
-                  />
+                <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide pb-1">
+                  {connections.map((conn) => {
+                    const isSelected = conn._id === emailsConnectionId;
+                    return (
+                      <button
+                        key={conn._id}
+                        type="button"
+                        onClick={() => setSelectedConnectionId(conn._id)}
+                        className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-left transition-all cursor-pointer shrink-0 ${
+                          isSelected
+                            ? "bg-foreground text-background shadow-sm"
+                            : "border border-foreground/8 bg-popover text-foreground hover:border-foreground/15 hover:bg-foreground/[0.02]"
+                        }`}
+                      >
+                        <ConnectionIcon
+                          imapHost={conn.imapHost}
+                          provider={conn.provider}
+                          className={`w-7 h-7 shrink-0 ${isSelected ? "!bg-background/20" : ""}`}
+                        />
+                        <div className="min-w-0">
+                          <p className={`text-body-sm font-medium truncate leading-tight ${isSelected ? "text-background" : "text-foreground"}`}>
+                            {conn.label}
+                          </p>
+                          <p className={`text-label-sm truncate leading-tight ${isSelected ? "text-background/60" : "text-muted-foreground/50"}`}>
+                            {conn.email}
+                          </p>
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               )}
               {emailsConnectionId ? (

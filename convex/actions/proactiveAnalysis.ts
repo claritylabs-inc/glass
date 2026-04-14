@@ -5,7 +5,7 @@ import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { getModel, generateTextWithFallback } from "../lib/models";
 import { logAiError } from "../lib/aiUtils";
-import { buildMemoryContext } from "../lib/orgMemoryContext";
+import { buildIntelligenceContext } from "../lib/agentPrompts";
 
 const POLICY_TYPE_GUIDANCE: Record<string, string> = {
   general_liability: `GL policy analysis:
@@ -71,16 +71,14 @@ export const analyzePolicy = internalAction({
   },
   handler: async (ctx, args) => {
     try {
-      const [policy, orgMemories] = await Promise.all([
-        ctx.runQuery(internal.policies.getInternal, { id: args.policyId }),
-        ctx.runQuery(internal.orgMemory.listByOrg, { orgId: args.orgId, limit: 20 }),
-      ]);
+      const policy = await ctx.runQuery(internal.policies.getInternal, { id: args.policyId });
 
       if (!policy || policy.extractionStatus !== "complete") return;
       if (policy.analysis) return; // already analyzed
 
       const guidance = getGuidance(policy.policyTypes);
-      const memoryBlock = buildMemoryContext(orgMemories);
+      const policyDesc = `${policy.security || policy.carrier} ${policy.policyTypes?.join(", ")} policy`;
+      const memoryBlock = await buildIntelligenceContext(ctx, args.orgId, policyDesc);
 
       const prompt = `Analyze this insurance policy and provide a structured health check.
 
@@ -168,15 +166,14 @@ export const analyzePortfolio = internalAction({
   args: { orgId: v.id("organizations") },
   handler: async (ctx, args) => {
     try {
-      const [policies, org, orgMemories] = await Promise.all([
+      const [policies, org] = await Promise.all([
         ctx.runQuery(internal.policies.listAllInternal, { orgId: args.orgId }),
         ctx.runQuery(internal.orgs.getInternal, { id: args.orgId }),
-        ctx.runQuery(internal.orgMemory.listByOrg, { orgId: args.orgId, limit: 30 }),
       ]);
 
       if (policies.length < 2) return;
 
-      const memoryBlock = buildMemoryContext(orgMemories);
+      const memoryBlock = await buildIntelligenceContext(ctx, args.orgId, "insurance portfolio analysis coverage gaps");
       const policySummaries = policies.map((p: any) => ({
         carrier: p.security,
         type: p.policyTypes?.join(", "),

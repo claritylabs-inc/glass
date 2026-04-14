@@ -55,6 +55,67 @@ export async function buildDocumentContext(
 }
 
 /**
+ * Build business intelligence context using vector search over orgIntelligence.
+ * Replaces the old buildMemoryContext which used key-based orgMemory lookups.
+ */
+export async function buildIntelligenceContext(
+  ctx: ActionCtx,
+  orgId: Id<"organizations">,
+  queryText: string,
+): Promise<string> {
+  try {
+    const embed = makeEmbedText();
+    const queryEmbedding = await embed(queryText);
+
+    // Vector search must be called from action context directly
+    const searchResults = await ctx.vectorSearch("orgIntelligence", "by_embedding", {
+      vector: queryEmbedding,
+      limit: 10,
+      filter: (q: any) => q.eq("orgId", orgId),
+    });
+
+    if (searchResults.length === 0) return "";
+
+    // Hydrate results via query
+    const results = await ctx.runQuery(internal.intelligence.hydrateSearchResults, {
+      ids: searchResults.map((r: any) => r._id),
+    });
+
+    if (!results || results.length === 0) return "";
+
+    const categoryLabels: Record<string, string> = {
+      company_info: "Company Information",
+      operations: "Operations",
+      financial: "Financial",
+      coverage: "Coverage & Insurance",
+      risk: "Risk Signals",
+      relationship: "Relationships",
+      observation: "Observations",
+    };
+
+    // Group by category
+    const grouped: Record<string, string[]> = {};
+    for (const entry of results) {
+      if (!entry) continue;
+      const cat = entry.category || "observation";
+      if (!grouped[cat]) grouped[cat] = [];
+      const sourceTag = entry.source !== "manual" ? ` [${entry.source}]` : "";
+      grouped[cat].push(`- ${entry.content}${sourceTag}`);
+    }
+
+    const sections: string[] = [];
+    for (const [cat, items] of Object.entries(grouped)) {
+      const label = categoryLabels[cat] || cat;
+      sections.push(`${label}:\n${items.join("\n")}`);
+    }
+
+    return `\n\nBUSINESS INTELLIGENCE:\n${sections.join("\n\n")}`;
+  } catch {
+    return "";
+  }
+}
+
+/**
  * Vector-search-based document context.
  * Embeds the query, searches documentChunks, and formats results.
  */

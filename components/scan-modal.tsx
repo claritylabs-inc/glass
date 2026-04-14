@@ -33,7 +33,7 @@ export function ScanModal({ open, onClose, connectionId, provider, defaults }: S
   const defaultSince = defaults?.sinceDate
     ?? (defaults?.lastScanAt
       ? formatDate(new Date(defaults.lastScanAt))
-      : formatDate(new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)));
+      : formatDate(new Date(Date.now() - 14 * 24 * 60 * 60 * 1000)));
   const defaultUntil = defaults?.untilDate ?? formatDate(new Date());
 
   const [sinceDate, setSinceDate] = useState(defaultSince);
@@ -41,35 +41,25 @@ export function ScanModal({ open, onClose, connectionId, provider, defaults }: S
   const [senderDomains, setSenderDomains] = useState(
     defaults?.senderDomains?.join(", ") ?? ""
   );
-  const [scanning, setScanning] = useState(false);
-
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setScanning(true);
-    try {
-      const domains = senderDomains
-        .split(",")
-        .map((d) => d.trim())
-        .filter(Boolean);
+    const domains = senderDomains
+      .split(",")
+      .map((d) => d.trim())
+      .filter(Boolean);
 
-      const scanArgs = {
-        connectionId,
-        sinceDate: sinceDate || undefined,
-        untilDate: untilDate || undefined,
-        senderDomains: domains.length > 0 ? domains : undefined,
-      };
-      if (provider === "google") {
-        await scanGmail(scanArgs);
-      } else {
-        await scanInbox(scanArgs);
-      }
-      onClose();
-      toast.success("Inbox scan started");
-    } catch {
-      toast.error("Failed to start scan");
-    } finally {
-      setScanning(false);
-    }
+    const scanArgs = {
+      connectionId,
+      sinceDate: sinceDate || undefined,
+      untilDate: untilDate || undefined,
+      senderDomains: domains.length > 0 ? domains : undefined,
+    };
+
+    // Fire and close — progress shows on the connection card
+    const scanFn = provider === "google" ? scanGmail : scanInbox;
+    scanFn(scanArgs).catch(() => toast.error("Failed to start scan"));
+    onClose();
+    toast.success("Scan started — progress will appear on the connection card");
   };
 
   return (
@@ -153,18 +143,12 @@ export function ScanModal({ open, onClose, connectionId, provider, defaults }: S
 
               {/* Actions */}
               <div className="flex justify-end gap-2 pt-2">
-                <PillButton variant="secondary" onClick={onClose} disabled={scanning}>
+                <PillButton variant="secondary" onClick={onClose}>
                   Cancel
                 </PillButton>
-                <PillButton type="submit" disabled={scanning}>
-                  {scanning ? (
-                    <>Scanning...</>
-                  ) : (
-                    <>
-                      <Search className="w-3.5 h-3.5" />
-                      Start Scan
-                    </>
-                  )}
+                <PillButton type="submit">
+                  <Search className="w-3.5 h-3.5" />
+                  Start Scan
                 </PillButton>
               </div>
             </form>
