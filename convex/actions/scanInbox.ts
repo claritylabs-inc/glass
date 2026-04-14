@@ -82,6 +82,9 @@ export const scanInbox = action({
       if (before) searchCriteria.before = before;
 
       // Fetch emails via IMAP
+      if (!connection.imapHost || !connection.imapPort || !connection.password) {
+        throw new Error("IMAP connection missing host, port, or password");
+      }
       const client = new ImapFlow({
         host: connection.imapHost,
         port: connection.imapPort,

@@ -12,7 +12,7 @@ interface ScanProgress {
 }
 
 interface ScanStatusProps {
-  status?: "scanning" | "success" | "error" | null;
+  status?: "scanning" | "success" | "error" | "disconnected" | null;
   error?: string | null;
   progress?: ScanProgress | null;
 }
@@ -66,6 +66,14 @@ export function ScanStatus({ status, error, progress }: ScanStatusProps) {
           <AlertCircle className="w-3.5 h-3.5 text-destructive" />
           <span className="text-destructive font-medium">
             {error || "Scan failed"}
+          </span>
+        </>
+      )}
+      {status === "disconnected" && (
+        <>
+          <AlertCircle className="w-3.5 h-3.5 text-amber-500" />
+          <span className="text-amber-600 dark:text-amber-400 font-medium">
+            Disconnected — reconnect required
           </span>
         </>
       )}

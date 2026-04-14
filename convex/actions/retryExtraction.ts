@@ -233,6 +233,9 @@ export const retryExtraction = action({
         if (!connection) throw new Error("Email connection not found");
 
         await log("Connecting to email server...");
+        if (!connection.imapHost || !connection.imapPort || !connection.password) {
+          throw new Error("IMAP connection missing host, port, or password");
+        }
         const client = new ImapFlow({
           host: connection.imapHost,
           port: connection.imapPort,

@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useQuery, useMutation, useAction } from "convex/react";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
@@ -14,7 +14,7 @@ import { ExtractionLog } from "@/components/extraction-log";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { FadeIn } from "@/components/ui/fade-in";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowRight, Upload } from "lucide-react";
+import { ArrowRight, Upload, RefreshCw } from "lucide-react";
 import { motion } from "framer-motion";
 import {
   Dialog,
@@ -118,12 +118,37 @@ function RemoveConnectionDialog({
 export default function ConnectionsPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const pathname = usePathname();
+
+  // Handle Google OAuth callback params
+  const handleOAuthToast = useCallback(() => {
+    const googleParam = searchParams.get("google");
+    if (googleParam === "connected") {
+      toast.success("Google account connected");
+    } else if (googleParam === "error") {
+      toast.error(searchParams.get("message") || "Failed to connect Google account");
+    }
+    if (googleParam) {
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete("google");
+      params.delete("message");
+      const qs = params.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    }
+  }, [searchParams, router, pathname]);
+
+  useEffect(() => {
+    handleOAuthToast();
+  }, [handleOAuthToast]);
+
   const initialTab = (searchParams.get("tab") as TabId) || "connections";
   const [activeTab, setActiveTab] = useState<TabId>(
     TABS.some((t) => t.id === initialTab) ? initialTab : "connections"
   );
 
   const connections = useQuery(api.connections.list);
+  const orgData = useQuery(api.orgs.viewerOrg);
+  const orgId = orgData?.org?._id;
   const pending = useQuery(
     api.policies.listPending,
     activeTab === "processing" ? {} : "skip"
@@ -180,6 +205,7 @@ export default function ConnectionsPage() {
 
   const [scanTarget, setScanTarget] = useState<{
     id: Id<"emailConnections">;
+    provider?: "google" | "imap";
     defaults?: {
       sinceDate?: string;
       untilDate?: string;
@@ -199,6 +225,7 @@ export default function ConnectionsPage() {
   const openScanModal = (conn: NonNullable<typeof connections>[number]) => {
     setScanTarget({
       id: conn._id,
+      provider: conn.provider as "google" | "imap" | undefined,
       defaults: {
         sinceDate: conn.lastScanParams?.sinceDate,
         untilDate: conn.lastScanParams?.untilDate,
@@ -333,7 +360,7 @@ export default function ConnectionsPage() {
                                 <Mail className="w-4 h-4 text-amber-500" />
                               </div>
                             ) : (
-                              <ConnectionIcon imapHost={conn.imapHost} className="w-8 h-8 shrink-0" />
+                              <ConnectionIcon imapHost={conn.imapHost} provider={conn.provider} className="w-8 h-8 shrink-0" />
                             )}
                             <div className="min-w-0">
                               <div className="flex items-center gap-2">
@@ -347,7 +374,9 @@ export default function ConnectionsPage() {
                                 )}
                               </div>
                               <p className="text-label-sm text-muted-foreground/60 truncate">
-                                {conn.email} · {conn.imapHost}
+                                {conn.provider === "google"
+                                  ? conn.email
+                                  : `${conn.email} · ${conn.imapHost}`}
                               </p>
                             </div>
                           </div>
@@ -364,6 +393,14 @@ export default function ConnectionsPage() {
                                 {conn.emailsFound} emails ·{" "}
                                 {conn.policiesExtracted ?? 0} policies
                               </span>
+                            )}
+                            {!isDemo && conn.provider === "google" && conn.lastScanStatus === "disconnected" && (
+                              <a href={`/api/auth/google/start${orgId ? `?orgId=${orgId}` : ""}`}>
+                                <PillButton variant="secondary">
+                                  <RefreshCw className="w-3 h-3" />
+                                  Reconnect
+                                </PillButton>
+                              </a>
                             )}
                             {!isDemo && (
                               isScanning ? (
@@ -406,7 +443,7 @@ export default function ConnectionsPage() {
                                 <Mail className="w-4 h-4 text-amber-500" />
                               </div>
                             ) : (
-                              <ConnectionIcon imapHost={conn.imapHost} className="w-8 h-8 shrink-0" />
+                              <ConnectionIcon imapHost={conn.imapHost} provider={conn.provider} className="w-8 h-8 shrink-0" />
                             )}
                             <div className="min-w-0">
                               <div className="flex items-center gap-2">
@@ -420,7 +457,9 @@ export default function ConnectionsPage() {
                                 )}
                               </div>
                               <p className="text-label-sm text-muted-foreground/60 truncate">
-                                {conn.email} · {conn.imapHost}
+                                {conn.provider === "google"
+                                  ? conn.email
+                                  : `${conn.email} · ${conn.imapHost}`}
                               </p>
                             </div>
                           </div>
@@ -439,6 +478,14 @@ export default function ConnectionsPage() {
                             )}
                           </div>
                           <div className="flex items-center gap-2">
+                            {!isDemo && conn.provider === "google" && conn.lastScanStatus === "disconnected" && (
+                              <a href={`/api/auth/google/start${orgId ? `?orgId=${orgId}` : ""}`}>
+                                <PillButton variant="secondary">
+                                  <RefreshCw className="w-3 h-3" />
+                                  Reconnect
+                                </PillButton>
+                              </a>
+                            )}
                             {!isDemo && (
                               isScanning ? (
                                 <PillButton
@@ -522,13 +569,14 @@ export default function ConnectionsPage() {
             <ExtractionLog entries={log ?? []} />
           )}
 
-      <ConnectionForm open={formOpen} onClose={() => setFormOpen(false)} />
+      <ConnectionForm open={formOpen} onClose={() => setFormOpen(false)} orgId={orgId} />
 
       {scanTarget && (
         <ScanModal
           open={true}
           onClose={() => setScanTarget(null)}
           connectionId={scanTarget.id}
+          provider={scanTarget.provider}
           defaults={scanTarget.defaults}
         />
       )}

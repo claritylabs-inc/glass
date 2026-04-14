@@ -29,6 +29,9 @@ export const extractPolicy = internalAction({
     // Download PDF attachment via IMAP
     let pdfBuffer: Buffer;
     {
+      if (!connection.imapHost || !connection.imapPort || !connection.password) {
+        throw new Error("IMAP connection missing host, port, or password");
+      }
       const client = new ImapFlow({
         host: connection.imapHost,
         port: connection.imapPort,
