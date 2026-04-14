@@ -174,7 +174,7 @@ function DocumentSection({ section, highlighted }: { section: any; highlighted?:
           {section.sectionNumber && (
             <span className="text-muted-foreground mr-1.5">{section.sectionNumber}</span>
           )}
-          {section.title}
+          {section.title || SECTION_TYPE_LABELS[section.type] || section.type || "Untitled"}
         </span>
         <span className={`shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${typeColor}`}>
           {SECTION_TYPE_LABELS[section.type] || section.type}

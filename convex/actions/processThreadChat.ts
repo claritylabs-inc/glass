@@ -660,7 +660,9 @@ When answering coverage questions, you are an expert insurance analyst, not a di
       let hasStartedReasoning = false;
       let lastReasoningFlush = Date.now();
       const citedSections = new Set<string>(); // titles from lookup_policy_section results
+      const citedPolicyIds = new Set<string>(); // policy IDs actually looked up via lookup_policy_section
       let lastToolName = "";
+      let lastToolPolicyId = "";
 
       for await (const part of result.fullStream) {
         if (part.type === "reasoning-delta") {
@@ -690,19 +692,21 @@ When answering coverage questions, you are an expert insurance analyst, not a di
           }
         } else if (part.type === "tool-call") {
           lastToolName = part.toolName;
+          lastToolPolicyId = part.toolName === "lookup_policy_section" ? (part as any).input?.policyId ?? "" : "";
           const label = TOOL_LABELS[part.toolName] ?? `Using ${part.toolName}...`;
           await ctx.runMutation(internal.threads.streamAgentMessage, {
             id: agentMsgId,
             content: content ? content + `\n\n*${label}*` : `*${label}*`,
           });
         } else if (part.type === "tool-result") {
-          // Capture cited section titles from lookup_policy_section results
+          // Capture cited section titles and policy IDs from lookup_policy_section results
           if (lastToolName === "lookup_policy_section" && (part as any).output) {
             const output = (part as any).output;
             const results = Array.isArray(output) ? output : [output];
             for (const r of results) {
               if (r && typeof r === "object" && r.title) {
                 citedSections.add(r.title);
+                if (lastToolPolicyId) citedPolicyIds.add(lastToolPolicyId);
               }
             }
           }
@@ -718,8 +722,9 @@ When answering coverage questions, you are an expert insurance analyst, not a di
       await ctx.runMutation(internal.threads.updateAgentMessage, {
         id: agentMsgId,
         content,
-        referencedPolicyIds: relevantPolicyIds.length > 0 ? relevantPolicyIds : undefined,
-        referencedQuoteIds: relevantQuoteIds.length > 0 ? relevantQuoteIds : undefined,
+        referencedPolicyIds: citedPolicyIds.size > 0 ? [...citedPolicyIds] as any : undefined,
+        referencedQuoteIds: relevantQuoteIds.filter((qid: string) => citedPolicyIds.has(qid)).length > 0
+          ? relevantQuoteIds.filter((qid: string) => citedPolicyIds.has(qid)) : undefined,
         citedSections: citedSections.size > 0 ? [...citedSections] : undefined,
       });
       // Save final reasoning if any
@@ -822,8 +827,9 @@ When answering coverage questions, you are an expert insurance analyst, not a di
                 ccAddresses: replyCc.length > 0 ? replyCc : undefined,
                 subject: replySubject,
                 emailBody,
-                referencedPolicyIds: relevantPolicyIds.length > 0 ? relevantPolicyIds : undefined,
-                referencedQuoteIds: relevantQuoteIds.length > 0 ? relevantQuoteIds : undefined,
+                referencedPolicyIds: citedPolicyIds.size > 0 ? [...citedPolicyIds] as any : undefined,
+                referencedQuoteIds: relevantQuoteIds.filter((qid: string) => citedPolicyIds.has(qid)).length > 0
+                  ? relevantQuoteIds.filter((qid: string) => citedPolicyIds.has(qid)) : undefined,
               });
 
               // Update chat message to show pending state with recipient info

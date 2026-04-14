@@ -13,7 +13,7 @@ import { toast } from "sonner";
 import { Loader2, Archive, ArchiveRestore, FileText, FileInput, Pencil, Check, Shield, Search, ClipboardList, HelpCircle, Asterisk, Mail as MailIcon, MessageSquare, Paperclip, Download, Copy, Lock, RotateCcw } from "lucide-react";
 import { usePdf } from "@/components/pdf-context";
 import { usePresence } from "@/hooks/use-presence";
-import { ContextReferenceCard, extractEntityRefs, ReferenceCardStrip } from "@/components/context-reference-card";
+import { ContextReferenceCard, ReferenceCardStrip } from "@/components/context-reference-card";
 import { ChatInput, ChatInputOverlay, type ChatInputHandle } from "@/components/chat-input";
 import { PrismPromptInput, type PrismPromptInputHandle } from "@/components/prism-prompt-input";
 import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
@@ -354,26 +354,16 @@ function UnifiedMessageBubble({
     // Cited sections from tool results (stored on message by processThreadChat)
     const citedSections = msg.citedSections;
 
-    // Merge citation sources: inline links + referencedPolicyIds/QuoteIds from context
-    const inlineRefs = extractEntityRefs(fixedContent);
-    const seen = new Set(inlineRefs.map((r) => `${r.type}:${r.id}`));
-    const allRefs = [...inlineRefs];
+    // Build reference cards — referencedPolicyIds now only contains policies actually cited via lookup_policy_section
+    const allRefs: { type: "policy" | "quote"; id: string; page?: number }[] = [];
     if (msg.referencedPolicyIds) {
       for (const pid of msg.referencedPolicyIds) {
-        const key = `policy:${pid}`;
-        if (!seen.has(key)) {
-          seen.add(key);
-          allRefs.push({ type: "policy", id: pid as string });
-        }
+        allRefs.push({ type: "policy", id: pid as string });
       }
     }
     if (msg.referencedQuoteIds && Array.isArray(msg.referencedQuoteIds)) {
       for (const qid of msg.referencedQuoteIds) {
-        const key = `quote:${qid}`;
-        if (!seen.has(key)) {
-          seen.add(key);
-          allRefs.push({ type: "quote", id: qid as string });
-        }
+        allRefs.push({ type: "quote", id: qid as string });
       }
     }
     return (

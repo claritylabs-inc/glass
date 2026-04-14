@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ChevronDown, BookOpen, ScrollText, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { FormattedSectionContent } from "./formatted-section-content";
@@ -12,14 +12,20 @@ export function DocSection({
   pages,
   content,
   defaultOpen = false,
+  forceOpen,
 }: {
   title: string;
   type?: string;
   pages?: string;
   content: string;
   defaultOpen?: boolean;
+  forceOpen?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
+
+  useEffect(() => {
+    if (forceOpen !== undefined) setOpen(forceOpen);
+  }, [forceOpen]);
 
   const icon =
     type === "endorsement" ? <ScrollText className="w-3 h-3" /> :
@@ -35,7 +41,7 @@ export function DocSection({
       >
         <span className="text-muted-foreground/40">{icon}</span>
         <span className="text-label font-medium text-foreground flex-1 truncate">
-          {title}
+          {title || (type === "endorsement" ? "Endorsement" : type === "exclusion" ? "Exclusion" : type === "condition" ? "Condition" : type === "definition" ? "Definition" : "Section")}
         </span>
         {pages && (
           <span className="text-label-sm text-muted-foreground/30 shrink-0">

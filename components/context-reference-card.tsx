@@ -7,14 +7,19 @@ import { ArrowRight, FileText, ClipboardList } from "lucide-react";
 import { useEntityPreview } from "@/hooks/use-entity-preview";
 import { POLICY_TYPE_LABELS } from "@/convex/lib/policyTypes";
 
+/** Convex document IDs are base32-encoded and always contain non-digit chars */
+function isConvexId(id: string): boolean {
+  return id.length > 0 && !/^\d+$/.test(id);
+}
+
 function extractIdAndType(href: string): { id: string; type: "policy" | "quote"; page?: number } | null {
   const policyMatch = href.match(/^\/policies\/([a-z0-9]+)/);
-  if (policyMatch) {
+  if (policyMatch && isConvexId(policyMatch[1])) {
     const page = href.match(/[?&]page=(\d+)/);
     return { id: policyMatch[1], type: "policy", page: page ? parseInt(page[1]) : undefined };
   }
   const quoteMatch = href.match(/^\/quotes\/([a-z0-9]+)/);
-  if (quoteMatch) {
+  if (quoteMatch && isConvexId(quoteMatch[1])) {
     const page = href.match(/[?&]page=(\d+)/);
     return { id: quoteMatch[1], type: "quote", page: page ? parseInt(page[1]) : undefined };
   }

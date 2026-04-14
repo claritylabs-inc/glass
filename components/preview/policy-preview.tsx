@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, Children, cloneElement, isValidElement } from "react";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
@@ -116,33 +116,65 @@ export function PolicyPreview({ id, page, citedSections }: { id: string; page?: 
         </Link>
       </div>
 
-      {/* Document sections */}
-      {hasSections && (
-        <div>
-          <p className="text-label-sm font-medium text-muted-foreground/40 uppercase tracking-wider mb-2">
-            {hasCitations ? "Cited sections" : "Document sections"}
-            {hasCitations && totalCount > citedCount && (
-              <span className="text-muted-foreground/25 font-normal ml-1">{citedCount} of {totalCount}</span>
-            )}
-          </p>
-          <div className="space-y-1.5">
-            {sections.map((s: any, i: number) => (
-              <DocSection key={`s-${i}`} title={s.title} type={s.type} pages={`${s.pageStart}${s.pageEnd ? `-${s.pageEnd}` : ""}`} content={buildSectionContent(s)} defaultOpen={hasCitations} />
-            ))}
-            {endorsements.map((e: any, i: number) => (
-              <DocSection key={`e-${i}`} title={e.title} type="endorsement" pages={e.pageStart ? `${e.pageStart}` : undefined} content={e.content || "No content extracted"} defaultOpen={hasCitations} />
-            ))}
-            {conditions.map((c: any, i: number) => (
-              <DocSection key={`c-${i}`} title={c.title} type="condition" pages={c.pageNumber ? `${c.pageNumber}` : undefined} content={c.content || "No content extracted"} defaultOpen={hasCitations} />
-            ))}
-            {exclusions.map((ex: any, i: number) => (
-              <DocSection key={`ex-${i}`} title={ex.title} type="exclusion" content={ex.content || ex.description || "No content extracted"} defaultOpen={hasCitations} />
-            ))}
-            {hasCitations && totalCount > citedCount && (
-              <ShowAllSections allSections={allSections} allEndorsements={allEndorsements} allConditions={allConditions} allExclusions={allExclusions} />
-            )}
-          </div>
-        </div>
+      {/* Document sections — grouped by type like the detail page */}
+      {(sections.length > 0 || (!hasCitations && allSections.length > 0)) && (
+        <SectionGroup
+          label={hasCitations ? "Cited sections" : "Sections"}
+          count={hasCitations ? sections.length : undefined}
+          totalCount={hasCitations ? allSections.length : undefined}
+          allChildren={allSections.map((s: any, i: number) => (
+            <DocSection key={`s-${i}`} title={s.title} type={s.type} pages={`${s.pageStart}${s.pageEnd ? `-${s.pageEnd}` : ""}`} content={buildSectionContent(s)} />
+          ))}
+        >
+          {sections.map((s: any, i: number) => (
+            <DocSection key={`s-${i}`} title={s.title} type={s.type} pages={`${s.pageStart}${s.pageEnd ? `-${s.pageEnd}` : ""}`} content={buildSectionContent(s)} defaultOpen={hasCitations} />
+          ))}
+        </SectionGroup>
+      )}
+
+      {(endorsements.length > 0 || (!hasCitations && allEndorsements.length > 0)) && (
+        <SectionGroup
+          label="Endorsements"
+          count={hasCitations ? endorsements.length : undefined}
+          totalCount={hasCitations ? allEndorsements.length : undefined}
+          allChildren={allEndorsements.map((e: any, i: number) => (
+            <DocSection key={`e-${i}`} title={e.title} type="endorsement" pages={e.pageStart ? `${e.pageStart}` : undefined} content={e.content || "No content extracted"} />
+          ))}
+        >
+          {endorsements.map((e: any, i: number) => (
+            <DocSection key={`e-${i}`} title={e.title} type="endorsement" pages={e.pageStart ? `${e.pageStart}` : undefined} content={e.content || "No content extracted"} defaultOpen={hasCitations} />
+          ))}
+        </SectionGroup>
+      )}
+
+      {(conditions.length > 0 || (!hasCitations && allConditions.length > 0)) && (
+        <SectionGroup
+          label="Conditions"
+          count={hasCitations ? conditions.length : undefined}
+          totalCount={hasCitations ? allConditions.length : undefined}
+          allChildren={allConditions.map((c: any, i: number) => (
+            <DocSection key={`c-${i}`} title={c.title || c.name || "Condition"} type="condition" pages={c.pageNumber ? `${c.pageNumber}` : undefined} content={c.content || "No content extracted"} />
+          ))}
+        >
+          {conditions.map((c: any, i: number) => (
+            <DocSection key={`c-${i}`} title={c.title || c.name || "Condition"} type="condition" pages={c.pageNumber ? `${c.pageNumber}` : undefined} content={c.content || "No content extracted"} defaultOpen={hasCitations} />
+          ))}
+        </SectionGroup>
+      )}
+
+      {(exclusions.length > 0 || (!hasCitations && allExclusions.length > 0)) && (
+        <SectionGroup
+          label="Exclusions"
+          count={hasCitations ? exclusions.length : undefined}
+          totalCount={hasCitations ? allExclusions.length : undefined}
+          allChildren={allExclusions.map((ex: any, i: number) => (
+            <DocSection key={`ex-${i}`} title={ex.title || ex.name || "Exclusion"} type="exclusion" content={ex.content || ex.description || "No content extracted"} />
+          ))}
+        >
+          {exclusions.map((ex: any, i: number) => (
+            <DocSection key={`ex-${i}`} title={ex.title || ex.name || "Exclusion"} type="exclusion" content={ex.content || ex.description || "No content extracted"} defaultOpen={hasCitations} />
+          ))}
+        </SectionGroup>
       )}
 
       {/* Coverages */}
@@ -169,33 +201,49 @@ export function PolicyPreview({ id, page, citedSections }: { id: string; page?: 
   );
 }
 
-function ShowAllSections({ allSections, allEndorsements, allConditions, allExclusions }: {
-  allSections: any[]; allEndorsements: any[]; allConditions: any[]; allExclusions: any[];
+function SectionGroup({ label, count, totalCount, children, allChildren }: {
+  label: string;
+  count?: number;
+  totalCount?: number;
+  children: React.ReactNode;
+  allChildren?: React.ReactNode;
 }) {
-  const [expanded, setExpanded] = useState(false);
-  if (!expanded) {
-    const total = allSections.length + allEndorsements.length + allConditions.length + allExclusions.length;
-    return (
-      <button type="button" onClick={() => setExpanded(true)} className="text-label-sm text-muted-foreground/40 hover:text-muted-foreground/60 transition-colors cursor-pointer pl-1">
-        Show all {total} sections
-      </button>
-    );
-  }
+  const [showAll, setShowAll] = useState(false);
+  const [forceOpen, setForceOpen] = useState<boolean | undefined>(undefined);
+  const hasMore = count != null && totalCount != null && totalCount > count;
+  const visibleChildren = showAll ? allChildren : children;
+
+  const withForceOpen = forceOpen !== undefined
+    ? Children.map(visibleChildren, (child) =>
+        isValidElement(child) ? cloneElement(child as React.ReactElement<any>, { forceOpen }) : child
+      )
+    : visibleChildren;
+
   return (
-    <div className="space-y-1.5 pt-1 border-t border-foreground/4">
-      <p className="text-label-sm text-muted-foreground/30 uppercase tracking-wider font-medium pt-1">All sections</p>
-      {allSections.map((s: any, i: number) => (
-        <DocSection key={`all-s-${i}`} title={s.title} type={s.type} pages={`${s.pageStart}${s.pageEnd ? `-${s.pageEnd}` : ""}`} content={buildSectionContent(s)} />
-      ))}
-      {allEndorsements.map((e: any, i: number) => (
-        <DocSection key={`all-e-${i}`} title={e.title} type="endorsement" pages={e.pageStart ? `${e.pageStart}` : undefined} content={e.content || "No content extracted"} />
-      ))}
-      {allConditions.map((c: any, i: number) => (
-        <DocSection key={`all-c-${i}`} title={c.title} type="condition" pages={c.pageNumber ? `${c.pageNumber}` : undefined} content={c.content || "No content extracted"} />
-      ))}
-      {allExclusions.map((ex: any, i: number) => (
-        <DocSection key={`all-ex-${i}`} title={ex.title} type="exclusion" content={ex.content || ex.description || "No content extracted"} />
-      ))}
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-label-sm font-medium text-muted-foreground/40 uppercase tracking-wider">
+          {label}
+          {hasMore && (
+            <span className="text-muted-foreground/25 font-normal ml-1">{count} of {totalCount}</span>
+          )}
+        </p>
+        <button
+          type="button"
+          onClick={() => setForceOpen(forceOpen === true ? false : true)}
+          className="text-label-sm text-muted-foreground/30 hover:text-muted-foreground/50 transition-colors cursor-pointer"
+        >
+          {forceOpen === true ? "Collapse all" : "Expand all"}
+        </button>
+      </div>
+      <div className="space-y-1.5">
+        {withForceOpen}
+        {hasMore && (
+          <button type="button" onClick={() => setShowAll(!showAll)} className="text-label-sm text-muted-foreground/40 hover:text-muted-foreground/60 transition-colors cursor-pointer pl-1">
+            {showAll ? "Only show cited" : `Show all ${totalCount} ${label.toLowerCase()}`}
+          </button>
+        )}
+      </div>
     </div>
   );
 }
