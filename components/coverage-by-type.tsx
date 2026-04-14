@@ -4,7 +4,7 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import { FadeIn } from "@/components/ui/fade-in";
 import { Skeleton } from "@/components/ui/skeleton";
-import { POLICY_TYPE_LABELS } from "@/convex/lib/policyTypes";
+import { POLICY_TYPE_LABELS, PERSONAL_LINE_KEYS } from "@/convex/lib/policyTypes";
 
 const TYPE_COLORS: Record<string, string> = {
   general_liability: "bg-blue-100 text-blue-700",
@@ -69,6 +69,42 @@ export interface CoverageByType {
   policyCount: number;
 }
 
+function CoverageGrid({ rows }: { rows: CoverageByType[] }) {
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3">
+      {rows.map((row) => (
+        <Link key={row.typeKey} href="/policies">
+          <motion.div
+            whileHover={{
+              scale: 1.02,
+              boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.08), 0 2px 4px -4px rgb(0 0 0 / 0.08)",
+              borderColor: "var(--input)",
+              backgroundColor: "var(--popover)",
+            }}
+            whileTap={{ scale: 0.98 }}
+            transition={{ type: "tween", duration: 0.2, ease: "easeOut" }}
+            className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-3 cursor-pointer"
+          >
+            <span
+              className={`inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium mb-2 max-w-full truncate ${
+                TYPE_COLORS[row.typeKey] || TYPE_COLORS.other
+              }`}
+            >
+              {row.label}
+            </span>
+            <p className="text-lg font-semibold text-foreground font-mono">
+              {formatCoverage(row.totalCoverage)}
+            </p>
+            <p className="text-label-sm text-muted-foreground/50">
+              {row.policyCount} {row.policyCount === 1 ? "policy" : "policies"}
+            </p>
+          </motion.div>
+        </Link>
+      ))}
+    </div>
+  );
+}
+
 export function CoverageByTypeSection({ data }: { data: CoverageByType[] | undefined }) {
   // Loading state
   if (data === undefined) {
@@ -92,6 +128,9 @@ export function CoverageByTypeSection({ data }: { data: CoverageByType[] | undef
   // Empty — hide entirely
   if (data.length === 0) return null;
 
+  const commercial = data.filter((r) => !PERSONAL_LINE_KEYS.has(r.typeKey));
+  const personal = data.filter((r) => PERSONAL_LINE_KEYS.has(r.typeKey));
+
   return (
     <FadeIn when={true} staggerIndex={1} duration={0.6}>
       <div className="mb-6">
@@ -99,40 +138,20 @@ export function CoverageByTypeSection({ data }: { data: CoverageByType[] | undef
           <p className="text-body-sm font-semibold text-foreground">Coverage by Risk Type</p>
           <span className="text-label-sm text-muted-foreground/50">active policies</span>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3">
-          {data.map((row, i) => (
-            <Link
-              key={row.typeKey}
-              href="/policies"
-            >
-              <motion.div
-                whileHover={{
-                  scale: 1.02,
-                  boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.08), 0 2px 4px -4px rgb(0 0 0 / 0.08)",
-                  borderColor: "var(--input)",
-                  backgroundColor: "var(--popover)",
-                }}
-                whileTap={{ scale: 0.98 }}
-                transition={{ type: "tween", duration: 0.2, ease: "easeOut" }}
-                className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-3 cursor-pointer"
-              >
-                <span
-                  className={`inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium mb-2 max-w-full truncate ${
-                    TYPE_COLORS[row.typeKey] || TYPE_COLORS.other
-                  }`}
-                >
-                  {row.label}
-                </span>
-                <p className="text-lg font-semibold text-foreground font-mono">
-                  {formatCoverage(row.totalCoverage)}
-                </p>
-                <p className="text-label-sm text-muted-foreground/50">
-                  {row.policyCount} {row.policyCount === 1 ? "policy" : "policies"}
-                </p>
-              </motion.div>
-            </Link>
-          ))}
-        </div>
+
+        {commercial.length > 0 && (
+          <div className="mb-4">
+            <p className="text-label-sm font-medium text-muted-foreground mb-2">Commercial</p>
+            <CoverageGrid rows={commercial} />
+          </div>
+        )}
+
+        {personal.length > 0 && (
+          <div>
+            <p className="text-label-sm font-medium text-muted-foreground mb-2">Personal</p>
+            <CoverageGrid rows={personal} />
+          </div>
+        )}
       </div>
     </FadeIn>
   );

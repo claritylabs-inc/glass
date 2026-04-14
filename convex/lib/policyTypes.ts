@@ -44,6 +44,30 @@ export const POLICY_TYPE_LABELS: Record<string, string> = {
   other: "Other",
 };
 
+/** Keys that belong to personal lines; everything else is commercial. */
+export const PERSONAL_LINE_KEYS = new Set([
+  "homeowners_ho3",
+  "homeowners_ho5",
+  "renters_ho4",
+  "condo_ho6",
+  "dwelling_fire",
+  "mobile_home",
+  "personal_auto",
+  "personal_umbrella",
+  "flood_nfip",
+  "flood_private",
+  "earthquake",
+  "personal_inland_marine",
+  "watercraft",
+  "recreational_vehicle",
+  "farm_ranch",
+  "pet",
+  "travel",
+  "identity_theft",
+  "title",
+  "property",
+]);
+
 export const INSURANCE_KEYWORDS = [
   // Core terms
   "insurance",
