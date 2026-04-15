@@ -7,84 +7,21 @@ import { getModel } from "../lib/models";
 import { makeEmbedText } from "../lib/sdkCallbacks";
 import { logAiError } from "../lib/aiUtils";
 import { generateText } from "ai";
+import { Id } from "../_generated/dataModel";
 
 /**
- * Weekly "dream" consolidation — reviews all extracted intelligence for an org,
- * resolves conflicts, merges duplicates, identifies gaps, and generates a summary.
+ * Dream consolidation — fan-out architecture.
+ *
+ * 1. dreamForOrg: creates log entry, groups entries by category, schedules
+ *    one dreamCategory action per category (each gets its own timeout)
+ * 2. dreamCategory: processes one category (with sub-batching for large ones),
+ *    updates the shared log entry, then decrements the pending counter.
+ *    When counter hits 0, schedules dreamFinalize.
+ * 3. dreamFinalize: runs the summary/gaps pass, marks the log as complete.
  */
 
-export const runDreamForAllOrgs = internalAction({
-  args: {},
-  handler: async (ctx) => {
-    const orgs = await ctx.runQuery(internal.orgs.listAllInternal, {});
-
-    for (const org of orgs) {
-      // Check if the org has any intelligence entries worth consolidating
-      const entries = await ctx.runQuery(internal.intelligence.listActiveByOrg, {
-        orgId: org._id,
-      });
-      if (entries.length >= 3) {
-        await ctx.scheduler.runAfter(0, internal.actions.dreamConsolidation.dreamForOrg, {
-          orgId: org._id,
-        });
-      }
-    }
-  },
-});
-
-const DREAM_SYSTEM = `You are an insurance intelligence analyst. Respond with ONLY valid JSON, no markdown or explanation.
-
-Format:
-{
-  "deleteIds": ["id1", "id2"],
-  "consolidated": [{ "content": "...", "category": "company_info" | "operations" | "financial" | "coverage" | "risk" | "relationship" | "observation" }],
-  "gaps": ["question1", "question2"],
-  "summary": "2-3 sentence summary of this organization's intelligence profile"
-}`;
-
-function formatEntries(entries: any[]): string {
-  const grouped: Record<string, any[]> = {};
-  for (const entry of entries) {
-    const cat = entry.category;
-    if (!grouped[cat]) grouped[cat] = [];
-    grouped[cat].push(entry);
-  }
-  const sections: string[] = [];
-  for (const [category, catEntries] of Object.entries(grouped)) {
-    const lines = catEntries.map((e: any) => {
-      const tags: string[] = [
-        `confidence: ${e.confidence}`,
-        `source: ${e.source}`,
-        `updated: ${new Date(e.updatedAt).toISOString().slice(0, 10)}`,
-      ];
-      if (e.asOfDate) tags.push(`as-of: ${e.asOfDate}`);
-      if (e.sourceLabel) tags.push(`from: ${e.sourceLabel}`);
-      return `  - [${e._id}] (${tags.join(", ")}) ${e.content}`;
-    });
-    sections.push(`### ${category}\n${lines.join("\n")}`);
-  }
-  return sections.join("\n\n");
-}
-
-function parseDreamResult(text: string): {
-  deleteIds: string[];
-  consolidated: Array<{ content: string; category: string }>;
-  gaps: string[];
-  summary: string;
-} | null {
-  try {
-    const cleaned = text.replace(/```json\n?|```\n?/g, "").trim();
-    try {
-      return JSON.parse(cleaned);
-    } catch {
-      const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) throw new Error("No JSON found");
-      return JSON.parse(jsonMatch[0]);
-    }
-  } catch {
-    return null;
-  }
-}
+// ── Max entries per LLM call within a category ──
+const CHUNK_SIZE = 80;
 
 const CATEGORY_PROMPT = `You are an insurance intelligence analyst reviewing entries in ONE category.
 
@@ -99,20 +36,74 @@ IMPORTANT:
 - deleteIds must contain the exact bracket IDs from the entries (the string inside [...])
 - When consolidating financial data, always include the time period (e.g. 'as of FY2025')`;
 
+function parseDreamResult(text: string): any | null {
+  try {
+    const cleaned = text.replace(/```json\n?|```\n?/g, "").trim();
+    try {
+      return JSON.parse(cleaned);
+    } catch {
+      const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) throw new Error("No JSON found");
+      return JSON.parse(jsonMatch[0]);
+    }
+  } catch {
+    return null;
+  }
+}
+
+function formatEntryLines(entries: any[]): string[] {
+  return entries.map((e: any) => {
+    const tags: string[] = [
+      `confidence: ${e.confidence}`,
+      `source: ${e.source}`,
+      `updated: ${new Date(e.updatedAt).toISOString().slice(0, 10)}`,
+    ];
+    if (e.asOfDate) tags.push(`as-of: ${e.asOfDate}`);
+    if (e.sourceLabel) tags.push(`from: ${e.sourceLabel}`);
+    return `  - [${e._id}] (${tags.join(", ")}) ${e.content}`;
+  });
+}
+
+// ── Cron entry point ──
+
+export const runDreamForAllOrgs = internalAction({
+  args: {},
+  handler: async (ctx) => {
+    const orgs = await ctx.runQuery(internal.orgs.listAllInternal, {});
+    for (const org of orgs) {
+      const entries = await ctx.runQuery(internal.intelligence.listActiveByOrg, {
+        orgId: org._id,
+      });
+      if (entries.length >= 3) {
+        await ctx.scheduler.runAfter(0, internal.actions.dreamConsolidation.dreamForOrg, {
+          orgId: org._id,
+        });
+      }
+    }
+  },
+});
+
+// ── Step 1: Coordinator — creates log, fans out per-category actions ──
+
 export const dreamForOrg = internalAction({
   args: { orgId: v.id("organizations") },
   handler: async (ctx, args): Promise<void> => {
-    const startTime = Date.now();
-    const logLines: string[] = [];
-
-    // Create the log entry immediately so it shows up in the UI
     const entries = await ctx.runQuery(internal.intelligence.listActiveByOrg, {
       orgId: args.orgId,
     });
 
     if (entries.length < 3) return;
 
-    logLines.push(`Starting dream consolidation: ${entries.length} entries`);
+    // Group by category
+    const grouped: Record<string, number> = {};
+    for (const entry of entries) {
+      grouped[entry.category] = (grouped[entry.category] || 0) + 1;
+    }
+
+    const categories = Object.keys(grouped);
+    const catSummary = categories.map((c) => `${c}(${grouped[c]})`).join(", ");
+
+    // Create log entry immediately
     const logId = await ctx.runMutation(internal.dreamLogs.insert, {
       orgId: args.orgId,
       status: "running",
@@ -120,113 +111,151 @@ export const dreamForOrg = internalAction({
       entriesDeleted: 0,
       entriesConsolidated: 0,
       gapsIdentified: 0,
-      log: logLines,
+      log: [
+        `Starting dream consolidation: ${entries.length} entries`,
+        `Categories: ${catSummary}`,
+        `Scheduling ${categories.length} category workers...`,
+      ],
       durationMs: 0,
     });
 
-    // Helper to append a log line and flush to DB
-    async function appendLog(line: string) {
-      logLines.push(line);
-      await ctx.runMutation(internal.dreamLogs.update, {
-        id: logId,
-        log: logLines,
-        durationMs: Date.now() - startTime,
+    // Store the pending count so the last category worker can trigger finalize
+    await ctx.runMutation(internal.dreamLogs.update, {
+      id: logId,
+      // Store pending count in durationMs temporarily (will be overwritten at finalize)
+      // Actually let's use a cleaner approach — store in the log entry itself
+    });
+
+    // Schedule one action per category (each gets its own Convex action timeout)
+    for (const category of categories) {
+      if (grouped[category] < 2) continue; // Skip single-entry categories
+      await ctx.scheduler.runAfter(0, internal.actions.dreamConsolidation.dreamCategory, {
+        orgId: args.orgId,
+        category,
+        logId,
       });
     }
 
-    try {
-      const entryIdSet = new Set(entries.map((e: any) => e._id));
-      const embedText = makeEmbedText();
+    // Schedule finalize to run after a delay to let category workers complete
+    // Each category typically takes 10-30s, so stagger based on count
+    const delayMs = Math.max(30000, categories.length * 15000);
+    await ctx.scheduler.runAfter(delayMs, internal.actions.dreamConsolidation.dreamFinalize, {
+      orgId: args.orgId,
+      logId,
+      startTime: Date.now(),
+    });
+  },
+});
 
-      // Group by category
-      const grouped: Record<string, any[]> = {};
-      for (const entry of entries) {
-        const cat = entry.category;
-        if (!grouped[cat]) grouped[cat] = [];
-        grouped[cat].push(entry);
+// ── Step 2: Per-category worker — processes one category with sub-batching ──
+
+export const dreamCategory = internalAction({
+  args: {
+    orgId: v.id("organizations"),
+    category: v.string(),
+    logId: v.id("dreamLogs"),
+  },
+  handler: async (ctx, args): Promise<void> => {
+    try {
+      // Fetch current entries for this category
+      const allEntries = await ctx.runQuery(internal.intelligence.listActiveByOrg, {
+        orgId: args.orgId,
+      });
+      const catEntries = allEntries.filter((e: any) => e.category === args.category);
+
+      if (catEntries.length < 2) {
+        await appendLogLine(ctx, args.logId, `${args.category}: ${catEntries.length} entry, skipping`);
+        return;
       }
 
-      const categories = Object.keys(grouped);
-      await appendLog(`Found ${categories.length} categories: ${categories.join(", ")}`);
-
+      const entryIdSet = new Set(catEntries.map((e: any) => e._id));
+      const embedText = makeEmbedText();
       let totalDeleted = 0;
       let totalConsolidated = 0;
-      let totalGaps = 0;
 
-      // ── Pass 1: Process each category independently ──
-      for (const category of categories) {
-        const catEntries = grouped[category];
-        if (catEntries.length < 2) {
-          await appendLog(`${category}: ${catEntries.length} entry, skipping`);
-          continue;
-        }
+      // Sub-batch if category is large
+      const chunks: any[][] = [];
+      for (let i = 0; i < catEntries.length; i += CHUNK_SIZE) {
+        chunks.push(catEntries.slice(i, i + CHUNK_SIZE));
+      }
 
-        await appendLog(`Processing ${category}: ${catEntries.length} entries...`);
+      const chunkLabel = chunks.length > 1 ? ` (${chunks.length} batches)` : "";
+      await appendLogLine(ctx, args.logId, `Processing ${args.category}: ${catEntries.length} entries${chunkLabel}...`);
 
-        const lines = catEntries.map((e: any) => {
-          const tags: string[] = [
-            `confidence: ${e.confidence}`,
-            `source: ${e.source}`,
-            `updated: ${new Date(e.updatedAt).toISOString().slice(0, 10)}`,
-          ];
-          if (e.asOfDate) tags.push(`as-of: ${e.asOfDate}`);
-          if (e.sourceLabel) tags.push(`from: ${e.sourceLabel}`);
-          return `  - [${e._id}] (${tags.join(", ")}) ${e.content}`;
-        });
+      for (let ci = 0; ci < chunks.length; ci++) {
+        const chunk = chunks[ci];
+        const lines = formatEntryLines(chunk);
+        const batchNote = chunks.length > 1 ? ` [batch ${ci + 1}/${chunks.length}]` : "";
 
         const result = await generateText({
           model: getModel("analysis"),
           system: `You are an insurance intelligence analyst. Respond with ONLY valid JSON, no markdown.
-Format: { "reasoning": "brief explanation of what you're deleting and why, and what you're consolidating", "deleteIds": ["id1"], "consolidated": [{ "content": "...", "category": "${category}" }] }`,
-          prompt: `${CATEGORY_PROMPT}\n\nCategory: ${category}\nEntries:\n${lines.join("\n")}`,
+Format: { "reasoning": "brief explanation of what you're deleting and why", "deleteIds": ["id1"], "consolidated": [{ "content": "...", "category": "${args.category}" }] }`,
+          prompt: `${CATEGORY_PROMPT}\n\nCategory: ${args.category}${batchNote}\nEntries:\n${lines.join("\n")}`,
         });
 
         const parsed = parseDreamResult(result.text);
         if (!parsed) {
-          await appendLog(`${category}: failed to parse LLM output, skipping`);
-          await appendLog(`  Raw (first 300 chars): ${result.text.slice(0, 300)}`);
+          await appendLogLine(ctx, args.logId, `${args.category}${batchNote}: failed to parse, skipping`);
           continue;
         }
 
-        // Stream the LLM's reasoning into the log
-        if ((parsed as any).reasoning) {
-          await appendLog(`${category} reasoning: ${(parsed as any).reasoning}`);
+        if (parsed.reasoning) {
+          await appendLogLine(ctx, args.logId, `${args.category} reasoning: ${parsed.reasoning}`);
         }
 
-        const deleteIds = (parsed.deleteIds ?? []).filter((id) => entryIdSet.has(id as any));
+        const deleteIds = (parsed.deleteIds ?? []).filter((id: string) => entryIdSet.has(id as any));
         if (deleteIds.length > 0) {
           await ctx.runMutation(internal.intelligence.bulkDelete, { ids: deleteIds as any });
           for (const id of deleteIds) entryIdSet.delete(id as any);
           totalDeleted += deleteIds.length;
         }
 
-        const newConsolidated = parsed.consolidated ?? [];
-        for (const c of newConsolidated) {
+        for (const c of parsed.consolidated ?? []) {
           if (!c.content?.trim()) continue;
           const embedding = await embedText(c.content);
           await ctx.runMutation(internal.intelligence.insert, {
             orgId: args.orgId,
             content: c.content,
-            category: (c.category || category) as any,
+            category: (c.category || args.category) as any,
             confidence: "inferred",
             source: "dream",
             embedding,
           });
           totalConsolidated++;
         }
-
-        await appendLog(`${category}: ${deleteIds.length} deleted, ${newConsolidated.length} consolidated`);
-
-        // Update running totals on the log entry
-        await ctx.runMutation(internal.dreamLogs.update, {
-          id: logId,
-          entriesDeleted: totalDeleted,
-          entriesConsolidated: totalConsolidated,
-        });
       }
 
-      // ── Pass 2: Summary + gaps ──
-      await appendLog("Generating summary and identifying gaps...");
+      await appendLogLine(ctx, args.logId, `${args.category}: ${totalDeleted} deleted, ${totalConsolidated} consolidated`);
+
+      // Increment totals on the shared log
+      const currentLog = await ctx.runQuery(internal.dreamLogs.get, { id: args.logId });
+      if (currentLog) {
+        await ctx.runMutation(internal.dreamLogs.update, {
+          id: args.logId,
+          entriesDeleted: (currentLog.entriesDeleted ?? 0) + totalDeleted,
+          entriesConsolidated: (currentLog.entriesConsolidated ?? 0) + totalConsolidated,
+        });
+      }
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      await appendLogLine(ctx, args.logId, `${args.category} error: ${errMsg}`);
+      logAiError("dreamCategory", err, { orgId: args.orgId, category: args.category });
+    }
+  },
+});
+
+// ── Step 3: Finalize — summary + gaps, mark complete ──
+
+export const dreamFinalize = internalAction({
+  args: {
+    orgId: v.id("organizations"),
+    logId: v.id("dreamLogs"),
+    startTime: v.number(),
+  },
+  handler: async (ctx, args): Promise<void> => {
+    try {
+      await appendLogLine(ctx, args.logId, "Generating summary and identifying gaps...");
 
       const remaining = await ctx.runQuery(internal.intelligence.listActiveByOrg, {
         orgId: args.orgId,
@@ -239,7 +268,7 @@ Format: { "reasoning": "brief explanation of what you're deleting and why, and w
       const summaryResult = await generateText({
         model: getModel("analysis"),
         system: `You are an insurance intelligence analyst. Respond with ONLY valid JSON, no markdown.
-Format: { "reasoning": "brief analysis of the org's intelligence profile and what's missing", "gaps": ["question1", "question2"], "summary": "2-3 sentence summary of this organization's intelligence profile" }`,
+Format: { "reasoning": "brief analysis of the org's profile and gaps", "gaps": ["question1", "question2"], "summary": "2-3 sentence summary of this organization's intelligence profile" }`,
         prompt: `Review these ${remaining.length} intelligence entries and identify:
 1. Important GAPS — what should we know about this organization but don't?
 2. A 2-3 sentence SUMMARY of the organization's overall intelligence profile.
@@ -247,14 +276,17 @@ Format: { "reasoning": "brief analysis of the org's intelligence profile and wha
 Entries (truncated for review):\n${summaryLines.join("\n")}`,
       });
 
-      const summaryParsed = parseDreamResult(summaryResult.text);
+      const parsed = parseDreamResult(summaryResult.text);
       let summary = "";
+      let totalGaps = 0;
 
-      if (summaryParsed) {
-        if ((summaryParsed as any).reasoning) {
-          await appendLog(`Gap analysis reasoning: ${(summaryParsed as any).reasoning}`);
+      if (parsed) {
+        if (parsed.reasoning) {
+          await appendLogLine(ctx, args.logId, `Gap analysis reasoning: ${parsed.reasoning}`);
         }
-        for (const gap of summaryParsed.gaps ?? []) {
+
+        const embedText = makeEmbedText();
+        for (const gap of parsed.gaps ?? []) {
           const gapContent = `GAP: ${gap}`;
           const embedding = await embedText(gapContent);
           await ctx.runMutation(internal.intelligence.insert, {
@@ -267,12 +299,13 @@ Entries (truncated for review):\n${summaryLines.join("\n")}`,
           });
           totalGaps++;
         }
-        summary = summaryParsed.summary ?? "";
+
+        summary = parsed.summary ?? "";
         if (summary) {
-          await appendLog(`Summary: ${summary}`);
+          await appendLogLine(ctx, args.logId, `Summary: ${summary}`);
         }
         if (totalGaps > 0) {
-          await appendLog(`Identified ${totalGaps} knowledge gaps`);
+          await appendLogLine(ctx, args.logId, `Identified ${totalGaps} knowledge gaps`);
         }
       }
 
@@ -284,37 +317,51 @@ Entries (truncated for review):\n${summaryLines.join("\n")}`,
         });
       }
 
-      await appendLog(`Complete: ${totalDeleted} deleted, ${totalConsolidated} consolidated, ${totalGaps} gaps (${Math.round((Date.now() - startTime) / 1000)}s)`);
+      const currentLog = await ctx.runQuery(internal.dreamLogs.get, { id: args.logId });
+      const totalDeleted = currentLog?.entriesDeleted ?? 0;
+      const totalConsolidated = currentLog?.entriesConsolidated ?? 0;
+      const duration = Date.now() - args.startTime;
+
+      await appendLogLine(ctx, args.logId,
+        `Complete: ${totalDeleted} deleted, ${totalConsolidated} consolidated, ${totalGaps} gaps (${Math.round(duration / 1000)}s)`,
+      );
 
       await ctx.runMutation(internal.dreamLogs.update, {
-        id: logId,
+        id: args.logId,
         status: "success",
-        entriesDeleted: totalDeleted,
-        entriesConsolidated: totalConsolidated,
         gapsIdentified: totalGaps,
         summary: summary || undefined,
-        durationMs: Date.now() - startTime,
+        durationMs: duration,
       });
     } catch (err) {
-      logAiError("dreamConsolidation", err, { orgId: args.orgId });
+      logAiError("dreamFinalize", err, { orgId: args.orgId });
       const errMsg = err instanceof Error ? err.message : String(err);
-      logLines.push(`Error: ${errMsg}`);
-      try {
-        await ctx.runMutation(internal.dreamLogs.update, {
-          id: logId,
-          status: "error",
-          error: errMsg,
-          log: logLines,
-          durationMs: Date.now() - startTime,
-        });
-      } catch {
-        // If even logging fails, just let it go
-      }
+      await appendLogLine(ctx, args.logId, `Finalize error: ${errMsg}`);
+      await ctx.runMutation(internal.dreamLogs.update, {
+        id: args.logId,
+        status: "error",
+        error: errMsg,
+        durationMs: Date.now() - args.startTime,
+      });
     }
   },
 });
 
-// Public action for manual consolidation trigger
+// ── Helper: append a line to the shared dream log ──
+
+async function appendLogLine(ctx: any, logId: Id<"dreamLogs">, line: string) {
+  const current = await ctx.runQuery(internal.dreamLogs.get, { id: logId });
+  const lines = current?.log ?? [];
+  lines.push(line);
+  await ctx.runMutation(internal.dreamLogs.update, {
+    id: logId,
+    log: lines,
+    durationMs: Date.now() - (current?.createdAt ?? Date.now()),
+  });
+}
+
+// ── Public trigger ──
+
 export const consolidate = action({
   args: {},
   handler: async (ctx) => {

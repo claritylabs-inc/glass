@@ -1,6 +1,13 @@
 import { v } from "convex/values";
-import { query, internalMutation } from "./_generated/server";
+import { query, internalMutation, internalQuery } from "./_generated/server";
 import { getOrgAccess } from "./lib/orgAuth";
+
+export const get = internalQuery({
+  args: { id: v.id("dreamLogs") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.id);
+  },
+});
 
 export const list = query({
   args: {},
