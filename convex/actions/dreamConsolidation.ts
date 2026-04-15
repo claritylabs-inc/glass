@@ -32,6 +32,63 @@ export const runDreamForAllOrgs = internalAction({
   },
 });
 
+// Max entries per batch — keeps prompt + output within model limits
+const DREAM_BATCH_SIZE = 80;
+
+const DREAM_SYSTEM = `You are an insurance intelligence analyst. Respond with ONLY valid JSON, no markdown or explanation.
+
+Format:
+{
+  "staleIds": ["id1", "id2"],
+  "consolidated": [{ "content": "...", "category": "company_info" | "operations" | "financial" | "coverage" | "risk" | "relationship" | "observation" }],
+  "gaps": ["question1", "question2"],
+  "summary": "2-3 sentence summary of this organization's intelligence profile"
+}`;
+
+function formatEntries(entries: any[]): string {
+  const grouped: Record<string, any[]> = {};
+  for (const entry of entries) {
+    const cat = entry.category;
+    if (!grouped[cat]) grouped[cat] = [];
+    grouped[cat].push(entry);
+  }
+  const sections: string[] = [];
+  for (const [category, catEntries] of Object.entries(grouped)) {
+    const lines = catEntries.map((e: any) => {
+      const tags: string[] = [
+        `confidence: ${e.confidence}`,
+        `source: ${e.source}`,
+        `updated: ${new Date(e.updatedAt).toISOString().slice(0, 10)}`,
+      ];
+      if (e.asOfDate) tags.push(`as-of: ${e.asOfDate}`);
+      if (e.sourceLabel) tags.push(`from: ${e.sourceLabel}`);
+      return `  - [${e._id}] (${tags.join(", ")}) ${e.content}`;
+    });
+    sections.push(`### ${category}\n${lines.join("\n")}`);
+  }
+  return sections.join("\n\n");
+}
+
+function parseDreamResult(text: string): {
+  staleIds: string[];
+  consolidated: Array<{ content: string; category: string }>;
+  gaps: string[];
+  summary: string;
+} | null {
+  try {
+    const cleaned = text.replace(/```json\n?|```\n?/g, "").trim();
+    try {
+      return JSON.parse(cleaned);
+    } catch {
+      const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) throw new Error("No JSON found");
+      return JSON.parse(jsonMatch[0]);
+    }
+  } catch {
+    return null;
+  }
+}
+
 export const dreamForOrg = internalAction({
   args: { orgId: v.id("organizations") },
   handler: async (ctx, args) => {
@@ -42,33 +99,39 @@ export const dreamForOrg = internalAction({
 
       if (entries.length < 3) return;
 
-      // Group entries by category
-      const grouped: Record<string, typeof entries> = {};
-      for (const entry of entries) {
-        const cat = entry.category;
-        if (!grouped[cat]) grouped[cat] = [];
-        grouped[cat].push(entry);
+      const entryIdSet = new Set(entries.map((e: any) => e._id));
+      const embedText = makeEmbedText();
+
+      // Accumulate results across batches
+      let totalStale = 0;
+      let totalConsolidated = 0;
+      let totalGaps = 0;
+      let lastSummary = "";
+
+      // Process in batches — each category-sorted batch gets its own LLM call
+      const batches: (typeof entries)[] = [];
+      if (entries.length <= DREAM_BATCH_SIZE) {
+        batches.push(entries);
+      } else {
+        // Sort by category so related entries stay together within batches
+        const sorted = [...entries].sort((a, b) => a.category.localeCompare(b.category));
+        for (let i = 0; i < sorted.length; i += DREAM_BATCH_SIZE) {
+          batches.push(sorted.slice(i, i + DREAM_BATCH_SIZE));
+        }
       }
 
-      // Format entries for the prompt
-      const formattedSections: string[] = [];
-      for (const [category, catEntries] of Object.entries(grouped)) {
-        const lines = catEntries.map(
-          (e: any) => {
-            const tags: string[] = [
-              `confidence: ${e.confidence}`,
-              `source: ${e.source}`,
-              `updated: ${new Date(e.updatedAt).toISOString().slice(0, 10)}`,
-            ];
-            if (e.asOfDate) tags.push(`as-of: ${e.asOfDate}`);
-            if (e.sourceLabel) tags.push(`from: ${e.sourceLabel}`);
-            return `  - [${e._id}] (${tags.join(", ")}) ${e.content}`;
-          },
-        );
-        formattedSections.push(`### ${category}\n${lines.join("\n")}`);
-      }
+      console.log(
+        `Dream consolidation for org ${args.orgId}: ${entries.length} entries in ${batches.length} batch(es)`,
+      );
 
-      const prompt = `You are an insurance intelligence analyst performing a weekly review of extracted business context for a company.
+      for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
+        const batch = batches[batchIdx];
+        const formattedSections = formatEntries(batch);
+        const batchNote = batches.length > 1
+          ? `\n\nNote: This is batch ${batchIdx + 1} of ${batches.length} (${batch.length} entries). Focus on deduplication and consolidation within this batch.`
+          : "";
+
+        const prompt = `You are an insurance intelligence analyst performing a weekly review of extracted business context for a company.
 
 Review the following intelligence entries grouped by category. For each category:
 1. Identify duplicate or near-duplicate entries and mark the older/less specific ones as stale
@@ -84,101 +147,82 @@ IMPORTANT:
 - Flag entries that are likely outdated (e.g. revenue from 2+ years ago without a newer figure)
 
 CURRENT INTELLIGENCE:
-${formattedSections.join("\n\n")}`;
+${formattedSections}${batchNote}`;
 
-      const result = await generateText({
-        model: getModel("analysis"),
-        maxOutputTokens: 4096,
-        system: `You are an insurance intelligence analyst. Respond with ONLY valid JSON, no markdown or explanation.
+        const result = await generateText({
+          model: getModel("analysis"),
+          system: DREAM_SYSTEM,
+          prompt,
+        });
 
-Format:
-{
-  "staleIds": ["id1", "id2"],
-  "consolidated": [{ "content": "...", "category": "company_info" | "operations" | "financial" | "coverage" | "risk" | "relationship" | "observation" }],
-  "gaps": ["question1", "question2"],
-  "summary": "2-3 sentence summary"
-}`,
-        prompt,
-      });
-
-      let dreamResult: {
-        staleIds: string[];
-        consolidated: Array<{ content: string; category: string }>;
-        gaps: string[];
-        summary: string;
-      };
-      try {
-        const cleaned = result.text.replace(/```json\n?|```\n?/g, "").trim();
-        // Try direct parse first, then extract JSON object if extra text surrounds it
-        try {
-          dreamResult = JSON.parse(cleaned);
-        } catch {
-          const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
-          if (!jsonMatch) throw new Error("No JSON found");
-          dreamResult = JSON.parse(jsonMatch[0]);
+        const dreamResult = parseDreamResult(result.text);
+        if (!dreamResult) {
+          console.warn(
+            `Dream consolidation batch ${batchIdx + 1}/${batches.length} produced unparseable output for org ${args.orgId}. ` +
+            `Raw output (first 500 chars): ${result.text.slice(0, 500)}`,
+          );
+          continue; // Skip this batch but process remaining ones
         }
-      } catch {
-        console.warn(`Dream consolidation produced unparseable output for org ${args.orgId}`);
-        return;
-      }
 
-      if (!dreamResult.staleIds) dreamResult.staleIds = [];
-      if (!dreamResult.consolidated) dreamResult.consolidated = [];
-      if (!dreamResult.gaps) dreamResult.gaps = [];
-      if (!dreamResult.summary) dreamResult.summary = "";
+        if (!dreamResult.staleIds) dreamResult.staleIds = [];
+        if (!dreamResult.consolidated) dreamResult.consolidated = [];
+        if (!dreamResult.gaps) dreamResult.gaps = [];
 
-      // Validate staleIds — only keep IDs that match actual entry IDs
-      const entryIdSet = new Set(entries.map((e: any) => e._id));
-      const validStaleIds = dreamResult.staleIds.filter((id) =>
-        entryIdSet.has(id as any),
-      );
+        // Validate staleIds — only keep IDs that match actual entry IDs
+        const validStaleIds = dreamResult.staleIds.filter((id) =>
+          entryIdSet.has(id as any),
+        );
 
-      // Mark stale entries
-      if (validStaleIds.length > 0) {
-        await ctx.runMutation(internal.intelligence.markStale, {
-          ids: validStaleIds as any,
-        });
-      }
+        if (validStaleIds.length > 0) {
+          await ctx.runMutation(internal.intelligence.markStale, {
+            ids: validStaleIds as any,
+          });
+          totalStale += validStaleIds.length;
+        }
 
-      // Insert consolidated entries with embeddings
-      const embedText = makeEmbedText();
+        for (const consolidated of dreamResult.consolidated) {
+          if (!consolidated.content?.trim()) continue;
+          const embedding = await embedText(consolidated.content);
+          await ctx.runMutation(internal.intelligence.insert, {
+            orgId: args.orgId,
+            content: consolidated.content,
+            category: consolidated.category as any,
+            confidence: "inferred",
+            source: "dream",
+            embedding,
+          });
+          totalConsolidated++;
+        }
 
-      for (const consolidated of dreamResult.consolidated) {
-        const embedding = await embedText(consolidated.content);
-        await ctx.runMutation(internal.intelligence.insert, {
-          orgId: args.orgId,
-          content: consolidated.content,
-          category: consolidated.category as any,
-          confidence: "inferred",
-          source: "dream",
-          embedding,
-        });
-      }
+        for (const gap of dreamResult.gaps ?? []) {
+          const gapContent = `GAP: ${gap}`;
+          const embedding = await embedText(gapContent);
+          await ctx.runMutation(internal.intelligence.insert, {
+            orgId: args.orgId,
+            content: gapContent,
+            category: "observation",
+            confidence: "inferred",
+            source: "dream",
+            embedding,
+          });
+          totalGaps++;
+        }
 
-      // Insert gaps as observations
-      for (const gap of dreamResult.gaps) {
-        const gapContent = `GAP: ${gap}`;
-        const embedding = await embedText(gapContent);
-        await ctx.runMutation(internal.intelligence.insert, {
-          orgId: args.orgId,
-          content: gapContent,
-          category: "observation",
-          confidence: "inferred",
-          source: "dream",
-          embedding,
-        });
+        if (dreamResult.summary) lastSummary = dreamResult.summary;
       }
 
       // Update org with intelligence summary and dream timestamp
-      await ctx.runMutation(internal.orgs.updateDreamResults, {
-        orgId: args.orgId,
-        intelligenceSummary: dreamResult.summary,
-        lastDreamAt: Date.now(),
-      });
+      if (lastSummary) {
+        await ctx.runMutation(internal.orgs.updateDreamResults, {
+          orgId: args.orgId,
+          intelligenceSummary: lastSummary,
+          lastDreamAt: Date.now(),
+        });
+      }
 
       console.log(
         `Dream consolidation complete for org ${args.orgId}: ` +
-          `${validStaleIds.length} stale, ${dreamResult.consolidated.length} consolidated, ${dreamResult.gaps.length} gaps`,
+          `${totalStale} stale, ${totalConsolidated} consolidated, ${totalGaps} gaps`,
       );
     } catch (err) {
       logAiError("dreamConsolidation", err, { orgId: args.orgId });
