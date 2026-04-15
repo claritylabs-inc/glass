@@ -103,7 +103,10 @@ export function DreamLog() {
               {logs.map((log) => {
                 const isRunning = log.status === "running";
                 const isError = log.status === "error";
-                const isLogCollapsed = collapsedLogs.has(log._id);
+                // Running entries default open, completed/error default closed. Toggle set inverts the default.
+                const isLogCollapsed = isRunning
+                  ? collapsedLogs.has(log._id)
+                  : !collapsedLogs.has(log._id);
                 return (
                   <div key={log._id}>
                     {/* Log entry header — clickable to collapse */}
