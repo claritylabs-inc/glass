@@ -1484,6 +1484,7 @@ Use the most specific code that applies. Do not guess if the info is insufficien
               confidence: (f as any).confidence === "confirmed" ? "confirmed" : "inferred",
               source: "application",
               sourceRef: sessionId,
+              sourceLabel: `Application: ${args.applicationTitle ?? "untitled"}`,
               embedding,
             };
           }),
@@ -1661,10 +1662,11 @@ export const processApplicationReply = internalAction({
               return {
                 orgId: session.orgId,
                 content,
-                category: field ? sectionToCategory(field.section) : "other",
+                category: field ? sectionToCategory(field.section) : "observation",
                 confidence: "confirmed",
                 source: "application",
                 sourceRef: args.sessionId,
+                sourceLabel: `Application: ${session.applicationTitle ?? "untitled"}`,
                 embedding,
               };
             }),
@@ -1789,10 +1791,11 @@ export const processApplicationReply = internalAction({
                   return {
                     orgId: session.orgId,
                     content,
-                    category: field ? sectionToCategory(field.section) : "other",
+                    category: field ? sectionToCategory(field.section) : "observation",
                     confidence: "confirmed",
                     source: "application",
                     sourceRef: args.sessionId,
+                    sourceLabel: `Application: ${session.applicationTitle ?? "untitled"}`,
                     embedding,
                   };
                 }),
@@ -2418,9 +2421,9 @@ function sectionToCategory(section: string): string {
   if (s.includes("coverage") || s.includes("limit") || s.includes("deductible"))
     return "coverage";
   if (s.includes("loss") || s.includes("claim") || s.includes("history"))
-    return "loss_history";
-  if (s.includes("declaration")) return "declarations";
-  return "other";
+    return "risk";
+  if (s.includes("declaration")) return "coverage";
+  return "observation";
 }
 
 async function generateConfirmationSummary(
