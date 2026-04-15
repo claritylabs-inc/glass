@@ -4,7 +4,7 @@ Guidance for any coding agent working in this repository: Codex, Claude Code, Cu
 
 ## Workflow
 
-- After major architecture or data-flow changes, update `AGENTS.md` and `README.md`.
+- After major architecture or data-flow changes, update `AGENTS.md`.
 - Prefer documenting current behavior over planned behavior.
 - Treat the Convex worktree as potentially dirty. Do not revert unrelated user changes.
 
