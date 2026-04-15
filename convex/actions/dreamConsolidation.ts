@@ -206,7 +206,7 @@ export const dreamCategory = internalAction({
         const batchNote = chunks.length > 1 ? ` [batch ${ci + 1}/${chunks.length}]` : "";
 
         const result = await generateText({
-          model: getModel("analysis"),
+          model: getModel("chat"),
           system: `You are an insurance intelligence analyst. Respond with ONLY valid JSON, no markdown.
 Format: { "reasoning": "brief explanation of what you're deleting and why", "deleteIds": ["id1"], "consolidated": [{ "content": "...", "category": "${args.category}" }] }`,
           prompt: `${CATEGORY_PROMPT}\n\nCategory: ${args.category}${batchNote}\nEntries:\n${lines.join("\n")}`,
