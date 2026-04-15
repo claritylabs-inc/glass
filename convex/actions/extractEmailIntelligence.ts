@@ -277,15 +277,17 @@ If no relevant business facts found, return { "entries": [] }.`,
         generateText({
           model: getModel("email_extraction"),
           maxOutputTokens: 2048,
-          system: `You are extracting risk signals and insurance intelligence from an email. Extract information about coverage discussions, claims, incidents, compliance, risk exposures, and business changes. Only extract facts that are clearly stated or strongly implied.
+          system: `You are extracting risk signals from an email. Extract information about claims, incidents, compliance issues, risk exposures, and business changes. Only extract facts that are clearly stated or strongly implied.
+
+Do NOT extract insurance coverage details (limits, deductibles, policy terms) — those are handled separately by policy extraction.
 
 IMPORTANT: Include temporal context when available. If the email mentions dates, deadlines, renewal dates, or incident dates, include them in the extracted fact.
 
 Respond with ONLY valid JSON, no markdown.
 
-Format: { "entries": [{ "content": "...", "category": "coverage" | "risk" | "observation" }] }
+Format: { "entries": [{ "content": "...", "category": "risk" | "observation" }] }
 
-If no relevant risk/insurance signals found, return { "entries": [] }.`,
+If no relevant risk signals found, return { "entries": [] }.`,
           prompt: emailContext,
         }),
       ]);

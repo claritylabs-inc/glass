@@ -35,6 +35,7 @@ OPERATIONS (in priority order):
    - Generic industry commentary not specific to THIS organization
    - Descriptions of the software/platform itself (e.g. "Prism is an AI-native system...")
    - Outdated facts superseded by newer entries with as-of dates
+   - Insurance coverage details (limits, deductibles, policy terms, coverage lines) — these belong in policy extraction, not org intelligence. DELETE them.
 
 2. SPLIT over-consolidated entries into atomic facts. Each consolidated entry should contain ONE fact that answers ONE question. Examples:
    BAD (too broad): "FY2025 Financials: Revenue $15.2M, Gross Profit $9.5M, Net Income $2.7M, Total Assets $18.4M..."
@@ -61,7 +62,6 @@ WHY ATOMIC: Each entry gets its own embedding vector. A query like "what's our r
    - operations: internal processes, equipment, fleet, facilities
    - employees: headcount, roles, departments, HR
    - financial: revenue, payroll, assets, budgets
-   - coverage: insurance policies, limits, deductibles
    - risk: claims, incidents, hazards, compliance
    - clients: client and customer relationships
    - insurance: broker, carrier, underwriter, insurance relationships

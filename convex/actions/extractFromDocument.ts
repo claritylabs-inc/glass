@@ -204,11 +204,13 @@ If no relevant business facts found, return { "entries": [] }.`,
           generateText({
             model: getModel("email_extraction"),
             maxOutputTokens: 4096,
-            system: `You are extracting risk signals and insurance intelligence from a document. Extract information about coverage discussions, claims, incidents, compliance, risk exposures, and business changes. Only extract facts that are clearly stated or strongly implied.${temporalInstruction}
+            system: `You are extracting risk signals from a document. Extract information about claims, incidents, compliance issues, risk exposures, and business changes. Only extract facts that are clearly stated or strongly implied.
 
-Format: { "entries": [{ "content": "...", "category": "coverage" | "risk" | "observation" }] }
+Do NOT extract insurance coverage details (limits, deductibles, policy terms) — those are handled separately by policy extraction.${temporalInstruction}
+
+Format: { "entries": [{ "content": "...", "category": "risk" | "observation" }] }
 Respond with ONLY valid JSON, no markdown.
-If no relevant risk/insurance signals found, return { "entries": [] }.`,
+If no relevant risk signals found, return { "entries": [] }.`,
             prompt: `Document: ${fileName}\n\n${truncated}`,
           }),
         ]);

@@ -32,7 +32,7 @@ export const extractFromChat = internalAction({
         system: `You extract business facts from chat conversations. You ONLY extract facts that the USER explicitly provided — never extract things the assistant said or inferred.
 
 Respond with ONLY valid JSON, no markdown:
-{ "entries": [{ "content": "...", "category": "company_info" | "products_services" | "operations" | "employees" | "financial" | "coverage" | "risk" | "clients" | "insurance" | "investors" | "vendors" | "partners" | "observation" }] }
+{ "entries": [{ "content": "...", "category": "company_info" | "products_services" | "operations" | "employees" | "financial" | "risk" | "clients" | "insurance" | "investors" | "vendors" | "partners" | "observation" }] }
 
 Rules:
 - Each fact should be a standalone statement (e.g. "Company has 45 employees", "Fleet includes 12 box trucks")
@@ -48,8 +48,7 @@ Category guide:
 - operations: internal processes, equipment, fleet, facilities
 - employees: headcount, roles, departments, HR
 - financial: revenue, payroll, assets, budgets
-- coverage: insurance discussions, policy preferences
-- risk: claims, incidents, hazards, compliance
+- risk: claims, incidents, hazards, compliance (NOT coverage details — those come from policy extraction)
 - clients: client and customer relationships
 - insurance: broker, carrier, underwriter relationships
 - investors: investor, shareholder, funding relationships
