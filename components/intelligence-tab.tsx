@@ -116,6 +116,42 @@ function OrgIntelligencePanel() {
     return [...counts.entries()].sort((a, b) => b[1] - a[1]);
   }, [entries]);
 
+  // Sort newest first and group by date
+  const groupedByDate = useMemo(() => {
+    if (!entries || entries.length === 0) return [];
+    const sorted = [...entries].sort(
+      (a, b) => (b.createdAt ?? b._creationTime) - (a.createdAt ?? a._creationTime),
+    );
+    const groups: Array<{ label: string; entries: typeof sorted }> = [];
+    let currentLabel = "";
+    for (const entry of sorted) {
+      const ts = entry.createdAt ?? entry._creationTime;
+      const date = new Date(ts);
+      const now = new Date();
+      const isToday =
+        date.toDateString() === now.toDateString();
+      const yesterday = new Date(now);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const isYesterday =
+        date.toDateString() === yesterday.toDateString();
+      const label = isToday
+        ? "Today"
+        : isYesterday
+          ? "Yesterday"
+          : date.toLocaleDateString("en-US", {
+              month: "short",
+              day: "numeric",
+              year: date.getFullYear() !== now.getFullYear() ? "numeric" : undefined,
+            });
+      if (label !== currentLabel) {
+        groups.push({ label, entries: [] });
+        currentLabel = label;
+      }
+      groups[groups.length - 1].entries.push(entry);
+    }
+    return groups;
+  }, [entries]);
+
   useEffect(() => {
     if (entries && entries.length > 0 && !vectorData && !loadingVectors) {
       setLoadingVectors(true);
@@ -222,61 +258,65 @@ function OrgIntelligencePanel() {
         </div>
       ) : null}
 
-      {/* Intelligence entries list */}
-      {entries.length > 0 ? (
-        <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
-          <div className="px-5 py-3.5 border-b border-foreground/6">
-            <h3 className="!mb-0 text-sm font-medium text-foreground">
-              Intelligence Entries
-            </h3>
-            <p className="text-label-sm text-muted-foreground mt-0.5">
-              Facts and observations learned from emails, applications, and
-              conversations.
-            </p>
-          </div>
-          <div className="divide-y divide-foreground/4">
-            {entries.map((entry) => (
-              <div
-                key={entry._id}
-                className="px-5 py-3 flex items-start gap-3 group hover:bg-foreground/[0.015] transition-colors"
-              >
-                <div className="flex-1 min-w-0">
-                  <p className="text-body-sm text-foreground leading-relaxed line-clamp-2">
-                    {entry.content}
-                  </p>
-                  <div className="flex items-center gap-1.5 mt-1.5">
-                    <span
-                      className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${INTEL_CATEGORY_COLORS[entry.category] ?? INTEL_CATEGORY_COLORS.observation}`}
-                    >
-                      {entry.category.replace(/_/g, " ")}
-                    </span>
-                    <span
-                      className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${INTEL_SOURCE_COLORS[entry.source] ?? INTEL_SOURCE_COLORS.manual}`}
-                    >
-                      {entry.source}
-                    </span>
-                    <span
-                      className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${INTEL_CONFIDENCE_COLORS[entry.confidence] ?? INTEL_CONFIDENCE_COLORS.inferred}`}
-                    >
-                      {entry.confidence}
-                    </span>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => handleRemove(entry._id)}
-                  disabled={removingId === entry._id}
-                  className="p-1 text-muted-foreground/20 hover:text-red-500 cursor-pointer opacity-0 group-hover:opacity-100 transition-all shrink-0 mt-0.5"
-                >
-                  {removingId === entry._id ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Trash2 className="w-3.5 h-3.5" />
-                  )}
-                </button>
+      {/* Intelligence entries list — grouped by date, newest first */}
+      {groupedByDate.length > 0 ? (
+        <div className="space-y-4">
+          {groupedByDate.map((group) => (
+            <div
+              key={group.label}
+              className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden"
+            >
+              <div className="px-5 py-2.5 border-b border-foreground/6 bg-foreground/[0.015]">
+                <p className="text-label-sm font-medium text-muted-foreground">
+                  {group.label}
+                  <span className="ml-1.5 opacity-50">{group.entries.length}</span>
+                </p>
               </div>
-            ))}
-          </div>
+              <div className="divide-y divide-foreground/4">
+                {group.entries.map((entry) => (
+                  <div
+                    key={entry._id}
+                    className="px-5 py-3 flex items-start gap-3 group hover:bg-foreground/[0.015] transition-colors"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className="text-body-sm text-foreground leading-relaxed line-clamp-2">
+                        {entry.content}
+                      </p>
+                      <div className="flex items-center gap-1.5 mt-1.5">
+                        <span
+                          className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${INTEL_CATEGORY_COLORS[entry.category] ?? INTEL_CATEGORY_COLORS.observation}`}
+                        >
+                          {entry.category.replace(/_/g, " ")}
+                        </span>
+                        <span
+                          className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${INTEL_SOURCE_COLORS[entry.source] ?? INTEL_SOURCE_COLORS.manual}`}
+                        >
+                          {entry.source}
+                        </span>
+                        <span
+                          className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${INTEL_CONFIDENCE_COLORS[entry.confidence] ?? INTEL_CONFIDENCE_COLORS.inferred}`}
+                        >
+                          {entry.confidence}
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleRemove(entry._id)}
+                      disabled={removingId === entry._id}
+                      className="p-1 text-muted-foreground/20 hover:text-red-500 cursor-pointer opacity-0 group-hover:opacity-100 transition-all shrink-0 mt-0.5"
+                    >
+                      {removingId === entry._id ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Trash2 className="w-3.5 h-3.5" />
+                      )}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
       ) : (
         <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-5 py-8 text-center">
