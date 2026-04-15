@@ -39,7 +39,7 @@ const DREAM_SYSTEM = `You are an insurance intelligence analyst. Respond with ON
 
 Format:
 {
-  "staleIds": ["id1", "id2"],
+  "deleteIds": ["id1", "id2"],
   "consolidated": [{ "content": "...", "category": "company_info" | "operations" | "financial" | "coverage" | "risk" | "relationship" | "observation" }],
   "gaps": ["question1", "question2"],
   "summary": "2-3 sentence summary of this organization's intelligence profile"
@@ -70,7 +70,7 @@ function formatEntries(entries: any[]): string {
 }
 
 function parseDreamResult(text: string): {
-  staleIds: string[];
+  deleteIds: string[];
   consolidated: Array<{ content: string; category: string }>;
   gaps: string[];
   summary: string;
@@ -134,13 +134,13 @@ export const dreamForOrg = internalAction({
         const prompt = `You are an insurance intelligence analyst performing a weekly review of extracted business context for a company.
 
 Review the following intelligence entries grouped by category. For each category:
-1. Identify duplicate or near-duplicate entries and mark the older/less specific ones as stale
+1. Identify duplicate or near-duplicate entries to DELETE (the older/less specific ones)
 2. When entries conflict (e.g., different employee counts or revenue figures): If both have as-of dates, keep the MORE RECENT as-of date. If only one has an as-of date, prefer it. If neither has dates, keep the most recently updated entry.
 3. Create consolidated entries that merge related facts
 4. Identify important gaps — things we should know but don't
 
 IMPORTANT:
-- staleIds must contain the exact bracket IDs from the entries below (e.g. the string inside [...])
+- deleteIds must contain the exact bracket IDs from the entries below (e.g. the string inside [...])
 - Only create consolidated entries when merging or improving upon existing entries
 - Gaps should be specific, actionable questions
 - When consolidating financial data, always include the time period (e.g. 'as of FY2025')
@@ -164,20 +164,20 @@ ${formattedSections}${batchNote}`;
           continue; // Skip this batch but process remaining ones
         }
 
-        if (!dreamResult.staleIds) dreamResult.staleIds = [];
+        if (!dreamResult.deleteIds) dreamResult.deleteIds = [];
         if (!dreamResult.consolidated) dreamResult.consolidated = [];
         if (!dreamResult.gaps) dreamResult.gaps = [];
 
-        // Validate staleIds — only keep IDs that match actual entry IDs
-        const validStaleIds = dreamResult.staleIds.filter((id) =>
+        // Validate deleteIds — only keep IDs that match actual entry IDs
+        const validDeleteIds = dreamResult.deleteIds.filter((id) =>
           entryIdSet.has(id as any),
         );
 
-        if (validStaleIds.length > 0) {
-          await ctx.runMutation(internal.intelligence.markStale, {
-            ids: validStaleIds as any,
+        if (validDeleteIds.length > 0) {
+          await ctx.runMutation(internal.intelligence.bulkDelete, {
+            ids: validDeleteIds as any,
           });
-          totalStale += validStaleIds.length;
+          totalStale += validDeleteIds.length;
         }
 
         for (const consolidated of dreamResult.consolidated) {
@@ -222,7 +222,7 @@ ${formattedSections}${batchNote}`;
 
       console.log(
         `Dream consolidation complete for org ${args.orgId}: ` +
-          `${totalStale} stale, ${totalConsolidated} consolidated, ${totalGaps} gaps`,
+          `${totalStale} deleted, ${totalConsolidated} consolidated, ${totalGaps} gaps`,
       );
     } catch (err) {
       logAiError("dreamConsolidation", err, { orgId: args.orgId });

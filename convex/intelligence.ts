@@ -207,6 +207,15 @@ export const markStale = internalMutation({
   },
 });
 
+export const bulkDelete = internalMutation({
+  args: { ids: v.array(v.id("orgIntelligence")) },
+  handler: async (ctx, args) => {
+    for (const id of args.ids) {
+      await ctx.db.delete(id);
+    }
+  },
+});
+
 export const updateEntry = internalMutation({
   args: {
     id: v.id("orgIntelligence"),
