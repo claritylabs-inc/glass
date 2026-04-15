@@ -32,7 +32,9 @@ export const extractFromChat = internalAction({
         system: `You extract business facts from chat conversations. You ONLY extract facts that the USER explicitly provided — never extract things the assistant said or inferred.
 
 Respond with ONLY valid JSON, no markdown:
-{ "entries": [{ "content": "...", "category": "company_info" | "products_services" | "operations" | "employees" | "financial" | "risk" | "clients" | "insurance" | "investors" | "vendors" | "partners" | "observation" }] }
+{ "entries": [{ "content": "...", "category": "primary_category", "tags": ["additional_category"] }] }
+Valid categories: company_info, products_services, operations, employees, financial, risk, clients, insurance, investors, vendors, partners, observation
+Use "category" for the primary fit, and "tags" for secondary categories (optional, only if the fact genuinely spans multiple).
 
 Rules:
 - Each fact should be a standalone statement (e.g. "Company has 45 employees", "Fleet includes 12 box trucks")
@@ -45,7 +47,7 @@ Rules:
 Category guide (INTERNAL = about this org itself, EXTERNAL = about other parties):
 INTERNAL categories:
 - company_info: the org's own entity details, legal name, addresses, structure, founding date
-- products_services: what this org sells or provides to its customers
+- products_services: this org's own products/services — specs, features, pricing, service standards, SLAs
 - operations: this org's internal processes, equipment, fleet, facilities
 - employees: this org's headcount, roles, departments, HR details
 - financial: this org's revenue, payroll, assets, budgets, expenses
@@ -67,7 +69,7 @@ EXTERNAL relationship categories (about OTHER companies/people, not this org):
         ],
       });
 
-      let entries: Array<{ content: string; category: string }>;
+      let entries: Array<{ content: string; category: string; tags?: string[] }>;
       try {
         const cleaned = text.trim().replace(/```json\n?|```\n?/g, "").trim();
         const parsed = JSON.parse(cleaned);
@@ -100,6 +102,7 @@ EXTERNAL relationship categories (about OTHER companies/people, not this org):
           orgId: args.orgId,
           content: entry.content,
           category: entry.category as any,
+          tags: Array.isArray(entry.tags) && entry.tags.length > 0 ? entry.tags : undefined,
           confidence: "inferred" as const,
           source: "chat" as const,
           sourceRef: args.threadId as string,

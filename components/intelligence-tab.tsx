@@ -458,6 +458,14 @@ function OrgIntelligencePanel() {
                                           >
                                             {entry.confidence}
                                           </span>
+                                          {(entry as any).tags?.map((tag: string) => (
+                                            <span
+                                              key={tag}
+                                              className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${INTEL_CATEGORY_COLORS[tag] ?? INTEL_CATEGORY_COLORS.observation}`}
+                                            >
+                                              {tag.replace(/_/g, " ")}
+                                            </span>
+                                          ))}
                                         </div>
                                       </>
                                     )}

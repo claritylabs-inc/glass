@@ -104,6 +104,7 @@ export const insert = internalMutation({
       v.literal("partners"),
       v.literal("observation"),
     ),
+    tags: v.optional(v.array(v.string())),
     confidence: v.union(
       v.literal("confirmed"),
       v.literal("inferred"),

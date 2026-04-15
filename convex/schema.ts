@@ -257,6 +257,7 @@ export default defineSchema({
       v.literal("partners"),
       v.literal("observation"),
     ),
+    tags: v.optional(v.array(v.string())), // additional categories beyond the primary one
     confidence: v.union(
       v.literal("confirmed"),
       v.literal("inferred"),

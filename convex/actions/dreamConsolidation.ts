@@ -60,7 +60,7 @@ WHY ATOMIC: Each entry gets its own embedding vector. A query like "what's our r
 
    INTERNAL categories (facts about THIS organization itself):
    - company_info: the org's own entity details, legal name, addresses, structure, founding date
-   - products_services: what this org sells or provides to its customers
+   - products_services: this org's own products and services — product specs, features, pricing, service standards, SLAs, delivery methods
    - operations: this org's own internal processes, equipment, fleet, facilities
    - employees: this org's own headcount, roles, departments, HR details
    - financial: this org's own revenue, payroll, assets, budgets, expenses
@@ -141,11 +141,20 @@ export const runDreamForAllOrgs = internalAction({
 export const dreamForOrg = internalAction({
   args: { orgId: v.id("organizations") },
   handler: async (ctx, args): Promise<void> => {
-    const entries = await ctx.runQuery(internal.intelligence.listActiveByOrg, {
-      orgId: args.orgId,
-    });
+    const [entries, org] = await Promise.all([
+      ctx.runQuery(internal.intelligence.listActiveByOrg, { orgId: args.orgId }),
+      ctx.runQuery(internal.orgs.getInternal, { id: args.orgId }),
+    ]);
 
     if (entries.length < 3) return;
+
+    // Build org context string for category workers
+    const orgParts: string[] = [];
+    if (org?.name) orgParts.push(`Company: ${org.name}`);
+    if (org?.context) orgParts.push(`Description: ${org.context}`);
+    if (org?.industry) orgParts.push(`Industry: ${org.industry}`);
+    if (org?.website) orgParts.push(`Website: ${org.website}`);
+    const orgContext = orgParts.length > 0 ? orgParts.join(". ") : "";
 
     // Group by category
     const grouped: Record<string, number> = {};
@@ -199,6 +208,7 @@ export const dreamForOrg = internalAction({
         category,
         logId,
         startTime: Date.now(),
+        orgContext,
       });
       scheduled++;
     }
@@ -220,6 +230,7 @@ export const dreamCategory = internalAction({
     category: v.string(),
     logId: v.id("dreamLogs"),
     startTime: v.number(),
+    orgContext: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<void> => {
     try {
@@ -257,8 +268,8 @@ export const dreamCategory = internalAction({
         const result = await generateText({
           model: getModel("chat"),
           system: `You are an insurance intelligence analyst. Respond with ONLY valid JSON, no markdown.
-Format: { "reasoning": "brief explanation", "deleteIds": ["id1"], "recategorize": [{ "id": "id2", "category": "correct_category" }], "consolidated": [{ "content": "...", "category": "best_category" }] }`,
-          prompt: `${CATEGORY_PROMPT}\n\nCategory: ${args.category}${batchNote}\nEntries:\n${lines.join("\n")}`,
+Format: { "reasoning": "brief explanation", "deleteIds": ["id1"], "recategorize": [{ "id": "id2", "category": "correct_category" }], "consolidated": [{ "content": "...", "category": "primary_category", "tags": ["optional_secondary_category"] }] }`,
+          prompt: `${args.orgContext ? `ORGANIZATION: ${args.orgContext}\n\n` : ""}${CATEGORY_PROMPT}\n\nCategory: ${args.category}${batchNote}\nEntries:\n${lines.join("\n")}`,
         });
 
         const parsed = parseDreamResult(result.text);
@@ -296,6 +307,7 @@ Format: { "reasoning": "brief explanation", "deleteIds": ["id1"], "recategorize"
             orgId: args.orgId,
             content: c.content,
             category: (c.category || args.category) as any,
+            tags: Array.isArray(c.tags) && c.tags.length > 0 ? c.tags : undefined,
             confidence: "inferred",
             source: "dream",
             embedding,
