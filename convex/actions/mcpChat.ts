@@ -76,8 +76,11 @@ export const run = internalAction({
     // Cross-thread conversation memory (vector search)
     const memoryContext = await buildConversationMemoryContext(ctx, args.orgId, args.message);
 
-    // Load business intelligence (vector search)
-    const orgMemoryBlock = await buildIntelligenceContext(ctx, args.orgId, args.message);
+    // Load business intelligence (vector search, deduped against policy context)
+    const orgMemoryBlock = await buildIntelligenceContext(
+      ctx, args.orgId, args.message,
+      relevantPolicyIds.map((id: any) => id as string),
+    );
 
     // Application context
     let applicationContext = "";
