@@ -311,6 +311,57 @@ function Scene({
   );
 }
 
+function SelectedDetail({
+  selected,
+  dark,
+  onClose,
+}: {
+  selected: VectorPoint;
+  dark: boolean;
+  onClose: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const isTruncated = selected.text.length > 120;
+
+  return (
+    <div className={`absolute bottom-4 left-4 z-10 backdrop-blur-md rounded-lg border px-4 py-3 ${
+      expanded ? "max-w-lg" : "max-w-sm"
+    } ${dark ? "bg-black/70 border-white/10" : "bg-white/80 border-foreground/10"}`}>
+      <div className="flex items-center gap-2.5 mb-1.5">
+        <span
+          className="w-2.5 h-2.5 rounded-full shrink-0"
+          style={{ backgroundColor: CHUNK_COLORS[selected.chunkType] || "#94a3b8" }}
+        />
+        <span className={`text-body-sm font-medium ${dark ? "text-white" : "text-foreground"}`}>
+          {CHUNK_LABELS[selected.chunkType] || selected.chunkType}
+        </span>
+      </div>
+      <p className={`text-label-sm mb-1 ${dark ? "text-white/40" : "text-muted-foreground/50"}`}>
+        {selected.carrier} · {selected.policyNumber}
+      </p>
+      <p className={`text-label-sm leading-relaxed ${expanded ? "" : "line-clamp-2"} ${dark ? "text-white/60" : "text-muted-foreground"}`}>
+        {selected.text}
+      </p>
+      {isTruncated && (
+        <button
+          type="button"
+          onClick={() => setExpanded(!expanded)}
+          className={`text-label-sm mt-1 cursor-pointer ${dark ? "text-blue-400/70 hover:text-blue-400" : "text-blue-500/70 hover:text-blue-500"}`}
+        >
+          {expanded ? "Show less" : "Show more..."}
+        </button>
+      )}
+      <button
+        type="button"
+        className={`absolute top-2.5 right-3 text-xs cursor-pointer ${dark ? "text-white/20 hover:text-white/50" : "text-foreground/20 hover:text-foreground/50"}`}
+        onClick={onClose}
+      >
+        ✕
+      </button>
+    </div>
+  );
+}
+
 export type VectorSpaceProps = {
   points: VectorPoint[];
   totalChunks: number;
@@ -394,32 +445,11 @@ export function VectorSpace({ points, totalChunks }: VectorSpaceProps) {
 
         {/* Selected point detail */}
         {selected && (
-          <div className={`absolute bottom-4 left-4 z-10 backdrop-blur-md rounded-lg border px-4 py-3 max-w-sm ${
-            dark ? "bg-black/70 border-white/10" : "bg-white/80 border-foreground/10"
-          }`}>
-            <div className="flex items-center gap-2.5 mb-1.5">
-              <span
-                className="w-2.5 h-2.5 rounded-full shrink-0"
-                style={{ backgroundColor: CHUNK_COLORS[selected.chunkType] || "#94a3b8" }}
-              />
-              <span className={`text-body-sm font-medium ${dark ? "text-white" : "text-foreground"}`}>
-                {CHUNK_LABELS[selected.chunkType] || selected.chunkType}
-              </span>
-            </div>
-            <p className={`text-label-sm mb-1 ${dark ? "text-white/40" : "text-muted-foreground/50"}`}>
-              {selected.carrier} · {selected.policyNumber}
-            </p>
-            <p className={`text-label-sm leading-relaxed line-clamp-2 ${dark ? "text-white/60" : "text-muted-foreground"}`}>
-              {selected.text}
-            </p>
-            <button
-              type="button"
-              className={`absolute top-2.5 right-3 text-xs cursor-pointer ${dark ? "text-white/20 hover:text-white/50" : "text-foreground/20 hover:text-foreground/50"}`}
-              onClick={() => setSelectedIndex(null)}
-            >
-              ✕
-            </button>
-          </div>
+          <SelectedDetail
+            selected={selected}
+            dark={dark}
+            onClose={() => setSelectedIndex(null)}
+          />
         )}
     </div>
   );
