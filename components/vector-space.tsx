@@ -320,25 +320,10 @@ function SelectedDetail({
   dark: boolean;
   onClose: () => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
-  const textRef = useRef<HTMLParagraphElement>(null);
-  const [isTruncated, setIsTruncated] = useState(false);
-
-  useEffect(() => {
-    setExpanded(false);
-  }, [selected]);
-
-  useEffect(() => {
-    const el = textRef.current;
-    if (el) {
-      setIsTruncated(el.scrollHeight > el.clientHeight + 1);
-    }
-  }, [selected, expanded]);
-
   return (
-    <div className={`absolute bottom-4 left-4 z-10 backdrop-blur-md rounded-lg border px-4 py-3 ${
-      expanded ? "max-w-lg max-h-64 overflow-y-auto" : "max-w-sm"
-    } ${dark ? "bg-black/70 border-white/10" : "bg-white/80 border-foreground/10"}`}>
+    <div className={`absolute bottom-4 left-4 z-10 backdrop-blur-md rounded-lg border px-4 py-3 max-w-md max-h-48 overflow-y-auto ${
+      dark ? "bg-black/70 border-white/10" : "bg-white/80 border-foreground/10"
+    }`}>
       <div className="flex items-center gap-2.5 mb-1.5">
         <span
           className="w-2.5 h-2.5 rounded-full shrink-0"
@@ -351,21 +336,9 @@ function SelectedDetail({
       <p className={`text-label-sm mb-1 ${dark ? "text-white/40" : "text-muted-foreground/50"}`}>
         {selected.carrier} · {selected.policyNumber}
       </p>
-      <p
-        ref={textRef}
-        className={`text-label-sm leading-relaxed ${expanded ? "" : "line-clamp-2"} ${dark ? "text-white/60" : "text-muted-foreground"}`}
-      >
+      <p className={`text-label-sm leading-relaxed ${dark ? "text-white/60" : "text-muted-foreground"}`}>
         {selected.text}
       </p>
-      {(isTruncated || expanded) && (
-        <button
-          type="button"
-          onClick={() => setExpanded(!expanded)}
-          className={`text-label-sm mt-1 cursor-pointer ${dark ? "text-blue-400/70 hover:text-blue-400" : "text-blue-500/70 hover:text-blue-500"}`}
-        >
-          {expanded ? "Show less" : "Show more..."}
-        </button>
-      )}
       <button
         type="button"
         className={`absolute top-2.5 right-3 text-xs cursor-pointer ${dark ? "text-white/20 hover:text-white/50" : "text-foreground/20 hover:text-foreground/50"}`}
