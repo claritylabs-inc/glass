@@ -23,6 +23,7 @@ import {
   logAiError,
 } from "../lib/aiUtils";
 import { buildIntelligenceContext } from "../lib/agentPrompts";
+import { makeEmbedText } from "../lib/sdkCallbacks";
 
 /** Build executable tools with Convex context wired in. */
 function buildTools(ctx: any, args: { orgId: any; threadId: any }, org?: any) {
@@ -273,14 +274,26 @@ function buildTools(ctx: any, args: { orgId: any; threadId: any }, org?: any) {
     save_note: {
       ...saveNote,
       execute: async (params: { content: string; type: string; policyId?: string }) => {
-        await ctx.runMutation(internal.orgMemory.upsert, {
+        const embedText = makeEmbedText();
+        const embedding = await embedText(params.content);
+        const categoryMap: Record<string, string> = {
+          fact: "company_info",
+          risk_note: "risk",
+          coverage_note: "coverage",
+          action_item: "observation",
+        };
+        const category = categoryMap[params.type] ?? "observation";
+        await ctx.runMutation(internal.intelligence.insert, {
           orgId: args.orgId,
-          type: params.type as any,
           content: params.content,
-          source: "chat",
-          policyId: params.policyId as any,
+          category: category as any,
+          confidence: "confirmed" as const,
+          source: "chat" as const,
+          sourceRef: args.threadId as string,
+          sourceLabel: "Saved from chat",
+          embedding,
         });
-        return "Note saved to organization memory.";
+        return "Note saved to organization intelligence.";
       },
     },
     generate_coi: {
@@ -423,8 +436,11 @@ export const run = internalAction({
       // Cross-thread conversation memory (vector search)
       const memoryContext = await buildConversationMemoryContext(ctx, args.orgId, latestUserContent);
 
-      // Load business intelligence (vector search)
-      const orgMemoryBlock = await buildIntelligenceContext(ctx, args.orgId, latestUserContent);
+      // Load business intelligence (vector search, deduped against policy context)
+      const orgMemoryBlock = await buildIntelligenceContext(
+        ctx, args.orgId, latestUserContent,
+        relevantPolicyIds.map((id: any) => id as string),
+      );
 
       // Build message history (skip processing placeholders)
       const messageHistory = buildMessageHistory(allMessages);
@@ -734,6 +750,16 @@ When answering coverage questions, you are an expert insurance analyst, not a di
       await ctx.runMutation(internal.threads.touchThread, {
         threadId: args.threadId,
       });
+
+      // Schedule post-response intelligence extraction (non-blocking)
+      if (latestUserContent && content) {
+        await ctx.scheduler.runAfter(0, internal.actions.extractChatIntelligence.extractFromChat, {
+          orgId: args.orgId,
+          threadId: args.threadId,
+          userMessage: latestUserContent,
+          agentResponse: content,
+        });
+      }
 
       // ── Send email if agent confirmed a send ──
       if (canSendEmail) {
