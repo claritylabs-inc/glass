@@ -87,7 +87,8 @@ IMPORTANT:
 - recategorize: array of { "id": "bracket-id", "category": "correct_category" } for mis-categorized entries
 - Each consolidated entry must be a SINGLE fact (one metric, one coverage line, one relationship)
 - Always include temporal context (time period, as-of date) in each entry
-- 15-80 words per entry is ideal. Over 100 words means it should be split further.`;
+- 15-80 words per entry is ideal. Over 100 words means it should be split further.
+- NEVER truncate content mid-sentence. Every consolidated entry must be a complete, self-contained statement.`;
 
 function parseDreamResult(text: string): any | null {
   try {
