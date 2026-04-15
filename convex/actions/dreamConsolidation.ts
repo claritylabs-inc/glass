@@ -25,16 +25,41 @@ const CHUNK_SIZE = 80;
 
 const CATEGORY_PROMPT = `You are an insurance intelligence analyst reviewing entries in ONE category.
 
-1. DELETE duplicates, near-duplicates, and the older/less specific version of conflicting entries
-2. DELETE low-value noise — individual transaction details, receipt line items, routine vendor interactions, spam-sourced entries, and anything that isn't meaningful business intelligence on its own
-3. When entries conflict (e.g., different employee counts or revenue figures): prefer the one with a more recent as-of date, or the most recently updated if neither has dates
-4. CONSOLIDATE related facts into single, richer entries (e.g., merge 5 separate vendor mentions into one "Key vendors" entry)
+Your goal: produce a CLEAN, HIGH-SIGNAL set of ATOMIC facts optimized for vector search retrieval.
 
-Be aggressive about pruning. Individual data points like "Payment of $247.50 to Office Depot" or "Receipt from UPS Store" should be deleted unless they reveal something meaningful about the business.
+OPERATIONS (in priority order):
+
+1. DELETE entries that are:
+   - Duplicates or near-duplicates (keep the more specific/recent one)
+   - Low-value noise: receipts, individual transactions, routine vendor mentions, spam
+   - Generic industry commentary not specific to THIS organization
+   - Descriptions of the software/platform itself (e.g. "Prism is an AI-native system...")
+   - Outdated facts superseded by newer entries with as-of dates
+
+2. SPLIT over-consolidated entries into atomic facts. Each consolidated entry should contain ONE fact that answers ONE question. Examples:
+   BAD (too broad): "FY2025 Financials: Revenue $15.2M, Gross Profit $9.5M, Net Income $2.7M, Total Assets $18.4M..."
+   GOOD (atomic): Create separate entries for each:
+     - "FY2025 annual revenue: $15.2M (as of December 31, 2025)"
+     - "FY2025 gross profit: $9.5M (as of December 31, 2025)"
+     - "FY2025 net income: $2.7M (as of December 31, 2025)"
+     - "Total assets: $18.4M (as of December 31, 2025)"
+
+   BAD (too broad): "Company holds a CGL policy with Carrier X, coverage includes Bodily Injury $5M, Products $5M, Medical $25K..."
+   GOOD (atomic): Create separate entries for each:
+     - "CGL policy with Carrier X, active through 2027-08-04"
+     - "General liability per-occurrence limit: $5,000,000 (Carrier X CGL)"
+     - "Products/completed operations aggregate: $5,000,000 (Carrier X CGL)"
+     - "Medical payments limit: $25,000 per person (Carrier X CGL)"
+
+3. When entries conflict: prefer the one with a more recent as-of date, or most recently updated if neither has dates.
+
+WHY ATOMIC: Each entry gets its own embedding vector. A query like "what's our revenue?" should match a focused revenue entry with high cosine similarity, not a mega-entry where revenue is diluted among 15 other metrics.
 
 IMPORTANT:
-- deleteIds must contain the exact bracket IDs from the entries (the string inside [...])
-- When consolidating financial data, always include the time period (e.g. 'as of FY2025')`;
+- deleteIds: exact bracket IDs from the entries (the string inside [...])
+- Each consolidated entry must be a SINGLE fact (one metric, one coverage line, one relationship)
+- Always include temporal context (time period, as-of date) in each entry
+- 15-80 words per entry is ideal. Over 100 words means it should be split further.`;
 
 function parseDreamResult(text: string): any | null {
   try {
