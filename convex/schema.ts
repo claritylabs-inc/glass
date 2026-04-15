@@ -264,6 +264,9 @@ export default defineSchema({
       v.literal("manual"),
     ),
     sourceRef: v.optional(v.string()),
+    sourceLabel: v.optional(v.string()),    // human-readable: "2025 P&L", "GL Policy #ABC"
+    asOfDate: v.optional(v.string()),       // when the fact was true: "2025-12-31"
+    documentDate: v.optional(v.string()),   // when the source doc was created/effective
     embedding: v.optional(v.array(v.float64())),
     supersededBy: v.optional(v.id("orgIntelligence")),
     createdAt: v.number(),
