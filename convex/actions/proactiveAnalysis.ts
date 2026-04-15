@@ -6,6 +6,7 @@ import { internal } from "../_generated/api";
 import { getModel, generateTextWithFallback } from "../lib/models";
 import { logAiError } from "../lib/aiUtils";
 import { buildIntelligenceContext } from "../lib/agentPrompts";
+import { makeEmbedText } from "../lib/sdkCallbacks";
 
 const POLICY_TYPE_GUIDANCE: Record<string, string> = {
   general_liability: `GL policy analysis:
@@ -127,34 +128,69 @@ Respond with a JSON object:
         analysis,
       });
 
-      // Save key facts/risk notes to org memory
+      // Save key facts/risk notes to orgIntelligence
       const carrier = policy.security ?? "unknown carrier";
       const policyType = policy.policyTypes?.[0] ?? "policy";
-      const items: Array<{ content: string; type: "fact" | "risk_note" }> = [];
+      const sourceLabel = `${carrier} ${policyType} analysis`;
+      const sourceRef = args.policyId as string;
+      const embed = makeEmbedText();
+
+      const entries: Array<{ content: string; category: "risk" | "coverage" | "observation" }> = [];
+
       if (analysis.gaps?.length) {
         for (const gap of analysis.gaps.slice(0, 3)) {
-          items.push({
+          entries.push({
             content: `Coverage gap (${carrier} ${policyType}): ${gap}`,
-            type: "risk_note",
+            category: "risk",
+          });
+        }
+      }
+      if (analysis.notableExclusions?.length) {
+        for (const excl of analysis.notableExclusions.slice(0, 3)) {
+          entries.push({
+            content: `Notable exclusion (${carrier} ${policyType}): ${excl}`,
+            category: "risk",
+          });
+        }
+      }
+      if (analysis.recommendations?.length) {
+        for (const rec of analysis.recommendations.slice(0, 3)) {
+          entries.push({
+            content: `Recommendation (${carrier} ${policyType}): ${rec}`,
+            category: "observation",
           });
         }
       }
       if (analysis.strengths?.length) {
-        items.push({
+        entries.push({
           content: `${carrier} ${policyType}: ${analysis.overallScore} — ${analysis.strengths[0]}`,
-          type: "fact",
+          category: "coverage",
         });
       }
-      if (items.length > 0) {
-        await ctx.runMutation(internal.orgMemory.bulkInsert, {
-          items: items.map((f) => ({
+
+      for (const entry of entries) {
+        try {
+          const embedding = await embed(entry.content);
+          const similar = await ctx.vectorSearch("orgIntelligence", "by_embedding", {
+            vector: embedding,
+            limit: 3,
+            filter: (q: any) => q.eq("orgId", args.orgId),
+          });
+          if (similar.some((s: any) => s._score > 0.95)) continue;
+
+          await ctx.runMutation(internal.intelligence.insert, {
             orgId: args.orgId,
-            type: f.type,
-            content: f.content,
-            source: "analysis" as const,
-            policyId: args.policyId,
-          })),
-        });
+            content: entry.content,
+            category: entry.category,
+            confidence: "confirmed",
+            source: "extraction",
+            sourceRef,
+            sourceLabel,
+            embedding,
+          });
+        } catch {
+          // Non-critical — continue with remaining entries
+        }
       }
     } catch (err) {
       logAiError("analyzePolicy", err, { policyId: args.policyId });
@@ -218,6 +254,52 @@ Provide a portfolio-level assessment as JSON:
         id: args.orgId,
         portfolioAnalysis: analysis,
       });
+
+      // Write portfolio-level findings to orgIntelligence
+      const embed = makeEmbedText();
+      const portfolioEntries: string[] = [];
+
+      if (analysis.coverageGaps?.length) {
+        for (const gap of analysis.coverageGaps.slice(0, 3)) {
+          portfolioEntries.push(`Portfolio gap: ${gap}`);
+        }
+      }
+      if (analysis.keyRisks?.length) {
+        for (const risk of analysis.keyRisks.slice(0, 3)) {
+          portfolioEntries.push(`Portfolio risk: ${risk}`);
+        }
+      }
+      if (analysis.recommendations?.length) {
+        for (const rec of analysis.recommendations.slice(0, 3)) {
+          portfolioEntries.push(`Portfolio recommendation: ${rec}`);
+        }
+      }
+      if (analysis.overallHealth) {
+        portfolioEntries.push(`Portfolio health: ${analysis.overallHealth} (${policies.length} policies, total premium ${analysis.totalPremium ?? "N/A"})`);
+      }
+
+      for (const content of portfolioEntries) {
+        try {
+          const embedding = await embed(content);
+          const similar = await ctx.vectorSearch("orgIntelligence", "by_embedding", {
+            vector: embedding,
+            limit: 3,
+            filter: (q: any) => q.eq("orgId", args.orgId),
+          });
+          if (similar.some((s: any) => s._score > 0.95)) continue;
+
+          await ctx.runMutation(internal.intelligence.insert, {
+            orgId: args.orgId,
+            content,
+            category: "observation",
+            confidence: "confirmed",
+            source: "extraction",
+            embedding,
+          });
+        } catch {
+          // Non-critical
+        }
+      }
     } catch (err) {
       logAiError("analyzePortfolio", err, { orgId: args.orgId });
     }
@@ -283,13 +365,28 @@ Provide a comparison as JSON:
       }
 
       const summaryNote = `Renewal comparison: ${newPolicy.security} ${newPolicy.policyTypes?.[0]} — ${comparison.overallAssessment ?? "see analysis"}`;
-      await ctx.runMutation(internal.orgMemory.upsert, {
-        orgId: args.orgId,
-        type: "observation",
-        content: summaryNote,
-        source: "analysis",
-        policyId: args.newPolicyId,
-      });
+      const embed = makeEmbedText();
+      try {
+        const embedding = await embed(summaryNote);
+        const similar = await ctx.vectorSearch("orgIntelligence", "by_embedding", {
+          vector: embedding,
+          limit: 3,
+          filter: (q: any) => q.eq("orgId", args.orgId),
+        });
+        if (!similar.some((s: any) => s._score > 0.95)) {
+          await ctx.runMutation(internal.intelligence.insert, {
+            orgId: args.orgId,
+            content: summaryNote,
+            category: "observation",
+            confidence: "confirmed",
+            source: "extraction",
+            sourceRef: args.newPolicyId as string,
+            embedding,
+          });
+        }
+      } catch {
+        // Non-critical — renewal comparison already saved to policy
+      }
     } catch (err) {
       logAiError("compareRenewal", err, { newPolicyId: args.newPolicyId, priorPolicyId: args.priorPolicyId });
     }
