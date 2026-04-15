@@ -85,7 +85,7 @@ export const run = internalAction({
     // Application context
     let applicationContext = "";
     if (applications.length > 0) {
-      const appLines = applications.map((a) => {
+      const appLines = applications.map((a: any) => {
         const title = a.applicationTitle ?? a.sourceFileName;
         const progress = a.totalFields
           ? `${a.filledFields ?? 0}/${a.totalFields} fields filled`
@@ -137,7 +137,7 @@ MCP MODE:
     await ctx.runMutation(internal.threads.touchThread, { threadId });
 
     // Auto-title if this is a new thread (only 1 user message)
-    const userMessages = allMessages.filter((m) => m.role === "user");
+    const userMessages = allMessages.filter((m: any) => m.role === "user");
     if (userMessages.length <= 1) {
       try {
         const { text: titleText } = await generateText({

@@ -420,7 +420,7 @@ export const run = internalAction({
 
       // Find the latest user message for context
       const latestUserMsg = allMessages
-        .filter((m) => m.role === "user")
+        .filter((m: any) => m.role === "user")
         .pop();
       const latestUserContent = latestUserMsg?.content ?? "";
 
@@ -514,7 +514,7 @@ export const run = internalAction({
 
       // Detect thread type
       const thread = await ctx.runQuery(internal.threads.getInternal, { id: args.threadId });
-      const hasEmailMessages = allMessages.some((m) => m.channel === "email");
+      const hasEmailMessages = allMessages.some((m: any) => m.channel === "email");
       const isMixedThread = hasEmailMessages || !!thread?.legacyConversationId;
       // Can send emails from any thread with a threadEmail address
       const canSendEmail = !!thread?.threadEmail;
@@ -585,7 +585,7 @@ For emails, compose a professional message that:
       // Build application context
       let applicationContext = "";
       if (applications.length > 0) {
-        const appLines = applications.map((a) => {
+        const appLines = applications.map((a: any) => {
           const title = a.applicationTitle ?? a.sourceFileName;
           const progress = a.totalFields
             ? `${a.filledFields ?? 0}/${a.totalFields} fields filled`
@@ -917,7 +917,7 @@ When answering coverage questions, you are an expert insurance analyst, not a di
       }
 
       // Auto-title: if this is the first user message, generate a title
-      const userMessages = allMessages.filter((m) => m.role === "user");
+      const userMessages = allMessages.filter((m: any) => m.role === "user");
       if (userMessages.length === 1) {
         try {
           const { text: titleText } = await generateText({
