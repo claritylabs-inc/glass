@@ -21,7 +21,7 @@ import { Id } from "../_generated/dataModel";
  */
 
 // ── Max entries per LLM call within a category ──
-const CHUNK_SIZE = 80;
+const CHUNK_SIZE = 30;
 
 const CATEGORY_PROMPT = `You are an insurance intelligence analyst reviewing entries in ONE category.
 
@@ -142,13 +142,6 @@ export const dreamForOrg = internalAction({
         `Scheduling ${categories.length} category workers...`,
       ],
       durationMs: 0,
-    });
-
-    // Store the pending count so the last category worker can trigger finalize
-    await ctx.runMutation(internal.dreamLogs.update, {
-      id: logId,
-      // Store pending count in durationMs temporarily (will be overwritten at finalize)
-      // Actually let's use a cleaner approach — store in the log entry itself
     });
 
     // Schedule one action per category (each gets its own Convex action timeout)
