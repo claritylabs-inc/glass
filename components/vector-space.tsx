@@ -30,7 +30,9 @@ const CHUNK_COLORS: Record<string, string> = {
   supplementary: "#06b6d4",
   // Intelligence categories
   company_info: "#3b82f6",
+  products_services: "#14b8a6",
   operations: "#8b5cf6",
+  employees: "#0ea5e9",
   financial: "#10b981",
   risk: "#ef4444",
   relationship: "#f59e0b",
@@ -51,7 +53,9 @@ const CHUNK_LABELS: Record<string, string> = {
   supplementary: "Additional Details",
   // Intelligence categories
   company_info: "Company Info",
+  products_services: "Products & Services",
   operations: "Operations",
+  employees: "Employees",
   financial: "Financial",
   risk: "Risk",
   relationship: "Relationship",
