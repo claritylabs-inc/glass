@@ -171,6 +171,86 @@ export const extractPolicy = internalAction({
         await log(`Stored ${chunks.length} chunks for vector search.`);
       }
 
+      // ── Synthesize key policy facts into orgIntelligence ──
+      if (args.orgId) {
+        const embed = makeEmbedText();
+        const carrier = fields.carrier ?? "Unknown carrier";
+        const policyType = fields.policyTypes?.[0] ?? "policy";
+        const policyNum = fields.policyNumber ?? "unknown";
+        const sourceLabel = `${carrier} ${policyType} #${policyNum}`;
+        const sourceRef = policyId as string;
+
+        const entries: Array<{
+          content: string;
+          category: "coverage" | "financial" | "relationship" | "company_info";
+        }> = [];
+
+        // Coverage summary from each coverage
+        if (fields.coverages?.length) {
+          for (const cov of fields.coverages) {
+            const parts = [cov.name];
+            if (cov.limit) parts.push(`limit ${cov.limit}`);
+            if (cov.deductible) parts.push(`deductible ${cov.deductible}`);
+            entries.push({
+              content: `Coverage: ${parts.join(", ")} (${carrier} ${policyType})`,
+              category: "coverage",
+            });
+          }
+        }
+
+        // Premium as financial entry
+        if (fields.premium) {
+          entries.push({
+            content: `Premium: ${fields.premium} for ${carrier} ${policyType} #${policyNum}`,
+            category: "financial",
+          });
+        }
+
+        // Carrier relationship
+        entries.push({
+          content: `Carrier relationship: ${carrier} — ${policyType} policy #${policyNum}, effective ${fields.effectiveDate ?? "unknown"}`,
+          category: "relationship",
+        });
+
+        // Insured name/address as company_info
+        if (fields.insuredName) {
+          const addrPart = fields.insuredAddress ? `, address: ${fields.insuredAddress}` : "";
+          entries.push({
+            content: `Insured: ${fields.insuredName}${addrPart}`,
+            category: "company_info",
+          });
+        }
+
+        for (const entry of entries) {
+          try {
+            const embedding = await embed(entry.content);
+            // Dedup via vector search — skip if near-duplicate exists
+            const similar = await ctx.vectorSearch("orgIntelligence", "by_embedding", {
+              vector: embedding,
+              limit: 3,
+              filter: (q: any) => q.eq("orgId", args.orgId),
+            });
+            if (similar.some((s: any) => s._score > 0.95)) continue;
+
+            await ctx.runMutation(internal.intelligence.insert, {
+              orgId: args.orgId!,
+              content: entry.content,
+              category: entry.category,
+              confidence: "confirmed",
+              source: "extraction",
+              sourceRef,
+              sourceLabel,
+              asOfDate: fields.effectiveDate,
+              documentDate: fields.effectiveDate,
+              embedding,
+            });
+          } catch (err: any) {
+            await log(`Warning: failed to write intelligence entry: ${err.message}`);
+          }
+        }
+        await log(`Synthesized ${entries.length} intelligence entries from policy.`);
+      }
+
       await ctx.runMutation(internal.policyAuditLog.append, {
         policyId,
         userId: args.userId,

@@ -62,6 +62,7 @@ export async function buildIntelligenceContext(
   ctx: ActionCtx,
   orgId: Id<"organizations">,
   queryText: string,
+  excludePolicyIds?: string[],
 ): Promise<string> {
   try {
     const embed = makeEmbedText();
@@ -70,7 +71,7 @@ export async function buildIntelligenceContext(
     // Vector search must be called from action context directly
     const searchResults = await ctx.vectorSearch("orgIntelligence", "by_embedding", {
       vector: queryEmbedding,
-      limit: 10,
+      limit: 15,
       filter: (q: any) => q.eq("orgId", orgId),
     });
 
@@ -82,6 +83,18 @@ export async function buildIntelligenceContext(
     });
 
     if (!results || results.length === 0) return "";
+
+    // Filter out policy-derived facts already covered by documentChunks
+    const excludeSet = new Set(excludePolicyIds ?? []);
+    const filtered = results.filter((entry: any) => {
+      if (!entry) return false;
+      if (entry.source === "extraction" && entry.sourceRef && excludeSet.has(entry.sourceRef)) {
+        return false;
+      }
+      return true;
+    });
+
+    if (filtered.length === 0) return "";
 
     const categoryLabels: Record<string, string> = {
       company_info: "Company Information",
@@ -95,12 +108,16 @@ export async function buildIntelligenceContext(
 
     // Group by category
     const grouped: Record<string, string[]> = {};
-    for (const entry of results) {
+    for (const entry of filtered) {
       if (!entry) continue;
       const cat = entry.category || "observation";
       if (!grouped[cat]) grouped[cat] = [];
-      const sourceTag = entry.source !== "manual" ? ` [${entry.source}]` : "";
-      grouped[cat].push(`- ${entry.content}${sourceTag}`);
+      const tags: string[] = [];
+      if (entry.source && entry.source !== "manual") tags.push(entry.source);
+      if (entry.asOfDate) tags.push(`as of ${entry.asOfDate}`);
+      if (entry.sourceLabel) tags.push(entry.sourceLabel);
+      const tagStr = tags.length > 0 ? ` [${tags.join(" | ")}]` : "";
+      grouped[cat].push(`- ${entry.content}${tagStr}`);
     }
 
     const sections: string[] = [];
