@@ -112,7 +112,7 @@ export const projectIntelligence = action({
         meta.push({
           id: entry._id,
           category: entry.category,
-          content: entry.content.slice(0, 100),
+          content: entry.content,
           source: entry.source,
           confidence: entry.confidence,
         });
@@ -174,7 +174,7 @@ export const project = action({
           id: chunk._id,
           chunkType: chunk.chunkType,
           policyId: chunk.policyId,
-          text: chunk.text.slice(0, 120),
+          text: chunk.text,
         });
       }
     }
