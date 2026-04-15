@@ -109,7 +109,14 @@ Format:
       };
       try {
         const cleaned = result.text.replace(/```json\n?|```\n?/g, "").trim();
-        dreamResult = JSON.parse(cleaned);
+        // Try direct parse first, then extract JSON object if extra text surrounds it
+        try {
+          dreamResult = JSON.parse(cleaned);
+        } catch {
+          const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+          if (!jsonMatch) throw new Error("No JSON found");
+          dreamResult = JSON.parse(jsonMatch[0]);
+        }
       } catch {
         console.warn(`Dream consolidation produced unparseable output for org ${args.orgId}`);
         return;

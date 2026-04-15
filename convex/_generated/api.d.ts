@@ -12,6 +12,7 @@ import type * as actions_backfillChunks from "../actions/backfillChunks.js";
 import type * as actions_classifyEmails from "../actions/classifyEmails.js";
 import type * as actions_dailyScan from "../actions/dailyScan.js";
 import type * as actions_dreamConsolidation from "../actions/dreamConsolidation.js";
+import type * as actions_extractChatIntelligence from "../actions/extractChatIntelligence.js";
 import type * as actions_extractCompanyInfo from "../actions/extractCompanyInfo.js";
 import type * as actions_extractEmailIntelligence from "../actions/extractEmailIntelligence.js";
 import type * as actions_extractFromDocument from "../actions/extractFromDocument.js";
@@ -98,6 +99,7 @@ declare const fullApi: ApiFromModules<{
   "actions/classifyEmails": typeof actions_classifyEmails;
   "actions/dailyScan": typeof actions_dailyScan;
   "actions/dreamConsolidation": typeof actions_dreamConsolidation;
+  "actions/extractChatIntelligence": typeof actions_extractChatIntelligence;
   "actions/extractCompanyInfo": typeof actions_extractCompanyInfo;
   "actions/extractEmailIntelligence": typeof actions_extractEmailIntelligence;
   "actions/extractFromDocument": typeof actions_extractFromDocument;
