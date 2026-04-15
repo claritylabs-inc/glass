@@ -243,7 +243,9 @@ export default defineSchema({
     content: v.string(),
     category: v.union(
       v.literal("company_info"),
+      v.literal("products_services"),
       v.literal("operations"),
+      v.literal("employees"),
       v.literal("financial"),
       v.literal("coverage"),
       v.literal("risk"),

@@ -98,7 +98,9 @@ export async function buildIntelligenceContext(
 
     const categoryLabels: Record<string, string> = {
       company_info: "Company Information",
+      products_services: "Products & Services",
       operations: "Operations",
+      employees: "Employees & Workforce",
       financial: "Financial",
       coverage: "Coverage & Insurance",
       risk: "Risk Signals",

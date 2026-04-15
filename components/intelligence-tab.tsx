@@ -11,8 +11,12 @@ import { PillButton } from "@/components/ui/pill-button";
 const INTEL_CATEGORY_COLORS: Record<string, string> = {
   company_info:
     "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400",
+  products_services:
+    "bg-teal-50 text-teal-600 dark:bg-teal-950/40 dark:text-teal-400",
   operations:
     "bg-violet-50 text-violet-600 dark:bg-violet-950/40 dark:text-violet-400",
+  employees:
+    "bg-sky-50 text-sky-600 dark:bg-sky-950/40 dark:text-sky-400",
   financial:
     "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400",
   coverage:

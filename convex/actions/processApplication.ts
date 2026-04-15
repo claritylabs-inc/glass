@@ -2414,7 +2414,11 @@ function sectionToCategory(section: string): string {
   const s = section.toLowerCase();
   if (s.includes("general") || s.includes("applicant") || s.includes("company"))
     return "company_info";
-  if (s.includes("operation") || s.includes("business") || s.includes("employee"))
+  if (s.includes("product") || s.includes("service"))
+    return "products_services";
+  if (s.includes("employee") || s.includes("headcount") || s.includes("personnel") || s.includes("staffing"))
+    return "employees";
+  if (s.includes("operation") || s.includes("business") || s.includes("equipment") || s.includes("fleet"))
     return "operations";
   if (s.includes("financial") || s.includes("revenue") || s.includes("payroll"))
     return "financial";

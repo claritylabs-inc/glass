@@ -32,7 +32,7 @@ export const extractFromChat = internalAction({
         system: `You extract business facts from chat conversations. You ONLY extract facts that the USER explicitly provided — never extract things the assistant said or inferred.
 
 Respond with ONLY valid JSON, no markdown:
-{ "entries": [{ "content": "...", "category": "company_info" | "operations" | "financial" | "coverage" | "risk" | "relationship" | "observation" }] }
+{ "entries": [{ "content": "...", "category": "company_info" | "products_services" | "operations" | "employees" | "financial" | "coverage" | "risk" | "relationship" | "observation" }] }
 
 Rules:
 - Each fact should be a standalone statement (e.g. "Company has 45 employees", "Fleet includes 12 box trucks")
@@ -43,12 +43,14 @@ Rules:
 - Include temporal context when dates or time periods are mentioned
 
 Category guide:
-- company_info: entity details, locations, employee counts
-- operations: business activities, equipment, fleet, processes
+- company_info: entity details, locations, legal structure
+- products_services: what the company sells or provides to customers
+- operations: internal processes, equipment, fleet, facilities
+- employees: headcount, roles, departments, HR
 - financial: revenue, payroll, assets, budgets
 - coverage: insurance discussions, policy preferences
 - risk: claims, incidents, hazards, compliance
-- relationship: broker, carrier, vendor mentions
+- relationship: broker, carrier, vendor, client mentions
 - observation: general business changes or plans`,
         messages: [
           {

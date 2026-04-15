@@ -180,7 +180,7 @@ export const extractFromDocument = action({
             maxOutputTokens: 4096,
             system: `You are extracting non-financial business intelligence from a document (company info, operations, relationships, ownership, addresses, etc.). Skip financial metrics — those are extracted separately. Only extract facts that are clearly stated or strongly implied.${temporalInstruction}
 
-Format: { "entries": [{ "content": "...", "category": "company_info" | "operations" | "relationship" }] }
+Format: { "entries": [{ "content": "...", "category": "company_info" | "products_services" | "operations" | "employees" | "relationship" }] }
 Respond with ONLY valid JSON, no markdown.
 If no relevant facts found, return { "entries": [] }.`,
             prompt: `Document: ${fileName}\n\n${truncated}`,
@@ -196,7 +196,7 @@ If no relevant facts found, return { "entries": [] }.`,
             maxOutputTokens: 4096,
             system: `You are extracting business intelligence from a document. Extract structured facts about the company, its operations, finances, and relationships. Only extract facts that are clearly stated or strongly implied.${temporalInstruction}
 
-Format: { "entries": [{ "content": "...", "category": "company_info" | "operations" | "financial" | "relationship" }] }
+Format: { "entries": [{ "content": "...", "category": "company_info" | "products_services" | "operations" | "employees" | "financial" | "relationship" }] }
 Respond with ONLY valid JSON, no markdown.
 If no relevant business facts found, return { "entries": [] }.`,
             prompt: `Document: ${fileName}\n\n${truncated}`,
