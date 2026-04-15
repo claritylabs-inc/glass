@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
-import { Brain, Loader2, Trash2, Search, RefreshCw } from "lucide-react";
+import { Brain, Loader2, Trash2, Search, RefreshCw, ChevronDown, Pencil, Check, X } from "lucide-react";
 import { VectorSpace } from "@/components/vector-space";
 import { PillButton } from "@/components/ui/pill-button";
 
@@ -95,6 +95,7 @@ export function IntelligenceTab() {
 function OrgIntelligencePanel() {
   const entries = useQuery(api.intelligence.list, {});
   const removeEntry = useMutation(api.intelligence.remove);
+  const updateEntry = useMutation(api.intelligence.update);
   const projectIntelligence = useAction(
     api.actions.vectorProjection.projectIntelligence,
   );
@@ -104,6 +105,10 @@ function OrgIntelligencePanel() {
   } | null>(null);
   const [loadingVectors, setLoadingVectors] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editContent, setEditContent] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
   const totalEntries = entries?.length ?? 0;
 
@@ -174,6 +179,37 @@ function OrgIntelligencePanel() {
     } finally {
       setRemovingId(null);
     }
+  }
+
+  function startEditing(id: string, content: string) {
+    setEditingId(id);
+    setEditContent(content);
+  }
+
+  async function saveEdit() {
+    if (!editingId || !editContent.trim()) return;
+    setSavingEdit(true);
+    try {
+      await updateEntry({ id: editingId as any, content: editContent.trim() });
+      toast.success("Entry updated");
+      setEditingId(null);
+    } catch {
+      toast.error("Failed to update entry");
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  function toggleGroup(label: string) {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(label)) {
+        next.delete(label);
+      } else {
+        next.add(label);
+      }
+      return next;
+    });
   }
 
   if (entries === undefined) {
@@ -261,62 +297,125 @@ function OrgIntelligencePanel() {
       {/* Intelligence entries list — grouped by date, newest first */}
       {groupedByDate.length > 0 ? (
         <div className="space-y-4">
-          {groupedByDate.map((group) => (
-            <div
-              key={group.label}
-              className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden"
-            >
-              <div className="px-5 py-2.5 border-b border-foreground/6 bg-foreground/[0.015]">
-                <p className="text-label-sm font-medium text-muted-foreground">
-                  {group.label}
-                  <span className="ml-1.5 opacity-50">{group.entries.length}</span>
-                </p>
-              </div>
-              <div className="divide-y divide-foreground/4">
-                {group.entries.map((entry) => (
-                  <div
-                    key={entry._id}
-                    className="px-5 py-3 flex items-start gap-3 group hover:bg-foreground/[0.015] transition-colors"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <p className="text-body-sm text-foreground leading-relaxed line-clamp-2">
-                        {entry.content}
-                      </p>
-                      <div className="flex items-center gap-1.5 mt-1.5">
-                        <span
-                          className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${INTEL_CATEGORY_COLORS[entry.category] ?? INTEL_CATEGORY_COLORS.observation}`}
-                        >
-                          {entry.category.replace(/_/g, " ")}
-                        </span>
-                        <span
-                          className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${INTEL_SOURCE_COLORS[entry.source] ?? INTEL_SOURCE_COLORS.manual}`}
-                        >
-                          {entry.source}
-                        </span>
-                        <span
-                          className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${INTEL_CONFIDENCE_COLORS[entry.confidence] ?? INTEL_CONFIDENCE_COLORS.inferred}`}
-                        >
-                          {entry.confidence}
-                        </span>
+          {groupedByDate.map((group) => {
+            const isCollapsed = collapsedGroups.has(group.label);
+            return (
+              <div
+                key={group.label}
+                className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden"
+              >
+                <button
+                  type="button"
+                  onClick={() => toggleGroup(group.label)}
+                  className="w-full px-5 py-2.5 border-b border-foreground/6 bg-foreground/[0.015] flex items-center justify-between cursor-pointer hover:bg-foreground/[0.03] transition-colors"
+                >
+                  <p className="text-label-sm font-medium text-muted-foreground">
+                    {group.label}
+                    <span className="ml-1.5 opacity-50">{group.entries.length}</span>
+                  </p>
+                  <ChevronDown
+                    className={`w-3.5 h-3.5 text-muted-foreground/40 transition-transform ${isCollapsed ? "-rotate-90" : ""}`}
+                  />
+                </button>
+                {!isCollapsed && (
+                  <div className="divide-y divide-foreground/4">
+                    {group.entries.map((entry) => (
+                      <div
+                        key={entry._id}
+                        className="px-5 py-3 flex items-start gap-3 group hover:bg-foreground/[0.015] transition-colors"
+                      >
+                        <div className="flex-1 min-w-0">
+                          {editingId === entry._id ? (
+                            <div className="flex items-start gap-2">
+                              <textarea
+                                value={editContent}
+                                onChange={(e) => setEditContent(e.target.value)}
+                                className="flex-1 text-body-sm text-foreground bg-white dark:bg-white/5 border border-foreground/10 rounded-md px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-blue-500/40"
+                                rows={2}
+                                autoFocus
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                                    saveEdit();
+                                  } else if (e.key === "Escape") {
+                                    setEditingId(null);
+                                  }
+                                }}
+                              />
+                              <button
+                                type="button"
+                                onClick={saveEdit}
+                                disabled={savingEdit || !editContent.trim()}
+                                className="p-1 text-emerald-500 hover:text-emerald-600 cursor-pointer shrink-0 mt-1"
+                              >
+                                {savingEdit ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <Check className="w-3.5 h-3.5" />
+                                )}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setEditingId(null)}
+                                className="p-1 text-muted-foreground/40 hover:text-muted-foreground cursor-pointer shrink-0 mt-1"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ) : (
+                            <>
+                              <p className="text-body-sm text-foreground leading-relaxed line-clamp-2">
+                                {entry.content}
+                              </p>
+                              <div className="flex items-center gap-1.5 mt-1.5">
+                                <span
+                                  className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${INTEL_CATEGORY_COLORS[entry.category] ?? INTEL_CATEGORY_COLORS.observation}`}
+                                >
+                                  {entry.category.replace(/_/g, " ")}
+                                </span>
+                                <span
+                                  className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${INTEL_SOURCE_COLORS[entry.source] ?? INTEL_SOURCE_COLORS.manual}`}
+                                >
+                                  {entry.source}
+                                </span>
+                                <span
+                                  className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${INTEL_CONFIDENCE_COLORS[entry.confidence] ?? INTEL_CONFIDENCE_COLORS.inferred}`}
+                                >
+                                  {entry.confidence}
+                                </span>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                        {editingId !== entry._id && (
+                          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all shrink-0 mt-0.5">
+                            <button
+                              type="button"
+                              onClick={() => startEditing(entry._id, entry.content)}
+                              className="p-1 text-muted-foreground/20 hover:text-blue-500 cursor-pointer"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleRemove(entry._id)}
+                              disabled={removingId === entry._id}
+                              className="p-1 text-muted-foreground/20 hover:text-red-500 cursor-pointer"
+                            >
+                              {removingId === entry._id ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <Trash2 className="w-3.5 h-3.5" />
+                              )}
+                            </button>
+                          </div>
+                        )}
                       </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => handleRemove(entry._id)}
-                      disabled={removingId === entry._id}
-                      className="p-1 text-muted-foreground/20 hover:text-red-500 cursor-pointer opacity-0 group-hover:opacity-100 transition-all shrink-0 mt-0.5"
-                    >
-                      {removingId === entry._id ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      ) : (
-                        <Trash2 className="w-3.5 h-3.5" />
-                      )}
-                    </button>
+                    ))}
                   </div>
-                ))}
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       ) : (
         <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-5 py-8 text-center">

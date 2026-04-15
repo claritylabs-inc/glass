@@ -226,6 +226,24 @@ export const updateEntry = internalMutation({
 
 // ── Public Mutations ──
 
+export const update = mutation({
+  args: {
+    id: v.id("orgIntelligence"),
+    content: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const access = await getOrgAccess(ctx);
+    if (!access) throw new Error("Not authenticated");
+    const entry = await ctx.db.get(args.id);
+    if (!entry || entry.orgId !== access.orgId) throw new Error("Not found");
+    await ctx.db.patch(args.id, {
+      content: args.content,
+      confidence: "confirmed" as const,
+      updatedAt: Date.now(),
+    });
+  },
+});
+
 export const remove = mutation({
   args: { id: v.id("orgIntelligence") },
   handler: async (ctx, args) => {
