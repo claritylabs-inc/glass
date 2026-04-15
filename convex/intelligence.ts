@@ -209,6 +209,21 @@ export const markStale = internalMutation({
   },
 });
 
+export const bulkRecategorize = internalMutation({
+  args: {
+    updates: v.array(v.object({
+      id: v.id("orgIntelligence"),
+      category: v.string(),
+    })),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    for (const { id, category } of args.updates) {
+      await ctx.db.patch(id, { category: category as any, updatedAt: now });
+    }
+  },
+});
+
 export const bulkDelete = internalMutation({
   args: { ids: v.array(v.id("orgIntelligence")) },
   handler: async (ctx, args) => {

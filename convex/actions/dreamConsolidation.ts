@@ -55,8 +55,20 @@ OPERATIONS (in priority order):
 
 WHY ATOMIC: Each entry gets its own embedding vector. A query like "what's our revenue?" should match a focused revenue entry with high cosine similarity, not a mega-entry where revenue is diluted among 15 other metrics.
 
+4. RECATEGORIZE entries that are in the wrong category. Available categories:
+   - company_info: entity details, locations, legal structure
+   - products_services: what the company sells or provides to customers
+   - operations: internal processes, equipment, fleet, facilities
+   - employees: headcount, roles, departments, HR
+   - financial: revenue, payroll, assets, budgets
+   - coverage: insurance policies, limits, deductibles
+   - risk: claims, incidents, hazards, compliance
+   - relationship: broker, carrier, vendor, client mentions
+   - observation: general business changes or plans
+
 IMPORTANT:
 - deleteIds: exact bracket IDs from the entries (the string inside [...])
+- recategorize: array of { "id": "bracket-id", "category": "correct_category" } for mis-categorized entries
 - Each consolidated entry must be a SINGLE fact (one metric, one coverage line, one relationship)
 - Always include temporal context (time period, as-of date) in each entry
 - 15-80 words per entry is ideal. Over 100 words means it should be split further.`;
@@ -192,6 +204,7 @@ export const dreamCategory = internalAction({
       const embedText = makeEmbedText();
       let totalDeleted = 0;
       let totalConsolidated = 0;
+      let totalRecategorized = 0;
 
       // Sub-batch if category is large
       const chunks: any[][] = [];
@@ -210,7 +223,7 @@ export const dreamCategory = internalAction({
         const result = await generateText({
           model: getModel("chat"),
           system: `You are an insurance intelligence analyst. Respond with ONLY valid JSON, no markdown.
-Format: { "reasoning": "brief explanation of what you're deleting and why", "deleteIds": ["id1"], "consolidated": [{ "content": "...", "category": "${args.category}" }] }`,
+Format: { "reasoning": "brief explanation", "deleteIds": ["id1"], "recategorize": [{ "id": "id2", "category": "correct_category" }], "consolidated": [{ "content": "...", "category": "best_category" }] }`,
           prompt: `${CATEGORY_PROMPT}\n\nCategory: ${args.category}${batchNote}\nEntries:\n${lines.join("\n")}`,
         });
 
@@ -231,6 +244,17 @@ Format: { "reasoning": "brief explanation of what you're deleting and why", "del
           totalDeleted += deleteIds.length;
         }
 
+        // Recategorize mis-filed entries
+        const recats = (parsed.recategorize ?? []).filter(
+          (r: any) => r.id && r.category && entryIdSet.has(r.id as any),
+        );
+        if (recats.length > 0) {
+          await ctx.runMutation(internal.intelligence.bulkRecategorize, {
+            updates: recats.map((r: any) => ({ id: r.id, category: r.category })),
+          });
+          totalRecategorized += recats.length;
+        }
+
         for (const c of parsed.consolidated ?? []) {
           if (!c.content?.trim()) continue;
           const embedding = await embedText(c.content);
@@ -246,7 +270,9 @@ Format: { "reasoning": "brief explanation of what you're deleting and why", "del
         }
       }
 
-      await appendLogLine(ctx, args.logId, `${args.category}: ${totalDeleted} deleted, ${totalConsolidated} consolidated`);
+      const parts = [`${totalDeleted} deleted`, `${totalConsolidated} consolidated`];
+      if (totalRecategorized > 0) parts.push(`${totalRecategorized} recategorized`);
+      await appendLogLine(ctx, args.logId, `${args.category}: ${parts.join(", ")}`);
 
       // Increment totals on the shared log
       const currentLog = await ctx.runQuery(internal.dreamLogs.get, { id: args.logId });
