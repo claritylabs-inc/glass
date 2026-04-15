@@ -145,20 +145,21 @@ export const dreamForOrg = internalAction({
     });
 
     // Schedule one action per category (each gets its own Convex action timeout)
+    let scheduled = 0;
     for (const category of categories) {
-      if (grouped[category] < 2) continue; // Skip single-entry categories
+      if (grouped[category] < 2) continue;
       await ctx.scheduler.runAfter(0, internal.actions.dreamConsolidation.dreamCategory, {
         orgId: args.orgId,
         category,
         logId,
+        startTime: Date.now(),
       });
+      scheduled++;
     }
 
-    // Schedule finalize to run after a delay to let category workers complete
-    // Each category typically takes 10-30s, so stagger based on count
-    const delayMs = Math.max(30000, categories.length * 15000);
-    await ctx.scheduler.runAfter(delayMs, internal.actions.dreamConsolidation.dreamFinalize, {
-      orgId: args.orgId,
+    // Schedule a lightweight completion marker after workers are expected to finish
+    const delayMs = Math.max(30000, scheduled * 20000);
+    await ctx.scheduler.runAfter(delayMs, internal.actions.dreamConsolidation.dreamMarkComplete, {
       logId,
       startTime: Date.now(),
     });
@@ -172,6 +173,7 @@ export const dreamCategory = internalAction({
     orgId: v.id("organizations"),
     category: v.string(),
     logId: v.id("dreamLogs"),
+    startTime: v.number(),
   },
   handler: async (ctx, args): Promise<void> => {
     try {
@@ -263,105 +265,30 @@ Format: { "reasoning": "brief explanation of what you're deleting and why", "del
   },
 });
 
-// ── Step 3: Finalize — summary + gaps, mark complete ──
+// ── Step 3: Mark complete (lightweight — no LLM call) ──
 
-export const dreamFinalize = internalAction({
+export const dreamMarkComplete = internalAction({
   args: {
-    orgId: v.id("organizations"),
     logId: v.id("dreamLogs"),
     startTime: v.number(),
   },
   handler: async (ctx, args): Promise<void> => {
-    try {
-      await appendLogLine(ctx, args.logId, "Generating summary and identifying gaps...");
+    const currentLog = await ctx.runQuery(internal.dreamLogs.get, { id: args.logId });
+    if (!currentLog || currentLog.status !== "running") return;
 
-      const remaining = await ctx.runQuery(internal.intelligence.listActiveByOrg, {
-        orgId: args.orgId,
-      });
+    const duration = Date.now() - args.startTime;
+    const deleted = currentLog.entriesDeleted ?? 0;
+    const consolidated = currentLog.entriesConsolidated ?? 0;
 
-      const summaryLines = remaining.slice(0, 100).map((e: any) =>
-        `[${e.category}] ${e.content.slice(0, 120)}`,
-      );
+    await appendLogLine(ctx, args.logId,
+      `Complete: ${deleted} deleted, ${consolidated} consolidated (${Math.round(duration / 1000)}s)`,
+    );
 
-      const summaryResult = await generateText({
-        model: getModel("analysis"),
-        system: `You are an insurance intelligence analyst. Respond with ONLY valid JSON, no markdown.
-Format: { "reasoning": "brief analysis of the org's profile and gaps", "gaps": ["question1", "question2"], "summary": "2-3 sentence summary of this organization's intelligence profile" }`,
-        prompt: `Review these ${remaining.length} intelligence entries and identify:
-1. Important GAPS — what should we know about this organization but don't?
-2. A 2-3 sentence SUMMARY of the organization's overall intelligence profile.
-
-Entries (truncated for review):\n${summaryLines.join("\n")}`,
-      });
-
-      const parsed = parseDreamResult(summaryResult.text);
-      let summary = "";
-      let totalGaps = 0;
-
-      if (parsed) {
-        if (parsed.reasoning) {
-          await appendLogLine(ctx, args.logId, `Gap analysis reasoning: ${parsed.reasoning}`);
-        }
-
-        const embedText = makeEmbedText();
-        for (const gap of parsed.gaps ?? []) {
-          const gapContent = `GAP: ${gap}`;
-          const embedding = await embedText(gapContent);
-          await ctx.runMutation(internal.intelligence.insert, {
-            orgId: args.orgId,
-            content: gapContent,
-            category: "observation",
-            confidence: "inferred",
-            source: "dream",
-            embedding,
-          });
-          totalGaps++;
-        }
-
-        summary = parsed.summary ?? "";
-        if (summary) {
-          await appendLogLine(ctx, args.logId, `Summary: ${summary}`);
-        }
-        if (totalGaps > 0) {
-          await appendLogLine(ctx, args.logId, `Identified ${totalGaps} knowledge gaps`);
-        }
-      }
-
-      if (summary) {
-        await ctx.runMutation(internal.orgs.updateDreamResults, {
-          orgId: args.orgId,
-          intelligenceSummary: summary,
-          lastDreamAt: Date.now(),
-        });
-      }
-
-      const currentLog = await ctx.runQuery(internal.dreamLogs.get, { id: args.logId });
-      const totalDeleted = currentLog?.entriesDeleted ?? 0;
-      const totalConsolidated = currentLog?.entriesConsolidated ?? 0;
-      const duration = Date.now() - args.startTime;
-
-      await appendLogLine(ctx, args.logId,
-        `Complete: ${totalDeleted} deleted, ${totalConsolidated} consolidated, ${totalGaps} gaps (${Math.round(duration / 1000)}s)`,
-      );
-
-      await ctx.runMutation(internal.dreamLogs.update, {
-        id: args.logId,
-        status: "success",
-        gapsIdentified: totalGaps,
-        summary: summary || undefined,
-        durationMs: duration,
-      });
-    } catch (err) {
-      logAiError("dreamFinalize", err, { orgId: args.orgId });
-      const errMsg = err instanceof Error ? err.message : String(err);
-      await appendLogLine(ctx, args.logId, `Finalize error: ${errMsg}`);
-      await ctx.runMutation(internal.dreamLogs.update, {
-        id: args.logId,
-        status: "error",
-        error: errMsg,
-        durationMs: Date.now() - args.startTime,
-      });
-    }
+    await ctx.runMutation(internal.dreamLogs.update, {
+      id: args.logId,
+      status: "success",
+      durationMs: duration,
+    });
   },
 });
 
