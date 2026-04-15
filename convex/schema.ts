@@ -43,6 +43,12 @@ export default defineSchema({
     context: v.optional(v.string()),
     industry: v.optional(v.string()),
     industryVertical: v.optional(v.string()),
+    // Relationship context — helps categorize intelligence entries
+    clientsContext: v.optional(v.string()),    // who the org's clients/customers are
+    vendorsContext: v.optional(v.string()),    // key vendors and service providers
+    insuranceContext: v.optional(v.string()),  // brokers, carriers, insurance relationships
+    investorsContext: v.optional(v.string()),  // investors, shareholders, funding
+    partnersContext: v.optional(v.string()),   // joint ventures, affiliates, partners
     // Broker info
     insuranceBroker: v.optional(v.string()),
     brokerContactName: v.optional(v.string()),

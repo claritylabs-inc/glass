@@ -154,6 +154,12 @@ export const dreamForOrg = internalAction({
     if (org?.context) orgParts.push(`Description: ${org.context}`);
     if (org?.industry) orgParts.push(`Industry: ${org.industry}`);
     if (org?.website) orgParts.push(`Website: ${org.website}`);
+    // Relationship context — critical for correct categorization
+    if (org?.clientsContext) orgParts.push(`Clients/Customers: ${org.clientsContext}`);
+    if (org?.vendorsContext) orgParts.push(`Vendors/Suppliers: ${org.vendorsContext}`);
+    if (org?.insuranceContext) orgParts.push(`Insurance relationships: ${org.insuranceContext}`);
+    if (org?.investorsContext) orgParts.push(`Investors: ${org.investorsContext}`);
+    if (org?.partnersContext) orgParts.push(`Partners: ${org.partnersContext}`);
     const orgContext = orgParts.length > 0 ? orgParts.join(". ") : "";
 
     // Group by category

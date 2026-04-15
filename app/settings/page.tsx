@@ -79,6 +79,11 @@ export default function SettingsPage() {
   const [context, setContext] = useState("");
   const [industry, setIndustry] = useState("");
   const [industryVertical, setIndustryVertical] = useState("");
+  const [clientsContext, setClientsContext] = useState("");
+  const [vendorsContext, setVendorsContext] = useState("");
+  const [insuranceContext, setInsuranceContext] = useState("");
+  const [investorsContext, setInvestorsContext] = useState("");
+  const [partnersContext, setPartnersContext] = useState("");
   const [insuranceBroker, setInsuranceBroker] = useState("");
   const [brokerContactName, setBrokerContactName] = useState("");
   const [brokerContactEmail, setBrokerContactEmail] = useState("");
@@ -124,6 +129,11 @@ export default function SettingsPage() {
       setContext(org.context ?? "");
       setIndustry(org.industry ?? "");
       setIndustryVertical(org.industryVertical ?? "");
+      setClientsContext(org.clientsContext ?? "");
+      setVendorsContext(org.vendorsContext ?? "");
+      setInsuranceContext(org.insuranceContext ?? "");
+      setInvestorsContext(org.investorsContext ?? "");
+      setPartnersContext(org.partnersContext ?? "");
       setInsuranceBroker(org.insuranceBroker ?? "");
       setBrokerContactName(org.brokerContactName ?? "");
       setBrokerContactEmail(org.brokerContactEmail ?? "");
@@ -144,6 +154,11 @@ export default function SettingsPage() {
         context: context || undefined,
         industry: industry || undefined,
         industryVertical: industryVertical || undefined,
+        clientsContext: clientsContext || undefined,
+        vendorsContext: vendorsContext || undefined,
+        insuranceContext: insuranceContext || undefined,
+        investorsContext: investorsContext || undefined,
+        partnersContext: partnersContext || undefined,
         insuranceBroker: insuranceBroker || undefined,
         brokerContactName: brokerContactName || undefined,
         brokerContactEmail: brokerContactEmail || undefined,
@@ -168,6 +183,11 @@ export default function SettingsPage() {
         setIndustry(result.industry);
         setIndustryVertical(result.industryVertical ?? "");
       }
+      if (result.clientsContext) setClientsContext(result.clientsContext);
+      if (result.vendorsContext) setVendorsContext(result.vendorsContext);
+      if (result.insuranceContext) setInsuranceContext(result.insuranceContext);
+      if (result.investorsContext) setInvestorsContext(result.investorsContext);
+      if (result.partnersContext) setPartnersContext(result.partnersContext);
       toast.success("Company info extracted");
     } catch {
       toast.error("Failed to extract company info");
@@ -401,6 +421,83 @@ export default function SettingsPage() {
                           rows={4}
                           className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors resize-none overflow-hidden"
                         />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Relationship Context section */}
+                  <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] mb-4">
+                    <div className="px-5 py-3.5 border-b border-foreground/6">
+                      <h3 className="!mb-0 text-sm font-medium text-foreground">Relationship Context</h3>
+                      <p className="text-label-sm text-muted-foreground mt-0.5">
+                        Helps Prism correctly categorize intelligence about your business relationships.
+                        {website && (
+                          <> Auto-populated from your website — edit to refine.</>
+                        )}
+                      </p>
+                    </div>
+                    <div className="px-5 py-5 space-y-4">
+                      <div>
+                        <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+                          Clients & Customers
+                        </label>
+                        <input
+                          type="text"
+                          value={clientsContext}
+                          onChange={(e) => setClientsContext(e.target.value)}
+                          placeholder="e.g. Small to mid-size restaurants in the Bay Area"
+                          className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+                          Vendors & Service Providers
+                        </label>
+                        <input
+                          type="text"
+                          value={vendorsContext}
+                          onChange={(e) => setVendorsContext(e.target.value)}
+                          placeholder="e.g. AWS for cloud, Stripe for payments, WeWork for office space"
+                          className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+                          Insurance Relationships
+                        </label>
+                        <input
+                          type="text"
+                          value={insuranceContext}
+                          onChange={(e) => setInsuranceContext(e.target.value)}
+                          placeholder="e.g. Marsh as broker, Hartford and Travelers as carriers"
+                          className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                        />
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+                            Investors & Shareholders
+                          </label>
+                          <input
+                            type="text"
+                            value={investorsContext}
+                            onChange={(e) => setInvestorsContext(e.target.value)}
+                            placeholder="e.g. Series A from Sequoia, angel investors"
+                            className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+                            Partners & Affiliates
+                          </label>
+                          <input
+                            type="text"
+                            value={partnersContext}
+                            onChange={(e) => setPartnersContext(e.target.value)}
+                            placeholder="e.g. Joint venture with ABC Corp, reseller agreement with XYZ"
+                            className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                          />
+                        </div>
                       </div>
                     </div>
                   </div>

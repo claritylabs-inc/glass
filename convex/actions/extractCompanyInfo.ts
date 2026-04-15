@@ -56,6 +56,11 @@ export const extractCompanyInfo = action({
 1. "companyContext": A 2-4 sentence description of the company. Include their industry, what they do, approximate size if mentioned, location, and key products/services. Be concise and factual.
 2. "industry": The best-matching industry value from the list below.
 3. "industryVertical": The best-matching vertical value for that industry from the list below.
+4. "clientsContext": Who are the company's typical clients/customers? (e.g. "Small to mid-size restaurants in the Bay Area", "Enterprise SaaS companies"). Leave empty if not clear from the website.
+5. "vendorsContext": Key vendors, suppliers, or service providers mentioned or implied. (e.g. "AWS for cloud hosting, Stripe for payments"). Leave empty if not clear.
+6. "insuranceContext": Any insurance brokers, carriers, or insurance relationships mentioned. Leave empty if not found.
+7. "investorsContext": Any investors, funding sources, or shareholders mentioned. Leave empty if not found.
+8. "partnersContext": Any business partners, affiliates, or joint ventures mentioned. Leave empty if not found.
 
 Valid industry values and their verticals:
 ${INDUSTRY_REF}
@@ -89,12 +94,39 @@ ${html}`,
       // If JSON parsing fails, use the raw text as companyContext
     }
 
+    // Extract relationship context fields
+    let clientsContext: string | undefined;
+    let vendorsContext: string | undefined;
+    let insuranceContext: string | undefined;
+    let investorsContext: string | undefined;
+    let partnersContext: string | undefined;
+    try {
+      const parsed = JSON.parse(text.replace(/```json?\n?|\n?```/g, "").trim());
+      if (parsed.clientsContext) clientsContext = parsed.clientsContext;
+      if (parsed.vendorsContext) vendorsContext = parsed.vendorsContext;
+      if (parsed.insuranceContext) insuranceContext = parsed.insuranceContext;
+      if (parsed.investorsContext) investorsContext = parsed.investorsContext;
+      if (parsed.partnersContext) partnersContext = parsed.partnersContext;
+    } catch {
+      // Already handled above
+    }
+
     // Save to user profile
     const updates: Record<string, string> = { companyContext };
     if (industry) updates.industry = industry;
     if (industryVertical) updates.industryVertical = industryVertical;
     await ctx.runMutation(api.users.updateProfile, updates);
 
-    return { success: true, companyContext, industry, industryVertical };
+    return {
+      success: true,
+      companyContext,
+      industry,
+      industryVertical,
+      clientsContext,
+      vendorsContext,
+      insuranceContext,
+      investorsContext,
+      partnersContext,
+    };
   },
 });
