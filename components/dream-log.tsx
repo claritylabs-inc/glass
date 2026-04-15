@@ -127,15 +127,28 @@ export function DreamLog() {
 
                       {/* Streaming log lines */}
                       {log.log && log.log.length > 0 && (
-                        <div className="mt-2 rounded-md bg-foreground/[0.02] border border-foreground/4 px-3 py-2 max-h-40 overflow-y-auto">
-                          {log.log.map((line, i) => (
-                            <p
-                              key={i}
-                              className="text-label-sm text-muted-foreground/70 font-mono leading-relaxed"
-                            >
-                              {line}
-                            </p>
-                          ))}
+                        <div className="mt-2 rounded-md bg-foreground/[0.02] border border-foreground/4 px-3 py-2 max-h-60 overflow-y-auto">
+                          {log.log.map((line, i) => {
+                            const isReasoning = line.includes("reasoning:");
+                            const isError = line.startsWith("Error:") || line.includes("failed");
+                            const isComplete = line.startsWith("Complete:");
+                            return (
+                              <p
+                                key={i}
+                                className={`text-label-sm font-mono leading-relaxed ${
+                                  isReasoning
+                                    ? "text-indigo-500/60 dark:text-indigo-400/50 pl-2 border-l-2 border-indigo-500/20 ml-1 my-0.5"
+                                    : isError
+                                      ? "text-red-500/70"
+                                      : isComplete
+                                        ? "text-emerald-600/70 dark:text-emerald-400/60 font-medium"
+                                        : "text-muted-foreground/70"
+                                }`}
+                              >
+                                {line}
+                              </p>
+                            );
+                          })}
                         </div>
                       )}
 

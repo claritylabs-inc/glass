@@ -177,14 +177,20 @@ export const dreamForOrg = internalAction({
         const result = await generateText({
           model: getModel("analysis"),
           system: `You are an insurance intelligence analyst. Respond with ONLY valid JSON, no markdown.
-Format: { "deleteIds": ["id1"], "consolidated": [{ "content": "...", "category": "${category}" }] }`,
+Format: { "reasoning": "brief explanation of what you're deleting and why, and what you're consolidating", "deleteIds": ["id1"], "consolidated": [{ "content": "...", "category": "${category}" }] }`,
           prompt: `${CATEGORY_PROMPT}\n\nCategory: ${category}\nEntries:\n${lines.join("\n")}`,
         });
 
         const parsed = parseDreamResult(result.text);
         if (!parsed) {
           await appendLog(`${category}: failed to parse LLM output, skipping`);
+          await appendLog(`  Raw (first 300 chars): ${result.text.slice(0, 300)}`);
           continue;
+        }
+
+        // Stream the LLM's reasoning into the log
+        if ((parsed as any).reasoning) {
+          await appendLog(`${category} reasoning: ${(parsed as any).reasoning}`);
         }
 
         const deleteIds = (parsed.deleteIds ?? []).filter((id) => entryIdSet.has(id as any));
@@ -233,7 +239,7 @@ Format: { "deleteIds": ["id1"], "consolidated": [{ "content": "...", "category":
       const summaryResult = await generateText({
         model: getModel("analysis"),
         system: `You are an insurance intelligence analyst. Respond with ONLY valid JSON, no markdown.
-Format: { "gaps": ["question1", "question2"], "summary": "2-3 sentence summary of this organization's intelligence profile" }`,
+Format: { "reasoning": "brief analysis of the org's intelligence profile and what's missing", "gaps": ["question1", "question2"], "summary": "2-3 sentence summary of this organization's intelligence profile" }`,
         prompt: `Review these ${remaining.length} intelligence entries and identify:
 1. Important GAPS — what should we know about this organization but don't?
 2. A 2-3 sentence SUMMARY of the organization's overall intelligence profile.
@@ -245,6 +251,9 @@ Entries (truncated for review):\n${summaryLines.join("\n")}`,
       let summary = "";
 
       if (summaryParsed) {
+        if ((summaryParsed as any).reasoning) {
+          await appendLog(`Gap analysis reasoning: ${(summaryParsed as any).reasoning}`);
+        }
         for (const gap of summaryParsed.gaps ?? []) {
           const gapContent = `GAP: ${gap}`;
           const embedding = await embedText(gapContent);
