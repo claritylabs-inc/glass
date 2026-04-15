@@ -343,6 +343,7 @@ export default function ConnectionsPage() {
     try {
       await consolidate();
       toast.success("Consolidation started — this may take a minute");
+      handleTabChange("activity");
     } catch {
       toast.error("Failed to start consolidation");
     } finally {
@@ -858,10 +859,7 @@ export default function ConnectionsPage() {
                   <ExtractionTable extractions={pending} />
                 </div>
               )}
-              <div>
-                <h3 className="text-body-sm font-medium text-foreground mb-3">Dream Consolidation</h3>
-                <DreamLog />
-              </div>
+              <DreamLog />
               <div>
                 <h3 className="text-body-sm font-medium text-foreground mb-3">Extraction History</h3>
                 <ExtractionLog entries={log ?? []} />
