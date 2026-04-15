@@ -24,6 +24,16 @@ const INTEL_CATEGORY_COLORS: Record<string, string> = {
   risk: "bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400",
   relationship:
     "bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400",
+  clients:
+    "bg-lime-50 text-lime-600 dark:bg-lime-950/40 dark:text-lime-400",
+  insurance:
+    "bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-400",
+  investors:
+    "bg-pink-50 text-pink-600 dark:bg-pink-950/40 dark:text-pink-400",
+  vendors:
+    "bg-orange-50 text-orange-600 dark:bg-orange-950/40 dark:text-orange-400",
+  partners:
+    "bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400",
   observation:
     "bg-gray-50 text-gray-600 dark:bg-gray-800/40 dark:text-gray-400",
 };

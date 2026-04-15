@@ -97,6 +97,11 @@ export const insert = internalMutation({
       v.literal("coverage"),
       v.literal("risk"),
       v.literal("relationship"),
+      v.literal("clients"),
+      v.literal("insurance"),
+      v.literal("investors"),
+      v.literal("vendors"),
+      v.literal("partners"),
       v.literal("observation"),
     ),
     confidence: v.union(

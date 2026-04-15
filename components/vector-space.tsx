@@ -36,6 +36,11 @@ const CHUNK_COLORS: Record<string, string> = {
   financial: "#10b981",
   risk: "#ef4444",
   relationship: "#f59e0b",
+  clients: "#84cc16",
+  insurance: "#6366f1",
+  investors: "#ec4899",
+  vendors: "#f97316",
+  partners: "#f59e0b",
   observation: "#6b7280",
 };
 
@@ -59,6 +64,11 @@ const CHUNK_LABELS: Record<string, string> = {
   financial: "Financial",
   risk: "Risk",
   relationship: "Relationship",
+  clients: "Clients",
+  insurance: "Insurance",
+  investors: "Investors",
+  vendors: "Vendors",
+  partners: "Partners",
   observation: "Observation",
 };
 

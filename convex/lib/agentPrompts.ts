@@ -105,6 +105,11 @@ export async function buildIntelligenceContext(
       coverage: "Coverage & Insurance",
       risk: "Risk Signals",
       relationship: "Relationships",
+      clients: "Client Relationships",
+      insurance: "Broker & Insurance Relationships",
+      investors: "Investor Relationships",
+      vendors: "Vendors & Service Providers",
+      partners: "Partners",
       observation: "Observations",
     };
 

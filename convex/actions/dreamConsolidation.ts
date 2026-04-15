@@ -63,7 +63,11 @@ WHY ATOMIC: Each entry gets its own embedding vector. A query like "what's our r
    - financial: revenue, payroll, assets, budgets
    - coverage: insurance policies, limits, deductibles
    - risk: claims, incidents, hazards, compliance
-   - relationship: broker, carrier, vendor, client mentions
+   - clients: client and customer relationships
+   - insurance: broker, carrier, underwriter, insurance relationships
+   - investors: investor, shareholder, funding relationships
+   - vendors: vendors, service providers, suppliers, procurement, subcontractors
+   - partners: general partnerships or uncertain relationship types
    - observation: general business changes or plans
 
 IMPORTANT:

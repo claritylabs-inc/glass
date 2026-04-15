@@ -265,9 +265,9 @@ IMPORTANT: Include temporal context when available. If the email mentions dates,
 
 Respond with ONLY valid JSON, no markdown.
 
-Format: { "entries": [{ "content": "...", "category": "company_info" | "products_services" | "operations" | "employees" | "financial" | "relationship" }] }
+Format: { "entries": [{ "content": "...", "category": "company_info" | "products_services" | "operations" | "employees" | "financial" | "clients" | "insurance" | "investors" | "vendors" | "partners" }] }
 
-Category guide: company_info = entity details, locations, legal structure. products_services = what the company sells or provides. operations = internal processes, equipment, fleet, facilities. employees = headcount, roles, HR. financial = revenue, payroll, assets. relationship = broker, carrier, vendor, client mentions.
+Category guide: company_info = entity details, locations, legal structure. products_services = what the company sells or provides. operations = internal processes, equipment, fleet, facilities. employees = headcount, roles, HR. financial = revenue, payroll, assets. clients = client/customer relationships. insurance = broker, carrier, underwriter relationships. investors = investor, shareholder, funding. vendors = vendors, service providers, suppliers, procurement. partners = general partnerships or uncertain relationship types.
 
 If no relevant business facts found, return { "entries": [] }.`,
           prompt: emailContext,
