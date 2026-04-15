@@ -171,7 +171,7 @@ export const extractFromDocument = action({
       /* ── Step 2: Extract ─────────────────────────────────────── */
       let allEntries: Array<{ content: string; category: string }>;
 
-      if (classification.documentType === "financial_statement") {
+      if (["financial_statement", "loss_run", "payroll_schedule"].includes(classification.documentType)) {
         // Financial docs: structured KV extraction + supplemental business context
         const [financialEntries, businessResult] = await Promise.all([
           extractFinancialKVs(fileName, truncated, classification),
