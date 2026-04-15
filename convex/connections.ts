@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query, internalQuery, internalMutation } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { requireOrgAccess, requireOrgAdmin, getOrgAccess } from "./lib/orgAuth";
 
 export const list = query({
@@ -160,6 +161,7 @@ export const connectGoogle = mutation({
     accessToken: v.string(),
     refreshToken: v.string(),
     tokenExpiry: v.number(),
+    sinceDate: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const expected = process.env.GOOGLE_OAUTH_SERVER_SECRET;
@@ -188,7 +190,7 @@ export const connectGoogle = mutation({
       return existing._id;
     }
 
-    return await ctx.db.insert("emailConnections", {
+    const connectionId = await ctx.db.insert("emailConnections", {
       provider: "google",
       orgId,
       label: args.email,
@@ -196,7 +198,15 @@ export const connectGoogle = mutation({
       accessToken: args.accessToken,
       refreshToken: args.refreshToken,
       tokenExpiry: args.tokenExpiry,
+      lastScanParams: args.sinceDate ? { sinceDate: args.sinceDate } : undefined,
     });
+
+    // Schedule initial scan
+    await ctx.scheduler.runAfter(0, internal.actions.dailyScan.scanSingleConnection, {
+      connectionId,
+    });
+
+    return connectionId;
   },
 });
 

@@ -3,33 +3,12 @@
 import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
-import { generateText, Output } from "ai";
+import { generateText } from "ai";
 import { getModel } from "../lib/models";
 import { makeEmbedText } from "../lib/sdkCallbacks";
-import { z } from "zod";
 import { google } from "googleapis";
 import { OAuth2Client } from "google-auth-library";
 import { ImapFlow } from "imapflow";
-
-// ── Schemas ──
-
-const businessEntrySchema = z.object({
-  content: z.string(),
-  category: z.enum(["company_info", "operations", "financial", "relationship"]),
-});
-
-const riskEntrySchema = z.object({
-  content: z.string(),
-  category: z.enum(["coverage", "risk", "observation"]),
-});
-
-const businessExtractionSchema = z.object({
-  entries: z.array(businessEntrySchema),
-});
-
-const riskExtractionSchema = z.object({
-  entries: z.array(riskEntrySchema),
-});
 
 // ── Helpers ──
 
@@ -280,10 +259,9 @@ export const extractSingle = internalAction({
         generateText({
           model: getModel("email_extraction"),
           maxOutputTokens: 2048,
-          output: Output.object({ schema: businessExtractionSchema }),
-          system: `You are extracting business intelligence from an email. Extract structured facts about the company, its operations, finances, and relationships. Only extract facts that are clearly stated or strongly implied. Output JSON with an "entries" array.
+          system: `You are extracting business intelligence from an email. Extract structured facts about the company, its operations, finances, and relationships. Only extract facts that are clearly stated or strongly implied. Respond with ONLY valid JSON, no markdown.
 
-Each entry: { content: string, category: "company_info" | "operations" | "financial" | "relationship" }
+Format: { "entries": [{ "content": "...", "category": "company_info" | "operations" | "financial" | "relationship" }] }
 
 If no relevant business facts found, return { "entries": [] }.`,
           prompt: emailContext,
@@ -293,18 +271,24 @@ If no relevant business facts found, return { "entries": [] }.`,
         generateText({
           model: getModel("email_extraction"),
           maxOutputTokens: 2048,
-          output: Output.object({ schema: riskExtractionSchema }),
-          system: `You are extracting risk signals and insurance intelligence from an email. Extract information about coverage discussions, claims, incidents, compliance, risk exposures, and business changes. Only extract facts that are clearly stated or strongly implied. Output JSON with an "entries" array.
+          system: `You are extracting risk signals and insurance intelligence from an email. Extract information about coverage discussions, claims, incidents, compliance, risk exposures, and business changes. Only extract facts that are clearly stated or strongly implied. Respond with ONLY valid JSON, no markdown.
 
-Each entry: { content: string, category: "coverage" | "risk" | "observation" }
+Format: { "entries": [{ "content": "...", "category": "coverage" | "risk" | "observation" }] }
 
 If no relevant risk/insurance signals found, return { "entries": [] }.`,
           prompt: emailContext,
         }),
       ]);
 
-      const businessEntries = businessResult.output?.entries ?? [];
-      const riskEntries = riskResult.output?.entries ?? [];
+      function parseEntries(text: string): Array<{ content: string; category: string }> {
+        try {
+          const cleaned = text.replace(/```json\n?|```\n?/g, "").trim();
+          const parsed = JSON.parse(cleaned);
+          return Array.isArray(parsed?.entries) ? parsed.entries : [];
+        } catch { return []; }
+      }
+      const businessEntries = parseEntries(businessResult.text);
+      const riskEntries = parseEntries(riskResult.text);
       const allEntries = [...businessEntries, ...riskEntries];
 
       // ── Stage 3: Dedup + Embed + Store ──
@@ -332,7 +316,7 @@ If no relevant risk/insurance signals found, return { "entries": [] }.`,
           await ctx.runMutation(internal.intelligence.insert, {
             orgId: args.orgId,
             content: entry.content,
-            category: entry.category,
+            category: entry.category as any,
             confidence: "inferred" as const,
             source: "email" as const,
             sourceRef: args.emailId as string,

@@ -62,12 +62,14 @@ const CHUNK_LABELS: Record<string, string> = {
 function PointCloud({
   points,
   hoveredIndex,
+  selectedIndex,
   selectedType,
   onHover,
   onClick,
 }: {
   points: VectorPoint[];
   hoveredIndex: number | null;
+  selectedIndex: number | null;
   selectedType: string | null;
   onHover: (index: number | null) => void;
   onClick: (index: number) => void;
@@ -97,7 +99,8 @@ function PointCloud({
     points.forEach((p, i) => {
       const isFiltered = selectedType !== null && p.chunkType !== selectedType;
       const isHovered = hoveredIndex === i;
-      const scale = isHovered ? 0.18 : isFiltered ? 0.04 : 0.09;
+      const isSelected = selectedIndex === i;
+      const scale = isSelected ? 0.22 : isHovered ? 0.18 : isFiltered ? 0.04 : 0.09;
 
       tempObj.position.set(p.x, p.y, p.z);
       tempObj.scale.setScalar(scale);
@@ -105,8 +108,10 @@ function PointCloud({
       meshRef.current!.setMatrixAt(i, tempObj.matrix);
 
       tempColor.set(CHUNK_COLORS[p.chunkType] || "#94a3b8");
-      if (isFiltered) {
-        tempColor.multiplyScalar(0.3);
+      if (isSelected) {
+        tempColor.lerp(new THREE.Color("#ffffff"), 0.4);
+      } else if (isFiltered) {
+        tempColor.multiplyScalar(0.15);
       } else if (isHovered) {
         tempColor.lerp(new THREE.Color("#ffffff"), 0.3);
       }
@@ -245,6 +250,7 @@ function SceneBackground({ dark }: { dark: boolean }) {
 function Scene({
   points,
   hoveredIndex,
+  selectedIndex,
   selectedType,
   dark,
   onHover,
@@ -252,6 +258,7 @@ function Scene({
 }: {
   points: VectorPoint[];
   hoveredIndex: number | null;
+  selectedIndex: number | null;
   selectedType: string | null;
   dark: boolean;
   onHover: (index: number | null) => void;
@@ -263,12 +270,18 @@ function Scene({
       <PointCloud
         points={points}
         hoveredIndex={hoveredIndex}
+        selectedIndex={selectedIndex}
         selectedType={selectedType}
         onHover={onHover}
         onClick={onClick}
       />
       <SceneHelpers dark={dark} />
-      {hoveredIndex !== null && points[hoveredIndex] && (
+      {/* Persistent label on selected point */}
+      {selectedIndex !== null && points[selectedIndex] && (
+        <HoverLabel point={points[selectedIndex]} dark={dark} />
+      )}
+      {/* Hover label (only if different from selected) */}
+      {hoveredIndex !== null && hoveredIndex !== selectedIndex && points[hoveredIndex] && (
         <HoverLabel point={points[hoveredIndex]} dark={dark} />
       )}
       <OrbitControls
@@ -357,6 +370,7 @@ export function VectorSpace({ points, totalChunks }: VectorSpaceProps) {
           <Scene
             points={points}
             hoveredIndex={hoveredIndex}
+            selectedIndex={selectedIndex}
             selectedType={selectedType}
             dark={dark}
             onHover={setHoveredIndex}

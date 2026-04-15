@@ -7,14 +7,9 @@ import { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
 import { PillButton } from "@/components/ui/pill-button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { FadeIn } from "@/components/ui/fade-in";
 import {
   Paperclip,
   Search,
-  ShieldCheck,
-  ShieldX,
-  RotateCcw,
-  FileDown,
   Loader2,
 } from "lucide-react";
 
@@ -22,29 +17,29 @@ type ClassificationFilter = "all" | "insurance" | "not_insurance" | "unclassifie
 
 const PAGE_SIZE = 50;
 
-export function EmailReviewTable({
-  connectionId,
-}: {
+interface EmailReviewTableProps {
   connectionId: Id<"emailConnections">;
-}) {
+  /** Render function for toolbar actions based on selection */
+  onSelectionChange?: (selectedIds: Id<"emails">[]) => void;
+}
+
+export function EmailReviewTable({ connectionId, onSelectionChange }: EmailReviewTableProps) {
   const { results, status, loadMore } = usePaginatedQuery(
     api.emails.listPaginated,
     { connectionId },
     { initialNumItems: PAGE_SIZE }
   );
   const totalCount = useQuery(api.emails.count, { connectionId });
-  const emailIdsWithPolicies = useQuery(api.policies.emailIdsWithPolicies);
-  const updateClassification = useMutation(api.emails.updateClassification);
-  const resetProcessed = useMutation(api.emails.resetProcessed);
-  const triggerExtraction = useMutation(api.emails.triggerExtraction);
+
+  const pendingCount = useMemo(
+    () => results?.filter((e) => !e.processed).length ?? 0,
+    [results]
+  );
 
   const [filter, setFilter] = useState<ClassificationFilter>("all");
   const [search, setSearch] = useState("");
-
-  const policyEmailIds = useMemo(
-    () => new Set(emailIdsWithPolicies ?? []),
-    [emailIdsWithPolicies]
-  );
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [sortAsc, setSortAsc] = useState(false);
 
   const filtered = useMemo(() => {
     if (!results) return [];
@@ -69,12 +64,17 @@ export function EmailReviewTable({
       );
     }
 
+    list.sort((a, b) => {
+      const ta = new Date(a.date).getTime();
+      const tb = new Date(b.date).getTime();
+      return sortAsc ? ta - tb : tb - ta;
+    });
+
     return list;
-  }, [results, filter, search]);
+  }, [results, filter, search, sortAsc]);
 
-  // Infinite scroll sentinel — only trigger when CanLoadMore (not while loading)
+  // Infinite scroll
   const sentinelRef = useRef<HTMLDivElement>(null);
-
   useEffect(() => {
     if (status !== "CanLoadMore") return;
     const sentinel = sentinelRef.current;
@@ -91,37 +91,40 @@ export function EmailReviewTable({
     return () => observer.disconnect();
   }, [status, loadMore]);
 
-  const handleClassify = async (
-    id: Id<"emails">,
-    isInsuranceRelated: boolean
-  ) => {
-    try {
-      await updateClassification({ id, isInsuranceRelated });
-      toast.success(
-        isInsuranceRelated ? "Marked as insurance" : "Marked as not insurance"
-      );
-    } catch {
-      toast.error("Failed to update classification");
+  // Selection with shift+click range support
+  const lastClickedRef = useRef<number | null>(null);
+
+  const toggleSelect = (id: string, index?: number, shiftKey?: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+
+      if (shiftKey && lastClickedRef.current !== null && index !== undefined) {
+        const start = Math.min(lastClickedRef.current, index);
+        const end = Math.max(lastClickedRef.current, index);
+        for (let i = start; i <= end; i++) {
+          next.add(filtered[i]._id);
+        }
+      } else {
+        if (next.has(id)) next.delete(id); else next.add(id);
+      }
+
+      return next;
+    });
+    if (index !== undefined) lastClickedRef.current = index;
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === filtered.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filtered.map((e) => e._id)));
     }
   };
 
-  const handleReset = async (id: Id<"emails">) => {
-    try {
-      await resetProcessed({ id });
-      toast.success("Email reset for re-classification");
-    } catch {
-      toast.error("Failed to reset email");
-    }
-  };
-
-  const handleExtract = async (id: Id<"emails">) => {
-    try {
-      await triggerExtraction({ id });
-      toast.success("Extraction started");
-    } catch {
-      toast.error("Failed to trigger extraction");
-    }
-  };
+  // Notify parent of selection changes
+  useEffect(() => {
+    onSelectionChange?.([...selectedIds] as Id<"emails">[]);
+  }, [selectedIds, onSelectionChange]);
 
   const FILTERS: { value: ClassificationFilter; label: string }[] = [
     { value: "all", label: "All" },
@@ -142,14 +145,14 @@ export function EmailReviewTable({
 
   return (
     <div className="space-y-4">
-      {/* Filters */}
+      {/* Filters + search */}
       <div className="flex flex-wrap items-center gap-2">
         {FILTERS.map((f) => (
           <button
             key={f.value}
             type="button"
             onClick={() => setFilter(f.value)}
-            className={`px-3 py-1 rounded-full text-label-sm font-medium transition-colors ${
+            className={`px-3 py-1 rounded-full text-label-sm font-medium transition-colors cursor-pointer ${
               filter === f.value
                 ? "bg-foreground text-background"
                 : "bg-foreground/6 text-muted-foreground hover:bg-foreground/10"
@@ -162,20 +165,30 @@ export function EmailReviewTable({
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground/50" />
           <input
             type="text"
-            placeholder="Search subject or sender..."
+            placeholder="Search..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-8 pr-3 py-1.5 rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-foreground/20 w-64"
+            className="pl-8 pr-3 py-1.5 rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-foreground/20 w-48"
           />
         </div>
       </div>
 
-      {/* Summary */}
-      <p className="text-label-sm text-muted-foreground">
-        {filter !== "all" || search
-          ? `${filtered.length} of ${totalCount ?? "..."} emails (${filter.replace("_", " ")})`
-          : `${totalCount ?? "..."} emails`}
-      </p>
+      {/* Summary + processing indicator */}
+      <div className="flex items-center gap-3">
+        <p className="text-label-sm text-muted-foreground">
+          {selectedIds.size > 0
+            ? `${selectedIds.size} selected`
+            : filter !== "all" || search
+              ? `${filtered.length} of ${totalCount ?? "..."} emails`
+              : `${totalCount ?? "..."} emails`}
+        </p>
+        {pendingCount > 0 && (
+          <span className="inline-flex items-center gap-1.5 text-label-sm text-primary">
+            <Loader2 className="w-3 h-3 animate-spin" />
+            Processing {pendingCount} email{pendingCount !== 1 ? "s" : ""}
+          </span>
+        )}
+      </div>
 
       {/* Table */}
       {filtered.length === 0 && status !== "CanLoadMore" ? (
@@ -190,55 +203,65 @@ export function EmailReviewTable({
             <table className="w-full text-body-sm">
               <thead>
                 <tr className="border-b border-foreground/6 bg-foreground/[0.02]">
+                  <th className="w-10 px-3 py-2">
+                    <input
+                      type="checkbox"
+                      checked={filtered.length > 0 && selectedIds.size === filtered.length}
+                      onChange={toggleSelectAll}
+                      className="rounded border-foreground/20 cursor-pointer"
+                    />
+                  </th>
                   <th className="text-left px-3 py-2 font-medium text-muted-foreground">
-                    Subject / From
+                    Subject
                   </th>
-                  <th className="text-left px-3 py-2 font-medium text-muted-foreground whitespace-nowrap">
-                    Date
+                  <th className="text-left px-3 py-2 font-medium text-muted-foreground">
+                    From
                   </th>
-                  <th className="text-center px-3 py-2 font-medium text-muted-foreground w-10">
+                  <th
+                    className="text-left px-3 py-2 font-medium text-muted-foreground whitespace-nowrap cursor-pointer hover:text-foreground transition-colors select-none"
+                    onClick={() => setSortAsc(!sortAsc)}
+                  >
+                    Date {sortAsc ? "↑" : "↓"}
+                  </th>
+                  <th className="text-center px-3 py-2 font-medium text-muted-foreground w-8">
                     <Paperclip className="w-3.5 h-3.5 mx-auto" />
                   </th>
                   <th className="text-left px-3 py-2 font-medium text-muted-foreground">
-                    Classification
-                  </th>
-                  <th className="text-left px-3 py-2 font-medium text-muted-foreground hidden lg:table-cell">
-                    Reason
-                  </th>
-                  <th className="text-left px-3 py-2 font-medium text-muted-foreground">
-                    Status
-                  </th>
-                  <th className="text-right px-3 py-2 font-medium text-muted-foreground">
-                    Actions
+                    Type
                   </th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map((email, i) => {
-                  const hasPolicy = policyEmailIds.has(email._id);
+                  const isSelected = selectedIds.has(email._id);
                   const isInsurance = email.isInsuranceRelated === true;
                   const isNotInsurance = email.isInsuranceRelated === false;
-                  const isUnclassified =
-                    email.isInsuranceRelated === undefined ||
-                    email.isInsuranceRelated === null;
-                  const canExtract =
-                    isInsurance && email.hasAttachments && !hasPolicy;
 
                   return (
-                    <FadeIn
+                    <tr
                       key={email._id}
-                      when={true}
-                      staggerIndex={i % PAGE_SIZE}
-                      duration={0.3}
-                      as="tr"
-                      className="border-b border-foreground/4 last:border-b-0 hover:bg-foreground/[0.02] transition-colors"
+                      onClick={(e) => toggleSelect(email._id, i, e.shiftKey)}
+                      className={`border-b border-foreground/4 last:border-b-0 transition-colors cursor-pointer ${
+                        isSelected ? "bg-primary/[0.04]" : "hover:bg-foreground/[0.02]"
+                      }`}
                     >
-                      <td className="px-3 py-2 max-w-xs">
+                      <td className="px-3 py-2">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={(e) => toggleSelect(email._id, i, e.nativeEvent instanceof MouseEvent && (e.nativeEvent as MouseEvent).shiftKey)}
+                          onClick={(e) => e.stopPropagation()}
+                          className="rounded border-foreground/20 cursor-pointer"
+                        />
+                      </td>
+                      <td className="px-3 py-2 max-w-[280px]">
                         <p className="font-medium text-foreground truncate">
                           {email.subject || "(no subject)"}
                         </p>
-                        <p className="text-label-sm text-muted-foreground/60 truncate">
-                          {email.from}
+                      </td>
+                      <td className="px-3 py-2 max-w-[200px]">
+                        <p className="text-muted-foreground truncate">
+                          {extractName(email.from)}
                         </p>
                       </td>
                       <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">
@@ -246,98 +269,36 @@ export function EmailReviewTable({
                       </td>
                       <td className="px-3 py-2 text-center">
                         {email.hasAttachments && (
-                          <Paperclip className="w-3.5 h-3.5 text-muted-foreground/50 mx-auto" />
+                          <Paperclip className="w-3.5 h-3.5 text-muted-foreground/40 mx-auto" />
                         )}
                       </td>
                       <td className="px-3 py-2">
-                        <ClassificationBadge
-                          isInsurance={isInsurance}
-                          isNotInsurance={isNotInsurance}
-                          isUnclassified={isUnclassified}
-                          confidence={email.classificationConfidence}
-                        />
-                      </td>
-                      <td className="px-3 py-2 hidden lg:table-cell max-w-[200px]">
-                        <p className="text-label-sm text-muted-foreground/60 truncate">
-                          {email.classificationReason || "—"}
-                        </p>
-                      </td>
-                      <td className="px-3 py-2">
-                        {email.processed ? (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400">
-                            Processed
+                        {isInsurance ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400">
+                            Insurance
+                          </span>
+                        ) : isNotInsurance ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-zinc-100 dark:bg-zinc-800/40 text-zinc-500 dark:text-zinc-400">
+                            Other
                           </span>
                         ) : (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-100 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400">
                             Pending
                           </span>
                         )}
-                        {hasPolicy && (
-                          <span className="ml-1 inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium bg-blue-100 dark:bg-blue-950/40 text-blue-700 dark:text-blue-400">
-                            Has Policy
-                          </span>
-                        )}
                       </td>
-                      <td className="px-3 py-2">
-                        <div className="flex items-center justify-end gap-1">
-                          {isInsurance || isUnclassified ? (
-                            <PillButton
-                              size="compact"
-                              variant="secondary"
-                              onClick={() => handleClassify(email._id, false)}
-                              title="Mark as Not Insurance"
-                            >
-                              <ShieldX className="w-3 h-3" />
-                              Not Ins.
-                            </PillButton>
-                          ) : (
-                            <PillButton
-                              size="compact"
-                              variant="secondary"
-                              onClick={() => handleClassify(email._id, true)}
-                              title="Mark as Insurance"
-                            >
-                              <ShieldCheck className="w-3 h-3" />
-                              Insurance
-                            </PillButton>
-                          )}
-                          {canExtract && (
-                            <PillButton
-                              size="compact"
-                              variant="primary"
-                              onClick={() => handleExtract(email._id)}
-                              title="Trigger extraction"
-                            >
-                              <FileDown className="w-3 h-3" />
-                              Extract
-                            </PillButton>
-                          )}
-                          {email.processed && (
-                            <PillButton
-                              size="compact"
-                              variant="secondary"
-                              onClick={() => handleReset(email._id)}
-                              title="Reset for re-classification"
-                            >
-                              <RotateCcw className="w-3 h-3" />
-                              Reset
-                            </PillButton>
-                          )}
-                        </div>
-                      </td>
-                    </FadeIn>
+                    </tr>
                   );
                 })}
               </tbody>
             </table>
           </div>
 
-          {/* Infinite scroll sentinel + loading indicator */}
           <div ref={sentinelRef} className="h-1" />
           {status === "LoadingMore" && (
             <div className="flex items-center justify-center gap-2 py-4 text-muted-foreground">
               <Loader2 className="w-4 h-4 animate-spin" />
-              <span className="text-label-sm">Loading more emails...</span>
+              <span className="text-label-sm">Loading more...</span>
             </div>
           )}
         </div>
@@ -346,54 +307,17 @@ export function EmailReviewTable({
   );
 }
 
-function ClassificationBadge({
-  isInsurance,
-  isNotInsurance,
-  isUnclassified,
-  confidence,
-}: {
-  isInsurance: boolean;
-  isNotInsurance: boolean;
-  isUnclassified: boolean;
-  confidence?: number;
-}) {
-  const tooltip = confidence != null ? `Confidence: ${Math.round(confidence * 100)}%` : undefined;
-
-  if (isInsurance) {
-    return (
-      <span
-        title={tooltip}
-        className="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400"
-      >
-        Insurance
-      </span>
-    );
-  }
-  if (isNotInsurance) {
-    return (
-      <span
-        title={tooltip}
-        className="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium bg-zinc-100 dark:bg-zinc-800/40 text-zinc-600 dark:text-zinc-400"
-      >
-        Not Insurance
-      </span>
-    );
-  }
-  return (
-    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400">
-      Unclassified
-    </span>
-  );
+/** Extract display name from "Name <email>" format */
+function extractName(from: string): string {
+  const match = from.match(/^([^<]+)</);
+  if (match) return match[1].trim();
+  return from;
 }
 
 function formatDate(dateStr: string): string {
   try {
     const d = new Date(dateStr);
-    return d.toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
+    return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
   } catch {
     return dateStr;
   }

@@ -14,6 +14,7 @@ import {
   FileText,
   FileInput,
   Mail,
+  Layers,
   Asterisk,
   Settings,
   ChevronLeft,
@@ -39,7 +40,7 @@ const INSURANCE_ITEMS = [
 ];
 
 const TOOLS_ITEMS = [
-  { href: "/connections", label: "Connections", icon: Mail, shortcut: "E" },
+  { href: "/connections", label: "Context", icon: Layers, shortcut: "E" },
   { href: "/agent", label: "Prism", icon: Asterisk, shortcut: "G" },
 ];
 

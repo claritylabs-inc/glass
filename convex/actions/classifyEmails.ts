@@ -67,6 +67,18 @@ export const classifyEmails = internalAction({
         const subjectLower = email.subject.toLowerCase();
         const fromLower = email.from.toLowerCase();
 
+        // Skip internal emails from claritylabs.inc — never insurance
+        if (fromLower.includes("@claritylabs.inc") || fromLower.includes("claritylabs.inc>")) {
+          await ctx.runMutation(api.emails.markClassified, {
+            id: email._id,
+            isInsuranceRelated: false,
+            classificationReason: "Internal claritylabs.inc email",
+            classificationConfidence: 1.0,
+          });
+          processed++;
+          continue;
+        }
+
         // Fast path: keyword heuristics
         const keywordMatch = INSURANCE_KEYWORDS.some(
           (kw) => subjectLower.includes(kw.toLowerCase())
@@ -210,5 +222,12 @@ Respond with JSON only: {"isInsurance": boolean, "reason": "brief explanation", 
         },
       });
     }
+
+    // Schedule intelligence extraction (triage → extract context from all classified emails)
+    await ctx.scheduler.runAfter(0, internal.actions.triageEmails.triageAndExtract, {
+      connectionId: args.connectionId,
+      userId: args.userId,
+      orgId: args.orgId,
+    });
   },
 });

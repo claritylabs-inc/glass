@@ -910,3 +910,34 @@ export const restore = mutation({
     });
   },
 });
+
+export const remove = mutation({
+  args: { id: v.id("policies") },
+  handler: async (ctx, args) => {
+    const { orgId } = await requireOrgAccess(ctx);
+    const policy = await ctx.db.get(args.id);
+    if (!policy || policy.orgId !== orgId) throw new Error("Not found");
+
+    // Delete associated document chunks
+    const chunks = await ctx.db
+      .query("documentChunks")
+      .withIndex("by_policyId", (idx) => idx.eq("policyId", args.id))
+      .collect();
+    for (const chunk of chunks) {
+      await ctx.db.delete(chunk._id);
+    }
+
+    // Delete associated intelligence entries (sourceRef = policyId)
+    const intel = await ctx.db
+      .query("orgIntelligence")
+      .withIndex("by_orgId", (idx) => idx.eq("orgId", orgId))
+      .collect();
+    for (const entry of intel) {
+      if (entry.sourceRef === args.id) {
+        await ctx.db.delete(entry._id);
+      }
+    }
+
+    await ctx.db.delete(args.id);
+  },
+});

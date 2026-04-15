@@ -1,8 +1,8 @@
 "use node";
 
 import { v } from "convex/values";
-import { internalAction } from "../_generated/server";
-import { internal } from "../_generated/api";
+import { action, internalAction } from "../_generated/server";
+import { api, internal } from "../_generated/api";
 import { getModel } from "../lib/models";
 import { makeEmbedText } from "../lib/sdkCallbacks";
 import { logAiError } from "../lib/aiUtils";
@@ -170,5 +170,20 @@ ${formattedSections.join("\n\n")}`;
     } catch (err) {
       logAiError("dreamConsolidation", err, { orgId: args.orgId });
     }
+  },
+});
+
+// Public action for manual consolidation trigger
+export const consolidate = action({
+  args: {},
+  handler: async (ctx) => {
+    const viewer = await ctx.runQuery(api.users.viewer);
+    if (!viewer) throw new Error("Not authenticated");
+    const orgData = await ctx.runQuery(api.orgs.viewerOrg);
+    if (!orgData?.org) throw new Error("No organization");
+    await ctx.scheduler.runAfter(0, internal.actions.dreamConsolidation.dreamForOrg, {
+      orgId: orgData.org._id,
+    });
+    return { scheduled: true };
   },
 });

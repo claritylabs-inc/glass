@@ -3,15 +3,8 @@
 import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
-import { generateText, Output } from "ai";
+import { generateText } from "ai";
 import { getModel } from "../lib/models";
-import { z } from "zod";
-
-const triageSchema = z.object({
-  analyze: z.boolean(),
-  reason: z.string(),
-});
-
 export const triageAndExtract = internalAction({
   args: {
     connectionId: v.id("emailConnections"),
@@ -39,15 +32,16 @@ export const triageAndExtract = internalAction({
         const result = await generateText({
           model: getModel("triage"),
           maxOutputTokens: 256,
-          output: Output.object({ schema: triageSchema }),
-          prompt: `You are triaging emails for business intelligence extraction. Given this email metadata, should we fetch and analyze the full body? Skip newsletters, automated notifications, OTP codes, marketing emails, and spam. Respond with JSON: { analyze: boolean, reason: string }
-
-Subject: ${email.subject}
-From: ${email.from}
-Date: ${email.date}`,
+          system: `You are triaging emails for business intelligence extraction. Given email metadata, decide if the full body should be fetched and analyzed. Skip newsletters, automated notifications, OTP codes, marketing emails, and spam. Respond with ONLY valid JSON, no markdown.
+Format: { "analyze": true/false, "reason": "..." }`,
+          prompt: `Subject: ${email.subject}\nFrom: ${email.from}\nDate: ${email.date}`,
         });
 
-        const triage = result.output;
+        let triage: { analyze: boolean; reason: string } | null = null;
+        try {
+          const cleaned = result.text.replace(/```json\n?|```\n?/g, "").trim();
+          triage = JSON.parse(cleaned);
+        } catch { triage = { analyze: false, reason: "Failed to parse triage response" }; }
 
         if (triage?.analyze) {
           // Mark as pending and schedule extraction

@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
   }
 
   // Decode state and verify nonce
-  let state: { nonce: string; orgId: string };
+  let state: { nonce: string; orgId: string; sinceDate?: string };
   try {
     state = JSON.parse(Buffer.from(stateParam, "base64url").toString("utf-8"));
   } catch {
@@ -113,6 +113,7 @@ export async function GET(req: NextRequest) {
       accessToken: tokens.access_token,
       refreshToken: tokens.refresh_token,
       tokenExpiry: tokens.expiry_date ?? Date.now() + 3600 * 1000,
+      sinceDate: state.sinceDate ?? undefined,
     });
   } catch (err) {
     console.error("Failed to save Google connection:", err);
@@ -120,8 +121,10 @@ export async function GET(req: NextRequest) {
   }
 
   // Clear the nonce cookie and redirect to connections page
+  const redirectParams = new URLSearchParams({ google: "connected" });
+  if (state.sinceDate) redirectParams.set("sinceDate", state.sinceDate);
   const response = NextResponse.redirect(
-    `${appUrl}/connections?google=connected`,
+    `${appUrl}/connections?${redirectParams.toString()}`,
   );
   response.cookies.set("google_oauth_nonce", "", {
     httpOnly: true,

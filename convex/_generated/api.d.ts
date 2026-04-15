@@ -14,6 +14,7 @@ import type * as actions_dailyScan from "../actions/dailyScan.js";
 import type * as actions_dreamConsolidation from "../actions/dreamConsolidation.js";
 import type * as actions_extractCompanyInfo from "../actions/extractCompanyInfo.js";
 import type * as actions_extractEmailIntelligence from "../actions/extractEmailIntelligence.js";
+import type * as actions_extractFromDocument from "../actions/extractFromDocument.js";
 import type * as actions_extractFromUpload from "../actions/extractFromUpload.js";
 import type * as actions_extractPolicy from "../actions/extractPolicy.js";
 import type * as actions_extractSupplementary from "../actions/extractSupplementary.js";
@@ -99,6 +100,7 @@ declare const fullApi: ApiFromModules<{
   "actions/dreamConsolidation": typeof actions_dreamConsolidation;
   "actions/extractCompanyInfo": typeof actions_extractCompanyInfo;
   "actions/extractEmailIntelligence": typeof actions_extractEmailIntelligence;
+  "actions/extractFromDocument": typeof actions_extractFromDocument;
   "actions/extractFromUpload": typeof actions_extractFromUpload;
   "actions/extractPolicy": typeof actions_extractPolicy;
   "actions/extractSupplementary": typeof actions_extractSupplementary;

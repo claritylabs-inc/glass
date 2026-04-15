@@ -24,8 +24,11 @@ export async function GET(req: NextRequest) {
   // Generate a random nonce for CSRF protection
   const nonce = crypto.randomUUID();
 
-  // Encode orgId and nonce into the state parameter
-  const state = Buffer.from(JSON.stringify({ nonce, orgId })).toString(
+  // Optional: sinceDate for initial scan history
+  const sinceDate = req.nextUrl.searchParams.get("sinceDate");
+
+  // Encode orgId, nonce, and sinceDate into the state parameter
+  const state = Buffer.from(JSON.stringify({ nonce, orgId, sinceDate })).toString(
     "base64url",
   );
 
