@@ -321,11 +321,23 @@ function SelectedDetail({
   onClose: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const isTruncated = selected.text.length > 120;
+  const textRef = useRef<HTMLParagraphElement>(null);
+  const [isTruncated, setIsTruncated] = useState(false);
+
+  useEffect(() => {
+    setExpanded(false);
+  }, [selected]);
+
+  useEffect(() => {
+    const el = textRef.current;
+    if (el) {
+      setIsTruncated(el.scrollHeight > el.clientHeight + 1);
+    }
+  }, [selected, expanded]);
 
   return (
     <div className={`absolute bottom-4 left-4 z-10 backdrop-blur-md rounded-lg border px-4 py-3 ${
-      expanded ? "max-w-lg" : "max-w-sm"
+      expanded ? "max-w-lg max-h-64 overflow-y-auto" : "max-w-sm"
     } ${dark ? "bg-black/70 border-white/10" : "bg-white/80 border-foreground/10"}`}>
       <div className="flex items-center gap-2.5 mb-1.5">
         <span
@@ -339,10 +351,13 @@ function SelectedDetail({
       <p className={`text-label-sm mb-1 ${dark ? "text-white/40" : "text-muted-foreground/50"}`}>
         {selected.carrier} · {selected.policyNumber}
       </p>
-      <p className={`text-label-sm leading-relaxed ${expanded ? "" : "line-clamp-2"} ${dark ? "text-white/60" : "text-muted-foreground"}`}>
+      <p
+        ref={textRef}
+        className={`text-label-sm leading-relaxed ${expanded ? "" : "line-clamp-2"} ${dark ? "text-white/60" : "text-muted-foreground"}`}
+      >
         {selected.text}
       </p>
-      {isTruncated && (
+      {(isTruncated || expanded) && (
         <button
           type="button"
           onClick={() => setExpanded(!expanded)}
