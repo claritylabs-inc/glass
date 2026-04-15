@@ -68,7 +68,7 @@ WHY ATOMIC: Each entry gets its own embedding vector. A query like "what's our r
 
    EXTERNAL relationship categories (facts about OTHER companies/people):
    - clients: companies or people who BUY FROM this org
-   - insurance: brokers, carriers, underwriters who INSURE this org
+   - insurance: brokers, carriers, underwriters who INSURE this org (relationship only — NOT coverage details like limits, deductibles, or policy terms which belong in policy extraction)
    - investors: investors, shareholders, funds who INVEST IN this org
    - vendors: companies who SELL TO or PROVIDE SERVICES to this org
    - partners: joint ventures, affiliates, or uncertain external relationships
@@ -172,9 +172,27 @@ export const dreamForOrg = internalAction({
       durationMs: 0,
     });
 
+    // Delete all coverage entries upfront — coverage belongs in policy extraction, not org intelligence
+    const coverageEntries = entries.filter((e: any) => e.category === "coverage");
+    if (coverageEntries.length > 0) {
+      await ctx.runMutation(internal.intelligence.bulkDelete, {
+        ids: coverageEntries.map((e: any) => e._id),
+      });
+      await appendLogLine(ctx, logId, `Purged ${coverageEntries.length} coverage entries (handled by policy extraction)`);
+      await ctx.runMutation(internal.dreamLogs.update, {
+        id: logId,
+        entriesDeleted: coverageEntries.length,
+      });
+    }
+
+    // Also purge legacy "relationship" entries — should be recategorized into specific types
+    // (the category workers will handle recategorization for entries that are actually in other categories)
+
     // Schedule one action per category (each gets its own Convex action timeout)
+    // Skip "coverage" (just purged) and categories with < 2 entries
     let scheduled = 0;
     for (const category of categories) {
+      if (category === "coverage") continue;
       if (grouped[category] < 2) continue;
       await ctx.scheduler.runAfter(0, internal.actions.dreamConsolidation.dreamCategory, {
         orgId: args.orgId,
