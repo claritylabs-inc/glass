@@ -209,7 +209,7 @@ function SupplementaryCard({
   children,
 }: {
   title: string;
-  icon: React.ElementType;
+  icon: React.ComponentType<{ className?: string }>;
   pageNumber?: number;
   content: string;
   hasStructured: boolean;
