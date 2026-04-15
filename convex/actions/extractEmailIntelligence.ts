@@ -259,7 +259,11 @@ export const extractSingle = internalAction({
         generateText({
           model: getModel("email_extraction"),
           maxOutputTokens: 2048,
-          system: `You are extracting business intelligence from an email. Extract structured facts about the company, its operations, finances, and relationships. Only extract facts that are clearly stated or strongly implied. Respond with ONLY valid JSON, no markdown.
+          system: `You are extracting business intelligence from an email. Extract structured facts about the company, its operations, finances, and relationships. Only extract facts that are clearly stated or strongly implied.
+
+IMPORTANT: Include temporal context when available. If the email mentions dates, time periods, quarters, fiscal years, or "as of" dates, include them in the extracted fact. For example: "Annual revenue of $5M as of FY2025" rather than just "Annual revenue is $5M".
+
+Respond with ONLY valid JSON, no markdown.
 
 Format: { "entries": [{ "content": "...", "category": "company_info" | "operations" | "financial" | "relationship" }] }
 
@@ -271,7 +275,11 @@ If no relevant business facts found, return { "entries": [] }.`,
         generateText({
           model: getModel("email_extraction"),
           maxOutputTokens: 2048,
-          system: `You are extracting risk signals and insurance intelligence from an email. Extract information about coverage discussions, claims, incidents, compliance, risk exposures, and business changes. Only extract facts that are clearly stated or strongly implied. Respond with ONLY valid JSON, no markdown.
+          system: `You are extracting risk signals and insurance intelligence from an email. Extract information about coverage discussions, claims, incidents, compliance, risk exposures, and business changes. Only extract facts that are clearly stated or strongly implied.
+
+IMPORTANT: Include temporal context when available. If the email mentions dates, deadlines, renewal dates, or incident dates, include them in the extracted fact.
+
+Respond with ONLY valid JSON, no markdown.
 
 Format: { "entries": [{ "content": "...", "category": "coverage" | "risk" | "observation" }] }
 
@@ -320,6 +328,8 @@ If no relevant risk/insurance signals found, return { "entries": [] }.`,
             confidence: "inferred" as const,
             source: "email" as const,
             sourceRef: args.emailId as string,
+            sourceLabel: `Email: ${email.subject?.slice(0, 50) ?? "untitled"}`,
+            documentDate: email.date ? new Date(email.date).toISOString().slice(0, 10) : undefined,
             embedding,
           });
           inserted++;
