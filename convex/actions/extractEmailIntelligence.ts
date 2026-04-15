@@ -267,7 +267,8 @@ Respond with ONLY valid JSON, no markdown.
 
 Format: { "entries": [{ "content": "...", "category": "company_info" | "products_services" | "operations" | "employees" | "financial" | "clients" | "insurance" | "investors" | "vendors" | "partners" }] }
 
-Category guide: company_info = entity details, locations, legal structure. products_services = what the company sells or provides. operations = internal processes, equipment, fleet, facilities. employees = headcount, roles, HR. financial = revenue, payroll, assets. clients = client/customer relationships. insurance = broker, carrier, underwriter relationships. investors = investor, shareholder, funding. vendors = vendors, service providers, suppliers, procurement. partners = general partnerships or uncertain relationship types.
+INTERNAL categories (about THIS org): company_info = own entity details, legal name, addresses, structure. products_services = what this org sells/provides. operations = own internal processes, equipment, fleet. employees = own headcount, roles, HR. financial = own revenue, payroll, assets, expenses.
+EXTERNAL relationship categories (about OTHER parties): clients = companies/people who buy from this org. insurance = brokers, carriers who insure this org. investors = investors, shareholders. vendors = companies who sell to or serve this org. partners = joint ventures, affiliates, uncertain relationships.
 
 If no relevant business facts found, return { "entries": [] }.`,
           prompt: emailContext,

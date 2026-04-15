@@ -56,19 +56,31 @@ OPERATIONS (in priority order):
 
 WHY ATOMIC: Each entry gets its own embedding vector. A query like "what's our revenue?" should match a focused revenue entry with high cosine similarity, not a mega-entry where revenue is diluted among 15 other metrics.
 
-4. RECATEGORIZE entries that are in the wrong category. Available categories:
-   - company_info: entity details, locations, legal structure
-   - products_services: what the company sells or provides to customers
-   - operations: internal processes, equipment, fleet, facilities
-   - employees: headcount, roles, departments, HR
-   - financial: revenue, payroll, assets, budgets
-   - risk: claims, incidents, hazards, compliance
-   - clients: client and customer relationships
-   - insurance: broker, carrier, underwriter, insurance relationships
-   - investors: investor, shareholder, funding relationships
-   - vendors: vendors, service providers, suppliers, procurement, subcontractors
-   - partners: general partnerships or uncertain relationship types
-   - observation: general business changes or plans
+4. RECATEGORIZE entries that are in the wrong category. Pay close attention to INTERNAL vs EXTERNAL:
+
+   INTERNAL categories (facts about THIS organization itself):
+   - company_info: the org's own entity details, legal name, addresses, structure, founding date
+   - products_services: what this org sells or provides to its customers
+   - operations: this org's own internal processes, equipment, fleet, facilities
+   - employees: this org's own headcount, roles, departments, HR details
+   - financial: this org's own revenue, payroll, assets, budgets, expenses
+   - risk: claims, incidents, hazards, compliance issues affecting this org
+
+   EXTERNAL relationship categories (facts about OTHER companies/people):
+   - clients: companies or people who BUY FROM this org
+   - insurance: brokers, carriers, underwriters who INSURE this org
+   - investors: investors, shareholders, funds who INVEST IN this org
+   - vendors: companies who SELL TO or PROVIDE SERVICES to this org
+   - partners: joint ventures, affiliates, or uncertain external relationships
+
+   - observation: general business changes, plans, or anything that doesn't fit above
+
+   COMMON MISTAKES to fix via recategorize:
+   - "Acme Corp is a client" filed under company_info → should be clients
+   - "Uses AWS for hosting" filed under company_info → should be vendors
+   - "Broker is Smith Insurance" filed under relationship → should be insurance
+   - "CEO is John Smith" filed under relationship → should be employees
+   - "Annual revenue $5M" filed under operations → should be financial
 
 IMPORTANT:
 - deleteIds: exact bracket IDs from the entries (the string inside [...])

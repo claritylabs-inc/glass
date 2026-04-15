@@ -42,19 +42,23 @@ Rules:
 - If the user message contains NO extractable business facts, return { "entries": [] }
 - Include temporal context when dates or time periods are mentioned
 
-Category guide:
-- company_info: entity details, locations, legal structure
-- products_services: what the company sells or provides to customers
-- operations: internal processes, equipment, fleet, facilities
-- employees: headcount, roles, departments, HR
-- financial: revenue, payroll, assets, budgets
-- risk: claims, incidents, hazards, compliance (NOT coverage details — those come from policy extraction)
-- clients: client and customer relationships
-- insurance: broker, carrier, underwriter relationships
-- investors: investor, shareholder, funding relationships
-- vendors: vendors, service providers, suppliers, procurement
-- partners: general partnerships or uncertain relationship types
-- observation: general business changes or plans`,
+Category guide (INTERNAL = about this org itself, EXTERNAL = about other parties):
+INTERNAL categories:
+- company_info: the org's own entity details, legal name, addresses, structure, founding date
+- products_services: what this org sells or provides to its customers
+- operations: this org's internal processes, equipment, fleet, facilities
+- employees: this org's headcount, roles, departments, HR details
+- financial: this org's revenue, payroll, assets, budgets, expenses
+- risk: claims, incidents, hazards, compliance issues affecting this org
+
+EXTERNAL relationship categories (about OTHER companies/people, not this org):
+- clients: companies or people who BUY FROM this org
+- insurance: brokers, carriers, underwriters who INSURE this org
+- investors: investors, shareholders, funds who INVEST IN this org
+- vendors: companies who SELL TO or PROVIDE SERVICES to this org
+- partners: joint ventures, affiliates, or uncertain external relationships
+
+- observation: general business changes, plans, or anything that doesn't fit above`,
         messages: [
           {
             role: "user",
