@@ -6,32 +6,7 @@ import { api, internal } from "../_generated/api";
 import { getModel } from "../lib/models";
 import { makeEmbedText } from "../lib/sdkCallbacks";
 import { logAiError } from "../lib/aiUtils";
-import { generateText, Output } from "ai";
-import { z } from "zod";
-
-const CATEGORY_VALUES = [
-  "company_info",
-  "operations",
-  "financial",
-  "coverage",
-  "risk",
-  "relationship",
-  "observation",
-] as const;
-
-type Category = (typeof CATEGORY_VALUES)[number];
-
-const dreamResultSchema = z.object({
-  staleIds: z.array(z.string()).describe("IDs of entries to mark as stale"),
-  consolidated: z.array(
-    z.object({
-      content: z.string(),
-      category: z.enum(CATEGORY_VALUES),
-    }),
-  ).describe("New or updated consolidated entries"),
-  gaps: z.array(z.string()).describe("Questions we should know answers to"),
-  summary: z.string().describe("2-3 sentence holistic org intelligence summary"),
-});
+import { generateText } from "ai";
 
 /**
  * Weekly "dream" consolidation — reviews all extracted intelligence for an org,
@@ -104,15 +79,36 @@ ${formattedSections.join("\n\n")}`;
       const result = await generateText({
         model: getModel("analysis"),
         maxOutputTokens: 4096,
-        output: Output.object({ schema: dreamResultSchema }),
-        messages: [{ role: "user", content: prompt }],
+        system: `You are an insurance intelligence analyst. Respond with ONLY valid JSON, no markdown or explanation.
+
+Format:
+{
+  "staleIds": ["id1", "id2"],
+  "consolidated": [{ "content": "...", "category": "company_info" | "operations" | "financial" | "coverage" | "risk" | "relationship" | "observation" }],
+  "gaps": ["question1", "question2"],
+  "summary": "2-3 sentence summary"
+}`,
+        prompt,
       });
 
-      const dreamResult = result.output;
-      if (!dreamResult) {
-        console.warn(`Dream consolidation produced no output for org ${args.orgId}`);
+      let dreamResult: {
+        staleIds: string[];
+        consolidated: Array<{ content: string; category: string }>;
+        gaps: string[];
+        summary: string;
+      };
+      try {
+        const cleaned = result.text.replace(/```json\n?|```\n?/g, "").trim();
+        dreamResult = JSON.parse(cleaned);
+      } catch {
+        console.warn(`Dream consolidation produced unparseable output for org ${args.orgId}`);
         return;
       }
+
+      if (!dreamResult.staleIds) dreamResult.staleIds = [];
+      if (!dreamResult.consolidated) dreamResult.consolidated = [];
+      if (!dreamResult.gaps) dreamResult.gaps = [];
+      if (!dreamResult.summary) dreamResult.summary = "";
 
       // Validate staleIds — only keep IDs that match actual entry IDs
       const entryIdSet = new Set(entries.map((e: any) => e._id));
@@ -135,7 +131,7 @@ ${formattedSections.join("\n\n")}`;
         await ctx.runMutation(internal.intelligence.insert, {
           orgId: args.orgId,
           content: consolidated.content,
-          category: consolidated.category,
+          category: consolidated.category as any,
           confidence: "inferred",
           source: "dream",
           embedding,
