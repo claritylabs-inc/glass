@@ -281,6 +281,20 @@ export default defineSchema({
       filterFields: ["orgId"],
     }),
 
+  // Dream consolidation run logs
+  dreamLogs: defineTable({
+    orgId: v.id("organizations"),
+    status: v.union(v.literal("success"), v.literal("partial"), v.literal("error")),
+    entriesReviewed: v.number(),
+    entriesDeleted: v.number(),
+    entriesConsolidated: v.number(),
+    gapsIdentified: v.number(),
+    summary: v.optional(v.string()),
+    error: v.optional(v.string()),
+    durationMs: v.number(),
+    createdAt: v.number(),
+  }).index("by_orgId", ["orgId"]),
+
   emails: defineTable({
     userId: v.optional(v.id("users")),
     orgId: v.optional(v.id("organizations")),

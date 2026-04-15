@@ -1,0 +1,145 @@
+"use client";
+
+import { useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import { Brain, Loader2, CheckCircle2, AlertCircle, Trash2, Sparkles, HelpCircle } from "lucide-react";
+import { FadeIn } from "@/components/ui/fade-in";
+
+function formatDate(ts: number): string {
+  return new Date(ts).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function formatTime(ts: number): string {
+  return new Date(ts).toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  const secs = Math.round(ms / 1000);
+  if (secs < 60) return `${secs}s`;
+  return `${Math.floor(secs / 60)}m ${secs % 60}s`;
+}
+
+export function DreamLog() {
+  const logs = useQuery(api.dreamLogs.list, {});
+
+  if (logs === undefined) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <Loader2 className="w-4 h-4 animate-spin text-muted-foreground/30" />
+      </div>
+    );
+  }
+
+  if (logs.length === 0) {
+    return (
+      <FadeIn when={true} duration={0.6}>
+        <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-6 py-8 text-center">
+          <Brain className="w-5 h-5 text-muted-foreground/20 mx-auto mb-2" />
+          <p className="text-body-sm text-muted-foreground/60">
+            No dream consolidation runs yet
+          </p>
+          <p className="text-label-sm text-muted-foreground/40 mt-0.5">
+            Dream runs weekly to deduplicate and synthesize intelligence entries.
+          </p>
+        </div>
+      </FadeIn>
+    );
+  }
+
+  return (
+    <FadeIn when={true} delay={0.2} duration={0.6}>
+      <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
+        <div className="divide-y divide-foreground/4">
+          {logs.map((log) => (
+            <div
+              key={log._id}
+              className="px-5 py-3.5 hover:bg-foreground/[0.015] transition-colors"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start gap-3 min-w-0">
+                  {log.status === "success" ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                  )}
+                  <div className="min-w-0">
+                    <p className="text-body-sm font-medium text-foreground">
+                      Dream Consolidation
+                      {log.status === "error" && (
+                        <span className="ml-1.5 text-red-500 font-normal">
+                          — failed
+                        </span>
+                      )}
+                    </p>
+
+                    {/* Stats */}
+                    <div className="flex items-center gap-3 mt-1">
+                      <span className="inline-flex items-center gap-1 text-label-sm text-muted-foreground">
+                        <Brain className="w-3 h-3" />
+                        {log.entriesReviewed} reviewed
+                      </span>
+                      {log.entriesDeleted > 0 && (
+                        <span className="inline-flex items-center gap-1 text-label-sm text-red-500/70">
+                          <Trash2 className="w-3 h-3" />
+                          {log.entriesDeleted} removed
+                        </span>
+                      )}
+                      {log.entriesConsolidated > 0 && (
+                        <span className="inline-flex items-center gap-1 text-label-sm text-blue-500/70">
+                          <Sparkles className="w-3 h-3" />
+                          {log.entriesConsolidated} consolidated
+                        </span>
+                      )}
+                      {log.gapsIdentified > 0 && (
+                        <span className="inline-flex items-center gap-1 text-label-sm text-amber-500/70">
+                          <HelpCircle className="w-3 h-3" />
+                          {log.gapsIdentified} gaps
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Summary */}
+                    {log.summary && (
+                      <p className="text-label-sm text-muted-foreground/60 mt-1.5 line-clamp-2">
+                        {log.summary}
+                      </p>
+                    )}
+
+                    {/* Error */}
+                    {log.error && (
+                      <p className="text-label-sm text-red-500/70 mt-1.5 line-clamp-2 font-mono">
+                        {log.error.slice(0, 200)}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="text-right shrink-0">
+                  <p className="text-label-sm text-muted-foreground">
+                    {formatDate(log.createdAt)}
+                  </p>
+                  <p className="text-label-sm text-muted-foreground/40">
+                    {formatTime(log.createdAt)} · {formatDuration(log.durationMs)}
+                  </p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="border-t border-foreground/[0.04] px-4 py-2 bg-foreground/[0.01]">
+          <p className="text-label-sm text-muted-foreground/60">
+            {logs.length} dream {logs.length === 1 ? "run" : "runs"}
+          </p>
+        </div>
+      </div>
+    </FadeIn>
+  );
+}

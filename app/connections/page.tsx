@@ -29,6 +29,7 @@ import { ConnectionIcon } from "@/components/connection-icon";
 import { getScanCoverageLabel } from "@/components/pull-more-dropdown";
 import { EmailReviewTable } from "@/components/email-review-table";
 import { IntelligenceTab } from "@/components/intelligence-tab";
+import { DreamLog } from "@/components/dream-log";
 import { ScanCalendarDialog } from "@/components/scan-calendar-dialog";
 import { LogoIcon } from "@/components/ui/logo-icon";
 import { Id } from "@/convex/_generated/dataModel";
@@ -858,7 +859,11 @@ export default function ConnectionsPage() {
                 </div>
               )}
               <div>
-                <h3 className="text-body-sm font-medium text-foreground mb-3">History</h3>
+                <h3 className="text-body-sm font-medium text-foreground mb-3">Dream Consolidation</h3>
+                <DreamLog />
+              </div>
+              <div>
+                <h3 className="text-body-sm font-medium text-foreground mb-3">Extraction History</h3>
                 <ExtractionLog entries={log ?? []} />
               </div>
             </div>

@@ -89,6 +89,7 @@ function parseDreamResult(text: string): {
 export const dreamForOrg = internalAction({
   args: { orgId: v.id("organizations") },
   handler: async (ctx, args): Promise<void> => {
+    const startTime = Date.now();
     try {
       const entries = await ctx.runQuery(internal.intelligence.listActiveByOrg, {
         orgId: args.orgId,
@@ -107,10 +108,13 @@ export const dreamForOrg = internalAction({
       const prompt = `You are an insurance intelligence analyst performing a weekly review of extracted business context for a company.
 
 Review the following intelligence entries grouped by category. For each category:
-1. Identify duplicate or near-duplicate entries to DELETE (the older/less specific ones)
-2. When entries conflict (e.g., different employee counts or revenue figures): If both have as-of dates, keep the MORE RECENT as-of date. If only one has an as-of date, prefer it. If neither has dates, keep the most recently updated entry.
-3. Create consolidated entries that merge related facts
-4. Identify important gaps — things we should know but don't
+1. DELETE duplicates, near-duplicates, and the older/less specific version of conflicting entries
+2. DELETE low-value noise — individual transaction details, receipt line items, routine vendor interactions, spam-sourced entries, and anything that isn't meaningful business intelligence on its own
+3. When entries conflict (e.g., different employee counts or revenue figures): If both have as-of dates, keep the MORE RECENT as-of date. If only one has an as-of date, prefer it. If neither has dates, keep the most recently updated entry.
+4. CONSOLIDATE related facts into single, richer entries (e.g., merge 5 separate vendor mentions into one "Key vendors" entry)
+5. Identify important gaps — things we should know but don't
+
+Be aggressive about pruning. The goal is a clean, high-signal intelligence store. Individual data points like "Payment of $247.50 to Office Depot" or "Receipt from UPS Store" should be deleted unless they reveal something meaningful about the business (e.g., a pattern of large equipment purchases).
 
 IMPORTANT:
 - deleteIds must contain the exact bracket IDs from the entries below (e.g. the string inside [...])
@@ -130,10 +134,18 @@ ${formattedSections}`;
 
       const dreamResult = parseDreamResult(result.text);
       if (!dreamResult) {
-        console.warn(
-          `Dream consolidation produced unparseable output for org ${args.orgId}. ` +
-          `Raw output (first 500 chars): ${result.text.slice(0, 500)}`,
-        );
+        const errMsg = `Unparseable output. Raw (first 500 chars): ${result.text.slice(0, 500)}`;
+        console.warn(`Dream consolidation for org ${args.orgId}: ${errMsg}`);
+        await ctx.runMutation(internal.dreamLogs.insert, {
+          orgId: args.orgId,
+          status: "error",
+          entriesReviewed: entries.length,
+          entriesDeleted: 0,
+          entriesConsolidated: 0,
+          gapsIdentified: 0,
+          error: errMsg,
+          durationMs: Date.now() - startTime,
+        });
         return;
       }
 
@@ -187,12 +199,33 @@ ${formattedSections}`;
         });
       }
 
+      await ctx.runMutation(internal.dreamLogs.insert, {
+        orgId: args.orgId,
+        status: "success",
+        entriesReviewed: entries.length,
+        entriesDeleted: validDeleteIds.length,
+        entriesConsolidated: dreamResult.consolidated.length,
+        gapsIdentified: (dreamResult.gaps ?? []).length,
+        summary: dreamResult.summary || undefined,
+        durationMs: Date.now() - startTime,
+      });
+
       console.log(
         `Dream consolidation complete for org ${args.orgId}: ` +
           `${validDeleteIds.length} deleted, ${dreamResult.consolidated.length} consolidated, ${(dreamResult.gaps ?? []).length} gaps`,
       );
     } catch (err) {
       logAiError("dreamConsolidation", err, { orgId: args.orgId });
+      await ctx.runMutation(internal.dreamLogs.insert, {
+        orgId: args.orgId,
+        status: "error",
+        entriesReviewed: 0,
+        entriesDeleted: 0,
+        entriesConsolidated: 0,
+        gapsIdentified: 0,
+        error: err instanceof Error ? err.message : String(err),
+        durationMs: Date.now() - startTime,
+      });
     }
   },
 });
