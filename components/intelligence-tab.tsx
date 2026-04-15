@@ -121,40 +121,78 @@ function OrgIntelligencePanel() {
     return [...counts.entries()].sort((a, b) => b[1] - a[1]);
   }, [entries]);
 
-  // Sort newest first and group by date
-  const groupedByDate = useMemo(() => {
+  type EntryType = NonNullable<typeof entries>[number];
+
+  // Sort newest first, group by month → day
+  const groupedByMonth = useMemo(() => {
     if (!entries || entries.length === 0) return [];
     const sorted = [...entries].sort(
       (a, b) => (b.createdAt ?? b._creationTime) - (a.createdAt ?? a._creationTime),
     );
-    const groups: Array<{ label: string; entries: typeof sorted }> = [];
-    let currentLabel = "";
+    const now = new Date();
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    function getDayLabel(date: Date) {
+      if (date.toDateString() === now.toDateString()) return "Today";
+      if (date.toDateString() === yesterday.toDateString()) return "Yesterday";
+      return date.toLocaleDateString("en-US", {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+      });
+    }
+
+    function getMonthKey(date: Date) {
+      return `${date.getFullYear()}-${String(date.getMonth()).padStart(2, "0")}`;
+    }
+
+    function getMonthLabel(date: Date) {
+      if (
+        date.getMonth() === now.getMonth() &&
+        date.getFullYear() === now.getFullYear()
+      )
+        return "This Month";
+      return date.toLocaleDateString("en-US", {
+        month: "long",
+        year: date.getFullYear() !== now.getFullYear() ? "numeric" : undefined,
+      });
+    }
+
+    const months: Array<{
+      key: string;
+      label: string;
+      totalCount: number;
+      days: Array<{ label: string; entries: EntryType[] }>;
+    }> = [];
+    let curMonthKey = "";
+    let curDayLabel = "";
+
     for (const entry of sorted) {
       const ts = entry.createdAt ?? entry._creationTime;
       const date = new Date(ts);
-      const now = new Date();
-      const isToday =
-        date.toDateString() === now.toDateString();
-      const yesterday = new Date(now);
-      yesterday.setDate(yesterday.getDate() - 1);
-      const isYesterday =
-        date.toDateString() === yesterday.toDateString();
-      const label = isToday
-        ? "Today"
-        : isYesterday
-          ? "Yesterday"
-          : date.toLocaleDateString("en-US", {
-              month: "short",
-              day: "numeric",
-              year: date.getFullYear() !== now.getFullYear() ? "numeric" : undefined,
-            });
-      if (label !== currentLabel) {
-        groups.push({ label, entries: [] });
-        currentLabel = label;
+      const monthKey = getMonthKey(date);
+      const dayLabel = getDayLabel(date);
+
+      if (monthKey !== curMonthKey) {
+        months.push({
+          key: monthKey,
+          label: getMonthLabel(date),
+          totalCount: 0,
+          days: [],
+        });
+        curMonthKey = monthKey;
+        curDayLabel = "";
       }
-      groups[groups.length - 1].entries.push(entry);
+      if (dayLabel !== curDayLabel) {
+        months[months.length - 1].days.push({ label: dayLabel, entries: [] });
+        curDayLabel = dayLabel;
+      }
+      const month = months[months.length - 1];
+      month.days[month.days.length - 1].entries.push(entry);
+      month.totalCount++;
     }
-    return groups;
+    return months;
   }, [entries]);
 
   useEffect(() => {
@@ -294,123 +332,152 @@ function OrgIntelligencePanel() {
         </div>
       ) : null}
 
-      {/* Intelligence entries list — grouped by date, newest first */}
-      {groupedByDate.length > 0 ? (
-        <div className="space-y-4">
-          {groupedByDate.map((group) => {
-            const isCollapsed = collapsedGroups.has(group.label);
+      {/* Intelligence entries — grouped by month → day, newest first */}
+      {groupedByMonth.length > 0 ? (
+        <div className="space-y-6">
+          {groupedByMonth.map((month) => {
+            const isMonthCollapsed = collapsedGroups.has(month.key);
             return (
-              <div
-                key={group.label}
-                className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden"
-              >
+              <div key={month.key}>
+                {/* Month header */}
                 <button
                   type="button"
-                  onClick={() => toggleGroup(group.label)}
-                  className="w-full px-5 py-2.5 border-b border-foreground/6 bg-foreground/[0.015] flex items-center justify-between cursor-pointer hover:bg-foreground/[0.03] transition-colors"
+                  onClick={() => toggleGroup(month.key)}
+                  className="w-full flex items-center gap-3 mb-3 cursor-pointer group/month"
                 >
-                  <p className="text-label-sm font-medium text-muted-foreground">
-                    {group.label}
-                    <span className="ml-1.5 opacity-50">{group.entries.length}</span>
-                  </p>
+                  <h3 className="text-sm font-semibold text-foreground shrink-0">
+                    {month.label}
+                    <span className="ml-1.5 text-muted-foreground/40 font-normal text-xs">
+                      {month.totalCount}
+                    </span>
+                  </h3>
+                  <div className="flex-1 border-b border-foreground/6" />
                   <ChevronDown
-                    className={`w-3.5 h-3.5 text-muted-foreground/40 transition-transform ${isCollapsed ? "-rotate-90" : ""}`}
+                    className={`w-3.5 h-3.5 text-muted-foreground/30 group-hover/month:text-muted-foreground/50 transition-transform shrink-0 ${isMonthCollapsed ? "-rotate-90" : ""}`}
                   />
                 </button>
-                {!isCollapsed && (
-                  <div className="divide-y divide-foreground/4">
-                    {group.entries.map((entry) => (
-                      <div
-                        key={entry._id}
-                        className="px-5 py-3 flex items-start gap-3 group hover:bg-foreground/[0.015] transition-colors"
-                      >
-                        <div className="flex-1 min-w-0">
-                          {editingId === entry._id ? (
-                            <div className="flex items-start gap-2">
-                              <textarea
-                                value={editContent}
-                                onChange={(e) => setEditContent(e.target.value)}
-                                className="flex-1 text-body-sm text-foreground bg-white dark:bg-white/5 border border-foreground/10 rounded-md px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-blue-500/40"
-                                rows={2}
-                                autoFocus
-                                onKeyDown={(e) => {
-                                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                                    saveEdit();
-                                  } else if (e.key === "Escape") {
-                                    setEditingId(null);
-                                  }
-                                }}
-                              />
-                              <button
-                                type="button"
-                                onClick={saveEdit}
-                                disabled={savingEdit || !editContent.trim()}
-                                className="p-1 text-emerald-500 hover:text-emerald-600 cursor-pointer shrink-0 mt-1"
-                              >
-                                {savingEdit ? (
-                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                ) : (
-                                  <Check className="w-3.5 h-3.5" />
-                                )}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setEditingId(null)}
-                                className="p-1 text-muted-foreground/40 hover:text-muted-foreground cursor-pointer shrink-0 mt-1"
-                              >
-                                <X className="w-3.5 h-3.5" />
-                              </button>
+
+                {!isMonthCollapsed && (
+                  <div className="space-y-3">
+                    {month.days.map((day) => {
+                      const isDayCollapsed = collapsedGroups.has(`${month.key}:${day.label}`);
+                      return (
+                        <div
+                          key={day.label}
+                          className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => toggleGroup(`${month.key}:${day.label}`)}
+                            className={`w-full px-5 py-2.5 flex items-center justify-between cursor-pointer hover:bg-foreground/[0.03] transition-colors bg-foreground/[0.015] ${isDayCollapsed ? "" : "border-b border-foreground/6"}`}
+                          >
+                            <p className="text-label-sm font-medium text-muted-foreground">
+                              {day.label}
+                              <span className="ml-1.5 opacity-50">{day.entries.length}</span>
+                            </p>
+                            <ChevronDown
+                              className={`w-3.5 h-3.5 text-muted-foreground/40 transition-transform ${isDayCollapsed ? "-rotate-90" : ""}`}
+                            />
+                          </button>
+                          {!isDayCollapsed && (
+                            <div className="divide-y divide-foreground/4">
+                              {day.entries.map((entry) => (
+                                <div
+                                  key={entry._id}
+                                  className="px-5 py-3 flex items-start gap-3 group hover:bg-foreground/[0.015] transition-colors"
+                                >
+                                  <div className="flex-1 min-w-0">
+                                    {editingId === entry._id ? (
+                                      <div className="flex items-start gap-2">
+                                        <textarea
+                                          value={editContent}
+                                          onChange={(e) => setEditContent(e.target.value)}
+                                          className="flex-1 text-body-sm text-foreground bg-white dark:bg-white/5 border border-foreground/10 rounded-md px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-blue-500/40"
+                                          rows={2}
+                                          autoFocus
+                                          onKeyDown={(e) => {
+                                            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                                              saveEdit();
+                                            } else if (e.key === "Escape") {
+                                              setEditingId(null);
+                                            }
+                                          }}
+                                        />
+                                        <button
+                                          type="button"
+                                          onClick={saveEdit}
+                                          disabled={savingEdit || !editContent.trim()}
+                                          className="p-1 text-emerald-500 hover:text-emerald-600 cursor-pointer shrink-0 mt-1"
+                                        >
+                                          {savingEdit ? (
+                                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                          ) : (
+                                            <Check className="w-3.5 h-3.5" />
+                                          )}
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => setEditingId(null)}
+                                          className="p-1 text-muted-foreground/40 hover:text-muted-foreground cursor-pointer shrink-0 mt-1"
+                                        >
+                                          <X className="w-3.5 h-3.5" />
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <>
+                                        <p className="text-body-sm text-foreground leading-relaxed line-clamp-2">
+                                          {entry.content}
+                                        </p>
+                                        <div className="flex items-center gap-1.5 mt-1.5">
+                                          <span
+                                            className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${INTEL_CATEGORY_COLORS[entry.category] ?? INTEL_CATEGORY_COLORS.observation}`}
+                                          >
+                                            {entry.category.replace(/_/g, " ")}
+                                          </span>
+                                          <span
+                                            className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${INTEL_SOURCE_COLORS[entry.source] ?? INTEL_SOURCE_COLORS.manual}`}
+                                          >
+                                            {entry.source}
+                                          </span>
+                                          <span
+                                            className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${INTEL_CONFIDENCE_COLORS[entry.confidence] ?? INTEL_CONFIDENCE_COLORS.inferred}`}
+                                          >
+                                            {entry.confidence}
+                                          </span>
+                                        </div>
+                                      </>
+                                    )}
+                                  </div>
+                                  {editingId !== entry._id && (
+                                    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all shrink-0 mt-0.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => startEditing(entry._id, entry.content)}
+                                        className="p-1 text-muted-foreground/20 hover:text-blue-500 cursor-pointer"
+                                      >
+                                        <Pencil className="w-3.5 h-3.5" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRemove(entry._id)}
+                                        disabled={removingId === entry._id}
+                                        className="p-1 text-muted-foreground/20 hover:text-red-500 cursor-pointer"
+                                      >
+                                        {removingId === entry._id ? (
+                                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                        ) : (
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        )}
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
                             </div>
-                          ) : (
-                            <>
-                              <p className="text-body-sm text-foreground leading-relaxed line-clamp-2">
-                                {entry.content}
-                              </p>
-                              <div className="flex items-center gap-1.5 mt-1.5">
-                                <span
-                                  className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${INTEL_CATEGORY_COLORS[entry.category] ?? INTEL_CATEGORY_COLORS.observation}`}
-                                >
-                                  {entry.category.replace(/_/g, " ")}
-                                </span>
-                                <span
-                                  className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${INTEL_SOURCE_COLORS[entry.source] ?? INTEL_SOURCE_COLORS.manual}`}
-                                >
-                                  {entry.source}
-                                </span>
-                                <span
-                                  className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${INTEL_CONFIDENCE_COLORS[entry.confidence] ?? INTEL_CONFIDENCE_COLORS.inferred}`}
-                                >
-                                  {entry.confidence}
-                                </span>
-                              </div>
-                            </>
                           )}
                         </div>
-                        {editingId !== entry._id && (
-                          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all shrink-0 mt-0.5">
-                            <button
-                              type="button"
-                              onClick={() => startEditing(entry._id, entry.content)}
-                              className="p-1 text-muted-foreground/20 hover:text-blue-500 cursor-pointer"
-                            >
-                              <Pencil className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleRemove(entry._id)}
-                              disabled={removingId === entry._id}
-                              className="p-1 text-muted-foreground/20 hover:text-red-500 cursor-pointer"
-                            >
-                              {removingId === entry._id ? (
-                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              ) : (
-                                <Trash2 className="w-3.5 h-3.5" />
-                              )}
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
