@@ -345,7 +345,7 @@ function OrgIntelligencePanel() {
                   onClick={() => toggleGroup(month.key)}
                   className="w-full flex items-center gap-3 mb-3 cursor-pointer group/month"
                 >
-                  <h3 className="text-sm font-semibold text-foreground shrink-0">
+                  <h3 className="text-sm font-medium text-foreground shrink-0">
                     {month.label}
                     <span className="ml-1.5 text-muted-foreground/40 font-normal text-xs">
                       {month.totalCount}
