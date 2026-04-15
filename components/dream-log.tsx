@@ -2,7 +2,15 @@
 
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { Brain, Loader2, CheckCircle2, AlertCircle, Trash2, Sparkles, HelpCircle } from "lucide-react";
+import {
+  Brain,
+  Loader2,
+  CheckCircle2,
+  AlertCircle,
+  Trash2,
+  Sparkles,
+  HelpCircle,
+} from "lucide-react";
 import { FadeIn } from "@/components/ui/fade-in";
 
 function formatDate(ts: number): string {
@@ -47,7 +55,8 @@ export function DreamLog() {
             No dream consolidation runs yet
           </p>
           <p className="text-label-sm text-muted-foreground/40 mt-0.5">
-            Dream runs weekly to deduplicate and synthesize intelligence entries.
+            Dream runs weekly to deduplicate and synthesize intelligence
+            entries.
           </p>
         </div>
       </FadeIn>
@@ -58,81 +67,108 @@ export function DreamLog() {
     <FadeIn when={true} delay={0.2} duration={0.6}>
       <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
         <div className="divide-y divide-foreground/4">
-          {logs.map((log) => (
-            <div
-              key={log._id}
-              className="px-5 py-3.5 hover:bg-foreground/[0.015] transition-colors"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-start gap-3 min-w-0">
-                  {log.status === "success" ? (
-                    <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
-                  ) : (
-                    <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
-                  )}
-                  <div className="min-w-0">
-                    <p className="text-body-sm font-medium text-foreground">
-                      Dream Consolidation
-                      {log.status === "error" && (
-                        <span className="ml-1.5 text-red-500 font-normal">
-                          — failed
-                        </span>
-                      )}
-                    </p>
+          {logs.map((log) => {
+            const isRunning = log.status === "running";
+            const isError = log.status === "error";
+            return (
+              <div
+                key={log._id}
+                className="px-5 py-3.5 hover:bg-foreground/[0.015] transition-colors"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-3 min-w-0">
+                    {isRunning ? (
+                      <Loader2 className="w-4 h-4 text-blue-500 animate-spin shrink-0 mt-0.5" />
+                    ) : isError ? (
+                      <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                    ) : (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className="text-body-sm font-medium text-foreground">
+                        Dream Consolidation
+                        {isRunning && (
+                          <span className="ml-1.5 text-blue-500 font-normal">
+                            — running
+                          </span>
+                        )}
+                        {isError && (
+                          <span className="ml-1.5 text-red-500 font-normal">
+                            — failed
+                          </span>
+                        )}
+                      </p>
 
-                    {/* Stats */}
-                    <div className="flex items-center gap-3 mt-1">
-                      <span className="inline-flex items-center gap-1 text-label-sm text-muted-foreground">
-                        <Brain className="w-3 h-3" />
-                        {log.entriesReviewed} reviewed
-                      </span>
-                      {log.entriesDeleted > 0 && (
-                        <span className="inline-flex items-center gap-1 text-label-sm text-red-500/70">
-                          <Trash2 className="w-3 h-3" />
-                          {log.entriesDeleted} removed
+                      {/* Stats */}
+                      <div className="flex items-center gap-3 mt-1">
+                        <span className="inline-flex items-center gap-1 text-label-sm text-muted-foreground">
+                          <Brain className="w-3 h-3" />
+                          {log.entriesReviewed} reviewed
                         </span>
+                        {log.entriesDeleted > 0 && (
+                          <span className="inline-flex items-center gap-1 text-label-sm text-red-500/70">
+                            <Trash2 className="w-3 h-3" />
+                            {log.entriesDeleted} removed
+                          </span>
+                        )}
+                        {log.entriesConsolidated > 0 && (
+                          <span className="inline-flex items-center gap-1 text-label-sm text-blue-500/70">
+                            <Sparkles className="w-3 h-3" />
+                            {log.entriesConsolidated} consolidated
+                          </span>
+                        )}
+                        {log.gapsIdentified > 0 && (
+                          <span className="inline-flex items-center gap-1 text-label-sm text-amber-500/70">
+                            <HelpCircle className="w-3 h-3" />
+                            {log.gapsIdentified} gaps
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Streaming log lines */}
+                      {log.log && log.log.length > 0 && (
+                        <div className="mt-2 rounded-md bg-foreground/[0.02] border border-foreground/4 px-3 py-2 max-h-40 overflow-y-auto">
+                          {log.log.map((line, i) => (
+                            <p
+                              key={i}
+                              className="text-label-sm text-muted-foreground/70 font-mono leading-relaxed"
+                            >
+                              {line}
+                            </p>
+                          ))}
+                        </div>
                       )}
-                      {log.entriesConsolidated > 0 && (
-                        <span className="inline-flex items-center gap-1 text-label-sm text-blue-500/70">
-                          <Sparkles className="w-3 h-3" />
-                          {log.entriesConsolidated} consolidated
-                        </span>
+
+                      {/* Summary (only show if no log lines or completed) */}
+                      {log.summary && !isRunning && !(log.log && log.log.length > 0) && (
+                        <p className="text-label-sm text-muted-foreground/60 mt-1.5 line-clamp-2">
+                          {log.summary}
+                        </p>
                       )}
-                      {log.gapsIdentified > 0 && (
-                        <span className="inline-flex items-center gap-1 text-label-sm text-amber-500/70">
-                          <HelpCircle className="w-3 h-3" />
-                          {log.gapsIdentified} gaps
-                        </span>
+
+                      {/* Error */}
+                      {log.error && (
+                        <p className="text-label-sm text-red-500/70 mt-1.5 line-clamp-2 font-mono">
+                          {log.error.slice(0, 200)}
+                        </p>
                       )}
                     </div>
+                  </div>
 
-                    {/* Summary */}
-                    {log.summary && (
-                      <p className="text-label-sm text-muted-foreground/60 mt-1.5 line-clamp-2">
-                        {log.summary}
-                      </p>
-                    )}
-
-                    {/* Error */}
-                    {log.error && (
-                      <p className="text-label-sm text-red-500/70 mt-1.5 line-clamp-2 font-mono">
-                        {log.error.slice(0, 200)}
-                      </p>
-                    )}
+                  <div className="text-right shrink-0">
+                    <p className="text-label-sm text-muted-foreground">
+                      {formatDate(log.createdAt)}
+                    </p>
+                    <p className="text-label-sm text-muted-foreground/40">
+                      {formatTime(log.createdAt)}
+                      {log.durationMs > 0 &&
+                        ` · ${formatDuration(log.durationMs)}`}
+                    </p>
                   </div>
                 </div>
-
-                <div className="text-right shrink-0">
-                  <p className="text-label-sm text-muted-foreground">
-                    {formatDate(log.createdAt)}
-                  </p>
-                  <p className="text-label-sm text-muted-foreground/40">
-                    {formatTime(log.createdAt)} · {formatDuration(log.durationMs)}
-                  </p>
-                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
         <div className="border-t border-foreground/[0.04] px-4 py-2 bg-foreground/[0.01]">
           <p className="text-label-sm text-muted-foreground/60">

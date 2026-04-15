@@ -281,16 +281,22 @@ export default defineSchema({
       filterFields: ["orgId"],
     }),
 
-  // Dream consolidation run logs
+  // Dream consolidation run logs (streaming — updated as run progresses)
   dreamLogs: defineTable({
     orgId: v.id("organizations"),
-    status: v.union(v.literal("success"), v.literal("partial"), v.literal("error")),
+    status: v.union(
+      v.literal("running"),
+      v.literal("success"),
+      v.literal("partial"),
+      v.literal("error"),
+    ),
     entriesReviewed: v.number(),
     entriesDeleted: v.number(),
     entriesConsolidated: v.number(),
     gapsIdentified: v.number(),
     summary: v.optional(v.string()),
     error: v.optional(v.string()),
+    log: v.optional(v.array(v.string())), // streaming progress lines
     durationMs: v.number(),
     createdAt: v.number(),
   }).index("by_orgId", ["orgId"]),
