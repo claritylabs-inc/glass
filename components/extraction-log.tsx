@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { RotateCw } from "lucide-react";
-import { POLICY_TYPE_LABELS } from "@/convex/lib/policyTypes";
+import { POLICY_TYPE_LABELS, POLICY_TYPE_COLORS } from "@/convex/lib/policyTypes";
 import { FadeIn } from "@/components/ui/fade-in";
 import { useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
@@ -33,31 +33,6 @@ interface LogEntry {
   isDemo?: boolean;
 }
 
-const TYPE_COLORS: Record<string, string> = {
-  general_liability: "bg-blue-100 dark:bg-blue-950/40 text-blue-700 dark:text-blue-400",
-  commercial_property: "bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400",
-  commercial_auto: "bg-purple-100 dark:bg-purple-950/40 text-purple-700 dark:text-purple-400",
-  non_owned_auto: "bg-violet-100 dark:bg-violet-950/40 text-violet-700 dark:text-violet-400",
-  workers_comp: "bg-orange-100 dark:bg-orange-950/40 text-orange-700 dark:text-orange-400",
-  umbrella: "bg-sky-100 dark:bg-sky-950/40 text-sky-700 dark:text-sky-400",
-  excess_liability: "bg-cyan-100 dark:bg-cyan-950/40 text-cyan-700 dark:text-cyan-400",
-  professional_liability: "bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400",
-  cyber: "bg-red-100 dark:bg-red-950/40 text-red-700 dark:text-red-400",
-  epli: "bg-pink-100 dark:bg-pink-950/40 text-pink-700 dark:text-pink-400",
-  directors_officers: "bg-indigo-100 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-400",
-  fiduciary_liability: "bg-fuchsia-100 dark:bg-fuchsia-950/40 text-fuchsia-700 dark:text-fuchsia-400",
-  crime_fidelity: "bg-rose-100 dark:bg-rose-950/40 text-rose-700 dark:text-rose-400",
-  inland_marine: "bg-teal-100 dark:bg-teal-950/40 text-teal-700 dark:text-teal-400",
-  builders_risk: "bg-yellow-100 dark:bg-yellow-950/40 text-yellow-700 dark:text-yellow-400",
-  environmental: "bg-lime-100 dark:bg-lime-950/40 text-lime-700 dark:text-lime-400",
-  ocean_marine: "bg-blue-100 dark:bg-blue-950/40 text-blue-700 dark:text-blue-400",
-  surety: "bg-stone-100 dark:bg-stone-950/40 text-stone-700 dark:text-stone-400",
-  product_liability: "bg-orange-100 dark:bg-orange-950/40 text-orange-700 dark:text-orange-400",
-  bop: "bg-slate-100 dark:bg-slate-950/40 text-slate-700 dark:text-slate-400",
-  management_liability_package: "bg-indigo-100 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-400",
-  property: "bg-green-100 dark:bg-green-950/40 text-green-700 dark:text-green-400",
-  other: "bg-gray-100 dark:bg-gray-800/40 text-gray-700 dark:text-gray-400",
-};
 
 function formatDate(timestamp: number): string {
   return new Date(timestamp).toLocaleDateString("en-US", {
@@ -165,7 +140,7 @@ export function ExtractionLog({ entries }: { entries: LogEntry[] }) {
                           )}
                           <span
                             className={`inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium ${
-                              TYPE_COLORS[firstType] || TYPE_COLORS.other
+                              POLICY_TYPE_COLORS[firstType] || POLICY_TYPE_COLORS.other
                             }`}
                           >
                             {POLICY_TYPE_LABELS[firstType] || firstType}

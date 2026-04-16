@@ -4,33 +4,7 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import { FadeIn } from "@/components/ui/fade-in";
 import { Skeleton } from "@/components/ui/skeleton";
-import { POLICY_TYPE_LABELS, PERSONAL_LINE_KEYS } from "@/convex/lib/policyTypes";
-
-const TYPE_COLORS: Record<string, string> = {
-  general_liability: "bg-blue-100 text-blue-700",
-  commercial_property: "bg-emerald-100 text-emerald-700",
-  commercial_auto: "bg-purple-100 text-purple-700",
-  non_owned_auto: "bg-violet-100 text-violet-700",
-  workers_comp: "bg-orange-100 text-orange-700",
-  umbrella: "bg-sky-100 text-sky-700",
-  excess_liability: "bg-cyan-100 text-cyan-700",
-  professional_liability: "bg-amber-100 text-amber-700",
-  cyber: "bg-red-100 text-red-700",
-  epli: "bg-pink-100 text-pink-700",
-  directors_officers: "bg-indigo-100 text-indigo-700",
-  fiduciary_liability: "bg-fuchsia-100 text-fuchsia-700",
-  crime_fidelity: "bg-rose-100 text-rose-700",
-  inland_marine: "bg-teal-100 text-teal-700",
-  builders_risk: "bg-yellow-100 text-yellow-700",
-  environmental: "bg-lime-100 text-lime-700",
-  ocean_marine: "bg-blue-100 text-blue-700",
-  surety: "bg-stone-100 text-stone-700",
-  product_liability: "bg-orange-100 text-orange-700",
-  bop: "bg-slate-100 text-slate-700",
-  management_liability_package: "bg-indigo-100 text-indigo-700",
-  property: "bg-green-100 text-green-700",
-  other: "bg-gray-100 text-gray-700",
-};
+import { POLICY_TYPE_LABELS, POLICY_TYPE_COLORS, PERSONAL_LINE_KEYS } from "@/convex/lib/policyTypes";
 
 export function parseDollarAmount(str: string): number | null {
   if (!str) return null;
@@ -87,7 +61,7 @@ function CoverageGrid({ rows }: { rows: CoverageByType[] }) {
           >
             <span
               className={`inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium mb-2 max-w-full truncate ${
-                TYPE_COLORS[row.typeKey] || TYPE_COLORS.other
+                POLICY_TYPE_COLORS[row.typeKey] || POLICY_TYPE_COLORS.other
               }`}
             >
               {row.label}
