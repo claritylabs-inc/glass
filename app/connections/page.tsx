@@ -9,8 +9,7 @@ import { AppShell } from "@/components/app-shell";
 import { ConnectionForm } from "@/components/connection-form";
 import { ScanModal } from "@/components/scan-modal";
 import { ScanStatus } from "@/components/scan-status";
-import { ExtractionTable } from "@/components/extraction-table";
-import { ExtractionLog } from "@/components/extraction-log";
+import { PolicyExtractionsLog } from "@/components/policy-extractions-log";
 import { FadeIn } from "@/components/ui/fade-in";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowRight, Upload, RefreshCw, FileText, Sparkles, Loader2 } from "lucide-react";
@@ -31,7 +30,6 @@ import { EmailReviewTable } from "@/components/email-review-table";
 import { IntelligenceTab } from "@/components/intelligence-tab";
 import { DreamLog } from "@/components/dream-log";
 import { EmailScanLog } from "@/components/email-scan-log";
-import { ActivitySection } from "@/components/activity-section";
 import { ScanCalendarDialog } from "@/components/scan-calendar-dialog";
 import { LogoIcon } from "@/components/ui/logo-icon";
 import { Id } from "@/convex/_generated/dataModel";
@@ -187,14 +185,6 @@ export default function ConnectionsPage() {
   const connections = useQuery(api.connections.list);
   const orgData = useQuery(api.orgs.viewerOrg);
   const orgId = orgData?.org?._id;
-  const pending = useQuery(
-    api.policies.listPending,
-    activeTab === "activity" ? {} : "skip"
-  );
-  const log = useQuery(
-    api.policies.listExtractionLog,
-    activeTab === "activity" ? {} : "skip"
-  );
 
   const [selectedConnectionId, setSelectedConnectionId] = useState<Id<"emailConnections"> | null>(null);
 
@@ -330,8 +320,6 @@ export default function ConnectionsPage() {
     router.replace(url, { scroll: false });
   };
 
-  const pendingCount = pending?.length ?? 0;
-
   const handleBulkClassify = async (isInsurance: boolean) => {
     for (const id of selectedEmailIds) {
       await updateClassification({ id, isInsuranceRelated: isInsurance });
@@ -425,11 +413,6 @@ export default function ConnectionsPage() {
                   }`}
                 >
                   {tab.label}
-                  {tab.id === "activity" && pendingCount > 0 && (
-                    <span className="ml-1.5 inline-flex items-center justify-center px-1.5 py-0.5 rounded-full text-label-sm font-medium bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400">
-                      {pendingCount}
-                    </span>
-                  )}
                   {activeTab === tab.id && (
                     <motion.div
                       layoutId="connections-tab-indicator"
@@ -892,26 +875,7 @@ export default function ConnectionsPage() {
           {activeTab === "activity" && (
             <div className="space-y-6">
               <EmailScanLog />
-              {(() => {
-                const extractionCount = (pending?.length ?? 0) + (log?.length ?? 0);
-                const extractionLoading = pending === undefined || log === undefined;
-                return (
-                  <ActivitySection
-                    title="Extractions"
-                    count={extractionLoading ? undefined : extractionCount}
-                    loading={extractionLoading}
-                    skeletonRows={3}
-                    emptyIcon={FileText}
-                    emptyMessage="No extractions yet"
-                    emptyDescription="Policy extractions will appear here after scanning emails or uploading documents."
-                    isEmpty={!extractionLoading && extractionCount === 0}
-                    footerText={extractionCount > 0 ? `${extractionCount} ${extractionCount === 1 ? "extraction" : "extractions"}` : undefined}
-                  >
-                    <ExtractionTable extractions={pending} />
-                    <ExtractionLog entries={log ?? []} />
-                  </ActivitySection>
-                );
-              })()}
+              <PolicyExtractionsLog />
               <DreamLog />
             </div>
           )}
