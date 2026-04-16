@@ -226,11 +226,12 @@ async function scanImapInternal(
     hasAttachments: boolean;
   }> = [];
 
+  const searchCriteria: any = { since };
+
   try {
     await client.connect();
     const lock = await client.getMailboxLock("INBOX");
     try {
-      const searchCriteria: any = { since };
       for await (const message of client.fetch(searchCriteria, {
         uid: true,
         envelope: true,

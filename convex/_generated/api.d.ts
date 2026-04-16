@@ -47,6 +47,7 @@ import type * as conversationTurns from "../conversationTurns.js";
 import type * as crons from "../crons.js";
 import type * as documentChunks from "../documentChunks.js";
 import type * as dreamLogs from "../dreamLogs.js";
+import type * as emailScanLogs from "../emailScanLogs.js";
 import type * as emails from "../emails.js";
 import type * as http from "../http.js";
 import type * as intelligence from "../intelligence.js";
@@ -136,6 +137,7 @@ declare const fullApi: ApiFromModules<{
   crons: typeof crons;
   documentChunks: typeof documentChunks;
   dreamLogs: typeof dreamLogs;
+  emailScanLogs: typeof emailScanLogs;
   emails: typeof emails;
   http: typeof http;
   intelligence: typeof intelligence;

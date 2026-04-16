@@ -67,7 +67,7 @@ const INTEGRATIONS: { name: string; desc: string; icon: React.ComponentType<any>
 
 const TABS = [
   { id: "sources", label: "Sources" },
-  { id: "inbox", label: "Inbox" },
+  { id: "inbox", label: "Scanned Emails" },
   { id: "intelligence", label: "Intelligence" },
   { id: "activity", label: "Activity" },
 ] as const;
@@ -815,7 +815,7 @@ export default function ConnectionsPage() {
             </div>
           )}
 
-          {/* Emails tab */}
+          {/* Scanned Emails tab */}
           {activeTab === "inbox" && (
             <div className="space-y-4">
               {connections && connections.length > 0 && (
