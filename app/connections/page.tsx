@@ -692,7 +692,7 @@ export default function ConnectionsPage() {
                   <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden flex flex-col">
                     <div className="px-4 py-3 border-b border-foreground/6 bg-foreground/[0.015]">
                       <p className="text-label-sm font-medium text-muted-foreground">Insurance Documents</p>
-                      <p className="text-[11px] text-muted-foreground/50">Policies, certificates, and quotes</p>
+                      <p className="text-[11px] text-muted-foreground/50">Policies and certificates</p>
                     </div>
                     <UploadedDocumentsInline />
                     <div className="p-3 mt-auto">
@@ -725,7 +725,7 @@ export default function ConnectionsPage() {
                               {uploading ? "Uploading..." : "Upload or drag a PDF"}
                             </p>
                             <p className="text-[11px] text-muted-foreground/50">
-                              Policy, certificate, or quote
+                              Policy or certificate
                             </p>
                           </div>
                         </div>

@@ -20,11 +20,10 @@ function parseDate(dateStr: string | undefined) {
   return d.isValid() ? d : null;
 }
 
-type DocumentView = "active" | "expired" | "quotes";
+type DocumentView = "active" | "expired";
 
 export default function PoliciesPage() {
   const policies = useQuery(api.policies.list, {});
-  const quotes = useQuery(api.policies.listQuotes, {});
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -47,9 +46,6 @@ export default function PoliciesPage() {
 
   // Split policies into active vs expired
   const viewFilteredDocs = useMemo(() => {
-    if (documentView === "quotes") {
-      return quotes ?? undefined;
-    }
     if (!policies) return undefined;
     return policies.filter((p) => {
       // Exclude quotes from the policies views
@@ -64,7 +60,7 @@ export default function PoliciesPage() {
       if (!exp) return false;
       return exp.isBefore(today, "day");
     });
-  }, [policies, quotes, documentView, today]);
+  }, [policies, documentView, today]);
 
   const carriers = useMemo(() => {
     if (!viewFilteredDocs) return [];
@@ -97,11 +93,11 @@ export default function PoliciesPage() {
   }, [viewFilteredDocs, selectedType, selectedCarrier, selectedYear]);
 
 
-  const isLoading = policies === undefined || quotes === undefined;
+  const isLoading = policies === undefined;
 
   const viewToggle = (
     <div className="inline-flex items-center rounded-lg border border-foreground/8 bg-foreground/[0.02] p-0.5">
-      {(["active", "expired", "quotes"] as const).map((view) => (
+      {(["active", "expired"] as const).map((view) => (
         <button
           key={view}
           type="button"
@@ -112,7 +108,7 @@ export default function PoliciesPage() {
               : "text-muted-foreground/60 hover:text-muted-foreground"
           }`}
         >
-          {view === "active" ? "Active" : view === "expired" ? "Expired" : "Quotes"}
+          {view === "active" ? "Active" : "Expired"}
         </button>
       ))}
     </div>

@@ -10,7 +10,6 @@ import { useEntityPreview } from "@/hooks/use-entity-preview";
 import { X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { PolicyPreview } from "./preview/policy-preview";
-import { QuotePreview } from "./preview/quote-preview";
 
 const EASE = [0.16, 1, 0.3, 1] as const;
 const MIN_WIDTH = 320;
@@ -76,7 +75,7 @@ export function EntityPreviewPanel() {
             {/* Toolbar */}
             <div className="h-12 flex items-center justify-between px-4 border-b border-foreground/6 shrink-0">
               <span className="text-body-sm font-medium text-foreground">
-                {preview.type === "policy" ? "Policy" : "Quote"} Preview
+                Policy Preview
               </span>
               <button
                 type="button"
@@ -89,12 +88,7 @@ export function EntityPreviewPanel() {
 
             {/* Content */}
             <div className="flex-1 overflow-y-auto p-4">
-              {preview.type === "policy" && (
-                <PolicyPreview id={preview.id} page={preview.page} citedSections={preview.citedSections} />
-              )}
-              {preview.type === "quote" && (
-                <QuotePreview id={preview.id} page={preview.page} citedSections={preview.citedSections} />
-              )}
+              <PolicyPreview id={preview.id} page={preview.page} citedSections={preview.citedSections} />
             </div>
           </motion.div>
         </motion.div>

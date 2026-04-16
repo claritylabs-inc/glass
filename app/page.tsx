@@ -26,9 +26,7 @@ function parseDate(dateStr: string | undefined, format = "MM/DD/YYYY") {
 
 export default function DashboardPage() {
   const stats = useQuery(api.policies.stats);
-  const quoteStats = useQuery(api.policies.quoteStats);
   const policies = useQuery(api.policies.list, {});
-  const quotes = useQuery(api.policies.listQuotes, {});
   const viewer = useQuery(api.users.viewer);
   const agentStats = useQuery(api.agentConversations.stats);
   const appStats = useQuery(api.applicationSessions.stats);
@@ -53,16 +51,6 @@ export default function DashboardPage() {
       return true;
     });
   }, [policies, today]);
-
-  const activeQuotes = useMemo(() => {
-    if (!quotes) return undefined;
-    return quotes.filter((q) => {
-      const exp = parseDate((q as any).quoteExpirationDate);
-      // Active if no expiration or not yet expired
-      if (!exp) return true;
-      return today.isBefore(exp.add(1, "day"));
-    });
-  }, [quotes, today]);
 
   const coverageByType = useMemo(() => {
     if (!activePolicies) return undefined;
@@ -110,23 +98,7 @@ export default function DashboardPage() {
       });
   }, [policies, today]);
 
-  const expiringQuotes = useMemo(() => {
-    if (!quotes) return undefined;
-    const cutoff = today.add(30, "day");
-    return quotes
-      .filter((q) => {
-        const exp = parseDate((q as any).quoteExpirationDate);
-        if (!exp) return false;
-        return exp.isAfter(today.subtract(1, "day")) && exp.isBefore(cutoff);
-      })
-      .sort((a, b) => {
-        const aExp = parseDate((a as any).quoteExpirationDate)!;
-        const bExp = parseDate((b as any).quoteExpirationDate)!;
-        return aExp.diff(bExp);
-      });
-  }, [quotes, today]);
-
-  const isEmpty = policies && policies.length === 0 && quotes && quotes.length === 0;
+  const isEmpty = policies && policies.length === 0;
 
   const seedButton = isEmpty ? (
     <PillButton size="compact" onClick={async () => { setSeeding(true); try { await seedData({}); } finally { setSeeding(false); } }} disabled={seeding}>
@@ -138,7 +110,7 @@ export default function DashboardPage() {
     <AppShell actions={seedButton}>
       <div>
 
-          <StatsCards stats={stats} quoteStats={quoteStats} />
+          <StatsCards stats={stats} />
 
           {/* Application stats */}
           {appStats && appStats.total > 0 && (
@@ -322,50 +294,6 @@ export default function DashboardPage() {
             </FadeIn>
           )}
 
-          {/* Expiring Quotes */}
-          {expiringQuotes && expiringQuotes.length > 0 && (
-            <FadeIn when={true} staggerIndex={4} duration={0.6}>
-              <div className="mb-6">
-                <div className="flex flex-col gap-0.5 md:flex-row md:items-center md:justify-between mb-3">
-                  <p className="text-body-sm font-semibold text-foreground">Expiring Quotes</p>
-                  <span className="text-label-sm text-muted-foreground/50">next 30 days</span>
-                </div>
-                <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
-                  {expiringQuotes.map((q, i) => {
-                    const exp = parseDate(q.quoteExpirationDate)!;
-                    const daysLeft = exp.diff(today, "day");
-                    const types = q.policyTypes ?? ["other"];
-                    const firstType = types[0];
-                    return (
-                      <Link
-                        key={q._id}
-                        href={`/policies/${q._id}`}
-                        className={`flex items-center gap-3 px-4 py-3 hover:bg-foreground/[0.02] transition-colors ${
-                          i > 0 ? "border-t border-foreground/4" : ""
-                        }`}
-                      >
-                        <div className="flex-1 min-w-0">
-                          <div className="flex flex-col md:flex-row md:items-center gap-1 md:gap-2 mb-1.5 md:mb-0">
-                            <span className="text-body-sm font-medium text-foreground">{(q as any).quoteNumber ?? q.policyNumber}</span>
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium w-fit truncate max-w-full ${POLICY_TYPE_COLORS[firstType] || POLICY_TYPE_COLORS.other}`}>
-                              {POLICY_TYPE_LABELS[firstType] || firstType}
-                            </span>
-                          </div>
-                          <p className="text-label-sm text-muted-foreground/60">{q.carrier}</p>
-                        </div>
-                        <div className="text-right shrink-0">
-                          <p className={`text-body-sm font-medium ${daysLeft <= 7 ? "text-red-600" : "text-orange-600"}`}>
-                            {daysLeft <= 0 ? "Expires today" : `${daysLeft}d left`}
-                          </p>
-                          <p className="text-label-sm text-muted-foreground/50">{(q as any).quoteExpirationDate}</p>
-                        </div>
-                      </Link>
-                    );
-                  })}
-                </div>
-              </div>
-            </FadeIn>
-          )}
       </div>
 
     </AppShell>

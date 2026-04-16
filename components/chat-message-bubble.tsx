@@ -56,7 +56,7 @@ export function ChatMessageBubble({ message, viewerId }: { message: WebChatMessa
             <div className="rounded-lg bg-popover border border-foreground/6 px-3.5 py-2.5 ${PROSE_MARKDOWN_STYLES} [&_a]:text-blue-600 [&_a]:underline">
               <Markdown remarkPlugins={[remarkBreaks]} components={{
                 a: ({ href, children }) => {
-                  if (href?.startsWith("/policies/") || href?.startsWith("/quotes/")) {
+                  if (href?.startsWith("/policies/")) {
                     return <ContextReferenceCard href={href}>{children}</ContextReferenceCard>;
                   }
                   return <a href={href} className="text-blue-600 underline" target="_blank" rel="noopener noreferrer">{children}</a>;

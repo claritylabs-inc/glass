@@ -50,7 +50,6 @@ type ThreadMessage = {
   responseMessageId?: string;
   attachments?: { filename: string; contentType: string; size: number; fileId?: Id<"_storage"> }[];
   referencedPolicyIds?: Id<"policies">[];
-  referencedQuoteIds?: Id<"policies">[];
   citedSections?: string[];
   status?: "processing" | "error" | "pending_send";
   error?: string;
@@ -139,20 +138,12 @@ function UnifiedThreadActions({
   );
 }
 
-/**
- * Legacy no-op: quote IDs now use /policies/ routes like policies do.
- * Kept for call-site compatibility.
- */
-function fixQuoteLinks(content: string, _quoteIds?: Id<"policies">[]): string {
-  return content;
-}
-
 /* ── Shared markdown container styles ── */
 const MARKDOWN_STYLES = PROSE_MARKDOWN_STYLES + " [&_a]:text-[#A0D2FA] [&_a]:underline";
 
 const markdownComponents = {
   a: ({ href, children }: { href?: string; children?: React.ReactNode }) => {
-    if (href?.startsWith("/policies/") || href?.startsWith("/quotes/")) {
+    if (href?.startsWith("/policies/")) {
       return <ContextReferenceCard href={href}>{children}</ContextReferenceCard>;
     }
     return <a href={href} className="text-[#A0D2FA] underline" target="_blank" rel="noopener noreferrer">{children}</a>;
@@ -315,7 +306,7 @@ function UnifiedMessageBubble({
           {/* Content bubble or thinking indicator */}
           {displayContent ? (
             <div className={`rounded-lg bg-popover border border-foreground/6 px-3.5 py-2.5 mt-1 ${MARKDOWN_STYLES}`}>
-              <Markdown remarkPlugins={[remarkGfm, remarkBreaks]} components={markdownComponents}>{fixQuoteLinks(displayContent, msg.referencedQuoteIds)}</Markdown>
+              <Markdown remarkPlugins={[remarkGfm, remarkBreaks]} components={markdownComponents}>{displayContent}</Markdown>
               <span className="inline-block w-1.5 h-4 bg-[#A0D2FA] rounded-sm animate-pulse ml-0.5 align-middle" />
             </div>
           ) : (
@@ -349,21 +340,16 @@ function UnifiedMessageBubble({
 
   // Agent message
   if (msg.role === "agent") {
-    const fixedContent = fixQuoteLinks(msg.content, msg.referencedQuoteIds);
+    const fixedContent = msg.content;
 
     // Cited sections from tool results (stored on message by processThreadChat)
     const citedSections = msg.citedSections;
 
     // Build reference cards — referencedPolicyIds now only contains policies actually cited via lookup_policy_section
-    const allRefs: { type: "policy" | "quote"; id: string; page?: number }[] = [];
+    const allRefs: { type: "policy"; id: string; page?: number }[] = [];
     if (msg.referencedPolicyIds) {
       for (const pid of msg.referencedPolicyIds) {
         allRefs.push({ type: "policy", id: pid as string });
-      }
-    }
-    if (msg.referencedQuoteIds && Array.isArray(msg.referencedQuoteIds)) {
-      for (const qid of msg.referencedQuoteIds) {
-        allRefs.push({ type: "quote", id: qid as string });
       }
     }
     return (
@@ -593,12 +579,6 @@ const EXAMPLE_PROMPTS_UNIFIED = [
     label: "Policy lookup",
     prompt: "What are the coverage limits on my general liability policy?",
     description: "Ask about your active policies, coverages, and limits",
-  },
-  {
-    icon: Search,
-    label: "Compare quotes",
-    prompt: "Compare my cyber liability quotes and highlight the differences",
-    description: "Analyze and compare quotes across carriers",
   },
   {
     icon: ClipboardList,
@@ -851,7 +831,7 @@ function UnifiedThreadContent({
               </div>
               <h3 className="text-body-sm font-semibold text-foreground mb-1">Ask Prism anything</h3>
               <p className="text-label-sm text-muted-foreground/50 mb-6 text-center max-w-sm">
-                I can help with your policies, quotes, applications, and general insurance questions.
+                I can help with your policies, applications, and general insurance questions.
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full max-w-md">
                 {EXAMPLE_PROMPTS_UNIFIED.map((item) => (
@@ -1204,12 +1184,6 @@ const EXAMPLE_PROMPTS = [
     description: "Ask about your active policies, coverages, and limits",
   },
   {
-    icon: Search,
-    label: "Compare quotes",
-    prompt: "Compare my cyber liability quotes and highlight the differences",
-    description: "Analyze and compare quotes across carriers",
-  },
-  {
     icon: ClipboardList,
     label: "Application help",
     prompt: "What information do I need to fill out a workers comp application?",
@@ -1326,7 +1300,7 @@ function WebChatContent({
               </div>
               <h3 className="text-body-sm font-semibold text-foreground mb-1">Ask Prism anything</h3>
               <p className="text-label-sm text-muted-foreground/50 mb-6 text-center max-w-sm">
-                I can help with your policies, quotes, applications, and general insurance questions.
+                I can help with your policies, applications, and general insurance questions.
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full max-w-md">
                 {EXAMPLE_PROMPTS.map((item) => (

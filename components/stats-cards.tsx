@@ -62,17 +62,12 @@ interface StatsData {
   byType: Record<string, number>;
 }
 
-interface QuoteStatsData {
-  totalQuotes: number;
-  pendingExtractions: number;
-}
-
-export function StatsCards({ stats, quoteStats }: { stats: StatsData | undefined; quoteStats?: QuoteStatsData | undefined }) {
-  const totalDocs = (stats?.totalPolicies ?? 0) + (quoteStats?.totalQuotes ?? 0);
+export function StatsCards({ stats }: { stats: StatsData | undefined }) {
+  const totalDocs = stats?.totalPolicies ?? 0;
   const items = [
     {
       label: "Documents",
-      value: stats !== undefined && quoteStats !== undefined ? totalDocs : "—",
+      value: stats !== undefined ? totalDocs : "—",
       icon: FileText,
       href: "/policies",
     },
