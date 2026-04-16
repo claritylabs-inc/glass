@@ -82,7 +82,7 @@ export function ScanModal({ open, onClose, connectionId, provider, defaults }: S
             className="relative bg-popover rounded-xl border border-foreground/8 shadow-xl max-w-md w-full mx-4 p-6"
           >
             <div className="flex items-center justify-between mb-5">
-              <h3 className="!mb-0">Scan Inbox</h3>
+              <h3 className="!mb-0">Scan Email</h3>
               <button
                 type="button"
                 onClick={onClose}

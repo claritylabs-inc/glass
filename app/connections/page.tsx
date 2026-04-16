@@ -30,6 +30,7 @@ import { getScanCoverageLabel } from "@/components/pull-more-dropdown";
 import { EmailReviewTable } from "@/components/email-review-table";
 import { IntelligenceTab } from "@/components/intelligence-tab";
 import { DreamLog } from "@/components/dream-log";
+import { EmailScanLog } from "@/components/email-scan-log";
 import { ScanCalendarDialog } from "@/components/scan-calendar-dialog";
 import { LogoIcon } from "@/components/ui/logo-icon";
 import { Id } from "@/convex/_generated/dataModel";
@@ -859,6 +860,7 @@ export default function ConnectionsPage() {
                   <ExtractionTable extractions={pending} />
                 </div>
               )}
+              <EmailScanLog />
               <DreamLog />
               <div>
                 <h3 className="text-body-sm font-medium text-foreground mb-3">Extraction History</h3>
