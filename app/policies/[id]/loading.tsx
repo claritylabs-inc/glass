@@ -1,10 +1,8 @@
-import { Nav } from "@/components/nav";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export default function PolicyDetailLoading() {
   return (
     <div className="min-h-screen flex flex-col">
-      <Nav />
       <main className="flex-1">
         <div className="max-w-6xl mx-auto px-4 md:px-8 py-6">
           <Skeleton className="h-4 w-28 mb-4" />
