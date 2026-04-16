@@ -65,7 +65,7 @@ export const update = internalMutation({
   },
   handler: async (ctx, args) => {
     const { id, ...fields } = args;
-    const patch: Record<string, any> = {};
+    const patch: Record<string, unknown> = {};
     for (const [k, val] of Object.entries(fields)) {
       if (val !== undefined) patch[k] = val;
     }

@@ -119,7 +119,7 @@ export const scanInbox = action({
         date: string;
         hasAttachments: boolean;
       }> = [];
-      let sentEmails: typeof emails = [];
+      const sentEmails: typeof emails = [];
 
       try {
         await client.connect();
