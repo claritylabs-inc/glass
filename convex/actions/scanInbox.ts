@@ -65,6 +65,24 @@ export const scanInbox = action({
       scanProgress: { phase: "fetching" },
     });
 
+    const startTime = Date.now();
+    const scanLogId = await ctx.runMutation(internal.emailScanLogs.insert, {
+      orgId: orgId ?? undefined,
+      connectionId: args.connectionId,
+      connectionLabel: connection.label,
+      trigger: "manual" as const,
+      status: "running",
+      sinceDate: args.sinceDate,
+      untilDate: args.untilDate,
+      senderDomains: args.senderDomains,
+      inboxFound: 0,
+      sentFound: 0,
+      totalInserted: 0,
+      duplicatesSkipped: 0,
+      durationMs: 0,
+      log: ["Scan started"],
+    });
+
     try {
       // Determine date range
       const since = args.sinceDate
@@ -101,6 +119,7 @@ export const scanInbox = action({
         date: string;
         hasAttachments: boolean;
       }> = [];
+      let sentEmails: typeof emails = [];
 
       try {
         await client.connect();
@@ -133,6 +152,82 @@ export const scanInbox = action({
         } finally {
           lock.release();
         }
+
+        // Also scan Sent mailbox
+        try {
+          const sentLock = await client.getMailboxLock("[Gmail]/Sent Mail");
+          try {
+            for await (const message of client.fetch(
+              searchCriteria,
+              { uid: true, envelope: true, bodyStructure: true }
+            )) {
+              const envelope = message.envelope!;
+              const from = envelope.from?.[0];
+              const fromStr = from
+                ? `${from.name || ""} <${from.address || ""}>`
+                : "Unknown";
+
+              if (args.senderDomains?.length && !matchesDomains(fromStr, args.senderDomains)) {
+                continue;
+              }
+
+              sentEmails.push({
+                uid: message.uid,
+                messageId: envelope.messageId || `uid-${message.uid}`,
+                subject: envelope.subject || "(No Subject)",
+                from: fromStr,
+                date: envelope.date?.toISOString() || new Date().toISOString(),
+                hasAttachments: hasAttachmentParts(message.bodyStructure),
+              });
+            }
+          } finally {
+            sentLock.release();
+          }
+        } catch {
+          // Try common alternative name
+          try {
+            const sentLock2 = await client.getMailboxLock("Sent");
+            try {
+              for await (const message of client.fetch(
+                searchCriteria,
+                { uid: true, envelope: true, bodyStructure: true }
+              )) {
+                const envelope = message.envelope!;
+                const from = envelope.from?.[0];
+                const fromStr = from
+                  ? `${from.name || ""} <${from.address || ""}>`
+                  : "Unknown";
+
+                if (args.senderDomains?.length && !matchesDomains(fromStr, args.senderDomains)) {
+                  continue;
+                }
+
+                sentEmails.push({
+                  uid: message.uid,
+                  messageId: envelope.messageId || `uid-${message.uid}`,
+                  subject: envelope.subject || "(No Subject)",
+                  from: fromStr,
+                  date: envelope.date?.toISOString() || new Date().toISOString(),
+                  hasAttachments: hasAttachmentParts(message.bodyStructure),
+                });
+              }
+            } finally {
+              sentLock2.release();
+            }
+          } catch {
+            // No accessible sent mailbox — continue with inbox only
+          }
+        }
+
+        // Merge inbox + sent, dedup by messageId
+        const seenIds = new Set(emails.map((e) => e.messageId));
+        for (const se of sentEmails) {
+          if (!seenIds.has(se.messageId)) {
+            emails.push(se);
+            seenIds.add(se.messageId);
+          }
+        }
+
         await client.logout();
       } catch (error) {
         try { await client.logout(); } catch { /* ignore */ }
@@ -143,6 +238,19 @@ export const scanInbox = action({
       await ctx.runMutation(api.connections.updateScanProgress, {
         id: args.connectionId,
         scanProgress: { phase: "fetching", totalEmails: emails.length },
+      });
+
+      const inboxCount = emails.length - sentEmails.length;
+      await ctx.runMutation(internal.emailScanLogs.update, {
+        id: scanLogId,
+        inboxFound: inboxCount,
+        sentFound: sentEmails.length,
+        log: [
+          "Scan started",
+          `Found ${inboxCount} inbox emails`,
+          `Found ${sentEmails.length} sent emails`,
+          `${emails.length} unique after dedup`,
+        ],
       });
 
       // Insert new emails (dedup handled by mutation)
@@ -182,6 +290,23 @@ export const scanInbox = action({
         { connectionId: args.connectionId, userId, orgId }
       );
 
+      const duplicatesSkipped = emails.length - inserted;
+      await ctx.runMutation(internal.emailScanLogs.update, {
+        id: scanLogId,
+        status: "success",
+        totalInserted: inserted,
+        duplicatesSkipped,
+        durationMs: Date.now() - startTime,
+        log: [
+          "Scan started",
+          `Found ${inboxCount} inbox emails`,
+          `Found ${sentEmails.length} sent emails`,
+          `${emails.length} unique after dedup`,
+          `Inserted ${inserted} new emails (${duplicatesSkipped} already imported)`,
+          `Complete (${Math.round((Date.now() - startTime) / 1000)}s)`,
+        ],
+      });
+
       return { emailsFound: inserted };
     } catch (error: any) {
       const message =
@@ -204,6 +329,16 @@ export const scanInbox = action({
         id: args.connectionId,
         scanProgress: { phase: "complete" },
       });
+
+      try {
+        await ctx.runMutation(internal.emailScanLogs.update, {
+          id: scanLogId,
+          status: "error",
+          error: friendlyError,
+          durationMs: Date.now() - startTime,
+          log: ["Scan started", `Error: ${friendlyError}`],
+        });
+      } catch { /* scanLogId may not exist if error happened before log creation */ }
 
       return { error: friendlyError };
     }
