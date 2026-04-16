@@ -1290,7 +1290,7 @@ const AUDIT_ACTION_CONFIG: Record<string, { dotColor: string; title: string }> =
   deleted: { dotColor: "bg-red-400", title: "Policy deleted" },
   restored: { dotColor: "bg-emerald-500", title: "Policy restored" },
   dismissed: { dotColor: "bg-gray-400", title: "Policy dismissed" },
-  agent_referenced: { dotColor: "bg-[#A0D2FA]", title: "Referenced by Prism" },
+  agent_referenced: { dotColor: "bg-primary-light", title: "Referenced by Prism" },
 };
 
 function PolicyActivityTab({ policyId }: { policyId: string }) {

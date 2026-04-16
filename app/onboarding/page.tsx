@@ -354,9 +354,9 @@ export default function OnboardingPage() {
                 key={s.label}
                 className={`h-1 rounded-full transition-all duration-300 ${
                   i === currentStep
-                    ? "w-8 bg-[#A0D2FA]"
+                    ? "w-8 bg-primary-light"
                     : i < currentStep
-                      ? "w-4 bg-[#A0D2FA]/40"
+                      ? "w-4 bg-primary-light/40"
                       : "w-4 bg-foreground/10"
                 }`}
               />
@@ -627,9 +627,9 @@ export default function OnboardingPage() {
           {currentStep === 2 && (
             <div className="space-y-6">
               {(viewerOrg?.org?.agentHandle ?? viewer?.agentHandle) ? (
-                <div className="rounded-lg border border-[#A0D2FA]/40 bg-[#A0D2FA]/[0.06] p-4">
+                <div className="rounded-lg border border-primary-light/40 bg-primary-light/[0.06] p-4">
                   <div className="flex items-center gap-2 mb-1.5">
-                    <Asterisk className="w-4 h-4 text-[#A0D2FA] shrink-0" />
+                    <Asterisk className="w-4 h-4 text-primary-light shrink-0" />
                     <p className="text-body-sm font-medium text-foreground">Agent email claimed</p>
                   </div>
                   <p className="text-label-sm font-mono text-[#6BB8F0] pl-6">

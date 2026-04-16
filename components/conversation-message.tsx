@@ -319,7 +319,7 @@ export function MessageBubble({ conv, onOpenPdf, onRetry, viewerEmail }: { conv:
           <div className="mb-2">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1">
-                <Asterisk className="w-3.5 h-3.5 text-[#A0D2FA]" />
+                <Asterisk className="w-3.5 h-3.5 text-primary-light" />
                 <span className="text-label-sm font-medium text-muted-foreground leading-none">
                   Prism
                 </span>

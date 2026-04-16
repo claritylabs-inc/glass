@@ -174,7 +174,7 @@ export default function DashboardPage() {
                     <div className="space-y-4">
                       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 md:gap-2 min-w-0">
                         <div className="flex items-center gap-2">
-                          <Asterisk className="w-4 h-4 text-[#A0D2FA] shrink-0" />
+                          <Asterisk className="w-4 h-4 text-primary-light shrink-0" />
                           <span className="text-sm font-semibold text-foreground shrink-0">Prism</span>
                         </div>
                         <button
@@ -210,7 +210,7 @@ export default function DashboardPage() {
                     </div>
                   ) : (
                     <div className="flex items-center gap-2">
-                      <Asterisk className="w-4 h-4 text-[#A0D2FA] shrink-0" />
+                      <Asterisk className="w-4 h-4 text-primary-light shrink-0" />
                       <div className="flex-1 min-w-0">
                         <p className="text-body-sm font-medium text-foreground">
                           Set Up Prism

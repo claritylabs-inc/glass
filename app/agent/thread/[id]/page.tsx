@@ -139,14 +139,14 @@ function UnifiedThreadActions({
 }
 
 /* ── Shared markdown container styles ── */
-const MARKDOWN_STYLES = PROSE_MARKDOWN_STYLES + " [&_a]:text-[#A0D2FA] [&_a]:underline";
+const MARKDOWN_STYLES = PROSE_MARKDOWN_STYLES + " [&_a]:text-primary-light [&_a]:underline";
 
 const markdownComponents = {
   a: ({ href, children }: { href?: string; children?: React.ReactNode }) => {
     if (href?.startsWith("/policies/")) {
       return <ContextReferenceCard href={href}>{children}</ContextReferenceCard>;
     }
-    return <a href={href} className="text-[#A0D2FA] underline" target="_blank" rel="noopener noreferrer">{children}</a>;
+    return <a href={href} className="text-primary-light underline" target="_blank" rel="noopener noreferrer">{children}</a>;
   },
 };
 
@@ -285,8 +285,8 @@ function UnifiedMessageBubble({
 
     return (
       <div className="flex items-start gap-2.5 max-w-lg">
-        <div className="w-7 h-7 rounded-full bg-[#A0D2FA]/15 flex items-center justify-center shrink-0">
-          <Asterisk className="w-3.5 h-3.5 text-[#A0D2FA]" />
+        <div className="w-7 h-7 rounded-full bg-primary-light/15 flex items-center justify-center shrink-0">
+          <Asterisk className="w-3.5 h-3.5 text-primary-light" />
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
@@ -307,14 +307,14 @@ function UnifiedMessageBubble({
           {displayContent ? (
             <div className={`rounded-lg bg-popover border border-foreground/6 px-3.5 py-2.5 mt-1 ${MARKDOWN_STYLES}`}>
               <Markdown remarkPlugins={[remarkGfm, remarkBreaks]} components={markdownComponents}>{displayContent}</Markdown>
-              <span className="inline-block w-1.5 h-4 bg-[#A0D2FA] rounded-sm animate-pulse ml-0.5 align-middle" />
+              <span className="inline-block w-1.5 h-4 bg-primary-light rounded-sm animate-pulse ml-0.5 align-middle" />
             </div>
           ) : (
             <div className="flex items-center gap-1.5 h-6 mt-1">
               <span className="flex gap-[3px]">
-                <span className="w-1 h-1 rounded-full bg-[#A0D2FA]/60 animate-pulse" />
-                <span className="w-1 h-1 rounded-full bg-[#A0D2FA]/60 animate-pulse [animation-delay:150ms]" />
-                <span className="w-1 h-1 rounded-full bg-[#A0D2FA]/60 animate-pulse [animation-delay:300ms]" />
+                <span className="w-1 h-1 rounded-full bg-primary-light/60 animate-pulse" />
+                <span className="w-1 h-1 rounded-full bg-primary-light/60 animate-pulse [animation-delay:150ms]" />
+                <span className="w-1 h-1 rounded-full bg-primary-light/60 animate-pulse [animation-delay:300ms]" />
               </span>
               <span className="text-label-sm text-muted-foreground/40 select-none">
                 {toolLabel ?? (isStale ? "Taking longer than expected" : "Thinking")}
@@ -355,8 +355,8 @@ function UnifiedMessageBubble({
     return (
       <div>
         <div className="flex items-start gap-2.5 max-w-lg w-fit">
-          <div className="w-7 h-7 rounded-full bg-[#A0D2FA]/15 flex items-center justify-center shrink-0">
-            <Asterisk className="w-3.5 h-3.5 text-[#A0D2FA]" />
+          <div className="w-7 h-7 rounded-full bg-primary-light/15 flex items-center justify-center shrink-0">
+            <Asterisk className="w-3.5 h-3.5 text-primary-light" />
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
@@ -826,8 +826,8 @@ function UnifiedThreadContent({
         <div className="max-w-2xl mx-auto space-y-4">
           {(!messages || messages.length === 0) && (
             <div className="flex flex-col items-center justify-center pt-16 pb-8">
-              <div className="w-10 h-10 rounded-full bg-[#A0D2FA]/15 flex items-center justify-center mb-4">
-                <Asterisk className="w-5 h-5 text-[#A0D2FA]" />
+              <div className="w-10 h-10 rounded-full bg-primary-light/15 flex items-center justify-center mb-4">
+                <Asterisk className="w-5 h-5 text-primary-light" />
               </div>
               <h3 className="text-body-sm font-semibold text-foreground mb-1">Ask Prism anything</h3>
               <p className="text-label-sm text-muted-foreground/50 mb-6 text-center max-w-sm">
@@ -1295,8 +1295,8 @@ function WebChatContent({
         <div className="max-w-2xl mx-auto space-y-4">
           {(!messages || messages.length === 0) && (
             <div className="flex flex-col items-center justify-center pt-16 pb-8">
-              <div className="w-10 h-10 rounded-full bg-[#A0D2FA]/15 flex items-center justify-center mb-4">
-                <Asterisk className="w-5 h-5 text-[#A0D2FA]" />
+              <div className="w-10 h-10 rounded-full bg-primary-light/15 flex items-center justify-center mb-4">
+                <Asterisk className="w-5 h-5 text-primary-light" />
               </div>
               <h3 className="text-body-sm font-semibold text-foreground mb-1">Ask Prism anything</h3>
               <p className="text-label-sm text-muted-foreground/50 mb-6 text-center max-w-sm">

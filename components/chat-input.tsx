@@ -135,7 +135,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
         <div className="flex items-center justify-between px-2 pb-1.5 pt-0">
           {/* Left side */}
           <div className="flex items-center gap-1.5 ml-1">
-            <Asterisk className="w-3.5 h-3.5 text-[#A0D2FA]" />
+            <Asterisk className="w-3.5 h-3.5 text-primary-light" />
             <span className="hidden sm:inline text-[11px] font-medium text-muted-foreground/40">Prism</span>
             {contextLabel && (
               <span className="text-[10px] font-medium text-muted-foreground/30 bg-foreground/[0.03] px-1.5 py-0.5 rounded">

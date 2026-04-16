@@ -12,7 +12,7 @@ import {
 interface LogoIconProps {
   className?: string;
   size?: number;
-  /** Override the fill/stroke color (default: #A0D2FA) */
+  /** Override the fill/stroke color (default: currentColor) */
   color?: string;
   /** When true, disables all scroll/load animations */
   static?: boolean;
@@ -24,7 +24,7 @@ const GLOBE_PATH =
 export function LogoIcon({
   className = "",
   size = 20,
-  color = "#A0D2FA",
+  color = "currentColor",
   static: isStatic = false,
 }: LogoIconProps) {
   if (isStatic) {

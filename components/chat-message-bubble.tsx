@@ -43,8 +43,8 @@ export function ChatMessageBubble({ message, viewerId }: { message: WebChatMessa
     const hasContent = message.content && message.content.length > 0;
     return (
       <div className="flex items-start gap-2.5 max-w-lg">
-        <div className="w-7 h-7 rounded-full bg-[#A0D2FA]/15 flex items-center justify-center shrink-0">
-          <Asterisk className="w-3.5 h-3.5 text-[#A0D2FA]" />
+        <div className="w-7 h-7 rounded-full bg-primary-light/15 flex items-center justify-center shrink-0">
+          <Asterisk className="w-3.5 h-3.5 text-primary-light" />
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
@@ -62,7 +62,7 @@ export function ChatMessageBubble({ message, viewerId }: { message: WebChatMessa
                   return <a href={href} className="text-blue-600 underline" target="_blank" rel="noopener noreferrer">{children}</a>;
                 },
               }}>{message.content}</Markdown>
-              <span className="inline-block w-1.5 h-4 bg-[#A0D2FA] rounded-sm animate-pulse ml-0.5 align-middle" />
+              <span className="inline-block w-1.5 h-4 bg-primary-light rounded-sm animate-pulse ml-0.5 align-middle" />
             </div>
           ) : (
             <div className="flex items-center gap-2 text-muted-foreground/40 text-body-sm">
@@ -96,8 +96,8 @@ export function ChatMessageBubble({ message, viewerId }: { message: WebChatMessa
   if (message.role === "agent") {
     return (
       <div className="flex items-start gap-2.5 max-w-lg">
-        <div className="w-7 h-7 rounded-full bg-[#A0D2FA]/15 flex items-center justify-center shrink-0">
-          <Asterisk className="w-3.5 h-3.5 text-[#A0D2FA]" />
+        <div className="w-7 h-7 rounded-full bg-primary-light/15 flex items-center justify-center shrink-0">
+          <Asterisk className="w-3.5 h-3.5 text-primary-light" />
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">

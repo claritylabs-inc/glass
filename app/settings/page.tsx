@@ -667,7 +667,7 @@ export default function SettingsPage() {
                         )}
                         <span className={`text-[11px] px-1.5 py-0.5 rounded flex items-center gap-1 ${
                           member.role === "admin"
-                            ? "text-[#5BA4D9] bg-[#A0D2FA]/10"
+                            ? "text-primary-muted bg-primary-light/10"
                             : "text-muted-foreground bg-foreground/5"
                         }`}>
                           {member.role === "admin" && <ShieldCheck className="w-3 h-3" />}

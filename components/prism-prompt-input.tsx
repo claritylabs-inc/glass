@@ -94,7 +94,7 @@ export const PrismPromptInput = forwardRef<
           {/* Left side: branding + context */}
           <PromptInputTools>
             <div className="flex items-center gap-1.5 ml-1">
-              <Asterisk className="w-3.5 h-3.5 text-[#A0D2FA]" />
+              <Asterisk className="w-3.5 h-3.5 text-primary-light" />
               <span className="hidden sm:inline text-[11px] font-medium text-muted-foreground/40">
                 Prism
               </span>

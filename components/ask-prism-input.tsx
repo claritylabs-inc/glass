@@ -164,7 +164,7 @@ export function AskPrismInput() {
                   onClick={() => { setExpanded(true); setEngaged(true); }}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-foreground/8 bg-popover text-label-sm text-muted-foreground/60 shadow-sm hover:text-foreground hover:border-foreground/15 transition-colors cursor-pointer"
                 >
-                  <Asterisk className="w-3 h-3 text-[#A0D2FA]" />
+                  <Asterisk className="w-3 h-3 text-primary-light" />
                   Ask Prism
                 </button>
               </motion.div>

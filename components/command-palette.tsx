@@ -118,7 +118,7 @@ export function CommandPalette() {
                 {/* Bottom row */}
                 <div className="flex items-center justify-between px-3 pb-2.5 pt-0">
                   <div className="flex items-center gap-1.5 ml-1">
-                    <Asterisk className="w-3.5 h-3.5 text-[#A0D2FA]" />
+                    <Asterisk className="w-3.5 h-3.5 text-primary-light" />
                     <span className="text-[11px] font-medium text-muted-foreground/40">Prism</span>
                   </div>
                   <div className="flex items-center gap-2">

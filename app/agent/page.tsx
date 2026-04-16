@@ -534,7 +534,7 @@ export default function AgentPage() {
             <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-4 mb-6">
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
                 <div className="flex items-center gap-2">
-                  <Asterisk className="w-4 h-4 text-[#A0D2FA] shrink-0" />
+                  <Asterisk className="w-4 h-4 text-primary-light shrink-0" />
                   <span className="text-sm font-semibold text-foreground shrink-0">Prism</span>
                 </div>
                 <button
