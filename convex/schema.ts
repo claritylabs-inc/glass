@@ -295,6 +295,36 @@ export default defineSchema({
       filterFields: ["orgId"],
     }),
 
+  // Email scan run logs (streaming — updated as scan progresses)
+  emailScanLogs: defineTable({
+    orgId: v.optional(v.id("organizations")),
+    connectionId: v.id("emailConnections"),
+    connectionLabel: v.string(),
+    trigger: v.union(v.literal("manual"), v.literal("daily"), v.literal("calendar")),
+    status: v.union(
+      v.literal("running"),
+      v.literal("success"),
+      v.literal("error"),
+    ),
+    // Scan parameters
+    sinceDate: v.optional(v.string()),
+    untilDate: v.optional(v.string()),
+    senderDomains: v.optional(v.array(v.string())),
+    // Result metrics
+    inboxFound: v.number(),
+    sentFound: v.number(),
+    totalInserted: v.number(),
+    duplicatesSkipped: v.number(),
+    insuranceFound: v.optional(v.number()),
+    // Progress + errors
+    error: v.optional(v.string()),
+    log: v.optional(v.array(v.string())),
+    durationMs: v.number(),
+    createdAt: v.number(),
+  })
+    .index("by_orgId", ["orgId"])
+    .index("by_connectionId", ["connectionId"]),
+
   // Dream consolidation run logs (streaming — updated as run progresses)
   dreamLogs: defineTable({
     orgId: v.id("organizations"),
