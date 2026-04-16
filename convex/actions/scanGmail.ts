@@ -70,6 +70,30 @@ export const scanGmail = action({
       scanProgress: { phase: "fetching" },
     });
 
+    // Create scan log entry
+    const startTime = Date.now();
+    let scanLogId: any;
+    try {
+      scanLogId = await ctx.runMutation(internal.emailScanLogs.insert, {
+        orgId: orgId ?? undefined,
+        connectionId: args.connectionId,
+        connectionLabel: connection.label,
+        trigger: "manual" as const,
+        status: "running",
+        sinceDate: args.sinceDate,
+        untilDate: args.untilDate,
+        senderDomains: args.senderDomains,
+        inboxFound: 0,
+        sentFound: 0,
+        totalInserted: 0,
+        duplicatesSkipped: 0,
+        durationMs: 0,
+        log: ["Scan started"],
+      });
+    } catch (_) {
+      // Non-fatal: scan log creation failure shouldn't block scanning
+    }
+
     try {
       // Set up OAuth2 client
       const oauth2Client = new OAuth2Client(
@@ -122,46 +146,72 @@ export const scanGmail = action({
         ? new Date(new Date(args.untilDate).getTime() + 24 * 60 * 60 * 1000)
         : undefined;
 
-      // Build Gmail search query
-      const queryParts: string[] = [];
+      // Build base query (date + optional domain filter)
+      const baseQueryParts: string[] = [];
 
       const formatDate = (d: Date) =>
         `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}`;
 
-      queryParts.push(`after:${formatDate(since)}`);
+      baseQueryParts.push(`after:${formatDate(since)}`);
       if (before) {
-        queryParts.push(`before:${formatDate(before)}`);
+        baseQueryParts.push(`before:${formatDate(before)}`);
       }
 
       if (args.senderDomains?.length) {
         const domainQuery = args.senderDomains
           .map((d) => `from:${d}`)
           .join(" OR ");
-        queryParts.push(`(${domainQuery})`);
+        baseQueryParts.push(`(${domainQuery})`);
       }
 
-      const searchQuery = queryParts.join(" ");
+      const baseQuery = baseQueryParts.join(" ");
 
-      // List messages with pagination
-      const messageIds: string[] = [];
-      let pageToken: string | undefined;
+      // Fetch from both inbox and sent
+      const inboxQuery = `in:inbox ${baseQuery}`;
+      const sentQuery = `in:sent ${baseQuery}`;
 
-      do {
-        const listResponse = await gmail.users.messages.list({
-          userId: "me",
-          q: searchQuery,
-          pageToken,
-          maxResults: 500,
-        });
-
-        if (listResponse.data.messages) {
-          for (const msg of listResponse.data.messages) {
-            if (msg.id) messageIds.push(msg.id);
+      async function listAllMessageIds(query: string): Promise<string[]> {
+        const ids: string[] = [];
+        let pageToken: string | undefined;
+        do {
+          const res = await gmail.users.messages.list({
+            userId: "me",
+            q: query,
+            pageToken,
+            maxResults: 500,
+          });
+          if (res.data.messages) {
+            for (const msg of res.data.messages) {
+              if (msg.id) ids.push(msg.id);
+            }
           }
-        }
+          pageToken = res.data.nextPageToken || undefined;
+        } while (pageToken);
+        return ids;
+      }
 
-        pageToken = listResponse.data.nextPageToken || undefined;
-      } while (pageToken);
+      const [inboxIds, sentIds] = await Promise.all([
+        listAllMessageIds(inboxQuery),
+        listAllMessageIds(sentQuery),
+      ]);
+
+      // Merge and dedup
+      const allIdSet = new Set([...inboxIds, ...sentIds]);
+      const messageIds = [...allIdSet];
+
+      if (scanLogId) {
+        await ctx.runMutation(internal.emailScanLogs.update, {
+          id: scanLogId,
+          inboxFound: inboxIds.length,
+          sentFound: sentIds.length,
+          log: [
+            "Scan started",
+            `Found ${inboxIds.length} inbox emails`,
+            `Found ${sentIds.length} sent emails`,
+            `${messageIds.length} unique after dedup`,
+          ],
+        });
+      }
 
       // Update progress with total count
       await ctx.runMutation(api.connections.updateScanProgress, {
@@ -252,6 +302,25 @@ export const scanGmail = action({
         { connectionId: args.connectionId, userId, orgId }
       );
 
+      const duplicatesSkipped = emails.length - inserted;
+      if (scanLogId) {
+        await ctx.runMutation(internal.emailScanLogs.update, {
+          id: scanLogId,
+          status: "success",
+          totalInserted: inserted,
+          duplicatesSkipped,
+          durationMs: Date.now() - startTime,
+          log: [
+            "Scan started",
+            `Found ${inboxIds.length} inbox emails`,
+            `Found ${sentIds.length} sent emails`,
+            `${messageIds.length} unique after dedup`,
+            `Inserted ${inserted} new emails (${duplicatesSkipped} already imported)`,
+            `Complete (${Math.round((Date.now() - startTime) / 1000)}s)`,
+          ],
+        });
+      }
+
       return { emailsFound: inserted };
     } catch (error: any) {
       const message = error.message || "Unknown error";
@@ -286,6 +355,23 @@ export const scanGmail = action({
           lastScanStatus: "error",
           lastScanError: friendlyError,
         });
+      }
+
+      if (scanLogId) {
+        try {
+          await ctx.runMutation(internal.emailScanLogs.update, {
+            id: scanLogId,
+            status: "error",
+            error: friendlyError,
+            durationMs: Date.now() - startTime,
+            log: [
+              "Scan started",
+              `Error: ${friendlyError}`,
+            ],
+          });
+        } catch (_) {
+          // Non-fatal: scan log update failure shouldn't block error handling
+        }
       }
 
       await ctx.runMutation(api.connections.updateScanProgress, {
