@@ -98,6 +98,21 @@ export const scanSingleConnection = internalAction({
       scanProgress: { phase: "fetching" },
     });
 
+    const startTime = Date.now();
+    const scanLogId = await ctx.runMutation(internal.emailScanLogs.insert, {
+      orgId: orgId ?? undefined,
+      connectionId: args.connectionId,
+      connectionLabel: connection.label,
+      trigger: "daily" as const,
+      status: "running",
+      inboxFound: 0,
+      sentFound: 0,
+      totalInserted: 0,
+      duplicatesSkipped: 0,
+      durationMs: 0,
+      log: ["Daily scan started"],
+    });
+
     try {
       let result: { emailsFound: number };
 
@@ -124,6 +139,18 @@ export const scanSingleConnection = internalAction({
         emailsFound: result.emailsFound,
       });
 
+      await ctx.runMutation(internal.emailScanLogs.update, {
+        id: scanLogId,
+        status: "success",
+        totalInserted: result.emailsFound,
+        durationMs: Date.now() - startTime,
+        log: [
+          "Daily scan started",
+          `Inserted ${result.emailsFound} new emails`,
+          "Complete",
+        ],
+      });
+
       // Schedule classification
       if (userId) {
         await ctx.scheduler.runAfter(
@@ -147,6 +174,15 @@ export const scanSingleConnection = internalAction({
         id: args.connectionId,
         scanProgress: { phase: "complete" },
       });
+
+      try {
+        await ctx.runMutation(internal.emailScanLogs.update, {
+          id: scanLogId,
+          status: "error",
+          error: message,
+          log: ["Daily scan started", `Error: ${message}`],
+        });
+      } catch { /* scanLogId may not exist */ }
 
       return { error: message };
     }
@@ -213,6 +249,76 @@ async function scanImapInternal(
     } finally {
       lock.release();
     }
+
+    // Also scan Sent mailbox
+    const sentEmails: typeof emails = [];
+    try {
+      const sentLock = await client.getMailboxLock("[Gmail]/Sent Mail");
+      try {
+        for await (const message of client.fetch(searchCriteria, {
+          uid: true,
+          envelope: true,
+          bodyStructure: true,
+        })) {
+          const envelope = message.envelope!;
+          const from = envelope.from?.[0];
+          const fromStr = from
+            ? `${from.name || ""} <${from.address || ""}>`
+            : "Unknown";
+
+          sentEmails.push({
+            uid: message.uid,
+            messageId: envelope.messageId || `uid-${message.uid}`,
+            subject: envelope.subject || "(No Subject)",
+            from: fromStr,
+            date: envelope.date?.toISOString() || new Date().toISOString(),
+            hasAttachments: hasImapAttachmentParts(message.bodyStructure),
+          });
+        }
+      } finally {
+        sentLock.release();
+      }
+    } catch {
+      try {
+        const sentLock2 = await client.getMailboxLock("Sent");
+        try {
+          for await (const message of client.fetch(searchCriteria, {
+            uid: true,
+            envelope: true,
+            bodyStructure: true,
+          })) {
+            const envelope = message.envelope!;
+            const from = envelope.from?.[0];
+            const fromStr = from
+              ? `${from.name || ""} <${from.address || ""}>`
+              : "Unknown";
+
+            sentEmails.push({
+              uid: message.uid,
+              messageId: envelope.messageId || `uid-${message.uid}`,
+              subject: envelope.subject || "(No Subject)",
+              from: fromStr,
+              date: envelope.date?.toISOString() || new Date().toISOString(),
+              hasAttachments: hasImapAttachmentParts(message.bodyStructure),
+            });
+          }
+        } finally {
+          sentLock2.release();
+        }
+      } catch {
+        // No accessible sent mailbox — continue with inbox only
+      }
+    }
+
+    // Merge inbox + sent, dedup by messageId
+    const seenIds = new Set(emails.map((e) => e.messageId));
+    for (const se of sentEmails) {
+      if (!seenIds.has(se.messageId)) {
+        emails.push(se);
+        seenIds.add(se.messageId);
+      }
+    }
+
     await client.logout();
   } catch (error) {
     try {
@@ -305,28 +411,36 @@ async function scanGmailInternal(
   const formatDate = (d: Date) =>
     `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}`;
 
-  const searchQuery = `after:${formatDate(since)}`;
+  const inboxQuery = `in:inbox after:${formatDate(since)}`;
+  const sentQuery = `in:sent after:${formatDate(since)}`;
 
-  // List messages with pagination
-  const messageIds: string[] = [];
-  let pageToken: string | undefined;
-
-  do {
-    const listResponse = await gmail.users.messages.list({
-      userId: "me",
-      q: searchQuery,
-      pageToken,
-      maxResults: 500,
-    });
-
-    if (listResponse.data.messages) {
-      for (const msg of listResponse.data.messages) {
-        if (msg.id) messageIds.push(msg.id);
+  async function listGmailIds(gmail: any, query: string): Promise<string[]> {
+    const ids: string[] = [];
+    let pageToken: string | undefined;
+    do {
+      const res = await gmail.users.messages.list({
+        userId: "me",
+        q: query,
+        pageToken,
+        maxResults: 500,
+      });
+      if (res.data.messages) {
+        for (const msg of res.data.messages) {
+          if (msg.id) ids.push(msg.id);
+        }
       }
-    }
+      pageToken = res.data.nextPageToken || undefined;
+    } while (pageToken);
+    return ids;
+  }
 
-    pageToken = listResponse.data.nextPageToken || undefined;
-  } while (pageToken);
+  const [inboxIds, sentIds] = await Promise.all([
+    listGmailIds(gmail, inboxQuery),
+    listGmailIds(gmail, sentQuery),
+  ]);
+
+  const allIdSet = new Set([...inboxIds, ...sentIds]);
+  const messageIds = [...allIdSet];
 
   await ctx.runMutation(api.connections.updateScanProgress, {
     id: connectionId,
