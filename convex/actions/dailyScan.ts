@@ -7,6 +7,8 @@ import { ImapFlow } from "imapflow";
 import { google } from "googleapis";
 import { OAuth2Client } from "google-auth-library";
 
+const SCAN_OVERLAP_MS = 5 * 60 * 1000;
+
 function hasImapAttachmentParts(structure: any): boolean {
   if (!structure) return false;
   if (structure.disposition === "attachment") return true;
@@ -79,10 +81,15 @@ export const scanSingleConnection = internalAction({
     );
     if (!connection) return { error: "Connection not found" };
 
-    // Determine scan window: last scan time or 14 days ago
-    const since = connection.lastScanAt
-      ? new Date(connection.lastScanAt)
-      : new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+    const latestImported = await ctx.runQuery(
+      internal.emails.latestImportedAtByConnection,
+      { connectionId: args.connectionId },
+    );
+    const scanAnchorMs =
+      latestImported?.timestamp
+      ?? connection.lastScanAt
+      ?? Date.now() - 14 * 24 * 60 * 60 * 1000;
+    const since = new Date(scanAnchorMs - SCAN_OVERLAP_MS);
 
     const userId = connection.userId;
     const orgId = connection.orgId;
@@ -122,11 +129,10 @@ export const scanSingleConnection = internalAction({
         result = await scanImapInternal(ctx, connection, args.connectionId, since, userId, orgId);
       }
 
-      // Update progress to classifying phase
       await ctx.runMutation(api.connections.updateScanProgress, {
         id: args.connectionId,
         scanProgress: {
-          phase: "classifying",
+          phase: "complete",
           totalEmails: result.emailsFound,
           processedEmails: 0,
         },
@@ -151,7 +157,6 @@ export const scanSingleConnection = internalAction({
         ],
       });
 
-      // Schedule classification
       if (userId) {
         await ctx.scheduler.runAfter(
           0,
@@ -336,7 +341,7 @@ async function scanImapInternal(
 
   let inserted = 0;
   for (const email of emails) {
-    await ctx.runMutation(api.emails.insert, {
+    const result = await ctx.runMutation(api.emails.insert, {
       userId,
       orgId,
       connectionId,
@@ -348,7 +353,7 @@ async function scanImapInternal(
       hasAttachments: email.hasAttachments,
       processed: false,
     });
-    inserted++;
+    if (result.inserted) inserted++;
   }
 
   return { emailsFound: inserted };
@@ -483,7 +488,7 @@ async function scanGmailInternal(
 
   let inserted = 0;
   for (const email of emails) {
-    await ctx.runMutation(api.emails.insert, {
+    const result = await ctx.runMutation(api.emails.insert, {
       userId,
       orgId,
       connectionId,
@@ -494,7 +499,7 @@ async function scanGmailInternal(
       hasAttachments: email.hasAttachments,
       processed: false,
     });
-    inserted++;
+    if (result.inserted) inserted++;
   }
 
   return { emailsFound: inserted };

@@ -105,6 +105,72 @@ export const stats = query({
   },
 });
 
+/** List chunks grouped by policy for inline editing in the intelligence UI. */
+export const listForEditor = query({
+  args: {},
+  handler: async (ctx) => {
+    const { orgId } = await requireOrgAccess(ctx);
+    const chunks = await ctx.db
+      .query("documentChunks")
+      .withIndex("by_orgId", (q) => q.eq("orgId", orgId))
+      .collect();
+
+    const grouped = new Map<
+      string,
+      {
+        id: string;
+        carrier: string;
+        policyNumber: string;
+        policyType: string | null;
+        count: number;
+        chunks: Array<{
+          _id: string;
+          chunkId: string;
+          chunkType: string;
+          text: string;
+          createdAt: number;
+        }>;
+      }
+    >();
+
+    for (const chunk of chunks) {
+      const policyId = chunk.policyId as string;
+      let policyGroup = grouped.get(policyId);
+      if (!policyGroup) {
+        const policy = await ctx.db.get(chunk.policyId);
+        policyGroup = {
+          id: policyId,
+          carrier: (policy as any)?.carrier ?? "Unknown carrier",
+          policyNumber: (policy as any)?.policyNumber ?? "Unknown policy",
+          policyType:
+            (policy as any)?.policyTypes?.[0] ??
+            (policy as any)?.policyType ??
+            null,
+          count: 0,
+          chunks: [],
+        };
+        grouped.set(policyId, policyGroup);
+      }
+
+      policyGroup.count += 1;
+      policyGroup.chunks.push({
+        _id: chunk._id as string,
+        chunkId: chunk.chunkId,
+        chunkType: chunk.chunkType,
+        text: chunk.text,
+        createdAt: chunk.createdAt,
+      });
+    }
+
+    return [...grouped.values()]
+      .map((policy) => ({
+        ...policy,
+        chunks: policy.chunks.sort((a, b) => a.chunkId.localeCompare(b.chunkId)),
+      }))
+      .sort((a, b) => b.count - a.count);
+  },
+});
+
 /** List all chunks for an org with embeddings (used by PCA projection). */
 export const listAllForOrg = internalQuery({
   args: { orgId: v.id("organizations") },
@@ -127,5 +193,20 @@ export const deleteByPolicy = internalMutation({
     for (const chunk of chunks) {
       await ctx.db.delete(chunk._id);
     }
+  },
+});
+
+/** Update a single chunk after text/category edits. */
+export const updateOne = internalMutation({
+  args: {
+    id: v.id("documentChunks"),
+    text: v.optional(v.string()),
+    chunkType: v.optional(v.string()),
+    embedding: v.optional(v.array(v.float64())),
+    metadata: v.optional(v.any()),
+  },
+  handler: async (ctx, args) => {
+    const { id, ...fields } = args;
+    await ctx.db.patch(id, fields);
   },
 });

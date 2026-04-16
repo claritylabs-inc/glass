@@ -275,7 +275,7 @@ export const dreamCategory = internalAction({
         const result = await generateText({
           model: getModel("chat"),
           system: `You are an insurance intelligence analyst. Respond with ONLY valid JSON, no markdown.
-Format: { "reasoning": "brief explanation", "deleteIds": ["id1"], "recategorize": [{ "id": "id2", "category": "correct_category" }], "consolidated": [{ "content": "...", "category": "primary_category", "tags": ["optional_secondary_category"] }] }`,
+Format: { "reasoning": "brief explanation", "deleteIds": ["id1"], "recategorize": [{ "id": "id2", "category": "correct_category" }], "consolidated": [{ "content": "...", "category": "best_category" }] }`,
           prompt: `${args.orgContext ? `ORGANIZATION: ${args.orgContext}\n\n` : ""}${CATEGORY_PROMPT}\n\nCategory: ${args.category}${batchNote}\nEntries:\n${lines.join("\n")}`,
         });
 
@@ -314,7 +314,6 @@ Format: { "reasoning": "brief explanation", "deleteIds": ["id1"], "recategorize"
             orgId: args.orgId,
             content: c.content,
             category: (c.category || args.category) as any,
-            tags: Array.isArray(c.tags) && c.tags.length > 0 ? c.tags : undefined,
             confidence: "inferred",
             source: "dream",
             embedding,

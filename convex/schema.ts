@@ -263,7 +263,8 @@ export default defineSchema({
       v.literal("partners"),
       v.literal("observation"),
     ),
-    tags: v.optional(v.array(v.string())), // additional categories beyond the primary one
+    // Temporary compatibility for legacy rows. Run cleanup, then remove again.
+    tags: v.optional(v.array(v.string())),
     confidence: v.union(
       v.literal("confirmed"),
       v.literal("inferred"),
@@ -370,6 +371,7 @@ export default defineSchema({
     intelligenceExtractedAt: v.optional(v.number()),
   }).index("by_messageId", ["messageId"])
     .index("by_connection_processed", ["connectionId", "processed"])
+    .index("by_connection_date", ["connectionId", "date"])
     .index("by_userId", ["userId"])
     .index("by_orgId", ["orgId"]),
 

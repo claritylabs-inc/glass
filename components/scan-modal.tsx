@@ -12,6 +12,7 @@ import { Id } from "@/convex/_generated/dataModel";
 interface ScanModalProps {
   open: boolean;
   onClose: () => void;
+  onScanStarted?: () => void;
   connectionId: Id<"emailConnections">;
   provider?: "google" | "imap";
   defaults?: {
@@ -26,7 +27,7 @@ function formatDate(d: Date): string {
   return d.toISOString().split("T")[0];
 }
 
-export function ScanModal({ open, onClose, connectionId, provider, defaults }: ScanModalProps) {
+export function ScanModal({ open, onClose, onScanStarted, connectionId, provider, defaults }: ScanModalProps) {
   const scanInbox = useAction(api.actions.scanInbox.scanInbox);
   const scanGmail = useAction(api.actions.scanGmail.scanGmail);
 
@@ -59,7 +60,8 @@ export function ScanModal({ open, onClose, connectionId, provider, defaults }: S
     const scanFn = provider === "google" ? scanGmail : scanInbox;
     scanFn(scanArgs).catch(() => toast.error("Failed to start scan"));
     onClose();
-    toast.success("Scan started — progress will appear on the connection card");
+    onScanStarted?.();
+    toast.success("Scan started — progress will appear in the Activity tab");
   };
 
   return (

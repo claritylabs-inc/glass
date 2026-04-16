@@ -125,8 +125,9 @@ export const insert = mutation({
       .query("emails")
       .withIndex("by_messageId", (q) => q.eq("messageId", args.messageId))
       .first();
-    if (existing) return existing._id;
-    return await ctx.db.insert("emails", args);
+    if (existing) return { id: existing._id, inserted: false };
+    const id = await ctx.db.insert("emails", args);
+    return { id, inserted: true };
   },
 });
 
@@ -147,6 +148,32 @@ export const markProcessed = mutation({
   args: { id: v.id("emails") },
   handler: async (ctx, args) => {
     await ctx.db.patch(args.id, { processed: true });
+  },
+});
+
+export const repairProcessedForConnection = internalMutation({
+  args: { connectionId: v.id("emailConnections") },
+  handler: async (ctx, args) => {
+    const emails = await ctx.db
+      .query("emails")
+      .withIndex("by_connection_processed", (q) =>
+        q.eq("connectionId", args.connectionId).eq("processed", false)
+      )
+      .collect();
+
+    let repaired = 0;
+    for (const email of emails) {
+      if (
+        email.isInsuranceRelated !== undefined ||
+        email.classificationReason !== undefined ||
+        email.classificationConfidence !== undefined
+      ) {
+        await ctx.db.patch(email._id, { processed: true });
+        repaired++;
+      }
+    }
+
+    return { repaired };
   },
 });
 
@@ -250,6 +277,30 @@ export const listByConnection = internalQuery({
         q.eq("connectionId", args.connectionId)
       )
       .collect();
+  },
+});
+
+export const latestImportedAtByConnection = internalQuery({
+  args: { connectionId: v.id("emailConnections") },
+  handler: async (ctx, args) => {
+    const latest = await ctx.db
+      .query("emails")
+      .withIndex("by_connection_date", (q) =>
+        q.eq("connectionId", args.connectionId)
+      )
+      .order("desc")
+      .first();
+
+    if (!latest) return null;
+
+    const timestamp = Date.parse(latest.date);
+    if (Number.isNaN(timestamp)) return null;
+
+    return {
+      emailId: latest._id,
+      date: latest.date,
+      timestamp,
+    };
   },
 });
 

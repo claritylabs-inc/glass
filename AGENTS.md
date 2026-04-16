@@ -210,6 +210,13 @@ Storage and retrieval pattern:
 
 Important: `git push` only deploys the Next.js frontend via Vercel. Convex functions require a separate `npx convex dev --once` (dev) or `npx convex deploy --yes` (prod) to go live.
 
+Email scan pattern:
+
+- Scan windows should anchor to the newest stored email record for that connection, not only `lastScanAt`.
+- Prism intentionally rewinds the inferred scan anchor slightly and relies on `emails.messageId` deduplication so daily/manual scans do not miss boundary emails.
+- Progress counts should reflect newly inserted emails, not all provider messages returned by the upstream inbox query.
+- Classification is the only stage that should set `scanProgress.phase = "classifying"`; scan actions should avoid optimistic classifying state before the classifier actually starts.
+
 ## Main Product Flows
 
 ### Email Scan To Policy

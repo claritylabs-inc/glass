@@ -27,6 +27,40 @@ export const list = query({
   },
 });
 
+/** List distinct uploaded business-context documents (source=manual with a sourceRef). */
+export const listUploadedDocuments = query({
+  args: {},
+  handler: async (ctx) => {
+    const access = await getOrgAccess(ctx);
+    if (!access) return [];
+    const { orgId } = access;
+
+    const entries = await ctx.db
+      .query("orgIntelligence")
+      .withIndex("by_orgId", (idx) => idx.eq("orgId", orgId))
+      .collect();
+
+    // Group manual-source entries by sourceRef to get distinct documents
+    const docs = new Map<string, { sourceRef: string; sourceLabel?: string; entryCount: number; createdAt: number }>();
+    for (const e of entries) {
+      if (e.source !== "manual" || !e.sourceRef) continue;
+      const existing = docs.get(e.sourceRef);
+      if (existing) {
+        existing.entryCount++;
+      } else {
+        docs.set(e.sourceRef, {
+          sourceRef: e.sourceRef,
+          sourceLabel: e.sourceLabel,
+          entryCount: 1,
+          createdAt: e.createdAt ?? e._creationTime,
+        });
+      }
+    }
+
+    return [...docs.values()].sort((a, b) => b.createdAt - a.createdAt);
+  },
+});
+
 export const listActive = query({
   args: {},
   handler: async (ctx) => {
@@ -104,7 +138,6 @@ export const insert = internalMutation({
       v.literal("partners"),
       v.literal("observation"),
     ),
-    tags: v.optional(v.array(v.string())),
     confidence: v.union(
       v.literal("confirmed"),
       v.literal("inferred"),
@@ -261,18 +294,21 @@ export const updateEntry = internalMutation({
 export const update = mutation({
   args: {
     id: v.id("orgIntelligence"),
-    content: v.string(),
+    content: v.optional(v.string()),
+    category: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const access = await getOrgAccess(ctx);
     if (!access) throw new Error("Not authenticated");
     const entry = await ctx.db.get(args.id);
     if (!entry || entry.orgId !== access.orgId) throw new Error("Not found");
-    await ctx.db.patch(args.id, {
-      content: args.content,
+    const patch: Record<string, any> = {
       confidence: "confirmed" as const,
       updatedAt: Date.now(),
-    });
+    };
+    if (args.content !== undefined) patch.content = args.content;
+    if (args.category !== undefined) patch.category = args.category;
+    await ctx.db.patch(args.id, patch);
   },
 });
 
@@ -284,5 +320,21 @@ export const remove = mutation({
     const entry = await ctx.db.get(args.id);
     if (!entry || entry.orgId !== access.orgId) throw new Error("Not found");
     await ctx.db.delete(args.id);
+  },
+});
+
+// One-time maintenance: remove legacy `tags` fields from orgIntelligence rows.
+export const removeLegacyTags = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const entries = await ctx.db.query("orgIntelligence").collect();
+    let updated = 0;
+    for (const entry of entries) {
+      if ("tags" in entry) {
+        await ctx.db.patch(entry._id, { tags: undefined });
+        updated += 1;
+      }
+    }
+    return { updated };
   },
 });

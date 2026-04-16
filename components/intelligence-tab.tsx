@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { Brain, Loader2, Trash2, Search, RefreshCw, ChevronDown, Pencil, Check, X } from "lucide-react";
 import { VectorSpace } from "@/components/vector-space";
 import { PillButton } from "@/components/ui/pill-button";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 
 const INTEL_CATEGORY_COLORS: Record<string, string> = {
   company_info:
@@ -38,6 +39,23 @@ const INTEL_CATEGORY_COLORS: Record<string, string> = {
     "bg-gray-50 text-gray-600 dark:bg-gray-800/40 dark:text-gray-400",
 };
 
+const INTEL_CATEGORY_OPTIONS = [
+  "company_info",
+  "products_services",
+  "operations",
+  "employees",
+  "financial",
+  "coverage",
+  "risk",
+  "relationship",
+  "clients",
+  "insurance",
+  "investors",
+  "vendors",
+  "partners",
+  "observation",
+] as const;
+
 const INTEL_SOURCE_COLORS: Record<string, string> = {
   email:
     "bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400",
@@ -67,6 +85,16 @@ const SUB_TABS = [
 ] as const;
 
 type SubTabId = (typeof SUB_TABS)[number]["id"];
+
+function buildOptionsWithCurrent<T extends readonly string[]>(
+  options: T,
+  current?: string,
+) {
+  if (current && !options.includes(current as T[number])) {
+    return [...options, current];
+  }
+  return [...options];
+}
 
 export function IntelligenceTab() {
   const [subTab, setSubTab] = useState<SubTabId>("intelligence");
@@ -121,6 +149,7 @@ function OrgIntelligencePanel() {
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState("");
+  const [editCategory, setEditCategory] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
@@ -233,18 +262,25 @@ function OrgIntelligencePanel() {
     }
   }
 
-  function startEditing(id: string, content: string) {
+  function startEditing(id: string, content: string, category: string) {
     setEditingId(id);
     setEditContent(content);
+    setEditCategory(category);
   }
 
   async function saveEdit() {
     if (!editingId || !editContent.trim()) return;
     setSavingEdit(true);
     try {
-      await updateEntry({ id: editingId as any, content: editContent.trim() });
+      await updateEntry({
+        id: editingId as any,
+        content: editContent.trim(),
+        category: editCategory || undefined,
+      });
       toast.success("Entry updated");
       setEditingId(null);
+      setEditContent("");
+      setEditCategory("");
     } catch {
       toast.error("Failed to update entry");
     } finally {
@@ -402,40 +438,56 @@ function OrgIntelligencePanel() {
                                 >
                                   <div className="flex-1 min-w-0">
                                     {editingId === entry._id ? (
-                                      <div className="flex items-start gap-2">
-                                        <textarea
-                                          value={editContent}
-                                          onChange={(e) => setEditContent(e.target.value)}
-                                          className="flex-1 text-body-sm text-foreground bg-white dark:bg-white/5 border border-foreground/10 rounded-md px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-blue-500/40"
-                                          rows={2}
-                                          autoFocus
-                                          onKeyDown={(e) => {
-                                            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                                              saveEdit();
-                                            } else if (e.key === "Escape") {
-                                              setEditingId(null);
-                                            }
-                                          }}
-                                        />
-                                        <button
-                                          type="button"
-                                          onClick={saveEdit}
-                                          disabled={savingEdit || !editContent.trim()}
-                                          className="p-1 text-emerald-500 hover:text-emerald-600 cursor-pointer shrink-0 mt-1"
-                                        >
-                                          {savingEdit ? (
-                                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                          ) : (
-                                            <Check className="w-3.5 h-3.5" />
-                                          )}
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() => setEditingId(null)}
-                                          className="p-1 text-muted-foreground/40 hover:text-muted-foreground cursor-pointer shrink-0 mt-1"
-                                        >
-                                          <X className="w-3.5 h-3.5" />
-                                        </button>
+                                      <div className="space-y-2">
+                                        <div className="flex items-start gap-2">
+                                          <textarea
+                                            value={editContent}
+                                            onChange={(e) => setEditContent(e.target.value)}
+                                            className="flex-1 text-body-sm text-foreground bg-white dark:bg-white/5 border border-foreground/10 rounded-md px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-blue-500/40"
+                                            rows={2}
+                                            autoFocus
+                                            onKeyDown={(e) => {
+                                              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                                                saveEdit();
+                                              } else if (e.key === "Escape") {
+                                                setEditingId(null);
+                                              }
+                                            }}
+                                          />
+                                          <button
+                                            type="button"
+                                            onClick={saveEdit}
+                                            disabled={savingEdit || !editContent.trim()}
+                                            className="p-1 text-emerald-500 hover:text-emerald-600 cursor-pointer shrink-0 mt-1"
+                                          >
+                                            {savingEdit ? (
+                                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                            ) : (
+                                              <Check className="w-3.5 h-3.5" />
+                                            )}
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => setEditingId(null)}
+                                            className="p-1 text-muted-foreground/40 hover:text-muted-foreground cursor-pointer shrink-0 mt-1"
+                                          >
+                                            <X className="w-3.5 h-3.5" />
+                                          </button>
+                                        </div>
+                                        <div className="w-[220px]">
+                                          <SearchableSelect
+                                            options={buildOptionsWithCurrent(
+                                              INTEL_CATEGORY_OPTIONS,
+                                              editCategory,
+                                            ).map((cat) => ({
+                                              value: cat,
+                                              label: cat.replace(/_/g, " "),
+                                            }))}
+                                            value={editCategory}
+                                            onChange={setEditCategory}
+                                            placeholder="Select category..."
+                                          />
+                                        </div>
                                       </div>
                                     ) : (
                                       <>
@@ -458,14 +510,6 @@ function OrgIntelligencePanel() {
                                           >
                                             {entry.confidence}
                                           </span>
-                                          {(entry as any).tags?.map((tag: string) => (
-                                            <span
-                                              key={tag}
-                                              className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${INTEL_CATEGORY_COLORS[tag] ?? INTEL_CATEGORY_COLORS.observation}`}
-                                            >
-                                              {tag.replace(/_/g, " ")}
-                                            </span>
-                                          ))}
                                         </div>
                                       </>
                                     )}
@@ -474,7 +518,13 @@ function OrgIntelligencePanel() {
                                     <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all shrink-0 mt-0.5">
                                       <button
                                         type="button"
-                                        onClick={() => startEditing(entry._id, entry.content)}
+                                        onClick={() =>
+                                          startEditing(
+                                            entry._id,
+                                            entry.content,
+                                            entry.category,
+                                          )
+                                        }
                                         className="p-1 text-muted-foreground/20 hover:text-blue-500 cursor-pointer"
                                       >
                                         <Pencil className="w-3.5 h-3.5" />

@@ -9,7 +9,6 @@ import dayjs from "dayjs";
 import { PillButton } from "@/components/ui/pill-button";
 import { Pause, Play, X, RotateCw, Trash2 } from "lucide-react";
 import { FadeIn } from "@/components/ui/fade-in";
-import { Skeleton } from "@/components/ui/skeleton";
 import { TerminalLog } from "@/components/terminal-log";
 import {
   Dialog,
@@ -227,179 +226,113 @@ function ExtractionLogRow({ log, isExpanded, isExtracting }: { log: ExtractionLo
   );
 }
 
-function ExtractionSkeletonRows() {
-  return (
-    <tbody>
-      {Array.from({ length: 4 }).map((_, i) => (
-        <tr key={i} className="border-t border-foreground/4">
-          <td className="px-4 py-2.5">
-            <Skeleton className="h-4 w-44 mb-1.5" />
-            <Skeleton className="h-3 w-28" />
-          </td>
-          <td className="px-4 py-2.5 hidden sm:table-cell">
-            <Skeleton className="h-4 w-32" />
-          </td>
-          <td className="px-4 py-2.5">
-            <Skeleton className="h-5 w-16 rounded-full" />
-          </td>
-          <td className="px-4 py-2.5 hidden md:table-cell">
-            <Skeleton className="h-4 w-20" />
-          </td>
-          <td className="px-4 py-2.5 hidden md:table-cell text-right">
-            <Skeleton className="h-7 w-24 ml-auto rounded-md" />
-          </td>
-        </tr>
-      ))}
-    </tbody>
-  );
-}
-
 export function ExtractionTable({
   extractions,
 }: {
   extractions: Extraction[] | undefined;
 }) {
-  if (extractions === undefined) {
-    return (
-      <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
-        <div className="overflow-x-auto scrollbar-hide">
-          <table className="w-full text-left md:min-w-[700px]">
-            <thead>
-              <tr className="bg-foreground/[0.02]">
-                <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">Source Email</th>
-                <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap hidden sm:table-cell">Attachment</th>
-                <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">Status</th>
-                <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap hidden md:table-cell">Date</th>
-                <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap text-right hidden md:table-cell">Actions</th>
-              </tr>
-            </thead>
-            <ExtractionSkeletonRows />
-          </table>
-        </div>
-      </div>
-    );
-  }
-
-  if (extractions.length === 0) {
-    return (
-      <FadeIn when={true} duration={0.6}>
-        <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-6 py-8 text-center">
-          <p className="text-body-sm text-muted-foreground/60">No pending extractions</p>
-        </div>
-      </FadeIn>
-    );
-  }
+  if (!extractions || extractions.length === 0) return null;
 
   return (
-    <FadeIn when={true} delay={0.2} duration={0.6}>
-      <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
-        <div className="overflow-x-auto scrollbar-hide">
-          <table className="w-full text-left md:min-w-[700px]">
-            <thead>
-              <tr className="bg-foreground/[0.02]">
-                <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">
-                  Source Email
-                </th>
-                <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap hidden sm:table-cell">
-                  Attachment
-                </th>
-                <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">
-                  Status
-                </th>
-                <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap hidden md:table-cell">
-                  Date
-                </th>
-                <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap text-right hidden md:table-cell">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <AnimatePresence mode="wait">
-              <motion.tbody
-                key={extractions.map((e) => e._id).join(",")}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.15 }}
-              >
-                {extractions.map((extraction, i) => {
-                  const badge = STATUS_BADGES[extraction.extractionStatus] || STATUS_BADGES.pending;
-                  const hasLog = extraction.extractionLog && extraction.extractionLog.length > 0;
-                  const showLog = hasLog && (extraction.extractionStatus === "extracting" || extraction.extractionStatus === "error");
-                  return (
-                    <Fragment key={extraction._id}>
-                      <FadeIn
-                        as="tr"
-                        when={true}
-                        delay={i * 0.02}
-                        duration={0.35}
-                        direction="none"
-                        className="border-t border-foreground/4 hover:bg-foreground/[0.015] transition-colors"
-                      >
-                        <td className="px-4 py-2.5 whitespace-nowrap">
-                          <p className="text-body-sm text-foreground font-medium truncate max-w-[250px]">
-                            {extraction.emailSubject || (extraction.emailFrom ? "—" : (extraction.fileName ?? "Manual Upload"))}
-                          </p>
-                          <p className="text-label-sm text-muted-foreground/60 truncate max-w-[250px]">
-                            {extraction.emailFrom || (extraction.emailSubject ? "Unknown sender" : "Uploaded file")}
-                          </p>
-                        </td>
-                        <td className="px-4 py-2.5 text-body-sm text-muted-foreground whitespace-nowrap hidden sm:table-cell">
-                          {extraction.fileName || "—"}
-                        </td>
-                        <td className="px-4 py-2.5 whitespace-nowrap">
-                          <div className="flex items-center gap-2">
-                            <span
-                              className={`inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium ${badge.className}`}
-                            >
-                              {badge.label}
-                            </span>
-                            {extraction.extractionStatus === "error" && extraction.extractionError && (
-                              <ViewErrorButton error={extraction.extractionError} />
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-4 py-2.5 text-body-sm text-muted-foreground hidden md:table-cell whitespace-nowrap">
-                          {formatDate(extraction._creationTime)}
-                        </td>
-                        <td className="px-4 py-2.5 text-right whitespace-nowrap hidden md:table-cell">
-                          <div className="inline-flex items-center gap-2">
-                            {extraction.extractionStatus === "extracting" && (
-                              <PauseButton policyId={extraction._id} />
-                            )}
-                            {extraction.extractionStatus === "paused" && (
-                              <>
-                                <ResumeButton policyId={extraction._id} />
-                                <CancelButton policyId={extraction._id} />
-                              </>
-                            )}
-                            {(extraction.extractionStatus === "error" || extraction.extractionStatus === "pending") && (
-                              <CancelButton policyId={extraction._id} />
-                            )}
-                          </div>
-                        </td>
-                      </FadeIn>
-                      {showLog && (
-                        <ExtractionLogRow
-                          log={extraction.extractionLog!}
-                          isExpanded={true}
-                          isExtracting={extraction.extractionStatus === "extracting"}
-                        />
-                      )}
-                    </Fragment>
-                  );
-                })}
-              </motion.tbody>
-            </AnimatePresence>
-          </table>
-        </div>
-        <div className="border-t border-foreground/[0.04] px-4 py-2 flex items-center justify-between bg-foreground/[0.01]">
-          <p className="text-label-sm text-muted-foreground/60">
-            {extractions.length} pending{" "}
-            {extractions.length === 1 ? "extraction" : "extractions"}
-          </p>
-        </div>
-      </div>
-    </FadeIn>
+    <div className="overflow-x-auto scrollbar-hide">
+      <table className="w-full text-left md:min-w-[700px]">
+        <thead>
+          <tr className="bg-foreground/[0.02]">
+            <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">
+              Source Email
+            </th>
+            <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap hidden sm:table-cell">
+              Attachment
+            </th>
+            <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">
+              Status
+            </th>
+            <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap hidden md:table-cell">
+              Date
+            </th>
+            <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap text-right hidden md:table-cell">
+              Actions
+            </th>
+          </tr>
+        </thead>
+        <AnimatePresence mode="wait">
+          <motion.tbody
+            key={extractions.map((e) => e._id).join(",")}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+          >
+            {extractions.map((extraction, i) => {
+              const badge = STATUS_BADGES[extraction.extractionStatus] || STATUS_BADGES.pending;
+              const hasLog = extraction.extractionLog && extraction.extractionLog.length > 0;
+              const showLog = hasLog && (extraction.extractionStatus === "extracting" || extraction.extractionStatus === "error");
+              return (
+                <Fragment key={extraction._id}>
+                  <FadeIn
+                    as="tr"
+                    when={true}
+                    delay={i * 0.02}
+                    duration={0.35}
+                    direction="none"
+                    className="border-t border-foreground/4 hover:bg-foreground/[0.015] transition-colors"
+                  >
+                    <td className="px-4 py-2.5 whitespace-nowrap">
+                      <p className="text-body-sm text-foreground font-medium truncate max-w-[250px]">
+                        {extraction.emailSubject || (extraction.emailFrom ? "—" : (extraction.fileName ?? "Manual Upload"))}
+                      </p>
+                      <p className="text-label-sm text-muted-foreground/60 truncate max-w-[250px]">
+                        {extraction.emailFrom || (extraction.emailSubject ? "Unknown sender" : "Uploaded file")}
+                      </p>
+                    </td>
+                    <td className="px-4 py-2.5 text-body-sm text-muted-foreground whitespace-nowrap hidden sm:table-cell">
+                      {extraction.fileName || "—"}
+                    </td>
+                    <td className="px-4 py-2.5 whitespace-nowrap">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium ${badge.className}`}
+                        >
+                          {badge.label}
+                        </span>
+                        {extraction.extractionStatus === "error" && extraction.extractionError && (
+                          <ViewErrorButton error={extraction.extractionError} />
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-2.5 text-body-sm text-muted-foreground hidden md:table-cell whitespace-nowrap">
+                      {formatDate(extraction._creationTime)}
+                    </td>
+                    <td className="px-4 py-2.5 text-right whitespace-nowrap hidden md:table-cell">
+                      <div className="inline-flex items-center gap-2">
+                        {extraction.extractionStatus === "extracting" && (
+                          <PauseButton policyId={extraction._id} />
+                        )}
+                        {extraction.extractionStatus === "paused" && (
+                          <>
+                            <ResumeButton policyId={extraction._id} />
+                            <CancelButton policyId={extraction._id} />
+                          </>
+                        )}
+                        {(extraction.extractionStatus === "error" || extraction.extractionStatus === "pending") && (
+                          <CancelButton policyId={extraction._id} />
+                        )}
+                      </div>
+                    </td>
+                  </FadeIn>
+                  {showLog && (
+                    <ExtractionLogRow
+                      log={extraction.extractionLog!}
+                      isExpanded={true}
+                      isExtracting={extraction.extractionStatus === "extracting"}
+                    />
+                  )}
+                </Fragment>
+              );
+            })}
+          </motion.tbody>
+        </AnimatePresence>
+      </table>
+    </div>
   );
 }

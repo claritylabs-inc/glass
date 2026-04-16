@@ -7,6 +7,24 @@ import { INSURANCE_KEYWORDS, INSURANCE_SENDER_PATTERNS } from "../lib/policyType
 import { generateText } from "ai";
 import { haikuModel } from "../lib/ai";
 
+async function updateClassificationProgress(
+  ctx: any,
+  connectionId: any,
+  total: number,
+  processed: number,
+  policiesFound: number,
+) {
+  await ctx.runMutation(api.connections.updateScanProgress, {
+    id: connectionId,
+    scanProgress: {
+      phase: "classifying",
+      totalEmails: total,
+      processedEmails: processed,
+      insuranceFound: policiesFound,
+    },
+  });
+}
+
 export const classifyEmails = internalAction({
   args: {
     connectionId: v.id("emailConnections"),
@@ -14,6 +32,10 @@ export const classifyEmails = internalAction({
     orgId: v.optional(v.id("organizations")),
   },
   handler: async (ctx, args) => {
+    await ctx.runMutation(internal.emails.repairProcessedForConnection, {
+      connectionId: args.connectionId,
+    });
+
     // Get unprocessed emails for this connection (internal query — no auth needed)
     const emails = await ctx.runQuery(internal.emails.listByConnection, {
       connectionId: args.connectionId,
@@ -51,10 +73,7 @@ export const classifyEmails = internalAction({
     const total = unprocessed.length;
 
     // Update progress
-    await ctx.runMutation(api.connections.updateScanProgress, {
-      id: args.connectionId,
-      scanProgress: { phase: "classifying", totalEmails: total, processedEmails: 0 },
-    });
+    await updateClassificationProgress(ctx, args.connectionId, total, 0, policiesFound);
 
     try {
       for (const email of unprocessed) {
@@ -62,6 +81,7 @@ export const classifyEmails = internalAction({
         if (emailIdsWithPolicies.has(email._id)) {
           await ctx.runMutation(api.emails.markProcessed, { id: email._id });
           processed++;
+          await updateClassificationProgress(ctx, args.connectionId, total, processed, policiesFound);
           continue;
         }
         const subjectLower = email.subject.toLowerCase();
@@ -75,7 +95,9 @@ export const classifyEmails = internalAction({
             classificationReason: "Internal claritylabs.inc email",
             classificationConfidence: 1.0,
           });
+          await ctx.runMutation(api.emails.markProcessed, { id: email._id });
           processed++;
+          await updateClassificationProgress(ctx, args.connectionId, total, processed, policiesFound);
           continue;
         }
 
@@ -164,17 +186,7 @@ Respond with JSON only: {"isInsurance": boolean, "reason": "brief explanation", 
         await ctx.runMutation(api.emails.markProcessed, { id: email._id });
         processed++;
 
-        // Update progress every email (don't set extracting/extracted here —
-        // that's managed by the extracting phase to avoid clobbering concurrent updates)
-        await ctx.runMutation(api.connections.updateScanProgress, {
-          id: args.connectionId,
-          scanProgress: {
-            phase: "classifying",
-            totalEmails: total,
-            processedEmails: processed,
-            insuranceFound: policiesFound,
-          },
-        });
+        await updateClassificationProgress(ctx, args.connectionId, total, processed, policiesFound);
       }
     } catch (error: any) {
       console.error("Classification failed:", error.message);

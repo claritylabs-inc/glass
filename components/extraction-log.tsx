@@ -93,51 +93,41 @@ function ReExtractButton({ entry }: { entry: LogEntry }) {
 
 export function ExtractionLog({ entries }: { entries: LogEntry[] }) {
   const router = useRouter();
-  if (!entries || entries.length === 0) {
-    return (
-      <FadeIn when={true} duration={0.6}>
-        <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-6 py-8 text-center">
-          <p className="text-body-sm text-muted-foreground/60">No completed extractions</p>
-        </div>
-      </FadeIn>
-    );
-  }
+  if (!entries || entries.length === 0) return null;
 
   return (
-    <FadeIn when={true} delay={0.2} duration={0.6}>
-      <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
-        <div className="overflow-x-auto scrollbar-hide">
-          <table className="w-full text-left md:min-w-[700px]">
-            <thead>
-              <tr className="bg-foreground/[0.02]">
-                <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">
-                  Policy
-                </th>
-                <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">
-                  Type
-                </th>
-                <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap hidden md:table-cell">
-                  Source
-                </th>
-                <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">
-                  Status
-                </th>
-                <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap text-right hidden md:table-cell">
-                  Date
-                </th>
-                <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap text-right hidden md:table-cell">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <AnimatePresence mode="wait">
-              <motion.tbody
-                key={entries.map((e) => e._id).join(",")}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.15 }}
-              >
+    <div className="overflow-x-auto scrollbar-hide">
+      <table className="w-full text-left md:min-w-[700px]">
+        <thead>
+          <tr className="bg-foreground/[0.02]">
+            <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">
+              Policy
+            </th>
+            <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">
+              Type
+            </th>
+            <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap hidden md:table-cell">
+              Source
+            </th>
+            <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">
+              Status
+            </th>
+            <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap text-right hidden md:table-cell">
+              Date
+            </th>
+            <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap text-right hidden md:table-cell">
+              Actions
+            </th>
+          </tr>
+        </thead>
+        <AnimatePresence mode="wait">
+          <motion.tbody
+            key={entries.map((e) => e._id).join(",")}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+          >
                 {entries.map((entry, i) => {
                   const types = entry.policyTypes ?? [entry.policyType ?? "other"];
                   const firstType = types[0];
@@ -239,12 +229,5 @@ export function ExtractionLog({ entries }: { entries: LogEntry[] }) {
             </AnimatePresence>
           </table>
         </div>
-        <div className="border-t border-foreground/[0.04] px-4 py-2 flex items-center justify-between bg-foreground/[0.01]">
-          <p className="text-label-sm text-muted-foreground/60">
-            {entries.length} {entries.length === 1 ? "extraction" : "extractions"}
-          </p>
-        </div>
-      </div>
-    </FadeIn>
   );
 }

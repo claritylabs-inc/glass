@@ -5,6 +5,8 @@ import { action } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import { ImapFlow } from "imapflow";
 
+const SCAN_OVERLAP_MS = 5 * 60 * 1000;
+
 function hasAttachmentParts(structure: any): boolean {
   if (!structure) return false;
   if (structure.disposition === "attachment") return true;
@@ -84,12 +86,16 @@ export const scanInbox = action({
     });
 
     try {
-      // Determine date range
-      const since = args.sinceDate
-        ? new Date(args.sinceDate)
-        : connection.lastScanAt
-          ? new Date(connection.lastScanAt)
-          : new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+      const latestImported = await ctx.runQuery(
+        internal.emails.latestImportedAtByConnection,
+        { connectionId: args.connectionId }
+      );
+      const scanAnchorMs = args.sinceDate
+        ? Date.parse(args.sinceDate)
+        : latestImported?.timestamp
+          ?? connection.lastScanAt
+          ?? Date.now() - 14 * 24 * 60 * 60 * 1000;
+      const since = new Date(scanAnchorMs - (args.sinceDate ? 0 : SCAN_OVERLAP_MS));
 
       const before = args.untilDate
         ? new Date(new Date(args.untilDate).getTime() + 24 * 60 * 60 * 1000)
@@ -256,7 +262,7 @@ export const scanInbox = action({
       // Insert new emails (dedup handled by mutation)
       let inserted = 0;
       for (const email of emails) {
-        await ctx.runMutation(api.emails.insert, {
+        const result = await ctx.runMutation(api.emails.insert, {
           userId,
           orgId,
           connectionId: args.connectionId,
@@ -268,13 +274,12 @@ export const scanInbox = action({
           hasAttachments: email.hasAttachments,
           processed: false,
         });
-        inserted++;
+        if (result.inserted) inserted++;
       }
 
-      // Update progress to classifying phase
       await ctx.runMutation(api.connections.updateScanProgress, {
         id: args.connectionId,
-        scanProgress: { phase: "classifying", totalEmails: inserted, processedEmails: 0 },
+        scanProgress: { phase: "complete", totalEmails: inserted, processedEmails: 0 },
       });
 
       await ctx.runMutation(api.connections.updateScanStatus, {

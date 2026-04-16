@@ -31,6 +31,7 @@ import { EmailReviewTable } from "@/components/email-review-table";
 import { IntelligenceTab } from "@/components/intelligence-tab";
 import { DreamLog } from "@/components/dream-log";
 import { EmailScanLog } from "@/components/email-scan-log";
+import { ActivitySection } from "@/components/activity-section";
 import { ScanCalendarDialog } from "@/components/scan-calendar-dialog";
 import { LogoIcon } from "@/components/ui/logo-icon";
 import { Id } from "@/convex/_generated/dataModel";
@@ -375,20 +376,9 @@ export default function ConnectionsPage() {
         onChange={(e) => { const f = e.target.files?.[0]; if (f) handleContextUpload(f); }}
       />
       {activeTab === "sources" && (
-        <>
-          <PillButton
-            size="compact"
-            variant="secondary"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploading}
-          >
-            <Upload className="w-3 h-3" />
-            {uploading ? "Uploading..." : "Upload PDF"}
-          </PillButton>
           <PillButton size="compact" onClick={() => setFormOpen(true)}>
             Add Connection <ArrowRight className="w-3 h-3" />
           </PillButton>
-        </>
       )}
       {activeTab === "inbox" && selectedEmailIds.length > 0 && (
         <>
@@ -707,56 +697,103 @@ export default function ConnectionsPage() {
               </div>
               </section>
 
-              {/* ── Insurance Documents ── */}
+              {/* ── Documents ── */}
               <section>
                 <div className="mb-3">
-                  <h3 className="text-body-sm font-medium text-foreground !mb-0">Insurance Documents</h3>
-                  <p className="text-label-sm text-muted-foreground/60">Policies, certificates, and quotes for extraction</p>
+                  <h3 className="text-body-sm font-medium text-foreground !mb-0">Documents</h3>
+                  <p className="text-label-sm text-muted-foreground/60">Upload insurance policies and business context documents</p>
                 </div>
-                <UploadedDocumentsList />
-              </section>
 
-              {/* ── Business Context ── */}
-              <section>
-                <div className="mb-3">
-                  <h3 className="text-body-sm font-medium text-foreground !mb-0">Business Context</h3>
-                  <p className="text-label-sm text-muted-foreground/60">Upload documents to enrich your intelligence profile</p>
-                </div>
-                <div
-                  onClick={() => contextFileInputRef.current?.click()}
-                  onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
-                  onDragLeave={() => setDragging(false)}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    setDragging(false);
-                    const file = e.dataTransfer.files?.[0];
-                    if (file) handleContextUpload(file);
-                  }}
-                  className={`w-full rounded-lg border-2 border-dashed transition-all cursor-pointer px-6 py-5 group ${
-                    dragging
-                      ? "border-primary/40 bg-primary/[0.04]"
-                      : "border-foreground/10 hover:border-foreground/20 bg-foreground/[0.01] hover:bg-foreground/[0.03]"
-                  }`}
-                >
-                  <div className="flex items-center gap-4">
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 transition-colors ${
-                      dragging ? "bg-primary/10" : "bg-foreground/[0.04] group-hover:bg-foreground/[0.08]"
-                    }`}>
-                      <Upload className={`w-4.5 h-4.5 transition-colors ${
-                        dragging ? "text-primary" : "text-muted-foreground/40 group-hover:text-muted-foreground/60"
-                      }`} />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {/* Insurance Documents card */}
+                  <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden flex flex-col">
+                    <div className="px-4 py-3 border-b border-foreground/6 bg-foreground/[0.015]">
+                      <p className="text-label-sm font-medium text-muted-foreground">Insurance Documents</p>
+                      <p className="text-[11px] text-muted-foreground/50">Policies, certificates, and quotes</p>
                     </div>
-                    <div className="text-left">
-                      <p className="text-body-sm font-medium text-foreground">
-                        {uploading ? "Uploading..." : dragging ? "Drop to upload" : "Upload or drag a document"}
-                      </p>
-                      <p className="text-label-sm text-muted-foreground/50 mt-0.5">
-                        {dragging
-                          ? "PDF, Word, Excel, CSV, and Markdown supported"
-                          : orgData?.org?.industry
-                            ? `e.g. articles of incorporation, pitch deck, ${orgData.org.industry.toLowerCase()} certificates, financial statements`
-                            : "e.g. articles of incorporation, pitch deck, financial statements, contracts"}
-                      </p>
+                    <UploadedDocumentsInline />
+                    <div className="p-3 mt-auto">
+                      <div
+                        onClick={() => fileInputRef.current?.click()}
+                        onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+                        onDragLeave={() => setDragging(false)}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          setDragging(false);
+                          const file = e.dataTransfer.files?.[0];
+                          if (file) handleInsuranceUpload(file);
+                        }}
+                        className={`rounded-lg border-2 border-dashed transition-all cursor-pointer px-4 py-3.5 group ${
+                          dragging
+                            ? "border-primary/40 bg-primary/[0.04]"
+                            : "border-foreground/8 hover:border-foreground/15 bg-foreground/[0.01] hover:bg-foreground/[0.025]"
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-colors ${
+                            dragging ? "bg-primary/10" : "bg-foreground/[0.04] group-hover:bg-foreground/[0.08]"
+                          }`}>
+                            <Upload className={`w-3.5 h-3.5 transition-colors ${
+                              dragging ? "text-primary" : "text-muted-foreground/40 group-hover:text-muted-foreground/60"
+                            }`} />
+                          </div>
+                          <div className="text-left">
+                            <p className="text-body-sm font-medium text-foreground">
+                              {uploading ? "Uploading..." : "Upload or drag a PDF"}
+                            </p>
+                            <p className="text-[11px] text-muted-foreground/50">
+                              Policy, certificate, or quote
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Business Context card */}
+                  <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden flex flex-col">
+                    <div className="px-4 py-3 border-b border-foreground/6 bg-foreground/[0.015]">
+                      <p className="text-label-sm font-medium text-muted-foreground">Business Context</p>
+                      <p className="text-[11px] text-muted-foreground/50">Enrich your intelligence profile</p>
+                    </div>
+                    <UploadedContextDocsInline />
+                    <div className="p-3 mt-auto">
+                      <div
+                        onClick={() => contextFileInputRef.current?.click()}
+                        onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+                        onDragLeave={() => setDragging(false)}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          setDragging(false);
+                          const file = e.dataTransfer.files?.[0];
+                          if (file) handleContextUpload(file);
+                        }}
+                        className={`rounded-lg border-2 border-dashed transition-all cursor-pointer px-4 py-3.5 group ${
+                          dragging
+                            ? "border-primary/40 bg-primary/[0.04]"
+                            : "border-foreground/8 hover:border-foreground/15 bg-foreground/[0.01] hover:bg-foreground/[0.025]"
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-colors ${
+                            dragging ? "bg-primary/10" : "bg-foreground/[0.04] group-hover:bg-foreground/[0.08]"
+                          }`}>
+                            <Upload className={`w-3.5 h-3.5 transition-colors ${
+                              dragging ? "text-primary" : "text-muted-foreground/40 group-hover:text-muted-foreground/60"
+                            }`} />
+                          </div>
+                          <div className="text-left">
+                            <p className="text-body-sm font-medium text-foreground">
+                              {uploading ? "Uploading..." : "Upload or drag a document"}
+                            </p>
+                            <p className="text-[11px] text-muted-foreground/50">
+                              {orgData?.org?.industry
+                                ? `e.g. incorporation docs, pitch deck, ${orgData.org.industry.toLowerCase()} certificates`
+                                : "e.g. incorporation docs, pitch deck, financials"}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -854,18 +891,28 @@ export default function ConnectionsPage() {
           {/* Activity tab — processing + history combined */}
           {activeTab === "activity" && (
             <div className="space-y-6">
-              {pending && pending.length > 0 && (
-                <div>
-                  <h3 className="text-body-sm font-medium text-foreground mb-3">In Progress</h3>
-                  <ExtractionTable extractions={pending} />
-                </div>
-              )}
               <EmailScanLog />
+              {(() => {
+                const extractionCount = (pending?.length ?? 0) + (log?.length ?? 0);
+                const extractionLoading = pending === undefined || log === undefined;
+                return (
+                  <ActivitySection
+                    title="Extractions"
+                    count={extractionLoading ? undefined : extractionCount}
+                    loading={extractionLoading}
+                    skeletonRows={3}
+                    emptyIcon={FileText}
+                    emptyMessage="No extractions yet"
+                    emptyDescription="Policy extractions will appear here after scanning emails or uploading documents."
+                    isEmpty={!extractionLoading && extractionCount === 0}
+                    footerText={extractionCount > 0 ? `${extractionCount} ${extractionCount === 1 ? "extraction" : "extractions"}` : undefined}
+                  >
+                    <ExtractionTable extractions={pending} />
+                    <ExtractionLog entries={log ?? []} />
+                  </ActivitySection>
+                );
+              })()}
               <DreamLog />
-              <div>
-                <h3 className="text-body-sm font-medium text-foreground mb-3">Extraction History</h3>
-                <ExtractionLog entries={log ?? []} />
-              </div>
             </div>
           )}
 
@@ -875,6 +922,7 @@ export default function ConnectionsPage() {
         <ScanModal
           open={true}
           onClose={() => setScanTarget(null)}
+          onScanStarted={() => handleTabChange("activity")}
           connectionId={scanTarget.id}
           provider={scanTarget.provider}
           defaults={scanTarget.defaults}
@@ -1012,7 +1060,7 @@ export default function ConnectionsPage() {
   );
 }
 
-function UploadedDocumentsList() {
+function UploadedDocumentsInline() {
   const policies = useQuery(api.policies.list, {});
   const removePolicy = useMutation(api.policies.remove);
   const [removingId, setRemovingId] = useState<string | null>(null);
@@ -1025,43 +1073,60 @@ function UploadedDocumentsList() {
   if (uploaded.length === 0) return null;
 
   return (
-    <div className="mt-3 rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
-      <div className="px-4 py-2.5 border-b border-foreground/6">
-        <p className="text-label-sm font-medium text-muted-foreground">{uploaded.length} uploaded document{uploaded.length !== 1 ? "s" : ""}</p>
-      </div>
-      <div className="divide-y divide-foreground/4">
-        {uploaded.map((doc: any) => (
-          <div key={doc._id} className="px-4 py-2.5 flex items-center gap-3 group hover:bg-foreground/[0.015] transition-colors">
-            <FileText className="w-4 h-4 text-muted-foreground/40 shrink-0" />
-            <div className="flex-1 min-w-0">
-              <p className="text-body-sm text-foreground truncate">{doc.fileName || doc.carrier || "Document"}</p>
-              <p className="text-label-sm text-muted-foreground/50 truncate">
-                {doc.documentType === "quote" ? "Quote" : "Policy"}
-                {doc.carrier ? ` · ${doc.security || doc.carrier}` : ""}
-                {doc.extractionStatus === "complete" ? " · Extracted" : doc.extractionStatus === "extracting" ? " · Extracting..." : ""}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={async () => {
-                setRemovingId(doc._id);
-                try {
-                  await removePolicy({ id: doc._id });
-                  toast.success("Document removed");
-                } catch {
-                  toast.error("Failed to remove document");
-                } finally {
-                  setRemovingId(null);
-                }
-              }}
-              disabled={removingId === doc._id}
-              className="p-1 text-muted-foreground/20 hover:text-red-500 cursor-pointer opacity-0 group-hover:opacity-100 transition-all shrink-0"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
+    <div className="divide-y divide-foreground/4 border-b border-foreground/6">
+      {uploaded.map((doc: any) => (
+        <div key={doc._id} className="px-4 py-2.5 flex items-center gap-3 group hover:bg-foreground/[0.015] transition-colors">
+          <FileText className="w-4 h-4 text-muted-foreground/40 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-body-sm text-foreground truncate">{doc.fileName || doc.carrier || "Document"}</p>
+            <p className="text-label-sm text-muted-foreground/50 truncate">
+              {doc.documentType === "quote" ? "Quote" : "Policy"}
+              {doc.carrier ? ` · ${doc.security || doc.carrier}` : ""}
+              {doc.extractionStatus === "complete" ? " · Extracted" : doc.extractionStatus === "extracting" ? " · Extracting..." : ""}
+            </p>
           </div>
-        ))}
-      </div>
+          <button
+            type="button"
+            onClick={async () => {
+              setRemovingId(doc._id);
+              try {
+                await removePolicy({ id: doc._id });
+                toast.success("Document removed");
+              } catch {
+                toast.error("Failed to remove document");
+              } finally {
+                setRemovingId(null);
+              }
+            }}
+            disabled={removingId === doc._id}
+            className="p-1 text-muted-foreground/20 hover:text-red-500 cursor-pointer opacity-0 group-hover:opacity-100 transition-all shrink-0"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function UploadedContextDocsInline() {
+  const docs = useQuery(api.intelligence.listUploadedDocuments);
+
+  if (!docs || docs.length === 0) return null;
+
+  return (
+    <div className="divide-y divide-foreground/4 border-b border-foreground/6">
+      {docs.map((doc) => (
+        <div key={doc.sourceRef} className="px-4 py-2.5 flex items-center gap-3 hover:bg-foreground/[0.015] transition-colors">
+          <FileText className="w-4 h-4 text-muted-foreground/40 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-body-sm text-foreground truncate">{doc.sourceLabel || "Document"}</p>
+            <p className="text-label-sm text-muted-foreground/50 truncate">
+              {doc.entryCount} {doc.entryCount === 1 ? "entry" : "entries"} extracted
+            </p>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
