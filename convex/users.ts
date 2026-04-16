@@ -183,6 +183,20 @@ export const getInternal = internalQuery({
   },
 });
 
+export const listByOrgInternal = internalQuery({
+  args: { orgId: v.id("organizations") },
+  handler: async (ctx, args) => {
+    const memberships = await ctx.db
+      .query("orgMemberships")
+      .withIndex("by_orgId", (q) => q.eq("orgId", args.orgId))
+      .collect();
+    const users = await Promise.all(
+      memberships.map((m) => ctx.db.get(m.userId)),
+    );
+    return users.filter(Boolean);
+  },
+});
+
 export const resetAccount = mutation({
   args: {},
   handler: async (ctx) => {

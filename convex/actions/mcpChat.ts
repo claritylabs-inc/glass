@@ -9,9 +9,9 @@ import { buildDocumentContext, buildConversationMemoryContext } from "../lib/age
 import {
   buildSystemPromptForContext,
   buildMessageHistory,
-  logAiError,
 } from "../lib/aiUtils";
 import { buildIntelligenceContext } from "../lib/agentPrompts";
+import { classifyPromptInjection, enforceInputLimits } from "../lib/security";
 
 /**
  * Simplified chat action for MCP — no streaming, no email sending.
@@ -28,6 +28,20 @@ export const run = internalAction({
     // Load org
     const org = await ctx.runQuery(internal.orgs.getInternal, { id: args.orgId });
     if (!org) throw new Error("Organization not found");
+
+    // ── Prompt injection guard ──
+    const sanitizedMessage = enforceInputLimits(args.message);
+    const injectionCheck = await classifyPromptInjection(sanitizedMessage);
+    if (!injectionCheck.safe) {
+      console.warn("[security] Prompt injection blocked in MCP chat", {
+        orgId: args.orgId,
+        reason: injectionCheck.reason,
+      });
+      return {
+        threadId: args.threadId as string ?? "",
+        response: "I can't process this request. Please rephrase your question about insurance policies or coverage.",
+      };
+    }
 
     // Get or create thread
     let threadId = args.threadId;

@@ -10,6 +10,7 @@ import {
   buildConversationMemoryContext,
 } from "../lib/agentPrompts";
 import { buildSystemPromptForContext } from "../lib/aiUtils";
+import { classifyPromptInjection, enforceInputLimits } from "../lib/security";
 
 export const run = internalAction({
   args: {
@@ -31,6 +32,26 @@ export const run = internalAction({
         id: args.orgId,
       });
       if (!org) throw new Error("Organization not found");
+
+      // ── Prompt injection guard ──
+      const userMsgForGuard = await ctx.runQuery(internal.webChats.getMessageInternal, {
+        id: args.userMessageId,
+      });
+      if (userMsgForGuard?.content) {
+        const sanitizedContent = enforceInputLimits(userMsgForGuard.content);
+        const injectionCheck = await classifyPromptInjection(sanitizedContent);
+        if (!injectionCheck.safe) {
+          await ctx.runMutation(internal.webChats.updateAgentMessage, {
+            id: agentMsgId,
+            content: "I can't process this request. Please rephrase your question about insurance policies or coverage.",
+          });
+          console.warn("[security] Prompt injection blocked in web chat", {
+            chatId: args.chatId,
+            reason: injectionCheck.reason,
+          });
+          return;
+        }
+      }
 
       // Load policies, quotes, and applications
       const policies = await ctx.runQuery(

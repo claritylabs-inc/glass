@@ -7,7 +7,7 @@ import { api } from "@/convex/_generated/api";
 import { AppShell } from "@/components/app-shell";
 import { Skeleton } from "@/components/ui/skeleton";
 
-const PUBLIC_PATHS = ["/login", "/signup", "/oauth/authorize"];
+const PUBLIC_PATHS = ["/login", "/signup", "/oauth/authorize", "/weather"];
 const ONBOARDING_PATH = "/onboarding";
 const ADMIN_PATHS = ["/settings"];
 

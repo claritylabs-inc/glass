@@ -4,7 +4,7 @@ import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { generateText, streamText, stepCountIs } from "ai";
-import { getModel, generateTextWithFallback } from "../lib/models";
+import { getModel } from "../lib/models";
 import {
   lookupPolicy,
   lookupPolicySection,
@@ -24,6 +24,13 @@ import {
 } from "../lib/aiUtils";
 import { buildIntelligenceContext } from "../lib/agentPrompts";
 import { makeEmbedText } from "../lib/sdkCallbacks";
+import {
+  classifyPromptInjection,
+  validateEmailRecipient,
+  collectAllowedRecipients,
+  assertOrgOwnership,
+  enforceInputLimits,
+} from "../lib/security";
 
 /** Build executable tools with Convex context wired in. */
 function buildTools(ctx: any, args: { orgId: any; threadId: any }, org?: any) {
@@ -83,7 +90,12 @@ function buildTools(ctx: any, args: { orgId: any; threadId: any }, org?: any) {
           internal.policies.getInternal,
           { id: params.policyId as any },
         );
-        if (!policy) return "Policy not found.";
+        // Enforce org ownership — prevent cross-org policy access
+        try {
+          assertOrgOwnership(policy, args.orgId, "Policy");
+        } catch {
+          return "Policy not found.";
+        }
         const doc = policy.document as any;
         if (!doc) return "No document data available for this policy.";
 
@@ -384,6 +396,26 @@ export const run = internalAction({
         id: args.orgId,
       });
       if (!org) throw new Error("Organization not found");
+
+      // ── Prompt injection guard ──
+      const userMsgForGuard = await ctx.runQuery(internal.threads.getMessageInternal, {
+        id: args.userMessageId,
+      });
+      if (userMsgForGuard?.content) {
+        const sanitizedContent = enforceInputLimits(userMsgForGuard.content);
+        const injectionCheck = await classifyPromptInjection(sanitizedContent);
+        if (!injectionCheck.safe) {
+          await ctx.runMutation(internal.threads.updateAgentMessage, {
+            id: agentMsgId,
+            content: "I can't process this request. Please rephrase your question about insurance policies or coverage.",
+          });
+          console.warn("[security] Prompt injection blocked", {
+            threadId: args.threadId,
+            reason: injectionCheck.reason,
+          });
+          return;
+        }
+      }
 
       // Load policies, quotes, and applications
       const policies = await ctx.runQuery(
@@ -784,6 +816,20 @@ When answering coverage questions, you are an expert insurance analyst, not a di
 
             const replyTo = hintEmailMatch?.[0] ?? lastInboundEmail?.fromEmail;
             if (!replyTo) throw new Error("No email recipient found — include the recipient's email address");
+
+            // Validate recipient against known thread participants and org members
+            const orgMembers = await ctx.runQuery(internal.users.listByOrgInternal, { orgId: args.orgId });
+            const orgMemberEmails = orgMembers.map((m: any) => m.email).filter(Boolean);
+            const allowedRecipients = collectAllowedRecipients(allMessages as any, orgMemberEmails);
+            const recipientCheck = validateEmailRecipient(replyTo, allowedRecipients);
+            if (!recipientCheck.allowed) {
+              console.warn("[security] Email recipient blocked", {
+                threadId: args.threadId,
+                recipient: replyTo,
+                reason: recipientCheck.reason,
+              });
+              throw new Error(recipientCheck.reason!);
+            }
 
             // CC the user who instructed us + any original CCs, excluding the agent
             const replyCc: string[] = [];

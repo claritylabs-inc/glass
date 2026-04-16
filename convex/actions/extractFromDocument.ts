@@ -4,7 +4,7 @@ import { v } from "convex/values";
 import { action } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import { makeEmbedText } from "../lib/sdkCallbacks";
-import { getModel } from "../lib/models";
+import { getModel, generateTextWithFallback } from "../lib/models";
 import { generateText } from "ai";
 import { Id } from "../_generated/dataModel";
 
@@ -93,9 +93,9 @@ async function extractFinancialKVs(
     classification.documentDate && `document date: ${classification.documentDate}`,
   ].filter(Boolean).join(", ");
 
-  const { text } = await generateText({
+  const { text } = await generateTextWithFallback({
     model: getModel("email_extraction"),
-    maxOutputTokens: 4096,
+    maxOutputTokens: 16384,
     system: `You are extracting structured financial data from a ${classification.documentType.replace(/_/g, " ")}. ${temporalHint ? `Temporal context: ${temporalHint}.` : ""}
 
 For each financial metric, produce a fact that includes:
@@ -175,9 +175,9 @@ export const extractFromDocument = action({
         // Financial docs: structured KV extraction + supplemental business context
         const [financialEntries, businessResult] = await Promise.all([
           extractFinancialKVs(fileName, truncated, classification),
-          generateText({
+          generateTextWithFallback({
             model: getModel("email_extraction"),
-            maxOutputTokens: 4096,
+            maxOutputTokens: 16384,
             system: `You are extracting non-financial business intelligence from a document (company info, operations, relationships, ownership, addresses, etc.). Skip financial metrics — those are extracted separately. Only extract facts that are clearly stated or strongly implied.${temporalInstruction}
 
 Format: { "entries": [{ "content": "...", "category": "company_info" | "products_services" | "operations" | "employees" | "clients" | "insurance" | "investors" | "vendors" | "partners" }] }
@@ -191,9 +191,9 @@ If no relevant facts found, return { "entries": [] }.`,
       } else {
         // Non-financial docs: two-agent extraction with temporal awareness
         const [businessResult, riskResult] = await Promise.all([
-          generateText({
+          generateTextWithFallback({
             model: getModel("email_extraction"),
-            maxOutputTokens: 4096,
+            maxOutputTokens: 16384,
             system: `You are extracting business intelligence from a document. Extract structured facts about the company, its operations, finances, and relationships. Only extract facts that are clearly stated or strongly implied.${temporalInstruction}
 
 Format: { "entries": [{ "content": "...", "category": "company_info" | "products_services" | "operations" | "employees" | "financial" | "clients" | "insurance" | "investors" | "vendors" | "partners" }] }
@@ -201,9 +201,9 @@ Respond with ONLY valid JSON, no markdown.
 If no relevant business facts found, return { "entries": [] }.`,
             prompt: `Document: ${fileName}\n\n${truncated}`,
           }),
-          generateText({
+          generateTextWithFallback({
             model: getModel("email_extraction"),
-            maxOutputTokens: 4096,
+            maxOutputTokens: 16384,
             system: `You are extracting risk signals from a document. Extract information about claims, incidents, compliance issues, risk exposures, and business changes. Only extract facts that are clearly stated or strongly implied.
 
 Do NOT extract insurance coverage details (limits, deductibles, policy terms) — those are handled separately by policy extraction.${temporalInstruction}

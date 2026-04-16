@@ -3,8 +3,7 @@
 import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
-import { generateText } from "ai";
-import { getModel } from "../lib/models";
+import { getModel, generateTextWithFallback } from "../lib/models";
 import { makeEmbedText } from "../lib/sdkCallbacks";
 import { google } from "googleapis";
 import { OAuth2Client } from "google-auth-library";
@@ -27,6 +26,7 @@ function stripHtml(html: string): string {
     .trim();
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function getHeader(
   headers: Array<{ name?: string | null; value?: string | null }>,
   name: string
@@ -256,9 +256,9 @@ export const extractSingle = internalAction({
     try {
       const [businessResult, riskResult] = await Promise.all([
         // Business Context Agent
-        generateText({
+        generateTextWithFallback({
           model: getModel("email_extraction"),
-          maxOutputTokens: 2048,
+          maxOutputTokens: 8192,
           system: `You are extracting business intelligence from an email. Extract structured facts about the company, its operations, finances, and relationships. Only extract facts that are clearly stated or strongly implied.
 
 IMPORTANT: Include temporal context when available. If the email mentions dates, time periods, quarters, fiscal years, or "as of" dates, include them in the extracted fact. For example: "Annual revenue of $5M as of FY2025" rather than just "Annual revenue is $5M".
@@ -275,9 +275,9 @@ If no relevant business facts found, return { "entries": [] }.`,
         }),
 
         // Risk & Intelligence Agent
-        generateText({
+        generateTextWithFallback({
           model: getModel("email_extraction"),
-          maxOutputTokens: 2048,
+          maxOutputTokens: 8192,
           system: `You are extracting risk signals from an email. Extract information about claims, incidents, compliance issues, risk exposures, and business changes. Only extract facts that are clearly stated or strongly implied.
 
 Do NOT extract insurance coverage details (limits, deductibles, policy terms) — those are handled separately by policy extraction.
