@@ -14,13 +14,10 @@ import {
   FileText,
   FileInput,
   Mail,
-  Layers,
-  Asterisk,
   Settings,
   ChevronLeft,
   ChevronRight,
   Plus,
-  Search,
   LogOut,
   User,
   MessageSquare,
@@ -39,12 +36,7 @@ const INSURANCE_ITEMS = [
   { href: "/applications", label: "Applications", icon: FileInput, shortcut: "Y" },
 ];
 
-const TOOLS_ITEMS = [
-  { href: "/connections", label: "Context", icon: Layers, shortcut: "E" },
-  { href: "/agent", label: "Prism", icon: Asterisk, shortcut: "G" },
-];
-
-const ALL_NAV_ITEMS = [...INSURANCE_ITEMS, ...TOOLS_ITEMS];
+const ALL_NAV_ITEMS = [...INSURANCE_ITEMS];
 
 /** Map from lowercase key to href for page shortcuts.
  * Avoids: A (select all), C (copy), V (paste), X (cut), S (save),
@@ -93,12 +85,10 @@ export function AppSidebar({
   const pathname = usePathname();
   const router = useRouter();
   const viewer = useQuery(api.users.viewer);
-  const viewerOrg = useQuery(api.orgs.viewerOrg);
   const unifiedThreads = useQuery(api.threads.list, { archived: false });
   const webChats = useQuery(api.webChats.list, { archived: false });
   const emailConvs = useQuery(api.agentConversations.list, { archived: false });
   const createThread = useMutation(api.threads.create);
-  const sendThreadMessage = useMutation(api.threads.sendMessage);
   const archiveThread = useMutation(api.threads.archive);
   const { signOut } = useAuthActions();
   const { context: pageContext } = usePageContext();
@@ -106,14 +96,10 @@ export function AppSidebar({
   const ThemeIcon = theme === "light" ? Sun : theme === "dark" ? Moon : Monitor;
   const themeLabel = theme === "light" ? "Light" : theme === "dark" ? "Dark" : "System";
 
-  const isAdmin = viewerOrg?.membership?.role === "admin";
   const [collapsed, setCollapsed] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchSending, setSearchSending] = useState(false);
   const [cmdHeld, setCmdHeld] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const cmdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Unified thread list — prefers unified threads table, falls back to legacy merge
   const conversations = useMemo(() => {
@@ -189,24 +175,7 @@ export function AppSidebar({
     }
   }
 
-  async function handleSearchSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const content = searchQuery.trim();
-    if (!content || searchSending) return;
-    setSearchSending(true);
-    try {
-      const threadId = await createThread({ initialContext: pageContext ?? undefined, agentDomain: AGENT_DOMAIN });
-      await sendThreadMessage({ threadId, content });
-      setSearchQuery("");
-      router.push(`/agent/thread/${threadId}`);
-    } catch {
-      toast.error("Failed to start chat");
-    } finally {
-      setSearchSending(false);
-    }
-  }
-
-  // Cmd+K search, Cmd+letter page nav, Cmd+number thread nav, Cmd held state
+  // Cmd+letter page nav, Cmd+number thread nav, Cmd held state
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if (e.metaKey || e.ctrlKey) {
@@ -217,18 +186,6 @@ export function AppSidebar({
 
         // Skip navigation shortcuts when focus is in an editable element
         if (isEditableTarget(e)) return;
-
-        // Cmd+K — focus search
-        if (e.key === "k") {
-          e.preventDefault();
-          if (collapsed) {
-            setCollapsed(false);
-            setTimeout(() => searchInputRef.current?.focus(), 150);
-          } else {
-            searchInputRef.current?.focus();
-          }
-          return;
-        }
 
         // Cmd+letter — navigate to pages
         const pageHref = PAGE_SHORTCUT_MAP[e.key.toLowerCase()];
@@ -298,56 +255,11 @@ export function AppSidebar({
         </button>
       </div>
 
-      {/* Search / quick chat */}
-      {!collapsed ? (
-        <div className="px-3 pt-3 pb-1">
-          <form onSubmit={handleSearchSubmit}>
-            <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-md border border-foreground/6 focus-within:border-foreground/12 transition-colors">
-              <Search className="w-3.5 h-3.5 shrink-0 text-muted-foreground/40" />
-              <input
-                ref={searchInputRef}
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Ask Prism..."
-                className="flex-1 bg-transparent outline-none text-label-sm text-foreground placeholder:text-muted-foreground/40 min-w-0"
-              />
-            </div>
-          </form>
-        </div>
-      ) : (
-        <div className="px-2 pt-3 pb-1">
-          <button
-            type="button"
-            onClick={() => { setCollapsed(false); setTimeout(() => searchInputRef.current?.focus(), 150); }}
-            className="w-full flex items-center justify-center py-1.5 rounded-md text-muted-foreground/40 hover:text-foreground hover:bg-foreground/[0.04] transition-colors cursor-pointer"
-            title="Search"
-          >
-            <Search className="w-4 h-4" />
-          </button>
-        </div>
-      )}
-
       {/* Nav sections */}
       <nav className="flex-1 overflow-y-auto px-2 pb-2">
         {/* INSURANCE */}
         <SectionHeader label="Insurance" collapsed={collapsed} />
         {INSURANCE_ITEMS.map((item) => (
-          <NavItem
-            key={item.href}
-            href={item.href}
-            label={item.label}
-            icon={item.icon}
-            active={isActive(item.href)}
-            collapsed={collapsed}
-            shortcut={item.shortcut ?? undefined}
-            cmdHeld={showShortcuts}
-          />
-        ))}
-
-        {/* TOOLS */}
-        <SectionHeader label="Tools" collapsed={collapsed} />
-        {TOOLS_ITEMS.map((item) => (
           <NavItem
             key={item.href}
             href={item.href}
@@ -487,17 +399,15 @@ export function AppSidebar({
           <ThemeIcon className="w-4 h-4 shrink-0" />
           {!collapsed && <span>{themeLabel}</span>}
         </button>
-        {isAdmin && (
-          <NavItem
-            href="/settings"
-            label="Settings"
-            icon={Settings}
-            active={isActive("/settings")}
-            collapsed={collapsed}
-            shortcut="J"
-            cmdHeld={showShortcuts}
-          />
-        )}
+        <NavItem
+          href="/settings"
+          label="Settings"
+          icon={Settings}
+          active={isActive("/settings")}
+          collapsed={collapsed}
+          shortcut="J"
+          cmdHeld={showShortcuts}
+        />
         <NavItem
           href="/profile"
           label="Profile"
