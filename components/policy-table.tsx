@@ -69,7 +69,6 @@ export function PolicyTable({ policies }: { policies: Policy[] | undefined }) {
                 <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground  whitespace-nowrap hidden md:table-cell">Carrier</th>
                 <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground  whitespace-nowrap text-right">Premium</th>
                 <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground  whitespace-nowrap text-right hidden md:table-cell">Period</th>
-                <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground  whitespace-nowrap text-right hidden md:table-cell">Actions</th>
               </tr>
             </thead>
             <SkeletonRows />
@@ -110,9 +109,6 @@ export function PolicyTable({ policies }: { policies: Policy[] | undefined }) {
                 </th>
                 <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground  whitespace-nowrap text-right hidden md:table-cell">
                   Period
-                </th>
-                <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground  whitespace-nowrap text-right hidden md:table-cell">
-                  Actions
                 </th>
               </tr>
             </thead>
@@ -184,15 +180,6 @@ export function PolicyTable({ policies }: { policies: Policy[] | undefined }) {
                       {policy.effectiveDate === "Unknown" && policy.expirationDate === "Unknown"
                         ? policy.documentType === "quote" ? "Quote" : "Unknown"
                         : `${policy.effectiveDate} – ${policy.expirationDate}`}
-                    </td>
-                    <td className="px-4 py-2.5 text-right whitespace-nowrap hidden md:table-cell">
-                      <Link
-                        href={`/policies/${policy._id}`}
-                        onClick={(e) => e.stopPropagation()}
-                        className="px-2.5 py-1 rounded-md border border-foreground/12 bg-card text-label-sm font-medium text-foreground hover:border-foreground/20 hover:bg-foreground/[0.03] transition-colors"
-                      >
-                        View
-                      </Link>
                     </td>
                   </FadeIn>
                 ))}
