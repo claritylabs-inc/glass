@@ -130,7 +130,7 @@ export const PrismPromptInput = forwardRef<
     <div className="w-full">
       <PromptInput
         onSubmit={handleSubmit}
-        className="rounded-xl border border-transparent bg-popover shadow-[0_2px_12px_rgba(0,0,0,0.06)] focus-within:border-foreground/15 dark:focus-within:border-[#3a3a3a] transition-all overflow-hidden [&_[data-slot=input-group]]:border-0 [&_[data-slot=input-group]]:rounded-none [&_[data-slot=input-group]]:shadow-none"
+        className="rounded-xl border border-foreground/6 bg-popover focus-within:border-foreground/15 dark:focus-within:border-[#3a3a3a] transition-all overflow-hidden [&_[data-slot=input-group]]:border-0 [&_[data-slot=input-group]]:rounded-none [&_[data-slot=input-group]]:shadow-none"
       >
         <PromptInputTextarea
           ref={textareaRef}
