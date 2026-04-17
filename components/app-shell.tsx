@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { AppTopBar, type PresenceUser } from "@/components/app-top-bar";
-import { AskPrismInput } from "@/components/ask-prism-input";
+
 import { PdfProvider, usePdf } from "@/components/pdf-context";
 import { PageContextProvider } from "@/hooks/use-page-context";
 import { EntityPreviewProvider, useEntityPreview } from "@/hooks/use-entity-preview";
@@ -53,7 +53,6 @@ function ShellContent({
               {children}
             </div>
           </main>
-          <AskPrismInput />
           <CommandPalette />
         </div>
       </div>
