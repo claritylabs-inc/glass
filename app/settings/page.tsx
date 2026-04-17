@@ -14,6 +14,7 @@ import {
 import { OrganizationSection } from "@/components/settings/organization-section";
 import { TeamSection } from "@/components/settings/team-section";
 import { ApiKeysSection } from "@/components/settings/api-keys-section";
+import { SourcesSection } from "@/components/settings/sources-section";
 
 const SETTINGS_SECTIONS = [
   { id: "organization", label: "Organization", icon: Building2 },
@@ -130,6 +131,8 @@ function SectionContent({
         <TeamSection />
       ) : section === "api-keys" ? (
         <ApiKeysSection />
+      ) : section === "sources" ? (
+        <SourcesSection />
       ) : (
         <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-8 text-center">
           <p className="text-body-sm text-muted-foreground">
