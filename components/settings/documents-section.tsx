@@ -249,7 +249,7 @@ export function DocumentsSection() {
               <p className="text-label-sm font-medium text-muted-foreground">
                 Insurance Documents
               </p>
-              <p className="text-[11px] text-muted-foreground/50">
+              <p className="text-label-sm text-muted-foreground/50">
                 Policies and certificates
               </p>
             </div>
@@ -294,7 +294,7 @@ export function DocumentsSection() {
                     <p className="text-body-sm font-medium text-foreground">
                       {uploading ? "Uploading..." : "Upload or drag a PDF"}
                     </p>
-                    <p className="text-[11px] text-muted-foreground/50">
+                    <p className="text-label-sm text-muted-foreground/50">
                       Policy or certificate
                     </p>
                   </div>
@@ -309,7 +309,7 @@ export function DocumentsSection() {
               <p className="text-label-sm font-medium text-muted-foreground">
                 Business Context
               </p>
-              <p className="text-[11px] text-muted-foreground/50">
+              <p className="text-label-sm text-muted-foreground/50">
                 Enrich your intelligence profile
               </p>
             </div>
@@ -354,7 +354,7 @@ export function DocumentsSection() {
                     <p className="text-body-sm font-medium text-foreground">
                       {uploading ? "Uploading..." : "Upload or drag a document"}
                     </p>
-                    <p className="text-[11px] text-muted-foreground/50">
+                    <p className="text-label-sm text-muted-foreground/50">
                       {orgData?.org?.industry
                         ? `e.g. incorporation docs, pitch deck, ${orgData.org.industry.toLowerCase()} certificates`
                         : "e.g. incorporation docs, pitch deck, financials"}

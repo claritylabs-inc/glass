@@ -1,6 +1,7 @@
 "use client";
 
 import { useSearchParams, useRouter } from "next/navigation";
+import { useState, createContext, useContext } from "react";
 import { AppShell } from "@/components/app-shell";
 import {
   Mail,
@@ -39,9 +40,19 @@ const SETTINGS_SECTIONS = [
 
 type SettingsSection = (typeof SETTINGS_SECTIONS)[number]["id"];
 
+// ── Context for sections to inject header actions ──
+export const SettingsActionsContext = createContext<{
+  setActions: (node: React.ReactNode) => void;
+}>({ setActions: () => {} });
+
+export function useSettingsActions() {
+  return useContext(SettingsActionsContext);
+}
+
 export default function SettingsPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const [headerActions, setHeaderActions] = useState<React.ReactNode>(null);
 
   const activeSection = (searchParams.get("section") as SettingsSection) ?? "organization";
 
@@ -55,35 +66,37 @@ export default function SettingsPage() {
     SETTINGS_SECTIONS.find((s) => s.id === activeSection)?.label ?? "Settings";
 
   return (
-    <AppShell breadcrumbDetail={activeLabel}>
-      {/* Mobile: horizontal scrollable tabs */}
-      <div className="lg:hidden mb-6 -mx-6 px-6 overflow-x-auto scrollbar-hide">
-        <div className="flex gap-1 min-w-max">
-          {SETTINGS_SECTIONS.map((section) => {
-            const Icon = section.icon;
-            const isActive = section.id === activeSection;
-            return (
-              <button
-                key={section.id}
-                type="button"
-                onClick={() => handleSectionChange(section.id)}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-label-sm whitespace-nowrap transition-colors cursor-pointer ${
-                  isActive
-                    ? "bg-foreground/8 text-foreground font-medium"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                <Icon className="w-3.5 h-3.5 shrink-0" />
-                {section.label}
-              </button>
-            );
-          })}
+    <SettingsActionsContext.Provider value={{ setActions: setHeaderActions }}>
+      <AppShell breadcrumbDetail={activeLabel} actions={headerActions}>
+        {/* Mobile: horizontal scrollable tabs */}
+        <div className="lg:hidden mb-6 -mx-6 px-6 overflow-x-auto scrollbar-hide">
+          <div className="flex gap-1 min-w-max">
+            {SETTINGS_SECTIONS.map((section) => {
+              const Icon = section.icon;
+              const isActive = section.id === activeSection;
+              return (
+                <button
+                  key={section.id}
+                  type="button"
+                  onClick={() => handleSectionChange(section.id)}
+                  className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-label-sm whitespace-nowrap transition-colors cursor-pointer ${
+                    isActive
+                      ? "bg-foreground/8 text-foreground font-medium"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <Icon className="w-3.5 h-3.5 shrink-0" />
+                  {section.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
-      </div>
 
-      {/* Section content — sidebar navigation is handled by the main app sidebar on desktop */}
-      <SectionContent section={activeSection} />
-    </AppShell>
+        {/* Section content — sidebar navigation is handled by the main app sidebar on desktop */}
+        <SectionContent section={activeSection} />
+      </AppShell>
+    </SettingsActionsContext.Provider>
   );
 }
 

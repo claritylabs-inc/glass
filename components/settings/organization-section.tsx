@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useSettingsActions } from "@/app/settings/page";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { useRouter } from "next/navigation";
 import { api } from "@/convex/_generated/api";
@@ -58,6 +59,8 @@ export function OrganizationSection() {
   const [removingDemo, setRemovingDemo] = useState(false);
   const [showRemoveDemoDialog, setShowRemoveDemoDialog] = useState(false);
 
+  const { setActions } = useSettingsActions();
+
   const contextRef = useRef<HTMLTextAreaElement>(null);
   const autoResize = useCallback(() => {
     const el = contextRef.current;
@@ -86,6 +89,23 @@ export function OrganizationSection() {
   }, [org]);
 
   useEffect(() => { autoResize(); }, [context, autoResize]);
+
+  useEffect(() => {
+    setActions(
+      <PillButton size="compact" onClick={handleSave} disabled={saving}>
+        {saving ? (
+          <>
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            Saving...
+          </>
+        ) : (
+          "Save Settings"
+        )}
+      </PillButton>
+    );
+    return () => setActions(null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [saving]);
 
   const hasDemo = hasDemoDataResult === true;
 
@@ -178,20 +198,6 @@ export function OrganizationSection() {
 
   return (
     <div className="space-y-4">
-      {/* Save button row */}
-      <div className="flex justify-end">
-        <PillButton size="compact" onClick={handleSave} disabled={saving}>
-          {saving ? (
-            <>
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              Saving...
-            </>
-          ) : (
-            "Save Settings"
-          )}
-        </PillButton>
-      </div>
-
       {/* Organization info */}
       <form onSubmit={handleSave}>
         <div className="rounded-lg border border-foreground/6 bg-card mb-4">

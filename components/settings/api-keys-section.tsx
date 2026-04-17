@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSettingsActions } from "@/app/settings/page";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
@@ -35,6 +36,19 @@ export function ApiKeysSection() {
   const [generatedKey, setGeneratedKey] = useState<string | null>(null);
   const [copiedKey, setCopiedKey] = useState(false);
   const [showRevokeDialog, setShowRevokeDialog] = useState<string | null>(null);
+
+  const { setActions } = useSettingsActions();
+
+  useEffect(() => {
+    setActions(
+      <PillButton size="compact" variant="secondary" onClick={openGenerateDialog}>
+        <Plus className="w-3.5 h-3.5" />
+        Generate Key
+      </PillButton>
+    );
+    return () => setActions(null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function openGenerateDialog() {
     setShowGenerateKeyDialog(true);
@@ -78,14 +92,6 @@ export function ApiKeysSection() {
 
   return (
     <div className="space-y-4">
-      {/* Generate button row */}
-      <div className="flex justify-end">
-        <PillButton size="compact" variant="secondary" onClick={openGenerateDialog}>
-          <Plus className="w-3.5 h-3.5" />
-          Generate Key
-        </PillButton>
-      </div>
-
       {/* API Keys list */}
       <div className="rounded-lg border border-foreground/6 bg-card">
         <div className="px-5 py-3.5 border-b border-foreground/6">
@@ -102,7 +108,7 @@ export function ApiKeysSection() {
                   <p className="text-body-sm font-medium text-foreground">
                     {key.name}
                     {key.revokedAt && (
-                      <span className="text-[11px] text-red-400 bg-red-50 dark:bg-red-950/40 px-1.5 py-0.5 rounded ml-2">
+                      <span className="text-label-sm text-red-400 bg-red-50 dark:bg-red-950/40 px-1.5 py-0.5 rounded ml-2">
                         Revoked
                       </span>
                     )}
@@ -111,7 +117,7 @@ export function ApiKeysSection() {
                     {key.keyPrefix}{"••••••••"}
                   </p>
                   {key.lastUsedAt && (
-                    <p className="text-[11px] text-muted-foreground/50 mt-0.5">
+                    <p className="text-label-sm text-muted-foreground/50 mt-0.5">
                       Last used {new Date(key.lastUsedAt).toLocaleDateString()}
                     </p>
                   )}

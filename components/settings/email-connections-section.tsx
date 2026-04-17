@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSettingsActions } from "@/app/settings/page";
 import { useQuery, useMutation } from "convex/react";
 import { useRouter, usePathname } from "next/navigation";
 import { api } from "@/convex/_generated/api";
@@ -130,6 +131,18 @@ export function EmailConnectionsSection() {
 
   const [formOpen, setFormOpen] = useState(false);
 
+  const { setActions } = useSettingsActions();
+
+  useEffect(() => {
+    setActions(
+      <PillButton size="compact" onClick={() => setFormOpen(true)}>
+        Add Connection
+      </PillButton>
+    );
+    return () => setActions(null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const stopScan = useMutation(api.connections.stopScan);
   const removeDemoData = useMutation(api.seed.removeDemoData);
 
@@ -186,18 +199,13 @@ export function EmailConnectionsSection() {
     <div className="space-y-10">
       {/* ── Connections list ── */}
       <section>
-        <div className="flex items-center justify-between mb-3">
-          <div>
-            <h3 className="text-body-sm font-medium text-foreground !mb-0">
-              Connected Accounts
-            </h3>
-            <p className="text-label-sm text-muted-foreground/60">
-              Auto-scanned daily for policies and business intelligence
-            </p>
-          </div>
-          <PillButton size="compact" onClick={() => setFormOpen(true)}>
-            Add Connection
-          </PillButton>
+        <div className="mb-3">
+          <h3 className="text-body-sm font-medium text-foreground !mb-0">
+            Connected Accounts
+          </h3>
+          <p className="text-label-sm text-muted-foreground/60">
+            Auto-scanned daily for policies and business intelligence
+          </p>
         </div>
 
         {connections === undefined && (

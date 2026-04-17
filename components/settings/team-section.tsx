@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSettingsActions } from "@/app/settings/page";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
@@ -38,6 +39,19 @@ export function TeamSection() {
   const [inviting, setInviting] = useState(false);
   const [showInviteDialog, setShowInviteDialog] = useState(false);
 
+  const { setActions } = useSettingsActions();
+
+  useEffect(() => {
+    setActions(
+      <PillButton size="compact" variant="secondary" onClick={() => setShowInviteDialog(true)}>
+        <UserPlus className="w-3.5 h-3.5" />
+        Invite Member
+      </PillButton>
+    );
+    return () => setActions(null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function handleInvite() {
     if (!inviteEmail) return;
     setInviting(true);
@@ -64,14 +78,6 @@ export function TeamSection() {
 
   return (
     <div className="space-y-4">
-      {/* Invite button row */}
-      <div className="flex justify-end">
-        <PillButton size="compact" variant="secondary" onClick={() => setShowInviteDialog(true)}>
-          <UserPlus className="w-3.5 h-3.5" />
-          Invite Member
-        </PillButton>
-      </div>
-
       <div className="rounded-lg border border-foreground/6 bg-card">
         <div className="px-5 py-3.5 border-b border-foreground/6">
           <h3 className="!mb-0 text-sm font-medium text-foreground">Team Members</h3>
@@ -97,11 +103,11 @@ export function TeamSection() {
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 {member.userId === org?.primaryInsuranceContactId && (
-                  <span className="text-[11px] text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 rounded">
+                  <span className="text-label-sm text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 rounded">
                     Primary Contact
                   </span>
                 )}
-                <span className={`text-[11px] px-1.5 py-0.5 rounded flex items-center gap-1 ${
+                <span className={`text-label-sm px-1.5 py-0.5 rounded flex items-center gap-1 ${
                   member.role === "admin"
                     ? "text-primary-muted bg-primary-light/10"
                     : "text-muted-foreground bg-foreground/5"
@@ -179,7 +185,7 @@ export function TeamSection() {
                 <p className="text-label-sm text-muted-foreground/40">Invitation pending</p>
               </div>
               <div className="flex items-center gap-2 shrink-0">
-                <span className="text-[11px] text-muted-foreground bg-foreground/5 px-1.5 py-0.5 rounded">
+                <span className="text-label-sm text-muted-foreground bg-foreground/5 px-1.5 py-0.5 rounded">
                   {inv.role}
                 </span>
                 <PillButton

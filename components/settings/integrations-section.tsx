@@ -134,11 +134,11 @@ export function IntegrationsSection() {
                 <p className="text-body-sm font-medium text-foreground">
                   {item.name}
                 </p>
-                <p className="text-[10px] text-muted-foreground/50 truncate">
+                <p className="text-label-sm text-muted-foreground/50 truncate">
                   {item.desc}
                 </p>
               </div>
-              <span className="text-[10px] font-medium text-muted-foreground/40 bg-foreground/[0.04] group-hover/int:bg-primary/10 group-hover/int:text-primary px-2 py-0.5 rounded-full shrink-0 transition-colors">
+              <span className="text-label-sm font-medium text-muted-foreground/40 bg-foreground/[0.04] group-hover/int:bg-primary/10 group-hover/int:text-primary px-2 py-0.5 rounded-full shrink-0 transition-colors">
                 Soon
               </span>
             </button>
