@@ -61,10 +61,10 @@ export default function SettingsPage() {
                 key={section.id}
                 type="button"
                 onClick={() => handleSectionChange(section.id)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-body-sm whitespace-nowrap transition-colors cursor-pointer ${
+                className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full text-body-sm whitespace-nowrap transition-colors cursor-pointer ${
                   isActive
-                    ? "bg-foreground/[0.05] text-foreground font-medium"
-                    : "text-muted-foreground hover:bg-foreground/[0.04]"
+                    ? "bg-foreground/8 text-foreground font-medium"
+                    : "text-muted-foreground hover:text-foreground"
                 }`}
               >
                 <Icon className="w-4 h-4 shrink-0" />

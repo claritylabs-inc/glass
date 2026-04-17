@@ -20,7 +20,6 @@ import {
   Search,
   Eye,
 } from "lucide-react";
-import { motion } from "framer-motion";
 import dayjs from "dayjs";
 import { ModeBadge } from "@/components/mode-badge";
 import { MessageBubble, type Conversation } from "@/components/conversation-message";
@@ -246,11 +245,11 @@ function ExtractionTab({ policy }: { policy: any }) {
 
       {/* Supplementary Extraction */}
       {policy.extractionStatus === "complete" && (
-        <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
+        <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
           <div className="px-4 py-2.5 bg-foreground/[0.02] border-b border-foreground/4">
             <div className="flex items-center gap-2">
               <Search className="w-4 h-4 text-muted-foreground" />
-              <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider flex-1">
+              <p className="text-label-sm font-semibold text-muted-foreground flex-1">
                 Additional Details
               </p>
               {policy.supplementaryFacts?.length > 0 && (
@@ -334,11 +333,11 @@ function ExtractionTab({ policy }: { policy: any }) {
 
       {/* Raw Data */}
       {(rawExtraction || rawMetadata) && (
-        <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
+        <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
           <div className="px-4 py-2.5 bg-foreground/[0.02] border-b border-foreground/4">
             <div className="flex items-center gap-2">
               <Code className="w-4 h-4 text-muted-foreground" />
-              <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">
+              <p className="text-label-sm font-semibold text-muted-foreground">
                 Raw Data
               </p>
             </div>
@@ -469,7 +468,7 @@ function PolicyConversationsTab({
 
   if (!threads || threads.length === 0) {
     return (
-      <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-6 py-12 text-center">
+      <div className="rounded-lg border border-foreground/6 bg-card px-6 py-12 text-center">
         <MessageSquare className="w-8 h-8 text-muted-foreground/15 mx-auto mb-3" />
         <p className="text-body-sm text-muted-foreground/50 mb-1">
           No conversations about this policy
@@ -483,7 +482,7 @@ function PolicyConversationsTab({
   }
 
   return (
-    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
+    <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
       <table className="w-full text-body-sm">
         <thead>
           <tr className="border-b border-foreground/6 bg-foreground/2">
@@ -611,7 +610,7 @@ function PolicyActivityTab({ policyId }: { policyId: string }) {
     <div className="space-y-4">
       {groups.map((group) => (
         <div key={group.label}>
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50 mb-1.5">
+          <p className="text-[10px] font-semibold text-muted-foreground/50 mb-1.5">
             {group.label}
           </p>
           <div className="space-y-0">
@@ -752,7 +751,7 @@ export default function PolicyDetailPage({
           {Array.from({ length: 3 }).map((_, i) => (
             <div
               key={i}
-              className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-4 py-3"
+              className="rounded-lg border border-foreground/6 bg-card px-4 py-3"
             >
               <Skeleton className="h-5 w-32 mb-1" />
               <Skeleton className="h-3 w-24" />
@@ -982,7 +981,7 @@ export default function PolicyDetailPage({
       )}
 
       {/* Tab bar */}
-      <div className="flex items-center gap-1 border-b border-foreground/6 mb-6">
+      <div className="flex items-center gap-1 mb-6">
         {(
           [
             { id: "details" as const, label: "Details" },
@@ -999,10 +998,10 @@ export default function PolicyDetailPage({
             key={tab.id}
             type="button"
             onClick={() => setActiveTab(tab.id)}
-            className={`relative px-3 py-2 text-body-sm font-medium whitespace-nowrap transition-colors cursor-pointer ${
+            className={`px-4 py-1.5 text-body-sm rounded-full whitespace-nowrap transition-colors cursor-pointer ${
               activeTab === tab.id
-                ? "text-foreground"
-                : "text-muted-foreground hover:text-foreground/70"
+                ? "bg-foreground/8 text-foreground font-medium"
+                : "text-muted-foreground hover:text-foreground"
             }`}
           >
             <span className="flex items-center gap-1.5">
@@ -1013,13 +1012,6 @@ export default function PolicyDetailPage({
                 </span>
               )}
             </span>
-            {activeTab === tab.id && (
-              <motion.div
-                layoutId="policy-tab-indicator"
-                className="absolute bottom-0 left-0 right-0 h-[2px] bg-foreground"
-                transition={{ type: "spring", stiffness: 400, damping: 30 }}
-              />
-            )}
           </button>
         ))}
       </div>

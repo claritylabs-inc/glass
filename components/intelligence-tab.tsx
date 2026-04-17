@@ -101,8 +101,8 @@ export function IntelligenceTab() {
 
   return (
     <div className="space-y-5">
-      {/* Sub-tab switcher — underline style */}
-      <div className="flex items-center border-b border-foreground/6">
+      {/* Sub-tab switcher — pill style */}
+      <div className="flex items-center gap-1">
         {SUB_TABS.map((tab) => {
           const isActive = subTab === tab.id;
           return (
@@ -110,16 +110,13 @@ export function IntelligenceTab() {
               key={tab.id}
               type="button"
               onClick={() => setSubTab(tab.id)}
-              className={`relative px-3 py-2 text-body-sm font-medium whitespace-nowrap transition-colors cursor-pointer ${
+              className={`px-4 py-1.5 text-body-sm rounded-full whitespace-nowrap transition-colors cursor-pointer ${
                 isActive
-                  ? "text-foreground"
-                  : "text-muted-foreground hover:text-foreground/70"
+                  ? "bg-foreground/8 text-foreground font-medium"
+                  : "text-muted-foreground hover:text-foreground"
               }`}
             >
               {tab.label}
-              {isActive && (
-                <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-foreground rounded-t-full" />
-              )}
             </button>
           );
         })}
@@ -314,7 +311,7 @@ function OrgIntelligencePanel() {
     <>
       {/* Stats bar */}
       <div className="grid grid-cols-2 gap-4">
-        <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-5 py-4">
+        <div className="rounded-lg border border-foreground/6 bg-card px-5 py-4">
           <p className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider">
             Total Entries
           </p>
@@ -322,7 +319,7 @@ function OrgIntelligencePanel() {
             {totalEntries.toLocaleString()}
           </p>
         </div>
-        <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-5 py-4">
+        <div className="rounded-lg border border-foreground/6 bg-card px-5 py-4">
           <p className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider">
             Categories
           </p>
@@ -416,7 +413,7 @@ function OrgIntelligencePanel() {
                       return (
                         <div
                           key={day.label}
-                          className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden"
+                          className="rounded-lg border border-foreground/6 bg-card overflow-hidden"
                         >
                           <button
                             type="button"
@@ -559,7 +556,7 @@ function OrgIntelligencePanel() {
           })}
         </div>
       ) : (
-        <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-5 py-8 text-center">
+        <div className="rounded-lg border border-foreground/6 bg-card px-5 py-8 text-center">
           <Brain className="w-6 h-6 text-muted-foreground/20 mx-auto mb-2" />
           <p className="text-body-sm text-muted-foreground">
             No intelligence entries yet
@@ -616,7 +613,7 @@ function PolicyExtractionsPanel() {
     <>
       {/* Overview stats */}
       <div className="grid grid-cols-2 gap-4">
-        <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-5 py-4">
+        <div className="rounded-lg border border-foreground/6 bg-card px-5 py-4">
           <p className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider">
             Total Vectors
           </p>
@@ -624,7 +621,7 @@ function PolicyExtractionsPanel() {
             {stats.totalChunks.toLocaleString()}
           </p>
         </div>
-        <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-5 py-4">
+        <div className="rounded-lg border border-foreground/6 bg-card px-5 py-4">
           <p className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider">
             Indexed Policies
           </p>
@@ -680,7 +677,7 @@ function PolicyExtractionsPanel() {
 
       {/* Per-policy breakdown */}
       {stats.byPolicy.length > 0 && (
-        <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
+        <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
           <div className="px-5 py-3.5 border-b border-foreground/6">
             <h3 className="!mb-0 text-sm font-medium text-foreground">
               Index by Policy
@@ -751,7 +748,7 @@ function PolicyExtractionsPanel() {
       )}
 
       {stats.totalChunks === 0 && (
-        <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-5 py-8 text-center">
+        <div className="rounded-lg border border-foreground/6 bg-card px-5 py-8 text-center">
           <Search className="w-6 h-6 text-muted-foreground/20 mx-auto mb-2" />
           <p className="text-body-sm text-muted-foreground">
             No search index data

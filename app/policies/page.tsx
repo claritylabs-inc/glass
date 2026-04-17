@@ -118,7 +118,7 @@ export default function PoliciesPage() {
     <AppShell actions={viewToggle}>
           {isLoading ? (
             <div className="space-y-3 mb-4">
-              <div className="flex items-center gap-1 border-b border-foreground/6 pb-2">
+              <div className="flex items-center gap-1">
                 <Skeleton className="h-5 w-28" />
                 <Skeleton className="h-5 w-28" />
                 <Skeleton className="h-5 w-16" />
