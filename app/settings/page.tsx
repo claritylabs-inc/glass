@@ -11,6 +11,9 @@ import {
   Users,
   Key,
 } from "lucide-react";
+import { OrganizationSection } from "@/components/settings/organization-section";
+import { TeamSection } from "@/components/settings/team-section";
+import { ApiKeysSection } from "@/components/settings/api-keys-section";
 
 const SETTINGS_SECTIONS = [
   { id: "organization", label: "Organization", icon: Building2 },
@@ -121,14 +124,22 @@ function SectionContent({
   return (
     <div>
       <h2 className="text-lg font-semibold mb-4">{sectionLabel}</h2>
-      <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-8 text-center">
-        <p className="text-body-sm text-muted-foreground">
-          Section: <span className="font-medium text-foreground">{section}</span>
-        </p>
-        <p className="text-label-sm text-muted-foreground/50 mt-1">
-          Content will be migrated here in Task 8.
-        </p>
-      </div>
+      {section === "organization" ? (
+        <OrganizationSection />
+      ) : section === "team" ? (
+        <TeamSection />
+      ) : section === "api-keys" ? (
+        <ApiKeysSection />
+      ) : (
+        <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-8 text-center">
+          <p className="text-body-sm text-muted-foreground">
+            Section: <span className="font-medium text-foreground">{section}</span>
+          </p>
+          <p className="text-label-sm text-muted-foreground/50 mt-1">
+            Content will be migrated here in a future task.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

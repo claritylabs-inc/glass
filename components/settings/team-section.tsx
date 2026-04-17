@@ -1,0 +1,269 @@
+"use client";
+
+import { useState } from "react";
+import { useQuery, useMutation } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import { toast } from "sonner";
+import {
+  Loader2,
+  UserPlus,
+  ShieldCheck,
+  Mail,
+} from "lucide-react";
+import { PillButton } from "@/components/ui/pill-button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+
+export function TeamSection() {
+  const viewer = useQuery(api.users.viewer);
+  const orgData = useQuery(api.orgs.viewerOrg);
+  const members = useQuery(api.orgs.listMembers);
+  const invitations = useQuery(api.orgs.listInvitations);
+  const inviteMember = useMutation(api.orgs.inviteMember);
+  const removeMember = useMutation(api.orgs.removeMember);
+  const updateMemberRole = useMutation(api.orgs.updateMemberRole);
+  const setPrimaryContact = useMutation(api.orgs.setPrimaryInsuranceContact);
+  const cancelInvitation = useMutation(api.orgs.cancelInvitation);
+
+  const org = orgData?.org;
+
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState<"admin" | "member">("member");
+  const [inviting, setInviting] = useState(false);
+  const [showInviteDialog, setShowInviteDialog] = useState(false);
+
+  async function handleInvite() {
+    if (!inviteEmail) return;
+    setInviting(true);
+    try {
+      await inviteMember({ email: inviteEmail, role: inviteRole });
+      toast.success(`Invitation sent to ${inviteEmail}`);
+      setInviteEmail("");
+      setShowInviteDialog(false);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Failed to send invitation";
+      toast.error(msg);
+    } finally {
+      setInviting(false);
+    }
+  }
+
+  if (viewer === undefined || orgData === undefined || members === undefined) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Invite button row */}
+      <div className="flex justify-end">
+        <PillButton size="compact" variant="secondary" onClick={() => setShowInviteDialog(true)}>
+          <UserPlus className="w-3.5 h-3.5" />
+          Invite Member
+        </PillButton>
+      </div>
+
+      <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04]">
+        <div className="px-5 py-3.5 border-b border-foreground/6">
+          <h3 className="!mb-0 text-sm font-medium text-foreground">Team Members</h3>
+        </div>
+        <div className="divide-y divide-foreground/6">
+          {members.map((member) => (
+            <div key={member.membershipId} className="px-5 py-3.5 flex items-center gap-3">
+              <div className="w-8 h-8 rounded-full bg-foreground/8 flex items-center justify-center text-label-sm font-medium text-foreground shrink-0">
+                {member.name
+                  ? member.name.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2)
+                  : member.email?.[0]?.toUpperCase() ?? "?"}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-body-sm font-medium text-foreground truncate">
+                  {member.name || member.email}
+                  {member.userId === viewer?._id && (
+                    <span className="text-label-sm text-muted-foreground/40 ml-1">(you)</span>
+                  )}
+                </p>
+                {member.name && member.email && (
+                  <p className="text-label-sm text-muted-foreground truncate">{member.email}</p>
+                )}
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                {member.userId === org?.primaryInsuranceContactId && (
+                  <span className="text-[11px] text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 rounded">
+                    Primary Contact
+                  </span>
+                )}
+                <span className={`text-[11px] px-1.5 py-0.5 rounded flex items-center gap-1 ${
+                  member.role === "admin"
+                    ? "text-primary-muted bg-primary-light/10"
+                    : "text-muted-foreground bg-foreground/5"
+                }`}>
+                  {member.role === "admin" && <ShieldCheck className="w-3 h-3" />}
+                  {member.role === "admin" ? "Admin" : "Member"}
+                </span>
+                {member.userId !== viewer?._id && (
+                  <div className="flex items-center gap-1">
+                    {member.userId !== org?.primaryInsuranceContactId && (
+                      <PillButton
+                        variant="ghost"
+                        size="compact"
+                        onClick={async () => {
+                          try {
+                            await setPrimaryContact({ userId: member.userId });
+                            toast.success("Primary contact updated");
+                          } catch (e: unknown) {
+                            const msg = e instanceof Error ? e.message : "Failed to update";
+                            toast.error(msg);
+                          }
+                        }}
+                        title="Set as primary insurance contact"
+                      >
+                        Set Primary
+                      </PillButton>
+                    )}
+                    <PillButton
+                      variant="ghost"
+                      size="compact"
+                      onClick={async () => {
+                        try {
+                          await updateMemberRole({
+                            membershipId: member.membershipId,
+                            role: member.role === "admin" ? "member" : "admin",
+                          });
+                          toast.success("Role updated");
+                        } catch (e: unknown) {
+                          const msg = e instanceof Error ? e.message : "Failed to update role";
+                          toast.error(msg);
+                        }
+                      }}
+                    >
+                      {member.role === "admin" ? "Demote" : "Promote"}
+                    </PillButton>
+                    <PillButton
+                      variant="destructive"
+                      size="compact"
+                      onClick={async () => {
+                        try {
+                          await removeMember({ membershipId: member.membershipId });
+                          toast.success("Member removed");
+                        } catch (e: unknown) {
+                          const msg = e instanceof Error ? e.message : "Failed to remove member";
+                          toast.error(msg);
+                        }
+                      }}
+                    >
+                      Remove
+                    </PillButton>
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+
+          {/* Pending invitations */}
+          {invitations?.filter((i) => i.status === "pending").map((inv) => (
+            <div key={inv._id} className="px-5 py-3.5 flex items-center gap-3 opacity-60">
+              <div className="w-8 h-8 rounded-full bg-foreground/5 flex items-center justify-center shrink-0">
+                <Mail className="w-3.5 h-3.5 text-muted-foreground/40" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-body-sm text-muted-foreground truncate">{inv.email}</p>
+                <p className="text-label-sm text-muted-foreground/40">Invitation pending</p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="text-[11px] text-muted-foreground bg-foreground/5 px-1.5 py-0.5 rounded">
+                  {inv.role}
+                </span>
+                <PillButton
+                  variant="destructive"
+                  size="compact"
+                  onClick={async () => {
+                    try {
+                      await cancelInvitation({ invitationId: inv._id });
+                      toast.success("Invitation cancelled");
+                    } catch {
+                      toast.error("Failed to cancel invitation");
+                    }
+                  }}
+                >
+                  Cancel
+                </PillButton>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Invite Dialog */}
+      <Dialog open={showInviteDialog} onOpenChange={(v) => !v && setShowInviteDialog(false)}>
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <UserPlus className="w-5 h-5 text-muted-foreground" />
+              Invite Team Member
+            </DialogTitle>
+            <DialogDescription>
+              Send an invitation to join your organization. They&apos;ll receive an email with instructions.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+                Email Address
+              </label>
+              <input
+                type="email"
+                value={inviteEmail}
+                onChange={(e) => setInviteEmail(e.target.value)}
+                placeholder="colleague@company.com"
+                className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+              />
+            </div>
+            <div>
+              <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+                Role
+              </label>
+              <div className="flex gap-2">
+                {(["member", "admin"] as const).map((role) => (
+                  <button
+                    key={role}
+                    type="button"
+                    onClick={() => setInviteRole(role)}
+                    className={`flex-1 py-2 rounded-lg border text-body-sm font-medium transition-colors cursor-pointer ${
+                      inviteRole === role
+                        ? "border-foreground/15 bg-foreground/[0.03] text-foreground"
+                        : "border-foreground/6 text-muted-foreground hover:border-foreground/10"
+                    }`}
+                  >
+                    {role === "admin" ? "Admin" : "Member"}
+                  </button>
+                ))}
+              </div>
+              <p className="text-label-sm text-muted-foreground/50 mt-1.5">
+                {inviteRole === "admin"
+                  ? "Admins can manage connections, settings, and team members."
+                  : "Members can view policies and use the agent, but can't manage connections or settings."}
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <PillButton variant="secondary" onClick={() => setShowInviteDialog(false)} disabled={inviting}>
+              Cancel
+            </PillButton>
+            <PillButton onClick={handleInvite} disabled={inviting || !inviteEmail}>
+              {inviting ? "Sending..." : "Send Invitation"}
+            </PillButton>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
