@@ -110,7 +110,7 @@ export function IntelligenceTab() {
               key={tab.id}
               type="button"
               onClick={() => setSubTab(tab.id)}
-              className={`px-4 py-1.5 text-body-sm rounded-full whitespace-nowrap transition-colors cursor-pointer ${
+              className={`px-3 py-1 text-label-sm rounded-full whitespace-nowrap transition-colors cursor-pointer ${
                 isActive
                   ? "bg-foreground/8 text-foreground font-medium"
                   : "text-muted-foreground hover:text-foreground"

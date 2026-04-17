@@ -51,8 +51,8 @@ export default function SettingsPage() {
   return (
     <AppShell breadcrumbDetail={activeLabel}>
       {/* Mobile: horizontal scrollable tabs */}
-      <div className="lg:hidden mb-6 -mx-1 overflow-x-auto">
-        <div className="flex gap-1 px-1 min-w-max">
+      <div className="lg:hidden mb-6 -mx-6 px-6 overflow-x-auto scrollbar-hide">
+        <div className="flex gap-1 min-w-max">
           {SETTINGS_SECTIONS.map((section) => {
             const Icon = section.icon;
             const isActive = section.id === activeSection;
@@ -61,13 +61,13 @@ export default function SettingsPage() {
                 key={section.id}
                 type="button"
                 onClick={() => handleSectionChange(section.id)}
-                className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full text-body-sm whitespace-nowrap transition-colors cursor-pointer ${
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-label-sm whitespace-nowrap transition-colors cursor-pointer ${
                   isActive
                     ? "bg-foreground/8 text-foreground font-medium"
                     : "text-muted-foreground hover:text-foreground"
                 }`}
               >
-                <Icon className="w-4 h-4 shrink-0" />
+                <Icon className="w-3.5 h-3.5 shrink-0" />
                 {section.label}
               </button>
             );
@@ -76,13 +76,10 @@ export default function SettingsPage() {
       </div>
 
       {/* Desktop: sidebar + content */}
-      <div className="hidden lg:flex gap-8">
-        {/* Sidebar nav */}
-        <nav className="w-[220px] shrink-0 self-start sticky top-0">
-          <p className="text-[11px] font-medium text-muted-foreground/50 px-3 pt-5 pb-1.5">
-            Settings
-          </p>
-          <ul className="space-y-0.5 px-2">
+      <div className="hidden lg:flex gap-0 -ml-8 -mt-6">
+        {/* Sidebar nav — breaks out of container padding to align with edge */}
+        <nav className="w-[200px] shrink-0 self-start sticky top-0 border-r border-foreground/6 py-4 pr-2 pl-4">
+          <ul className="space-y-0.5">
             {SETTINGS_SECTIONS.map((section) => {
               const Icon = section.icon;
               const isActive = section.id === activeSection;
@@ -107,7 +104,7 @@ export default function SettingsPage() {
         </nav>
 
         {/* Section content */}
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0 pt-4 pl-8">
           <SectionContent section={activeSection} />
         </div>
       </div>

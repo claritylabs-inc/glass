@@ -42,7 +42,7 @@ export function PolicyFilters({
             key={tab.id}
             type="button"
             onClick={() => onTabChange(tab.id)}
-            className={`px-4 py-1.5 text-body-sm rounded-full whitespace-nowrap transition-colors cursor-pointer ${
+            className={`px-3 py-1 text-label-sm rounded-full whitespace-nowrap transition-colors cursor-pointer ${
               activeTab === tab.id
                 ? "bg-foreground/8 text-foreground font-medium"
                 : "text-muted-foreground hover:text-foreground"
