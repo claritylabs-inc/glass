@@ -1,14 +1,4 @@
-"use client";
-
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
-
+import { redirect } from "next/navigation";
 export default function ExtractionsPage() {
-  const router = useRouter();
-
-  useEffect(() => {
-    router.replace("/connections?tab=processing");
-  }, [router]);
-
-  return null;
+  redirect("/settings?section=activity");
 }
