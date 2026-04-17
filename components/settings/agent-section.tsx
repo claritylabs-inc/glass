@@ -5,6 +5,7 @@ import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
 import { FadeIn } from "@/components/ui/fade-in";
+import { LogoIcon } from "@/components/ui/logo-icon";
 import { AgentHandleForm } from "@/components/agent-handle-form";
 import {
   Copy,
@@ -13,7 +14,6 @@ import {
   Users,
   FileText,
   X,
-  Sparkles,
   ChevronDown,
 } from "lucide-react";
 
@@ -404,7 +404,7 @@ export function AgentSection() {
             <div className="rounded-lg border border-foreground/6 bg-card p-4">
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
                 <div className="flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-primary-light shrink-0" />
+                  <LogoIcon size={16} static className="text-primary-light shrink-0" />
                   <span className="text-sm font-semibold text-foreground shrink-0">
                     Prism
                   </span>
@@ -454,18 +454,6 @@ export function AgentSection() {
             </div>
           </FadeIn>
 
-          <FadeIn when={true} staggerIndex={2} duration={0.6}>
-            <p className="text-label-sm text-muted-foreground/40">
-              COI and broker settings can also be managed in{" "}
-              <a
-                href="/settings"
-                className="text-foreground/60 hover:text-foreground underline"
-              >
-                Organization Settings
-              </a>
-              .
-            </p>
-          </FadeIn>
         </div>
       )}
     </>
