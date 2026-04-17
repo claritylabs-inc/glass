@@ -6,7 +6,7 @@ import { api } from "@/convex/_generated/api";
 import { AppShell } from "@/components/app-shell";
 import { FadeIn } from "@/components/ui/fade-in";
 import { PillButton } from "@/components/ui/pill-button";
-import { ArrowRight, Loader2, X } from "lucide-react";
+import { ArrowRight, Loader2, X, Copy, Check } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { PrismPromptInput } from "@/components/prism-prompt-input";
@@ -19,6 +19,8 @@ const AGENT_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "prism.claritylabs.
 export default function DashboardPage() {
   const policies = useQuery(api.policies.list, {});
   const hasDemoDataResult = useQuery(api.seed.hasDemoData);
+  const viewer = useQuery(api.users.viewer);
+  const viewerOrg = useQuery(api.orgs.viewerOrg);
   const seedData = useAction(api.seed.seed);
   const createThread = useMutation(api.threads.create);
   const sendThreadMessage = useMutation(api.threads.sendMessage);
@@ -28,6 +30,10 @@ export default function DashboardPage() {
   const [demoBannerDismissed, setDemoBannerDismissed] = useState(false);
   const [seeding, setSeeding] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [emailCopied, setEmailCopied] = useState(false);
+
+  const agentHandle = viewerOrg?.org?.agentHandle ?? viewer?.agentHandle;
+  const agentEmail = agentHandle ? `${agentHandle}@${AGENT_DOMAIN}` : null;
 
   const isEmpty = policies && policies.length === 0;
 
@@ -96,6 +102,27 @@ export default function DashboardPage() {
                 showAttach={false}
                 disabled={submitting}
               />
+              {agentEmail && (
+                <div className="flex items-center justify-center gap-1.5 mt-3">
+                  <span className="text-label-sm text-muted-foreground">Email your documents to:</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(agentEmail);
+                      setEmailCopied(true);
+                      setTimeout(() => setEmailCopied(false), 2000);
+                    }}
+                    className="inline-flex items-center gap-1 text-label-sm text-foreground font-medium hover:text-muted-foreground transition-colors cursor-pointer"
+                  >
+                    <span>{agentEmail}</span>
+                    {emailCopied ? (
+                      <Check className="w-3 h-3 text-emerald-600 shrink-0" />
+                    ) : (
+                      <Copy className="w-3 h-3 text-muted-foreground/40 shrink-0" />
+                    )}
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </FadeIn>

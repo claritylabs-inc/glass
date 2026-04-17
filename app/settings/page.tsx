@@ -78,11 +78,11 @@ export default function SettingsPage() {
       {/* Desktop: sidebar + content */}
       <div className="hidden lg:flex gap-8">
         {/* Sidebar nav */}
-        <nav className="w-[200px] shrink-0 self-start sticky top-0">
-          <p className="text-[11px] font-medium text-muted-foreground/50 uppercase tracking-wider px-3 pt-5 pb-1.5">
+        <nav className="w-[220px] shrink-0 self-start sticky top-0">
+          <p className="text-[11px] font-medium text-muted-foreground/50 px-3 pt-5 pb-1.5">
             Settings
           </p>
-          <ul className="space-y-0.5">
+          <ul className="space-y-0.5 px-2">
             {SETTINGS_SECTIONS.map((section) => {
               const Icon = section.icon;
               const isActive = section.id === activeSection;
