@@ -84,11 +84,11 @@ export default function DashboardPage() {
 
   return (
     <AppShell actions={seedButton}>
-      <div className="flex flex-col min-h-[calc(100vh-8rem)]">
+      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-10rem)]">
 
         {/* Hero — conversation-first */}
         <FadeIn when={true} staggerIndex={0} duration={0.5}>
-          <div className="flex flex-col items-center justify-center text-center pt-16 pb-10 px-4">
+          <div className="flex flex-col items-center justify-center text-center px-4">
             <h1 className="text-2xl font-medium text-foreground tracking-tight mb-2">
               What can I help with?
             </h1>
