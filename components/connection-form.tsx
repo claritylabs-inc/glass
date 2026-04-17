@@ -173,7 +173,7 @@ export function ConnectionForm({ open, onClose, orgId }: ConnectionFormProps) {
                   <div>
                     <div className="flex items-center gap-2 mb-1.5">
                       <Clock className="w-3.5 h-3.5 text-muted-foreground" />
-                      <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider">
+                      <label className="text-label-sm font-medium text-muted-foreground ">
                         Email history to import
                       </label>
                     </div>
@@ -228,7 +228,7 @@ export function ConnectionForm({ open, onClose, orgId }: ConnectionFormProps) {
                 >
                   <form onSubmit={handleSubmit} className="space-y-4">
                     <div>
-                      <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-2">
+                      <label className="text-label-sm font-medium text-muted-foreground  block mb-2">
                         Provider
                       </label>
                       <div className="grid grid-cols-3 gap-2">
@@ -254,7 +254,7 @@ export function ConnectionForm({ open, onClose, orgId }: ConnectionFormProps) {
                     </div>
 
                     <div>
-                      <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+                      <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
                         Label (optional)
                       </label>
                       <input
@@ -269,7 +269,7 @@ export function ConnectionForm({ open, onClose, orgId }: ConnectionFormProps) {
                     {preset === "Custom" && (
                       <div className="grid grid-cols-3 gap-3">
                         <div className="col-span-2">
-                          <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+                          <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
                             IMAP Host
                           </label>
                           <input
@@ -281,7 +281,7 @@ export function ConnectionForm({ open, onClose, orgId }: ConnectionFormProps) {
                           />
                         </div>
                         <div>
-                          <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+                          <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
                             Port
                           </label>
                           <input
@@ -296,7 +296,7 @@ export function ConnectionForm({ open, onClose, orgId }: ConnectionFormProps) {
                     )}
 
                     <div>
-                      <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+                      <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
                         Email Address
                       </label>
                       <input
@@ -310,7 +310,7 @@ export function ConnectionForm({ open, onClose, orgId }: ConnectionFormProps) {
                     </div>
 
                     <div>
-                      <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+                      <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
                         Password / App Password
                       </label>
                       <input

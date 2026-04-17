@@ -60,7 +60,7 @@ export function PolicyPreview({ id, page, citedSections }: { id: string; page?: 
       <div>
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
-            <p className="text-label-sm font-medium text-muted-foreground/40 uppercase tracking-wider">
+            <p className="text-label-sm font-medium text-muted-foreground/40 ">
               {isQuoteDoc ? "Quote" : "Policy"}
             </p>
             <h3 className="text-sm font-semibold text-foreground leading-tight mt-0.5">{carrier}</h3>
@@ -101,7 +101,7 @@ export function PolicyPreview({ id, page, citedSections }: { id: string; page?: 
           <button
             type="button"
             onClick={() => { openWithUrl(fileUrl, page); closePreview(); }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-foreground/8 bg-white/80 dark:bg-white/[0.06] hover:bg-foreground/[0.03] transition-colors text-label font-medium cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-foreground/8 bg-card hover:bg-foreground/[0.03] transition-colors text-label font-medium cursor-pointer"
           >
             <FileText className="w-3 h-3 text-muted-foreground/50" />
             View PDF
@@ -109,7 +109,7 @@ export function PolicyPreview({ id, page, citedSections }: { id: string; page?: 
         )}
         <Link
           href={`/policies/${id}`}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-foreground/8 bg-white/80 dark:bg-white/[0.06] hover:bg-foreground/[0.03] transition-colors text-label font-medium no-underline"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-foreground/8 bg-card hover:bg-foreground/[0.03] transition-colors text-label font-medium no-underline"
         >
           <ExternalLink className="w-3 h-3 text-muted-foreground/50" />
           Full details
@@ -222,7 +222,7 @@ function SectionGroup({ label, count, totalCount, children, allChildren }: {
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
-        <p className="text-label-sm font-medium text-muted-foreground/40 uppercase tracking-wider">
+        <p className="text-label-sm font-medium text-muted-foreground/40 ">
           {label}
           {hasMore && (
             <span className="text-muted-foreground/25 font-normal ml-1">{count} of {totalCount}</span>

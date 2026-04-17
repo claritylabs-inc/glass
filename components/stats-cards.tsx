@@ -27,11 +27,11 @@ export function StatCard({
       }}
       whileTap={{ scale: 0.98 }}
       transition={{ type: "tween", duration: 0.2, ease: "easeOut" }}
-      className="group rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-3 py-2.5 sm:px-4 sm:py-3 cursor-pointer"
+      className="group rounded-lg border border-foreground/6 bg-card px-3 py-2.5 sm:px-4 sm:py-3 cursor-pointer"
     >
       <div className="flex items-start justify-between gap-2">
         <div>
-          <p className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider">
+          <p className="text-label-sm font-medium text-muted-foreground ">
             {label}
           </p>
           <p className="text-lg sm:text-xl font-semibold text-foreground-highlight mt-1 font-mono">

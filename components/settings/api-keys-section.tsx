@@ -87,7 +87,7 @@ export function ApiKeysSection() {
       </div>
 
       {/* API Keys list */}
-      <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04]">
+      <div className="rounded-lg border border-foreground/6 bg-card">
         <div className="px-5 py-3.5 border-b border-foreground/6">
           <h3 className="!mb-0 text-sm font-medium text-foreground">API Keys</h3>
           <p className="text-label-sm text-muted-foreground mt-0.5">
@@ -157,7 +157,7 @@ export function ApiKeysSection() {
       </div>
 
       {/* Local MCP Setup Instructions */}
-      <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04]">
+      <div className="rounded-lg border border-foreground/6 bg-card">
         <div className="px-5 py-3.5 border-b border-foreground/6">
           <h3 className="!mb-0 text-sm font-medium text-foreground">Local MCP Setup</h3>
           <p className="text-label-sm text-muted-foreground mt-0.5">
@@ -220,7 +220,7 @@ export function ApiKeysSection() {
             </div>
           ) : (
             <div className="py-2">
-              <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+              <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
                 Key Name
               </label>
               <input

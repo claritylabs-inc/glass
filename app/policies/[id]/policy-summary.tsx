@@ -15,7 +15,7 @@ function SummaryField({
 }) {
   return (
     <div className="flex flex-col gap-0.5">
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+      <p className="text-[10px] font-semibold text-muted-foreground/60">
         {label}
       </p>
       <p className={`text-body-sm font-medium text-foreground ${mono ? "font-mono" : ""}`}>
@@ -130,7 +130,7 @@ export function PolicySummary({
   }
 
   return (
-    <div className="rounded-lg border border-foreground/6 bg-white/70 dark:bg-white/[0.04] overflow-hidden mb-6">
+    <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden mb-6">
       {/* Header row */}
       <div className="px-5 py-4 border-b border-foreground/6 flex flex-col sm:flex-row sm:items-center gap-3">
         <div className="flex-1 min-w-0">
@@ -170,12 +170,12 @@ export function PolicySummary({
       {/* Key facts grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-foreground/6">
         {carrier && (
-          <div className="bg-white/80 dark:bg-[#0d0d0d]/80 px-4 py-3">
+          <div className="bg-card px-4 py-3">
             <SummaryField label="Carrier" value={carrier} />
           </div>
         )}
         {insuredName && (
-          <div className="bg-white/80 dark:bg-[#0d0d0d]/80 px-4 py-3">
+          <div className="bg-card px-4 py-3">
             <SummaryField
               label="Named Insured"
               value={
@@ -188,7 +188,7 @@ export function PolicySummary({
           </div>
         )}
         {(effectiveDate || expirationDate) && (
-          <div className="bg-white/80 dark:bg-[#0d0d0d]/80 px-4 py-3">
+          <div className="bg-card px-4 py-3">
             <SummaryField
               label="Policy Period"
               value={
@@ -201,7 +201,7 @@ export function PolicySummary({
           </div>
         )}
         {displayPremium && (
-          <div className="bg-white/80 dark:bg-[#0d0d0d]/80 px-4 py-3">
+          <div className="bg-card px-4 py-3">
             <SummaryField
               label="Premium"
               value={
@@ -215,12 +215,12 @@ export function PolicySummary({
           </div>
         )}
         {keyLimits.map(({ label, value }) => (
-          <div key={label} className="bg-white/80 dark:bg-[#0d0d0d]/80 px-4 py-3">
+          <div key={label} className="bg-card px-4 py-3">
             <SummaryField label={label} value={value} mono />
           </div>
         ))}
         {keyDeductibles.map(({ label, value }) => (
-          <div key={label} className="bg-white/80 dark:bg-[#0d0d0d]/80 px-4 py-3">
+          <div key={label} className="bg-card px-4 py-3">
             <SummaryField label={label} value={value} mono />
           </div>
         ))}

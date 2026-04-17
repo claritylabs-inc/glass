@@ -312,7 +312,7 @@ function OrgIntelligencePanel() {
       {/* Stats bar */}
       <div className="grid grid-cols-2 gap-4">
         <div className="rounded-lg border border-foreground/6 bg-card px-5 py-4">
-          <p className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider">
+          <p className="text-label-sm font-medium text-muted-foreground ">
             Total Entries
           </p>
           <p className="text-2xl font-semibold text-foreground mt-1 font-mono">
@@ -320,7 +320,7 @@ function OrgIntelligencePanel() {
           </p>
         </div>
         <div className="rounded-lg border border-foreground/6 bg-card px-5 py-4">
-          <p className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider">
+          <p className="text-label-sm font-medium text-muted-foreground ">
             Categories
           </p>
           <div className="flex flex-wrap gap-1.5 mt-2">
@@ -614,7 +614,7 @@ function PolicyExtractionsPanel() {
       {/* Overview stats */}
       <div className="grid grid-cols-2 gap-4">
         <div className="rounded-lg border border-foreground/6 bg-card px-5 py-4">
-          <p className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider">
+          <p className="text-label-sm font-medium text-muted-foreground ">
             Total Vectors
           </p>
           <p className="text-2xl font-semibold text-foreground mt-1 font-mono">
@@ -622,7 +622,7 @@ function PolicyExtractionsPanel() {
           </p>
         </div>
         <div className="rounded-lg border border-foreground/6 bg-card px-5 py-4">
-          <p className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider">
+          <p className="text-label-sm font-medium text-muted-foreground ">
             Indexed Policies
           </p>
           <p className="text-2xl font-semibold text-foreground mt-1 font-mono">

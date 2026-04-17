@@ -184,7 +184,7 @@ function ThreadAttachmentChip({
       onClick={handleClick}
       className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-label-sm transition-colors ${
         url
-          ? "border-foreground/10 bg-white/80 dark:bg-white/[0.06] hover:bg-foreground/[0.03] hover:border-foreground/15 cursor-pointer"
+          ? "border-foreground/10 bg-card hover:bg-foreground/[0.03] hover:border-foreground/15 cursor-pointer"
           : "border-foreground/6 bg-foreground/[0.02] text-muted-foreground/40 pointer-events-none"
       }`}
     >
@@ -628,13 +628,13 @@ function ThreadContextLink({
   return (
     <Link
       href={href}
-      className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-foreground/6 bg-white/80 dark:bg-white/[0.06] hover:bg-foreground/[0.02] hover:border-foreground/10 transition-colors text-left max-w-sm"
+      className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-foreground/6 bg-card hover:bg-foreground/[0.02] hover:border-foreground/10 transition-colors text-left max-w-sm"
     >
       <div className="w-6 h-6 rounded-md bg-foreground/[0.04] flex items-center justify-center shrink-0">
         <Icon className="w-3.5 h-3.5 text-muted-foreground/50" />
       </div>
       <div className="min-w-0 flex-1">
-        <p className="text-label-sm text-muted-foreground/40 uppercase tracking-wider font-medium leading-none mb-0.5">{typeLabel}</p>
+        <p className="text-label-sm text-muted-foreground/40 font-medium leading-none mb-0.5">{typeLabel}</p>
         <p className="text-label-sm text-foreground truncate">{context.summary}</p>
       </div>
     </Link>
@@ -839,7 +839,7 @@ function UnifiedThreadContent({
                     key={item.label}
                     type="button"
                     onClick={() => chatInputRef.current?.setValueAndFocus(item.prompt)}
-                    className="flex items-start gap-2.5 px-3 py-2.5 rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] hover:bg-foreground/[0.02] hover:border-foreground/10 transition-colors cursor-pointer text-left"
+                    className="flex items-start gap-2.5 px-3 py-2.5 rounded-lg border border-foreground/6 bg-card hover:bg-foreground/[0.02] hover:border-foreground/10 transition-colors cursor-pointer text-left"
                   >
                     <item.icon className="w-3.5 h-3.5 text-muted-foreground/40 mt-0.5 shrink-0" />
                     <div className="min-w-0">
@@ -1308,7 +1308,7 @@ function WebChatContent({
                     key={item.label}
                     type="button"
                     onClick={() => chatInputRef.current?.setValueAndFocus(item.prompt)}
-                    className="flex items-start gap-2.5 px-3 py-2.5 rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] hover:bg-foreground/[0.02] hover:border-foreground/10 transition-colors cursor-pointer text-left"
+                    className="flex items-start gap-2.5 px-3 py-2.5 rounded-lg border border-foreground/6 bg-card hover:bg-foreground/[0.02] hover:border-foreground/10 transition-colors cursor-pointer text-left"
                   >
                     <item.icon className="w-3.5 h-3.5 text-muted-foreground/40 mt-0.5 shrink-0" />
                     <div className="min-w-0">

@@ -41,7 +41,7 @@ export function FilterDropdown({
         className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-body-sm font-medium transition-all cursor-pointer max-w-[200px] ${
           value
             ? "border-foreground/15 bg-foreground/5 text-foreground"
-            : "border-foreground/8 bg-white/80 dark:bg-white/[0.06] text-muted-foreground hover:border-foreground/15 hover:text-foreground/80"
+            : "border-foreground/8 bg-card text-muted-foreground hover:border-foreground/15 hover:text-foreground/80"
         }`}
       >
         <span className="truncate">{selectedLabel}</span>

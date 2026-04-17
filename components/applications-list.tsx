@@ -94,19 +94,19 @@ function SessionTable({
       <table className="w-full text-left">
         <thead>
           <tr className="bg-foreground/[0.02]">
-            <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">
+            <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground  whitespace-nowrap">
               Application
             </th>
-            <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">
+            <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground  whitespace-nowrap">
               Status
             </th>
-            <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap hidden sm:table-cell">
+            <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground  whitespace-nowrap hidden sm:table-cell">
               Progress
             </th>
-            <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap hidden md:table-cell">
+            <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground  whitespace-nowrap hidden md:table-cell">
               Created
             </th>
-            <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap text-right hidden md:table-cell">
+            <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground  whitespace-nowrap text-right hidden md:table-cell">
               Actions
             </th>
           </tr>
@@ -244,7 +244,7 @@ export function ApplicationsList() {
 
   if (sessions.length === 0) {
     return (
-      <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-8 text-center">
+      <div className="rounded-lg border border-foreground/6 bg-card p-8 text-center">
         <FileText className="w-8 h-8 text-muted-foreground/15 mx-auto mb-2" />
         <p className="text-body-sm text-muted-foreground/50">
           No applications yet
@@ -294,7 +294,7 @@ export function ApplicationsList() {
         ))}
       </div>
 
-      <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
+      <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
         <SessionTable
           sessions={displayedSessions}
           onCancel={handleCancel}

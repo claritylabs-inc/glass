@@ -194,13 +194,13 @@ export function OrganizationSection() {
 
       {/* Organization info */}
       <form onSubmit={handleSave}>
-        <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] mb-4">
+        <div className="rounded-lg border border-foreground/6 bg-card mb-4">
           <div className="px-5 py-3.5 border-b border-foreground/6">
             <h3 className="!mb-0 text-sm font-medium text-foreground">Organization</h3>
           </div>
           <div className="px-5 py-5 space-y-4">
             <div>
-              <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+              <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
                 Organization Name
               </label>
               <input
@@ -213,7 +213,7 @@ export function OrganizationSection() {
             </div>
 
             <div>
-              <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+              <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
                 Website
               </label>
               <div className="flex gap-2">
@@ -245,7 +245,7 @@ export function OrganizationSection() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+                <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
                   Industry
                 </label>
                 <SearchableSelect
@@ -259,7 +259,7 @@ export function OrganizationSection() {
                 />
               </div>
               <div>
-                <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+                <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
                   Vertical
                 </label>
                 <SearchableSelect
@@ -273,7 +273,7 @@ export function OrganizationSection() {
             </div>
 
             <div>
-              <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+              <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
                 Company Context
               </label>
               <textarea
@@ -290,7 +290,7 @@ export function OrganizationSection() {
         </div>
 
         {/* Relationship Context section */}
-        <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] mb-4">
+        <div className="rounded-lg border border-foreground/6 bg-card mb-4">
           <div className="px-5 py-3.5 border-b border-foreground/6">
             <h3 className="!mb-0 text-sm font-medium text-foreground">Relationship Context</h3>
             <p className="text-label-sm text-muted-foreground mt-0.5">
@@ -302,7 +302,7 @@ export function OrganizationSection() {
           </div>
           <div className="px-5 py-5 space-y-4">
             <div>
-              <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+              <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
                 Clients &amp; Customers
               </label>
               <input
@@ -314,7 +314,7 @@ export function OrganizationSection() {
               />
             </div>
             <div>
-              <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+              <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
                 Vendors &amp; Service Providers
               </label>
               <input
@@ -326,7 +326,7 @@ export function OrganizationSection() {
               />
             </div>
             <div>
-              <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+              <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
                 Insurance Relationships
               </label>
               <input
@@ -339,7 +339,7 @@ export function OrganizationSection() {
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+                <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
                   Investors &amp; Shareholders
                 </label>
                 <input
@@ -351,7 +351,7 @@ export function OrganizationSection() {
                 />
               </div>
               <div>
-                <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+                <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
                   Partners &amp; Affiliates
                 </label>
                 <input
@@ -367,14 +367,14 @@ export function OrganizationSection() {
         </div>
 
         {/* Insurance Broker section */}
-        <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] mb-4">
+        <div className="rounded-lg border border-foreground/6 bg-card mb-4">
           <div className="px-5 py-3.5 border-b border-foreground/6">
             <h3 className="!mb-0 text-sm font-medium text-foreground">Insurance Broker</h3>
           </div>
           <div className="px-5 py-5">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+                <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
                   Broker (Company)
                 </label>
                 <input
@@ -386,7 +386,7 @@ export function OrganizationSection() {
                 />
               </div>
               <div>
-                <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+                <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
                   Contact Name
                 </label>
                 <input
@@ -398,7 +398,7 @@ export function OrganizationSection() {
                 />
               </div>
               <div>
-                <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+                <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
                   Contact Email
                 </label>
                 <input
@@ -415,7 +415,7 @@ export function OrganizationSection() {
       </form>
 
       {/* Onboarding section */}
-      <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04]">
+      <div className="rounded-lg border border-foreground/6 bg-card">
         <div className="px-5 py-3.5 border-b border-foreground/6">
           <h3 className="!mb-0 text-sm font-medium text-foreground">Onboarding</h3>
         </div>

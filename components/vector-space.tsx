@@ -322,7 +322,7 @@ function SelectedDetail({
 }) {
   return (
     <div className={`absolute bottom-4 left-4 z-10 backdrop-blur-md rounded-lg border px-4 py-3 max-w-md max-h-48 overflow-y-auto ${
-      dark ? "bg-black/70 border-white/10" : "bg-white/80 border-foreground/10"
+      dark ? "bg-black/70 border-white/10" : "bg-card border-foreground/10"
     }`}>
       <div className="flex items-center gap-2.5 mb-1.5">
         <span

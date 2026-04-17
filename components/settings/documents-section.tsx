@@ -244,7 +244,7 @@ export function DocumentsSection() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {/* Insurance Documents */}
-          <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden flex flex-col">
+          <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden flex flex-col">
             <div className="px-4 py-3 border-b border-foreground/6 bg-foreground/[0.015]">
               <p className="text-label-sm font-medium text-muted-foreground">
                 Insurance Documents
@@ -304,7 +304,7 @@ export function DocumentsSection() {
           </div>
 
           {/* Business Context */}
-          <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden flex flex-col">
+          <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden flex flex-col">
             <div className="px-4 py-3 border-b border-foreground/6 bg-foreground/[0.015]">
               <p className="text-label-sm font-medium text-muted-foreground">
                 Business Context

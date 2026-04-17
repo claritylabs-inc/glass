@@ -70,14 +70,14 @@ export default function ProfilePage() {
 
           <FadeIn when={true} staggerIndex={1} duration={0.6}>
             <form onSubmit={handleSave}>
-              <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] mb-4">
+              <div className="rounded-lg border border-foreground/6 bg-card mb-4">
                 <div className="px-5 py-3.5 border-b border-foreground/6">
                   <h3 className="!mb-0 text-sm font-medium text-foreground">Account</h3>
                 </div>
                 <div className="px-5 py-5 space-y-4">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                      <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+                      <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
                         Name
                       </label>
                       <input
@@ -89,7 +89,7 @@ export default function ProfilePage() {
                       />
                     </div>
                     <div>
-                      <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+                      <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
                         Email
                       </label>
                       <input
@@ -102,7 +102,7 @@ export default function ProfilePage() {
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                      <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+                      <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
                         Title
                       </label>
                       <input
@@ -114,7 +114,7 @@ export default function ProfilePage() {
                       />
                     </div>
                     <div>
-                      <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+                      <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
                         Phone
                       </label>
                       <input
@@ -138,7 +138,7 @@ export default function ProfilePage() {
           </FadeIn>
 
           <FadeIn when={true} staggerIndex={2} duration={0.6}>
-            <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] mt-4">
+            <div className="rounded-lg border border-foreground/6 bg-card mt-4">
               <div className="px-5 py-3.5 border-b border-foreground/6">
                 <h3 className="!mb-0 text-sm font-medium text-foreground">Appearance</h3>
               </div>

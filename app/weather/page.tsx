@@ -35,7 +35,7 @@ export default function WeatherPage() {
             href="https://claritylabs.inc"
             target="_blank"
             rel="noopener noreferrer"
-            className="text-xs font-medium uppercase tracking-widest text-foreground/30 hover:text-foreground/50 transition-colors"
+            className="text-xs font-medium  text-foreground/30 hover:text-foreground/50 transition-colors"
           >
             Prism by Clarity Labs
           </Link>
@@ -62,13 +62,13 @@ export default function WeatherPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-foreground/8 bg-foreground/[0.02]">
-                    <th className="px-4 py-3 text-left font-medium text-foreground/40 text-xs uppercase tracking-wider">
+                    <th className="px-4 py-3 text-left font-medium text-foreground/40 text-xs ">
                       Task
                     </th>
-                    <th className="px-4 py-3 text-left font-medium text-foreground/40 text-xs uppercase tracking-wider">
+                    <th className="px-4 py-3 text-left font-medium text-foreground/40 text-xs ">
                       Model
                     </th>
-                    <th className="px-4 py-3 text-left font-medium text-foreground/40 text-xs uppercase tracking-wider">
+                    <th className="px-4 py-3 text-left font-medium text-foreground/40 text-xs ">
                       Provider
                     </th>
                   </tr>

@@ -48,7 +48,7 @@ export function ActivitySection({
   // Loading state — show skeleton rows inside the consistent card shell
   if (loading) {
     return (
-      <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
+      <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
         <div className="px-5 py-2.5 bg-foreground/[0.015] border-b border-foreground/6">
           <div className="flex items-center gap-2">
             <Skeleton className="h-3.5 w-28" />
@@ -79,7 +79,7 @@ export function ActivitySection({
   if (isEmpty) {
     return (
       <FadeIn when={true} duration={0.6}>
-        <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-6 py-8 text-center">
+        <div className="rounded-lg border border-foreground/6 bg-card px-6 py-8 text-center">
           {EmptyIcon && (
             <EmptyIcon className="w-5 h-5 text-muted-foreground/20 mx-auto mb-2" />
           )}
@@ -100,7 +100,7 @@ export function ActivitySection({
 
   return (
     <FadeIn when={true} delay={0.2} duration={0.6}>
-      <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
+      <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
         {/* Collapsible section header */}
         <button
           type="button"

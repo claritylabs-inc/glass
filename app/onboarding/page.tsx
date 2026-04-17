@@ -279,7 +279,7 @@ export default function OnboardingPage() {
 
             <div className="space-y-4">
               <div>
-                <label className="text-label-sm font-medium text-foreground/50 uppercase tracking-wider block mb-1.5">
+                <label className="text-label-sm font-medium text-foreground/50  block mb-1.5">
                   Your Name
                 </label>
                 <input
@@ -288,7 +288,7 @@ export default function OnboardingPage() {
                   onChange={(e) => setInviteName(e.target.value)}
                   placeholder="Jane Smith"
                   autoFocus
-                  className="w-full rounded-lg border border-foreground/10 bg-white/80 dark:bg-white/[0.06] px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                  className="w-full rounded-lg border border-foreground/10 bg-card px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
                 />
               </div>
 
@@ -367,7 +367,7 @@ export default function OnboardingPage() {
           {currentStep === 0 && (
             <div className="space-y-4">
               <div>
-                <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+                <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
                   Your Name
                 </label>
                 <input
@@ -381,7 +381,7 @@ export default function OnboardingPage() {
               </div>
 
               <div>
-                <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+                <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
                   Company Name
                 </label>
                 <input
@@ -394,7 +394,7 @@ export default function OnboardingPage() {
               </div>
 
               <div>
-                <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+                <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
                   Company Website
                 </label>
                 <div className="flex gap-2">
@@ -426,7 +426,7 @@ export default function OnboardingPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+                  <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
                     Industry
                   </label>
                   <SearchableSelect
@@ -440,7 +440,7 @@ export default function OnboardingPage() {
                   />
                 </div>
                 <div>
-                  <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+                  <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
                     Vertical
                   </label>
                   <SearchableSelect
@@ -454,7 +454,7 @@ export default function OnboardingPage() {
               </div>
 
               <div>
-                <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+                <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
                   Company Context
                 </label>
                 <textarea
@@ -657,7 +657,7 @@ export default function OnboardingPage() {
               )}
 
               <div>
-                <p className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider mb-3">
+                <p className="text-label-sm font-medium text-muted-foreground  mb-3">
                   What Prism can do
                 </p>
                 <div className="space-y-2">
@@ -785,7 +785,7 @@ export default function OnboardingPage() {
               </div>
 
               {pendingInvitations.length > 0 && (
-                <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
+                <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
                   {pendingInvitations.map((inv, i) => (
                     <div
                       key={inv._id}

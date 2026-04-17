@@ -29,7 +29,7 @@ export function CollapsibleBlock({
             open && "rotate-180"
           )}
         />
-        <span className="text-label-sm font-medium text-muted-foreground/40 uppercase tracking-wider">
+        <span className="text-label-sm font-medium text-muted-foreground/40 ">
           {title}
         </span>
         {count != null && (

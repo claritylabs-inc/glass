@@ -171,7 +171,7 @@ function CategorySection({
   const [expanded, setExpanded] = useState(true);
 
   return (
-    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
+    <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
       <div className="overflow-x-auto scrollbar-hide">
         <table className="w-full text-left table-fixed">
           <colgroup>
@@ -185,7 +185,7 @@ function CategorySection({
               className="bg-foreground/[0.02] cursor-pointer h-10"
               onClick={() => setExpanded(!expanded)}
             >
-              <th className="px-4 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap" style={{ verticalAlign: "middle" }}>
+              <th className="px-4 text-label-sm font-semibold text-muted-foreground  whitespace-nowrap" style={{ verticalAlign: "middle" }}>
                 <span className="inline-flex items-center gap-1.5 leading-none">
                   {expanded ? (
                     <ChevronDown className="w-3.5 h-3.5 text-muted-foreground/40 shrink-0" />
@@ -195,10 +195,10 @@ function CategorySection({
                   {label}
                 </span>
               </th>
-              <th className="px-4 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap" style={{ verticalAlign: "middle" }}>
+              <th className="px-4 text-label-sm font-semibold text-muted-foreground  whitespace-nowrap" style={{ verticalAlign: "middle" }}>
                 {expanded ? "Value" : ""}
               </th>
-              <th className="px-4 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap hidden sm:table-cell" style={{ verticalAlign: "middle" }}>
+              <th className="px-4 text-label-sm font-semibold text-muted-foreground  whitespace-nowrap hidden sm:table-cell" style={{ verticalAlign: "middle" }}>
                 {expanded ? "Source" : ""}
               </th>
               <th className="px-4 text-right" style={{ verticalAlign: "middle" }}>
@@ -278,7 +278,7 @@ export function BusinessContextManager({
       </p>
 
       {showAddForm && (
-        <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-4 space-y-3">
+        <div className="rounded-lg border border-foreground/6 bg-card p-4 space-y-3">
           <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="text-label-sm text-muted-foreground/60 mb-1 block">
@@ -331,7 +331,7 @@ export function BusinessContextManager({
       )}
 
       {allEntries.length === 0 && !showAddForm ? (
-        <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-8 text-center">
+        <div className="rounded-lg border border-foreground/6 bg-card p-8 text-center">
           <p className="text-body-sm text-muted-foreground/50">
             No business context saved yet. Context is automatically learned from application answers,
             or you can add entries manually.

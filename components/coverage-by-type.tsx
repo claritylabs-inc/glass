@@ -57,7 +57,7 @@ function CoverageGrid({ rows }: { rows: CoverageByType[] }) {
             }}
             whileTap={{ scale: 0.98 }}
             transition={{ type: "tween", duration: 0.2, ease: "easeOut" }}
-            className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-3 cursor-pointer"
+            className="rounded-lg border border-foreground/6 bg-card p-3 cursor-pointer"
           >
             <span
               className={`inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium mb-2 max-w-full truncate ${
@@ -89,7 +89,7 @@ export function CoverageByTypeSection({ data }: { data: CoverageByType[] | undef
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3">
           {[0, 1, 2, 3].map((i) => (
-            <div key={i} className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-3">
+            <div key={i} className="rounded-lg border border-foreground/6 bg-card p-3">
               <Skeleton className="h-5 w-20 rounded-full mb-2.5" />
               <Skeleton className="h-5 w-14" />
             </div>

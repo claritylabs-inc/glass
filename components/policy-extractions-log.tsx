@@ -144,7 +144,7 @@ function EntryActions({ entry }: { entry: PolicyEntry }) {
           icon={RotateCw}
           label="Re-extract"
           loadingLabel="Re-extracting..."
-          className="border-foreground/12 bg-white/80 dark:bg-white/[0.06] text-muted-foreground hover:border-foreground/20 hover:bg-foreground/[0.03]"
+          className="border-foreground/12 bg-card text-muted-foreground hover:border-foreground/20 hover:bg-foreground/[0.03]"
         />
       )}
       {status === "complete" && (
@@ -154,7 +154,7 @@ function EntryActions({ entry }: { entry: PolicyEntry }) {
             e.stopPropagation();
             router.push(`/policies/${entry._id}`);
           }}
-          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-foreground/12 bg-white/80 dark:bg-white/[0.06] text-label-sm font-medium text-foreground hover:border-foreground/20 hover:bg-foreground/[0.03] transition-colors cursor-pointer"
+          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-foreground/12 bg-card text-label-sm font-medium text-foreground hover:border-foreground/20 hover:bg-foreground/[0.03] transition-colors cursor-pointer"
         >
           <ExternalLink className="w-3 h-3" />
           View

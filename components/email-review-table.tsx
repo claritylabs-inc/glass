@@ -168,7 +168,7 @@ export function EmailReviewTable({ connectionId, onSelectionChange }: EmailRevie
             placeholder="Search..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-8 pr-3 py-1.5 rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-foreground/20 w-48"
+            className="pl-8 pr-3 py-1.5 rounded-lg border border-foreground/6 bg-card text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-foreground/20 w-48"
           />
         </div>
       </div>
@@ -192,7 +192,7 @@ export function EmailReviewTable({ connectionId, onSelectionChange }: EmailRevie
 
       {/* Table */}
       {filtered.length === 0 && status !== "CanLoadMore" ? (
-        <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-6 py-8 text-center">
+        <div className="rounded-lg border border-foreground/6 bg-card px-6 py-8 text-center">
           <p className="text-body-sm text-muted-foreground/60">
             {search ? "No emails match your search" : "No emails found"}
           </p>

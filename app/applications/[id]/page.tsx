@@ -467,7 +467,7 @@ export default function ApplicationDetailPage({
           {activeTab === "details" && (<>
           {/* Progress + batch overview card */}
           <FadeIn when={true} staggerIndex={1} duration={0.6}>
-            <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-4 mb-6">
+            <div className="rounded-lg border border-foreground/6 bg-card p-4 mb-6">
               {/* Progress bar */}
               <div className="flex items-center justify-between mb-2">
                 <span className="text-label-sm text-muted-foreground/60">
@@ -564,7 +564,7 @@ export default function ApplicationDetailPage({
                 return (
                   <div
                     key={sectionName}
-                    className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden"
+                    className="rounded-lg border border-foreground/6 bg-card overflow-hidden"
                   >
                     <div className="flex items-center gap-2 px-4 py-3 bg-foreground/[0.015] border-b border-foreground/5">
                       <h3 className="text-body-sm font-semibold !mb-0 flex-1">
@@ -589,7 +589,7 @@ export default function ApplicationDetailPage({
           </>)}
 
           {activeTab === "threads" && (
-            <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-6 py-12 text-center">
+            <div className="rounded-lg border border-foreground/6 bg-card px-6 py-12 text-center">
               {threadId ? (
                 <>
                   <MessageSquare className="w-8 h-8 text-muted-foreground/15 mx-auto mb-3" />

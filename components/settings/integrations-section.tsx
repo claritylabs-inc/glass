@@ -125,7 +125,7 @@ export function IntegrationsSection() {
               key={item.name}
               type="button"
               onClick={() => setIntegrationRequest(item.name)}
-              className="group/int rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-4 py-3 flex items-center gap-3 text-left hover:border-primary/30 hover:bg-primary/[0.02] transition-all cursor-pointer"
+              className="group/int rounded-lg border border-foreground/6 bg-card px-4 py-3 flex items-center gap-3 text-left hover:border-primary/30 hover:bg-primary/[0.02] transition-all cursor-pointer"
             >
               <div className="w-8 h-8 rounded-lg bg-foreground/[0.04] flex items-center justify-center shrink-0">
                 <item.icon className="w-4 h-4 text-muted-foreground/60" />

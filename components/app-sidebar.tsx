@@ -276,7 +276,7 @@ export function AppSidebar({
         {!collapsed ? (
           <>
             <div className="flex items-center justify-between px-3 pt-5 pb-1.5">
-              <span className="text-[11px] font-medium text-muted-foreground/50 uppercase tracking-wider">
+              <span className="text-[11px] font-medium text-muted-foreground/50 ">
                 Threads
               </span>
               <button
@@ -472,7 +472,7 @@ export function AppSidebar({
 function SectionHeader({ label, collapsed }: { label: string; collapsed: boolean }) {
   if (collapsed) return <div className="pt-4 pb-1" />;
   return (
-    <p className="text-[11px] font-medium text-muted-foreground/50 uppercase tracking-wider px-3 pt-5 pb-1.5">
+    <p className="text-[11px] font-medium text-muted-foreground/50  px-3 pt-5 pb-1.5">
       {label}
     </p>
   );

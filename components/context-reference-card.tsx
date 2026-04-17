@@ -44,7 +44,7 @@ function PolicyReferenceCard({ id, page, citedSections }: { id: string; page?: n
 
   if (!policy) {
     return (
-      <div className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-foreground/8 bg-white/80 dark:bg-white/[0.06] text-body-sm">
+      <div className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-foreground/8 bg-card text-body-sm">
         <span className="text-foreground/70">Loading…</span>
       </div>
     );
@@ -57,7 +57,7 @@ function PolicyReferenceCard({ id, page, citedSections }: { id: string; page?: n
     <button
       type="button"
       onClick={() => openPreview({ type: "policy", id, page, citedSections })}
-      className="flex items-start gap-2.5 px-3 py-2.5 rounded-lg border border-foreground/8 bg-white/80 dark:bg-white/[0.06] hover:bg-foreground/[0.03] hover:border-foreground/12 transition-colors cursor-pointer text-left group w-[260px] shrink-0"
+      className="flex items-start gap-2.5 px-3 py-2.5 rounded-lg border border-foreground/8 bg-card hover:bg-foreground/[0.03] hover:border-foreground/12 transition-colors cursor-pointer text-left group w-[260px] shrink-0"
     >
       <div className="w-7 h-7 rounded-md bg-foreground/[0.04] flex items-center justify-center shrink-0 mt-0.5">
         <FileText className="w-3.5 h-3.5 text-muted-foreground/40" />

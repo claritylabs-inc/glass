@@ -97,7 +97,7 @@ export function ScanModal({ open, onClose, onScanStarted, connectionId, provider
             <form onSubmit={handleSubmit} className="space-y-4">
               {/* Date Range */}
               <div>
-                <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+                <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
                   Date Range
                 </label>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -128,7 +128,7 @@ export function ScanModal({ open, onClose, onScanStarted, connectionId, provider
 
               {/* Sender Filter */}
               <div>
-                <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+                <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
                   Sender Filter
                 </label>
                 <input

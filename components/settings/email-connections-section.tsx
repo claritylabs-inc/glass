@@ -205,7 +205,7 @@ export function EmailConnectionsSection() {
             {Array.from({ length: 2 }).map((_, i) => (
               <div
                 key={i}
-                className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-4 py-3"
+                className="rounded-lg border border-foreground/6 bg-card px-4 py-3"
               >
                 <div className="flex items-center gap-3">
                   <Skeleton className="w-8 h-8 rounded-md shrink-0" />
@@ -227,7 +227,7 @@ export function EmailConnectionsSection() {
 
         {connections && connections.length === 0 && (
           <FadeIn when={true} delay={0.2} duration={0.6}>
-            <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-6 py-8 text-center">
+            <div className="rounded-lg border border-foreground/6 bg-card px-6 py-8 text-center">
               <p className="text-body-sm text-muted-foreground/60">
                 No email connections yet
               </p>
@@ -247,7 +247,7 @@ export function EmailConnectionsSection() {
                   className={`rounded-lg border px-4 py-3 ${
                     isDemo
                       ? "border-amber-200/60 dark:border-amber-900/40 bg-amber-50/30 dark:bg-amber-950/20"
-                      : "border-foreground/6 bg-white/60 dark:bg-white/[0.04]"
+                      : "border-foreground/6 bg-card"
                   }`}
                 >
                   {/* Desktop layout */}
@@ -562,7 +562,7 @@ export function EmailConnectionsSection() {
             onSelectionChange={setSelectedEmailIds}
           />
         ) : (
-          <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-6 py-8 text-center">
+          <div className="rounded-lg border border-foreground/6 bg-card px-6 py-8 text-center">
             <p className="text-body-sm text-muted-foreground/60">
               No connections available. Add a connection first.
             </p>

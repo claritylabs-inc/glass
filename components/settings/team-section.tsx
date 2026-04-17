@@ -72,7 +72,7 @@ export function TeamSection() {
         </PillButton>
       </div>
 
-      <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04]">
+      <div className="rounded-lg border border-foreground/6 bg-card">
         <div className="px-5 py-3.5 border-b border-foreground/6">
           <h3 className="!mb-0 text-sm font-medium text-foreground">Team Members</h3>
         </div>
@@ -216,7 +216,7 @@ export function TeamSection() {
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div>
-              <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+              <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
                 Email Address
               </label>
               <input
@@ -228,7 +228,7 @@ export function TeamSection() {
               />
             </div>
             <div>
-              <label className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider block mb-1.5">
+              <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
                 Role
               </label>
               <div className="flex gap-2">

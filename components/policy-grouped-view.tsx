@@ -100,7 +100,7 @@ export function PolicyGroupedView({ policies, groupBy }: GroupedViewProps) {
   if (!policies || policies.length === 0) {
     return (
       <FadeIn when={true} duration={0.6}>
-        <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-6 py-8 text-center">
+        <div className="rounded-lg border border-foreground/6 bg-card px-6 py-8 text-center">
           <p className="text-body-sm text-muted-foreground/60">No policies found</p>
         </div>
       </FadeIn>
@@ -133,9 +133,9 @@ export function PolicyGroupedView({ policies, groupBy }: GroupedViewProps) {
             </colgroup>
             <thead>
               <tr>
-                <th className="px-4 py-2 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">Policy</th>
-                <th className="px-4 py-2 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap text-right">Premium</th>
-                <th className="px-4 py-2 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap text-right hidden md:table-cell">Period</th>
+                <th className="px-4 py-2 text-label-sm font-semibold text-muted-foreground  whitespace-nowrap">Policy</th>
+                <th className="px-4 py-2 text-label-sm font-semibold text-muted-foreground  whitespace-nowrap text-right">Premium</th>
+                <th className="px-4 py-2 text-label-sm font-semibold text-muted-foreground  whitespace-nowrap text-right hidden md:table-cell">Period</th>
                 <th className="px-4 py-2 hidden md:table-cell" />
               </tr>
             </thead>
@@ -144,7 +144,7 @@ export function PolicyGroupedView({ policies, groupBy }: GroupedViewProps) {
 
         {groups.map((group, gi) => (
           <FadeIn key={group.key} when={true} delay={gi * 0.05} duration={0.4}>
-            <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
+            <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
               <button
                 type="button"
                 onClick={() => toggleGroup(group.key)}
@@ -208,7 +208,7 @@ export function PolicyGroupedView({ policies, groupBy }: GroupedViewProps) {
                               <Link
                                 href={`/policies/${policy._id}`}
                                 onClick={(e) => e.stopPropagation()}
-                                className="px-2.5 py-1 rounded-md border border-foreground/12 bg-white/80 dark:bg-white/[0.06] text-label-sm font-medium text-foreground hover:border-foreground/20 hover:bg-foreground/[0.03] transition-colors"
+                                className="px-2.5 py-1 rounded-md border border-foreground/12 bg-card text-label-sm font-medium text-foreground hover:border-foreground/20 hover:bg-foreground/[0.03] transition-colors"
                               >
                                 View
                               </Link>

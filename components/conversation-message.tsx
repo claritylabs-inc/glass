@@ -219,7 +219,7 @@ function AttachmentChip({
       onClick={handleClick}
       className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-label-sm transition-colors ${
         url
-          ? "border-foreground/10 bg-white/80 dark:bg-white/[0.04] hover:bg-foreground/[0.03] hover:border-foreground/15 cursor-pointer"
+          ? "border-foreground/10 bg-card hover:bg-foreground/[0.03] hover:border-foreground/15 cursor-pointer"
           : "border-foreground/6 bg-foreground/[0.02] text-muted-foreground/40 pointer-events-none"
       }`}
     >

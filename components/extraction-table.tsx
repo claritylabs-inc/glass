@@ -172,7 +172,7 @@ function DismissButton({ policyId }: { policyId: string }) {
           setDismissing(false);
         }
       }}
-      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-foreground/12 bg-white/80 dark:bg-white/[0.06] text-label-sm font-medium text-muted-foreground hover:border-red-200 dark:hover:border-red-900/50 hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-600 dark:hover:text-red-400 transition-colors cursor-pointer disabled:opacity-50"
+      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-foreground/12 bg-card text-label-sm font-medium text-muted-foreground hover:border-red-200 dark:hover:border-red-900/50 hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-600 dark:hover:text-red-400 transition-colors cursor-pointer disabled:opacity-50"
     >
       <Trash2 className="w-3 h-3" />
       Dismiss
@@ -238,19 +238,19 @@ export function ExtractionTable({
       <table className="w-full text-left md:min-w-[700px]">
         <thead>
           <tr className="bg-foreground/[0.02]">
-            <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">
+            <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground  whitespace-nowrap">
               Source Email
             </th>
-            <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap hidden sm:table-cell">
+            <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground  whitespace-nowrap hidden sm:table-cell">
               Attachment
             </th>
-            <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">
+            <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground  whitespace-nowrap">
               Status
             </th>
-            <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap hidden md:table-cell">
+            <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground  whitespace-nowrap hidden md:table-cell">
               Date
             </th>
-            <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap text-right hidden md:table-cell">
+            <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground  whitespace-nowrap text-right hidden md:table-cell">
               Actions
             </th>
           </tr>

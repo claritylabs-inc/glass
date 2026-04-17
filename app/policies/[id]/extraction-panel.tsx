@@ -179,7 +179,7 @@ function StructuredFieldGrid({
           key={field.label}
           className="rounded-md border border-foreground/6 bg-foreground/[0.015] px-3 py-2"
         >
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+          <p className="text-[10px] font-semibold text-muted-foreground/70">
             {field.label}
           </p>
           {Array.isArray(field.value) ? (
@@ -187,7 +187,7 @@ function StructuredFieldGrid({
               {field.value.map((item) => (
                 <span
                   key={item}
-                  className="inline-flex rounded-full bg-white/80 px-2 py-0.5 text-label-sm text-foreground dark:bg-white/[0.06]"
+                  className="inline-flex rounded-full bg-card px-2 py-0.5 text-label-sm text-foreground"
                 >
                   {item}
                 </span>
@@ -311,7 +311,7 @@ function ExclusionBody({ ex }: { ex: any }) {
       )}
       {ex?.excludedPerils && (
         <div>
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60 mb-0.5">
+          <p className="text-[10px] font-semibold text-muted-foreground/60 mb-0.5">
             Excluded Perils
           </p>
           <p className="text-body-sm text-foreground leading-relaxed">
@@ -321,7 +321,7 @@ function ExclusionBody({ ex }: { ex: any }) {
       )}
       {ex?.exceptions && (
         <div>
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60 mb-0.5">
+          <p className="text-[10px] font-semibold text-muted-foreground/60 mb-0.5">
             Exceptions
           </p>
           <p className="text-body-sm text-foreground leading-relaxed">
@@ -341,7 +341,7 @@ function ConditionBody({ c }: { c: any }) {
     <div className="space-y-2">
       {keyValues && keyValues.length > 0 && (
         <div>
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60 mb-0.5">
+          <p className="text-[10px] font-semibold text-muted-foreground/60 mb-0.5">
             Terms
           </p>
           <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-body-sm">
@@ -384,7 +384,7 @@ function EndorsementBody({ e }: { e: any }) {
       )}
       {e?.affectedCoverageParts && (
         <div>
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60 mb-0.5">
+          <p className="text-[10px] font-semibold text-muted-foreground/60 mb-0.5">
             Affected Coverage Parts
           </p>
           <p className="text-body-sm text-foreground leading-relaxed">
@@ -396,7 +396,7 @@ function EndorsementBody({ e }: { e: any }) {
       )}
       {namedParties && namedParties.length > 0 && (
         <div>
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60 mb-0.5">
+          <p className="text-[10px] font-semibold text-muted-foreground/60 mb-0.5">
             Named Parties
           </p>
           <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-body-sm">
@@ -422,7 +422,7 @@ function EndorsementBody({ e }: { e: any }) {
       )}
       {e?.keyTerms && (
         <div>
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60 mb-0.5">
+          <p className="text-[10px] font-semibold text-muted-foreground/60 mb-0.5">
             Key Terms
           </p>
           <p className="text-body-sm text-foreground leading-relaxed">
@@ -469,7 +469,7 @@ function StructuredItemsCard({
       className="border-t border-foreground/6"
     >
       <div className="px-5 py-2 border-b border-foreground/4">
-        <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">
+        <p className="text-label-sm font-semibold text-muted-foreground">
           {title} ({items.length})
         </p>
       </div>
@@ -603,7 +603,7 @@ function SupplementaryCard({
       <div className="px-5 py-2 border-b border-foreground/4">
         <div className="flex items-center gap-2">
           <Icon className="w-4 h-4 text-muted-foreground" />
-          <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">
+          <p className="text-label-sm font-semibold text-muted-foreground">
             {title}
           </p>
           {pageNumber != null && <PageRef page={pageNumber} />}
@@ -648,7 +648,7 @@ function RegulatoryContextStructured({ data }: { data: any }) {
         <div className="flex flex-col sm:flex-row sm:divide-x divide-foreground/6 border-b border-foreground/4">
           {gridItems.map((item) => (
             <div key={item.label} className="flex-1 px-4 py-2.5">
-              <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider mb-0.5">
+              <p className="text-label-sm font-semibold text-muted-foreground mb-0.5">
                 {item.label}
               </p>
               <p className="text-body-sm text-foreground font-medium">
@@ -704,7 +704,7 @@ function ClaimsContactStructured({ data }: { data: any }) {
       )}
       {data.processSteps?.length > 0 && (
         <div className="border-t border-foreground/4 px-4 py-3">
-          <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+          <p className="text-label-sm font-semibold text-muted-foreground mb-2">
             Claims Process
           </p>
           <ol className="space-y-1.5">
@@ -721,7 +721,7 @@ function ClaimsContactStructured({ data }: { data: any }) {
       )}
       {data.reportingTimeLimit && (
         <div className="border-t border-foreground/4 px-4 py-3">
-          <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider mb-1">
+          <p className="text-label-sm font-semibold text-muted-foreground mb-1">
             Reporting Time Limit
           </p>
           <p className="text-body-sm text-foreground font-medium">
@@ -801,7 +801,7 @@ export function ExtractionPanel({
   if (!hasAnyData) return null;
 
   return (
-    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden mt-4">
+    <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden mt-4">
       {/* Top toggle row */}
       <button
         type="button"
@@ -830,7 +830,7 @@ export function ExtractionPanel({
               {policyDocument?.sections?.length > 0 && (
                 <div className="border-t border-foreground/6">
                   <div className="px-5 py-2 border-b border-foreground/4">
-                    <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                    <p className="text-label-sm font-semibold text-muted-foreground">
                       Document Sections ({policyDocument.sections.length})
                     </p>
                   </div>
@@ -900,13 +900,13 @@ export function ExtractionPanel({
                       <table className="w-full text-left">
                         <thead>
                           <tr className="bg-foreground/[0.02]">
-                            <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                            <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground">
                               Name
                             </th>
-                            <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider text-right">
+                            <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground text-right">
                               Amount
                             </th>
-                            <th className="hidden sm:table-cell px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                            <th className="hidden sm:table-cell px-4 py-2.5 text-label-sm font-semibold text-muted-foreground">
                               Type
                             </th>
                           </tr>

@@ -24,7 +24,7 @@ export default function PolicyDetailLoading() {
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
             {[0, 1, 2].map((i) => (
-              <div key={i} className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-4 py-3">
+              <div key={i} className="rounded-lg border border-foreground/6 bg-card px-4 py-3">
                 <div className="flex items-center gap-2 mb-2">
                   <Skeleton className="h-4 w-4" />
                   <Skeleton className="h-3 w-20" />
@@ -35,13 +35,13 @@ export default function PolicyDetailLoading() {
             ))}
           </div>
 
-          <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-4 py-3 mb-6">
+          <div className="rounded-lg border border-foreground/6 bg-card px-4 py-3 mb-6">
             <Skeleton className="h-3 w-16 mb-2" />
             <Skeleton className="h-4 w-full mb-1.5" />
             <Skeleton className="h-4 w-3/4" />
           </div>
 
-          <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden mb-6">
+          <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden mb-6">
             <div className="px-4 py-2.5 bg-foreground/[0.02] border-b border-foreground/4">
               <Skeleton className="h-4 w-28" />
             </div>

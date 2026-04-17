@@ -59,17 +59,17 @@ export function PolicyTable({ policies }: { policies: Policy[] | undefined }) {
 
   if (policies === undefined) {
     return (
-      <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
+      <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
         <div className="overflow-x-auto scrollbar-hide">
           <table className="w-full text-left md:min-w-[700px]">
             <thead>
               <tr className="bg-foreground/[0.02]">
-                <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">Policy</th>
-                <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap hidden sm:table-cell">Type</th>
-                <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap hidden md:table-cell">Carrier</th>
-                <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap text-right">Premium</th>
-                <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap text-right hidden md:table-cell">Period</th>
-                <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap text-right hidden md:table-cell">Actions</th>
+                <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground  whitespace-nowrap">Policy</th>
+                <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground  whitespace-nowrap hidden sm:table-cell">Type</th>
+                <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground  whitespace-nowrap hidden md:table-cell">Carrier</th>
+                <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground  whitespace-nowrap text-right">Premium</th>
+                <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground  whitespace-nowrap text-right hidden md:table-cell">Period</th>
+                <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground  whitespace-nowrap text-right hidden md:table-cell">Actions</th>
               </tr>
             </thead>
             <SkeletonRows />
@@ -82,7 +82,7 @@ export function PolicyTable({ policies }: { policies: Policy[] | undefined }) {
   if (policies.length === 0) {
     return (
       <FadeIn when={true} duration={0.6}>
-        <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-6 py-8 text-center">
+        <div className="rounded-lg border border-foreground/6 bg-card px-6 py-8 text-center">
           <p className="text-body-sm text-muted-foreground/60">No policies found</p>
         </div>
       </FadeIn>
@@ -91,27 +91,27 @@ export function PolicyTable({ policies }: { policies: Policy[] | undefined }) {
 
   return (
     <FadeIn when={true} delay={0.2} duration={0.6}>
-      <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
+      <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
         <div className="overflow-x-auto scrollbar-hide">
           <table className="w-full text-left md:min-w-[700px]">
             <thead>
               <tr className="bg-foreground/[0.02]">
-                <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">
+                <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground  whitespace-nowrap">
                   Policy
                 </th>
-                <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap hidden sm:table-cell">
+                <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground  whitespace-nowrap hidden sm:table-cell">
                   Type
                 </th>
-                <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap hidden md:table-cell">
+                <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground  whitespace-nowrap hidden md:table-cell">
                   Carrier
                 </th>
-                <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap text-right">
+                <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground  whitespace-nowrap text-right">
                   Premium
                 </th>
-                <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap text-right hidden md:table-cell">
+                <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground  whitespace-nowrap text-right hidden md:table-cell">
                   Period
                 </th>
-                <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap text-right hidden md:table-cell">
+                <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground  whitespace-nowrap text-right hidden md:table-cell">
                   Actions
                 </th>
               </tr>
@@ -189,7 +189,7 @@ export function PolicyTable({ policies }: { policies: Policy[] | undefined }) {
                       <Link
                         href={`/policies/${policy._id}`}
                         onClick={(e) => e.stopPropagation()}
-                        className="px-2.5 py-1 rounded-md border border-foreground/12 bg-white/80 dark:bg-white/[0.06] text-label-sm font-medium text-foreground hover:border-foreground/20 hover:bg-foreground/[0.03] transition-colors"
+                        className="px-2.5 py-1 rounded-md border border-foreground/12 bg-card text-label-sm font-medium text-foreground hover:border-foreground/20 hover:bg-foreground/[0.03] transition-colors"
                       >
                         View
                       </Link>
