@@ -236,7 +236,7 @@ function DocumentSection({
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center gap-2 px-4 py-2.5 text-left hover:bg-foreground/[0.015] transition-colors cursor-pointer"
+        className="w-full flex items-center gap-2 px-5 py-2.5 text-left hover:bg-foreground/[0.015] transition-colors cursor-pointer"
       >
         {expanded ? (
           <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
@@ -264,7 +264,7 @@ function DocumentSection({
         </span>
       </button>
       {expanded && (
-        <div className="px-4 pb-3 pl-10">
+        <div className="px-5 pb-3 pl-11">
           <DocContent>{section.content}</DocContent>
           {section.subsections?.map((sub: any, i: number) => (
             <div key={i} className="mt-3 pl-3 border-l-2 border-foreground/6">
@@ -466,9 +466,9 @@ function StructuredItemsCard({
   return (
     <div
       id={id}
-      className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden"
+      className="border-t border-foreground/6"
     >
-      <div className="px-4 py-2.5 bg-foreground/[0.02] border-b border-foreground/4">
+      <div className="px-5 py-2 border-b border-foreground/4">
         <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">
           {title} ({items.length})
         </p>
@@ -481,7 +481,7 @@ function StructuredItemsCard({
             <button
               type="button"
               onClick={() => toggle(i)}
-              className="w-full flex items-center gap-2 px-4 py-2.5 text-left hover:bg-foreground/[0.01] transition-colors cursor-pointer"
+              className="w-full flex items-center gap-2 px-5 py-2.5 text-left hover:bg-foreground/[0.015] transition-colors cursor-pointer"
             >
               {expanded.has(i) ? (
                 <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
@@ -506,7 +506,7 @@ function StructuredItemsCard({
               {page != null && <PageRef page={page} />}
             </button>
             {expanded.has(i) && (
-              <div className="space-y-3 px-4 pb-3 pl-10">
+              <div className="space-y-3 px-5 pb-3 pl-11">
                 {badges.length > 0 && (
                   <div className="flex flex-wrap gap-1.5 md:hidden">
                     {badges.map((badge) => (
@@ -599,8 +599,8 @@ function SupplementaryCard({
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
-      <div className="px-4 py-2.5 bg-foreground/[0.02] border-b border-foreground/4">
+    <div className="border-t border-foreground/6">
+      <div className="px-5 py-2 border-b border-foreground/4">
         <div className="flex items-center gap-2">
           <Icon className="w-4 h-4 text-muted-foreground" />
           <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">
@@ -611,13 +611,13 @@ function SupplementaryCard({
       </div>
       {hasStructured ? (
         <>
-          <div className="px-4 py-3">{children}</div>
+          <div className="px-5 py-3">{children}</div>
           <details className="group/raw border-t border-foreground/4">
-            <summary className="flex items-center gap-2 px-4 py-2.5 text-label-sm text-muted-foreground/50 cursor-pointer hover:text-muted-foreground hover:bg-foreground/[0.015] transition-colors select-none [&::-webkit-details-marker]:hidden [&::marker]:hidden list-none">
+            <summary className="flex items-center gap-2 px-5 py-2.5 text-label-sm text-muted-foreground/50 cursor-pointer hover:text-muted-foreground hover:bg-foreground/[0.015] transition-colors select-none [&::-webkit-details-marker]:hidden [&::marker]:hidden list-none">
               <ChevronRight className="w-3.5 h-3.5 shrink-0 transition-transform duration-200 group-open/raw:rotate-90" />
               View raw text
             </summary>
-            <div className="px-4 pt-1 pb-3">
+            <div className="px-5 pt-1 pb-3">
               <p className="text-body-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">
                 {content}
               </p>
@@ -625,7 +625,7 @@ function SupplementaryCard({
           </details>
         </>
       ) : (
-        <div className="px-4 py-3">
+        <div className="px-5 py-3">
           <p className="text-body-sm text-foreground whitespace-pre-wrap leading-relaxed">
             {content}
           </p>
@@ -761,7 +761,7 @@ function GroupSection({
           {label}
         </span>
       </button>
-      {open && <div className="px-5 pb-5 space-y-4">{children}</div>}
+      {open && <div className="space-y-0">{children}</div>}
     </div>
   );
 }
@@ -801,7 +801,7 @@ export function ExtractionPanel({
   if (!hasAnyData) return null;
 
   return (
-    <div className="rounded-xl border border-foreground/8 bg-white/60 dark:bg-white/[0.04] overflow-hidden shadow-sm mt-4">
+    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden mt-4">
       {/* Top toggle row */}
       <button
         type="button"
@@ -828,8 +828,8 @@ export function ExtractionPanel({
           {hasCoverageAndLimits && (
             <GroupSection label="Coverage & Limits">
               {policyDocument?.sections?.length > 0 && (
-                <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
-                  <div className="px-4 py-2.5 bg-foreground/[0.02] border-b border-foreground/4">
+                <div className="border-t border-foreground/6">
+                  <div className="px-5 py-2 border-b border-foreground/4">
                     <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">
                       Document Sections ({policyDocument.sections.length})
                     </p>

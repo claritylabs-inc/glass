@@ -130,7 +130,7 @@ export function PolicySummary({
   }
 
   return (
-    <div className="rounded-xl border border-foreground/8 bg-white/70 dark:bg-white/[0.04] overflow-hidden shadow-sm mb-6">
+    <div className="rounded-lg border border-foreground/6 bg-white/70 dark:bg-white/[0.04] overflow-hidden mb-6">
       {/* Header row */}
       <div className="px-5 py-4 border-b border-foreground/6 flex flex-col sm:flex-row sm:items-center gap-3">
         <div className="flex-1 min-w-0">
@@ -168,7 +168,7 @@ export function PolicySummary({
       </div>
 
       {/* Key facts grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-px bg-foreground/6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-foreground/6">
         {carrier && (
           <div className="bg-white/80 dark:bg-[#0d0d0d]/80 px-4 py-3">
             <SummaryField label="Carrier" value={carrier} />
