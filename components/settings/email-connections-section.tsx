@@ -11,7 +11,8 @@ import { ScanModal } from "@/components/scan-modal";
 import { ScanStatus } from "@/components/scan-status";
 import { FadeIn } from "@/components/ui/fade-in";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Mail, RefreshCw, Trash2, Square, BadgeCheck } from "lucide-react";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { RefreshCw, Trash2, Square } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -25,7 +26,6 @@ import { ConnectionIcon } from "@/components/connection-icon";
 import { getScanCoverageLabel } from "@/components/pull-more-dropdown";
 import { EmailReviewTable } from "@/components/email-review-table";
 import { ScanCalendarDialog } from "@/components/scan-calendar-dialog";
-import { EmailScanLog } from "@/components/email-scan-log";
 import { Id } from "@/convex/_generated/dataModel";
 
 /* ── RemoveConnectionDialog ── */
@@ -196,17 +196,15 @@ export function EmailConnectionsSection() {
   };
 
   return (
-    <div className="space-y-10">
-      {/* ── Connections list ── */}
-      <section>
-        <div className="mb-3">
-          <h3 className="text-body-sm font-medium text-foreground !mb-0">
-            Connected Accounts
-          </h3>
-          <p className="text-label-sm text-muted-foreground/60">
-            Auto-scanned daily for policies and business intelligence
-          </p>
-        </div>
+    <div className="space-y-4">
+      <Tabs defaultValue="accounts">
+        <TabsList variant="pill">
+          <TabsTrigger value="accounts">Accounts</TabsTrigger>
+          <TabsTrigger value="emails">Scanned emails</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="accounts">
+        <div className="pt-4">
 
         {connections === undefined && (
           <div className="space-y-3">
@@ -261,11 +259,7 @@ export function EmailConnectionsSection() {
                   {/* Desktop layout */}
                   <div className="hidden md:flex items-center justify-between">
                     <div className="flex items-center gap-3 min-w-0">
-                      {isDemo ? (
-                        <div className="w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-950/40 flex items-center justify-center shrink-0">
-                          <Mail className="w-4 h-4 text-amber-500" />
-                        </div>
-                      ) : (
+                      {!isDemo && (
                         <ConnectionIcon
                           imapHost={conn.imapHost}
                           provider={conn.provider}
@@ -283,8 +277,7 @@ export function EmailConnectionsSection() {
                             </span>
                           )}
                           {!isDemo && conn.provider === "google" && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-label-sm font-medium bg-blue-50 dark:bg-blue-950/30 text-blue-600 dark:text-blue-400 shrink-0">
-                              <BadgeCheck className="w-3 h-3" />
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium bg-blue-50 dark:bg-blue-950/30 text-blue-600 dark:text-blue-400 shrink-0">
                               OAuth
                             </span>
                           )}
@@ -372,11 +365,7 @@ export function EmailConnectionsSection() {
                   {/* Mobile layout */}
                   <div className="md:hidden space-y-3">
                     <div className="flex items-center gap-3">
-                      {isDemo ? (
-                        <div className="w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-950/40 flex items-center justify-center shrink-0">
-                          <Mail className="w-4 h-4 text-amber-500" />
-                        </div>
-                      ) : (
+                      {!isDemo && (
                         <ConnectionIcon
                           imapHost={conn.imapHost}
                           provider={conn.provider}
@@ -394,8 +383,7 @@ export function EmailConnectionsSection() {
                             </span>
                           )}
                           {!isDemo && conn.provider === "google" && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-label-sm font-medium bg-blue-50 dark:bg-blue-950/30 text-blue-600 dark:text-blue-400 shrink-0">
-                              <BadgeCheck className="w-3 h-3" />
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium bg-blue-50 dark:bg-blue-950/30 text-blue-600 dark:text-blue-400 shrink-0">
                               OAuth
                             </span>
                           )}
@@ -487,19 +475,11 @@ export function EmailConnectionsSection() {
             );
           })}
         </div>
-      </section>
-
-      {/* ── Scanned Emails ── */}
-      <section>
-        <div className="mb-3">
-          <h3 className="text-body-sm font-medium text-foreground !mb-0">
-            Scanned Emails
-          </h3>
-          <p className="text-label-sm text-muted-foreground/60">
-            Emails scanned from connected accounts
-          </p>
         </div>
+        </TabsContent>
 
+        <TabsContent value="emails">
+        <div className="pt-4">
         {selectedEmailIds.length > 0 && (
           <div className="flex items-center gap-2 mb-3 flex-wrap">
             <PillButton
@@ -576,12 +556,9 @@ export function EmailConnectionsSection() {
             </p>
           </div>
         )}
-      </section>
-
-      {/* ── Scan Log ── */}
-      <section>
-        <EmailScanLog />
-      </section>
+        </div>
+        </TabsContent>
+      </Tabs>
 
       {/* ── Modals ── */}
       <ConnectionForm

@@ -24,12 +24,13 @@ function Tabs({
 }
 
 const tabsListVariants = cva(
-  "group/tabs-list inline-flex w-fit items-center justify-center text-muted-foreground group-data-horizontal/tabs:h-fit group-data-vertical/tabs:h-fit group-data-vertical/tabs:flex-col",
+  "group/tabs-list inline-flex w-fit text-muted-foreground group-data-horizontal/tabs:h-fit group-data-vertical/tabs:h-fit group-data-vertical/tabs:flex-col",
   {
     variants: {
       variant: {
-        default: "gap-1",
-        line: "gap-1 bg-transparent",
+        default: "items-end gap-4 border-b border-foreground/6",
+        line: "items-end gap-4 border-b border-foreground/6 bg-transparent",
+        pill: "items-center gap-1 border-none",
       },
     },
     defaultVariants: {
@@ -58,8 +59,9 @@ function TabsTrigger({ className, ...props }: TabsPrimitive.Tab.Props) {
     <TabsPrimitive.Tab
       data-slot="tabs-trigger"
       className={cn(
-        "relative inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1 text-label-sm whitespace-nowrap text-muted-foreground transition-all group-data-vertical/tabs:w-full group-data-vertical/tabs:justify-start hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
-        "data-active:bg-foreground/8 data-active:text-foreground data-active:font-medium",
+        "relative inline-flex items-center justify-center gap-1.5 px-1 pb-2 text-body-sm whitespace-nowrap text-muted-foreground/60 transition-colors group-data-vertical/tabs:w-full group-data-vertical/tabs:justify-start hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
+        "after:absolute after:bottom-0 after:left-0 after:right-0 after:h-px after:bg-transparent data-active:text-foreground data-active:font-medium data-active:after:bg-foreground",
+        "group-data-[variant=pill]/tabs-list:rounded-full group-data-[variant=pill]/tabs-list:px-3 group-data-[variant=pill]/tabs-list:py-1 group-data-[variant=pill]/tabs-list:pb-1 group-data-[variant=pill]/tabs-list:text-label-sm group-data-[variant=pill]/tabs-list:after:hidden group-data-[variant=pill]/tabs-list:data-active:bg-foreground/8 group-data-[variant=pill]/tabs-list:data-active:after:bg-transparent",
         className
       )}
       {...props}

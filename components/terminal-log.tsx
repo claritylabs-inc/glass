@@ -18,6 +18,7 @@ export function TerminalLog({
   live = false,
   emptyMessage = "No log entries",
   maxHeight = 300,
+  showHeader = true,
   className,
 }: {
   entries: LogEntry[];
@@ -25,6 +26,7 @@ export function TerminalLog({
   live?: boolean;
   emptyMessage?: string;
   maxHeight?: number;
+  showHeader?: boolean;
   className?: string;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -67,15 +69,17 @@ export function TerminalLog({
           className
         )}
       >
-        <div className="flex items-center gap-2 px-3 py-1.5 border-b border-foreground/6 bg-foreground/[0.02]">
-          <Terminal className="w-3 h-3 text-muted-foreground/40" />
-          <span className="text-xs font-medium text-muted-foreground/50 font-mono">{title}</span>
-          <div className="ml-auto">
-            <PillButton size="compact" variant="icon" onClick={handleCopy} label="Copy log">
-              {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-            </PillButton>
+        {showHeader && (
+          <div className="flex items-center gap-2 px-3 py-1.5 border-b border-foreground/6 bg-foreground/[0.02]">
+            <Terminal className="w-3 h-3 text-muted-foreground/40" />
+            <span className="text-xs font-medium text-muted-foreground/50 font-mono">{title}</span>
+            <div className="ml-auto">
+              <PillButton size="compact" variant="icon" onClick={handleCopy} label="Copy log">
+                {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+              </PillButton>
+            </div>
           </div>
-        </div>
+        )}
         <div className="px-4 py-6 text-center">
           <p className="text-label-sm text-muted-foreground/50 font-mono">{emptyMessage}</p>
         </div>
@@ -90,22 +94,24 @@ export function TerminalLog({
         className
       )}
     >
-      <div className="flex items-center gap-2 px-3 py-1.5 border-b border-foreground/6 bg-foreground/[0.02]">
-        <Terminal className="w-3 h-3 text-muted-foreground/40" />
-        <span className="text-xs font-medium text-muted-foreground/50 font-mono">{title}</span>
-        <PillButton size="compact" variant="icon" onClick={handleCopy} label="Copy log" className="ml-auto">
-          {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-        </PillButton>
-        {live && (
-          <span className="flex items-center gap-1.5">
-            <span className="relative flex h-1.5 w-1.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" />
+      {showHeader && (
+        <div className="flex items-center gap-2 px-3 py-1.5 border-b border-foreground/6 bg-foreground/[0.02]">
+          <Terminal className="w-3 h-3 text-muted-foreground/40" />
+          <span className="text-xs font-medium text-muted-foreground/50 font-mono">{title}</span>
+          <PillButton size="compact" variant="icon" onClick={handleCopy} label="Copy log" className="ml-auto">
+            {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+          </PillButton>
+          {live && (
+            <span className="flex items-center gap-1.5">
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" />
+              </span>
+              <span className="text-xs font-mono text-emerald-600/70 dark:text-emerald-500/70">live</span>
             </span>
-            <span className="text-xs font-mono text-emerald-600/70 dark:text-emerald-500/70">live</span>
-          </span>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
       <div
         ref={scrollRef}

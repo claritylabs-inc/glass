@@ -1,19 +1,14 @@
 "use client";
 
 import { useState, useMemo, useRef, useEffect } from "react";
-import { usePaginatedQuery, useQuery, useMutation } from "convex/react";
+import { usePaginatedQuery, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
-import { toast } from "sonner";
-import { PillButton } from "@/components/ui/pill-button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Paperclip,
-  Search,
   Loader2,
 } from "lucide-react";
-
-type ClassificationFilter = "all" | "insurance" | "not_insurance" | "unclassified";
 
 const PAGE_SIZE = 50;
 
@@ -36,42 +31,19 @@ export function EmailReviewTable({ connectionId, onSelectionChange }: EmailRevie
     [results]
   );
 
-  const [filter, setFilter] = useState<ClassificationFilter>("all");
-  const [search, setSearch] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [sortAsc, setSortAsc] = useState(false);
 
   const filtered = useMemo(() => {
     if (!results) return [];
-    let list = results;
-
-    if (filter === "insurance") {
-      list = list.filter((e) => e.isInsuranceRelated === true);
-    } else if (filter === "not_insurance") {
-      list = list.filter((e) => e.isInsuranceRelated === false);
-    } else if (filter === "unclassified") {
-      list = list.filter(
-        (e) => e.isInsuranceRelated === undefined || e.isInsuranceRelated === null
-      );
-    }
-
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      list = list.filter(
-        (e) =>
-          e.subject.toLowerCase().includes(q) ||
-          e.from.toLowerCase().includes(q)
-      );
-    }
-
+    const list = [...results];
     list.sort((a, b) => {
       const ta = new Date(a.date).getTime();
       const tb = new Date(b.date).getTime();
       return sortAsc ? ta - tb : tb - ta;
     });
-
     return list;
-  }, [results, filter, search, sortAsc]);
+  }, [results, sortAsc]);
 
   // Infinite scroll
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -126,13 +98,6 @@ export function EmailReviewTable({ connectionId, onSelectionChange }: EmailRevie
     onSelectionChange?.([...selectedIds] as Id<"emails">[]);
   }, [selectedIds, onSelectionChange]);
 
-  const FILTERS: { value: ClassificationFilter; label: string }[] = [
-    { value: "all", label: "All" },
-    { value: "insurance", label: "Insurance" },
-    { value: "not_insurance", label: "Not Insurance" },
-    { value: "unclassified", label: "Unclassified" },
-  ];
-
   if (status === "LoadingFirstPage") {
     return (
       <div className="space-y-3">
@@ -145,42 +110,12 @@ export function EmailReviewTable({ connectionId, onSelectionChange }: EmailRevie
 
   return (
     <div className="space-y-4">
-      {/* Filters + search */}
-      <div className="flex flex-wrap items-center gap-2">
-        {FILTERS.map((f) => (
-          <button
-            key={f.value}
-            type="button"
-            onClick={() => setFilter(f.value)}
-            className={`px-3 py-1 rounded-full text-label-sm font-medium transition-colors cursor-pointer ${
-              filter === f.value
-                ? "bg-foreground text-background"
-                : "bg-foreground/6 text-muted-foreground hover:bg-foreground/10"
-            }`}
-          >
-            {f.label}
-          </button>
-        ))}
-        <div className="relative ml-auto">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground/50" />
-          <input
-            type="text"
-            placeholder="Search..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-8 pr-3 py-1.5 rounded-lg border border-foreground/6 bg-card text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-foreground/20 w-48"
-          />
-        </div>
-      </div>
-
       {/* Summary + processing indicator */}
       <div className="flex items-center gap-3">
         <p className="text-label-sm text-muted-foreground">
           {selectedIds.size > 0
             ? `${selectedIds.size} selected`
-            : filter !== "all" || search
-              ? `${filtered.length} of ${totalCount ?? "..."} emails`
-              : `${totalCount ?? "..."} emails`}
+            : `${totalCount ?? "..."} emails`}
         </p>
         {pendingCount > 0 && (
           <span className="inline-flex items-center gap-1.5 text-label-sm text-primary">
@@ -194,7 +129,7 @@ export function EmailReviewTable({ connectionId, onSelectionChange }: EmailRevie
       {filtered.length === 0 && status !== "CanLoadMore" ? (
         <div className="rounded-lg border border-foreground/6 bg-card px-6 py-8 text-center">
           <p className="text-body-sm text-muted-foreground/60">
-            {search ? "No emails match your search" : "No emails found"}
+            No emails found
           </p>
         </div>
       ) : (

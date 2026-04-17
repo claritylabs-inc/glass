@@ -5,7 +5,7 @@ import { Canvas, useFrame, useThree, ThreeEvent } from "@react-three/fiber";
 import { OrbitControls, Text } from "@react-three/drei";
 import * as THREE from "three";
 
-type VectorPoint = {
+export type VectorPoint = {
   x: number;
   y: number;
   z: number;
@@ -353,9 +353,18 @@ function SelectedDetail({
 export type VectorSpaceProps = {
   points: VectorPoint[];
   totalChunks: number;
+  onSelectedPointChange?: (point: VectorPoint | null) => void;
+  onTypeFilterChange?: (type: string | null) => void;
+  showSelectedDetail?: boolean;
 };
 
-export function VectorSpace({ points, totalChunks }: VectorSpaceProps) {
+export function VectorSpace({
+  points,
+  totalChunks,
+  onSelectedPointChange,
+  onTypeFilterChange,
+  showSelectedDetail = true,
+}: VectorSpaceProps) {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [selectedType, setSelectedType] = useState<string | null>(null);
@@ -383,6 +392,14 @@ export function VectorSpace({ points, totalChunks }: VectorSpaceProps) {
   }, [points]);
 
   const selected = selectedIndex !== null ? points[selectedIndex] : null;
+
+  useEffect(() => {
+    onSelectedPointChange?.(selected ?? null);
+  }, [selected, onSelectedPointChange]);
+
+  useEffect(() => {
+    onTypeFilterChange?.(selectedType);
+  }, [selectedType, onTypeFilterChange]);
 
   return (
     <div className="relative w-full rounded-lg border border-foreground/6 overflow-hidden bg-background" style={{ height: 520 }}>
@@ -427,12 +444,14 @@ export function VectorSpace({ points, totalChunks }: VectorSpaceProps) {
             selectedType={selectedType}
             dark={dark}
             onHover={setHoveredIndex}
-            onClick={setSelectedIndex}
+            onClick={(index) =>
+              setSelectedIndex((prev) => (prev === index ? null : index))
+            }
           />
         </Canvas>
 
         {/* Selected point detail */}
-        {selected && (
+        {showSelectedDetail && selected && (
           <SelectedDetail
             selected={selected}
             dark={dark}

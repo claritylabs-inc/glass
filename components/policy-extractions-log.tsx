@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import {
-  FileText,
   Loader2,
   CheckCircle2,
   AlertCircle,
@@ -277,7 +276,7 @@ export function PolicyExtractionsLog() {
       count={loading ? undefined : entries.length}
       loading={loading}
       skeletonRows={3}
-      emptyIcon={FileText}
+
       emptyMessage="No policy extractions yet"
       emptyDescription="Extractions will appear here after scanning emails or uploading documents."
       isEmpty={!loading && entries.length === 0}
@@ -308,7 +307,7 @@ export function PolicyExtractionsLog() {
                   <div className="flex items-start gap-3 min-w-0">
                     <StatusIcon status={entry.extractionStatus} />
                     <div className="min-w-0 flex-1">
-                      <p className="text-body-sm font-medium text-foreground">
+                      <p className="text-xs font-medium text-foreground">
                         {entryTitle(entry)}
                         {suffix && (
                           <span className={`ml-1.5 font-normal ${statusSuffixColor(entry.extractionStatus)}`}>

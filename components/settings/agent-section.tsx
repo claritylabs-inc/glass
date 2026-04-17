@@ -97,19 +97,14 @@ function CoiSettingsCard({
 
   return (
     <div>
-      <p className="text-body-sm font-medium text-foreground mb-1">COI Settings</p>
-      <p className="text-label-sm text-muted-foreground/50 mb-4">
-        Configure how COI requests are handled by the agent
-      </p>
-
       {/* Auto-generate toggle */}
       <div className="flex items-center justify-between mb-4 pb-4 border-b border-foreground/6">
         <div>
           <p className="text-body-sm font-medium text-foreground">
             Auto-generate COI
           </p>
-          <p className="text-label-sm text-muted-foreground/50">
-            Prism generates ACORD 25-style COI PDFs when requested
+          <p className="text-label-sm text-muted-foreground/60">
+            Generate ACORD 25-style COIs automatically.
           </p>
         </div>
         <button
@@ -129,43 +124,57 @@ function CoiSettingsCard({
         </button>
       </div>
 
-      <p className="text-label-sm text-muted-foreground/60 mb-3">
-        When not auto-generating, route COI requests to:
-      </p>
+      <div className="flex items-center justify-between mb-3 gap-3">
+        <p className="text-label-sm font-medium text-muted-foreground/80">
+          Fallback routing
+        </p>
+        {autoGenerate && (
+          <span className="text-label-sm text-muted-foreground/60">
+            Disabled while auto-generate is on
+          </span>
+        )}
+      </div>
       <div className="space-y-2">
-        {options.map((opt) => (
-          <button
-            key={opt.value}
-            type="button"
-            disabled={opt.disabled || autoGenerate}
-            onClick={() => handleChange(opt.value)}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg border transition-colors text-left cursor-pointer ${
-              current === opt.value && !autoGenerate
-                ? "border-foreground/15 bg-foreground/[0.03]"
-                : "border-foreground/6 hover:border-foreground/10 hover:bg-foreground/[0.01]"
-            } ${opt.disabled || autoGenerate ? "opacity-40 cursor-not-allowed" : ""}`}
-          >
-            <div
-              className={`w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center ${
+        {options.map((opt) => {
+          const Icon = opt.icon;
+
+          return (
+            <button
+              key={opt.value}
+              type="button"
+              disabled={opt.disabled || autoGenerate}
+              onClick={() => handleChange(opt.value)}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg border transition-colors text-left cursor-pointer ${
                 current === opt.value && !autoGenerate
-                  ? "border-foreground"
-                  : "border-foreground/20"
-              }`}
+                  ? "border-foreground/20 bg-foreground/[0.03]"
+                  : "border-foreground/8 hover:border-foreground/15 hover:bg-foreground/[0.01]"
+              } ${opt.disabled || autoGenerate ? "opacity-55 cursor-not-allowed" : ""}`}
             >
-              {current === opt.value && !autoGenerate && (
-                <div className="w-2 h-2 rounded-full bg-foreground" />
-              )}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-body-sm font-medium text-foreground">
-                {opt.label}
-              </p>
-              <p className="text-label-sm text-muted-foreground/50">
-                {opt.description}
-              </p>
-            </div>
-          </button>
-        ))}
+              <div className="w-8 h-8 rounded-md bg-foreground/[0.04] flex items-center justify-center shrink-0">
+                <Icon className="w-4 h-4 text-muted-foreground/70" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-body-sm font-medium text-foreground">
+                  {opt.label}
+                </p>
+                <p className="text-label-sm text-muted-foreground/60">
+                  {opt.description}
+                </p>
+              </div>
+              <div
+                className={`w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center ${
+                  current === opt.value && !autoGenerate
+                    ? "border-foreground"
+                    : "border-foreground/20"
+                }`}
+              >
+                {current === opt.value && !autoGenerate && (
+                  <div className="w-2 h-2 rounded-full bg-foreground" />
+                )}
+              </div>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -193,13 +202,13 @@ function ChatEmailNotificationsToggle() {
   if (!isAdmin) return null;
 
   return (
-    <div className="flex items-center justify-between">
+    <div className="flex items-center justify-between gap-4 py-3">
       <div>
         <p className="text-body-sm font-medium text-foreground">
           Email notifications for chat responses
         </p>
         <p className="text-label-sm text-muted-foreground/60 mt-0.5 max-w-md">
-          Send agent chat replies to your email to keep your inbox in sync.
+          Send chat replies to email.
         </p>
       </div>
       <button
@@ -241,14 +250,13 @@ function AutoSendEmailsToggle() {
   if (!isAdmin) return null;
 
   return (
-    <div className="flex items-center justify-between">
+    <div className="flex items-center justify-between gap-4 py-3">
       <div>
         <p className="text-body-sm font-medium text-foreground">
           Auto-send emails from chat
         </p>
         <p className="text-label-sm text-muted-foreground/60 mt-0.5 max-w-md">
-          When disabled, drafted emails require manual confirmation before
-          sending.
+          Require confirmation before sending when off.
         </p>
       </div>
       <button
@@ -316,13 +324,13 @@ function EmailSendDelaySetting() {
   if (!isAdmin) return null;
 
   return (
-    <div className="flex items-center justify-between">
+    <div className="flex items-center justify-between gap-4 py-3">
       <div>
         <p className="text-body-sm font-medium text-foreground">
           Email send delay
         </p>
         <p className="text-label-sm text-muted-foreground/60 mt-0.5 max-w-md">
-          Time window to cancel outgoing emails before they&apos;re sent.
+          Undo window before outgoing emails are sent.
         </p>
       </div>
       <div ref={containerRef} className="relative shrink-0 ml-4">
@@ -430,23 +438,36 @@ export function AgentSection() {
             </div>
           </FadeIn>
 
-          {/* Settings */}
+          {/* COI settings */}
           <FadeIn when={true} staggerIndex={1} duration={0.6}>
-            <div className="rounded-lg border border-foreground/6 bg-card p-5 space-y-6">
-              <CoiSettingsCard
-                coiHandling={
-                  (org?.coiHandling ??
-                    viewer?.coiHandling) as
-                    | "broker"
-                    | "user"
-                    | "ignore"
-                    | undefined
-                }
-                autoGenerateCoi={org?.autoGenerateCoi}
-                hasBroker={!!(org?.insuranceBroker ?? viewer?.insuranceBroker)}
-              />
+            <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
+              <div className="px-5 py-3.5 border-b border-foreground/6">
+                <h3 className="!mb-0 text-sm font-medium text-foreground">COI Settings</h3>
+              </div>
+              <div className="px-5 py-5">
+                <CoiSettingsCard
+                  coiHandling={
+                    (org?.coiHandling ??
+                      viewer?.coiHandling) as
+                      | "broker"
+                      | "user"
+                      | "ignore"
+                      | undefined
+                  }
+                  autoGenerateCoi={org?.autoGenerateCoi}
+                  hasBroker={!!(org?.insuranceBroker ?? viewer?.insuranceBroker)}
+                />
+              </div>
+            </div>
+          </FadeIn>
 
-              <div className="pt-4 border-t border-foreground/6 space-y-5">
+          {/* Email settings */}
+          <FadeIn when={true} staggerIndex={2} duration={0.6}>
+            <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
+              <div className="px-5 py-3.5 border-b border-foreground/6">
+                <h3 className="!mb-0 text-sm font-medium text-foreground">Email Settings</h3>
+              </div>
+              <div className="px-5 py-2 divide-y divide-foreground/6">
                 <ChatEmailNotificationsToggle />
                 <AutoSendEmailsToggle />
                 <EmailSendDelaySetting />

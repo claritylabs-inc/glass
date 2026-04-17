@@ -70,6 +70,7 @@ export interface PrismPromptInputProps {
   placeholder?: string;
   contextLabel?: string;
   showAttach?: boolean;
+  roomyOnMobile?: boolean;
   disabled?: boolean;
   status?: ChatStatus;
   onStop?: () => void;
@@ -84,6 +85,7 @@ export const PrismPromptInput = forwardRef<
     placeholder = "Ask Prism...",
     contextLabel,
     showAttach = true,
+    roomyOnMobile = false,
     disabled = false,
     status,
     onStop,
@@ -135,13 +137,16 @@ export const PrismPromptInput = forwardRef<
         <PromptInputTextarea
           ref={textareaRef}
           placeholder={placeholder}
-          className="min-h-[22px] text-body-sm leading-5 px-3 pt-2.5 pb-1 placeholder:text-muted-foreground/40"
+          className={roomyOnMobile
+            ? "min-h-[88px] sm:min-h-[22px] text-body-sm leading-6 sm:leading-5 px-4 sm:px-3 pt-3 sm:pt-2.5 pb-2 sm:pb-1 placeholder:text-muted-foreground/40"
+            : "min-h-[22px] text-body-sm leading-5 px-3 pt-2.5 pb-1 placeholder:text-muted-foreground/40"
+          }
         />
 
-        <PromptInputFooter className="px-2 pb-1.5 pt-0">
+        <PromptInputFooter className={roomyOnMobile ? "px-3 sm:px-2 pb-2 sm:pb-1.5 pt-0.5 sm:pt-0" : "px-2 pb-1.5 pt-0"}>
           {/* Left side: branding + context */}
           <PromptInputTools>
-            <div className="flex items-center gap-1.5 ml-1">
+            <div className={roomyOnMobile ? "flex items-center gap-1.5 ml-1.5 sm:ml-1" : "flex items-center gap-1.5 ml-1"}>
               <Asterisk className="w-3.5 h-3.5 text-primary-light" />
               <span className="hidden sm:inline text-[11px] font-medium text-muted-foreground/40">
                 Prism
@@ -162,20 +167,26 @@ export const PrismPromptInput = forwardRef<
                 <button
                   type="button"
                   onClick={handleStopClick}
-                  className="w-6 h-6 flex items-center justify-center rounded-md bg-foreground text-background transition-opacity cursor-pointer"
+                  className={roomyOnMobile
+                    ? "w-9 h-9 sm:w-6 sm:h-6 flex items-center justify-center rounded-md bg-foreground text-background transition-opacity cursor-pointer"
+                    : "w-6 h-6 flex items-center justify-center rounded-md bg-foreground text-background transition-opacity cursor-pointer"
+                  }
                 >
-                  <Square className="w-3 h-3 fill-current" />
+                  <Square className={roomyOnMobile ? "w-4 h-4 sm:w-3 sm:h-3 fill-current" : "w-3 h-3 fill-current"} />
                 </button>
               ) : (
                 <button
                   type="submit"
                   disabled={disabled || isGenerating}
-                  className="w-6 h-6 flex items-center justify-center rounded-md bg-foreground text-background disabled:opacity-20 transition-opacity cursor-pointer"
+                  className={roomyOnMobile
+                    ? "w-9 h-9 sm:w-6 sm:h-6 flex items-center justify-center rounded-md bg-foreground text-background disabled:opacity-20 transition-opacity cursor-pointer"
+                    : "w-6 h-6 flex items-center justify-center rounded-md bg-foreground text-background disabled:opacity-20 transition-opacity cursor-pointer"
+                  }
                 >
                   {status === "submitted" ? (
-                    <Spinner className="w-3.5 h-3.5" />
+                    <Spinner className={roomyOnMobile ? "w-4 h-4 sm:w-3.5 sm:h-3.5" : "w-3.5 h-3.5"} />
                   ) : (
-                    <ArrowUp className="w-3.5 h-3.5" />
+                    <ArrowUp className={roomyOnMobile ? "w-4 h-4 sm:w-3.5 sm:h-3.5" : "w-3.5 h-3.5"} />
                   )}
                 </button>
               )}

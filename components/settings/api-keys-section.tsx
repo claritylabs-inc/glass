@@ -96,9 +96,6 @@ export function ApiKeysSection() {
       <div className="rounded-lg border border-foreground/6 bg-card">
         <div className="px-5 py-3.5 border-b border-foreground/6">
           <h3 className="!mb-0 text-sm font-medium text-foreground">API Keys</h3>
-          <p className="text-label-sm text-muted-foreground mt-0.5">
-            API keys for local MCP servers (Claude Code, Cursor) and programmatic access.
-          </p>
         </div>
         {apiKeys.length > 0 ? (
           <div className="divide-y divide-foreground/6">
@@ -166,13 +163,10 @@ export function ApiKeysSection() {
       <div className="rounded-lg border border-foreground/6 bg-card">
         <div className="px-5 py-3.5 border-b border-foreground/6">
           <h3 className="!mb-0 text-sm font-medium text-foreground">Local MCP Setup</h3>
-          <p className="text-label-sm text-muted-foreground mt-0.5">
-            For local tools like Claude Code and Cursor. For remote tools (Claude.ai, ChatGPT), use the Sources tab instead.
-          </p>
         </div>
         <div className="px-5 py-5">
-          <p className="text-body-sm text-muted-foreground mb-2">
-            Add this to your MCP config (<code className="text-[12px] bg-foreground/5 px-1 py-0.5 rounded">~/.claude/mcp.json</code>):
+          <p className="text-body-sm text-muted-foreground mb-3">
+            For local tools like Claude Code and Cursor. For remote tools (Claude.ai, ChatGPT), use the Sources tab instead. Add this to your MCP config (<code className="text-[12px] bg-foreground/5 px-1 py-0.5 rounded">~/.claude/mcp.json</code>):
           </p>
           <pre className="text-[12px] bg-foreground/[0.03] border border-foreground/6 rounded-lg p-4 overflow-x-auto text-muted-foreground">
 {JSON.stringify({

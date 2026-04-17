@@ -1,26 +1,28 @@
 "use client";
 
-import { Calendar, Shield, DollarSign, Users, FileText } from "lucide-react";
 import { POLICY_TYPE_LABELS, POLICY_TYPE_COLORS } from "@/convex/lib/policyTypes";
+import { usePdf } from "@/components/pdf-context";
+import { Document, Page, pdfjs } from "react-pdf";
+import "react-pdf/dist/Page/AnnotationLayer.css";
+import "react-pdf/dist/Page/TextLayer.css";
 import dayjs from "dayjs";
+import { useState } from "react";
 
-function SummaryField({
+pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+
+function SummaryRow({
   label,
   value,
-  mono,
 }: {
   label: string;
   value: React.ReactNode;
-  mono?: boolean;
 }) {
   return (
-    <div className="flex flex-col gap-0.5">
-      <p className="text-[10px] font-semibold text-muted-foreground/60">
-        {label}
-      </p>
-      <p className={`text-body-sm font-medium text-foreground ${mono ? "font-mono" : ""}`}>
+    <div className="flex items-baseline justify-between gap-4">
+      <span className="text-body-sm text-muted-foreground shrink-0">{label}</span>
+      <span className="text-body-sm font-medium text-foreground text-right">
         {value}
-      </p>
+      </span>
     </div>
   );
 }
@@ -64,6 +66,34 @@ function StatusBadge({ effectiveDate, expirationDate }: { effectiveDate?: string
   );
 }
 
+function PdfThumbnail({ url }: { url: string }) {
+  const [loaded, setLoaded] = useState(false);
+  const { openWithUrl } = usePdf();
+
+  return (
+    <button
+      type="button"
+      onClick={() => openWithUrl(url)}
+      className="shrink-0 rounded-md border border-foreground/8 bg-foreground/[0.02] overflow-hidden cursor-pointer hover:border-foreground/15 transition-colors w-[160px] aspect-[8.5/11]"
+    >
+      <Document
+        file={url}
+        loading={<div className="w-full h-full animate-pulse bg-foreground/5" />}
+        error={null}
+        onLoadSuccess={() => setLoaded(true)}
+      >
+        <Page
+          pageNumber={1}
+          width={160}
+          renderTextLayer={false}
+          renderAnnotationLayer={false}
+          className={`transition-opacity duration-300 [&_.react-pdf\_\_Page\_\_canvas]:!w-full [&_.react-pdf\_\_Page\_\_canvas]:!h-auto ${loaded ? "opacity-100" : "opacity-0"}`}
+        />
+      </Document>
+    </button>
+  );
+}
+
 export interface PolicySummaryProps {
   policyNumber?: string;
   carrier?: string;
@@ -74,13 +104,12 @@ export interface PolicySummaryProps {
   totalCost?: string;
   policyTypes: string[];
   policyTermType?: string;
-  /** top-level limits object (per-occurrence, aggregate, etc.) */
   limits?: Record<string, unknown>;
-  /** top-level deductibles object */
   deductibles?: Record<string, unknown>;
   summary?: string;
   isRenewal?: boolean;
   documentType?: string;
+  pdfUrl?: string | null;
 }
 
 export function PolicySummary({
@@ -98,6 +127,7 @@ export function PolicySummary({
   summary,
   isRenewal,
   documentType,
+  pdfUrl,
 }: PolicySummaryProps) {
   const displayPremium = totalCost || premium;
 
@@ -110,7 +140,6 @@ export function PolicySummary({
         ? `${effectiveDate} — Until Cancelled`
         : `${effectiveDate ?? "—"} – ${expirationDate ?? "—"}`;
 
-  // Extract key limits for display
   const keyLimits: { label: string; value: string }[] = [];
   if (limits && typeof limits === "object") {
     const l = limits as any;
@@ -130,109 +159,78 @@ export function PolicySummary({
   }
 
   return (
-    <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden mb-6">
+    <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden mb-6 @container">
       {/* Header row */}
-      <div className="px-5 py-4 border-b border-foreground/6 flex flex-col sm:flex-row sm:items-center gap-3">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <Shield className="w-4 h-4 text-muted-foreground shrink-0" />
-            <h2 className="text-body-sm font-semibold text-foreground truncate">
-              {policyNumber ?? "Unknown Policy"}
-            </h2>
-            {isRenewal && (
-              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400">
-                Renewal
-              </span>
-            )}
-            <StatusBadge effectiveDate={effectiveDate} expirationDate={expirationDate} />
-          </div>
-          {/* Policy type badges */}
-          <div className="flex flex-wrap gap-1.5 mt-2">
-            {policyTypes.slice(0, 4).map((t) => (
-              <span
-                key={t}
-                className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-label-sm font-medium ${
-                  POLICY_TYPE_COLORS[t] ?? POLICY_TYPE_COLORS.other
-                }`}
-              >
-                {POLICY_TYPE_LABELS[t] ?? t}
-              </span>
-            ))}
-            {policyTypes.length > 4 && (
-              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium bg-foreground/5 text-muted-foreground">
-                +{policyTypes.length - 4} more
-              </span>
-            )}
-          </div>
+      <div className="px-5 py-3 border-b border-foreground/6 flex items-center gap-3">
+        <h2 className="text-body-sm font-semibold text-foreground flex-1">
+          Policy Overview
+        </h2>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {isRenewal && (
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400">
+              Renewal
+            </span>
+          )}
+          <StatusBadge effectiveDate={effectiveDate} expirationDate={expirationDate} />
         </div>
       </div>
 
-      {/* Key facts grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-foreground/6">
-        {carrier && (
-          <div className="bg-card px-4 py-3">
-            <SummaryField label="Carrier" value={carrier} />
-          </div>
-        )}
-        {insuredName && (
-          <div className="bg-card px-4 py-3">
-            <SummaryField
-              label="Named Insured"
+      {/* Body — stacks when narrow, side-by-side when wide */}
+      <div className="flex flex-col @sm:flex-row gap-5 p-5">
+        {/* PDF thumbnail */}
+        {pdfUrl && <PdfThumbnail url={pdfUrl} />}
+
+        {/* Details column */}
+        <div className="flex-1 min-w-0 space-y-2.5">
+          {/* Coverage types — same row style as other fields */}
+          {policyTypes.length > 0 && (
+            <SummaryRow
+              label="Coverage types"
               value={
-                <span className="flex items-center gap-1.5">
-                  <Users className="w-3 h-3 text-muted-foreground/50 shrink-0" />
-                  {insuredName}
+                <span className="flex flex-wrap justify-end gap-1">
+                  {policyTypes.slice(0, 4).map((t) => (
+                    <span
+                      key={t}
+                      className="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium bg-foreground/5 text-foreground/70"
+                    >
+                      {POLICY_TYPE_LABELS[t] ?? t}
+                    </span>
+                  ))}
+                  {policyTypes.length > 4 && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium bg-foreground/5 text-muted-foreground">
+                      +{policyTypes.length - 4} more
+                    </span>
+                  )}
                 </span>
               }
             />
-          </div>
-        )}
-        {(effectiveDate || expirationDate) && (
-          <div className="bg-card px-4 py-3">
-            <SummaryField
-              label="Policy Period"
-              value={
-                <span className="flex items-center gap-1.5">
-                  <Calendar className="w-3 h-3 text-muted-foreground/50 shrink-0" />
-                  {periodValue}
-                </span>
-              }
-            />
-          </div>
-        )}
-        {displayPremium && (
-          <div className="bg-card px-4 py-3">
-            <SummaryField
-              label="Premium"
-              value={
-                <span className="flex items-center gap-1.5">
-                  <DollarSign className="w-3 h-3 text-muted-foreground/50 shrink-0" />
-                  {displayPremium}
-                </span>
-              }
-              mono
-            />
-          </div>
-        )}
-        {keyLimits.map(({ label, value }) => (
-          <div key={label} className="bg-card px-4 py-3">
-            <SummaryField label={label} value={value} mono />
-          </div>
-        ))}
-        {keyDeductibles.map(({ label, value }) => (
-          <div key={label} className="bg-card px-4 py-3">
-            <SummaryField label={label} value={value} mono />
-          </div>
-        ))}
+          )}
+
+          {carrier && (
+            <SummaryRow label="Carrier" value={carrier} />
+          )}
+          {insuredName && (
+            <SummaryRow label="Named insured" value={insuredName} />
+          )}
+          {(effectiveDate || expirationDate) && (
+            <SummaryRow label="Policy period" value={periodValue} />
+          )}
+          {displayPremium && (
+            <SummaryRow label="Premium" value={displayPremium} />
+          )}
+          {keyLimits.map(({ label, value }) => (
+            <SummaryRow key={label} label={label} value={value} />
+          ))}
+          {keyDeductibles.map(({ label, value }) => (
+            <SummaryRow key={label} label={label} value={value} />
+          ))}
+        </div>
       </div>
 
       {/* AI summary if available */}
       {summary && (
         <div className="px-5 py-3 border-t border-foreground/6 bg-foreground/[0.01]">
-          <div className="flex items-start gap-2">
-            <FileText className="w-3.5 h-3.5 text-muted-foreground/40 mt-0.5 shrink-0" />
-            <p className="text-body-sm text-muted-foreground leading-relaxed">{summary}</p>
-          </div>
+          <p className="text-body-sm text-muted-foreground leading-relaxed">{summary}</p>
         </div>
       )}
     </div>

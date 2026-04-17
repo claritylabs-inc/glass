@@ -9,7 +9,6 @@ import {
   Loader2,
   UserPlus,
   ShieldCheck,
-  Mail,
 } from "lucide-react";
 import { PillButton } from "@/components/ui/pill-button";
 import {
@@ -177,9 +176,6 @@ export function TeamSection() {
           {/* Pending invitations */}
           {invitations?.filter((i) => i.status === "pending").map((inv) => (
             <div key={inv._id} className="px-5 py-3.5 flex items-center gap-3 opacity-60">
-              <div className="w-8 h-8 rounded-full bg-foreground/5 flex items-center justify-center shrink-0">
-                <Mail className="w-3.5 h-3.5 text-muted-foreground/40" />
-              </div>
               <div className="flex-1 min-w-0">
                 <p className="text-body-sm text-muted-foreground truncate">{inv.email}</p>
                 <p className="text-label-sm text-muted-foreground/40">Invitation pending</p>

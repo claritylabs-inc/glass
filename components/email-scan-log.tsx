@@ -2,13 +2,6 @@
 
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import {
-  Mail,
-  Inbox,
-  Send,
-  Plus,
-  Copy,
-} from "lucide-react";
 import { ActivityLogSection, type LogEntry, type StatPill } from "@/components/activity-log-section";
 
 interface ScanLogEntry extends LogEntry {
@@ -36,28 +29,24 @@ export function EmailScanLog() {
     const pills: StatPill[] = [];
     if (entry.inboxFound > 0) {
       pills.push({
-        icon: Inbox,
         label: `${entry.inboxFound} inbox`,
         colorClass: "text-muted-foreground",
       });
     }
     if (entry.sentFound > 0) {
       pills.push({
-        icon: Send,
         label: `${entry.sentFound} sent`,
         colorClass: "text-muted-foreground",
       });
     }
     if (entry.totalInserted > 0) {
       pills.push({
-        icon: Plus,
         label: `${entry.totalInserted} new`,
         colorClass: "text-emerald-500/70",
       });
     }
     if (entry.duplicatesSkipped > 0) {
       pills.push({
-        icon: Copy,
         label: `${entry.duplicatesSkipped} skipped`,
         colorClass: "text-muted-foreground/50",
       });
@@ -76,7 +65,7 @@ export function EmailScanLog() {
       title="Email Scans"
       entries={logs as ScanLogEntry[] | undefined}
       loading={logs === undefined}
-      emptyIcon={Mail}
+
       emptyMessage="No email scans yet"
       emptyDescription="Scan logs will appear here after your first email scan."
       renderEntryTitle={renderEntryTitle}

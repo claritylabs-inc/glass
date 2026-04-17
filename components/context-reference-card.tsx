@@ -3,7 +3,7 @@
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
-import { ArrowRight, FileText } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { useEntityPreview } from "@/hooks/use-entity-preview";
 import { POLICY_TYPE_LABELS } from "@/convex/lib/policyTypes";
 
@@ -57,12 +57,11 @@ function PolicyReferenceCard({ id, page, citedSections }: { id: string; page?: n
     <button
       type="button"
       onClick={() => openPreview({ type: "policy", id, page, citedSections })}
-      className="flex items-start gap-2.5 px-3 py-2.5 rounded-lg border border-foreground/8 bg-card hover:bg-foreground/[0.03] hover:border-foreground/12 transition-colors cursor-pointer text-left group w-[260px] shrink-0"
+      className="relative flex items-start gap-2.5 px-3 py-2.5 rounded-lg border border-foreground/8 bg-card hover:border-foreground/12 hover:-translate-y-px hover:shadow-sm active:translate-y-0 active:shadow-none transition-all duration-150 cursor-pointer text-left group w-[260px] shrink-0 overflow-hidden"
     >
-      <div className="w-7 h-7 rounded-md bg-foreground/[0.04] flex items-center justify-center shrink-0 mt-0.5">
-        <FileText className="w-3.5 h-3.5 text-muted-foreground/40" />
-      </div>
-      <div className="min-w-0 flex-1 space-y-0.5">
+      {/* Hover overlay */}
+      <div className="absolute inset-0 bg-primary/0 group-hover:bg-primary/[0.04] transition-colors duration-150 pointer-events-none" />
+      <div className="min-w-0 flex-1 space-y-0.5 relative">
         <p className="text-body-sm font-medium text-foreground leading-tight truncate !my-0">
           {carrier}
         </p>
@@ -82,7 +81,7 @@ function PolicyReferenceCard({ id, page, citedSections }: { id: string; page?: n
           </div>
         )}
       </div>
-      <ArrowRight className="w-3.5 h-3.5 text-muted-foreground/15 group-hover:text-muted-foreground/40 transition-colors shrink-0 mt-1" />
+      <ArrowRight className="relative w-3.5 h-3.5 text-muted-foreground/15 group-hover:text-primary/50 transition-colors shrink-0 mt-1" />
     </button>
   );
 }

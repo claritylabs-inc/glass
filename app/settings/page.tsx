@@ -13,6 +13,7 @@ import {
   Puzzle,
 } from "lucide-react";
 import { LogoIcon } from "@/components/ui/logo-icon";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 /** Wrapper so LogoIcon matches the lucide icon interface used in nav items */
 function PrismStarIcon({ className }: { className?: string }) {
@@ -70,27 +71,22 @@ export default function SettingsPage() {
       <AppShell breadcrumbDetail={activeLabel} actions={headerActions}>
         {/* Mobile: horizontal scrollable tabs */}
         <div className="lg:hidden mb-6 -mx-6 px-6 overflow-x-auto scrollbar-hide">
-          <div className="flex gap-1 min-w-max">
-            {SETTINGS_SECTIONS.map((section) => {
-              const Icon = section.icon;
-              const isActive = section.id === activeSection;
-              return (
-                <button
-                  key={section.id}
-                  type="button"
-                  onClick={() => handleSectionChange(section.id)}
-                  className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-label-sm whitespace-nowrap transition-colors cursor-pointer ${
-                    isActive
-                      ? "bg-foreground/8 text-foreground font-medium"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  <Icon className="w-3.5 h-3.5 shrink-0" />
-                  {section.label}
-                </button>
-              );
-            })}
-          </div>
+          <Tabs
+            value={activeSection}
+            onValueChange={(value) => handleSectionChange(value as SettingsSection)}
+          >
+            <TabsList variant="pill" className="min-w-max">
+              {SETTINGS_SECTIONS.map((section) => {
+                const Icon = section.icon;
+                return (
+                  <TabsTrigger key={section.id} value={section.id}>
+                    <Icon className="w-3.5 h-3.5 shrink-0" />
+                    {section.label}
+                  </TabsTrigger>
+                );
+              })}
+            </TabsList>
+          </Tabs>
         </div>
 
         {/* Section content — sidebar navigation is handled by the main app sidebar on desktop */}

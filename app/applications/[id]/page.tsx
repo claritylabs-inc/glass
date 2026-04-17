@@ -8,7 +8,6 @@ import { AppShell } from "@/components/app-shell";
 import { FadeIn } from "@/components/ui/fade-in";
 import { PillButton } from "@/components/ui/pill-button";
 import {
-  ArrowLeft,
   FileInput,
   FileText,
   FileCheck,
@@ -16,10 +15,10 @@ import {
   X,
   CheckCircle,
   RotateCcw,
-  Clock,
   CircleDot,
   Circle,
 } from "lucide-react";
+import { StructuredLog, type StructuredLogEntry } from "@/components/structured-log";
 import { useRouter } from "next/navigation";
 import { usePdf } from "@/components/pdf-context";
 import { usePageContext } from "@/hooks/use-page-context";
@@ -193,6 +192,114 @@ function EditableField({
   );
 }
 
+const APP_STATUS_MAP: Record<string, { status: StructuredLogEntry["status"]; event: string }> = {
+  extracting_fields: { status: "info", event: "Field extraction started" },
+  filling_known: { status: "info", event: "Auto-filling known fields" },
+  asking_questions: { status: "info", event: "Asking questions" },
+  pending_confirmation: { status: "warning", event: "Pending user confirmation" },
+  confirmed: { status: "success", event: "Fields confirmed" },
+  complete: { status: "success", event: "Application complete" },
+  cancelled: { status: "warning", event: "Application cancelled" },
+  failed: { status: "error", event: "Processing failed" },
+};
+
+function ApplicationActivityTab({ session }: { session: any }) {
+  const logEntries: StructuredLogEntry[] = [];
+
+  // Session creation
+  logEntries.push({
+    id: "created",
+    timestamp: session._creationTime,
+    status: "info",
+    event: "Application uploaded",
+    detail: session.sourceFileName,
+    meta: {
+      title: session.applicationTitle ?? "—",
+      file: session.sourceFileName,
+    },
+  });
+
+  // Current status
+  const statusInfo = APP_STATUS_MAP[session.status];
+  if (statusInfo && session.status !== "extracting_fields") {
+    logEntries.push({
+      id: "status",
+      timestamp: session.lastProgressAt ?? session._creationTime + 1000,
+      status: statusInfo.status,
+      event: statusInfo.event,
+      detail: session.status === "failed" ? session.failureReason : undefined,
+      meta: session.totalFields
+        ? {
+            "total fields": session.totalFields,
+            "filled fields": session.filledFields ?? 0,
+            "confirmed fields": session.confirmedFields ?? 0,
+          }
+        : undefined,
+    });
+  }
+
+  // Batch progress
+  if (session.parsedBatches) {
+    for (const batch of session.parsedBatches) {
+      if (batch.complete) {
+        logEntries.push({
+          id: `batch-${batch.batchIndex}`,
+          timestamp: (session.lastProgressAt ?? session._creationTime) - (session.parsedBatches.length - batch.batchIndex) * 1000,
+          status: "success",
+          event: `Section complete — batch ${batch.batchIndex + 1}`,
+          detail: `${batch.fieldIds.length} fields answered`,
+        });
+      }
+    }
+  }
+
+  // Error
+  if (session.error) {
+    logEntries.push({
+      id: "error",
+      timestamp: session.lastProgressAt ?? session._creationTime + 2000,
+      status: "error",
+      event: "Error occurred",
+      detail: session.error,
+    });
+  }
+
+  // Completion
+  if (session.completedAt) {
+    logEntries.push({
+      id: "completed",
+      timestamp: session.completedAt,
+      status: "success",
+      event: "Application processing complete",
+      detail: session.filledFields
+        ? `${session.filledFields} of ${session.totalFields} fields filled`
+        : undefined,
+    });
+  }
+
+  if (session.cancelledAt) {
+    logEntries.push({
+      id: "cancelled",
+      timestamp: session.cancelledAt,
+      status: "warning",
+      event: "Application cancelled",
+    });
+  }
+
+  // Sort by timestamp
+  logEntries.sort((a, b) => a.timestamp - b.timestamp);
+
+  const isLive = !["complete", "cancelled", "failed"].includes(session.status);
+
+  return (
+    <StructuredLog
+      entries={logEntries}
+      live={isLive}
+      emptyMessage="No activity recorded yet"
+    />
+  );
+}
+
 function ActionButtons({
   sourceFileUrl,
   summaryFileUrl,
@@ -294,7 +401,7 @@ export default function ApplicationDetailPage({
   const retryApp = useAction(api.actions.processApplication.retryApplication);
   const fillApp = useAction(api.actions.processApplication.fillApplicationPdf);
   const [isFilling, setIsFilling] = useState(false);
-  const [activeTab, setActiveTab] = useState<"details" | "threads">("details");
+  const [activeTab, setActiveTab] = useState<"details" | "activity" | "threads">("details");
   const { setPageContext } = usePageContext();
   useEffect(() => {
     if (session) {
@@ -419,15 +526,7 @@ export default function ApplicationDetailPage({
     <AppShell breadcrumbDetail={session.applicationTitle ?? session.sourceFileName} actions={headerActions}>
           <FadeIn when={true} staggerIndex={0} duration={0.6}>
             <div className="mb-6">
-              <Link
-                href="/applications"
-                className="inline-flex items-center gap-1.5 text-body-sm text-muted-foreground hover:text-foreground transition-colors mb-4"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" />
-                Back to applications
-              </Link>
-              <h1 className="!mb-0">{session.applicationTitle ?? session.sourceFileName}</h1>
-              <div className="flex items-center gap-3 flex-wrap mt-1">
+              <div className="flex items-center gap-3 flex-wrap">
                 <StatusBadge status={session.status} />
                 <span className="text-label-sm text-muted-foreground/40">
                   {dayjs(session._creationTime).format("MMM D, YYYY h:mm A")}
@@ -440,6 +539,7 @@ export default function ApplicationDetailPage({
           <div className="flex items-center gap-1 border-b border-foreground/6 mb-6">
             {([
               { id: "details" as const, label: "Details" },
+              { id: "activity" as const, label: "Activity" },
               { id: "threads" as const, label: "Threads" },
             ]).map((tab) => (
               <button
@@ -587,6 +687,10 @@ export default function ApplicationDetailPage({
             </div>
           </FadeIn>
           </>)}
+
+          {activeTab === "activity" && (
+            <ApplicationActivityTab session={session} />
+          )}
 
           {activeTab === "threads" && (
             <div className="rounded-lg border border-foreground/6 bg-card px-6 py-12 text-center">

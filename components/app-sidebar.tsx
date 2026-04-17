@@ -10,7 +10,6 @@ import { toast } from "sonner";
 
 const AGENT_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "prism.claritylabs.inc";
 import {
-  LayoutDashboard,
   FileText,
   FileInput,
   Mail,
@@ -40,7 +39,6 @@ const SETTINGS_SECTIONS_WITH_AGENT = [
 ];
 
 const INSURANCE_ITEMS = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard, shortcut: "D" },
   { href: "/policies", label: "Policies", icon: FileText, shortcut: "O" },
   { href: "/applications", label: "Applications", icon: FileInput, shortcut: "Y" },
 ];

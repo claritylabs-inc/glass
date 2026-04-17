@@ -43,7 +43,7 @@ export interface LogEntry {
 }
 
 export interface StatPill {
-  icon: React.ComponentType<{ className?: string }>;
+  icon?: React.ComponentType<{ className?: string }>;
   label: string;
   colorClass: string;
 }
@@ -52,7 +52,7 @@ interface ActivityLogSectionProps<T extends LogEntry> {
   title: string;
   entries: T[] | undefined;
   loading: boolean;
-  emptyIcon: React.ComponentType<{ className?: string }>;
+  emptyIcon?: React.ComponentType<{ className?: string }>;
   emptyMessage: string;
   emptyDescription: string;
   renderEntryTitle: (entry: T) => string;
@@ -131,7 +131,7 @@ export function ActivityLogSection<T extends LogEntry>({
                       <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
                     )}
                     <div className="min-w-0 flex-1">
-                      <p className="text-body-sm font-medium text-foreground">
+                      <p className="text-xs font-medium text-foreground">
                         {renderEntryTitle(entry)}
                         {isRunning && (
                           <span className="ml-1.5 text-blue-500 font-normal">
@@ -152,7 +152,6 @@ export function ActivityLogSection<T extends LogEntry>({
                               key={i}
                               className={`inline-flex items-center gap-1 text-label-sm ${stat.colorClass}`}
                             >
-                              <stat.icon className="w-3 h-3" />
                               {stat.label}
                             </span>
                           ))}

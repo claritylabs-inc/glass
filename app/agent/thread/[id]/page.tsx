@@ -10,7 +10,7 @@ import { ModeBadge } from "@/components/mode-badge";
 import { MessageBubble, splitQuotedReply, QuotedContent, type Conversation } from "@/components/conversation-message";
 import { ChatMessageBubble, type WebChatMessage } from "@/components/chat-message-bubble";
 import { toast } from "sonner";
-import { Loader2, Archive, ArchiveRestore, FileText, FileInput, Pencil, Check, Shield, Search, ClipboardList, HelpCircle, Asterisk, Mail as MailIcon, MessageSquare, Paperclip, Download, Copy, Lock, RotateCcw } from "lucide-react";
+import { Loader2, Archive, ArchiveRestore, FileText, FileInput, Pencil, Check, Search, ClipboardList, Asterisk, Mail as MailIcon, MessageSquare, Paperclip, Download, Copy, Lock, RotateCcw } from "lucide-react";
 import { usePdf } from "@/components/pdf-context";
 import { usePresence } from "@/hooks/use-presence";
 import { ContextReferenceCard, ReferenceCardStrip } from "@/components/context-reference-card";
@@ -24,6 +24,7 @@ import Markdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import dayjs from "dayjs";
+import { NewChatEmptyState } from "@/components/new-chat-empty-state";
 
 /* ═══════════════════════════════════════════════════
    Unified Thread View (new threads table)
@@ -573,27 +574,6 @@ function RetryButton({ messageId }: { messageId: string }) {
 
 const AGENT_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "prism.claritylabs.inc";
 
-const EXAMPLE_PROMPTS_UNIFIED = [
-  {
-    icon: Shield,
-    label: "Policy lookup",
-    prompt: "What are the coverage limits on my general liability policy?",
-    description: "Ask about your active policies, coverages, and limits",
-  },
-  {
-    icon: ClipboardList,
-    label: "Application help",
-    prompt: "What information do I need to fill out a workers comp application?",
-    description: "Get help with insurance application forms",
-  },
-  {
-    icon: HelpCircle,
-    label: "General question",
-    prompt: "What types of insurance does my business need?",
-    description: "Ask general insurance questions",
-  },
-];
-
 /* ── Initial context link (shows which entity the chat was started from) ── */
 function ThreadContextLink({
   context,
@@ -825,31 +805,7 @@ function UnifiedThreadContent({
       <div ref={messagesRef} className="absolute inset-0 overflow-y-auto p-4 pr-5">
         <div className="max-w-2xl mx-auto space-y-4">
           {(!messages || messages.length === 0) && (
-            <div className="flex flex-col items-center justify-center pt-16 pb-8">
-              <div className="w-10 h-10 rounded-full bg-primary-light/15 flex items-center justify-center mb-4">
-                <Asterisk className="w-5 h-5 text-primary-light" />
-              </div>
-              <h3 className="text-body-sm font-semibold text-foreground mb-1">Ask Prism anything</h3>
-              <p className="text-label-sm text-muted-foreground/50 mb-6 text-center max-w-sm">
-                I can help with your policies, applications, and general insurance questions.
-              </p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full max-w-md">
-                {EXAMPLE_PROMPTS_UNIFIED.map((item) => (
-                  <button
-                    key={item.label}
-                    type="button"
-                    onClick={() => chatInputRef.current?.setValueAndFocus(item.prompt)}
-                    className="flex items-start gap-2.5 px-3 py-2.5 rounded-lg border border-foreground/6 bg-card hover:bg-foreground/[0.02] hover:border-foreground/10 transition-colors cursor-pointer text-left"
-                  >
-                    <item.icon className="w-3.5 h-3.5 text-muted-foreground/40 mt-0.5 shrink-0" />
-                    <div className="min-w-0">
-                      <p className="text-body-sm font-medium text-foreground">{item.label}</p>
-                      <p className="text-label-sm text-muted-foreground/40 line-clamp-2">{item.description}</p>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
+            <NewChatEmptyState onSelectPrompt={(prompt) => chatInputRef.current?.setValueAndFocus(prompt)} />
           )}
           {(() => {
             const lastAgentIdx = messages?.reduce((acc, m, i) => m.role === "agent" ? i : acc, -1) ?? -1;
@@ -1176,27 +1132,6 @@ function WebChatActions({
   );
 }
 
-const EXAMPLE_PROMPTS = [
-  {
-    icon: Shield,
-    label: "Policy lookup",
-    prompt: "What are the coverage limits on my general liability policy?",
-    description: "Ask about your active policies, coverages, and limits",
-  },
-  {
-    icon: ClipboardList,
-    label: "Application help",
-    prompt: "What information do I need to fill out a workers comp application?",
-    description: "Get help with insurance application forms",
-  },
-  {
-    icon: HelpCircle,
-    label: "General question",
-    prompt: "What types of insurance does my business need?",
-    description: "Ask general insurance questions",
-  },
-];
-
 /* ── Legacy web chat view ── */
 function WebChatContent({
   chatId,
@@ -1294,31 +1229,7 @@ function WebChatContent({
       <div ref={messagesRef} className="absolute inset-0 overflow-y-auto p-4 pr-5">
         <div className="max-w-2xl mx-auto space-y-4">
           {(!messages || messages.length === 0) && (
-            <div className="flex flex-col items-center justify-center pt-16 pb-8">
-              <div className="w-10 h-10 rounded-full bg-primary-light/15 flex items-center justify-center mb-4">
-                <Asterisk className="w-5 h-5 text-primary-light" />
-              </div>
-              <h3 className="text-body-sm font-semibold text-foreground mb-1">Ask Prism anything</h3>
-              <p className="text-label-sm text-muted-foreground/50 mb-6 text-center max-w-sm">
-                I can help with your policies, applications, and general insurance questions.
-              </p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full max-w-md">
-                {EXAMPLE_PROMPTS.map((item) => (
-                  <button
-                    key={item.label}
-                    type="button"
-                    onClick={() => chatInputRef.current?.setValueAndFocus(item.prompt)}
-                    className="flex items-start gap-2.5 px-3 py-2.5 rounded-lg border border-foreground/6 bg-card hover:bg-foreground/[0.02] hover:border-foreground/10 transition-colors cursor-pointer text-left"
-                  >
-                    <item.icon className="w-3.5 h-3.5 text-muted-foreground/40 mt-0.5 shrink-0" />
-                    <div className="min-w-0">
-                      <p className="text-body-sm font-medium text-foreground">{item.label}</p>
-                      <p className="text-label-sm text-muted-foreground/40 line-clamp-2">{item.description}</p>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
+            <NewChatEmptyState onSelectPrompt={(prompt) => chatInputRef.current?.setValueAndFocus(prompt)} />
           )}
           {messages?.map((msg) => (
             <ChatMessageBubble key={msg._id} message={msg} viewerId={viewerId} />

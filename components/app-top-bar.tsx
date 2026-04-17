@@ -2,25 +2,16 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  LayoutDashboard,
-  FileText,
-  FileInput,
-  Layers,
-  Asterisk,
-  Settings,
-  User,
-  Menu,
-} from "lucide-react";
+import { Menu } from "lucide-react";
 
-const BREADCRUMB_MAP: Record<string, { icon: React.ComponentType<{ className?: string }>; label: string }> = {
-  "/": { icon: LayoutDashboard, label: "Dashboard" },
-  "/policies": { icon: FileText, label: "Policies" },
-  "/applications": { icon: FileInput, label: "Applications" },
-  "/connections": { icon: Layers, label: "Context" },
-  "/agent": { icon: Asterisk, label: "Prism" },
-  "/settings": { icon: Settings, label: "Settings" },
-  "/profile": { icon: User, label: "Profile" },
+const BREADCRUMB_MAP: Record<string, { label: string }> = {
+  "/": { label: "Dashboard" },
+  "/policies": { label: "Policies" },
+  "/applications": { label: "Applications" },
+  "/connections": { label: "Context" },
+  "/agent": { label: "Prism" },
+  "/settings": { label: "Settings" },
+  "/profile": { label: "Profile" },
 };
 
 export interface PresenceUser {
@@ -96,11 +87,10 @@ export function AppTopBar({
     }
   }
 
-  const Icon = crumb?.icon ?? LayoutDashboard;
   const label = crumb?.label ?? "Page";
 
   return (
-    <header className="h-12 flex items-center gap-3 px-4 lg:px-6 border-b border-foreground/6 shrink-0">
+    <header className="h-12 flex items-center gap-3 px-6 lg:px-8 border-b border-foreground/6 shrink-0">
       {/* Mobile hamburger */}
       <button
         type="button"
@@ -112,7 +102,6 @@ export function AppTopBar({
 
       {/* Breadcrumb */}
       <div className="flex items-center gap-1.5 min-w-0 flex-1">
-        <Icon className="w-4 h-4 text-muted-foreground/50 shrink-0" />
         {breadcrumbDetail ? (
           <>
             <Link href={matchedPath} className="hidden sm:inline text-body-sm font-medium text-muted-foreground/60 hover:text-foreground transition-colors truncate shrink-0">

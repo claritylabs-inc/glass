@@ -4,10 +4,11 @@ import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
-import { Brain, Loader2, Trash2, Search, RefreshCw, ChevronDown, Pencil, Check, X } from "lucide-react";
-import { VectorSpace } from "@/components/vector-space";
+import { Brain, Loader2, Trash2, Search, RefreshCw, Pencil, Check, X } from "lucide-react";
+import { VectorSpace, type VectorPoint } from "@/components/vector-space";
 import { PillButton } from "@/components/ui/pill-button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
 const INTEL_CATEGORY_COLORS: Record<string, string> = {
   company_info:
@@ -100,34 +101,26 @@ export function IntelligenceTab() {
   const [subTab, setSubTab] = useState<SubTabId>("intelligence");
 
   return (
-    <div className="space-y-5">
-      {/* Sub-tab switcher — pill style */}
-      <div className="flex items-center gap-1">
-        {SUB_TABS.map((tab) => {
-          const isActive = subTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setSubTab(tab.id)}
-              className={`px-3 py-1 text-label-sm rounded-full whitespace-nowrap transition-colors cursor-pointer ${
-                isActive
-                  ? "bg-foreground/8 text-foreground font-medium"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {tab.label}
-            </button>
-          );
-        })}
-      </div>
+    <Tabs
+      value={subTab}
+      onValueChange={(value) => setSubTab(value as SubTabId)}
+      className="space-y-5"
+    >
+      <TabsList variant="pill">
+        {SUB_TABS.map((tab) => (
+          <TabsTrigger key={tab.id} value={tab.id}>
+            {tab.label}
+          </TabsTrigger>
+        ))}
+      </TabsList>
 
-      {subTab === "intelligence" ? (
+      <TabsContent value="intelligence">
         <OrgIntelligencePanel />
-      ) : (
+      </TabsContent>
+      <TabsContent value="extractions">
         <PolicyExtractionsPanel />
-      )}
-    </div>
+      </TabsContent>
+    </Tabs>
   );
 }
 
@@ -150,92 +143,35 @@ function OrgIntelligencePanel() {
   const [editContent, setEditContent] = useState("");
   const [editCategory, setEditCategory] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [selectedVectorEntryId, setSelectedVectorEntryId] = useState<string | null>(null);
+  const [selectedVectorCategory, setSelectedVectorCategory] = useState<string | null>(null);
 
   const totalEntries = entries?.length ?? 0;
 
-  const categoryBreakdown = useMemo(() => {
-    if (!entries) return [];
-    const counts = new Map<string, number>();
-    for (const e of entries) {
-      counts.set(e.category, (counts.get(e.category) || 0) + 1);
-    }
-    return [...counts.entries()].sort((a, b) => b[1] - a[1]);
-  }, [entries]);
-
-  type EntryType = NonNullable<typeof entries>[number];
-
-  // Sort newest first, group by month → day
-  const groupedByMonth = useMemo(() => {
+  const sortedEntries = useMemo(() => {
     if (!entries || entries.length === 0) return [];
-    const sorted = [...entries].sort(
+    return [...entries].sort(
       (a, b) => (b.createdAt ?? b._creationTime) - (a.createdAt ?? a._creationTime),
     );
-    const now = new Date();
-    const yesterday = new Date(now);
-    yesterday.setDate(yesterday.getDate() - 1);
-
-    function getDayLabel(date: Date) {
-      if (date.toDateString() === now.toDateString()) return "Today";
-      if (date.toDateString() === yesterday.toDateString()) return "Yesterday";
-      return date.toLocaleDateString("en-US", {
-        weekday: "short",
-        month: "short",
-        day: "numeric",
-      });
-    }
-
-    function getMonthKey(date: Date) {
-      return `${date.getFullYear()}-${String(date.getMonth()).padStart(2, "0")}`;
-    }
-
-    function getMonthLabel(date: Date) {
-      if (
-        date.getMonth() === now.getMonth() &&
-        date.getFullYear() === now.getFullYear()
-      )
-        return "This Month";
-      return date.toLocaleDateString("en-US", {
-        month: "long",
-        year: date.getFullYear() !== now.getFullYear() ? "numeric" : undefined,
-      });
-    }
-
-    const months: Array<{
-      key: string;
-      label: string;
-      totalCount: number;
-      days: Array<{ label: string; entries: EntryType[] }>;
-    }> = [];
-    let curMonthKey = "";
-    let curDayLabel = "";
-
-    for (const entry of sorted) {
-      const ts = entry.createdAt ?? entry._creationTime;
-      const date = new Date(ts);
-      const monthKey = getMonthKey(date);
-      const dayLabel = getDayLabel(date);
-
-      if (monthKey !== curMonthKey) {
-        months.push({
-          key: monthKey,
-          label: getMonthLabel(date),
-          totalCount: 0,
-          days: [],
-        });
-        curMonthKey = monthKey;
-        curDayLabel = "";
-      }
-      if (dayLabel !== curDayLabel) {
-        months[months.length - 1].days.push({ label: dayLabel, entries: [] });
-        curDayLabel = dayLabel;
-      }
-      const month = months[months.length - 1];
-      month.days[month.days.length - 1].entries.push(entry);
-      month.totalCount++;
-    }
-    return months;
   }, [entries]);
+
+  const filteredEntries = useMemo(() => {
+    if (selectedVectorEntryId) {
+      return sortedEntries.filter((entry) => entry._id === selectedVectorEntryId);
+    }
+    if (selectedVectorCategory) {
+      return sortedEntries.filter(
+        (entry) => entry.category === selectedVectorCategory,
+      );
+    }
+    return sortedEntries;
+  }, [sortedEntries, selectedVectorEntryId, selectedVectorCategory]);
+
+  useEffect(() => {
+    if (!selectedVectorEntryId) return;
+    const exists = sortedEntries.some((entry) => entry._id === selectedVectorEntryId);
+    if (!exists) setSelectedVectorEntryId(null);
+  }, [sortedEntries, selectedVectorEntryId]);
 
   useEffect(() => {
     if (entries && entries.length > 0 && !vectorData && !loadingVectors) {
@@ -287,18 +223,6 @@ function OrgIntelligencePanel() {
     }
   }
 
-  function toggleGroup(label: string) {
-    setCollapsedGroups((prev) => {
-      const next = new Set(prev);
-      if (next.has(label)) {
-        next.delete(label);
-      } else {
-        next.add(label);
-      }
-      return next;
-    });
-  }
-
   if (entries === undefined) {
     return (
       <div className="flex items-center justify-center py-16">
@@ -314,6 +238,13 @@ function OrgIntelligencePanel() {
         <VectorSpace
           points={vectorData.points}
           totalChunks={vectorData.totalEntries}
+          showSelectedDetail={false}
+          onSelectedPointChange={(point: VectorPoint | null) => {
+            setSelectedVectorEntryId(point?.policyId ?? null);
+          }}
+          onTypeFilterChange={(type) => {
+            setSelectedVectorCategory(type);
+          }}
         />
       ) : loadingVectors ? (
         <div
@@ -353,179 +284,144 @@ function OrgIntelligencePanel() {
         </div>
       ) : null}
 
-      {/* Intelligence entries — grouped by month → day, newest first */}
-      {groupedByMonth.length > 0 ? (
-        <div className="space-y-6">
-          {groupedByMonth.map((month) => {
-            const isMonthCollapsed = collapsedGroups.has(month.key);
-            return (
-              <div key={month.key}>
-                {/* Month header */}
-                <button
-                  type="button"
-                  onClick={() => toggleGroup(month.key)}
-                  className="w-full flex items-center gap-3 mb-3 cursor-pointer group/month"
-                >
-                  <h3 className="text-sm font-medium text-foreground shrink-0">
-                    {month.label}
-                    <span className="ml-1.5 text-muted-foreground/40 font-normal text-xs">
-                      {month.totalCount}
-                    </span>
-                  </h3>
-                  <div className="flex-1 border-b border-foreground/6" />
-                  <ChevronDown
-                    className={`w-3.5 h-3.5 text-muted-foreground/30 group-hover/month:text-muted-foreground/50 transition-transform shrink-0 ${isMonthCollapsed ? "-rotate-90" : ""}`}
-                  />
-                </button>
-
-                {!isMonthCollapsed && (
-                  <div className="space-y-3">
-                    {month.days.map((day) => {
-                      const isDayCollapsed = collapsedGroups.has(`${month.key}:${day.label}`);
-                      return (
-                        <div
-                          key={day.label}
-                          className="rounded-lg border border-foreground/6 bg-card overflow-hidden"
+      {/* Intelligence entries */}
+      {sortedEntries.length > 0 ? (
+        <div className="mt-6 space-y-3">
+          {(selectedVectorEntryId || selectedVectorCategory) && (
+            <p className="text-label-sm text-muted-foreground/70">
+              Showing {filteredEntries.length} of {sortedEntries.length} entries
+            </p>
+          )}
+          {filteredEntries.map((entry) => (
+            <div
+              key={entry._id}
+              className={`rounded-lg border bg-card px-5 py-4 ${
+                selectedVectorEntryId === entry._id
+                  ? "border-foreground/20"
+                  : "border-foreground/6"
+              }`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  {editingId === entry._id ? (
+                    <div className="space-y-2">
+                      <div className="flex items-start gap-2">
+                        <textarea
+                          value={editContent}
+                          onChange={(e) => setEditContent(e.target.value)}
+                          className="flex-1 text-body-sm text-foreground bg-white dark:bg-white/5 border border-foreground/10 rounded-md px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-blue-500/40"
+                          rows={2}
+                          autoFocus
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                              saveEdit();
+                            } else if (e.key === "Escape") {
+                              setEditingId(null);
+                            }
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={saveEdit}
+                          disabled={savingEdit || !editContent.trim()}
+                          className="p-1 text-emerald-500 hover:text-emerald-600 cursor-pointer shrink-0 mt-1"
                         >
-                          <button
-                            type="button"
-                            onClick={() => toggleGroup(`${month.key}:${day.label}`)}
-                            className={`w-full px-5 py-2.5 flex items-center justify-between cursor-pointer hover:bg-foreground/[0.03] transition-colors bg-foreground/[0.015] ${isDayCollapsed ? "" : "border-b border-foreground/6"}`}
-                          >
-                            <p className="text-label-sm font-medium text-muted-foreground">
-                              {day.label}
-                              <span className="ml-1.5 opacity-50">{day.entries.length}</span>
-                            </p>
-                            <ChevronDown
-                              className={`w-3.5 h-3.5 text-muted-foreground/40 transition-transform ${isDayCollapsed ? "-rotate-90" : ""}`}
-                            />
-                          </button>
-                          {!isDayCollapsed && (
-                            <div className="divide-y divide-foreground/4">
-                              {day.entries.map((entry) => (
-                                <div
-                                  key={entry._id}
-                                  className="px-5 py-3 flex items-start gap-3 group hover:bg-foreground/[0.015] transition-colors"
-                                >
-                                  <div className="flex-1 min-w-0">
-                                    {editingId === entry._id ? (
-                                      <div className="space-y-2">
-                                        <div className="flex items-start gap-2">
-                                          <textarea
-                                            value={editContent}
-                                            onChange={(e) => setEditContent(e.target.value)}
-                                            className="flex-1 text-body-sm text-foreground bg-white dark:bg-white/5 border border-foreground/10 rounded-md px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-blue-500/40"
-                                            rows={2}
-                                            autoFocus
-                                            onKeyDown={(e) => {
-                                              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                                                saveEdit();
-                                              } else if (e.key === "Escape") {
-                                                setEditingId(null);
-                                              }
-                                            }}
-                                          />
-                                          <button
-                                            type="button"
-                                            onClick={saveEdit}
-                                            disabled={savingEdit || !editContent.trim()}
-                                            className="p-1 text-emerald-500 hover:text-emerald-600 cursor-pointer shrink-0 mt-1"
-                                          >
-                                            {savingEdit ? (
-                                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                            ) : (
-                                              <Check className="w-3.5 h-3.5" />
-                                            )}
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={() => setEditingId(null)}
-                                            className="p-1 text-muted-foreground/40 hover:text-muted-foreground cursor-pointer shrink-0 mt-1"
-                                          >
-                                            <X className="w-3.5 h-3.5" />
-                                          </button>
-                                        </div>
-                                        <div className="w-[220px]">
-                                          <SearchableSelect
-                                            options={buildOptionsWithCurrent(
-                                              INTEL_CATEGORY_OPTIONS,
-                                              editCategory,
-                                            ).map((cat) => ({
-                                              value: cat,
-                                              label: cat.replace(/_/g, " "),
-                                            }))}
-                                            value={editCategory}
-                                            onChange={setEditCategory}
-                                            placeholder="Select category..."
-                                          />
-                                        </div>
-                                      </div>
-                                    ) : (
-                                      <>
-                                        <p className="text-body-sm text-foreground leading-relaxed line-clamp-2">
-                                          {entry.content}
-                                        </p>
-                                        <div className="flex items-center gap-1.5 mt-1.5">
-                                          <span
-                                            className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${INTEL_CATEGORY_COLORS[entry.category] ?? INTEL_CATEGORY_COLORS.observation}`}
-                                          >
-                                            {entry.category.replace(/_/g, " ")}
-                                          </span>
-                                          <span
-                                            className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${INTEL_SOURCE_COLORS[entry.source] ?? INTEL_SOURCE_COLORS.manual}`}
-                                          >
-                                            {entry.source}
-                                          </span>
-                                          <span
-                                            className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${INTEL_CONFIDENCE_COLORS[entry.confidence] ?? INTEL_CONFIDENCE_COLORS.inferred}`}
-                                          >
-                                            {entry.confidence}
-                                          </span>
-                                        </div>
-                                      </>
-                                    )}
-                                  </div>
-                                  {editingId !== entry._id && (
-                                    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all shrink-0 mt-0.5">
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          startEditing(
-                                            entry._id,
-                                            entry.content,
-                                            entry.category,
-                                          )
-                                        }
-                                        className="p-1 text-muted-foreground/20 hover:text-blue-500 cursor-pointer"
-                                      >
-                                        <Pencil className="w-3.5 h-3.5" />
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleRemove(entry._id)}
-                                        disabled={removingId === entry._id}
-                                        className="p-1 text-muted-foreground/20 hover:text-red-500 cursor-pointer"
-                                      >
-                                        {removingId === entry._id ? (
-                                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                        ) : (
-                                          <Trash2 className="w-3.5 h-3.5" />
-                                        )}
-                                      </button>
-                                    </div>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
+                          {savingEdit ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Check className="w-3.5 h-3.5" />
                           )}
-                        </div>
-                      );
-                    })}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditingId(null)}
+                          className="p-1 text-muted-foreground/40 hover:text-muted-foreground cursor-pointer shrink-0 mt-1"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                      <div className="w-[220px]">
+                        <SearchableSelect
+                          options={buildOptionsWithCurrent(
+                            INTEL_CATEGORY_OPTIONS,
+                            editCategory,
+                          ).map((cat) => ({
+                            value: cat,
+                            label: cat.replace(/_/g, " "),
+                          }))}
+                          value={editCategory}
+                          onChange={setEditCategory}
+                          placeholder="Select category..."
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <p className="text-body-sm font-medium text-foreground leading-relaxed min-w-0">
+                        {entry.content}
+                      </p>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span
+                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${INTEL_CATEGORY_COLORS[entry.category] ?? INTEL_CATEGORY_COLORS.observation}`}
+                        >
+                          {entry.category.replace(/_/g, " ")}
+                        </span>
+                        <span
+                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${INTEL_SOURCE_COLORS[entry.source] ?? INTEL_SOURCE_COLORS.manual}`}
+                        >
+                          {entry.source}
+                        </span>
+                        <span
+                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${INTEL_CONFIDENCE_COLORS[entry.confidence] ?? INTEL_CONFIDENCE_COLORS.inferred}`}
+                        >
+                          {entry.confidence}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                {editingId !== entry._id && (
+                  <div className="flex items-center gap-1 opacity-60 hover:opacity-100 transition-all shrink-0 mt-0.5">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        startEditing(
+                          entry._id,
+                          entry.content,
+                          entry.category,
+                        )
+                      }
+                      className="p-1 text-muted-foreground/40 hover:text-foreground cursor-pointer"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleRemove(entry._id)}
+                      disabled={removingId === entry._id}
+                      className="p-1 text-muted-foreground/40 hover:text-red-500 cursor-pointer"
+                    >
+                      {removingId === entry._id ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Trash2 className="w-3.5 h-3.5" />
+                      )}
+                    </button>
                   </div>
                 )}
               </div>
-            );
-          })}
+            </div>
+          ))}
+          {filteredEntries.length === 0 && (
+            <div className="rounded-lg border border-foreground/6 bg-card px-5 py-8 text-center">
+              <p className="text-body-sm text-muted-foreground">
+                No entries match the current graph selection
+              </p>
+              <p className="text-label-sm text-muted-foreground/50 mt-0.5">
+                Clear the selected dot or category in the graph legend to show all entries.
+              </p>
+            </div>
+          )}
         </div>
       ) : (
         <div className="rounded-lg border border-foreground/6 bg-card px-5 py-8 text-center">
@@ -654,10 +550,6 @@ function PolicyExtractionsPanel() {
             <h3 className="!mb-0 text-sm font-medium text-foreground">
               Index by Policy
             </h3>
-            <p className="text-label-sm text-muted-foreground mt-0.5">
-              Search vectors per policy. Reindex individual policies to update
-              their search data.
-            </p>
           </div>
           <div className="divide-y divide-foreground/4">
             {stats.byPolicy.map(({ id, carrier, policyNumber, count }) => (

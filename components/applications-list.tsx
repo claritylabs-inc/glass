@@ -4,7 +4,7 @@ import { useState, useMemo } from "react";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
-import { Loader2, FileText, X, AlertCircle, RotateCcw, Copy, Check, Mail, Upload } from "lucide-react";
+import { Loader2, X, AlertCircle, RotateCcw, Copy, Check } from "lucide-react";
 import { PillButton } from "@/components/ui/pill-button";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
@@ -42,7 +42,6 @@ function ApplicationsEmptyState() {
   return (
     <div className="max-w-lg mx-auto py-16 text-center space-y-6">
       <div>
-        <FileText className="w-8 h-8 text-muted-foreground/20 mx-auto mb-3" />
         <p className="text-body-sm font-medium text-foreground">No applications yet</p>
         <p className="text-label-sm text-muted-foreground mt-1">
           Send an insurance application form to get started
@@ -56,7 +55,6 @@ function ApplicationsEmptyState() {
             onClick={handleCopy}
             className="w-full flex items-center gap-3 rounded-lg border border-foreground/6 p-3 hover:bg-foreground/[0.02] transition-colors cursor-pointer text-left"
           >
-            <Mail className="w-4 h-4 text-muted-foreground shrink-0" />
             <div className="flex-1 min-w-0">
               <p className="text-body-sm font-medium text-foreground">Email your agent</p>
               <p className="text-label-sm text-muted-foreground truncate">{agentEmail}</p>
@@ -74,7 +72,6 @@ function ApplicationsEmptyState() {
           onClick={() => router.push("/")}
           className="w-full flex items-center gap-3 rounded-lg border border-foreground/6 p-3 hover:bg-foreground/[0.02] transition-colors cursor-pointer text-left"
         >
-          <Upload className="w-4 h-4 text-muted-foreground shrink-0" />
           <div className="flex-1 min-w-0">
             <p className="text-body-sm font-medium text-foreground">Upload via web chat</p>
             <p className="text-label-sm text-muted-foreground">Attach a PDF to a Prism conversation</p>
@@ -128,7 +125,6 @@ function SessionList({
   if (sessions.length === 0) {
     return (
       <div className="p-8 text-center">
-        <FileText className="w-8 h-8 text-muted-foreground/15 mx-auto mb-2" />
         <p className="text-body-sm text-muted-foreground/50">
           No applications
         </p>

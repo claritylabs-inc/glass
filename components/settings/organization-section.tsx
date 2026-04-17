@@ -8,7 +8,6 @@ import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
 import {
   Loader2,
-  Globe,
   Sparkles,
   AlertTriangle,
   Trash2,
@@ -224,13 +223,12 @@ export function OrganizationSection() {
               </label>
               <div className="flex gap-2">
                 <div className="relative flex-1">
-                  <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground/40" />
                   <input
                     type="text"
                     value={website}
                     onChange={(e) => setWebsite(e.target.value)}
                     placeholder="https://yourcompany.com"
-                    className="w-full rounded-lg border border-foreground/8 bg-popover pl-8.5 pr-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                    className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
                   />
                 </div>
                 <button
@@ -299,12 +297,6 @@ export function OrganizationSection() {
         <div className="rounded-lg border border-foreground/6 bg-card mb-4">
           <div className="px-5 py-3.5 border-b border-foreground/6">
             <h3 className="!mb-0 text-sm font-medium text-foreground">Relationship Context</h3>
-            <p className="text-label-sm text-muted-foreground mt-0.5">
-              Helps Prism correctly categorize intelligence about your business relationships.
-              {website && (
-                <> Auto-populated from your website — edit to refine.</>
-              )}
-            </p>
           </div>
           <div className="px-5 py-5 space-y-4">
             <div>

@@ -115,9 +115,6 @@ export function IntegrationsSection() {
           <h3 className="text-body-sm font-medium text-foreground !mb-0">
             Integrations
           </h3>
-          <p className="text-label-sm text-muted-foreground/60">
-            Connect your tools to automatically sync business context
-          </p>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {INTEGRATIONS.map((item) => (

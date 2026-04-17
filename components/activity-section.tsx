@@ -80,9 +80,6 @@ export function ActivitySection({
     return (
       <FadeIn when={true} duration={0.6}>
         <div className="rounded-lg border border-foreground/6 bg-card px-6 py-8 text-center">
-          {EmptyIcon && (
-            <EmptyIcon className="w-5 h-5 text-muted-foreground/20 mx-auto mb-2" />
-          )}
           {emptyMessage && (
             <p className="text-body-sm text-muted-foreground/60">
               {emptyMessage}

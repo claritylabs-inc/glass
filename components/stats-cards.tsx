@@ -2,19 +2,17 @@
 
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { FileText, Mail, Clock, type LucideIcon } from "lucide-react";
+
 import { FadeIn } from "@/components/ui/fade-in";
 
 export function StatCard({
   label,
   value,
-  icon: Icon,
   href,
   staggerIndex = 0,
 }: {
   label: string;
   value: string | number;
-  icon: LucideIcon;
   href?: string;
   staggerIndex?: number;
 }) {
@@ -29,19 +27,12 @@ export function StatCard({
       transition={{ type: "tween", duration: 0.2, ease: "easeOut" }}
       className="group rounded-lg border border-foreground/6 bg-card px-3 py-2.5 sm:px-4 sm:py-3 cursor-pointer"
     >
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <p className="text-label-sm font-medium text-muted-foreground ">
-            {label}
-          </p>
-          <p className="text-lg sm:text-xl font-semibold text-foreground-highlight mt-1 font-mono">
-            {value}
-          </p>
-        </div>
-        <span className="mt-1 shrink-0 rounded-full bg-foreground/4 p-1.5 text-foreground/35 transition-colors group-hover:bg-foreground/8 group-hover:text-foreground/55">
-          <Icon className="w-3.5 h-3.5" />
-        </span>
-      </div>
+      <p className="text-label-sm font-medium text-muted-foreground ">
+        {label}
+      </p>
+      <p className="text-lg sm:text-xl font-semibold text-foreground-highlight mt-1 font-mono">
+        {value}
+      </p>
     </motion.div>
   );
 
@@ -66,19 +57,16 @@ export function StatsCards({ stats }: { stats: StatsData | undefined }) {
     {
       label: "Documents",
       value: stats !== undefined ? totalDocs : "—",
-      icon: FileText,
       href: "/policies",
     },
     {
       label: "Connections",
       value: stats?.activeConnections ?? "—",
-      icon: Mail,
       href: "/connections",
     },
     {
       label: "Last Scan",
       value: stats?.lastScanAt ? formatTimeAgo(stats.lastScanAt) : "Never",
-      icon: Clock,
       href: "/connections",
     },
   ];
@@ -90,7 +78,7 @@ export function StatsCards({ stats }: { stats: StatsData | undefined }) {
           key={stat.label}
           label={stat.label}
           value={stat.value}
-          icon={stat.icon}
+
           href={stat.href}
           staggerIndex={i}
         />
