@@ -4,7 +4,7 @@ import { useState, useMemo } from "react";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
-import { Loader2, FileText, X, AlertCircle, RotateCcw } from "lucide-react";
+import { Loader2, FileText, X, AlertCircle, RotateCcw, Copy, Check, Mail, Upload } from "lucide-react";
 import { PillButton } from "@/components/ui/pill-button";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
@@ -20,6 +20,70 @@ import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 
 dayjs.extend(relativeTime);
+
+const AGENT_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "prism.claritylabs.inc";
+
+function ApplicationsEmptyState() {
+  const viewer = useQuery(api.users.viewer);
+  const viewerOrg = useQuery(api.orgs.viewerOrg);
+  const router = useRouter();
+  const [copied, setCopied] = useState(false);
+
+  const agentHandle = viewerOrg?.org?.agentHandle ?? viewer?.agentHandle;
+  const agentEmail = agentHandle ? `${agentHandle}@${AGENT_DOMAIN}` : null;
+
+  const handleCopy = () => {
+    if (!agentEmail) return;
+    navigator.clipboard.writeText(agentEmail);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="max-w-lg mx-auto py-16 text-center space-y-6">
+      <div>
+        <FileText className="w-8 h-8 text-muted-foreground/20 mx-auto mb-3" />
+        <p className="text-body-sm font-medium text-foreground">No applications yet</p>
+        <p className="text-label-sm text-muted-foreground mt-1">
+          Send an insurance application form to get started
+        </p>
+      </div>
+
+      <div className="space-y-3 text-left">
+        {agentEmail && (
+          <button
+            type="button"
+            onClick={handleCopy}
+            className="w-full flex items-center gap-3 rounded-lg border border-foreground/6 p-3 hover:bg-foreground/[0.02] transition-colors cursor-pointer text-left"
+          >
+            <Mail className="w-4 h-4 text-muted-foreground shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-body-sm font-medium text-foreground">Email your agent</p>
+              <p className="text-label-sm text-muted-foreground truncate">{agentEmail}</p>
+            </div>
+            {copied ? (
+              <Check className="w-4 h-4 text-green-500 shrink-0" />
+            ) : (
+              <Copy className="w-4 h-4 text-muted-foreground/40 shrink-0" />
+            )}
+          </button>
+        )}
+
+        <button
+          type="button"
+          onClick={() => router.push("/")}
+          className="w-full flex items-center gap-3 rounded-lg border border-foreground/6 p-3 hover:bg-foreground/[0.02] transition-colors cursor-pointer text-left"
+        >
+          <Upload className="w-4 h-4 text-muted-foreground shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-body-sm font-medium text-foreground">Upload via web chat</p>
+            <p className="text-label-sm text-muted-foreground">Attach a PDF to a Prism conversation</p>
+          </div>
+        </button>
+      </div>
+    </div>
+  );
+}
 
 const STATUS_CONFIG: Record<
   string,
@@ -244,15 +308,7 @@ export function ApplicationsList() {
 
   if (sessions.length === 0) {
     return (
-      <div className="rounded-lg border border-foreground/6 bg-card p-8 text-center">
-        <FileText className="w-8 h-8 text-muted-foreground/15 mx-auto mb-2" />
-        <p className="text-body-sm text-muted-foreground/50">
-          No applications yet
-        </p>
-        <p className="text-label-sm text-muted-foreground/30 mt-1">
-          Email an insurance application form to your agent to get started
-        </p>
-      </div>
+      <ApplicationsEmptyState />
     );
   }
 
