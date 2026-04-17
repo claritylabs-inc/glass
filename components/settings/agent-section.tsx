@@ -1,121 +1,24 @@
 "use client";
 
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
 import { FadeIn } from "@/components/ui/fade-in";
 import { AgentHandleForm } from "@/components/agent-handle-form";
-import { motion } from "framer-motion";
 import {
   Copy,
   Check,
   MessageSquare,
   Users,
-  Forward,
-  Asterisk,
-  HelpCircle,
   FileText,
   X,
-  Settings,
+  Sparkles,
   ChevronDown,
 } from "lucide-react";
 
-const AGENT_TABS = [
-  { id: "help", label: "Help", icon: HelpCircle },
-  { id: "settings", label: "Settings", icon: Settings },
-] as const;
-
-type AgentTab = (typeof AGENT_TABS)[number]["id"];
-
 const AGENT_DOMAIN =
   process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "prism.claritylabs.inc";
-
-/* ── Mode explainer cards ── */
-function ModeExplainerCards({
-  companyDomains,
-}: {
-  companyDomains?: string[];
-}) {
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-5">
-          <div className="flex items-center gap-2 mb-2">
-            <MessageSquare className="w-4 h-4 text-violet-600" />
-            <h4 className="!mb-0 text-body-sm font-semibold">Direct Mode</h4>
-          </div>
-          <p className="text-label-sm text-muted-foreground/60">
-            Email the agent directly for policy questions or to fill out
-            insurance applications. Attach a PDF application form and the agent
-            will walk you through it.
-          </p>
-        </div>
-        <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-5">
-          <div className="flex items-center gap-2 mb-2">
-            <Users className="w-4 h-4 text-sky-600" />
-            <h4 className="!mb-0 text-body-sm font-semibold">CC Mode</h4>
-          </div>
-          <p className="text-label-sm text-muted-foreground/60">
-            CC the agent on a reply to a customer. The agent replies to all
-            participants in a professional, customer-facing tone.
-          </p>
-        </div>
-        <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-5">
-          <div className="flex items-center gap-2 mb-2">
-            <Forward className="w-4 h-4 text-teal-600" />
-            <h4 className="!mb-0 text-body-sm font-semibold">Forward Mode</h4>
-          </div>
-          <p className="text-label-sm text-muted-foreground/60">
-            Forward a customer email to the agent. The agent replies directly to
-            the original sender with you CC&#39;d.
-          </p>
-        </div>
-        <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-5">
-          <div className="flex items-center gap-2 mb-2">
-            <FileText className="w-4 h-4 text-rose-600" />
-            <h4 className="!mb-0 text-body-sm font-semibold">
-              Application Mode
-            </h4>
-          </div>
-          <p className="text-label-sm text-muted-foreground/60">
-            Attach an insurance application PDF and the agent extracts fields,
-            auto-fills from saved context, and asks you the rest in batches.
-          </p>
-        </div>
-        <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-5">
-          <div className="flex items-center gap-2 mb-2">
-            <HelpCircle className="w-4 h-4 text-amber-600" />
-            <h4 className="!mb-0 text-body-sm font-semibold">Unknown Mode</h4>
-          </div>
-          <p className="text-label-sm text-muted-foreground/60">
-            Emails the agent can&#39;t confidently classify are forwarded to you
-            for review. The agent won&#39;t reply until you respond.
-          </p>
-        </div>
-      </div>
-      {companyDomains ? (
-        <p className="text-label-sm text-muted-foreground/40">
-          Your company {companyDomains.length === 1 ? "domain" : "domains"}:{" "}
-          {companyDomains.map((d, i) => (
-            <span key={d}>
-              {i > 0 && ", "}
-              <span className="font-mono text-muted-foreground/60">@{d}</span>
-            </span>
-          ))}{" "}
-          — emails from{" "}
-          {companyDomains.length === 1 ? "this domain" : "these domains"} are
-          treated as internal.
-        </p>
-      ) : (
-        <p className="text-label-sm text-muted-foreground/30">
-          Set your company website in your profile to enable automatic internal
-          email detection.
-        </p>
-      )}
-    </div>
-  );
-}
 
 /* ── COI Request Handling settings ── */
 function CoiSettingsCard({
@@ -193,8 +96,11 @@ function CoiSettingsCard({
   ];
 
   return (
-    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-5">
-      <h4 className="!mb-4 text-body-sm font-semibold">COI Settings</h4>
+    <div>
+      <p className="text-body-sm font-medium text-foreground mb-1">COI Settings</p>
+      <p className="text-label-sm text-muted-foreground/50 mb-4">
+        Configure how COI requests are handled by the agent
+      </p>
 
       {/* Auto-generate toggle */}
       <div className="flex items-center justify-between mb-4 pb-4 border-b border-foreground/6">
@@ -216,7 +122,7 @@ function CoiSettingsCard({
           aria-checked={autoGenerate}
         >
           <span
-            className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${
+            className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white transition-transform ${
               autoGenerate ? "translate-x-4" : "translate-x-0"
             }`}
           />
@@ -265,56 +171,6 @@ function CoiSettingsCard({
   );
 }
 
-/* ── Detailed help section ── */
-function AgentHelpSection({ agentEmail }: { agentEmail: string }) {
-  const faqs = [
-    {
-      q: "How does the agent decide which mode to use?",
-      a: "The agent checks where it appears in the email. If it's in the CC field, it uses CC mode. If an internal user forwards an email, it uses Forward mode. If the agent is the sole direct recipient, it uses Direct mode.",
-    },
-    {
-      q: "What does the customer see when I CC the agent?",
-      a: "The agent replies to all participants on the thread in a professional, customer-facing tone.",
-    },
-    {
-      q: "What happens when I forward a customer email?",
-      a: "The agent extracts the original sender and replies directly to them. You are automatically CC'd.",
-    },
-    {
-      q: "How do I fill out an insurance application?",
-      a: "Email the agent directly with a PDF application form attached. The agent will extract all fields, auto-fill what it knows, and ask you the remaining questions in batches.",
-    },
-    {
-      q: "What is Business Context?",
-      a: "Reusable information about your company learned from past application answers. Used to auto-fill future applications. Manage it in Organization Settings.",
-    },
-  ];
-
-  return (
-    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-5">
-      <h4 className="!mb-4 text-body-sm font-semibold">How it works</h4>
-      <div className="space-y-4">
-        {faqs.map((faq, i) => (
-          <div key={i}>
-            <p className="text-body-sm font-medium text-foreground mb-1">
-              {faq.q}
-            </p>
-            <p className="text-label-sm text-muted-foreground/60 leading-relaxed">
-              {faq.a}
-            </p>
-          </div>
-        ))}
-      </div>
-      <div className="mt-6 pt-4 border-t border-foreground/6">
-        <p className="text-label-sm text-muted-foreground/40">
-          Your agent address:{" "}
-          <span className="font-mono text-muted-foreground/60">{agentEmail}</span>
-        </p>
-      </div>
-    </div>
-  );
-}
-
 /* ── Email notification toggle ── */
 function ChatEmailNotificationsToggle() {
   const viewerOrg = useQuery(api.orgs.viewerOrg);
@@ -337,30 +193,28 @@ function ChatEmailNotificationsToggle() {
   if (!isAdmin) return null;
 
   return (
-    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-5">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-body-sm font-medium text-foreground">
-            Email notifications for chat responses
-          </p>
-          <p className="text-label-sm text-muted-foreground/60 mt-0.5 max-w-md">
-            Send agent chat replies to your email to keep your inbox in sync.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={handleToggle}
-          className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors cursor-pointer shrink-0 ml-4 ${
-            enabled ? "bg-foreground" : "bg-foreground/15"
-          }`}
-        >
-          <span
-            className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
-              enabled ? "translate-x-4.5" : "translate-x-0.5"
-            }`}
-          />
-        </button>
+    <div className="flex items-center justify-between">
+      <div>
+        <p className="text-body-sm font-medium text-foreground">
+          Email notifications for chat responses
+        </p>
+        <p className="text-label-sm text-muted-foreground/60 mt-0.5 max-w-md">
+          Send agent chat replies to your email to keep your inbox in sync.
+        </p>
       </div>
+      <button
+        type="button"
+        onClick={handleToggle}
+        className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors cursor-pointer shrink-0 ml-4 ${
+          enabled ? "bg-foreground" : "bg-foreground/15"
+        }`}
+      >
+        <span
+          className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+            enabled ? "translate-x-4.5" : "translate-x-0.5"
+          }`}
+        />
+      </button>
     </div>
   );
 }
@@ -371,7 +225,7 @@ function AutoSendEmailsToggle() {
   const updateOrg = useMutation(api.orgs.updateOrg);
   const org = viewerOrg?.org;
   const isAdmin = viewerOrg?.membership?.role === "admin";
-  const enabled = org?.autoSendEmails === true; // defaults to false
+  const enabled = org?.autoSendEmails === true;
 
   async function handleToggle() {
     try {
@@ -387,31 +241,29 @@ function AutoSendEmailsToggle() {
   if (!isAdmin) return null;
 
   return (
-    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-5">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-body-sm font-medium text-foreground">
-            Auto-send emails from chat
-          </p>
-          <p className="text-label-sm text-muted-foreground/60 mt-0.5 max-w-md">
-            When disabled, drafted emails require manual confirmation before
-            sending.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={handleToggle}
-          className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors cursor-pointer shrink-0 ml-4 ${
-            enabled ? "bg-foreground" : "bg-foreground/15"
-          }`}
-        >
-          <span
-            className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
-              enabled ? "translate-x-4.5" : "translate-x-0.5"
-            }`}
-          />
-        </button>
+    <div className="flex items-center justify-between">
+      <div>
+        <p className="text-body-sm font-medium text-foreground">
+          Auto-send emails from chat
+        </p>
+        <p className="text-label-sm text-muted-foreground/60 mt-0.5 max-w-md">
+          When disabled, drafted emails require manual confirmation before
+          sending.
+        </p>
       </div>
+      <button
+        type="button"
+        onClick={handleToggle}
+        className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors cursor-pointer shrink-0 ml-4 ${
+          enabled ? "bg-foreground" : "bg-foreground/15"
+        }`}
+      >
+        <span
+          className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+            enabled ? "translate-x-4.5" : "translate-x-0.5"
+          }`}
+        />
+      </button>
     </div>
   );
 }
@@ -422,7 +274,7 @@ function EmailSendDelaySetting() {
   const updateOrg = useMutation(api.orgs.updateOrg);
   const org = viewerOrg?.org;
   const isAdmin = viewerOrg?.membership?.role === "admin";
-  const current = org?.emailSendDelay ?? 5; // default 5s
+  const current = org?.emailSendDelay ?? 5;
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -464,45 +316,43 @@ function EmailSendDelaySetting() {
   if (!isAdmin) return null;
 
   return (
-    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-5">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-body-sm font-medium text-foreground">
-            Email send delay
-          </p>
-          <p className="text-label-sm text-muted-foreground/60 mt-0.5 max-w-md">
-            Time window to cancel outgoing emails before they&#39;re sent.
-          </p>
-        </div>
-        <div ref={containerRef} className="relative shrink-0 ml-4">
-          <button
-            type="button"
-            onClick={() => setOpen(!open)}
-            className="flex items-center gap-1.5 rounded-lg border border-foreground/8 bg-popover px-3 py-1.5 text-body-sm text-foreground transition-colors hover:border-foreground/15 cursor-pointer"
-          >
-            <span>{selectedLabel}</span>
-            <ChevronDown className="w-3 h-3 text-muted-foreground/50" />
-          </button>
-          {open && (
-            <div className="absolute z-50 top-full right-0 mt-1 rounded-lg border border-foreground/10 bg-popover shadow-md overflow-hidden min-w-[100px]">
-              <div className="py-1">
-                {options.map((opt) => (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    onClick={() => handleSelect(opt.value)}
-                    className="w-full flex items-center justify-between gap-3 px-3 py-1.5 text-body-sm text-left hover:bg-foreground/[0.04] transition-colors cursor-pointer"
-                  >
-                    <span>{opt.label}</span>
-                    {opt.value === current && (
-                      <Check className="w-3 h-3 text-foreground shrink-0" />
-                    )}
-                  </button>
-                ))}
-              </div>
+    <div className="flex items-center justify-between">
+      <div>
+        <p className="text-body-sm font-medium text-foreground">
+          Email send delay
+        </p>
+        <p className="text-label-sm text-muted-foreground/60 mt-0.5 max-w-md">
+          Time window to cancel outgoing emails before they&apos;re sent.
+        </p>
+      </div>
+      <div ref={containerRef} className="relative shrink-0 ml-4">
+        <button
+          type="button"
+          onClick={() => setOpen(!open)}
+          className="flex items-center gap-1.5 rounded-lg border border-foreground/8 bg-popover px-3 py-1.5 text-body-sm text-foreground transition-colors hover:border-foreground/15 cursor-pointer"
+        >
+          <span>{selectedLabel}</span>
+          <ChevronDown className="w-3 h-3 text-muted-foreground/50" />
+        </button>
+        {open && (
+          <div className="absolute z-50 top-full right-0 mt-1 rounded-lg border border-foreground/10 bg-popover overflow-hidden min-w-[100px]">
+            <div className="py-1">
+              {options.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => handleSelect(opt.value)}
+                  className="w-full flex items-center justify-between gap-3 px-3 py-1.5 text-body-sm text-left hover:bg-foreground/[0.04] transition-colors cursor-pointer"
+                >
+                  <span>{opt.label}</span>
+                  {opt.value === current && (
+                    <Check className="w-3 h-3 text-foreground shrink-0" />
+                  )}
+                </button>
+              ))}
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -513,97 +363,48 @@ export function AgentSection() {
   const viewer = useQuery(api.users.viewer);
   const viewerOrg = useQuery(api.orgs.viewerOrg);
   const [copied, setCopied] = useState(false);
-  const [activeTab, setActiveTab] = useState<AgentTab>("help");
 
   const org = viewerOrg?.org;
   const handle = org?.agentHandle ?? viewer?.agentHandle;
   const agentEmail = handle ? `${handle}@${AGENT_DOMAIN}` : null;
 
-  const companyDomains = useMemo(() => {
-    if (!viewer) return undefined;
-    const consumerDomains = new Set([
-      "gmail.com",
-      "googlemail.com",
-      "yahoo.com",
-      "yahoo.co.uk",
-      "outlook.com",
-      "hotmail.com",
-      "live.com",
-      "msn.com",
-      "aol.com",
-      "icloud.com",
-      "me.com",
-      "mac.com",
-      "protonmail.com",
-      "proton.me",
-      "zoho.com",
-      "mail.com",
-      "ymail.com",
-      "gmx.com",
-      "gmx.net",
-    ]);
-    const domains: string[] = [];
-    const website = org?.website ?? viewer.companyWebsite;
-    if (website) {
-      try {
-        const hostname = new URL(website).hostname.replace(/^www\./, "");
-        if (!consumerDomains.has(hostname)) domains.push(hostname);
-      } catch {
-        /* ignore */
-      }
-    }
-    if (viewer.email) {
-      const domain = viewer.email.split("@")[1]?.toLowerCase();
-      if (domain && !consumerDomains.has(domain) && !domains.includes(domain)) {
-        domains.push(domain);
-      }
-    }
-    return domains.length > 0 ? domains : undefined;
-  }, [viewer, org]);
-
   return (
     <>
       {!handle ? (
-        /* ── No handle: show setup form + explainers ── */
-        <>
-          <FadeIn when={viewer !== undefined} staggerIndex={0} duration={0.6}>
-            <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-5 mb-6">
-              <AgentHandleForm
-                suggestedHandle={
-                  (org?.name ?? viewer?.companyName)
-                    ? (org?.name ?? viewer?.companyName ?? "")
-                        .toLowerCase()
-                        .replace(/[^a-z0-9]+/g, "-")
-                        .replace(/^-|-$/g, "")
-                    : undefined
-                }
-              />
-              <p className="text-label-sm text-muted-foreground/40 mt-3">
-                Agent handle can also be managed in{" "}
-                <a
-                  href="/settings"
-                  className="text-foreground/60 hover:text-foreground underline"
-                >
-                  Organization Settings
-                </a>
-                .
-              </p>
-            </div>
-          </FadeIn>
-
-          <FadeIn when={true} staggerIndex={1} duration={0.6}>
-            <ModeExplainerCards companyDomains={companyDomains} />
-          </FadeIn>
-        </>
+        /* ── No handle: show setup form ── */
+        <FadeIn when={viewer !== undefined} staggerIndex={0} duration={0.6}>
+          <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-5">
+            <AgentHandleForm
+              suggestedHandle={
+                (org?.name ?? viewer?.companyName)
+                  ? (org?.name ?? viewer?.companyName ?? "")
+                      .toLowerCase()
+                      .replace(/[^a-z0-9]+/g, "-")
+                      .replace(/^-|-$/g, "")
+                  : undefined
+              }
+            />
+            <p className="text-label-sm text-muted-foreground/40 mt-3">
+              Agent handle can also be managed in{" "}
+              <a
+                href="/settings"
+                className="text-foreground/60 hover:text-foreground underline"
+              >
+                Organization Settings
+              </a>
+              .
+            </p>
+          </div>
+        </FadeIn>
       ) : (
-        /* ── Handle claimed: help & settings ── */
-        <>
-          {/* Agent email card */}
+        /* ── Handle claimed: settings only ── */
+        <div className="space-y-6">
+          {/* Agent identity card */}
           <FadeIn when={true} staggerIndex={0} duration={0.6}>
-            <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-4 mb-6">
+            <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-4">
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
                 <div className="flex items-center gap-2">
-                  <Asterisk className="w-4 h-4 text-primary-light shrink-0" />
+                  <Sparkles className="w-4 h-4 text-primary-light shrink-0" />
                   <span className="text-sm font-semibold text-foreground shrink-0">
                     Prism
                   </span>
@@ -629,71 +430,43 @@ export function AgentSection() {
             </div>
           </FadeIn>
 
-          {/* Tabs */}
+          {/* Settings */}
           <FadeIn when={true} staggerIndex={1} duration={0.6}>
-            <div className="flex items-center gap-1 border-b border-foreground/6 mb-6">
-              {AGENT_TABS.map((tab) => (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`relative px-3 py-2 text-body-sm font-medium whitespace-nowrap transition-colors cursor-pointer ${
-                    activeTab === tab.id
-                      ? "text-foreground"
-                      : "text-muted-foreground hover:text-foreground/70"
-                  }`}
-                >
-                  {tab.label}
-                  {activeTab === tab.id && (
-                    <motion.div
-                      layoutId="agent-section-tab-indicator"
-                      className="absolute bottom-0 left-0 right-0 h-[2px] bg-foreground"
-                      transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                    />
-                  )}
-                </button>
-              ))}
-            </div>
-          </FadeIn>
+            <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-5 space-y-6">
+              <CoiSettingsCard
+                coiHandling={
+                  (org?.coiHandling ??
+                    viewer?.coiHandling) as
+                    | "broker"
+                    | "user"
+                    | "ignore"
+                    | undefined
+                }
+                autoGenerateCoi={org?.autoGenerateCoi}
+                hasBroker={!!(org?.insuranceBroker ?? viewer?.insuranceBroker)}
+              />
 
-          {/* Tab content */}
-          <FadeIn when={true} staggerIndex={2} duration={0.6}>
-            {activeTab === "help" ? (
-              <div className="space-y-6">
-                <ModeExplainerCards companyDomains={companyDomains} />
-                <AgentHelpSection agentEmail={agentEmail!} />
-              </div>
-            ) : (
-              <div className="space-y-6">
-                <CoiSettingsCard
-                  coiHandling={
-                    (org?.coiHandling ??
-                      viewer?.coiHandling) as
-                      | "broker"
-                      | "user"
-                      | "ignore"
-                      | undefined
-                  }
-                  autoGenerateCoi={org?.autoGenerateCoi}
-                  hasBroker={!!(org?.insuranceBroker ?? viewer?.insuranceBroker)}
-                />
+              <div className="pt-4 border-t border-foreground/6 space-y-5">
                 <ChatEmailNotificationsToggle />
                 <AutoSendEmailsToggle />
                 <EmailSendDelaySetting />
-                <p className="text-label-sm text-muted-foreground/40">
-                  COI and broker settings can also be managed in{" "}
-                  <a
-                    href="/settings"
-                    className="text-foreground/60 hover:text-foreground underline"
-                  >
-                    Organization Settings
-                  </a>
-                  .
-                </p>
               </div>
-            )}
+            </div>
           </FadeIn>
-        </>
+
+          <FadeIn when={true} staggerIndex={2} duration={0.6}>
+            <p className="text-label-sm text-muted-foreground/40">
+              COI and broker settings can also be managed in{" "}
+              <a
+                href="/settings"
+                className="text-foreground/60 hover:text-foreground underline"
+              >
+                Organization Settings
+              </a>
+              .
+            </p>
+          </FadeIn>
+        </div>
       )}
     </>
   );

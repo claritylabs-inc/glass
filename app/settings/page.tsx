@@ -5,28 +5,30 @@ import { AppShell } from "@/components/app-shell";
 import {
   Mail,
   Sparkles,
-  Activity,
-  Bot,
   Building2,
   Users,
   Key,
+  FileText,
+  Puzzle,
 } from "lucide-react";
 import { OrganizationSection } from "@/components/settings/organization-section";
 import { TeamSection } from "@/components/settings/team-section";
 import { ApiKeysSection } from "@/components/settings/api-keys-section";
-import { SourcesSection } from "@/components/settings/sources-section";
+import { EmailConnectionsSection } from "@/components/settings/email-connections-section";
+import { DocumentsSection } from "@/components/settings/documents-section";
+import { IntegrationsSection } from "@/components/settings/integrations-section";
 import { IntelligenceSection } from "@/components/settings/intelligence-section";
-import { ActivitySection } from "@/components/settings/activity-section";
 import { AgentSection } from "@/components/settings/agent-section";
 
 const SETTINGS_SECTIONS = [
   { id: "organization", label: "Organization", icon: Building2 },
   { id: "team", label: "Team", icon: Users },
   { id: "api-keys", label: "API Keys", icon: Key },
-  { id: "sources", label: "Sources", icon: Mail },
+  { id: "email-connections", label: "Email Connections", icon: Mail },
+  { id: "documents", label: "Documents", icon: FileText },
+  { id: "integrations", label: "Integrations", icon: Puzzle },
   { id: "intelligence", label: "Intelligence", icon: Sparkles },
-  { id: "activity", label: "Activity", icon: Activity },
-  { id: "agent", label: "Agent", icon: Bot },
+  { id: "agent", label: "Agent", icon: Sparkles },
 ] as const;
 
 type SettingsSection = (typeof SETTINGS_SECTIONS)[number]["id"];
@@ -47,7 +49,7 @@ export default function SettingsPage() {
     SETTINGS_SECTIONS.find((s) => s.id === activeSection)?.label ?? "Settings";
 
   return (
-    <AppShell>
+    <AppShell breadcrumbDetail={activeLabel}>
       {/* Mobile: horizontal scrollable tabs */}
       <div className="lg:hidden mb-6 -mx-1 overflow-x-auto">
         <div className="flex gap-1 px-1 min-w-max">
@@ -59,13 +61,13 @@ export default function SettingsPage() {
                 key={section.id}
                 type="button"
                 onClick={() => handleSectionChange(section.id)}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-body-sm whitespace-nowrap transition-colors cursor-pointer ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-body-sm whitespace-nowrap transition-colors cursor-pointer ${
                   isActive
-                    ? "bg-foreground/5 text-foreground font-medium"
-                    : "text-muted-foreground hover:text-foreground hover:bg-foreground/3"
+                    ? "bg-foreground/[0.05] text-foreground font-medium"
+                    : "text-muted-foreground hover:bg-foreground/[0.04]"
                 }`}
               >
-                <Icon size={16} />
+                <Icon className="w-4 h-4 shrink-0" />
                 {section.label}
               </button>
             );
@@ -76,8 +78,8 @@ export default function SettingsPage() {
       {/* Desktop: sidebar + content */}
       <div className="hidden lg:flex gap-8">
         {/* Sidebar nav */}
-        <nav className="w-[200px] shrink-0">
-          <p className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider px-3 mb-2">
+        <nav className="w-[200px] shrink-0 self-start sticky top-0">
+          <p className="text-[11px] font-medium text-muted-foreground/50 uppercase tracking-wider px-3 pt-5 pb-1.5">
             Settings
           </p>
           <ul className="space-y-0.5">
@@ -89,14 +91,14 @@ export default function SettingsPage() {
                   <button
                     type="button"
                     onClick={() => handleSectionChange(section.id)}
-                    className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-body-sm transition-colors cursor-pointer ${
+                    className={`w-full flex items-center gap-2.5 px-3 py-1.5 rounded-md text-body-sm transition-colors cursor-pointer ${
                       isActive
-                        ? "bg-foreground/5 text-foreground font-medium"
-                        : "text-muted-foreground hover:text-foreground hover:bg-foreground/3"
+                        ? "bg-foreground/[0.05] text-foreground"
+                        : "text-muted-foreground hover:bg-foreground/[0.04]"
                     }`}
                   >
-                    <Icon size={16} />
-                    {section.label}
+                    <Icon className="w-4 h-4 shrink-0" />
+                    <span className="flex-1 text-left">{section.label}</span>
                   </button>
                 </li>
               );
@@ -106,40 +108,35 @@ export default function SettingsPage() {
 
         {/* Section content */}
         <div className="flex-1 min-w-0">
-          <SectionContent section={activeSection} sectionLabel={activeLabel} />
+          <SectionContent section={activeSection} />
         </div>
       </div>
 
       {/* Mobile: section content below tabs */}
       <div className="lg:hidden">
-        <SectionContent section={activeSection} sectionLabel={activeLabel} />
+        <SectionContent section={activeSection} />
       </div>
     </AppShell>
   );
 }
 
-function SectionContent({
-  section,
-  sectionLabel,
-}: {
-  section: SettingsSection;
-  sectionLabel: string;
-}) {
+function SectionContent({ section }: { section: SettingsSection }) {
   return (
     <div>
-      <h2 className="text-lg font-semibold mb-4">{sectionLabel}</h2>
       {section === "organization" ? (
         <OrganizationSection />
       ) : section === "team" ? (
         <TeamSection />
       ) : section === "api-keys" ? (
         <ApiKeysSection />
-      ) : section === "sources" ? (
-        <SourcesSection />
+      ) : section === "email-connections" ? (
+        <EmailConnectionsSection />
+      ) : section === "documents" ? (
+        <DocumentsSection />
+      ) : section === "integrations" ? (
+        <IntegrationsSection />
       ) : section === "intelligence" ? (
         <IntelligenceSection />
-      ) : section === "activity" ? (
-        <ActivitySection />
       ) : section === "agent" ? (
         <AgentSection />
       ) : null}
