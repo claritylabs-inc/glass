@@ -1,16 +1,65 @@
 "use client";
 
 import { useCallback, useRef, useImperativeHandle, forwardRef } from "react";
-import { ArrowUp, Plus, Asterisk, Square } from "lucide-react";
+import { ArrowUp, ImageIcon, Monitor, Asterisk, Square } from "lucide-react";
 import {
   PromptInput,
   PromptInputTextarea,
   PromptInputFooter,
   PromptInputTools,
+  usePromptInputAttachments,
+  captureScreenshot,
   type PromptInputMessage,
 } from "@/components/ai-elements/prompt-input";
 import { Spinner } from "@/components/ui/spinner";
 import type { ChatStatus } from "ai";
+
+// Inner component — must render inside <PromptInput> to access LocalAttachmentsContext
+function AttachmentActionButtons() {
+  const attachments = usePromptInputAttachments();
+
+  const handleAttach = useCallback(() => {
+    attachments.openFileDialog();
+  }, [attachments]);
+
+  const handleScreenshot = useCallback(async () => {
+    try {
+      const screenshot = await captureScreenshot();
+      if (screenshot) {
+        attachments.add([screenshot]);
+      }
+    } catch (error) {
+      if (
+        error instanceof DOMException &&
+        (error.name === "NotAllowedError" || error.name === "AbortError")
+      ) {
+        return;
+      }
+      throw error;
+    }
+  }, [attachments]);
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={handleAttach}
+        title="Add photos or files"
+        className="w-6 h-6 flex items-center justify-center rounded-md text-muted-foreground/30 hover:text-muted-foreground/60 hover:bg-foreground/[0.04] transition-colors cursor-pointer"
+      >
+        <ImageIcon className="w-3.5 h-3.5" />
+      </button>
+      <button
+        type="button"
+        onClick={handleScreenshot}
+        title="Take screenshot"
+        className="w-6 h-6 flex items-center justify-center rounded-md text-muted-foreground/30 hover:text-muted-foreground/60 hover:bg-foreground/[0.04] transition-colors cursor-pointer"
+      >
+        <Monitor className="w-3.5 h-3.5" />
+      </button>
+    </>
+  );
+}
 
 export interface PrismPromptInputHandle {
   setValueAndFocus: (value: string) => void;
@@ -42,7 +91,6 @@ export const PrismPromptInput = forwardRef<
   ref,
 ) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useImperativeHandle(ref, () => ({
     setValueAndFocus: (v: string) => {
@@ -109,23 +157,7 @@ export const PrismPromptInput = forwardRef<
           {/* Right side: attach + submit */}
           <PromptInputTools>
             <div className="flex items-center gap-1">
-              {showAttach && (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="w-6 h-6 flex items-center justify-center rounded-md text-muted-foreground/30 hover:text-muted-foreground/60 hover:bg-foreground/[0.04] transition-colors cursor-pointer"
-                  >
-                    <Plus className="w-4 h-4" />
-                  </button>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    multiple
-                    className="hidden"
-                  />
-                </>
-              )}
+              {showAttach && <AttachmentActionButtons />}
               {isGenerating && onStop ? (
                 <button
                   type="button"
