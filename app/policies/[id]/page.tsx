@@ -6,7 +6,20 @@ import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
 import { FadeIn } from "@/components/ui/fade-in";
-import { ArrowLeft, Download, FileText, Calendar, Shield, DollarSign, Trash2, Upload, ChevronDown, ChevronRight, Loader2, Scale, Phone, Receipt, AlertTriangle, Users, Eye, Mail, MessageSquare, Activity, CheckCircle, XCircle, RefreshCw, Asterisk, X, Ban, BookOpen, Stamp, Clock, Code, Play, Copy, Check, Search } from "lucide-react";
+import {
+  ArrowLeft,
+  Upload,
+  Loader2,
+  RefreshCw,
+  MessageSquare,
+  Trash2,
+  Check,
+  Copy,
+  Play,
+  Code,
+  Search,
+  Eye,
+} from "lucide-react";
 import { motion } from "framer-motion";
 import dayjs from "dayjs";
 import { ModeBadge } from "@/components/mode-badge";
@@ -15,7 +28,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import Link from "next/link";
 import { TerminalLog } from "@/components/terminal-log";
 import { useRouter, useSearchParams } from "next/navigation";
-import { POLICY_TYPE_LABELS, POLICY_TYPE_COLORS } from "@/convex/lib/policyTypes";
 import { Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
 import { PillButton } from "@/components/ui/pill-button";
@@ -29,88 +41,15 @@ import {
 } from "@/components/ui/dialog";
 import { usePdf } from "@/components/pdf-context";
 import { usePageContext } from "@/hooks/use-page-context";
-import { ProseMarkdown } from "@/components/prose-markdown";
+import { X } from "lucide-react";
 
+import { PolicySummary } from "./policy-summary";
+import { ExtractionPanel } from "./extraction-panel";
 
-
-function PageRef({ page }: { page: number }) {
-  const pdf = usePdf();
-
-  if (!pdf.fileUrl) {
-    return (
-      <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-foreground/5 text-muted-foreground/60">
-        p.{page}
-      </span>
-    );
-  }
-
-  return (
-    <span
-      role="button"
-      tabIndex={0}
-      onClick={(e) => {
-        e.stopPropagation();
-        pdf.navigateToPage(page);
-      }}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          e.stopPropagation();
-          pdf.navigateToPage(page);
-        }
-      }}
-      className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-foreground/5 text-muted-foreground/60 hover:bg-blue-100 hover:text-blue-600 transition-colors cursor-pointer"
-    >
-      p.{page}
-    </span>
-  );
-}
-
-const SECTION_TYPE_LABELS: Record<string, string> = {
-  declarations: "Declarations",
-  insuring_agreement: "Insuring Agreement",
-  policy_form: "Policy Form",
-  endorsement: "Endorsement",
-  application: "Application",
-  exclusion: "Exclusion",
-  condition: "Condition",
-  definition: "Definition",
-  schedule: "Schedule",
-  subjectivity: "Subjectivity",
-  warranty: "Warranty",
-  notice: "Notice",
-  regulatory: "Regulatory",
-  other: "Other",
-};
-
-const SECTION_TYPE_COLORS: Record<string, string> = {
-  declarations: "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400",
-  insuring_agreement: "bg-green-50 text-green-600 dark:bg-green-950/40 dark:text-green-400",
-  policy_form: "bg-cyan-50 text-cyan-600 dark:bg-cyan-950/40 dark:text-cyan-400",
-  endorsement: "bg-sky-50 text-sky-600 dark:bg-sky-950/40 dark:text-sky-400",
-  application: "bg-lime-50 text-lime-600 dark:bg-lime-950/40 dark:text-lime-400",
-  exclusion: "bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400",
-  condition: "bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400",
-  definition: "bg-purple-50 text-purple-600 dark:bg-purple-950/40 dark:text-purple-400",
-  schedule: "bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-400",
-  subjectivity: "bg-orange-50 text-orange-600 dark:bg-orange-950/40 dark:text-orange-400",
-  warranty: "bg-pink-50 text-pink-600 dark:bg-pink-950/40 dark:text-pink-400",
-  notice: "bg-teal-50 text-teal-600 dark:bg-teal-950/40 dark:text-teal-400",
-  regulatory: "bg-yellow-50 text-yellow-700 dark:bg-yellow-950/40 dark:text-yellow-400",
-  other: "bg-gray-50 text-gray-600 dark:bg-gray-800/40 dark:text-gray-400",
-};
-
-function DocContent({ children }: { children: string }) {
-  return (
-    <ProseMarkdown gfm className="text-foreground">
-      {children}
-    </ProseMarkdown>
-  );
-}
+// ─── Extraction tab helpers ───────────────────────────────────────────────────
 
 function formatJsonForDisplay(value?: string): string | null {
   if (!value) return null;
-
   try {
     return JSON.stringify(JSON.parse(value), null, 2);
   } catch {
@@ -118,797 +57,82 @@ function formatJsonForDisplay(value?: string): string | null {
   }
 }
 
-function DocumentSection({ section, highlighted }: { section: any; highlighted?: boolean }) {
-  const [expanded, setExpanded] = useState(false);
-  const sectionRef = useRef<HTMLDivElement>(null);
-  const typeColor = SECTION_TYPE_COLORS[section.type] || SECTION_TYPE_COLORS.other;
-
-  useEffect(() => {
-    if (highlighted) {
-      setExpanded(true);
-      // Delay scroll to allow expand animation
-      const timer = setTimeout(() => {
-        sectionRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-      }, 150);
-      return () => clearTimeout(timer);
-    }
-  }, [highlighted]);
-
-  return (
-    <div ref={sectionRef} className={`border-t border-foreground/4 transition-colors duration-700 ${highlighted ? "bg-blue-50/60 dark:bg-blue-950/30" : ""}`}>
-      <button
-        type="button"
-        onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center gap-2 px-4 py-2.5 text-left hover:bg-foreground/[0.015] transition-colors cursor-pointer"
-      >
-        {expanded ? (
-          <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-        ) : (
-          <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-        )}
-        <span className="text-body-sm font-medium text-foreground flex-1 min-w-0 truncate">
-          {section.sectionNumber && (
-            <span className="text-muted-foreground mr-1.5">{section.sectionNumber}</span>
-          )}
-          {section.title || SECTION_TYPE_LABELS[section.type] || section.type || "Untitled"}
-        </span>
-        <span className={`shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${typeColor}`}>
-          {SECTION_TYPE_LABELS[section.type] || section.type}
-        </span>
-        <span className="hidden sm:inline-flex"><PageRef page={section.pageStart} /></span>
-      </button>
-      {expanded && (
-        <div className="px-4 pb-3 pl-10">
-          <DocContent>{section.content}</DocContent>
-          {section.subsections?.map((sub: any, i: number) => (
-            <div key={i} className="mt-3 pl-3 border-l-2 border-foreground/6">
-              <p className="text-body-sm font-medium text-foreground mb-1">
-                {sub.sectionNumber && <span className="text-muted-foreground mr-1.5">{sub.sectionNumber}</span>}
-                {sub.title}
-                {sub.pageNumber != null && <PageRef page={sub.pageNumber} />}
-              </p>
-              <DocContent>{sub.content}</DocContent>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function SupplementaryCard({
-  title,
-  icon: Icon,
-  pageNumber,
-  content,
-  hasStructured,
-  children,
-}: {
-  title: string;
-  icon: React.ComponentType<{ className?: string }>;
-  pageNumber?: number;
-  content: string;
-  hasStructured: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
-      <div className="px-4 py-2.5 bg-foreground/[0.02] border-b border-foreground/4">
-        <div className="flex items-center gap-2">
-          <Icon className="w-4 h-4 text-muted-foreground" />
-          <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">
-            {title}
-          </p>
-          {pageNumber != null && <PageRef page={pageNumber} />}
-        </div>
-      </div>
-      {hasStructured ? (
-        <>
-          <div className="px-4 py-3">
-            {children}
-          </div>
-          <details className="group/raw border-t border-foreground/4">
-            <summary className="flex items-center gap-2 px-4 py-2.5 text-label-sm text-muted-foreground/50 cursor-pointer hover:text-muted-foreground hover:bg-foreground/[0.015] transition-colors select-none [&::-webkit-details-marker]:hidden [&::marker]:hidden list-none">
-              <ChevronRight className="w-3.5 h-3.5 shrink-0 transition-transform duration-200 group-open/raw:rotate-90" />
-              View raw text
-            </summary>
-            <div className="px-4 pt-1 pb-3">
-              <p className="text-body-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">
-                {content}
-              </p>
-            </div>
-          </details>
-        </>
-      ) : (
-        <div className="px-4 py-3">
-          <p className="text-body-sm text-foreground whitespace-pre-wrap leading-relaxed">
-            {content}
-          </p>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function RegulatoryContextStructured({ data }: { data: any }) {
-  const gridItems = [
-    { label: "Jurisdiction", value: data.jurisdiction },
-    { label: "Regulatory Body", value: data.regulatoryBody },
-    { label: "Governing Law", value: data.governingLaw },
-  ].filter((item) => item.value);
-
-  return (
-    <div className="-mx-4 -mt-3">
-      {gridItems.length > 0 && (
-        <div className={`flex flex-col sm:flex-row sm:divide-x divide-foreground/6 border-b border-foreground/4`}>
-          {gridItems.map((item) => (
-            <div key={item.label} className="flex-1 px-4 py-2.5">
-              <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider mb-0.5">{item.label}</p>
-              <p className="text-body-sm text-foreground font-medium">{item.value}</p>
-            </div>
-          ))}
-        </div>
-      )}
-      {data.details?.length > 0 && (
-        <table className="w-full text-left">
-          <tbody>
-            {data.details.map((d: any, i: number) => (
-              <tr key={i} className="border-t border-foreground/4 first:border-t-0 hover:bg-foreground/[0.015] transition-colors">
-                <td className="px-4 py-2.5 text-body-sm text-muted-foreground align-top">{d.label}</td>
-                <td className="px-4 py-2.5 text-body-sm text-foreground font-medium">{d.value}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </div>
-  );
-}
-
-function ContactCard({ contact, showType }: { contact: any; showType?: boolean }) {
-  const fields = [
-    contact.phone && { label: "Phone", value: contact.phone },
-    contact.fax && { label: "Fax", value: contact.fax },
-    contact.email && { label: "Email", value: contact.email },
-    contact.hours && { label: "Hours", value: contact.hours },
-  ].filter(Boolean) as { label: string; value: string }[];
-
-  return (
-    <div className="border-t border-foreground/4 first:border-t-0 px-4 py-3">
-      <div className="flex items-center gap-2">
-        {contact.name && <p className="text-body-sm font-medium text-foreground">{contact.name}</p>}
-        {showType && contact.type && (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-foreground/5 text-muted-foreground">
-            {contact.type}
-          </span>
-        )}
-      </div>
-      {contact.title && (
-        <p className="text-body-sm text-muted-foreground mt-0.5">{contact.title}</p>
-      )}
-      {fields.length > 0 && (
-        <div className="flex flex-wrap gap-x-5 gap-y-0.5 mt-1">
-          {fields.map((f) => (
-            <p key={f.label} className="text-body-sm text-foreground">
-              <span className="text-muted-foreground">{f.label}:</span> {f.value}
-            </p>
-          ))}
-        </div>
-      )}
-      {contact.address && (
-        <p className="text-body-sm text-muted-foreground mt-1">{contact.address}</p>
-      )}
-    </div>
-  );
-}
-
-function ComplaintContactStructured({ contacts }: { contacts?: any[] }) {
-  if (!contacts?.length) return null;
-
-  return (
-    <div className="-mx-4 -mt-3">
-      {contacts.map((c: any, i: number) => (
-        <ContactCard key={i} contact={c} showType />
-      ))}
-    </div>
-  );
-}
-
-function CostsAndFeesStructured({ fees }: { fees?: any[] }) {
-  if (!fees?.length) return null;
-
-  return (
-    <div className="-mx-4 -mt-3">
-      <table className="w-full text-left">
-        <thead>
-          <tr className="bg-foreground/[0.02]">
-            <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">Name</th>
-            <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider text-right">Amount</th>
-            <th className="hidden sm:table-cell px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">Type</th>
-            <th className="hidden md:table-cell px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">Description</th>
-          </tr>
-        </thead>
-        <tbody>
-          {fees.map((f: any, i: number) => (
-            <tr key={i} className="border-t border-foreground/4 hover:bg-foreground/[0.015] transition-colors">
-              <td className="px-4 py-2.5 text-body-sm text-foreground font-medium">{f.name}</td>
-              <td className="px-4 py-2.5 text-body-sm font-mono font-medium text-foreground text-right">{f.amount || "—"}</td>
-              <td className="hidden sm:table-cell px-4 py-2.5 text-body-sm text-muted-foreground">{f.type || "—"}</td>
-              <td className="hidden md:table-cell px-4 py-2.5 text-body-sm text-foreground">{f.description || "—"}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function ClaimsContactStructured({ data }: { data: any }) {
-  return (
-    <div className="-mx-4 -mt-3">
-      {data.contacts?.length > 0 && (
-        <div>
-          {data.contacts.map((c: any, i: number) => (
-            <ContactCard key={i} contact={c} />
-          ))}
-        </div>
-      )}
-      {data.processSteps?.length > 0 && (
-        <div className="border-t border-foreground/4 px-4 py-3">
-          <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider mb-2">Claims Process</p>
-          <ol className="space-y-1.5">
-            {data.processSteps.map((step: string, i: number) => (
-              <li key={i} className="flex gap-2.5 text-body-sm text-foreground">
-                <span className="text-muted-foreground/60 font-mono text-label-sm mt-px shrink-0">{i + 1}.</span>
-                {step}
-              </li>
-            ))}
-          </ol>
-        </div>
-      )}
-      {data.reportingTimeLimit && (
-        <div className="border-t border-foreground/4 px-4 py-3">
-          <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider mb-1">Reporting Time Limit</p>
-          <p className="text-body-sm text-foreground font-medium">{data.reportingTimeLimit}</p>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ── Section Outline Sidebar ── */
-
-function SectionOutline({ sections }: { sections: Array<{ id: string; label: string; count?: number }> }) {
-  const visible = sections.filter((s) => s.count === undefined || s.count > 0);
-  const [activeId, setActiveId] = useState(visible[0]?.id ?? "");
-  const [expanded, setExpanded] = useState(false);
-  const [scrollExpanded, setScrollExpanded] = useState(false);
-  const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting) {
-            setActiveId(entry.target.id);
-          }
-        }
-      },
-      { rootMargin: "-80px 0px -60% 0px", threshold: 0.1 },
-    );
-    for (const s of visible) {
-      const el = document.getElementById(s.id);
-      if (el) observer.observe(el);
-    }
-    return () => observer.disconnect();
-  }, [visible]);
-
-  // Expand on scroll, collapse after idle
-  useEffect(() => {
-    const handleScroll = () => {
-      setScrollExpanded(true);
-      if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
-      scrollTimerRef.current = setTimeout(() => setScrollExpanded(false), 1500);
-    };
-    window.addEventListener("scroll", handleScroll, { passive: true });
-    return () => {
-      window.removeEventListener("scroll", handleScroll);
-      if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
-    };
-  }, []);
-
-  if (visible.length <= 1) return null;
-
-  const isExpanded = expanded || scrollExpanded;
-
-  return (
-    <nav
-      className="hidden xl:block shrink-0"
-      style={{ width: isExpanded ? "176px" : "20px", transition: "width 200ms ease" }}
-      onMouseEnter={() => setExpanded(true)}
-      onMouseLeave={() => setExpanded(false)}
-    >
-      <div className="sticky top-4">
-        {isExpanded ? (
-          <div className="space-y-0.5">
-            <p className="text-[10px] font-medium text-muted-foreground/40 uppercase tracking-wider mb-2 px-2">On this page</p>
-            {visible.map((s) => (
-              <button
-                key={s.id}
-                type="button"
-                onClick={() => document.getElementById(s.id)?.scrollIntoView({ behavior: "smooth", block: "start" })}
-                className={`w-full text-left px-2 py-1 rounded-md text-[11px] cursor-pointer transition-colors duration-150 ${
-                  activeId === s.id
-                    ? "text-foreground font-medium bg-foreground/[0.04]"
-                    : "text-muted-foreground/50 hover:text-muted-foreground hover:bg-foreground/[0.02]"
-                }`}
-              >
-                {s.label}
-                {s.count != null && <span className="text-muted-foreground/30 ml-1">{s.count}</span>}
-              </button>
-            ))}
-          </div>
-        ) : (
-          <div className="flex flex-col items-center gap-[6px] pt-6">
-            {visible.map((s) => (
-              <button
-                key={s.id}
-                type="button"
-                onClick={() => document.getElementById(s.id)?.scrollIntoView({ behavior: "smooth", block: "start" })}
-                className="cursor-pointer p-0 border-0 bg-transparent"
-              >
-                <span
-                  className={`block rounded-full transition-all duration-200 ${
-                    activeId === s.id
-                      ? "w-[5px] h-[5px] bg-foreground/50"
-                      : "w-[3px] h-[3px] bg-foreground/15"
-                  }`}
-                />
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-    </nav>
-  );
-}
-
-/* ── Document Structured Cards ── */
-
-function ExclusionBody({ ex }: { ex: any }) {
-  const metaItems = [
-    ex?.formNumber && { label: "Form", value: ex.formNumber },
-    ex?.appliesTo && { label: "Applies to", value: ex.appliesTo },
-    ex?.buybackAvailable && ex?.buybackEndorsement && { label: "Buyback", value: ex.buybackEndorsement },
-  ].filter(Boolean) as { label: string; value: string }[];
-
-  return (
-    <div className="space-y-2">
-      {/* Inline metadata chips */}
-      {metaItems.length > 0 && (
-        <div className="flex flex-wrap gap-x-3 gap-y-1 text-label-sm text-muted-foreground">
-          {metaItems.map((m) => (
-            <span key={m.label}>
-              <span className="text-muted-foreground/60">{m.label}:</span>{" "}
-              <span className="text-foreground">{m.value}</span>
-            </span>
-          ))}
-        </div>
-      )}
-
-      {/* Excluded perils */}
-      {ex?.excludedPerils && (
-        <div>
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60 mb-0.5">Excluded Perils</p>
-          <p className="text-body-sm text-foreground leading-relaxed">{ex.excludedPerils}</p>
-        </div>
-      )}
-
-      {/* Exceptions */}
-      {ex?.exceptions && (
-        <div>
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60 mb-0.5">Exceptions</p>
-          <p className="text-body-sm text-foreground leading-relaxed">{ex.exceptions}</p>
-        </div>
-      )}
-
-      <StructuredRawText content={ex?.content} />
-      <StructuredJsonDetails item={ex} />
-    </div>
-  );
-}
-
-function ConditionBody({ c }: { c: any }) {
-  const keyValues = c?.keyValues as { key: string; value: string }[] | undefined;
-
-  return (
-    <div className="space-y-2">
-      {/* Key-value terms */}
-      {keyValues && keyValues.length > 0 && (
-        <div>
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60 mb-0.5">Terms</p>
-          <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-body-sm">
-            {keyValues.map((entry, i) => (
-              <span key={i} className="text-foreground">
-                <span className="text-muted-foreground/60">{entry.key}:</span> {entry.value}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <StructuredRawText content={c?.content} />
-      <StructuredJsonDetails item={c} />
-    </div>
-  );
-}
-
-function ConditionsCard({ conditions }: { conditions: any[] }) {
-  return (
-    <StructuredItemsCard
-      id="section-conditions"
-      title="Conditions"
-      items={conditions}
-      getTitle={(c) => c.name ?? c.title ?? "Unnamed condition"}
-      getPage={(c) => c.pageNumber}
-      getBadges={(c) => c?.conditionType ? [{
-        label: formatStructuredLabel(c.conditionType) ?? c.conditionType,
-        className: "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400",
-      }] : []}
-      renderBody={(c) => <ConditionBody c={c} />}
-    />
-  );
-}
-
-function EndorsementBody({ e }: { e: any }) {
-  const metaItems = [
-    e?.formNumber && { label: "Form", value: e.formNumber },
-    e?.editionDate && { label: "Edition", value: e.editionDate },
-    e?.effectiveDate && { label: "Effective", value: e.effectiveDate },
-    e?.premiumImpact && { label: "Premium", value: e.premiumImpact },
-  ].filter(Boolean) as { label: string; value: string }[];
-
-  const namedParties = e?.namedParties as any[] | undefined;
-
-  return (
-    <div className="space-y-2">
-      {/* Inline metadata */}
-      {metaItems.length > 0 && (
-        <div className="flex flex-wrap gap-x-3 gap-y-1 text-label-sm text-muted-foreground">
-          {metaItems.map((m) => (
-            <span key={m.label}>
-              <span className="text-muted-foreground/60">{m.label}:</span>{" "}
-              <span className="text-foreground">{m.value}</span>
-            </span>
-          ))}
-        </div>
-      )}
-
-      {/* Affected coverage parts */}
-      {e?.affectedCoverageParts && (
-        <div>
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60 mb-0.5">Affected Coverage Parts</p>
-          <p className="text-body-sm text-foreground leading-relaxed">
-            {Array.isArray(e.affectedCoverageParts) ? e.affectedCoverageParts.join(", ") : e.affectedCoverageParts}
-          </p>
-        </div>
-      )}
-
-      {/* Named parties */}
-      {namedParties && namedParties.length > 0 && (
-        <div>
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60 mb-0.5">Named Parties</p>
-          <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-body-sm">
-            {namedParties.map((party, i) => {
-              const role = formatStructuredLabel(party.role);
-              const detail = [party.relationship, party.scope].filter(Boolean).join(" — ");
-              return (
-                <span key={i} className="text-foreground">
-                  {party.name}{role && <span className="text-muted-foreground/60"> [{role}]</span>}
-                  {detail && <span className="text-muted-foreground/60"> ({detail})</span>}
-                </span>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Key terms */}
-      {e?.keyTerms && (
-        <div>
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60 mb-0.5">Key Terms</p>
-          <p className="text-body-sm text-foreground leading-relaxed">
-            {Array.isArray(e.keyTerms) ? e.keyTerms.join(", ") : e.keyTerms}
-          </p>
-        </div>
-      )}
-
-      <StructuredRawText content={e?.content} />
-      <StructuredJsonDetails item={e} />
-    </div>
-  );
-}
-
-function EndorsementsCard({ endorsements }: { endorsements: any[] }) {
-  return (
-    <StructuredItemsCard
-      id="section-endorsements"
-      title="Endorsements"
-      items={endorsements}
-      getTitle={(e) => e.title ?? e.name ?? e.formNumber ?? "Unnamed endorsement"}
-      getPage={(e) => e.pageStart}
-      getBadges={(e) => [
-        e?.endorsementType ? {
-          label: formatStructuredLabel(e.endorsementType) ?? e.endorsementType,
-          className:
-            e.endorsementType === "restriction" || e.endorsementType === "exclusion"
-              ? "bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400"
-              : e.endorsementType === "broadening"
-                ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"
-                : "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400",
-        } : undefined,
-        e?.effectiveDate ? {
-          label: `Eff. ${e.effectiveDate}`,
-          className: "bg-foreground/5 text-muted-foreground",
-        } : undefined,
-      ].filter(Boolean) as { label: string; className: string }[]}
-      renderBody={(e) => <EndorsementBody e={e} />}
-    />
-  );
-}
-
-function ExclusionsCard({ exclusions }: { exclusions: any[] }) {
-  return (
-    <StructuredItemsCard
-      id="section-exclusions"
-      title="Exclusions"
-      items={exclusions}
-      getTitle={(ex) => typeof ex === "string" ? ex : (ex?.name ?? ex?.title ?? "Unnamed exclusion")}
-      getPage={(ex) => ex?.pageNumber ?? ex?.pageStart}
-      getBadges={(ex) => {
-        if (typeof ex === "string") return [];
-        return [
-          ex?.isAbsolute ? {
-            label: "Absolute",
-            className: "bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400",
-          } : {
-            label: "Limited",
-            className: "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400",
-          },
-          ex?.buybackAvailable ? {
-            label: "Buyback",
-            className: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400",
-          } : undefined,
-        ].filter(Boolean) as { label: string; className: string }[];
-      }}
-      renderBody={(ex) => {
-        if (typeof ex === "string") {
-          return <StructuredRawText content={ex} />;
-        }
-        return <ExclusionBody ex={ex} />;
-      }}
-    />
-  );
-}
-
-function formatStructuredLabel(value?: string | null) {
-  if (!value) return null;
-  return value
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (char) => char.toUpperCase());
-}
-
-function formatBooleanValue(value: unknown) {
-  return typeof value === "boolean" ? (value ? "Yes" : "No") : null;
-}
-
-function normalizeStructuredValue(value: unknown): string[] | string | null {
-  if (value == null) return null;
-  if (Array.isArray(value)) {
-    const items = value
-      .flatMap((item) => {
-        if (item == null) return [];
-        if (typeof item === "string") return [item];
-        if (typeof item === "number" || typeof item === "boolean") return [String(item)];
-        return [JSON.stringify(item)];
-      })
-      .filter(Boolean);
-    return items.length > 0 ? items : null;
-  }
-  if (typeof value === "string") return value.trim() ? value : null;
-  if (typeof value === "number") return String(value);
-  if (typeof value === "boolean") return value ? "Yes" : "No";
-  return JSON.stringify(value, null, 2);
-}
-
-function StructuredFieldGrid({
-  fields,
-}: {
-  fields: { label: string; value: unknown }[];
-}) {
-  const visibleFields = fields
-    .map((field) => ({
-      label: field.label,
-      value: normalizeStructuredValue(field.value),
-    }))
-    .filter((field) => field.value !== null);
-
-  if (visibleFields.length === 0) return null;
-
-  return (
-    <div className="grid gap-3 sm:grid-cols-2">
-      {visibleFields.map((field) => (
-        <div key={field.label} className="rounded-md border border-foreground/6 bg-foreground/[0.015] px-3 py-2">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-            {field.label}
-          </p>
-          {Array.isArray(field.value) ? (
-            <div className="mt-1 flex flex-wrap gap-1.5">
-              {field.value.map((item) => (
-                <span
-                  key={item}
-                  className="inline-flex rounded-full bg-white/80 px-2 py-0.5 text-label-sm text-foreground dark:bg-white/[0.06]"
-                >
-                  {item}
-                </span>
-              ))}
-            </div>
-          ) : (
-            <p className="mt-1 text-body-sm text-foreground whitespace-pre-wrap break-words">
-              {field.value}
-            </p>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function StructuredRawText({ content }: { content?: string | null }) {
-  if (!content?.trim()) return null;
-
-  return (
-    <details className="group/raw rounded-md border border-foreground/6 bg-foreground/[0.015]">
-      <summary className="flex items-center gap-2 px-3 py-2 text-label-sm text-muted-foreground/70 cursor-pointer hover:text-muted-foreground transition-colors select-none [&::-webkit-details-marker]:hidden [&::marker]:hidden list-none">
-        <ChevronRight className="w-3.5 h-3.5 shrink-0 transition-transform duration-200 group-open/raw:rotate-90" />
-        Source text
-      </summary>
-      <div className="border-t border-foreground/6 px-3 py-3">
-        <DocContent>{content}</DocContent>
-      </div>
-    </details>
-  );
-}
-
-function StructuredJsonDetails({ item }: { item: unknown }) {
-  if (!item || typeof item !== "object") return null;
-
-  return (
-    <details className="group/json rounded-md border border-foreground/6 bg-foreground/[0.015]">
-      <summary className="flex items-center gap-2 px-3 py-2 text-label-sm text-muted-foreground/70 cursor-pointer hover:text-muted-foreground transition-colors select-none [&::-webkit-details-marker]:hidden [&::marker]:hidden list-none">
-        <ChevronRight className="w-3.5 h-3.5 shrink-0 transition-transform duration-200 group-open/json:rotate-90" />
-        Extracted object
-      </summary>
-      <div className="border-t border-foreground/6 px-3 py-3">
-        <pre className="overflow-x-auto text-label-sm text-foreground whitespace-pre-wrap break-words">
-          {JSON.stringify(item, null, 2)}
-        </pre>
-      </div>
-    </details>
-  );
-}
-
-function StructuredItemsCard({ id, title, items, getTitle, getPage, getBadges, renderBody }: {
-  id: string;
-  title: string;
-  items: any[];
-  getTitle: (item: any) => string;
-  getPage?: (item: any) => number | undefined;
-  getBadges?: (item: any) => { label: string; className: string }[];
-  renderBody: (item: any) => React.ReactNode;
-}) {
-  const [expanded, setExpanded] = useState<Set<number>>(new Set());
-  if (!items?.length) return null;
-  const toggle = (i: number) => setExpanded((prev) => {
-    const next = new Set(prev);
-    next.has(i) ? next.delete(i) : next.add(i);
-    return next;
-  });
-
-  return (
-    <div id={id} className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden">
-      <div className="px-4 py-2.5 bg-foreground/[0.02] border-b border-foreground/4">
-        <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">
-          {title} ({items.length})
-        </p>
-      </div>
-      {items.map((item, i) => {
-        const badges = getBadges?.(item) ?? [];
-        const page = getPage?.(item);
-        return (
-          <div key={i} className="border-t border-foreground/4 first:border-t-0">
-            <button
-              type="button"
-              onClick={() => toggle(i)}
-              className="w-full flex items-center gap-2 px-4 py-2.5 text-left hover:bg-foreground/[0.01] transition-colors cursor-pointer"
-            >
-              {expanded.has(i) ? (
-                <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-              ) : (
-                <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-              )}
-              <span className="text-body-sm font-medium text-foreground flex-1 min-w-0 truncate">
-                {getTitle(item)}
-              </span>
-              {badges.length > 0 && (
-                <div className="hidden md:flex items-center gap-1.5 shrink-0">
-                  {badges.map((badge) => (
-                    <span key={badge.label} className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${badge.className}`}>
-                      {badge.label}
-                    </span>
-                  ))}
-                </div>
-              )}
-              {page != null && <PageRef page={page} />}
-            </button>
-            {expanded.has(i) && (
-              <div className="space-y-3 px-4 pb-3 pl-10">
-                {badges.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 md:hidden">
-                    {badges.map((badge) => (
-                      <span key={badge.label} className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${badge.className}`}>
-                        {badge.label}
-                      </span>
-                    ))}
-                  </div>
-                )}
-                {renderBody(item)}
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-
-/* ── Extraction Tab ── */
-
-const EXTRACTION_STATUS_CONFIG: Record<string, { label: string; color: string }> = {
-  pending: { label: "Pending", color: "bg-gray-100 text-gray-700 dark:bg-gray-800/40 dark:text-gray-400" },
-  extracting: { label: "Extracting", color: "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400" },
-  paused: { label: "Paused", color: "bg-yellow-100 text-yellow-700 dark:bg-yellow-950/40 dark:text-yellow-400" },
-  complete: { label: "Complete", color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400" },
-  error: { label: "Error", color: "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400" },
-  not_insurance: { label: "Not Insurance", color: "bg-gray-100 text-gray-700 dark:bg-gray-800/40 dark:text-gray-400" },
+const EXTRACTION_STATUS_CONFIG: Record<
+  string,
+  { label: string; color: string }
+> = {
+  pending: {
+    label: "Pending",
+    color: "bg-gray-100 text-gray-700 dark:bg-gray-800/40 dark:text-gray-400",
+  },
+  extracting: {
+    label: "Extracting",
+    color:
+      "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400",
+  },
+  paused: {
+    label: "Paused",
+    color:
+      "bg-yellow-100 text-yellow-700 dark:bg-yellow-950/40 dark:text-yellow-400",
+  },
+  complete: {
+    label: "Complete",
+    color:
+      "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400",
+  },
+  error: {
+    label: "Error",
+    color: "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400",
+  },
+  not_insurance: {
+    label: "Not Insurance",
+    color: "bg-gray-100 text-gray-700 dark:bg-gray-800/40 dark:text-gray-400",
+  },
 };
+
+import { ChevronRight } from "lucide-react";
 
 function ExtractionTab({ policy }: { policy: any }) {
   const retryExtraction = useAction(api.actions.retryExtraction.retryExtraction);
-  const runSupplementary = useAction(api.actions.extractSupplementary.runSupplementary);
+  const runSupplementary = useAction(
+    api.actions.extractSupplementary.runSupplementary,
+  );
   const rechunk = useAction(api.actions.rechunkPolicy.rechunk);
   const [runningMode, setRunningMode] = useState<string | null>(null);
-  const [copiedBlock, setCopiedBlock] = useState<"rawExtraction" | "rawMetadata" | null>(null);
+  const [copiedBlock, setCopiedBlock] = useState<
+    "rawExtraction" | "rawMetadata" | null
+  >(null);
 
-  const extractionLog: { timestamp: number; message: string }[] = policy.extractionLog ?? [];
-  const statusCfg = EXTRACTION_STATUS_CONFIG[policy.extractionStatus] ?? EXTRACTION_STATUS_CONFIG.pending;
+  const extractionLog: { timestamp: number; message: string }[] =
+    policy.extractionLog ?? [];
+  const statusCfg =
+    EXTRACTION_STATUS_CONFIG[policy.extractionStatus] ??
+    EXTRACTION_STATUS_CONFIG.pending;
   const rawMetadata: string | undefined = policy.rawMetadataResponse;
   const rawExtraction: string | undefined = policy.rawExtractionResponse;
-  const formattedRawMetadata = useMemo(() => formatJsonForDisplay(rawMetadata), [rawMetadata]);
-  const formattedRawExtraction = useMemo(() => formatJsonForDisplay(rawExtraction), [rawExtraction]);
-  const hasDocument = !!(policy as any).document;
-
+  const formattedRawMetadata = useMemo(
+    () => formatJsonForDisplay(rawMetadata),
+    [rawMetadata],
+  );
+  const formattedRawExtraction = useMemo(
+    () => formatJsonForDisplay(rawExtraction),
+    [rawExtraction],
+  );
   const hasCheckpoint = !!(policy as any).extractionCheckpoint;
 
   const handleRetry = async (mode: "resume" | "full") => {
     setRunningMode(mode);
     try {
-      const result = await retryExtraction({ policyId: policy._id, mode }) as any;
+      const result = (await retryExtraction({
+        policyId: policy._id,
+        mode,
+      })) as any;
       if (result?.error) {
         toast.error(result.error as string);
       } else {
-        toast.success(mode === "resume" ? "Resuming extraction" : "Re-extraction started");
+        toast.success(
+          mode === "resume" ? "Resuming extraction" : "Re-extraction started",
+        );
       }
     } catch {
       toast.error("Re-extraction failed");
@@ -924,19 +148,29 @@ function ExtractionTab({ policy }: { policy: any }) {
     if (!content) return;
     await navigator.clipboard.writeText(content);
     setCopiedBlock(block);
-    toast.success(`${block === "rawExtraction" ? "Raw extraction" : "Raw metadata"} copied`);
-    window.setTimeout(() => setCopiedBlock((current) => (current === block ? null : current)), 1200);
+    toast.success(
+      `${block === "rawExtraction" ? "Raw extraction" : "Raw metadata"} copied`,
+    );
+    window.setTimeout(
+      () =>
+        setCopiedBlock((current) => (current === block ? null : current)),
+      1200,
+    );
   };
 
   return (
     <div className="space-y-4">
       {/* Status bar */}
       <div className="flex items-center gap-3">
-        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-label-sm font-medium ${statusCfg.color}`}>
+        <span
+          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-label-sm font-medium ${statusCfg.color}`}
+        >
           {statusCfg.label}
         </span>
         {policy.extractionError && (
-          <span className="text-body-sm text-red-600 dark:text-red-400 flex-1 min-w-0 truncate">{policy.extractionError}</span>
+          <span className="text-body-sm text-red-600 dark:text-red-400 flex-1 min-w-0 truncate">
+            {policy.extractionError}
+          </span>
         )}
         <div className="flex items-center gap-2 ml-auto shrink-0">
           {hasCheckpoint && (
@@ -946,7 +180,11 @@ function ExtractionTab({ policy }: { policy: any }) {
               disabled={runningMode !== null}
               onClick={() => handleRetry("resume")}
             >
-              {runningMode === "resume" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+              {runningMode === "resume" ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <RefreshCw className="w-3.5 h-3.5" />
+              )}
               Restart from checkpoint
             </PillButton>
           )}
@@ -956,7 +194,11 @@ function ExtractionTab({ policy }: { policy: any }) {
             disabled={runningMode !== null}
             onClick={() => handleRetry("full")}
           >
-            {runningMode === "full" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+            {runningMode === "full" ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <RefreshCw className="w-3.5 h-3.5" />
+            )}
             Re-extract
           </PillButton>
           {policy.extractionStatus === "complete" && (
@@ -967,11 +209,15 @@ function ExtractionTab({ policy }: { policy: any }) {
               onClick={async () => {
                 setRunningMode("rechunk");
                 try {
-                  const result = await rechunk({ policyId: policy._id }) as any;
+                  const result = (await rechunk({
+                    policyId: policy._id,
+                  })) as any;
                   if (result?.error) {
                     toast.error(result.error);
                   } else {
-                    toast.success(`Reindexed: ${result.newChunks} search chunks updated`);
+                    toast.success(
+                      `Reindexed: ${result.newChunks} search chunks updated`,
+                    );
                   }
                 } catch {
                   toast.error("Reindexing failed");
@@ -980,7 +226,11 @@ function ExtractionTab({ policy }: { policy: any }) {
                 }
               }}
             >
-              {runningMode === "rechunk" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+              {runningMode === "rechunk" ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <RefreshCw className="w-3.5 h-3.5" />
+              )}
               Reindex for search
             </PillButton>
           )}
@@ -1015,14 +265,16 @@ function ExtractionTab({ policy }: { policy: any }) {
                 onClick={async () => {
                   setRunningMode("supplementary");
                   try {
-                    const result = await runSupplementary({
+                    const result = (await runSupplementary({
                       policyId: policy._id,
                       force: !!policy.supplementaryFacts?.length,
-                    }) as any;
+                    })) as any;
                     if (result?.error) {
                       toast.error(result.error);
                     } else {
-                      toast.success(`Extracted ${result.facts ?? 0} additional details`);
+                      toast.success(
+                        `Extracted ${result.facts ?? 0} additional details`,
+                      );
                     }
                   } catch {
                     toast.error("Supplementary extraction failed");
@@ -1031,22 +283,41 @@ function ExtractionTab({ policy }: { policy: any }) {
                   }
                 }}
               >
-                {runningMode === "supplementary" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : policy.supplementaryFacts?.length ? <RefreshCw className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
-                {policy.supplementaryFacts?.length ? "Re-extract" : "Extract additional details"}
+                {runningMode === "supplementary" ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : policy.supplementaryFacts?.length ? (
+                  <RefreshCw className="w-3.5 h-3.5" />
+                ) : (
+                  <Play className="w-3.5 h-3.5" />
+                )}
+                {policy.supplementaryFacts?.length
+                  ? "Re-extract"
+                  : "Extract additional details"}
               </PillButton>
             </div>
           </div>
           {policy.supplementaryFacts?.length > 0 && (
             <div className="divide-y divide-foreground/4">
               {policy.supplementaryFacts.map((fact: any, i: number) => (
-                <div key={i} className="px-4 py-2 grid grid-cols-[1fr_1fr] gap-x-4">
+                <div
+                  key={i}
+                  className="px-4 py-2 grid grid-cols-[1fr_1fr] gap-x-4"
+                >
                   <span className="text-body-sm text-muted-foreground break-words">
                     {fact.key}
-                    {fact.subject && <span className="block text-label-sm text-muted-foreground/40">{fact.subject}</span>}
+                    {fact.subject && (
+                      <span className="block text-label-sm text-muted-foreground/40">
+                        {fact.subject}
+                      </span>
+                    )}
                   </span>
                   <span className="text-body-sm text-foreground break-words">
                     {fact.value}
-                    {fact.context && <span className="block text-label-sm text-muted-foreground/40">{fact.context}</span>}
+                    {fact.context && (
+                      <span className="block text-label-sm text-muted-foreground/40">
+                        {fact.context}
+                      </span>
+                    )}
                   </span>
                 </div>
               ))}
@@ -1054,7 +325,8 @@ function ExtractionTab({ policy }: { policy: any }) {
           )}
           {!policy.supplementaryFacts?.length && (
             <div className="px-4 py-3 text-body-sm text-muted-foreground/50">
-              No additional details extracted yet. Run extraction to capture extra policy information for better querying.
+              No additional details extracted yet. Run extraction to capture
+              extra policy information for better querying.
             </div>
           )}
         </div>
@@ -1075,16 +347,26 @@ function ExtractionTab({ policy }: { policy: any }) {
             <details className="group/raw">
               <summary className="flex items-center gap-2 px-4 py-2.5 text-body-sm text-muted-foreground cursor-pointer hover:bg-foreground/[0.015] transition-colors select-none [&::-webkit-details-marker]:hidden [&::marker]:hidden list-none">
                 <ChevronRight className="w-3.5 h-3.5 shrink-0 transition-transform duration-200 group-open/raw:rotate-90" />
-                <span className="flex-1">Raw extraction response ({(rawExtraction.length / 1024).toFixed(1)} KB)</span>
+                <span className="flex-1">
+                  Raw extraction response (
+                  {(rawExtraction.length / 1024).toFixed(1)} KB)
+                </span>
                 <span
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    void handleCopyBlock("rawExtraction", formattedRawExtraction);
+                    void handleCopyBlock(
+                      "rawExtraction",
+                      formattedRawExtraction,
+                    );
                   }}
                 >
                   <PillButton size="compact" variant="icon" label="Copy JSON">
-                    {copiedBlock === "rawExtraction" ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                    {copiedBlock === "rawExtraction" ? (
+                      <Check className="w-3.5 h-3.5" />
+                    ) : (
+                      <Copy className="w-3.5 h-3.5" />
+                    )}
                   </PillButton>
                 </span>
               </summary>
@@ -1099,7 +381,10 @@ function ExtractionTab({ policy }: { policy: any }) {
             <details className="group/rawmeta border-t border-foreground/4">
               <summary className="flex items-center gap-2 px-4 py-2.5 text-body-sm text-muted-foreground cursor-pointer hover:bg-foreground/[0.015] transition-colors select-none [&::-webkit-details-marker]:hidden [&::marker]:hidden list-none">
                 <ChevronRight className="w-3.5 h-3.5 shrink-0 transition-transform duration-200 group-open/rawmeta:rotate-90" />
-                <span className="flex-1">Raw metadata response ({(rawMetadata.length / 1024).toFixed(1)} KB)</span>
+                <span className="flex-1">
+                  Raw metadata response (
+                  {(rawMetadata.length / 1024).toFixed(1)} KB)
+                </span>
                 <span
                   onClick={(e) => {
                     e.preventDefault();
@@ -1108,7 +393,11 @@ function ExtractionTab({ policy }: { policy: any }) {
                   }}
                 >
                   <PillButton size="compact" variant="icon" label="Copy JSON">
-                    {copiedBlock === "rawMetadata" ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                    {copiedBlock === "rawMetadata" ? (
+                      <Check className="w-3.5 h-3.5" />
+                    ) : (
+                      <Copy className="w-3.5 h-3.5" />
+                    )}
                   </PillButton>
                 </span>
               </summary>
@@ -1125,67 +414,19 @@ function ExtractionTab({ policy }: { policy: any }) {
   );
 }
 
+// ─── Conversations tab ────────────────────────────────────────────────────────
 
-const MAX_VISIBLE_TAGS = 3;
-
-function PolicyTypeTags({ types }: { types: string[] }) {
-  const [expanded, setExpanded] = useState(false);
-  const visible = expanded ? types : types.slice(0, MAX_VISIBLE_TAGS);
-  const overflow = types.length - MAX_VISIBLE_TAGS;
-
-  return (
-    <div className="flex flex-wrap gap-1.5 max-w-xl items-center">
-      {visible.map((t) => (
-        <span
-          key={t}
-          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-label-sm font-medium ${
-            POLICY_TYPE_COLORS[t] || POLICY_TYPE_COLORS.other
-          }`}
-        >
-          {POLICY_TYPE_LABELS[t] || t}
-        </span>
-      ))}
-      {overflow > 0 && !expanded && (
-        <button
-          type="button"
-          onClick={() => setExpanded(true)}
-          className="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium bg-foreground/5 text-muted-foreground hover:bg-foreground/10 transition-colors cursor-pointer"
-        >
-          +{overflow} more
-        </button>
-      )}
-    </div>
-  );
-}
-
-function ViewPdfButton({ url }: { url?: string | null }) {
-  const { isPdfOpen, togglePdf, openWithUrl } = usePdf();
-  if (!url) return null;
-
-  return (
-    <PillButton
-      variant="primary"
-      size="compact"
-      onClick={() => isPdfOpen ? togglePdf() : openWithUrl(url)}
-      className="hidden lg:inline-flex"
-    >
-      <Eye className="w-3.5 h-3.5" />
-      {isPdfOpen ? "Hide PDF" : "View PDF"}
-    </PillButton>
-  );
-}
-
-
-/* ── Conversations Tab ── */
 type PolicyThread = {
   root: Conversation;
   messages: Conversation[];
   latestTime: number;
 };
 
-
-function PolicyConversationsTab({ conversations }: { conversations: Conversation[] | undefined }) {
-  // Group into threads
+function PolicyConversationsTab({
+  conversations,
+}: {
+  conversations: Conversation[] | undefined;
+}) {
   const threads = useMemo(() => {
     if (!conversations) return undefined;
     const convs = conversations as unknown as Conversation[];
@@ -1196,10 +437,13 @@ function PolicyConversationsTab({ conversations }: { conversations: Conversation
       const existing = threadMap.get(rootId);
       if (existing) {
         existing.messages.push(conv);
-        if (conv._creationTime > existing.latestTime) existing.latestTime = conv._creationTime;
+        if (conv._creationTime > existing.latestTime)
+          existing.latestTime = conv._creationTime;
       } else {
         threadMap.set(rootId, {
-          root: conv.threadId ? convs.find((c) => c._id === conv.threadId) ?? conv : conv,
+          root: conv.threadId
+            ? convs.find((c) => c._id === conv.threadId) ?? conv
+            : conv,
           messages: [conv],
           latestTime: conv._creationTime,
         });
@@ -1210,7 +454,9 @@ function PolicyConversationsTab({ conversations }: { conversations: Conversation
       thread.messages.sort((a, b) => a._creationTime - b._creationTime);
     }
 
-    return Array.from(threadMap.values()).sort((a, b) => b.latestTime - a.latestTime);
+    return Array.from(threadMap.values()).sort(
+      (a, b) => b.latestTime - a.latestTime,
+    );
   }, [conversations]);
 
   if (conversations === undefined) {
@@ -1225,9 +471,12 @@ function PolicyConversationsTab({ conversations }: { conversations: Conversation
     return (
       <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-6 py-12 text-center">
         <MessageSquare className="w-8 h-8 text-muted-foreground/15 mx-auto mb-3" />
-        <p className="text-body-sm text-muted-foreground/50 mb-1">No conversations about this policy</p>
+        <p className="text-body-sm text-muted-foreground/50 mb-1">
+          No conversations about this policy
+        </p>
         <p className="text-label-sm text-muted-foreground/30">
-          When Prism references this policy in email conversations, they&#39;ll appear here.
+          When Prism references this policy in email conversations, they&apos;ll
+          appear here.
         </p>
       </div>
     );
@@ -1238,18 +487,32 @@ function PolicyConversationsTab({ conversations }: { conversations: Conversation
       <table className="w-full text-body-sm">
         <thead>
           <tr className="border-b border-foreground/6 bg-foreground/2">
-            <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Subject</th>
-            <th className="text-left px-4 py-2.5 font-medium text-muted-foreground hidden sm:table-cell">From</th>
-            <th className="text-left px-4 py-2.5 font-medium text-muted-foreground hidden md:table-cell">Mode</th>
-            <th className="text-right px-4 py-2.5 font-medium text-muted-foreground">Messages</th>
+            <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">
+              Subject
+            </th>
+            <th className="text-left px-4 py-2.5 font-medium text-muted-foreground hidden sm:table-cell">
+              From
+            </th>
+            <th className="text-left px-4 py-2.5 font-medium text-muted-foreground hidden md:table-cell">
+              Mode
+            </th>
+            <th className="text-right px-4 py-2.5 font-medium text-muted-foreground">
+              Messages
+            </th>
           </tr>
         </thead>
         <tbody>
           {threads.map((thread) => {
             const root = thread.root;
-            const msgCount = thread.messages.reduce((n, m) => n + 1 + (m.responseBody ? 1 : 0), 0);
+            const msgCount = thread.messages.reduce(
+              (n, m) => n + 1 + (m.responseBody ? 1 : 0),
+              0,
+            );
             return (
-              <tr key={root._id} className="border-b border-foreground/4 last:border-0 hover:bg-foreground/[0.02] transition-colors">
+              <tr
+                key={root._id}
+                className="border-b border-foreground/4 last:border-0 hover:bg-foreground/[0.02] transition-colors"
+              >
                 <td className="px-4 py-2.5">
                   <Link
                     href={`/agent/thread/${root._id}`}
@@ -1279,19 +542,33 @@ function PolicyConversationsTab({ conversations }: { conversations: Conversation
   );
 }
 
-/* ── Activity Tab (Audit Log) ── */
-const AUDIT_ACTION_CONFIG: Record<string, { dotColor: string; title: string }> = {
-  created: { dotColor: "bg-blue-500", title: "Policy created" },
-  extraction_started: { dotColor: "bg-amber-500", title: "Extraction started" },
-  extraction_complete: { dotColor: "bg-emerald-500", title: "Extraction complete" },
-  extraction_error: { dotColor: "bg-red-500", title: "Extraction failed" },
-  re_extraction: { dotColor: "bg-violet-500", title: "Re-extraction triggered" },
-  pdf_uploaded: { dotColor: "bg-sky-500", title: "PDF uploaded" },
-  deleted: { dotColor: "bg-red-400", title: "Policy deleted" },
-  restored: { dotColor: "bg-emerald-500", title: "Policy restored" },
-  dismissed: { dotColor: "bg-gray-400", title: "Policy dismissed" },
-  agent_referenced: { dotColor: "bg-primary-light", title: "Referenced by Prism" },
-};
+// ─── Activity tab ─────────────────────────────────────────────────────────────
+
+const AUDIT_ACTION_CONFIG: Record<string, { dotColor: string; title: string }> =
+  {
+    created: { dotColor: "bg-blue-500", title: "Policy created" },
+    extraction_started: {
+      dotColor: "bg-amber-500",
+      title: "Extraction started",
+    },
+    extraction_complete: {
+      dotColor: "bg-emerald-500",
+      title: "Extraction complete",
+    },
+    extraction_error: { dotColor: "bg-red-500", title: "Extraction failed" },
+    re_extraction: {
+      dotColor: "bg-violet-500",
+      title: "Re-extraction triggered",
+    },
+    pdf_uploaded: { dotColor: "bg-sky-500", title: "PDF uploaded" },
+    deleted: { dotColor: "bg-red-400", title: "Policy deleted" },
+    restored: { dotColor: "bg-emerald-500", title: "Policy restored" },
+    dismissed: { dotColor: "bg-gray-400", title: "Policy dismissed" },
+    agent_referenced: {
+      dotColor: "bg-primary-light",
+      title: "Referenced by Prism",
+    },
+  };
 
 function PolicyActivityTab({ policyId }: { policyId: string }) {
   const entries = useQuery(api.policyAuditLog.listByPolicy, {
@@ -1313,11 +590,12 @@ function PolicyActivityTab({ policyId }: { policyId: string }) {
 
   if (entries.length === 0) {
     return (
-      <p className="text-body-sm text-muted-foreground/50 py-8 text-center">No activity recorded yet</p>
+      <p className="text-body-sm text-muted-foreground/50 py-8 text-center">
+        No activity recorded yet
+      </p>
     );
   }
 
-  // Group entries by date
   const groups: { label: string; entries: typeof entries }[] = [];
   for (const entry of entries) {
     const label = dayjs(entry._creationTime).format("MMM D, YYYY");
@@ -1342,16 +620,21 @@ function PolicyActivityTab({ policyId }: { policyId: string }) {
                 dotColor: "bg-gray-400",
                 title: entry.action,
               };
-
               return (
                 <div
                   key={entry._id}
                   className="flex items-baseline gap-2.5 py-1"
                 >
-                  <span className={`w-1.5 h-1.5 rounded-full ${cfg.dotColor} shrink-0 translate-y-[-1px]`} />
-                  <span className="text-body-sm text-foreground">{cfg.title}</span>
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full ${cfg.dotColor} shrink-0 translate-y-[-1px]`}
+                  />
+                  <span className="text-body-sm text-foreground">
+                    {cfg.title}
+                  </span>
                   {entry.detail && (
-                    <span className="text-label-sm text-muted-foreground/40 truncate min-w-0">{entry.detail}</span>
+                    <span className="text-label-sm text-muted-foreground/40 truncate min-w-0">
+                      {entry.detail}
+                    </span>
                   )}
                   <span className="text-[10px] text-muted-foreground/30 shrink-0 ml-auto tabular-nums">
                     {dayjs(entry._creationTime).format("h:mm A")}
@@ -1366,6 +649,25 @@ function PolicyActivityTab({ policyId }: { policyId: string }) {
   );
 }
 
+// ─── ViewPdfButton ────────────────────────────────────────────────────────────
+
+function ViewPdfButton({ url }: { url?: string | null }) {
+  const { isPdfOpen, togglePdf, openWithUrl } = usePdf();
+  if (!url) return null;
+  return (
+    <PillButton
+      variant="primary"
+      size="compact"
+      onClick={() => (isPdfOpen ? togglePdf() : openWithUrl(url))}
+      className="hidden lg:inline-flex"
+    >
+      <Eye className="w-3.5 h-3.5" />
+      {isPdfOpen ? "Hide PDF" : "View PDF"}
+    </PillButton>
+  );
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function PolicyDetailPage({
   params,
@@ -1373,13 +675,11 @@ export default function PolicyDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
-  const policy = useQuery(api.policies.get, {
-    id: id as any,
-  });
 
+  const policy = useQuery(api.policies.get, { id: id as any });
   const fileUrl = useQuery(
     api.policies.getFileUrl,
-    policy?.fileId ? { fileId: policy.fileId as Id<"_storage"> } : "skip"
+    policy?.fileId ? { fileId: policy.fileId as Id<"_storage"> } : "skip",
   );
 
   const softDelete = useMutation(api.policies.softDelete);
@@ -1387,6 +687,7 @@ export default function PolicyDetailPage({
   const generateUploadUrl = useMutation(api.policies.generateUploadUrl);
   const reExtract = useAction(api.actions.reExtractFromFile.reExtractFromFile);
   const retryExtraction = useAction(api.actions.retryExtraction.retryExtraction);
+
   const [reExtracting, setReExtracting] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -1396,13 +697,17 @@ export default function PolicyDetailPage({
   const [uploading, setUploading] = useState(false);
   const [demoBannerDismissed, setDemoBannerDismissed] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [activeTab, setActiveTab] = useState<"details" | "conversations" | "activity" | "extraction">("details");
+  const [activeTab, setActiveTab] = useState<
+    "details" | "conversations" | "activity" | "extraction"
+  >("details");
 
   const { openWithUrl, setFileUrl: preloadPdfUrl } = usePdf();
   const { setPageContext } = usePageContext();
+
   useEffect(() => {
     if (policy) {
-      const types = policy.policyTypes ?? (policy.policyType ? [policy.policyType] : []);
+      const types =
+        policy.policyTypes ?? (policy.policyType ? [policy.policyType] : []);
       setPageContext({
         pageType: "policy",
         entityId: policy._id,
@@ -1411,11 +716,11 @@ export default function PolicyDetailPage({
     }
     return () => setPageContext(null);
   }, [policy, setPageContext]);
+
   const didAutoOpen = useRef(false);
   useEffect(() => {
     if (fileUrl && !didAutoOpen.current) {
       didAutoOpen.current = true;
-      // Pre-load URL so PageRef links work immediately
       preloadPdfUrl(fileUrl);
       if (initialPage) {
         openWithUrl(fileUrl, initialPage);
@@ -1427,6 +732,8 @@ export default function PolicyDetailPage({
     api.agentConversations.listByPolicyId,
     policy ? { policyId: policy._id } : "skip",
   );
+
+  // ── Loading / not-found states ──────────────────────────────────────────────
 
   if (policy === undefined) {
     return (
@@ -1443,7 +750,10 @@ export default function PolicyDetailPage({
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-4 py-3">
+            <div
+              key={i}
+              className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-4 py-3"
+            >
               <Skeleton className="h-5 w-32 mb-1" />
               <Skeleton className="h-3 w-24" />
             </div>
@@ -1458,7 +768,10 @@ export default function PolicyDetailPage({
       <AppShell>
         <div className="text-center py-12">
           <p className="text-muted-foreground mb-2">Policy not found</p>
-          <Link href="/policies" className="text-primary hover:underline text-body-sm">
+          <Link
+            href="/policies"
+            className="text-primary hover:underline text-body-sm"
+          >
             Back to policies
           </Link>
         </div>
@@ -1466,42 +779,17 @@ export default function PolicyDetailPage({
     );
   }
 
-  const policyTypes: string[] = (policy as any).policyTypes ?? [(policy as any).policyType ?? "other"];
+  // ── Derived data ────────────────────────────────────────────────────────────
+
+  const policyTypes: string[] =
+    (policy as any).policyTypes ?? [(policy as any).policyType ?? "other"];
   const documentType: string = (policy as any).documentType ?? "policy";
-  const security: string | undefined = (policy as any).security;
-  const underwriterName: string | undefined = (policy as any).underwriter;
-  const mga: string | undefined = (policy as any).mga;
-  const broker: string | undefined = (policy as any).broker;
   const isDeleted = !!(policy as any).deletedAt;
   const policyDocument: any = (policy as any).document;
-  const metadataSource: any = (policy as any).metadataSource;
-  // Enriched fields (cl-sdk 1.2+)
-  const carrierLegalName: string | undefined = (policy as any).carrierLegalName;
-  const carrierNaicNumber: string | undefined = (policy as any).carrierNaicNumber;
-  const carrierAmBestRating: string | undefined = (policy as any).carrierAmBestRating;
-  const carrierAdmittedStatus: string | undefined = (policy as any).carrierAdmittedStatus;
-  const brokerAgency: string | undefined = (policy as any).brokerAgency;
-  const brokerContactName: string | undefined = (policy as any).brokerContactName;
-  const brokerLicenseNumber: string | undefined = (policy as any).brokerLicenseNumber;
-  const priorPolicyNumber: string | undefined = (policy as any).priorPolicyNumber;
-  const programName: string | undefined = (policy as any).programName;
-  const isPackage: boolean | undefined = (policy as any).isPackage;
-  const insuredDba: string | undefined = (policy as any).insuredDba;
-  const insuredAddress: any = (policy as any).insuredAddress;
-  const insuredEntityType: string | undefined = (policy as any).insuredEntityType;
-  const insuredFein: string | undefined = (policy as any).insuredFein;
-  const additionalNamedInsureds: any[] | undefined = (policy as any).additionalNamedInsureds;
-  const coverageForm: string | undefined = (policy as any).coverageForm;
-  const retroactiveDate: string | undefined = (policy as any).retroactiveDate;
-  const effectiveTime: string | undefined = (policy as any).effectiveTime;
   const limits: any = (policy as any).limits;
   const deductibles: any = (policy as any).deductibles;
-  const locations: any[] | undefined = (policy as any).locations;
-  const vehicles: any[] | undefined = (policy as any).vehicles;
-  const classifications: any[] | undefined = (policy as any).classifications;
-  const formInventory: any[] | undefined = (policy as any).formInventory;
-  const taxesAndFees: any[] | undefined = (policy as any).taxesAndFees;
-  const supplementaryFacts: { key: string; value: string; subject?: string; context?: string }[] | undefined = (policy as any).supplementaryFacts;
+
+  // ── Handlers ────────────────────────────────────────────────────────────────
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1544,7 +832,9 @@ export default function PolicyDetailPage({
     <>
       {policy.carrier} {policy.policyNumber}
       {documentType === "quote" && (
-        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-yellow-100 dark:bg-yellow-950/40 text-yellow-800 dark:text-yellow-400 ml-1.5">Quote</span>
+        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-yellow-100 dark:bg-yellow-950/40 text-yellow-800 dark:text-yellow-400 ml-1.5">
+          Quote
+        </span>
       )}
     </>
   );
@@ -1583,7 +873,9 @@ export default function PolicyDetailPage({
             }
           }}
         >
-          <RefreshCw className={`w-4 h-4 ${reExtracting ? "animate-spin" : ""}`} />
+          <RefreshCw
+            className={`w-4 h-4 ${reExtracting ? "animate-spin" : ""}`}
+          />
         </PillButton>
       )}
       <PillButton
@@ -1604,701 +896,176 @@ export default function PolicyDetailPage({
   );
 
   return (
-      <AppShell breadcrumbDetail={breadcrumbLabel} actions={headerActions}>
-                <FadeIn when={true} staggerIndex={0} duration={0.6}>
-                  <Link
-                    href="/policies"
-                    className="inline-flex items-center gap-1.5 text-body-sm text-muted-foreground hover:text-foreground transition-colors mb-4"
-                  >
-                    <ArrowLeft className="w-3.5 h-3.5" />
-                    Back to policies
-                  </Link>
+    <AppShell breadcrumbDetail={breadcrumbLabel} actions={headerActions}>
+      <FadeIn when={true} staggerIndex={0} duration={0.6}>
+        <Link
+          href="/policies"
+          className="inline-flex items-center gap-1.5 text-body-sm text-muted-foreground hover:text-foreground transition-colors mb-4"
+        >
+          <ArrowLeft className="w-3.5 h-3.5" />
+          Back to policies
+        </Link>
 
-                  {isDeleted && (
-                    <div className="flex items-center gap-3 mb-4 rounded-lg border border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-950/40 px-4 py-2.5">
-                      <p className="text-body-sm text-red-700 dark:text-red-400 flex-1">This policy has been deleted.</p>
-                      <Button
-                        variant="outline"
-                        onClick={() => restorePolicy({ id: policy._id })}
-                        className="text-label-sm"
-                      >
-                        Restore
-                      </Button>
-                    </div>
-                  )}
+        {isDeleted && (
+          <div className="flex items-center gap-3 mb-4 rounded-lg border border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-950/40 px-4 py-2.5">
+            <p className="text-body-sm text-red-700 dark:text-red-400 flex-1">
+              This policy has been deleted.
+            </p>
+            <Button
+              variant="outline"
+              onClick={() => restorePolicy({ id: policy._id })}
+              className="text-label-sm"
+            >
+              Restore
+            </Button>
+          </div>
+        )}
 
-                  <div className="mb-6">
-                    <h1 className="!mb-0 break-all">{policy.policyNumber}</h1>
-                    <div className="flex items-center gap-2 flex-wrap mt-1">
-                      {policy.isRenewal && (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400">
-                          Renewal
-                        </span>
-                      )}
-                      <PolicyTypeTags types={policyTypes} />
-                    </div>
-                  </div>
-                </FadeIn>
+        <div className="mb-2">
+          <h1 className="!mb-0 break-all">{policy.policyNumber}</h1>
+        </div>
+      </FadeIn>
 
-                <Dialog open={showDeleteDialog} onOpenChange={(v) => !v && setShowDeleteDialog(false)}>
-                  <DialogContent showCloseButton={false}>
-                    <DialogHeader>
-                      <DialogTitle>Delete Policy</DialogTitle>
-                      <DialogDescription>
-                        Are you sure you want to delete <strong>{policy.policyNumber}</strong>? The policy can be restored later.
-                      </DialogDescription>
-                    </DialogHeader>
-                    <DialogFooter>
-                      <PillButton variant="secondary" onClick={() => setShowDeleteDialog(false)} disabled={deleting}>
-                        Cancel
-                      </PillButton>
-                      <PillButton variant="destructive" onClick={handleDelete} disabled={deleting}>
-                        {deleting ? "Deleting..." : "Delete"}
-                      </PillButton>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
+      <Dialog
+        open={showDeleteDialog}
+        onOpenChange={(v) => !v && setShowDeleteDialog(false)}
+      >
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Delete Policy</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete{" "}
+              <strong>{policy.policyNumber}</strong>? The policy can be restored
+              later.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <PillButton
+              variant="secondary"
+              onClick={() => setShowDeleteDialog(false)}
+              disabled={deleting}
+            >
+              Cancel
+            </PillButton>
+            <PillButton
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={deleting}
+            >
+              {deleting ? "Deleting..." : "Delete"}
+            </PillButton>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-                {/* Demo data banner */}
-                {(policy as any).isDemo && !demoBannerDismissed && (
-                  <div className="flex items-center gap-3 px-4 py-2.5 rounded-lg border border-amber-200 dark:border-amber-900/50 bg-amber-50/60 dark:bg-amber-950/30 mb-4">
-                    <p className="text-label-sm text-amber-700 dark:text-amber-400 flex-1">
-                      You&apos;re viewing demo data.{" "}
-                      <Link href="/profile" className="underline font-medium hover:text-amber-900">Remove demo data</Link>{" "}
-                      from Settings when you&apos;re ready.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => setDemoBannerDismissed(true)}
-                      className="text-amber-500 hover:text-amber-700 transition-colors cursor-pointer"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                )}
+      {/* Demo data banner */}
+      {(policy as any).isDemo && !demoBannerDismissed && (
+        <div className="flex items-center gap-3 px-4 py-2.5 rounded-lg border border-amber-200 dark:border-amber-900/50 bg-amber-50/60 dark:bg-amber-950/30 mb-4">
+          <p className="text-label-sm text-amber-700 dark:text-amber-400 flex-1">
+            You&apos;re viewing demo data.{" "}
+            <Link
+              href="/profile"
+              className="underline font-medium hover:text-amber-900"
+            >
+              Remove demo data
+            </Link>{" "}
+            from Settings when you&apos;re ready.
+          </p>
+          <button
+            type="button"
+            onClick={() => setDemoBannerDismissed(true)}
+            className="text-amber-500 hover:text-amber-700 transition-colors cursor-pointer"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
-                {/* Tab bar */}
-                <div className="flex items-center gap-1 border-b border-foreground/6 mb-6">
-                  {([
-                    { id: "details" as const, label: "Details" },
-                    { id: "conversations" as const, label: "Threads", count: conversations?.length },
-                    { id: "activity" as const, label: "Activity" },
-                    { id: "extraction" as const, label: "Extraction" },
-                  ]).map((tab) => (
-                    <button
-                      key={tab.id}
-                      type="button"
-                      onClick={() => setActiveTab(tab.id)}
-                      className={`relative px-3 py-2 text-body-sm font-medium whitespace-nowrap transition-colors cursor-pointer ${
-                        activeTab === tab.id
-                          ? "text-foreground"
-                          : "text-muted-foreground hover:text-foreground/70"
-                      }`}
-                    >
-                      <span className="flex items-center gap-1.5">
-                        {tab.label}
-                        {tab.count != null && tab.count > 0 && (
-                          <span className="text-[10px] font-medium bg-foreground/8 text-muted-foreground px-1.5 py-0.5 rounded-full leading-none">
-                            {tab.count}
-                          </span>
-                        )}
-                      </span>
-                      {activeTab === tab.id && (
-                        <motion.div
-                          layoutId="policy-tab-indicator"
-                          className="absolute bottom-0 left-0 right-0 h-[2px] bg-foreground"
-                          transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                        />
-                      )}
-                    </button>
-                  ))}
-                </div>
+      {/* Tab bar */}
+      <div className="flex items-center gap-1 border-b border-foreground/6 mb-6">
+        {(
+          [
+            { id: "details" as const, label: "Details" },
+            {
+              id: "conversations" as const,
+              label: "Threads",
+              count: conversations?.length,
+            },
+            { id: "activity" as const, label: "Activity" },
+            { id: "extraction" as const, label: "Extraction" },
+          ] as const
+        ).map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => setActiveTab(tab.id)}
+            className={`relative px-3 py-2 text-body-sm font-medium whitespace-nowrap transition-colors cursor-pointer ${
+              activeTab === tab.id
+                ? "text-foreground"
+                : "text-muted-foreground hover:text-foreground/70"
+            }`}
+          >
+            <span className="flex items-center gap-1.5">
+              {tab.label}
+              {"count" in tab && tab.count != null && tab.count > 0 && (
+                <span className="text-[10px] font-medium bg-foreground/8 text-muted-foreground px-1.5 py-0.5 rounded-full leading-none">
+                  {tab.count}
+                </span>
+              )}
+            </span>
+            {activeTab === tab.id && (
+              <motion.div
+                layoutId="policy-tab-indicator"
+                className="absolute bottom-0 left-0 right-0 h-[2px] bg-foreground"
+                transition={{ type: "spring", stiffness: 400, damping: 30 }}
+              />
+            )}
+          </button>
+        ))}
+      </div>
 
-                {activeTab === "details" && (<>
-                <div className="flex gap-6">
-                <div className="flex-1 min-w-0 @container">
+      {/* ── Details tab ── */}
+      {activeTab === "details" && (
+        <FadeIn when={true} staggerIndex={1} duration={0.5}>
+          {/* 1. Summary card — always visible, scannable */}
+          <PolicySummary
+            policyNumber={policy.policyNumber}
+            carrier={
+              (policy as any).carrierLegalName ||
+              (policy as any).security ||
+              policy.carrier
+            }
+            insuredName={policy.insuredName}
+            effectiveDate={policy.effectiveDate}
+            expirationDate={policy.expirationDate}
+            premium={policy.premium}
+            totalCost={(policy as any).totalCost}
+            policyTypes={policyTypes}
+            policyTermType={(policy as any).policyTermType}
+            limits={limits}
+            deductibles={deductibles}
+            summary={policy.summary}
+            isRenewal={policy.isRenewal}
+            documentType={documentType}
+          />
 
-                {/* Info grid */}
-                <div id="section-overview" />
-                <div className="flex flex-col @lg:grid @lg:grid-cols-2 @4xl:flex @4xl:flex-row gap-4 mb-6">
-                  {[
-                    { label: "Policy Period", value: policy.effectiveDate === "Unknown" && !policy.expirationDate
-                        ? (documentType === "quote" ? "Quote" : "Unknown")
-                        : (policy as any).policyTermType === "continuous"
-                          ? `${policy.effectiveDate} — Until Cancelled`
-                          : `${policy.effectiveDate} – ${policy.expirationDate ?? "—"}`,
-                      mono: false },
-                    { label: "Total Cost", value: (policy as any).totalCost || policy.premium, mono: true },
-                    { label: "Insurer", value: carrierLegalName || security || policy.carrier, mono: false },
-                    { label: "Insured", value: policy.insuredName, mono: false },
-                    { label: "Broker", value: brokerAgency || broker, mono: false },
-                  ].filter((c) => c.value).map((c, i) => (
-                    <FadeIn key={c.label} when={true} staggerIndex={i + 1} duration={0.6} className="@4xl:flex-1 min-w-0">
-                      <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-4 py-3 h-full">
-                        <p className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider mb-1.5">{c.label}</p>
-                        <p className={`text-body-sm font-medium text-foreground ${c.mono ? "font-mono" : ""}`}>{c.value}</p>
-                      </div>
-                    </FadeIn>
-                  ))}
-                </div>
+          {/* 2. Extraction details — collapsed by default */}
+          {policyDocument && (
+            <ExtractionPanel
+              policyDocument={policyDocument}
+              initialPage={initialPage}
+            />
+          )}
+        </FadeIn>
+      )}
 
-                {/* Summary */}
-                {policy.summary && (
-                  <FadeIn when={true} delay={0.5} duration={0.6}>
-                    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] px-4 py-3 mb-6">
-                      <p className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider mb-2">
-                        Summary
-                      </p>
-                      <p className="text-body-sm text-foreground leading-relaxed">
-                        {policy.summary}
-                      </p>
-                    </div>
-                  </FadeIn>
-                )}
+      {activeTab === "conversations" && (
+        <PolicyConversationsTab conversations={conversations} />
+      )}
 
-                {/* Policy Period */}
-                <FadeIn when={true} delay={0.55} duration={0.6}>
-                  <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden mb-6">
-                    <div className="px-4 py-2.5 bg-foreground/[0.02] border-b border-foreground/4">
-                      <div className="flex items-center gap-2">
-                        <Calendar className="w-4 h-4 text-muted-foreground" />
-                        <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">
-                          Policy Period
-                        </p>
-                        {metadataSource?.effectiveDatePage != null && <PageRef page={metadataSource.effectiveDatePage} />}
-                      </div>
-                    </div>
-                    <table className="w-full text-left">
-                      <tbody>
-                        {[
-                          { label: "Effective Date", value: policy.effectiveDate },
-                          { label: "Expiration Date", value: policy.expirationDate ?? "—" },
-                          { label: "Policy Year", value: String(policy.policyYear) },
-                          effectiveTime ? { label: "Effective Time", value: effectiveTime } : null,
-                          (policy as any).policyTermType ? { label: "Term Type", value: (policy as any).policyTermType.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase()) } : null,
-                          coverageForm ? { label: "Coverage Form", value: coverageForm === "claims_made" ? "Claims-Made" : coverageForm === "occurrence" ? "Occurrence" : coverageForm } : null,
-                          retroactiveDate ? { label: "Retroactive Date", value: retroactiveDate } : null,
-                          (policy as any).nextReviewDate ? { label: "Next Review", value: (policy as any).nextReviewDate } : null,
-                        ].filter(Boolean).map((item: any) => (
-                          <tr key={item.label} className="border-t border-foreground/4 first:border-t-0 hover:bg-foreground/[0.015] transition-colors">
-                            <td className="px-4 py-2 text-body-sm text-muted-foreground w-32 sm:w-48">{item.label}</td>
-                            <td className="px-4 py-2 text-body-sm text-foreground font-medium">{item.value}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </FadeIn>
+      {activeTab === "activity" && <PolicyActivityTab policyId={id} />}
 
-                {/* Coverages table */}
-                <FadeIn when={true} delay={0.6} duration={0.6}>
-                  <div id="section-coverages" className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden mb-6">
-                    <div className="px-4 py-2.5 bg-foreground/[0.02] border-b border-foreground/4">
-                      <div className="flex items-center gap-2">
-                        <FileText className="w-4 h-4 text-muted-foreground" />
-                        <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">
-                          Coverage Details
-                        </p>
-                      </div>
-                    </div>
-                    <table className="w-full text-left table-fixed">
-                      <colgroup>
-                        <col className="w-[50%]" />
-                        <col className="w-[20%]" />
-                        <col className="hidden sm:table-column w-[20%]" />
-                        <col className="hidden sm:table-column w-[10%]" />
-                      </colgroup>
-                      <thead>
-                        <tr className="bg-foreground/[0.02]">
-                          <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">
-                            Coverage
-                          </th>
-                          <th className="px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider text-right">
-                            Limit
-                          </th>
-                          <th className="hidden sm:table-cell px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider text-right">
-                            Deductible
-                          </th>
-                          <th className="hidden sm:table-cell px-4 py-2.5 text-label-sm font-semibold text-muted-foreground uppercase tracking-wider text-right">
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {policy.coverages.map((cov, i) => {
-                          const c = cov as any;
-                          const skipValueTypes = new Set(["numeric", "waiting_period"]);
-                          const tags = [
-                            c.formNumber,
-                            c.sectionRef,
-                            c.limitValueType && !skipValueTypes.has(c.limitValueType) && c.limitValueType.replace(/_/g, " "),
-                            c.deductibleValueType && !skipValueTypes.has(c.deductibleValueType) && `ded: ${c.deductibleValueType.replace(/_/g, " ")}`,
-                          ].filter(Boolean) as string[];
-                          return (
-                            <FadeIn
-                              key={i}
-                              as="tr"
-                              when={true}
-                              delay={0.65 + i * 0.02}
-                              duration={0.35}
-                              direction="none"
-                              className="border-t border-foreground/4 group/cov hover:bg-foreground/[0.015] transition-colors align-top"
-                            >
-                              <td className="px-4 py-2.5 text-body-sm text-foreground">
-                                <span>{cov.name}</span>
-                                {tags.length > 0 && (
-                                  <div className="flex flex-wrap gap-1 mt-1">
-                                    {tags.map((tag) => (
-                                      <span key={tag} className="inline-flex items-center rounded-full bg-foreground/[0.04] px-1.5 py-px text-[10px] text-muted-foreground/70">
-                                        {tag}
-                                      </span>
-                                    ))}
-                                  </div>
-                                )}
-                              </td>
-                              <td className="px-4 py-2.5 text-body-sm font-mono font-medium text-foreground text-right whitespace-nowrap">
-                                {cov.limit}
-                              </td>
-                              <td className="hidden sm:table-cell px-4 py-2.5 text-body-sm font-mono text-muted-foreground text-right whitespace-nowrap">
-                                {cov.deductible || "—"}
-                              </td>
-                              <td className="hidden sm:table-cell px-4 py-2.5 text-right">
-                                {c.pageNumber != null && <PageRef page={c.pageNumber} />}
-                              </td>
-                            </FadeIn>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </FadeIn>
-
-                {/* Parties */}
-                <FadeIn when={true} delay={0.65} duration={0.6}>
-                  <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden mb-6">
-                    <div className="px-4 py-2.5 bg-foreground/[0.02] border-b border-foreground/4">
-                      <div className="flex items-center gap-2">
-                        <Users className="w-4 h-4 text-muted-foreground" />
-                        <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">
-                          Parties
-                        </p>
-                        {metadataSource?.carrierPage != null && <PageRef page={metadataSource.carrierPage} />}
-                      </div>
-                    </div>
-                    <table className="w-full text-left">
-                      <tbody>
-                        {[
-                          { role: "Insured", value: policy.insuredName },
-                          insuredDba ? { role: "DBA", value: insuredDba } : null,
-                          insuredEntityType ? { role: "Entity Type", value: insuredEntityType.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase()) } : null,
-                          insuredAddress ? { role: "Address", value: [insuredAddress.street1, insuredAddress.street2, `${insuredAddress.city}, ${insuredAddress.state} ${insuredAddress.zip}`].filter(Boolean).join(", ") } : null,
-                          insuredFein ? { role: "FEIN", value: insuredFein } : null,
-                          { role: "Carrier", value: carrierLegalName || security || policy.carrier },
-                          carrierNaicNumber ? { role: "NAIC #", value: carrierNaicNumber } : null,
-                          carrierAmBestRating ? { role: "AM Best Rating", value: carrierAmBestRating } : null,
-                          carrierAdmittedStatus ? { role: "Status", value: carrierAdmittedStatus.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase()) } : null,
-                          underwriterName ? { role: "Underwriter", value: underwriterName } : null,
-                          mga ? { role: "Program Administrator", value: mga } : null,
-                          brokerAgency || broker ? { role: "Broker", value: brokerAgency || broker } : null,
-                          brokerContactName ? { role: "Producer Contact", value: brokerContactName } : null,
-                          brokerLicenseNumber ? { role: "License #", value: brokerLicenseNumber } : null,
-                          programName ? { role: "Program", value: programName } : null,
-                          priorPolicyNumber ? { role: "Prior Policy #", value: priorPolicyNumber } : null,
-                          isPackage ? { role: "Package Policy", value: "Yes" } : null,
-                        ].filter(Boolean).map((party: any, i: number) => (
-                          <tr key={party.role} className="border-t border-foreground/4 first:border-t-0 hover:bg-foreground/[0.015] transition-colors">
-                            <td className="px-4 py-2.5 text-body-sm text-muted-foreground w-32 sm:w-48">{party.role}</td>
-                            <td className="px-4 py-2.5 text-body-sm text-foreground font-medium">{party.value}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                    {additionalNamedInsureds && additionalNamedInsureds.length > 0 && (
-                      <div className="px-4 py-2.5 border-t border-foreground/4">
-                        <p className="text-label-sm text-muted-foreground mb-1">Additional Named Insureds</p>
-                        <ul className="space-y-0.5">
-                          {additionalNamedInsureds.map((ai: any, i: number) => (
-                            <li key={i} className="text-body-sm text-foreground">
-                              {ai.name}{ai.relationship ? ` (${ai.relationship})` : ""}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                  </div>
-                </FadeIn>
-
-                {/* Limits & deductibles removed — the coverage table shows this data in context */}
-
-                {/* Locations */}
-                {locations && locations.length > 0 && (
-                  <FadeIn when={true} delay={0.69} duration={0.6}>
-                    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden mb-6">
-                      <div className="px-4 py-2.5 bg-foreground/[0.02] border-b border-foreground/4">
-                        <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">
-                          Insured Locations ({locations.length})
-                        </p>
-                      </div>
-                      {locations.map((loc: any, i: number) => (
-                        <div key={i} className="px-4 py-2.5 border-t border-foreground/4 first:border-t-0">
-                          <p className="text-body-sm font-medium text-foreground">
-                            #{loc.number} — {loc.address.street1}, {loc.address.city}, {loc.address.state} {loc.address.zip}
-                          </p>
-                          {loc.description && <p className="text-body-sm text-muted-foreground mt-0.5">{loc.description}</p>}
-                          {(loc.buildingValue || loc.contentsValue) && (
-                            <p className="text-body-sm text-muted-foreground mt-0.5 font-mono">
-                              {loc.buildingValue && `Building: ${loc.buildingValue}`}
-                              {loc.buildingValue && loc.contentsValue && " | "}
-                              {loc.contentsValue && `Contents: ${loc.contentsValue}`}
-                            </p>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </FadeIn>
-                )}
-
-                {/* Vehicles */}
-                {vehicles && vehicles.length > 0 && (
-                  <FadeIn when={true} delay={0.69} duration={0.6}>
-                    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden mb-6">
-                      <div className="px-4 py-2.5 bg-foreground/[0.02] border-b border-foreground/4">
-                        <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">
-                          Insured Vehicles ({vehicles.length})
-                        </p>
-                      </div>
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-left">
-                          <thead>
-                            <tr className="border-t border-foreground/4">
-                              <th className="px-4 py-2 text-label-sm text-muted-foreground">#</th>
-                              <th className="px-4 py-2 text-label-sm text-muted-foreground">Year</th>
-                              <th className="px-4 py-2 text-label-sm text-muted-foreground">Make/Model</th>
-                              <th className="px-4 py-2 text-label-sm text-muted-foreground">VIN</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {vehicles.map((v: any, i: number) => (
-                              <tr key={i} className="border-t border-foreground/4 hover:bg-foreground/[0.015] transition-colors">
-                                <td className="px-4 py-2 text-body-sm text-muted-foreground">{v.number}</td>
-                                <td className="px-4 py-2 text-body-sm text-foreground">{v.year}</td>
-                                <td className="px-4 py-2 text-body-sm text-foreground font-medium">{v.make} {v.model}</td>
-                                <td className="px-4 py-2 text-body-sm font-mono text-muted-foreground">{v.vin}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  </FadeIn>
-                )}
-
-                {/* Classification Codes */}
-                {classifications && classifications.length > 0 && (
-                  <FadeIn when={true} delay={0.69} duration={0.6}>
-                    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden mb-6">
-                      <div className="px-4 py-2.5 bg-foreground/[0.02] border-b border-foreground/4">
-                        <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">
-                          Classification Codes ({classifications.length})
-                        </p>
-                      </div>
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-left">
-                          <thead>
-                            <tr className="border-t border-foreground/4">
-                              <th className="px-4 py-2 text-label-sm text-muted-foreground">Code</th>
-                              <th className="px-4 py-2 text-label-sm text-muted-foreground">Description</th>
-                              <th className="px-4 py-2 text-label-sm text-muted-foreground text-right">Basis</th>
-                              <th className="px-4 py-2 text-label-sm text-muted-foreground text-right">Premium</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {classifications.map((cls: any, i: number) => (
-                              <tr key={i} className="border-t border-foreground/4 hover:bg-foreground/[0.015] transition-colors">
-                                <td className="px-4 py-2 text-body-sm font-mono text-foreground">{cls.code}</td>
-                                <td className="px-4 py-2 text-body-sm text-foreground">{cls.description}</td>
-                                <td className="px-4 py-2 text-body-sm text-muted-foreground text-right">{cls.premiumBasis}{cls.basisAmount ? `: ${cls.basisAmount}` : ""}</td>
-                                <td className="px-4 py-2 text-body-sm font-mono font-medium text-foreground text-right">{cls.premium || "—"}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  </FadeIn>
-                )}
-
-                {/* Premiums and Fees */}
-                {(policy.premium || (policy as any).totalCost || (policy as any).minimumPremium || (policy as any).depositPremium || (taxesAndFees && taxesAndFees.length > 0) || policyDocument?.costsAndFees) && (
-                  <FadeIn when={true} delay={0.69} duration={0.6}>
-                    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden mb-6">
-                      <div className="px-4 py-2.5 bg-foreground/[0.02] border-b border-foreground/4">
-                        <div className="flex items-center gap-2">
-                          <DollarSign className="w-4 h-4 text-muted-foreground" />
-                          <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">
-                            Premiums and Fees
-                          </p>
-                          {metadataSource?.premiumPage != null && <PageRef page={metadataSource.premiumPage} />}
-                        </div>
-                      </div>
-                      <table className="w-full text-left">
-                        <tbody>
-                          {[
-                            policy.premium ? { label: "Premium", value: policy.premium } : null,
-                            (policy as any).totalCost && (policy as any).totalCost !== policy.premium ? { label: "Total Cost", value: (policy as any).totalCost } : null,
-                            (policy as any).minimumPremium ? { label: "Minimum Premium", value: (policy as any).minimumPremium } : null,
-                            (policy as any).depositPremium ? { label: "Deposit Premium", value: (policy as any).depositPremium } : null,
-                          ].filter(Boolean).map((item: any) => (
-                            <tr key={item.label} className="border-t border-foreground/4 first:border-t-0 hover:bg-foreground/[0.015] transition-colors">
-                              <td className="px-4 py-2 text-body-sm text-muted-foreground">{item.label}</td>
-                              <td className="px-4 py-2 text-body-sm font-mono font-medium text-foreground text-right whitespace-nowrap">{item.value}</td>
-                            </tr>
-                          ))}
-                          {taxesAndFees && taxesAndFees.length > 0 && (
-                            <>
-                              <tr className="border-t border-foreground/6 bg-foreground/[0.02]">
-                                <td colSpan={2} className="px-4 py-1.5 text-label-sm font-medium text-muted-foreground uppercase tracking-wider">Taxes & Fees</td>
-                              </tr>
-                              {taxesAndFees.map((tf: any, i: number) => (
-                                <tr key={i} className="border-t border-foreground/4 hover:bg-foreground/[0.015] transition-colors">
-                                  <td className="px-4 py-2 text-body-sm text-foreground">{tf.name}{tf.type ? ` (${tf.type})` : ""}</td>
-                                  <td className="px-4 py-2 text-body-sm font-mono font-medium text-foreground text-right whitespace-nowrap">{tf.amount}</td>
-                                </tr>
-                              ))}
-                            </>
-                          )}
-                          {policyDocument?.costsAndFees?.fees?.length > 0 && (
-                            <>
-                              <tr className="border-t border-foreground/6 bg-foreground/[0.02]">
-                                <td colSpan={2} className="px-4 py-1.5">
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-label-sm font-medium text-muted-foreground uppercase tracking-wider">Cost Breakdown</span>
-                                    {policyDocument.costsAndFees.pageNumber != null && <PageRef page={policyDocument.costsAndFees.pageNumber} />}
-                                  </div>
-                                </td>
-                              </tr>
-                              {policyDocument.costsAndFees.fees.map((f: any, i: number) => (
-                                <tr key={`cf-${i}`} className="border-t border-foreground/4 hover:bg-foreground/[0.015] transition-colors">
-                                  <td className="px-4 py-2 text-body-sm">
-                                    <span className="text-foreground font-medium">{f.name}</span>
-                                    {f.type && (
-                                      <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-foreground/[0.04] text-muted-foreground">{f.type}</span>
-                                    )}
-                                    {f.description && (
-                                      <p className="text-muted-foreground/60 text-label-sm mt-0.5">{f.description}</p>
-                                    )}
-                                  </td>
-                                  <td className="px-4 py-2 text-body-sm font-mono font-medium text-foreground text-right align-top whitespace-nowrap">{f.amount || "—"}</td>
-                                </tr>
-                              ))}
-                            </>
-                          )}
-                          {policyDocument?.costsAndFees?.content && !policyDocument?.costsAndFees?.fees?.length && (
-                            <tr className="border-t border-foreground/4">
-                              <td colSpan={2} className="px-4 py-2.5 text-body-sm text-foreground whitespace-pre-wrap">{policyDocument.costsAndFees.content}</td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                  </FadeIn>
-                )}
-
-                {/* Form Inventory */}
-                {formInventory && formInventory.length > 0 && (
-                  <FadeIn when={true} delay={0.69} duration={0.6}>
-                    <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden mb-6">
-                      <div className="px-4 py-2.5 bg-foreground/[0.02] border-b border-foreground/4">
-                        <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">
-                          Form Inventory ({formInventory.length})
-                        </p>
-                      </div>
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-left">
-                          <thead>
-                            <tr className="border-t border-foreground/4">
-                              <th className="px-4 py-2 text-label-sm text-muted-foreground">Form #</th>
-                              <th className="px-4 py-2 text-label-sm text-muted-foreground">Edition</th>
-                              <th className="px-4 py-2 text-label-sm text-muted-foreground">Title</th>
-                              <th className="px-4 py-2 text-label-sm text-muted-foreground">Type</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {formInventory.map((f: any, i: number) => (
-                              <tr key={i} className="border-t border-foreground/4 hover:bg-foreground/[0.015] transition-colors">
-                                <td className="px-4 py-2 text-body-sm font-mono text-foreground">{f.formNumber}</td>
-                                <td className="px-4 py-2 text-body-sm text-muted-foreground">{f.editionDate || "—"}</td>
-                                <td className="px-4 py-2 text-body-sm text-foreground">{f.title || "—"}</td>
-                                <td className="px-4 py-2 text-body-sm text-muted-foreground">{f.formType}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  </FadeIn>
-                )}
-
-                {/* Document Sections */}
-                {policyDocument?.sections?.length > 0 && (
-                  <FadeIn when={true} delay={0.7} duration={0.6}>
-                    <div id="section-document" className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden mb-6">
-                      <div className="px-4 py-2.5 bg-foreground/[0.02] border-b border-foreground/4">
-                        <div className="flex items-center gap-2">
-                          <FileText className="w-4 h-4 text-muted-foreground" />
-                          <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">
-                            Document Sections
-                          </p>
-                          <span className="text-label-sm text-muted-foreground/50">
-                            ({policyDocument.sections.length})
-                          </span>
-                        </div>
-                      </div>
-                      {policyDocument.sections.map((section: any, i: number) => (
-                        <DocumentSection
-                          key={i}
-                          section={section}
-                          highlighted={
-                            initialPage != null &&
-                            section.pageStart <= initialPage &&
-                            (section.pageEnd ?? section.pageStart) >= initialPage
-                          }
-                        />
-                      ))}
-                    </div>
-                  </FadeIn>
-                )}
-
-                {/* Regulatory Context / Complaint Contact / Claims Contact */}
-                {(policyDocument?.regulatoryContext || policyDocument?.complaintContact || policyDocument?.claimsContact) && (
-                  <div className="grid grid-cols-1 gap-4 mb-6">
-                    {policyDocument.regulatoryContext && (
-                      <FadeIn when={true} delay={0.75} duration={0.6}>
-                        <SupplementaryCard
-                          title="Regulatory Context"
-                          icon={Scale}
-                          pageNumber={policyDocument.regulatoryContext.pageNumber}
-                          content={policyDocument.regulatoryContext.content}
-                          hasStructured={!!(policyDocument.regulatoryContext.jurisdiction || policyDocument.regulatoryContext.regulatoryBody || policyDocument.regulatoryContext.governingLaw || policyDocument.regulatoryContext.details?.length)}
-                        >
-                          <RegulatoryContextStructured data={policyDocument.regulatoryContext} />
-                        </SupplementaryCard>
-                      </FadeIn>
-                    )}
-                    {policyDocument.complaintContact && (
-                      <FadeIn when={true} delay={0.8} duration={0.6}>
-                        <SupplementaryCard
-                          title="Complaint Contact"
-                          icon={Phone}
-                          pageNumber={policyDocument.complaintContact.pageNumber}
-                          content={policyDocument.complaintContact.content}
-                          hasStructured={!!policyDocument.complaintContact.contacts?.length}
-                        >
-                          <ComplaintContactStructured contacts={policyDocument.complaintContact.contacts} />
-                        </SupplementaryCard>
-                      </FadeIn>
-                    )}
-                    {policyDocument.claimsContact && (
-                      <FadeIn when={true} delay={0.9} duration={0.6}>
-                        <SupplementaryCard
-                          title="Claims Contact"
-                          icon={AlertTriangle}
-                          pageNumber={policyDocument.claimsContact.pageNumber}
-                          content={policyDocument.claimsContact.content}
-                          hasStructured={!!(policyDocument.claimsContact.contacts?.length || policyDocument.claimsContact.processSteps?.length || policyDocument.claimsContact.reportingTimeLimit)}
-                        >
-                          <ClaimsContactStructured data={policyDocument.claimsContact} />
-                        </SupplementaryCard>
-                      </FadeIn>
-                    )}
-                  </div>
-                )}
-
-                {/* Exclusions */}
-                {policyDocument?.exclusions?.length > 0 && (
-                  <FadeIn when={true} delay={0.85} duration={0.6}>
-                    <div className="mb-6">
-                      <ExclusionsCard exclusions={policyDocument.exclusions} />
-                    </div>
-                  </FadeIn>
-                )}
-
-                {/* Conditions */}
-                {policyDocument?.conditions?.length > 0 && (
-                  <FadeIn when={true} delay={0.9} duration={0.6}>
-                    <div className="mb-6">
-                      <ConditionsCard conditions={policyDocument.conditions} />
-                    </div>
-                  </FadeIn>
-                )}
-
-                {/* Endorsements */}
-                {policyDocument?.endorsements?.length > 0 && (
-                  <FadeIn when={true} delay={0.95} duration={0.6}>
-                    <div className="mb-6">
-                      <EndorsementsCard endorsements={policyDocument.endorsements} />
-                    </div>
-                  </FadeIn>
-                )}
-                {/* Supplementary Facts */}
-                {supplementaryFacts && supplementaryFacts.length > 0 && (
-                  <FadeIn when={true} delay={1.0} duration={0.6}>
-                    <div id="section-supplementary" className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] overflow-hidden mb-6">
-                      <div className="px-4 py-2.5 bg-foreground/[0.02] border-b border-foreground/4">
-                        <div className="flex items-center gap-2">
-                          <Search className="w-4 h-4 text-muted-foreground" />
-                          <p className="text-label-sm font-semibold text-muted-foreground uppercase tracking-wider">
-                            Additional Details ({supplementaryFacts.length})
-                          </p>
-                        </div>
-                      </div>
-                      <div className="divide-y divide-foreground/4">
-                        {supplementaryFacts.map((fact, i) => (
-                          <div key={i} className="px-4 py-2.5 grid grid-cols-[1fr_1fr] gap-x-4 hover:bg-foreground/[0.015] transition-colors">
-                            <span className="text-body-sm text-muted-foreground break-words">
-                              {fact.key}
-                              {fact.subject && (
-                                <span className="block text-label-sm text-muted-foreground/40 mt-0.5">{fact.subject}</span>
-                              )}
-                            </span>
-                            <span className="text-body-sm text-foreground break-words">
-                              {fact.value}
-                              {fact.context && (
-                                <span className="block text-label-sm text-muted-foreground/40 mt-0.5">{fact.context}</span>
-                              )}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </FadeIn>
-                )}
-
-                </div>{/* end flex-1 */}
-
-                <SectionOutline sections={[
-                  { id: "section-overview", label: "Overview" },
-                  { id: "section-coverages", label: "Coverages", count: policy.coverages?.length },
-                  { id: "section-document", label: "Sections", count: policyDocument?.sections?.length },
-                  { id: "section-exclusions", label: "Exclusions", count: policyDocument?.exclusions?.length },
-                  { id: "section-conditions", label: "Conditions", count: policyDocument?.conditions?.length },
-                  { id: "section-endorsements", label: "Endorsements", count: policyDocument?.endorsements?.length },
-                  ...(supplementaryFacts?.length ? [{ id: "section-supplementary", label: "Additional Details", count: supplementaryFacts.length }] : []),
-                ]} />
-                </div>{/* end flex */}
-                </>)}
-
-                {activeTab === "conversations" && (
-                  <PolicyConversationsTab conversations={conversations} />
-                )}
-
-                {activeTab === "activity" && (
-                  <PolicyActivityTab policyId={id} />
-                )}
-
-                {activeTab === "extraction" && (
-                  <ExtractionTab policy={policy} />
-                )}
-
-      </AppShell>
+      {activeTab === "extraction" && <ExtractionTab policy={policy} />}
+    </AppShell>
   );
 }
