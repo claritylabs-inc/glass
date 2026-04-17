@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useQuery, useMutation } from "convex/react";
 import { useAuthActions } from "@convex-dev/auth/react";
 import { api } from "@/convex/_generated/api";
@@ -22,9 +22,22 @@ import {
   User,
   MessageSquare,
   Archive,
+  ArrowLeft,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { usePageContext } from "@/hooks/use-page-context";
+import { SETTINGS_SECTIONS } from "@/lib/settings-sections";
+import { LogoIcon } from "@/components/ui/logo-icon";
+
+/** Wrapper so LogoIcon matches the lucide icon interface */
+function PrismStarIcon({ className }: { className?: string }) {
+  return <LogoIcon size={16} static className={className} />;
+}
+
+const SETTINGS_SECTIONS_WITH_AGENT = [
+  ...SETTINGS_SECTIONS,
+  { id: "agent", label: "Agent", icon: PrismStarIcon },
+];
 
 const INSURANCE_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard, shortcut: "D" },
@@ -79,7 +92,9 @@ export function AppSidebar({
   onMobileClose?: () => void;
 }) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const router = useRouter();
+  const isSettingsMode = pathname.startsWith("/settings");
   const viewer = useQuery(api.users.viewer);
   const unifiedThreads = useQuery(api.threads.list, { archived: false });
   const webChats = useQuery(api.webChats.list, { archived: false });
@@ -218,6 +233,56 @@ export function AppSidebar({
   }, [collapsed, router, conversations]);
 
   const initials = getInitials(viewer?.name, viewer?.email);
+
+  const activeSettingsSection = searchParams.get("section") ?? "organization";
+
+  const settingsSidebarContent = (
+    <div className="flex flex-col h-full">
+      {/* Header with collapse toggle */}
+      <div className="flex items-center gap-2 px-3 h-12 border-b border-foreground/6">
+        {!collapsed && (
+          <Link
+            href="/"
+            className="flex items-center gap-1.5 text-body-sm text-muted-foreground hover:text-foreground transition-colors flex-1 min-w-0"
+          >
+            <ArrowLeft className="w-3.5 h-3.5 shrink-0" />
+            <span>Back</span>
+          </Link>
+        )}
+        <button
+          type="button"
+          onClick={toggleCollapse}
+          className="w-7 h-7 hidden lg:flex items-center justify-center rounded-md text-muted-foreground/40 hover:text-foreground hover:bg-foreground/[0.04] transition-colors cursor-pointer shrink-0"
+        >
+          {collapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronLeft className="w-3.5 h-3.5" />}
+        </button>
+      </div>
+
+      {/* Settings nav */}
+      <nav className="flex-1 overflow-y-auto px-2 py-2">
+        {!collapsed && (
+          <p className="text-[11px] font-medium text-muted-foreground/50 px-3 pt-3 pb-1.5">
+            Settings
+          </p>
+        )}
+        {collapsed && <div className="pt-4 pb-1" />}
+        {SETTINGS_SECTIONS_WITH_AGENT.map((item) => {
+          const isItemActive = item.id === activeSettingsSection;
+          return (
+            <NavItem
+              key={item.id}
+              href={`/settings?section=${item.id}`}
+              label={item.label}
+              icon={item.icon}
+              active={isItemActive}
+              collapsed={collapsed}
+              cmdHeld={false}
+            />
+          );
+        })}
+      </nav>
+    </div>
+  );
 
   const sidebarContent = (
     <div className="flex flex-col h-full">
@@ -412,6 +477,8 @@ export function AppSidebar({
     </div>
   );
 
+  const activeContent = isSettingsMode ? settingsSidebarContent : sidebarContent;
+
   return (
     <>
       {/* Desktop sidebar */}
@@ -420,7 +487,7 @@ export function AppSidebar({
           collapsed ? "w-14" : "w-[220px]"
         }`}
       >
-        {sidebarContent}
+        {activeContent}
       </aside>
 
       {/* Mobile overlay drawer */}
@@ -442,7 +509,7 @@ export function AppSidebar({
               transition={{ type: "spring", damping: 30, stiffness: 300, bounce: 0 }}
               className="fixed left-0 top-0 bottom-0 w-[260px] z-50 bg-background border-r border-foreground/6 lg:hidden"
             >
-              {sidebarContent}
+              {activeContent}
             </motion.aside>
           </>
         )}

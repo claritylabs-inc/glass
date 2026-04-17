@@ -81,44 +81,8 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* Desktop: sidebar + content */}
-      <div className="hidden lg:flex gap-0 -ml-8 -mt-6 -mb-24 min-h-[calc(100vh-4rem)]">
-        {/* Sidebar nav — breaks out of container padding to align with edge */}
-        <nav className="w-[200px] shrink-0 sticky top-0 self-start border-r border-foreground/6 py-4 pr-2 pl-4 min-h-[inherit]">
-          <ul className="space-y-0.5">
-            {SETTINGS_SECTIONS.map((section) => {
-              const Icon = section.icon;
-              const isActive = section.id === activeSection;
-              return (
-                <li key={section.id}>
-                  <button
-                    type="button"
-                    onClick={() => handleSectionChange(section.id)}
-                    className={`w-full flex items-center gap-2.5 px-3 py-1.5 rounded-md text-body-sm transition-colors cursor-pointer ${
-                      isActive
-                        ? "bg-foreground/[0.05] text-foreground"
-                        : "text-muted-foreground hover:bg-foreground/[0.04]"
-                    }`}
-                  >
-                    <Icon className="w-4 h-4 shrink-0" />
-                    <span className="flex-1 text-left">{section.label}</span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </nav>
-
-        {/* Section content */}
-        <div className="flex-1 min-w-0 pt-4 pl-8">
-          <SectionContent section={activeSection} />
-        </div>
-      </div>
-
-      {/* Mobile: section content below tabs */}
-      <div className="lg:hidden">
-        <SectionContent section={activeSection} />
-      </div>
+      {/* Section content — sidebar navigation is handled by the main app sidebar on desktop */}
+      <SectionContent section={activeSection} />
     </AppShell>
   );
 }
