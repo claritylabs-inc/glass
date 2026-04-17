@@ -161,7 +161,7 @@ function unwrapEmailText(text: string): string {
     // - Lines starting with dashes (signature, forwarded msg separators)
     // - Lines that look like headers (From:, To:, Date:, Subject:, CC:)
     const isStructural =
-      /^\s*(\d+[\.\)]\s|[-*•]\s|[-]{3,}|[A-Z][a-z]*:\s)/.test(trimmed);
+      /^\s*(\d+[.)]\s|[-*•]\s|[-]{3,}|[A-Z][a-z]*:\s)/.test(trimmed);
 
     if (isStructural) {
       if (buffer) {
