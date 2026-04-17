@@ -1,19 +1,20 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { useQuery, useAction } from "convex/react";
+import { useState, useMemo, useCallback } from "react";
+import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { AppShell } from "@/components/app-shell";
 import { FadeIn } from "@/components/ui/fade-in";
 import { PillButton } from "@/components/ui/pill-button";
-import { ArrowRight, Asterisk, Copy, Check, X, Loader2, Play, CheckCircle, FileInput } from "lucide-react";
-import { motion } from "framer-motion";
+import { ArrowRight, Loader2, X } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Skeleton } from "@/components/ui/skeleton";
-import { StatsCards, StatCard } from "@/components/stats-cards";
-import { CoverageByTypeSection, parseDollarAmount } from "@/components/coverage-by-type";
+import { StatsCards } from "@/components/stats-cards";
 import { POLICY_TYPE_LABELS, POLICY_TYPE_COLORS } from "@/convex/lib/policyTypes";
+import { PrismPromptInput } from "@/components/prism-prompt-input";
+import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
+import { useRouter } from "next/navigation";
+import { useAction } from "convex/react";
 import dayjs from "dayjs";
 
 const AGENT_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "prism.claritylabs.inc";
@@ -27,60 +28,18 @@ function parseDate(dateStr: string | undefined, format = "MM/DD/YYYY") {
 export default function DashboardPage() {
   const stats = useQuery(api.policies.stats);
   const policies = useQuery(api.policies.list, {});
-  const viewer = useQuery(api.users.viewer);
-  const agentStats = useQuery(api.agentConversations.stats);
-  const appStats = useQuery(api.applicationSessions.stats);
-  const seedData = useAction(api.seed.seed);
   const hasDemoDataResult = useQuery(api.seed.hasDemoData);
-  const [emailCopied, setEmailCopied] = useState(false);
+  const seedData = useAction(api.seed.seed);
+  const createThread = useMutation(api.threads.create);
+  const sendThreadMessage = useMutation(api.threads.sendMessage);
+
+  const router = useRouter();
   const hasDemo = hasDemoDataResult === true;
   const [demoBannerDismissed, setDemoBannerDismissed] = useState(false);
   const [seeding, setSeeding] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   const today = dayjs();
-
-  const activePolicies = useMemo(() => {
-    if (!policies) return undefined;
-    return policies.filter((p) => {
-      const eff = parseDate(p.effectiveDate);
-      const exp = parseDate(p.expirationDate);
-      // Active if: no dates (unknown) OR current date is within the policy period
-      if (!eff && !exp) return true;
-      if (eff && exp) return today.isAfter(eff.subtract(1, "day")) && today.isBefore(exp.add(1, "day"));
-      if (exp) return today.isBefore(exp.add(1, "day"));
-      return true;
-    });
-  }, [policies, today]);
-
-  const coverageByType = useMemo(() => {
-    if (!activePolicies) return undefined;
-    const map = new Map<string, { total: number; count: number }>();
-    for (const p of activePolicies) {
-      if ((p as any).extractionStatus !== "complete") continue;
-      const types: string[] = (p as any).policyTypes ?? [(p as any).policyType ?? "other"];
-      const coverages: { limit: string }[] = (p as any).coverages ?? [];
-      let policyTotal = 0;
-      for (const c of coverages) {
-        const amt = parseDollarAmount(c.limit);
-        if (amt && amt > 0) policyTotal += amt;
-      }
-      if (policyTotal === 0) continue;
-      for (const t of types) {
-        const existing = map.get(t) ?? { total: 0, count: 0 };
-        existing.total += policyTotal;
-        existing.count += 1;
-        map.set(t, existing);
-      }
-    }
-    return Array.from(map.entries())
-      .map(([typeKey, { total, count }]) => ({
-        typeKey,
-        label: POLICY_TYPE_LABELS[typeKey] || typeKey,
-        totalCoverage: total,
-        policyCount: count,
-      }))
-      .sort((a, b) => b.totalCoverage - a.totalCoverage);
-  }, [activePolicies]);
 
   const expiringPolicies = useMemo(() => {
     if (!policies) return undefined;
@@ -95,147 +54,90 @@ export default function DashboardPage() {
         const aExp = parseDate(a.expirationDate)!;
         const bExp = parseDate(b.expirationDate)!;
         return aExp.diff(bExp);
-      });
+      })
+      .slice(0, 5);
   }, [policies, today]);
 
   const isEmpty = policies && policies.length === 0;
 
   const seedButton = isEmpty ? (
-    <PillButton size="compact" onClick={async () => { setSeeding(true); try { await seedData({}); } finally { setSeeding(false); } }} disabled={seeding}>
-      {seeding ? <><Loader2 className="w-3 h-3 animate-spin" /> Generating...</> : <>Seed Demo Data <ArrowRight className="w-3 h-3" /></>}
+    <PillButton
+      size="compact"
+      onClick={async () => {
+        setSeeding(true);
+        try {
+          await seedData({});
+        } finally {
+          setSeeding(false);
+        }
+      }}
+      disabled={seeding}
+    >
+      {seeding ? (
+        <>
+          <Loader2 className="w-3 h-3 animate-spin" /> Generating...
+        </>
+      ) : (
+        <>
+          Seed Demo Data <ArrowRight className="w-3 h-3" />
+        </>
+      )}
     </PillButton>
   ) : undefined;
 
+  const handleSubmit = useCallback(
+    async (message: PromptInputMessage) => {
+      const content = message.text.trim();
+      if (!content || submitting) return;
+      setSubmitting(true);
+      try {
+        const threadId = await createThread({ agentDomain: AGENT_DOMAIN });
+        await sendThreadMessage({ threadId, content });
+        router.push(`/agent/thread/${threadId}`);
+      } catch {
+        toast.error("Failed to start chat");
+        setSubmitting(false);
+      }
+    },
+    [createThread, sendThreadMessage, router, submitting],
+  );
+
   return (
     <AppShell actions={seedButton}>
-      <div>
+      <div className="flex flex-col min-h-[calc(100vh-8rem)]">
 
-          <StatsCards stats={stats} />
+        {/* Hero — conversation-first */}
+        <FadeIn when={true} staggerIndex={0} duration={0.5}>
+          <div className="flex flex-col items-center justify-center text-center pt-16 pb-10 px-4">
+            <h1 className="text-2xl md:text-3xl font-semibold text-foreground tracking-tight mb-3">
+              What can I help with?
+            </h1>
+            <p className="text-body-sm text-muted-foreground/60 max-w-sm mb-8">
+              Ask about your policies, coverage, applications, or anything insurance-related.
+            </p>
+            <div className="w-full max-w-xl">
+              <PrismPromptInput
+                onSubmit={handleSubmit}
+                placeholder="Ask Prism..."
+                showAttach={false}
+                disabled={submitting}
+              />
+            </div>
+          </div>
+        </FadeIn>
 
-          {/* Application stats */}
-          {appStats && appStats.total > 0 && (
-            <FadeIn when={true} staggerIndex={1} duration={0.6}>
-              <Link href="/applications" className="block">
-                <motion.div
-                  whileHover={{
-                    scale: 1.01,
-                    boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.08), 0 2px 4px -4px rgb(0 0 0 / 0.08)",
-                    borderColor: "var(--input)",
-                    backgroundColor: "var(--popover)",
-                  }}
-                  whileTap={{ scale: 0.99 }}
-                  transition={{ type: "tween", duration: 0.2, ease: "easeOut" }}
-                  className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] mb-6 cursor-pointer overflow-hidden"
-                >
-                  <div className="flex items-center justify-between px-4 py-2.5">
-                    <div className="flex items-center gap-2">
-                      <FileInput className="w-4 h-4 text-muted-foreground/50 shrink-0" />
-                      <span className="text-body-sm font-semibold text-foreground">Applications</span>
-                    </div>
-                    <span className="text-label-sm font-medium text-foreground flex items-center gap-1">
-                      View All <ArrowRight className="w-3 h-3" />
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-3 divide-x divide-foreground/6 border-t border-foreground/6">
-                    <div className="px-4 py-2.5">
-                      <p className="text-[11px] text-muted-foreground/50">Active</p>
-                      <p className="text-body-sm font-semibold text-foreground tabular-nums">{appStats.active}</p>
-                    </div>
-                    <div className="px-4 py-2.5">
-                      <p className="text-[11px] text-muted-foreground/50">Completed</p>
-                      <p className="text-body-sm font-semibold text-foreground tabular-nums">{appStats.completed}</p>
-                    </div>
-                    <div className="px-4 py-2.5">
-                      <p className="text-[11px] text-muted-foreground/50">Total</p>
-                      <p className="text-body-sm font-semibold text-foreground tabular-nums">{appStats.total}</p>
-                    </div>
-                  </div>
-                </motion.div>
-              </Link>
-            </FadeIn>
-          )}
-
-          {/* Agent card */}
-          {viewer && (
-            <FadeIn when={true} staggerIndex={2} duration={0.6}>
-              <Link href="/agent" className="block">
-                <motion.div
-                  whileHover={{
-                    scale: 1.01,
-                    boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.08), 0 2px 4px -4px rgb(0 0 0 / 0.08)",
-                    borderColor: "var(--input)",
-                    backgroundColor: "var(--popover)",
-                  }}
-                  whileTap={{ scale: 0.99 }}
-                  transition={{ type: "tween", duration: 0.2, ease: "easeOut" }}
-                  className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-4 mb-6 cursor-pointer"
-                >
-                  {viewer.agentHandle ? (
-                    <div className="space-y-4">
-                      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 md:gap-2 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <Asterisk className="w-4 h-4 text-primary-light shrink-0" />
-                          <span className="text-sm font-semibold text-foreground shrink-0">Prism</span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            navigator.clipboard.writeText(`${viewer.agentHandle}@${AGENT_DOMAIN}`);
-                            setEmailCopied(true);
-                            setTimeout(() => setEmailCopied(false), 2000);
-                            toast.success("Copied to clipboard");
-                          }}
-                          className="inline-flex items-center gap-1 text-xs font-mono text-muted-foreground hover:text-foreground/70 transition-colors cursor-pointer truncate min-w-0"
-                        >
-                          <span className="truncate">{viewer.agentHandle}@{AGENT_DOMAIN}</span>
-                          {emailCopied ? (
-                            <Check className="w-3 h-3 text-emerald-600 shrink-0" />
-                          ) : (
-                            <Copy className="w-3 h-3 text-muted-foreground/30 shrink-0" />
-                          )}
-                        </button>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        {agentStats && (
-                          <span className="text-label-sm text-muted-foreground/50">
-                            {agentStats.total} conversation{agentStats.total !== 1 ? "s" : ""}
-                          </span>
-                        )}
-                        <span className="text-label-sm font-medium text-foreground flex items-center gap-1">
-                          View All <ArrowRight className="w-3 h-3" />
-                        </span>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      <Asterisk className="w-4 h-4 text-primary-light shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-body-sm font-medium text-foreground">
-                          Set Up Prism
-                        </p>
-                        <p className="text-label-sm text-muted-foreground/40">
-                          Get a dedicated email for policy questions
-                        </p>
-                      </div>
-                      <ArrowRight className="w-4 h-4 text-muted-foreground/30 shrink-0" />
-                    </div>
-                  )}
-                </motion.div>
-              </Link>
-            </FadeIn>
-          )}
-
-          <CoverageByTypeSection data={coverageByType} />
+        {/* Secondary section */}
+        <div className="flex-1 pb-8">
 
           {/* Demo data banner */}
           {hasDemo && !demoBannerDismissed && (
-            <FadeIn when={true} staggerIndex={0} duration={0.4}>
+            <FadeIn when={true} staggerIndex={1} duration={0.4}>
               <div className="flex items-center gap-3 px-4 py-2.5 rounded-lg border border-amber-200 dark:border-amber-900/50 bg-amber-50/60 dark:bg-amber-950/30 mb-6">
                 <p className="text-label-sm text-amber-700 dark:text-amber-400 flex-1">
                   You&apos;re viewing demo data.{" "}
-                  <Link href="/profile" className="underline font-medium hover:text-amber-900">Remove demo data</Link>{" "}
+                  <Link href="/profile" className="underline font-medium hover:text-amber-900">
+                    Remove demo data
+                  </Link>{" "}
                   from Settings when you&apos;re ready.
                 </p>
                 <button
@@ -248,6 +150,11 @@ export default function DashboardPage() {
               </div>
             </FadeIn>
           )}
+
+          {/* Stats */}
+          <FadeIn when={true} staggerIndex={2} duration={0.6}>
+            <StatsCards stats={stats} />
+          </FadeIn>
 
           {/* Expiring Policies */}
           {expiringPolicies && expiringPolicies.length > 0 && (
@@ -273,18 +180,30 @@ export default function DashboardPage() {
                       >
                         <div className="flex-1 min-w-0">
                           <div className="flex flex-col md:flex-row md:items-center gap-1 md:gap-2 mb-1.5 md:mb-0">
-                            <span className="text-body-sm font-medium text-foreground">{p.policyNumber}</span>
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium w-fit truncate max-w-full ${POLICY_TYPE_COLORS[firstType] || POLICY_TYPE_COLORS.other}`}>
+                            <span className="text-body-sm font-medium text-foreground">
+                              {p.policyNumber}
+                            </span>
+                            <span
+                              className={`inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium w-fit truncate max-w-full ${
+                                POLICY_TYPE_COLORS[firstType] || POLICY_TYPE_COLORS.other
+                              }`}
+                            >
                               {POLICY_TYPE_LABELS[firstType] || firstType}
                             </span>
                           </div>
                           <p className="text-label-sm text-muted-foreground/60">{p.carrier}</p>
                         </div>
                         <div className="text-right shrink-0">
-                          <p className={`text-body-sm font-medium ${daysLeft <= 30 ? "text-red-600" : "text-amber-600"}`}>
+                          <p
+                            className={`text-body-sm font-medium ${
+                              daysLeft <= 30 ? "text-red-600" : "text-amber-600"
+                            }`}
+                          >
                             {daysLeft <= 0 ? "Expires today" : `${daysLeft}d left`}
                           </p>
-                          <p className="text-label-sm text-muted-foreground/50">{p.expirationDate}</p>
+                          <p className="text-label-sm text-muted-foreground/50">
+                            {p.expirationDate}
+                          </p>
                         </div>
                       </Link>
                     );
@@ -293,9 +212,8 @@ export default function DashboardPage() {
               </div>
             </FadeIn>
           )}
-
+        </div>
       </div>
-
     </AppShell>
   );
 }
