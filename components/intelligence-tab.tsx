@@ -309,34 +309,6 @@ function OrgIntelligencePanel() {
 
   return (
     <>
-      {/* Stats bar */}
-      <div className="grid grid-cols-2 gap-4">
-        <div className="rounded-lg border border-foreground/6 bg-card px-5 py-4">
-          <p className="text-label-sm font-medium text-muted-foreground ">
-            Total Entries
-          </p>
-          <p className="text-2xl font-semibold text-foreground mt-1 font-mono">
-            {totalEntries.toLocaleString()}
-          </p>
-        </div>
-        <div className="rounded-lg border border-foreground/6 bg-card px-5 py-4">
-          <p className="text-label-sm font-medium text-muted-foreground ">
-            Categories
-          </p>
-          <div className="flex flex-wrap gap-1.5 mt-2">
-            {categoryBreakdown.map(([cat, count]) => (
-              <span
-                key={cat}
-                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${INTEL_CATEGORY_COLORS[cat] ?? INTEL_CATEGORY_COLORS.observation}`}
-              >
-                {cat.replace(/_/g, " ")}
-                <span className="opacity-50">{count}</span>
-              </span>
-            ))}
-          </div>
-        </div>
-      </div>
-
       {/* 3D Vector Space */}
       {vectorData && vectorData.points.length > 0 ? (
         <VectorSpace
