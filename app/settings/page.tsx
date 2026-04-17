@@ -15,6 +15,9 @@ import { OrganizationSection } from "@/components/settings/organization-section"
 import { TeamSection } from "@/components/settings/team-section";
 import { ApiKeysSection } from "@/components/settings/api-keys-section";
 import { SourcesSection } from "@/components/settings/sources-section";
+import { IntelligenceSection } from "@/components/settings/intelligence-section";
+import { ActivitySection } from "@/components/settings/activity-section";
+import { AgentSection } from "@/components/settings/agent-section";
 
 const SETTINGS_SECTIONS = [
   { id: "organization", label: "Organization", icon: Building2 },
@@ -133,16 +136,13 @@ function SectionContent({
         <ApiKeysSection />
       ) : section === "sources" ? (
         <SourcesSection />
-      ) : (
-        <div className="rounded-lg border border-foreground/6 bg-white/60 dark:bg-white/[0.04] p-8 text-center">
-          <p className="text-body-sm text-muted-foreground">
-            Section: <span className="font-medium text-foreground">{section}</span>
-          </p>
-          <p className="text-label-sm text-muted-foreground/50 mt-1">
-            Content will be migrated here in a future task.
-          </p>
-        </div>
-      )}
+      ) : section === "intelligence" ? (
+        <IntelligenceSection />
+      ) : section === "activity" ? (
+        <ActivitySection />
+      ) : section === "agent" ? (
+        <AgentSection />
+      ) : null}
     </div>
   );
 }
