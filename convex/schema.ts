@@ -678,10 +678,110 @@ export default defineSchema({
     isDemo: v.optional(v.boolean()),
     // When true, this policy's chunks are excluded from vector search results
     excludeFromSearch: v.optional(v.boolean()),
+    // ── Multi-file support ──
+    // Denormalized lightweight file list for fast UI rendering (source of truth is policyFiles table)
+    files: v.optional(v.array(v.object({
+      fileId: v.id("_storage"),
+      fileName: v.string(),
+      fileType: v.string(), // declaration, wording, endorsement, schedule, renewal, certificate, unknown
+      status: v.string(), // pending, extracting, complete, error, not_insurance
+    }))),
+    // Whether the reconciled view is up to date across all files
+    reconciliationStatus: v.optional(v.union(
+      v.literal("pending"),
+      v.literal("reconciled"),
+      v.literal("error"),
+    )),
+    reconciliationLog: v.optional(v.array(v.object({
+      timestamp: v.number(),
+      message: v.string(),
+    }))),
+    // Multiple source emails (additive to legacy emailId)
+    emailIds: v.optional(v.array(v.id("emails"))),
   }).index("by_carrier", ["carrier"])
     .index("by_policyYear", ["policyYear"])
     .index("by_userId", ["userId"])
     .index("by_orgId", ["orgId"]),
+
+  // ── Policy Files (multi-file support) ──
+
+  // Each policy can have multiple source files (declaration, wording, endorsements, etc.)
+  policyFiles: defineTable({
+    policyId: v.id("policies"),
+    fileId: v.id("_storage"),
+    emailId: v.optional(v.id("emails")),
+    fileName: v.string(),
+    fileType: v.union(
+      v.literal("declaration"),
+      v.literal("wording"),
+      v.literal("endorsement"),
+      v.literal("schedule"),
+      v.literal("renewal"),
+      v.literal("certificate"),
+      v.literal("unknown"),
+    ),
+    extractionStatus: v.union(
+      v.literal("pending"),
+      v.literal("extracting"),
+      v.literal("complete"),
+      v.literal("error"),
+      v.literal("not_insurance"),
+    ),
+    extractionError: v.optional(v.string()),
+    extractedData: v.optional(v.any()), // Raw per-file extraction result (InsuranceDocument)
+    extractionLog: v.optional(v.array(v.object({
+      timestamp: v.number(),
+      message: v.string(),
+    }))),
+    pageCount: v.optional(v.number()),
+    createdAt: v.number(),
+    orgId: v.id("organizations"),
+  })
+    .index("by_policyId", ["policyId"])
+    .index("by_orgId", ["orgId"])
+    .index("by_fileId", ["fileId"])
+    .index("by_emailId", ["emailId"]),
+
+  // ── Notifications ──
+
+  notifications: defineTable({
+    orgId: v.id("organizations"),
+    userId: v.optional(v.id("users")), // null = org-wide
+    type: v.union(
+      v.literal("merge_suggestion"),
+      v.literal("coverage_gap"),
+      v.literal("renewal_reminder"),
+      v.literal("policy_lapsed"),
+      v.literal("coverage_limit_concern"),
+      v.literal("missing_coverage"),
+      v.literal("carrier_rating_change"),
+      v.literal("broker_action"),
+      v.literal("extraction_complete"),
+      v.literal("extraction_error"),
+      v.literal("incomplete_extraction"),
+      v.literal("stale_data"),
+      v.literal("premium_anomaly"),
+      v.literal("dream_insight"),
+    ),
+    title: v.string(),
+    body: v.string(),
+    severity: v.union(v.literal("info"), v.literal("warning"), v.literal("critical")),
+    status: v.union(
+      v.literal("unread"),
+      v.literal("read"),
+      v.literal("actioned"),
+      v.literal("dismissed"),
+    ),
+    actionType: v.optional(v.string()), // merge_policies, review_policy, renew_policy, etc.
+    actionPayload: v.optional(v.any()), // e.g. {policyIds: [...]} for merge
+    sourceRef: v.optional(v.any()), // what generated this: policyId, emailId, etc.
+    createdAt: v.number(),
+    expiresAt: v.optional(v.number()), // auto-dismiss after this date
+  })
+    .index("by_orgId", ["orgId"])
+    .index("by_orgId_status", ["orgId", "status"])
+    .index("by_orgId_type", ["orgId", "type"])
+    .index("by_userId", ["userId"]),
 
   // ── Vector Search (cl-sdk 0.5.0+) ──
 

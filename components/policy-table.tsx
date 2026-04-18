@@ -6,6 +6,13 @@ import { POLICY_TYPE_LABELS, POLICY_TYPE_COLORS } from "@/convex/lib/policyTypes
 import { FadeIn } from "@/components/ui/fade-in";
 import { Skeleton } from "@/components/ui/skeleton";
 
+interface PolicyFile {
+  fileId: string;
+  fileName: string;
+  fileType: string;
+  status: string;
+}
+
 interface Policy {
   _id: string;
   carrier: string;
@@ -21,6 +28,7 @@ interface Policy {
   insuredName: string;
   extractionStatus: string;
   isDemo?: boolean;
+  files?: PolicyFile[];
 }
 
 function SkeletonRows() {
@@ -111,6 +119,9 @@ export function PolicyTable({ policies }: { policies: Policy[] | undefined }) {
                       )}
                       {policy.isDemo && (
                         <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 shrink-0">Demo</span>
+                      )}
+                      {policy.files && policy.files.length > 1 && (
+                        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800/40 text-gray-500 dark:text-gray-500 shrink-0">{policy.files.length} files</span>
                       )}
                     </div>
                     <p className="text-label-sm text-muted-foreground/60 mt-0.5 truncate">

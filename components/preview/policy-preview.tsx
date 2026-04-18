@@ -36,6 +36,7 @@ export function PolicyPreview({ id, page, citedSections }: { id: string; page?: 
   const policyNum = policy.policyNumber;
   const types = policy.policyTypes ?? (policy.policyType ? [policy.policyType] : []);
   const isQuoteDoc = policy.documentType === "quote";
+  const fileCount = (policy as any).files?.length ?? 0;
   const doc = policy.document as any;
 
   const allSections = doc?.sections ?? [];
@@ -60,9 +61,16 @@ export function PolicyPreview({ id, page, citedSections }: { id: string; page?: 
       <div>
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
-            <p className="text-label-sm font-medium text-muted-foreground/40 ">
-              {isQuoteDoc ? "Quote" : "Policy"}
-            </p>
+            <div className="flex items-center gap-2">
+              <p className="text-label-sm font-medium text-muted-foreground/40 ">
+                {isQuoteDoc ? "Quote" : "Policy"}
+              </p>
+              {fileCount > 1 && (
+                <span className="text-[10px] font-medium px-1.5 py-px rounded bg-foreground/[0.04] text-muted-foreground/40">
+                  Combined from {fileCount} files
+                </span>
+              )}
+            </div>
             <h3 className="text-sm font-semibold text-foreground leading-tight mt-0.5">{carrier}</h3>
             {policyNum && (
               <p className="text-label text-muted-foreground/50 font-mono mt-0.5">#{policyNum}</p>

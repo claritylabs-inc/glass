@@ -94,6 +94,38 @@ export const extractPolicy = internalAction({
       extractionStatus: "extracting",
     });
 
+    // ── Create policyFiles record for this attachment ──
+    // We use "unknown" as initial fileType; reconciliation will classify it later
+    let policyFileId: Id<"policyFiles"> | undefined;
+    if (args.orgId) {
+      try {
+        policyFileId = await ctx.runMutation(internal.policyFiles.insert, {
+          policyId,
+          fileId,
+          emailId: args.emailId,
+          fileName: `attachment.pdf`,
+          fileType: "unknown",
+          extractionStatus: "extracting",
+          orgId: args.orgId,
+        });
+
+        // Update the denormalized files array on the policy
+        await ctx.runMutation(internal.policies.updateFiles, {
+          id: policyId,
+          files: [{
+            fileId,
+            fileName: `attachment.pdf`,
+            fileType: "unknown",
+            status: "extracting",
+          }],
+          emailIds: [args.emailId],
+        });
+      } catch (err: any) {
+        // Non-critical — log but don't abort extraction
+        console.error("Failed to create policyFiles record:", err.message);
+      }
+    }
+
     const log = async (message: string) => {
       await ctx.runMutation(internal.policies.appendExtractionLog, { id: policyId, message });
     };
@@ -139,13 +171,60 @@ export const extractPolicy = internalAction({
       const docName = doc.type === "quote"
         ? (doc.quoteNumber || "quote")
         : (doc.policyNumber || "policy");
+      const resolvedFileName = `${docName}.pdf`;
 
       await ctx.runMutation(api.policies.updateExtraction, {
         id: policyId,
-        fileName: `${docName}.pdf`,
+        fileName: resolvedFileName,
         extractionCheckpoint: undefined, // Clear checkpoint on success
         ...fields,
       });
+
+      // ── Update policyFiles record with extraction result ──
+      if (policyFileId && args.orgId) {
+        try {
+          await ctx.runMutation(internal.policyFiles.updateExtraction, {
+            id: policyFileId,
+            extractionStatus: "complete",
+            extractedData: result.document,
+          });
+
+          // Update denormalized files array status to complete
+          await ctx.runMutation(internal.policies.updateFiles, {
+            id: policyId,
+            files: [{
+              fileId,
+              fileName: resolvedFileName,
+              fileType: "unknown",
+              status: "complete",
+            }],
+          });
+
+          // Check if all sibling policyFiles for this policy are done
+          const siblingFiles = await ctx.runQuery(internal.policyFiles.listByPolicyInternal, {
+            policyId,
+          });
+          const allDone = siblingFiles.every(
+            (f: any) => f.extractionStatus === "complete" || f.extractionStatus === "error" || f.extractionStatus === "not_insurance"
+          );
+          if (allDone && siblingFiles.length > 1) {
+            // Multiple files — schedule reconciliation
+            await ctx.scheduler.runAfter(0, internal.actions.reconcilePolicy.reconcilePolicy, {
+              policyId,
+              orgId: args.orgId,
+            });
+          } else if (allDone && siblingFiles.length <= 1) {
+            // Single file — mark as reconciled immediately
+            await ctx.runMutation(internal.policies.updateFiles, {
+              id: policyId,
+              reconciliationStatus: "reconciled",
+            });
+          }
+        } catch (err: any) {
+          // Non-critical — don't fail extraction over policyFiles bookkeeping
+          console.error("Failed to update policyFiles record:", err.message);
+        }
+      }
 
       // Store document chunks for vector search
       if (chunks.length > 0 && args.orgId) {
@@ -309,6 +388,30 @@ export const extractPolicy = internalAction({
         extractionError: error.message || "Extraction failed",
       });
       console.error("Extraction failed:", error.message);
+
+      // Mark policyFiles record as error too
+      if (policyFileId) {
+        try {
+          await ctx.runMutation(internal.policyFiles.updateExtraction, {
+            id: policyFileId,
+            extractionStatus: "error",
+            extractionError: error.message || "Extraction failed",
+          });
+          if (args.orgId) {
+            await ctx.runMutation(internal.policies.updateFiles, {
+              id: policyId,
+              files: [{
+                fileId,
+                fileName: `attachment.pdf`,
+                fileType: "unknown",
+                status: "error",
+              }],
+            });
+          }
+        } catch {
+          // Non-critical
+        }
+      }
 
       await ctx.runMutation(internal.policyAuditLog.append, {
         policyId,

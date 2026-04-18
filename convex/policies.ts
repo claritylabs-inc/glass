@@ -894,6 +894,34 @@ export const updateAnalysis = internalMutation({
   },
 });
 
+// Update the denormalized files array on a policy, and optionally reconciliationStatus / emailIds
+export const updateFiles = internalMutation({
+  args: {
+    id: v.id("policies"),
+    files: v.optional(v.array(v.object({
+      fileId: v.id("_storage"),
+      fileName: v.string(),
+      fileType: v.string(),
+      status: v.string(),
+    }))),
+    reconciliationStatus: v.optional(v.union(
+      v.literal("pending"),
+      v.literal("reconciled"),
+      v.literal("error"),
+    )),
+    emailIds: v.optional(v.array(v.id("emails"))),
+  },
+  handler: async (ctx, args) => {
+    const { id, ...fields } = args;
+    // Strip undefined values so we don't accidentally unset fields
+    const patch: Record<string, any> = {};
+    if (fields.files !== undefined) patch.files = fields.files;
+    if (fields.reconciliationStatus !== undefined) patch.reconciliationStatus = fields.reconciliationStatus;
+    if (fields.emailIds !== undefined) patch.emailIds = fields.emailIds;
+    await ctx.db.patch(id, patch);
+  },
+});
+
 export const restore = mutation({
   args: { id: v.id("policies") },
   handler: async (ctx, args) => {

@@ -12,6 +12,7 @@ import {
   RefreshCw,
   Trash2,
   Eye,
+  FileText,
 } from "lucide-react";
 import dayjs from "dayjs";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -190,6 +191,139 @@ function PolicyActivityTab({ policyId, policy }: { policyId: string; policy: any
   );
 }
 
+// ─── File type badge config ────────────────────────────────────────────────────
+
+const FILE_TYPE_LABELS: Record<string, string> = {
+  declaration: "Declaration",
+  wording: "Wording",
+  endorsement: "Endorsement",
+  schedule: "Schedule",
+  renewal: "Renewal",
+  certificate: "Certificate",
+  unknown: "Other",
+};
+
+const FILE_TYPE_COLORS: Record<string, string> = {
+  declaration: "bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400",
+  wording: "bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-400",
+  endorsement: "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400",
+  schedule: "bg-cyan-100 text-cyan-700 dark:bg-cyan-950/40 dark:text-cyan-400",
+  renewal: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400",
+  certificate: "bg-orange-100 text-orange-700 dark:bg-orange-950/40 dark:text-orange-400",
+  unknown: "bg-gray-100 text-gray-600 dark:bg-gray-800/40 dark:text-gray-400",
+};
+
+// ─── PolicyFilesTab ────────────────────────────────────────────────────────────
+
+function PolicyFilesTab({ policyId, policy }: { policyId: string; policy: any }) {
+  const policyFiles = useQuery(api.policyFiles.listByPolicy, {
+    policyId: policyId as any,
+  });
+  const { openWithUrl } = usePdf();
+
+  // Build file URL queries — we query up to the first 8 files individually
+  const file0Url = useQuery(
+    api.policies.getFileUrl,
+    policyFiles?.[0]?.fileId ? { fileId: policyFiles[0].fileId as Id<"_storage"> } : "skip",
+  );
+  const file1Url = useQuery(
+    api.policies.getFileUrl,
+    policyFiles?.[1]?.fileId ? { fileId: policyFiles[1].fileId as Id<"_storage"> } : "skip",
+  );
+  const file2Url = useQuery(
+    api.policies.getFileUrl,
+    policyFiles?.[2]?.fileId ? { fileId: policyFiles[2].fileId as Id<"_storage"> } : "skip",
+  );
+  const file3Url = useQuery(
+    api.policies.getFileUrl,
+    policyFiles?.[3]?.fileId ? { fileId: policyFiles[3].fileId as Id<"_storage"> } : "skip",
+  );
+  const file4Url = useQuery(
+    api.policies.getFileUrl,
+    policyFiles?.[4]?.fileId ? { fileId: policyFiles[4].fileId as Id<"_storage"> } : "skip",
+  );
+  const file5Url = useQuery(
+    api.policies.getFileUrl,
+    policyFiles?.[5]?.fileId ? { fileId: policyFiles[5].fileId as Id<"_storage"> } : "skip",
+  );
+  const file6Url = useQuery(
+    api.policies.getFileUrl,
+    policyFiles?.[6]?.fileId ? { fileId: policyFiles[6].fileId as Id<"_storage"> } : "skip",
+  );
+  const file7Url = useQuery(
+    api.policies.getFileUrl,
+    policyFiles?.[7]?.fileId ? { fileId: policyFiles[7].fileId as Id<"_storage"> } : "skip",
+  );
+
+  const urlsByIndex = [file0Url, file1Url, file2Url, file3Url, file4Url, file5Url, file6Url, file7Url];
+
+  if (policyFiles === undefined) {
+    return (
+      <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <div key={i} className="px-4 py-3 border-b border-foreground/[0.04] last:border-0 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <div className="h-3.5 w-36 bg-foreground/5 rounded animate-pulse" />
+              <div className="h-5 w-20 bg-foreground/5 rounded-full animate-pulse" />
+            </div>
+            <div className="h-5 w-16 bg-foreground/5 rounded animate-pulse" />
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (policyFiles.length === 0) {
+    // Fall back to the legacy single-file entry from the policy record
+    const legacyFileId = (policy as any).fileId;
+    return (
+      <div className="rounded-lg border border-foreground/6 bg-card px-4 py-3 text-body-sm text-muted-foreground/60">
+        {legacyFileId
+          ? "This policy has a single attached file. Use the View PDF button in the header to open it."
+          : "No files attached to this policy yet."}
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
+      {policyFiles.map((file, i) => {
+        const url = urlsByIndex[i];
+        const typeLabel = FILE_TYPE_LABELS[file.fileType] ?? file.fileType;
+        const typeColor = FILE_TYPE_COLORS[file.fileType] ?? FILE_TYPE_COLORS.unknown;
+        const statusCfg = EXTRACTION_STATUS_CONFIG[file.extractionStatus] ?? EXTRACTION_STATUS_CONFIG.pending;
+
+        return (
+          <div
+            key={file._id}
+            className="flex items-center justify-between gap-3 px-4 py-3 border-b border-foreground/[0.04] last:border-0"
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <FileText className="w-3.5 h-3.5 text-muted-foreground/30 shrink-0" />
+              <p className="text-body-sm text-foreground truncate">{file.fileName}</p>
+              <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-label-sm font-medium shrink-0 ${typeColor}`}>
+                {typeLabel}
+              </span>
+              <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-label-sm font-medium shrink-0 ${statusCfg.color}`}>
+                {statusCfg.label}
+              </span>
+            </div>
+            {url && (
+              <PillButton
+                variant="secondary"
+                size="compact"
+                onClick={() => openWithUrl(url)}
+              >
+                View
+              </PillButton>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ─── ViewPdfButton ────────────────────────────────────────────────────────────
 
 function ViewPdfButton({ url }: { url?: string | null }) {
@@ -241,7 +375,7 @@ export default function PolicyDetailPage({
   const [demoBannerDismissed, setDemoBannerDismissed] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [activeTab, setActiveTab] = useState<
-    "details" | "activity" | "extraction"
+    "details" | "files" | "activity" | "extraction"
   >("details");
 
   const { openWithUrl, setFileUrl: preloadPdfUrl } = usePdf();
@@ -512,7 +646,7 @@ export default function PolicyDetailPage({
       <Tabs
         value={activeTab}
         onValueChange={(value) =>
-          setActiveTab(value as "details" | "activity" | "extraction")
+          setActiveTab(value as "details" | "files" | "activity" | "extraction")
         }
         className="mb-6"
       >
@@ -520,6 +654,7 @@ export default function PolicyDetailPage({
           {(
             [
               { id: "details" as const, label: "Details" },
+              { id: "files" as const, label: "Files" },
               { id: "activity" as const, label: "Activity" },
               { id: "extraction" as const, label: "Extraction" },
             ] as const
@@ -558,6 +693,10 @@ export default function PolicyDetailPage({
           />
 
         </FadeIn>
+      )}
+
+      {activeTab === "files" && (
+        <PolicyFilesTab policyId={id} policy={policy} />
       )}
 
       {activeTab === "activity" && (

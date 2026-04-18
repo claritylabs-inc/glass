@@ -22,11 +22,15 @@ import {
   MessageSquare,
   Archive,
   ArrowLeft,
+  Bell,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { usePageContext } from "@/hooks/use-page-context";
 import { SETTINGS_SECTIONS } from "@/lib/settings-sections";
 import { LogoIcon } from "@/components/ui/logo-icon";
+import { NotificationsPanel } from "@/components/notifications-panel";
+import { MergePolicyDialog } from "@/components/merge-policy-dialog";
+import type { Id } from "@/convex/_generated/dataModel";
 
 /** Wrapper so LogoIcon matches the lucide icon interface */
 function PrismStarIcon({ className }: { className?: string }) {
@@ -106,6 +110,16 @@ export function AppSidebar({
   const [cmdHeld, setCmdHeld] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const cmdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [notificationsPanelOpen, setNotificationsPanelOpen] = useState(false);
+  const [mergeDialog, setMergeDialog] = useState<{
+    open: boolean;
+    primaryPolicyId: string;
+    secondaryPolicyId: string;
+    notificationId?: Id<"notifications">;
+  }>({ open: false, primaryPolicyId: "", secondaryPolicyId: "" });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const unreadCount = useQuery((api as any).notifications.unreadCount) as number | undefined;
 
   // Unified thread list — prefers unified threads table, falls back to legacy merge
   const conversations = useMemo(() => {
@@ -315,6 +329,44 @@ export function AppSidebar({
       <nav className="flex-1 overflow-y-auto px-2 pb-2">
         {/* INSURANCE */}
         <SectionHeader label="Insurance" collapsed={collapsed} />
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setNotificationsPanelOpen((v) => !v)}
+            className={`w-full flex items-center gap-2.5 px-3 py-1.5 rounded-md text-body-sm transition-colors cursor-pointer ${
+              collapsed ? "justify-center" : ""
+            } ${
+              notificationsPanelOpen
+                ? "text-foreground bg-foreground/[0.05]"
+                : "text-muted-foreground hover:bg-foreground/[0.04]"
+            }`}
+            title={collapsed ? "Notifications" : undefined}
+          >
+            <Bell className="w-4 h-4 shrink-0" />
+            {!collapsed && <span className="flex-1 text-left">Notifications</span>}
+            {(unreadCount ?? 0) > 0 && (
+              <span
+                className={`flex items-center justify-center rounded-full bg-blue-500 text-white text-[10px] font-medium leading-none shrink-0 ${
+                  collapsed ? "w-4 h-4" : "min-w-[18px] h-4 px-1"
+                }`}
+              >
+                {unreadCount! > 99 ? "99+" : unreadCount}
+              </span>
+            )}
+          </button>
+          {notificationsPanelOpen && (
+            <NotificationsPanel
+              onClose={() => setNotificationsPanelOpen(false)}
+              onMergeSuggestion={(payload) =>
+                setMergeDialog({
+                  open: true,
+                  primaryPolicyId: payload.primaryPolicyId,
+                  secondaryPolicyId: payload.secondaryPolicyId,
+                })
+              }
+            />
+          )}
+        </div>
         {INSURANCE_ITEMS.map((item) => (
           <NavItem
             key={item.href}
@@ -512,6 +564,14 @@ export function AppSidebar({
           </>
         )}
       </AnimatePresence>
+
+      <MergePolicyDialog
+        open={mergeDialog.open}
+        onClose={() => setMergeDialog((d) => ({ ...d, open: false }))}
+        primaryPolicyId={mergeDialog.primaryPolicyId}
+        secondaryPolicyId={mergeDialog.secondaryPolicyId}
+        notificationId={mergeDialog.notificationId}
+      />
     </>
   );
 }
