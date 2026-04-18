@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { Suspense, useState, useCallback } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useMutation } from "convex/react";
 import { AppSidebar } from "@/components/app-sidebar";
@@ -50,10 +50,14 @@ function ShellContent({
 
   return (
     <div className="h-dvh flex overflow-hidden">
-      <AppSidebar
-        mobileOpen={mobileOpen}
-        onMobileClose={() => setMobileOpen(false)}
-      />
+      {/* AppSidebar uses useSearchParams; wrap in Suspense so the root
+          layout can prerender pages like /_not-found without bailing. */}
+      <Suspense fallback={null}>
+        <AppSidebar
+          mobileOpen={mobileOpen}
+          onMobileClose={() => setMobileOpen(false)}
+        />
+      </Suspense>
       {/* Main content column */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <AppTopBar
