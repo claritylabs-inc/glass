@@ -15,7 +15,8 @@ export const list = query({
       return await ctx.db
         .query("orgIntelligence")
         .withIndex("by_orgId_category", (idx) =>
-          idx.eq("orgId", orgId).eq("category", args.category as string)
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          idx.eq("orgId", orgId).eq("category", args.category as any)
         )
         .collect();
     }
@@ -186,8 +187,9 @@ export const bulkInsert = internalMutation({
     const now = Date.now();
     const ids = [];
     for (const entry of args.entries) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const id = await ctx.db.insert("orgIntelligence", {
-        ...(entry as Record<string, unknown>),
+        ...(entry as any),
         createdAt: now,
         updatedAt: now,
       });

@@ -53,6 +53,23 @@ export const extractFromUpload = action({
       extractionStatus: "extracting",
     });
 
+    // Create policyFile record for multi-file tracking
+    const policyFileId = await ctx.runMutation((internal as any).policyFiles.insert, {
+      policyId,
+      fileId: args.fileId,
+      fileName: args.fileName || "upload.pdf",
+      fileType: "unknown" as const,
+      extractionStatus: "extracting" as const,
+      orgId,
+    });
+
+    // Update denormalized files array on policy
+    await ctx.runMutation((internal as any).policies.updateFiles, {
+      id: policyId,
+      files: [{ fileId: args.fileId, fileName: args.fileName || "upload.pdf", fileType: "unknown", status: "extracting" }],
+      reconciliationStatus: "pending" as const,
+    });
+
     const log = async (message: string) => {
       await ctx.runMutation(internal.policies.appendExtractionLog, { id: policyId, message });
     };
@@ -121,6 +138,20 @@ export const extractFromUpload = action({
 
       await log(`${doc.type === "quote" ? "Quote" : "Policy"} extraction complete`);
 
+      // Update policyFile with extraction result
+      await ctx.runMutation((internal as any).policyFiles.updateExtraction, {
+        id: policyFileId,
+        extractionStatus: "complete",
+        extractedData: result.document,
+      });
+
+      // Single file upload — mark as reconciled (no multi-file reconciliation needed)
+      await ctx.runMutation((internal as any).policies.updateFiles, {
+        id: policyId,
+        files: [{ fileId: args.fileId, fileName: args.fileName || "upload.pdf", fileType: "unknown", status: "complete" }],
+        reconciliationStatus: "reconciled",
+      });
+
       await ctx.runMutation(internal.policyAuditLog.append, {
         policyId,
         userId,
@@ -128,10 +159,29 @@ export const extractFromUpload = action({
         action: "extraction_complete",
       });
 
-      return { success: true, type: doc.type, id: policyId };
+      // Schedule duplicate policy detection
+      await ctx.scheduler.runAfter(
+        2000,
+        (internal as any).actions.detectDuplicatePolicies.detectDuplicates,
+        { policyId, orgId },
+      );
+
+      return { success: true, type: doc.type ?? "policy", id: policyId };
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : "Extraction failed";
       await log(`Failed: ${errMsg}`);
+      // Mark policyFile as error
+      try {
+        await ctx.runMutation((internal as any).policyFiles.updateExtraction, {
+          id: policyFileId,
+          extractionStatus: "error",
+          extractionError: errMsg,
+        });
+        await ctx.runMutation((internal as any).policies.updateFiles, {
+          id: policyId,
+          files: [{ fileId: args.fileId, fileName: args.fileName || "upload.pdf", fileType: "unknown", status: "error" }],
+        });
+      } catch { /* non-critical */ }
       await ctx.runMutation(api.policies.updateExtraction, {
         id: policyId,
         extractionStatus: "error",

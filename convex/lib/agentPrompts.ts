@@ -72,14 +72,14 @@ export async function buildIntelligenceContext(
     const searchResults = await ctx.vectorSearch("orgIntelligence", "by_embedding", {
       vector: queryEmbedding,
       limit: 15,
-      filter: (q: (field: string, value: unknown) => unknown) => q.eq("orgId", orgId),
+      filter: (q) => q.eq("orgId", orgId),
     });
 
     if (searchResults.length === 0) return "";
 
     // Hydrate results via query
     const results = await ctx.runQuery(internal.intelligence.hydrateSearchResults, {
-      ids: searchResults.map((r: { _id: string }) => r._id),
+      ids: searchResults.map((r) => r._id),
     });
 
     if (!results || results.length === 0) return "";

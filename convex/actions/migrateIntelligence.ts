@@ -2,6 +2,7 @@
 
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
+import type { Id } from "../_generated/dataModel";
 import { makeEmbedText } from "../lib/sdkCallbacks";
 
 // ── Category mappings ──
@@ -97,7 +98,7 @@ export const migrateAll = internalAction({
     const alreadyMigratedOrgs = new Set<string>();
     for (const orgId of orgIds) {
       const existing = await ctx.runQuery(internal.intelligence.listByOrg, {
-        orgId: orgId as string,
+        orgId: orgId as Id<"organizations">,
       });
       if (existing.length > 0) {
         alreadyMigratedOrgs.add(orgId);
@@ -178,7 +179,7 @@ export const migrateAll = internalAction({
       const batchEmbeddings = embeddings.slice(i, i + INSERT_BATCH_SIZE);
 
       const entries = batch.map((entry, idx) => ({
-        orgId: entry.orgId as string,
+        orgId: entry.orgId as Id<"organizations">,
         content: entry.content,
         category: entry.category,
         confidence: entry.confidence,
@@ -190,7 +191,8 @@ export const migrateAll = internalAction({
       }));
 
       await ctx.runMutation(internal.intelligence.bulkInsertWithTimestamps, {
-        entries,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        entries: entries as any,
       });
 
       totalInserted += batch.length;

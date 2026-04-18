@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query, internalQuery, internalMutation } from "./_generated/server";
 import { internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
 import { requireOrgAccess, requireOrgAdmin, getOrgAccess } from "./lib/orgAuth";
 
 export const list = query({
@@ -169,7 +170,7 @@ export const connectGoogle = mutation({
       throw new Error("Unauthorized");
     }
 
-    const orgId = args.orgId as string; // from URL state, already validated
+    const orgId = args.orgId as Id<"organizations">; // from URL state, already validated
 
     // Upsert: update existing Google connection or create new one
     const existing = await ctx.db

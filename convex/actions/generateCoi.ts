@@ -25,7 +25,7 @@ export const run = internalAction({
 
       if (!policy) throw new Error("Policy not found");
 
-      const coiData = policyToCoiData(policy, org);
+      const coiData = policyToCoiData(policy, org ?? undefined);
       if (args.certificateHolder) {
         coiData.certificateHolder = args.certificateHolder;
       }

@@ -114,7 +114,8 @@ Respond with a JSON object:
         messages: [{ role: "user", content: prompt }],
       });
 
-      let analysis: Record<string, unknown>;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let analysis: any;
       try {
         const cleaned = text.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
         const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
@@ -174,7 +175,7 @@ Respond with a JSON object:
           const similar = await ctx.vectorSearch("orgIntelligence", "by_embedding", {
             vector: embedding,
             limit: 3,
-            filter: (q: { eq: (field: string, value: unknown) => unknown }) => q.eq("orgId", args.orgId),
+            filter: (q) => q.eq("orgId", args.orgId),
           });
           if (similar.some((s: { _score: number }) => s._score > 0.95)) continue;
 
@@ -210,7 +211,8 @@ export const analyzePortfolio = internalAction({
       if (policies.length < 2) return;
 
       const memoryBlock = await buildIntelligenceContext(ctx, args.orgId, "insurance portfolio analysis coverage gaps");
-      const policySummaries = policies.map((p: Record<string, unknown>) => ({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const policySummaries = policies.map((p: any) => ({
         carrier: p.security,
         type: p.policyTypes?.join(", "),
         limits: p.limits,
@@ -241,7 +243,8 @@ Provide a portfolio-level assessment as JSON:
         messages: [{ role: "user", content: prompt }],
       });
 
-      let analysis: Record<string, unknown>;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let analysis: any;
       try {
         const cleaned = text.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
         const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
@@ -284,7 +287,7 @@ Provide a portfolio-level assessment as JSON:
           const similar = await ctx.vectorSearch("orgIntelligence", "by_embedding", {
             vector: embedding,
             limit: 3,
-            filter: (q: { eq: (field: string, value: unknown) => unknown }) => q.eq("orgId", args.orgId),
+            filter: (q) => q.eq("orgId", args.orgId),
           });
           if (similar.some((s: { _score: number }) => s._score > 0.95)) continue;
 
@@ -371,7 +374,7 @@ Provide a comparison as JSON:
         const similar = await ctx.vectorSearch("orgIntelligence", "by_embedding", {
           vector: embedding,
           limit: 3,
-          filter: (q: { eq: (field: string, value: unknown) => unknown }) => q.eq("orgId", args.orgId),
+          filter: (q) => q.eq("orgId", args.orgId),
         });
         if (!similar.some((s: { _score: number }) => s._score > 0.95)) {
           await ctx.runMutation(internal.intelligence.insert, {

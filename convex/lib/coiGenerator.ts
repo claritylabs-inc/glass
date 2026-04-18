@@ -69,8 +69,10 @@ export interface CoverageLine {
  * Map a Prism policy document to CoiData.
  * Produces one CoverageLine per detected coverage type.
  */
-export function policyToCoiData(policy: Record<string, unknown>, org?: Record<string, unknown>): CoiData {
-  const limits: Record<string, unknown> = (policy.limits as Record<string, unknown>) ?? {};
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function policyToCoiData(policy: any, org?: any): CoiData {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const limits: any = policy.limits ?? {};
   const policyTypes: string[] = policy.policyTypes ?? [];
   const policyNumber = policy.policyNumber ?? "";
   const effDate = policy.effectiveDate ?? "";
@@ -161,7 +163,8 @@ export function policyToCoiData(policy: Record<string, unknown>, org?: Record<st
   // ── Workers Compensation ──────────────────────────────────────────────────
   const hasWC = policyTypes.includes("workers_comp");
   if (hasWC || limits.statutory || limits.employersLiability) {
-    const el = limits.employersLiability ?? {};
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const el: any = limits.employersLiability ?? {};
     const wcLimits: Array<{ label: string; value: string }> = [];
     wcLimits.push({ label: "WC STAT", value: limits.statutory ? "✓" : "" });
     if (el.eachAccident) wcLimits.push({ label: "E.L. EACH ACCIDENT", value: el.eachAccident });
@@ -225,7 +228,8 @@ export function policyToCoiData(policy: Record<string, unknown>, org?: Record<st
   };
 }
 
-function buildOtherLimits(limits: Record<string, unknown>): Array<{ label: string; value: string }> {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function buildOtherLimits(limits: any): Array<{ label: string; value: string }> {
   const result: Array<{ label: string; value: string }> = [];
   if (limits.perOccurrence) result.push({ label: "EACH CLAIM / OCCURRENCE", value: limits.perOccurrence });
   if (limits.generalAggregate) result.push({ label: "AGGREGATE", value: limits.generalAggregate });
@@ -233,7 +237,8 @@ function buildOtherLimits(limits: Record<string, unknown>): Array<{ label: strin
   return result;
 }
 
-function flattenToLimitLines(limits: Record<string, unknown>): Array<{ label: string; value: string }> {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function flattenToLimitLines(limits: any): Array<{ label: string; value: string }> {
   const result: Array<{ label: string; value: string }> = [];
   const labelMap: Record<string, string> = {
     perOccurrence: "EACH OCCURRENCE",

@@ -6,6 +6,7 @@ import { api, internal } from "../_generated/api";
 import { ImapFlow } from "imapflow";
 import { buildExtractor, insuranceDocToPolicy, summarizeExtractionCheckpoint } from "../lib/extraction";
 import { makeEmbedText } from "../lib/sdkCallbacks";
+import type { Id } from "../_generated/dataModel";
 
 export const extractPolicy = internalAction({
   args: {
@@ -167,7 +168,8 @@ export const extractPolicy = internalAction({
       }
 
       // Map InsuranceDocument → Prism policy fields
-      const fields = insuranceDocToPolicy(result.document);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const fields: any = insuranceDocToPolicy(result.document);
       const docName = doc.type === "quote"
         ? (doc.quoteNumber || "quote")
         : (doc.policyNumber || "policy");
@@ -306,7 +308,7 @@ export const extractPolicy = internalAction({
             const similar = await ctx.vectorSearch("orgIntelligence", "by_embedding", {
               vector: embedding,
               limit: 3,
-              filter: (q: { eq: (field: string, value: unknown) => unknown }) => q.eq("orgId", args.orgId),
+              filter: (q) => q.eq("orgId", args.orgId!),
             });
             if (similar.some((s: { _score?: number }) => (s._score ?? 0) > 0.95)) continue;
 
@@ -377,6 +379,13 @@ export const extractPolicy = internalAction({
             );
           }
         }
+
+        // Schedule duplicate policy detection
+        await ctx.scheduler.runAfter(
+          2000,
+          (internal as any).actions.detectDuplicatePolicies.detectDuplicates,
+          { policyId, orgId: args.orgId },
+        );
       }
 
       await incrementExtracted(ctx, args.connectionId);
@@ -396,7 +405,7 @@ export const extractPolicy = internalAction({
           await ctx.runMutation(internal.policyFiles.updateExtraction, {
             id: policyFileId,
             extractionStatus: "error",
-            extractionError: error.message || "Extraction failed",
+            extractionError: (error instanceof Error ? error.message : String(error)) || "Extraction failed",
           });
           if (args.orgId) {
             await ctx.runMutation(internal.policies.updateFiles, {
@@ -427,7 +436,8 @@ export const extractPolicy = internalAction({
   },
 });
 
-async function incrementExtracted(ctx: { runMutation: (...args: unknown[]) => Promise<unknown> }, connectionId: string) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function incrementExtracted(ctx: any, connectionId: string) {
   try {
     await ctx.runMutation(internal.connections.incrementExtracted, {
       id: connectionId,

@@ -9,11 +9,10 @@
 
 import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
-import { api, internal } from "../_generated/api";
+import { internal } from "../_generated/api";
 import { generateText } from "ai";
 import { getModel } from "../lib/models";
 import { insuranceDocToPolicy } from "../lib/documentMapping";
-import { chunkDocument } from "@claritylabs/cl-sdk";
 import { makeEmbedText } from "../lib/sdkCallbacks";
 
 export const reconcilePolicy = internalAction({
@@ -30,22 +29,16 @@ export const reconcilePolicy = internalAction({
     };
 
     const appendReconciliationLog = async (message: string) => {
-      const policy = await ctx.runQuery(internal.policies.getInternal, {
+      await ctx.runMutation(internal.policies.appendReconciliationLog, {
         id: args.policyId,
-      }) as any;
-      if (!policy) return;
-      const existing = policy.reconciliationLog ?? [];
-      existing.push({ timestamp: Date.now(), message });
-      await ctx.runMutation(api.policies.updateExtraction, {
-        id: args.policyId,
-        reconciliationLog: existing,
-      } as any);
+        message,
+      });
     };
 
     try {
       // 1. Load all complete policyFiles for this policy
       const allFiles = await ctx.runQuery(
-        internal.policyFiles.listByPolicyInternal,
+        (internal as any).policyFiles.listByPolicyInternal,
         { policyId: args.policyId },
       ) as any[];
 
@@ -58,28 +51,26 @@ export const reconcilePolicy = internalAction({
       // 2. Single file — skip LLM merge, just mark reconciled
       if (completeFiles.length <= 1) {
         if (completeFiles.length === 1) {
-          // Apply the single file's extracted data to the policy
           const fields = insuranceDocToPolicy(completeFiles[0].extractedData);
-          await ctx.runMutation(api.policies.updateExtraction, {
+          await ctx.runMutation(internal.policies.updateReconciliation, {
             id: args.policyId,
-            ...fields,
             reconciliationStatus: "reconciled",
-          } as any);
+            fields,
+          });
           await appendReconciliationLog("Single file — reconciliation skipped, data applied directly.");
           await log("Reconciliation: single file, applied directly.");
         } else {
-          // No complete files at all — just mark reconciled to unblock
-          await ctx.runMutation(api.policies.updateExtraction, {
+          await ctx.runMutation(internal.policies.updateReconciliation, {
             id: args.policyId,
             reconciliationStatus: "reconciled",
-          } as any);
+          });
           await appendReconciliationLog("No complete files — marked reconciled without data update.");
           await log("Reconciliation: no complete files, marked reconciled.");
         }
         return;
       }
 
-      // 3. Multiple files — merge via reasoning model
+      // 3. Multiple files — merge via reasoning model (kimi-k2.5, 256K context)
       const n = completeFiles.length;
       const docsJson = completeFiles
         .map((f: any, i: number) =>
@@ -113,7 +104,6 @@ Output: a single JSON object representing the merged InsuranceDocument.`;
       // 4. Parse reconciled result
       let reconciledDoc: any;
       try {
-        // Strip markdown fences if present
         const raw = result.text.trim();
         const jsonText = raw.startsWith("```")
           ? raw.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "")
@@ -125,22 +115,33 @@ Output: a single JSON object representing the merged InsuranceDocument.`;
 
       await log(`Reconciliation: merge complete. Mapping to policy fields.`);
 
-      // 5. Map to policy fields
+      // 5. Map to policy fields and update
       const fields = insuranceDocToPolicy(reconciledDoc);
-
-      // 6. Update the policy with reconciled fields
-      await ctx.runMutation(api.policies.updateExtraction, {
+      await ctx.runMutation(internal.policies.updateReconciliation, {
         id: args.policyId,
-        ...fields,
+        fields,
       });
 
-      // 7. Delete existing document chunks for this policy
+      // 6. Delete existing document chunks for this policy
       await ctx.runMutation(internal.documentChunks.deleteByPolicy, {
         policyId: args.policyId,
       });
 
-      // 8. Re-chunk from the reconciled extraction
-      const chunks = chunkDocument(reconciledDoc);
+      // 7. Re-chunk from the reconciled extraction
+      // Use cl-sdk chunkDocument if available, otherwise create a simple chunk
+      const chunks: Array<{ id: string; type: string; text: string; metadata?: any }> = [];
+      try {
+        const { chunkDocument } = await import("@claritylabs/cl-sdk");
+        chunks.push(...chunkDocument(reconciledDoc));
+      } catch {
+        // Fallback: create a single chunk from the full document
+        chunks.push({
+          id: `${args.policyId}:full:0`,
+          type: "full_document",
+          text: JSON.stringify(reconciledDoc),
+        });
+      }
+
       if (chunks.length > 0) {
         const embed = makeEmbedText();
         for (const chunk of chunks) {
@@ -163,11 +164,11 @@ Output: a single JSON object representing the merged InsuranceDocument.`;
         await log(`Reconciliation: stored ${chunks.length} chunks for vector search.`);
       }
 
-      // 9. Set reconciliationStatus to "reconciled" and log
-      await ctx.runMutation(api.policies.updateExtraction, {
+      // 8. Set reconciliationStatus to "reconciled"
+      await ctx.runMutation(internal.policies.updateReconciliation, {
         id: args.policyId,
         reconciliationStatus: "reconciled",
-      } as any);
+      });
 
       await appendReconciliationLog(
         `Reconciled ${n} files. ${chunks.length} chunks generated. Tokens: ${result.usage?.inputTokens ?? 0}in/${result.usage?.outputTokens ?? 0}out`,
@@ -176,24 +177,11 @@ Output: a single JSON object representing the merged InsuranceDocument.`;
       await log(`Reconciliation: complete. Policy updated from ${n} files.`);
     } catch (error: any) {
       const message = error.message || "Reconciliation failed";
-      await ctx.runMutation(api.policies.updateExtraction, {
+      await ctx.runMutation(internal.policies.updateReconciliation, {
         id: args.policyId,
         reconciliationStatus: "error",
-      } as any);
-
-      // Append to reconciliation log
-      const policy = await ctx.runQuery(internal.policies.getInternal, {
-        id: args.policyId,
-      }) as any;
-      if (policy) {
-        const existing = policy.reconciliationLog ?? [];
-        existing.push({ timestamp: Date.now(), message: `Error: ${message}` });
-        await ctx.runMutation(api.policies.updateExtraction, {
-          id: args.policyId,
-          reconciliationLog: existing,
-        } as any);
-      }
-
+      });
+      await appendReconciliationLog(`Error: ${message}`);
       console.error("Reconciliation failed:", message);
       throw error;
     }

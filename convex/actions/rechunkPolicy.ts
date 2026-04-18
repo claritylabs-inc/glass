@@ -12,6 +12,7 @@ import { v } from "convex/values";
 import { internalAction, action } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import { chunkDocument } from "@claritylabs/cl-sdk";
+import type { Id } from "../_generated/dataModel";
 import { policyToInsuranceDoc } from "../lib/documentMapping";
 import { makeEmbedText } from "../lib/sdkCallbacks";
 
@@ -26,7 +27,7 @@ export const rechunkOne = internalAction({
   handler: async (ctx, args): Promise<{ policyId: string; oldChunks: number; newChunks: number }> => {
     const policy = await ctx.runQuery(internal.policies.getInternal, {
       id: args.policyId,
-    }) as Record<string, unknown>;
+    });
     if (!policy) throw new Error("Policy not found");
 
     // Convert to InsuranceDocument and re-chunk
@@ -37,7 +38,7 @@ export const rechunkOne = internalAction({
     const existing = await ctx.runQuery(
       internal.documentChunks.listByPolicy,
       { policyId: args.policyId },
-    ) as Array<{ _id: string }>;
+    ) as Array<{ _id: Id<"documentChunks"> }>;
     for (const chunk of existing) {
       await ctx.runMutation(internal.documentChunks.deleteOne, { id: chunk._id });
     }
@@ -129,7 +130,7 @@ export const rechunk = action({
     const orgData = await ctx.runQuery(api.orgs.viewerOrg) as { membership: { orgId: string } } | null;
     if (!orgData) return { error: "No organization" };
 
-    const orgId = orgData.membership.orgId;
+    const orgId = orgData.membership.orgId as Id<"organizations">;
     const policy = await ctx.runQuery(internal.policies.getInternal, { id: args.policyId });
     if (!policy || policy.orgId !== orgId) {
       return { error: "Not found" };

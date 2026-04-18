@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, Children, cloneElement, isValidElement } from "react";
+import { useState, useEffect, Children, cloneElement, isValidElement } from "react";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
@@ -73,14 +73,18 @@ export function PolicyPreview({ id, page, citedSections, onHeaderInfo, onHeaderA
   // Notify parent of header info
   const carrier = policy?.carrier || "Unknown carrier";
   const policyNum = policy?.policyNumber;
-  
-  if (policy && onHeaderInfo) {
-    onHeaderInfo({ carrier, policyNum });
-  }
-  
-  if (fileUrl && onHeaderActions) {
-    onHeaderActions({ fileUrl, policyId: id, page });
-  }
+
+  useEffect(() => {
+    if (policy && onHeaderInfo) {
+      onHeaderInfo({ carrier, policyNum });
+    }
+  }, [carrier, policyNum, policy, onHeaderInfo]);
+
+  useEffect(() => {
+    if (fileUrl && onHeaderActions) {
+      onHeaderActions({ fileUrl, policyId: id, page });
+    }
+  }, [fileUrl, id, page, onHeaderActions]);
 
   if (!policy) {
     return (

@@ -3,6 +3,7 @@
 import { v } from "convex/values";
 import { action, internalAction } from "../_generated/server";
 import { api, internal } from "../_generated/api";
+import type { Id } from "../_generated/dataModel";
 import { generateText } from "ai";
 import { haikuModel, sonnetModel } from "../lib/ai";
 import { stripFences } from "../lib/extraction";
@@ -94,7 +95,8 @@ function getAppUrl(): string {
  * to dual-write agent email messages into the unified thread.
  */
 async function createThreadWriter(
-  ctx: { runQuery: (...args: unknown[]) => Promise<unknown>; runMutation: (...args: unknown[]) => Promise<unknown> },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ctx: any,
   conversationId: string,
   orgId: string,
   agentAddress: string,
@@ -173,7 +175,8 @@ export const retryApplication = action({
     const viewer = await ctx.runQuery(api.users.viewer);
     if (!viewer) return { error: "Not authenticated" };
 
-    const session = await ctx.runQuery(api.applicationSessions.get, { id: args.sessionId });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const session: any = await ctx.runQuery(api.applicationSessions.get, { id: args.sessionId });
     if (!session) return { error: "Session not found" };
     if (!session.error && session.status !== "extracting_fields") {
       return { error: "Session is not in an error state" };
@@ -312,7 +315,8 @@ export const fillApplicationPdf = action({
     const viewer = await ctx.runQuery(api.users.viewer);
     if (!viewer) return { error: "Not authenticated" };
 
-    const session = await ctx.runQuery(api.applicationSessions.get, { id: args.sessionId });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const session: any = await ctx.runQuery(api.applicationSessions.get, { id: args.sessionId });
     if (!session) return { error: "Session not found" };
     if (!["complete", "confirmed"].includes(session.status)) {
       return { error: "Application must be complete or confirmed before filling" };
@@ -330,7 +334,8 @@ export const fillApplicationPdf = action({
 
     // Get extracted fields with values
     const fields = session.parsedFields ?? [];
-    const fieldsWithValues = fields.filter((f: Record<string, unknown>) => f.value);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const fieldsWithValues = fields.filter((f: any) => f.value);
     if (fieldsWithValues.length === 0) {
       return { error: "No filled field values to map" };
     }
@@ -388,7 +393,8 @@ export const fillApplicationPdf = action({
       // ── AcroForm path: map extracted fields to form field names ──
       mode = "acroform";
       const mappingPrompt = buildAcroFormMappingPrompt(
-        fieldsWithValues.map((f: Record<string, unknown>) => ({ id: f.id, label: f.label ?? f.text, value: f.value })),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        fieldsWithValues.map((f: any) => ({ id: f.id, label: f.label ?? f.text, value: f.value })),
         acroFields,
       );
 
@@ -413,8 +419,9 @@ export const fillApplicationPdf = action({
       mode = "overlay";
       // Always send original PDF to Vision (better quality for field detection)
       const pdfBase64 = Buffer.from(pdfBytes).toString("base64");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const mappingPrompt = buildFlatPdfMappingPrompt(
-        fieldsWithValues.map((f: Record<string, unknown>) => ({
+        fieldsWithValues.map((f: any) => ({
           id: f.id,
           label: f.label ?? f.text,
           value: f.value,
@@ -519,7 +526,7 @@ export const fillApplicationPdf = action({
       // Group fields by section
       const sections = new Map<string, typeof fieldsWithValues>();
       for (const field of fieldsWithValues) {
-        const section = (field as Record<string, unknown>).section ?? "General";
+        const section = (field as any).section ?? "General";
         if (!sections.has(section)) sections.set(section, []);
         sections.get(section)!.push(field);
       }
@@ -532,8 +539,8 @@ export const fillApplicationPdf = action({
         yPos -= 20;
 
         for (const field of sectionFields) {
-          const label = (field as Record<string, unknown>).label ?? (field as Record<string, unknown>).text ?? (field as Record<string, unknown>).id;
-          const value = String((field as Record<string, unknown>).value);
+          const label = (field as any).label ?? (field as any).text ?? (field as any).id;
+          const value = String((field as any).value);
 
           ensureSpace(28);
           drawWrappedText(label, 9, font, { r: 0.4, g: 0.4, b: 0.4 });
@@ -662,9 +669,9 @@ async function sendEmail(
 
 function getFieldLabel(field: FormField): string {
   if (field.fieldType === "declaration") {
-    return (field as Record<string, unknown>).text ?? field.id;
+    return field.text ?? field.id;
   }
-  return (field as Record<string, unknown>).label ?? field.id;
+  return field.label ?? field.id;
 }
 
 async function generateBatchEmail(
@@ -686,8 +693,8 @@ async function generateBatchEmail(
     id: f.id,
     label: getFieldLabel(f),
     fieldType: f.fieldType,
-    options: (f as Record<string, unknown>).options as string[] | undefined,
-    condition: (f as Record<string, unknown>).condition as { dependsOn: string; whenValue: string } | undefined,
+    options: (f as any).options as string[] | undefined,
+    condition: (f as any).condition as { dependsOn: string; whenValue: string } | undefined,
   }));
 
   const { text: body } = await generateText({
@@ -724,7 +731,7 @@ function buildPreviousBatchSummary(
       const field = fields.find((f) => f.id === id);
       if (!field) return null;
       const label = getFieldLabel(field);
-      const value = (field as Record<string, unknown>).value ?? (field as Record<string, unknown>).explanation ?? "(provided)";
+      const value = (field as any).value ?? (field as any).explanation ?? "(provided)";
       return `- ${label}: ${value}`;
     })
     .filter(Boolean)
@@ -749,7 +756,8 @@ type AutoFillResult = { fieldId: string; value: string; source: string };
 /** Pre-fill coverage/policy fields from existing policy data before sending a batch.
  *  Returns fills with source attribution. */
 async function preFillFromPolicies(
-  ctx: { runQuery: (...args: unknown[]) => Promise<unknown>; runMutation: (...args: unknown[]) => Promise<unknown> },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ctx: any,
   fields: FormField[],
   batchFieldIds: string[],
   orgId: string,
@@ -759,7 +767,7 @@ async function preFillFromPolicies(
   const coverageKeywords = ["policy", "carrier", "insurer", "coverage", "limit", "deductible", "premium", "currently carry", "current insurance", "expir", "effective date"];
   const candidateFields = batchFieldIds
     .map((id) => fields.find((f) => f.id === id))
-    .filter((f): f is FormField => !!f && !(f as Record<string, unknown>).value)
+    .filter((f): f is FormField => !!f && !(f as any).value)
     .filter((f) => {
       const label = getFieldLabel(f).toLowerCase();
       const id = f.id.toLowerCase();
@@ -792,10 +800,10 @@ async function preFillFromPolicies(
     for (const fill of result.fills ?? []) {
       const field = fields.find((f) => f.id === fill.fieldId);
       if (field) {
-        (field as Record<string, unknown>).value = fill.value;
-        (field as Record<string, unknown>).source = "org_context";
-        (field as Record<string, unknown>).sourceDetail = fill.source; // e.g. "Cyber Policy #ABC123"
-        (field as Record<string, unknown>).confidence = "confirmed";
+        (field as any).value = fill.value;
+        (field as any).source = "org_context";
+        (field as any).sourceDetail = fill.source; // e.g. "Cyber Policy #ABC123"
+        (field as any).confidence = "confirmed";
         fills.push({ fieldId: fill.fieldId, value: fill.value, source: fill.source ?? "existing records" });
       }
     }
@@ -806,7 +814,8 @@ async function preFillFromPolicies(
 }
 
 async function loadLookupContext(
-  ctx: { runQuery: (...args: unknown[]) => Promise<unknown> },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ctx: any,
   orgId: string,
   userId: string,
   requestTypes: string[],
@@ -821,12 +830,13 @@ async function loadLookupContext(
     );
 
     if (requestTypes.includes("policy")) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const policyLines = policies
-        .filter((p: Record<string, unknown>) => p.documentType !== "quote")
-        .map((p: Record<string, unknown>) => {
+        .filter((p: any) => p.documentType !== "quote")
+        .map((p: any) => {
           const types = (p.policyTypes ?? []).join(", ") || p.policyType || "Unknown";
           const covs = (p.coverages ?? [])
-            .map((c: Record<string, unknown>) => `${c.name}: limit ${c.limit}${c.deductible ? `, deductible ${c.deductible}` : ""}`)
+            .map((c: any) => `${c.name}: limit ${c.limit}${c.deductible ? `, deductible ${c.deductible}` : ""}`)
             .join("; ");
           return `Policy: ${p.security ?? p.carrier} #${p.policyNumber} (${types}) | Effective: ${p.effectiveDate} - ${p.expirationDate}${p.premium ? ` | Premium: ${p.premium}` : ""}${covs ? ` | Coverages: ${covs}` : ""}`;
         });
@@ -836,12 +846,13 @@ async function loadLookupContext(
     }
 
     if (requestTypes.includes("quote")) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const quoteLines = policies
-        .filter((p: Record<string, unknown>) => p.documentType === "quote")
-        .map((p: Record<string, unknown>) => {
+        .filter((p: any) => p.documentType === "quote")
+        .map((p: any) => {
           const types = (p.policyTypes ?? []).join(", ") || p.policyType || "Unknown";
           const covs = (p.coverages ?? [])
-            .map((c: Record<string, unknown>) => `${c.name}: limit ${c.limit}`)
+            .map((c: any) => `${c.name}: limit ${c.limit}`)
             .join("; ");
           return `Quote: ${p.security ?? p.carrier} (${types})${p.premium ? ` | Premium: ${p.premium}` : ""}${covs ? ` | Coverages: ${covs}` : ""}`;
         });
@@ -1085,7 +1096,7 @@ export const startApplicationSession = internalAction({
         fields = JSON.parse(cleaned);
       } catch {
         // If JSON is truncated (hit max_tokens), try to salvage partial array
-        fields = salvageTruncatedJsonArray(cleaned);
+        fields = salvageTruncatedJsonArray(cleaned) as FormField[];
       }
 
       if (!Array.isArray(fields) || fields.length === 0) {
@@ -1101,7 +1112,7 @@ export const startApplicationSession = internalAction({
 
       const totalFields = fields.length;
       const filledFields = fields.filter(
-        (f) => f.fieldType !== "table" ? (f as Record<string, unknown>).value : (f as Record<string, unknown>).rows?.length > 0,
+        (f) => f.fieldType !== "table" ? (f as any).value : (f as any).rows?.length > 0,
       ).length;
 
       await ctx.runMutation(internal.applicationSessions.updateFields, {
@@ -1368,13 +1379,13 @@ Use the most specific code that applies. Do not guess if the info is insufficien
           for (const match of matches) {
             const field = fields.find((f) => f.id === match.fieldId);
             if (field && field.fieldType !== "table") {
-              (field as Record<string, unknown>).value = match.value;
-              (field as Record<string, unknown>).source = "org_context";
-              (field as Record<string, unknown>).confidence = match.confidence === "confirmed" ? "confirmed" : "inferred";
+              (field as any).value = match.value;
+              (field as any).source = "org_context";
+              (field as any).confidence = match.confidence === "confirmed" ? "confirmed" : "inferred";
               // Map contextKey to a readable source
               const ctx = contextEntries.find((e) => e.key === match.contextKey);
               const sourceLabel = ctx?.category === "current_insurance" ? `existing ${ctx.key.replace(/^current_/, "").replace(/_/g, " ")}` : ctx?.category ?? "business context";
-              (field as Record<string, unknown>).sourceDetail = sourceLabel;
+              (field as any).sourceDetail = sourceLabel;
               initialAutoFills.push({ fieldId: match.fieldId, value: match.value, source: sourceLabel });
             }
           }
@@ -1385,7 +1396,7 @@ Use the most specific code that applies. Do not guess if the info is insufficien
 
       // Update filled count
       const newFilledFields = fields.filter(
-        (f) => f.fieldType !== "table" ? (f as Record<string, unknown>).value : (f as Record<string, unknown>).rows?.length > 0,
+        (f) => f.fieldType !== "table" ? (f as any).value : (f as any).rows?.length > 0,
       ).length;
 
       await ctx.runMutation(internal.applicationSessions.updateFields, {
@@ -1397,28 +1408,28 @@ Use the most specific code that applies. Do not guess if the info is insufficien
 
       // 4. Auto-skip conditional fields whose parent condition is not met
       for (const field of fields) {
-        if (!("condition" in field) || !(field as Record<string, unknown>).condition) continue;
-        if ((field as Record<string, unknown>).value) continue; // already has a value
-        const cond = (field as Record<string, unknown>).condition as { dependsOn: string; whenValue: string };
+        if (!("condition" in field) || !(field as any).condition) continue;
+        if ((field as any).value) continue; // already has a value
+        const cond = (field as any).condition as { dependsOn: string; whenValue: string };
         const parent = fields.find((f) => f.id === cond.dependsOn);
         if (!parent) continue;
-        const parentValue = ((parent as Record<string, unknown>).value ?? "").toString().toLowerCase().trim();
+        const parentValue = ((parent as any).value ?? "").toString().toLowerCase().trim();
         if (parentValue && parentValue !== cond.whenValue.toLowerCase().trim()) {
-          (field as Record<string, unknown>).value = "N/A";
-          (field as Record<string, unknown>).source = "auto_skipped";
-          (field as Record<string, unknown>).confidence = "confirmed";
+          (field as any).value = "N/A";
+          (field as any).source = "auto_skipped";
+          (field as any).confidence = "confirmed";
         }
       }
 
       // Recount filled fields after auto-skipping
       const postSkipFilledFields = fields.filter(
-        (f) => f.fieldType !== "table" ? (f as Record<string, unknown>).value : (f as Record<string, unknown>).rows?.length > 0,
+        (f) => f.fieldType !== "table" ? (f as any).value : (f as any).rows?.length > 0,
       ).length;
 
       // Generate question batches for unfilled fields
       const unfilledFields = fields.filter((f) => {
-        if (f.fieldType === "table") return !(f as Record<string, unknown>).rows?.length;
-        return !(f as Record<string, unknown>).value;
+        if (f.fieldType === "table") return !(f as any).rows?.length;
+        return !(f as any).value;
       });
 
       if (unfilledFields.length === 0) {
@@ -1472,12 +1483,12 @@ Use the most specific code that applies. Do not guess if the info is insufficien
               content: buildQuestionBatchPrompt(
                 unfilledFields.map((f) => ({
                   id: f.id,
-                  label: f.fieldType !== "declaration" ? (f as Record<string, unknown>).label : undefined,
-                  text: f.fieldType === "declaration" ? (f as Record<string, unknown>).text : undefined,
+                  label: f.fieldType !== "declaration" ? (f as any).label : undefined,
+                  text: f.fieldType === "declaration" ? (f as any).text : undefined,
                   fieldType: f.fieldType,
                   section: f.section,
-                  required: (f as Record<string, unknown>).required ?? false,
-                  condition: (f as Record<string, unknown>).condition,
+                  required: (f as any).required ?? false,
+                  condition: (f as any).condition,
                 })),
               ),
             },
@@ -1546,22 +1557,22 @@ Use the most specific code that applies. Do not guess if the info is insufficien
 
       // Save new auto-filled values to orgIntelligence (skip transient/date fields)
       const autoFilledFields = fields
-        .filter((f) => (f as Record<string, unknown>).source === "org_context" || (f as Record<string, unknown>).source === "inferred")
-        .filter((f) => (f as Record<string, unknown>).value)
-        .filter((f) => !isTransientField({ id: f.id, label: (f as Record<string, unknown>).label, text: (f as Record<string, unknown>).text, fieldType: f.fieldType }));
+        .filter((f) => (f as any).source === "org_context" || (f as any).source === "inferred")
+        .filter((f) => (f as any).value)
+        .filter((f) => !isTransientField({ id: f.id, label: (f as any).label, text: (f as any).text, fieldType: f.fieldType }));
 
       if (autoFilledFields.length > 0) {
         const embedText = makeEmbedText();
         const intelEntries = await Promise.all(
           autoFilledFields.map(async (f) => {
             const label = getFieldLabel(f);
-            const content = `${label}: ${(f as Record<string, unknown>).value}`;
+            const content = `${label}: ${(f as any).value}`;
             const embedding = await embedText(content);
             return {
               orgId: args.orgId,
               content,
               category: sectionToCategory(f.section),
-              confidence: (f as Record<string, unknown>).confidence === "confirmed" ? "confirmed" : "inferred",
+              confidence: (f as any).confidence === "confirmed" ? "confirmed" : "inferred",
               source: "application",
               sourceRef: sessionId,
               sourceLabel: `Application: ${args.applicationTitle ?? "untitled"}`,
@@ -1603,7 +1614,8 @@ export const processApplicationReply = internalAction({
   },
   handler: async (ctx, args) => {
     try {
-      const session = await ctx.runQuery(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const session: any = await ctx.runQuery(
         internal.applicationSessions.getInternal,
         { id: args.sessionId },
       );
@@ -1683,8 +1695,8 @@ export const processApplicationReply = internalAction({
               content: buildAnswerParsingPrompt(
                 batchFields.map((f) => ({
                   id: f.id,
-                  label: f.fieldType !== "declaration" ? (f as Record<string, unknown>).label : undefined,
-                  text: f.fieldType === "declaration" ? (f as Record<string, unknown>).text : undefined,
+                  label: f.fieldType !== "declaration" ? (f as any).label : undefined,
+                  text: f.fieldType === "declaration" ? (f as any).text : undefined,
                   fieldType: f.fieldType,
                 })),
                 args.body,
@@ -1709,13 +1721,13 @@ export const processApplicationReply = internalAction({
           const field = fields.find((f) => f.id === answer.fieldId);
           if (field) {
             if (field.fieldType === "declaration") {
-              (field as Record<string, unknown>).value = answer.value;
-              if (answer.explanation) (field as Record<string, unknown>).explanation = answer.explanation;
+              (field as any).value = answer.value;
+              if (answer.explanation) (field as any).explanation = answer.explanation;
             } else {
-              (field as Record<string, unknown>).value = answer.value;
+              (field as any).value = answer.value;
             }
-            (field as Record<string, unknown>).source = "user_answer";
-            (field as Record<string, unknown>).confidence = "confirmed";
+            (field as any).source = "user_answer";
+            (field as any).confidence = "confirmed";
             if (!currentBatch.answeredFieldIds.includes(answer.fieldId)) {
               currentBatch.answeredFieldIds.push(answer.fieldId);
               newlyAnsweredIds.push(answer.fieldId);
@@ -1728,7 +1740,7 @@ export const processApplicationReply = internalAction({
           .filter((a) => a.value)
           .filter((a) => {
             const field = fields.find((f) => f.id === a.fieldId);
-            return field ? !isTransientField({ id: field.id, label: (field as Record<string, unknown>).label, text: (field as Record<string, unknown>).text, fieldType: field.fieldType }) : true;
+            return field ? !isTransientField({ id: field.id, label: (field as any).label, text: (field as any).text, fieldType: field.fieldType }) : true;
           });
 
         if (answerFields.length > 0) {
@@ -1783,7 +1795,7 @@ export const processApplicationReply = internalAction({
                   id: questionField?.id ?? "unknown",
                   label: questionField ? getFieldLabel(questionField) : (intentResult.questionText ?? "this field"),
                   fieldType: questionField?.fieldType ?? "text",
-                  options: (questionField as Record<string, unknown>)?.options as string[] | undefined,
+                  options: (questionField as any)?.options as string[] | undefined,
                 },
                 intentResult.questionText ?? args.body,
                 policyContext || undefined,
@@ -1840,10 +1852,10 @@ export const processApplicationReply = internalAction({
             for (const fill of fillResult.fills ?? []) {
               const field = fields.find((f) => f.id === fill.fieldId);
               if (field) {
-                (field as Record<string, unknown>).value = fill.value;
-                (field as Record<string, unknown>).source = "org_context";
-                (field as Record<string, unknown>).sourceDetail = fill.source;
-                (field as Record<string, unknown>).confidence = "confirmed";
+                (field as any).value = fill.value;
+                (field as any).source = "org_context";
+                (field as any).sourceDetail = fill.source;
+                (field as any).confidence = "confirmed";
                 lookupFills.push({ fieldId: fill.fieldId, value: fill.value, source: fill.source ?? "existing records" });
                 if (!currentBatch.answeredFieldIds.includes(fill.fieldId)) {
                   currentBatch.answeredFieldIds.push(fill.fieldId);
@@ -1853,17 +1865,19 @@ export const processApplicationReply = internalAction({
             }
 
             // Save filled values to orgIntelligence
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const lookupFillFields = (fillResult.fills ?? [])
-              .filter((f: Record<string, unknown>) => f.value)
-              .filter((f: Record<string, unknown>) => {
+              .filter((f: any) => f.value)
+              .filter((f: any) => {
                 const field = fields.find((fd) => fd.id === f.fieldId);
-                return field ? !isTransientField({ id: field.id, label: (field as Record<string, unknown>).label, text: (field as Record<string, unknown>).text, fieldType: field.fieldType }) : true;
+                return field ? !isTransientField({ id: field.id, label: (field as any).label, text: (field as any).text, fieldType: field.fieldType }) : true;
               });
 
             if (lookupFillFields.length > 0) {
               const embedText = makeEmbedText();
               const lookupIntelEntries = await Promise.all(
-                lookupFillFields.map(async (f: Record<string, unknown>) => {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                lookupFillFields.map(async (f: any) => {
                   const field = fields.find((fd) => fd.id === f.fieldId);
                   const label = field ? getFieldLabel(field) : f.fieldId;
                   const content = `${label}: ${f.value}`;
@@ -1909,20 +1923,20 @@ export const processApplicationReply = internalAction({
         if (!field || !("condition" in field) || !field.condition) continue;
         const parent = fields.find((f) => f.id === field.condition!.dependsOn);
         if (!parent) continue;
-        const parentValue = ((parent as Record<string, unknown>).value ?? "").toString().toLowerCase().trim();
+        const parentValue = ((parent as any).value ?? "").toString().toLowerCase().trim();
         const whenValue = field.condition.whenValue.toLowerCase().trim();
         // Parent has been answered but its value doesn't match the condition → skip this field
         if (parentValue && parentValue !== whenValue) {
-          (field as Record<string, unknown>).value = "N/A";
-          (field as Record<string, unknown>).source = "auto_skipped";
-          (field as Record<string, unknown>).confidence = "confirmed";
+          (field as any).value = "N/A";
+          (field as any).source = "auto_skipped";
+          (field as any).confidence = "confirmed";
           currentBatch.answeredFieldIds.push(fieldId);
         }
       }
 
       // 6. AFTER ALL HANDLING — determine next step
       let filledFields = fields.filter(
-        (f) => f.fieldType !== "table" ? (f as Record<string, unknown>).value : (f as Record<string, unknown>).rows?.length > 0,
+        (f) => f.fieldType !== "table" ? (f as any).value : (f as any).rows?.length > 0,
       ).length;
 
       const batchUnanswered = currentBatch.fieldIds.filter(
@@ -1956,7 +1970,7 @@ export const processApplicationReply = internalAction({
         batchUnanswered.push(...stillUnanswered);
         // Update filled count and summary with source attribution
         filledFields = fields.filter(
-          (f) => f.fieldType !== "table" ? (f as Record<string, unknown>).value : (f as Record<string, unknown>).rows?.length > 0,
+          (f) => f.fieldType !== "table" ? (f as any).value : (f as any).rows?.length > 0,
         ).length;
         const preFillSummary = buildAutoFillSummary(fields, preFilled);
         prevSummary = prevSummary
@@ -2044,7 +2058,7 @@ export const processApplicationReply = internalAction({
             }
             nextBatchFieldIds = nextBatch.fieldIds.filter((id) => !nextPreFilledIds.includes(id));
             filledFields = fields.filter(
-              (f) => f.fieldType !== "table" ? (f as Record<string, unknown>).value : (f as Record<string, unknown>).rows?.length > 0,
+              (f) => f.fieldType !== "table" ? (f as any).value : (f as any).rows?.length > 0,
             ).length;
             const nextPreFillSummary = buildAutoFillSummary(fields, nextPreFilled);
             prevSummary = prevSummary
@@ -2234,7 +2248,8 @@ export const processConfirmationReply = internalAction({
   },
   handler: async (ctx, args) => {
     try {
-      const session = await ctx.runQuery(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const session: any = await ctx.runQuery(
         internal.applicationSessions.getInternal,
         { id: args.sessionId },
       );
@@ -2305,7 +2320,7 @@ Respond with JSON only:
 
         await ctx.runMutation(internal.applicationSessions.markComplete, {
           id: args.sessionId,
-          summaryFileId,
+          summaryFileId: summaryFileId as Id<"_storage"> | undefined,
         });
 
         const appLink = `${getAppUrl()}/applications/${args.sessionId}`;
@@ -2345,8 +2360,8 @@ Respond with JSON only:
               content: buildAnswerParsingPrompt(
                 fields.map((f) => ({
                   id: f.id,
-                  label: f.fieldType !== "declaration" ? (f as Record<string, unknown>).label : undefined,
-                  text: f.fieldType === "declaration" ? (f as Record<string, unknown>).text : undefined,
+                  label: f.fieldType !== "declaration" ? (f as any).label : undefined,
+                  text: f.fieldType === "declaration" ? (f as any).text : undefined,
                   fieldType: f.fieldType,
                 })),
                 args.body,
@@ -2362,10 +2377,10 @@ Respond with JSON only:
           for (const answer of changeAnswers) {
             const field = fields.find((f) => f.id === answer.fieldId);
             if (field) {
-              (field as Record<string, unknown>).value = answer.value;
-              if (answer.explanation) (field as Record<string, unknown>).explanation = answer.explanation;
-              (field as Record<string, unknown>).source = "user_answer";
-              (field as Record<string, unknown>).confidence = "confirmed";
+              (field as any).value = answer.value;
+              if (answer.explanation) (field as any).explanation = answer.explanation;
+              (field as any).source = "user_answer";
+              (field as any).confidence = "confirmed";
             }
           }
         } catch {
@@ -2383,7 +2398,7 @@ Respond with JSON only:
         );
 
         const filledFields = fields.filter(
-          (f) => f.fieldType !== "table" ? (f as Record<string, unknown>).value : (f as Record<string, unknown>).rows?.length > 0,
+          (f) => f.fieldType !== "table" ? (f as any).value : (f as any).rows?.length > 0,
         ).length;
 
         await ctx.runMutation(internal.applicationSessions.updateStatus, {
@@ -2522,11 +2537,11 @@ async function generateConfirmationSummary(
         content: buildConfirmationSummaryPrompt(
           fields.map((f) => ({
             id: f.id,
-            label: f.fieldType !== "declaration" ? (f as Record<string, unknown>).label : undefined,
-            text: f.fieldType === "declaration" ? (f as Record<string, unknown>).text : undefined,
+            label: f.fieldType !== "declaration" ? (f as any).label : undefined,
+            text: f.fieldType === "declaration" ? (f as any).text : undefined,
             section: f.section,
             fieldType: f.fieldType,
-            value: (f as Record<string, unknown>).value,
+            value: (f as any).value,
           })),
           applicationTitle,
         ),
@@ -2574,17 +2589,17 @@ async function generateAndStoreSummaryPdf(
 
     for (const field of sectionFields) {
       const label = getFieldLabel(field);
-      const value = (field as Record<string, unknown>).value ?? "(not provided)";
+      const value = (field as any).value ?? "(not provided)";
 
       if (field.fieldType === "declaration") {
         doc.fontSize(10).font("Helvetica-Bold").text(`Q: ${label}`);
         doc.font("Helvetica").text(`A: ${value}`);
-        if ((field as Record<string, unknown>).explanation) {
-          doc.text(`   Explanation: ${(field as Record<string, unknown>).explanation}`);
+        if ((field as any).explanation) {
+          doc.text(`   Explanation: ${(field as any).explanation}`);
         }
       } else if (field.fieldType === "table") {
         doc.fontSize(10).font("Helvetica-Bold").text(`${label}:`);
-        const rows = (field as Record<string, unknown>).rows ?? [];
+        const rows = (field as any).rows ?? [];
         if (rows.length > 0) {
           for (const row of rows) {
             doc

@@ -4,6 +4,7 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createMoonshotAI } from "@ai-sdk/moonshotai";
 import { createDeepSeek } from "@ai-sdk/deepseek";
+import type { LanguageModel } from "ai";
 
 /**
  * Centralized model configuration for Prism.
@@ -84,7 +85,7 @@ export const MODEL_ROUTING: Record<ModelTask, { model: string; provider: string 
 
 export const FALLBACK_MODEL = { model: "gpt-5.4-mini", provider: "OpenAI" };
 
-const MODEL_CONFIG: Record<ModelTask, () => unknown> = {
+const MODEL_CONFIG: Record<ModelTask, () => LanguageModel> = {
   chat:             () => openai()("gpt-5.4-mini"),
   email_draft:      () => moonshot()("kimi-k2.5"),
   email_reply:      () => moonshot()("kimi-k2.5"),
@@ -97,7 +98,7 @@ const MODEL_CONFIG: Record<ModelTask, () => unknown> = {
   security:         () => openai()("gpt-4.1-nano"),
 };
 
-export function getModel(task: ModelTask) {
+export function getModel(task: ModelTask): LanguageModel {
   const factory = MODEL_CONFIG[task];
   if (!factory) {
     console.warn(`Unknown model task "${task}", falling back to chat`);

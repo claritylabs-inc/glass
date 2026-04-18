@@ -5,8 +5,10 @@
  * Runs server-side to avoid sending ~12MB of raw embeddings to the client.
  */
 
+import { v } from "convex/values";
 import { action } from "../_generated/server";
 import { api, internal } from "../_generated/api";
+import type { Id } from "../_generated/dataModel";
 
 /**
  * Simple PCA: find top-3 principal components via power iteration.
@@ -95,14 +97,14 @@ type PolicyRecord = { carrier?: string; policyNumber?: string };
 
 export const projectIntelligence = action({
   args: {},
-  returns: undefined as unknown,
+  returns: v.any(),
   handler: async (ctx): Promise<unknown> => {
     const viewer = await ctx.runQuery(api.users.viewer);
     if (!viewer) return { error: "Not authenticated" };
     const orgData = await ctx.runQuery(api.orgs.viewerOrg) as OrgData | null;
     if (!orgData) return { error: "No organization" };
 
-    const orgId = orgData.membership.orgId;
+    const orgId = orgData.membership.orgId as Id<"organizations">;
     const entries = await ctx.runQuery(internal.intelligence.listByOrg, { orgId }) as IntelligenceEntry[];
 
     if (entries.length === 0) return { points: [], totalEntries: 0 };
@@ -156,14 +158,14 @@ export const projectIntelligence = action({
 
 export const project = action({
   args: {},
-  returns: undefined as unknown,
+  returns: v.any(),
   handler: async (ctx): Promise<unknown> => {
     const viewer = await ctx.runQuery(api.users.viewer);
     if (!viewer) return { error: "Not authenticated" };
     const orgData = await ctx.runQuery(api.orgs.viewerOrg) as OrgData | null;
     if (!orgData) return { error: "No organization" };
 
-    const orgId = orgData.membership.orgId;
+    const orgId = orgData.membership.orgId as Id<"organizations">;
     const chunks = await ctx.runQuery(internal.documentChunks.listAllForOrg, { orgId }) as DocumentChunk[];
 
     if (chunks.length === 0) return { points: [] };

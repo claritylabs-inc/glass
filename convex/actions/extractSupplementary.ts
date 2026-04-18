@@ -27,7 +27,8 @@ import { Id } from "../_generated/dataModel";
  * Build a summary of data already captured by structured extractors.
  * Passed to the supplementary prompt so the LLM skips duplicates.
  */
-function buildAlreadyExtractedSummary(policy: Record<string, unknown>): string {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function buildAlreadyExtractedSummary(policy: any): string {
   const lines: string[] = [];
 
   // Core identity
@@ -92,9 +93,10 @@ export const extractOne = internalAction({
     force: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<{ skipped?: boolean; reason?: string; policyId?: string; facts: number; chunks?: number }> => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const policy = await ctx.runQuery(internal.policies.getInternal, {
       id: args.policyId,
-    }) as Record<string, unknown> | null;
+    }) as any;
     if (!policy) throw new Error("Policy not found");
     if (!policy.fileId) throw new Error("Policy has no stored PDF");
     if (policy.supplementaryFacts?.length && !args.force) {
@@ -149,7 +151,7 @@ export const extractOne = internalAction({
       );
       const supplementaryChunkIds = existingChunks
         .filter((c: { chunkType?: string }) => c.chunkType === "supplementary")
-        .map((c: { _id: string }) => c._id);
+        .map((c: { _id: Id<"documentChunks"> }) => c._id);
       for (const id of supplementaryChunkIds) {
         await ctx.runMutation(internal.documentChunks.deleteOne, { id });
       }
@@ -158,7 +160,8 @@ export const extractOne = internalAction({
       const doc = policyToInsuranceDoc({
         ...policy,
         supplementaryFacts: facts,
-      } as Record<string, unknown>);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any);
       const allChunks = chunkDocument(doc);
       const newChunks = allChunks.filter((c) => c.type === "supplementary");
 
@@ -167,7 +170,7 @@ export const extractOne = internalAction({
         for (const chunk of newChunks) {
           const embedding = await embed(chunk.text);
           await ctx.runMutation(internal.documentChunks.insert, {
-            orgId: policy.orgId,
+            orgId: policy.orgId as Id<"organizations">,
             policyId: args.policyId,
             chunkId: chunk.id,
             chunkType: chunk.type,

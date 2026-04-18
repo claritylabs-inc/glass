@@ -13,7 +13,8 @@ import { makeEmbedText } from "../lib/sdkCallbacks";
  * Supports resuming from a saved checkpoint or running a full extraction.
  */
 async function runExtraction(
-  ctx: { runMutation: (...args: unknown[]) => Promise<unknown> },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ctx: any,
   opts: {
     policyId: string;
     pdfBase64: string;

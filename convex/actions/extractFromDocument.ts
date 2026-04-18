@@ -235,14 +235,15 @@ If no relevant risk signals found, return { "entries": [] }.`,
           const similar = await ctx.vectorSearch("orgIntelligence", "by_embedding", {
             vector: embedding,
             limit: 3,
-            filter: (q: { eq: (field: string, value: unknown) => unknown }) => q.eq("orgId", orgId),
+            filter: (q) => q.eq("orgId", orgId),
           });
           if (similar.some((s: { _score?: number }) => (s._score ?? 0) > 0.95)) continue;
 
           await ctx.runMutation(internal.intelligence.insert, {
             orgId,
             content: entry.content,
-            category: entry.category as string,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            category: entry.category as any,
             confidence: "confirmed" as const,
             source: "manual" as const,
             sourceRef: args.fileId as string,

@@ -319,7 +319,8 @@ Format: { "reasoning": "brief explanation", "deleteIds": ["id1"], "recategorize"
           await ctx.runMutation(internal.intelligence.insert, {
             orgId: args.orgId,
             content: c.content,
-            category: (c.category || args.category) as string,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            category: (c.category || args.category) as any,
             confidence: "inferred",
             source: "dream",
             embedding,
@@ -378,7 +379,8 @@ export const dreamMarkComplete = internalAction({
 
 // ── Helper: append a line to the shared dream log ──
 
-async function appendLogLine(ctx: { runQuery: (...args: unknown[]) => Promise<unknown>; runMutation: (...args: unknown[]) => Promise<unknown> }, logId: Id<"dreamLogs">, line: string) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function appendLogLine(ctx: any, logId: Id<"dreamLogs">, line: string) {
   const current = await ctx.runQuery(internal.dreamLogs.get, { id: logId });
   const lines = current?.log ?? [];
   lines.push(line);

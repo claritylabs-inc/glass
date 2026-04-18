@@ -201,8 +201,10 @@ export const scanSingleConnection = internalAction({
 // IMAP scan logic (mirrors scanInbox.ts without auth)
 // ---------------------------------------------------------------------------
 async function scanImapInternal(
-  ctx: { runMutation: (...args: unknown[]) => Promise<unknown> },
-  connection: Record<string, unknown>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ctx: any,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  connection: any,
   connectionId: Id<"emailConnections">,
   since: Date,
   userId: Id<"users"> | undefined,
@@ -424,7 +426,8 @@ async function scanGmailInternal(
   const inboxQuery = `in:inbox after:${formatDate(since)}`;
   const sentQuery = `in:sent after:${formatDate(since)}`;
 
-  async function listGmailIds(gmailClient: { users: { messages: { list: (params: Record<string, unknown>) => Promise<{ data: { messages?: Array<{ id: string }>; nextPageToken?: string } }> } } }, query: string): Promise<string[]> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async function listGmailIds(gmailClient: any, query: string): Promise<string[]> {
     const ids: string[] = [];
     let pageToken: string | undefined;
     do {

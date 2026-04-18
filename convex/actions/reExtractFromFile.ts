@@ -5,6 +5,7 @@ import { action } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import { buildExtractor, insuranceDocToPolicy } from "../lib/extraction";
 import { makeEmbedText } from "../lib/sdkCallbacks";
+import type { Id } from "../_generated/dataModel";
 
 export const reExtractFromFile = action({
   args: {
@@ -84,7 +85,8 @@ export const reExtractFromFile = action({
       });
 
       // Store document chunks for vector search
-      const orgId = (policy as Record<string, unknown>).orgId;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const orgId = (policy as any).orgId as Id<"organizations"> | undefined;
       if (chunks.length > 0 && orgId) {
         const embed = makeEmbedText();
         for (const chunk of chunks) {

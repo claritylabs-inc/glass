@@ -407,8 +407,9 @@ Important:
 - The relationship between expiring policies and renewal quotes is critical — make it logical`;
 
   const { text } = await generateText({
-    model: "anthropic/claude-haiku-4.5",
-    maxTokens: 4096,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    model: "anthropic/claude-haiku-4.5" as any,
+    maxOutputTokens: 4096,
     messages: [{ role: "user", content: prompt }],
   });
   // Strip potential markdown fences

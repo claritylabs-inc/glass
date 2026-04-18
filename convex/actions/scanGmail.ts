@@ -3,6 +3,7 @@
 import { v } from "convex/values";
 import { action } from "../_generated/server";
 import { api, internal } from "../_generated/api";
+import type { Id } from "../_generated/dataModel";
 import { google } from "googleapis";
 import { OAuth2Client } from "google-auth-library";
 
@@ -13,7 +14,8 @@ function matchesDomains(fromStr: string, domains: string[]): boolean {
   return domains.some((d) => lower.includes(d.toLowerCase()));
 }
 
-function hasAttachmentParts(payload: Record<string, unknown> | null | undefined): boolean {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function hasAttachmentParts(payload: any): boolean {
   if (!payload) return false;
   if (payload.filename && (payload.body as Record<string, unknown>)?.attachmentId) return true;
   if (payload.parts) {
@@ -74,7 +76,7 @@ export const scanGmail = action({
 
     // Create scan log entry
     const startTime = Date.now();
-    let scanLogId: string | undefined;
+    let scanLogId: Id<"emailScanLogs"> | undefined;
     try {
       scanLogId = await ctx.runMutation(internal.emailScanLogs.insert, {
         orgId: orgId ?? undefined,

@@ -19,8 +19,9 @@ type AnyDoc = Record<string, unknown>;
  * This is the forward mapping: SDK extraction → Convex mutation args.
  */
 export function insuranceDocToPolicy(doc: InsuranceDocument): Record<string, unknown> {
-  // Cast to AnyDoc for property access — the SDK's Zod schema guarantees structure at runtime
-  const d = doc as AnyDoc;
+  // Cast to any for property access — the SDK's Zod schema guarantees structure at runtime
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const d = doc as any;
   const isQuote = d.type === "quote";
   const policyTypes = Array.isArray(d.policyTypes) && d.policyTypes.length > 0
     ? d.policyTypes
@@ -129,7 +130,8 @@ export function insuranceDocToPolicy(doc: InsuranceDocument): Record<string, unk
  * This is the reverse mapping: Convex Doc → SDK interface.
  * Used by DocumentStore.get/query and agent context building.
  */
-export function policyToInsuranceDoc(p: Doc<"policies">): InsuranceDocument {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function policyToInsuranceDoc(p: any): InsuranceDocument {
   const isQuote = p.documentType === "quote";
 
   const base = {
@@ -181,10 +183,10 @@ export function policyToInsuranceDoc(p: Doc<"policies">): InsuranceDocument {
     formInventory: p.formInventory as unknown,
     taxesAndFees: p.taxesAndFees as unknown,
     // Document structure
-    sections: (p.document as unknown)?.sections,
-    endorsements: (p.document as unknown)?.endorsements,
-    exclusions: (p.document as unknown)?.exclusions,
-    conditions: (p.document as unknown)?.conditions,
+    sections: p.document?.sections,
+    endorsements: p.document?.endorsements,
+    exclusions: p.document?.exclusions,
+    conditions: p.document?.conditions,
     // Declarations
     declarations: p.declarations as unknown,
     // Supplementary facts (cl-sdk 0.13+)
