@@ -57,7 +57,7 @@ function PolicyReferenceCard({ id, page, citedSections }: { id: string; page?: n
     <button
       type="button"
       onClick={() => openPreview({ type: "policy", id, page, citedSections })}
-      className="relative flex items-start gap-2.5 px-3 py-2.5 rounded-lg border border-foreground/8 bg-card hover:border-foreground/12 hover:-translate-y-px hover:shadow-sm active:translate-y-0 active:shadow-none transition-all duration-150 cursor-pointer text-left group w-[260px] shrink-0 overflow-hidden"
+      className="relative flex items-start gap-2.5 px-3 py-2.5 rounded-lg border border-foreground/8 bg-card hover:border-foreground/12 transition-all duration-150 cursor-pointer text-left group w-[260px] shrink-0 overflow-hidden"
     >
       {/* Hover overlay */}
       <div className="absolute inset-0 bg-primary/0 group-hover:bg-primary/[0.04] transition-colors duration-150 pointer-events-none" />

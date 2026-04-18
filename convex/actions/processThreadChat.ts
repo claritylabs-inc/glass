@@ -67,6 +67,11 @@ function buildTools(ctx: any, args: { orgId: string; threadId: string }, org?: R
           effective: p.effectiveDate,
           expiration: p.expirationDate,
           premium: p.premium,
+          coverages: (p.coverages ?? []).map((c: any) => ({
+            name: c.name,
+            limit: c.limit,
+            deductible: c.deductible,
+          })),
         }));
       },
     },
@@ -80,10 +85,11 @@ function buildTools(ctx: any, args: { orgId: string; threadId: string }, org?: R
         const p1 = policies.find((p: Record<string, unknown>) => p._id === params.policyId1);
         const p2 = policies.find((p: Record<string, unknown>) => p._id === params.policyId2);
         if (!p1 || !p2) return "One or both policies not found.";
-        return {
-          policy1: { id: p1._id, carrier: p1.security, type: p1.policyTypes, limits: p1.limits, deductibles: p1.deductibles, premium: p1.premium },
-          policy2: { id: p2._id, carrier: p2.security, type: p2.policyTypes, limits: p2.limits, deductibles: p2.deductibles, premium: p2.premium },
-        };
+        const mapPolicy = (p: any) => ({
+          id: p._id, carrier: p.security, type: p.policyTypes, limits: p.limits, deductibles: p.deductibles, premium: p.premium,
+          coverages: (p.coverages ?? []).map((c: any) => ({ name: c.name, limit: c.limit, deductible: c.deductible })),
+        });
+        return { policy1: mapPolicy(p1), policy2: mapPolicy(p2) };
       },
     },
     lookup_policy_section: {
@@ -212,6 +218,50 @@ function buildTools(ctx: any, args: { orgId: string; threadId: string }, org?: R
                 },
               });
             }
+          }
+        }
+
+        // Search coverages (structured data from policy record)
+        if (policy.coverages?.length) {
+          for (const cov of policy.coverages) {
+            const text = `${cov.name ?? ""} ${cov.limit ?? ""} ${cov.deductible ?? ""} ${cov.coverageCode ?? ""} ${cov.originalContent ?? ""}`;
+            const score = scoreText(text);
+            if (score > 0) {
+              const parts = [cov.name];
+              if (cov.limit) parts.push(`Limit: ${cov.limit}`);
+              if (cov.deductible) parts.push(`Deductible: ${cov.deductible}`);
+              if (cov.coverageCode) parts.push(`Code: ${cov.coverageCode}`);
+              if (cov.originalContent) parts.push(cov.originalContent);
+              results.push({
+                source: "coverage",
+                title: cov.name,
+                score: score + 1, // slight boost for direct coverage matches
+                data: {
+                  title: cov.name,
+                  type: "coverage",
+                  content: parts.join("\n"),
+                },
+              });
+            }
+          }
+          // If the query is broadly about coverages, return all of them
+          if (q.includes("coverage") || q.includes("limit") || q.includes("deductible")) {
+            const allCovText = policy.coverages.map((c: any) => {
+              const parts = [c.name];
+              if (c.limit) parts.push(`Limit: ${c.limit}`);
+              if (c.deductible) parts.push(`Deductible: ${c.deductible}`);
+              return parts.join(" — ");
+            }).join("\n");
+            results.push({
+              source: "coverage_summary",
+              title: "All Coverages",
+              score: queryWords.some((w: string) => "coverage".includes(w)) ? 5 : 2,
+              data: {
+                title: "All Coverages",
+                type: "coverage_summary",
+                content: allCovText.slice(0, 6000),
+              },
+            });
           }
         }
 

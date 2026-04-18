@@ -83,12 +83,12 @@ export function EntityPreviewPanel() {
             <div className="h-12 flex items-center justify-between px-4 border-b border-foreground/6 shrink-0 gap-3">
               <div className="min-w-0 flex-1">
                 {headerInfo ? (
-                  <div className="flex flex-col justify-center">
+                  <div className="flex items-baseline gap-2 min-w-0">
                     <span className="text-sm font-medium text-foreground truncate">
                       {headerInfo.carrier}
                     </span>
                     {headerInfo.policyNum && (
-                      <span className="text-xs text-muted-foreground/60">
+                      <span className="text-sm text-muted-foreground/60 shrink-0">
                         {headerInfo.policyNum}
                       </span>
                     )}

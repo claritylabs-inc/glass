@@ -179,7 +179,13 @@ async function buildVectorContext(
     const indexLines = policies.map((p, i) => {
       const types = p.policyTypes?.join(", ") ?? "unknown";
       const carrier = p.security || p.carrier;
-      return `[${i + 1}] ${carrier} | #${p.policyNumber} | Types: ${types} | ${p.effectiveDate} to ${p.expirationDate ?? "continuous"} | Insured: ${p.insuredName}`;
+      const covSummary = (p.coverages ?? []).slice(0, 8).map((c: any) => {
+        const parts = [c.name];
+        if (c.limit) parts.push(c.limit);
+        return parts.join(": ");
+      }).join("; ");
+      const covLine = covSummary ? ` | Coverages: ${covSummary}` : "";
+      return `[${i + 1}] ${carrier} | #${p.policyNumber} | Types: ${types} | ${p.effectiveDate} to ${p.expirationDate ?? "continuous"} | Insured: ${p.insuredName}${covLine}`;
     });
     parts.push(`POLICY INDEX (${policies.length} bound policies):\n${indexLines.join("\n")}`);
   }

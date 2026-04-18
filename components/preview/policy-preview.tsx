@@ -171,16 +171,13 @@ export function PolicyPreview({ id, page, citedSections, onHeaderInfo, onHeaderA
         )}
       </div>
 
-      {/* Coverages - always expanded, show all */}
+      {/* Coverages — filtered by citations like other sections */}
       {policy.coverages && policy.coverages.length > 0 && (
-        <div>
-          <p className="text-xs text-muted-foreground/50 mb-2">Coverages</p>
-          <div className="space-y-1.5">
-            {policy.coverages.map((cov: PolicyCoverage, i: number) => (
-              <CoverageRow key={i} name={cov.name} limit={cov.limit} deductible={cov.deductible} />
-            ))}
-          </div>
-        </div>
+        <CoverageGroup
+          coverages={policy.coverages as PolicyCoverage[]}
+          citedSections={citedSections}
+          hasCitations={!!hasCitations}
+        />
       )}
 
       {/* Document sections — grouped by type like the detail page */}
@@ -242,6 +239,43 @@ export function PolicyPreview({ id, page, citedSections, onHeaderInfo, onHeaderA
             <DocSection key={`ex-${i}`} title={ex.title || ex.name || "Exclusion"} type="exclusion" content={ex.content || ex.description || "No content extracted"} defaultOpen={hasCitations} />
           ))}
         </SectionGroup>
+      )}
+    </div>
+  );
+}
+
+function CoverageGroup({ coverages, citedSections, hasCitations }: {
+  coverages: PolicyCoverage[];
+  citedSections?: string[];
+  hasCitations: boolean;
+}) {
+  const [showAll, setShowAll] = useState(false);
+
+  const cited = hasCitations
+    ? coverages.filter((c) => matchesCitation(c.name, citedSections))
+    : coverages;
+  const hasMore = hasCitations && cited.length < coverages.length;
+  const visible = showAll ? coverages : cited;
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-body-sm font-medium text-muted-foreground/60">
+          Coverages
+          {hasMore && (
+            <span className="text-muted-foreground/40 font-normal ml-1">{cited.length} of {coverages.length}</span>
+          )}
+        </p>
+      </div>
+      <div className="border border-foreground/8 rounded-lg overflow-hidden divide-y divide-foreground/6">
+        {visible.map((cov, i) => (
+          <CoverageRow key={i} name={cov.name} limit={cov.limit} deductible={cov.deductible} />
+        ))}
+      </div>
+      {hasMore && (
+        <button type="button" onClick={() => setShowAll(!showAll)} className="text-body-sm text-muted-foreground/50 hover:text-muted-foreground/70 transition-colors cursor-pointer pl-1 mt-1.5">
+          {showAll ? "Only show cited" : `Show all ${coverages.length} coverages`}
+        </button>
       )}
     </div>
   );
