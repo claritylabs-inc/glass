@@ -85,10 +85,10 @@ export const stats = query({
     // Hydrate policy info for top policies
     const policyIds = Object.keys(byPolicy);
     for (const pid of policyIds) {
-      const policy = await ctx.db.get(pid as any);
+      const policy = await ctx.db.get(pid as never);
       if (policy) {
-        byPolicy[pid].carrier = (policy as any).carrier ?? "Unknown";
-        byPolicy[pid].policyNumber = (policy as any).policyNumber ?? "Unknown";
+        byPolicy[pid].carrier = (policy as unknown as { carrier?: string }).carrier ?? "Unknown";
+        byPolicy[pid].policyNumber = (policy as unknown as { policyNumber?: string }).policyNumber ?? "Unknown";
       }
     }
 
@@ -140,11 +140,11 @@ export const listForEditor = query({
         const policy = await ctx.db.get(chunk.policyId);
         policyGroup = {
           id: policyId,
-          carrier: (policy as any)?.carrier ?? "Unknown carrier",
-          policyNumber: (policy as any)?.policyNumber ?? "Unknown policy",
+          carrier: (policy as unknown as { carrier?: string })?.carrier ?? "Unknown carrier",
+          policyNumber: (policy as unknown as { policyNumber?: string })?.policyNumber ?? "Unknown policy",
           policyType:
-            (policy as any)?.policyTypes?.[0] ??
-            (policy as any)?.policyType ??
+            (policy as unknown as { policyTypes?: string[]; policyType?: string })?.policyTypes?.[0] ??
+            (policy as unknown as { policyType?: string })?.policyType ??
             null,
           count: 0,
           chunks: [],

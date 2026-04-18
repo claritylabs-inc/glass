@@ -259,7 +259,7 @@ export const listAllInternalByUser = internalQuery({
   handler: async (ctx, args) => {
     const all = await ctx.db
       .query("policies")
-      .withIndex("by_userId", (idx) => idx.eq("userId", args.userId as any))
+      .withIndex("by_userId", (idx) => idx.eq("userId", args.userId as unknown as never))
       .collect();
     return all.filter(
       (p) => p.extractionStatus === "complete" && !p.deletedAt
@@ -314,7 +314,8 @@ export const stats = query({
     const byYear: Record<string, number> = {};
 
     for (const p of policies) {
-      const types = p.policyTypes ?? ((p as any).policyType ? [(p as any).policyType] : ["other"]);
+      const policyLegacy = p as unknown as Record<string, unknown>;
+      const types = p.policyTypes ?? (policyLegacy.policyType ? [policyLegacy.policyType as string] : ["other"]);
       for (const t of types) {
         byType[t] = (byType[t] || 0) + 1;
       }
@@ -750,7 +751,7 @@ export const cancelExtraction = mutation({
     if (!cancelable.includes(policy.extractionStatus)) {
       throw new Error("Cannot cancel a completed extraction");
     }
-    await ctx.db.patch(args.id, { extractionStatus: "not_insurance" as any, extractionError: "Cancelled by user" });
+    await ctx.db.patch(args.id, { extractionStatus: "not_insurance" as const, extractionError: "Cancelled by user" });
     await ctx.db.insert("policyAuditLog", {
       policyId: args.id,
       userId,

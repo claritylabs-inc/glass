@@ -12,13 +12,13 @@ import { sanitizeNulls } from "@claritylabs/cl-sdk";
 import type { Doc } from "../_generated/dataModel";
 
 // Type alias to work around Zod discriminated union inference issues
-type AnyDoc = Record<string, any>;
+type AnyDoc = Record<string, unknown>;
 
 /**
  * Map an InsuranceDocument (extraction output) to Prism's policies table fields.
  * This is the forward mapping: SDK extraction → Convex mutation args.
  */
-export function insuranceDocToPolicy(doc: InsuranceDocument): Record<string, any> {
+export function insuranceDocToPolicy(doc: InsuranceDocument): Record<string, unknown> {
   // Cast to AnyDoc for property access — the SDK's Zod schema guarantees structure at runtime
   const d = doc as AnyDoc;
   const isQuote = d.type === "quote";
@@ -26,7 +26,7 @@ export function insuranceDocToPolicy(doc: InsuranceDocument): Record<string, any
     ? d.policyTypes
     : ["other"];
 
-  const fields: Record<string, any> = {
+  const fields: Record<string, unknown> = {
     carrier: d.carrier || d.security || "Unknown",
     security: d.security ?? undefined,
     underwriter: d.underwriter ?? undefined,
@@ -90,7 +90,7 @@ export function insuranceDocToPolicy(doc: InsuranceDocument): Record<string, any
   if (d.taxesAndFees?.length) fields.taxesAndFees = sanitizeNulls(d.taxesAndFees);
 
   // Document structure (sections, endorsements, conditions, exclusions)
-  const document: Record<string, any> = {};
+  const document: Record<string, unknown> = {};
   if (d.sections?.length) document.sections = sanitizeNulls(d.sections);
   if (d.endorsements?.length) document.endorsements = sanitizeNulls(d.endorsements);
   if (d.exclusions?.length) document.exclusions = sanitizeNulls(d.exclusions);
@@ -140,7 +140,7 @@ export function policyToInsuranceDoc(p: Doc<"policies">): InsuranceDocument {
     premium: p.premium,
     summary: p.summary,
     policyTypes: p.policyTypes,
-    coverages: p.coverages as any[] || [],
+    coverages: p.coverages as unknown[] || [],
     effectiveDate: p.effectiveDate,
     expirationDate: p.expirationDate,
     // Enriched entity
@@ -158,37 +158,37 @@ export function policyToInsuranceDoc(p: Doc<"policies">): InsuranceDocument {
     isRenewal: p.isRenewal,
     isPackage: p.isPackage,
     // Structured entities (cl-sdk 0.11+)
-    insurer: p.insurer as any,
-    producer: p.producer as any,
-    lossPayees: p.lossPayees as any,
-    mortgageHolders: p.mortgageHolders as any,
+    insurer: p.insurer as unknown,
+    producer: p.producer as unknown,
+    lossPayees: p.lossPayees as unknown,
+    mortgageHolders: p.mortgageHolders as unknown,
     // Insured details
     insuredDba: p.insuredDba,
-    insuredAddress: p.insuredAddress as any,
+    insuredAddress: p.insuredAddress as unknown,
     insuredEntityType: p.insuredEntityType,
     insuredFein: p.insuredFein,
-    additionalNamedInsureds: p.additionalNamedInsureds as any,
+    additionalNamedInsureds: p.additionalNamedInsureds as unknown,
     // Coverage structure
     coverageForm: p.coverageForm,
     retroactiveDate: p.retroactiveDate,
     effectiveTime: p.effectiveTime,
-    limits: p.limits as any,
-    deductibles: p.deductibles as any,
+    limits: p.limits as unknown,
+    deductibles: p.deductibles as unknown,
     // Schedules
-    locations: p.locations as any,
-    vehicles: p.vehicles as any,
-    classifications: p.classifications as any,
-    formInventory: p.formInventory as any,
-    taxesAndFees: p.taxesAndFees as any,
+    locations: p.locations as unknown,
+    vehicles: p.vehicles as unknown,
+    classifications: p.classifications as unknown,
+    formInventory: p.formInventory as unknown,
+    taxesAndFees: p.taxesAndFees as unknown,
     // Document structure
-    sections: (p.document as any)?.sections,
-    endorsements: (p.document as any)?.endorsements,
-    exclusions: (p.document as any)?.exclusions,
-    conditions: (p.document as any)?.conditions,
+    sections: (p.document as unknown)?.sections,
+    endorsements: (p.document as unknown)?.endorsements,
+    exclusions: (p.document as unknown)?.exclusions,
+    conditions: (p.document as unknown)?.conditions,
     // Declarations
-    declarations: p.declarations as any,
+    declarations: p.declarations as unknown,
     // Supplementary facts (cl-sdk 0.13+)
-    supplementaryFacts: p.supplementaryFacts as any,
+    supplementaryFacts: p.supplementaryFacts as unknown,
   };
 
   if (isQuote) {
@@ -198,9 +198,9 @@ export function policyToInsuranceDoc(p: Doc<"policies">): InsuranceDocument {
       quoteNumber: p.quoteNumber || p.policyNumber,
       proposedEffectiveDate: p.proposedEffectiveDate,
       proposedExpirationDate: p.proposedExpirationDate,
-      subjectivities: p.subjectivities as any,
-      underwritingConditions: p.underwritingConditions as any,
-      premiumBreakdown: p.premiumBreakdown as any,
+      subjectivities: p.subjectivities as unknown,
+      underwritingConditions: p.underwritingConditions as unknown,
+      premiumBreakdown: p.premiumBreakdown as unknown,
     } as QuoteDocument;
   }
 
@@ -208,7 +208,7 @@ export function policyToInsuranceDoc(p: Doc<"policies">): InsuranceDocument {
     ...base,
     type: "policy" as const,
     policyNumber: p.policyNumber,
-    policyTermType: p.policyTermType as any,
+    policyTermType: p.policyTermType as unknown,
     nextReviewDate: p.nextReviewDate,
   } as PolicyDocument;
 }

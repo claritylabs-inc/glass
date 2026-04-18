@@ -8,6 +8,7 @@ import { ChevronDown } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { PillButton } from "@/components/ui/pill-button";
 import { Id } from "@/convex/_generated/dataModel";
+import dayjs from "dayjs";
 
 interface PullMoreDropdownProps {
   connectionId: Id<"emailConnections">;
@@ -26,10 +27,6 @@ const PRESETS = [
   { label: "Last 6 months", days: 180 },
   { label: "All time", days: null },
 ] as const;
-
-function formatDate(d: Date): string {
-  return d.toISOString().split("T")[0];
-}
 
 export function PullMoreDropdown({
   connectionId,
@@ -65,14 +62,15 @@ export function PullMoreDropdown({
   }, [open]);
 
   const fireScan = (days: number | null) => {
+    const now = dayjs();
     const sinceDate = days != null
-      ? formatDate(new Date(Date.now() - days * 24 * 60 * 60 * 1000))
+      ? now.subtract(days, "day").format("YYYY-MM-DD")
       : undefined;
 
     const scanArgs = {
       connectionId,
       sinceDate,
-      untilDate: formatDate(new Date()),
+      untilDate: now.format("YYYY-MM-DD"),
       senderDomains: lastScanParams?.senderDomains,
     };
 

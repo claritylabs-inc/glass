@@ -37,7 +37,7 @@ export const listByType = internalQuery({
     return await ctx.db
       .query("orgMemory")
       .withIndex("by_org_type", (q) =>
-        q.eq("orgId", args.orgId).eq("type", args.type as any),
+        q.eq("orgId", args.orgId).eq("type", args.type as Parameters<typeof q.eq>[1]),
       )
       .collect();
   },

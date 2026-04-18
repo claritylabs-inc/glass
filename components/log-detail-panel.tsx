@@ -24,11 +24,13 @@ const STATUS_DOT: Record<LogStatus, string> = {
 export function LogDetailPanel() {
   const { entry, closeLogDetail } = useLogDetail();
   const [width, setWidth] = useState(DEFAULT_WIDTH);
+  const [isDraggingState, setIsDraggingState] = useState(false);
   const isDragging = useRef(false);
 
   const onPointerDown = useCallback((e: React.PointerEvent) => {
     e.preventDefault();
     isDragging.current = true;
+    setIsDraggingState(true);
     const startX = e.clientX;
     const startWidth = width;
 
@@ -39,6 +41,7 @@ export function LogDetailPanel() {
     };
     const onUp = () => {
       isDragging.current = false;
+      setIsDraggingState(false);
       document.removeEventListener("pointermove", onMove);
       document.removeEventListener("pointerup", onUp);
       document.body.style.cursor = "";
@@ -58,7 +61,7 @@ export function LogDetailPanel() {
           initial={{ width: 0 }}
           animate={{ width }}
           exit={{ width: 0 }}
-          transition={isDragging.current ? { duration: 0 } : { duration: 0.4, ease: EASE }}
+          transition={isDraggingState ? { duration: 0 } : { duration: 0.4, ease: EASE }}
           className="flex shrink-0 overflow-hidden h-full relative"
         >
           {/* Resize handle */}

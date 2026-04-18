@@ -2,7 +2,6 @@
 
 import {
   InputGroup,
-  InputGroupTextarea,
 } from "@/components/ui/input-group";
 import { cn } from "@/lib/utils";
 import type { FileUIPart, SourceDocumentUIPart } from "ai";

@@ -6,7 +6,6 @@ import dayjs from "dayjs";
 import { Asterisk, Loader2, AlertCircle, MessageSquare } from "lucide-react";
 import { Id } from "@/convex/_generated/dataModel";
 import { ContextReferenceCard } from "@/components/context-reference-card";
-import { PROSE_MARKDOWN_STYLES } from "@/components/prose-markdown";
 
 export type WebChatMessage = {
   _id: Id<"webChatMessages">;

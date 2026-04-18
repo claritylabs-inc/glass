@@ -1,8 +1,14 @@
 "use client";
 
+import { useState } from "react";
 import { useQuery } from "convex/react";
+import { useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { Id } from "@/convex/_generated/dataModel";
 import { ActivityLogSection, type LogEntry, type StatPill } from "@/components/activity-log-section";
+import { PillButton } from "@/components/ui/pill-button";
+import { Loader2, RefreshCw } from "lucide-react";
+import { toast } from "sonner";
 
 interface ScanLogEntry extends LogEntry {
   connectionLabel: string;
@@ -14,8 +20,17 @@ interface ScanLogEntry extends LogEntry {
   insuranceFound?: number;
 }
 
+interface ConnectionSummary {
+  _id: Id<"emailConnections">;
+  provider?: string;
+}
+
 export function EmailScanLog() {
   const logs = useQuery(api.emailScanLogs.list, {});
+  const connections = useQuery(api.connections.list, {});
+  const scanInbox = useAction(api.actions.scanInbox.scanInbox);
+  const scanGmail = useAction(api.actions.scanGmail.scanGmail);
+  const [scanning, setScanning] = useState(false);
 
   function renderEntryTitle(entry: ScanLogEntry) {
     const triggerLabel =
@@ -60,6 +75,31 @@ export function EmailScanLog() {
     return "default";
   }
 
+  async function runAllScans() {
+    const available = (connections ?? []) as ConnectionSummary[];
+    if (available.length === 0) {
+      toast.error("Add an email connection to start scanning.");
+      return;
+    }
+
+    setScanning(true);
+    try {
+      await Promise.all(
+        available.map((connection) => {
+          if (connection.provider === "google") {
+            return scanGmail({ connectionId: connection._id });
+          }
+          return scanInbox({ connectionId: connection._id });
+        }),
+      );
+      toast.success(`Started scans for ${available.length} connection${available.length === 1 ? "" : "s"}.`);
+    } catch {
+      toast.error("Failed to start one or more scans.");
+    } finally {
+      setScanning(false);
+    }
+  }
+
   return (
     <ActivityLogSection<ScanLogEntry>
       title="Email Scans"
@@ -67,7 +107,13 @@ export function EmailScanLog() {
       loading={logs === undefined}
 
       emptyMessage="No email scans yet"
-      emptyDescription="Scan logs will appear here after your first email scan."
+      emptyDescription="Run a scan now to pull in emails and kick off policy extraction."
+      emptyAction={
+        <PillButton onClick={runAllScans} disabled={scanning || connections === undefined}>
+          {scanning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+          {scanning ? "Starting scans..." : "Scan connected inboxes"}
+        </PillButton>
+      }
       renderEntryTitle={renderEntryTitle}
       renderStats={renderStats}
       classifyLogLine={classifyLogLine}

@@ -21,7 +21,7 @@ export function createConvexDocumentStore(
 ): DocumentStore {
   return {
     async save(doc: InsuranceDocument): Promise<void> {
-      const d = doc as any;
+      const d = doc as unknown as { id: string };
       const fields = insuranceDocToPolicy(doc);
       // Check if document already exists (by SDK id which maps to _id)
       const existing = await ctx.runQuery(internal.policies.getInternal, {
@@ -50,10 +50,11 @@ export function createConvexDocumentStore(
         orgId,
       });
       // Apply filters in memory (Convex queries are index-based)
-      let filtered = policies.filter((p: any) => !p.deletedAt);
+      type PolicyRecord = { deletedAt?: number; documentType?: string; carrier?: string; security?: string; insuredName?: string; policyNumber?: string; quoteNumber?: string };
+      let filtered = (policies as PolicyRecord[]).filter((p) => !p.deletedAt);
 
       if (filters.type) {
-        filtered = filtered.filter((p: any) =>
+        filtered = filtered.filter((p) =>
           filters.type === "quote"
             ? p.documentType === "quote"
             : p.documentType !== "quote",
@@ -62,25 +63,25 @@ export function createConvexDocumentStore(
       if (filters.carrier) {
         const carrier = filters.carrier.toLowerCase();
         filtered = filtered.filter(
-          (p: any) =>
+          (p) =>
             p.carrier?.toLowerCase().includes(carrier) ||
             p.security?.toLowerCase().includes(carrier),
         );
       }
       if (filters.insuredName) {
         const name = filters.insuredName.toLowerCase();
-        filtered = filtered.filter((p: any) =>
+        filtered = filtered.filter((p) =>
           p.insuredName?.toLowerCase().includes(name),
         );
       }
       if (filters.policyNumber) {
         filtered = filtered.filter(
-          (p: any) => p.policyNumber === filters.policyNumber,
+          (p) => p.policyNumber === filters.policyNumber,
         );
       }
       if (filters.quoteNumber) {
         filtered = filtered.filter(
-          (p: any) => p.quoteNumber === filters.quoteNumber,
+          (p) => p.quoteNumber === filters.quoteNumber,
         );
       }
 

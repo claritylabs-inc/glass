@@ -96,6 +96,10 @@ function ShellContent({
   );
 }
 
+function SidebarFallback() {
+  return <div className="hidden lg:block w-14 border-r border-foreground/6" aria-hidden="true" />;
+}
+
 function PersistentChatBar() {
   const pathname = usePathname();
   const router = useRouter();

@@ -69,8 +69,8 @@ export interface CoverageLine {
  * Map a Prism policy document to CoiData.
  * Produces one CoverageLine per detected coverage type.
  */
-export function policyToCoiData(policy: any, org?: any): CoiData {
-  const limits: any = policy.limits ?? {};
+export function policyToCoiData(policy: Record<string, unknown>, org?: Record<string, unknown>): CoiData {
+  const limits: Record<string, unknown> = (policy.limits as Record<string, unknown>) ?? {};
   const policyTypes: string[] = policy.policyTypes ?? [];
   const policyNumber = policy.policyNumber ?? "";
   const effDate = policy.effectiveDate ?? "";
@@ -195,7 +195,7 @@ export function policyToCoiData(policy: any, org?: any): CoiData {
       policyNumber,
       effectiveDate: effDate,
       expirationDate: expDate,
-      limits: buildOtherLimits(limits, policyTypes),
+      limits: buildOtherLimits(limits),
     });
   }
 
@@ -225,7 +225,7 @@ export function policyToCoiData(policy: any, org?: any): CoiData {
   };
 }
 
-function buildOtherLimits(limits: any, _policyTypes: string[]): Array<{ label: string; value: string }> {
+function buildOtherLimits(limits: Record<string, unknown>): Array<{ label: string; value: string }> {
   const result: Array<{ label: string; value: string }> = [];
   if (limits.perOccurrence) result.push({ label: "EACH CLAIM / OCCURRENCE", value: limits.perOccurrence });
   if (limits.generalAggregate) result.push({ label: "AGGREGATE", value: limits.generalAggregate });
@@ -233,7 +233,7 @@ function buildOtherLimits(limits: any, _policyTypes: string[]): Array<{ label: s
   return result;
 }
 
-function flattenToLimitLines(limits: any): Array<{ label: string; value: string }> {
+function flattenToLimitLines(limits: Record<string, unknown>): Array<{ label: string; value: string }> {
   const result: Array<{ label: string; value: string }> = [];
   const labelMap: Record<string, string> = {
     perOccurrence: "EACH OCCURRENCE",
@@ -257,7 +257,7 @@ function flattenToLimitLines(limits: any): Array<{ label: string; value: string 
   return result;
 }
 
-function formatAddress(addr: any): string {
+function formatAddress(addr: string | { street1?: string; city?: string; state?: string; zip?: string } | undefined | null): string {
   if (!addr) return "";
   if (typeof addr === "string") return addr;
   const parts = [addr.street1, addr.city, addr.state && addr.zip ? `${addr.state} ${addr.zip}` : (addr.state ?? addr.zip)];
@@ -356,9 +356,9 @@ export async function generateCoiPdf(data: CoiData): Promise<Buffer> {
     doc.rect(contactX, y, contactW, producerH).stroke();
     sectionLabel(doc, "CONTACT NAME:", contactX + 2, y + 2);
     sectionLabel(doc, "PHONE", contactX + 2, y + 18);
-    doc.text("(A/C, No, Ext):", contactX + 2, y + 26, { width: contactW / 2 - 4, fontSize: FS_SMALL } as any);
+    doc.fontSize(FS_SMALL).text("(A/C, No, Ext):", contactX + 2, y + 26, { width: contactW / 2 - 4 });
     sectionLabel(doc, "FAX", contactX + contactW / 2, y + 18);
-    doc.text("(A/C, No):", contactX + contactW / 2, y + 26, { width: contactW / 2 - 4, fontSize: FS_SMALL } as any);
+    doc.fontSize(FS_SMALL).text("(A/C, No):", contactX + contactW / 2, y + 26, { width: contactW / 2 - 4 });
     sectionLabel(doc, "E-MAIL ADDRESS:", contactX + 2, y + 42);
     sectionLabel(doc, "INSURER(S) AFFORDING COVERAGE", contactX + 2, y + 56);
     sectionLabel(doc, "NAIC #", M + W - 36, y + 56);

@@ -27,7 +27,7 @@ import { Id } from "../_generated/dataModel";
  * Build a summary of data already captured by structured extractors.
  * Passed to the supplementary prompt so the LLM skips duplicates.
  */
-function buildAlreadyExtractedSummary(policy: any): string {
+function buildAlreadyExtractedSummary(policy: Record<string, unknown>): string {
   const lines: string[] = [];
 
   // Core identity
@@ -94,7 +94,7 @@ export const extractOne = internalAction({
   handler: async (ctx, args): Promise<{ skipped?: boolean; reason?: string; policyId?: string; facts: number; chunks?: number }> => {
     const policy = await ctx.runQuery(internal.policies.getInternal, {
       id: args.policyId,
-    }) as any;
+    }) as Record<string, unknown> | null;
     if (!policy) throw new Error("Policy not found");
     if (!policy.fileId) throw new Error("Policy has no stored PDF");
     if (policy.supplementaryFacts?.length && !args.force) {
@@ -129,7 +129,7 @@ export const extractOne = internalAction({
       }),
     );
 
-    const facts: any[] = (result.object as any)?.auxiliaryFacts ?? [];
+    const facts: unknown[] = (result.object as Record<string, unknown>)?.auxiliaryFacts as unknown[] ?? [];
     if (facts.length === 0) {
       return { policyId: args.policyId, facts: 0 };
     }
@@ -148,8 +148,8 @@ export const extractOne = internalAction({
         { policyId: args.policyId },
       );
       const supplementaryChunkIds = existingChunks
-        .filter((c: any) => c.chunkType === "supplementary")
-        .map((c: any) => c._id);
+        .filter((c: { chunkType?: string }) => c.chunkType === "supplementary")
+        .map((c: { _id: string }) => c._id);
       for (const id of supplementaryChunkIds) {
         await ctx.runMutation(internal.documentChunks.deleteOne, { id });
       }
@@ -158,7 +158,7 @@ export const extractOne = internalAction({
       const doc = policyToInsuranceDoc({
         ...policy,
         supplementaryFacts: facts,
-      } as any);
+      } as Record<string, unknown>);
       const allChunks = chunkDocument(doc);
       const newChunks = allChunks.filter((c) => c.type === "supplementary");
 
@@ -219,17 +219,18 @@ export const extractAll = internalAction({
         const result = await ctx.runAction(internal.actions.extractSupplementary.extractOne, {
           policyId: policy._id,
         });
-        if ((result as any).skipped) {
+        const r = result as { skipped?: boolean; facts?: number };
+        if (r.skipped) {
           skipped++;
         } else {
           processed++;
-          totalFacts += (result as any).facts ?? 0;
+          totalFacts += r.facts ?? 0;
           console.log(
-            `Supplementary: ${processed}/${allDocs.length} — ${policy.carrier} #${policy.policyNumber} → ${(result as any).facts} facts`,
+            `Supplementary: ${processed}/${allDocs.length} — ${policy.carrier} #${policy.policyNumber} → ${r.facts} facts`,
           );
         }
-      } catch (err: any) {
-        console.error(`Supplementary: failed for ${policy._id}: ${err.message}`);
+      } catch (err: unknown) {
+        console.error(`Supplementary: failed for ${policy._id}: ${err instanceof Error ? err.message : String(err)}`);
         skipped++;
       }
 
@@ -252,10 +253,10 @@ export const runSupplementary = action({
     force: v.optional(v.boolean()),
   },
   returns: v.any(),
-  handler: async (ctx, args): Promise<any> => {
-    const viewer = await ctx.runQuery(api.users.viewer) as any;
+  handler: async (ctx, args): Promise<unknown> => {
+    const viewer = await ctx.runQuery(api.users.viewer) as { _id: string } | null;
     if (!viewer) return { error: "Not authenticated" };
-    const orgData = await ctx.runQuery(api.orgs.viewerOrg) as any;
+    const orgData = await ctx.runQuery(api.orgs.viewerOrg) as { membership: { orgId: string } } | null;
     if (!orgData) return { error: "No organization" };
 
     const policy = await ctx.runQuery(internal.policies.getInternal, { id: args.policyId });

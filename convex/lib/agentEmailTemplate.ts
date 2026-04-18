@@ -2,7 +2,6 @@ import { EMAIL_PRISM_LOGO, EMAIL_FROM_FOOTER } from "./emailTemplate";
 
 export function buildAgentReplyEmail(
   responseBody: string,
-  _siteUrl: string,
 ): { html: string; text: string } {
   // Convert markdown-ish response to HTML paragraphs
   const htmlBody = responseBody

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState } from "react";
 import { useAuthActions } from "@convex-dev/auth/react";
 import { useConvexAuth, useQuery, useMutation } from "convex/react";
 import { useSearchParams } from "next/navigation";
@@ -81,8 +81,8 @@ export default function OAuthAuthorizePage() {
     try {
       await signIn("resend-otp", { email });
       setLoginStep("code");
-    } catch (err: any) {
-      setError(friendlyError(err.message || ""));
+    } catch (err: unknown) {
+      setError(friendlyError(err instanceof Error ? err.message : ""));
     } finally {
       setSendingCode(false);
     }
@@ -94,8 +94,8 @@ export default function OAuthAuthorizePage() {
     setError("");
     try {
       await signIn("resend-otp", { email, code });
-    } catch (err: any) {
-      setError(friendlyError(err.message || ""));
+    } catch (err: unknown) {
+      setError(friendlyError(err instanceof Error ? err.message : ""));
     } finally {
       setVerifying(false);
     }
@@ -119,9 +119,11 @@ export default function OAuthAuthorizePage() {
       setRedirectUrl(target);
       setRedirecting(true);
       window.location.href = target;
-    } catch (err: any) {
+    } catch (err: unknown) {
       const message = typeof err === "string" ? err
-        : err?.data ?? err?.message ?? "Failed to authorize";
+        : (err as { data?: string; message?: string } | null)?.data
+          ?? (err instanceof Error ? err.message : null)
+          ?? "Failed to authorize";
       setError(String(message));
       setAuthorizing(false);
     }

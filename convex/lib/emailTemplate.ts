@@ -16,7 +16,8 @@ export const EMAIL_FROM_FOOTER = `
   </tr>
 </table>`;
 
-export function buildOtpEmail(token: string, _siteUrl: string): { html: string; text: string } {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function buildOtpEmail(token: string, _siteUrl?: string): { html: string; text: string } {
   const digits = token.split("");
 
   const digitCells = digits

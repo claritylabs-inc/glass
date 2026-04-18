@@ -8,11 +8,12 @@ export const migratePolicies = mutation({
     let migrated = 0;
 
     for (const policy of policies) {
-      const updates: Record<string, any> = {};
+      const updates: Record<string, unknown> = {};
 
       // Migrate policyType → policyTypes
-      if (!policy.policyTypes && (policy as any).policyType) {
-        updates.policyTypes = [(policy as any).policyType];
+      const policyWithLegacy = policy as Record<string, unknown>;
+      if (!policy.policyTypes && policyWithLegacy.policyType) {
+        updates.policyTypes = [policyWithLegacy.policyType];
       } else if (!policy.policyTypes) {
         updates.policyTypes = ["other"];
       }

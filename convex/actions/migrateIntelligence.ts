@@ -97,7 +97,7 @@ export const migrateAll = internalAction({
     const alreadyMigratedOrgs = new Set<string>();
     for (const orgId of orgIds) {
       const existing = await ctx.runQuery(internal.intelligence.listByOrg, {
-        orgId: orgId as any,
+        orgId: orgId as string,
       });
       if (existing.length > 0) {
         alreadyMigratedOrgs.add(orgId);
@@ -178,7 +178,7 @@ export const migrateAll = internalAction({
       const batchEmbeddings = embeddings.slice(i, i + INSERT_BATCH_SIZE);
 
       const entries = batch.map((entry, idx) => ({
-        orgId: entry.orgId as any,
+        orgId: entry.orgId as string,
         content: entry.content,
         category: entry.category,
         confidence: entry.confidence,

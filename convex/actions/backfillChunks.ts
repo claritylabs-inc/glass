@@ -84,8 +84,8 @@ export const backfill = internalAction({
         chunked += chunks.length;
         processed++;
         console.log(`Backfill: ${processed}/${allDocs.length} — ${policy.carrier} #${policy.policyNumber} → ${chunks.length} chunks`);
-      } catch (err: any) {
-        console.error(`Backfill: failed for ${policy._id}: ${err.message}`);
+      } catch (err: unknown) {
+        console.error(`Backfill: failed for ${policy._id}: ${err instanceof Error ? err.message : String(err)}`);
         skipped++;
       }
 

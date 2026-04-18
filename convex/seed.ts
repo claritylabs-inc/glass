@@ -4,7 +4,6 @@ import { api, internal } from "./_generated/api";
 import { requireOrgAccess, getOrgAccess } from "./lib/orgAuth";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { generateText } from "ai";
-import { anthropic } from "@ai-sdk/anthropic";
 import { Id } from "./_generated/dataModel";
 
 // ── Public action: generate and insert demo data ──
@@ -215,12 +214,10 @@ export const insertSeedData = internalMutation({
     // Insert quotes (stored in policies table with documentType: "quote")
     for (const q of seedData.quotes) {
       // Map quote coverages to policy coverage format (proposedLimit -> limit)
-      const mappedCoverages = q.coverages.map((c: any) => ({
+      const mappedCoverages = q.coverages.map((c) => ({
         name: c.name,
-        limit: c.proposedLimit ?? c.limit,
-        deductible: c.proposedDeductible ?? c.deductible,
-        pageNumber: c.pageNumber,
-        sectionRef: c.sectionRef,
+        limit: c.proposedLimit,
+        deductible: c.proposedDeductible,
       }));
       await ctx.db.insert("policies", {
         userId,
@@ -410,8 +407,8 @@ Important:
 - The relationship between expiring policies and renewal quotes is critical — make it logical`;
 
   const { text } = await generateText({
-    model: anthropic("claude-haiku-4-5-20251001"),
-    maxOutputTokens: 4096,
+    model: "anthropic/claude-haiku-4.5",
+    maxTokens: 4096,
     messages: [{ role: "user", content: prompt }],
   });
   // Strip potential markdown fences
@@ -425,10 +422,10 @@ Important:
 
   // Ensure quotes have correct field names (coverages use proposedLimit)
   for (const q of parsed.quotes) {
-    q.coverages = q.coverages.map((c: any) => ({
+    q.coverages = q.coverages.map((c) => ({
       name: c.name,
-      proposedLimit: c.proposedLimit || c.limit || "TBD",
-      ...(c.proposedDeductible || c.deductible ? { proposedDeductible: c.proposedDeductible || c.deductible } : {}),
+      proposedLimit: c.proposedLimit || "TBD",
+      ...(c.proposedDeductible ? { proposedDeductible: c.proposedDeductible } : {}),
     }));
   }
 

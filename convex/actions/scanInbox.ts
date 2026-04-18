@@ -7,12 +7,13 @@ import { ImapFlow } from "imapflow";
 
 const SCAN_OVERLAP_MS = 5 * 60 * 1000;
 
-function hasAttachmentParts(structure: any): boolean {
+function hasAttachmentParts(structure: unknown): boolean {
   if (!structure) return false;
-  if (structure.disposition === "attachment") return true;
-  if (structure.type === "application/pdf") return true;
-  if (structure.childNodes) {
-    return structure.childNodes.some((child: any) => hasAttachmentParts(child));
+  const s = structure as { disposition?: string; type?: string; childNodes?: unknown[] };
+  if (s.disposition === "attachment") return true;
+  if (s.type === "application/pdf") return true;
+  if (s.childNodes) {
+    return s.childNodes.some((child) => hasAttachmentParts(child));
   }
   return false;
 }
@@ -46,7 +47,7 @@ export const scanInbox = action({
     if (!connection) throw new Error("Connection not found");
 
     // Save scan params
-    const scanParams: any = {};
+    const scanParams: Record<string, unknown> = {};
     if (args.sinceDate) scanParams.sinceDate = args.sinceDate;
     if (args.untilDate) scanParams.untilDate = args.untilDate;
     if (args.senderDomains?.length) scanParams.senderDomains = args.senderDomains;
@@ -102,7 +103,7 @@ export const scanInbox = action({
         : undefined;
 
       // Build IMAP search criteria
-      const searchCriteria: any = { since };
+      const searchCriteria: Record<string, unknown> = { since };
       if (before) searchCriteria.before = before;
 
       // Fetch emails via IMAP
@@ -313,9 +314,9 @@ export const scanInbox = action({
       });
 
       return { emailsFound: inserted };
-    } catch (error: any) {
+    } catch (error: unknown) {
       const message =
-        error.message || "Unknown error";
+        error instanceof Error ? error.message : "Unknown error";
       const friendlyError: string = message.includes("AUTHENTICATIONFAILED")
         ? "Authentication failed — check your email and password (Gmail requires an App Password)"
         : message.includes("ENOTFOUND") || message.includes("getaddrinfo")

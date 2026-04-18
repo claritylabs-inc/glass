@@ -116,7 +116,7 @@ export function createConvexMemoryStore(
         },
       );
 
-      return turns.map((t: any) => ({
+      return turns.map((t: { _id: string; conversationId: string; role: string; content: string; createdAt: number }) => ({
         id: t._id as string,
         conversationId: t.conversationId,
         role: t.role as ConversationTurn["role"],

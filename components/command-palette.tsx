@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useRouter, usePathname } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
@@ -13,7 +13,6 @@ const AGENT_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "prism.claritylabs.
 
 export function CommandPalette() {
   const router = useRouter();
-  const pathname = usePathname();
   const createThread = useMutation(api.threads.create);
   const sendThreadMessage = useMutation(api.threads.sendMessage);
   const { context: pageContext } = usePageContext();

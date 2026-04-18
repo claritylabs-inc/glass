@@ -26,7 +26,7 @@ export const rechunkOne = internalAction({
   handler: async (ctx, args): Promise<{ policyId: string; oldChunks: number; newChunks: number }> => {
     const policy = await ctx.runQuery(internal.policies.getInternal, {
       id: args.policyId,
-    }) as any;
+    }) as Record<string, unknown>;
     if (!policy) throw new Error("Policy not found");
 
     // Convert to InsuranceDocument and re-chunk
@@ -37,7 +37,7 @@ export const rechunkOne = internalAction({
     const existing = await ctx.runQuery(
       internal.documentChunks.listByPolicy,
       { policyId: args.policyId },
-    ) as any[];
+    ) as Array<{ _id: string }>;
     for (const chunk of existing) {
       await ctx.runMutation(internal.documentChunks.deleteOne, { id: chunk._id });
     }
@@ -96,15 +96,15 @@ export const rechunkAll = internalAction({
         const result = await ctx.runAction(internal.actions.rechunkPolicy.rechunkOne, {
           policyId: policy._id,
           orgId: args.orgId,
-        }) as any;
+        }) as { oldChunks: number; newChunks: number };
         processed++;
         totalOld += result.oldChunks;
         totalNew += result.newChunks;
         console.log(
           `Re-chunk: ${processed}/${allDocs.length} — ${policy.carrier} #${policy.policyNumber}: ${result.oldChunks} → ${result.newChunks} chunks`,
         );
-      } catch (err: any) {
-        console.error(`Re-chunk: failed for ${policy._id}: ${err.message}`);
+      } catch (err: unknown) {
+        console.error(`Re-chunk: failed for ${policy._id}: ${err instanceof Error ? err.message : String(err)}`);
       }
 
       if (processed > 0 && processed % batchSize === 0) {
@@ -123,10 +123,10 @@ export const rechunkAll = internalAction({
 export const rechunk = action({
   args: { policyId: v.id("policies") },
   returns: v.any(),
-  handler: async (ctx, args): Promise<any> => {
-    const viewer = await ctx.runQuery(api.users.viewer) as any;
+  handler: async (ctx, args): Promise<{ error: string } | { policyId: string; oldChunks: number; newChunks: number }> => {
+    const viewer = await ctx.runQuery(api.users.viewer);
     if (!viewer) return { error: "Not authenticated" };
-    const orgData = await ctx.runQuery(api.orgs.viewerOrg) as any;
+    const orgData = await ctx.runQuery(api.orgs.viewerOrg) as { membership: { orgId: string } } | null;
     if (!orgData) return { error: "No organization" };
 
     const orgId = orgData.membership.orgId;

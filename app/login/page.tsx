@@ -53,8 +53,8 @@ export default function LoginPage() {
     try {
       await signIn("resend-otp", { email: targetEmail });
       setStep("code");
-    } catch (err: any) {
-      setError(friendlyError(err.message || ""));
+    } catch (err: unknown) {
+      setError(friendlyError(err instanceof Error ? err.message : ""));
     } finally {
       setSendingCode(false);
       setEmailToCheck("");
@@ -94,8 +94,8 @@ export default function LoginPage() {
     setError("");
     try {
       await signIn("resend-otp", { email, code });
-    } catch (err: any) {
-      setError(friendlyError(err.message || ""));
+    } catch (err: unknown) {
+      setError(friendlyError(err instanceof Error ? err.message : ""));
     } finally {
       setVerifying(false);
     }

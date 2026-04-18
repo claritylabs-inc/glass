@@ -15,7 +15,7 @@ export const list = query({
       return await ctx.db
         .query("orgIntelligence")
         .withIndex("by_orgId_category", (idx) =>
-          idx.eq("orgId", orgId).eq("category", args.category as any)
+          idx.eq("orgId", orgId).eq("category", args.category as string)
         )
         .collect();
     }
@@ -187,7 +187,7 @@ export const bulkInsert = internalMutation({
     const ids = [];
     for (const entry of args.entries) {
       const id = await ctx.db.insert("orgIntelligence", {
-        ...(entry as any),
+        ...(entry as Record<string, unknown>),
         createdAt: now,
         updatedAt: now,
       });
@@ -217,7 +217,7 @@ export const bulkInsertWithTimestamps = internalMutation({
   handler: async (ctx, args) => {
     const ids = [];
     for (const entry of args.entries) {
-      const id = await ctx.db.insert("orgIntelligence", entry as any);
+      const id = await ctx.db.insert("orgIntelligence", entry as never);
       ids.push(id);
     }
     return ids;
@@ -258,7 +258,7 @@ export const bulkRecategorize = internalMutation({
   handler: async (ctx, args) => {
     const now = Date.now();
     for (const { id, category } of args.updates) {
-      await ctx.db.patch(id, { category: category as any, updatedAt: now });
+      await ctx.db.patch(id, { category: category as never, updatedAt: now });
     }
   },
 });
@@ -302,7 +302,7 @@ export const update = mutation({
     if (!access) throw new Error("Not authenticated");
     const entry = await ctx.db.get(args.id);
     if (!entry || entry.orgId !== access.orgId) throw new Error("Not found");
-    const patch: Record<string, any> = {
+    const patch: Record<string, unknown> = {
       confidence: "confirmed" as const,
       updatedAt: Date.now(),
     };

@@ -74,7 +74,7 @@ export default function OnboardingPage() {
   const seeded = hasDemoData === true;
 
   // Step 3 state (agent)
-  const [handleClaimed, setHandleClaimed] = useState(false);
+  const [_handleClaimed, setHandleClaimed] = useState(false);
   const [canClaimHandle, setCanClaimHandle] = useState(false);
   const claimRef = useRef<(() => Promise<void>) | null>(null);
 
@@ -168,8 +168,8 @@ export default function OnboardingPage() {
       if (companyName) profileUpdates.companyName = companyName;
       if (companyWebsite) profileUpdates.companyWebsite = companyWebsite;
       if (companyContext) profileUpdates.companyContext = companyContext;
-      if (industry) (profileUpdates as any).industry = industry;
-      if (industryVertical) (profileUpdates as any).industryVertical = industryVertical;
+      if (industry) profileUpdates.industry = industry;
+      if (industryVertical) profileUpdates.industryVertical = industryVertical;
       await updateProfile(profileUpdates);
 
       // Create org if it doesn't exist, otherwise update it
@@ -213,8 +213,8 @@ export default function OnboardingPage() {
       await inviteMember({ email: inviteEmail, role: inviteRole });
       toast.success(`Invitation sent to ${inviteEmail}`);
       setInviteEmail("");
-    } catch (err: any) {
-      toast.error(err.message ?? "Failed to send invitation");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to send invitation");
     } finally {
       setInviting(false);
     }
@@ -241,8 +241,8 @@ export default function OnboardingPage() {
       await acceptInvitation({ invitationId: pendingInvitation.invitationId });
       await completeOnboarding();
       router.replace("/");
-    } catch (err: any) {
-      toast.error(err.message ?? "Failed to accept invitation");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to accept invitation");
       setAcceptingInvite(false);
     }
   }
@@ -987,7 +987,7 @@ function HowItWorksDemo({
   const [scannedEmails, setScannedEmails] = useState<number[]>([]);
   const [extractedPolicies, setExtractedPolicies] = useState<number[]>([]);
   const [statusItems, setStatusItems] = useState<typeof DEMO_STATUS>([]);
-  const [emailCount, setEmailCount] = useState(0);
+  const [_emailCount, setEmailCount] = useState(0);
 
   const activeBucket = getActiveBucket(phase);
 
@@ -1156,7 +1156,7 @@ function HowItWorksDemo({
             >
               <StepLabel stepNumber={3} label="Organize" />
               <div className="flex flex-col gap-3">
-                {DEMO_STATUS.map((item, i) => {
+                {DEMO_STATUS.map((item, _i) => {
                   const visible = statusItems.some((s) => s.id === item.id);
                   const isReady = item.id === "ready";
                   const isLast = visible && statusItems[statusItems.length - 1]?.id === item.id;

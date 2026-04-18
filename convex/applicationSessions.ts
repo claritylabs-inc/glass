@@ -120,11 +120,11 @@ export const updateFieldValue = mutation({
     const fields: FormField[] = parseFields(session.extractedFields);
     const field = fields.find((f) => f.id === args.fieldId);
     if (!field) throw new Error("Field not found");
-    (field as any).value = args.value || undefined;
-    if (args.value) (field as any).source = "manual";
+    (field as unknown as Record<string, unknown>).value = args.value || undefined;
+    if (args.value) (field as unknown as Record<string, unknown>).source = "manual";
     const filledFields = fields.filter((f) => {
-      if (f.fieldType === "table") return ((f as any).rows?.length ?? 0) > 0;
-      return !!(f as any).value;
+      if (f.fieldType === "table") return ((f as unknown as Record<string, unknown[]>).rows?.length ?? 0) > 0;
+      return !!(f as unknown as Record<string, unknown>).value;
     }).length;
     await ctx.db.patch(args.id, {
       extractedFields: JSON.stringify(fields),

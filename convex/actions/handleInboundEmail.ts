@@ -324,13 +324,13 @@ export const processInbound = internalAction({
     // Get all org members for domain detection and primary contact resolution
     const orgMembers = await ctx.runQuery(internal.orgs.getMembersInternal, { orgId });
     const memberEmails = orgMembers
-      .map((m: any) => m.user?.email)
+      .map((m: { user?: { email?: string } }) => m.user?.email)
       .filter(Boolean) as string[];
-    const firstAdmin = orgMembers.find((m: any) => m.role === "admin");
+    const firstAdmin = orgMembers.find((m: { role?: string }) => m.role === "admin");
 
     // Match sender to an org member by email — so the right user is attributed
     const senderMember = orgMembers.find(
-      (m: any) => m.user?.email?.toLowerCase() === fromEmail.toLowerCase(),
+      (m: { user?: { email?: string }; userId?: string }) => m.user?.email?.toLowerCase() === fromEmail.toLowerCase(),
     );
     const primaryUserId = senderMember?.userId
       ?? org.primaryInsuranceContactId
@@ -384,11 +384,11 @@ export const processInbound = internalAction({
     function getHeader(name: string): string | undefined {
       const lower = name.toLowerCase();
       if (Array.isArray(rawHeaders)) {
-        return rawHeaders.find(
-          (h: any) => h.name?.toLowerCase() === lower,
+        return (rawHeaders as Array<{ name?: string; value?: string }>).find(
+          (h) => h.name?.toLowerCase() === lower,
         )?.value;
       } else if (rawHeaders && typeof rawHeaders === "object") {
-        return (rawHeaders as any)[lower] ?? (rawHeaders as any)[name];
+        return (rawHeaders as Record<string, string>)[lower] ?? (rawHeaders as Record<string, string>)[name];
       }
       return undefined;
     }
@@ -509,7 +509,7 @@ export const processInbound = internalAction({
         mode: effectiveMode,
         resendEmailId: resendEmailId || undefined,
         threadId,
-        attachments: attachmentRecords.length > 0 ? attachmentRecords as any : undefined,
+        attachments: attachmentRecords.length > 0 ? attachmentRecords as unknown[] : undefined,
       },
     );
 
@@ -547,7 +547,7 @@ export const processInbound = internalAction({
         content: body,
         contentHtml: bodyHtml,
         messageId,
-        attachments: attachmentRecords.length > 0 ? attachmentRecords as any : undefined,
+        attachments: attachmentRecords.length > 0 ? attachmentRecords as unknown[] : undefined,
         legacyConversationId: conversationId,
       });
     } catch (err) {
@@ -559,7 +559,7 @@ export const processInbound = internalAction({
     // 1. By threadId (resolved from In-Reply-To or subject matching)
     // 2. By lastSentMessageId (the reply's In-Reply-To matches an outbound app email)
     // 3. By orgId fallback (active session exists for this org in asking/pending state)
-    let activeSession: any = null;
+    let activeSession: { _id: string; status?: string; userId?: string } | null = null;
 
     if (threadId) {
       activeSession = await ctx.runQuery(
@@ -844,7 +844,7 @@ Respond with JSON only:
         companyContext: org.context,
         siteUrl,
         userName,
-        coiHandling: org.coiHandling as any,
+        coiHandling: org.coiHandling as string | undefined,
         brokerName: org.insuranceBroker,
         brokerContactName: org.brokerContactName,
         brokerContactEmail: org.brokerContactEmail,
@@ -1092,8 +1092,8 @@ For emails, compose a professional message that:
                   ccAddresses: sendCc,
                   subject: replySub,
                   responseMessageId: sentMsgId,
-                  referencedPolicyIds: relevantPolicyIds.length > 0 ? (relevantPolicyIds as any) : undefined,
-                  referencedQuoteIds: relevantQuoteIds.length > 0 ? (relevantQuoteIds as any) : undefined,
+                  referencedPolicyIds: relevantPolicyIds.length > 0 ? (relevantPolicyIds as unknown[]) : undefined,
+                  referencedQuoteIds: relevantQuoteIds.length > 0 ? (relevantQuoteIds as unknown[]) : undefined,
                   legacyConversationId: conversationId,
                 });
               } catch (err) {
@@ -1272,8 +1272,8 @@ For emails, compose a professional message that:
             toAddresses: [replyTo],
             ccAddresses: replyCc.length > 0 ? replyCc : undefined,
             responseMessageId: sentMessageId,
-            referencedPolicyIds: relevantPolicyIds.length > 0 ? (relevantPolicyIds as any) : undefined,
-            referencedQuoteIds: relevantQuoteIds.length > 0 ? (relevantQuoteIds as any) : undefined,
+            referencedPolicyIds: relevantPolicyIds.length > 0 ? (relevantPolicyIds as unknown[]) : undefined,
+            referencedQuoteIds: relevantQuoteIds.length > 0 ? (relevantQuoteIds as unknown[]) : undefined,
             legacyConversationId: conversationId,
           });
         } catch (err) {

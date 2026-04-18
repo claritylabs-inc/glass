@@ -57,8 +57,8 @@ export default function SignupPage() {
     try {
       await signIn("resend-otp", { email });
       setStep("code");
-    } catch (err: any) {
-      setError(friendlyError(err.message || ""));
+    } catch (err: unknown) {
+      setError(friendlyError(err instanceof Error ? err.message : ""));
     } finally {
       setLoading(false);
     }
@@ -70,8 +70,8 @@ export default function SignupPage() {
     setError("");
     try {
       await signIn("resend-otp", { email, code });
-    } catch (err: any) {
-      setError(friendlyError(err.message || ""));
+    } catch (err: unknown) {
+      setError(friendlyError(err instanceof Error ? err.message : ""));
     } finally {
       setLoading(false);
     }

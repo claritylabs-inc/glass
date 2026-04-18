@@ -46,9 +46,13 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     const stored = localStorage.getItem("theme") as ThemeChoice | null;
     const choice = stored === "light" || stored === "dark" ? stored : "system";
     const res = choice === "system" ? getSystemTheme() : choice;
-    setThemeState(choice);
-    setResolved(res);
-    applyClass(res);
+    // Schedule state updates outside the synchronous effect body
+    const id = setTimeout(() => {
+      setThemeState(choice);
+      setResolved(res);
+      applyClass(res);
+    }, 0);
+    return () => clearTimeout(id);
   }, []);
 
   // Listen for OS preference changes

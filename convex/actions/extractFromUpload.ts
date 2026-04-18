@@ -18,10 +18,10 @@ export const extractFromUpload = action({
   },
   returns: v.any(),
   handler: async (ctx, args): Promise<{ error: string } | { success: true; type: string; id: string }> => {
-    const viewer = await ctx.runQuery(api.users.viewer) as any;
+    const viewer = await ctx.runQuery(api.users.viewer) as { _id: string } | null;
     if (!viewer) return { error: "Not authenticated" };
 
-    const orgData = await ctx.runQuery(api.orgs.viewerOrg) as any;
+    const orgData = await ctx.runQuery(api.orgs.viewerOrg) as { membership: { orgId: string } } | null;
     if (!orgData) return { error: "No organization" };
 
     const orgId = orgData.membership.orgId as Id<"organizations">;
@@ -34,14 +34,12 @@ export const extractFromUpload = action({
     const pdfBase64 = Buffer.from(arrayBuffer).toString("base64");
     const sizeKB = Math.round(arrayBuffer.byteLength / 1024);
 
-    const resolvedFileName = args.fileName ?? "upload.pdf";
-
     // Create placeholder policy record (type determined by extraction)
     const policyId: Id<"policies"> = await ctx.runMutation(api.policies.insert, {
       userId,
       orgId,
       fileId: args.fileId,
-      fileName: resolvedFileName,
+      fileName: args.fileName,
       carrier: "Extracting...",
       policyNumber: "Extracting...",
       policyTypes: ["other"],
@@ -54,33 +52,6 @@ export const extractFromUpload = action({
       insuredName: "Extracting...",
       extractionStatus: "extracting",
     });
-
-    // ── Create policyFiles record for this upload ──
-    let policyFileId: Id<"policyFiles"> | undefined;
-    try {
-      policyFileId = await ctx.runMutation(internal.policyFiles.insert, {
-        policyId,
-        fileId: args.fileId,
-        fileName: resolvedFileName,
-        fileType: "unknown",
-        extractionStatus: "extracting",
-        orgId,
-      });
-
-      // Update the denormalized files array on the policy
-      await ctx.runMutation(internal.policies.updateFiles, {
-        id: policyId,
-        files: [{
-          fileId: args.fileId,
-          fileName: resolvedFileName,
-          fileType: "unknown",
-          status: "extracting",
-        }],
-      });
-    } catch (err: any) {
-      // Non-critical — log but don't abort extraction
-      console.error("Failed to create policyFiles record:", err.message);
-    }
 
     const log = async (message: string) => {
       await ctx.runMutation(internal.policies.appendExtractionLog, { id: policyId, message });
@@ -107,7 +78,7 @@ export const extractFromUpload = action({
         pdfBase64,
         policyId as string,
       );
-      const doc = result.document as any;
+      const doc = result.document as { type?: string; quoteNumber?: string; policyNumber?: string };
       const chunks = result.chunks;
       const tokenUsage = result.tokenUsage;
 
@@ -118,39 +89,12 @@ export const extractFromUpload = action({
       const docName = doc.type === "quote"
         ? (doc.quoteNumber || "quote")
         : (doc.policyNumber || "policy");
-      const finalFileName = args.fileName || `${docName}.pdf`;
 
       await ctx.runMutation(api.policies.updateExtraction, {
         id: policyId,
-        fileName: finalFileName,
+        fileName: args.fileName || `${docName}.pdf`,
         ...fields,
       });
-
-      // ── Update policyFiles record with extraction result ──
-      if (policyFileId) {
-        try {
-          await ctx.runMutation(internal.policyFiles.updateExtraction, {
-            id: policyFileId,
-            extractionStatus: "complete",
-            extractedData: result.document,
-          });
-
-          // Update denormalized files array — single upload, so set reconciled immediately
-          await ctx.runMutation(internal.policies.updateFiles, {
-            id: policyId,
-            files: [{
-              fileId: args.fileId,
-              fileName: finalFileName,
-              fileType: "unknown",
-              status: "complete",
-            }],
-            reconciliationStatus: "reconciled",
-          });
-        } catch (err: any) {
-          // Non-critical
-          console.error("Failed to update policyFiles record:", err.message);
-        }
-      }
 
       // Store document chunks for vector search
       if (chunks.length > 0) {
@@ -168,8 +112,8 @@ export const extractFromUpload = action({
               embedding,
               createdAt: Date.now(),
             });
-          } catch (err: any) {
-            await log(`Warning: failed to embed chunk ${chunk.id}: ${err.message}`);
+          } catch (err: unknown) {
+            await log(`Warning: failed to embed chunk ${chunk.id}: ${err instanceof Error ? err.message : String(err)}`);
           }
         }
         await log(`Stored ${chunks.length} chunks for vector search.`);
@@ -185,37 +129,15 @@ export const extractFromUpload = action({
       });
 
       return { success: true, type: doc.type, id: policyId };
-    } catch (error: any) {
-      await log(`Failed: ${error.message || "Extraction failed"}`);
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : "Extraction failed";
+      await log(`Failed: ${errMsg}`);
       await ctx.runMutation(api.policies.updateExtraction, {
         id: policyId,
         extractionStatus: "error",
-        extractionError: error.message || "Extraction failed",
+        extractionError: errMsg,
       });
-
-      // Mark policyFiles record as error too
-      if (policyFileId) {
-        try {
-          await ctx.runMutation(internal.policyFiles.updateExtraction, {
-            id: policyFileId,
-            extractionStatus: "error",
-            extractionError: error.message || "Extraction failed",
-          });
-          await ctx.runMutation(internal.policies.updateFiles, {
-            id: policyId,
-            files: [{
-              fileId: args.fileId,
-              fileName: resolvedFileName,
-              fileType: "unknown",
-              status: "error",
-            }],
-          });
-        } catch {
-          // Non-critical
-        }
-      }
-
-      return { error: error.message || "Extraction failed" };
+      return { error: errMsg };
     }
   },
 });

@@ -157,7 +157,7 @@ export const extractPolicy = internalAction({
         pdfBase64,
         policyId as string,
       );
-      const doc = result.document as any;
+      const doc = result.document as { type?: string; quoteNumber?: string; policyNumber?: string };
       const chunks = result.chunks;
       const tokenUsage = result.tokenUsage;
 
@@ -242,8 +242,8 @@ export const extractPolicy = internalAction({
               embedding,
               createdAt: Date.now(),
             });
-          } catch (err: any) {
-            await log(`Warning: failed to embed chunk ${chunk.id}: ${err.message}`);
+          } catch (err: unknown) {
+            await log(`Warning: failed to embed chunk ${chunk.id}: ${err instanceof Error ? err.message : String(err)}`);
           }
         }
         await log(`Stored ${chunks.length} chunks for vector search.`);
@@ -306,9 +306,9 @@ export const extractPolicy = internalAction({
             const similar = await ctx.vectorSearch("orgIntelligence", "by_embedding", {
               vector: embedding,
               limit: 3,
-              filter: (q: any) => q.eq("orgId", args.orgId),
+              filter: (q: { eq: (field: string, value: unknown) => unknown }) => q.eq("orgId", args.orgId),
             });
-            if (similar.some((s: any) => s._score > 0.95)) continue;
+            if (similar.some((s: { _score?: number }) => (s._score ?? 0) > 0.95)) continue;
 
             await ctx.runMutation(internal.intelligence.insert, {
               orgId: args.orgId!,
@@ -322,8 +322,8 @@ export const extractPolicy = internalAction({
               documentDate: fields.effectiveDate,
               embedding,
             });
-          } catch (err: any) {
-            await log(`Warning: failed to write intelligence entry: ${err.message}`);
+          } catch (err: unknown) {
+            await log(`Warning: failed to write intelligence entry: ${err instanceof Error ? err.message : String(err)}`);
           }
         }
         await log(`Synthesized ${entries.length} intelligence entries from policy.`);
@@ -361,7 +361,7 @@ export const extractPolicy = internalAction({
         const priorPolicyNumber = fields.priorPolicyNumber;
         if (priorPolicyNumber) {
           const priorMatch = orgPolicies.find(
-            (p: any) =>
+            (p: { policyNumber?: string; _id: string }) =>
               p.policyNumber === priorPolicyNumber &&
               p._id !== policyId,
           );
@@ -380,14 +380,15 @@ export const extractPolicy = internalAction({
       }
 
       await incrementExtracted(ctx, args.connectionId);
-    } catch (error: any) {
-      await log(`Failed: ${error.message || "Extraction failed"}`);
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : "Extraction failed";
+      await log(`Failed: ${errMsg}`);
       await ctx.runMutation(api.policies.updateExtraction, {
         id: policyId,
         extractionStatus: "error",
-        extractionError: error.message || "Extraction failed",
+        extractionError: errMsg,
       });
-      console.error("Extraction failed:", error.message);
+      console.error("Extraction failed:", errMsg);
 
       // Mark policyFiles record as error too
       if (policyFileId) {
@@ -418,7 +419,7 @@ export const extractPolicy = internalAction({
         userId: args.userId,
         orgId: args.orgId,
         action: "extraction_error",
-        detail: error.message || "Extraction failed",
+        detail: errMsg,
       });
 
       await incrementExtracted(ctx, args.connectionId);
@@ -426,7 +427,7 @@ export const extractPolicy = internalAction({
   },
 });
 
-async function incrementExtracted(ctx: any, connectionId: any) {
+async function incrementExtracted(ctx: { runMutation: (...args: unknown[]) => Promise<unknown> }, connectionId: string) {
   try {
     await ctx.runMutation(internal.connections.incrementExtracted, {
       id: connectionId,

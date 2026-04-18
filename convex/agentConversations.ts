@@ -239,7 +239,7 @@ export const get = query({
   handler: async (ctx, args) => {
     const { orgId } = await requireOrgAccess(ctx);
     const conv = await ctx.db.get(args.id);
-    if (!conv || (conv as any).orgId !== orgId) return null;
+    if (!conv || (conv as unknown as { orgId: string }).orgId !== orgId) return null;
     return conv;
   },
 });
@@ -249,7 +249,7 @@ export const archive = mutation({
   handler: async (ctx, args) => {
     const { orgId } = await requireOrgAccess(ctx);
     const conv = await ctx.db.get(args.id);
-    if (!conv || (conv as any).orgId !== orgId) throw new Error("Not found");
+    if (!conv || (conv as unknown as { orgId: string }).orgId !== orgId) throw new Error("Not found");
     await ctx.db.patch(args.id, { archivedAt: Date.now() });
   },
 });
@@ -259,7 +259,7 @@ export const unarchive = mutation({
   handler: async (ctx, args) => {
     const { orgId } = await requireOrgAccess(ctx);
     const conv = await ctx.db.get(args.id);
-    if (!conv || (conv as any).orgId !== orgId) throw new Error("Not found");
+    if (!conv || (conv as unknown as { orgId: string }).orgId !== orgId) throw new Error("Not found");
     await ctx.db.patch(args.id, { archivedAt: undefined });
   },
 });

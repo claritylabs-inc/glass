@@ -89,7 +89,7 @@ EXTERNAL relationship categories (about OTHER companies/people, not this org):
         const existing = await ctx.vectorSearch("orgIntelligence", "by_embedding", {
           vector: embedding,
           limit: 1,
-          filter: (q: any) => q.eq("orgId", args.orgId),
+          filter: (q: { eq: (field: string, value: unknown) => unknown }) => q.eq("orgId", args.orgId),
         });
 
         if (existing.length > 0 && existing[0]._score > 0.95) {
@@ -99,7 +99,7 @@ EXTERNAL relationship categories (about OTHER companies/people, not this org):
         await ctx.runMutation(internal.intelligence.insert, {
           orgId: args.orgId,
           content: entry.content,
-          category: entry.category as any,
+          category: entry.category as string,
           confidence: "inferred" as const,
           source: "chat" as const,
           sourceRef: args.threadId as string,

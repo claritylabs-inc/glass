@@ -7,7 +7,7 @@ import { Id } from "@/convex/_generated/dataModel";
 import { motion, AnimatePresence } from "framer-motion";
 import dayjs from "dayjs";
 import { PillButton } from "@/components/ui/pill-button";
-import { Pause, Play, X, RotateCw, Trash2 } from "lucide-react";
+import { Pause, Play, X } from "lucide-react";
 import { FadeIn } from "@/components/ui/fade-in";
 import { TerminalLog } from "@/components/terminal-log";
 import {
@@ -126,56 +126,6 @@ function CancelButton({ policyId }: { policyId: string }) {
     >
       <X className="w-3 h-3" />
       {cancelling ? "Dismissing..." : "Dismiss"}
-    </button>
-  );
-}
-
-// Restart button - shown when paused or error (full re-extraction)
-function RestartButton({ extraction }: { extraction: Extraction }) {
-  const restart = useMutation(api.policies.restartExtraction);
-  const [restarting, setRestarting] = useState(false);
-
-  return (
-    <button
-      type="button"
-      disabled={restarting}
-      onClick={async () => {
-        setRestarting(true);
-        try {
-          await restart({ id: extraction._id as unknown as Id<"policies"> });
-        } finally {
-          setRestarting(false);
-        }
-      }}
-      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/40 text-label-sm font-medium text-amber-700 dark:text-amber-400 hover:border-amber-300 hover:bg-amber-100 dark:hover:bg-amber-950/60 transition-colors cursor-pointer disabled:opacity-50"
-    >
-      <RotateCw className="w-3 h-3" />
-      {restarting ? "Restarting..." : "Restart"}
-    </button>
-  );
-}
-
-// Dismiss button - shown for error/not_insurance (marks as not insurance)
-function DismissButton({ policyId }: { policyId: string }) {
-  const dismiss = useMutation(api.policies.dismiss);
-  const [dismissing, setDismissing] = useState(false);
-
-  return (
-    <button
-      type="button"
-      disabled={dismissing}
-      onClick={async () => {
-        setDismissing(true);
-        try {
-          await dismiss({ id: policyId as unknown as Id<"policies"> });
-        } finally {
-          setDismissing(false);
-        }
-      }}
-      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-foreground/12 bg-card text-label-sm font-medium text-muted-foreground hover:border-red-200 dark:hover:border-red-900/50 hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-600 dark:hover:text-red-400 transition-colors cursor-pointer disabled:opacity-50"
-    >
-      <Trash2 className="w-3 h-3" />
-      Dismiss
     </button>
   );
 }

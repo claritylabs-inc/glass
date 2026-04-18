@@ -6,7 +6,7 @@ import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
 import { PillButton } from "@/components/ui/pill-button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { Loader2, Plus, Trash2, ChevronDown, ChevronRight, Pencil, Check, X } from "lucide-react";
+import { Loader2, Trash2, ChevronDown, ChevronRight, Pencil, Check, X } from "lucide-react";
 import type { Id } from "@/convex/_generated/dataModel";
 
 const CATEGORIES = [
@@ -160,7 +160,7 @@ function ContextEntryRow({ entry }: { entry: ContextEntry }) {
 }
 
 function CategorySection({
-  category,
+  category: _category,
   label,
   entries,
 }: {
@@ -339,7 +339,7 @@ export function BusinessContextManager({
         </div>
       ) : (
         CATEGORIES.map((cat) => {
-          const entries = ((contextData as any)[cat.value] ?? []) as ContextEntry[];
+          const entries = ((contextData as Record<string, unknown>)[cat.value] as ContextEntry[] | undefined) ?? [];
           if (entries.length === 0) return null;
           return (
             <CategorySection

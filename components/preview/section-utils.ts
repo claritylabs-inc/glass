@@ -1,5 +1,10 @@
+interface SectionWithSubsections {
+  content?: string;
+  subsections?: Array<{ title?: string; content?: string }>;
+}
+
 /** Build full section content including subsections */
-export function buildSectionContent(s: any): string {
+export function buildSectionContent(s: SectionWithSubsections): string {
   let content = s.content ?? "";
   if (s.subsections?.length) {
     for (const sub of s.subsections) {

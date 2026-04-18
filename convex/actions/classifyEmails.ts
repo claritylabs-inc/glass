@@ -8,8 +8,9 @@ import { generateText } from "ai";
 import { haikuModel } from "../lib/ai";
 
 async function updateClassificationProgress(
-  ctx: any,
-  connectionId: any,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ctx: { runMutation: (...args: any[]) => Promise<unknown> },
+  connectionId: string,
   total: number,
   processed: number,
   policiesFound: number,
@@ -40,7 +41,7 @@ export const classifyEmails = internalAction({
     const emails = await ctx.runQuery(internal.emails.listByConnection, {
       connectionId: args.connectionId,
     });
-    const unprocessed = emails.filter((e: any) => !e.processed);
+    const unprocessed = emails.filter((e: { processed?: boolean }) => !e.processed);
 
     if (unprocessed.length === 0) {
       // All emails already processed — mark scan complete so UI doesn't stay stuck
@@ -123,7 +124,7 @@ export const classifyEmails = internalAction({
           // One signal matched — use AI to confirm, but bias toward insurance
           try {
             const { text: rawText } = await generateText({
-              model: haikuModel,
+              model: haikuModel as Parameters<typeof generateText>[0]["model"],
               maxOutputTokens: 256,
               messages: [
                 {
@@ -188,8 +189,8 @@ Respond with JSON only: {"isInsurance": boolean, "reason": "brief explanation", 
 
         await updateClassificationProgress(ctx, args.connectionId, total, processed, policiesFound);
       }
-    } catch (error: any) {
-      console.error("Classification failed:", error.message);
+    } catch (error: unknown) {
+      console.error("Classification failed:", error instanceof Error ? error.message : String(error));
       await ctx.runMutation(api.connections.updateScanProgress, {
         id: args.connectionId,
         scanProgress: {

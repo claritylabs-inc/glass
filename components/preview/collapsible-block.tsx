@@ -21,22 +21,22 @@ export function CollapsibleBlock({
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-1.5 w-full group cursor-pointer"
+        className="flex items-center gap-2 w-full group cursor-pointer"
       >
         <ChevronDown
           className={cn(
-            "w-3 h-3 text-muted-foreground/30 transition-transform duration-150",
+            "w-4 h-4 text-muted-foreground/40 transition-transform duration-150",
             open && "rotate-180"
           )}
         />
-        <span className="text-label-sm font-medium text-muted-foreground/40 ">
+        <span className="text-body-sm font-medium text-muted-foreground/60">
           {title}
         </span>
         {count != null && (
-          <span className="text-label-sm text-muted-foreground/25">{count}</span>
+          <span className="text-body-sm text-muted-foreground/40">{count}</span>
         )}
       </button>
-      {open && <div className="mt-2">{children}</div>}
+      {open && <div className="mt-3">{children}</div>}
     </div>
   );
 }

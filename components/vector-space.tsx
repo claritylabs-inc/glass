@@ -229,7 +229,7 @@ function SceneHelpers({ dark }: { dark: boolean }) {
 /** Tooltip label that follows the camera */
 function HoverLabel({ point, dark }: { point: VectorPoint; dark: boolean }) {
   const { camera } = useThree();
-  const textRef = useRef<any>(null);
+  const textRef = useRef<{ quaternion: THREE.Quaternion } | null>(null);
 
   useFrame(() => {
     if (textRef.current) textRef.current.quaternion.copy(camera.quaternion);
@@ -254,11 +254,8 @@ function HoverLabel({ point, dark }: { point: VectorPoint; dark: boolean }) {
 
 /** Sync scene background color with theme */
 function SceneBackground({ dark }: { dark: boolean }) {
-  const { scene } = useThree();
-  useEffect(() => {
-    scene.background = new THREE.Color(dark ? "#1a1816" : "#faf8f4");
-  }, [dark, scene]);
-  return null;
+  const bgColor = dark ? "#1a1816" : "#faf8f4";
+  return <color attach="background" args={[bgColor]} />;
 }
 
 function Scene({
@@ -373,14 +370,15 @@ export function VectorSpace({
   // Detect dark mode
   useEffect(() => {
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    setDark(mq.matches || document.documentElement.classList.contains("dark"));
+    const isDark = mq.matches || document.documentElement.classList.contains("dark");
+    const timer = setTimeout(() => setDark(isDark), 0);
     const handler = () => setDark(mq.matches || document.documentElement.classList.contains("dark"));
     mq.addEventListener("change", handler);
     const observer = new MutationObserver(() => {
       setDark(document.documentElement.classList.contains("dark"));
     });
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
-    return () => { mq.removeEventListener("change", handler); observer.disconnect(); };
+    return () => { clearTimeout(timer); mq.removeEventListener("change", handler); observer.disconnect(); };
   }, []);
 
   const chunkTypes = useMemo(() => {

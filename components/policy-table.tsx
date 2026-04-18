@@ -65,7 +65,7 @@ export function PolicyTable({ policies }: { policies: Policy[] | undefined }) {
     return (
       <FadeIn when={true} duration={0.6}>
         <div className="rounded-lg border border-foreground/6 bg-card px-6 py-8 text-center">
-          <p className="text-body-sm text-muted-foreground/60">No policies found</p>
+          <p className="text-body-sm text-muted-foreground/60">No policies in this tab yet</p>
         </div>
       </FadeIn>
     );

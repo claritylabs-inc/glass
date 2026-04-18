@@ -4,25 +4,83 @@ import { useState, Children, cloneElement, isValidElement } from "react";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
-import { useEntityPreview } from "@/hooks/use-entity-preview";
-import { usePdf } from "@/components/pdf-context";
-import { ExternalLink, FileText, Calendar, Shield, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import dayjs from "dayjs";
-import Link from "next/link";
 import { POLICY_TYPE_LABELS } from "@/convex/lib/policyTypes";
 import { DocSection } from "./doc-section";
-import { CollapsibleBlock } from "./collapsible-block";
 import { CoverageRow } from "./coverage-row";
 import { buildSectionContent, matchesCitation } from "./section-utils";
+import { PillButton } from "@/components/ui/pill-button";
 
-export function PolicyPreview({ id, page, citedSections }: { id: string; page?: number; citedSections?: string[] }) {
+interface DocSection {
+  title: string;
+  type?: string;
+  pageStart?: number;
+  pageEnd?: number;
+  content?: string;
+  subsections?: Array<{ title?: string; content?: string }>;
+}
+
+interface DocEndorsement {
+  title: string;
+  pageStart?: number;
+  content?: string;
+}
+
+interface DocCondition {
+  title?: string;
+  name?: string;
+  pageNumber?: number;
+  content?: string;
+}
+
+interface DocExclusion {
+  title?: string;
+  name?: string;
+  content?: string;
+  description?: string;
+}
+
+interface PolicyDocument {
+  sections?: DocSection[];
+  endorsements?: DocEndorsement[];
+  conditions?: DocCondition[];
+  exclusions?: DocExclusion[];
+}
+
+interface PolicyCoverage {
+  name: string;
+  limit?: string;
+  deductible?: string;
+}
+
+interface PolicyPreviewProps {
+  id: string;
+  page?: number;
+  citedSections?: string[];
+  onHeaderInfo?: (info: { carrier: string; policyNum?: string }) => void;
+  onHeaderActions?: (actions: { fileUrl?: string; policyId: string; page?: number }) => void;
+}
+
+export function PolicyPreview({ id, page, citedSections, onHeaderInfo, onHeaderActions }: PolicyPreviewProps) {
   const policy = useQuery(api.policies.get, { id: id as Id<"policies"> });
   const fileUrl = useQuery(
     api.policies.getFileUrl,
     policy?.fileId ? { fileId: policy.fileId } : "skip",
   );
-  const { openWithUrl } = usePdf();
-  const { closePreview } = useEntityPreview();
+  const [showAllTypes, setShowAllTypes] = useState(false);
+
+  // Notify parent of header info
+  const carrier = policy?.carrier || "Unknown carrier";
+  const policyNum = policy?.policyNumber;
+  
+  if (policy && onHeaderInfo) {
+    onHeaderInfo({ carrier, policyNum });
+  }
+  
+  if (fileUrl && onHeaderActions) {
+    onHeaderActions({ fileUrl, policyId: id, page });
+  }
 
   if (!policy) {
     return (
@@ -32,97 +90,94 @@ export function PolicyPreview({ id, page, citedSections }: { id: string; page?: 
     );
   }
 
-  const carrier = policy.security || policy.carrier || "Unknown carrier";
-  const policyNum = policy.policyNumber;
   const types = policy.policyTypes ?? (policy.policyType ? [policy.policyType] : []);
-  const isQuoteDoc = policy.documentType === "quote";
-  const fileCount = (policy as any).files?.length ?? 0;
-  const doc = policy.document as any;
+  const fileCount = (policy as { files?: unknown[] }).files?.length ?? 0;
+  const doc = policy.document as PolicyDocument | undefined;
 
-  const allSections = doc?.sections ?? [];
-  const allEndorsements = doc?.endorsements ?? [];
-  const allConditions = doc?.conditions ?? [];
-  const allExclusions = doc?.exclusions ?? [];
+  const allSections: DocSection[] = doc?.sections ?? [];
+  const allEndorsements: DocEndorsement[] = doc?.endorsements ?? [];
+  const allConditions: DocCondition[] = doc?.conditions ?? [];
+  const allExclusions: DocExclusion[] = doc?.exclusions ?? [];
 
   const hasCitations = citedSections && citedSections.length > 0;
 
-  const sections = allSections.filter((s: any) => matchesCitation(s.title, citedSections, s.content));
-  const endorsements = allEndorsements.filter((e: any) => matchesCitation(e.title, citedSections, e.content));
-  const conditions = allConditions.filter((c: any) => matchesCitation(c.title, citedSections, c.content));
-  const exclusions = allExclusions.filter((ex: any) => matchesCitation(ex.title, citedSections, ex.content ?? ex.description));
+  const sections = allSections.filter((s) => matchesCitation(s.title, citedSections, s.content));
+  const endorsements = allEndorsements.filter((e) => matchesCitation(e.title, citedSections, e.content));
+  const conditions = allConditions.filter((c) => matchesCitation(c.title ?? c.name ?? "", citedSections, c.content));
+  const exclusions = allExclusions.filter((ex) => matchesCitation(ex.title ?? ex.name ?? "", citedSections, ex.content ?? ex.description));
 
-  const citedCount = sections.length + endorsements.length + conditions.length + exclusions.length;
-  const totalCount = allSections.length + allEndorsements.length + allConditions.length + allExclusions.length;
-  const hasSections = citedCount > 0 || totalCount > 0;
+  const visibleTypes = showAllTypes ? types : types.slice(0, 2);
+  const hasMoreTypes = types.length > 2;
 
   return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div>
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <p className="text-label-sm font-medium text-muted-foreground/40 ">
-                {isQuoteDoc ? "Quote" : "Policy"}
-              </p>
-              {fileCount > 1 && (
-                <span className="text-[10px] font-medium px-1.5 py-px rounded bg-foreground/[0.04] text-muted-foreground/40">
-                  Combined from {fileCount} files
+    <div className="space-y-5">
+      {/* Summary - at top, always expanded */}
+      {policy.summary && (
+        <div>
+          <p className="text-body-sm text-foreground/90 leading-relaxed">{policy.summary}</p>
+        </div>
+      )}
+
+      {/* Multi-file indicator */}
+      {fileCount > 1 && (
+        <p className="text-xs text-muted-foreground/50">Combined from {fileCount} files</p>
+      )}
+
+      {/* Policy Details with Labels */}
+      <div className="space-y-3">
+        {/* Coverage Types */}
+        {types.length > 0 && (
+          <div>
+            <p className="text-xs text-muted-foreground/50 mb-1.5">Coverage types</p>
+            <div className="flex flex-wrap items-center gap-2">
+              {visibleTypes.map((t) => (
+                <span key={t} className="text-body-sm px-2.5 py-1 rounded-full bg-secondary text-muted-foreground">
+                  {POLICY_TYPE_LABELS[t] ?? t}
                 </span>
+              ))}
+              {hasMoreTypes && !showAllTypes && (
+                <PillButton size="compact" variant="secondary" onClick={() => setShowAllTypes(true)}>
+                  +{types.length - 2} more
+                </PillButton>
               )}
             </div>
-            <h3 className="text-sm font-semibold text-foreground leading-tight mt-0.5">{carrier}</h3>
-            {policyNum && (
-              <p className="text-label text-muted-foreground/50 font-mono mt-0.5">#{policyNum}</p>
-            )}
           </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-1.5 mt-2">
-          {types.map((t) => (
-            <span key={t} className="text-label-sm px-1.5 py-px rounded bg-foreground/[0.04] text-muted-foreground/50">
-              {POLICY_TYPE_LABELS[t] ?? t}
-            </span>
-          ))}
-          {(policy.effectiveDate || policy.expirationDate) && (
-            <>
-              {types.length > 0 && <span className="text-muted-foreground/15">|</span>}
-              <span className="text-label-sm text-muted-foreground/40 flex items-center gap-1">
-                <Calendar className="w-2.5 h-2.5" />
-                {policy.effectiveDate ? dayjs(policy.effectiveDate).format("MMM D, YYYY") : "—"}
-                {" — "}
-                {policy.expirationDate ? dayjs(policy.expirationDate).format("MMM D, YYYY") : "—"}
-              </span>
-            </>
-          )}
-        </div>
+        )}
+
+        {/* Policy Period */}
+        {(policy.effectiveDate || policy.expirationDate) && (
+          <div>
+            <p className="text-xs text-muted-foreground/50 mb-1">Policy period</p>
+            <p className="text-body-sm text-muted-foreground">
+              {policy.effectiveDate ? dayjs(policy.effectiveDate).format("MMM D, YYYY") : "—"}
+              {" — "}
+              {policy.expirationDate ? dayjs(policy.expirationDate).format("MMM D, YYYY") : "—"}
+            </p>
+          </div>
+        )}
+
+        {/* Insured */}
         {policy.insuredName && (
-          <div className="flex items-center gap-1.5 mt-1.5 text-label-sm text-muted-foreground/40">
-            <Shield className="w-2.5 h-2.5" />
-            <span>{policy.insuredName}</span>
+          <div>
+            <p className="text-xs text-muted-foreground/50 mb-1">Insured</p>
+            <p className="text-body-sm text-muted-foreground">
+              {policy.insuredName}
+            </p>
           </div>
         )}
       </div>
 
-      {/* Actions */}
-      <div className="flex gap-2">
-        {fileUrl && (
-          <button
-            type="button"
-            onClick={() => { openWithUrl(fileUrl, page); closePreview(); }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-foreground/8 bg-card hover:bg-foreground/[0.03] transition-colors text-label font-medium cursor-pointer"
-          >
-            <FileText className="w-3 h-3 text-muted-foreground/50" />
-            View PDF
-          </button>
-        )}
-        <Link
-          href={`/policies/${id}`}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-foreground/8 bg-card hover:bg-foreground/[0.03] transition-colors text-label font-medium no-underline"
-        >
-          <ExternalLink className="w-3 h-3 text-muted-foreground/50" />
-          Full details
-        </Link>
-      </div>
+      {/* Coverages - always expanded, show all */}
+      {policy.coverages && policy.coverages.length > 0 && (
+        <div>
+          <p className="text-xs text-muted-foreground/50 mb-2">Coverages</p>
+          <div className="space-y-1.5">
+            {policy.coverages.map((cov: PolicyCoverage, i: number) => (
+              <CoverageRow key={i} name={cov.name} limit={cov.limit} deductible={cov.deductible} />
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Document sections — grouped by type like the detail page */}
       {(sections.length > 0 || (!hasCitations && allSections.length > 0)) && (
@@ -130,11 +185,11 @@ export function PolicyPreview({ id, page, citedSections }: { id: string; page?: 
           label={hasCitations ? "Cited sections" : "Sections"}
           count={hasCitations ? sections.length : undefined}
           totalCount={hasCitations ? allSections.length : undefined}
-          allChildren={allSections.map((s: any, i: number) => (
+          allChildren={allSections.map((s, i) => (
             <DocSection key={`s-${i}`} title={s.title} type={s.type} pages={`${s.pageStart}${s.pageEnd ? `-${s.pageEnd}` : ""}`} content={buildSectionContent(s)} />
           ))}
         >
-          {sections.map((s: any, i: number) => (
+          {sections.map((s, i) => (
             <DocSection key={`s-${i}`} title={s.title} type={s.type} pages={`${s.pageStart}${s.pageEnd ? `-${s.pageEnd}` : ""}`} content={buildSectionContent(s)} defaultOpen={hasCitations} />
           ))}
         </SectionGroup>
@@ -145,11 +200,11 @@ export function PolicyPreview({ id, page, citedSections }: { id: string; page?: 
           label="Endorsements"
           count={hasCitations ? endorsements.length : undefined}
           totalCount={hasCitations ? allEndorsements.length : undefined}
-          allChildren={allEndorsements.map((e: any, i: number) => (
+          allChildren={allEndorsements.map((e, i) => (
             <DocSection key={`e-${i}`} title={e.title} type="endorsement" pages={e.pageStart ? `${e.pageStart}` : undefined} content={e.content || "No content extracted"} />
           ))}
         >
-          {endorsements.map((e: any, i: number) => (
+          {endorsements.map((e, i) => (
             <DocSection key={`e-${i}`} title={e.title} type="endorsement" pages={e.pageStart ? `${e.pageStart}` : undefined} content={e.content || "No content extracted"} defaultOpen={hasCitations} />
           ))}
         </SectionGroup>
@@ -160,11 +215,11 @@ export function PolicyPreview({ id, page, citedSections }: { id: string; page?: 
           label="Conditions"
           count={hasCitations ? conditions.length : undefined}
           totalCount={hasCitations ? allConditions.length : undefined}
-          allChildren={allConditions.map((c: any, i: number) => (
+          allChildren={allConditions.map((c, i) => (
             <DocSection key={`c-${i}`} title={c.title || c.name || "Condition"} type="condition" pages={c.pageNumber ? `${c.pageNumber}` : undefined} content={c.content || "No content extracted"} />
           ))}
         >
-          {conditions.map((c: any, i: number) => (
+          {conditions.map((c, i) => (
             <DocSection key={`c-${i}`} title={c.title || c.name || "Condition"} type="condition" pages={c.pageNumber ? `${c.pageNumber}` : undefined} content={c.content || "No content extracted"} defaultOpen={hasCitations} />
           ))}
         </SectionGroup>
@@ -175,35 +230,14 @@ export function PolicyPreview({ id, page, citedSections }: { id: string; page?: 
           label="Exclusions"
           count={hasCitations ? exclusions.length : undefined}
           totalCount={hasCitations ? allExclusions.length : undefined}
-          allChildren={allExclusions.map((ex: any, i: number) => (
+          allChildren={allExclusions.map((ex, i) => (
             <DocSection key={`ex-${i}`} title={ex.title || ex.name || "Exclusion"} type="exclusion" content={ex.content || ex.description || "No content extracted"} />
           ))}
         >
-          {exclusions.map((ex: any, i: number) => (
+          {exclusions.map((ex, i) => (
             <DocSection key={`ex-${i}`} title={ex.title || ex.name || "Exclusion"} type="exclusion" content={ex.content || ex.description || "No content extracted"} defaultOpen={hasCitations} />
           ))}
         </SectionGroup>
-      )}
-
-      {/* Coverages */}
-      {policy.coverages && policy.coverages.length > 0 && (
-        <CollapsibleBlock title="Coverages" count={policy.coverages.length}>
-          <div className="space-y-1">
-            {policy.coverages.slice(0, 10).map((cov: any, i: number) => (
-              <CoverageRow key={i} name={cov.name} limit={cov.limit} deductible={cov.deductible} />
-            ))}
-            {policy.coverages.length > 10 && (
-              <p className="text-label-sm text-muted-foreground/30 pl-2">+{policy.coverages.length - 10} more</p>
-            )}
-          </div>
-        </CollapsibleBlock>
-      )}
-
-      {/* Summary */}
-      {policy.summary && (
-        <CollapsibleBlock title="Summary">
-          <p className="text-label-sm text-muted-foreground/60 leading-relaxed">{policy.summary}</p>
-        </CollapsibleBlock>
       )}
     </div>
   );
@@ -223,23 +257,23 @@ function SectionGroup({ label, count, totalCount, children, allChildren }: {
 
   const withForceOpen = forceOpen !== undefined
     ? Children.map(visibleChildren, (child) =>
-        isValidElement(child) ? cloneElement(child as React.ReactElement<any>, { forceOpen }) : child
+        isValidElement(child) ? cloneElement(child as React.ReactElement<{ forceOpen?: boolean }>, { forceOpen }) : child
       )
     : visibleChildren;
 
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
-        <p className="text-label-sm font-medium text-muted-foreground/40 ">
+        <p className="text-body-sm font-medium text-muted-foreground/60">
           {label}
           {hasMore && (
-            <span className="text-muted-foreground/25 font-normal ml-1">{count} of {totalCount}</span>
+            <span className="text-muted-foreground/40 font-normal ml-1">{count} of {totalCount}</span>
           )}
         </p>
         <button
           type="button"
           onClick={() => setForceOpen(forceOpen === true ? false : true)}
-          className="text-label-sm text-muted-foreground/30 hover:text-muted-foreground/50 transition-colors cursor-pointer"
+          className="text-body-sm text-muted-foreground/40 hover:text-muted-foreground/60 transition-colors cursor-pointer"
         >
           {forceOpen === true ? "Collapse all" : "Expand all"}
         </button>
@@ -247,7 +281,7 @@ function SectionGroup({ label, count, totalCount, children, allChildren }: {
       <div className="space-y-1.5">
         {withForceOpen}
         {hasMore && (
-          <button type="button" onClick={() => setShowAll(!showAll)} className="text-label-sm text-muted-foreground/40 hover:text-muted-foreground/60 transition-colors cursor-pointer pl-1">
+          <button type="button" onClick={() => setShowAll(!showAll)} className="text-body-sm text-muted-foreground/50 hover:text-muted-foreground/70 transition-colors cursor-pointer pl-1">
             {showAll ? "Only show cited" : `Show all ${totalCount} ${label.toLowerCase()}`}
           </button>
         )}

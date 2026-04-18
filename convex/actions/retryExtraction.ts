@@ -13,11 +13,11 @@ import { makeEmbedText } from "../lib/sdkCallbacks";
  * Supports resuming from a saved checkpoint or running a full extraction.
  */
 async function runExtraction(
-  ctx: any,
+  ctx: { runMutation: (...args: unknown[]) => Promise<unknown> },
   opts: {
-    policyId: any;
+    policyId: string;
     pdfBase64: string;
-    orgId?: any;
+    orgId?: string;
     checkpoint?: PipelineCheckpoint<ExtractionState>;
     log: (message: string) => Promise<void>;
   },
@@ -47,7 +47,7 @@ async function runExtraction(
     policyId as string,
     extractOptions,
   );
-  const doc = result.document as any;
+  const doc = result.document as Record<string, unknown>;
   const chunks = result.chunks;
   const tokenUsage = result.tokenUsage;
 
@@ -92,8 +92,8 @@ async function runExtraction(
           embedding,
           createdAt: Date.now(),
         });
-      } catch (err: any) {
-        await log(`Warning: failed to embed chunk ${chunk.id}: ${err.message}`);
+      } catch (err: unknown) {
+        await log(`Warning: failed to embed chunk ${chunk.id}: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
     await log(`Stored ${chunks.length} chunks for vector search.`);
@@ -138,7 +138,7 @@ export const retryQuoteExtraction = action({
     });
 
     // Load checkpoint for resume mode
-    const checkpoint = mode === "resume" ? (quote as any).extractionCheckpoint : undefined;
+    const checkpoint = mode === "resume" ? (quote as Record<string, unknown>).extractionCheckpoint as PipelineCheckpoint<ExtractionState> | undefined : undefined;
     if (checkpoint) {
       await log(`Resuming extraction from phase "${checkpoint.phase}"...`);
     } else {
@@ -153,21 +153,22 @@ export const retryQuoteExtraction = action({
       await runExtraction(ctx, {
         policyId: args.quoteId,
         pdfBase64,
-        orgId: (quote as any).orgId,
+        orgId: (quote as Record<string, unknown>).orgId as string | undefined,
         checkpoint,
         log,
       });
 
       await log("Extraction complete");
       return { success: true, resumed: !!checkpoint };
-    } catch (error: any) {
-      await log(`Failed: ${error.message || "Extraction failed"}`);
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : "Extraction failed";
+      await log(`Failed: ${errMsg}`);
       await ctx.runMutation(api.policies.updateExtraction, {
         id: args.quoteId,
         extractionStatus: "error",
-        extractionError: error.message || "Extraction failed",
+        extractionError: errMsg,
       });
-      return { error: error.message || "Extraction failed" };
+      return { error: errMsg };
     }
   },
 });
@@ -205,7 +206,7 @@ export const retryExtraction = action({
     });
 
     // Load checkpoint for resume mode
-    const checkpoint = mode === "resume" ? (policy as any).extractionCheckpoint : undefined;
+    const checkpoint = mode === "resume" ? (policy as Record<string, unknown>).extractionCheckpoint as PipelineCheckpoint<ExtractionState> | undefined : undefined;
     if (checkpoint) {
       await log(`Resuming extraction from phase "${checkpoint.phase}"...`);
     } else {
@@ -223,7 +224,7 @@ export const retryExtraction = action({
         pdfBase64 = Buffer.from(await blob.arrayBuffer()).toString("base64");
       } else if (policy.emailId) {
         const emails = await ctx.runQuery(api.emails.list, {});
-        const email = emails.find((e: any) => e._id === policy.emailId);
+        const email = emails.find((e: Record<string, unknown>) => e._id === policy.emailId);
         if (!email) throw new Error("Linked email not found");
 
         const connection = await ctx.runQuery(api.connections.get, {
@@ -293,21 +294,22 @@ export const retryExtraction = action({
       await runExtraction(ctx, {
         policyId: args.policyId,
         pdfBase64,
-        orgId: (policy as any).orgId,
+        orgId: (policy as Record<string, unknown>).orgId as string | undefined,
         checkpoint,
         log,
       });
 
       await log("Extraction complete");
       return { success: true, resumed: !!checkpoint };
-    } catch (error: any) {
-      await log(`Failed: ${error.message || "Extraction failed"}`);
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : "Extraction failed";
+      await log(`Failed: ${errMsg}`);
       await ctx.runMutation(api.policies.updateExtraction, {
         id: args.policyId,
         extractionStatus: "error",
-        extractionError: error.message || "Extraction failed",
+        extractionError: errMsg,
       });
-      return { error: error.message || "Extraction failed" };
+      return { error: errMsg };
     }
   },
 });

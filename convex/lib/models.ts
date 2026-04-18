@@ -84,7 +84,7 @@ export const MODEL_ROUTING: Record<ModelTask, { model: string; provider: string 
 
 export const FALLBACK_MODEL = { model: "gpt-5.4-mini", provider: "OpenAI" };
 
-const MODEL_CONFIG: Record<ModelTask, () => any> = {
+const MODEL_CONFIG: Record<ModelTask, () => unknown> = {
   chat:             () => openai()("gpt-5.4-mini"),
   email_draft:      () => moonshot()("kimi-k2.5"),
   email_reply:      () => moonshot()("kimi-k2.5"),
@@ -117,12 +117,12 @@ export async function generateTextWithFallback(
   const { generateText } = await import("ai");
   try {
     return await generateText(options);
-  } catch (err: any) {
-    const modelId = (options.model as any)?.modelId || "unknown";
+  } catch (err: unknown) {
+    const modelId = (options.model as Record<string, unknown>)?.modelId as string || "unknown";
     // If already on a fallback model, don't retry
     if (modelId.includes("gpt-5.4-mini") || modelId.includes("claude-haiku")) throw err;
     console.warn(
-      `Primary model (${modelId}) failed: ${err.message || err}. Retrying with GPT-5.4-mini.`,
+      `Primary model (${modelId}) failed: ${err instanceof Error ? err.message : String(err)}. Retrying with GPT-5.4-mini.`,
     );
     return await generateText({
       ...options,
@@ -137,11 +137,11 @@ export async function generateStructuredWithFallback(
   const { generateText } = await import("ai");
   try {
     return await generateText(options);
-  } catch (err: any) {
-    const modelId = (options.model as any)?.modelId || "unknown";
+  } catch (err: unknown) {
+    const modelId = (options.model as Record<string, unknown>)?.modelId as string || "unknown";
     if (modelId.includes("gpt-5.4-mini") || modelId.includes("claude-haiku")) throw err;
     console.warn(
-      `Primary model (${modelId}) failed for structured output: ${err.message || err}. Retrying with GPT-5.4-mini.`,
+      `Primary model (${modelId}) failed for structured output: ${err instanceof Error ? err.message : String(err)}. Retrying with GPT-5.4-mini.`,
     );
     return await generateText({
       ...options,

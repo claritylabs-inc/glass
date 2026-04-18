@@ -63,7 +63,7 @@ export const reExtractFromFile = action({
         pdfBase64,
         args.policyId as string,
       );
-      const doc = result.document as any;
+      const doc = result.document as Record<string, unknown>;
       const chunks = result.chunks;
       const tokenUsage = result.tokenUsage;
 
@@ -84,7 +84,7 @@ export const reExtractFromFile = action({
       });
 
       // Store document chunks for vector search
-      const orgId = (policy as any).orgId;
+      const orgId = (policy as Record<string, unknown>).orgId;
       if (chunks.length > 0 && orgId) {
         const embed = makeEmbedText();
         for (const chunk of chunks) {
@@ -100,8 +100,8 @@ export const reExtractFromFile = action({
               embedding,
               createdAt: Date.now(),
             });
-          } catch (err: any) {
-            await log(`Warning: failed to embed chunk ${chunk.id}: ${err.message}`);
+          } catch (err: unknown) {
+            await log(`Warning: failed to embed chunk ${chunk.id}: ${err instanceof Error ? err.message : String(err)}`);
           }
         }
         await log(`Stored ${chunks.length} chunks for vector search.`);
@@ -109,14 +109,15 @@ export const reExtractFromFile = action({
 
       await log("Re-extraction complete");
       return { success: true };
-    } catch (error: any) {
-      await log(`Failed: ${error.message || "Re-extraction failed"}`);
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : "Re-extraction failed";
+      await log(`Failed: ${errMsg}`);
       await ctx.runMutation(api.policies.updateExtraction, {
         id: args.policyId,
         extractionStatus: "error",
-        extractionError: error.message || "Re-extraction failed",
+        extractionError: errMsg,
       });
-      return { error: error.message || "Re-extraction failed" };
+      return { error: errMsg };
     }
   },
 });

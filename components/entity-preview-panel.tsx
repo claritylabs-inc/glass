@@ -7,9 +7,11 @@
 
 import { useState, useRef, useCallback } from "react";
 import { useEntityPreview } from "@/hooks/use-entity-preview";
+import { usePdf } from "@/components/pdf-context";
 import { X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { PolicyPreview } from "./preview/policy-preview";
+import { PillButton } from "@/components/ui/pill-button";
 
 const EASE = [0.16, 1, 0.3, 1] as const;
 const MIN_WIDTH = 320;
@@ -19,11 +21,15 @@ const DEFAULT_WIDTH = 400;
 export function EntityPreviewPanel() {
   const { preview, closePreview } = useEntityPreview();
   const [width, setWidth] = useState(DEFAULT_WIDTH);
+  const [isDraggingState, setIsDraggingState] = useState(false);
   const isDragging = useRef(false);
+  const [headerInfo, setHeaderInfo] = useState<{ carrier: string; policyNum?: string } | null>(null);
+  const [headerActions, setHeaderActions] = useState<{ fileUrl?: string; policyId: string; page?: number } | null>(null);
 
   const onPointerDown = useCallback((e: React.PointerEvent) => {
     e.preventDefault();
     isDragging.current = true;
+    setIsDraggingState(true);
     const startX = e.clientX;
     const startWidth = width;
 
@@ -34,6 +40,7 @@ export function EntityPreviewPanel() {
     };
     const onUp = () => {
       isDragging.current = false;
+      setIsDraggingState(false);
       document.removeEventListener("pointermove", onMove);
       document.removeEventListener("pointerup", onUp);
       document.body.style.cursor = "";
@@ -53,7 +60,7 @@ export function EntityPreviewPanel() {
           initial={{ width: 0 }}
           animate={{ width }}
           exit={{ width: 0 }}
-          transition={isDragging.current ? { duration: 0 } : { duration: 0.4, ease: EASE }}
+          transition={isDraggingState ? { duration: 0 } : { duration: 0.4, ease: EASE }}
           className="flex shrink-0 overflow-hidden h-full relative"
         >
           {/* Resize handle */}
@@ -73,14 +80,43 @@ export function EntityPreviewPanel() {
             style={{ width }}
           >
             {/* Toolbar */}
-            <div className="h-12 flex items-center justify-between px-4 border-b border-foreground/6 shrink-0">
-              <span className="text-body-sm font-medium text-foreground">
-                Policy Preview
-              </span>
+            <div className="h-12 flex items-center justify-between px-4 border-b border-foreground/6 shrink-0 gap-3">
+              <div className="min-w-0 flex-1">
+                {headerInfo ? (
+                  <div className="flex flex-col justify-center">
+                    <span className="text-sm font-medium text-foreground truncate">
+                      {headerInfo.carrier}
+                    </span>
+                    {headerInfo.policyNum && (
+                      <span className="text-xs text-muted-foreground/60">
+                        {headerInfo.policyNum}
+                      </span>
+                    )}
+                  </div>
+                ) : (
+                  <span className="text-sm font-medium text-foreground">
+                    Policy Preview
+                  </span>
+                )}
+              </div>
+              
+              {headerActions && (
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {headerActions.fileUrl && (
+                    <PolicyPreviewButtons 
+                      fileUrl={headerActions.fileUrl} 
+                      policyId={headerActions.policyId}
+                      page={headerActions.page}
+                      onClose={closePreview}
+                    />
+                  )}
+                </div>
+              )}
+              
               <button
                 type="button"
                 onClick={closePreview}
-                className="w-7 h-7 flex items-center justify-center rounded-md text-muted-foreground/40 hover:text-foreground hover:bg-foreground/[0.04] transition-colors cursor-pointer"
+                className="w-7 h-7 flex items-center justify-center rounded-md text-muted-foreground/40 hover:text-foreground hover:bg-foreground/[0.04] transition-colors cursor-pointer shrink-0"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -88,11 +124,37 @@ export function EntityPreviewPanel() {
 
             {/* Content */}
             <div className="flex-1 overflow-y-auto p-4">
-              <PolicyPreview id={preview.id} page={preview.page} citedSections={preview.citedSections} />
+              <PolicyPreview 
+                id={preview.id} 
+                page={preview.page} 
+                citedSections={preview.citedSections}
+                onHeaderInfo={setHeaderInfo}
+                onHeaderActions={setHeaderActions}
+              />
             </div>
           </motion.div>
         </motion.div>
       )}
     </AnimatePresence>
+  );
+}
+
+// Separate component to handle the PDF context that requires being inside the provider
+function PolicyPreviewButtons({ fileUrl, policyId, page, onClose }: { fileUrl: string; policyId: string; page?: number; onClose: () => void }) {
+  const { openWithUrl } = usePdf();
+  
+  return (
+    <>
+      <PillButton
+        size="compact"
+        variant="secondary"
+        onClick={() => { openWithUrl(fileUrl, page); onClose(); }}
+      >
+        View PDF
+      </PillButton>
+      <a href={`/policies/${policyId}`} className="no-underline">
+        <PillButton size="compact" variant="secondary">Details</PillButton>
+      </a>
+    </>
   );
 }

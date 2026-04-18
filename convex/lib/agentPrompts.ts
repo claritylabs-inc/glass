@@ -72,21 +72,21 @@ export async function buildIntelligenceContext(
     const searchResults = await ctx.vectorSearch("orgIntelligence", "by_embedding", {
       vector: queryEmbedding,
       limit: 15,
-      filter: (q: any) => q.eq("orgId", orgId),
+      filter: (q: (field: string, value: unknown) => unknown) => q.eq("orgId", orgId),
     });
 
     if (searchResults.length === 0) return "";
 
     // Hydrate results via query
     const results = await ctx.runQuery(internal.intelligence.hydrateSearchResults, {
-      ids: searchResults.map((r: any) => r._id),
+      ids: searchResults.map((r: { _id: string }) => r._id),
     });
 
     if (!results || results.length === 0) return "";
 
     // Filter out policy-derived facts already covered by documentChunks
     const excludeSet = new Set(excludePolicyIds ?? []);
-    const filtered = results.filter((entry: any) => {
+    const filtered = results.filter((entry: { source?: string; sourceRef?: string } | null) => {
       if (!entry) return false;
       if (entry.source === "extraction" && entry.sourceRef && excludeSet.has(entry.sourceRef)) {
         return false;
@@ -257,7 +257,7 @@ function buildFallbackContext(
     const searchText = [
       p.carrier, p.security, p.policyNumber, p.insuredName,
       ...(p.policyTypes ?? []),
-      ...(p.coverages?.map((c: any) => c.name) ?? []),
+      ...(p.coverages?.map((c: { name?: string }) => c.name) ?? []),
       p.summary,
     ].filter(Boolean).join(" ").toLowerCase();
     for (const word of queryWords) {
@@ -271,7 +271,7 @@ function buildFallbackContext(
     const searchText = [
       q.carrier, q.security, q.quoteNumber, q.insuredName,
       ...(q.policyTypes ?? []),
-      ...(q.coverages?.map((c: any) => c.name) ?? []),
+      ...(q.coverages?.map((c: { name?: string }) => c.name) ?? []),
     ].filter(Boolean).join(" ").toLowerCase();
     for (const word of queryWords) {
       if (searchText.includes(word)) score++;
@@ -294,7 +294,7 @@ function buildFallbackContext(
     const indexLines = policies.map((p, i) => {
       const types = p.policyTypes?.join(", ") ?? "unknown";
       const carrier = p.security || p.carrier;
-      const coverages = p.coverages?.slice(0, 5).map((c: any) => `${c.name}: ${c.limit}`).join("; ") ?? "";
+      const coverages = p.coverages?.slice(0, 5).map((c: { name?: string; limit?: string }) => `${c.name}: ${c.limit}`).join("; ") ?? "";
       return `[${i + 1}] ${carrier} | #${p.policyNumber} | Types: ${types} | ${p.effectiveDate} to ${p.expirationDate ?? "continuous"} | Insured: ${p.insuredName} | Coverages: ${coverages}`;
     });
     parts.push(`POLICY INDEX (${policies.length} bound policies):\n${indexLines.join("\n")}`);
@@ -307,7 +307,7 @@ function buildFallbackContext(
     if (p.summary) section += `\nSummary: ${p.summary}`;
     if (p.coverages?.length) {
       section += "\nCoverages:";
-      for (const c of p.coverages as any[]) {
+      for (const c of p.coverages as Array<{ name?: string; limit?: string; deductible?: string }>) {
         section += `\n  - ${c.name}: Limit ${c.limit}${c.deductible ? `, Deductible ${c.deductible}` : ""}`;
       }
     }

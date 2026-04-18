@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { ChevronDown, BookOpen, ScrollText, AlertTriangle } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
+import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { FormattedSectionContent } from "./formatted-section-content";
 
-/** Collapsible document section with icon by type and formatted content */
+/** Collapsible document section with formatted content */
 export function DocSection({
   title,
   type,
@@ -21,42 +21,45 @@ export function DocSection({
   defaultOpen?: boolean;
   forceOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
+  const [open, setOpen] = useState(forceOpen ?? defaultOpen);
+  const prevForceOpen = useRef(forceOpen);
 
   useEffect(() => {
-    if (forceOpen !== undefined) setOpen(forceOpen);
+    if (forceOpen !== undefined && forceOpen !== prevForceOpen.current) {
+      prevForceOpen.current = forceOpen;
+      // Schedule state update outside the synchronous effect body
+      const id = setTimeout(() => setOpen(forceOpen), 0);
+      return () => clearTimeout(id);
+    }
+    prevForceOpen.current = forceOpen;
   }, [forceOpen]);
 
-  const icon =
-    type === "endorsement" ? <ScrollText className="w-3 h-3" /> :
-    type === "exclusion" ? <AlertTriangle className="w-3 h-3" /> :
-    <BookOpen className="w-3 h-3" />;
+  const typeLabel = type === "endorsement" ? "Endorsement" : type === "exclusion" ? "Exclusion" : type === "condition" ? "Condition" : type === "definition" ? "Definition" : null;
 
   return (
-    <div className="border border-foreground/6 rounded-lg overflow-hidden">
+    <div className="border border-foreground/8 rounded-lg overflow-hidden">
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 w-full px-3 py-2 text-left hover:bg-foreground/[0.02] transition-colors cursor-pointer"
+        className="flex items-center gap-3 w-full px-3 py-2.5 text-left hover:bg-secondary/50 transition-colors cursor-pointer"
       >
-        <span className="text-muted-foreground/40">{icon}</span>
-        <span className="text-label font-medium text-foreground flex-1 truncate">
-          {title || (type === "endorsement" ? "Endorsement" : type === "exclusion" ? "Exclusion" : type === "condition" ? "Condition" : type === "definition" ? "Definition" : "Section")}
+        <span className="text-body-sm font-medium text-foreground flex-1 truncate">
+          {title || typeLabel || "Section"}
         </span>
         {pages && (
-          <span className="text-label-sm text-muted-foreground/30 shrink-0">
+          <span className="text-body-sm text-muted-foreground/40 shrink-0">
             p.{pages}
           </span>
         )}
         <ChevronDown
           className={cn(
-            "w-3 h-3 text-muted-foreground/30 transition-transform duration-150 shrink-0",
+            "w-4 h-4 text-muted-foreground/40 transition-transform duration-150 shrink-0",
             open && "rotate-180"
           )}
         />
       </button>
       {open && (
-        <div className="px-3 pb-3 pt-2.5 border-t border-foreground/4">
+        <div className="px-3 pb-3 pt-3 border-t border-foreground/4">
           <FormattedSectionContent content={content} />
         </div>
       )}

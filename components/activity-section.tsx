@@ -14,12 +14,14 @@ interface ActivitySectionProps {
   loading?: boolean;
   /** Number of skeleton rows to show while loading (default 3) */
   skeletonRows?: number;
-  /** Empty state icon */
+  /** Empty state icon (reserved for future use) */
   emptyIcon?: React.ComponentType<{ className?: string }>;
   /** Empty state primary text */
   emptyMessage?: string;
   /** Empty state secondary text */
   emptyDescription?: string;
+  /** Optional empty-state action content */
+  emptyAction?: React.ReactNode;
   /** Whether the section has items (controls empty state rendering) */
   isEmpty?: boolean;
   /** Footer text (e.g. "5 runs") — shown at the bottom of the section */
@@ -38,6 +40,7 @@ export function ActivitySection({
   emptyIcon: EmptyIcon,
   emptyMessage,
   emptyDescription,
+  emptyAction,
   isEmpty,
   footerText,
   children,
@@ -80,6 +83,7 @@ export function ActivitySection({
     return (
       <FadeIn when={true} duration={0.6}>
         <div className="rounded-lg border border-foreground/6 bg-card px-6 py-8 text-center">
+          {EmptyIcon && <EmptyIcon className="w-5 h-5 text-muted-foreground/30 mx-auto mb-2" />}
           {emptyMessage && (
             <p className="text-body-sm text-muted-foreground/60">
               {emptyMessage}
@@ -90,6 +94,7 @@ export function ActivitySection({
               {emptyDescription}
             </p>
           )}
+          {emptyAction && <div className="mt-4 flex items-center justify-center">{emptyAction}</div>}
         </div>
       </FadeIn>
     );

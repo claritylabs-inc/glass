@@ -1,14 +1,17 @@
 "use client";
 
 import { useState, useMemo, useRef, useEffect } from "react";
-import { usePaginatedQuery, useQuery } from "convex/react";
+import { useAction, usePaginatedQuery, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Paperclip,
   Loader2,
+  RefreshCw,
 } from "lucide-react";
+import { PillButton } from "@/components/ui/pill-button";
+import { toast } from "sonner";
 
 const PAGE_SIZE = 50;
 
@@ -25,6 +28,10 @@ export function EmailReviewTable({ connectionId, onSelectionChange }: EmailRevie
     { initialNumItems: PAGE_SIZE }
   );
   const totalCount = useQuery(api.emails.count, { connectionId });
+  const connection = useQuery(api.connections.get, { id: connectionId });
+  const scanInbox = useAction(api.actions.scanInbox.scanInbox);
+  const scanGmail = useAction(api.actions.scanGmail.scanGmail);
+  const [scanning, setScanning] = useState(false);
 
   const pendingCount = useMemo(
     () => results?.filter((e) => !e.processed).length ?? 0,
@@ -98,12 +105,58 @@ export function EmailReviewTable({ connectionId, onSelectionChange }: EmailRevie
     onSelectionChange?.([...selectedIds] as Id<"emails">[]);
   }, [selectedIds, onSelectionChange]);
 
+  async function runScanNow() {
+    if (!connection) {
+      toast.error("Connection not found.");
+      return;
+    }
+
+    setScanning(true);
+    try {
+      if (connection.provider === "google") {
+        await scanGmail({ connectionId });
+      } else {
+        await scanInbox({ connectionId });
+      }
+      toast.success("Scan started.");
+    } catch {
+      toast.error("Failed to start scan.");
+    } finally {
+      setScanning(false);
+    }
+  }
+
   if (status === "LoadingFirstPage") {
     return (
-      <div className="space-y-3">
-        {Array.from({ length: 5 }).map((_, i) => (
-          <Skeleton key={i} className="h-12 w-full rounded-lg" />
-        ))}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <Skeleton className="h-4 w-28" />
+          <Skeleton className="h-8 w-32 rounded-full" />
+        </div>
+        <div className="rounded-lg border border-foreground/6 overflow-hidden">
+          <div className="border-b border-foreground/6 bg-foreground/[0.02] px-3 py-2">
+            <div className="grid grid-cols-12 gap-3">
+              <Skeleton className="col-span-1 h-4 w-4" />
+              <Skeleton className="col-span-4 h-4 w-24" />
+              <Skeleton className="col-span-3 h-4 w-16" />
+              <Skeleton className="col-span-2 h-4 w-12" />
+              <Skeleton className="col-span-2 h-4 w-14" />
+            </div>
+          </div>
+          <div className="space-y-0">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="border-b border-foreground/4 last:border-b-0 px-3 py-2.5">
+                <div className="grid grid-cols-12 items-center gap-3">
+                  <Skeleton className="col-span-1 h-4 w-4" />
+                  <Skeleton className="col-span-4 h-4 w-11/12" />
+                  <Skeleton className="col-span-3 h-4 w-10/12" />
+                  <Skeleton className="col-span-2 h-4 w-14" />
+                  <Skeleton className="col-span-2 h-5 w-16 rounded-full" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     );
   }
@@ -128,9 +181,14 @@ export function EmailReviewTable({ connectionId, onSelectionChange }: EmailRevie
       {/* Table */}
       {filtered.length === 0 && status !== "CanLoadMore" ? (
         <div className="rounded-lg border border-foreground/6 bg-card px-6 py-8 text-center">
-          <p className="text-body-sm text-muted-foreground/60">
-            No emails found
-          </p>
+          <p className="text-body-sm text-muted-foreground/80">No emails found yet</p>
+          <p className="text-label-sm text-muted-foreground/50 mt-1">Run a scan now to pull emails into this inbox.</p>
+          <div className="mt-4">
+            <PillButton onClick={runScanNow} disabled={scanning || !connection}>
+              {scanning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+              {scanning ? "Starting scan..." : "Scan this inbox"}
+            </PillButton>
+          </div>
         </div>
       ) : (
         <div className="rounded-lg border border-foreground/6 overflow-hidden">

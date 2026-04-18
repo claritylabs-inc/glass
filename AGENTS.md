@@ -240,6 +240,8 @@ Email scan pattern:
 
 Application workflows live mainly in [convex/actions/processApplication.ts](convex/actions/processApplication.ts).
 
+Users can also start an application directly from the `/applications` page by uploading a PDF. The upload flow stores the file, validates that it looks like an application form, creates an application session + legacy conversation, and schedules the same `startApplicationSession` pipeline used by inbound email.
+
 The pipeline:
 
 1. Detect application forms from inbound email or uploads.

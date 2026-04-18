@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, useCallback, useEffect, useRef, useMemo } from "react";
+import { createContext, useContext, useState, useCallback, useMemo } from "react";
 
 interface PdfContextValue {
   currentPage: number;

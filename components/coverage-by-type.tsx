@@ -4,7 +4,7 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import { FadeIn } from "@/components/ui/fade-in";
 import { Skeleton } from "@/components/ui/skeleton";
-import { POLICY_TYPE_LABELS, POLICY_TYPE_COLORS, PERSONAL_LINE_KEYS } from "@/convex/lib/policyTypes";
+import { POLICY_TYPE_COLORS, PERSONAL_LINE_KEYS } from "@/convex/lib/policyTypes";
 
 export function parseDollarAmount(str: string): number | null {
   if (!str) return null;

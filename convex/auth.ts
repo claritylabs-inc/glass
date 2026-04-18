@@ -8,7 +8,7 @@ const ResendOTP = Email({
   async generateVerificationToken() {
     return Math.floor(100000 + Math.random() * 900000).toString();
   },
-  async sendVerificationRequest({ identifier: email, token }: any) {
+  async sendVerificationRequest({ identifier: email, token }: { identifier: string; token: string }) {
     const siteUrl = process.env.SITE_URL ?? "https://prism.claritylabs.inc";
     const { html, text } = buildOtpEmail(token, siteUrl);
     const res = await fetch("https://api.resend.com/emails", {

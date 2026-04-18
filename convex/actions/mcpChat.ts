@@ -93,13 +93,13 @@ export const run = internalAction({
     // Load business intelligence (vector search, deduped against policy context)
     const orgMemoryBlock = await buildIntelligenceContext(
       ctx, args.orgId, args.message,
-      relevantPolicyIds.map((id: any) => id as string),
+      relevantPolicyIds.map((id: unknown) => id as string),
     );
 
     // Application context
     let applicationContext = "";
     if (applications.length > 0) {
-      const appLines = applications.map((a: any) => {
+      const appLines = applications.map((a: { applicationTitle?: string; sourceFileName?: string; status?: string; totalFields?: number; filledFields?: number; _id: string }) => {
         const title = a.applicationTitle ?? a.sourceFileName;
         const progress = a.totalFields
           ? `${a.filledFields ?? 0}/${a.totalFields} fields filled`
@@ -151,7 +151,7 @@ MCP MODE:
     await ctx.runMutation(internal.threads.touchThread, { threadId });
 
     // Auto-title if this is a new thread (only 1 user message)
-    const userMessages = allMessages.filter((m: any) => m.role === "user");
+    const userMessages = allMessages.filter((m: { role?: string }) => m.role === "user");
     if (userMessages.length <= 1) {
       try {
         const { text: titleText } = await generateText({

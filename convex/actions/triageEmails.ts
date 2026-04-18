@@ -17,7 +17,7 @@ export const triageAndExtract = internalAction({
       connectionId: args.connectionId,
     });
     const candidates = emails.filter(
-      (e: any) =>
+      (e: { isInsuranceRelated?: unknown; intelligenceStatus?: unknown }) =>
         e.isInsuranceRelated !== undefined && // classified
         !e.intelligenceStatus // not yet triaged for intelligence
     );
@@ -71,9 +71,9 @@ Format: { "analyze": true/false, "reason": "..." }`,
         }
 
         triaged++;
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.error(
-          `Triage failed for email ${email._id}: ${error.message || error}`
+          `Triage failed for email ${email._id}: ${error instanceof Error ? error.message : String(error)}`
         );
         // On triage failure, skip rather than block the pipeline
         await ctx.runMutation(internal.emails.updateIntelligenceStatus, {

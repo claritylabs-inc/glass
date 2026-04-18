@@ -3,12 +3,15 @@
 import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
 import { Brain, Loader2, Trash2, Search, RefreshCw, Pencil, Check, X } from "lucide-react";
 import { VectorSpace, type VectorPoint } from "@/components/vector-space";
 import { PillButton } from "@/components/ui/pill-button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useRouter } from "next/navigation";
 
 const INTEL_CATEGORY_COLORS: Record<string, string> = {
   company_info:
@@ -87,6 +90,22 @@ const SUB_TABS = [
 
 type SubTabId = (typeof SUB_TABS)[number]["id"];
 
+interface ConnectionSummary {
+  _id: Id<"emailConnections">;
+  provider?: string;
+}
+
+interface VectorProjectionResult {
+  points: VectorPoint[];
+  totalEntries?: number;
+  totalChunks?: number;
+}
+
+interface RechunkResult {
+  error?: string;
+  newChunks?: number;
+}
+
 function buildOptionsWithCurrent<T extends readonly string[]>(
   options: T,
   current?: string,
@@ -128,13 +147,16 @@ export function IntelligenceTab() {
 
 function OrgIntelligencePanel() {
   const entries = useQuery(api.intelligence.list, {});
+  const connections = useQuery(api.connections.list, {});
   const removeEntry = useMutation(api.intelligence.remove);
   const updateEntry = useMutation(api.intelligence.update);
+  const scanInbox = useAction(api.actions.scanInbox.scanInbox);
+  const scanGmail = useAction(api.actions.scanGmail.scanGmail);
   const projectIntelligence = useAction(
     api.actions.vectorProjection.projectIntelligence,
   );
   const [vectorData, setVectorData] = useState<{
-    points: any[];
+    points: VectorPoint[];
     totalEntries: number;
   } | null>(null);
   const [loadingVectors, setLoadingVectors] = useState(false);
@@ -145,6 +167,8 @@ function OrgIntelligencePanel() {
   const [savingEdit, setSavingEdit] = useState(false);
   const [selectedVectorEntryId, setSelectedVectorEntryId] = useState<string | null>(null);
   const [selectedVectorCategory, setSelectedVectorCategory] = useState<string | null>(null);
+  const [startingScan, setStartingScan] = useState(false);
+  const router = useRouter();
 
   const totalEntries = entries?.length ?? 0;
 
@@ -177,8 +201,9 @@ function OrgIntelligencePanel() {
     if (entries && entries.length > 0 && !vectorData && !loadingVectors) {
       setLoadingVectors(true);
       projectIntelligence()
-        .then((result: any) => {
-          if (result?.points) setVectorData(result);
+        .then((result: unknown) => {
+          const r = result as VectorProjectionResult | undefined;
+          if (r?.points) setVectorData({ points: r.points, totalEntries: r.totalEntries ?? r.points.length });
         })
         .catch(() => {})
         .finally(() => setLoadingVectors(false));
@@ -188,7 +213,7 @@ function OrgIntelligencePanel() {
   async function handleRemove(id: string) {
     setRemovingId(id);
     try {
-      await removeEntry({ id: id as any });
+      await removeEntry({ id: id as Id<"orgIntelligence"> });
       toast.success("Entry removed");
     } catch {
       toast.error("Failed to remove entry");
@@ -208,7 +233,7 @@ function OrgIntelligencePanel() {
     setSavingEdit(true);
     try {
       await updateEntry({
-        id: editingId as any,
+        id: editingId as Id<"orgIntelligence">,
         content: editContent.trim(),
         category: editCategory || undefined,
       });
@@ -223,10 +248,50 @@ function OrgIntelligencePanel() {
     }
   }
 
+  async function startEmailScan() {
+    const available = (connections ?? []) as ConnectionSummary[];
+    if (available.length === 0) {
+      toast.error("Connect an inbox first to scan for intelligence.");
+      return;
+    }
+
+    setStartingScan(true);
+    try {
+      await Promise.all(
+        available.map((connection) => {
+          if (connection.provider === "google") {
+            return scanGmail({ connectionId: connection._id });
+          }
+          return scanInbox({ connectionId: connection._id });
+        }),
+      );
+      toast.success("Email scan started.");
+    } catch {
+      toast.error("Failed to start scan.");
+    } finally {
+      setStartingScan(false);
+    }
+  }
+
   if (entries === undefined) {
     return (
-      <div className="flex items-center justify-center py-16">
-        <Loader2 className="w-5 h-5 animate-spin text-muted-foreground/30" />
+      <div className="space-y-4">
+        <div className="rounded-lg border border-foreground/6 bg-card p-5">
+          <Skeleton className="h-4 w-40 mb-3" />
+          <Skeleton className="h-[220px] w-full rounded-md" />
+        </div>
+        <div className="space-y-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="rounded-lg border border-foreground/6 bg-card px-5 py-4">
+              <Skeleton className="h-4 w-3/4 mb-3" />
+              <div className="flex items-center gap-2">
+                <Skeleton className="h-5 w-24 rounded-full" />
+                <Skeleton className="h-5 w-20 rounded-full" />
+                <Skeleton className="h-5 w-16 rounded-full" />
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     );
   }
@@ -268,8 +333,9 @@ function OrgIntelligencePanel() {
             onClick={() => {
               setLoadingVectors(true);
               projectIntelligence()
-                .then((result: any) => {
-                  if (result?.points) setVectorData(result);
+                .then((result: unknown) => {
+                  const r = result as VectorProjectionResult | undefined;
+                  if (r?.points) setVectorData({ points: r.points, totalEntries: r.totalEntries ?? r.points.length });
                 })
                 .catch(() => {})
                 .finally(() => setLoadingVectors(false));
@@ -430,9 +496,16 @@ function OrgIntelligencePanel() {
             No intelligence entries yet
           </p>
           <p className="text-label-sm text-muted-foreground/50 mt-0.5">
-            Intelligence is automatically learned from emails, applications, and
-            conversations.
+            Run a scan or upload a policy/application to create your first intelligence signals.
           </p>
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+            <PillButton onClick={startEmailScan} disabled={startingScan || connections === undefined}>
+              {startingScan ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+              {startingScan ? "Starting scan..." : "Scan connected inboxes"}
+            </PillButton>
+            <PillButton variant="secondary" onClick={() => router.push("/policies")}>Upload a policy</PillButton>
+            <PillButton variant="secondary" onClick={() => router.push("/applications")}>Upload an application</PillButton>
+          </div>
         </div>
       )}
     </>
@@ -447,17 +520,20 @@ function PolicyExtractionsPanel() {
   const rechunkAction = useAction(api.actions.rechunkPolicy.rechunk);
   const [reindexingId, setReindexingId] = useState<string | null>(null);
   const [vectorData, setVectorData] = useState<{
-    points: any[];
+    points: VectorPoint[];
     totalChunks: number;
   } | null>(null);
   const [loadingVectors, setLoadingVectors] = useState(false);
+
+  const router = useRouter();
 
   useEffect(() => {
     if (stats && stats.totalChunks > 0 && !vectorData && !loadingVectors) {
       setLoadingVectors(true);
       projectVectors()
-        .then((result: any) => {
-          if (result?.points) setVectorData(result);
+        .then((result: unknown) => {
+          const r = result as VectorProjectionResult | undefined;
+          if (r?.points) setVectorData({ points: r.points, totalChunks: r.totalChunks ?? r.points.length });
         })
         .catch(() => {})
         .finally(() => setLoadingVectors(false));
@@ -466,8 +542,20 @@ function PolicyExtractionsPanel() {
 
   if (!stats) {
     return (
-      <div className="flex items-center justify-center py-16">
-        <Loader2 className="w-5 h-5 animate-spin text-muted-foreground/30" />
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-4">
+          <div className="rounded-lg border border-foreground/6 bg-card px-5 py-4">
+            <Skeleton className="h-3 w-24 mb-2" />
+            <Skeleton className="h-8 w-16" />
+          </div>
+          <div className="rounded-lg border border-foreground/6 bg-card px-5 py-4">
+            <Skeleton className="h-3 w-24 mb-2" />
+            <Skeleton className="h-8 w-16" />
+          </div>
+        </div>
+        <div className="rounded-lg border border-foreground/6 bg-card p-5">
+          <Skeleton className="h-[260px] w-full rounded-md" />
+        </div>
       </div>
     );
   }
@@ -527,8 +615,9 @@ function PolicyExtractionsPanel() {
             onClick={() => {
               setLoadingVectors(true);
               projectVectors()
-                .then((result: any) => {
-                  if (result?.points) setVectorData(result);
+                .then((result: unknown) => {
+                  const r = result as VectorProjectionResult | undefined;
+                  if (r?.points) setVectorData({ points: r.points, totalChunks: r.totalChunks ?? r.points.length });
                 })
                 .catch(() => {})
                 .finally(() => setLoadingVectors(false));
@@ -583,13 +672,13 @@ function PolicyExtractionsPanel() {
                     setReindexingId(id);
                     try {
                       const result = (await rechunkAction({
-                        policyId: id as any,
-                      })) as any;
+                        policyId: id as Id<"policies">,
+                      })) as RechunkResult | undefined;
                       if (result?.error) {
                         toast.error(result.error);
                       } else {
                         toast.success(
-                          `Reindexed: ${result.newChunks} chunks`,
+                          `Reindexed: ${result?.newChunks} chunks`,
                         );
                       }
                     } catch {
@@ -619,8 +708,11 @@ function PolicyExtractionsPanel() {
             No search index data
           </p>
           <p className="text-label-sm text-muted-foreground/50 mt-0.5">
-            Extract policies to populate the search index.
+            Upload a policy PDF to create your vector index.
           </p>
+          <div className="mt-4">
+            <PillButton onClick={() => router.push("/policies")}>Upload policy PDF</PillButton>
+          </div>
         </div>
       )}
     </>

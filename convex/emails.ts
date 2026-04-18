@@ -83,7 +83,7 @@ export const list = query({
           q.eq("connectionId", args.connectionId!)
         )
         .collect();
-      return all.filter((e) => (e as any).orgId === orgId);
+      return all.filter((e) => (e as unknown as { orgId?: string }).orgId === orgId);
     }
     return await ctx.db
       .query("emails")
@@ -218,7 +218,7 @@ export const bulkReclassify = mutation({
     ids: v.array(v.id("emails")),
   },
   handler: async (ctx, args) => {
-    const { userId, orgId } = await requireOrgAccess(ctx) as any;
+    const { userId, orgId } = await requireOrgAccess(ctx);
     if (!orgId) throw new Error("Not authenticated");
 
     // Reset all emails

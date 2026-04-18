@@ -90,7 +90,7 @@ IMPORTANT:
 - 15-80 words per entry is ideal. Over 100 words means it should be split further.
 - NEVER truncate content mid-sentence. Every consolidated entry must be a complete, self-contained statement.`;
 
-function parseDreamResult(text: string): any | null {
+function parseDreamResult(text: string): Record<string, unknown> | null {
   try {
     const cleaned = text.replace(/```json\n?|```\n?/g, "").trim();
     try {
@@ -105,12 +105,16 @@ function parseDreamResult(text: string): any | null {
   }
 }
 
-function formatEntryLines(entries: any[]): string[] {
-  return entries.map((e: any) => {
+function formatEntryLines(entries: Record<string, unknown>[]): string[] {
+  return entries.map((e) => {
+    const updatedAt =
+      typeof e.updatedAt === "number" || typeof e.updatedAt === "string"
+        ? new Date(e.updatedAt)
+        : new Date(0);
     const tags: string[] = [
       `confidence: ${e.confidence}`,
       `source: ${e.source}`,
-      `updated: ${new Date(e.updatedAt).toISOString().slice(0, 10)}`,
+      `updated: ${updatedAt.toISOString().slice(0, 10)}`,
     ];
     if (e.asOfDate) tags.push(`as-of: ${e.asOfDate}`);
     if (e.sourceLabel) tags.push(`from: ${e.sourceLabel}`);
@@ -189,10 +193,10 @@ export const dreamForOrg = internalAction({
     });
 
     // Delete all coverage entries upfront — coverage belongs in policy extraction, not org intelligence
-    const coverageEntries = entries.filter((e: any) => e.category === "coverage");
+    const coverageEntries = entries.filter((e: { category: string }) => e.category === "coverage");
     if (coverageEntries.length > 0) {
       await ctx.runMutation(internal.intelligence.bulkDelete, {
-        ids: coverageEntries.map((e: any) => e._id),
+        ids: coverageEntries.map((e: { _id: string }) => e._id as Id<"orgIntelligence">),
       });
       await appendLogLine(ctx, logId, `Purged ${coverageEntries.length} coverage entries (handled by policy extraction)`);
       await ctx.runMutation(internal.dreamLogs.update, {
@@ -245,21 +249,21 @@ export const dreamCategory = internalAction({
       const allEntries = await ctx.runQuery(internal.intelligence.listActiveByOrg, {
         orgId: args.orgId,
       });
-      const catEntries = allEntries.filter((e: any) => e.category === args.category);
+      const catEntries = allEntries.filter((e: { category: string }) => e.category === args.category);
 
       if (catEntries.length < 2) {
         await appendLogLine(ctx, args.logId, `${args.category}: ${catEntries.length} entry, skipping`);
         return;
       }
 
-      const entryIdSet = new Set(catEntries.map((e: any) => e._id));
+      const entryIdSet = new Set(catEntries.map((e: { _id: string }) => e._id as Id<"orgIntelligence">));
       const embedText = makeEmbedText();
       let totalDeleted = 0;
       let totalConsolidated = 0;
       let totalRecategorized = 0;
 
       // Sub-batch if category is large
-      const chunks: any[][] = [];
+      const chunks: Record<string, unknown>[][] = [];
       for (let i = 0; i < catEntries.length; i += CHUNK_SIZE) {
         chunks.push(catEntries.slice(i, i + CHUNK_SIZE));
       }
@@ -273,7 +277,7 @@ export const dreamCategory = internalAction({
         const batchNote = chunks.length > 1 ? ` [batch ${ci + 1}/${chunks.length}]` : "";
 
         const result = await generateText({
-          model: getModel("chat"),
+          model: getModel("chat") as Parameters<typeof generateText>[0]["model"],
           system: `You are an insurance intelligence analyst. Respond with ONLY valid JSON, no markdown.
 Format: { "reasoning": "brief explanation", "deleteIds": ["id1"], "recategorize": [{ "id": "id2", "category": "correct_category" }], "consolidated": [{ "content": "...", "category": "best_category" }] }`,
           prompt: `${args.orgContext ? `ORGANIZATION: ${args.orgContext}\n\n` : ""}${CATEGORY_PROMPT}\n\nCategory: ${args.category}${batchNote}\nEntries:\n${lines.join("\n")}`,
@@ -289,31 +293,33 @@ Format: { "reasoning": "brief explanation", "deleteIds": ["id1"], "recategorize"
           await appendLogLine(ctx, args.logId, `${args.category} reasoning: ${parsed.reasoning}`);
         }
 
-        const deleteIds = (parsed.deleteIds ?? []).filter((id: string) => entryIdSet.has(id as any));
+        const deleteIds = ((parsed.deleteIds ?? []) as string[])
+          .map((id) => id as Id<"orgIntelligence">)
+          .filter((id) => entryIdSet.has(id));
         if (deleteIds.length > 0) {
-          await ctx.runMutation(internal.intelligence.bulkDelete, { ids: deleteIds as any });
-          for (const id of deleteIds) entryIdSet.delete(id as any);
+          await ctx.runMutation(internal.intelligence.bulkDelete, { ids: deleteIds });
+          for (const id of deleteIds) entryIdSet.delete(id);
           totalDeleted += deleteIds.length;
         }
 
         // Recategorize mis-filed entries
-        const recats = (parsed.recategorize ?? []).filter(
-          (r: any) => r.id && r.category && entryIdSet.has(r.id as any),
+        const recats = ((parsed.recategorize ?? []) as Array<{ id: string; category: string }>).filter(
+          (r) => r.id && r.category && entryIdSet.has(r.id as Id<"orgIntelligence">),
         );
         if (recats.length > 0) {
           await ctx.runMutation(internal.intelligence.bulkRecategorize, {
-            updates: recats.map((r: any) => ({ id: r.id, category: r.category })),
+            updates: recats.map((r) => ({ id: r.id as Id<"orgIntelligence">, category: r.category as string })),
           });
           totalRecategorized += recats.length;
         }
 
-        for (const c of parsed.consolidated ?? []) {
+        for (const c of (parsed.consolidated ?? []) as Array<{ content?: string; category?: string }>) {
           if (!c.content?.trim()) continue;
           const embedding = await embedText(c.content);
           await ctx.runMutation(internal.intelligence.insert, {
             orgId: args.orgId,
             content: c.content,
-            category: (c.category || args.category) as any,
+            category: (c.category || args.category) as string,
             confidence: "inferred",
             source: "dream",
             embedding,
@@ -372,7 +378,7 @@ export const dreamMarkComplete = internalAction({
 
 // ── Helper: append a line to the shared dream log ──
 
-async function appendLogLine(ctx: any, logId: Id<"dreamLogs">, line: string) {
+async function appendLogLine(ctx: { runQuery: (...args: unknown[]) => Promise<unknown>; runMutation: (...args: unknown[]) => Promise<unknown> }, logId: Id<"dreamLogs">, line: string) {
   const current = await ctx.runQuery(internal.dreamLogs.get, { id: logId });
   const lines = current?.log ?? [];
   lines.push(line);

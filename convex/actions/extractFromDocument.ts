@@ -131,10 +131,10 @@ export const extractFromDocument = action({
   },
   returns: v.any(),
   handler: async (ctx, args): Promise<{ error: string } | { success: true; entries: number }> => {
-    const viewer = await ctx.runQuery(api.users.viewer) as any;
+    const viewer = await ctx.runQuery(api.users.viewer) as { _id: string } | null;
     if (!viewer) return { error: "Not authenticated" };
 
-    const orgData = await ctx.runQuery(api.orgs.viewerOrg) as any;
+    const orgData = await ctx.runQuery(api.orgs.viewerOrg) as { membership: { orgId: string } } | null;
     if (!orgData) return { error: "No organization" };
 
     const orgId = orgData.membership.orgId as Id<"organizations">;
@@ -235,14 +235,14 @@ If no relevant risk signals found, return { "entries": [] }.`,
           const similar = await ctx.vectorSearch("orgIntelligence", "by_embedding", {
             vector: embedding,
             limit: 3,
-            filter: (q: any) => q.eq("orgId", orgId),
+            filter: (q: { eq: (field: string, value: unknown) => unknown }) => q.eq("orgId", orgId),
           });
-          if (similar.some((s: any) => s._score > 0.95)) continue;
+          if (similar.some((s: { _score?: number }) => (s._score ?? 0) > 0.95)) continue;
 
           await ctx.runMutation(internal.intelligence.insert, {
             orgId,
             content: entry.content,
-            category: entry.category as any,
+            category: entry.category as string,
             confidence: "confirmed" as const,
             source: "manual" as const,
             sourceRef: args.fileId as string,
@@ -258,8 +258,8 @@ If no relevant risk signals found, return { "entries": [] }.`,
       }
 
       return { success: true, entries: inserted };
-    } catch (err: any) {
-      return { error: `Extraction failed: ${err.message || "Unknown error"}` };
+    } catch (err: unknown) {
+      return { error: `Extraction failed: ${err instanceof Error ? err.message : "Unknown error"}` };
     }
   },
 });

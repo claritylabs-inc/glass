@@ -88,17 +88,22 @@ function pca3(vectors: number[][]): number[][] {
   });
 }
 
+type OrgData = { membership: { orgId: string } };
+type IntelligenceEntry = { _id: string; embedding?: number[]; category: string; content: string; source: string; confidence: string };
+type DocumentChunk = { _id: string; embedding?: number[]; chunkType: string; policyId: string; text: string };
+type PolicyRecord = { carrier?: string; policyNumber?: string };
+
 export const projectIntelligence = action({
   args: {},
-  returns: undefined as any,
-  handler: async (ctx): Promise<any> => {
-    const viewer = await ctx.runQuery(api.users.viewer) as any;
+  returns: undefined as unknown,
+  handler: async (ctx): Promise<unknown> => {
+    const viewer = await ctx.runQuery(api.users.viewer);
     if (!viewer) return { error: "Not authenticated" };
-    const orgData = await ctx.runQuery(api.orgs.viewerOrg) as any;
+    const orgData = await ctx.runQuery(api.orgs.viewerOrg) as OrgData | null;
     if (!orgData) return { error: "No organization" };
 
     const orgId = orgData.membership.orgId;
-    const entries = await ctx.runQuery(internal.intelligence.listByOrg, { orgId }) as any[];
+    const entries = await ctx.runQuery(internal.intelligence.listByOrg, { orgId }) as IntelligenceEntry[];
 
     if (entries.length === 0) return { points: [], totalEntries: 0 };
 
@@ -151,15 +156,15 @@ export const projectIntelligence = action({
 
 export const project = action({
   args: {},
-  returns: undefined as any,
-  handler: async (ctx): Promise<any> => {
-    const viewer = await ctx.runQuery(api.users.viewer) as any;
+  returns: undefined as unknown,
+  handler: async (ctx): Promise<unknown> => {
+    const viewer = await ctx.runQuery(api.users.viewer);
     if (!viewer) return { error: "Not authenticated" };
-    const orgData = await ctx.runQuery(api.orgs.viewerOrg) as any;
+    const orgData = await ctx.runQuery(api.orgs.viewerOrg) as OrgData | null;
     if (!orgData) return { error: "No organization" };
 
     const orgId = orgData.membership.orgId;
-    const chunks = await ctx.runQuery(internal.documentChunks.listAllForOrg, { orgId }) as any[];
+    const chunks = await ctx.runQuery(internal.documentChunks.listAllForOrg, { orgId }) as DocumentChunk[];
 
     if (chunks.length === 0) return { points: [] };
 
@@ -195,10 +200,10 @@ export const project = action({
     const policyCache: Record<string, { carrier: string; policyNumber: string }> = {};
     for (const m of meta) {
       if (!policyCache[m.policyId]) {
-        const policy = await ctx.runQuery(internal.policies.getInternal, { id: m.policyId as any });
+        const policy = await ctx.runQuery(internal.policies.getInternal, { id: m.policyId as string & { __tableName: "policies" } }) as PolicyRecord | null;
         policyCache[m.policyId] = {
-          carrier: (policy as any)?.carrier ?? "Unknown",
-          policyNumber: (policy as any)?.policyNumber ?? "Unknown",
+          carrier: policy?.carrier ?? "Unknown",
+          policyNumber: policy?.policyNumber ?? "Unknown",
         };
       }
     }

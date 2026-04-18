@@ -10,6 +10,10 @@ import { useCallback } from "react";
 import { captureScreenshot } from "./helpers";
 import { usePromptInputAttachments } from "./context";
 
+type DropdownItemSelectEvent = Parameters<
+  NonNullable<ComponentProps<typeof DropdownMenuItem>["onSelect"]>
+>[0];
+
 export type PromptInputActionAddAttachmentsProps = ComponentProps<
   typeof DropdownMenuItem
 > & {
@@ -23,7 +27,7 @@ export const PromptInputActionAddAttachments = ({
   const attachments = usePromptInputAttachments();
 
   const handleSelect = useCallback(
-    (e: any) => {
+    (e: DropdownItemSelectEvent) => {
       e.preventDefault();
       attachments.openFileDialog();
     },
@@ -51,7 +55,7 @@ export const PromptInputActionAddScreenshot = ({
   const attachments = usePromptInputAttachments();
 
   const handleSelect = useCallback(
-    async (event: any) => {
+    async (event: DropdownItemSelectEvent) => {
       onSelect?.(event);
       if (event.defaultPrevented) {
         return;

@@ -6,6 +6,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useQuery, useMutation } from "convex/react";
 import { useAuthActions } from "@convex-dev/auth/react";
 import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
 
 const AGENT_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "prism.claritylabs.inc";
@@ -106,8 +107,13 @@ export function AppSidebar({
   const { signOut } = useAuthActions();
   const { context: pageContext } = usePageContext();
 
-  const [collapsed, setCollapsed] = useState(false);
-  const [cmdHeld, setCmdHeld] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem("sidebar-collapsed") === "1";
+    } catch {
+      return false;
+    }
+  });
   const [showShortcuts, setShowShortcuts] = useState(false);
   const cmdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -160,13 +166,6 @@ export function AppSidebar({
     return items.sort((a, b) => b.time - a.time).slice(0, 8);
   }, [unifiedThreads, emailConvs, webChats]);
 
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem("sidebar-collapsed");
-      if (stored === "1") setCollapsed(true);
-    } catch {}
-  }, []);
-
   function toggleCollapse() {
     const next = !collapsed;
     setCollapsed(next);
@@ -200,7 +199,6 @@ export function AppSidebar({
     function handleKeyDown(e: KeyboardEvent) {
       if (e.metaKey || e.ctrlKey) {
         if (!cmdTimerRef.current) {
-          setCmdHeld(true);
           cmdTimerRef.current = setTimeout(() => setShowShortcuts(true), 500);
         }
 
@@ -224,7 +222,6 @@ export function AppSidebar({
       }
     }
     function clearCmd() {
-      setCmdHeld(false);
       setShowShortcuts(false);
       if (cmdTimerRef.current) { clearTimeout(cmdTimerRef.current); cmdTimerRef.current = null; }
     }
@@ -430,7 +427,7 @@ export function AppSidebar({
                   onClick={async (e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    await archiveThread({ id: item.id as any });
+                    await archiveThread({ id: item.id as Id<"threads"> });
                     if (isConvActive) {
                       const next = conversations.find((c) => c.id !== item.id);
                       if (next) {

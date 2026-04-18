@@ -102,7 +102,7 @@ export function buildSystemPromptForContext(params: {
     companyContext: safeContext,
     siteUrl,
     userName,
-    coiHandling: org.coiHandling as any,
+    coiHandling: org.coiHandling as string | undefined,
     brokerName: org.insuranceBroker,
     brokerContactName: org.brokerContactName,
     brokerContactEmail: org.brokerContactEmail,

@@ -13,11 +13,11 @@ function matchesDomains(fromStr: string, domains: string[]): boolean {
   return domains.some((d) => lower.includes(d.toLowerCase()));
 }
 
-function hasAttachmentParts(payload: any): boolean {
+function hasAttachmentParts(payload: Record<string, unknown> | null | undefined): boolean {
   if (!payload) return false;
-  if (payload.filename && payload.body?.attachmentId) return true;
+  if (payload.filename && (payload.body as Record<string, unknown>)?.attachmentId) return true;
   if (payload.parts) {
-    return payload.parts.some((part: any) => hasAttachmentParts(part));
+    return (payload.parts as Record<string, unknown>[]).some((part) => hasAttachmentParts(part));
   }
   return false;
 }
@@ -51,7 +51,7 @@ export const scanGmail = action({
     if (!connection) throw new Error("Connection not found");
 
     // Save scan params
-    const scanParams: any = {};
+    const scanParams: Record<string, unknown> = {};
     if (args.sinceDate) scanParams.sinceDate = args.sinceDate;
     if (args.untilDate) scanParams.untilDate = args.untilDate;
     if (args.senderDomains?.length) scanParams.senderDomains = args.senderDomains;
@@ -74,7 +74,7 @@ export const scanGmail = action({
 
     // Create scan log entry
     const startTime = Date.now();
-    let scanLogId: any;
+    let scanLogId: string | undefined;
     try {
       scanLogId = await ctx.runMutation(internal.emailScanLogs.insert, {
         orgId: orgId ?? undefined,
@@ -117,8 +117,8 @@ export const scanGmail = action({
             tokenExpiry: credentials.expiry_date!,
           });
           oauth2Client.setCredentials(credentials);
-        } catch (refreshError: any) {
-          const status = refreshError?.response?.status || refreshError?.code;
+        } catch (refreshError: unknown) {
+          const status = (refreshError as { response?: { status?: number }; code?: number })?.response?.status || (refreshError as { code?: number })?.code;
           if (status === 401 || status === 403) {
             await ctx.runMutation(api.connections.updateScanStatus, {
               id: args.connectionId,
@@ -327,9 +327,9 @@ export const scanGmail = action({
       }
 
       return { emailsFound: inserted };
-    } catch (error: any) {
-      const message = error.message || "Unknown error";
-      const status = error?.response?.status || error?.code;
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      const status = (error as { response?: { status?: number }; code?: number })?.response?.status || (error as { code?: number })?.code;
 
       let friendlyError: string;
       if (status === 401 || status === 403 || message.includes("invalid_grant")) {

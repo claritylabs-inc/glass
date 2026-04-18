@@ -37,7 +37,7 @@ function getHeader(
   return header?.value || "";
 }
 
-function extractPlainTextFromParts(parts: any[]): string {
+function extractPlainTextFromParts(parts: Array<{ mimeType?: string; body?: { data?: string }; parts?: unknown[] }>): string {
   for (const part of parts) {
     if (part.mimeType === "text/plain" && part.body?.data) {
       return Buffer.from(part.body.data, "base64url").toString("utf-8");
@@ -62,9 +62,9 @@ function extractPlainTextFromParts(parts: any[]): string {
 }
 
 async function fetchGmailBody(
-  connection: any,
+  connection: Record<string, unknown>,
   messageId: string,
-  ctx: any
+  ctx: { runMutation: (...args: unknown[]) => Promise<unknown> }
 ): Promise<string> {
   const oauth2Client = new OAuth2Client(
     process.env.GOOGLE_CLIENT_ID,
@@ -114,7 +114,7 @@ async function fetchGmailBody(
 }
 
 async function fetchImapBody(
-  connection: any,
+  connection: Record<string, unknown>,
   uid: number
 ): Promise<string> {
   if (!connection.imapHost || !connection.imapPort || !connection.password) {
@@ -224,9 +224,9 @@ export const extractSingle = internalAction({
         if (!uid) throw new Error("No UID for IMAP email");
         body = await fetchImapBody(connection, uid);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error(
-        `Body fetch failed for email ${args.emailId}: ${error.message || error}`
+        `Body fetch failed for email ${args.emailId}: ${error instanceof Error ? error.message : String(error)}`
       );
       await ctx.runMutation(internal.emails.updateIntelligenceStatus, {
         id: args.emailId,
@@ -317,11 +317,11 @@ If no relevant risk signals found, return { "entries": [] }.`,
           const similar = await ctx.vectorSearch("orgIntelligence", "by_embedding", {
             vector: embedding,
             limit: 3,
-            filter: (q: any) => q.eq("orgId", args.orgId),
+            filter: (q: { eq: (field: string, value: unknown) => unknown }) => q.eq("orgId", args.orgId),
           });
 
           const isDuplicate = similar.some(
-            (s: any) => s._score && s._score > 0.95
+            (s: { _score?: number }) => s._score && s._score > 0.95
           );
           if (isDuplicate) continue;
 
@@ -329,7 +329,7 @@ If no relevant risk signals found, return { "entries": [] }.`,
           await ctx.runMutation(internal.intelligence.insert, {
             orgId: args.orgId,
             content: entry.content,
-            category: entry.category as any,
+            category: entry.category as string,
             confidence: "inferred" as const,
             source: "email" as const,
             sourceRef: args.emailId as string,
@@ -338,9 +338,9 @@ If no relevant risk signals found, return { "entries": [] }.`,
             embedding,
           });
           inserted++;
-        } catch (entryError: any) {
+        } catch (entryError: unknown) {
           console.error(
-            `Failed to process intelligence entry: ${entryError.message || entryError}`
+            `Failed to process intelligence entry: ${entryError instanceof Error ? entryError.message : String(entryError)}`
           );
           // Continue with remaining entries
         }
@@ -356,9 +356,9 @@ If no relevant risk signals found, return { "entries": [] }.`,
         intelligenceStatus: "extracted" as const,
         intelligenceExtractedAt: Date.now(),
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error(
-        `Extraction failed for email ${args.emailId}: ${error.message || error}`
+        `Extraction failed for email ${args.emailId}: ${error instanceof Error ? error.message : String(error)}`
       );
       await ctx.runMutation(internal.emails.updateIntelligenceStatus, {
         id: args.emailId,

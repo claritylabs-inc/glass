@@ -15,6 +15,10 @@ import { CornerDownLeftIcon, SquareIcon, XIcon } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 import { Children, useCallback } from "react";
 
+type InputGroupButtonClickEvent = Parameters<
+  NonNullable<ComponentProps<typeof InputGroupButton>["onClick"]>
+>[0];
+
 export type PromptInputButtonTooltip =
   | string
   | {
@@ -97,7 +101,7 @@ export const PromptInputSubmit = ({
   }
 
   const handleClick = useCallback(
-    (e: any) => {
+    (e: InputGroupButtonClickEvent) => {
       if (isGenerating && onStop) {
         e.preventDefault();
         onStop();

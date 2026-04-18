@@ -3,27 +3,30 @@
 import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { api, internal } from "../_generated/api";
+import type { Id } from "../_generated/dataModel";
 import { ImapFlow } from "imapflow";
 import { google } from "googleapis";
 import { OAuth2Client } from "google-auth-library";
 
 const SCAN_OVERLAP_MS = 5 * 60 * 1000;
 
-function hasImapAttachmentParts(structure: any): boolean {
+function hasImapAttachmentParts(structure: unknown): boolean {
   if (!structure) return false;
-  if (structure.disposition === "attachment") return true;
-  if (structure.type === "application/pdf") return true;
-  if (structure.childNodes) {
-    return structure.childNodes.some((child: any) => hasImapAttachmentParts(child));
+  const s = structure as Record<string, unknown>;
+  if (s.disposition === "attachment") return true;
+  if (s.type === "application/pdf") return true;
+  if (s.childNodes) {
+    return (s.childNodes as unknown[]).some((child) => hasImapAttachmentParts(child));
   }
   return false;
 }
 
-function hasGmailAttachmentParts(payload: any): boolean {
+function hasGmailAttachmentParts(payload: unknown): boolean {
   if (!payload) return false;
-  if (payload.filename && payload.body?.attachmentId) return true;
-  if (payload.parts) {
-    return payload.parts.some((part: any) => hasGmailAttachmentParts(part));
+  const p = payload as Record<string, unknown>;
+  if (p.filename && (p.body as Record<string, unknown> | undefined)?.attachmentId) return true;
+  if (p.parts) {
+    return (p.parts as unknown[]).some((part) => hasGmailAttachmentParts(part));
   }
   return false;
 }
@@ -46,7 +49,7 @@ export const runDailyScan = internalAction({
   args: {},
   returns: v.object({ scheduled: v.number() }),
   handler: async (ctx): Promise<{ scheduled: number }> => {
-    const connections: any[] = await ctx.runQuery(
+    const connections: { _id: Id<"emailConnections">; lastScanStatus?: string; provider?: string }[] = await ctx.runQuery(
       internal.connections.listAllInternal,
     );
 
@@ -166,8 +169,8 @@ export const scanSingleConnection = internalAction({
       }
 
       return result;
-    } catch (error: any) {
-      const message = error.message || "Unknown error";
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Unknown error";
 
       await ctx.runMutation(api.connections.updateScanStatus, {
         id: args.connectionId,
@@ -198,12 +201,12 @@ export const scanSingleConnection = internalAction({
 // IMAP scan logic (mirrors scanInbox.ts without auth)
 // ---------------------------------------------------------------------------
 async function scanImapInternal(
-  ctx: any,
-  connection: any,
-  connectionId: any,
+  ctx: { runMutation: (...args: unknown[]) => Promise<unknown> },
+  connection: Record<string, unknown>,
+  connectionId: Id<"emailConnections">,
   since: Date,
-  userId: any,
-  orgId: any,
+  userId: Id<"users"> | undefined,
+  orgId: Id<"organizations"> | undefined,
 ) {
   if (!connection.imapHost || !connection.imapPort || !connection.password) {
     throw new Error("IMAP connection missing host, port, or password");
@@ -226,7 +229,7 @@ async function scanImapInternal(
     hasAttachments: boolean;
   }> = [];
 
-  const searchCriteria: any = { since };
+  const searchCriteria: Record<string, unknown> = { since };
 
   try {
     await client.connect();
@@ -354,7 +357,7 @@ async function scanImapInternal(
       hasAttachments: email.hasAttachments,
       processed: false,
     });
-    if (result.inserted) inserted++;
+    if ((result as Record<string, unknown>).inserted) inserted++;
   }
 
   return { emailsFound: inserted };
@@ -393,8 +396,9 @@ async function scanGmailInternal(
         tokenExpiry: credentials.expiry_date!,
       });
       oauth2Client.setCredentials(credentials);
-    } catch (refreshError: any) {
-      const status = refreshError?.response?.status || refreshError?.code;
+    } catch (refreshError: unknown) {
+      const refreshErr = refreshError as { response?: { status?: number }; code?: number };
+      const status = refreshErr?.response?.status || refreshErr?.code;
       if (status === 401 || status === 403) {
         await ctx.runMutation(api.connections.updateScanStatus, {
           id: connectionId,
@@ -420,11 +424,11 @@ async function scanGmailInternal(
   const inboxQuery = `in:inbox after:${formatDate(since)}`;
   const sentQuery = `in:sent after:${formatDate(since)}`;
 
-  async function listGmailIds(gmail: any, query: string): Promise<string[]> {
+  async function listGmailIds(gmailClient: { users: { messages: { list: (params: Record<string, unknown>) => Promise<{ data: { messages?: Array<{ id: string }>; nextPageToken?: string } }> } } }, query: string): Promise<string[]> {
     const ids: string[] = [];
     let pageToken: string | undefined;
     do {
-      const res = await gmail.users.messages.list({
+      const res = await gmailClient.users.messages.list({
         userId: "me",
         q: query,
         pageToken,
@@ -500,7 +504,7 @@ async function scanGmailInternal(
       hasAttachments: email.hasAttachments,
       processed: false,
     });
-    if (result.inserted) inserted++;
+    if ((result as Record<string, unknown>).inserted) inserted++;
   }
 
   return { emailsFound: inserted };

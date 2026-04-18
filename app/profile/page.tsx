@@ -22,7 +22,7 @@ export default function ProfilePage() {
   useEffect(() => {
     if (viewer) {
       setName(viewer.name ?? "");
-      setTitle((viewer as any).title ?? "");
+      setTitle((viewer as Record<string, unknown>).title as string ?? "");
     }
   }, [viewer]);
 

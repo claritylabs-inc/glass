@@ -10,7 +10,7 @@ import { ModeBadge } from "@/components/mode-badge";
 import { MessageBubble, splitQuotedReply, QuotedContent, type Conversation } from "@/components/conversation-message";
 import { ChatMessageBubble, type WebChatMessage } from "@/components/chat-message-bubble";
 import { toast } from "sonner";
-import { Loader2, Archive, ArchiveRestore, FileText, FileInput, Pencil, Check, Search, ClipboardList, Asterisk, Mail as MailIcon, MessageSquare, Paperclip, Download, Copy, Lock, RotateCcw } from "lucide-react";
+import { Loader2, Archive, ArchiveRestore, FileText, FileInput, Pencil, Check, ClipboardList, Asterisk, Mail as MailIcon, MessageSquare, Paperclip, Download, Copy, Lock, RotateCcw } from "lucide-react";
 import { usePdf } from "@/components/pdf-context";
 import { usePresence } from "@/hooks/use-presence";
 import { ContextReferenceCard, ReferenceCardStrip } from "@/components/context-reference-card";
@@ -209,7 +209,6 @@ function PendingSendCountdown({ pendingEmailId }: { pendingEmailId: Id<"pendingE
 
   useEffect(() => {
     if (!pendingEmail || pendingEmail.status !== "pending") {
-      setRemaining(null);
       return;
     }
     function tick() {
@@ -218,7 +217,10 @@ function PendingSendCountdown({ pendingEmailId }: { pendingEmailId: Id<"pendingE
     }
     tick();
     const interval = setInterval(tick, 200);
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      setRemaining(null);
+    };
   }, [pendingEmail]);
 
   if (!pendingEmail || pendingEmail.status !== "pending" || remaining === null) {
@@ -267,6 +269,7 @@ function UnifiedMessageBubble({
   threadContext?: { pageType: string; entityId?: string; summary?: string };
 }) {
   const [showQuoted, setShowQuoted] = useState(false);
+  const [now] = useState(() => Date.now());
   const time = dayjs(msg._creationTime);
   const channelIcon = msg.channel === "email"
     ? <MailIcon className="w-3 h-3 text-muted-foreground/30" />
@@ -276,7 +279,7 @@ function UnifiedMessageBubble({
   if (msg.role === "agent" && msg.status === "processing") {
     const hasContent = msg.content && msg.content.length > 0;
     const hasReasoning = msg.reasoning && msg.reasoning.length > 0;
-    const ageMs = Date.now() - msg._creationTime;
+    const ageMs = now - msg._creationTime;
     const isStale = ageMs > 60_000;
     // Tool status messages are like "*Searching policies...*"
     const isToolStatus = hasContent && /^\*[^*]+\.\.\.\*$/.test(msg.content.trim());
@@ -509,7 +512,7 @@ function CancelButton({ messageId, show }: { messageId: string; show: boolean })
       onClick={async () => {
         setCancelling(true);
         try {
-          await cancel({ messageId: messageId as any });
+          await cancel({ messageId: messageId as Id<"threadMessages"> });
         } catch {
           toast.error("Failed to cancel");
         } finally {
@@ -557,7 +560,7 @@ function RetryButton({ messageId }: { messageId: string }) {
       onClick={async () => {
         setRetrying(true);
         try {
-          await retry({ messageId: messageId as any });
+          await retry({ messageId: messageId as Id<"threadMessages"> });
         } catch {
           toast.error("Failed to retry");
         } finally {
@@ -571,8 +574,6 @@ function RetryButton({ messageId }: { messageId: string }) {
     </button>
   );
 }
-
-const AGENT_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "prism.claritylabs.inc";
 
 /* ── Initial context link (shows which entity the chat was started from) ── */
 function ThreadContextLink({
@@ -645,7 +646,6 @@ function UnifiedThreadContent({
   onMeta,
   viewerId,
   viewerEmail,
-  agentHandle,
 }: {
   threadId: Id<"threads">;
   onMeta?: (meta: { detail: string; actions: React.ReactNode }) => void;
@@ -664,13 +664,11 @@ function UnifiedThreadContent({
   const chatInputRef = useRef<PrismPromptInputHandle>(null);
   const prevThreadId = useRef<string | null>(null);
 
-  // Error state for chat
-  const [chatError, setChatError] = useState<string | null>(null);
-
-  // Reset error when thread changes
-  useEffect(() => {
-    setChatError(null);
-  }, [threadId]);
+  // Error state for chat — stored as { threadId, message } so switching threads auto-clears it
+  const [chatErrorState, setChatErrorState] = useState<{ threadId: string; message: string } | null>(null);
+  const chatError = chatErrorState?.threadId === threadId ? chatErrorState.message : null;
+  const setChatError = useCallback((msg: string | null) =>
+    setChatErrorState(msg ? { threadId, message: msg } : null), [threadId]);
 
   // Push title + actions to parent for AppShell header
   useEffect(() => {
@@ -689,7 +687,7 @@ function UnifiedThreadContent({
         />
       ),
     });
-  }, [thread, threadId, onMeta]);
+  }, [thread, threadId, onMeta, messages]);
 
   // Scroll to bottom when messages change or thread switches
   useEffect(() => {
@@ -751,7 +749,7 @@ function UnifiedThreadContent({
     // For text-only messages, send via Convex (processThreadChat handles the response)
     setChatError(null);
     await sendMessage({ threadId, content: text });
-  }, [sendMessage, threadId, generateUploadUrl]);
+  }, [sendMessage, threadId, generateUploadUrl, setChatError]);
 
   // Detect if thread has both chat and email messages (mixed thread)
   const isMixedThread = useMemo(() => {
@@ -908,7 +906,7 @@ function EmailThreadActions({
       lines.push("");
       lines.push(msg.responseBody ? msg.responseBody : msg.body);
       if (msg.attachments?.length) {
-        lines.push(`Attachments: ${msg.attachments.map((a: any) => a.filename).join(", ")}`);
+        lines.push(`Attachments: ${msg.attachments.map((a: { filename: string }) => a.filename).join(", ")}`);
       }
       lines.push("─".repeat(50));
     }
@@ -1012,7 +1010,7 @@ function EmailThreadContent({
     const isNew = prevThreadId.current !== thread.root._id;
     prevThreadId.current = thread.root._id;
     el.scrollTo({ top: el.scrollHeight, behavior: isNew ? "instant" : "smooth" });
-  }, [thread?.root._id, thread?.messages.length]);
+  }, [thread, thread?.root._id, thread?.messages.length]);
 
   if (conversations === undefined && archivedConversations === undefined) {
     return (
@@ -1033,7 +1031,7 @@ function EmailThreadContent({
   async function handleRetry() {
     if (!appInfo?.sessionId) return;
     try {
-      const result = await retryApp({ sessionId: appInfo.sessionId as any });
+      const result = await retryApp({ sessionId: appInfo.sessionId as Id<"applicationSessions"> });
       if (result?.error) {
         toast.error(result.error);
       } else {
@@ -1170,7 +1168,7 @@ function WebChatContent({
         />
       ),
     });
-  }, [chat, chatId, onMeta]);
+  }, [chat, chatId, onMeta, messages]);
 
   useEffect(() => {
     const el = messagesRef.current;

@@ -114,7 +114,7 @@ Respond with a JSON object:
         messages: [{ role: "user", content: prompt }],
       });
 
-      let analysis: any;
+      let analysis: Record<string, unknown>;
       try {
         const cleaned = text.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
         const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
@@ -174,9 +174,9 @@ Respond with a JSON object:
           const similar = await ctx.vectorSearch("orgIntelligence", "by_embedding", {
             vector: embedding,
             limit: 3,
-            filter: (q: any) => q.eq("orgId", args.orgId),
+            filter: (q: { eq: (field: string, value: unknown) => unknown }) => q.eq("orgId", args.orgId),
           });
-          if (similar.some((s: any) => s._score > 0.95)) continue;
+          if (similar.some((s: { _score: number }) => s._score > 0.95)) continue;
 
           await ctx.runMutation(internal.intelligence.insert, {
             orgId: args.orgId,
@@ -210,7 +210,7 @@ export const analyzePortfolio = internalAction({
       if (policies.length < 2) return;
 
       const memoryBlock = await buildIntelligenceContext(ctx, args.orgId, "insurance portfolio analysis coverage gaps");
-      const policySummaries = policies.map((p: any) => ({
+      const policySummaries = policies.map((p: Record<string, unknown>) => ({
         carrier: p.security,
         type: p.policyTypes?.join(", "),
         limits: p.limits,
@@ -241,7 +241,7 @@ Provide a portfolio-level assessment as JSON:
         messages: [{ role: "user", content: prompt }],
       });
 
-      let analysis: any;
+      let analysis: Record<string, unknown>;
       try {
         const cleaned = text.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
         const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
@@ -284,9 +284,9 @@ Provide a portfolio-level assessment as JSON:
           const similar = await ctx.vectorSearch("orgIntelligence", "by_embedding", {
             vector: embedding,
             limit: 3,
-            filter: (q: any) => q.eq("orgId", args.orgId),
+            filter: (q: { eq: (field: string, value: unknown) => unknown }) => q.eq("orgId", args.orgId),
           });
-          if (similar.some((s: any) => s._score > 0.95)) continue;
+          if (similar.some((s: { _score: number }) => s._score > 0.95)) continue;
 
           await ctx.runMutation(internal.intelligence.insert, {
             orgId: args.orgId,
@@ -355,7 +355,7 @@ Provide a comparison as JSON:
         messages: [{ role: "user", content: prompt }],
       });
 
-      let comparison: any;
+      let comparison: Record<string, unknown>;
       try {
         const cleaned = text.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
         const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
@@ -371,9 +371,9 @@ Provide a comparison as JSON:
         const similar = await ctx.vectorSearch("orgIntelligence", "by_embedding", {
           vector: embedding,
           limit: 3,
-          filter: (q: any) => q.eq("orgId", args.orgId),
+          filter: (q: { eq: (field: string, value: unknown) => unknown }) => q.eq("orgId", args.orgId),
         });
-        if (!similar.some((s: any) => s._score > 0.95)) {
+        if (!similar.some((s: { _score: number }) => s._score > 0.95)) {
           await ctx.runMutation(internal.intelligence.insert, {
             orgId: args.orgId,
             content: summaryNote,

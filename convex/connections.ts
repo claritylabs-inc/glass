@@ -169,7 +169,7 @@ export const connectGoogle = mutation({
       throw new Error("Unauthorized");
     }
 
-    const orgId = args.orgId as any; // from URL state, already validated
+    const orgId = args.orgId as string; // from URL state, already validated
 
     // Upsert: update existing Google connection or create new one
     const existing = await ctx.db

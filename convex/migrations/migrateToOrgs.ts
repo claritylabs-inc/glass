@@ -134,7 +134,7 @@ export const backfillOrgId = internalMutation({
       if (conn.orgId) continue;
       const orgId = conn.userId ? userOrgMap.get(conn.userId) : undefined;
       if (orgId) {
-        await ctx.db.patch(conn._id, { orgId: orgId as any });
+        await ctx.db.patch(conn._id, { orgId: orgId as unknown as never });
         counts.emailConnections++;
       }
     }
@@ -142,10 +142,10 @@ export const backfillOrgId = internalMutation({
     // Backfill emails
     const emails = await ctx.db.query("emails").collect();
     for (const email of emails) {
-      if ((email as any).orgId) continue;
+      if ((email as unknown as Record<string, unknown>).orgId) continue;
       const orgId = email.userId ? userOrgMap.get(email.userId) : undefined;
       if (orgId) {
-        await ctx.db.patch(email._id, { orgId: orgId as any });
+        await ctx.db.patch(email._id, { orgId: orgId as unknown as never });
         counts.emails++;
       }
     }
@@ -156,7 +156,7 @@ export const backfillOrgId = internalMutation({
       if (policy.orgId) continue;
       const orgId = policy.userId ? userOrgMap.get(policy.userId) : undefined;
       if (orgId) {
-        await ctx.db.patch(policy._id, { orgId: orgId as any });
+        await ctx.db.patch(policy._id, { orgId: orgId as unknown as never });
         counts.policies++;
       }
     }
@@ -164,10 +164,10 @@ export const backfillOrgId = internalMutation({
     // Backfill agentConversations
     const conversations = await ctx.db.query("agentConversations").collect();
     for (const conv of conversations) {
-      if ((conv as any).orgId) continue;
+      if ((conv as unknown as Record<string, unknown>).orgId) continue;
       const orgId = userOrgMap.get(conv.userId);
       if (orgId) {
-        await ctx.db.patch(conv._id, { orgId: orgId as any });
+        await ctx.db.patch(conv._id, { orgId: orgId as unknown as never });
         counts.agentConversations++;
       }
     }
@@ -175,10 +175,10 @@ export const backfillOrgId = internalMutation({
     // Backfill policyAuditLog
     const auditLogs = await ctx.db.query("policyAuditLog").collect();
     for (const log of auditLogs) {
-      if ((log as any).orgId) continue;
+      if ((log as unknown as Record<string, unknown>).orgId) continue;
       const orgId = userOrgMap.get(log.userId);
       if (orgId) {
-        await ctx.db.patch(log._id, { orgId: orgId as any });
+        await ctx.db.patch(log._id, { orgId: orgId as unknown as never });
         counts.policyAuditLog++;
       }
     }
@@ -205,16 +205,16 @@ export const verifyMigration = internalQuery({
     missing.emailConnections = connections.filter((c) => !c.orgId).length;
 
     const emails = await ctx.db.query("emails").collect();
-    missing.emails = emails.filter((e) => !(e as any).orgId).length;
+    missing.emails = emails.filter((e) => !(e as unknown as Record<string, unknown>).orgId).length;
 
     const policies = await ctx.db.query("policies").collect();
     missing.policies = policies.filter((p) => !p.orgId).length;
 
     const conversations = await ctx.db.query("agentConversations").collect();
-    missing.agentConversations = conversations.filter((c) => !(c as any).orgId).length;
+    missing.agentConversations = conversations.filter((c) => !(c as unknown as Record<string, unknown>).orgId).length;
 
     const auditLogs = await ctx.db.query("policyAuditLog").collect();
-    missing.policyAuditLog = auditLogs.filter((l) => !(l as any).orgId).length;
+    missing.policyAuditLog = auditLogs.filter((l) => !(l as unknown as Record<string, unknown>).orgId).length;
 
     const total = Object.values(missing).reduce((sum, n) => sum + n, 0);
 

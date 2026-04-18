@@ -1,6 +1,6 @@
 "use client";
 
-import { POLICY_TYPE_LABELS, POLICY_TYPE_COLORS } from "@/convex/lib/policyTypes";
+import { POLICY_TYPE_LABELS } from "@/convex/lib/policyTypes";
 import { usePdf } from "@/components/pdf-context";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
@@ -27,7 +27,7 @@ function SummaryRow({
   );
 }
 
-function StatusBadge({ effectiveDate, expirationDate }: { effectiveDate?: string; expirationDate?: string }) {
+function StatusBadge({ expirationDate }: { effectiveDate?: string; expirationDate?: string }) {
   if (!expirationDate || expirationDate === "—") {
     return (
       <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-label-sm font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400">
@@ -113,7 +113,7 @@ export interface PolicySummaryProps {
 }
 
 export function PolicySummary({
-  policyNumber,
+  policyNumber: _policyNumber,
   carrier,
   insuredName,
   effectiveDate,
@@ -142,20 +142,20 @@ export function PolicySummary({
 
   const keyLimits: { label: string; value: string }[] = [];
   if (limits && typeof limits === "object") {
-    const l = limits as any;
-    if (l.perOccurrence) keyLimits.push({ label: "Per Occurrence", value: l.perOccurrence });
-    if (l.aggregate) keyLimits.push({ label: "Aggregate", value: l.aggregate });
-    if (l.perClaim) keyLimits.push({ label: "Per Claim", value: l.perClaim });
-    if (l.eachOccurrence) keyLimits.push({ label: "Each Occurrence", value: l.eachOccurrence });
-    if (l.generalAggregate) keyLimits.push({ label: "General Aggregate", value: l.generalAggregate });
+    const l = limits as Record<string, unknown>;
+    if (l.perOccurrence) keyLimits.push({ label: "Per Occurrence", value: l.perOccurrence as string });
+    if (l.aggregate) keyLimits.push({ label: "Aggregate", value: l.aggregate as string });
+    if (l.perClaim) keyLimits.push({ label: "Per Claim", value: l.perClaim as string });
+    if (l.eachOccurrence) keyLimits.push({ label: "Each Occurrence", value: l.eachOccurrence as string });
+    if (l.generalAggregate) keyLimits.push({ label: "General Aggregate", value: l.generalAggregate as string });
   }
 
   const keyDeductibles: { label: string; value: string }[] = [];
   if (deductibles && typeof deductibles === "object") {
-    const d = deductibles as any;
-    if (d.perOccurrence) keyDeductibles.push({ label: "Deductible", value: d.perOccurrence });
-    else if (d.perClaim) keyDeductibles.push({ label: "Deductible", value: d.perClaim });
-    else if (d.aggregate) keyDeductibles.push({ label: "Deductible (Agg)", value: d.aggregate });
+    const d = deductibles as Record<string, unknown>;
+    if (d.perOccurrence) keyDeductibles.push({ label: "Deductible", value: d.perOccurrence as string });
+    else if (d.perClaim) keyDeductibles.push({ label: "Deductible", value: d.perClaim as string });
+    else if (d.aggregate) keyDeductibles.push({ label: "Deductible (Agg)", value: d.aggregate as string });
   }
 
   return (

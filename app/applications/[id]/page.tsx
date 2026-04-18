@@ -19,7 +19,6 @@ import {
   Circle,
 } from "lucide-react";
 import { StructuredLog, type StructuredLogEntry } from "@/components/structured-log";
-import { useRouter } from "next/navigation";
 import { usePdf } from "@/components/pdf-context";
 import { usePageContext } from "@/hooks/use-page-context";
 import { motion, AnimatePresence } from "framer-motion";
@@ -28,6 +27,7 @@ import { MessageSquare } from "lucide-react";
 import dayjs from "dayjs";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { FormField } from "@/convex/lib/applicationTypes";
+import { isTableField, isDeclarationField } from "@/convex/lib/applicationTypes";
 
 const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
   extracting_fields: { label: "Extracting Fields", color: "bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400" },
@@ -56,9 +56,8 @@ function EditableField({
   sessionId: Id<"applicationSessions">;
 }) {
   const updateField = useMutation(api.applicationSessions.updateFieldValue);
-  const f = field as any;
-  const label = f.label ?? f.text ?? field.id;
-  const value = f.value ?? "";
+  const label = isDeclarationField(field) ? field.text : (field as { label?: string }).label ?? field.id;
+  const value = (field as { value?: string }).value ?? "";
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
   const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
@@ -87,10 +86,10 @@ function EditableField({
   const isLong = value.length > 80 || field.fieldType === "declaration";
 
   // Declaration fields
-  if (field.fieldType === "declaration") {
+  if (isDeclarationField(field)) {
     return (
       <div className="py-3">
-        <p className="text-[11px] text-muted-foreground/50 leading-relaxed mb-1">{f.text}</p>
+        <p className="text-[11px] text-muted-foreground/50 leading-relaxed mb-1">{field.text}</p>
         {editing ? (
           <input
             ref={inputRef as React.RefObject<HTMLInputElement>}
@@ -109,7 +108,7 @@ function EditableField({
             className="text-left cursor-text"
           >
             {value ? (
-              <span className={`text-body-sm font-medium ${f.value === "yes" ? "text-amber-600" : f.value === "no" ? "text-emerald-600" : "text-foreground"}`}>
+              <span className={`text-body-sm font-medium ${field.value === "yes" ? "text-amber-600" : field.value === "no" ? "text-emerald-600" : "text-foreground"}`}>
                 {value}
               </span>
             ) : (
@@ -117,23 +116,23 @@ function EditableField({
             )}
           </button>
         )}
-        {f.explanation && (
-          <p className="text-[11px] text-muted-foreground/40 mt-1">{f.explanation}</p>
+        {field.explanation && (
+          <p className="text-[11px] text-muted-foreground/40 mt-1">{field.explanation}</p>
         )}
       </div>
     );
   }
 
   // Table fields — show as sub-fields
-  if (field.fieldType === "table") {
+  if (isTableField(field)) {
     return (
       <div className="py-3">
         <p className="text-[11px] text-muted-foreground/50 mb-2">{label}</p>
-        {f.rows && f.rows.length > 0 ? (
+        {field.rows && field.rows.length > 0 ? (
           <div className="space-y-2">
-            {f.rows.map((row: Record<string, string>, i: number) => (
+            {field.rows.map((row: Record<string, string>, i: number) => (
               <div key={i} className="pl-3 border-l-2 border-foreground/6 space-y-1">
-                {f.columns?.map((col: any) => (
+                {field.columns?.map((col: { name: string; type: string }) => (
                   <div key={col.name}>
                     <span className="text-[10px] text-muted-foreground/35">{col.name}</span>
                     <p className="text-body-sm text-foreground">{row[col.name] || "—"}</p>
@@ -203,7 +202,24 @@ const APP_STATUS_MAP: Record<string, { status: StructuredLogEntry["status"]; eve
   failed: { status: "error", event: "Processing failed" },
 };
 
-function ApplicationActivityTab({ session }: { session: any }) {
+type SessionRecord = {
+  _id: string;
+  _creationTime: number;
+  status: string;
+  sourceFileName?: string;
+  applicationTitle?: string;
+  lastProgressAt?: number;
+  failureReason?: string;
+  totalFields?: number;
+  filledFields?: number;
+  confirmedFields?: number;
+  parsedBatches?: Array<{ batchIndex: number; fieldIds: string[]; complete: boolean }>;
+  error?: string;
+  completedAt?: number;
+  cancelledAt?: number;
+};
+
+function ApplicationActivityTab({ session }: { session: SessionRecord }) {
   const logEntries: StructuredLogEntry[] = [];
 
   // Session creation
@@ -392,7 +408,6 @@ export default function ApplicationDetailPage({
 }) {
   const { id } = use(params);
   const sessionId = id as Id<"applicationSessions">;
-  const router = useRouter();
   const session = useQuery(api.applicationSessions.get, { id: sessionId });
   const sourceFileUrl = useQuery(api.applicationSessions.getSourceFileUrl, { id: sessionId });
   const summaryFileUrl = useQuery(api.applicationSessions.getSummaryFileUrl, { id: sessionId });
@@ -445,7 +460,7 @@ export default function ApplicationDetailPage({
     sections.set(field.section, existing);
   }
 
-  function getBatchTopic(batch: any): string {
+  function getBatchTopic(batch: { batchIndex: number; fieldIds: string[] }): string {
     const sectionCounts = new Map<string, number>();
     for (const fid of batch.fieldIds) {
       const f = fields.find((field) => field.id === fid);
@@ -460,8 +475,8 @@ export default function ApplicationDetailPage({
   }
 
   const filledCount = fields.filter((f) => {
-    if (f.fieldType === "table") return (f as any).rows?.length > 0;
-    return !!(f as any).value;
+    if (isTableField(f)) return f.rows?.length > 0;
+    return !!(f as { value?: string }).value;
   }).length;
 
   const pct = fields.length > 0 ? Math.round((filledCount / fields.length) * 100) : 0;
@@ -601,8 +616,8 @@ export default function ApplicationDetailPage({
               {session.parsedBatches && session.parsedBatches.length > 0 && (
                 <div className="mt-4 pt-3 border-t border-foreground/5">
                   <div className="flex items-center gap-1.5 flex-wrap">
-                    {session.parsedBatches.map((batch: any, i: number) => {
-                      const isCurrent = i === (session.currentBatchIndex ?? 0) && !batch.complete && session.status === "asking_questions";
+                    {session.parsedBatches.map((batch: { batchIndex: number; fieldIds: string[]; complete: boolean }, i: number) => {
+                      const isCurrent = i === ((session.currentBatchIndex as number | undefined) ?? 0) && !batch.complete && session.status === "asking_questions";
                       const topic = getBatchTopic(batch);
                       return (
                         <motion.div
@@ -643,7 +658,7 @@ export default function ApplicationDetailPage({
                       );
                     })}
                     <span className="text-[11px] text-muted-foreground/30 ml-1">
-                      {session.parsedBatches.filter((b: any) => b.complete).length}/{session.parsedBatches.length} sections
+                      {session.parsedBatches.filter((b: { complete: boolean }) => b.complete).length}/{session.parsedBatches.length} sections
                     </span>
                   </div>
                 </div>
@@ -656,8 +671,8 @@ export default function ApplicationDetailPage({
             <div className="space-y-4">
               {Array.from(sections).map(([sectionName, sectionFields]) => {
                 const sectionFilled = sectionFields.filter((f) => {
-                  if (f.fieldType === "table") return (f as any).rows?.length > 0;
-                  return !!(f as any).value;
+                  if (isTableField(f)) return f.rows?.length > 0;
+                  return !!(f as { value?: string }).value;
                 }).length;
                 const sectionComplete = sectionFilled === sectionFields.length;
 

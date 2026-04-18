@@ -8,6 +8,7 @@ import { X, Search } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { PillButton } from "@/components/ui/pill-button";
 import { Id } from "@/convex/_generated/dataModel";
+import dayjs from "dayjs";
 
 interface ScanModalProps {
   open: boolean;
@@ -23,19 +24,15 @@ interface ScanModalProps {
   };
 }
 
-function formatDate(d: Date): string {
-  return d.toISOString().split("T")[0];
-}
-
 export function ScanModal({ open, onClose, onScanStarted, connectionId, provider, defaults }: ScanModalProps) {
   const scanInbox = useAction(api.actions.scanInbox.scanInbox);
   const scanGmail = useAction(api.actions.scanGmail.scanGmail);
 
   const defaultSince = defaults?.sinceDate
     ?? (defaults?.lastScanAt
-      ? formatDate(new Date(defaults.lastScanAt))
-      : formatDate(new Date(Date.now() - 14 * 24 * 60 * 60 * 1000)));
-  const defaultUntil = defaults?.untilDate ?? formatDate(new Date());
+      ? dayjs(defaults.lastScanAt).format("YYYY-MM-DD")
+      : dayjs().subtract(14, "day").format("YYYY-MM-DD"));
+  const defaultUntil = defaults?.untilDate ?? dayjs().format("YYYY-MM-DD");
 
   const [sinceDate, setSinceDate] = useState(defaultSince);
   const [untilDate, setUntilDate] = useState(defaultUntil);

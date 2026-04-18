@@ -33,7 +33,7 @@ import {
 } from "../lib/security";
 
 /** Build executable tools with Convex context wired in. */
-function buildTools(ctx: any, args: { orgId: any; threadId: any }, org?: any) {
+function buildTools(ctx: { runQuery: (...args: unknown[]) => Promise<unknown>; runMutation: (...args: unknown[]) => Promise<unknown>; scheduler: { runAfter: (...args: unknown[]) => Promise<unknown> } }, args: { orgId: string; threadId: string }, org?: Record<string, unknown>) {
   return {
     lookup_policy: {
       ...lookupPolicy,
@@ -43,19 +43,19 @@ function buildTools(ctx: any, args: { orgId: any; threadId: any }, org?: any) {
           { orgId: args.orgId },
         );
         const q = params.query.toLowerCase();
-        const matches = policies.filter((p: any) => {
+        const matches = policies.filter((p: Record<string, unknown>) => {
           const matchesQuery =
-            p.insuredName?.toLowerCase().includes(q) ||
-            p.security?.toLowerCase().includes(q) ||
-            p.policyNumber?.toLowerCase().includes(q) ||
-            p.policyTypes?.some((t: string) => t.toLowerCase().includes(q));
-          const matchesType = !params.policyType || p.policyTypes?.includes(params.policyType);
+            (p.insuredName as string)?.toLowerCase().includes(q) ||
+            (p.security as string)?.toLowerCase().includes(q) ||
+            (p.policyNumber as string)?.toLowerCase().includes(q) ||
+            (p.policyTypes as string[])?.some((t: string) => t.toLowerCase().includes(q));
+          const matchesType = !params.policyType || (p.policyTypes as string[])?.includes(params.policyType);
           const matchesCarrier = !params.carrier ||
-            p.security?.toLowerCase().includes(params.carrier.toLowerCase());
+            (p.security as string)?.toLowerCase().includes(params.carrier.toLowerCase());
           return matchesQuery && matchesType && matchesCarrier;
         });
         if (matches.length === 0) return "No matching policies found.";
-        return matches.slice(0, 5).map((p: any) => ({
+        return matches.slice(0, 5).map((p: Record<string, unknown>) => ({
           id: p._id,
           insured: p.insuredName,
           carrier: p.security,
@@ -74,8 +74,8 @@ function buildTools(ctx: any, args: { orgId: any; threadId: any }, org?: any) {
           internal.policies.listAllInternal,
           { orgId: args.orgId },
         );
-        const p1 = policies.find((p: any) => p._id === params.policyId1);
-        const p2 = policies.find((p: any) => p._id === params.policyId2);
+        const p1 = policies.find((p: Record<string, unknown>) => p._id === params.policyId1);
+        const p2 = policies.find((p: Record<string, unknown>) => p._id === params.policyId2);
         if (!p1 || !p2) return "One or both policies not found.";
         return {
           policy1: { id: p1._id, carrier: p1.security, type: p1.policyTypes, limits: p1.limits, deductibles: p1.deductibles, premium: p1.premium },
@@ -88,7 +88,7 @@ function buildTools(ctx: any, args: { orgId: any; threadId: any }, org?: any) {
       execute: async (params: { policyId: string; query: string }) => {
         const policy = await ctx.runQuery(
           internal.policies.getInternal,
-          { id: params.policyId as any },
+          { id: params.policyId },
         );
         // Enforce org ownership — prevent cross-org policy access
         try {
@@ -96,7 +96,7 @@ function buildTools(ctx: any, args: { orgId: any; threadId: any }, org?: any) {
         } catch {
           return "Policy not found.";
         }
-        const doc = policy.document as any;
+        const doc = (policy as Record<string, unknown>).document as Record<string, unknown>;
         if (!doc) return "No document data available for this policy.";
 
         const q = params.query.toLowerCase();
@@ -112,14 +112,14 @@ function buildTools(ctx: any, args: { orgId: any; threadId: any }, org?: any) {
           return score;
         }
 
-        type ScoredResult = { source: string; title: string; score: number; data: any };
+        type ScoredResult = { source: string; title: string; score: number; data: Record<string, unknown> };
         const results: ScoredResult[] = [];
 
         // Search sections (with subsections)
         if (doc.sections?.length) {
           for (const s of doc.sections) {
             const subsectionText = (s.subsections ?? [])
-              .map((sub: any) => `${sub.title ?? ""} ${sub.content ?? ""}`)
+              .map((sub: Record<string, unknown>) => `${sub.title ?? ""} ${sub.content ?? ""}`)
               .join(" ");
             const fullText = `${s.title ?? ""} ${s.content ?? ""} ${subsectionText}`;
             const score = scoreText(fullText);
@@ -230,7 +230,7 @@ function buildTools(ctx: any, args: { orgId: any; threadId: any }, org?: any) {
 
         // Also surface key policy-level fields for coverage analysis
         if (q.includes("coinsurance") || q.includes("valuation") || q.includes("limit")) {
-          const policyMeta: Record<string, any> = {};
+          const policyMeta: Record<string, unknown> = {};
           if (policy.limits) policyMeta.limits = policy.limits;
           if (policy.deductibles) policyMeta.deductibles = policy.deductibles;
           if (policy.coverageForm) policyMeta.coverageForm = policy.coverageForm;
@@ -253,8 +253,8 @@ function buildTools(ctx: any, args: { orgId: any; threadId: any }, org?: any) {
         const top = results.slice(0, 5);
 
         if (top.length === 0) {
-          const sectionTitles = (doc.sections ?? []).map((s: any) => s.title).join(", ");
-          const endorsementTitles = (doc.endorsements ?? []).map((e: any) => e.title).join(", ");
+          const sectionTitles = ((doc.sections ?? []) as Record<string, unknown>[]).map((s) => s.title).join(", ");
+          const endorsementTitles = ((doc.endorsements ?? []) as Record<string, unknown>[]).map((e) => e.title).join(", ");
           return `No matches for "${params.query}". Available sections: ${sectionTitles || "none"}. Endorsements: ${endorsementTitles || "none"}.`;
         }
 
@@ -269,14 +269,14 @@ function buildTools(ctx: any, args: { orgId: any; threadId: any }, org?: any) {
           { orgId: args.orgId },
         );
         if (params.applicationId) {
-          const match = apps.find((a: any) => a._id === params.applicationId);
+          const match = apps.find((a: Record<string, unknown>) => a._id === params.applicationId);
           return match ?? "Application not found.";
         }
         if (params.query) {
           const q = params.query.toLowerCase();
-          const matches = apps.filter((a: any) =>
-            a.applicationTitle?.toLowerCase().includes(q) ||
-            a.sourceFileName?.toLowerCase().includes(q),
+          const matches = apps.filter((a: Record<string, unknown>) =>
+            (a.applicationTitle as string)?.toLowerCase().includes(q) ||
+            (a.sourceFileName as string)?.toLowerCase().includes(q),
           );
           return matches.length > 0 ? matches : "No matching applications found.";
         }
@@ -298,7 +298,7 @@ function buildTools(ctx: any, args: { orgId: any; threadId: any }, org?: any) {
         await ctx.runMutation(internal.intelligence.insert, {
           orgId: args.orgId,
           content: params.content,
-          category: category as any,
+          category: category as "company_info" | "risk" | "coverage" | "observation",
           confidence: "confirmed" as const,
           source: "chat" as const,
           sourceRef: args.threadId as string,
@@ -328,7 +328,7 @@ function buildTools(ctx: any, args: { orgId: any; threadId: any }, org?: any) {
             0,
             internal.actions.generateCoi.run,
             {
-              policyId: input.policyId as any,
+              policyId: input.policyId,
               orgId: args.orgId,
               certificateHolder: input.certificateHolder,
             },
@@ -452,7 +452,7 @@ export const run = internalAction({
 
       // Find the latest user message for context
       const latestUserMsg = allMessages
-        .filter((m: any) => m.role === "user")
+        .filter((m: Record<string, unknown>) => m.role === "user")
         .pop();
       const latestUserContent = latestUserMsg?.content ?? "";
 
@@ -471,7 +471,7 @@ export const run = internalAction({
       // Load business intelligence (vector search, deduped against policy context)
       const orgMemoryBlock = await buildIntelligenceContext(
         ctx, args.orgId, latestUserContent,
-        relevantPolicyIds.map((id: any) => id as string),
+        relevantPolicyIds.map((id: string) => id),
       );
 
       // Build message history (skip processing placeholders)
@@ -494,7 +494,7 @@ export const run = internalAction({
         }>) {
           if (!att.fileId) continue;
           try {
-            const blob = await ctx.storage.get(att.fileId as any);
+            const blob = await ctx.storage.get(att.fileId);
             if (!blob) continue;
             const buffer = Buffer.from(await blob.arrayBuffer());
 
@@ -546,7 +546,7 @@ export const run = internalAction({
 
       // Detect thread type
       const thread = await ctx.runQuery(internal.threads.getInternal, { id: args.threadId });
-      const hasEmailMessages = allMessages.some((m: any) => m.channel === "email");
+      const hasEmailMessages = allMessages.some((m: Record<string, unknown>) => m.channel === "email");
       const isMixedThread = hasEmailMessages || !!thread?.legacyConversationId;
       // Can send emails from any thread with a threadEmail address
       const canSendEmail = !!thread?.threadEmail;
@@ -617,7 +617,7 @@ For emails, compose a professional message that:
       // Build application context
       let applicationContext = "";
       if (applications.length > 0) {
-        const appLines = applications.map((a: any) => {
+        const appLines = applications.map((a: Record<string, unknown>) => {
           const title = a.applicationTitle ?? a.sourceFileName;
           const progress = a.totalFields
             ? `${a.filledFields ?? 0}/${a.totalFields} fields filled`
@@ -711,7 +711,7 @@ When answering coverage questions, you are an expert insurance analyst, not a di
       for await (const part of result.fullStream) {
         if (part.type === "reasoning-delta") {
           // Stream reasoning separately from content
-          reasoning += (part as any).text ?? (part as any).delta ?? "";
+          reasoning += (part as Record<string, unknown>).text as string ?? (part as Record<string, unknown>).delta as string ?? "";
           if (!hasStartedReasoning) {
             hasStartedReasoning = true;
           }
@@ -736,7 +736,7 @@ When answering coverage questions, you are an expert insurance analyst, not a di
           }
         } else if (part.type === "tool-call") {
           lastToolName = part.toolName;
-          lastToolPolicyId = part.toolName === "lookup_policy_section" ? (part as any).input?.policyId ?? "" : "";
+          lastToolPolicyId = part.toolName === "lookup_policy_section" ? ((part as Record<string, unknown>).input as Record<string, unknown>)?.policyId as string ?? "" : "";
           const label = TOOL_LABELS[part.toolName] ?? `Using ${part.toolName}...`;
           await ctx.runMutation(internal.threads.streamAgentMessage, {
             id: agentMsgId,
@@ -744,8 +744,8 @@ When answering coverage questions, you are an expert insurance analyst, not a di
           });
         } else if (part.type === "tool-result") {
           // Capture cited section titles and policy IDs from lookup_policy_section results
-          if (lastToolName === "lookup_policy_section" && (part as any).output) {
-            const output = (part as any).output;
+          if (lastToolName === "lookup_policy_section" && (part as Record<string, unknown>).output) {
+            const output = (part as Record<string, unknown>).output;
             const results = Array.isArray(output) ? output : [output];
             for (const r of results) {
               if (r && typeof r === "object" && r.title) {
@@ -766,7 +766,7 @@ When answering coverage questions, you are an expert insurance analyst, not a di
       await ctx.runMutation(internal.threads.updateAgentMessage, {
         id: agentMsgId,
         content,
-        referencedPolicyIds: citedPolicyIds.size > 0 ? [...citedPolicyIds] as any : undefined,
+        referencedPolicyIds: citedPolicyIds.size > 0 ? [...citedPolicyIds] : undefined,
         referencedQuoteIds: relevantQuoteIds.filter((qid: string) => citedPolicyIds.has(qid)).length > 0
           ? relevantQuoteIds.filter((qid: string) => citedPolicyIds.has(qid)) : undefined,
         citedSections: citedSections.size > 0 ? [...citedSections] : undefined,
@@ -819,8 +819,8 @@ When answering coverage questions, you are an expert insurance analyst, not a di
 
             // Validate recipient against known thread participants and org members
             const orgMembers = await ctx.runQuery(internal.users.listByOrgInternal, { orgId: args.orgId });
-            const orgMemberEmails = orgMembers.map((m: any) => m.email).filter(Boolean);
-            const allowedRecipients = collectAllowedRecipients(allMessages as any, orgMemberEmails);
+            const orgMemberEmails = orgMembers.map((m: Record<string, unknown>) => m.email).filter(Boolean);
+            const allowedRecipients = collectAllowedRecipients(allMessages as Parameters<typeof collectAllowedRecipients>[0], orgMemberEmails as string[]);
             const recipientCheck = validateEmailRecipient(replyTo, allowedRecipients);
             if (!recipientCheck.allowed) {
               console.warn("[security] Email recipient blocked", {
@@ -895,7 +895,7 @@ When answering coverage questions, you are an expert insurance analyst, not a di
                 ccAddresses: replyCc.length > 0 ? replyCc : undefined,
                 subject: replySubject,
                 emailBody,
-                referencedPolicyIds: citedPolicyIds.size > 0 ? [...citedPolicyIds] as any : undefined,
+                referencedPolicyIds: citedPolicyIds.size > 0 ? [...citedPolicyIds] : undefined,
                 referencedQuoteIds: relevantQuoteIds.filter((qid: string) => citedPolicyIds.has(qid)).length > 0
                   ? relevantQuoteIds.filter((qid: string) => citedPolicyIds.has(qid)) : undefined,
               });
@@ -963,7 +963,7 @@ When answering coverage questions, you are an expert insurance analyst, not a di
       }
 
       // Auto-title: if this is the first user message, generate a title
-      const userMessages = allMessages.filter((m: any) => m.role === "user");
+      const userMessages = allMessages.filter((m: Record<string, unknown>) => m.role === "user");
       if (userMessages.length === 1) {
         try {
           const { text: titleText } = await generateText({

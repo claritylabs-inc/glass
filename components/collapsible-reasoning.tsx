@@ -16,13 +16,15 @@ export function CollapsibleReasoning({
   className
 }: CollapsibleReasoningProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const reasoningLength = reasoning.length;
 
-  // Auto-open when streaming starts
+  // Auto-open when streaming starts with content.
+  // Uses setTimeout to schedule state update outside the synchronous effect body.
   useEffect(() => {
-    if (isStreaming && reasoning.length > 0) {
-      setIsOpen(true);
-    }
-  }, [isStreaming, reasoning.length > 0]);
+    if (!isStreaming || reasoningLength === 0) return;
+    const id = setTimeout(() => setIsOpen(true), 0);
+    return () => clearTimeout(id);
+  }, [isStreaming, reasoningLength]);
 
   if (!reasoning || reasoning.trim().length === 0) {
     return null;

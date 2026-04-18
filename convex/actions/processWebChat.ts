@@ -88,7 +88,7 @@ export const run = internalAction({
 
       // Find the latest user message for context
       const latestUserMsg = allMessages
-        .filter((m: any) => m.role === "user")
+        .filter((m: Record<string, unknown>) => m.role === "user")
         .pop();
       const latestUserContent = latestUserMsg?.content ?? "";
 
@@ -144,7 +144,7 @@ WEB CHAT MODE:
       // Build application context
       let applicationContext = "";
       if (applications.length > 0) {
-        const appLines = applications.map((a: any) => {
+        const appLines = applications.map((a: Record<string, unknown>) => {
           const title = a.applicationTitle ?? a.sourceFileName;
           const progress = a.totalFields
             ? `${a.filledFields ?? 0}/${a.totalFields} fields filled`
@@ -199,7 +199,7 @@ WEB CHAT MODE:
       });
 
       // Auto-title: if this is the first user message, generate a title
-      const userMessages = allMessages.filter((m: any) => m.role === "user");
+      const userMessages = allMessages.filter((m: Record<string, unknown>) => m.role === "user");
       if (userMessages.length === 1) {
         try {
           const { text: titleText } = await generateText({

@@ -14,7 +14,6 @@ import {
   Eye,
   FileText,
 } from "lucide-react";
-import dayjs from "dayjs";
 import { Skeleton } from "@/components/ui/skeleton";
 import Link from "next/link";
 import { StructuredLog, type StructuredLogEntry } from "@/components/structured-log";
@@ -38,38 +37,6 @@ import { X } from "lucide-react";
 import { PolicySummary } from "./policy-summary";
 import { ExtractionCards } from "./extraction-panel";
 
-const EXTRACTION_STATUS_CONFIG: Record<
-  string,
-  { label: string; color: string }
-> = {
-  pending: {
-    label: "Pending",
-    color: "bg-gray-100 text-gray-700 dark:bg-gray-800/40 dark:text-gray-400",
-  },
-  extracting: {
-    label: "Extracting",
-    color:
-      "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400",
-  },
-  paused: {
-    label: "Paused",
-    color:
-      "bg-yellow-100 text-yellow-700 dark:bg-yellow-950/40 dark:text-yellow-400",
-  },
-  complete: {
-    label: "Complete",
-    color:
-      "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400",
-  },
-  error: {
-    label: "Error",
-    color: "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400",
-  },
-  not_insurance: {
-    label: "Not Insurance",
-    color: "bg-gray-100 text-gray-700 dark:bg-gray-800/40 dark:text-gray-400",
-  },
-};
 
 // ─── Activity tab ─────────────────────────────────────────────────────────────
 
@@ -105,9 +72,9 @@ const EXTRACTION_ACTIONS = new Set([
   "extraction_error",
 ]);
 
-function PolicyActivityTab({ policyId, policy }: { policyId: string; policy: any }) {
+function PolicyActivityTab({ policyId, policy }: { policyId: string; policy: Record<string, unknown> }) {
   const entries = useQuery(api.policyAuditLog.listByPolicy, {
-    policyId: policyId as any,
+    policyId: policyId as Id<"policies">,
   });
 
   const isLive = policy.extractionStatus === "extracting";
@@ -148,7 +115,9 @@ function PolicyActivityTab({ policyId, policy }: { policyId: string; policy: any
 
   // Build extraction sub-entries from the raw extraction log
   const rawLog: { timestamp: number; message: string }[] =
-    policy.extractionLog ?? [];
+    Array.isArray(policy.extractionLog)
+      ? (policy.extractionLog as { timestamp: number; message: string }[])
+      : [];
   const extractionSubEntries: StructuredLogEntry["subEntries"] = rawLog.map(
     (entry) => ({
       timestamp: entry.timestamp,
@@ -351,7 +320,7 @@ export default function PolicyDetailPage({
 }) {
   const { id } = use(params);
 
-  const policy = useQuery(api.policies.get, { id: id as any });
+  const policy = useQuery(api.policies.get, { id: id as Id<"policies"> });
   const fileUrl = useQuery(
     api.policies.getFileUrl,
     policy?.fileId ? { fileId: policy.fileId as Id<"_storage"> } : "skip",
@@ -453,13 +422,17 @@ export default function PolicyDetailPage({
 
   // ── Derived data ────────────────────────────────────────────────────────────
 
+  const p = policy as unknown as Record<string, unknown>;
   const policyTypes: string[] =
-    (policy as any).policyTypes ?? [(policy as any).policyType ?? "other"];
-  const documentType: string = (policy as any).documentType ?? "policy";
-  const isDeleted = !!(policy as any).deletedAt;
-  const policyDocument: any = (policy as any).document;
-  const limits: any = (policy as any).limits;
-  const deductibles: any = (policy as any).deductibles;
+    (p.policyTypes as string[] | undefined) ?? [(p.policyType as string | undefined) ?? "other"];
+  const documentType: string = (p.documentType as string | undefined) ?? "policy";
+  const carrierName = (p.carrier as string | undefined) ?? "";
+  const policyNumber = (p.policyNumber as string | undefined) ?? "";
+  const hasEmailSource = Boolean(p.emailId);
+  const isDeleted = !!(p.deletedAt);
+  const policyDocument: Record<string, unknown> | undefined = p.document as Record<string, unknown> | undefined;
+  const limits: Record<string, unknown> | undefined = p.limits as Record<string, unknown> | undefined;
+  const deductibles: Record<string, unknown> | undefined = p.deductibles as Record<string, unknown> | undefined;
 
   // ── Handlers ────────────────────────────────────────────────────────────────
 
@@ -502,7 +475,7 @@ export default function PolicyDetailPage({
 
   const breadcrumbLabel = (
     <>
-      {policy.carrier} {policy.policyNumber}
+      {carrierName} {policyNumber}
       {documentType === "quote" && (
         <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-yellow-100 dark:bg-yellow-950/40 text-yellow-800 dark:text-yellow-400 ml-1.5">
           Quote
@@ -530,7 +503,7 @@ export default function PolicyDetailPage({
           <Trash2 className="w-4 h-4" />
         </PillButton>
       )}
-      {policy.emailId && (
+      {hasEmailSource && (
         <PillButton
           size="compact"
           variant="icon"
@@ -539,7 +512,7 @@ export default function PolicyDetailPage({
           onClick={async () => {
             setReExtracting(true);
             try {
-              await retryExtraction({ policyId: id as any, mode: "full" });
+              await retryExtraction({ policyId: id as Id<"policies">, mode: "full" });
             } finally {
               setReExtracting(false);
             }
@@ -596,7 +569,7 @@ export default function PolicyDetailPage({
             <DialogTitle>Delete Policy</DialogTitle>
             <DialogDescription>
               Are you sure you want to delete{" "}
-              <strong>{policy.policyNumber}</strong>? The policy can be restored
+              <strong>{policyNumber}</strong>? The policy can be restored
               later.
             </DialogDescription>
           </DialogHeader>
@@ -620,7 +593,7 @@ export default function PolicyDetailPage({
       </Dialog>
 
       {/* Demo data banner */}
-      {(policy as any).isDemo && !demoBannerDismissed && (
+      {Boolean(p.isDemo) && !demoBannerDismissed && (
         <div className="flex items-center gap-3 px-4 py-2.5 rounded-lg border border-amber-200 dark:border-amber-900/50 bg-amber-50/60 dark:bg-amber-950/30 mb-4">
           <p className="text-label-sm text-amber-700 dark:text-amber-400 flex-1">
             You&apos;re viewing demo data.{" "}
@@ -673,17 +646,17 @@ export default function PolicyDetailPage({
           <PolicySummary
             policyNumber={policy.policyNumber}
             carrier={
-              (policy as any).carrierLegalName ||
-              (policy as any).security ||
+              (p.carrierLegalName as string | undefined) ||
+              (p.security as string | undefined) ||
               policy.carrier
             }
             insuredName={policy.insuredName}
             effectiveDate={policy.effectiveDate}
             expirationDate={policy.expirationDate}
             premium={policy.premium}
-            totalCost={(policy as any).totalCost}
+            totalCost={p.totalCost as string | undefined}
             policyTypes={policyTypes}
-            policyTermType={(policy as any).policyTermType}
+            policyTermType={p.policyTermType as string | undefined}
             limits={limits}
             deductibles={deductibles}
             summary={policy.summary}
@@ -713,7 +686,7 @@ export default function PolicyDetailPage({
               onClick={async () => {
                 setReExtracting(true);
                 try {
-                  await retryExtraction({ policyId: id as any, mode: "full" });
+                  await retryExtraction({ policyId: id as Id<"policies">, mode: "full" });
                   toast.success("Re-extraction started");
                 } catch {
                   toast.error("Re-extraction failed");
@@ -733,8 +706,8 @@ export default function PolicyDetailPage({
                 onClick={async () => {
                   setRechunking(true);
                   try {
-                    const result = (await rechunk({ policyId: policy._id })) as any;
-                    if (result?.error) toast.error(result.error);
+                    const result = await rechunk({ policyId: policy._id }) as Record<string, unknown>;
+                    if (result?.error) toast.error(result.error as string);
                     else toast.success(`Reindexed: ${result.newChunks} search chunks updated`);
                   } catch {
                     toast.error("Reindexing failed");

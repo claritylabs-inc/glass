@@ -22,6 +22,20 @@ interface PdfViewerProps {
 const RENDER_BUFFER = 2;
 const PAGE_GAP = 12; // mb-3 = 0.75rem = 12px
 
+/** Clear scrollingToPage flag using scrollend event with fallback */
+function clearScrollFlag(container: HTMLElement, scrollingRef: React.MutableRefObject<number | null>) {
+  let cleared = false;
+  const cleanup = () => {
+    if (cleared) return;
+    cleared = true;
+    scrollingRef.current = null;
+    container.removeEventListener("scrollend", onScrollEnd);
+  };
+  const onScrollEnd = () => cleanup();
+  container.addEventListener("scrollend", onScrollEnd, { once: true });
+  setTimeout(cleanup, 2000);
+}
+
 type PageDims = Map<number, { width: number; height: number }>;
 
 /** Compute scaled page height from intrinsic dimensions */
@@ -33,7 +47,7 @@ function getPageHeight(page: number, pageWidth: number | undefined, dims: PageDi
 }
 
 /** Compute scroll offset to the top of a target page using cached dimensions */
-function computeScrollOffset(targetPage: number, pageWidth: number, dims: PageDims, gap: number, containerPadding: number): number {
+function computeScrollOffset(targetPage: number, pageWidth: number, dims: PageDims, gap: number): number {
   let offset = 0;
   for (let p = 1; p < targetPage; p++) {
     offset += getPageHeight(p, pageWidth, dims) + gap;
@@ -116,12 +130,12 @@ export function PdfViewer({
         if (diff > 10) {
           scrollingToPage.current = currentPage;
           container.scrollTo({ top: targetTop, behavior: "smooth" });
-          clearScrollFlag(container);
+          clearScrollFlag(container, scrollingToPage);
         }
       }
     } else {
       // Use arithmetic offset
-      const targetTop = computeScrollOffset(currentPage, pw, pageDimensions, PAGE_GAP, 0);
+      const targetTop = computeScrollOffset(currentPage, pw, pageDimensions, PAGE_GAP);
       const diff = Math.abs(container.scrollTop - targetTop);
       if (diff > 10) {
         scrollingToPage.current = currentPage;
@@ -150,31 +164,19 @@ export function PdfViewer({
           });
         } else {
           container.scrollTo({ top: targetTop, behavior: "smooth" });
-          clearScrollFlag(container);
+          clearScrollFlag(container, scrollingToPage);
         }
       }
     }
 
-    setPageInput(String(currentPage));
-    setVisiblePage(currentPage);
+    const inputTimer = setTimeout(() => {
+      setPageInput(String(currentPage));
+      setVisiblePage(currentPage);
+    }, 0);
+    return () => clearTimeout(inputTimer);
   }, [currentPage, numPages, pageDimensions.size]);
 
-  /** Clear scrollingToPage flag using scrollend event with fallback */
-  function clearScrollFlag(container: HTMLElement) {
-    let cleared = false;
-    const cleanup = () => {
-      if (cleared) return;
-      cleared = true;
-      scrollingToPage.current = null;
-      container.removeEventListener("scrollend", onScrollEnd);
-    };
-    const onScrollEnd = () => cleanup();
-    container.addEventListener("scrollend", onScrollEnd, { once: true });
-    // Fallback timeout in case scrollend isn't fired
-    setTimeout(cleanup, 2000);
-  }
-
-  // Detect visible page on manual scroll
+    // Detect visible page on manual scroll
   useEffect(() => {
     const container = containerRef.current;
     if (!container || !numPages) return;
@@ -227,7 +229,7 @@ export function PdfViewer({
       scrollingToPage.current = pageToRestore;
 
       const container = containerRef.current;
-      const pw = pageWidth;
+      const pw = pageWidthRef.current;
       if (!container || !pw) {
         scrollingToPage.current = null;
         return;
@@ -235,7 +237,7 @@ export function PdfViewer({
 
       // Scroll immediately with current dimensions if available
       if (pageDimensions.size > 0) {
-        const targetTop = computeScrollOffset(pageToRestore, pw, pageDimensions, PAGE_GAP, 0);
+        const targetTop = computeScrollOffset(pageToRestore, pw, pageDimensions, PAGE_GAP);
         container.scrollTo({ top: targetTop, behavior: "instant" });
       }
 
@@ -244,7 +246,7 @@ export function PdfViewer({
         requestAnimationFrame(() => {
           if (!container) return;
           if (pageDimensions.size > 0) {
-            const targetTop = computeScrollOffset(pageToRestore, pw, pageDimensions, PAGE_GAP, 0);
+            const targetTop = computeScrollOffset(pageToRestore, pw, pageDimensions, PAGE_GAP);
             container.scrollTo({ top: targetTop, behavior: "instant" });
           } else {
             const pageEl = pageRefs.current.get(pageToRestore);
@@ -263,7 +265,7 @@ export function PdfViewer({
   }, [scale, numPages, pageDimensions]);
 
   const handleDocumentLoad = useCallback(
-    (pdf: any) => {
+    (pdf: { numPages: number; getPage: (n: number) => Promise<{ getViewport: (opts: { scale: number }) => { width: number; height: number } }> }) => {
       const n = pdf.numPages;
       setNumPages(n);
       setError(null);
@@ -273,7 +275,7 @@ export function PdfViewer({
         const dims: PageDims = new Map();
         await Promise.all(
           Array.from({ length: n }, (_, i) =>
-            pdf.getPage(i + 1).then((page: any) => {
+            pdf.getPage(i + 1).then((page) => {
               const vp = page.getViewport({ scale: 1 });
               dims.set(i + 1, { width: vp.width, height: vp.height });
             })
@@ -312,9 +314,13 @@ export function PdfViewer({
   const zoomOut = () => setScale((s) => Math.max(s - 0.25, 0.5));
 
   const pageWidth = containerWidth > 0 ? (containerWidth - 24) * scale : undefined;
-  pageWidthRef.current = pageWidth;
+  // Keep ref in sync with computed pageWidth (outside of render body — using layout effect)
+  // We use a layout effect here so the ref is updated before paint
+  useEffect(() => {
+    pageWidthRef.current = pageWidth;
+  });
 
-  const displayPage = scrollingToPage.current !== null ? currentPage : visiblePage;
+  const displayPage = visiblePage;
 
   const shouldRenderPage = (page: number) => {
     return Math.abs(page - displayPage) <= RENDER_BUFFER;

@@ -55,6 +55,7 @@ interface ActivityLogSectionProps<T extends LogEntry> {
   emptyIcon?: React.ComponentType<{ className?: string }>;
   emptyMessage: string;
   emptyDescription: string;
+  emptyAction?: React.ReactNode;
   renderEntryTitle: (entry: T) => string;
   renderStats: (entry: T) => StatPill[];
   classifyLogLine?: (line: string) => "reasoning" | "error" | "complete" | "default";
@@ -67,6 +68,7 @@ export function ActivityLogSection<T extends LogEntry>({
   emptyIcon,
   emptyMessage,
   emptyDescription,
+  emptyAction,
   renderEntryTitle,
   renderStats,
   classifyLogLine,
@@ -102,6 +104,7 @@ export function ActivityLogSection<T extends LogEntry>({
       emptyIcon={emptyIcon}
       emptyMessage={emptyMessage}
       emptyDescription={emptyDescription}
+      emptyAction={emptyAction}
       isEmpty={!loading && count === 0}
       footerText={count > 0 ? `${count} ${count === 1 ? "run" : "runs"}` : undefined}
     >

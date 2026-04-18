@@ -1,6 +1,7 @@
 import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
 import { auth } from "./auth";
 const http = httpRouter();
 
@@ -223,8 +224,8 @@ http.route({
           { status: 400, headers: responseHeaders },
         );
       }
-    } catch (e: any) {
-      const message = e?.message ?? String(e);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
       if (message === "invalid_grant") {
         return new Response(
           JSON.stringify({ error: "invalid_grant" }),
@@ -289,7 +290,8 @@ async function sha256Hex(input: string): Promise<string> {
  * Returns 401 with WWW-Authenticate: Bearer when no auth (triggers OAuth flow in MCP clients).
  */
 async function requireMcpAuth(
-  ctx: { runQuery: any; runMutation: any },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ctx: { runQuery: (...args: any[]) => Promise<any>; runMutation: (...args: any[]) => Promise<any> },
   request: Request,
 ): Promise<McpIdentity> {
   const authHeader = request.headers.get("Authorization");
@@ -370,7 +372,7 @@ http.route({
     try {
       const identity = await requireMcpAuth(ctx, request);
       const policies = await ctx.runQuery(internal.policies.listAllInternal, {
-        orgId: identity.orgId as any,
+        orgId: identity.orgId as Id<"organizations">,
       });
 
       // Apply optional filters from query params
@@ -378,7 +380,7 @@ http.route({
       const year = getQueryParam(request, "year");
       const type = getQueryParam(request, "type");
 
-      const filtered = policies.filter((p: any) => {
+      const filtered = policies.filter((p: Record<string, unknown>) => {
         if (carrier && p.carrier !== carrier) return false;
         if (year && p.policyYear !== parseInt(year)) return false;
         if (type && !(p.policyTypes ?? []).includes(type)) return false;
@@ -387,7 +389,7 @@ http.route({
 
       // Return lightweight summaries
       return jsonResponse(
-        filtered.map((p: any) => ({
+        filtered.map((p: Record<string, unknown>) => ({
           _id: p._id,
           carrier: p.carrier,
           security: p.security,
@@ -422,13 +424,14 @@ http.route({
       if (!id) return jsonResponse({ error: "Missing id parameter" }, 400);
 
       const policy = await ctx.runQuery(internal.policies.listAllInternal, {
-        orgId: identity.orgId as any,
+        orgId: identity.orgId as Id<"organizations">,
       });
-      const found = policy.find((p: any) => p._id === id);
+      const found = policy.find((p: Record<string, unknown>) => p._id === id);
       if (!found) return jsonResponse({ error: "Not found" }, 404);
 
       // Return full detail (excluding raw extraction responses)
-      const { rawExtractionResponse, rawMetadataResponse, ...rest } = found;
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { rawExtractionResponse: _rawExtractionResponse, rawMetadataResponse: _rawMetadataResponse, ...rest } = found;
       return jsonResponse(rest);
     } catch (e) {
       if (e instanceof Response) return e;
@@ -448,11 +451,11 @@ http.route({
       if (!q) return jsonResponse({ error: "Missing q parameter" }, 400);
 
       const policies = await ctx.runQuery(internal.policies.listAllInternal, {
-        orgId: identity.orgId as any,
+        orgId: identity.orgId as Id<"organizations">,
       });
 
       const query = q.toLowerCase();
-      const results = policies.filter((p: any) => {
+      const results = policies.filter((p: Record<string, unknown>) => {
         const searchable = [
           p.carrier,
           p.policyNumber,
@@ -469,7 +472,7 @@ http.route({
       });
 
       return jsonResponse(
-        results.map((p: any) => ({
+        results.map((p: Record<string, unknown>) => ({
           _id: p._id,
           carrier: p.carrier,
           policyNumber: p.policyNumber,
@@ -497,7 +500,7 @@ http.route({
     try {
       const identity = await requireMcpAuth(ctx, request);
       const policies = await ctx.runQuery(internal.policies.listAllInternal, {
-        orgId: identity.orgId as any,
+        orgId: identity.orgId as Id<"organizations">,
       });
 
       const byType: Record<string, number> = {};
@@ -505,12 +508,12 @@ http.route({
       const byYear: Record<string, number> = {};
 
       for (const p of policies) {
-        const types = (p as any).policyTypes ?? ["other"];
+        const types = (p as Record<string, unknown>).policyTypes ?? ["other"];
         for (const t of types) {
           byType[t] = (byType[t] || 0) + 1;
         }
-        byCarrier[(p as any).carrier] = (byCarrier[(p as any).carrier] || 0) + 1;
-        byYear[(p as any).policyYear] = (byYear[(p as any).policyYear] || 0) + 1;
+        byCarrier[(p as Record<string, unknown>).carrier] = (byCarrier[(p as Record<string, unknown>).carrier] || 0) + 1;
+        byYear[(p as Record<string, unknown>).policyYear] = (byYear[(p as Record<string, unknown>).policyYear] || 0) + 1;
       }
 
       return jsonResponse({
@@ -534,20 +537,20 @@ http.route({
     try {
       const identity = await requireMcpAuth(ctx, request);
       const quotes = await ctx.runQuery(internal.policies.listAllQuotesInternal, {
-        orgId: identity.orgId as any,
+        orgId: identity.orgId as Id<"organizations">,
       });
 
       const carrier = getQueryParam(request, "carrier");
       const year = getQueryParam(request, "year");
 
-      const filtered = quotes.filter((q: any) => {
+      const filtered = quotes.filter((q: Record<string, unknown>) => {
         if (carrier && q.carrier !== carrier) return false;
         if (year && q.policyYear !== parseInt(year)) return false;
         return true;
       });
 
       return jsonResponse(
-        filtered.map((q: any) => ({
+        filtered.map((q: Record<string, unknown>) => ({
           _id: q._id,
           carrier: q.carrier,
           security: q.security,
@@ -583,12 +586,13 @@ http.route({
       if (!id) return jsonResponse({ error: "Missing id parameter" }, 400);
 
       const quotes = await ctx.runQuery(internal.policies.listAllQuotesInternal, {
-        orgId: identity.orgId as any,
+        orgId: identity.orgId as Id<"organizations">,
       });
-      const found = quotes.find((q: any) => q._id === id);
+      const found = quotes.find((q: Record<string, unknown>) => q._id === id);
       if (!found) return jsonResponse({ error: "Not found" }, 404);
 
-      const { rawExtractionResponse, rawMetadataResponse, ...rest } = found as any;
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { rawExtractionResponse: _rawExtractionResponse, rawMetadataResponse: _rawMetadataResponse, ...rest } = found as Record<string, unknown>;
       return jsonResponse(rest);
     } catch (e) {
       if (e instanceof Response) return e;
@@ -606,7 +610,7 @@ http.route({
       const identity = await requireMcpAuth(ctx, request);
       const sessions = await ctx.runQuery(
         internal.applicationSessions.listAllInternal,
-        { orgId: identity.orgId as any },
+        { orgId: identity.orgId as Id<"organizations"> },
       );
       return jsonResponse(sessions);
     } catch (e) {
@@ -628,9 +632,9 @@ http.route({
 
       const session = await ctx.runQuery(
         internal.applicationSessions.getInternal,
-        { id: id as any },
+        { id: id as Id<"applicationSessions"> },
       );
-      if (!session || (session as any).orgId !== identity.orgId) {
+      if (!session || (session as Record<string, unknown>).orgId !== identity.orgId) {
         return jsonResponse({ error: "Not found" }, 404);
       }
       return jsonResponse(session);
@@ -649,10 +653,10 @@ http.route({
     try {
       const identity = await requireMcpAuth(ctx, request);
       const threads = await ctx.runQuery(internal.threads.listByOrg, {
-        orgId: identity.orgId as any,
+        orgId: identity.orgId as Id<"organizations">,
       });
       return jsonResponse(
-        threads.map((t: any) => ({
+        threads.map((t: Record<string, unknown>) => ({
           _id: t._id,
           title: t.title,
           lastMessageAt: t.lastMessageAt,
@@ -679,17 +683,17 @@ http.route({
 
       // Verify thread belongs to org
       const thread = await ctx.runQuery(internal.threads.getInternal, {
-        id: threadId as any,
+        id: threadId as Id<"threads">,
       });
-      if (!thread || (thread as any).orgId !== identity.orgId) {
+      if (!thread || (thread as Record<string, unknown>).orgId !== identity.orgId) {
         return jsonResponse({ error: "Not found" }, 404);
       }
 
       const messages = await ctx.runQuery(internal.threads.messagesInternal, {
-        threadId: threadId as any,
+        threadId: threadId as Id<"threads">,
       });
       return jsonResponse(
-        messages.map((m: any) => ({
+        messages.map((m: Record<string, unknown>) => ({
           _id: m._id,
           role: m.role,
           channel: m.channel,
@@ -714,7 +718,7 @@ http.route({
     try {
       const identity = await requireMcpAuth(ctx, request);
       const entries = await ctx.runQuery(internal.businessContext.listInternal, {
-        orgId: identity.orgId as any,
+        orgId: identity.orgId as Id<"organizations">,
       });
       return jsonResponse(entries);
     } catch (e) {
@@ -732,7 +736,7 @@ http.route({
     try {
       const identity = await requireMcpAuth(ctx, request);
       const org = await ctx.runQuery(internal.orgs.getInternal, {
-        id: identity.orgId as any,
+        id: identity.orgId as Id<"organizations">,
       });
       if (!org) return jsonResponse({ error: "Not found" }, 404);
       return jsonResponse({
@@ -767,7 +771,7 @@ http.route({
       }
 
       await ctx.runMutation(internal.businessContext.upsertInternal, {
-        orgId: identity.orgId as any,
+        orgId: identity.orgId as Id<"organizations">,
         category,
         key,
         value,
@@ -796,17 +800,17 @@ http.route({
       // Verify org ownership
       const session = await ctx.runQuery(
         internal.applicationSessions.getInternal,
-        { id: id as any },
+        { id: id as Id<"applicationSessions"> },
       );
-      if (!session || (session as any).orgId !== identity.orgId) {
+      if (!session || (session as Record<string, unknown>).orgId !== identity.orgId) {
         return jsonResponse({ error: "Not found" }, 404);
       }
-      if (["complete", "cancelled"].includes((session as any).status)) {
+      if (["complete", "cancelled"].includes((session as Record<string, unknown>).status as string)) {
         return jsonResponse({ error: "Session already ended" }, 400);
       }
 
       await ctx.runMutation(internal.applicationSessions.updateStatus, {
-        id: id as any,
+        id: id as Id<"applicationSessions">,
         status: "cancelled" as const,
       });
       return jsonResponse({ success: true });
@@ -956,24 +960,25 @@ function jsonRpcError(id: string | number | null, code: number, message: string)
 }
 
 async function handleToolCall(
-  ctx: { runQuery: any; runMutation: any; runAction: any },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ctx: { runQuery: (...args: any[]) => Promise<any>; runMutation: (...args: any[]) => Promise<any>; runAction: (...args: any[]) => Promise<any> },
   identity: McpIdentity,
   name: string,
   args: Record<string, unknown>,
 ): Promise<{ content: Array<{ type: "text"; text: string }> }> {
-  const orgId = identity.orgId as any;
-  const userId = identity.userId as any;
+  const orgId = identity.orgId as Id<"organizations">;
+  const userId = identity.userId as Id<"users">;
 
   switch (name) {
     case "list_policies": {
       const policies = await ctx.runQuery(internal.policies.listAllInternal, { orgId });
-      const filtered = policies.filter((p: any) => {
+      const filtered = policies.filter((p: Record<string, unknown>) => {
         if (args.carrier && p.carrier !== args.carrier) return false;
         if (args.year && p.policyYear !== parseInt(args.year as string)) return false;
         if (args.type && !(p.policyTypes ?? []).includes(args.type)) return false;
         return true;
       });
-      return { content: [{ type: "text", text: JSON.stringify(filtered.map((p: any) => ({
+      return { content: [{ type: "text", text: JSON.stringify(filtered.map((p: Record<string, unknown>) => ({
         _id: p._id, carrier: p.carrier, security: p.security, broker: p.broker,
         policyNumber: p.policyNumber, policyTypes: p.policyTypes, policyYear: p.policyYear,
         effectiveDate: p.effectiveDate, expirationDate: p.expirationDate, premium: p.premium,
@@ -983,20 +988,21 @@ async function handleToolCall(
     case "get_policy": {
       if (!args.id) throw new Error("Missing id parameter");
       const policies = await ctx.runQuery(internal.policies.listAllInternal, { orgId });
-      const found = policies.find((p: any) => p._id === args.id);
+      const found = policies.find((p: Record<string, unknown>) => p._id === args.id);
       if (!found) throw new Error("Not found");
-      const { rawExtractionResponse, rawMetadataResponse, ...rest } = found as any;
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { rawExtractionResponse: _rawExtractionResponse, rawMetadataResponse: _rawMetadataResponse, ...rest } = found as Record<string, unknown>;
       return { content: [{ type: "text", text: JSON.stringify(rest, null, 2) }] };
     }
     case "search_policies": {
       if (!args.q) throw new Error("Missing q parameter");
       const policies = await ctx.runQuery(internal.policies.listAllInternal, { orgId });
       const query = (args.q as string).toLowerCase();
-      const results = policies.filter((p: any) => {
+      const results = policies.filter((p: Record<string, unknown>) => {
         const searchable = [p.carrier, p.policyNumber, p.insuredName, p.summary, p.security, p.broker, ...(p.policyTypes ?? [])].filter(Boolean).join(" ").toLowerCase();
         return searchable.includes(query);
       });
-      return { content: [{ type: "text", text: JSON.stringify(results.map((p: any) => ({
+      return { content: [{ type: "text", text: JSON.stringify(results.map((p: Record<string, unknown>) => ({
         _id: p._id, carrier: p.carrier, policyNumber: p.policyNumber, policyTypes: p.policyTypes,
         policyYear: p.policyYear, effectiveDate: p.effectiveDate, expirationDate: p.expirationDate,
         premium: p.premium, insuredName: p.insuredName, summary: p.summary,
@@ -1008,20 +1014,20 @@ async function handleToolCall(
       const byCarrier: Record<string, number> = {};
       const byYear: Record<string, number> = {};
       for (const p of policies) {
-        for (const t of ((p as any).policyTypes ?? ["other"])) byType[t] = (byType[t] || 0) + 1;
-        byCarrier[(p as any).carrier] = (byCarrier[(p as any).carrier] || 0) + 1;
-        byYear[(p as any).policyYear] = (byYear[(p as any).policyYear] || 0) + 1;
+        for (const t of ((p as Record<string, unknown>).policyTypes ?? ["other"])) byType[t] = (byType[t] || 0) + 1;
+        byCarrier[(p as Record<string, unknown>).carrier] = (byCarrier[(p as Record<string, unknown>).carrier] || 0) + 1;
+        byYear[(p as Record<string, unknown>).policyYear] = (byYear[(p as Record<string, unknown>).policyYear] || 0) + 1;
       }
       return { content: [{ type: "text", text: JSON.stringify({ totalPolicies: policies.length, byType, byCarrier, byYear }, null, 2) }] };
     }
     case "list_quotes": {
       const quotes = await ctx.runQuery(internal.policies.listAllQuotesInternal, { orgId });
-      const filtered = quotes.filter((q: any) => {
+      const filtered = quotes.filter((q: Record<string, unknown>) => {
         if (args.carrier && q.carrier !== args.carrier) return false;
         if (args.year && q.policyYear !== parseInt(args.year as string)) return false;
         return true;
       });
-      return { content: [{ type: "text", text: JSON.stringify(filtered.map((q: any) => ({
+      return { content: [{ type: "text", text: JSON.stringify(filtered.map((q: Record<string, unknown>) => ({
         _id: q._id, carrier: q.carrier, security: q.security, broker: q.broker,
         quoteNumber: q.quoteNumber, policyTypes: q.policyTypes, quoteYear: q.quoteYear,
         proposedEffectiveDate: q.proposedEffectiveDate, proposedExpirationDate: q.proposedExpirationDate,
@@ -1032,9 +1038,10 @@ async function handleToolCall(
     case "get_quote": {
       if (!args.id) throw new Error("Missing id parameter");
       const quotes = await ctx.runQuery(internal.policies.listAllQuotesInternal, { orgId });
-      const found = quotes.find((q: any) => q._id === args.id);
+      const found = quotes.find((q: Record<string, unknown>) => q._id === args.id);
       if (!found) throw new Error("Not found");
-      const { rawExtractionResponse, rawMetadataResponse, ...rest } = found as any;
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { rawExtractionResponse: _rawExtractionResponse, rawMetadataResponse: _rawMetadataResponse, ...rest } = found as Record<string, unknown>;
       return { content: [{ type: "text", text: JSON.stringify(rest, null, 2) }] };
     }
     case "list_applications": {
@@ -1043,22 +1050,22 @@ async function handleToolCall(
     }
     case "get_application": {
       if (!args.id) throw new Error("Missing id parameter");
-      const session = await ctx.runQuery(internal.applicationSessions.getInternal, { id: args.id as any });
-      if (!session || (session as any).orgId !== identity.orgId) throw new Error("Not found");
+      const session = await ctx.runQuery(internal.applicationSessions.getInternal, { id: args.id as Id<"applicationSessions"> });
+      if (!session || (session as Record<string, unknown>).orgId !== identity.orgId) throw new Error("Not found");
       return { content: [{ type: "text", text: JSON.stringify(session, null, 2) }] };
     }
     case "list_threads": {
       const threads = await ctx.runQuery(internal.threads.listByOrg, { orgId });
-      return { content: [{ type: "text", text: JSON.stringify(threads.map((t: any) => ({
+      return { content: [{ type: "text", text: JSON.stringify(threads.map((t: Record<string, unknown>) => ({
         _id: t._id, title: t.title, lastMessageAt: t.lastMessageAt, archivedAt: t.archivedAt, _creationTime: t._creationTime,
       })), null, 2) }] };
     }
     case "get_thread_messages": {
       if (!args.threadId) throw new Error("Missing threadId parameter");
-      const thread = await ctx.runQuery(internal.threads.getInternal, { id: args.threadId as any });
-      if (!thread || (thread as any).orgId !== identity.orgId) throw new Error("Not found");
-      const messages = await ctx.runQuery(internal.threads.messagesInternal, { threadId: args.threadId as any });
-      return { content: [{ type: "text", text: JSON.stringify(messages.map((m: any) => ({
+      const thread = await ctx.runQuery(internal.threads.getInternal, { id: args.threadId as Id<"threads"> });
+      if (!thread || (thread as Record<string, unknown>).orgId !== identity.orgId) throw new Error("Not found");
+      const messages = await ctx.runQuery(internal.threads.messagesInternal, { threadId: args.threadId as Id<"threads"> });
+      return { content: [{ type: "text", text: JSON.stringify(messages.map((m: Record<string, unknown>) => ({
         _id: m._id, role: m.role, channel: m.channel, content: m.content, userName: m.userName, fromEmail: m.fromEmail, _creationTime: m._creationTime,
       })), null, 2) }] };
     }
@@ -1157,9 +1164,9 @@ http.route({
           try {
             const result = await handleToolCall(ctx, identity, toolName, toolArgs);
             return jsonRpcResponse(id, result);
-          } catch (toolErr: any) {
+          } catch (toolErr: unknown) {
             return jsonRpcResponse(id, {
-              content: [{ type: "text", text: `Error: ${toolErr.message}` }],
+              content: [{ type: "text", text: `Error: ${toolErr instanceof Error ? toolErr.message : String(toolErr)}` }],
               isError: true,
             });
           }
@@ -1195,8 +1202,8 @@ http.route({
       if (!message) return jsonResponse({ error: "Missing message" }, 400);
 
       const result = await ctx.runAction(internal.actions.mcpChat.run, {
-        orgId: identity.orgId as any,
-        userId: identity.userId as any,
+        orgId: identity.orgId as Id<"organizations">,
+        userId: identity.userId as Id<"users">,
         message,
         threadId: threadId ?? undefined,
       });

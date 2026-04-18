@@ -8,6 +8,118 @@ import {
 import { usePdf } from "@/components/pdf-context";
 import { ProseMarkdown } from "@/components/prose-markdown";
 
+// ─── Internal types for policy document data ──────────────────────────────────
+
+type PolicySubsection = {
+  sectionNumber?: string;
+  title?: string;
+  content: string;
+  pageNumber?: number;
+};
+
+type PolicySection = {
+  type: string;
+  title?: string;
+  sectionNumber?: string;
+  content: string;
+  pageStart: number;
+  pageEnd?: number;
+  subsections?: PolicySubsection[];
+};
+
+type ContactEntry = {
+  name?: string;
+  title?: string;
+  type?: string;
+  phone?: string;
+  fax?: string;
+  email?: string;
+  hours?: string;
+  address?: string;
+};
+
+type PolicyExclusion = {
+  name?: string;
+  title?: string;
+  content?: string;
+  isAbsolute?: boolean;
+  buybackAvailable?: boolean;
+  buybackEndorsement?: string;
+  appliesTo?: string | string[];
+  formNumber?: string;
+  pageNumber?: number;
+  pageStart?: number;
+};
+
+type PolicyCondition = {
+  name?: string;
+  title?: string;
+  content?: string;
+  conditionType?: string;
+  keyValues?: { key: string; value: string }[];
+  pageNumber?: number;
+};
+
+type PolicyEndorsement = {
+  title?: string;
+  name?: string;
+  formNumber?: string;
+  editionDate?: string;
+  effectiveDate?: string;
+  premiumImpact?: string;
+  endorsementType?: string;
+  content?: string;
+  pageStart?: number;
+};
+
+type FeeEntry = {
+  name: string;
+  amount?: string;
+  type?: string;
+};
+
+type PolicyFee = {
+  content?: string;
+  pageNumber?: number;
+  fees?: FeeEntry[];
+};
+
+type RegulatoryDetail = { label: string; value: string };
+
+type RegulatoryContext = {
+  content: string;
+  pageNumber?: number;
+  jurisdiction?: string;
+  regulatoryBody?: string;
+  governingLaw?: string;
+  details?: RegulatoryDetail[];
+};
+
+type ClaimsContact = {
+  content: string;
+  pageNumber?: number;
+  contacts?: ContactEntry[];
+  processSteps?: string[];
+  reportingTimeLimit?: string;
+};
+
+type ComplaintContact = {
+  content: string;
+  pageNumber?: number;
+  contacts?: ContactEntry[];
+};
+
+type PolicyDocument = {
+  sections?: PolicySection[];
+  endorsements?: PolicyEndorsement[];
+  costsAndFees?: PolicyFee;
+  exclusions?: (PolicyExclusion | string)[];
+  conditions?: PolicyCondition[];
+  claimsContact?: ClaimsContact;
+  complaintContact?: ComplaintContact;
+  regulatoryContext?: RegulatoryContext;
+};
+
 // ─── Shared sub-components (moved from page.tsx) ─────────────────────────────
 
 const SECTION_TYPE_LABELS: Record<string, string> = {
@@ -108,22 +220,30 @@ function DocumentSection({
   section,
   highlighted,
 }: {
-  section: any;
+  section: PolicySection;
   highlighted?: boolean;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(() => !!highlighted);
   const sectionRef = useRef<HTMLDivElement>(null);
+  const prevHighlighted = useRef(highlighted);
   const typeColor =
     SECTION_TYPE_COLORS[section.type] ?? SECTION_TYPE_COLORS.other;
 
+  // When highlighted newly becomes true, expand and scroll
   useEffect(() => {
-    if (highlighted) {
-      setExpanded(true);
-      const timer = setTimeout(() => {
-        sectionRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-      }, 150);
-      return () => clearTimeout(timer);
+    if (highlighted && !prevHighlighted.current && !expanded) {
+      setTimeout(() => setExpanded(true), 0);
     }
+    prevHighlighted.current = highlighted;
+  }, [highlighted, expanded]);
+
+  // Scroll into view in a separate effect (no setState)
+  useEffect(() => {
+    if (!highlighted) return;
+    const timer = setTimeout(() => {
+      sectionRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 150);
+    return () => clearTimeout(timer);
   }, [highlighted]);
 
   return (
@@ -164,7 +284,7 @@ function DocumentSection({
       {expanded && (
         <div className="px-5 pt-2 pb-3 pl-11">
           <DocContent>{section.content}</DocContent>
-          {section.subsections?.map((sub: any, i: number) => (
+          {section.subsections?.map((sub: PolicySubsection, i: number) => (
             <div key={i} className="mt-3 pl-3 border-l-2 border-foreground/6">
               <p className="text-sm font-medium text-foreground mb-1">
                 {sub.sectionNumber && (
@@ -184,7 +304,7 @@ function DocumentSection({
   );
 }
 
-function ExclusionBody({ ex }: { ex: any }) {
+function ExclusionBody({ ex }: { ex: PolicyExclusion }) {
   const metaItems = [
     ex?.formNumber && { label: "Form", value: ex.formNumber },
     ex?.appliesTo && {
@@ -217,7 +337,7 @@ function ExclusionBody({ ex }: { ex: any }) {
   );
 }
 
-function ConditionBody({ c }: { c: any }) {
+function ConditionBody({ c }: { c: PolicyCondition }) {
   const keyValues = c?.keyValues as { key: string; value: string }[] | undefined;
   return (
     <div className="space-y-3">
@@ -236,7 +356,7 @@ function ConditionBody({ c }: { c: any }) {
   );
 }
 
-function EndorsementBody({ e }: { e: any }) {
+function EndorsementBody({ e }: { e: PolicyEndorsement }) {
   const metaItems = [
     e?.formNumber && { label: "Form", value: e.formNumber },
     e?.editionDate && { label: "Edition", value: e.editionDate },
@@ -261,7 +381,7 @@ function EndorsementBody({ e }: { e: any }) {
   );
 }
 
-function StructuredItemsCard({
+function StructuredItemsCard<T>({
   id,
   title,
   items,
@@ -272,11 +392,11 @@ function StructuredItemsCard({
 }: {
   id: string;
   title: string;
-  items: any[];
-  getTitle: (item: any) => string;
-  getPage?: (item: any) => number | undefined;
-  getBadges?: (item: any) => { label: string; className: string }[];
-  renderBody: (item: any) => React.ReactNode;
+  items: T[];
+  getTitle: (item: T) => string;
+  getPage?: (item: T) => number | undefined;
+  getBadges?: (item: T) => { label: string; className: string }[];
+  renderBody: (item: T) => React.ReactNode;
 }) {
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   if (!items?.length) return null;
@@ -284,7 +404,11 @@ function StructuredItemsCard({
   const toggle = (i: number) =>
     setExpanded((prev) => {
       const next = new Set(prev);
-      next.has(i) ? next.delete(i) : next.add(i);
+      if (next.has(i)) {
+        next.delete(i);
+      } else {
+        next.add(i);
+      }
       return next;
     });
 
@@ -357,7 +481,7 @@ function ContactCard({
   contact,
   showType,
 }: {
-  contact: any;
+  contact: ContactEntry;
   showType?: boolean;
 }) {
   const fields = [
@@ -407,7 +531,7 @@ function ContactCard({
 
 function SupplementaryCard({
   title,
-  icon: Icon,
+  icon: _Icon,
   pageNumber,
   content,
   hasStructured,
@@ -456,7 +580,7 @@ function SupplementaryCard({
   );
 }
 
-function RegulatoryContextStructured({ data }: { data: any }) {
+function RegulatoryContextStructured({ data }: { data: RegulatoryContext }) {
   const gridItems = [
     { label: "Jurisdiction", value: data.jurisdiction },
     { label: "Regulatory Body", value: data.regulatoryBody },
@@ -479,10 +603,10 @@ function RegulatoryContextStructured({ data }: { data: any }) {
           ))}
         </div>
       )}
-      {data.details?.length > 0 && (
+      {(data.details?.length ?? 0) > 0 && (
         <table className="w-full text-left">
           <tbody>
-            {data.details.map((d: any, i: number) => (
+            {(data.details ?? []).map((d: RegulatoryDetail, i: number) => (
               <tr
                 key={i}
                 className="border-t border-foreground/4 first:border-t-0 hover:bg-foreground/[0.015] transition-colors"
@@ -502,34 +626,34 @@ function RegulatoryContextStructured({ data }: { data: any }) {
   );
 }
 
-function ComplaintContactStructured({ contacts }: { contacts?: any[] }) {
+function ComplaintContactStructured({ contacts }: { contacts?: ContactEntry[] }) {
   if (!contacts?.length) return null;
   return (
     <div className="-mx-4 -mt-3">
-      {contacts.map((c: any, i: number) => (
+      {contacts.map((c: ContactEntry, i: number) => (
         <ContactCard key={i} contact={c} showType />
       ))}
     </div>
   );
 }
 
-function ClaimsContactStructured({ data }: { data: any }) {
+function ClaimsContactStructured({ data }: { data: ClaimsContact }) {
   return (
     <div className="-mx-4 -mt-3">
-      {data.contacts?.length > 0 && (
+      {(data.contacts?.length ?? 0) > 0 && (
         <div>
-          {data.contacts.map((c: any, i: number) => (
+          {(data.contacts ?? []).map((c: ContactEntry, i: number) => (
             <ContactCard key={i} contact={c} />
           ))}
         </div>
       )}
-      {data.processSteps?.length > 0 && (
+      {(data.processSteps?.length ?? 0) > 0 && (
         <div className="border-t border-foreground/4 px-4 py-3">
           <p className="text-xs font-semibold text-muted-foreground mb-2">
             Claims Process
           </p>
           <ol className="space-y-1.5">
-            {data.processSteps.map((step: string, i: number) => (
+            {(data.processSteps ?? []).map((step: string, i: number) => (
               <li key={i} className="flex gap-2.5 text-sm text-foreground">
                 <span className="text-muted-foreground/60 text-xs mt-px shrink-0">
                   {i + 1}.
@@ -556,7 +680,7 @@ function ClaimsContactStructured({ data }: { data: any }) {
 
 // ─── Group wrapper ─────────────────────────────────────────────────────────────
 
-function GroupSection({
+export function GroupSection({
   label,
   children,
   defaultOpen,
@@ -591,7 +715,7 @@ function GroupSection({
 
 export interface ExtractionPanelProps {
   /** The full `document` field from the policy record */
-  policyDocument: any;
+  policyDocument: PolicyDocument | null | undefined;
   /** page number that triggered the URL (for section highlighting) */
   initialPage?: number;
 }
@@ -601,12 +725,19 @@ export function ExtractionCards({
   policyDocument,
   initialPage,
 }: ExtractionPanelProps) {
+  const sections = policyDocument?.sections ?? [];
+  const endorsements = policyDocument?.endorsements ?? [];
+  const costsAndFees = policyDocument?.costsAndFees;
+  const fees = costsAndFees?.fees ?? [];
+  const exclusions = policyDocument?.exclusions ?? [];
+  const conditions = policyDocument?.conditions ?? [];
+
   const hasAnyData =
-    policyDocument?.sections?.length > 0 ||
-    policyDocument?.endorsements?.length > 0 ||
-    policyDocument?.costsAndFees ||
-    policyDocument?.exclusions?.length > 0 ||
-    policyDocument?.conditions?.length > 0 ||
+    sections.length > 0 ||
+    endorsements.length > 0 ||
+    costsAndFees ||
+    exclusions.length > 0 ||
+    conditions.length > 0 ||
     policyDocument?.claimsContact ||
     policyDocument?.complaintContact ||
     policyDocument?.regulatoryContext;
@@ -616,14 +747,14 @@ export function ExtractionCards({
   return (
     <div className="space-y-4">
       {/* Document Sections */}
-      {policyDocument?.sections?.length > 0 && (
+      {sections.length > 0 && (
         <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
           <div className="px-5 py-3 border-b border-foreground/4">
             <p className="text-sm font-semibold text-foreground">
-              Document sections ({policyDocument.sections.length})
+              Document sections ({sections.length})
             </p>
           </div>
-          {policyDocument.sections.map((section: any, i: number) => (
+          {sections.map((section: PolicySection, i: number) => (
             <DocumentSection
               key={i}
               section={section}
@@ -638,12 +769,12 @@ export function ExtractionCards({
       )}
 
       {/* Endorsements */}
-      {policyDocument?.endorsements?.length > 0 && (
+      {endorsements.length > 0 && (
         <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
           <StructuredItemsCard
             id="ep-endorsements"
             title="Endorsements"
-            items={policyDocument.endorsements}
+            items={endorsements}
             getTitle={(e) =>
               e.title ?? e.name ?? e.formNumber ?? "Unnamed endorsement"
             }
@@ -678,15 +809,15 @@ export function ExtractionCards({
       )}
 
       {/* Costs & Fees */}
-      {policyDocument?.costsAndFees && (
+      {costsAndFees && (
         <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
           <SupplementaryCard
             title="Costs & fees"
-            pageNumber={policyDocument.costsAndFees.pageNumber}
-            content={policyDocument.costsAndFees.content ?? ""}
-            hasStructured={!!policyDocument.costsAndFees.fees?.length}
+            pageNumber={costsAndFees.pageNumber}
+            content={costsAndFees.content ?? ""}
+            hasStructured={fees.length > 0}
           >
-            {policyDocument.costsAndFees.fees?.length > 0 && (
+            {fees.length > 0 && (
               <div className="-mx-4 -mt-3">
                 <table className="w-full text-left">
                   <thead>
@@ -703,20 +834,20 @@ export function ExtractionCards({
                     </tr>
                   </thead>
                   <tbody>
-                    {policyDocument.costsAndFees.fees.map(
-                      (f: any, i: number) => (
+                    {(fees as Record<string, unknown>[]).map(
+                      (f, i: number) => (
                         <tr
                           key={i}
                           className="border-t border-foreground/4 hover:bg-foreground/[0.015] transition-colors"
                         >
                           <td className="px-4 py-2.5 text-sm text-foreground font-medium">
-                            {f.name}
+                            {String(f.name ?? "—")}
                           </td>
                           <td className="px-4 py-2.5 text-sm font-medium text-foreground text-right">
-                            {f.amount ?? "—"}
+                            {String(f.amount ?? "—")}
                           </td>
                           <td className="hidden sm:table-cell px-4 py-2.5 text-sm text-muted-foreground">
-                            {f.type ?? "—"}
+                            {String(f.type ?? "—")}
                           </td>
                         </tr>
                       ),
@@ -730,18 +861,20 @@ export function ExtractionCards({
       )}
 
       {/* Exclusions */}
-      {policyDocument?.exclusions?.length > 0 && (
+      {exclusions.length > 0 && (
         <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
           <StructuredItemsCard
             id="ep-exclusions"
             title="Exclusions"
-            items={policyDocument.exclusions}
+            items={exclusions}
             getTitle={(ex) =>
               typeof ex === "string"
                 ? ex
                 : (ex?.name ?? ex?.title ?? "Unnamed exclusion")
             }
-            getPage={(ex) => ex?.pageNumber ?? ex?.pageStart}
+            getPage={(ex) =>
+              typeof ex === "string" ? undefined : ex.pageNumber ?? ex.pageStart
+            }
             getBadges={(ex) => {
               if (typeof ex === "string") return [];
               return [
@@ -776,12 +909,12 @@ export function ExtractionCards({
       )}
 
       {/* Conditions */}
-      {policyDocument?.conditions?.length > 0 && (
+      {conditions.length > 0 && (
         <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
           <StructuredItemsCard
             id="ep-conditions"
             title="Conditions"
-            items={policyDocument.conditions}
+            items={conditions}
             getTitle={(c) => c.name ?? c.title ?? "Unnamed condition"}
             getPage={(c) => c.pageNumber}
             getBadges={(c) =>

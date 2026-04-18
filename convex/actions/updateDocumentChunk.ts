@@ -12,7 +12,7 @@ export const update = action({
     chunkType: v.optional(v.string()),
   },
   returns: v.any(),
-  handler: async (ctx, args): Promise<any> => {
+  handler: async (ctx, args): Promise<{ error: string } | { ok: boolean; updated: boolean }> => {
     const viewer = await ctx.runQuery(api.users.viewer);
     if (!viewer) return { error: "Not authenticated" };
 
