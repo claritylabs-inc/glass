@@ -92,7 +92,7 @@ export const scanGmail = action({
         durationMs: 0,
         log: ["Scan started"],
       });
-    } catch (_) {
+    } catch {
       // Non-fatal: scan log creation failure shouldn't block scanning
     }
 
@@ -374,7 +374,7 @@ export const scanGmail = action({
               `Error: ${friendlyError}`,
             ],
           });
-        } catch (_) {
+        } catch {
           // Non-fatal: scan log update failure shouldn't block error handling
         }
       }

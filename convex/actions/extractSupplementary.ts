@@ -16,7 +16,6 @@ import {
   getExtractor,
   toStrictSchema,
   withRetry,
-  extractPageRange,
   getPdfPageCount,
   chunkDocument,
 } from "@claritylabs/cl-sdk";

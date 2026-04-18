@@ -6,7 +6,6 @@ import { api, internal } from "../_generated/api";
 import { ImapFlow } from "imapflow";
 import { buildExtractor, insuranceDocToPolicy, summarizeExtractionCheckpoint } from "../lib/extraction";
 import { makeEmbedText } from "../lib/sdkCallbacks";
-import { Id } from "../_generated/dataModel";
 
 export const extractPolicy = internalAction({
   args: {

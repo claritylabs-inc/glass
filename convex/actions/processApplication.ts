@@ -127,9 +127,6 @@ async function createThreadWriter(
   };
 }
 
-/** Type for the thread writer function */
-type ThreadWriter = (content: string, responseMessageId?: string) => Promise<void>;
-
 /**
  * Attempt to parse a truncated JSON array by finding the last complete object.
  * Returns parsed array of complete objects, or throws if nothing salvageable.
@@ -1218,7 +1215,6 @@ Use the most specific code that applies. Do not guess if the info is insufficien
 
       for (const policy of existingPolicies) {
         const types = policy.policyTypes ?? (policy.policyType ? [policy.policyType] : []);
-        const typeLabel = types.map((t: string) => policyTypeLabels[t.toLowerCase()] ?? t).join(", ") || "Insurance";
         const prefix = `current_${types[0]?.toLowerCase()?.replace(/\s+/g, "_") ?? "policy"}`;
         availablePolicyTypes.push(...types.map((t: string) => (policyTypeLabels[t.toLowerCase()] ?? t).toLowerCase()));
 
@@ -1271,7 +1267,7 @@ Use the most specific code that applies. Do not guess if the info is insufficien
           section: f.section,
         }));
 
-      let initialAutoFills: AutoFillResult[] = [];
+      const initialAutoFills: AutoFillResult[] = [];
       if (simpleFields.length > 0 && contextEntries.length > 0) {
         const { text: autoFillText } = await generateText({
           model: haikuModel,
@@ -1590,7 +1586,7 @@ export const processApplicationReply = internalAction({
 
       let explanationPrefix = "";
       let lookupSummary = "";
-      let newlyAnsweredIds: string[] = [];
+      const newlyAnsweredIds: string[] = [];
 
       // 2. HANDLE ANSWERS (answers_only or mixed)
       if (intentResult.hasAnswers || intentResult.primaryIntent === "answers_only" || intentResult.primaryIntent === "mixed") {
@@ -2218,7 +2214,6 @@ Respond with JSON only:
             ctx,
             fields,
             session.applicationTitle ?? session.sourceFileName,
-            session.orgId,
           );
         } catch (err) {
           console.warn("PDF generation failed, completing without PDF:", err);
@@ -2462,7 +2457,6 @@ async function generateAndStoreSummaryPdf(
   ctx: any,
   fields: FormField[],
   title: string,
-  _orgId: any,
 ): Promise<any> {
   // Generate a simple text-based summary as PDF using basic PDF generation
   // For v1, we generate a formatted text document stored as a file

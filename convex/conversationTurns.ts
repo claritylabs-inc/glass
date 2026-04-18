@@ -16,7 +16,7 @@ export const listByConversation = internalQuery({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    let q = ctx.db
+    const q = ctx.db
       .query("conversationTurns")
       .withIndex("by_conversationId", (q) => q.eq("conversationId", args.conversationId))
       .order("desc");

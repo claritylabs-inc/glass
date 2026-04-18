@@ -12,7 +12,35 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Convex codegen output — regenerated on every `convex dev`.
+    "convex/_generated/**",
   ]),
+  // Allow underscore-prefixed identifiers to mark intentionally-unused values
+  // across the repo. Matches the existing convention (`_unused`, `catch (_)`).
+  {
+    rules: {
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        {
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+          destructuredArrayIgnorePattern: "^_",
+          caughtErrorsIgnorePattern: "^_",
+          ignoreRestSiblings: true,
+        },
+      ],
+    },
+  },
+  // Convex functions deal with dynamic data: cl-sdk discriminated unions,
+  // LLM JSON output, and `v.any()`-typed schema fields (document, analysis,
+  // declarations, etc). Explicit `any` is the pragmatic choice here rather
+  // than a code smell, so relax the rule in this directory.
+  {
+    files: ["convex/**/*.{ts,tsx,js}"],
+    rules: {
+      "@typescript-eslint/no-explicit-any": "off",
+    },
+  },
 ]);
 
 export default eslintConfig;
