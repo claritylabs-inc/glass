@@ -29,6 +29,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { usePageContext } from "@/hooks/use-page-context";
 import { SETTINGS_SECTIONS } from "@/lib/settings-sections";
 import { LogoIcon } from "@/components/ui/logo-icon";
+import { PillButton } from "@/components/ui/pill-button";
 import { NotificationsPanel } from "@/components/notifications-panel";
 import { MergePolicyDialog } from "@/components/merge-policy-dialog";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -384,13 +385,16 @@ export function AppSidebar({
               <span className="text-[11px] font-medium text-muted-foreground/50 ">
                 Threads
               </span>
-              <button
+              <PillButton
                 type="button"
+                size="compact"
+                variant="icon"
                 onClick={handleNewChat}
-                className="w-5 h-5 flex items-center justify-center rounded text-muted-foreground/40 hover:text-foreground hover:bg-foreground/[0.04] transition-colors cursor-pointer"
+                title="New thread"
+                aria-label="New thread"
               >
                 <Plus className="w-3.5 h-3.5" />
-              </button>
+              </PillButton>
             </div>
             {conversations.length === 0 && (
               <p className="px-3 py-1 text-label-sm text-muted-foreground/30">
@@ -479,14 +483,17 @@ export function AppSidebar({
                 </Link>
               );
             })}
-            <button
+            <PillButton
               type="button"
+              size="compact"
+              variant="icon"
               onClick={handleNewChat}
-              title="New chat"
-              className="w-full flex items-center justify-center py-1.5 rounded-md text-muted-foreground/40 hover:text-foreground hover:bg-foreground/[0.04] transition-colors cursor-pointer mt-0.5"
+              title="New thread"
+              aria-label="New thread"
+              className="mt-0.5"
             >
               <Plus className="w-3.5 h-3.5" />
-            </button>
+            </PillButton>
           </>
         )}
       </nav>

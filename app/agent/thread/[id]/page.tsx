@@ -52,10 +52,23 @@ type ThreadMessage = {
   attachments?: { filename: string; contentType: string; size: number; fileId?: Id<"_storage"> }[];
   referencedPolicyIds?: Id<"policies">[];
   citedSections?: string[];
+  citedCoverageNames?: string[];
+  usedTools?: string[];
+  toolCalls?: { name: string; input?: string }[];
   status?: "processing" | "error" | "pending_send";
   error?: string;
   pendingEmailId?: Id<"pendingEmails">;
   legacyConversationId?: Id<"agentConversations">;
+};
+
+const TOOL_DISPLAY_NAMES: Record<string, string> = {
+  lookup_policy: "Searched policies",
+  lookup_policy_section: "Read policy sections",
+  compare_coverages: "Compared coverages",
+  check_application_status: "Checked application",
+  save_note: "Saved note",
+  generate_coi: "Generated COI",
+  send_email: "Drafted email",
 };
 
 /* ── Unified thread actions ── */
@@ -269,6 +282,7 @@ function UnifiedMessageBubble({
   threadContext?: { pageType: string; entityId?: string; summary?: string };
 }) {
   const [showQuoted, setShowQuoted] = useState(false);
+  const [showToolCalls, setShowToolCalls] = useState(false);
   const [now] = useState(() => Date.now());
   const time = dayjs(msg._creationTime);
   const channelIcon = msg.channel === "email"
@@ -348,6 +362,8 @@ function UnifiedMessageBubble({
 
     // Cited sections from tool results (stored on message by processThreadChat)
     const citedSections = msg.citedSections;
+    const citedCoverageNames = msg.citedCoverageNames;
+    const toolCalls = msg.toolCalls ?? [];
 
     // Build reference cards — referencedPolicyIds now only contains policies actually cited via lookup_policy_section
     const allRefs: { type: "policy"; id: string; page?: number }[] = [];
@@ -363,11 +379,22 @@ function UnifiedMessageBubble({
             <Asterisk className="w-3.5 h-3.5 text-primary-light" />
           </div>
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              <p className="text-label-sm font-medium text-muted-foreground/50">Prism</p>
-              {channelIcon}
-              <span className="text-muted-foreground/20">·</span>
-              <span className="text-label-sm text-muted-foreground/25">{time.format("MMM D, h:mm A")}</span>
+            <div className="flex items-center justify-between gap-3 mb-1">
+              <div className="flex items-center gap-2 min-w-0">
+                <p className="text-label-sm font-medium text-muted-foreground/50">Prism</p>
+                {channelIcon}
+                <span className="text-muted-foreground/20">·</span>
+                <span className="text-label-sm text-muted-foreground/25">{time.format("MMM D, h:mm A")}</span>
+              </div>
+              {toolCalls.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowToolCalls((value) => !value)}
+                  className="shrink-0 text-label-sm text-muted-foreground/45 hover:text-muted-foreground/65 transition-colors cursor-pointer"
+                >
+                  {showToolCalls ? "Hide tool calls" : `${toolCalls.length} tool call${toolCalls.length === 1 ? "" : "s"}`}
+                </button>
+              )}
             </div>
             {msg.channel === "email" && msg.toAddresses && (
               <div className="flex flex-wrap gap-x-3 text-label-sm text-muted-foreground/35 mb-1">
@@ -388,6 +415,22 @@ function UnifiedMessageBubble({
               reasoning={msg.reasoning ?? ""}
               isStreaming={false}
             />
+            {toolCalls.length > 0 && showToolCalls && (
+              <div className="mb-3 ml-0.5">
+                  <div className="rounded-lg border border-foreground/6 bg-white overflow-hidden">
+                    <div className="px-3 py-2 space-y-1">
+                      {toolCalls.map((toolCall, index) => (
+                        <div key={`${toolCall.name}-${index}`} className="py-1.5 first:pt-0 last:pb-0">
+                          <p className="text-label-sm text-foreground/75 font-medium">{TOOL_DISPLAY_NAMES[toolCall.name] ?? toolCall.name}</p>
+                          {toolCall.input && (
+                            <pre className="mt-1 whitespace-pre-wrap break-words text-[11px] leading-4 text-muted-foreground/70 font-mono">{toolCall.input}</pre>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+              </div>
+            )}
             <div className={`group/agent-msg relative rounded-lg bg-popover border border-foreground/6 px-3.5 py-2.5 ${msg.reasoning ? "mt-1" : ""} ${MARKDOWN_STYLES}`}>
               <Markdown remarkPlugins={[remarkGfm, remarkBreaks]} components={markdownComponents}>{fixedContent}</Markdown>
               <CopyMessageButton content={msg.content} />
@@ -403,7 +446,7 @@ function UnifiedMessageBubble({
             )}
           </div>
         </div>
-        <ReferenceCardStrip refs={allRefs} citedSections={citedSections} />
+        <ReferenceCardStrip refs={allRefs} citedSections={citedSections} citedCoverageNames={citedCoverageNames} />
         {isLastAgentMessage && (!msg.content || msg.content.trim().length === 0) && (
           <RetryButton messageId={msg._id} />
         )}

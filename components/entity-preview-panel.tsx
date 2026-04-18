@@ -128,6 +128,7 @@ export function EntityPreviewPanel() {
                 id={preview.id} 
                 page={preview.page} 
                 citedSections={preview.citedSections}
+                citedCoverageNames={preview.citedCoverageNames}
                 onHeaderInfo={setHeaderInfo}
                 onHeaderActions={setHeaderActions}
               />

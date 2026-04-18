@@ -355,6 +355,12 @@ export const updateAgentMessage = internalMutation({
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
     referencedQuoteIds: v.optional(v.array(v.id("policies"))),
     citedSections: v.optional(v.array(v.string())),
+    citedCoverageNames: v.optional(v.array(v.string())),
+    usedTools: v.optional(v.array(v.string())),
+    toolCalls: v.optional(v.array(v.object({
+      name: v.string(),
+      input: v.optional(v.string()),
+    }))),
     pendingEmailId: v.optional(v.id("pendingEmails")),
     status: v.optional(v.union(v.literal("pending_send"), v.literal("processing"), v.literal("error"))),
   },
@@ -365,6 +371,9 @@ export const updateAgentMessage = internalMutation({
       referencedPolicyIds: args.referencedPolicyIds,
       referencedQuoteIds: args.referencedQuoteIds,
       citedSections: args.citedSections,
+      citedCoverageNames: args.citedCoverageNames,
+      usedTools: args.usedTools,
+      toolCalls: args.toolCalls,
       pendingEmailId: args.pendingEmailId,
     });
   },

@@ -3,11 +3,10 @@
 import {
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
-import { ImageIcon, Monitor } from "lucide-react";
+import { ImageIcon } from "lucide-react";
 import type { ComponentProps } from "react";
 import { useCallback } from "react";
 
-import { captureScreenshot } from "./helpers";
 import { usePromptInputAttachments } from "./context";
 
 type DropdownItemSelectEvent = Parameters<
@@ -37,52 +36,6 @@ export const PromptInputActionAddAttachments = ({
   return (
     <DropdownMenuItem {...props} onSelect={handleSelect}>
       <ImageIcon className="mr-2 size-4" /> {label}
-    </DropdownMenuItem>
-  );
-};
-
-export type PromptInputActionAddScreenshotProps = ComponentProps<
-  typeof DropdownMenuItem
-> & {
-  label?: string;
-};
-
-export const PromptInputActionAddScreenshot = ({
-  label = "Take screenshot",
-  onSelect,
-  ...props
-}: PromptInputActionAddScreenshotProps) => {
-  const attachments = usePromptInputAttachments();
-
-  const handleSelect = useCallback(
-    async (event: DropdownItemSelectEvent) => {
-      onSelect?.(event);
-      if (event.defaultPrevented) {
-        return;
-      }
-
-      try {
-        const screenshot = await captureScreenshot();
-        if (screenshot) {
-          attachments.add([screenshot]);
-        }
-      } catch (error) {
-        if (
-          error instanceof DOMException &&
-          (error.name === "NotAllowedError" || error.name === "AbortError")
-        ) {
-          return;
-        }
-        throw error;
-      }
-    },
-    [onSelect, attachments]
-  );
-
-  return (
-    <DropdownMenuItem {...props} onSelect={handleSelect}>
-      <Monitor className="mr-2 size-4" />
-      {label}
     </DropdownMenuItem>
   );
 };

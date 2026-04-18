@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery, useAction, useMutation } from "convex/react";
+import { useQuery, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import {
@@ -70,17 +70,14 @@ export function MergePolicyDialog({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const _api = api as any;
   const mergePolicies = useAction(_api.actions.detectDuplicatePolicies.mergePolicies);
-  const markActioned = useMutation(_api.notifications.markActioned);
 
   async function handleMerge() {
     try {
       await mergePolicies({
         primaryPolicyId: primaryPolicyId as Id<"policies">,
         secondaryPolicyId: secondaryPolicyId as Id<"policies">,
+        notificationId: notificationId || undefined,
       });
-      if (notificationId) {
-        await markActioned({ notificationId });
-      }
       onClose();
     } catch (err) {
       console.error("Merge failed", err);

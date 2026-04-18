@@ -38,7 +38,7 @@ export function extractEntityRefs(content: string): { type: "policy"; id: string
   return refs;
 }
 
-function PolicyReferenceCard({ id, page, citedSections }: { id: string; page?: number; citedSections?: string[] }) {
+function PolicyReferenceCard({ id, page, citedSections, citedCoverageNames }: { id: string; page?: number; citedSections?: string[]; citedCoverageNames?: string[] }) {
   const policy = useQuery(api.policies.get, { id: id as Id<"policies"> });
   const { openPreview } = useEntityPreview();
 
@@ -56,7 +56,7 @@ function PolicyReferenceCard({ id, page, citedSections }: { id: string; page?: n
   return (
     <button
       type="button"
-      onClick={() => openPreview({ type: "policy", id, page, citedSections })}
+      onClick={() => openPreview({ type: "policy", id, page, citedSections, citedCoverageNames })}
       className="relative flex items-start gap-2.5 px-3 py-2.5 rounded-lg border border-foreground/8 bg-card hover:border-foreground/12 transition-all duration-150 cursor-pointer text-left group w-[260px] shrink-0 overflow-hidden"
     >
       {/* Hover overlay */}
@@ -111,16 +111,18 @@ export function ContextReferenceCard({
 export function ReferenceCardStrip({
   refs,
   citedSections,
+  citedCoverageNames,
 }: {
   refs: { type: "policy"; id: string; page?: number }[];
   citedSections?: string[];
+  citedCoverageNames?: string[];
 }) {
   if (refs.length === 0) return null;
 
   return (
     <div className="flex gap-2 flex-wrap mt-2 ml-[38px]">
       {refs.map((ref) => (
-        <PolicyReferenceCard key={`${ref.type}:${ref.id}`} id={ref.id} page={ref.page} citedSections={citedSections} />
+        <PolicyReferenceCard key={`${ref.type}:${ref.id}`} id={ref.id} page={ref.page} citedSections={citedSections} citedCoverageNames={citedCoverageNames} />
       ))}
     </div>
   );

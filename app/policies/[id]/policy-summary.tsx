@@ -176,7 +176,7 @@ export function PolicySummary({
       </div>
 
       {/* Body — stacks when narrow, side-by-side when wide */}
-      <div className="flex flex-col @sm:flex-row gap-5 p-5">
+      <div className="flex flex-col @lg:flex-row gap-5 p-5">
         {/* PDF thumbnail */}
         {pdfUrl && <PdfThumbnail url={pdfUrl} />}
 

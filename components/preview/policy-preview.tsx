@@ -58,11 +58,12 @@ interface PolicyPreviewProps {
   id: string;
   page?: number;
   citedSections?: string[];
+  citedCoverageNames?: string[];
   onHeaderInfo?: (info: { carrier: string; policyNum?: string }) => void;
   onHeaderActions?: (actions: { fileUrl?: string; policyId: string; page?: number }) => void;
 }
 
-export function PolicyPreview({ id, page, citedSections, onHeaderInfo, onHeaderActions }: PolicyPreviewProps) {
+export function PolicyPreview({ id, page, citedSections, citedCoverageNames, onHeaderInfo, onHeaderActions }: PolicyPreviewProps) {
   const policy = useQuery(api.policies.get, { id: id as Id<"policies"> });
   const fileUrl = useQuery(
     api.policies.getFileUrl,
@@ -104,6 +105,7 @@ export function PolicyPreview({ id, page, citedSections, onHeaderInfo, onHeaderA
   const allExclusions: DocExclusion[] = doc?.exclusions ?? [];
 
   const hasCitations = citedSections && citedSections.length > 0;
+  const hasCoverageCitations = !!(citedCoverageNames && citedCoverageNames.length > 0);
 
   const sections = allSections.filter((s) => matchesCitation(s.title, citedSections, s.content));
   const endorsements = allEndorsements.filter((e) => matchesCitation(e.title, citedSections, e.content));
@@ -172,11 +174,10 @@ export function PolicyPreview({ id, page, citedSections, onHeaderInfo, onHeaderA
       </div>
 
       {/* Coverages — filtered by citations like other sections */}
-      {policy.coverages && policy.coverages.length > 0 && (
+      {policy.coverages && policy.coverages.length > 0 && (!hasCitations || hasCoverageCitations) && (
         <CoverageGroup
           coverages={policy.coverages as PolicyCoverage[]}
-          citedSections={citedSections}
-          hasCitations={!!hasCitations}
+          citedCoverageNames={citedCoverageNames}
         />
       )}
 
@@ -244,17 +245,17 @@ export function PolicyPreview({ id, page, citedSections, onHeaderInfo, onHeaderA
   );
 }
 
-function CoverageGroup({ coverages, citedSections, hasCitations }: {
+function CoverageGroup({ coverages, citedCoverageNames }: {
   coverages: PolicyCoverage[];
-  citedSections?: string[];
-  hasCitations: boolean;
+  citedCoverageNames?: string[];
 }) {
   const [showAll, setShowAll] = useState(false);
+  const hasCoverageCitations = !!(citedCoverageNames && citedCoverageNames.length > 0);
 
-  const cited = hasCitations
-    ? coverages.filter((c) => matchesCitation(c.name, citedSections))
+  const cited = hasCoverageCitations
+    ? coverages.filter((c) => matchesCitation(c.name, citedCoverageNames))
     : coverages;
-  const hasMore = hasCitations && cited.length < coverages.length;
+  const hasMore = hasCoverageCitations && cited.length < coverages.length;
   const visible = showAll ? coverages : cited;
 
   return (
@@ -267,7 +268,7 @@ function CoverageGroup({ coverages, citedSections, hasCitations }: {
           )}
         </p>
       </div>
-      <div className="border border-foreground/8 rounded-lg overflow-hidden divide-y divide-foreground/6">
+      <div className="border border-foreground/8 rounded-lg overflow-hidden divide-y divide-foreground/6 bg-white">
         {visible.map((cov, i) => (
           <CoverageRow key={i} name={cov.name} limit={cov.limit} deductible={cov.deductible} />
         ))}

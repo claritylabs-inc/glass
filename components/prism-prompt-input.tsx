@@ -1,16 +1,24 @@
 "use client";
 
-import { useCallback, useRef, useImperativeHandle, forwardRef } from "react";
-import { ArrowUp, ImageIcon, Monitor, Asterisk, Square } from "lucide-react";
+import {
+  useCallback,
+  useRef,
+  useImperativeHandle,
+  forwardRef,
+  useState,
+} from "react";
+import type { DragEvent as ReactDragEvent } from "react";
+import { ArrowUp, Asterisk, Paperclip, Square, X } from "lucide-react";
 import {
   PromptInput,
   PromptInputTextarea,
   PromptInputFooter,
   PromptInputTools,
   usePromptInputAttachments,
-  captureScreenshot,
   type PromptInputMessage,
 } from "@/components/ai-elements/prompt-input";
+import { PillButton } from "@/components/ui/pill-button";
+import { cn } from "@/lib/utils";
 import { Spinner } from "@/components/ui/spinner";
 import type { ChatStatus } from "ai";
 
@@ -22,42 +30,54 @@ function AttachmentActionButtons() {
     attachments.openFileDialog();
   }, [attachments]);
 
-  const handleScreenshot = useCallback(async () => {
-    try {
-      const screenshot = await captureScreenshot();
-      if (screenshot) {
-        attachments.add([screenshot]);
-      }
-    } catch (error) {
-      if (
-        error instanceof DOMException &&
-        (error.name === "NotAllowedError" || error.name === "AbortError")
-      ) {
-        return;
-      }
-      throw error;
-    }
-  }, [attachments]);
-
   return (
     <>
-      <button
+      <PillButton
         type="button"
+        size="compact"
+        variant="icon"
         onClick={handleAttach}
         title="Add photos or files"
-        className="w-6 h-6 flex items-center justify-center rounded-md text-muted-foreground/30 hover:text-muted-foreground/60 hover:bg-foreground/[0.04] transition-colors cursor-pointer"
+        aria-label="Add photos or files"
       >
-        <ImageIcon className="w-3.5 h-3.5" />
-      </button>
-      <button
-        type="button"
-        onClick={handleScreenshot}
-        title="Take screenshot"
-        className="w-6 h-6 flex items-center justify-center rounded-md text-muted-foreground/30 hover:text-muted-foreground/60 hover:bg-foreground/[0.04] transition-colors cursor-pointer"
-      >
-        <Monitor className="w-3.5 h-3.5" />
-      </button>
+        <Paperclip className="h-3.5 w-3.5" />
+      </PillButton>
     </>
+  );
+}
+
+function AttachmentTags({ roomyOnMobile = false }: { roomyOnMobile?: boolean }) {
+  const attachments = usePromptInputAttachments();
+
+  if (attachments.files.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className={cn(
+      "order-first flex w-full flex-wrap justify-start self-start gap-2",
+      roomyOnMobile ? "px-4 sm:px-3 pt-3 pb-0" : "px-3 pt-3 pb-0"
+    )}>
+      {attachments.files.map((file) => (
+        <span
+          key={file.id}
+          className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-foreground/[0.05] px-2.5 py-1 text-[11px] font-medium text-foreground/75"
+        >
+          <Paperclip className="h-3 w-3 shrink-0 text-muted-foreground" />
+          <span className="max-w-[180px] truncate sm:max-w-[240px]" title={file.filename}>
+            {file.filename}
+          </span>
+          <button
+            type="button"
+            onClick={() => attachments.remove(file.id)}
+            title={`Remove ${file.filename}`}
+            className="-mr-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/[0.08] hover:text-foreground"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </span>
+      ))}
+    </div>
   );
 }
 
@@ -93,6 +113,45 @@ export const PrismPromptInput = forwardRef<
   ref,
 ) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [isDraggingFiles, setIsDraggingFiles] = useState(false);
+
+  const handleDragState = useCallback((event: ReactDragEvent<HTMLFormElement>) => {
+    if (!event.dataTransfer.types.includes("Files")) {
+      return false;
+    }
+
+    event.preventDefault();
+    return true;
+  }, []);
+
+  const handleDragEnter = useCallback((event: ReactDragEvent<HTMLFormElement>) => {
+    if (handleDragState(event)) {
+      setIsDraggingFiles(true);
+    }
+  }, [handleDragState]);
+
+  const handleDragOver = useCallback((event: ReactDragEvent<HTMLFormElement>) => {
+    if (handleDragState(event)) {
+      event.dataTransfer.dropEffect = "copy";
+      if (!isDraggingFiles) {
+        setIsDraggingFiles(true);
+      }
+    }
+  }, [handleDragState, isDraggingFiles]);
+
+  const handleDragLeave = useCallback((event: ReactDragEvent<HTMLFormElement>) => {
+    if (
+      event.currentTarget.contains(event.relatedTarget as Node | null)
+    ) {
+      return;
+    }
+
+    setIsDraggingFiles(false);
+  }, []);
+
+  const handleDrop = useCallback(() => {
+    setIsDraggingFiles(false);
+  }, []);
 
   useImperativeHandle(ref, () => ({
     setValueAndFocus: (v: string) => {
@@ -132,8 +191,16 @@ export const PrismPromptInput = forwardRef<
     <div className="w-full">
       <PromptInput
         onSubmit={handleSubmit}
-        className="rounded-xl border border-foreground/6 bg-popover focus-within:border-foreground/15 dark:focus-within:border-[#3a3a3a] transition-all overflow-hidden [&_[data-slot=input-group]]:border-0 [&_[data-slot=input-group]]:rounded-none [&_[data-slot=input-group]]:shadow-none"
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
+        className={cn(
+          "rounded-xl border border-foreground/6 bg-popover focus-within:border-foreground/15 dark:focus-within:border-[#3a3a3a] transition-all overflow-hidden [&_[data-slot=input-group]]:border-0 [&_[data-slot=input-group]]:rounded-none [&_[data-slot=input-group]]:shadow-none",
+          isDraggingFiles && "border-primary/40 bg-primary/5"
+        )}
       >
+        <AttachmentTags roomyOnMobile={roomyOnMobile} />
         <PromptInputTextarea
           ref={textareaRef}
           placeholder={placeholder}
@@ -164,31 +231,34 @@ export const PrismPromptInput = forwardRef<
             <div className="flex items-center gap-1">
               {showAttach && <AttachmentActionButtons />}
               {isGenerating && onStop ? (
-                <button
+                <PillButton
                   type="button"
+                  size="compact"
                   onClick={handleStopClick}
-                  className={roomyOnMobile
-                    ? "w-9 h-9 sm:w-6 sm:h-6 flex items-center justify-center rounded-md bg-foreground text-background transition-opacity cursor-pointer"
-                    : "w-6 h-6 flex items-center justify-center rounded-md bg-foreground text-background transition-opacity cursor-pointer"
-                  }
+                  className={roomyOnMobile ? "h-9 px-4 text-[12px] sm:h-7 sm:px-3 sm:text-[11px]" : undefined}
                 >
-                  <Square className={roomyOnMobile ? "w-4 h-4 sm:w-3 sm:h-3 fill-current" : "w-3 h-3 fill-current"} />
-                </button>
+                  <Square className={roomyOnMobile ? "h-3.5 w-3.5 fill-current sm:h-3 sm:w-3" : "h-3 w-3 fill-current"} />
+                  Stop
+                </PillButton>
               ) : (
-                <button
+                <PillButton
                   type="submit"
+                  size="compact"
                   disabled={disabled || isGenerating}
-                  className={roomyOnMobile
-                    ? "w-9 h-9 sm:w-6 sm:h-6 flex items-center justify-center rounded-md bg-foreground text-background disabled:opacity-20 transition-opacity cursor-pointer"
-                    : "w-6 h-6 flex items-center justify-center rounded-md bg-foreground text-background disabled:opacity-20 transition-opacity cursor-pointer"
-                  }
+                  className={roomyOnMobile ? "h-9 px-4 text-[12px] sm:h-7 sm:px-3 sm:text-[11px]" : undefined}
                 >
                   {status === "submitted" ? (
-                    <Spinner className={roomyOnMobile ? "w-4 h-4 sm:w-3.5 sm:h-3.5" : "w-3.5 h-3.5"} />
+                    <>
+                      <Spinner className={roomyOnMobile ? "h-4 w-4 sm:h-3.5 sm:w-3.5" : "h-3.5 w-3.5"} />
+                      Sending
+                    </>
                   ) : (
-                    <ArrowUp className={roomyOnMobile ? "w-4 h-4 sm:w-3.5 sm:h-3.5" : "w-3.5 h-3.5"} />
+                    <>
+                      <ArrowUp className={roomyOnMobile ? "h-4 w-4 sm:h-3.5 sm:w-3.5" : "h-3.5 w-3.5"} />
+                      Send
+                    </>
                   )}
-                </button>
+                </PillButton>
               )}
             </div>
           </PromptInputTools>

@@ -3,7 +3,7 @@
 // are intentionally NOT re-exported here; they remain accessible within the
 // directory by importing directly from ./context.
 
-export { convertBlobUrlToDataUrl, captureScreenshot } from "./helpers";
+export { convertBlobUrlToDataUrl } from "./helpers";
 
 export type {
   AttachmentsContext,
@@ -25,11 +25,9 @@ export {
 
 export type {
   PromptInputActionAddAttachmentsProps,
-  PromptInputActionAddScreenshotProps,
 } from "./actions";
 export {
   PromptInputActionAddAttachments,
-  PromptInputActionAddScreenshot,
 } from "./actions";
 
 export type { PromptInputMessage, PromptInputProps } from "./prompt-input";

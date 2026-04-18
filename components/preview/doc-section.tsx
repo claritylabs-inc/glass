@@ -37,7 +37,7 @@ export function DocSection({
   const typeLabel = type === "endorsement" ? "Endorsement" : type === "exclusion" ? "Exclusion" : type === "condition" ? "Condition" : type === "definition" ? "Definition" : null;
 
   return (
-    <div className="border border-foreground/8 rounded-lg overflow-hidden">
+    <div className="border border-foreground/8 rounded-lg overflow-hidden bg-white">
       <button
         type="button"
         onClick={() => setOpen(!open)}

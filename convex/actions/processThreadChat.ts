@@ -759,7 +759,10 @@ When answering coverage questions, you are an expert insurance analyst, not a di
       let hasStartedReasoning = false;
       let lastReasoningFlush = Date.now();
       const citedSections = new Set<string>(); // titles from lookup_policy_section results
+      const citedCoverageNames = new Set<string>(); // structured coverage names surfaced by tool results
       const citedPolicyIds = new Set<string>(); // policy IDs actually looked up via lookup_policy_section
+      const usedTools: string[] = [];
+      const toolCalls: Array<{ name: string; input?: string }> = [];
       let lastToolName = "";
       let lastToolPolicyId = "";
 
@@ -791,7 +794,13 @@ When answering coverage questions, you are an expert insurance analyst, not a di
           }
         } else if (part.type === "tool-call") {
           lastToolName = part.toolName;
-          lastToolPolicyId = part.toolName === "lookup_policy_section" ? ((part as Record<string, unknown>).input as Record<string, unknown>)?.policyId as string ?? "" : "";
+          const input = ((part as Record<string, unknown>).input as Record<string, unknown> | undefined) ?? undefined;
+          lastToolPolicyId = part.toolName === "lookup_policy_section" ? input?.policyId as string ?? "" : "";
+          usedTools.push(part.toolName);
+          toolCalls.push({
+            name: part.toolName,
+            input: input ? JSON.stringify(input).slice(0, 500) : undefined,
+          });
           const label = TOOL_LABELS[part.toolName] ?? `Using ${part.toolName}...`;
           await ctx.runMutation(internal.threads.streamAgentMessage, {
             id: agentMsgId,
@@ -804,8 +813,14 @@ When answering coverage questions, you are an expert insurance analyst, not a di
             const results = Array.isArray(output) ? output : [output];
             for (const r of results) {
               if (r && typeof r === "object" && r.title) {
-                citedSections.add(r.title);
-                if (lastToolPolicyId) citedPolicyIds.add(lastToolPolicyId);
+                const resultType = (r as Record<string, unknown>).type;
+                if (resultType === "coverage") {
+                  citedCoverageNames.add(String((r as Record<string, unknown>).title));
+                  if (lastToolPolicyId) citedPolicyIds.add(lastToolPolicyId);
+                } else {
+                  citedSections.add(String((r as Record<string, unknown>).title));
+                  if (lastToolPolicyId) citedPolicyIds.add(lastToolPolicyId);
+                }
               }
             }
           }
@@ -825,6 +840,9 @@ When answering coverage questions, you are an expert insurance analyst, not a di
         referencedQuoteIds: relevantQuoteIds.filter((qid: string) => citedPolicyIds.has(qid)).length > 0
           ? relevantQuoteIds.filter((qid: string) => citedPolicyIds.has(qid)) as Id<"policies">[] : undefined,
         citedSections: citedSections.size > 0 ? [...citedSections] : undefined,
+        citedCoverageNames: citedCoverageNames.size > 0 ? [...citedCoverageNames] : undefined,
+        usedTools: usedTools.length > 0 ? usedTools : undefined,
+        toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
       });
       // Save final reasoning if any
       if (reasoning) {

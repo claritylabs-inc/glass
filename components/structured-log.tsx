@@ -151,7 +151,7 @@ export function StructuredLog({
   return (
     <div
       className={cn(
-        "rounded-lg border border-foreground/6 bg-card overflow-hidden",
+        "rounded-lg border border-foreground/6 bg-card overflow-hidden @container",
         className,
       )}
     >
@@ -159,13 +159,13 @@ export function StructuredLog({
       <div className="flex items-center gap-2 px-3 py-2 border-b border-foreground/6 bg-foreground/[0.015]">
         {/* Search */}
         <div className="relative flex-1 max-w-xs">
-          <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground/40" />
+          <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground/60" />
           <input
             type="text"
             placeholder="Search logs..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-7 pr-2 py-1 text-xs bg-transparent border border-foreground/8 rounded-md outline-none focus:border-foreground/20 transition-colors placeholder:text-muted-foreground/30"
+            className="w-full pl-7 pr-2 py-1.5 text-sm text-foreground bg-transparent border border-foreground/10 rounded-md outline-none focus:border-foreground/25 transition-colors placeholder:text-muted-foreground/55"
           />
         </div>
 
@@ -181,10 +181,10 @@ export function StructuredLog({
                 type="button"
                 onClick={() => toggleFilter(f.value)}
                 className={cn(
-                  "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium transition-colors cursor-pointer",
+                  "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium transition-colors cursor-pointer",
                   active
                     ? `${STATUS_STYLES[f.value].text} bg-foreground/5 ring-1 ring-foreground/10`
-                    : "text-muted-foreground/40 hover:text-muted-foreground/60",
+                    : "text-muted-foreground/70 hover:text-foreground/80",
                 )}
               >
                 <span
@@ -207,7 +207,7 @@ export function StructuredLog({
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
               <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" />
             </span>
-            <span className="text-[11px] font-medium text-emerald-600/70 dark:text-emerald-500/70">
+            <span className="text-xs font-medium text-emerald-700 dark:text-emerald-400">
               Live
             </span>
           </span>
@@ -215,16 +215,16 @@ export function StructuredLog({
       </div>
 
       {/* ── Column headers ── */}
-      <div className="grid grid-cols-[100px_minmax(0,1fr)_minmax(0,1.5fr)] gap-x-3 px-4 py-1.5 border-b border-foreground/4 bg-foreground/[0.01] text-[11px] font-medium text-muted-foreground/40 uppercase tracking-wider">
+      <div className="grid grid-cols-[100px_minmax(0,1fr)] @lg:grid-cols-[100px_minmax(0,1fr)_minmax(0,1.5fr)] gap-x-3 px-4 py-2 border-b border-foreground/4 bg-foreground/[0.01] text-xs font-semibold text-muted-foreground/80 tracking-normal">
         <span>Time</span>
         <span>Event</span>
-        <span>Detail</span>
+        <span className="hidden @lg:block">Detail</span>
       </div>
 
       {/* ── Rows ── */}
       {filtered.length === 0 ? (
         <div className="px-4 py-10 text-center">
-          <p className="text-xs text-muted-foreground/40">
+          <p className="text-sm text-muted-foreground/70">
             {search || statusFilter.size > 0
               ? "No matching entries"
               : emptyMessage}
@@ -247,7 +247,7 @@ export function StructuredLog({
                 type="button"
                 onClick={() => handleRowClick(entry)}
                 className={cn(
-                  "w-full grid grid-cols-[100px_minmax(0,1fr)_minmax(0,1.5fr)] gap-x-3 px-4 py-2 text-left transition-colors cursor-pointer",
+                  "w-full grid grid-cols-[100px_minmax(0,1fr)] @lg:grid-cols-[100px_minmax(0,1fr)_minmax(0,1.5fr)] gap-x-3 px-4 py-2 text-left transition-colors cursor-pointer",
                   isSelected
                     ? "bg-foreground/[0.04]"
                     : "hover:bg-foreground/[0.02]",
@@ -256,7 +256,7 @@ export function StructuredLog({
                 )}
               >
                 {/* Time */}
-                <span className="text-[12px] tabular-nums text-muted-foreground/50 font-mono whitespace-nowrap">
+                <span className="text-sm tabular-nums text-muted-foreground/80 font-mono whitespace-nowrap">
                   {dayjs(entry.timestamp).format("HH:mm:ss")}
                 </span>
 
@@ -267,23 +267,23 @@ export function StructuredLog({
                   />
                   <span
                     className={cn(
-                      "text-xs truncate",
+                      "text-sm truncate",
                       isSelected || isLatest
                         ? "text-foreground font-medium"
-                        : "text-foreground/80",
+                        : "text-foreground/90",
                     )}
                   >
                     {entry.event}
                   </span>
                   {entry.subEntries && entry.subEntries.length > 0 && (
-                    <span className="text-[10px] text-muted-foreground/30 tabular-nums shrink-0">
+                    <span className="text-xs text-muted-foreground/70 tabular-nums shrink-0">
                       {entry.subEntries.length} steps
                     </span>
                   )}
                 </span>
 
                 {/* Detail */}
-                <span className="text-xs text-muted-foreground/50 truncate">
+                <span className="hidden @lg:block text-sm text-muted-foreground/80 truncate">
                   {entry.detail}
                 </span>
               </button>
@@ -294,13 +294,13 @@ export function StructuredLog({
 
       {/* ── Footer ── */}
       <div className="flex items-center justify-between px-4 py-1.5 border-t border-foreground/4 bg-foreground/[0.01]">
-        <span className="text-[11px] text-muted-foreground/35 tabular-nums">
+        <span className="text-xs text-muted-foreground/70 tabular-nums">
           {filtered.length === entries.length
             ? `${entries.length} ${entries.length === 1 ? "entry" : "entries"}`
             : `${filtered.length} of ${entries.length} entries`}
         </span>
         {filtered.length > 0 && (
-          <span className="text-[11px] text-muted-foreground/25 tabular-nums">
+          <span className="text-xs text-muted-foreground/60 tabular-nums">
             {dayjs(filtered[0].timestamp).format("MMM D")} — {dayjs(filtered[filtered.length - 1].timestamp).format("MMM D")}
           </span>
         )}

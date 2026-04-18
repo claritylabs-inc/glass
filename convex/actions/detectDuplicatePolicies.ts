@@ -229,12 +229,12 @@ export const mergePolicies = action({
       ...secondaryEmailIds.filter((id) => !primaryEmailIds.includes(id)),
     ];
 
-    await ctx.runMutation(api.policies.updateExtraction, {
+    await ctx.runMutation((internal as any).policies.updateFiles, {
       id: args.primaryPolicyId,
       files: mergedFiles,
       emailIds: mergedEmailIds,
       reconciliationStatus: "pending",
-    } as any);
+    });
 
     // 7. Schedule reconciliation for the primary policy
     await ctx.scheduler.runAfter(0, internal.actions.reconcilePolicy.reconcilePolicy, {

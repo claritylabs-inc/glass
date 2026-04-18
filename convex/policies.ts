@@ -923,6 +923,40 @@ export const updateFiles = internalMutation({
   },
 });
 
+// Atomically append to the reconciliationLog array on a policy
+export const appendReconciliationLog = internalMutation({
+  args: {
+    id: v.id("policies"),
+    message: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const policy = await ctx.db.get(args.id);
+    if (!policy) return;
+    const existing = (policy as any).reconciliationLog ?? [];
+    existing.push({ timestamp: Date.now(), message: args.message });
+    await ctx.db.patch(args.id, { reconciliationLog: existing } as any);
+  },
+});
+
+// Update reconciliation status and optionally policy fields (used by reconcilePolicy action)
+export const updateReconciliation = internalMutation({
+  args: {
+    id: v.id("policies"),
+    reconciliationStatus: v.optional(v.union(
+      v.literal("pending"),
+      v.literal("reconciled"),
+      v.literal("error"),
+    )),
+    fields: v.optional(v.any()), // Reconciled extraction fields to patch onto the policy
+  },
+  handler: async (ctx, args) => {
+    const patch: Record<string, unknown> = {};
+    if (args.reconciliationStatus !== undefined) patch.reconciliationStatus = args.reconciliationStatus;
+    if (args.fields) Object.assign(patch, args.fields);
+    await ctx.db.patch(args.id, patch);
+  },
+});
+
 export const restore = mutation({
   args: { id: v.id("policies") },
   handler: async (ctx, args) => {

@@ -205,12 +205,6 @@ export function DocumentsSection() {
     );
 
   const loading = policies === undefined || contextDocs === undefined;
-  const activePolicyCount = uploadedPolicies.filter((doc: { extractionStatus?: string }) =>
-    ["extracting", "paused", "pending"].includes(doc.extractionStatus ?? "")
-  ).length;
-  const completedPolicyCount = uploadedPolicies.filter(
-    (doc: { extractionStatus?: string }) => doc.extractionStatus === "complete"
-  ).length;
 
   return (
     <div className="space-y-5">
@@ -290,7 +284,7 @@ export function DocumentsSection() {
               >
                 <div className="px-5 py-3.5 border-b border-foreground/6 flex items-center justify-between gap-3">
                   <div className="min-w-0">
-                    <h3 className="!mb-0 text-sm font-medium text-foreground">Org context documents</h3>
+                    <h3 className="!mb-0 text-sm font-medium text-foreground">Org Context Documents</h3>
                   </div>
                   <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-foreground/[0.05] text-muted-foreground shrink-0">
                     {contextDocs?.length ?? 0} files
@@ -377,7 +371,7 @@ export function DocumentsSection() {
               >
                 <div className="px-5 py-3.5 border-b border-foreground/6 flex items-center justify-between gap-3">
                   <div className="min-w-0">
-                    <h3 className="!mb-0 text-sm font-medium text-foreground">Policy extraction queue</h3>
+                    <h3 className="!mb-0 text-sm font-medium text-foreground">Policy Extraction Queue</h3>
                   </div>
                   <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-foreground/[0.05] text-muted-foreground shrink-0">
                     {uploadedPolicies.length} files
@@ -406,7 +400,7 @@ export function DocumentsSection() {
                         key={doc._id}
                         className="px-5 py-3.5 group hover:bg-foreground/[0.015] transition-colors"
                       >
-                        <div className="flex items-start gap-3">
+                        <div className="flex items-center gap-3">
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium text-foreground truncate">
                               {doc.fileName || doc.carrier || "Document"}
@@ -420,9 +414,15 @@ export function DocumentsSection() {
                                 {doc.extractionError}
                               </p>
                             ) : null}
+                          </div>
 
-                            <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                              {doc.extractionStatus === "extracting" && (
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {doc.extractionStatus === "extracting" && (
+                              <>
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 mr-1">
+                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                  Extracting
+                                </span>
                                 <button
                                   type="button"
                                   disabled={runningActionKey !== null}
@@ -441,118 +441,107 @@ export function DocumentsSection() {
                                 >
                                   Pause
                                 </button>
-                              )}
+                              </>
+                            )}
 
-                              {doc.extractionStatus === "paused" && (
+                            {doc.extractionStatus === "paused" && (
+                              <button
+                                type="button"
+                                disabled={runningActionKey !== null}
+                                onClick={async () => {
+                                  setRunningActionKey(`resume-${doc._id}`);
+                                  try {
+                                    await resumeExtraction({ id: doc._id as Id<"policies"> });
+                                    toast.success("Extraction resumed");
+                                  } catch {
+                                    toast.error("Failed to resume extraction");
+                                  } finally {
+                                    setRunningActionKey(null);
+                                  }
+                                }}
+                                className="px-2 py-0.5 rounded-md border border-foreground/12 text-xs text-muted-foreground hover:bg-foreground/[0.03] disabled:opacity-50"
+                              >
+                                Resume
+                              </button>
+                            )}
+
+                            {(doc.extractionStatus === "paused" ||
+                              doc.extractionStatus === "error" ||
+                              doc.extractionStatus === "pending") && (
+                              <button
+                                type="button"
+                                disabled={runningActionKey !== null}
+                                onClick={async () => {
+                                  setRunningActionKey(`dismiss-${doc._id}`);
+                                  try {
+                                    await cancelExtraction({ id: doc._id as Id<"policies"> });
+                                    toast.success("Extraction dismissed");
+                                  } catch {
+                                    toast.error("Failed to dismiss extraction");
+                                  } finally {
+                                    setRunningActionKey(null);
+                                  }
+                                }}
+                                className="px-2 py-0.5 rounded-md border border-red-200 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50"
+                              >
+                                Dismiss
+                              </button>
+                            )}
+
+                            {(doc.fileId || doc.emailId) && !doc.isDemo &&
+                              (doc.extractionStatus === "complete" || doc.extractionStatus === "error") && (
                                 <button
                                   type="button"
                                   disabled={runningActionKey !== null}
                                   onClick={async () => {
-                                    setRunningActionKey(`resume-${doc._id}`);
+                                    setRunningActionKey(`retry-${doc._id}`);
                                     try {
-                                      await resumeExtraction({ id: doc._id as Id<"policies"> });
-                                      toast.success("Extraction resumed");
+                                      await retryExtraction({
+                                        policyId: doc._id as Id<"policies">,
+                                        mode: "full",
+                                      });
+                                      toast.success("Re-extraction started");
                                     } catch {
-                                      toast.error("Failed to resume extraction");
+                                      toast.error("Failed to re-extract");
                                     } finally {
                                       setRunningActionKey(null);
                                     }
                                   }}
                                   className="px-2 py-0.5 rounded-md border border-foreground/12 text-xs text-muted-foreground hover:bg-foreground/[0.03] disabled:opacity-50"
                                 >
-                                  Resume
+                                  Re-Extract
                                 </button>
                               )}
 
-                              {(doc.extractionStatus === "paused" ||
-                                doc.extractionStatus === "error" ||
-                                doc.extractionStatus === "pending") && (
-                                <button
-                                  type="button"
-                                  disabled={runningActionKey !== null}
-                                  onClick={async () => {
-                                    setRunningActionKey(`dismiss-${doc._id}`);
-                                    try {
-                                      await cancelExtraction({ id: doc._id as Id<"policies"> });
-                                      toast.success("Extraction dismissed");
-                                    } catch {
-                                      toast.error("Failed to dismiss extraction");
-                                    } finally {
-                                      setRunningActionKey(null);
-                                    }
-                                  }}
-                                  className="px-2 py-0.5 rounded-md border border-red-200 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50"
-                                >
-                                  Dismiss
-                                </button>
-                              )}
+                            {doc.extractionStatus === "complete" && (
+                              <button
+                                type="button"
+                                onClick={() => router.push(`/policies/${doc._id}`)}
+                                className="px-2 py-0.5 rounded-md border border-foreground/12 text-xs text-foreground hover:bg-foreground/[0.03]"
+                              >
+                                View
+                              </button>
+                            )}
 
-                              {(doc.fileId || doc.emailId) && !doc.isDemo &&
-                                (doc.extractionStatus === "complete" || doc.extractionStatus === "error") && (
-                                  <button
-                                    type="button"
-                                    disabled={runningActionKey !== null}
-                                    onClick={async () => {
-                                      setRunningActionKey(`retry-${doc._id}`);
-                                      try {
-                                        await retryExtraction({
-                                          policyId: doc._id as Id<"policies">,
-                                          mode: "full",
-                                        });
-                                        toast.success("Re-extraction started");
-                                      } catch {
-                                        toast.error("Failed to re-extract");
-                                      } finally {
-                                        setRunningActionKey(null);
-                                      }
-                                    }}
-                                    className="px-2 py-0.5 rounded-md border border-foreground/12 text-xs text-muted-foreground hover:bg-foreground/[0.03] disabled:opacity-50"
-                                  >
-                                    Re-extract
-                                  </button>
-                                )}
-
-                              {doc.extractionStatus === "complete" && (
-                                <button
-                                  type="button"
-                                  onClick={() => router.push(`/policies/${doc._id}`)}
-                                  className="px-2 py-0.5 rounded-md border border-foreground/12 text-xs text-foreground hover:bg-foreground/[0.03]"
-                                >
-                                  View
-                                </button>
-                              )}
-                            </div>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                setRemovingId(doc._id);
+                                try {
+                                  await removePolicy({ id: doc._id as Id<"policies"> });
+                                  toast.success("Document removed");
+                                } catch {
+                                  toast.error("Failed to remove document");
+                                } finally {
+                                  setRemovingId(null);
+                                }
+                              }}
+                              disabled={removingId === doc._id}
+                              className="p-1 text-muted-foreground/25 hover:text-red-500 cursor-pointer opacity-0 group-hover:opacity-100 transition-all shrink-0"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
                           </div>
-
-                          {doc.extractionStatus === "extracting" ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 shrink-0">
-                              <Loader2 className="w-3 h-3 animate-spin" />
-                              Extracting
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 shrink-0">
-                              {doc.documentType === "quote" ? "Quote" : "Policy"}
-                            </span>
-                          )}
-
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              setRemovingId(doc._id);
-                              try {
-                                await removePolicy({ id: doc._id as Id<"policies"> });
-                                toast.success("Document removed");
-                              } catch {
-                                toast.error("Failed to remove document");
-                              } finally {
-                                setRemovingId(null);
-                              }
-                            }}
-                            disabled={removingId === doc._id}
-                            className="p-1 text-muted-foreground/25 hover:text-red-500 cursor-pointer opacity-0 group-hover:opacity-100 transition-all shrink-0"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
                         </div>
                       </div>
                     ))}

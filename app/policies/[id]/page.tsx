@@ -10,6 +10,7 @@ import {
   Upload,
   Loader2,
   RefreshCw,
+  RotateCw,
   Trash2,
   Eye,
   FileText,
@@ -182,6 +183,25 @@ const FILE_TYPE_COLORS: Record<string, string> = {
   unknown: "bg-gray-100 text-gray-600 dark:bg-gray-800/40 dark:text-gray-400",
 };
 
+const EXTRACTION_STATUS_CONFIG: Record<string, { label: string; color: string }> = {
+  pending: {
+    label: "Pending",
+    color: "bg-gray-100 text-gray-600 dark:bg-gray-800/40 dark:text-gray-400",
+  },
+  extracting: {
+    label: "Extracting",
+    color: "bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400",
+  },
+  complete: {
+    label: "Complete",
+    color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400",
+  },
+  failed: {
+    label: "Failed",
+    color: "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400",
+  },
+};
+
 // ─── PolicyFilesTab ────────────────────────────────────────────────────────────
 
 function PolicyFilesTab({ policyId, policy }: { policyId: string; policy: any }) {
@@ -189,6 +209,10 @@ function PolicyFilesTab({ policyId, policy }: { policyId: string; policy: any })
     policyId: policyId as any,
   });
   const { openWithUrl } = usePdf();
+  const legacyFileUrl = useQuery(
+    api.policies.getFileUrl,
+    policy?.fileId ? { fileId: policy.fileId as Id<"_storage"> } : "skip",
+  );
 
   // Build file URL queries — we query up to the first 8 files individually
   const file0Url = useQuery(
@@ -245,12 +269,34 @@ function PolicyFilesTab({ policyId, policy }: { policyId: string; policy: any })
   if (policyFiles.length === 0) {
     // Fall back to the legacy single-file entry from the policy record
     const legacyFileId = (policy as any).fileId;
+    const legacyFileName = (policy as any).fileName ?? "Attached file";
     return (
-      <div className="rounded-lg border border-foreground/6 bg-card px-4 py-3 text-body-sm text-muted-foreground/60">
-        {legacyFileId
-          ? "This policy has a single attached file. Use the View PDF button in the header to open it."
-          : "No files attached to this policy yet."}
-      </div>
+      legacyFileId ? (
+        <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
+          <div className="flex items-center justify-between gap-3 px-4 py-3">
+            <div className="flex items-center gap-2 min-w-0">
+              <FileText className="w-3.5 h-3.5 text-muted-foreground/30 shrink-0" />
+              <p className="text-body-sm text-foreground truncate">{legacyFileName}</p>
+              <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-label-sm font-medium shrink-0 ${FILE_TYPE_COLORS.unknown}`}>
+                {FILE_TYPE_LABELS.unknown}
+              </span>
+            </div>
+            {legacyFileUrl && (
+              <PillButton
+                variant="secondary"
+                size="compact"
+                onClick={() => openWithUrl(legacyFileUrl)}
+              >
+                View
+              </PillButton>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="rounded-lg border border-foreground/6 bg-card px-4 py-3 text-body-sm text-muted-foreground/60">
+          No files attached to this policy yet.
+        </div>
+      )
     );
   }
 
@@ -339,6 +385,7 @@ export default function PolicyDetailPage({
   const searchParams = useSearchParams();
   const initialPage = Number(searchParams.get("page")) || undefined;
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showRefreshDialog, setShowRefreshDialog] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [demoBannerDismissed, setDemoBannerDismissed] = useState(false);
@@ -428,7 +475,6 @@ export default function PolicyDetailPage({
   const documentType: string = (p.documentType as string | undefined) ?? "policy";
   const carrierName = (p.carrier as string | undefined) ?? "";
   const policyNumber = (p.policyNumber as string | undefined) ?? "";
-  const hasEmailSource = Boolean(p.emailId);
   const isDeleted = !!(p.deletedAt);
   const policyDocument: Record<string, unknown> | undefined = p.document as Record<string, unknown> | undefined;
   const limits: Record<string, unknown> | undefined = p.limits as Record<string, unknown> | undefined;
@@ -473,6 +519,36 @@ export default function PolicyDetailPage({
     }
   };
 
+  const handleReextractFromSource = async () => {
+    setReExtracting(true);
+    try {
+      await retryExtraction({ policyId: id as Id<"policies">, mode: "full" });
+      toast.success("Re-extraction started");
+      setShowRefreshDialog(false);
+    } catch {
+      toast.error("Re-extraction failed");
+    } finally {
+      setReExtracting(false);
+    }
+  };
+
+  const handleReindex = async () => {
+    setRechunking(true);
+    try {
+      const result = await rechunk({ policyId: policy._id }) as Record<string, unknown>;
+      if (result?.error) {
+        toast.error(result.error as string);
+        return;
+      }
+      toast.success(`Reindexed: ${result.newChunks} search chunks updated`);
+      setShowRefreshDialog(false);
+    } catch {
+      toast.error("Reindexing failed");
+    } finally {
+      setRechunking(false);
+    }
+  };
+
   const breadcrumbLabel = (
     <>
       {carrierName} {policyNumber}
@@ -503,24 +579,19 @@ export default function PolicyDetailPage({
           <Trash2 className="w-4 h-4" />
         </PillButton>
       )}
-      {hasEmailSource && (
+      {!isDeleted && (
         <PillButton
           size="compact"
           variant="icon"
           label="Re-extract"
-          disabled={reExtracting}
-          onClick={async () => {
-            setReExtracting(true);
-            try {
-              await retryExtraction({ policyId: id as Id<"policies">, mode: "full" });
-            } finally {
-              setReExtracting(false);
-            }
-          }}
+          disabled={reExtracting || rechunking}
+          onClick={() => setShowRefreshDialog(true)}
         >
-          <RefreshCw
-            className={`w-4 h-4 ${reExtracting ? "animate-spin" : ""}`}
-          />
+          {reExtracting || rechunking ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <RotateCw className="w-4 h-4" />
+          )}
         </PillButton>
       )}
       <PillButton
@@ -592,6 +663,62 @@ export default function PolicyDetailPage({
         </DialogContent>
       </Dialog>
 
+      <Dialog
+        open={showRefreshDialog}
+        onOpenChange={(v) => !v && setShowRefreshDialog(false)}
+      >
+        <DialogContent showCloseButton={false} className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Refresh full data</DialogTitle>
+            <DialogDescription>
+              Choose whether to rerun extraction from the original files or just
+              rebuild the searchable chunks from the existing extracted data.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 text-body-sm text-muted-foreground">
+            <div className="rounded-lg border border-foreground/6 bg-foreground/[0.02] px-3 py-2.5">
+              <p className="font-medium text-foreground">Re-extract from original files</p>
+              <p className="mt-1">
+                Rerun the extraction pipeline and regenerate the structured policy data.
+              </p>
+            </div>
+
+            <div className="rounded-lg border border-foreground/6 bg-foreground/[0.02] px-3 py-2.5">
+              <p className="font-medium text-foreground">Reindex existing data</p>
+              <p className="mt-1">
+                Rebuild search chunks without rerunning extraction.
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <PillButton
+              variant="secondary"
+              onClick={() => setShowRefreshDialog(false)}
+              disabled={reExtracting || rechunking}
+            >
+              Cancel
+            </PillButton>
+            <PillButton
+              variant="secondary"
+              onClick={handleReindex}
+              disabled={policy.extractionStatus !== "complete" || reExtracting || rechunking}
+            >
+              {rechunking && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              Reindex
+            </PillButton>
+            <PillButton
+              onClick={handleReextractFromSource}
+              disabled={reExtracting || rechunking}
+            >
+              {reExtracting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              Re-extract
+            </PillButton>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Demo data banner */}
       {Boolean(p.isDemo) && !demoBannerDismissed && (
         <div className="flex items-center gap-3 px-4 py-2.5 rounded-lg border border-amber-200 dark:border-amber-900/50 bg-amber-50/60 dark:bg-amber-950/30 mb-4">
@@ -629,7 +756,7 @@ export default function PolicyDetailPage({
               { id: "details" as const, label: "Details" },
               { id: "files" as const, label: "Files" },
               { id: "activity" as const, label: "Activity" },
-              { id: "extraction" as const, label: "Extraction" },
+              { id: "extraction" as const, label: "Full Data" },
             ] as const
           ).map((tab) => (
             <TabsTrigger key={tab.id} value={tab.id}>
@@ -677,57 +804,12 @@ export default function PolicyDetailPage({
       )}
 
       {activeTab === "extraction" && (
-        <div className="space-y-4">
-          <div className="flex items-center gap-2">
-            <PillButton
-              variant="secondary"
-              size="compact"
-              disabled={reExtracting || rechunking}
-              onClick={async () => {
-                setReExtracting(true);
-                try {
-                  await retryExtraction({ policyId: id as Id<"policies">, mode: "full" });
-                  toast.success("Re-extraction started");
-                } catch {
-                  toast.error("Re-extraction failed");
-                } finally {
-                  setReExtracting(false);
-                }
-              }}
-            >
-              {reExtracting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-              Re-extract
-            </PillButton>
-            {policy.extractionStatus === "complete" && (
-              <PillButton
-                variant="secondary"
-                size="compact"
-                disabled={reExtracting || rechunking}
-                onClick={async () => {
-                  setRechunking(true);
-                  try {
-                    const result = await rechunk({ policyId: policy._id }) as Record<string, unknown>;
-                    if (result?.error) toast.error(result.error as string);
-                    else toast.success(`Reindexed: ${result.newChunks} search chunks updated`);
-                  } catch {
-                    toast.error("Reindexing failed");
-                  } finally {
-                    setRechunking(false);
-                  }
-                }}
-              >
-                {rechunking && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                Reindex
-              </PillButton>
-            )}
-          </div>
-          {policyDocument && (
-            <ExtractionCards
-              policyDocument={policyDocument}
-              initialPage={initialPage}
-            />
-          )}
-        </div>
+        policyDocument && (
+          <ExtractionCards
+            policyDocument={policyDocument}
+            initialPage={initialPage}
+          />
+        )
       )}
     </AppShell>
   );

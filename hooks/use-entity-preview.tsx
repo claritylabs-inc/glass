@@ -7,6 +7,7 @@ export interface EntityPreview {
   id: string;
   page?: number; // optional page from ?page= param
   citedSections?: string[]; // section/endorsement titles or form numbers referenced in the agent answer
+  citedCoverageNames?: string[]; // structured coverage names referenced in the agent answer
 }
 
 interface EntityPreviewContextValue {

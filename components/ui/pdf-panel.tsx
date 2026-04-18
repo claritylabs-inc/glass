@@ -15,22 +15,43 @@ export function PdfPanel() {
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   const [isDraggingState, setIsDraggingState] = useState(false);
   const isDragging = useRef(false);
+  const widthRef = useRef(DEFAULT_WIDTH);
+  const dragFrame = useRef<number | null>(null);
+  const pendingWidth = useRef<number | null>(null);
+
+  widthRef.current = width;
 
   const onPointerDown = useCallback((e: React.PointerEvent) => {
     e.preventDefault();
     isDragging.current = true;
     setIsDraggingState(true);
     const startX = e.clientX;
-    const startWidth = width;
+    const startWidth = widthRef.current;
 
     const onMove = (ev: PointerEvent) => {
       if (!isDragging.current) return;
       const delta = startX - ev.clientX; // dragging left = wider
-      setWidth(Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, startWidth + delta)));
+      const nextWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, startWidth + delta));
+      if (nextWidth === widthRef.current) return;
+      pendingWidth.current = nextWidth;
+      if (dragFrame.current !== null) return;
+      dragFrame.current = window.requestAnimationFrame(() => {
+        dragFrame.current = null;
+        const widthToApply = pendingWidth.current;
+        pendingWidth.current = null;
+        if (widthToApply == null || widthToApply === widthRef.current) return;
+        widthRef.current = widthToApply;
+        setWidth(widthToApply);
+      });
     };
     const onUp = () => {
       isDragging.current = false;
       setIsDraggingState(false);
+      if (dragFrame.current !== null) {
+        window.cancelAnimationFrame(dragFrame.current);
+        dragFrame.current = null;
+      }
+      pendingWidth.current = null;
       document.removeEventListener("pointermove", onMove);
       document.removeEventListener("pointerup", onUp);
       document.body.style.cursor = "";
@@ -40,7 +61,7 @@ export function PdfPanel() {
     document.body.style.userSelect = "none";
     document.addEventListener("pointermove", onMove);
     document.addEventListener("pointerup", onUp);
-  }, [width]);
+  }, []);
 
   if (!fileUrl) return null;
 

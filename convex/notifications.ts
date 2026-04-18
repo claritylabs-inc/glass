@@ -79,7 +79,7 @@ export const unreadCount = query({
       .withIndex("by_orgId_status", (idx) =>
         idx.eq("orgId", orgId).eq("status", "unread")
       )
-      .collect();
+      .take(100);
     return unread.length;
   },
 });

@@ -129,23 +129,21 @@ export function LogDetailPanel() {
               {/* Sub-entries / extraction log */}
               {entry.subEntries && entry.subEntries.length > 0 && (
                 <div className="px-4 py-3">
-                  <p className="text-xs text-muted-foreground/50 mb-2">
+                  <p className="text-sm font-medium text-muted-foreground/60 mb-2">
                     {entry.subEntries.length} steps
                   </p>
-                  <div className="rounded-md bg-foreground/[0.02] border border-foreground/5 overflow-hidden">
+                  <div className="rounded-md bg-white dark:bg-background border border-foreground/5 overflow-hidden">
                     <div className="max-h-[600px] overflow-y-auto py-1">
                       {entry.subEntries.map((sub, i) => {
-                        const dot = STATUS_DOT[sub.status ?? "info"];
                         return (
                           <div
                             key={i}
-                            className="flex items-start gap-2 py-1 px-2.5 hover:bg-foreground/[0.02] transition-colors"
+                            className="flex items-start gap-4 py-1 px-3 hover:bg-foreground/[0.02] transition-colors"
                           >
-                            <span className="text-xs tabular-nums text-muted-foreground/40 font-mono shrink-0 w-[52px] text-right pt-px">
+                            <span className="text-sm tabular-nums text-muted-foreground/60 font-mono shrink-0 w-[64px] text-left pt-px">
                               {dayjs(sub.timestamp).format("HH:mm:ss")}
                             </span>
-                            <span className={cn("w-1 h-1 rounded-full shrink-0 mt-[5px]", dot)} />
-                            <span className="text-xs font-mono text-foreground/60 leading-relaxed break-words min-w-0">
+                            <span className="text-sm font-mono text-foreground/85 leading-relaxed break-words min-w-0">
                               {sub.message}
                             </span>
                           </div>
@@ -173,9 +171,9 @@ function DetailRow({
   mono?: boolean;
 }) {
   return (
-    <div className="flex items-baseline justify-between gap-4 py-1.5">
-      <span className="text-xs text-muted-foreground/50 shrink-0">{label}</span>
-      <span className={cn("text-xs text-foreground/80 text-right break-all", mono && "font-mono")}>
+    <div className="flex items-baseline justify-between gap-4 py-2">
+      <span className="text-sm font-medium text-muted-foreground/60 shrink-0">{label}</span>
+      <span className={cn("text-sm text-foreground/90 text-right break-all", mono && "font-mono")}>
         {value}
       </span>
     </div>

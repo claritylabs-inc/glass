@@ -960,6 +960,15 @@ export default defineSchema({
     referencedQuoteIds: v.optional(v.any()), // legacy: may contain old quotes table IDs
     // Sections cited by the agent (titles captured from lookup_policy_section tool results)
     citedSections: v.optional(v.array(v.string())),
+    // Structured coverage names cited by the agent when tool results match policy coverages
+    citedCoverageNames: v.optional(v.array(v.string())),
+    // Tool names used while producing the response, in call order
+    usedTools: v.optional(v.array(v.string())),
+    // Exact tool calls made while producing the response
+    toolCalls: v.optional(v.array(v.object({
+      name: v.string(),
+      input: v.optional(v.string()),
+    }))),
     // Status
     status: v.optional(v.union(
       v.literal("processing"),

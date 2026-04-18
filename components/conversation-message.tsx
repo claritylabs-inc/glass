@@ -252,14 +252,9 @@ export function MessageBubble({ conv, onOpenPdf, onRetry, viewerEmail }: { conv:
             <span className="text-label-sm font-medium text-muted-foreground">
               {conv.fromName ?? conv.fromEmail}
             </span>
-            <div className="flex items-center gap-1.5 shrink-0">
-              <MailIcon className="w-3 h-3 text-muted-foreground/30" />
-              <span className="text-[11px] text-muted-foreground/30">Email</span>
-              <span className="text-muted-foreground/20 mx-0.5">·</span>
-              <span className="text-[11px] text-muted-foreground/30">
-                {dayjs(conv._creationTime).format("MMM D, h:mm A")}
-              </span>
-            </div>
+            <span className="text-[11px] text-muted-foreground/30 shrink-0">
+              {dayjs(conv._creationTime).format("MMM D, h:mm A")}
+            </span>
           </div>
           {!isViewerMessage && (
           <div className="flex flex-wrap gap-x-3 text-[11px] text-muted-foreground/35 mt-0.5">
@@ -324,16 +319,11 @@ export function MessageBubble({ conv, onOpenPdf, onRetry, viewerEmail }: { conv:
                   Prism
                 </span>
               </div>
-              <div className="flex items-center gap-1.5 shrink-0">
-                <MailIcon className="w-3 h-3 text-muted-foreground/30" />
-                <span className="text-[11px] text-muted-foreground/30">Email</span>
-                <span className="text-muted-foreground/20 mx-0.5">·</span>
-                <span className="text-[11px] text-muted-foreground/30">
-                  {conv.responseSentAt
-                    ? dayjs(conv.responseSentAt).format("MMM D, h:mm A")
-                    : ""}
-                </span>
-              </div>
+              <span className="text-[11px] text-muted-foreground/30 shrink-0">
+                {conv.responseSentAt
+                  ? dayjs(conv.responseSentAt).format("MMM D, h:mm A")
+                  : ""}
+              </span>
             </div>
             {conv.responseTo && (
               <div className="flex flex-wrap gap-x-3 text-[11px] text-muted-foreground/35 mt-0.5">

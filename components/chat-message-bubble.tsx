@@ -48,8 +48,6 @@ export function ChatMessageBubble({ message, viewerId }: { message: WebChatMessa
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
             <p className="text-[11px] font-medium text-muted-foreground/50">Prism</p>
-            <MessageSquare className="w-3 h-3 text-muted-foreground/30" />
-            <span className="text-[11px] text-muted-foreground/30">Chat</span>
           </div>
           {hasContent ? (
             <div className="rounded-lg bg-popover border border-foreground/6 px-3.5 py-2.5 ${PROSE_MARKDOWN_STYLES} [&_a]:text-blue-600 [&_a]:underline">
@@ -101,9 +99,6 @@ export function ChatMessageBubble({ message, viewerId }: { message: WebChatMessa
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
             <p className="text-[11px] font-medium text-muted-foreground/50">Prism</p>
-            <MessageSquare className="w-3 h-3 text-muted-foreground/30" />
-            <span className="text-[11px] text-muted-foreground/30">Chat</span>
-            <span className="text-muted-foreground/20">·</span>
             <span className="text-[10px] text-muted-foreground/25">{time}</span>
           </div>
           <div className="rounded-lg bg-popover border border-foreground/6 px-3.5 py-2.5 ${PROSE_MARKDOWN_STYLES} [&_a]:text-blue-600 [&_a]:underline">

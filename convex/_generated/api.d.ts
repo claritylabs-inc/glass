@@ -11,6 +11,7 @@
 import type * as actions_backfillChunks from "../actions/backfillChunks.js";
 import type * as actions_classifyEmails from "../actions/classifyEmails.js";
 import type * as actions_dailyScan from "../actions/dailyScan.js";
+import type * as actions_detectDuplicatePolicies from "../actions/detectDuplicatePolicies.js";
 import type * as actions_dreamConsolidation from "../actions/dreamConsolidation.js";
 import type * as actions_extractChatIntelligence from "../actions/extractChatIntelligence.js";
 import type * as actions_extractCompanyInfo from "../actions/extractCompanyInfo.js";
@@ -30,6 +31,7 @@ import type * as actions_processThreadChat from "../actions/processThreadChat.js
 import type * as actions_processWebChat from "../actions/processWebChat.js";
 import type * as actions_reExtractFromFile from "../actions/reExtractFromFile.js";
 import type * as actions_rechunkPolicy from "../actions/rechunkPolicy.js";
+import type * as actions_reconcilePolicy from "../actions/reconcilePolicy.js";
 import type * as actions_retryExtraction from "../actions/retryExtraction.js";
 import type * as actions_scanGmail from "../actions/scanGmail.js";
 import type * as actions_scanInbox from "../actions/scanInbox.js";
@@ -81,12 +83,14 @@ import type * as migrations_migrateOnboarding from "../migrations/migrateOnboard
 import type * as migrations_migrateToOrgs from "../migrations/migrateToOrgs.js";
 import type * as migrations_migrateToThreads from "../migrations/migrateToThreads.js";
 import type * as modelConfig from "../modelConfig.js";
+import type * as notifications from "../notifications.js";
 import type * as oauth from "../oauth.js";
 import type * as orgMemory from "../orgMemory.js";
 import type * as orgs from "../orgs.js";
 import type * as pendingEmails from "../pendingEmails.js";
 import type * as policies from "../policies.js";
 import type * as policyAuditLog from "../policyAuditLog.js";
+import type * as policyFiles from "../policyFiles.js";
 import type * as presence from "../presence.js";
 import type * as seed from "../seed.js";
 import type * as threads from "../threads.js";
@@ -103,6 +107,7 @@ declare const fullApi: ApiFromModules<{
   "actions/backfillChunks": typeof actions_backfillChunks;
   "actions/classifyEmails": typeof actions_classifyEmails;
   "actions/dailyScan": typeof actions_dailyScan;
+  "actions/detectDuplicatePolicies": typeof actions_detectDuplicatePolicies;
   "actions/dreamConsolidation": typeof actions_dreamConsolidation;
   "actions/extractChatIntelligence": typeof actions_extractChatIntelligence;
   "actions/extractCompanyInfo": typeof actions_extractCompanyInfo;
@@ -122,6 +127,7 @@ declare const fullApi: ApiFromModules<{
   "actions/processWebChat": typeof actions_processWebChat;
   "actions/reExtractFromFile": typeof actions_reExtractFromFile;
   "actions/rechunkPolicy": typeof actions_rechunkPolicy;
+  "actions/reconcilePolicy": typeof actions_reconcilePolicy;
   "actions/retryExtraction": typeof actions_retryExtraction;
   "actions/scanGmail": typeof actions_scanGmail;
   "actions/scanInbox": typeof actions_scanInbox;
@@ -173,12 +179,14 @@ declare const fullApi: ApiFromModules<{
   "migrations/migrateToOrgs": typeof migrations_migrateToOrgs;
   "migrations/migrateToThreads": typeof migrations_migrateToThreads;
   modelConfig: typeof modelConfig;
+  notifications: typeof notifications;
   oauth: typeof oauth;
   orgMemory: typeof orgMemory;
   orgs: typeof orgs;
   pendingEmails: typeof pendingEmails;
   policies: typeof policies;
   policyAuditLog: typeof policyAuditLog;
+  policyFiles: typeof policyFiles;
   presence: typeof presence;
   seed: typeof seed;
   threads: typeof threads;
