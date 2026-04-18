@@ -101,6 +101,7 @@ function PersistentChatBar() {
   const generateUploadUrl = useMutation(api.threads.generateUploadUrl);
   const [sending, setSending] = useState(false);
   const isThreadPage = pathname.startsWith("/agent/thread/");
+  const hasContext = !!pageContext;
 
   const handleSubmit = useCallback(
     async (message: PromptInputMessage) => {
@@ -169,7 +170,7 @@ function PersistentChatBar() {
     ],
   );
 
-  if (isThreadPage) return null;
+  if (isThreadPage || !hasContext) return null;
 
   return (
     <div className="absolute bottom-0 left-0 right-0 z-10 pointer-events-none">
