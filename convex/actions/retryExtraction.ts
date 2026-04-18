@@ -4,7 +4,7 @@ import { v } from "convex/values";
 import { action } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import { ImapFlow } from "imapflow";
-import { stripFences, buildExtractor, insuranceDocToPolicy, summarizeExtractionCheckpoint } from "../lib/extraction";
+import { buildExtractor, insuranceDocToPolicy, summarizeExtractionCheckpoint } from "../lib/extraction";
 import type { ExtractionState, PipelineCheckpoint } from "../lib/extraction";
 import { makeEmbedText } from "../lib/sdkCallbacks";
 
@@ -12,7 +12,6 @@ import { makeEmbedText } from "../lib/sdkCallbacks";
  * Shared extraction runner used by both policy and quote retry actions.
  * Supports resuming from a saved checkpoint or running a full extraction.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function runExtraction(
   ctx: any,
   opts: {

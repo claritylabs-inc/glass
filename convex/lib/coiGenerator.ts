@@ -225,7 +225,7 @@ export function policyToCoiData(policy: any, org?: any): CoiData {
   };
 }
 
-function buildOtherLimits(limits: any, policyTypes: string[]): Array<{ label: string; value: string }> {
+function buildOtherLimits(limits: any, _policyTypes: string[]): Array<{ label: string; value: string }> {
   const result: Array<{ label: string; value: string }> = [];
   if (limits.perOccurrence) result.push({ label: "EACH CLAIM / OCCURRENCE", value: limits.perOccurrence });
   if (limits.generalAggregate) result.push({ label: "AGGREGATE", value: limits.generalAggregate });
@@ -379,7 +379,6 @@ export async function generateCoiPdf(data: CoiData): Promise<Buffer> {
     if (data.insuredFein) { doc.text(`FEIN: ${data.insuredFein}`, M + 3, iy, { width: producerW - 6 }); }
 
     // Insurers A–F (right side, stacked in insured height)
-    const insurerRowH = insuredH / Math.max(data.insurers.length, 4);
     const naicW = 36;
     const insurerNameW = contactW - naicW - 14; // "INSURER A:" label + name + naic
     for (let i = 0; i < 6; i++) {
@@ -517,7 +516,6 @@ function drawCoverageRow(
   cols: Column[],
   M: number,
 ): number {
-  const limitsPerRow = 4; // max visible limits per row height unit
   const baseH = Math.max(38, 12 * Math.ceil((cov.limits.length + 1) / 1));
   const rowH = Math.min(baseH, 14 + cov.limits.length * 11);
 

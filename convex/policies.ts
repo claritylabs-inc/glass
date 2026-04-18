@@ -1,7 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query, internalQuery, internalMutation } from "./_generated/server";
 import { api, internal } from "./_generated/api";
-import { requireAuth } from "./lib/auth";
 import { requireOrgAccess, getOrgAccess } from "./lib/orgAuth";
 
 export const list = query({
