@@ -4,13 +4,12 @@ import { fetchMutation } from "convex/nextjs";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 
-function errorRedirect(message: string) {
+function errorRedirect(message: string, returnTo = "/settings?section=email-connections") {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL!;
-  const params = new URLSearchParams({
-    google: "error",
-    message,
-  });
-  return NextResponse.redirect(`${appUrl}/connections?${params.toString()}`);
+  const destination = new URL(returnTo, appUrl);
+  destination.searchParams.set("google", "error");
+  destination.searchParams.set("message", message);
+  return NextResponse.redirect(destination.toString());
 }
 
 export async function GET(req: NextRequest) {
@@ -41,7 +40,12 @@ export async function GET(req: NextRequest) {
   }
 
   let oauthState:
-    | { userId: Id<"users">; orgId: Id<"organizations">; sinceDate?: string }
+    | {
+        userId: Id<"users">;
+        orgId: Id<"organizations">;
+        sinceDate?: string;
+        returnTo?: string;
+      }
     | null
     | undefined;
 
@@ -75,7 +79,10 @@ export async function GET(req: NextRequest) {
     tokens = t;
   } catch (err) {
     console.error("Google token exchange failed:", err);
-    return errorRedirect("Failed to exchange authorization code");
+    return errorRedirect(
+      "Failed to exchange authorization code",
+      oauthState.returnTo,
+    );
   }
 
   if (!tokens.access_token || !tokens.refresh_token) {
@@ -106,7 +113,7 @@ export async function GET(req: NextRequest) {
       email = res.data.email;
     } catch (err) {
       console.error("Failed to fetch user email:", err);
-      return errorRedirect("Could not retrieve email from Google");
+      return errorRedirect("Could not retrieve email from Google", oauthState.returnTo);
     }
   }
 
@@ -128,14 +135,19 @@ export async function GET(req: NextRequest) {
     });
   } catch (err) {
     console.error("Failed to save Google connection:", err);
-    return errorRedirect("Failed to save connection");
+    return errorRedirect("Failed to save connection", oauthState.returnTo);
   }
 
   // Clear the OAuth state cookie and redirect to connections page
   const redirectParams = new URLSearchParams({ google: "connected" });
   if (oauthState.sinceDate) redirectParams.set("sinceDate", oauthState.sinceDate);
+  const returnTo = oauthState.returnTo ?? "/settings?section=email-connections";
+  const destination = new URL(returnTo, appUrl);
+  redirectParams.forEach((value, key) => {
+    destination.searchParams.set(key, value);
+  });
   const response = NextResponse.redirect(
-    `${appUrl}/connections?${redirectParams.toString()}`,
+    destination.toString(),
   );
   response.cookies.set("google_oauth_state", "", {
     httpOnly: true,

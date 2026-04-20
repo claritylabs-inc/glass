@@ -126,7 +126,7 @@ export function EmailConnectionsSection() {
   const pathname = usePathname();
 
   const connections = useQuery(api.connections.list);
-  const googleStartHref = "/api/auth/google/start";
+  const googleStartHref = "/api/auth/google/start?returnTo=%2Fsettings%3Fsection%3Demail-connections";
 
   const [formOpen, setFormOpen] = useState(false);
 

@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuthActions } from "@convex-dev/auth/react";
 import { useConvexAuth, useQuery } from "convex/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { api } from "@/convex/_generated/api";
 import { FadeIn } from "@/components/ui/fade-in";
@@ -29,6 +29,12 @@ export default function LoginPage() {
   const { signIn } = useAuthActions();
   const { isAuthenticated } = useConvexAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const nextPath = searchParams.get("next");
+  const postLoginPath =
+    nextPath && nextPath.startsWith("/") && !nextPath.startsWith("//")
+      ? nextPath
+      : "/";
 
   const [step, setStep] = useState<"email" | "code">("email");
   const [email, setEmail] = useState("");
@@ -76,8 +82,8 @@ export default function LoginPage() {
   }, [emailToCheck, emailCheck, invitationCheck, router, sendOtp]);
 
   useEffect(() => {
-    if (isAuthenticated) router.replace("/");
-  }, [isAuthenticated, router]);
+    if (isAuthenticated) router.replace(postLoginPath);
+  }, [isAuthenticated, postLoginPath, router]);
 
   if (isAuthenticated) return null;
 

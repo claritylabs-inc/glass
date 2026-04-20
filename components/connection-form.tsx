@@ -30,9 +30,14 @@ type ProviderChoice = "google" | "imap";
 interface ConnectionFormProps {
   open: boolean;
   onClose: () => void;
+  returnTo?: string;
 }
 
-export function ConnectionForm({ open, onClose }: ConnectionFormProps) {
+export function ConnectionForm({
+  open,
+  onClose,
+  returnTo = "/settings?section=email-connections",
+}: ConnectionFormProps) {
   const createConnection = useMutation(api.connections.create);
   const [step, setStep] = useState<Step>("choose");
   const [providerChoice, setProviderChoice] = useState<ProviderChoice>("google");
@@ -69,6 +74,7 @@ export function ConnectionForm({ open, onClose }: ConnectionFormProps) {
       const sinceDate = new Date(Date.now() - historyDays * 86400000).toISOString().split("T")[0];
       const params = new URLSearchParams();
       params.set("sinceDate", sinceDate);
+      params.set("returnTo", returnTo);
       window.location.href = `/api/auth/google/start?${params.toString()}`;
     } else {
       setStep("imap");
