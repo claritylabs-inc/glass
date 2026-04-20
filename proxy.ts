@@ -9,6 +9,7 @@ export default authkitProxy({
       "/signup/:path*",
       "/auth/callback",
       "/logout",
+      "/api/auth/google/:path*",
     ],
   },
 });
