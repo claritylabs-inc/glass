@@ -10,10 +10,21 @@ import { ArchiveRestore, Mail, MessageSquare, Loader2 } from "lucide-react";
 import Link from "next/link";
 import dayjs from "dayjs";
 import { Id } from "@/convex/_generated/dataModel";
+import { useMembershipStatus } from "@/hooks/use-membership-status";
+import { PendingApprovalState } from "@/components/pending-approval-state";
 
 export default function ArchivePage() {
+  const membershipStatus = useMembershipStatus();
   const threads = useQuery(api.threads.list, { archived: true });
   const unarchive = useMutation(api.threads.unarchive);
+
+  if (membershipStatus === "pending") {
+    return (
+      <AppShell breadcrumbDetail="Archive">
+        <PendingApprovalState />
+      </AppShell>
+    );
+  }
 
   async function handleUnarchive(id: Id<"threads">) {
     try {

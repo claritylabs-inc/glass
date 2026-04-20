@@ -28,6 +28,8 @@ import dayjs from "dayjs";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { FormField } from "@/convex/lib/applicationTypes";
 import { isTableField, isDeclarationField } from "@/convex/lib/applicationTypes";
+import { useMembershipStatus } from "@/hooks/use-membership-status";
+import { PendingApprovalState } from "@/components/pending-approval-state";
 
 const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
   extracting_fields: { label: "Extracting Fields", color: "bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400" },
@@ -407,6 +409,7 @@ export default function ApplicationDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
+  const membershipStatus = useMembershipStatus();
   const sessionId = id as Id<"applicationSessions">;
   const session = useQuery(api.applicationSessions.get, { id: sessionId });
   const sourceFileUrl = useQuery(api.applicationSessions.getSourceFileUrl, { id: sessionId });
@@ -428,6 +431,14 @@ export default function ApplicationDetailPage({
     }
     return () => setPageContext(null);
   }, [session, setPageContext]);
+
+  if (membershipStatus === "pending") {
+    return (
+      <AppShell>
+        <PendingApprovalState />
+      </AppShell>
+    );
+  }
 
   if (session === undefined) {
     return (

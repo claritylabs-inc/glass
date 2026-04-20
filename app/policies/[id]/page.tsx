@@ -37,6 +37,8 @@ import { X } from "lucide-react";
 
 import { PolicySummary } from "./policy-summary";
 import { ExtractionCards } from "./extraction-panel";
+import { useMembershipStatus } from "@/hooks/use-membership-status";
+import { PendingApprovalState } from "@/components/pending-approval-state";
 
 
 // ─── Activity tab ─────────────────────────────────────────────────────────────
@@ -365,6 +367,7 @@ export default function PolicyDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
+  const membershipStatus = useMembershipStatus();
 
   const policy = useQuery(api.policies.get, { id: id as Id<"policies"> });
   const fileUrl = useQuery(
@@ -420,6 +423,16 @@ export default function PolicyDetailPage({
       }
     }
   }, [fileUrl, initialPage, openWithUrl, preloadPdfUrl]);
+
+  // ── Pending membership guard ────────────────────────────────────────────────
+
+  if (membershipStatus === "pending") {
+    return (
+      <AppShell>
+        <PendingApprovalState />
+      </AppShell>
+    );
+  }
 
   // ── Loading / not-found states ──────────────────────────────────────────────
 

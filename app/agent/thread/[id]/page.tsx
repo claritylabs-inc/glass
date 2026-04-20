@@ -25,6 +25,8 @@ import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import dayjs from "dayjs";
 import { NewChatEmptyState } from "@/components/new-chat-empty-state";
+import { useMembershipStatus } from "@/hooks/use-membership-status";
+import { PendingApprovalState } from "@/components/pending-approval-state";
 
 /* ═══════════════════════════════════════════════════
    Unified Thread View (new threads table)
@@ -1300,6 +1302,7 @@ function WebChatContent({
 
 export default function ThreadPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const membershipStatus = useMembershipStatus();
   const viewer = useQuery(api.users.viewer);
   const viewerOrg = useQuery(api.orgs.viewerOrg);
   const presenceUsers = usePresence(`thread:${id}`);
@@ -1330,6 +1333,14 @@ export default function ThreadPage({ params }: { params: Promise<{ id: string }>
   const handleChatMeta = useCallback((meta: { title: string; actions: React.ReactNode }) => {
     setThreadMeta({ detail: meta.title, actions: meta.actions });
   }, []);
+
+  if (membershipStatus === "pending") {
+    return (
+      <AppShell breadcrumbDetail="Conversation">
+        <PendingApprovalState />
+      </AppShell>
+    );
+  }
 
   // Loading: unified query still pending
   if (unifiedThread === undefined) {

@@ -5,6 +5,8 @@ import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { AppShell } from "@/components/app-shell";
 import { PolicyTable } from "@/components/policy-table";
+import { useMembershipStatus } from "@/hooks/use-membership-status";
+import { PendingApprovalState } from "@/components/pending-approval-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FileUp } from "lucide-react";
@@ -152,8 +154,17 @@ function PoliciesEmptyState() {
 }
 
 export default function PoliciesPage() {
+  const membershipStatus = useMembershipStatus();
   const policies = useQuery(api.policies.list, {});
   const [activeTab, setActiveTab] = useState<TabId>("active");
+
+  if (membershipStatus === "pending") {
+    return (
+      <AppShell>
+        <PendingApprovalState />
+      </AppShell>
+    );
+  }
 
   const today = dayjs();
 
