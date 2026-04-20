@@ -124,6 +124,7 @@ export const createOAuthState = internalMutation({
     userId: v.id("users"),
     orgId: v.id("organizations"),
     sinceDate: v.optional(v.string()),
+    returnTo: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     return await ctx.db.insert("oauthStates", {
@@ -154,6 +155,7 @@ export const consumeOAuthState = internalMutation({
       userId: record.userId,
       orgId: record.orgId,
       sinceDate: record.sinceDate,
+      returnTo: record.returnTo,
     };
   },
 });
@@ -162,6 +164,7 @@ export const createOAuthStateForViewer = mutation({
   args: {
     state: v.string(),
     sinceDate: v.optional(v.string()),
+    returnTo: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const { userId, orgId } = await requireOrgAccess(ctx);
@@ -170,6 +173,7 @@ export const createOAuthStateForViewer = mutation({
       userId,
       orgId,
       sinceDate: args.sinceDate,
+      returnTo: args.returnTo,
       createdAt: Date.now(),
     });
   },
@@ -203,6 +207,7 @@ export const consumeOAuthStateFromServer = mutation({
       userId: record.userId,
       orgId: record.orgId,
       sinceDate: record.sinceDate,
+      returnTo: record.returnTo,
     };
   },
 });

@@ -862,6 +862,7 @@ export default function OnboardingPage() {
       <ConnectionForm
         open={connectionFormOpen}
         onClose={() => setConnectionFormOpen(false)}
+        returnTo="/onboarding"
       />
     </div>
   );

@@ -4,6 +4,13 @@ import { fetchMutation } from "convex/nextjs";
 import { convexAuthNextjsToken } from "@convex-dev/auth/nextjs/server";
 import { api } from "@/convex/_generated/api";
 
+function sanitizeReturnTo(value: string | null): string {
+  if (!value || !value.startsWith("/") || value.startsWith("//")) {
+    return "/settings?section=email-connections";
+  }
+  return value;
+}
+
 export async function GET(req: NextRequest) {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const appUrl = process.env.NEXT_PUBLIC_APP_URL;
@@ -18,7 +25,7 @@ export async function GET(req: NextRequest) {
   const token = await convexAuthNextjsToken();
   if (!token) {
     const loginUrl = new URL("/login", req.url);
-    loginUrl.searchParams.set("next", "/connections");
+    loginUrl.searchParams.set("next", `${req.nextUrl.pathname}${req.nextUrl.search}`);
     return NextResponse.redirect(loginUrl);
   }
 
@@ -26,11 +33,12 @@ export async function GET(req: NextRequest) {
 
   // Optional: sinceDate for initial scan history
   const sinceDate = req.nextUrl.searchParams.get("sinceDate");
+  const returnTo = sanitizeReturnTo(req.nextUrl.searchParams.get("returnTo"));
 
   try {
     await fetchMutation(
       api.connections.createOAuthStateForViewer,
-      { state, sinceDate: sinceDate ?? undefined },
+      { state, sinceDate: sinceDate ?? undefined, returnTo },
       { token },
     );
   } catch (error) {

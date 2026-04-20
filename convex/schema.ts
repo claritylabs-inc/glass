@@ -241,6 +241,7 @@ export default defineSchema({
     userId: v.id("users"),
     orgId: v.id("organizations"),
     sinceDate: v.optional(v.string()),
+    returnTo: v.optional(v.string()),
     createdAt: v.number(),
   }).index("by_state", ["state"]),
 
