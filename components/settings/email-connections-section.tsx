@@ -126,8 +126,7 @@ export function EmailConnectionsSection() {
   const pathname = usePathname();
 
   const connections = useQuery(api.connections.list);
-  const orgData = useQuery(api.orgs.viewerOrg);
-  const orgId = orgData?.org?._id;
+  const googleStartHref = "/api/auth/google/start";
 
   const [formOpen, setFormOpen] = useState(false);
 
@@ -314,9 +313,7 @@ export function EmailConnectionsSection() {
                       {!isDemo &&
                         conn.provider === "google" &&
                         conn.lastScanStatus === "disconnected" && (
-                          <a
-                            href={`/api/auth/google/start${orgId ? `?orgId=${orgId}` : ""}`}
-                          >
+                          <a href={googleStartHref}>
                             <PillButton variant="secondary">
                               <RefreshCw className="w-3 h-3" />
                               Reconnect
@@ -423,9 +420,7 @@ export function EmailConnectionsSection() {
                       {!isDemo &&
                         conn.provider === "google" &&
                         conn.lastScanStatus === "disconnected" && (
-                          <a
-                            href={`/api/auth/google/start${orgId ? `?orgId=${orgId}` : ""}`}
-                          >
+                          <a href={googleStartHref}>
                             <PillButton variant="secondary">
                               <RefreshCw className="w-3 h-3" />
                               Reconnect
@@ -564,7 +559,6 @@ export function EmailConnectionsSection() {
       <ConnectionForm
         open={formOpen}
         onClose={() => setFormOpen(false)}
-        orgId={orgId}
       />
 
       {scanTarget && (

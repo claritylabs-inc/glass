@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { OAuth2Client } from "google-auth-library";
-import { ConvexHttpClient } from "convex/browser";
+import { fetchMutation } from "convex/nextjs";
 import { api } from "@/convex/_generated/api";
-
-const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+import type { Id } from "@/convex/_generated/dataModel";
 
 function errorRedirect(message: string) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL!;
@@ -36,17 +35,28 @@ export async function GET(req: NextRequest) {
     return errorRedirect("Missing code or state parameter");
   }
 
-  // Decode state and verify nonce
-  let state: { nonce: string; orgId: string; sinceDate?: string };
-  try {
-    state = JSON.parse(Buffer.from(stateParam, "base64url").toString("utf-8"));
-  } catch {
-    return errorRedirect("Invalid state parameter");
+  const cookieState = req.cookies.get("google_oauth_state")?.value;
+  if (!cookieState || cookieState !== stateParam) {
+    return errorRedirect("Invalid or expired OAuth state. Please try again");
   }
 
-  const cookieNonce = req.cookies.get("google_oauth_nonce")?.value;
-  if (!cookieNonce || cookieNonce !== state.nonce) {
-    return errorRedirect("Invalid or expired nonce — please try again");
+  let oauthState:
+    | { userId: Id<"users">; orgId: Id<"organizations">; sinceDate?: string }
+    | null
+    | undefined;
+
+  try {
+    oauthState = await fetchMutation(api.connections.consumeOAuthStateFromServer, {
+      serverSecret,
+      state: stateParam,
+    });
+  } catch (err) {
+    console.error("Failed to consume OAuth state:", err);
+    return errorRedirect("Failed to validate OAuth state");
+  }
+
+  if (!oauthState) {
+    return errorRedirect("OAuth state expired or was already used");
   }
 
   // Exchange authorization code for tokens
@@ -106,27 +116,28 @@ export async function GET(req: NextRequest) {
 
   // Save the Google connection via Convex public mutation (guarded by server secret)
   try {
-    await convex.mutation(api.connections.connectGoogle, {
+    await fetchMutation(api.connections.connectGoogle, {
       serverSecret,
-      orgId: state.orgId,
+      userId: oauthState.userId,
+      orgId: oauthState.orgId,
       email,
       accessToken: tokens.access_token,
       refreshToken: tokens.refresh_token,
       tokenExpiry: tokens.expiry_date ?? Date.now() + 3600 * 1000,
-      sinceDate: state.sinceDate ?? undefined,
+      sinceDate: oauthState.sinceDate ?? undefined,
     });
   } catch (err) {
     console.error("Failed to save Google connection:", err);
     return errorRedirect("Failed to save connection");
   }
 
-  // Clear the nonce cookie and redirect to connections page
+  // Clear the OAuth state cookie and redirect to connections page
   const redirectParams = new URLSearchParams({ google: "connected" });
-  if (state.sinceDate) redirectParams.set("sinceDate", state.sinceDate);
+  if (oauthState.sinceDate) redirectParams.set("sinceDate", oauthState.sinceDate);
   const response = NextResponse.redirect(
     `${appUrl}/connections?${redirectParams.toString()}`,
   );
-  response.cookies.set("google_oauth_nonce", "", {
+  response.cookies.set("google_oauth_state", "", {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
