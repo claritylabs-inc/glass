@@ -31,18 +31,20 @@ interface ConnectionFormProps {
   open: boolean;
   onClose: () => void;
   returnTo?: string;
+  initialHistoryDays?: number;
 }
 
 export function ConnectionForm({
   open,
   onClose,
   returnTo = "/settings?section=email-connections",
+  initialHistoryDays = 30,
 }: ConnectionFormProps) {
   const createConnection = useMutation(api.connections.create);
   const createOAuthState = useMutation(api.connections.createOAuthStateForViewer);
   const [step, setStep] = useState<Step>("choose");
   const [providerChoice, setProviderChoice] = useState<ProviderChoice>("google");
-  const [historyDays, setHistoryDays] = useState(30);
+  const [historyDays, setHistoryDays] = useState(initialHistoryDays);
   const [preset, setPreset] = useState("Outlook");
   const [label, setLabel] = useState("");
   const [host, setHost] = useState(IMAP_PRESETS.Outlook.host);
@@ -62,6 +64,7 @@ export function ConnectionForm({
   const handleClose = () => {
     onClose();
     setStep("choose");
+    setHistoryDays(initialHistoryDays);
   };
 
   const handleChooseProvider = (provider: ProviderChoice) => {

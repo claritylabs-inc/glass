@@ -19,6 +19,7 @@ export const extractCompanyInfo = action({
   handler: async (ctx, args) => {
     const viewer = await ctx.runQuery(api.users.viewer);
     if (!viewer) throw new Error("Not authenticated");
+    const viewerOrg = await ctx.runQuery(api.orgs.viewerOrg);
 
     // Fetch the URL
     const response = await fetch(args.url, {
@@ -111,11 +112,23 @@ ${html}`,
       // Already handled above
     }
 
-    // Save to user profile
+    // Save to user profile for backward compatibility during the org transition.
     const updates: Record<string, string> = { companyContext };
     if (industry) updates.industry = industry;
     if (industryVertical) updates.industryVertical = industryVertical;
     await ctx.runMutation(api.users.updateProfile, updates);
+
+    if (viewerOrg?.org) {
+      const orgUpdates: Record<string, string> = { context: companyContext };
+      if (industry) orgUpdates.industry = industry;
+      if (industryVertical) orgUpdates.industryVertical = industryVertical;
+      if (clientsContext) orgUpdates.clientsContext = clientsContext;
+      if (vendorsContext) orgUpdates.vendorsContext = vendorsContext;
+      if (insuranceContext) orgUpdates.insuranceContext = insuranceContext;
+      if (investorsContext) orgUpdates.investorsContext = investorsContext;
+      if (partnersContext) orgUpdates.partnersContext = partnersContext;
+      await ctx.runMutation(api.orgs.updateOrg, orgUpdates);
+    }
 
     return {
       success: true,

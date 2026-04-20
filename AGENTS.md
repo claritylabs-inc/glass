@@ -220,6 +220,22 @@ Email scan pattern:
 
 ## Main Product Flows
 
+### Onboarding
+
+The onboarding flow at `/onboarding` is intentionally minimal and runs in this order:
+
+1. User profile (`name`, `title`)
+2. Org profile (`name`, `website`)
+3. Agent handle claim
+4. Email connection
+5. Complete
+
+Important onboarding behavior:
+
+- Onboarding no longer offers demo data or team invites.
+- After the org step saves, Prism kicks off website enrichment in the background via `actions/extractCompanyInfo`.
+- That enrichment now updates both legacy user profile fields and the org record (`context`, `industry`, `industryVertical`, and relationship context fields).
+
 ### Email Scan To Policy
 
 1. Scan IMAP/Gmail inboxes (daily cron + manual).

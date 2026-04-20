@@ -121,7 +121,7 @@ export function AgentHandleForm({ suggestedHandle, onClaimed, claimLabel = "Clai
         {showStatus && availability?.available && (
           <>
             <Check className="w-3.5 h-3.5 text-emerald-600" />
-            <span className="text-label-sm text-emerald-600">
+            <span className="text-body-sm text-emerald-600">
               {availability.normalized}@{AGENT_DOMAIN} is available
             </span>
           </>
@@ -129,13 +129,13 @@ export function AgentHandleForm({ suggestedHandle, onClaimed, claimLabel = "Clai
         {showStatus && !availability?.available && (
           <>
             <X className="w-3.5 h-3.5 text-red-500" />
-            <span className="text-label-sm text-red-500">
+            <span className="text-body-sm text-red-500">
               {availability?.reason ?? "Not available"}
             </span>
           </>
         )}
         {normalized.length > 0 && normalized.length < 3 && (
-          <span className="text-label-sm text-muted-foreground/50">
+          <span className="text-body-sm text-muted-foreground/50">
             Minimum 3 characters
           </span>
         )}
