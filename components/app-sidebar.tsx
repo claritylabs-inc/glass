@@ -4,7 +4,6 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useQuery, useMutation } from "convex/react";
-import { useAuthActions } from "@convex-dev/auth/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
@@ -104,7 +103,6 @@ export function AppSidebar({
   const emailConvs = useQuery(api.agentConversations.list, { archived: false });
   const createThread = useMutation(api.threads.create);
   const archiveThread = useMutation(api.threads.archive);
-  const { signOut } = useAuthActions();
   const { context: pageContext } = usePageContext();
 
   const [collapsed, setCollapsed] = useState(() => {
@@ -519,7 +517,7 @@ export function AppSidebar({
         />
         <button
           type="button"
-          onClick={() => signOut()}
+          onClick={() => router.push("/logout")}
           className={`w-full flex items-center gap-2.5 px-3 py-1.5 rounded-md text-body-sm text-muted-foreground hover:bg-foreground/[0.04] transition-colors cursor-pointer ${
             collapsed ? "justify-center" : ""
           }`}

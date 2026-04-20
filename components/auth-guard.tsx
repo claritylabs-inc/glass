@@ -1,60 +1,57 @@
 "use client";
 
-import { useConvexAuth, useQuery } from "convex/react";
+import { useAuth } from "@workos-inc/authkit-nextjs/components";
+import { useQuery } from "convex/react";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { api } from "@/convex/_generated/api";
 import { AppShell } from "@/components/app-shell";
 import { Skeleton } from "@/components/ui/skeleton";
 
-const PUBLIC_PATHS = ["/login", "/signup", "/oauth/authorize", "/weather"];
+const PUBLIC_PATHS = ["/login", "/signup", "/auth/callback", "/auth/bootstrap", "/logout", "/oauth/authorize", "/weather"];
 const ONBOARDING_PATH = "/onboarding";
 const ADMIN_PATHS = ["/settings"];
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isLoading } = useConvexAuth();
+  const { user, loading } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
 
-  const isPublic = PUBLIC_PATHS.some((p) => pathname === p);
+  const isPublic = PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"));
   const isOnboarding = pathname === ONBOARDING_PATH;
   const isAdminPath = ADMIN_PATHS.some((p) => pathname.startsWith(p));
 
-  // Only query viewer when authenticated
-  const viewer = useQuery(api.users.viewer, isAuthenticated ? {} : "skip");
-  const viewerOrg = useQuery(api.orgs.viewerOrg, isAuthenticated ? {} : "skip");
+  const viewer = useQuery(api.users.viewer, user ? {} : "skip");
+  const viewerOrg = useQuery(api.orgs.viewerOrg, user ? {} : "skip");
 
   useEffect(() => {
-    if (isLoading) return;
+    if (loading) return;
 
-    if (!isAuthenticated && !isPublic) {
+    if (!user && !isPublic) {
       router.replace("/login");
       return;
     }
 
-    if (isAuthenticated && viewer !== undefined) {
-      // Redirect to onboarding if not complete
+    if (user && viewer !== undefined) {
       if (viewer && !viewer.onboardingComplete && !isOnboarding && !isPublic) {
         router.replace("/onboarding");
         return;
       }
-      // Redirect away from onboarding if already complete
       if (viewer && viewer.onboardingComplete && isOnboarding) {
         router.replace("/");
         return;
       }
     }
 
-    // Redirect non-admins away from admin-only paths
-    if (isAuthenticated && viewerOrg !== undefined && isAdminPath) {
+    if (user && viewerOrg !== undefined && isAdminPath) {
       if (!viewerOrg || viewerOrg.membership.role !== "admin") {
         router.replace("/");
         return;
       }
     }
-  }, [isLoading, isAuthenticated, isPublic, isOnboarding, isAdminPath, viewer, viewerOrg, router, pathname]);
+  }, [loading, user, isPublic, isOnboarding, isAdminPath, viewer, viewerOrg, router, pathname]);
 
-  if (isLoading || (isAuthenticated && viewer === undefined)) {
+  if (loading || (user && viewer === undefined)) {
     if (isPublic) return null;
     return (
       <AppShell>
@@ -71,21 +68,18 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (!isAuthenticated && !isPublic) {
+  if (!user && !isPublic) {
     return null;
   }
 
-  // Waiting for redirect to onboarding
-  if (isAuthenticated && viewer && !viewer.onboardingComplete && !isOnboarding && !isPublic) {
+  if (user && viewer && !viewer.onboardingComplete && !isOnboarding && !isPublic) {
     return null;
   }
 
-  // Waiting for redirect away from onboarding
-  if (isAuthenticated && viewer && viewer.onboardingComplete && isOnboarding) {
+  if (user && viewer && viewer.onboardingComplete && isOnboarding) {
     return null;
   }
 
-  // Waiting for redirect away from admin paths
   if (isAdminPath && viewerOrg !== undefined && (!viewerOrg || viewerOrg.membership.role !== "admin")) {
     return null;
   }
