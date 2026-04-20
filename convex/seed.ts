@@ -23,13 +23,12 @@ export const seed = action({
     const existing = await ctx.runQuery(internal.seed.hasExistingConnection, { userId });
     if (existing) return "Already seeded";
 
-    // Get org or user profile for context
+    // Get org context
     const org = orgId ? await ctx.runQuery(internal.orgs.getInternal, { id: orgId }) : null;
-    const userProfile = await ctx.runQuery(internal.users.getInternal, { id: userId });
-    const companyName = org?.name || userProfile?.companyName || "Demo Company";
-    const companyContext = org?.context || userProfile?.companyContext || "";
-    const industry = org?.industry || userProfile?.industry || "";
-    const industryVertical = org?.industryVertical || userProfile?.industryVertical || "";
+    const companyName = org?.name || "Demo Company";
+    const companyContext = org?.context || "";
+    const industry = org?.industry || "";
+    const industryVertical = org?.industryVertical || "";
 
     let seedData: SeedPayload;
 

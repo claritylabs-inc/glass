@@ -31,21 +31,16 @@ function CoiSettingsCard({
   hasBroker: boolean;
 }) {
   const updateOrg = useMutation(api.orgs.updateOrg);
-  const updateProfile = useMutation(api.users.updateProfile);
   const viewerOrg = useQuery(api.orgs.viewerOrg);
   const current = coiHandling === "member" ? "user" : (coiHandling ?? "ignore");
   const autoGenerate = autoGenerateCoi !== false; // default on
 
   async function handleChange(value: "broker" | "user" | "ignore") {
     try {
-      if (viewerOrg?.org) {
-        const orgValue = value === "user" ? "member" : value;
-        await updateOrg({
-          coiHandling: orgValue as "broker" | "member" | "ignore",
-        });
-      } else {
-        await updateProfile({ coiHandling: value });
-      }
+      const orgValue = value === "user" ? "member" : value;
+      await updateOrg({
+        coiHandling: orgValue as "broker" | "member" | "ignore",
+      });
       toast.success("COI handling updated");
     } catch {
       toast.error("Failed to update COI handling");
@@ -373,7 +368,7 @@ export function AgentSection() {
   const [copied, setCopied] = useState(false);
 
   const org = viewerOrg?.org;
-  const handle = org?.agentHandle ?? viewer?.agentHandle;
+  const handle = org?.agentHandle;
   const agentEmail = handle ? `${handle}@${AGENT_DOMAIN}` : null;
 
   return (
@@ -384,8 +379,8 @@ export function AgentSection() {
           <div className="rounded-lg border border-foreground/6 bg-card p-5">
             <AgentHandleForm
               suggestedHandle={
-                (org?.name ?? viewer?.companyName)
-                  ? (org?.name ?? viewer?.companyName ?? "")
+                org?.name
+                  ? org.name
                       .toLowerCase()
                       .replace(/[^a-z0-9]+/g, "-")
                       .replace(/^-|-$/g, "")
@@ -447,15 +442,14 @@ export function AgentSection() {
               <div className="px-5 py-5">
                 <CoiSettingsCard
                   coiHandling={
-                    (org?.coiHandling ??
-                      viewer?.coiHandling) as
+                    org?.coiHandling as
                       | "broker"
                       | "user"
                       | "ignore"
                       | undefined
                   }
                   autoGenerateCoi={org?.autoGenerateCoi}
-                  hasBroker={!!(org?.insuranceBroker ?? viewer?.insuranceBroker)}
+                  hasBroker={!!org?.insuranceBroker}
                 />
               </div>
             </div>

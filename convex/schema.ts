@@ -1,43 +1,17 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
-import { authTables } from "@convex-dev/auth/server";
 
 export default defineSchema({
-  ...authTables,
-
-  // Override default users table with custom profile fields
   users: defineTable({
-    // Auth-managed fields
+    workosUserId: v.string(),
+    email: v.string(),
     name: v.optional(v.string()),
-    email: v.optional(v.string()),
     image: v.optional(v.string()),
-    emailVerificationTime: v.optional(v.number()),
-    phone: v.optional(v.string()),
-    phoneVerificationTime: v.optional(v.number()),
-    isAnonymous: v.optional(v.boolean()),
-    // Personal profile fields
     title: v.optional(v.string()),
-    // Legacy company fields (kept for backward compat, will be removed after migration)
-    companyName: v.optional(v.string()),
-    insuranceBroker: v.optional(v.string()),
-    companyWebsite: v.optional(v.string()),
-    companyContext: v.optional(v.string()),
-    brokerContactName: v.optional(v.string()),
-    brokerContactEmail: v.optional(v.string()),
-    coiHandling: v.optional(v.union(v.literal("broker"), v.literal("user"), v.literal("ignore"))),
-    industry: v.optional(v.string()),
-    industryVertical: v.optional(v.string()),
-    // Onboarding & admin
     onboardingComplete: v.optional(v.boolean()),
-    isAdmin: v.optional(v.boolean()),
-    agentHandle: v.optional(v.string()),
-    // NEW
-    workosUserId: v.optional(v.string()),
   })
-    .index("email", ["email"])
-    .index("phone", ["phone"])
-    .index("by_agentHandle", ["agentHandle"])
-    .index("by_workosUserId", ["workosUserId"]),
+    .index("by_workosUserId", ["workosUserId"])
+    .index("email", ["email"]),
 
   // Organizations — owns company data, agent, broker info
   organizations: defineTable({
@@ -74,11 +48,8 @@ export default defineSchema({
     // Intelligence pipeline
     intelligenceSummary: v.optional(v.string()),
     lastDreamAt: v.optional(v.number()),
-    // NEW
     primaryDomain: v.optional(v.string()),
-    domainJoinPolicy: v.optional(
-      v.union(v.literal("auto"), v.literal("approval"), v.literal("off"))
-    ),
+    domainJoinPolicy: v.union(v.literal("auto"), v.literal("approval"), v.literal("off")),
   })
     .index("by_agentHandle", ["agentHandle"])
     .index("by_primaryDomain", ["primaryDomain"]),
@@ -88,10 +59,7 @@ export default defineSchema({
     orgId: v.id("organizations"),
     userId: v.id("users"),
     role: v.union(v.literal("admin"), v.literal("member")),
-    // NEW
-    status: v.optional(
-      v.union(v.literal("active"), v.literal("pending"))
-    ),
+    status: v.union(v.literal("active"), v.literal("pending")),
   })
     .index("by_userId", ["userId"])
     .index("by_orgId", ["orgId"])

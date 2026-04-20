@@ -2,10 +2,7 @@ import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { auth } from "./auth";
 const http = httpRouter();
-
-auth.addHttpRoutes(http);
 
 http.route({
   path: "/resend-inbound",

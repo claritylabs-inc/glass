@@ -192,16 +192,6 @@ export const findThreadBySubject = internalQuery({
   },
 });
 
-// Legacy: kept for backward compat during transition
-export const getUserByHandle = internalQuery({
-  args: { handle: v.string() },
-  handler: async (ctx, args) => {
-    return await ctx.db
-      .query("users")
-      .withIndex("by_agentHandle", (q) => q.eq("agentHandle", args.handle))
-      .first();
-  },
-});
 
 export const getThreadMessages = internalQuery({
   args: { threadId: v.id("agentConversations") },

@@ -61,14 +61,13 @@ function ApplicationsEmptyState({
   onUploadApplication: (file: File) => Promise<void>;
   uploading: boolean;
 }) {
-  const viewer = useQuery(api.users.viewer);
   const viewerOrg = useQuery(api.orgs.viewerOrg);
   const router = useRouter();
   const [copied, setCopied] = useState(false);
   const [dragging, setDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const agentHandle = viewerOrg?.org?.agentHandle ?? viewer?.agentHandle;
+  const agentHandle = viewerOrg?.org?.agentHandle;
   const agentEmail = agentHandle ? `${agentHandle}@${AGENT_DOMAIN}` : null;
 
   const handleCopy = () => {

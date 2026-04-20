@@ -40,20 +40,7 @@ export const run = internalMutation({
           }
         }
       }
-      // 4) Move agentHandle from the admin's user row to the org, if not already set.
-      if (!org.agentHandle) {
-        const adminMembership = await ctx.db
-          .query("orgMemberships")
-          .withIndex("by_orgId", (q) => q.eq("orgId", org._id))
-          .filter((q) => q.eq(q.field("role"), "admin"))
-          .first();
-        if (adminMembership) {
-          const admin = await ctx.db.get(adminMembership.userId);
-          if (admin?.agentHandle) {
-            patch.agentHandle = admin.agentHandle;
-          }
-        }
-      }
+
       if (Object.keys(patch).length) {
         await ctx.db.patch(org._id, patch);
       }

@@ -106,11 +106,11 @@ export default function OnboardingPage() {
       setName(viewer.name ?? "");
       // Prefer org fields if available
       const org = viewerOrg?.org;
-      setCompanyName(org?.name ?? viewer.companyName ?? "");
-      setCompanyWebsite(org?.website ?? viewer.companyWebsite ?? "");
-      setCompanyContext(org?.context ?? viewer.companyContext ?? "");
-      setIndustry(org?.industry ?? viewer.industry ?? "");
-      setIndustryVertical(org?.industryVertical ?? viewer.industryVertical ?? "");
+      setCompanyName(org?.name ?? "");
+      setCompanyWebsite(org?.website ?? "");
+      setCompanyContext(org?.context ?? "");
+      setIndustry(org?.industry ?? "");
+      setIndustryVertical(org?.industryVertical ?? "");
     }
   }, [viewer, viewerOrg]);
 
@@ -122,15 +122,10 @@ export default function OnboardingPage() {
     if (!companyWebsite) return;
     setExtracting(true);
     try {
-      // Save current form fields first so the viewer re-fetch doesn't wipe them
-      const updates: Record<string, string> = {};
-      if (name) updates.name = name;
-      if (companyName) updates.companyName = companyName;
-      if (companyWebsite) updates.companyWebsite = companyWebsite;
-      if (companyContext) updates.companyContext = companyContext;
-      await updateProfile(updates);
+      // Save name to profile first
+      if (name) await updateProfile({ name });
 
-      // Also save to org if available
+      // Save org fields if available
       if (viewerOrg?.org) {
         const orgUpdates: Record<string, string> = {};
         if (companyName) orgUpdates.name = companyName;
@@ -162,15 +157,7 @@ export default function OnboardingPage() {
     setSavingProfile(true);
     try {
       // Save personal fields to user profile
-      const profileUpdates: Record<string, string> = {};
-      if (name) profileUpdates.name = name;
-      // Also save company fields to user profile for backward compat during transition
-      if (companyName) profileUpdates.companyName = companyName;
-      if (companyWebsite) profileUpdates.companyWebsite = companyWebsite;
-      if (companyContext) profileUpdates.companyContext = companyContext;
-      if (industry) profileUpdates.industry = industry;
-      if (industryVertical) profileUpdates.industryVertical = industryVertical;
-      await updateProfile(profileUpdates);
+      if (name) await updateProfile({ name });
 
       // Create org if it doesn't exist, otherwise update it
       if (viewerOrg?.org) {
@@ -626,14 +613,14 @@ export default function OnboardingPage() {
           {/* Step 3: AI Email Agent */}
           {currentStep === 2 && (
             <div className="space-y-6">
-              {(viewerOrg?.org?.agentHandle ?? viewer?.agentHandle) ? (
+              {viewerOrg?.org?.agentHandle ? (
                 <div className="rounded-lg border border-primary-light/40 bg-primary-light/[0.06] p-4">
                   <div className="flex items-center gap-2 mb-1.5">
                     <Asterisk className="w-4 h-4 text-primary-light shrink-0" />
                     <p className="text-body-sm font-medium text-foreground">Agent email claimed</p>
                   </div>
                   <p className="text-label-sm font-mono text-[#6BB8F0] pl-6">
-                    {viewerOrg?.org?.agentHandle ?? viewer?.agentHandle}@{AGENT_DOMAIN}
+                    {viewerOrg.org.agentHandle}@{AGENT_DOMAIN}
                   </p>
                 </div>
               ) : (
@@ -704,7 +691,7 @@ export default function OnboardingPage() {
                   >
                     Skip for now
                   </button>
-                  {(viewerOrg?.org?.agentHandle ?? viewer?.agentHandle) ? (
+                  {viewerOrg?.org?.agentHandle ? (
                     <PillButton onClick={() => setCurrentStep(3)}>
                       Next
                       <ArrowRight className="w-3.5 h-3.5" />

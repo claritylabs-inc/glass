@@ -31,10 +31,10 @@ export function AgentHandleForm({ suggestedHandle, onClaimed, claimLabel = "Clai
   const [claiming, setClaiming] = useState(false);
 
   const availability = useQuery(
-    api.users.checkHandleAvailability,
+    api.orgs.checkHandleAvailability,
     debouncedHandle.length >= 3 ? { handle: debouncedHandle } : "skip",
   );
-  const claimHandle = useMutation(api.users.claimAgentHandle);
+  const claimHandle = useMutation(api.orgs.claimAgentHandle);
 
   // Pre-fill from suggestion
   useEffect(() => {

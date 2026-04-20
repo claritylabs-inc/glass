@@ -9,7 +9,6 @@ import { toast } from "sonner";
 import {
   Loader2,
   Sparkles,
-  AlertTriangle,
   Trash2,
   RotateCcw,
 } from "lucide-react";
@@ -29,7 +28,6 @@ export function OrganizationSection() {
   const viewer = useQuery(api.users.viewer);
   const orgData = useQuery(api.orgs.viewerOrg);
   const updateOrg = useMutation(api.orgs.updateOrg);
-  const resetAccount = useMutation(api.users.resetAccount);
   const restartOnboarding = useMutation(api.users.restartOnboarding);
   const removeDemoData = useMutation(api.seed.removeDemoData);
   const hasDemoDataResult = useQuery(api.seed.hasDemoData);
@@ -53,8 +51,6 @@ export function OrganizationSection() {
   const [brokerContactEmail, setBrokerContactEmail] = useState("");
   const [saving, setSaving] = useState(false);
   const [extracting, setExtracting] = useState(false);
-  const [showResetDialog, setShowResetDialog] = useState(false);
-  const [resetting, setResetting] = useState(false);
   const [removingDemo, setRemovingDemo] = useState(false);
   const [showRemoveDemoDialog, setShowRemoveDemoDialog] = useState(false);
 
@@ -170,20 +166,6 @@ export function OrganizationSection() {
       toast.error("Failed to remove demo data");
     } finally {
       setRemovingDemo(false);
-    }
-  }
-
-  async function handleReset() {
-    setResetting(true);
-    try {
-      await resetAccount();
-      setShowResetDialog(false);
-      toast.success("Account reset successfully");
-      router.replace("/onboarding");
-    } catch {
-      toast.error("Failed to reset account");
-    } finally {
-      setResetting(false);
     }
   }
 
@@ -470,33 +452,6 @@ export function OrganizationSection() {
         </div>
       )}
 
-      {/* Danger Zone */}
-      {viewer?.isAdmin && (
-        <div className="mt-4">
-          <div className="rounded-lg border border-red-200 dark:border-red-900/50 bg-red-50/50 dark:bg-red-950/30">
-            <div className="px-5 py-3.5 border-b border-red-200 dark:border-red-900/50">
-              <h3 className="!mb-0 text-sm font-medium text-red-900 dark:text-red-400">Danger Zone</h3>
-            </div>
-            <div className="px-5 py-5">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-body-sm font-medium text-foreground">Reset Organization</p>
-                  <p className="text-label-sm text-muted-foreground mt-0.5">
-                    Delete all policies, emails, connections, and conversations. This cannot be undone.
-                  </p>
-                </div>
-                <PillButton
-                  variant="destructive"
-                  onClick={() => setShowResetDialog(true)}
-                >
-                  Reset
-                </PillButton>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Remove Demo Dialog */}
       <Dialog open={showRemoveDemoDialog} onOpenChange={(v) => !v && setShowRemoveDemoDialog(false)}>
         <DialogContent showCloseButton={false}>
@@ -520,28 +475,6 @@ export function OrganizationSection() {
         </DialogContent>
       </Dialog>
 
-      {/* Reset Dialog */}
-      <Dialog open={showResetDialog} onOpenChange={(v) => !v && setShowResetDialog(false)}>
-        <DialogContent showCloseButton={false}>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="w-5 h-5 text-red-500" />
-              Reset Organization
-            </DialogTitle>
-            <DialogDescription>
-              This will permanently delete all policies (including stored files), emails, connections, and conversations for your organization. This action cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <PillButton variant="secondary" onClick={() => setShowResetDialog(false)} disabled={resetting}>
-              Cancel
-            </PillButton>
-            <PillButton variant="destructive" onClick={handleReset} disabled={resetting}>
-              {resetting ? "Resetting..." : "Yes, Reset Everything"}
-            </PillButton>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

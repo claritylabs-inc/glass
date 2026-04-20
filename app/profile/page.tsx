@@ -113,17 +113,6 @@ export default function ProfilePage() {
                         className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
                       />
                     </div>
-                    <div>
-                      <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
-                        Phone
-                      </label>
-                      <input
-                        type="text"
-                        value={viewer?.phone ?? ""}
-                        disabled
-                        className="w-full rounded-lg border border-foreground/8 bg-foreground/[0.02] px-3 py-2 text-body-sm text-muted-foreground/60 cursor-not-allowed"
-                      />
-                    </div>
                   </div>
                 </div>
               </div>

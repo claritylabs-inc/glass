@@ -1158,7 +1158,7 @@ export const startApplicationSession = internalAction({
         if (user.name) contextEntries.push({ key: "contact_name", value: user.name, category: "contact_info" });
         if (user.email) contextEntries.push({ key: "contact_email", value: user.email, category: "contact_info" });
         if (user.title) contextEntries.push({ key: "contact_title", value: user.title, category: "contact_info" });
-        if (user.phone) contextEntries.push({ key: "contact_phone", value: user.phone, category: "contact_info" });
+        // phone field removed from user schema
       }
 
       // Add orgIntelligence entries as context

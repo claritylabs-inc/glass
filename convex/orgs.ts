@@ -86,12 +86,7 @@ export const checkHandleAvailability = query({
       .query("organizations")
       .withIndex("by_agentHandle", (q) => q.eq("agentHandle", normalized))
       .first();
-    // Also check legacy users table for transition period
-    const existingUser = await ctx.db
-      .query("users")
-      .withIndex("by_agentHandle", (q) => q.eq("agentHandle", normalized))
-      .first();
-    const taken = !!(existingOrg || existingUser);
+    const taken = !!existingOrg;
     return { available: !taken, normalized, reason: taken ? "Handle already taken" : undefined };
   },
 });
@@ -187,6 +182,7 @@ export const createOrg = mutation({
 
     const orgId = await ctx.db.insert("organizations", {
       name: args.name,
+      domainJoinPolicy: "approval",
       ...(args.website && { website: args.website }),
       ...(args.context && { context: args.context }),
       ...(args.industry && { industry: args.industry }),
@@ -197,6 +193,7 @@ export const createOrg = mutation({
       orgId,
       userId,
       role: "admin",
+      status: "active",
     });
 
     return orgId;
@@ -241,16 +238,11 @@ export const claimAgentHandle = mutation({
       throw new Error("Handle must be 3-30 characters");
     }
 
-    // Check both tables during transition
     const existingOrg = await ctx.db
       .query("organizations")
       .withIndex("by_agentHandle", (q) => q.eq("agentHandle", normalized))
       .first();
-    const existingUser = await ctx.db
-      .query("users")
-      .withIndex("by_agentHandle", (q) => q.eq("agentHandle", normalized))
-      .first();
-    if (existingOrg || existingUser) throw new Error("Handle already taken");
+    if (existingOrg) throw new Error("Handle already taken");
 
     await ctx.db.patch(orgId, { agentHandle: normalized });
     return normalized;
@@ -336,6 +328,7 @@ export const acceptInvitation = mutation({
       orgId: invitation.orgId,
       userId,
       role: invitation.role,
+      status: "active",
     });
 
     await ctx.db.patch(args.invitationId, { status: "accepted" });
@@ -426,24 +419,7 @@ export const getByHandle = internalQuery({
       .query("organizations")
       .withIndex("by_agentHandle", (q) => q.eq("agentHandle", args.handle))
       .first();
-    if (org) return org;
-
-    // Fallback: check legacy users table during transition
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_agentHandle", (q) => q.eq("agentHandle", args.handle))
-      .first();
-    if (user) {
-      // Return in org-like shape for backward compat
-      const membership = await ctx.db
-        .query("orgMemberships")
-        .withIndex("by_userId", (q) => q.eq("userId", user._id))
-        .first();
-      if (membership) {
-        return await ctx.db.get(membership.orgId);
-      }
-    }
-    return null;
+    return org ?? null;
   },
 });
 
