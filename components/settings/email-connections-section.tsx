@@ -126,9 +126,10 @@ export function EmailConnectionsSection() {
   const pathname = usePathname();
 
   const connections = useQuery(api.connections.list);
-  const googleStartHref = "/api/auth/google/start?returnTo=%2Fsettings%3Fsection%3Demail-connections";
+  const createOAuthState = useMutation(api.connections.createOAuthStateForViewer);
 
   const [formOpen, setFormOpen] = useState(false);
+  const [reconnectingId, setReconnectingId] = useState<Id<"emailConnections"> | null>(null);
 
   const { setActions } = useSettingsActions();
 
@@ -144,6 +145,21 @@ export function EmailConnectionsSection() {
 
   const stopScan = useMutation(api.connections.stopScan);
   const removeDemoData = useMutation(api.seed.removeDemoData);
+
+  const handleReconnectGoogle = async (connectionId: Id<"emailConnections">) => {
+    const state = crypto.randomUUID();
+    setReconnectingId(connectionId);
+    try {
+      await createOAuthState({
+        state,
+        returnTo: "/settings?section=email-connections",
+      });
+      window.location.href = `/api/auth/google/start?state=${encodeURIComponent(state)}`;
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to start Google reconnect");
+      setReconnectingId(null);
+    }
+  };
 
   const [scanTarget, setScanTarget] = useState<{
     id: Id<"emailConnections">;
@@ -313,12 +329,14 @@ export function EmailConnectionsSection() {
                       {!isDemo &&
                         conn.provider === "google" &&
                         conn.lastScanStatus === "disconnected" && (
-                          <a href={googleStartHref}>
-                            <PillButton variant="secondary">
-                              <RefreshCw className="w-3 h-3" />
-                              Reconnect
-                            </PillButton>
-                          </a>
+                          <PillButton
+                            variant="secondary"
+                            onClick={() => handleReconnectGoogle(conn._id)}
+                            disabled={reconnectingId === conn._id}
+                          >
+                            <RefreshCw className="w-3 h-3" />
+                            {reconnectingId === conn._id ? "Connecting..." : "Reconnect"}
+                          </PillButton>
                         )}
                       {!isDemo &&
                         (isScanning ? (
@@ -420,12 +438,14 @@ export function EmailConnectionsSection() {
                       {!isDemo &&
                         conn.provider === "google" &&
                         conn.lastScanStatus === "disconnected" && (
-                          <a href={googleStartHref}>
-                            <PillButton variant="secondary">
-                              <RefreshCw className="w-3 h-3" />
-                              Reconnect
-                            </PillButton>
-                          </a>
+                          <PillButton
+                            variant="secondary"
+                            onClick={() => handleReconnectGoogle(conn._id)}
+                            disabled={reconnectingId === conn._id}
+                          >
+                            <RefreshCw className="w-3 h-3" />
+                            {reconnectingId === conn._id ? "Connecting..." : "Reconnect"}
+                          </PillButton>
                         )}
                       {!isDemo &&
                         (isScanning ? (

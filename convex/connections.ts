@@ -4,6 +4,13 @@ import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { requireOrgAccess, requireOrgAdmin, getOrgAccess } from "./lib/orgAuth";
 
+function normalizeReturnTo(returnTo?: string) {
+  if (!returnTo || !returnTo.startsWith("/") || returnTo.startsWith("//")) {
+    return "/settings?section=email-connections";
+  }
+  return returnTo;
+}
+
 export const list = query({
   args: {},
   handler: async (ctx) => {
@@ -129,6 +136,7 @@ export const createOAuthState = internalMutation({
   handler: async (ctx, args) => {
     return await ctx.db.insert("oauthStates", {
       ...args,
+      returnTo: normalizeReturnTo(args.returnTo),
       createdAt: Date.now(),
     });
   },
@@ -173,7 +181,7 @@ export const createOAuthStateForViewer = mutation({
       userId,
       orgId,
       sinceDate: args.sinceDate,
-      returnTo: args.returnTo,
+      returnTo: normalizeReturnTo(args.returnTo),
       createdAt: Date.now(),
     });
   },

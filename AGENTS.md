@@ -216,7 +216,7 @@ Email scan pattern:
 - Prism intentionally rewinds the inferred scan anchor slightly and relies on `emails.messageId` deduplication so daily/manual scans do not miss boundary emails.
 - Progress counts should reflect newly inserted emails, not all provider messages returned by the upstream inbox query.
 - Classification is the only stage that should set `scanProgress.phase = "classifying"`; scan actions should avoid optimistic classifying state before the classifier actually starts.
-- Google OAuth start/callback is server-managed: the Next.js route derives the authenticated user + org, stores them in `oauthStates`, and sends Google an opaque state token instead of trusting a client-supplied `orgId`.
+- Google OAuth uses server-managed state with client-side initialization: authenticated client code writes `{ userId, orgId, returnTo, sinceDate }` into `oauthStates`, the Next.js start route only sets the OAuth state cookie + redirects to Google, and the callback consumes the opaque state token instead of trusting a client-supplied `orgId`.
 
 ## Main Product Flows
 

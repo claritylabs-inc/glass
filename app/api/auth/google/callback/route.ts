@@ -4,9 +4,16 @@ import { fetchMutation } from "convex/nextjs";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 
+function sanitizeReturnTo(returnTo?: string) {
+  if (!returnTo || !returnTo.startsWith("/") || returnTo.startsWith("//")) {
+    return "/settings?section=email-connections";
+  }
+  return returnTo;
+}
+
 function errorRedirect(message: string, returnTo = "/settings?section=email-connections") {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL!;
-  const destination = new URL(returnTo, appUrl);
+  const destination = new URL(sanitizeReturnTo(returnTo), appUrl);
   destination.searchParams.set("google", "error");
   destination.searchParams.set("message", message);
   return NextResponse.redirect(destination.toString());
@@ -141,7 +148,7 @@ export async function GET(req: NextRequest) {
   // Clear the OAuth state cookie and redirect to connections page
   const redirectParams = new URLSearchParams({ google: "connected" });
   if (oauthState.sinceDate) redirectParams.set("sinceDate", oauthState.sinceDate);
-  const returnTo = oauthState.returnTo ?? "/settings?section=email-connections";
+  const returnTo = sanitizeReturnTo(oauthState.returnTo);
   const destination = new URL(returnTo, appUrl);
   redirectParams.forEach((value, key) => {
     destination.searchParams.set(key, value);
