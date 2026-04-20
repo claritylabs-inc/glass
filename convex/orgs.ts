@@ -409,6 +409,54 @@ export const cancelInvitation = mutation({
   },
 });
 
+// ── Pending-membership approval ──
+
+export const approveMembership = mutation({
+  args: { membershipId: v.id("orgMemberships") },
+  handler: async (ctx, args) => {
+    const { orgId } = await requireOrgAdmin(ctx);
+    const membership = await ctx.db.get(args.membershipId);
+    if (!membership || membership.orgId !== orgId) throw new Error("Membership not found");
+    await ctx.db.patch(args.membershipId, { status: "active" });
+  },
+});
+
+export const denyMembership = mutation({
+  args: { membershipId: v.id("orgMemberships") },
+  handler: async (ctx, args) => {
+    const { orgId } = await requireOrgAdmin(ctx);
+    const membership = await ctx.db.get(args.membershipId);
+    if (!membership || membership.orgId !== orgId) throw new Error("Membership not found");
+    await ctx.db.delete(args.membershipId);
+  },
+});
+
+export const listPendingMemberships = query({
+  args: {},
+  handler: async (ctx) => {
+    const { orgId } = await requireOrgAdmin(ctx);
+
+    const memberships = await ctx.db
+      .query("orgMemberships")
+      .withIndex("by_orgId", (q) => q.eq("orgId", orgId))
+      .collect();
+
+    const pending = memberships.filter((m) => m.status === "pending");
+
+    return Promise.all(
+      pending.map(async (m) => {
+        const user = await ctx.db.get(m.userId);
+        return {
+          membershipId: m._id,
+          userId: m.userId,
+          name: user?.name,
+          email: user?.email,
+        };
+      }),
+    );
+  },
+});
+
 // ── Internal queries ──
 
 export const getByHandle = internalQuery({

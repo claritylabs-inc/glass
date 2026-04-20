@@ -9,6 +9,7 @@ import {
   Loader2,
   UserPlus,
   ShieldCheck,
+  Clock,
 } from "lucide-react";
 import { PillButton } from "@/components/ui/pill-button";
 import {
@@ -25,13 +26,17 @@ export function TeamSection() {
   const orgData = useQuery(api.orgs.viewerOrg);
   const members = useQuery(api.orgs.listMembers);
   const invitations = useQuery(api.orgs.listInvitations);
+  const pendingMemberships = useQuery(api.orgs.listPendingMemberships);
   const inviteMember = useMutation(api.orgs.inviteMember);
   const removeMember = useMutation(api.orgs.removeMember);
   const updateMemberRole = useMutation(api.orgs.updateMemberRole);
   const setPrimaryContact = useMutation(api.orgs.setPrimaryInsuranceContact);
   const cancelInvitation = useMutation(api.orgs.cancelInvitation);
+  const approveMembership = useMutation(api.orgs.approveMembership);
+  const denyMembership = useMutation(api.orgs.denyMembership);
 
   const org = orgData?.org;
+  const isAdmin = orgData?.membership?.role === "admin";
 
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<"admin" | "member">("member");
@@ -77,6 +82,68 @@ export function TeamSection() {
 
   return (
     <div className="space-y-4">
+      {/* Pending membership requests — admin only */}
+      {isAdmin && pendingMemberships && pendingMemberships.length > 0 && (
+        <div className="rounded-lg border border-amber-200 dark:border-amber-900/50 bg-amber-50/50 dark:bg-amber-950/30">
+          <div className="px-5 py-3.5 border-b border-amber-200 dark:border-amber-900/50 flex items-center gap-2">
+            <Clock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+            <h3 className="!mb-0 text-sm font-medium text-amber-900 dark:text-amber-400">
+              Pending requests
+            </h3>
+          </div>
+          <div className="divide-y divide-amber-200/50 dark:divide-amber-900/30">
+            {pendingMemberships.map((pending) => (
+              <div key={pending.membershipId} className="px-5 py-3.5 flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-950/60 flex items-center justify-center text-label-sm font-medium text-amber-800 dark:text-amber-400 shrink-0">
+                  {pending.name
+                    ? pending.name.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2)
+                    : pending.email?.[0]?.toUpperCase() ?? "?"}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-body-sm font-medium text-foreground truncate">
+                    {pending.name || pending.email}
+                  </p>
+                  {pending.name && pending.email && (
+                    <p className="text-label-sm text-muted-foreground truncate">{pending.email}</p>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <PillButton
+                    size="compact"
+                    onClick={async () => {
+                      try {
+                        await approveMembership({ membershipId: pending.membershipId });
+                        toast.success("Member approved");
+                      } catch (e: unknown) {
+                        const msg = e instanceof Error ? e.message : "Failed to approve";
+                        toast.error(msg);
+                      }
+                    }}
+                  >
+                    Approve
+                  </PillButton>
+                  <PillButton
+                    variant="destructive"
+                    size="compact"
+                    onClick={async () => {
+                      try {
+                        await denyMembership({ membershipId: pending.membershipId });
+                        toast.success("Request denied");
+                      } catch (e: unknown) {
+                        const msg = e instanceof Error ? e.message : "Failed to deny";
+                        toast.error(msg);
+                      }
+                    }}
+                  >
+                    Deny
+                  </PillButton>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="rounded-lg border border-foreground/6 bg-card">
         <div className="px-5 py-3.5 border-b border-foreground/6">
           <h3 className="!mb-0 text-sm font-medium text-foreground">Team Members</h3>
