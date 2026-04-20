@@ -1,9 +1,9 @@
 "use client";
 
-import { ConvexAuthProvider } from "@convex-dev/auth/react";
-import { ConvexReactClient } from "convex/react";
-import { ReactNode } from "react";
+import { ConvexProvider, ConvexReactClient } from "convex/react";
+import { AuthKitProvider } from "@workos-inc/authkit-nextjs/components";
 import { ThemeProvider } from "@/hooks/use-theme";
+import type { ReactNode } from "react";
 
 const convex = new ConvexReactClient(
   process.env.NEXT_PUBLIC_CONVEX_URL ?? "https://placeholder.convex.cloud"
@@ -11,8 +11,10 @@ const convex = new ConvexReactClient(
 
 export function ConvexClientProvider({ children }: { children: ReactNode }) {
   return (
-    <ConvexAuthProvider client={convex}>
-      <ThemeProvider>{children}</ThemeProvider>
-    </ConvexAuthProvider>
+    <AuthKitProvider>
+      <ConvexProvider client={convex}>
+        <ThemeProvider>{children}</ThemeProvider>
+      </ConvexProvider>
+    </AuthKitProvider>
   );
 }
