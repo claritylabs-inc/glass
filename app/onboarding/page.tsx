@@ -12,6 +12,7 @@ import { PillButton } from "@/components/ui/pill-button";
 import { LogoIcon } from "@/components/ui/logo-icon";
 import { ArrowLeft, ArrowRight, AtSign, Check, ChevronDown, Clock3, Loader2, Mail } from "lucide-react";
 import { toast } from "sonner";
+import { useOnboardingCache } from "@/hooks/use-onboarding-cache";
 
 type Step = 0 | 1 | 2 | 3 | 4;
 type EnrichmentState = "idle" | "running" | "success" | "error";
@@ -117,6 +118,7 @@ export default function OnboardingPage() {
   const acceptInvitation = useMutation(api.orgs.acceptInvitation);
   const completeOnboarding = useMutation(api.users.completeOnboarding);
   const extractCompanyInfo = useAction(api.actions.extractCompanyInfo.extractCompanyInfo);
+  const { setOnboardingComplete, clearCache: clearOnboardingCache } = useOnboardingCache();
 
   const [currentStep, setCurrentStep] = useState<Step>(0);
   const [connectionFormOpen, setConnectionFormOpen] = useState(false);
@@ -160,6 +162,7 @@ export default function OnboardingPage() {
   const syncComplete = primaryConnection?.lastScanStatus === "success";
 
   async function handleLogout() {
+    clearOnboardingCache();
     await signOut();
     router.replace("/login");
   }
@@ -221,6 +224,7 @@ export default function OnboardingPage() {
     setFinishing(true);
     try {
       await completeOnboarding();
+      setOnboardingComplete(true);
       router.replace("/");
     } catch (err) {
       setFinishing(false);
@@ -237,6 +241,7 @@ export default function OnboardingPage() {
       }
       await acceptInvitation({ invitationId: pendingInvitation.invitationId });
       await completeOnboarding();
+      setOnboardingComplete(true);
       router.replace("/");
     } catch (err) {
       setAcceptingInvite(false);
