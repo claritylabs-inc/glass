@@ -5,10 +5,10 @@ const BRAND_BLUE = "#A0D2FA";
 
 export function BrandWordmark() {
   return (
-    <div className="flex items-center gap-3 text-foreground">
-      <LogoIcon size={18} color={BRAND_BLUE} static />
+    <div className="flex items-center gap-2.5 text-foreground">
+      <LogoIcon size={16} color={BRAND_BLUE} static />
       <div className="flex items-baseline gap-1.5">
-        <span className="text-base font-medium tracking-tight">Prism</span>
+        <span className="text-sm font-medium tracking-tight">Prism</span>
         <span className="text-sm text-muted-foreground">by Clarity Labs</span>
       </div>
     </div>

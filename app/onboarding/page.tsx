@@ -68,7 +68,7 @@ function Shell({
 }) {
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <header className="w-full px-6 py-6 sm:px-8 sm:py-7">
+      <header className="w-full px-6 py-6 sm:px-8">
         <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-4 text-sm text-muted-foreground">
           <div className="justify-self-start min-w-0">
             <div className="sm:hidden">
