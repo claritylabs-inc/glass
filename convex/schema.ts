@@ -31,10 +31,13 @@ export default defineSchema({
     onboardingComplete: v.optional(v.boolean()),
     isAdmin: v.optional(v.boolean()),
     agentHandle: v.optional(v.string()),
+    // NEW
+    workosUserId: v.optional(v.string()),
   })
     .index("email", ["email"])
     .index("phone", ["phone"])
-    .index("by_agentHandle", ["agentHandle"]),
+    .index("by_agentHandle", ["agentHandle"])
+    .index("by_workosUserId", ["workosUserId"]),
 
   // Organizations — owns company data, agent, broker info
   organizations: defineTable({
@@ -71,13 +74,24 @@ export default defineSchema({
     // Intelligence pipeline
     intelligenceSummary: v.optional(v.string()),
     lastDreamAt: v.optional(v.number()),
-  }).index("by_agentHandle", ["agentHandle"]),
+    // NEW
+    primaryDomain: v.optional(v.string()),
+    domainJoinPolicy: v.optional(
+      v.union(v.literal("auto"), v.literal("approval"), v.literal("off"))
+    ),
+  })
+    .index("by_agentHandle", ["agentHandle"])
+    .index("by_primaryDomain", ["primaryDomain"]),
 
   // Org memberships — links users to orgs
   orgMemberships: defineTable({
     orgId: v.id("organizations"),
     userId: v.id("users"),
     role: v.union(v.literal("admin"), v.literal("member")),
+    // NEW
+    status: v.optional(
+      v.union(v.literal("active"), v.literal("pending"))
+    ),
   })
     .index("by_userId", ["userId"])
     .index("by_orgId", ["orgId"])
