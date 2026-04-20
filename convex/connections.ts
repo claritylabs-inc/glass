@@ -123,6 +123,7 @@ export const createOAuthState = internalMutation({
     state: v.string(),
     userId: v.id("users"),
     orgId: v.id("organizations"),
+    sinceDate: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     return await ctx.db.insert("oauthStates", {
@@ -149,7 +150,60 @@ export const consumeOAuthState = internalMutation({
     }
 
     await ctx.db.delete(record._id);
-    return { userId: record.userId, orgId: record.orgId };
+    return {
+      userId: record.userId,
+      orgId: record.orgId,
+      sinceDate: record.sinceDate,
+    };
+  },
+});
+
+export const createOAuthStateForViewer = mutation({
+  args: {
+    state: v.string(),
+    sinceDate: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { userId, orgId } = await requireOrgAccess(ctx);
+    return await ctx.db.insert("oauthStates", {
+      state: args.state,
+      userId,
+      orgId,
+      sinceDate: args.sinceDate,
+      createdAt: Date.now(),
+    });
+  },
+});
+
+export const consumeOAuthStateFromServer = mutation({
+  args: {
+    serverSecret: v.string(),
+    state: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const expected = process.env.GOOGLE_OAUTH_SERVER_SECRET;
+    if (!expected || args.serverSecret !== expected) {
+      throw new Error("Unauthorized");
+    }
+
+    const record = await ctx.db
+      .query("oauthStates")
+      .withIndex("by_state", (idx) => idx.eq("state", args.state))
+      .first();
+
+    if (!record) return null;
+
+    if (Date.now() - record.createdAt > 10 * 60 * 1000) {
+      await ctx.db.delete(record._id);
+      return null;
+    }
+
+    await ctx.db.delete(record._id);
+    return {
+      userId: record.userId,
+      orgId: record.orgId,
+      sinceDate: record.sinceDate,
+    };
   },
 });
 
@@ -157,7 +211,8 @@ export const consumeOAuthState = internalMutation({
 export const connectGoogle = mutation({
   args: {
     serverSecret: v.string(),
-    orgId: v.string(),
+    userId: v.id("users"),
+    orgId: v.id("organizations"),
     email: v.string(),
     accessToken: v.string(),
     refreshToken: v.string(),
@@ -170,18 +225,17 @@ export const connectGoogle = mutation({
       throw new Error("Unauthorized");
     }
 
-    const orgId = args.orgId as Id<"organizations">; // from URL state, already validated
-
     // Upsert: update existing Google connection or create new one
     const existing = await ctx.db
       .query("emailConnections")
       .withIndex("by_email_orgId_provider", (idx) =>
-        idx.eq("email", args.email).eq("orgId", orgId).eq("provider", "google")
+        idx.eq("email", args.email).eq("orgId", args.orgId).eq("provider", "google")
       )
       .first();
 
     if (existing) {
       await ctx.db.patch(existing._id, {
+        userId: args.userId,
         accessToken: args.accessToken,
         refreshToken: args.refreshToken,
         tokenExpiry: args.tokenExpiry,
@@ -193,7 +247,8 @@ export const connectGoogle = mutation({
 
     const connectionId = await ctx.db.insert("emailConnections", {
       provider: "google",
-      orgId,
+      userId: args.userId,
+      orgId: args.orgId,
       label: args.email,
       email: args.email,
       accessToken: args.accessToken,

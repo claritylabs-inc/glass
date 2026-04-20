@@ -30,10 +30,9 @@ type ProviderChoice = "google" | "imap";
 interface ConnectionFormProps {
   open: boolean;
   onClose: () => void;
-  orgId?: string;
 }
 
-export function ConnectionForm({ open, onClose, orgId }: ConnectionFormProps) {
+export function ConnectionForm({ open, onClose }: ConnectionFormProps) {
   const createConnection = useMutation(api.connections.create);
   const [step, setStep] = useState<Step>("choose");
   const [providerChoice, setProviderChoice] = useState<ProviderChoice>("google");
@@ -69,7 +68,6 @@ export function ConnectionForm({ open, onClose, orgId }: ConnectionFormProps) {
       // Redirect to Google OAuth with history days encoded
       const sinceDate = new Date(Date.now() - historyDays * 86400000).toISOString().split("T")[0];
       const params = new URLSearchParams();
-      if (orgId) params.set("orgId", orgId);
       params.set("sinceDate", sinceDate);
       window.location.href = `/api/auth/google/start?${params.toString()}`;
     } else {

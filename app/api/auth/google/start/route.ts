@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
+import { fetchMutation } from "convex/nextjs";
+import { convexAuthNextjsToken } from "@convex-dev/auth/nextjs/server";
+import { api } from "@/convex/_generated/api";
 
 export async function GET(req: NextRequest) {
   const clientId = process.env.GOOGLE_CLIENT_ID;
@@ -12,25 +15,28 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  // orgId is passed as a query param from the frontend
-  const orgId = req.nextUrl.searchParams.get("orgId");
-  if (!orgId) {
-    return NextResponse.json(
-      { error: "Missing orgId parameter" },
-      { status: 400 },
-    );
+  const token = await convexAuthNextjsToken();
+  if (!token) {
+    const loginUrl = new URL("/login", req.url);
+    loginUrl.searchParams.set("next", "/connections");
+    return NextResponse.redirect(loginUrl);
   }
 
-  // Generate a random nonce for CSRF protection
-  const nonce = crypto.randomUUID();
+  const state = crypto.randomUUID();
 
   // Optional: sinceDate for initial scan history
   const sinceDate = req.nextUrl.searchParams.get("sinceDate");
 
-  // Encode orgId, nonce, and sinceDate into the state parameter
-  const state = Buffer.from(JSON.stringify({ nonce, orgId, sinceDate })).toString(
-    "base64url",
-  );
+  try {
+    await fetchMutation(
+      api.connections.createOAuthStateForViewer,
+      { state, sinceDate: sinceDate ?? undefined },
+      { token },
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to initialize Google OAuth";
+    return NextResponse.json({ error: message }, { status: 400 });
+  }
 
   // Build the Google OAuth authorization URL
   const params = new URLSearchParams({
@@ -45,9 +51,9 @@ export async function GET(req: NextRequest) {
 
   const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
 
-  // Set the nonce in an httpOnly cookie so we can verify it on callback
+  // Mirror the opaque state in a cookie so we can reject cross-site callbacks.
   const response = NextResponse.redirect(googleAuthUrl);
-  response.cookies.set("google_oauth_nonce", nonce, {
+  response.cookies.set("google_oauth_state", state, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
