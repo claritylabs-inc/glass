@@ -5,6 +5,9 @@ import { requireUser } from "./lib/auth";
 
 // ── Queries ──
 
+// Intentionally does NOT call requireOrgAccess — pending members must
+// read their own membership row to see the approval screen. Only
+// exposes membership status + org name, not org-scoped data.
 export const viewerOrg = query({
   args: {},
   handler: async (ctx) => {
