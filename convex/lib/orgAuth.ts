@@ -27,6 +27,10 @@ export async function requireOrgAccess(ctx: Ctx): Promise<OrgAccess> {
     throw new Error("No organization membership");
   }
 
+  if (membership.status !== "active") {
+    throw new Error("Membership pending approval");
+  }
+
   const org = await ctx.db.get(membership.orgId);
   if (!org) {
     throw new Error("Organization not found");
@@ -53,6 +57,9 @@ export async function getOrgAccess(ctx: Ctx): Promise<OrgAccess | null> {
     .first();
 
   if (!membership) return null;
+
+  // Pending members have no org-scoped access — treat as no membership.
+  if (membership.status !== "active") return null;
 
   const org = await ctx.db.get(membership.orgId);
   if (!org) return null;
