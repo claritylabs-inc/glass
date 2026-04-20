@@ -28,6 +28,7 @@ export function OrganizationSection() {
   const viewer = useQuery(api.users.viewer);
   const orgData = useQuery(api.orgs.viewerOrg);
   const updateOrg = useMutation(api.orgs.updateOrg);
+  const setDomainJoinPolicy = useMutation(api.orgs.setDomainJoinPolicy);
   const restartOnboarding = useMutation(api.users.restartOnboarding);
   const removeDemoData = useMutation(api.seed.removeDemoData);
   const hasDemoDataResult = useQuery(api.seed.hasDemoData);
@@ -392,6 +393,53 @@ export function OrganizationSection() {
             </div>
           </div>
         </div>
+
+        {/* Domain join policy — admin only */}
+        {orgData?.membership?.role === "admin" && (
+          <div className="rounded-lg border border-foreground/6 bg-card mb-4">
+            <div className="px-5 py-3.5 border-b border-foreground/6">
+              <h3 className="!mb-0 text-sm font-medium text-foreground">Member access</h3>
+            </div>
+            <div className="px-5 py-5">
+              <label className="text-label-sm font-medium text-muted-foreground block mb-2">
+                Domain join policy
+              </label>
+              <p className="text-label-sm text-muted-foreground/60 mb-3">
+                Controls how new users with a matching email domain join this organization.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-2">
+                {(
+                  [
+                    { value: "approval", label: "Require approval", description: "New users must be approved by an admin." },
+                    { value: "auto", label: "Auto-join", description: "Anyone with a matching domain joins automatically." },
+                    { value: "off", label: "Off", description: "Domain matching disabled; invite-only." },
+                  ] as const
+                ).map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        await setDomainJoinPolicy({ policy: option.value });
+                        toast.success("Domain join policy updated");
+                      } catch {
+                        toast.error("Failed to update policy");
+                      }
+                    }}
+                    className={`flex-1 text-left px-3 py-2.5 rounded-lg border text-body-sm transition-colors cursor-pointer ${
+                      org?.domainJoinPolicy === option.value
+                        ? "border-foreground/15 bg-foreground/[0.03] text-foreground"
+                        : "border-foreground/6 text-muted-foreground hover:border-foreground/10"
+                    }`}
+                  >
+                    <span className="font-medium block">{option.label}</span>
+                    <span className="text-label-sm text-muted-foreground/60">{option.description}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
       </form>
 
       {/* Onboarding section */}

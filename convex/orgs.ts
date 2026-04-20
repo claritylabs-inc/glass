@@ -431,6 +431,16 @@ export const denyMembership = mutation({
   },
 });
 
+export const setDomainJoinPolicy = mutation({
+  args: {
+    policy: v.union(v.literal("auto"), v.literal("approval"), v.literal("off")),
+  },
+  handler: async (ctx, args) => {
+    const { orgId } = await requireOrgAdmin(ctx);
+    await ctx.db.patch(orgId, { domainJoinPolicy: args.policy });
+  },
+});
+
 export const listPendingMemberships = query({
   args: {},
   handler: async (ctx) => {
