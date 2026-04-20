@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery, query } from "./_generated/server";
-import { requireUser } from "./lib/auth";
+import { getOrgAccess } from "./lib/orgAuth";
 
 export const listAllInternal = internalQuery({
   args: {},
@@ -156,15 +156,12 @@ export const deleteExpired = internalMutation({
 export const list = query({
   args: {},
   handler: async (ctx) => {
-    const { userId } = await requireUser(ctx);
-    const membership = await ctx.db
-      .query("orgMemberships")
-      .withIndex("by_userId", (q) => q.eq("userId", userId))
-      .first();
-    if (!membership) return [];
+    const access = await getOrgAccess(ctx);
+    if (!access) return [];
+    const { orgId } = access;
     const memories = await ctx.db
       .query("orgMemory")
-      .withIndex("by_org", (q) => q.eq("orgId", membership.orgId))
+      .withIndex("by_org", (q) => q.eq("orgId", orgId))
       .collect();
     const now = Date.now();
     return memories
