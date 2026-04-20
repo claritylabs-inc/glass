@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { usePageContext } from "@/hooks/use-page-context";
+import { useOnboardingCache } from "@/hooks/use-onboarding-cache";
 import { SETTINGS_SECTIONS } from "@/lib/settings-sections";
 import { LogoIcon } from "@/components/ui/logo-icon";
 import { PillButton } from "@/components/ui/pill-button";
@@ -105,6 +106,7 @@ export function AppSidebar({
   const createThread = useMutation(api.threads.create);
   const archiveThread = useMutation(api.threads.archive);
   const { signOut } = useAuthActions();
+  const { clearCache: clearOnboardingCache } = useOnboardingCache();
   const { context: pageContext } = usePageContext();
 
   const [collapsed, setCollapsed] = useState(() => {
@@ -519,7 +521,10 @@ export function AppSidebar({
         />
         <button
           type="button"
-          onClick={() => signOut()}
+          onClick={() => {
+            clearOnboardingCache();
+            signOut();
+          }}
           className={`w-full flex items-center gap-2.5 px-3 py-1.5 rounded-md text-body-sm text-muted-foreground hover:bg-foreground/[0.04] transition-colors cursor-pointer ${
             collapsed ? "justify-center" : ""
           }`}
