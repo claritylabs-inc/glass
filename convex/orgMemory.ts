@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery, query } from "./_generated/server";
-import { requireAuth } from "./lib/auth";
+import { requireUser } from "./lib/auth";
 
 export const listAllInternal = internalQuery({
   args: {},
@@ -156,7 +156,7 @@ export const deleteExpired = internalMutation({
 export const list = query({
   args: {},
   handler: async (ctx) => {
-    const userId = await requireAuth(ctx);
+    const { userId } = await requireUser(ctx);
     const membership = await ctx.db
       .query("orgMemberships")
       .withIndex("by_userId", (q) => q.eq("userId", userId))

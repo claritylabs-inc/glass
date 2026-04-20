@@ -2,7 +2,6 @@ import { v } from "convex/values";
 import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import { requireOrgAccess, getOrgAccess } from "./lib/orgAuth";
-import { getAuthUserId } from "@convex-dev/auth/server";
 import { generateText } from "ai";
 import { Id } from "./_generated/dataModel";
 
@@ -10,8 +9,11 @@ import { Id } from "./_generated/dataModel";
 export const seed = action({
   args: {},
   handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+    const user = await ctx.runQuery(internal.users.getByWorkosUserId, { workosUserId: identity.subject });
+    if (!user) throw new Error("User not yet initialized — call ensureCurrentUser first");
+    const userId = user._id;
 
     // Get org membership
     const orgData = await ctx.runQuery(api.orgs.viewerOrg);
@@ -23,11 +25,11 @@ export const seed = action({
 
     // Get org or user profile for context
     const org = orgId ? await ctx.runQuery(internal.orgs.getInternal, { id: orgId }) : null;
-    const user = await ctx.runQuery(internal.users.getInternal, { id: userId });
-    const companyName = org?.name || user?.companyName || "Demo Company";
-    const companyContext = org?.context || user?.companyContext || "";
-    const industry = org?.industry || user?.industry || "";
-    const industryVertical = org?.industryVertical || user?.industryVertical || "";
+    const userProfile = await ctx.runQuery(internal.users.getInternal, { id: userId });
+    const companyName = org?.name || userProfile?.companyName || "Demo Company";
+    const companyContext = org?.context || userProfile?.companyContext || "";
+    const industry = org?.industry || userProfile?.industry || "";
+    const industryVertical = org?.industryVertical || userProfile?.industryVertical || "";
 
     let seedData: SeedPayload;
 

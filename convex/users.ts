@@ -1,14 +1,17 @@
 import { v } from "convex/values";
 import { query, mutation, internalQuery, action, internalMutation } from "./_generated/server";
 import { internal } from "./_generated/api";
-import { getAuthUserId } from "@convex-dev/auth/server";
-import { ResolvedUser } from "./lib/auth";
+import { requireUser, ResolvedUser } from "./lib/auth";
 
 export const viewer = query({
   args: {},
   handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) return null;
+    let userId;
+    try {
+      ({ userId } = await requireUser(ctx));
+    } catch {
+      return null;
+    }
     return await ctx.db.get(userId);
   },
 });
@@ -72,8 +75,7 @@ export const updateProfile = mutation({
     coiHandling: v.optional(v.union(v.literal("broker"), v.literal("user"), v.literal("ignore"))),
   },
   handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    const { userId } = await requireUser(ctx);
     await ctx.db.patch(userId, args);
   },
 });
@@ -81,8 +83,7 @@ export const updateProfile = mutation({
 export const completeOnboarding = mutation({
   args: {},
   handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    const { userId } = await requireUser(ctx);
     await ctx.db.patch(userId, { onboardingComplete: true });
 
     // Also mark org as onboarded if user has one
@@ -125,8 +126,7 @@ export const checkHandleAvailability = query({
 export const claimAgentHandle = mutation({
   args: { handle: v.string() },
   handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    const { userId } = await requireUser(ctx);
 
     // Prefer setting on org if user has one
     const membership = await ctx.db
@@ -164,8 +164,7 @@ export const claimAgentHandle = mutation({
 export const restartOnboarding = mutation({
   args: {},
   handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    const { userId } = await requireUser(ctx);
     await ctx.db.patch(userId, { onboardingComplete: false });
 
     const membership = await ctx.db
@@ -182,6 +181,16 @@ export const getInternal = internalQuery({
   args: { id: v.id("users") },
   handler: async (ctx, args) => {
     return await ctx.db.get(args.id);
+  },
+});
+
+export const getByWorkosUserId = internalQuery({
+  args: { workosUserId: v.string() },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("users")
+      .withIndex("by_workosUserId", (q) => q.eq("workosUserId", args.workosUserId))
+      .first();
   },
 });
 
@@ -202,8 +211,7 @@ export const listByOrgInternal = internalQuery({
 export const resetAccount = mutation({
   args: {},
   handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    const { userId } = await requireUser(ctx);
 
     const user = await ctx.db.get(userId);
     if (!user?.isAdmin) throw new Error("Not authorized");

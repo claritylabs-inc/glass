@@ -16,8 +16,10 @@
  * }
  */
 
-import { QueryCtx } from "../_generated/server";
+import { QueryCtx, MutationCtx } from "../_generated/server";
 import { Id } from "../_generated/dataModel";
+
+type Ctx = QueryCtx | MutationCtx;
 
 export type ResolvedUser = {
   userId: Id<"users">;
@@ -31,7 +33,7 @@ export type ResolvedUser = {
  * Use in queries. Throws if unauthenticated OR if the user row has not yet been
  * materialized (first-call-after-login must go through ensureCurrentUser).
  */
-export async function requireUser(ctx: QueryCtx): Promise<ResolvedUser> {
+export async function requireUser(ctx: Ctx): Promise<ResolvedUser> {
   const identity = await ctx.auth.getUserIdentity();
   if (!identity) throw new Error("Not authenticated");
   const workosUserId = identity.subject;

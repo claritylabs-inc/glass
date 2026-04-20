@@ -1,4 +1,4 @@
-import { getAuthUserId } from "@convex-dev/auth/server";
+import { requireUser } from "./auth";
 import { QueryCtx, MutationCtx } from "../_generated/server";
 import { Id, Doc } from "../_generated/dataModel";
 
@@ -16,10 +16,7 @@ export type OrgAccess = {
  * Used by all public queries/mutations that need org scoping.
  */
 export async function requireOrgAccess(ctx: Ctx): Promise<OrgAccess> {
-  const userId = await getAuthUserId(ctx);
-  if (!userId) {
-    throw new Error("Not authenticated");
-  }
+  const { userId } = await requireUser(ctx);
 
   const membership = await ctx.db
     .query("orgMemberships")
@@ -43,8 +40,12 @@ export async function requireOrgAccess(ctx: Ctx): Promise<OrgAccess> {
  * Use for queries that may be called during onboarding before org exists.
  */
 export async function getOrgAccess(ctx: Ctx): Promise<OrgAccess | null> {
-  const userId = await getAuthUserId(ctx);
-  if (!userId) return null;
+  let userId: Id<"users">;
+  try {
+    ({ userId } = await requireUser(ctx));
+  } catch {
+    return null;
+  }
 
   const membership = await ctx.db
     .query("orgMemberships")

@@ -1,15 +1,19 @@
 import { v } from "convex/values";
 import { query, mutation, internalQuery, internalMutation } from "./_generated/server";
 import { requireOrgAccess, requireOrgAdmin, getOrgAccess } from "./lib/orgAuth";
-import { getAuthUserId } from "@convex-dev/auth/server";
+import { requireUser } from "./lib/auth";
 
 // ── Queries ──
 
 export const viewerOrg = query({
   args: {},
   handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) return null;
+    let userId;
+    try {
+      ({ userId } = await requireUser(ctx));
+    } catch {
+      return null;
+    }
 
     const membership = await ctx.db
       .query("orgMemberships")
@@ -119,8 +123,12 @@ export const checkPendingInvitation = query({
 export const pendingInvitationForViewer = query({
   args: {},
   handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) return null;
+    let userId;
+    try {
+      ({ userId } = await requireUser(ctx));
+    } catch {
+      return null;
+    }
 
     const user = await ctx.db.get(userId);
     if (!user?.email) return null;
@@ -168,8 +176,7 @@ export const createOrg = mutation({
     industryVertical: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    const { userId } = await requireUser(ctx);
 
     // Check if user already has an org
     const existing = await ctx.db
@@ -299,8 +306,7 @@ export const inviteMember = mutation({
 export const acceptInvitation = mutation({
   args: { invitationId: v.id("orgInvitations") },
   handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    const { userId } = await requireUser(ctx);
 
     const invitation = await ctx.db.get(args.invitationId);
     if (!invitation) throw new Error("Invitation not found");
