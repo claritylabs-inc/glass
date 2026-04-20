@@ -265,7 +265,7 @@ export default function OnboardingPage() {
           subtitle={`You've been invited to join ${pendingInvitation.orgName}.`}
           logo={<BrandWordmark />}
         >
-          <div className="space-y-6 px-1 py-2">
+          <div className="space-y-6">
             <div className="text-base text-muted-foreground">
               <p className="font-medium text-foreground">{pendingInvitation.orgName}</p>
               <p className="mt-1 text-muted-foreground">
@@ -314,7 +314,6 @@ export default function OnboardingPage() {
           </div>
 
           {currentStep === 0 && (
-            <div className="px-1 py-2">
             <div className="space-y-10">
               <div className="space-y-4">
                 <div className="space-y-2">
@@ -352,11 +351,9 @@ export default function OnboardingPage() {
                 {!savingProfile ? <ArrowRight className="h-4 w-4" /> : null}
               </PillButton>
             </div>
-            </div>
           )}
 
           {currentStep === 1 && (
-            <div className="px-1 py-2">
             <div className="space-y-10">
               <div className="space-y-4">
                 <div className="space-y-2">
@@ -405,11 +402,9 @@ export default function OnboardingPage() {
                 </PillButton>
               </div>
             </div>
-            </div>
           )}
 
           {currentStep === 2 && (
-            <div className="px-1 py-2">
             <div className="space-y-10">
               <div className="space-y-3">
                 <label className="text-label-sm font-medium text-muted-foreground block mb-1.5">Agent handle</label>
@@ -473,11 +468,9 @@ export default function OnboardingPage() {
                 )}
               </div>
             </div>
-            </div>
           )}
 
           {currentStep === 3 && (
-            <div className="px-1 py-2">
             <div className="space-y-10">
               {!hasConnection ? (
                 <div className="rounded-xl border border-foreground/8 bg-popover/60">
@@ -550,7 +543,6 @@ export default function OnboardingPage() {
                   <ArrowRight className="h-4 w-4" />
                 </PillButton>
               </div>
-            </div>
             </div>
           )}
 
