@@ -5,9 +5,7 @@ import { useAuthActions } from "@convex-dev/auth/react";
 import { useConvexAuth, useQuery, useMutation } from "convex/react";
 import { useSearchParams } from "next/navigation";
 import { api } from "@/convex/_generated/api";
-import { FadeIn } from "@/components/ui/fade-in";
-import { LogoIcon } from "@/components/ui/logo-icon";
-import { AuthHeroBackground, PrismHeroLogo } from "@/components/auth-hero-background";
+import { AuthCard, AuthShell } from "@/components/auth-shell";
 import { PillButton } from "@/components/ui/pill-button";
 import { Loader2, ArrowLeft, ArrowRight, Shield, X } from "lucide-react";
 
@@ -136,50 +134,38 @@ export default function OAuthAuthorizePage() {
   // Invalid params
   if (!paramsValid) {
     return (
-      <div className="relative flex min-h-screen items-center justify-center px-4 overflow-hidden">
-        <AuthHeroBackground />
-        <FadeIn className="relative z-10 w-full max-w-sm">
-          <PrismHeroLogo />
-          <div className="rounded-xl border border-foreground/8 bg-background p-6 sm:p-8 text-center">
-            <X className="w-8 h-8 text-red-400 mx-auto mb-3" />
-            <h2 className="text-body-lg font-semibold text-foreground mb-1">Invalid Request</h2>
-            <p className="text-body-sm text-muted-foreground">
+      <AuthShell>
+        <AuthCard title="Invalid request" subtitle="This authorization request could not be completed.">
+          <div className="text-center">
+            <X className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">
               This authorization request is missing required parameters.
             </p>
           </div>
-        </FadeIn>
-      </div>
+        </AuthCard>
+      </AuthShell>
     );
   }
 
   // Loading auth state
   if (authLoading) {
     return (
-      <div className="relative flex min-h-screen items-center justify-center px-4 overflow-hidden">
-        <AuthHeroBackground />
-        <FadeIn className="relative z-10">
-          <Loader2 className="w-6 h-6 animate-spin text-white/40" />
-        </FadeIn>
-      </div>
+      <AuthShell>
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </AuthShell>
     );
   }
 
   // Not authenticated — show login
   if (!isAuthenticated) {
     return (
-      <div className="relative flex min-h-screen items-center justify-center px-4 overflow-hidden">
-        <AuthHeroBackground />
-        <FadeIn className="relative z-10 w-full max-w-sm">
-          <PrismHeroLogo />
-          <div className="rounded-xl border border-foreground/8 bg-background p-6 sm:p-8">
-            <p className="text-label-sm text-muted-foreground text-center mb-4">
-              Sign in to connect your Prism account
-            </p>
+      <AuthShell>
+        <AuthCard title="Authorize app" subtitle="Sign in to connect your Prism account.">
 
             {loginStep === "email" ? (
               <form onSubmit={handleEmailSubmit} className="space-y-4">
                 <div>
-                  <label className="text-label-sm font-medium text-foreground/50  block mb-1.5">
+                  <label className="text-label-sm font-medium text-muted-foreground block mb-1.5">
                     Email Address
                   </label>
                   <input
@@ -189,32 +175,24 @@ export default function OAuthAuthorizePage() {
                     placeholder="you@company.com"
                     required
                     autoFocus
-                    className="w-full rounded-lg border border-foreground/10 bg-card px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                    className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
                   />
                 </div>
                 {error && (
-                  <p className="text-body-sm text-muted-foreground bg-card border border-foreground/6 rounded-lg px-3 py-2">
+                  <p className="px-1 py-1 text-sm text-muted-foreground">
                     {error}
                   </p>
                 )}
-                <PillButton type="submit" disabled={sendingCode || !email} className="w-full">
-                  {sendingCode ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      Sending code...
-                    </>
-                  ) : (
-                    <>
-                      Send verification code
-                      <ArrowRight className="w-3.5 h-3.5" />
-                    </>
-                  )}
+                <PillButton type="submit" disabled={sendingCode || !email} className="h-12 w-full justify-center text-sm shadow-none">
+                  {sendingCode ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  {sendingCode ? "Sending code..." : "Send verification code"}
+                  {!sendingCode ? <ArrowRight className="h-4 w-4" /> : null}
                 </PillButton>
               </form>
             ) : (
               <form onSubmit={handleCodeSubmit} className="space-y-4">
                 <div>
-                  <label className="text-label-sm font-medium text-foreground/50  block mb-2">
+                  <label className="text-label-sm font-medium text-muted-foreground block mb-2">
                     Verification Code
                   </label>
                   <div
@@ -227,10 +205,10 @@ export default function OAuthAuthorizePage() {
                     {Array.from({ length: 6 }).map((_, i) => (
                       <div
                         key={i}
-                        className={`flex-1 aspect-square max-h-14 rounded-lg border bg-card flex items-center justify-center text-xl font-semibold font-mono transition-colors ${
+                        className={`flex-1 aspect-square max-h-14 rounded-lg border border-foreground/8 bg-popover flex items-center justify-center text-xl font-medium font-mono transition-colors ${
                           code.length === i
                             ? "border-foreground/30 ring-1 ring-foreground/10"
-                            : "border-foreground/10"
+                            : "border-foreground/8"
                         }`}
                       >
                         {code[i] ?? ""}
@@ -250,84 +228,67 @@ export default function OAuthAuthorizePage() {
                       aria-label="Verification code"
                     />
                   </div>
-                  <p className="text-label-sm text-foreground/40 mt-2">
+                  <p className="mt-2 text-sm text-muted-foreground">
                     We sent a 6-digit code to{" "}
-                    <span className="text-foreground/70 font-medium">{email}</span>
+                    <span className="font-medium text-foreground">{email}</span>
                   </p>
                 </div>
                 {error && (
-                  <p className="text-body-sm text-muted-foreground bg-card border border-foreground/6 rounded-lg px-3 py-2">
+                  <p className="px-1 py-1 text-sm text-muted-foreground">
                     {error}
                   </p>
                 )}
-                <div className="flex flex-col gap-2.5 pt-1">
-                  <PillButton type="submit" disabled={verifying || code.length < 6} className="w-full">
-                    {verifying ? (
-                      <>
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        Verifying...
-                      </>
-                    ) : (
-                      <>
-                        Verify & continue
-                        <ArrowRight className="w-3.5 h-3.5" />
-                      </>
-                    )}
+                <div className="flex flex-col gap-3 pt-1">
+                  <PillButton type="submit" disabled={verifying || code.length < 6} className="h-12 w-full justify-center text-sm shadow-none">
+                    {verifying ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                    {verifying ? "Verifying..." : "Verify and continue"}
+                    {!verifying ? <ArrowRight className="h-4 w-4" /> : null}
                   </PillButton>
                   <PillButton
+                    type="button"
                     variant="secondary"
                     onClick={() => { setLoginStep("email"); setCode(""); setError(""); }}
-                    className="w-full"
+                    className="h-12 w-full justify-center text-sm shadow-none"
                   >
-                    <ArrowLeft className="w-3.5 h-3.5" />
+                    <ArrowLeft className="h-4 w-4" />
                     Use a different email
                   </PillButton>
                 </div>
               </form>
             )}
-          </div>
-          <p className="text-center mt-5">
-            <a href="https://claritylabs.inc" target="_blank" rel="noopener noreferrer" className="inline-flex flex-col items-center gap-0.5 hover:opacity-80 transition-opacity">
-              <span className="text-[11px] text-white/40">from</span>
-              <span className="inline-flex items-center gap-1 serif text-[18px] text-white/70">clarity <LogoIcon size={16} color="#ffffff" static className="shrink-0" /> labs</span>
-            </a>
-          </p>
-        </FadeIn>
-      </div>
+        </AuthCard>
+      </AuthShell>
     );
   }
 
   // Authenticated — show consent screen
   return (
-    <div className="relative flex min-h-screen items-center justify-center px-4 overflow-hidden">
-      <AuthHeroBackground />
-      <FadeIn className="relative z-10 w-full max-w-sm">
-        <PrismHeroLogo />
-        <div className="rounded-xl border border-foreground/8 bg-background p-6 sm:p-8">
+    <AuthShell>
+      <AuthCard title="Authorize app" subtitle={clientInfo ? `${clientInfo.clientName} wants to access your Prism account.` : "Review this request before continuing."}>
           {clientInfo === undefined ? (
             <div className="flex justify-center py-8">
-              <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
             </div>
           ) : clientInfo === null ? (
             <div className="text-center py-4">
-              <X className="w-8 h-8 text-red-400 mx-auto mb-3" />
-              <h2 className="text-body-lg font-semibold text-foreground mb-1">Unknown Application</h2>
-              <p className="text-body-sm text-muted-foreground">
+              <X className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
+              <h2 className="mb-1 text-lg font-medium text-foreground">Unknown application</h2>
+              <p className="text-sm text-muted-foreground">
                 This application is not registered or the redirect URI doesn&apos;t match.
               </p>
             </div>
           ) : redirecting ? (
             <div className="text-center py-6 space-y-3">
-              <Loader2 className="w-6 h-6 animate-spin text-muted-foreground mx-auto" />
+              <Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" />
               <div>
-                <h2 className="text-body-lg font-semibold text-foreground">Connected</h2>
-                <p className="text-body-sm text-muted-foreground mt-1">
+                <h2 className="text-lg font-medium text-foreground">Connected</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
                   Redirecting you back to {clientInfo.clientName}...
                 </p>
               </div>
-              <p className="text-label-sm text-muted-foreground/50 mt-4">
+              <p className="mt-4 text-sm text-muted-foreground">
                 If you&apos;re not redirected automatically,{" "}
-                <a href={redirectUrl} className="underline text-foreground/60 hover:text-foreground/80">
+                <a href={redirectUrl} className="font-medium text-foreground hover:underline">
                   click here
                 </a>
                 . You can also close this window.
@@ -336,20 +297,20 @@ export default function OAuthAuthorizePage() {
           ) : (
             <div className="space-y-5">
               <div className="text-center">
-                <Shield className="w-8 h-8 text-foreground/30 mx-auto mb-3" />
-                <h2 className="text-body-lg font-semibold text-foreground">
+                <Shield className="mx-auto mb-3 h-8 w-8 text-foreground/30" />
+                <h2 className="text-lg font-medium text-foreground">
                   Authorize {clientInfo.clientName}
                 </h2>
-                <p className="text-body-sm text-muted-foreground mt-1">
-                  This application wants to access your Prism account.
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Review what this application will be able to access.
                 </p>
               </div>
 
-              <div className="rounded-lg border border-foreground/6 bg-foreground/[0.02] p-4">
-                <p className="text-label-sm font-medium text-foreground/50  mb-2">
+              <div className="text-base text-muted-foreground">
+                <p className="mb-2 text-sm font-medium text-foreground">
                   This will allow the app to:
                 </p>
-                <ul className="space-y-1.5 text-body-sm text-muted-foreground">
+                <ul className="space-y-1.5 text-sm text-muted-foreground">
                   <li className="flex items-start gap-2">
                     <span className="text-foreground/30 mt-0.5">&#x2022;</span>
                     Read your policies, quotes, and applications
@@ -370,36 +331,34 @@ export default function OAuthAuthorizePage() {
               </div>
 
               {error && (
-                <p className="text-body-sm text-red-500/80 bg-red-50 dark:bg-red-950/30 border border-red-200/30 rounded-lg px-3 py-2">
+                <p className="px-1 py-1 text-sm text-muted-foreground">
                   {error}
                 </p>
               )}
 
-              <div className="flex flex-col gap-2.5">
-                <PillButton onClick={handleAllow} disabled={authorizing} className="w-full">
-                  {authorizing ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      Authorizing...
-                    </>
-                  ) : (
-                    "Allow"
-                  )}
+              <div className="flex flex-col gap-3">
+                <PillButton
+                  type="button"
+                  onClick={handleAllow}
+                  disabled={authorizing}
+                  className="h-12 w-full justify-center text-sm shadow-none"
+                >
+                  {authorizing ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  {authorizing ? "Authorizing..." : "Allow"}
                 </PillButton>
-                <PillButton variant="secondary" onClick={handleDeny} disabled={authorizing} className="w-full">
+                <PillButton
+                  type="button"
+                  variant="secondary"
+                  onClick={handleDeny}
+                  disabled={authorizing}
+                  className="h-12 w-full justify-center text-sm shadow-none"
+                >
                   Deny
                 </PillButton>
               </div>
             </div>
           )}
-        </div>
-        <p className="text-center mt-5">
-          <a href="https://claritylabs.inc" target="_blank" rel="noopener noreferrer" className="inline-flex flex-col items-center gap-0.5 hover:opacity-80 transition-opacity">
-            <span className="text-[11px] text-white/40">from</span>
-            <span className="inline-flex items-center gap-1 serif text-[18px] text-white/70">clarity <LogoIcon size={16} color="#ffffff" static className="shrink-0" /> labs</span>
-          </a>
-        </p>
-      </FadeIn>
-    </div>
+      </AuthCard>
+    </AuthShell>
   );
 }
