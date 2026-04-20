@@ -125,7 +125,7 @@ export function NotificationsPanel({ onClose, onMergeSuggestion }: Notifications
   return (
     <div
       ref={panelRef}
-      className="absolute left-full top-0 ml-2 z-50 w-80 bg-background border border-foreground/10 rounded-lg shadow-lg overflow-hidden"
+      className="absolute left-2 right-2 top-full mt-2 z-50 min-w-[18rem] overflow-hidden rounded-lg border border-foreground/10 bg-background shadow-lg"
     >
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2.5 border-b border-foreground/6">
