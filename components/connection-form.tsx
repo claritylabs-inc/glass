@@ -39,6 +39,7 @@ export function ConnectionForm({
   returnTo = "/settings?section=email-connections",
 }: ConnectionFormProps) {
   const createConnection = useMutation(api.connections.create);
+  const createOAuthState = useMutation(api.connections.createOAuthStateForViewer);
   const [step, setStep] = useState<Step>("choose");
   const [providerChoice, setProviderChoice] = useState<ProviderChoice>("google");
   const [historyDays, setHistoryDays] = useState(30);
@@ -68,14 +69,18 @@ export function ConnectionForm({
     setStep("history");
   };
 
-  const handleHistoryConfirm = () => {
+  const handleHistoryConfirm = async () => {
     if (providerChoice === "google") {
       // Redirect to Google OAuth with history days encoded
       const sinceDate = new Date(Date.now() - historyDays * 86400000).toISOString().split("T")[0];
-      const params = new URLSearchParams();
-      params.set("sinceDate", sinceDate);
-      params.set("returnTo", returnTo);
-      window.location.href = `/api/auth/google/start?${params.toString()}`;
+      const state = crypto.randomUUID();
+
+      try {
+        await createOAuthState({ state, sinceDate, returnTo });
+        window.location.href = `/api/auth/google/start?state=${encodeURIComponent(state)}`;
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to start Google connection");
+      }
     } else {
       setStep("imap");
     }

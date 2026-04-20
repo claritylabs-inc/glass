@@ -1,15 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import crypto from "crypto";
-import { fetchMutation } from "convex/nextjs";
-import { convexAuthNextjsToken } from "@convex-dev/auth/nextjs/server";
-import { api } from "@/convex/_generated/api";
-
-function sanitizeReturnTo(value: string | null): string {
-  if (!value || !value.startsWith("/") || value.startsWith("//")) {
-    return "/settings?section=email-connections";
-  }
-  return value;
-}
 
 export async function GET(req: NextRequest) {
   const clientId = process.env.GOOGLE_CLIENT_ID;
@@ -22,28 +11,12 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const token = await convexAuthNextjsToken();
-  if (!token) {
-    const loginUrl = new URL("/login", req.url);
-    loginUrl.searchParams.set("next", `${req.nextUrl.pathname}${req.nextUrl.search}`);
-    return NextResponse.redirect(loginUrl);
-  }
-
-  const state = crypto.randomUUID();
-
-  // Optional: sinceDate for initial scan history
-  const sinceDate = req.nextUrl.searchParams.get("sinceDate");
-  const returnTo = sanitizeReturnTo(req.nextUrl.searchParams.get("returnTo"));
-
-  try {
-    await fetchMutation(
-      api.connections.createOAuthStateForViewer,
-      { state, sinceDate: sinceDate ?? undefined, returnTo },
-      { token },
+  const state = req.nextUrl.searchParams.get("state");
+  if (!state) {
+    return NextResponse.json(
+      { error: "Missing OAuth state" },
+      { status: 400 },
     );
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to initialize Google OAuth";
-    return NextResponse.json({ error: message }, { status: 400 });
   }
 
   // Build the Google OAuth authorization URL
