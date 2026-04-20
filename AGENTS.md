@@ -195,11 +195,22 @@ Prism uses three vector-backed stores:
 
 ## Convex Patterns
 
-Auth pattern:
+Auth system (WorkOS AuthKit):
 
-- Public Convex functions have user auth context.
-- Internal functions do not.
-- Never call a public function that depends on `requireAuth()` from an internal action.
+Prism uses WorkOS AuthKit for authentication. The old `@convex-dev/auth` / Email OTP / ResendOTP stack has been fully removed.
+
+- Login: `/login` redirects to WorkOS-hosted AuthKit. Consumer-domain signups are blocked at the signup gate.
+- Callback: `/auth/callback` exchanges the WorkOS authorization code for a session cookie, then redirects to `/auth/bootstrap`.
+- Bootstrap: `/auth/bootstrap` calls `api.users.ensureCurrentUser` (a Convex action) once per sign-in. That action fetches the authoritative WorkOS profile server-to-server, upserts the `users` row (or silently migrates a legacy row matched by email), and resolves org placement via invite → domain-join policy → new solo org.
+- Domain-join policy: each `organizations` row carries `domainJoinPolicy: "auto" | "approval" | "off"`. `"auto"` grants immediate active membership; `"approval"` places the user in `"pending"` status until an admin approves or denies via `api.orgs.approveMembership` / `api.orgs.denyMembership`.
+- Pending members are blocked from all org-scoped data access. In-app UI surfaces the pending state and polls until the membership is resolved.
+
+Convex auth helpers (all in `convex/lib/`):
+
+- `requireUser(ctx)` — read-path helper for queries/mutations. Reads `ctx.auth.getUserIdentity()`, looks up the `users` row by `workosUserId`, returns `{ userId, orgId, onboardingComplete, membershipStatus }`. Throws if unauthenticated or if the user row has not yet been materialized.
+- `requireOrgAccess(ctx)` / `getOrgAccess(ctx)` — org-scoped helpers in `orgAuth.ts`. Require an active membership; pending memberships are rejected. Return `{ userId, orgId, role, org }`.
+- `requireOrgAdmin(ctx)` — like `requireOrgAccess` but also asserts `role === "admin"`.
+- Internal functions do not have user auth context. Never call a public function that depends on `requireUser()` from an internal action.
 
 Storage and retrieval pattern:
 
