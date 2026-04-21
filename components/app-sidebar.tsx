@@ -132,7 +132,10 @@ export function AppSidebar({
     notificationId?: Id<"notifications">;
   }>({ open: false, primaryPolicyId: "", secondaryPolicyId: "" });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const unreadCount = useQuery((api as any).notifications.unreadCount) as number | undefined;
+  const unreadCount = useQuery(
+    (api as any).notifications.unreadCount,
+    currentOrg?.orgId ? { orgId: currentOrg.orgId } : "skip",
+  ) as number | undefined;
 
   // Unified thread list — prefers unified threads table, falls back to legacy merge
   const conversations = useMemo(() => {
@@ -356,8 +359,9 @@ export function AppSidebar({
             </span>
           )}
         </button>
-        {notificationsPanelOpen && (
+        {notificationsPanelOpen && currentOrg?.orgId && (
           <NotificationsPanel
+            orgId={currentOrg.orgId}
             onClose={() => setNotificationsPanelOpen(false)}
             onMergeSuggestion={(payload) =>
               setMergeDialog({

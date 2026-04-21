@@ -4,6 +4,7 @@ import { useRef, useEffect } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { useRouter } from "next/navigation";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 import {
@@ -18,6 +19,15 @@ import {
   Lightbulb,
   Bell,
   X,
+  Send,
+  RotateCcw,
+  CheckCheck,
+  Flag,
+  Plug,
+  FileText,
+  FileCheck,
+  UserCheck,
+  UserPlus,
 } from "lucide-react";
 
 dayjs.extend(relativeTime);
@@ -36,7 +46,24 @@ type NotificationType =
   | "incomplete_extraction"
   | "stale_data"
   | "premium_anomaly"
-  | "dream_insight";
+  | "dream_insight"
+  // New broker-targeted
+  | "client_invitation_accepted"
+  | "client_onboarding_completed"
+  | "application_submitted_by_client"
+  | "application_completed_by_client"
+  | "client_document_uploaded"
+  | "integration_disconnected_for_client"
+  | "integration_request_fulfilled"
+  | "passport_flag_resolved_by_client"
+  // New client-targeted
+  | "application_sent_by_broker"
+  | "application_section_returned_by_broker"
+  | "application_accepted_by_broker"
+  | "passport_flag_raised_by_broker"
+  | "integration_requested_by_broker"
+  | "policy_delivered_by_broker"
+  | "quote_delivered_by_broker";
 
 interface Notification {
   _id: Id<"notifications">;
@@ -48,6 +75,9 @@ interface Notification {
   actionType?: string;
   actionPayload?: unknown;
   sourceRef?: unknown;
+  relatedOrgId?: Id<"organizations">;
+  relatedOrgName?: string;
+  coalescedCount?: number;
 }
 
 const TYPE_ICONS: Record<NotificationType, React.ComponentType<{ className?: string }>> = {
@@ -65,17 +95,38 @@ const TYPE_ICONS: Record<NotificationType, React.ComponentType<{ className?: str
   stale_data: Clock,
   premium_anomaly: TrendingUp,
   dream_insight: Lightbulb,
+  // New broker-targeted
+  client_invitation_accepted: UserPlus,
+  client_onboarding_completed: UserCheck,
+  application_submitted_by_client: Send,
+  application_completed_by_client: CheckCheck,
+  client_document_uploaded: FileText,
+  integration_disconnected_for_client: Plug,
+  integration_request_fulfilled: CheckCircle,
+  passport_flag_resolved_by_client: CheckCheck,
+  // New client-targeted
+  application_sent_by_broker: Send,
+  application_section_returned_by_broker: RotateCcw,
+  application_accepted_by_broker: CheckCheck,
+  passport_flag_raised_by_broker: Flag,
+  integration_requested_by_broker: Plug,
+  policy_delivered_by_broker: FileCheck,
+  quote_delivered_by_broker: FileCheck,
 };
 
 interface NotificationsPanelProps {
+  orgId: Id<"organizations">;
   onClose: () => void;
   onMergeSuggestion?: (payload: { primaryPolicyId: string; secondaryPolicyId: string }) => void;
 }
 
-export function NotificationsPanel({ onClose, onMergeSuggestion }: NotificationsPanelProps) {
+export function NotificationsPanel({ orgId, onClose, onMergeSuggestion }: NotificationsPanelProps) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const _api = api as any;
-  const notifications = useQuery(_api.notifications.list, {}) as Notification[] | undefined;
+  const router = useRouter();
+  const notifications = useQuery(_api.notifications.listInbox, { orgId }) as
+    | (Notification & { relatedOrgName?: string })[]
+    | undefined;
   const markRead = useMutation(_api.notifications.markRead);
   const markAllRead = useMutation(_api.notifications.markAllRead);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -102,8 +153,33 @@ export function NotificationsPanel({ onClose, onMergeSuggestion }: Notifications
 
   async function handleNotificationClick(notification: Notification) {
     if (notification.status === "unread") {
-      await markRead({ notificationId: notification._id });
+      await markRead({ ids: [notification._id] });
     }
+
+    // Deep link navigation
+    if (notification.actionType && notification.actionPayload) {
+      const p = notification.actionPayload as Record<string, string>;
+      switch (notification.actionType) {
+        case "view_application":
+          router.push(`/applications/${p.applicationId}`);
+          break;
+        case "view_policy":
+          router.push(`/policies/${p.policyId}`);
+          break;
+        case "view_passport":
+          router.push(`/passport/${p.flagId}`);
+          break;
+        case "view_integration":
+          router.push(`/connections/${p.connectionId}`);
+          break;
+        default:
+          break;
+      }
+      onClose();
+      return;
+    }
+
+    // Legacy merge_suggestion
     if (
       notification.type === "merge_suggestion" &&
       notification.actionPayload &&
@@ -154,7 +230,8 @@ export function NotificationsPanel({ onClose, onMergeSuggestion }: Notifications
             const TypeIcon = TYPE_ICONS[notification.type as NotificationType] ?? Bell;
             const isUnread = notification.status === "unread";
             const isClickable =
-              notification.type === "merge_suggestion" && !!notification.actionPayload;
+              !!(notification.actionType && notification.actionPayload) ||
+              (notification.type === "merge_suggestion" && !!notification.actionPayload);
 
             return (
               <button
@@ -169,7 +246,17 @@ export function NotificationsPanel({ onClose, onMergeSuggestion }: Notifications
               >
                 <TypeIcon className="w-3.5 h-3.5 shrink-0 mt-0.5 text-muted-foreground" />
                 <div className="flex-1 min-w-0">
-                  <p className="text-body-sm text-foreground truncate">{notification.title}</p>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <p className="text-body-sm text-foreground truncate">{notification.title}</p>
+                    {(notification.coalescedCount ?? 1) > 1 && (
+                      <span className="inline-flex items-center px-1 py-0 rounded text-[10px] font-medium bg-foreground/[0.08] text-muted-foreground">
+                        ×{notification.coalescedCount}
+                      </span>
+                    )}
+                  </div>
+                  {notification.relatedOrgName && (
+                    <p className="text-[11px] text-muted-foreground/50 mt-0.5">{notification.relatedOrgName}</p>
+                  )}
                   <p className="text-[11px] text-muted-foreground/60 mt-0.5 line-clamp-2">
                     {notification.body}
                   </p>
@@ -191,7 +278,7 @@ export function NotificationsPanel({ onClose, onMergeSuggestion }: Notifications
         <div className="px-3 py-2 border-t border-foreground/6">
           <button
             type="button"
-            onClick={() => markAllRead()}
+            onClick={() => markAllRead({ orgId })}
             className="text-[11px] text-muted-foreground/50 hover:text-foreground transition-colors cursor-pointer"
           >
             Mark all as read
