@@ -281,11 +281,52 @@ The Activity tab shows:
 
 ## MCP
 
-Prism exposes MCP functionality for remote and local AI tools.
+Glass exposes MCP functionality for remote and local AI tools.
 
-- Remote MCP is served from Convex HTTP handlers.
+- Remote MCP is served from Convex HTTP handlers at `/mcp`.
 - Local MCP support lives under [mcp-server/](mcp-server/).
-- Tools: `get_org_info`, `get_business_context`, `update_business_context`, `ask_prism`, `list_policies`, `get_policy`, `search_policies`, `list_quotes`, `get_quote`, `list_applications`, `get_application`, `list_threads`, `get_thread_messages`, `get_policy_stats`
+- MCP discovery: `GET /.well-known/mcp.json`
+
+### Tools
+
+**Legacy (client-org scoped):** `get_org_info`, `get_business_context`, `update_business_context`, `ask_glass` (was `ask_prism` — alias kept), `list_policies`, `get_policy`, `search_policies`, `list_quotes`, `get_quote`, `list_applications`, `get_application`, `list_threads`, `get_thread_messages`, `get_policy_stats`
+
+**Broker tools:** `list_clients`, `get_client`, `list_applications_for_client`, `create_application_draft`, `add_application_question`, `send_application`, `raise_passport_flag`, `list_broker_activity`
+
+**Client tools:** `get_passport`, `update_passport`, `answer_application_question`, `submit_application_section`, `list_my_policies`
+
+All MCP tool invocations require a Bearer token (OAuth or API key) and resolve org from session metadata. Write tools require a token with `write` scope.
+
+## REST API
+
+Versioned REST API under `/api/v1/*`. All routes require:
+- `Authorization: Bearer <token>` (OAuth token from `/oauth/token`)
+- `X-Org-Id: <orgId>` header
+
+Scopes: `read` (default for legacy tokens) and `write`. Write endpoints require a token with `write` scope.
+
+Error shape: `{ "error": { "code": "...", "message": "...", "request_id": "..." } }`
+
+Pagination shape: `{ "data": [...], "next_cursor": "opaque_or_null" }` with `?limit` capped at 100.
+
+Rate limit: 600 req/min burst, 20 req/s sustained per token. Returns 429 with `Retry-After`.
+
+OpenAPI spec: `GET /api/v1/openapi.json`
+
+### Resources
+
+- `GET /api/v1/me` — current user + accessible orgs
+- `GET /api/v1/org` — current org (scoped by X-Org-Id)
+- `GET /api/v1/clients` — broker's clients (broker org only)
+- `GET /api/v1/clients/:id` — client detail
+- `POST /api/v1/clients/invitations` — create invite (write)
+- `GET|PATCH /api/v1/passport` — passport read/edit
+- `GET|POST /api/v1/applications` + `GET /api/v1/applications/:id`
+- `GET /api/v1/policies` + `GET /api/v1/policies/:id`
+- `GET /api/v1/notifications` — list notifications
+- `GET /api/v1/activity` — activity feed
+
+Write requests are audit-logged to `apiAuditLog` table.
 
 ## Documentation Maintenance
 
