@@ -647,3 +647,30 @@ export const updateDreamResults = internalMutation({
     });
   },
 });
+
+export const getById = query({
+  args: { orgId: v.id("organizations") },
+  handler: async (ctx, args) => {
+    const access = await getOrgAccess(ctx);
+    if (!access) return null;
+    return ctx.db.get(args.orgId);
+  },
+});
+
+export const listMembersForOrg = query({
+  args: { orgId: v.id("organizations") },
+  handler: async (ctx, args) => {
+    const access = await getOrgAccess(ctx);
+    if (!access) return [];
+    const memberships = await ctx.db
+      .query("orgMemberships")
+      .withIndex("by_orgId", (q) => q.eq("orgId", args.orgId))
+      .collect();
+    return Promise.all(
+      memberships.map(async (m) => {
+        const user = await ctx.db.get(m.userId);
+        return { userId: m.userId, role: m.role, name: user?.name, email: user?.email };
+      }),
+    );
+  },
+});
