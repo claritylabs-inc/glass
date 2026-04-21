@@ -11,12 +11,12 @@ export class PrismClient {
     this.apiKey = apiKey;
   }
 
-  private async get<T>(path: string, params?: Record<string, string>): Promise<T> {
+  async get<T>(path: string, params?: Record<string, unknown>): Promise<T> {
     const url = new URL(`${this.baseUrl}${path}`);
     if (params) {
       for (const [key, value] of Object.entries(params)) {
         if (value !== undefined && value !== null && value !== "") {
-          url.searchParams.set(key, value);
+          url.searchParams.set(key, String(value));
         }
       }
     }
@@ -33,7 +33,7 @@ export class PrismClient {
     return res.json() as Promise<T>;
   }
 
-  private async post<T>(path: string, body: Record<string, unknown>): Promise<T> {
+  async post<T>(path: string, body: Record<string, unknown>): Promise<T> {
     const res = await fetch(`${this.baseUrl}${path}`, {
       method: "POST",
       headers: {

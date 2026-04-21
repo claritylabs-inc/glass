@@ -10,28 +10,30 @@ import { registerThreadTools } from "./tools/threads.js";
 import { registerContextTools } from "./tools/context.js";
 import { registerOrgTools } from "./tools/org.js";
 import { registerAgentTools } from "./tools/agent.js";
+import { registerBrokerTools } from "./tools/broker.js";
+import { registerClientTools } from "./tools/client.js";
 
-// Validate env vars
-const PRISM_CONVEX_SITE_URL = process.env.PRISM_CONVEX_SITE_URL;
-const PRISM_API_KEY = process.env.PRISM_API_KEY;
+// Validate env vars — support both Glass and legacy Prism env var names
+const GLASS_CONVEX_SITE_URL = process.env.GLASS_CONVEX_SITE_URL ?? process.env.PRISM_CONVEX_SITE_URL;
+const GLASS_API_KEY = process.env.GLASS_API_KEY ?? process.env.PRISM_API_KEY;
 
-if (!PRISM_CONVEX_SITE_URL) {
-  console.error("Error: PRISM_CONVEX_SITE_URL environment variable is required");
+if (!GLASS_CONVEX_SITE_URL) {
+  console.error("Error: GLASS_CONVEX_SITE_URL environment variable is required");
   process.exit(1);
 }
 
-if (!PRISM_API_KEY) {
-  console.error("Error: PRISM_API_KEY environment variable is required");
+if (!GLASS_API_KEY) {
+  console.error("Error: GLASS_API_KEY environment variable is required");
   process.exit(1);
 }
 
 // Create client
-const client = new PrismClient(PRISM_CONVEX_SITE_URL, PRISM_API_KEY);
+const client = new PrismClient(GLASS_CONVEX_SITE_URL, GLASS_API_KEY);
 
 // Create MCP server
 const server = new McpServer({
-  name: "prism",
-  version: "1.0.0",
+  name: "glass",
+  version: "2.0.0",
 });
 
 // Register all tools
@@ -42,6 +44,8 @@ registerThreadTools(server, client);
 registerContextTools(server, client);
 registerOrgTools(server, client);
 registerAgentTools(server, client);
+registerBrokerTools(server, client);
+registerClientTools(server, client);
 
 // Connect via stdio
 const transport = new StdioServerTransport();
