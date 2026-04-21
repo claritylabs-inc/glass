@@ -1044,6 +1044,44 @@ const MCP_TOOLS = [
     description: "List policies for the caller's client org. Client only.",
     inputSchema: { type: "object" as const, properties: {} },
   },
+  // ── Integration tools ──
+  {
+    name: "list_integrations",
+    description:
+      "List all connected integrations for the calling org (or a client org if broker). " +
+      "Returns category, provider, status, and last sync timestamp.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        clientOrgId: {
+          type: "string",
+          description: "Client org ID to query. Required when calling as a broker.",
+        },
+      },
+    },
+  },
+  {
+    name: "request_integration",
+    description:
+      "Broker tool: request that a client connect a specific integration category " +
+      "(accounting, hris, or payroll). Sends a notification to the client.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        clientOrgId: { type: "string", description: "Client org ID" },
+        category: {
+          type: "string",
+          enum: ["accounting", "hris", "payroll"],
+          description: "Integration category to request",
+        },
+        message: {
+          type: "string",
+          description: "Optional message to the client explaining why the data is needed",
+        },
+      },
+      required: ["clientOrgId", "category"],
+    },
+  },
 ];
 
 function requireWriteScope(identity: McpIdentity): void {
@@ -1318,6 +1356,40 @@ async function handleToolCall(
         _id: p._id, carrier: p.carrier, policyNumber: p.policyNumber,
         policyTypes: p.policyTypes, effectiveDate: p.effectiveDate, expirationDate: p.expirationDate, premium: p.premium,
       })), null, 2) }] };
+    }
+    case "list_integrations": {
+      const targetOrgId = (args.clientOrgId as string) ?? orgId;
+      const connections = await ctx.runQuery(
+        (internal as any).integrationConnections.listForClient,
+        { clientOrgId: targetOrgId },
+      );
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify(
+            connections.map((c: any) => ({
+              id: c._id,
+              category: c.category,
+              provider: c.providerDisplayName,
+              status: c.status,
+              lastSyncAt: c.lastSyncAt ?? null,
+            })),
+            null, 2,
+          ),
+        }],
+      };
+    }
+    case "request_integration": {
+      requireWriteScope(identity);
+      const requestId = await ctx.runMutation(
+        (internal as any).integrationRequests.create,
+        {
+          clientOrgId: args.clientOrgId as string,
+          category: args.category as string,
+          message: args.message as string | undefined,
+        },
+      );
+      return { content: [{ type: "text", text: JSON.stringify({ success: true, integrationRequestId: requestId }) }] };
     }
     default:
       throw new Error(`Unknown tool: ${name}`);
