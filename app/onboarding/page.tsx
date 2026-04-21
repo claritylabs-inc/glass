@@ -118,8 +118,28 @@ export default function OnboardingPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const viewer = useQuery(api.users.viewer);
-  const viewerOrg = useQuery(api.orgs.viewerOrg);
+  const viewerOrg = useQuery(api.orgs.viewerOrg, {});
   const connections = useQuery(api.connections.list);
+
+  // Dual-org routing: redirect broker users and broker-flow signups
+  useEffect(() => {
+    if (viewerOrg === undefined) return; // still loading
+
+    if (viewerOrg) {
+      const orgType = (viewerOrg.org as { type?: string }).type ?? "client";
+      if (orgType === "broker") {
+        router.replace("/"); // broker dashboard (future)
+        return;
+      }
+      return;
+    }
+
+    // No org yet — check if broker flow was requested
+    const isBrokerFlow = searchParams?.get("type") === "broker";
+    if (isBrokerFlow) {
+      router.replace("/onboarding/broker");
+    }
+  }, [viewerOrg, router, searchParams]);
   const pendingInvitation = useQuery(api.orgs.pendingInvitationForViewer);
   const updateProfile = useMutation(api.users.updateProfile);
   const createOrg = useMutation(api.orgs.createOrg);
