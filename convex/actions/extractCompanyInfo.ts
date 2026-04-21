@@ -4,10 +4,11 @@ import { v } from "convex/values";
 import { z } from "zod";
 import { generateObject } from "ai";
 import { action } from "../_generated/server";
-import { api } from "../_generated/api";
+import { api, internal } from "../_generated/api";
 import { getModel } from "../lib/models";
 import { INDUSTRIES } from "../lib/industries";
 
+// Build a compact reference of valid industry/vertical values for the prompt
 const INDUSTRY_REF = INDUSTRIES.map(
   (i) => `${i.value}: [${i.verticals.map((v) => v.value).join(", ")}]`,
 ).join("\n");
@@ -22,6 +23,56 @@ const CompanyInfoSchema = z.object({
   investorsContext: z.string().describe("Investors, funding sources, shareholders. Empty string if not evident."),
   partnersContext: z.string().describe("Business partners, affiliates, joint ventures. Empty string if not evident."),
 });
+
+async function fetchFavicon(siteUrl: string): Promise<Blob | null> {
+  let base: URL;
+  try {
+    base = new URL(siteUrl);
+  } catch {
+    return null;
+  }
+
+  const candidates: string[] = [];
+  try {
+    const pageRes = await fetch(base.toString(), {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; PrismBot/1.0)" },
+    });
+    if (pageRes.ok) {
+      const html = await pageRes.text();
+      const iconMatches = html.matchAll(
+        /<link[^>]+rel=["']([^"']*icon[^"']*)["'][^>]*href=["']([^"']+)["']/gi,
+      );
+      for (const m of iconMatches) candidates.push(m[2]);
+      const reverseMatches = html.matchAll(
+        /<link[^>]+href=["']([^"']+)["'][^>]*rel=["']([^"']*icon[^"']*)["']/gi,
+      );
+      for (const m of reverseMatches) candidates.push(m[1]);
+    }
+  } catch {
+    // ignore
+  }
+
+  candidates.push("/apple-touch-icon.png", "/favicon.ico");
+  candidates.push(`https://www.google.com/s2/favicons?domain=${base.hostname}&sz=128`);
+
+  for (const candidate of candidates) {
+    try {
+      const absolute = new URL(candidate, base).toString();
+      const res = await fetch(absolute, {
+        headers: { "User-Agent": "Mozilla/5.0 (compatible; PrismBot/1.0)" },
+      });
+      if (!res.ok) continue;
+      const contentType = res.headers.get("content-type") ?? "";
+      if (!contentType.startsWith("image/") && !absolute.endsWith(".ico")) continue;
+      const buffer = await res.arrayBuffer();
+      if (buffer.byteLength < 64 || buffer.byteLength > 512 * 1024) continue;
+      return new Blob([buffer], { type: contentType || "image/x-icon" });
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
 
 async function fetchWithExa(url: string): Promise<string | null> {
   const apiKey = process.env.EXA_API_KEY;
@@ -76,6 +127,24 @@ export const extractCompanyInfo = action({
     const viewer = await ctx.runQuery(api.users.viewer);
     if (!viewer) throw new Error("Not authenticated");
     const viewerOrg = await ctx.runQuery(api.orgs.viewerOrg);
+
+    // Favicon — best effort, parallel with content fetch
+    if (viewerOrg?.org) {
+      void (async () => {
+        try {
+          const iconBlob = await fetchFavicon(args.url);
+          if (iconBlob) {
+            const iconStorageId = await ctx.storage.store(iconBlob);
+            await ctx.runMutation(internal.orgs.setIconInternal, {
+              orgId: viewerOrg.org._id,
+              iconStorageId,
+            });
+          }
+        } catch {
+          // ignore favicon failures
+        }
+      })();
+    }
 
     const content =
       (await fetchWithExa(args.url)) ?? (await fetchWithRawHtml(args.url));

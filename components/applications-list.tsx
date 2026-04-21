@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useMemo, useRef, useCallback } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useQuery, useMutation, useAction } from "convex/react";
 import type { FunctionReference } from "convex/server";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
-import { Loader2, X, AlertCircle, RotateCcw, Copy, Check, FileUp } from "lucide-react";
+import { Loader2, X, AlertCircle, RotateCcw } from "lucide-react";
 import { PillButton } from "@/components/ui/pill-button";
+import { DocumentUploadEmptyState } from "@/components/document-upload-empty-state";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
@@ -23,8 +24,6 @@ import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 
 dayjs.extend(relativeTime);
-
-const AGENT_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "prism.claritylabs.inc";
 
 function ApplicationsListSkeleton() {
   return (
@@ -49,116 +48,6 @@ function ApplicationsListSkeleton() {
             </div>
           </div>
         ))}
-      </div>
-    </div>
-  );
-}
-
-function ApplicationsEmptyState({
-  onUploadApplication,
-  uploading,
-}: {
-  onUploadApplication: (file: File) => Promise<void>;
-  uploading: boolean;
-}) {
-  const viewer = useQuery(api.users.viewer);
-  const viewerOrg = useQuery(api.orgs.viewerOrg);
-  const router = useRouter();
-  const [copied, setCopied] = useState(false);
-  const [dragging, setDragging] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-
-  const agentHandle = viewerOrg?.org?.agentHandle ?? viewer?.agentHandle;
-  const agentEmail = agentHandle ? `${agentHandle}@${AGENT_DOMAIN}` : null;
-
-  const handleCopy = () => {
-    if (!agentEmail) return;
-    navigator.clipboard.writeText(agentEmail);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  const handleFileSelection = useCallback((file?: File) => {
-    if (!file) return;
-    void onUploadApplication(file);
-  }, [onUploadApplication]);
-
-  return (
-    <div className="max-w-xl mx-auto py-8 space-y-6">
-      <div>
-        <p className="text-body-sm font-medium text-foreground text-center">No applications yet</p>
-        <p className="text-label-sm text-muted-foreground mt-1 text-center">Upload an application PDF to start the workflow immediately.</p>
-      </div>
-
-      <button
-        type="button"
-        disabled={uploading}
-        onClick={() => fileInputRef.current?.click()}
-        onDragEnter={(e) => {
-          e.preventDefault();
-          setDragging(true);
-        }}
-        onDragOver={(e) => {
-          e.preventDefault();
-          setDragging(true);
-        }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={(e) => {
-          e.preventDefault();
-          setDragging(false);
-          handleFileSelection(e.dataTransfer.files?.[0]);
-        }}
-        className={`w-full rounded-lg border border-dashed px-6 py-10 text-center transition-colors ${dragging ? "border-primary/40 bg-primary/[0.03]" : "border-foreground/10 hover:border-foreground/20 hover:bg-foreground/[0.01]"} ${uploading ? "opacity-70 cursor-not-allowed" : "cursor-pointer"}`}
-      >
-        <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-foreground/[0.04]">
-          <FileUp className="h-5 w-5 text-foreground/70" />
-        </div>
-        <p className="text-body-sm font-medium text-foreground">
-          {uploading ? "Uploading application..." : dragging ? "Drop application PDF" : "Drag and drop an application PDF"}
-        </p>
-        <p className="mt-1 text-label-sm text-muted-foreground">or click to choose a file</p>
-      </button>
-
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="application/pdf,.pdf"
-        className="hidden"
-        onChange={(e) => {
-          handleFileSelection(e.target.files?.[0]);
-          e.currentTarget.value = "";
-        }}
-      />
-
-      <div className="space-y-3 text-left">
-        {agentEmail && (
-          <button
-            type="button"
-            onClick={handleCopy}
-            className="w-full flex items-center gap-3 rounded-lg border border-foreground/6 p-3 hover:bg-foreground/[0.02] transition-colors cursor-pointer text-left"
-          >
-            <div className="flex-1 min-w-0">
-              <p className="text-body-sm font-medium text-foreground">Email your agent</p>
-              <p className="text-label-sm text-muted-foreground truncate">{agentEmail}</p>
-            </div>
-            {copied ? (
-              <Check className="w-4 h-4 text-green-500 shrink-0" />
-            ) : (
-              <Copy className="w-4 h-4 text-muted-foreground/40 shrink-0" />
-            )}
-          </button>
-        )}
-
-        <button
-          type="button"
-          onClick={() => router.push("/")}
-          className="w-full flex items-center gap-3 rounded-lg border border-foreground/6 p-3 hover:bg-foreground/[0.02] transition-colors cursor-pointer text-left"
-        >
-          <div className="flex-1 min-w-0">
-            <p className="text-body-sm font-medium text-foreground">Upload via web chat</p>
-            <p className="text-label-sm text-muted-foreground">Attach a PDF to a Prism conversation</p>
-          </div>
-        </button>
       </div>
     </div>
   );
@@ -395,7 +284,7 @@ export function ApplicationsList() {
   }
 
   if (sessions.length === 0) {
-    return <ApplicationsEmptyState onUploadApplication={handleApplicationUpload} uploading={uploading} />;
+    return <DocumentUploadEmptyState kind="application" uploading={uploading} onUpload={handleApplicationUpload} />;
   }
 
   const tabs: { id: AppTab; label: string; count: number }[] = [

@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useMemo, useCallback, useRef } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { AppShell } from "@/components/app-shell";
 import { PolicyTable } from "@/components/policy-table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { FileUp } from "lucide-react";
+import { DocumentUploadEmptyState } from "@/components/document-upload-empty-state";
 import { toast } from "sonner";
 import { usePathname, useRouter } from "next/navigation";
 import dayjs from "dayjs";
@@ -56,9 +56,7 @@ function PoliciesLoadingSkeleton() {
 function PoliciesEmptyState() {
   const generateUploadUrl = useMutation(api.policies.generateUploadUrl);
   const extractFromUpload = useAction(api.actions.extractFromUpload.extractFromUpload);
-  const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const router = useRouter();
   const pathname = usePathname();
 
@@ -96,59 +94,10 @@ function PoliciesEmptyState() {
       toast.error("Upload failed. Please try again.");
     } finally {
       setUploading(false);
-      setDragging(false);
     }
   }, [extractFromUpload, generateUploadUrl, pathname, router]);
 
-  return (
-    <div className="rounded-lg border border-foreground/6 bg-card p-6">
-      <div className="mb-4">
-        <p className="text-body-sm font-medium text-foreground">No policies yet</p>
-        <p className="text-label-sm text-muted-foreground mt-1">Drop in a policy PDF to start extraction right away.</p>
-      </div>
-
-      <button
-        type="button"
-        disabled={uploading}
-        onClick={() => fileInputRef.current?.click()}
-        onDragEnter={(e) => {
-          e.preventDefault();
-          setDragging(true);
-        }}
-        onDragOver={(e) => {
-          e.preventDefault();
-          setDragging(true);
-        }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={(e) => {
-          e.preventDefault();
-          const file = e.dataTransfer.files?.[0];
-          if (file) void uploadPolicy(file);
-        }}
-        className={`w-full rounded-lg border border-dashed px-6 py-10 text-center transition-colors ${dragging ? "border-primary/40 bg-primary/[0.03]" : "border-foreground/10 hover:border-foreground/20 hover:bg-foreground/[0.01]"} ${uploading ? "opacity-70 cursor-not-allowed" : "cursor-pointer"}`}
-      >
-        <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-foreground/[0.04]">
-          <FileUp className="h-5 w-5 text-foreground/70" />
-        </div>
-        <p className="text-body-sm font-medium text-foreground">
-          {uploading ? "Uploading policy..." : dragging ? "Drop PDF to upload" : "Drag and drop a policy PDF"}
-        </p>
-        <p className="mt-1 text-label-sm text-muted-foreground">or click to choose a file</p>
-      </button>
-
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="application/pdf,.pdf"
-        className="hidden"
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (file) void uploadPolicy(file);
-          e.currentTarget.value = "";
-        }}
-      />
-    </div>
-  );
+  return <DocumentUploadEmptyState kind="policy" uploading={uploading} onUpload={uploadPolicy} />;
 }
 
 export default function PoliciesPage() {
