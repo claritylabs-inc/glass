@@ -5,6 +5,7 @@ import { useQuery, useMutation, useAction } from "convex/react";
 import type { FunctionReference } from "convex/server";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
+import { toastUploadStarted, toastUploadFailed } from "@/lib/upload-toast";
 import { Loader2, X, AlertCircle, RotateCcw } from "lucide-react";
 import { PillButton } from "@/components/ui/pill-button";
 import { DocumentUploadEmptyState } from "@/components/document-upload-empty-state";
@@ -264,16 +265,16 @@ export function ApplicationsList() {
       const result = await startFromUpload({ fileId: storageId, fileName: file.name });
 
       if (result.error) {
-        toast.error(result.error);
+        toastUploadFailed("application", result.error);
         return;
       }
 
-      toast.success("Application uploaded. Processing started.");
+      toastUploadStarted("application");
       if (result.sessionId) {
         router.push(`/applications/${result.sessionId}`);
       }
     } catch {
-      toast.error("Upload failed. Please try again.");
+      toastUploadFailed("application", "Upload failed. Please try again.");
     } finally {
       setUploading(false);
     }

@@ -60,6 +60,7 @@ export function DocumentsSection() {
   const [activeTab, setActiveTab] = useState<DocumentTab>("org-context");
 
   const policies = useQuery(api.policies.list, {});
+  const pendingPolicies = useQuery(api.policies.listPending);
   const contextDocs = useQuery(api.intelligence.listUploadedDocuments);
 
   const [uploading, setUploading] = useState(false);
@@ -211,15 +212,25 @@ export function DocumentsSection() {
     return () => setActions(null);
   }, [activeTab, setActions, uploading]);
 
-  // Build unified document list
-  const uploadedPolicies = (policies ?? [])
-    .filter((p: { fileId?: string; emailId?: string }) => p.fileId && !p.emailId)
-    .sort(
-      (a: { _creationTime?: number }, b: { _creationTime?: number }) =>
-        (b._creationTime ?? 0) - (a._creationTime ?? 0)
-    );
+  // Build unified document list — includes in-progress (pending/extracting/paused/error) + completed uploads
+  const uploadedPolicies = (() => {
+    const combined = [
+      ...((pendingPolicies ?? []) as Array<{ _id: string; fileId?: string; emailId?: string; _creationTime?: number }>),
+      ...((policies ?? []) as Array<{ _id: string; fileId?: string; emailId?: string; _creationTime?: number }>),
+    ];
+    const seen = new Set<string>();
+    return combined
+      .filter((p) => p.fileId && !p.emailId)
+      .filter((p) => {
+        if (seen.has(p._id)) return false;
+        seen.add(p._id);
+        return true;
+      })
+      .sort((a, b) => (b._creationTime ?? 0) - (a._creationTime ?? 0));
+  })();
 
-  const loading = policies === undefined || contextDocs === undefined;
+  const loading =
+    policies === undefined || pendingPolicies === undefined || contextDocs === undefined;
 
   return (
     <div className="space-y-5">

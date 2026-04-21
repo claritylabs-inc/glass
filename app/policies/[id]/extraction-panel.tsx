@@ -261,7 +261,7 @@ function DocumentSection({
         ) : (
           <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
         )}
-        <span className="text-sm font-medium text-foreground flex-1 min-w-0 truncate">
+        <span className="text-sm font-normal text-foreground flex-1 min-w-0 truncate">
           {section.sectionNumber && (
             <span className="text-muted-foreground mr-1.5">
               {section.sectionNumber}
@@ -415,7 +415,7 @@ function StructuredItemsCard<T>({
   return (
     <div id={id}>
       <div className="px-5 py-3 border-b border-foreground/4">
-        <p className="text-sm font-semibold text-foreground">
+        <p className="text-sm font-medium text-foreground">
           {title} ({items.length})
         </p>
       </div>
@@ -434,7 +434,7 @@ function StructuredItemsCard<T>({
               ) : (
                 <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
               )}
-              <span className="text-sm font-medium text-foreground flex-1 min-w-0 truncate">
+              <span className="text-sm font-normal text-foreground flex-1 min-w-0 truncate">
                 {getTitle(item)}
               </span>
               {badges.length > 0 && (
@@ -548,7 +548,7 @@ function SupplementaryCard({
     <div>
       <div className="px-5 py-3 border-b border-foreground/4">
         <div className="flex items-center gap-2">
-          <p className="text-sm font-semibold text-foreground">
+          <p className="text-sm font-medium text-foreground">
             {title}
           </p>
           {pageNumber != null && <PageRef page={pageNumber} />}
@@ -702,7 +702,7 @@ export function GroupSection({
         ) : (
           <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
         )}
-        <span className="text-sm font-semibold text-foreground flex-1">
+        <span className="text-sm font-medium text-foreground flex-1">
           {label}
         </span>
       </button>
@@ -750,7 +750,7 @@ export function ExtractionCards({
       {sections.length > 0 && (
         <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
           <div className="px-5 py-3 border-b border-foreground/4">
-            <p className="text-sm font-semibold text-foreground">
+            <p className="text-sm font-medium text-foreground">
               Document sections ({sections.length})
             </p>
           </div>

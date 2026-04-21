@@ -52,7 +52,10 @@ export function OrganizationSection() {
   const [brokerContactName, setBrokerContactName] = useState("");
   const [brokerContactEmail, setBrokerContactEmail] = useState("");
   const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState<number | null>(null);
   const [extracting, setExtracting] = useState(false);
+  const hydratedRef = useRef(false);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showResetDialog, setShowResetDialog] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [removingDemo, setRemovingDemo] = useState(false);
@@ -70,7 +73,7 @@ export function OrganizationSection() {
   }, []);
 
   useEffect(() => {
-    if (org) {
+    if (org && !hydratedRef.current) {
       setName(org.name ?? "");
       setWebsite(org.website ?? "");
       setContext(org.context ?? "");
@@ -84,32 +87,13 @@ export function OrganizationSection() {
       setInsuranceBroker(org.insuranceBroker ?? "");
       setBrokerContactName(org.brokerContactName ?? "");
       setBrokerContactEmail(org.brokerContactEmail ?? "");
+      hydratedRef.current = true;
     }
   }, [org]);
 
   useEffect(() => { autoResize(); }, [context, autoResize]);
 
-  useEffect(() => {
-    setActions(
-      <PillButton size="compact" onClick={handleSave} disabled={saving}>
-        {saving ? (
-          <>
-            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            Saving...
-          </>
-        ) : (
-          "Save Settings"
-        )}
-      </PillButton>
-    );
-    return () => setActions(null);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [saving]);
-
-  const hasDemo = hasDemoDataResult === true;
-
-  async function handleSave(e?: React.FormEvent) {
-    e?.preventDefault();
+  const saveNow = useCallback(async () => {
     setSaving(true);
     try {
       await updateOrg({
@@ -127,13 +111,46 @@ export function OrganizationSection() {
         brokerContactName: brokerContactName || undefined,
         brokerContactEmail: brokerContactEmail || undefined,
       });
-      toast.success("Settings saved");
+      setSavedAt(Date.now());
     } catch {
       toast.error("Failed to save settings");
     } finally {
       setSaving(false);
     }
-  }
+  }, [
+    updateOrg,
+    name, website, context, industry, industryVertical,
+    clientsContext, vendorsContext, insuranceContext, investorsContext, partnersContext,
+    insuranceBroker, brokerContactName, brokerContactEmail,
+  ]);
+
+  useEffect(() => {
+    if (!hydratedRef.current) return;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => { void saveNow(); }, 600);
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
+  }, [saveNow]);
+
+  useEffect(() => {
+    setActions(
+      <span className="text-label-sm text-muted-foreground flex items-center gap-1.5">
+        {saving ? (
+          <>
+            <Loader2 className="w-3 h-3 animate-spin" />
+            Saving
+          </>
+        ) : savedAt ? (
+          "Saved"
+        ) : null}
+      </span>
+    );
+    return () => setActions(null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [saving, savedAt]);
+
+  const hasDemo = hasDemoDataResult === true;
 
   async function handleExtract() {
     if (!website) return;
@@ -141,6 +158,11 @@ export function OrganizationSection() {
     try {
       let url = website;
       if (!url.startsWith("http")) url = "https://" + url;
+      // Persist the current website immediately so the server-side extract
+      // and the re-fetched org reflect what the user actually typed.
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      await updateOrg({ website: url });
+      setWebsite(url);
       const result = await extractCompanyInfo({ url });
       if (result.companyContext) setContext(result.companyContext);
       if (result.industry) {
@@ -198,16 +220,16 @@ export function OrganizationSection() {
   return (
     <div className="space-y-4">
       {/* Organization info */}
-      <form onSubmit={handleSave}>
+      <div>
         <div className="rounded-lg border border-foreground/6 bg-card mb-4">
           <div className="px-5 py-3.5 border-b border-foreground/6">
             <h3 className="!mb-0 text-sm font-medium text-foreground">Organization</h3>
           </div>
           <div className="px-5 py-5 space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-lg border border-foreground/8 bg-popover flex items-center justify-center overflow-hidden shrink-0">
+            <div className="flex items-center gap-4">
+              <div className="w-[3.75rem] h-[3.75rem] rounded-lg border border-foreground/8 bg-popover flex items-center justify-center overflow-hidden shrink-0">
                 {org?.iconUrl ? (
-                  <img src={org.iconUrl} alt="" className="w-12 h-12 object-contain bg-white" />
+                  <img src={org.iconUrl} alt="" className="w-full h-full object-contain bg-white" />
                 ) : (
                   <span className="text-body-sm font-medium text-muted-foreground/60">
                     {(name || "?").slice(0, 2).toUpperCase()}
@@ -421,7 +443,7 @@ export function OrganizationSection() {
             </div>
           </div>
         </div>
-      </form>
+      </div>
 
       {/* Onboarding section */}
       <div className="rounded-lg border border-foreground/6 bg-card">

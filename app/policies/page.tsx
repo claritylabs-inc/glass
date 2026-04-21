@@ -9,6 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DocumentUploadEmptyState } from "@/components/document-upload-empty-state";
 import { toast } from "sonner";
+import { toastUploadStarted, toastUploadFailed } from "@/lib/upload-toast";
 import { usePathname, useRouter } from "next/navigation";
 import dayjs from "dayjs";
 import customParseFormat from "dayjs/plugin/customParseFormat";
@@ -84,14 +85,14 @@ function PoliciesEmptyState() {
       });
 
       if ((result as Record<string, unknown>)?.error) {
-        toast.error((result as Record<string, unknown>).error as string);
+        toastUploadFailed("policy", (result as Record<string, unknown>).error as string);
         return;
       }
 
-      toast.success("Policy uploaded. Extraction started.");
+      toastUploadStarted("policy");
       router.replace(`${pathname}?refresh=${Date.now()}`);
     } catch {
-      toast.error("Upload failed. Please try again.");
+      toastUploadFailed("policy", "Upload failed. Please try again.");
     } finally {
       setUploading(false);
     }
