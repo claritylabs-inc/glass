@@ -39,11 +39,8 @@ export const reExtractFromFile = action({
     });
 
     try {
-      const blob = await ctx.storage.get(args.fileId);
-      if (!blob) throw new Error("File not found in storage");
-
-      const arrayBuffer = await blob.arrayBuffer();
-      const pdfBase64 = Buffer.from(arrayBuffer).toString("base64");
+      const url = await ctx.storage.getUrl(args.fileId);
+      if (!url) throw new Error("File not found in storage");
 
       // Delete old chunks before re-extracting
       await ctx.runMutation(internal.documentChunks.deleteByPolicy, { policyId: args.policyId });
@@ -61,7 +58,7 @@ export const reExtractFromFile = action({
       });
 
       const result = await extractor.extract(
-        pdfBase64,
+        new URL(url),
         args.policyId as string,
       );
       const doc = result.document as Record<string, unknown>;

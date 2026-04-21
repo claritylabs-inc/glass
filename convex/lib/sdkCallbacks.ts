@@ -28,8 +28,45 @@ type ExtractionImage = {
 
 type ExtractionProviderOptions = ProviderOptions & {
   pdfBase64?: string;
+  pdfUrl?: URL | string;
+  pdfBytes?: Uint8Array;
+  fileId?: string;
+  mimeType?: string;
   images?: ExtractionImage[];
 };
+
+type PdfFilePart = {
+  type: "file";
+  data: URL | Uint8Array | string;
+  mediaType: string;
+  filename: string;
+};
+
+/**
+ * Build a single AI SDK file message part for the PDF, preferring memory-efficient
+ * inputs over the legacy base64 fallback. The AI SDK handles provider-specific
+ * encoding (OpenAI and Anthropic both accept URL / bytes / base64 `file` parts).
+ */
+function buildPdfFilePart(opts: {
+  pdfUrl?: URL | string;
+  pdfBytes?: Uint8Array;
+  pdfBase64?: string;
+  mimeType?: string;
+}): PdfFilePart | null {
+  const mediaType = opts.mimeType ?? "application/pdf";
+  const filename = "document.pdf";
+  if (opts.pdfUrl) {
+    const url = opts.pdfUrl instanceof URL ? opts.pdfUrl : new URL(opts.pdfUrl);
+    return { type: "file", data: url, mediaType, filename };
+  }
+  if (opts.pdfBytes) {
+    return { type: "file", data: opts.pdfBytes, mediaType, filename };
+  }
+  if (opts.pdfBase64) {
+    return { type: "file", data: opts.pdfBase64, mediaType, filename };
+  }
+  return null;
+}
 
 const EXTRACTION_MAX_TOKEN_OVERRIDES: Record<string, number> = {
   exclusions: 8192,
@@ -55,8 +92,6 @@ function buildPromptInput(
   providerOptions?: Record<string, unknown>,
 ) {
   const options = providerOptions as ExtractionProviderOptions | undefined;
-
-  const pdfBase64 = options?.pdfBase64;
   const images = options?.images;
 
   if (images?.length) {
@@ -77,48 +112,47 @@ function buildPromptInput(
     };
   }
 
-  if (!pdfBase64) {
-    // cl-sdk's application pipeline embeds base64 PDF directly in the prompt
-    // text instead of using providerOptions.pdfBase64. Detect this and convert
-    // to a proper file content part so the model can actually read the PDF.
-    const extracted = extractEmbeddedPdf(prompt);
-    if (extracted) {
-      return {
-        messages: [
-          {
-            role: "user" as const,
-            content: [
-              { type: "text" as const, text: extracted.text },
-              {
-                type: "file" as const,
-                data: extracted.pdfBase64,
-                mediaType: "application/pdf",
-                filename: "document.pdf",
-              },
-            ],
-          },
-        ],
-      };
-    }
-    return { prompt };
+  const pdfPart = buildPdfFilePart({
+    pdfUrl: options?.pdfUrl,
+    pdfBytes: options?.pdfBytes,
+    pdfBase64: options?.pdfBase64,
+    mimeType: options?.mimeType,
+  });
+
+  if (pdfPart) {
+    return {
+      messages: [
+        {
+          role: "user" as const,
+          content: [{ type: "text" as const, text: prompt }, pdfPart],
+        },
+      ],
+    };
   }
 
-  return {
-    messages: [
-      {
-        role: "user" as const,
-        content: [
-          { type: "text" as const, text: prompt },
-          {
-            type: "file" as const,
-            data: pdfBase64,
-            mediaType: "application/pdf",
-            filename: "document.pdf",
-          },
-        ],
-      },
-    ],
-  };
+  // Fallback: cl-sdk's application pipeline embeds base64 PDF directly in the prompt
+  // text instead of using providerOptions. Detect and lift it into a file part.
+  const extracted = extractEmbeddedPdf(prompt);
+  if (extracted) {
+    return {
+      messages: [
+        {
+          role: "user" as const,
+          content: [
+            { type: "text" as const, text: extracted.text },
+            {
+              type: "file" as const,
+              data: extracted.pdfBase64,
+              mediaType: "application/pdf",
+              filename: "document.pdf",
+            },
+          ],
+        },
+      ],
+    };
+  }
+
+  return { prompt };
 }
 
 /**

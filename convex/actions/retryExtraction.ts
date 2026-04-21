@@ -5,7 +5,7 @@ import { action } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import { ImapFlow } from "imapflow";
 import { buildExtractor, insuranceDocToPolicy, summarizeExtractionCheckpoint } from "../lib/extraction";
-import type { ExtractionState, PipelineCheckpoint } from "../lib/extraction";
+import type { ExtractionState, PdfInput, PipelineCheckpoint } from "../lib/extraction";
 import { makeEmbedText } from "../lib/sdkCallbacks";
 
 /**
@@ -17,13 +17,13 @@ async function runExtraction(
   ctx: any,
   opts: {
     policyId: string;
-    pdfBase64: string;
+    pdfInput: PdfInput;
     orgId?: string;
     checkpoint?: PipelineCheckpoint<ExtractionState>;
     log: (message: string) => Promise<void>;
   },
 ) {
-  const { policyId, pdfBase64, orgId, checkpoint, log } = opts;
+  const { policyId, pdfInput, orgId, checkpoint, log } = opts;
 
   // Track latest checkpoint for persistence on success or failure
   let latestCheckpoint: PipelineCheckpoint<ExtractionState> | undefined = checkpoint;
@@ -44,7 +44,7 @@ async function runExtraction(
   const extractOptions = checkpoint ? { resumeFrom: checkpoint } : undefined;
 
   const result = await extractor.extract(
-    pdfBase64,
+    pdfInput,
     policyId as string,
     extractOptions,
   );
@@ -147,13 +147,12 @@ export const retryQuoteExtraction = action({
     }
 
     try {
-      const blob = await ctx.storage.get(quote.fileId);
-      if (!blob) throw new Error("Stored PDF not found");
-      const pdfBase64 = Buffer.from(await blob.arrayBuffer()).toString("base64");
+      const url = await ctx.storage.getUrl(quote.fileId);
+      if (!url) throw new Error("Stored PDF not found");
 
       await runExtraction(ctx, {
         policyId: args.quoteId,
-        pdfBase64,
+        pdfInput: new URL(url),
         orgId: (quote as Record<string, unknown>).orgId as string | undefined,
         checkpoint,
         log,
@@ -215,14 +214,14 @@ export const retryExtraction = action({
     }
 
     try {
-      let pdfBase64: string;
+      let pdfInput: PdfInput;
       let fileId = policy.fileId;
 
       if (policy.fileId) {
         await log("Loading PDF from storage...");
-        const blob = await ctx.storage.get(policy.fileId);
-        if (!blob) throw new Error("Stored PDF not found");
-        pdfBase64 = Buffer.from(await blob.arrayBuffer()).toString("base64");
+        const url = await ctx.storage.getUrl(policy.fileId);
+        if (!url) throw new Error("Stored PDF not found");
+        pdfInput = new URL(url);
       } else if (policy.emailId) {
         const emails = await ctx.runQuery(api.emails.list, {});
         const email = emails.find((e: Record<string, unknown>) => e._id === policy.emailId);
@@ -276,11 +275,10 @@ export const retryExtraction = action({
 
         const sizeKB = Math.round(pdfBuffer.length / 1024);
         await log(`PDF stored (${sizeKB} KB)`);
-        const storageBlob = new Blob([new Uint8Array(pdfBuffer)], {
-          type: "application/pdf",
-        });
+        const pdfBytes = new Uint8Array(pdfBuffer);
+        const storageBlob = new Blob([pdfBytes], { type: "application/pdf" });
         fileId = await ctx.storage.store(storageBlob);
-        pdfBase64 = pdfBuffer.toString("base64");
+        pdfInput = pdfBytes;
       } else {
         return { error: "No PDF file or linked email — cannot retry" };
       }
@@ -294,7 +292,7 @@ export const retryExtraction = action({
 
       await runExtraction(ctx, {
         policyId: args.policyId,
-        pdfBase64,
+        pdfInput,
         orgId: (policy as Record<string, unknown>).orgId as string | undefined,
         checkpoint,
         log,

@@ -16,7 +16,7 @@ export { POLICY_TYPES, CONTEXT_KEY_MAP } from "@claritylabs/cl-sdk";
 export { chunkDocument, createExtractor } from "@claritylabs/cl-sdk";
 
 // ── Types ──
-export type { LogFn, PolicyType, ContextKeyMapping, TokenUsage, ConvertPdfToImagesFn } from "@claritylabs/cl-sdk";
+export type { LogFn, PolicyType, ContextKeyMapping, TokenUsage, ConvertPdfToImagesFn, PdfInput } from "@claritylabs/cl-sdk";
 export type { ExtractorConfig, ExtractionResult, ExtractionState, ExtractOptions, InsuranceDocument, DocumentChunk, PipelineCheckpoint, AuxiliaryFact } from "@claritylabs/cl-sdk";
 
 // ── Local re-exports ──

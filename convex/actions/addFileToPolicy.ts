@@ -59,10 +59,8 @@ export const addFileToPolicy = action({
     };
 
     try {
-      const blob = await ctx.storage.get(args.fileId);
-      if (!blob) throw new Error("File not found in storage");
-      const arrayBuffer = await blob.arrayBuffer();
-      const pdfBase64 = Buffer.from(arrayBuffer).toString("base64");
+      const url = await ctx.storage.getUrl(args.fileId);
+      if (!url) throw new Error("File not found in storage");
 
       await log(`Added supplemental file: ${args.fileName}. Extracting chunks...`);
 
@@ -73,7 +71,7 @@ export const addFileToPolicy = action({
         },
       });
 
-      const result = await extractor.extract(pdfBase64, args.policyId as string);
+      const result = await extractor.extract(new URL(url), args.policyId as string);
       const chunks = result.chunks;
 
       if (chunks.length > 0) {

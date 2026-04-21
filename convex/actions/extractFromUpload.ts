@@ -27,12 +27,8 @@ export const extractFromUpload = action({
     const orgId = orgData.membership.orgId as Id<"organizations">;
     const userId = viewer._id as Id<"users">;
 
-    const blob = await ctx.storage.get(args.fileId);
-    if (!blob) return { error: "File not found in storage" };
-
-    const arrayBuffer = await blob.arrayBuffer();
-    const pdfBase64 = Buffer.from(arrayBuffer).toString("base64");
-    const sizeKB = Math.round(arrayBuffer.byteLength / 1024);
+    const pdfUrl = await ctx.storage.getUrl(args.fileId);
+    if (!pdfUrl) return { error: "File not found in storage" };
 
     // Create placeholder policy record (type determined by extraction)
     const policyId: Id<"policies"> = await ctx.runMutation(api.policies.insert, {
@@ -83,16 +79,18 @@ export const extractFromUpload = action({
 
     try {
       await ctx.runMutation(internal.policies.clearExtractionLog, { id: policyId });
-      await log(`Uploaded PDF (${sizeKB} KB). Starting extraction pipeline.`);
+      await log(`Uploaded PDF stored. Starting extraction pipeline.`);
 
-      // Unified extraction — SDK handles classification, extraction, and assembly
+      // Unified extraction — SDK handles classification, extraction, and assembly.
+      // Pass the Convex storage URL directly so the SDK / AI SDK can stream the PDF
+      // without materializing a base64 copy in this action's memory.
       const extractor = buildExtractor({
         log,
         onProgress: async (msg) => { await log(msg); },
       });
 
       const result = await extractor.extract(
-        pdfBase64,
+        new URL(pdfUrl),
         policyId as string,
       );
       const doc = result.document as { type?: string; quoteNumber?: string; policyNumber?: string };

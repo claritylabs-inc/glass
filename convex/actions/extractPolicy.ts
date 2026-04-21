@@ -74,7 +74,9 @@ export const extractPolicy = internalAction({
       type: "application/pdf",
     });
     const fileId = await ctx.storage.store(blob);
-    const pdfBase64 = pdfBuffer.toString("base64");
+    // Pass bytes directly to the extractor — the email fetch already has them in memory,
+    // so we skip the ~1.37× base64 inflation and rely on the AI SDK's file part encoding.
+    const pdfBytes = new Uint8Array(pdfBuffer);
 
     // Create placeholder policy record (type determined by extraction)
     const policyId = await ctx.runMutation(api.policies.insert, {
@@ -155,7 +157,7 @@ export const extractPolicy = internalAction({
       });
 
       const result = await extractor.extract(
-        pdfBase64,
+        pdfBytes,
         policyId as string,
       );
       const doc = result.document as { type?: string; quoteNumber?: string; policyNumber?: string };

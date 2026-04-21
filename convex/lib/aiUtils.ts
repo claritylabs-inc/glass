@@ -1,3 +1,4 @@
+"use node";
 import type { ModelMessage } from "ai";
 import { buildAgentSystemPrompt, type AgentContext } from "@claritylabs/cl-sdk";
 

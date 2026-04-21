@@ -1,3 +1,4 @@
+"use node";
 export {
   APPLICATION_CLASSIFY_PROMPT,
   buildFieldExtractionPrompt,
