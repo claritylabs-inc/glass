@@ -7,8 +7,9 @@ const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { connectionId: string } },
+  { params }: { params: Promise<{ connectionId: string }> },
 ): Promise<NextResponse> {
+  const { connectionId } = await params;
   const token = request.headers.get("authorization")?.slice(7);
   if (!token) {
     return NextResponse.json(
@@ -21,7 +22,7 @@ export async function GET(
     convex.setAuth(token);
     const conn = await convex.query(
       (api as any).integrationConnections.getInternal,
-      { connectionId: params.connectionId },
+      { connectionId },
     );
     if (!conn) {
       return NextResponse.json(
@@ -43,8 +44,9 @@ export async function GET(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { connectionId: string } },
+  { params }: { params: Promise<{ connectionId: string }> },
 ): Promise<NextResponse> {
+  const { connectionId } = await params;
   const token = request.headers.get("authorization")?.slice(7);
   if (!token) {
     return NextResponse.json(
@@ -55,9 +57,9 @@ export async function DELETE(
 
   try {
     convex.setAuth(token);
-    await convex.mutation(
-      (api as any).integrationConnections.disconnect,
-      { connectionId: params.connectionId },
+    await convex.action(
+      (api as any).actions.integrationConnectionActions.disconnect,
+      { connectionId },
     );
     return new NextResponse(null, { status: 204 });
   } catch (e) {
