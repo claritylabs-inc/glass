@@ -59,19 +59,6 @@ function readableTextFor(accent: string): "light" | "dark" {
   return relativeLuminance(accent) > 0.45 ? "dark" : "light";
 }
 
-function normalizeHex(raw: string): string | null {
-  const v = raw.trim().replace(/^#/, "").toLowerCase();
-  if (/^[0-9a-f]{6}$/.test(v)) return `#${v.toUpperCase()}`;
-  if (/^[0-9a-f]{3}$/.test(v)) {
-    return `#${v
-      .split("")
-      .map((c) => c + c)
-      .join("")
-      .toUpperCase()}`;
-  }
-  return null;
-}
-
 function extractDomain(url: string): string | null {
   const trimmed = url.trim();
   if (!trimmed) return null;
@@ -276,7 +263,6 @@ export default function BrokerOnboardingPage() {
   const [brandingColor, setBrandingColor] = useState("#1E293B");
   const [brandingMode, setBrandingMode] = useState<"light" | "dark">("light");
   const [brandingTextOnAccent, setBrandingTextOnAccent] = useState<"light" | "dark" | "auto">("auto");
-  const [hexInput, setHexInput] = useState("");
   const [sampledColors, setSampledColors] = useState<string[]>([]);
   const [samplingColor, setSamplingColor] = useState(false);
   const [agentDisplayName, setAgentDisplayName] = useState("");
@@ -307,10 +293,6 @@ export default function BrokerOnboardingPage() {
     const timer = setTimeout(() => setDebouncedSlug(slugInput), 300);
     return () => clearTimeout(timer);
   }, [slugInput]);
-
-  useEffect(() => {
-    setHexInput(brandingColor);
-  }, [brandingColor]);
 
   useEffect(() => {
     const domain = extractDomain(website);
@@ -691,79 +673,10 @@ export default function BrokerOnboardingPage() {
                       );
                     })()}
 
-                    <div className="space-y-1.5">
-                      <p className="text-label-sm text-muted-foreground">Custom hex</p>
-                      <div className="flex items-center gap-2">
-                        <div
-                          className="h-9 w-9 shrink-0 rounded-md border border-foreground/10"
-                          style={{ backgroundColor: brandingColor }}
-                        />
-                        <input
-                          type="text"
-                          value={hexInput}
-                          onChange={(e) => {
-                            const raw = e.target.value;
-                            setHexInput(raw.startsWith("#") ? raw : `#${raw}`);
-                            const n = normalizeHex(raw);
-                            if (n) setBrandingColor(n);
-                          }}
-                          onBlur={() => {
-                            const n = normalizeHex(hexInput);
-                            if (n) {
-                              setHexInput(n);
-                              setBrandingColor(n);
-                            } else {
-                              setHexInput(brandingColor);
-                            }
-                          }}
-                          spellCheck={false}
-                          className={`flex-1 font-mono uppercase tracking-wider ${inputClass}`}
-                          placeholder="#1E293B"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4 pt-1">
-                      <div className="space-y-1.5">
-                        <p className="text-label-sm text-muted-foreground">Client theme</p>
-                        <div className="grid grid-cols-2 gap-1 rounded-lg border border-foreground/8 bg-popover p-1">
-                          {(["light", "dark"] as const).map((mode) => (
-                            <button
-                              key={mode}
-                              type="button"
-                              onClick={() => setBrandingMode(mode)}
-                              className={`rounded-md px-2 py-1.5 text-label-sm font-medium capitalize transition-colors ${
-                                brandingMode === mode
-                                  ? "bg-foreground text-background"
-                                  : "text-muted-foreground hover:text-foreground"
-                              }`}
-                            >
-                              {mode}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <p className="text-label-sm text-muted-foreground">Text on accent</p>
-                        <div className="grid grid-cols-3 gap-1 rounded-lg border border-foreground/8 bg-popover p-1">
-                          {(["auto", "light", "dark"] as const).map((t) => (
-                            <button
-                              key={t}
-                              type="button"
-                              onClick={() => setBrandingTextOnAccent(t)}
-                              className={`rounded-md px-2 py-1.5 text-label-sm font-medium capitalize transition-colors ${
-                                brandingTextOnAccent === t
-                                  ? "bg-foreground text-background"
-                                  : "text-muted-foreground hover:text-foreground"
-                              }`}
-                            >
-                              {t}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
+                    <p className="text-label-sm text-muted-foreground/70">
+                      You can fine-tune the client theme, text contrast, and add a custom color from
+                      Settings after onboarding.
+                    </p>
                   </div>
                 );
               })()}

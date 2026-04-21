@@ -3,6 +3,7 @@ import { query, mutation, internalQuery, internalMutation } from "./_generated/s
 import { requireOrgAccess, requireOrgAdmin, getOrgAccess } from "./lib/orgAuth";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { getOrgAccess as getOrgAccessNew, assertBrokerOrg } from "./lib/access";
+import type { Id } from "./_generated/dataModel";
 
 // ── Queries ──
 
@@ -35,7 +36,61 @@ export const viewerOrg = query({
 
     const iconUrl = org.iconStorageId ? await ctx.storage.getUrl(org.iconStorageId) : null;
 
-    return { org: { ...org, iconUrl }, membership };
+    let brokerOrg: {
+      _id: Id<"organizations">;
+      name: string;
+      slug?: string;
+      website?: string;
+      brandingColor?: string;
+      agentHandle?: string;
+      agentDisplayName?: string;
+      iconUrl: string | null;
+      primaryContact: {
+        userId: Id<"users">;
+        name?: string;
+        email?: string;
+        title?: string;
+      } | null;
+    } | null = null;
+    if (org.type === "client" && org.brokerOrgId) {
+      const broker = await ctx.db.get(org.brokerOrgId);
+      if (broker) {
+        const brokerIconUrl = broker.iconStorageId
+          ? await ctx.storage.getUrl(broker.iconStorageId)
+          : null;
+        let primaryContact: {
+          userId: Id<"users">;
+          name?: string;
+          email?: string;
+          title?: string;
+        } | null = null;
+        const contactUserId = broker.primaryInsuranceContactId;
+        if (contactUserId) {
+          const contactUser = await ctx.db.get(contactUserId);
+          if (contactUser) {
+            primaryContact = {
+              userId: contactUser._id,
+              name: contactUser.name,
+              email: contactUser.email,
+              title: contactUser.title,
+            };
+          }
+        }
+        brokerOrg = {
+          _id: broker._id,
+          name: broker.name,
+          slug: broker.slug,
+          website: broker.website,
+          brandingColor: broker.brandingColor,
+          agentHandle: broker.agentHandle,
+          agentDisplayName: broker.agentDisplayName,
+          iconUrl: brokerIconUrl,
+          primaryContact,
+        };
+      }
+    }
+
+    return { org: { ...org, iconUrl }, membership, brokerOrg };
   },
 });
 

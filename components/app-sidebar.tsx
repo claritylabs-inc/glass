@@ -94,7 +94,7 @@ export function AppSidebar({
   const isSettingsMode = pathname.startsWith("/settings");
   const viewer = useQuery(api.users.viewer);
   const viewerOrg = useQuery(api.orgs.viewerOrg, {});
-  const orgIcon = viewerOrg?.org?.iconUrl ?? null;
+  const orgIcon = viewerOrg?.brokerOrg?.iconUrl ?? viewerOrg?.org?.iconUrl ?? null;
   const unifiedThreads = useQuery(api.threads.list, { archived: false });
   const webChats = useQuery(api.webChats.list, { archived: false });
   const emailConvs = useQuery(api.agentConversations.list, { archived: false });

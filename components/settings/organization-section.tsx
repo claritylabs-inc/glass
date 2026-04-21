@@ -434,51 +434,134 @@ export function OrganizationSection() {
         </div>
 
         {/* Insurance Broker section */}
-        <div className="rounded-lg border border-foreground/6 bg-card mb-4">
-          <div className="px-5 py-3.5 border-b border-foreground/6">
-            <h3 className="!mb-0 text-sm font-medium text-foreground">Insurance Broker</h3>
-          </div>
-          <div className="px-5 py-5">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
-                  Broker (Company)
-                </label>
-                <input
-                  type="text"
-                  value={insuranceBroker}
-                  onChange={(e) => setInsuranceBroker(e.target.value)}
-                  placeholder="Marsh McLennan"
-                  className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
-                />
+        {orgData?.brokerOrg ? (
+          (() => {
+            const broker = orgData.brokerOrg;
+            const contact = broker.primaryContact;
+            const agentDomain = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "glass.claritylabs.inc";
+            const agentEmail = broker.agentHandle ? `${broker.agentHandle}@${agentDomain}` : null;
+            return (
+              <div className="rounded-lg border border-foreground/6 bg-card mb-4">
+                <div className="px-5 py-3.5 border-b border-foreground/6">
+                  <h3 className="!mb-0 text-sm font-medium text-foreground">Your insurance broker</h3>
+                </div>
+                <div className="px-5 py-5">
+                  <div className="flex items-start gap-4">
+                    <div
+                      className="h-12 w-12 shrink-0 overflow-hidden rounded-lg border border-foreground/8 bg-popover flex items-center justify-center"
+                      style={broker.brandingColor ? { backgroundColor: broker.brandingColor } : undefined}
+                    >
+                      {broker.iconUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={broker.iconUrl} alt="" className="h-full w-full object-contain bg-white" />
+                      ) : (
+                        <span className="text-sm font-medium text-foreground/70">
+                          {broker.name.charAt(0).toUpperCase()}
+                        </span>
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <div className="text-base font-medium text-foreground truncate">{broker.name}</div>
+                      {broker.website ? (
+                        <a
+                          href={broker.website.startsWith("http") ? broker.website : `https://${broker.website}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-label-sm text-muted-foreground hover:text-foreground"
+                        >
+                          {broker.website.replace(/^https?:\/\//, "")}
+                        </a>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {contact ? (
+                      <div className="rounded-lg border border-foreground/6 bg-popover/40 px-4 py-3">
+                        <div className="text-label-sm text-muted-foreground mb-1">Primary contact</div>
+                        <div className="text-body-sm font-medium text-foreground">
+                          {contact.name ?? "Your broker"}
+                        </div>
+                        {contact.title ? (
+                          <div className="text-label-sm text-muted-foreground">{contact.title}</div>
+                        ) : null}
+                        {contact.email ? (
+                          <a
+                            href={`mailto:${contact.email}`}
+                            className="text-label-sm text-foreground hover:underline mt-1 inline-block"
+                          >
+                            {contact.email}
+                          </a>
+                        ) : null}
+                      </div>
+                    ) : null}
+
+                    {agentEmail ? (
+                      <div className="rounded-lg border border-foreground/6 bg-popover/40 px-4 py-3">
+                        <div className="text-label-sm text-muted-foreground mb-1">AI agent email</div>
+                        <div className="text-body-sm font-medium text-foreground">
+                          {broker.agentDisplayName ?? `${broker.name} agent`}
+                        </div>
+                        <a
+                          href={`mailto:${agentEmail}`}
+                          className="text-label-sm text-foreground hover:underline mt-1 inline-block break-all"
+                        >
+                          {agentEmail}
+                        </a>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
               </div>
-              <div>
-                <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
-                  Contact Name
-                </label>
-                <input
-                  type="text"
-                  value={brokerContactName}
-                  onChange={(e) => setBrokerContactName(e.target.value)}
-                  placeholder="Jane Smith"
-                  className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
-                />
-              </div>
-              <div>
-                <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
-                  Contact Email
-                </label>
-                <input
-                  type="email"
-                  value={brokerContactEmail}
-                  onChange={(e) => setBrokerContactEmail(e.target.value)}
-                  placeholder="jane@broker.com"
-                  className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
-                />
+            );
+          })()
+        ) : (
+          <div className="rounded-lg border border-foreground/6 bg-card mb-4">
+            <div className="px-5 py-3.5 border-b border-foreground/6">
+              <h3 className="!mb-0 text-sm font-medium text-foreground">Insurance Broker</h3>
+            </div>
+            <div className="px-5 py-5">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
+                    Broker (Company)
+                  </label>
+                  <input
+                    type="text"
+                    value={insuranceBroker}
+                    onChange={(e) => setInsuranceBroker(e.target.value)}
+                    placeholder="Marsh McLennan"
+                    className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                  />
+                </div>
+                <div>
+                  <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
+                    Contact Name
+                  </label>
+                  <input
+                    type="text"
+                    value={brokerContactName}
+                    onChange={(e) => setBrokerContactName(e.target.value)}
+                    placeholder="Jane Smith"
+                    className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                  />
+                </div>
+                <div>
+                  <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
+                    Contact Email
+                  </label>
+                  <input
+                    type="email"
+                    value={brokerContactEmail}
+                    onChange={(e) => setBrokerContactEmail(e.target.value)}
+                    placeholder="jane@broker.com"
+                    className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                  />
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Onboarding section */}
