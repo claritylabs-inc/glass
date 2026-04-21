@@ -201,3 +201,38 @@ export function assertCanInviteClient(access: OrgAccess): void {
 export function assertCanInviteTeammate(access: OrgAccess): void {
   if (access.role !== "admin") throw new Error("Admin role required to invite teammates");
 }
+
+// ── Integration capability helpers ─────────────────────────────────────────
+
+/** member OR broker_of_client */
+export function assertCanReadIntegrationsList(_access: OrgAccess): void {
+  // no restriction beyond having org access
+}
+
+/** member only — creating connections requires being in the client org */
+export function assertCanConnectIntegration(access: OrgAccess): void {
+  if (access.accessType !== "member") {
+    throw new Error("Only org members can connect integrations");
+  }
+}
+
+/** member only */
+export function assertCanDisconnectIntegration(access: OrgAccess): void {
+  if (access.accessType !== "member") {
+    throw new Error("Only org members can disconnect integrations");
+  }
+}
+
+/** broker_of_client only — requesting a connection from the client */
+export function assertCanRequestIntegration(access: OrgAccess): void {
+  if (access.accessType !== "broker_of_client") {
+    throw new Error("Only broker users can request integrations from a client");
+  }
+}
+
+/** member only — raw integration values are never exposed directly to brokers */
+export function assertCanReadRawIntegrationData(access: OrgAccess): void {
+  if (access.accessType !== "member") {
+    throw new Error("Raw integration data is restricted to org members");
+  }
+}
