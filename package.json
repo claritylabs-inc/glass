@@ -20,6 +20,7 @@
     "@base-ui/react": "^1.2.0",
     "@claritylabs/cl-sdk": "^0.16.0",
     "@convex-dev/auth": "^0.0.91",
+    "@mergeapi/merge-node-client": "^4.0.3",
     "@radix-ui/react-use-controllable-state": "^1.2.2",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.6.0",
