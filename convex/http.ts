@@ -896,17 +896,162 @@ const MCP_TOOLS = [
   },
   {
     name: "ask_prism",
-    description: "Ask the Prism AI assistant a question about the organization's insurance portfolio, policies, quotes, applications, or coverage details. Prism has full context about all policies and quotes and can answer complex insurance questions. Optionally pass a threadId to continue an existing conversation.",
+    description: "Alias for ask_glass (legacy name). Ask the Glass AI assistant a question about the organization's insurance portfolio.",
     inputSchema: {
       type: "object" as const,
       properties: {
-        message: { type: "string", description: "The question or message to send to Prism" },
+        message: { type: "string", description: "The question or message to send to Glass" },
         threadId: { type: "string", description: "Optional thread ID to continue an existing conversation" },
       },
       required: ["message"],
     },
   },
+  {
+    name: "ask_glass",
+    description: "Ask the Glass AI assistant a question about the organization's insurance portfolio, policies, quotes, applications, or coverage details. Glass has full context about all policies and quotes and can answer complex insurance questions. Optionally pass a threadId to continue an existing conversation.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        message: { type: "string", description: "The question or message to send to Glass" },
+        threadId: { type: "string", description: "Optional thread ID to continue an existing conversation" },
+      },
+      required: ["message"],
+    },
+  },
+  // ── Broker tools ──
+  {
+    name: "list_clients",
+    description: "List clients visible to the broker. Broker only.",
+    inputSchema: { type: "object" as const, properties: {} },
+  },
+  {
+    name: "get_client",
+    description: "Get passport summary and policy count for a client org. Broker only.",
+    inputSchema: {
+      type: "object" as const,
+      properties: { client_org_id: { type: "string", description: "Client org ID" } },
+      required: ["client_org_id"],
+    },
+  },
+  {
+    name: "list_applications_for_client",
+    description: "List applications for a specific client. Broker only.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        client_org_id: { type: "string", description: "Client org ID" },
+        status: { type: "string", description: "Optional status filter" },
+      },
+      required: ["client_org_id"],
+    },
+  },
+  {
+    name: "create_application_draft",
+    description: "Create a new application draft for a client. Broker only. Write scope required.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        client_org_id: { type: "string" },
+        creation_path: { type: "string", enum: ["blank", "template", "upload"] },
+        title: { type: "string" },
+        line_of_business: { type: "string" },
+      },
+      required: ["client_org_id", "creation_path", "title"],
+    },
+  },
+  {
+    name: "add_application_question",
+    description: "Add a question to a draft application. Broker only. Write scope required.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        application_id: { type: "string" },
+        intent_key: { type: "string" },
+        custom_prompt: { type: "string" },
+        answer_type: { type: "string" },
+        required: { type: "boolean" },
+      },
+      required: ["application_id"],
+    },
+  },
+  {
+    name: "send_application",
+    description: "Send an application to a client. Broker only. Write scope required.",
+    inputSchema: {
+      type: "object" as const,
+      properties: { application_id: { type: "string" } },
+      required: ["application_id"],
+    },
+  },
+  {
+    name: "raise_passport_flag",
+    description: "Raise a flag on a client passport field. Broker only. Write scope required.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        client_org_id: { type: "string" },
+        field_path: { type: "string" },
+        message: { type: "string" },
+      },
+      required: ["client_org_id", "field_path", "message"],
+    },
+  },
+  {
+    name: "list_broker_activity",
+    description: "List broker portfolio activity feed.",
+    inputSchema: { type: "object" as const, properties: {} },
+  },
+  // ── Client tools ──
+  {
+    name: "get_passport",
+    description: "Get the full passport for the caller's client org. Client only.",
+    inputSchema: { type: "object" as const, properties: {} },
+  },
+  {
+    name: "update_passport",
+    description: "Update passport fields. Client only. Write scope required.",
+    inputSchema: {
+      type: "object" as const,
+      properties: { patch: { type: "object", description: "Fields to update (snake_case)" } },
+      required: ["patch"],
+    },
+  },
+  {
+    name: "answer_application_question",
+    description: "Upsert an answer to an application question. Client only. Write scope required.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        application_id: { type: "string" },
+        question_id: { type: "string" },
+        row_key: { type: "string" },
+        value: {},
+      },
+      required: ["application_id", "question_id", "value"],
+    },
+  },
+  {
+    name: "submit_application_section",
+    description: "Submit a section of an application for broker review. Client only. Write scope required.",
+    inputSchema: {
+      type: "object" as const,
+      properties: { application_id: { type: "string" }, group_id: { type: "string" } },
+      required: ["application_id", "group_id"],
+    },
+  },
+  {
+    name: "list_my_policies",
+    description: "List policies for the caller's client org. Client only.",
+    inputSchema: { type: "object" as const, properties: {} },
+  },
 ];
+
+function requireWriteScope(identity: McpIdentity): void {
+  const scopes = identity.scopes ?? ["read"];
+  if (!scopes.includes("write")) {
+    throw new Error("insufficient_scope: this tool requires write scope");
+  }
+}
 
 function jsonRpcResponse(id: string | number | null, result: unknown): Response {
   return new Response(
@@ -1063,13 +1208,116 @@ async function handleToolCall(
         brokerContactName: org.brokerContactName, brokerContactEmail: org.brokerContactEmail,
       }, null, 2) }] };
     }
-    case "ask_prism": {
+    case "ask_prism":
+    case "ask_glass": {
       if (!args.message) throw new Error("Missing message");
       const result = await ctx.runAction(internal.actions.mcpChat.run, {
         orgId, userId, message: args.message as string,
         threadId: (args.threadId as string) ?? undefined,
       });
       return { content: [{ type: "text", text: `**Thread:** ${result.threadId}\n\n${result.response}` }] };
+    }
+    // ── Broker tools ──
+    case "list_clients": {
+      const clients = await ctx.runQuery((internal as any).clients.listForBroker, { brokerOrgId: orgId });
+      return { content: [{ type: "text", text: JSON.stringify(clients, null, 2) }] };
+    }
+    case "get_client": {
+      const clientOrgId = args.client_org_id as Id<"organizations">;
+      const clientOrg = await ctx.runQuery(internal.orgs.getInternal, { id: clientOrgId });
+      const policies = await ctx.runQuery(internal.policies.listAllInternal, { orgId: clientOrgId });
+      return { content: [{ type: "text", text: JSON.stringify({ org: clientOrg, policy_count: policies.length }, null, 2) }] };
+    }
+    case "list_applications_for_client": {
+      const clientOrgId = args.client_org_id as Id<"organizations">;
+      const apps = await ctx.runQuery((internal as any).applications.listForOrg, {
+        orgId: clientOrgId, userId, cursor: undefined, limit: 50,
+      });
+      return { content: [{ type: "text", text: JSON.stringify(apps, null, 2) }] };
+    }
+    case "create_application_draft": {
+      requireWriteScope(identity);
+      const appId = await ctx.runMutation((internal as any).applications.createDraft, {
+        brokerOrgId: orgId, clientOrgId: args.client_org_id as Id<"organizations">,
+        creationPath: args.creation_path, title: args.title, lineOfBusiness: args.line_of_business,
+      });
+      return { content: [{ type: "text", text: JSON.stringify({ id: appId }, null, 2) }] };
+    }
+    case "add_application_question": {
+      requireWriteScope(identity);
+      const qId = await ctx.runMutation((internal as any).applications.addQuestion, {
+        applicationId: args.application_id as Id<"applications">,
+        brokerOrgId: orgId, intentKey: args.intent_key,
+        customPrompt: args.custom_prompt, answerType: args.answer_type ?? "text",
+        required: args.required ?? false,
+      });
+      return { content: [{ type: "text", text: JSON.stringify({ id: qId }, null, 2) }] };
+    }
+    case "send_application": {
+      requireWriteScope(identity);
+      await ctx.runMutation((internal as any).applications.send, {
+        applicationId: args.application_id as Id<"applications">, brokerOrgId: orgId,
+      });
+      return { content: [{ type: "text", text: JSON.stringify({ ok: true }, null, 2) }] };
+    }
+    case "raise_passport_flag": {
+      requireWriteScope(identity);
+      const flagId = await ctx.runMutation((internal as any).passportFieldFlags.raise, {
+        clientOrgId: args.client_org_id as Id<"organizations">, brokerOrgId: orgId,
+        fieldPath: args.field_path, message: args.message,
+      });
+      return { content: [{ type: "text", text: JSON.stringify({ id: flagId }, null, 2) }] };
+    }
+    case "list_broker_activity": {
+      const activity = await ctx.runQuery((internal as any).brokerActivity.listPortfolio, {
+        orgId, limit: 50,
+      }).catch(() => []);
+      return { content: [{ type: "text", text: JSON.stringify(activity, null, 2) }] };
+    }
+    // ── Client tools ──
+    case "get_passport": {
+      const passport = await ctx.runQuery((internal as any).clientPassport.getFull, { orgId }).catch(() => null);
+      if (!passport) throw new Error("not_found: passport not found");
+      return { content: [{ type: "text", text: JSON.stringify(passport, null, 2) }] };
+    }
+    case "update_passport": {
+      requireWriteScope(identity);
+      const patch = args.patch as Record<string, any>;
+      const convexPatch: Record<string, any> = {};
+      for (const [k, v] of Object.entries(patch)) {
+        if (k === "legal_name") convexPatch.legalName = v;
+        else if (k === "full_time_employees") convexPatch.fullTimeEmployees = v;
+        else if (k === "annual_revenue") convexPatch.annualRevenue = v;
+        else convexPatch[k] = v;
+      }
+      await ctx.runMutation((internal as any).clientPassport.upsertCoreInternal, { orgId, ...convexPatch });
+      return { content: [{ type: "text", text: JSON.stringify({ ok: true }, null, 2) }] };
+    }
+    case "answer_application_question": {
+      requireWriteScope(identity);
+      await ctx.runMutation((internal as any).applications.upsertAnswer, {
+        applicationId: args.application_id as Id<"applications">,
+        clientOrgId: orgId,
+        questionId: args.question_id as Id<"applicationQuestions">,
+        rowKey: args.row_key, value: args.value,
+      });
+      return { content: [{ type: "text", text: JSON.stringify({ ok: true }, null, 2) }] };
+    }
+    case "submit_application_section": {
+      requireWriteScope(identity);
+      await ctx.runMutation((internal as any).applications.submitGroup, {
+        applicationId: args.application_id as Id<"applications">,
+        groupId: args.group_id as Id<"applicationGroups">,
+        clientOrgId: orgId,
+      });
+      return { content: [{ type: "text", text: JSON.stringify({ ok: true }, null, 2) }] };
+    }
+    case "list_my_policies": {
+      const policies = await ctx.runQuery(internal.policies.listAllInternal, { orgId });
+      return { content: [{ type: "text", text: JSON.stringify(policies.map((p: any) => ({
+        _id: p._id, carrier: p.carrier, policyNumber: p.policyNumber,
+        policyTypes: p.policyTypes, effectiveDate: p.effectiveDate, expirationDate: p.expirationDate, premium: p.premium,
+      })), null, 2) }] };
     }
     default:
       throw new Error(`Unknown tool: ${name}`);
@@ -1101,16 +1349,16 @@ http.route({
 
       switch (method) {
         case "initialize": {
-          const siteUrl = process.env.SITE_URL ?? "https://prism.claritylabs.inc";
+          const siteUrl = process.env.SITE_URL ?? "https://glass.claritylabs.inc";
           return jsonRpcResponse(id, {
             protocolVersion: "2025-03-26",
             capabilities: { tools: {} },
             serverInfo: {
-              name: "Prism",
-              version: "1.0.0",
+              name: "Glass",
+              version: "2.0.0",
               icons: [
                 {
-                  src: `${siteUrl}/prism-icon.svg`,
+                  src: `${siteUrl}/glass-icon.svg`,
                   mimeType: "image/svg+xml",
                   sizes: ["any"],
                 },
@@ -1122,7 +1370,7 @@ http.route({
                 },
               ],
             },
-            instructions: "Prism is an insurance intelligence platform. Use Prism tools to look up policies, quotes, applications, and business context for the connected organization. Use ask_prism for complex insurance questions.",
+            instructions: "Glass is an insurance intelligence platform. Use Glass tools to look up policies, quotes, applications, passport data, and broker-client workflows. Use ask_glass for complex insurance questions.",
           });
         }
         case "tools/list": {
