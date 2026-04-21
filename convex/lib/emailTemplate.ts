@@ -1,18 +1,10 @@
 const SITE_URL = process.env.SITE_URL ?? "https://prism.claritylabs.inc";
 
-/** Prism logo HTML block for email headers — rendered as image for font reliability */
+/** Prism + Clarity Labs lockup for email headers — JPEG for Gmail reliability */
 export const EMAIL_PRISM_LOGO = `
 <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;">
   <tr>
-    <td align="center"><img src="${SITE_URL}/email-logo" alt="Prism" width="200" height="48" style="display:block;border:0;" /></td>
-  </tr>
-</table>`;
-
-/** "from clarity labs" footer HTML for emails — rendered as image for font reliability */
-export const EMAIL_FROM_FOOTER = `
-<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;">
-  <tr>
-    <td align="center"><img src="${SITE_URL}/email-footer" alt="from clarity labs" width="120" height="40" style="display:block;border:0;" /></td>
+    <td align="center"><img src="${SITE_URL}/prism-logo-email.jpg" alt="Prism by Clarity Labs" width="206" height="58" style="display:block;border:0;outline:none;text-decoration:none;" /></td>
   </tr>
 </table>`;
 
@@ -38,7 +30,6 @@ export function buildOtpEmail(token: string, _siteUrl?: string): { html: string;
 <!--[if mso]>
 <style>table{border-collapse:collapse;}td{padding:0;}</style>
 <![endif]-->
-<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif&display=swap" rel="stylesheet">
 </head>
 <body style="margin:0;padding:0;background-color:#faf8f4;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#faf8f4;">
@@ -46,7 +37,7 @@ export function buildOtpEmail(token: string, _siteUrl?: string): { html: string;
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:440px;background-color:#ffffff;border-radius:16px;border:1px solid rgba(17,24,39,0.06);box-shadow:0 1px 3px rgba(0,0,0,0.04);">
 
 <!-- Logo -->
-<tr><td align="center" style="padding:40px 40px 0 40px;">
+<tr><td align="center" style="padding:36px 40px 0 40px;">
   ${EMAIL_PRISM_LOGO}
 </td></tr>
 
@@ -75,15 +66,10 @@ export function buildOtpEmail(token: string, _siteUrl?: string): { html: string;
 </td></tr>
 
 <!-- Footer -->
-<tr><td align="center" style="padding:20px 40px 12px 40px;">
+<tr><td align="center" style="padding:20px 40px 32px 40px;">
   <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:12px;color:#9ca3af;line-height:1.5;">
     If you didn't request this code, you can safely ignore this email.
   </p>
-</td></tr>
-
-<!-- From Clarity Labs -->
-<tr><td align="center" style="padding:0 40px 32px 40px;">
-  ${EMAIL_FROM_FOOTER}
 </td></tr>
 
 </table>
