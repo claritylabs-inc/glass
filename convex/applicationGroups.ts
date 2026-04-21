@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { mutation } from "./_generated/server";
 import { assertCanAnswerApplication, assertCanReviewApplication } from "./lib/applicationCapabilities";
 import { internal } from "./_generated/api";
+import { notify } from "./lib/notify";
 
 export const submit = mutation({
   args: { groupId: v.id("applicationGroups") },
@@ -47,6 +48,22 @@ export const submit = mutation({
     await ctx.runMutation((internal as any).applications.recomputeStatus, {
       applicationId: group.applicationId,
     });
+
+    // Notify broker of submission
+    const app = await ctx.db.get(group.applicationId);
+    if (app) {
+      const clientOrg = await ctx.db.get(app.clientOrgId);
+      await notify(ctx, {
+        orgId: app.brokerOrgId,
+        type: "application_submitted_by_client",
+        title: "Application submitted",
+        body: `${clientOrg?.name ?? "Your client"} submitted a section.`,
+        relatedOrgId: app.clientOrgId,
+        actionType: "view_application",
+        actionPayload: { applicationId: group.applicationId },
+        coalesceKeyParts: ["application_submitted_by_client", app.brokerOrgId, app.clientOrgId],
+      });
+    }
   },
 });
 
@@ -61,6 +78,21 @@ export const acceptSection = mutation({
     await ctx.runMutation((internal as any).applications.recomputeStatus, {
       applicationId: group.applicationId,
     });
+
+    // Notify client of section acceptance
+    const app = await ctx.db.get(group.applicationId);
+    if (app) {
+      const brokerOrg = await ctx.db.get(app.brokerOrgId);
+      await notify(ctx, {
+        orgId: app.clientOrgId,
+        type: "application_accepted_by_broker",
+        title: "Application accepted",
+        body: `${brokerOrg?.name ?? "Your broker"} accepted your application.`,
+        relatedOrgId: app.brokerOrgId,
+        actionType: "view_application",
+        actionPayload: { applicationId: group.applicationId },
+      });
+    }
   },
 });
 
@@ -96,5 +128,20 @@ export const returnSection = mutation({
     await ctx.runMutation((internal as any).applications.recomputeStatus, {
       applicationId: group.applicationId,
     });
+
+    // Notify client of section return
+    const app = await ctx.db.get(group.applicationId);
+    if (app) {
+      const brokerOrg = await ctx.db.get(app.brokerOrgId);
+      await notify(ctx, {
+        orgId: app.clientOrgId,
+        type: "application_section_returned_by_broker",
+        title: "Section returned for revision",
+        body: `${brokerOrg?.name ?? "Your broker"} returned a section of your application.`,
+        relatedOrgId: app.brokerOrgId,
+        actionType: "view_application",
+        actionPayload: { applicationId: group.applicationId },
+      });
+    }
   },
 });

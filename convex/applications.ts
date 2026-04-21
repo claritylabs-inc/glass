@@ -8,6 +8,7 @@ import {
 import { requireOrgAccess } from "./lib/orgAuth";
 import { deriveApplicationStatus } from "./lib/applicationDerivation";
 import { internal } from "./_generated/api";
+import { notify } from "./lib/notify";
 
 export const listForClient = query({
   args: { clientOrgId: v.id("organizations") },
@@ -184,6 +185,7 @@ export const send = mutation({
   args: { applicationId: v.id("applications") },
   handler: async (ctx, args) => {
     await assertCanSendApplication(ctx, args.applicationId);
+    const app = await ctx.db.get(args.applicationId);
     await ctx.db.patch(args.applicationId, {
       status: "sent",
       sentAt: Date.now(),
@@ -193,6 +195,19 @@ export const send = mutation({
     await ctx.scheduler.runAfter(0, (internal as any).actions.applicationAuthoring.regroupAndOrder, {
       applicationId: args.applicationId,
     });
+    // Notify client org
+    if (app) {
+      const brokerOrg = await ctx.db.get(app.brokerOrgId);
+      await notify(ctx, {
+        orgId: app.clientOrgId,
+        type: "application_sent_by_broker",
+        title: "New application from your broker",
+        body: `${brokerOrg?.name ?? "Your broker"} sent you an application to complete.`,
+        relatedOrgId: app.brokerOrgId,
+        actionType: "view_application",
+        actionPayload: { applicationId: args.applicationId },
+      });
+    }
   },
 });
 
@@ -223,6 +238,20 @@ export const recomputeStatus = mutation({
     const patch: Record<string, unknown> = { status: derived, updatedAt: now };
     if (derived === "complete") patch.completedAt = now;
     await ctx.db.patch(args.applicationId, patch as any);
+
+    // Notify broker when client completes the application
+    if (derived === "complete") {
+      const clientOrg = await ctx.db.get(app.clientOrgId);
+      await notify(ctx, {
+        orgId: app.brokerOrgId,
+        type: "application_completed_by_client",
+        title: "Application completed",
+        body: `${clientOrg?.name ?? "Your client"} completed their application.`,
+        relatedOrgId: app.clientOrgId,
+        actionType: "view_application",
+        actionPayload: { applicationId: args.applicationId },
+      });
+    }
 
     // Trigger filled PDF generation for template-derived apps on completion
     if (derived === "complete" && app.sourceTemplateId) {
