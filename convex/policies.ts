@@ -2,6 +2,12 @@ import { v } from "convex/values";
 import { mutation, query, internalQuery, internalMutation } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import { requireOrgAccess, getOrgAccess } from "./lib/orgAuth";
+import {
+  requireBrokerAccessToClient,
+  assertCanUploadPolicy,
+  assertCanDeletePolicy,
+  assertCanReadPolicy,
+} from "./lib/access";
 import { recordBrokerActivity } from "./lib/brokerActivity";
 import type { Id as DataModelId } from "./_generated/dataModel";
 
@@ -689,6 +695,102 @@ export const generateUploadUrl = mutation({
   },
 });
 
+// Broker uploads a policy or quote on behalf of a client org.
+// Requires broker_of_client access to the clientOrgId.
+export const createBrokerUpload = mutation({
+  args: {
+    clientOrgId: v.id("organizations"),
+    fileId: v.id("_storage"),
+    fileName: v.optional(v.string()),
+    documentType: v.union(v.literal("policy"), v.literal("quote")),
+    note: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const access = await requireBrokerAccessToClient(ctx, args.clientOrgId);
+    assertCanUploadPolicy(access);
+
+    const policyId = await ctx.db.insert("policies", {
+      orgId: args.clientOrgId,
+      fileId: args.fileId,
+      fileName: args.fileName,
+      documentType: args.documentType,
+      carrier: "Extracting...",
+      policyNumber: "Extracting...",
+      policyTypes: ["other"],
+      policyYear: new Date().getFullYear(),
+      effectiveDate: "Extracting...",
+      expirationDate: "Extracting...",
+      isRenewal: false,
+      coverages: [],
+      insuredName: "Extracting...",
+      extractionStatus: "pending",
+      uploadedBySide: "broker",
+      uploadedByUserId: access.userId,
+      uploadedByBrokerOrgId: access.brokerOrgId,
+    });
+
+    // Emit broker-activity event for upload
+    await recordBrokerActivity(ctx, {
+      brokerOrgId: access.brokerOrgId,
+      clientOrgId: args.clientOrgId,
+      type: args.documentType === "quote" ? "policy_uploaded" : "policy_uploaded",
+      actorUserId: access.userId,
+      actorSide: "broker",
+      payload: {
+        policyId,
+        documentType: args.documentType,
+        uploadedBySide: "broker",
+      },
+      summary: `Broker uploaded a ${args.documentType} on behalf of client`,
+    });
+
+    return policyId;
+  },
+});
+
+// Broker queries all policies for a client org they manage.
+export const listForBroker = query({
+  args: {
+    clientOrgId: v.id("organizations"),
+    documentType: v.optional(v.union(v.literal("policy"), v.literal("quote"))),
+  },
+  handler: async (ctx, args) => {
+    const access = await requireBrokerAccessToClient(ctx, args.clientOrgId);
+    assertCanReadPolicy(access);
+    const all = await ctx.db
+      .query("policies")
+      .withIndex("by_orgId", (idx) => idx.eq("orgId", args.clientOrgId))
+      .collect();
+    return all.filter(
+      (p) =>
+        !p.deletedAt &&
+        (!args.documentType || p.documentType === args.documentType),
+    );
+  },
+});
+
+// Client queries their own policies (explicit about side).
+export const listForClient = query({
+  args: {
+    documentType: v.optional(v.union(v.literal("policy"), v.literal("quote"))),
+  },
+  handler: async (ctx, args) => {
+    const access = await getOrgAccess(ctx);
+    if (!access) return [];
+    const { orgId } = access;
+    const all = await ctx.db
+      .query("policies")
+      .withIndex("by_orgId", (idx) => idx.eq("orgId", orgId))
+      .collect();
+    return all.filter(
+      (p) =>
+        p.extractionStatus !== "not_insurance" &&
+        !p.deletedAt &&
+        (!args.documentType || p.documentType === args.documentType),
+    );
+  },
+});
+
 export const dismiss = mutation({
   args: {
     id: v.id("policies"),
@@ -837,6 +939,25 @@ export const softDelete = mutation({
     const { userId, orgId } = await requireOrgAccess(ctx);
     const policy = await ctx.db.get(args.id);
     if (!policy || policy.orgId !== orgId) throw new Error("Not found");
+    // Capability check: broker_of_client users can only delete their own uploads
+    const membership = await ctx.db
+      .query("orgMemberships")
+      .withIndex("by_orgId_userId", (q) => q.eq("orgId", orgId).eq("userId", userId))
+      .first();
+    if (!membership && policy.orgId) {
+      // Broker-of-client path: check ownership
+      assertCanDeletePolicy(
+        {
+          accessType: "broker_of_client",
+          userId,
+          org: { _id: orgId } as any,
+          orgType: "client",
+          role: undefined,
+          brokerOrgId: policy.uploadedByBrokerOrgId,
+        },
+        policy,
+      );
+    }
     await ctx.db.patch(args.id, { deletedAt: Date.now() });
     await ctx.db.insert("policyAuditLog", {
       policyId: args.id,
