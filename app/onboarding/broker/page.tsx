@@ -548,6 +548,10 @@ export default function BrokerOnboardingPage() {
                 const previewMuted = brandingMode === "dark" ? "#94A3B8" : "#64748B";
                 const previewSurface = brandingMode === "dark" ? "#111827" : "#FFFFFF";
                 const previewBorder = brandingMode === "dark" ? "#1F2937" : "#E5E7EB";
+                const previewDomain = extractDomain(website);
+                const faviconUrl = previewDomain
+                  ? `https://www.google.com/s2/favicons?domain=${encodeURIComponent(previewDomain)}&sz=64`
+                  : null;
 
                 return (
                   <div className="rounded-xl border border-foreground/8 bg-popover/60 p-5 space-y-5">
@@ -568,9 +572,21 @@ export default function BrokerOnboardingPage() {
                         style={{ backgroundColor: previewSurface, border: `1px solid ${previewBorder}` }}
                       >
                         <div
-                          className="h-8 w-8 rounded-md shrink-0"
-                          style={{ backgroundColor: brandingColor }}
-                        />
+                          className="h-8 w-8 rounded-md shrink-0 overflow-hidden flex items-center justify-center"
+                          style={{ backgroundColor: faviconUrl ? "#FFFFFF" : brandingColor }}
+                        >
+                          {faviconUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={faviconUrl}
+                              alt=""
+                              className="h-full w-full object-contain"
+                              onError={(e) => {
+                                (e.currentTarget as HTMLImageElement).style.display = "none";
+                              }}
+                            />
+                          ) : null}
+                        </div>
                         <div className="min-w-0 flex-1">
                           <div className="text-sm font-medium truncate" style={{ color: previewFg }}>
                             {agentDisplayName.trim() || orgName.trim() || "Your brokerage"}
