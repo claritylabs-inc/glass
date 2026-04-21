@@ -469,3 +469,16 @@ export const resetForRetry = internalMutation({
     });
   },
 });
+
+export const listForOrg = query({
+  args: { orgId: v.id("organizations") },
+  handler: async (ctx, args) => {
+    const access = await getOrgAccess(ctx);
+    if (!access) return [];
+    return ctx.db
+      .query("applicationSessions")
+      .withIndex("by_orgId", (q) => q.eq("orgId", args.orgId))
+      .order("desc")
+      .take(100);
+  },
+});

@@ -1003,3 +1003,17 @@ export const remove = mutation({
     await ctx.db.delete(args.id);
   },
 });
+
+export const listForOrg = query({
+  args: { orgId: v.id("organizations") },
+  handler: async (ctx, args) => {
+    const access = await getOrgAccess(ctx);
+    if (!access) return [];
+    return ctx.db
+      .query("policies")
+      .withIndex("by_orgId", (idx) => idx.eq("orgId", args.orgId))
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
+      .order("desc")
+      .take(100);
+  },
+});

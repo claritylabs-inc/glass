@@ -331,3 +331,20 @@ export const removeLegacyTags = mutation({
     return { updated };
   },
 });
+
+/** Broker-filtered view: drops source="email" and source="chat" per the access model. */
+export const listForBroker = query({
+  args: { orgId: v.id("organizations") },
+  handler: async (ctx, args) => {
+    const access = await getOrgAccess(ctx);
+    if (!access) return [];
+    const entries = await ctx.db
+      .query("orgIntelligence")
+      .withIndex("by_orgId", (q) => q.eq("orgId", args.orgId))
+      .order("desc")
+      .take(200);
+    return entries.filter(
+      (e) => e.source !== "email" && e.source !== "chat",
+    );
+  },
+});
