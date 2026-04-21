@@ -33,7 +33,7 @@ OPERATIONS (in priority order):
    - Duplicates or near-duplicates (keep the more specific/recent one)
    - Low-value noise: receipts, individual transactions, routine vendor mentions, spam
    - Generic industry commentary not specific to THIS organization
-   - Descriptions of the software/platform itself (e.g. "Prism is an AI-native system...")
+   - Descriptions of the software/platform itself (e.g. "Glass is an AI-native system...")
    - Outdated facts superseded by newer entries with as-of dates
    - Insurance coverage details (limits, deductibles, policy terms, coverage lines) — these belong in policy extraction, not org intelligence. DELETE them.
 
