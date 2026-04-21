@@ -980,6 +980,7 @@ export default defineSchema({
     orgId: v.id("organizations"),
     userId: v.optional(v.id("users")), // null = org-wide
     type: v.union(
+      // Existing prism types
       v.literal("merge_suggestion"),
       v.literal("coverage_gap"),
       v.literal("renewal_reminder"),
@@ -994,6 +995,23 @@ export default defineSchema({
       v.literal("stale_data"),
       v.literal("premium_anomaly"),
       v.literal("dream_insight"),
+      // Broker-targeted (new)
+      v.literal("client_invitation_accepted"),
+      v.literal("client_onboarding_completed"),
+      v.literal("application_submitted_by_client"),
+      v.literal("application_completed_by_client"),
+      v.literal("client_document_uploaded"),
+      v.literal("integration_disconnected_for_client"),
+      v.literal("integration_request_fulfilled"),
+      v.literal("passport_flag_resolved_by_client"),
+      // Client-targeted (new)
+      v.literal("application_sent_by_broker"),
+      v.literal("application_section_returned_by_broker"),
+      v.literal("application_accepted_by_broker"),
+      v.literal("passport_flag_raised_by_broker"),
+      v.literal("integration_requested_by_broker"),
+      v.literal("policy_delivered_by_broker"),
+      v.literal("quote_delivered_by_broker"),
     ),
     title: v.string(),
     body: v.string(),
@@ -1009,11 +1027,38 @@ export default defineSchema({
     sourceRef: v.optional(v.any()), // what generated this: policyId, emailId, etc.
     createdAt: v.number(),
     expiresAt: v.optional(v.number()), // auto-dismiss after this date
+    // Cross-org context
+    relatedOrgId: v.optional(v.id("organizations")),
+    // Coalesce fields
+    coalesceKey: v.optional(v.string()),
+    coalescedCount: v.optional(v.number()),
+    lastEventAt: v.optional(v.number()),
+    // Email delivery
+    emailStatus: v.optional(v.union(
+      v.literal("not_scheduled"),
+      v.literal("scheduled"),
+      v.literal("sent"),
+      v.literal("suppressed_by_preference"),
+      v.literal("failed"),
+    )),
+    emailSentAt: v.optional(v.number()),
   })
     .index("by_orgId", ["orgId"])
     .index("by_orgId_status", ["orgId", "status"])
     .index("by_orgId_type", ["orgId", "type"])
-    .index("by_userId", ["userId"]),
+    .index("by_userId", ["userId"])
+    .index("by_orgId_coalesceKey_status", ["orgId", "coalesceKey", "status"]),
+
+  notificationPreferences: defineTable({
+    userId: v.id("users"),
+    orgId: v.id("organizations"),
+    type: v.string(),    // matches notifications.type or "__all__"
+    channel: v.union(v.literal("in_app"), v.literal("email")),
+    enabled: v.boolean(),
+    updatedAt: v.number(),
+  })
+    .index("by_userId_orgId", ["userId", "orgId"])
+    .index("by_userId_orgId_type_channel", ["userId", "orgId", "type", "channel"]),
 
   // ── Client Passport (ACORD 125) ──
 
