@@ -1,6 +1,14 @@
 import { v } from "convex/values";
-import { query, internalMutation } from "./_generated/server";
+import { internalQuery, query, internalMutation } from "./_generated/server";
 import { requireOrgAccess } from "./lib/orgAuth";
+
+// Internal query for use by actions that need the full intent catalogue.
+export const listAll = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    return await ctx.db.query("questionIntents").collect();
+  },
+});
 
 export const search = query({
   args: {

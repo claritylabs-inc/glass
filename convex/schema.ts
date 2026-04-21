@@ -267,7 +267,7 @@ export default defineSchema({
     createdByUserId: v.id("users"),
     assignedProducerId: v.optional(v.id("users")),
     sourceTemplateId: v.optional(v.id("applicationTemplates")),
-    creationPath: v.union(v.literal("custom"), v.literal("ai"), v.literal("template")),
+    creationPath: v.union(v.literal("custom"), v.literal("ai"), v.literal("template"), v.literal("extracted_pdf")),
     title: v.string(),
     lineOfBusiness: v.optional(v.string()),
     aiGenerationPrompt: v.optional(v.string()),
