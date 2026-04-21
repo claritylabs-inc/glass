@@ -1,0 +1,33 @@
+"use client";
+
+import { useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
+import { useCurrentOrg } from "@/hooks/use-current-org";
+import { AppShell } from "@/components/app-shell";
+import { ActivityFeed, type ActivityEvent } from "@/components/activity-feed";
+
+export default function PortfolioActivityPage() {
+  const currentOrg = useCurrentOrg();
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const events = useQuery(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (api as any).brokerActivity.listPortfolio,
+    currentOrg?.isBroker
+      ? { brokerOrgId: currentOrg.orgId as Id<"organizations"> }
+      : "skip",
+  );
+
+  return (
+    <AppShell breadcrumbDetail="Activity">
+      <div className="space-y-4">
+        <h2 className="text-lg font-semibold">Portfolio Activity</h2>
+        <ActivityFeed
+          events={events as ActivityEvent[] | undefined}
+          showClientColumn={true}
+        />
+      </div>
+    </AppShell>
+  );
+}
