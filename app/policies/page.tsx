@@ -1,49 +1,39 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { AppShell } from "@/components/app-shell";
-import { PolicyTable } from "@/components/policy-table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { DocumentUploadEmptyState } from "@/components/document-upload-empty-state";
+import { Button } from "@/components/ui/button";
+import { PolicyListItem } from "@/components/policy-list-item";
+import { PolicyUploadDrawer } from "@/components/policy-upload-drawer";
 import { toast } from "sonner";
-import { toastUploadStarted, toastUploadFailed } from "@/lib/upload-toast";
-import { usePathname, useRouter } from "next/navigation";
-import dayjs from "dayjs";
-import customParseFormat from "dayjs/plugin/customParseFormat";
+import { Upload } from "lucide-react";
 
-dayjs.extend(customParseFormat);
-
-function parseDate(dateStr: string | undefined) {
-  if (!dateStr || dateStr === "Unknown") return null;
-  const d = dayjs(dateStr, "MM/DD/YYYY");
-  return d.isValid() ? d : null;
-}
-
-const TABS = [
-  { id: "active", label: "Active" },
-  { id: "expired", label: "Expired" },
+const DOC_TYPE_TABS = [
+  { id: "policy", label: "Policies" },
+  { id: "quote", label: "Quotes" },
 ] as const;
 
-type TabId = (typeof TABS)[number]["id"];
+type DocTypeTab = (typeof DOC_TYPE_TABS)[number]["id"];
 
 function PoliciesLoadingSkeleton() {
   return (
-    <div>
+    <div className="space-y-2">
       <div className="flex items-center gap-1 mb-4">
-        <Skeleton className="h-7 w-16 rounded-full" />
+        <Skeleton className="h-7 w-20 rounded-full" />
         <Skeleton className="h-7 w-16 rounded-full" />
       </div>
       <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} className="flex items-center justify-between px-4 py-3 border-t border-foreground/4 first:border-t-0">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <div
+            key={i}
+            className="flex items-center justify-between px-4 py-3 border-t border-foreground/4 first:border-t-0"
+          >
             <div className="space-y-1.5">
-              <div className="flex items-center gap-2">
-                <Skeleton className="h-4 w-32" />
-                <Skeleton className="h-5 w-20 rounded-full" />
-              </div>
+              <Skeleton className="h-4 w-36" />
               <Skeleton className="h-3 w-24" />
             </div>
             <Skeleton className="h-4 w-24 hidden sm:block" />
@@ -54,105 +44,108 @@ function PoliciesLoadingSkeleton() {
   );
 }
 
-function PoliciesEmptyState() {
-  const generateUploadUrl = useMutation(api.policies.generateUploadUrl);
-  const extractFromUpload = useAction(api.actions.extractFromUpload.extractFromUpload);
+export default function PoliciesPage() {
+  const [docTypeTab, setDocTypeTab] = useState<DocTypeTab>("policy");
+  const [uploaderOpen, setUploaderOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const router = useRouter();
-  const pathname = usePathname();
 
-  const uploadPolicy = useCallback(async (file: File) => {
-    if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
-      toast.error("Please upload a PDF policy document.");
-      return;
-    }
+  const policies = useQuery((api as any).policies.listForClient, {
+    documentType: docTypeTab,
+  });
 
-    setUploading(true);
-    try {
-      const uploadUrl = await generateUploadUrl();
-      const uploadRes = await fetch(uploadUrl, {
-        method: "POST",
-        headers: { "Content-Type": file.type || "application/pdf" },
-        body: file,
-      });
+  const generateUploadUrl = useMutation(api.policies.generateUploadUrl);
+  const extractFromUpload = useAction(
+    api.actions.extractFromUpload.extractFromUpload,
+  );
 
-      if (!uploadRes.ok) throw new Error("Failed to upload file");
-      const { storageId } = await uploadRes.json();
-
-      const result = await extractFromUpload({
-        fileId: storageId,
-        fileName: file.name,
-      });
-
-      if ((result as Record<string, unknown>)?.error) {
-        toastUploadFailed("policy", (result as Record<string, unknown>).error as string);
+  const handleUpload = useCallback(
+    async (file: File, documentType: "policy" | "quote" | "application") => {
+      if (documentType === "application") {
+        toast.info("Application uploads are handled by your broker.");
         return;
       }
-
-      toastUploadStarted("policy");
-      router.replace(`${pathname}?refresh=${Date.now()}`);
-    } catch {
-      toastUploadFailed("policy", "Upload failed. Please try again.");
-    } finally {
-      setUploading(false);
-    }
-  }, [extractFromUpload, generateUploadUrl, pathname, router]);
-
-  return <DocumentUploadEmptyState kind="policy" uploading={uploading} onUpload={uploadPolicy} />;
-}
-
-export default function PoliciesPage() {
-  const policies = useQuery(api.policies.list, {});
-  const [activeTab, setActiveTab] = useState<TabId>("active");
-
-  const today = dayjs();
-
-  const { activePolicies, expiredPolicies } = useMemo(() => {
-    if (!policies) return { activePolicies: undefined, expiredPolicies: undefined };
-    const nonQuotes = policies.filter((p: Record<string, unknown>) => p.documentType !== "quote");
-    const active = nonQuotes.filter((p: Record<string, unknown>) => {
-      const exp = parseDate(p.expirationDate as string | undefined);
-      if (!exp) return true;
-      return !exp.isBefore(today, "day");
-    });
-    const expired = nonQuotes.filter((p: Record<string, unknown>) => {
-      const exp = parseDate(p.expirationDate as string | undefined);
-      if (!exp) return false;
-      return exp.isBefore(today, "day");
-    });
-    return { activePolicies: active, expiredPolicies: expired };
-  }, [policies, today]);
+      setUploading(true);
+      try {
+        const uploadUrl = await generateUploadUrl();
+        const res = await fetch(uploadUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/pdf" },
+          body: file,
+        });
+        if (!res.ok) throw new Error("Upload failed");
+        const { storageId } = await res.json();
+        await extractFromUpload({ fileId: storageId, fileName: file.name });
+        toast.success("Upload started — processing in background.");
+        setUploaderOpen(false);
+      } catch (err) {
+        toast.error("Upload failed. Please try again.");
+        console.error(err);
+      } finally {
+        setUploading(false);
+      }
+    },
+    [generateUploadUrl, extractFromUpload],
+  );
 
   const isLoading = policies === undefined;
-  const displayPolicies = activeTab === "active" ? activePolicies : expiredPolicies;
-  const hasAnyPolicies = (activePolicies?.length ?? 0) + (expiredPolicies?.length ?? 0) > 0;
-  const tablePolicies = displayPolicies as unknown as Parameters<typeof PolicyTable>[0]["policies"];
 
   return (
     <AppShell>
-      {isLoading ? (
-        <PoliciesLoadingSkeleton />
-      ) : (
-        <Tabs
-          value={activeTab}
-          onValueChange={(value) => setActiveTab(value as TabId)}
-          className="mb-4"
-        >
-          <TabsList variant="pill">
-            {TABS.map((tab) => (
-              <TabsTrigger key={tab.id} value={tab.id}>
-                {tab.label}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
-      )}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <Tabs
+            value={docTypeTab}
+            onValueChange={(v) => setDocTypeTab(v as DocTypeTab)}
+          >
+            <TabsList variant="pill">
+              {DOC_TYPE_TABS.map((tab) => (
+                <TabsTrigger key={tab.id} value={tab.id}>
+                  {tab.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setUploaderOpen(true)}
+          >
+            <Upload className="h-4 w-4 mr-2" />
+            Upload
+          </Button>
+        </div>
 
-      {!isLoading && !hasAnyPolicies ? (
-        <PoliciesEmptyState />
-      ) : (
-        <PolicyTable policies={tablePolicies} />
-      )}
+        {isLoading ? (
+          <PoliciesLoadingSkeleton />
+        ) : (policies as any[]).length === 0 ? (
+          <div className="py-16 text-center">
+            <p className="text-sm text-muted-foreground/60">
+              No {docTypeTab === "quote" ? "quotes" : "policies"} yet.
+            </p>
+          </div>
+        ) : (
+          <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
+            {(policies as any[]).map((p: any) => (
+              <PolicyListItem
+                key={p._id}
+                carrier={p.carrier}
+                policyNumber={p.policyNumber}
+                effectiveDate={p.effectiveDate}
+                expirationDate={p.expirationDate}
+                extractionStatus={p.extractionStatus}
+                uploadedBySide={p.uploadedBySide}
+              />
+            ))}
+          </div>
+        )}
+
+        <PolicyUploadDrawer
+          open={uploaderOpen}
+          onClose={() => setUploaderOpen(false)}
+          onUpload={handleUpload}
+          uploading={uploading}
+        />
+      </div>
     </AppShell>
   );
 }
