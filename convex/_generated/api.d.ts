@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as actions_addFileToPolicy from "../actions/addFileToPolicy.js";
 import type * as actions_backfillChunks from "../actions/backfillChunks.js";
 import type * as actions_classifyEmails from "../actions/classifyEmails.js";
 import type * as actions_dailyScan from "../actions/dailyScan.js";
@@ -104,6 +105,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  "actions/addFileToPolicy": typeof actions_addFileToPolicy;
   "actions/backfillChunks": typeof actions_backfillChunks;
   "actions/classifyEmails": typeof actions_classifyEmails;
   "actions/dailyScan": typeof actions_dailyScan;

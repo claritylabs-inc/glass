@@ -1,15 +1,14 @@
 "use client";
 
-import { use, useState, useRef, useEffect } from "react";
+import { use, useState, useRef, useEffect, useCallback } from "react";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
 import { FadeIn } from "@/components/ui/fade-in";
+import { FileDropZone } from "@/components/ui/file-drop";
 import {
-  Upload,
   Loader2,
-  RefreshCw,
   RotateCw,
   Trash2,
   Eye,
@@ -214,6 +213,45 @@ function PolicyFilesTab({ policyId, policy }: { policyId: string; policy: any })
     policy?.fileId ? { fileId: policy.fileId as Id<"_storage"> } : "skip",
   );
 
+  const generateUploadUrl = useMutation(api.policies.generateUploadUrl);
+  const addFileToPolicy = useAction(api.actions.addFileToPolicy.addFileToPolicy);
+  const [uploading, setUploading] = useState(false);
+
+  const handleUpload = useCallback(
+    async (file: File) => {
+      if (!file.name.toLowerCase().endsWith(".pdf") && file.type !== "application/pdf") {
+        toast.error("Please upload a PDF file.");
+        return;
+      }
+      setUploading(true);
+      try {
+        const url = await generateUploadUrl();
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": file.type || "application/pdf" },
+          body: file,
+        });
+        if (!res.ok) throw new Error("Upload failed");
+        const { storageId } = await res.json();
+        const result = await addFileToPolicy({
+          policyId: policyId as Id<"policies">,
+          fileId: storageId,
+          fileName: file.name,
+        });
+        if ((result as Record<string, unknown>)?.error) {
+          toast.error((result as Record<string, unknown>).error as string);
+        } else {
+          toast.success(`${file.name} added to policy`);
+        }
+      } catch {
+        toast.error("Upload failed. Please try again.");
+      } finally {
+        setUploading(false);
+      }
+    },
+    [addFileToPolicy, generateUploadUrl, policyId],
+  );
+
   // Build file URL queries — we query up to the first 8 files individually
   const file0Url = useQuery(
     api.policies.getFileUrl,
@@ -250,18 +288,39 @@ function PolicyFilesTab({ policyId, policy }: { policyId: string; policy: any })
 
   const urlsByIndex = [file0Url, file1Url, file2Url, file3Url, file4Url, file5Url, file6Url, file7Url];
 
+  const uploadCard = (
+    <div className="rounded-lg border border-foreground/6 bg-card p-4">
+      <div className="mb-3">
+        <p className="text-body-sm font-medium text-foreground">Add supplemental files</p>
+        <p className="text-label-sm text-muted-foreground mt-1">
+          Upload additional pages, endorsements, schedules, or sections of this policy.
+        </p>
+      </div>
+      <FileDropZone
+        disabled={uploading}
+        onFile={handleUpload}
+        idleLabel="Drag and drop a PDF"
+        activeLabel="Drop PDF to upload"
+        busyLabel="Uploading..."
+      />
+    </div>
+  );
+
   if (policyFiles === undefined) {
     return (
-      <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
-        {Array.from({ length: 3 }).map((_, i) => (
-          <div key={i} className="px-4 py-3 border-b border-foreground/[0.04] last:border-0 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <div className="h-3.5 w-36 bg-foreground/5 rounded animate-pulse" />
-              <div className="h-5 w-20 bg-foreground/5 rounded-full animate-pulse" />
+      <div className="space-y-4">
+        <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="px-4 py-3 border-b border-foreground/[0.04] last:border-0 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <div className="h-3.5 w-36 bg-foreground/5 rounded animate-pulse" />
+                <div className="h-5 w-20 bg-foreground/5 rounded-full animate-pulse" />
+              </div>
+              <div className="h-5 w-16 bg-foreground/5 rounded animate-pulse" />
             </div>
-            <div className="h-5 w-16 bg-foreground/5 rounded animate-pulse" />
-          </div>
-        ))}
+          ))}
+        </div>
+        {uploadCard}
       </div>
     );
   }
@@ -271,36 +330,40 @@ function PolicyFilesTab({ policyId, policy }: { policyId: string; policy: any })
     const legacyFileId = (policy as any).fileId;
     const legacyFileName = (policy as any).fileName ?? "Attached file";
     return (
-      legacyFileId ? (
-        <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
-          <div className="flex items-center justify-between gap-3 px-4 py-3">
-            <div className="flex items-center gap-2 min-w-0">
-              <FileText className="w-3.5 h-3.5 text-muted-foreground/30 shrink-0" />
-              <p className="text-body-sm text-foreground truncate">{legacyFileName}</p>
-              <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-label-sm font-medium shrink-0 ${FILE_TYPE_COLORS.unknown}`}>
-                {FILE_TYPE_LABELS.unknown}
-              </span>
+      <div className="space-y-4">
+        {legacyFileId ? (
+          <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
+            <div className="flex items-center justify-between gap-3 px-4 py-3">
+              <div className="flex items-center gap-2 min-w-0">
+                <FileText className="w-3.5 h-3.5 text-muted-foreground/30 shrink-0" />
+                <p className="text-body-sm text-foreground truncate">{legacyFileName}</p>
+                <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-label-sm font-medium shrink-0 ${FILE_TYPE_COLORS.unknown}`}>
+                  {FILE_TYPE_LABELS.unknown}
+                </span>
+              </div>
+              {legacyFileUrl && (
+                <PillButton
+                  variant="secondary"
+                  size="compact"
+                  onClick={() => openWithUrl(legacyFileUrl)}
+                >
+                  View
+                </PillButton>
+              )}
             </div>
-            {legacyFileUrl && (
-              <PillButton
-                variant="secondary"
-                size="compact"
-                onClick={() => openWithUrl(legacyFileUrl)}
-              >
-                View
-              </PillButton>
-            )}
           </div>
-        </div>
-      ) : (
-        <div className="rounded-lg border border-foreground/6 bg-card px-4 py-3 text-body-sm text-muted-foreground/60">
-          No files attached to this policy yet.
-        </div>
-      )
+        ) : (
+          <div className="rounded-lg border border-foreground/6 bg-card px-4 py-3 text-body-sm text-muted-foreground/60">
+            No files attached to this policy yet.
+          </div>
+        )}
+        {uploadCard}
+      </div>
     );
   }
 
   return (
+    <div className="space-y-4">
     <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
       {policyFiles.map((file, i) => {
         const url = urlsByIndex[i];
@@ -336,10 +399,12 @@ function PolicyFilesTab({ policyId, policy }: { policyId: string; policy: any })
         );
       })}
     </div>
+      {uploadCard}
+    </div>
   );
 }
 
-// ─── ViewPdfButton ────────────────────────────────────────────────────────────
+// ─── ViewPdfButton────────────────────────────────────────────────────────────
 
 function ViewPdfButton({ url }: { url?: string | null }) {
   const { isPdfOpen, togglePdf, openWithUrl } = usePdf();
@@ -374,8 +439,6 @@ export default function PolicyDetailPage({
 
   const softDelete = useMutation(api.policies.softDelete);
   const restorePolicy = useMutation(api.policies.restore);
-  const generateUploadUrl = useMutation(api.policies.generateUploadUrl);
-  const reExtract = useAction(api.actions.reExtractFromFile.reExtractFromFile);
   const retryExtraction = useAction(api.actions.retryExtraction.retryExtraction);
   const rechunk = useAction(api.actions.rechunkPolicy.rechunk);
 
@@ -387,9 +450,7 @@ export default function PolicyDetailPage({
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showRefreshDialog, setShowRefreshDialog] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [uploading, setUploading] = useState(false);
   const [demoBannerDismissed, setDemoBannerDismissed] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const [activeTab, setActiveTab] = useState<
     "details" | "files" | "activity" | "extraction"
   >("details");
@@ -482,29 +543,6 @@ export default function PolicyDetailPage({
 
   // ── Handlers ────────────────────────────────────────────────────────────────
 
-  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploading(true);
-    try {
-      const url = await generateUploadUrl();
-      const result = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": file.type },
-        body: file,
-      });
-      const { storageId } = await result.json();
-      await reExtract({ policyId: policy._id, fileId: storageId });
-      toast.success("PDF uploaded, re-extracting...");
-    } catch (err) {
-      console.error("Upload failed:", err);
-      toast.error("Upload failed");
-    } finally {
-      setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    }
-  };
-
   const handleDelete = async () => {
     setDeleting(true);
     try {
@@ -562,13 +600,6 @@ export default function PolicyDetailPage({
 
   const headerActions = (
     <>
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept=".pdf"
-        onChange={handleUpload}
-        className="hidden"
-      />
       {!isDeleted && (
         <PillButton
           size="compact"
@@ -594,19 +625,6 @@ export default function PolicyDetailPage({
           )}
         </PillButton>
       )}
-      <PillButton
-        size="compact"
-        variant="icon"
-        label="Upload"
-        onClick={() => fileInputRef.current?.click()}
-        disabled={uploading}
-      >
-        {uploading ? (
-          <Loader2 className="w-4 h-4 animate-spin" />
-        ) : (
-          <Upload className="w-4 h-4" />
-        )}
-      </PillButton>
       <ViewPdfButton url={fileUrl} />
     </>
   );
