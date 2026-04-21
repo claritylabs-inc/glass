@@ -1189,4 +1189,398 @@ http.route({
   }),
 });
 
+// ── REST API v1 helpers ──
+
+function extractBearerToken(request: Request): string {
+  const auth = request.headers.get("Authorization") ?? "";
+  if (!auth.startsWith("Bearer ")) return "";
+  return auth.slice(7);
+}
+
+async function requireApiAuth(
+  ctx: { runQuery: (...args: any[]) => Promise<any>; runMutation: (...args: any[]) => Promise<any> },
+  request: Request,
+): Promise<{ userId: Id<"users">; orgId: Id<"organizations">; scopes: ("read" | "write")[]; tokenId: Id<"oauthTokens">; requestId: string }> {
+  const requestId = crypto.randomUUID();
+  const rawToken = extractBearerToken(request);
+  if (!rawToken) {
+    throw jsonResponse({ error: { code: "unauthorized", message: "Missing bearer token", request_id: requestId } }, 401);
+  }
+  const orgIdHeader = request.headers.get("x-org-id") ?? request.headers.get("X-Org-Id") ?? "";
+
+  // API key path
+  if (rawToken.startsWith("prism_") || rawToken.startsWith("glass_")) {
+    const keyHash = await sha256Hex(rawToken);
+    const result = await ctx.runQuery(internal.apiKeys.validateKey, { keyHash });
+    if (!result) {
+      throw jsonResponse({ error: { code: "unauthorized", message: "Invalid or revoked API key", request_id: requestId } }, 401);
+    }
+    await ctx.runMutation(internal.apiKeys.touchLastUsed, { id: result.keyId });
+    // Find a token record for audit log — skip rate limit for API keys, use a sentinel
+    return {
+      userId: result.userId as Id<"users">,
+      orgId: (orgIdHeader || result.orgId) as Id<"organizations">,
+      scopes: ["read", "write"],
+      tokenId: "sentinel" as Id<"oauthTokens">,
+      requestId,
+    };
+  }
+
+  // OAuth path
+  const tokenHash = await sha256Hex(rawToken);
+  const tokenData = await ctx.runQuery(
+    (internal as any).oauth.validateAccessTokenWithScopes,
+    { tokenHash },
+  );
+  if (!tokenData) {
+    throw jsonResponse({ error: { code: "unauthorized", message: "Invalid or expired token", request_id: requestId } }, 401);
+  }
+
+  const orgId = (orgIdHeader || tokenData.orgId) as Id<"organizations">;
+
+  return {
+    userId: tokenData.userId as Id<"users">,
+    orgId,
+    scopes: tokenData.scopes ?? ["read"],
+    tokenId: tokenData.tokenId as Id<"oauthTokens">,
+    requestId,
+  };
+}
+
+// ── Task 7: GET /api/v1/me ──
+http.route({
+  path: "/api/v1/me",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const identity = await requireApiAuth(ctx, request);
+      const user = await ctx.runQuery(internal.users.getInternal, { id: identity.userId });
+      const orgs = await ctx.runQuery((internal as any).orgs.getOrgsByUserId, { userId: identity.userId }).catch(() => null);
+      return jsonResponse({
+        user: { id: identity.userId, name: user?.name, email: user?.email },
+        accessible_orgs: Array.isArray(orgs) ? orgs.map((o: any) => ({ id: o._id, name: o.name, created_at: o._creationTime, industry: o.industry })) : [],
+      });
+    } catch (e) {
+      if (e instanceof Response) return e;
+      return jsonResponse({ error: { code: "internal_error", message: String(e) } }, 500);
+    }
+  }),
+});
+
+// ── GET /api/v1/org ──
+http.route({
+  path: "/api/v1/org",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const identity = await requireApiAuth(ctx, request);
+      const org = await ctx.runQuery(internal.orgs.getInternal, { id: identity.orgId });
+      if (!org) return jsonResponse({ error: { code: "not_found", message: "Org not found" } }, 404);
+      return jsonResponse({ id: org._id, name: org.name, created_at: org._creationTime, industry: org.industry });
+    } catch (e) {
+      if (e instanceof Response) return e;
+      return jsonResponse({ error: { code: "internal_error", message: String(e) } }, 500);
+    }
+  }),
+});
+
+// ── Task 8: GET /api/v1/clients ──
+http.route({
+  path: "/api/v1/clients",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const identity = await requireApiAuth(ctx, request);
+      const result = await ctx.runQuery((internal as any).clients.listForBroker, { brokerOrgId: identity.orgId });
+      const data = Array.isArray(result) ? result : (result?.clients ?? []);
+      return jsonResponse({ data, next_cursor: result?.nextCursor });
+    } catch (e) {
+      if (e instanceof Response) return e;
+      return jsonResponse({ error: { code: "internal_error", message: String(e) } }, 500);
+    }
+  }),
+});
+
+// ── GET /api/v1/clients/:id ──
+http.route({
+  path: "/api/v1/clients/:id",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const identity = await requireApiAuth(ctx, request);
+      const clientOrgId = new URL(request.url).pathname.split("/").pop() as Id<"organizations">;
+      const org = await ctx.runQuery(internal.orgs.getInternal, { id: clientOrgId });
+      if (!org) return jsonResponse({ error: { code: "not_found", message: "Client not found" } }, 404);
+      const policies = await ctx.runQuery(internal.policies.listAllInternal, { orgId: clientOrgId });
+      return jsonResponse({ id: org._id, name: org.name, policy_count: policies.length });
+    } catch (e) {
+      if (e instanceof Response) return e;
+      return jsonResponse({ error: { code: "internal_error", message: String(e) } }, 500);
+    }
+  }),
+});
+
+// ── POST /api/v1/clients/invitations ──
+http.route({
+  path: "/api/v1/clients/invitations",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const identity = await requireApiAuth(ctx, request);
+      if (!identity.scopes.includes("write")) {
+        return jsonResponse({ error: { code: "insufficient_scope", message: "Write scope required", request_id: identity.requestId } }, 403);
+      }
+      const body = await request.json();
+      if (!body.client_email) return jsonResponse({ error: { code: "bad_request", message: "Missing client_email" } }, 400);
+      const result = await ctx.runMutation((internal as any).clientInvitations.insertInvitation, {
+        brokerOrgId: identity.orgId,
+        email: body.client_email,
+        message: body.message,
+      }).catch(() => null);
+      return jsonResponse({ ok: true, result }, 201);
+    } catch (e) {
+      if (e instanceof Response) return e;
+      return jsonResponse({ error: { code: "internal_error", message: String(e) } }, 500);
+    }
+  }),
+});
+
+// ── Task 9: GET /api/v1/passport ──
+http.route({
+  path: "/api/v1/passport",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const identity = await requireApiAuth(ctx, request);
+      const passport = await ctx.runQuery((internal as any).clientPassport.getFull, { orgId: identity.orgId }).catch(() => null);
+      if (!passport) return jsonResponse({ error: { code: "not_found", message: "Passport not found" } }, 404);
+      return jsonResponse({
+        id: passport._id ?? identity.orgId,
+        legal_name: passport.legalName,
+        full_time_employees: passport.fullTimeEmployees,
+        annual_revenue: passport.annualRevenue,
+        created_at: passport._creationTime,
+        updated_at: passport.lastUpdated,
+      });
+    } catch (e) {
+      if (e instanceof Response) return e;
+      return jsonResponse({ error: { code: "internal_error", message: String(e) } }, 500);
+    }
+  }),
+});
+
+// ── PATCH /api/v1/passport ──
+http.route({
+  path: "/api/v1/passport",
+  method: "PATCH",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const identity = await requireApiAuth(ctx, request);
+      if (!identity.scopes.includes("write")) {
+        return jsonResponse({ error: { code: "insufficient_scope", message: "Write scope required", request_id: identity.requestId } }, 403);
+      }
+      const body = await request.json();
+      // Convert snake_case → camelCase
+      const patch: Record<string, any> = {};
+      for (const [k, v] of Object.entries(body)) {
+        if (k === "legal_name") patch.legalName = v;
+        else if (k === "full_time_employees") patch.fullTimeEmployees = v;
+        else if (k === "annual_revenue") patch.annualRevenue = v;
+        else patch[k] = v;
+      }
+      await ctx.runMutation((internal as any).clientPassport.upsertCoreInternal, { orgId: identity.orgId, ...patch });
+      return jsonResponse({ ok: true });
+    } catch (e) {
+      if (e instanceof Response) return e;
+      return jsonResponse({ error: { code: "internal_error", message: String(e) } }, 500);
+    }
+  }),
+});
+
+// ── Task 10: GET /api/v1/applications ──
+http.route({
+  path: "/api/v1/applications",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const identity = await requireApiAuth(ctx, request);
+      const limit = Math.min(parseInt(getQueryParam(request, "limit") ?? "50"), 100);
+      const cursor = getQueryParam(request, "cursor") ?? undefined;
+      const result = await ctx.runQuery((internal as any).applications.listForOrg, {
+        orgId: identity.orgId,
+        userId: identity.userId,
+        cursor,
+        limit,
+      });
+      const data = Array.isArray(result) ? result : (result?.page ?? result?.applications ?? []);
+      const nextCursor = result?.continueCursor ?? result?.nextCursor;
+      return jsonResponse({ data: data.map((a: any) => ({ id: a._id, title: a.title, status: a.status, created_at: a._creationTime })), next_cursor: nextCursor });
+    } catch (e) {
+      if (e instanceof Response) return e;
+      return jsonResponse({ error: { code: "internal_error", message: String(e) } }, 500);
+    }
+  }),
+});
+
+// ── GET /api/v1/applications/:id ──
+http.route({
+  path: "/api/v1/applications/:id",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const identity = await requireApiAuth(ctx, request);
+      const appId = new URL(request.url).pathname.split("/").pop() as Id<"applications">;
+      const app = await ctx.runQuery((internal as any).applications.getInternal, { id: appId }).catch(() => null);
+      if (!app) return jsonResponse({ error: { code: "not_found", message: "Application not found" } }, 404);
+      return jsonResponse({ id: app._id, title: app.title, status: app.status, created_at: app._creationTime });
+    } catch (e) {
+      if (e instanceof Response) return e;
+      return jsonResponse({ error: { code: "internal_error", message: String(e) } }, 500);
+    }
+  }),
+});
+
+// ── Task 11: GET /api/v1/policies ──
+http.route({
+  path: "/api/v1/policies",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const identity = await requireApiAuth(ctx, request);
+      const policies = await ctx.runQuery(internal.policies.listAllInternal, { orgId: identity.orgId });
+      return jsonResponse({
+        data: policies.map((p: any) => ({
+          id: p._id, carrier: p.carrier, policy_number: p.policyNumber,
+          policy_types: p.policyTypes, effective_date: p.effectiveDate,
+          expiration_date: p.expirationDate, premium: p.premium, created_at: p._creationTime,
+        })),
+      });
+    } catch (e) {
+      if (e instanceof Response) return e;
+      return jsonResponse({ error: { code: "internal_error", message: String(e) } }, 500);
+    }
+  }),
+});
+
+// ── GET /api/v1/policies/:id ──
+http.route({
+  path: "/api/v1/policies/:id",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const identity = await requireApiAuth(ctx, request);
+      const policyId = new URL(request.url).pathname.split("/").pop() as Id<"policies">;
+      const policy = await ctx.runQuery((internal as any).policies.getInternal, { id: policyId }).catch(() =>
+        ctx.runQuery(internal.policies.listAllInternal, { orgId: identity.orgId }).then((ps: any[]) => ps.find((p: any) => p._id === policyId))
+      );
+      if (!policy) return jsonResponse({ error: { code: "not_found", message: "Policy not found" } }, 404);
+      return jsonResponse({
+        id: policy._id, carrier: policy.carrier, policy_number: policy.policyNumber,
+        policy_types: policy.policyTypes, effective_date: policy.effectiveDate,
+        expiration_date: policy.expirationDate, premium: policy.premium, created_at: policy._creationTime,
+      });
+    } catch (e) {
+      if (e instanceof Response) return e;
+      return jsonResponse({ error: { code: "internal_error", message: String(e) } }, 500);
+    }
+  }),
+});
+
+// ── GET /api/v1/notifications ──
+http.route({
+  path: "/api/v1/notifications",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const identity = await requireApiAuth(ctx, request);
+      const notifs = await ctx.runQuery((internal as any).notifications.listInternal, {
+        orgId: identity.orgId,
+        userId: identity.userId,
+      }).catch(() => []);
+      return jsonResponse({
+        data: (Array.isArray(notifs) ? notifs : []).map((n: any) => ({
+          id: n._id, type: n.type, message: n.message ?? n.body, read: !!n.read, created_at: n._creationTime,
+        })),
+      });
+    } catch (e) {
+      if (e instanceof Response) return e;
+      return jsonResponse({ error: { code: "internal_error", message: String(e) } }, 500);
+    }
+  }),
+});
+
+// ── GET /api/v1/activity ──
+http.route({
+  path: "/api/v1/activity",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const identity = await requireApiAuth(ctx, request);
+      const result = await ctx.runQuery((internal as any).brokerActivity.listPortfolioInternal, {
+        orgId: identity.orgId,
+        userId: identity.userId,
+      }).catch(() => []);
+      return jsonResponse({ data: Array.isArray(result) ? result : [] });
+    } catch (e) {
+      if (e instanceof Response) return e;
+      return jsonResponse({ error: { code: "internal_error", message: String(e) } }, 500);
+    }
+  }),
+});
+
+// ── Task 13: GET /api/v1/openapi.json ──
+http.route({
+  path: "/api/v1/openapi.json",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const url = new URL(request.url);
+    const baseUrl = url.origin;
+    return jsonResponse({
+      openapi: "3.1.0",
+      info: { title: "Glass API", version: "1.0.0", description: "Glass insurance intelligence platform REST API" },
+      servers: [{ url: baseUrl, description: "Glass API" }],
+      security: [{ bearerAuth: [] }],
+      components: {
+        securitySchemes: {
+          bearerAuth: { type: "http", scheme: "bearer", bearerFormat: "OAuth2" },
+        },
+      },
+      paths: {
+        "/api/v1/me": { get: { tags: ["User"], summary: "Current user + accessible orgs", responses: { "200": { description: "User and org list" } } } },
+        "/api/v1/org": { get: { tags: ["Org"], summary: "Current org detail", responses: { "200": { description: "Org detail" } } } },
+        "/api/v1/clients": { get: { tags: ["Clients"], summary: "List broker clients", responses: { "200": { description: "Paginated client list" } } } },
+        "/api/v1/clients/{id}": { get: { tags: ["Clients"], summary: "Get client detail", responses: { "200": { description: "Client detail" } } } },
+        "/api/v1/clients/invitations": { post: { tags: ["Clients"], summary: "Create client invitation (write)", responses: { "201": { description: "Invitation created" } } } },
+        "/api/v1/passport": {
+          get: { tags: ["Passport"], summary: "Get passport", responses: { "200": { description: "Passport" } } },
+          patch: { tags: ["Passport"], summary: "Update passport (write)", responses: { "200": { description: "Updated" } } },
+        },
+        "/api/v1/applications": { get: { tags: ["Applications"], summary: "List applications", responses: { "200": { description: "Applications" } } } },
+        "/api/v1/applications/{id}": { get: { tags: ["Applications"], summary: "Get application", responses: { "200": { description: "Application" } } } },
+        "/api/v1/policies": { get: { tags: ["Policies"], summary: "List policies", responses: { "200": { description: "Policies" } } } },
+        "/api/v1/policies/{id}": { get: { tags: ["Policies"], summary: "Get policy", responses: { "200": { description: "Policy" } } } },
+        "/api/v1/notifications": { get: { tags: ["Notifications"], summary: "List notifications", responses: { "200": { description: "Notifications" } } } },
+        "/api/v1/activity": { get: { tags: ["Activity"], summary: "Activity feed", responses: { "200": { description: "Activity" } } } },
+      },
+    });
+  }),
+});
+
+// ── GET /.well-known/mcp.json ──
+http.route({
+  path: "/.well-known/mcp.json",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const url = new URL(request.url);
+    return jsonResponse({
+      mcpServers: {
+        glass: {
+          uri: `sse://${url.host}/mcp`,
+          instructions: "Glass is an insurance intelligence platform. Use Glass tools to look up policies, quotes, applications, passport data, and broker-client workflows.",
+        },
+      },
+    });
+  }),
+});
+
 export default http;
