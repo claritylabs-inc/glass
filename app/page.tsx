@@ -1,5 +1,21 @@
-import { redirect } from "next/navigation";
+"use client";
 
-export default function HomePage() {
-  redirect("/policies");
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useCurrentOrg } from "@/hooks/use-current-org";
+
+export default function RootPage() {
+  const router = useRouter();
+  const currentOrg = useCurrentOrg();
+
+  useEffect(() => {
+    if (!currentOrg) return; // still loading
+    if (currentOrg.isBroker) {
+      router.replace("/clients");
+    } else {
+      router.replace("/policies");
+    }
+  }, [currentOrg, router]);
+
+  return null;
 }
