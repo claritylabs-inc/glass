@@ -152,6 +152,28 @@ export const validateAccessToken = internalQuery({
   },
 });
 
+export const validateAccessTokenWithScopes = internalQuery({
+  args: { tokenHash: v.string() },
+  handler: async (ctx, args) => {
+    const token = await ctx.db
+      .query("oauthTokens")
+      .withIndex("by_tokenHash", (q) => q.eq("tokenHash", args.tokenHash))
+      .first();
+
+    if (!token) return null;
+    if (token.revokedAt) return null;
+    if (token.expiresAt < Date.now()) return null;
+
+    return {
+      userId: token.userId,
+      orgId: token.orgId,
+      clientId: token.clientId,
+      tokenId: token._id,
+      scopes: token.scopes ?? (["read"] as ("read" | "write")[]),
+    };
+  },
+});
+
 export const refreshAccessToken = internalMutation({
   args: {
     refreshTokenRaw: v.string(),

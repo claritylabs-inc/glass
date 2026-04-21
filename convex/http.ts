@@ -274,6 +274,7 @@ type McpIdentity = {
   orgId: string;
   source: "api_key" | "oauth";
   keyId?: string;
+  scopes?: ("read" | "write")[];
 };
 
 async function sha256Hex(input: string): Promise<string> {
@@ -327,9 +328,10 @@ async function requireMcpAuth(
   // Try OAuth token auth (prsm_at_ prefix)
   if (rawToken.startsWith("prsm_at_")) {
     const tokenHash = await sha256Hex(rawToken);
-    const result = await ctx.runQuery(internal.oauth.validateAccessToken, {
-      tokenHash,
-    });
+    const result = await ctx.runQuery(
+      (internal as any).oauth.validateAccessTokenWithScopes,
+      { tokenHash },
+    );
     if (!result) {
       throw new Response("Invalid or expired token", {
         status: 401,
@@ -342,6 +344,7 @@ async function requireMcpAuth(
     return {
       userId: result.userId,
       orgId: result.orgId,
+      scopes: result.scopes ?? ["read"],
       source: "oauth",
     };
   }
