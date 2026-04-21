@@ -58,6 +58,7 @@ export type ModelTask =
   | "summary"
   | "triage"
   | "email_extraction"
+  | "document_extraction"
   | "security";
 
 /**
@@ -80,6 +81,7 @@ export const MODEL_ROUTING: Record<ModelTask, { model: string; provider: string 
   extraction:       { model: "gpt-5.4-mini",              provider: "OpenAI" },
   triage:           { model: "gpt-5.4-nano",              provider: "OpenAI" },
   email_extraction: { model: "gpt-5.4-nano",              provider: "OpenAI" },
+  document_extraction: { model: "claude-haiku-4-5-20251001", provider: "Anthropic" },
   security:         { model: "gpt-4.1-nano",              provider: "OpenAI" },
 };
 
@@ -95,6 +97,7 @@ const MODEL_CONFIG: Record<ModelTask, () => LanguageModel> = {
   extraction:       () => openai()("gpt-5.4-mini"),
   triage:           () => openai()("gpt-5.4-nano"),
   email_extraction: () => openai()("gpt-5.4-nano"),
+  document_extraction: () => anthropic()("claude-haiku-4-5-20251001"),
   security:         () => openai()("gpt-4.1-nano"),
 };
 

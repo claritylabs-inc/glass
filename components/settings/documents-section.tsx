@@ -21,10 +21,15 @@ const CONTEXT_SUPPORTED_EXTENSIONS = [
   ".md",
   ".mdx",
   ".csv",
-  ".doc",
   ".docx",
-  ".xls",
   ".xlsx",
+  ".pptx",
+  ".odt",
+  ".ods",
+  ".odp",
+  ".txt",
+  ".tsv",
+  ".json",
 ] as const;
 
 function formatCreatedAt(timestamp: number) {
@@ -69,6 +74,8 @@ export function DocumentsSection() {
 
   const generateUploadUrl = useMutation(api.policies.generateUploadUrl);
   const removePolicy = useMutation(api.policies.remove);
+  const createOrgDocument = useMutation(api.orgDocuments.create);
+  const removeOrgDocument = useMutation(api.orgDocuments.remove);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [runningActionKey, setRunningActionKey] = useState<string | null>(null);
   const extractFromUpload = useAction(
@@ -86,12 +93,18 @@ export function DocumentsSection() {
     ".md": "text/markdown",
     ".mdx": "text/mdx",
     ".csv": "text/csv",
-    ".doc": "application/msword",
+    ".txt": "text/plain",
+    ".tsv": "text/tab-separated-values",
+    ".json": "application/json",
     ".docx":
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    ".xls": "application/vnd.ms-excel",
     ".xlsx":
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".pptx":
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ".odt": "application/vnd.oasis.opendocument.text",
+    ".ods": "application/vnd.oasis.opendocument.spreadsheet",
+    ".odp": "application/vnd.oasis.opendocument.presentation",
   };
 
   const uploadToStorage = useCallback(async (file: File) => {
@@ -140,16 +153,25 @@ export function DocumentsSection() {
   const handleContextUpload = useCallback(async (file: File) => {
     const ext = file.name.toLowerCase().slice(file.name.lastIndexOf("."));
     if (!CONTEXT_SUPPORTED_EXTENSIONS.includes(ext as (typeof CONTEXT_SUPPORTED_EXTENSIONS)[number])) {
-      toast.error("Supported: PDF, Word, Excel, CSV, Markdown");
+      // Keep client validation aligned with server-side parsers to avoid guaranteed upload failures.
+      toast.error("Supported: PDF, DOCX/XLSX/PPTX, ODT/ODS/ODP, CSV/TSV, Markdown, TXT, JSON");
       return;
     }
     setUploading(true);
     try {
       const storageId = await uploadToStorage(file);
+      const ct = file.type || EXT_TYPE_MAP[ext] || undefined;
+      const documentId = await createOrgDocument({
+        storageId,
+        fileName: file.name,
+        mimeType: ct,
+        size: file.size,
+      });
       toast.success("Uploaded, extracting business context...");
       const outcome = await extractFromDocument({
         fileId: storageId,
         fileName: file.name,
+        documentId,
       });
       if ("error" in outcome) {
         toast.error(outcome.error);
@@ -162,7 +184,8 @@ export function DocumentsSection() {
       setUploading(false);
       if (contextFileInputRef.current) contextFileInputRef.current.value = "";
     }
-  }, [uploadToStorage, extractFromDocument]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uploadToStorage, extractFromDocument, createOrgDocument]);
 
   const contextDrop = useFileDrop<HTMLDivElement>((files) => {
     const file = files[0];
@@ -251,7 +274,7 @@ export function DocumentsSection() {
       <input
         ref={contextFileInputRef}
         type="file"
-        accept=".pdf,.md,.mdx,.csv,.doc,.docx,.xls,.xlsx"
+        accept=".pdf,.md,.mdx,.csv,.docx,.xlsx,.pptx,.odt,.ods,.odp,.txt,.tsv,.json"
         className="hidden"
         onChange={(e) => {
           const f = e.target.files?.[0];
@@ -313,24 +336,63 @@ export function DocumentsSection() {
                   </div>
                 ) : (
                   <div className="divide-y divide-foreground/4">
-                    {contextDocs.map((doc) => (
-                      <div
-                        key={doc.sourceRef}
-                        className="px-5 py-3 flex items-center gap-3 hover:bg-foreground/[0.015] transition-colors"
-                      >
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-foreground truncate">
-                            {doc.sourceLabel || "Document"}
-                          </p>
-                          <p className="text-xs text-muted-foreground/55 truncate mt-0.5">
-                            {doc.entryCount} {doc.entryCount === 1 ? "entry" : "entries"} extracted · {formatCreatedAt(doc.createdAt)}
-                          </p>
+                    {contextDocs.map((doc) => {
+                      const status = doc.extractionStatus;
+                      const statusChip =
+                        status === "extracting" || status === "pending" ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 shrink-0">
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                            Extracting
+                          </span>
+                        ) : status === "error" ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-700 shrink-0">
+                            Failed
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 shrink-0">
+                            Context
+                          </span>
+                        );
+                      return (
+                        <div
+                          key={doc._id}
+                          className="px-5 py-3 group flex items-center gap-3 hover:bg-foreground/[0.015] transition-colors"
+                        >
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-foreground truncate">
+                              {doc.sourceLabel || doc.fileName || "Document"}
+                            </p>
+                            <p className="text-xs text-muted-foreground/55 truncate mt-0.5">
+                              {doc.entryCount} {doc.entryCount === 1 ? "entry" : "entries"} · {formatCreatedAt(doc.createdAt)}
+                            </p>
+                            {status === "error" && doc.extractionError ? (
+                              <p className="text-xs text-red-500/70 mt-1 line-clamp-2">
+                                {doc.extractionError}
+                              </p>
+                            ) : null}
+                          </div>
+                          {statusChip}
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              setRemovingId(doc._id);
+                              try {
+                                await removeOrgDocument({ id: doc._id as Id<"orgDocuments"> });
+                                toast.success("Document removed");
+                              } catch {
+                                toast.error("Failed to remove document");
+                              } finally {
+                                setRemovingId(null);
+                              }
+                            }}
+                            disabled={removingId === doc._id}
+                            className="p-1 text-muted-foreground/25 hover:text-red-500 cursor-pointer opacity-0 group-hover:opacity-100 transition-all shrink-0"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 shrink-0">
-                          Context
-                        </span>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
 

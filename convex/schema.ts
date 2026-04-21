@@ -300,6 +300,32 @@ export default defineSchema({
       filterFields: ["orgId"],
     }),
 
+  // Uploaded org context documents — one row per file, persists regardless of extraction outcome
+  orgDocuments: defineTable({
+    orgId: v.id("organizations"),
+    storageId: v.id("_storage"),
+    fileName: v.string(),
+    mimeType: v.optional(v.string()),
+    size: v.optional(v.number()),
+    extractionStatus: v.union(
+      v.literal("pending"),
+      v.literal("extracting"),
+      v.literal("complete"),
+      v.literal("error"),
+    ),
+    extractionError: v.optional(v.string()),
+    entryCount: v.optional(v.number()),
+    sourceLabel: v.optional(v.string()),
+    documentType: v.optional(v.string()),
+    asOfDate: v.optional(v.string()),
+    documentDate: v.optional(v.string()),
+    uploadedBy: v.optional(v.id("users")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_orgId", ["orgId"])
+    .index("by_storageId", ["storageId"]),
+
   // Email scan run logs (streaming — updated as scan progresses)
   emailScanLogs: defineTable({
     orgId: v.optional(v.id("organizations")),
