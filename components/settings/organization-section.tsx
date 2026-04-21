@@ -5,6 +5,8 @@ import { useSettingsActions } from "@/app/settings/page";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { useRouter } from "next/navigation";
 import { api } from "@/convex/_generated/api";
+import { useCurrentOrg } from "@/hooks/use-current-org";
+import type { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
 import {
   Loader2,
@@ -51,6 +53,15 @@ export function OrganizationSection() {
   const [insuranceBroker, setInsuranceBroker] = useState("");
   const [brokerContactName, setBrokerContactName] = useState("");
   const [brokerContactEmail, setBrokerContactEmail] = useState("");
+  const currentOrg = useCurrentOrg();
+  const isBroker = currentOrg?.isBroker ?? false;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const updateSlug = useMutation((api as any).organizations.updateSlug);
+  const [slug, setSlug] = useState(
+    (currentOrg?.org as { slug?: string } | undefined)?.slug ?? "",
+  );
+  const [savingSlug, setSavingSlug] = useState(false);
+
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [extracting, setExtracting] = useState(false);
@@ -60,6 +71,23 @@ export function OrganizationSection() {
   const [resetting, setResetting] = useState(false);
   const [removingDemo, setRemovingDemo] = useState(false);
   const [showRemoveDemoDialog, setShowRemoveDemoDialog] = useState(false);
+
+  async function handleSlugSave() {
+    if (!currentOrg?.orgId) return;
+    setSavingSlug(true);
+    try {
+      const normalized = await updateSlug({
+        brokerOrgId: currentOrg.orgId as Id<"organizations">,
+        slug,
+      });
+      setSlug(normalized);
+      toast.success("Slug saved");
+    } catch (err) {
+      toast.error(String(err));
+    } finally {
+      setSavingSlug(false);
+    }
+  }
 
   const { setActions } = useSettingsActions();
 
@@ -249,6 +277,34 @@ export function OrganizationSection() {
                 />
               </div>
             </div>
+
+            {isBroker && (
+              <div>
+                <label className="text-label-sm font-medium text-muted-foreground block mb-1.5">
+                  URL slug
+                </label>
+                <div className="flex gap-2 items-center">
+                  <input
+                    type="text"
+                    value={slug}
+                    onChange={(e) => setSlug(e.target.value)}
+                    placeholder="my-brokerage"
+                    className="rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm font-mono placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors max-w-xs"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSlugSave}
+                    disabled={savingSlug}
+                    className="px-3 py-2 text-sm rounded-lg border border-foreground/8 bg-popover hover:bg-foreground/[0.02] disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                  >
+                    {savingSlug ? "Saving…" : "Save slug"}
+                  </button>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Used in shareable invite links: glass.claritylabs.inc/join/{slug || "your-slug"}
+                </p>
+              </div>
+            )}
 
             <div>
               <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
