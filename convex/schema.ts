@@ -2,6 +2,15 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 import { authTables } from "@convex-dev/auth/server";
 
+const addressObject = v.object({
+  street1: v.string(),
+  street2: v.optional(v.string()),
+  city: v.optional(v.string()),
+  state: v.optional(v.string()),
+  zip: v.optional(v.string()),
+  country: v.optional(v.string()),
+});
+
 export default defineSchema({
   ...authTables,
 
@@ -82,6 +91,20 @@ export default defineSchema({
     // Broker branding
     brandingColor: v.optional(v.string()),  // hex e.g. "#4F46E5"
     agentDisplayName: v.optional(v.string()),
+    // Broker-org: which extended passport sections are required by default
+    defaultRequiredPassportSections: v.optional(v.array(v.union(
+      v.literal("prior_carrier"),
+      v.literal("loss_history"),
+      v.literal("additional_interests"),
+      v.literal("transaction_info"),
+    ))),
+    // Client-org: per-client override of broker's default
+    passportRequirementOverrides: v.optional(v.array(v.union(
+      v.literal("prior_carrier"),
+      v.literal("loss_history"),
+      v.literal("additional_interests"),
+      v.literal("transaction_info"),
+    ))),
   })
     .index("by_agentHandle", ["agentHandle"])
     .index("by_type", ["type"])
@@ -862,6 +885,149 @@ export default defineSchema({
     .index("by_orgId_status", ["orgId", "status"])
     .index("by_orgId_type", ["orgId", "type"])
     .index("by_userId", ["userId"]),
+
+  // ── Client Passport (ACORD 125) ──
+
+  clientPassport: defineTable({
+    clientOrgId: v.id("organizations"),
+    // Applicant info
+    legalName: v.optional(v.string()),
+    dba: v.optional(v.string()),
+    entityType: v.optional(v.string()),
+    fein: v.optional(v.string()),
+    website: v.optional(v.string()),
+    primaryContactName: v.optional(v.string()),
+    primaryContactTitle: v.optional(v.string()),
+    primaryContactEmail: v.optional(v.string()),
+    primaryContactPhone: v.optional(v.string()),
+    mailingAddress: v.optional(addressObject),
+    // Nature of business
+    businessDescription: v.optional(v.string()),
+    naicsCode: v.optional(v.string()),
+    sicCode: v.optional(v.string()),
+    yearsInBusiness: v.optional(v.number()),
+    yearEstablished: v.optional(v.number()),
+    numberOfEmployees: v.optional(v.number()),
+    annualRevenue: v.optional(v.string()),
+    operationsSummary: v.optional(v.string()),
+    // General info
+    hasPriorBankruptcy: v.optional(v.boolean()),
+    bankruptcyDetails: v.optional(v.string()),
+    hasPriorCancellation: v.optional(v.boolean()),
+    cancellationDetails: v.optional(v.string()),
+    hasForeignOperations: v.optional(v.boolean()),
+    foreignOperationsDetails: v.optional(v.string()),
+    ownershipNotes: v.optional(v.string()),
+    // Transaction / desired coverage profile
+    desiredEffectiveDate: v.optional(v.string()),
+    desiredPolicyTerm: v.optional(v.string()),
+    desiredLinesOfBusiness: v.optional(v.array(v.string())),
+    // Completion tracking
+    coreCompletedAt: v.optional(v.number()),
+    lastEditedAt: v.number(),
+    lastEditedBy: v.optional(v.id("users")),
+  }).index("by_clientOrgId", ["clientOrgId"]),
+
+  passportFieldProvenance: defineTable({
+    clientOrgId: v.id("organizations"),
+    fieldPath: v.string(),
+    source: v.union(
+      v.literal("manual"),
+      v.literal("invite"),
+      v.literal("website"),
+      v.literal("document"),
+      v.literal("integration"),
+      v.literal("broker"),
+    ),
+    confidence: v.union(v.literal("confirmed"), v.literal("suggested")),
+    sourceRef: v.optional(v.string()),
+    sourceLabel: v.optional(v.string()),
+    suggestedValue: v.optional(v.any()),
+    setAt: v.number(),
+    setByUserId: v.optional(v.id("users")),
+  }).index("by_clientOrgId", ["clientOrgId"])
+    .index("by_clientOrgId_fieldPath", ["clientOrgId", "fieldPath"]),
+
+  passportLocations: defineTable({
+    clientOrgId: v.id("organizations"),
+    number: v.number(),
+    address: addressObject,
+    description: v.optional(v.string()),
+    occupancy: v.optional(v.string()),
+    squareFootage: v.optional(v.number()),
+    yearBuilt: v.optional(v.number()),
+    constructionType: v.optional(v.string()),
+    protectionClass: v.optional(v.string()),
+    sprinklered: v.optional(v.boolean()),
+    alarmType: v.optional(v.string()),
+    buildingValue: v.optional(v.string()),
+    contentsValue: v.optional(v.string()),
+    businessIncomeValue: v.optional(v.string()),
+  }).index("by_clientOrgId", ["clientOrgId"]),
+
+  passportSubsidiaries: defineTable({
+    clientOrgId: v.id("organizations"),
+    name: v.string(),
+    ownershipPct: v.optional(v.number()),
+    entityType: v.optional(v.string()),
+    description: v.optional(v.string()),
+    naicsCode: v.optional(v.string()),
+  }).index("by_clientOrgId", ["clientOrgId"]),
+
+  passportPriorCarriers: defineTable({
+    clientOrgId: v.id("organizations"),
+    lineOfBusiness: v.optional(v.string()),
+    carrierName: v.optional(v.string()),
+    policyNumber: v.optional(v.string()),
+    effectiveDate: v.optional(v.string()),
+    expirationDate: v.optional(v.string()),
+    premium: v.optional(v.string()),
+    notes: v.optional(v.string()),
+  }).index("by_clientOrgId", ["clientOrgId"]),
+
+  passportLosses: defineTable({
+    clientOrgId: v.id("organizations"),
+    dateOfLoss: v.optional(v.string()),
+    lineOfBusiness: v.optional(v.string()),
+    claimNumber: v.optional(v.string()),
+    description: v.optional(v.string()),
+    amountPaid: v.optional(v.string()),
+    amountReserved: v.optional(v.string()),
+    status: v.optional(v.union(v.literal("open"), v.literal("closed"))),
+    sourceDocumentId: v.optional(v.id("orgDocuments")),
+    confidence: v.optional(v.union(v.literal("confirmed"), v.literal("suggested"))),
+  }).index("by_clientOrgId", ["clientOrgId"]),
+
+  passportAdditionalInterests: defineTable({
+    clientOrgId: v.id("organizations"),
+    name: v.string(),
+    role: v.union(
+      v.literal("mortgagee"),
+      v.literal("loss_payee"),
+      v.literal("additional_insured"),
+    ),
+    address: v.optional(addressObject),
+    relationship: v.optional(v.string()),
+    scope: v.optional(v.string()),
+  }).index("by_clientOrgId", ["clientOrgId"]),
+
+  passportFieldFlags: defineTable({
+    clientOrgId: v.id("organizations"),
+    brokerOrgId: v.id("organizations"),
+    fieldPath: v.string(),
+    authorUserId: v.id("users"),
+    message: v.string(),
+    status: v.union(
+      v.literal("open"),
+      v.literal("resolved"),
+      v.literal("dismissed"),
+    ),
+    resolvedByUserId: v.optional(v.id("users")),
+    resolvedAt: v.optional(v.number()),
+    createdAt: v.number(),
+  }).index("by_clientOrgId", ["clientOrgId"])
+    .index("by_clientOrgId_status", ["clientOrgId", "status"])
+    .index("by_brokerOrgId", ["brokerOrgId"]),
 
   // ── Broker Activity ──
 
