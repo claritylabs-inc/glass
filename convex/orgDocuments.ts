@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query, internalMutation } from "./_generated/server";
+import { mutation, query, internalMutation, internalQuery } from "./_generated/server";
 import { getOrgAccess } from "./lib/orgAuth";
 import { Id } from "./_generated/dataModel";
 
@@ -72,6 +72,7 @@ export const remove = mutation({
 export const updateStatus = internalMutation({
   args: {
     id: v.id("orgDocuments"),
+    orgId: v.id("organizations"),
     extractionStatus: v.union(
       v.literal("pending"),
       v.literal("extracting"),
@@ -86,8 +87,23 @@ export const updateStatus = internalMutation({
     documentDate: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const { id, ...rest } = args;
+    const { id, orgId, ...rest } = args;
+    // Defense in depth: internal mutations bypass auth, so require the caller's orgId and verify it.
+    const doc = await ctx.db.get(id);
+    if (!doc || doc.orgId !== orgId) throw new Error("Not found");
     await ctx.db.patch(id, { ...rest, updatedAt: Date.now() });
+  },
+});
+
+/** Internal: validate that a document id belongs to an org before mutating it from actions. */
+export const belongsToOrg = internalQuery({
+  args: {
+    id: v.id("orgDocuments"),
+    orgId: v.id("organizations"),
+  },
+  handler: async (ctx, args) => {
+    const doc = await ctx.db.get(args.id);
+    return !!doc && doc.orgId === args.orgId;
   },
 });
 

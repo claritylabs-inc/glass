@@ -21,10 +21,15 @@ const CONTEXT_SUPPORTED_EXTENSIONS = [
   ".md",
   ".mdx",
   ".csv",
-  ".doc",
   ".docx",
-  ".xls",
   ".xlsx",
+  ".pptx",
+  ".odt",
+  ".ods",
+  ".odp",
+  ".txt",
+  ".tsv",
+  ".json",
 ] as const;
 
 function formatCreatedAt(timestamp: number) {
@@ -87,12 +92,18 @@ export function DocumentsSection() {
     ".md": "text/markdown",
     ".mdx": "text/mdx",
     ".csv": "text/csv",
-    ".doc": "application/msword",
+    ".txt": "text/plain",
+    ".tsv": "text/tab-separated-values",
+    ".json": "application/json",
     ".docx":
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    ".xls": "application/vnd.ms-excel",
     ".xlsx":
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".pptx":
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ".odt": "application/vnd.oasis.opendocument.text",
+    ".ods": "application/vnd.oasis.opendocument.spreadsheet",
+    ".odp": "application/vnd.oasis.opendocument.presentation",
   };
 
   const uploadToStorage = useCallback(async (file: File) => {
@@ -141,7 +152,8 @@ export function DocumentsSection() {
   const handleContextUpload = useCallback(async (file: File) => {
     const ext = file.name.toLowerCase().slice(file.name.lastIndexOf("."));
     if (!CONTEXT_SUPPORTED_EXTENSIONS.includes(ext as (typeof CONTEXT_SUPPORTED_EXTENSIONS)[number])) {
-      toast.error("Supported: PDF, Word, Excel, CSV, Markdown");
+      // Keep client validation aligned with server-side parsers to avoid guaranteed upload failures.
+      toast.error("Supported: PDF, DOCX/XLSX/PPTX, ODT/ODS/ODP, CSV/TSV, Markdown, TXT, JSON");
       return;
     }
     setUploading(true);
@@ -251,7 +263,7 @@ export function DocumentsSection() {
       <input
         ref={contextFileInputRef}
         type="file"
-        accept=".pdf,.md,.mdx,.csv,.doc,.docx,.xls,.xlsx"
+        accept=".pdf,.md,.mdx,.csv,.docx,.xlsx,.pptx,.odt,.ods,.odp,.txt,.tsv,.json"
         className="hidden"
         onChange={(e) => {
           const f = e.target.files?.[0];

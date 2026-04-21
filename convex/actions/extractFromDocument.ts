@@ -190,10 +190,21 @@ export const extractFromDocument = action({
     const orgId = orgData.membership.orgId as Id<"organizations">;
 
     const docId = args.documentId ?? null;
+
+    // Client-provided ids are untrusted; enforce org ownership before status updates.
+    if (docId) {
+      const belongsToOrg = await ctx.runQuery(internal.orgDocuments.belongsToOrg, {
+        id: docId,
+        orgId,
+      });
+      if (!belongsToOrg) return { error: "Invalid document reference" };
+    }
+
     const fail = async (message: string) => {
       if (docId) {
         await ctx.runMutation(internal.orgDocuments.updateStatus, {
           id: docId,
+          orgId,
           extractionStatus: "error",
           extractionError: message,
         });
@@ -204,6 +215,7 @@ export const extractFromDocument = action({
     if (docId) {
       await ctx.runMutation(internal.orgDocuments.updateStatus, {
         id: docId,
+        orgId,
         extractionStatus: "extracting",
       });
     }
@@ -345,6 +357,7 @@ If no relevant risk signals found, return { "entries": [] }.`;
       if (docId) {
         await ctx.runMutation(internal.orgDocuments.updateStatus, {
           id: docId,
+          orgId,
           extractionStatus: "complete",
           entryCount: inserted,
           sourceLabel: classification.sourceLabel,
