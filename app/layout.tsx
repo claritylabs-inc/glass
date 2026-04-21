@@ -28,20 +28,20 @@ export const viewport: Viewport = {
 
 export const metadata: Metadata = {
   title: {
-    default: "Prism",
-    template: "%s | Prism",
+    default: "Glass",
+    template: "%s | Glass",
   },
-  description: "AI-powered insurance policy extraction from email",
+  description: "AI-powered insurance intelligence by Clarity Labs",
   openGraph: {
-    title: "Prism",
-    description: "AI-powered insurance policy extraction from email",
-    siteName: "Prism",
+    title: "Glass",
+    description: "AI-powered insurance intelligence by Clarity Labs",
+    siteName: "Glass",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Prism",
-    description: "AI-powered insurance policy extraction from email",
+    title: "Glass",
+    description: "AI-powered insurance intelligence by Clarity Labs",
   },
 };
 
