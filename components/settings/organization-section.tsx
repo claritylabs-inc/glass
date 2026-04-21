@@ -12,7 +12,6 @@ import {
   Loader2,
   Sparkles,
   AlertTriangle,
-  Trash2,
   RotateCcw,
 } from "lucide-react";
 import { INDUSTRIES } from "@/convex/lib/industries";
@@ -33,8 +32,6 @@ export function OrganizationSection() {
   const updateOrg = useMutation(api.orgs.updateOrg);
   const resetAccount = useMutation(api.users.resetAccount);
   const restartOnboarding = useMutation(api.users.restartOnboarding);
-  const removeDemoData = useMutation(api.seed.removeDemoData);
-  const hasDemoDataResult = useQuery(api.seed.hasDemoData);
   const extractCompanyInfo = useAction(api.actions.extractCompanyInfo.extractCompanyInfo);
   const router = useRouter();
 
@@ -69,8 +66,6 @@ export function OrganizationSection() {
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showResetDialog, setShowResetDialog] = useState(false);
   const [resetting, setResetting] = useState(false);
-  const [removingDemo, setRemovingDemo] = useState(false);
-  const [showRemoveDemoDialog, setShowRemoveDemoDialog] = useState(false);
 
   async function handleSlugSave() {
     if (!currentOrg?.orgId) return;
@@ -178,8 +173,6 @@ export function OrganizationSection() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [saving, savedAt]);
 
-  const hasDemo = hasDemoDataResult === true;
-
   async function handleExtract() {
     if (!website) return;
     setExtracting(true);
@@ -207,19 +200,6 @@ export function OrganizationSection() {
       toast.error("Failed to extract company info");
     } finally {
       setExtracting(false);
-    }
-  }
-
-  async function handleRemoveDemo() {
-    setRemovingDemo(true);
-    try {
-      const result = await removeDemoData();
-      setShowRemoveDemoDialog(false);
-      toast.success(`Removed ${result.removed} demo records`);
-    } catch {
-      toast.error("Failed to remove demo data");
-    } finally {
-      setRemovingDemo(false);
     }
   }
 
@@ -533,32 +513,6 @@ export function OrganizationSection() {
         </div>
       </div>
 
-      {/* Demo Data section */}
-      {hasDemo && (
-        <div className="rounded-lg border border-amber-200 dark:border-amber-900/50 bg-amber-50/50 dark:bg-amber-950/30">
-          <div className="px-5 py-3.5 border-b border-amber-200 dark:border-amber-900/50">
-            <h3 className="!mb-0 text-sm font-medium text-amber-900 dark:text-amber-400">Demo Data</h3>
-          </div>
-          <div className="px-5 py-5">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-body-sm font-medium text-foreground">Remove Demo Data</p>
-                <p className="text-label-sm text-muted-foreground mt-0.5">
-                  Delete all demo policies, emails, and connections. Real data is not affected.
-                </p>
-              </div>
-              <PillButton
-                variant="destructive"
-                onClick={() => setShowRemoveDemoDialog(true)}
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                Remove
-              </PillButton>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Danger Zone */}
       {viewer?.isAdmin && (
         <div className="mt-4">
@@ -585,29 +539,6 @@ export function OrganizationSection() {
           </div>
         </div>
       )}
-
-      {/* Remove Demo Dialog */}
-      <Dialog open={showRemoveDemoDialog} onOpenChange={(v) => !v && setShowRemoveDemoDialog(false)}>
-        <DialogContent showCloseButton={false}>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Trash2 className="w-5 h-5 text-amber-500" />
-              Remove Demo Data
-            </DialogTitle>
-            <DialogDescription>
-              This will delete all demo policies, emails, and connections. Your real data will not be affected.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <PillButton variant="secondary" onClick={() => setShowRemoveDemoDialog(false)} disabled={removingDemo}>
-              Cancel
-            </PillButton>
-            <PillButton variant="destructive" onClick={handleRemoveDemo} disabled={removingDemo}>
-              {removingDemo ? "Removing..." : "Yes, Remove Demo Data"}
-            </PillButton>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Reset Dialog */}
       <Dialog open={showResetDialog} onOpenChange={(v) => !v && setShowResetDialog(false)}>

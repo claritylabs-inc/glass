@@ -16,18 +16,23 @@ import { notify } from "./lib/notify";
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
 /**
- * Hash a raw token string to SHA-256 hex.
- * Runs inside a Convex action (Node.js runtime) via internal mutation transport.
+ * Hash a raw token string to SHA-256 hex using Web Crypto API.
  */
 async function sha256Hex(token: string): Promise<string> {
-  const { createHash } = await import("crypto");
-  return createHash("sha256").update(token).digest("hex");
+  const encoded = new TextEncoder().encode(token);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", encoded);
+  return Array.from(new Uint8Array(hashBuffer))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 }
 
-/** Generate a 32-byte random hex token string. */
+/** Generate a 32-byte random hex token string using Web Crypto API. */
 function randomToken(): string {
-  const { randomBytes } = require("crypto");
-  return (randomBytes(32) as Buffer).toString("hex");
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 // ── Public mutations / queries ─────────────────────────────────────────────────

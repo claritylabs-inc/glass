@@ -144,7 +144,6 @@ export function EmailConnectionsSection() {
   }, []);
 
   const stopScan = useMutation(api.connections.stopScan);
-  const removeDemoData = useMutation(api.seed.removeDemoData);
 
   const handleReconnectGoogle = async (connectionId: Id<"emailConnections">) => {
     const state = crypto.randomUUID();
@@ -177,8 +176,6 @@ export function EmailConnectionsSection() {
     label: string;
   } | null>(null);
 
-  const [showRemoveDemo, setShowRemoveDemo] = useState(false);
-  const [removingDemo, setRemovingDemo] = useState(false);
   const [calendarTarget, setCalendarTarget] = useState<{
     id: Id<"emailConnections">;
     provider?: "google" | "imap";
@@ -367,9 +364,7 @@ export function EmailConnectionsSection() {
                         variant="icon"
                         label="Remove"
                         onClick={() =>
-                          isDemo
-                            ? setShowRemoveDemo(true)
-                            : setRemoveTarget({ id: conn._id, label: conn.label })
+                          setRemoveTarget({ id: conn._id, label: conn.label })
                         }
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -476,9 +471,7 @@ export function EmailConnectionsSection() {
                         variant="icon"
                         label="Remove"
                         onClick={() =>
-                          isDemo
-                            ? setShowRemoveDemo(true)
-                            : setRemoveTarget({ id: conn._id, label: conn.label })
+                          setRemoveTarget({ id: conn._id, label: conn.label })
                         }
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -600,48 +593,6 @@ export function EmailConnectionsSection() {
           onClose={() => setRemoveTarget(null)}
         />
       )}
-
-      <Dialog
-        open={showRemoveDemo}
-        onOpenChange={(v) => !v && setShowRemoveDemo(false)}
-      >
-        <DialogContent showCloseButton={false}>
-          <DialogHeader>
-            <DialogTitle>Remove Demo Data</DialogTitle>
-            <DialogDescription>
-              This will remove all demo connections, emails, policies, and
-              quotes. Your real data will not be affected.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <PillButton
-              variant="secondary"
-              onClick={() => setShowRemoveDemo(false)}
-              disabled={removingDemo}
-            >
-              Cancel
-            </PillButton>
-            <PillButton
-              variant="destructive"
-              disabled={removingDemo}
-              onClick={async () => {
-                setRemovingDemo(true);
-                try {
-                  await removeDemoData();
-                  setShowRemoveDemo(false);
-                  toast.success("Demo data removed");
-                } catch {
-                  toast.error("Failed to remove demo data");
-                } finally {
-                  setRemovingDemo(false);
-                }
-              }}
-            >
-              {removingDemo ? "Removing..." : "Remove demo data"}
-            </PillButton>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {calendarTarget && (
         <ScanCalendarDialog
