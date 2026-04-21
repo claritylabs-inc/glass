@@ -321,13 +321,24 @@ export default function OAuthAuthorizePage() {
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="text-foreground/30 mt-0.5">&#x2022;</span>
-                    Ask questions via Prism AI
+                    Ask questions via Glass AI
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="text-foreground/30 mt-0.5">&#x2022;</span>
                     Read and update business context
                   </li>
+                  {(scope ?? "").split(" ").includes("write") && (
+                    <li className="flex items-start gap-2">
+                      <span className="text-foreground/30 mt-0.5">&#x2022;</span>
+                      Modify your insurance data (write access)
+                    </li>
+                  )}
                 </ul>
+                {scope && (
+                  <p className="mt-2 text-xs text-muted-foreground/60">
+                    Requested scopes: {scope}
+                  </p>
+                )}
               </div>
 
               {error && (
