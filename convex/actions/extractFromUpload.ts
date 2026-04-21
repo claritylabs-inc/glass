@@ -15,6 +15,8 @@ export const extractFromUpload = action({
   args: {
     fileId: v.id("_storage"),
     fileName: v.optional(v.string()),
+    // Broker upload path: pre-created policy row from createBrokerUpload
+    policyId: v.optional(v.id("policies")),
   },
   returns: v.any(),
   handler: async (ctx, args): Promise<{ error: string } | { success: true; type: string; id: string }> => {
@@ -30,8 +32,9 @@ export const extractFromUpload = action({
     const pdfUrl = await ctx.storage.getUrl(args.fileId);
     if (!pdfUrl) return { error: "File not found in storage" };
 
-    // Create placeholder policy record (type determined by extraction)
-    const policyId: Id<"policies"> = await ctx.runMutation(api.policies.insert, {
+    // If a pre-created policyId (from broker upload) is provided, use it;
+    // otherwise create a new placeholder policy record.
+    const policyId: Id<"policies"> = args.policyId ?? await ctx.runMutation(api.policies.insert, {
       userId,
       orgId,
       fileId: args.fileId,
@@ -156,6 +159,28 @@ export const extractFromUpload = action({
         orgId,
         action: "extraction_complete",
       });
+
+      // Emit broker-activity event if this was a broker-uploaded policy
+      try {
+        const finalPolicy = await ctx.runQuery(internal.policies.getInternal, { id: policyId });
+        if (finalPolicy?.uploadedByBrokerOrgId && finalPolicy.orgId) {
+          const docType = (finalPolicy.documentType ?? "policy") as "policy" | "quote";
+          await ctx.runMutation((internal as any).brokerActivity.record, {
+            brokerOrgId: finalPolicy.uploadedByBrokerOrgId,
+            clientOrgId: finalPolicy.orgId,
+            type: "policy_extraction_completed" as const,
+            actorSide: "system" as const,
+            payload: {
+              policyId,
+              documentType: docType,
+              uploadedBySide: finalPolicy.uploadedBySide ?? "client",
+            },
+            summary: `${docType === "quote" ? "Quote" : "Policy"} extraction completed`,
+          });
+        }
+      } catch (err) {
+        console.error("brokerActivity record failed (non-critical):", err);
+      }
 
       // Schedule duplicate policy detection
       await ctx.scheduler.runAfter(

@@ -1,6 +1,35 @@
 import { v } from "convex/values";
-import { query } from "./_generated/server";
+import { internalMutation, query } from "./_generated/server";
 import { getOrgAccess, assertBrokerOrg } from "./lib/access";
+
+// Internal mutation so that actions can record broker activity via ctx.runMutation
+export const record = internalMutation({
+  args: {
+    brokerOrgId: v.id("organizations"),
+    clientOrgId: v.id("organizations"),
+    type: v.union(
+      v.literal("invitation_accepted"),
+      v.literal("onboarding_completed"),
+      v.literal("document_uploaded"),
+      v.literal("application_sent"),
+      v.literal("application_batch_submitted"),
+      v.literal("application_completed"),
+      v.literal("policy_uploaded"),
+      v.literal("policy_extraction_completed"),
+      v.literal("notification_fired"),
+    ),
+    actorUserId: v.optional(v.id("users")),
+    actorSide: v.union(v.literal("broker"), v.literal("client"), v.literal("system")),
+    payload: v.optional(v.any()),
+    summary: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.insert("brokerActivity", {
+      ...args,
+      createdAt: Date.now(),
+    });
+  },
+});
 
 export const listPortfolio = query({
   args: {
