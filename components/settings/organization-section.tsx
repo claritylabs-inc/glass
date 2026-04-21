@@ -204,17 +204,28 @@ export function OrganizationSection() {
             <h3 className="!mb-0 text-sm font-medium text-foreground">Organization</h3>
           </div>
           <div className="px-5 py-5 space-y-4">
-            <div>
-              <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
-                Organization Name
-              </label>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Acme Corp"
-                className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
-              />
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-lg border border-foreground/8 bg-popover flex items-center justify-center overflow-hidden shrink-0">
+                {org?.iconUrl ? (
+                  <img src={org.iconUrl} alt="" className="w-12 h-12 object-contain bg-white" />
+                ) : (
+                  <span className="text-body-sm font-medium text-muted-foreground/60">
+                    {(name || "?").slice(0, 2).toUpperCase()}
+                  </span>
+                )}
+              </div>
+              <div className="flex-1">
+                <label className="text-label-sm font-medium text-muted-foreground block mb-1.5">
+                  Organization Name
+                </label>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Acme Corp"
+                  className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                />
+              </div>
             </div>
 
             <div>

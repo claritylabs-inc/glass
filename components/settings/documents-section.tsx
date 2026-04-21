@@ -11,6 +11,7 @@ import { PillButton } from "@/components/ui/pill-button";
 import { FadeIn } from "@/components/ui/fade-in";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useFileDrop } from "@/components/ui/file-drop";
 import { Id } from "@/convex/_generated/dataModel";
 
 type DocumentTab = "org-context" | "policy-extractions";
@@ -62,7 +63,6 @@ export function DocumentsSection() {
   const contextDocs = useQuery(api.intelligence.listUploadedDocuments);
 
   const [uploading, setUploading] = useState(false);
-  const [dragging, setDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const contextFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -162,6 +162,21 @@ export function DocumentsSection() {
       if (contextFileInputRef.current) contextFileInputRef.current.value = "";
     }
   }, [uploadToStorage, extractFromDocument]);
+
+  const contextDrop = useFileDrop<HTMLDivElement>((files) => {
+    const file = files[0];
+    if (file) handleContextUpload(file);
+  });
+
+  const policyDrop = useFileDrop<HTMLDivElement>((files) => {
+    const file = files[0];
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith(".pdf")) {
+      toast.error("Policy extraction accepts PDF files only");
+      return;
+    }
+    handleInsuranceUpload(file);
+  });
 
   // Header actions
   const { setActions } = useSettingsActions();
@@ -267,19 +282,9 @@ export function DocumentsSection() {
           ) : (
             <FadeIn when={true} delay={0.2} duration={0.6}>
               <div
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  setDragging(true);
-                }}
-                onDragLeave={() => setDragging(false)}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  setDragging(false);
-                  const file = e.dataTransfer.files?.[0];
-                  if (file) handleContextUpload(file);
-                }}
+                {...contextDrop.handlers}
                 className={`rounded-lg border bg-card overflow-hidden transition-colors ${
-                  dragging ? "border-primary/40 bg-primary/[0.02]" : "border-foreground/6"
+                  contextDrop.dragging ? "border-primary/40 bg-primary/[0.02]" : "border-foreground/6"
                 }`}
               >
                 <div className="px-5 py-3.5 border-b border-foreground/6 flex items-center justify-between gap-3">
@@ -319,9 +324,9 @@ export function DocumentsSection() {
                 )}
 
                 <div
-                  className={`border-t border-foreground/4 px-5 py-2 bg-foreground/[0.01] transition-colors ${dragging ? "bg-primary/[0.04]" : ""}`}
+                  className={`border-t border-foreground/4 px-5 py-2 bg-foreground/[0.01] transition-colors ${contextDrop.dragging ? "bg-primary/[0.04]" : ""}`}
                 >
-                  <p className="text-xs text-muted-foreground/40">{dragging ? "Drop to upload" : "Drag files here to upload"}</p>
+                  <p className="text-xs text-muted-foreground/40">{contextDrop.dragging ? "Drop to upload" : "Drag files here to upload"}</p>
                 </div>
               </div>
             </FadeIn>
@@ -349,24 +354,9 @@ export function DocumentsSection() {
           ) : (
             <FadeIn when={true} delay={0.2} duration={0.6}>
               <div
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  setDragging(true);
-                }}
-                onDragLeave={() => setDragging(false)}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  setDragging(false);
-                  const file = e.dataTransfer.files?.[0];
-                  if (!file) return;
-                  if (!file.name.toLowerCase().endsWith(".pdf")) {
-                    toast.error("Policy extraction accepts PDF files only");
-                    return;
-                  }
-                  handleInsuranceUpload(file);
-                }}
+                {...policyDrop.handlers}
                 className={`rounded-lg border bg-card overflow-hidden transition-colors ${
-                  dragging ? "border-primary/40 bg-primary/[0.02]" : "border-foreground/6"
+                  policyDrop.dragging ? "border-primary/40 bg-primary/[0.02]" : "border-foreground/6"
                 }`}
               >
                 <div className="px-5 py-3.5 border-b border-foreground/6 flex items-center justify-between gap-3">
@@ -549,9 +539,9 @@ export function DocumentsSection() {
                 )}
 
                 <div
-                  className={`border-t border-foreground/4 px-5 py-2 bg-foreground/[0.01] transition-colors ${dragging ? "bg-primary/[0.04]" : ""}`}
+                  className={`border-t border-foreground/4 px-5 py-2 bg-foreground/[0.01] transition-colors ${policyDrop.dragging ? "bg-primary/[0.04]" : ""}`}
                 >
-                  <p className="text-xs text-muted-foreground/40">{dragging ? "Drop a PDF to upload" : "Drag PDF files here to upload"}</p>
+                  <p className="text-xs text-muted-foreground/40">{policyDrop.dragging ? "Drop a PDF to upload" : "Drag PDF files here to upload"}</p>
                 </div>
               </div>
             </FadeIn>

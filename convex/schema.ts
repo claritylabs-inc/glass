@@ -71,6 +71,8 @@ export default defineSchema({
     // Intelligence pipeline
     intelligenceSummary: v.optional(v.string()),
     lastDreamAt: v.optional(v.number()),
+    // Branding
+    iconStorageId: v.optional(v.id("_storage")),
   }).index("by_agentHandle", ["agentHandle"]),
 
   // Org memberships — links users to orgs

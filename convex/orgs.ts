@@ -21,7 +21,9 @@ export const viewerOrg = query({
     const org = await ctx.db.get(membership.orgId);
     if (!org) return null;
 
-    return { org, membership };
+    const iconUrl = org.iconStorageId ? await ctx.storage.getUrl(org.iconStorageId) : null;
+
+    return { org: { ...org, iconUrl }, membership };
   },
 });
 
@@ -461,6 +463,20 @@ export const getMembersInternal = internalQuery({
         return { ...m, user };
       }),
     );
+  },
+});
+
+export const setIconInternal = internalMutation({
+  args: {
+    orgId: v.id("organizations"),
+    iconStorageId: v.id("_storage"),
+  },
+  handler: async (ctx, args) => {
+    const org = await ctx.db.get(args.orgId);
+    if (org?.iconStorageId && org.iconStorageId !== args.iconStorageId) {
+      await ctx.storage.delete(org.iconStorageId).catch(() => {});
+    }
+    await ctx.db.patch(args.orgId, { iconStorageId: args.iconStorageId });
   },
 });
 

@@ -100,6 +100,8 @@ export function AppSidebar({
   const router = useRouter();
   const isSettingsMode = pathname.startsWith("/settings");
   const viewer = useQuery(api.users.viewer);
+  const viewerOrg = useQuery(api.orgs.viewerOrg);
+  const orgIcon = viewerOrg?.org?.iconUrl ?? null;
   const unifiedThreads = useQuery(api.threads.list, { archived: false });
   const webChats = useQuery(api.webChats.list, { archived: false });
   const emailConvs = useQuery(api.agentConversations.list, { archived: false });
@@ -301,8 +303,10 @@ export function AppSidebar({
       <div className="flex items-center gap-2 px-3 h-12 border-b border-foreground/6">
         {!collapsed && (
           <>
-            <div className="w-7 h-7 rounded-full bg-foreground/8 flex items-center justify-center text-[11px] font-medium text-foreground shrink-0">
-              {viewer?.image ? (
+            <div className="w-7 h-7 rounded-full bg-foreground/8 flex items-center justify-center text-[11px] font-medium text-foreground shrink-0 overflow-hidden">
+              {orgIcon ? (
+                <img src={orgIcon} alt="" className="w-7 h-7 object-contain bg-white" />
+              ) : viewer?.image ? (
                 <img src={viewer.image} alt="" className="w-7 h-7 rounded-full object-cover" />
               ) : (
                 initials
@@ -387,21 +391,28 @@ export function AppSidebar({
               <span className="text-[11px] font-medium text-muted-foreground/50 ">
                 Threads
               </span>
-              <PillButton
-                type="button"
-                size="compact"
-                variant="icon"
-                onClick={handleNewChat}
-                title="New thread"
-                aria-label="New thread"
-              >
-                <Plus className="w-3.5 h-3.5" />
-              </PillButton>
+              {conversations.length > 0 && (
+                <PillButton
+                  type="button"
+                  size="compact"
+                  variant="icon"
+                  onClick={handleNewChat}
+                  title="New thread"
+                  aria-label="New thread"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                </PillButton>
+              )}
             </div>
             {conversations.length === 0 && (
-              <p className="px-3 py-1 text-label-sm text-muted-foreground/30">
-                No conversations yet
-              </p>
+              <button
+                type="button"
+                onClick={handleNewChat}
+                className="w-full flex items-center gap-2 px-3 py-1 rounded-md text-label-sm text-muted-foreground/60 hover:text-foreground hover:bg-foreground/[0.03] transition-colors cursor-pointer"
+              >
+                <Plus className="w-3 h-3 shrink-0" />
+                <span>New chat</span>
+              </button>
             )}
             {conversations.map((item, idx) => {
               const isConvActive = pathname === `/agent/thread/${item.id}`;
