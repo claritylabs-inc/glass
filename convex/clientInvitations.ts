@@ -8,6 +8,7 @@ import { query, mutation, action, internalMutation, internalQuery } from "./_gen
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { internal } from "./_generated/api";
 import { getOrgAccess, assertBrokerOrg } from "./lib/access";
+import { recordBrokerActivity } from "./lib/brokerActivity";
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
@@ -257,6 +258,18 @@ export const accept = mutation({
         clientOrgId, // last accepted org for reference
       });
     }
+
+    // Record broker activity
+    const acceptingUser = await ctx.db.get(userId);
+    await recordBrokerActivity(ctx, {
+      brokerOrgId: inv.brokerOrgId,
+      clientOrgId,
+      type: "invitation_accepted",
+      actorUserId: userId,
+      actorSide: "client",
+      summary: `${acceptingUser?.name ?? acceptingUser?.email ?? "A client"} accepted the invitation to join.`,
+      payload: { invitationId: inv._id },
+    });
 
     return { clientOrgId };
   },
