@@ -2141,6 +2141,15 @@ http.route({
         "/api/v1/policies/{id}": { get: { tags: ["Policies"], summary: "Get policy", responses: { "200": { description: "Policy" } } } },
         "/api/v1/notifications": { get: { tags: ["Notifications"], summary: "List notifications", responses: { "200": { description: "Notifications" } } } },
         "/api/v1/activity": { get: { tags: ["Activity"], summary: "Activity feed", responses: { "200": { description: "Activity" } } } },
+        "/api/v1/integrations": { get: { tags: ["Integrations"], summary: "List integrations", responses: { "200": { description: "List of integration connections" }, "401": { description: "Unauthorized" } } } },
+        "/api/v1/integrations/{connectionId}": {
+          get: { tags: ["Integrations"], summary: "Get integration connection", responses: { "200": { description: "Connection detail" }, "404": { description: "Not found" } } },
+          delete: { tags: ["Integrations"], summary: "Disconnect integration", responses: { "204": { description: "Disconnected" }, "401": { description: "Unauthorized" } } },
+        },
+        "/api/v1/integration-requests": {
+          get: { tags: ["Integrations"], summary: "List integration requests", responses: { "200": { description: "List of requests" } } },
+          post: { tags: ["Integrations"], summary: "Create integration request (broker only)", responses: { "201": { description: "Request created" }, "403": { description: "Broker access required" } } },
+        },
       },
     });
   }),
