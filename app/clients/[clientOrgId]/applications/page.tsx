@@ -1,61 +1,78 @@
 "use client";
-
-import { useParams } from "next/navigation";
+import { useState } from "react";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import type { Id } from "@/convex/_generated/dataModel";
-import { formatDistanceToNow } from "date-fns";
+import { useCurrentOrg } from "@/lib/hooks/use-current-org";
+import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { CreateApplicationDrawer } from "@/components/applications/create-drawer";
+import Link from "next/link";
+import { useParams } from "next/navigation";
+import type { Id } from "@/convex/_generated/dataModel";
 
-const STATUS_LABELS: Record<string, string> = {
-  extracting_fields: "Extracting",
-  filling_known: "Filling",
-  asking_questions: "Asking",
-  pending_confirmation: "Pending",
-  confirmed: "Confirmed",
-  complete: "Complete",
-  cancelled: "Cancelled",
-  failed: "Failed",
+const STATUS_COLORS: Record<string, string> = {
+  draft:            "bg-gray-100 text-gray-600",
+  sent:             "bg-blue-100 text-blue-700",
+  in_progress:      "bg-amber-100 text-amber-700",
+  awaiting_review:  "bg-purple-100 text-purple-700",
+  complete:         "bg-green-100 text-green-700",
+  cancelled:        "bg-red-100 text-red-600",
 };
 
 export default function ClientApplicationsPage() {
   const { clientOrgId } = useParams<{ clientOrgId: string }>();
-  const sessions = useQuery(
-    api.applicationSessions.listForOrg,
-    clientOrgId ? { orgId: clientOrgId as Id<"organizations"> } : "skip",
-  );
+  const orgCtx = useCurrentOrg();
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
+  const applications = useQuery(
+    (api as any).applications.listForBroker,
+    orgCtx ? { brokerOrgId: orgCtx.orgId, clientOrgId: clientOrgId as Id<"organizations"> } : "skip",
+  ) as Array<{ _id: Id<"applications">; title: string; status: string; createdAt: number; lineOfBusiness?: string }> | undefined;
 
   return (
     <div className="space-y-4">
-      <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">
-        Applications — read-only (v1)
-      </p>
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">
+          Applications
+        </p>
+        <Button size="sm" onClick={() => setDrawerOpen(true)}>+ New</Button>
+      </div>
+
       <div className="rounded-lg border bg-card divide-y">
-        {sessions === undefined ? (
+        {applications === undefined ? (
           <div className="py-8 text-center text-sm text-muted-foreground">Loading…</div>
-        ) : sessions.length === 0 ? (
-          <div className="py-8 text-center text-sm text-muted-foreground">No applications yet.</div>
+        ) : applications.length === 0 ? (
+          <div className="py-8 text-center text-sm text-muted-foreground">
+            No applications yet. Click New to create one.
+          </div>
         ) : (
-          sessions.map((s) => (
-            <div key={s._id} className="flex items-center gap-4 px-4 py-3">
+          applications.map((app) => (
+            <Link
+              key={app._id}
+              href={`/clients/${clientOrgId}/applications/${app._id}`}
+              className="flex items-center gap-4 px-4 py-3 hover:bg-accent transition-colors"
+            >
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate">
-                  {(s as { applicationTitle?: string }).applicationTitle ?? (s as { sourceFileName?: string }).sourceFileName}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {formatDistanceToNow(new Date(s._creationTime), { addSuffix: true })}
-                </p>
+                <p className="text-sm font-medium truncate">{app.title}</p>
+                {app.lineOfBusiness && (
+                  <p className="text-xs text-muted-foreground">{app.lineOfBusiness}</p>
+                )}
               </div>
-              <Badge variant="outline">
-                {STATUS_LABELS[s.status] ?? s.status}
+              <Badge variant="outline" className={`text-xs ${STATUS_COLORS[app.status] ?? ""}`}>
+                {app.status.replace(/_/g, " ")}
               </Badge>
-            </div>
+            </Link>
           ))
         )}
       </div>
-      <p className="text-xs text-muted-foreground">
-        Full applications UI arrives in Subsystem 4.
-      </p>
+
+      {orgCtx && (
+        <CreateApplicationDrawer
+          open={drawerOpen}
+          onClose={() => setDrawerOpen(false)}
+          clientOrgId={clientOrgId as Id<"organizations">}
+        />
+      )}
     </div>
   );
 }
