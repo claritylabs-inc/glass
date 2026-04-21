@@ -1,9 +1,11 @@
 // convex/integrations.ts
 // Webhook dispatcher action + summary query.
+"use node";
 
 import { internalAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
+import { verifyMergeWebhookSignature } from "./lib/mergeClient";
 
 // ── Webhook dispatcher ─────────────────────────────────────────────────────
 
@@ -25,9 +27,8 @@ export const processWebhook = internalAction({
     signature: v.string(),
   },
   handler: async (ctx, args) => {
-    // DEFERRED: real HMAC check
-    // const secret = process.env.MERGE_WEBHOOK_SECRET;
-    // verifyMergeSignature(args.rawBody, args.signature, secret);
+    // Verify HMAC-SHA256 signature using MERGE_WEBHOOK_SECRET
+    verifyMergeWebhookSignature(args.rawBody, args.signature);
 
     let payload: Record<string, unknown>;
     try {

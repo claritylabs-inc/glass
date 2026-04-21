@@ -111,6 +111,49 @@ Manual trigger: `api.actions.dreamConsolidation.consolidate` (public action).
 
 Both `processThreadChat.ts` and `mcpChat.ts` pass `relevantPolicyIds` to avoid duplicating policy-derived intelligence.
 
+## Integrations (Merge.dev) — ACTIVE
+
+Glass syncs financial and HR data from client-connected systems via [Merge.dev](https://merge.dev).
+
+### Architecture
+
+- **`convex/lib/mergeClient.ts`** — `MergeClient` interface + real SDK implementation (backed by `@mergeapi/merge-node-client`) with a stub fallback.
+- **`convex/actions/mergeSync.ts`** — Sync pipeline actions: `runInitialSync`, `runScheduledSync`, `runWebhookDrivenSync`, `syncMetric`, `scheduledSyncAll`.
+- **`convex/integrations.ts`** — Webhook dispatcher (`processWebhook`). Verifies HMAC-SHA256 signature, routes events to connection/sync mutations.
+- **`convex/lib/secrets.ts`** — AES-256-GCM encryption for Merge `account_token` values stored at rest in `integrationConnections.mergeAccountTokenEncrypted`.
+
+### Environment Variables
+
+| Variable | Purpose |
+|----------|---------|
+| `MERGE_API_KEY` | Merge API key (dev/sandbox or production). When unset, the stub client is used automatically. |
+| `MERGE_WEBHOOK_SECRET` | HMAC-SHA256 secret for verifying `X-Merge-Webhook-Signature` on inbound webhooks. |
+| `INTEGRATION_TOKEN_ENC_KEY` | Base64-encoded 32-byte AES-256 key for encrypting Merge account tokens at rest. Generate with `openssl rand -base64 32`. If unset, a dev key (all-zeros) is used with a warning — **do not use the dev key in production**. |
+
+### Stub Fallback
+
+`getMergeClient()` reads `MERGE_API_KEY` at call time (not module load). When the variable is absent, `stubMergeClient` is returned automatically. CI and dev environments without credentials continue to work using deterministic fake data.
+
+### Webhook Signature Verification
+
+`verifyMergeWebhookSignature(rawBody, signature)` performs HMAC-SHA256 verification. If `MERGE_WEBHOOK_SECRET` is unset, a warning is logged and verification is skipped (to support local dev). In production the secret must be set.
+
+### Metric Keys
+
+Normalized `metricKey` values stored in `integrationData`:
+
+- `accounting.annual_revenue`, `accounting.prior_year_revenue`, `accounting.company_legal_name`, `accounting.company_ein`
+- `hris.headcount`, `hris.company_address`
+- `payroll.total_payroll_ytd`, `payroll.total_payroll_trailing_12`
+
+### Setting up credentials
+
+```sh
+npx convex env set MERGE_API_KEY <your-key>
+npx convex env set MERGE_WEBHOOK_SECRET <your-secret>
+npx convex env set INTEGRATION_TOKEN_ENC_KEY $(openssl rand -base64 32)
+```
+
 ## cl-sdk Integration
 
 The Prism-specific `cl-sdk` wiring lives under `convex/lib/`.
