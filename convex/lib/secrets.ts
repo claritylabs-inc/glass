@@ -17,7 +17,7 @@ function getKeyMaterial(): Uint8Array {
 }
 
 async function getCryptoKey(usage: KeyUsage[]): Promise<CryptoKey> {
-  return crypto.subtle.importKey("raw", getKeyMaterial(), "AES-GCM", false, usage);
+  return crypto.subtle.importKey("raw", getKeyMaterial().buffer as ArrayBuffer, "AES-GCM", false, usage);
 }
 
 /** Encrypt plaintext → base64url-encoded ciphertext with embedded 12-byte IV. */
