@@ -338,6 +338,113 @@ export default defineSchema({
 
   // ── End Applications v2 ───────────────────────────────────────────────────
 
+  // ── Integrations (Subsystem 5) ───────────────────────────────────────────
+
+  integrationConnections: defineTable({
+    clientOrgId: v.id("organizations"),
+    category: v.union(
+      v.literal("accounting"),
+      v.literal("hris"),
+      v.literal("payroll"),
+    ),
+    mergeAccountTokenEncrypted: v.string(),
+    mergeLinkedAccountId: v.string(),
+    providerSlug: v.string(),
+    providerDisplayName: v.string(),
+    status: v.union(
+      v.literal("connecting"),
+      v.literal("active"),
+      v.literal("reauth_required"),
+      v.literal("disconnected"),
+      v.literal("error"),
+    ),
+    lastSyncAt: v.optional(v.number()),
+    lastSyncStatus: v.optional(v.union(
+      v.literal("success"),
+      v.literal("partial"),
+      v.literal("error"),
+    )),
+    lastSyncError: v.optional(v.string()),
+    connectedByUserId: v.optional(v.id("users")),
+    connectedAt: v.number(),
+    disconnectedAt: v.optional(v.number()),
+    originatingApplicationId: v.optional(v.id("applications")),
+    integrationRequestId: v.optional(v.id("integrationRequests")),
+  })
+    .index("by_clientOrgId", ["clientOrgId"])
+    .index("by_clientOrgId_category", ["clientOrgId", "category"])
+    .index("by_mergeLinkedAccountId", ["mergeLinkedAccountId"]),
+
+  integrationData: defineTable({
+    connectionId: v.id("integrationConnections"),
+    clientOrgId: v.id("organizations"),
+    metricKey: v.string(),
+    value: v.any(),
+    unit: v.optional(v.string()),
+    asOfDate: v.optional(v.string()),
+    period: v.optional(v.object({
+      start: v.string(),
+      end: v.string(),
+      kind: v.union(
+        v.literal("ytd"),
+        v.literal("trailing_12"),
+        v.literal("fiscal_year"),
+        v.literal("calendar_year"),
+        v.literal("quarter"),
+        v.literal("month"),
+      ),
+    })),
+    syncedAt: v.number(),
+    mergeSourceRef: v.optional(v.string()),
+  })
+    .index("by_clientOrgId_metricKey", ["clientOrgId", "metricKey"])
+    .index("by_connectionId", ["connectionId"]),
+
+  integrationSyncLogs: defineTable({
+    connectionId: v.id("integrationConnections"),
+    clientOrgId: v.id("organizations"),
+    trigger: v.union(
+      v.literal("initial"),
+      v.literal("webhook"),
+      v.literal("scheduled"),
+      v.literal("manual"),
+    ),
+    status: v.union(
+      v.literal("running"),
+      v.literal("success"),
+      v.literal("error"),
+    ),
+    metricsWritten: v.number(),
+    error: v.optional(v.string()),
+    startedAt: v.number(),
+    durationMs: v.optional(v.number()),
+  })
+    .index("by_connectionId", ["connectionId"])
+    .index("by_clientOrgId", ["clientOrgId"]),
+
+  integrationRequests: defineTable({
+    brokerOrgId: v.id("organizations"),
+    clientOrgId: v.id("organizations"),
+    category: v.union(
+      v.literal("accounting"),
+      v.literal("hris"),
+      v.literal("payroll"),
+    ),
+    requestedByUserId: v.id("users"),
+    message: v.optional(v.string()),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("fulfilled"),
+      v.literal("dismissed"),
+    ),
+    createdAt: v.number(),
+    resolvedAt: v.optional(v.number()),
+  })
+    .index("by_clientOrgId_status", ["clientOrgId", "status"])
+    .index("by_brokerOrgId", ["brokerOrgId"]),
+
+  // ── End Integrations ──────────────────────────────────────────────────────
+
   // Org invitations — pending invites
   orgInvitations: defineTable({
     orgId: v.id("organizations"),
