@@ -32,6 +32,8 @@ interface ConnectionFormProps {
   onClose: () => void;
   returnTo?: string;
   initialHistoryDays?: number;
+  initialStep?: Step;
+  showBack?: boolean;
 }
 
 export function ConnectionForm({
@@ -39,10 +41,12 @@ export function ConnectionForm({
   onClose,
   returnTo = "/settings?section=email-connections",
   initialHistoryDays = 30,
+  initialStep = "choose",
+  showBack = true,
 }: ConnectionFormProps) {
   const createConnection = useMutation(api.connections.create);
   const createOAuthState = useMutation(api.connections.createOAuthStateForViewer);
-  const [step, setStep] = useState<Step>("choose");
+  const [step, setStep] = useState<Step>(initialStep);
   const [providerChoice, setProviderChoice] = useState<ProviderChoice>("google");
   const [historyDays, setHistoryDays] = useState(initialHistoryDays);
   const [preset, setPreset] = useState("Outlook");
@@ -63,7 +67,7 @@ export function ConnectionForm({
 
   const handleClose = () => {
     onClose();
-    setStep("choose");
+    setStep(initialStep);
     setHistoryDays(initialHistoryDays);
   };
 
@@ -336,14 +340,18 @@ export function ConnectionForm({
                     </div>
 
                     <div className="flex justify-between gap-3 pt-3">
-                      <PillButton
-                        variant="secondary"
-                        onClick={() => setStep("history")}
-                        type="button"
-                      >
-                        <ArrowLeft className="w-3 h-3" />
-                        Back
-                      </PillButton>
+                      {showBack ? (
+                        <PillButton
+                          variant="secondary"
+                          onClick={() => setStep("history")}
+                          type="button"
+                        >
+                          <ArrowLeft className="w-3 h-3" />
+                          Back
+                        </PillButton>
+                      ) : (
+                        <span />
+                      )}
                       <div className="flex gap-3">
                         <PillButton variant="secondary" onClick={handleClose} type="button">
                           Cancel

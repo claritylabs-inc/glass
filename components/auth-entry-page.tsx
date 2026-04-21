@@ -177,26 +177,27 @@ export function AuthEntryPage({ mode }: { mode: "login" | "signup" }) {
 
             {error && <p className="px-1 py-1 text-sm text-muted-foreground">{error}</p>}
 
-            <div className="flex flex-col gap-3 pt-1">
-              <PillButton type="submit" disabled={loading || code.length < 6} className="w-full justify-center text-sm shadow-none sm:w-auto">
+            <div className="flex flex-col items-start gap-5 pt-6">
+              <PillButton
+                type="submit"
+                disabled={loading || code.length < 6}
+                className="w-full justify-center text-sm shadow-none sm:w-auto"
+              >
                 {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                 {loading ? "Verifying..." : "Verify and continue"}
                 {!loading ? <ArrowRight className="h-4 w-4" /> : null}
               </PillButton>
-              <PillButton
+              <button
                 type="button"
-                variant="secondary"
-                size="compact"
                 onClick={() => {
                   setStep("email");
                   setCode("");
                   setError("");
                 }}
-                className="w-full justify-center text-sm shadow-none sm:w-auto"
+                className="self-center text-sm text-muted-foreground transition-colors hover:text-foreground sm:self-start"
               >
-                <ArrowLeft className="h-4 w-4" />
                 Use a different email
-              </PillButton>
+              </button>
             </div>
           </form>
         )}

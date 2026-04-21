@@ -1,16 +1,24 @@
 "use client";
 
 import { useAuthActions } from "@convex-dev/auth/react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { useAction, useMutation, useQuery } from "convex/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import { AuthCard, AuthMinimalShell, BrandWordmark } from "@/components/auth-shell";
 import { AgentHandleForm } from "@/components/agent-handle-form";
 import { ConnectionForm } from "@/components/connection-form";
 import { PillButton } from "@/components/ui/pill-button";
 import { LogoIcon } from "@/components/ui/logo-icon";
-import { ArrowLeft, ArrowRight, AtSign, Check, ChevronDown, Clock3, Loader2, Mail } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { AlertCircle, ArrowRight, AtSign, Check, Loader2, Mail } from "lucide-react";
+import { FaGoogle } from "react-icons/fa";
 import { toast } from "sonner";
 
 type Step = 0 | 1 | 2 | 3 | 4;
@@ -107,6 +115,7 @@ function Shell({
 export default function OnboardingPage() {
   const { signOut } = useAuthActions();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const viewer = useQuery(api.users.viewer);
   const viewerOrg = useQuery(api.orgs.viewerOrg);
   const connections = useQuery(api.connections.list);
@@ -116,11 +125,37 @@ export default function OnboardingPage() {
   const updateOrg = useMutation(api.orgs.updateOrg);
   const acceptInvitation = useMutation(api.orgs.acceptInvitation);
   const completeOnboarding = useMutation(api.users.completeOnboarding);
+  const createOAuthState = useMutation(api.connections.createOAuthStateForViewer);
   const extractCompanyInfo = useAction(api.actions.extractCompanyInfo.extractCompanyInfo);
 
-  const [currentStep, setCurrentStep] = useState<Step>(0);
-  const [connectionFormOpen, setConnectionFormOpen] = useState(false);
+  const stepParam = searchParams?.get("step");
+  const parsedStep = stepParam ? Number(stepParam) : NaN;
+  const initialStep: Step =
+    Number.isFinite(parsedStep) && parsedStep >= 0 && parsedStep <= 4
+      ? (parsedStep as Step)
+      : 0;
+
+  const [currentStep, setCurrentStepState] = useState<Step>(initialStep);
+  const [imapFormOpen, setImapFormOpen] = useState(false);
+  const [connectingGoogle, setConnectingGoogle] = useState(false);
   const claimRef = useRef<(() => Promise<void>) | null>(null);
+
+  const setCurrentStep = useCallback(
+    (next: Step) => {
+      setCurrentStepState(next);
+      const params = new URLSearchParams(searchParams?.toString() ?? "");
+      params.set("step", String(next));
+      router.replace(`/onboarding?${params.toString()}`, { scroll: false });
+    },
+    [router, searchParams],
+  );
+
+  useEffect(() => {
+    if (stepParam == null) return;
+    if (Number.isFinite(parsedStep) && parsedStep !== currentStep) {
+      setCurrentStepState(parsedStep as Step);
+    }
+  }, [stepParam, parsedStep, currentStep]);
 
   const [name, setName] = useState("");
   const [role, setRole] = useState("");
@@ -157,7 +192,11 @@ export default function OnboardingPage() {
   const hasConnection = nonDemoConnections.length > 0;
   const primaryConnection = nonDemoConnections[0];
   const existingHandle = viewerOrg?.org?.agentHandle ?? viewer?.agentHandle;
-  const syncComplete = primaryConnection?.lastScanStatus === "success";
+  const scanStatus = primaryConnection?.lastScanStatus;
+  const syncComplete = scanStatus === "success";
+  const syncFailed = scanStatus === "error" || scanStatus === "disconnected";
+  const hasContext = Boolean(viewerOrg?.org?.context);
+  const websiteProvided = Boolean((viewerOrg?.org?.website ?? viewer?.companyWebsite)?.trim());
 
   async function handleLogout() {
     await signOut();
@@ -214,6 +253,21 @@ export default function OnboardingPage() {
       }
     } finally {
       setSavingOrg(false);
+    }
+  }
+
+  async function handleConnectGoogle() {
+    setConnectingGoogle(true);
+    try {
+      const sinceDate = new Date(Date.now() - historyDays * 86400000)
+        .toISOString()
+        .split("T")[0];
+      const state = crypto.randomUUID();
+      await createOAuthState({ state, sinceDate, returnTo: "/onboarding?step=3" });
+      window.location.href = `/api/auth/google/start?state=${encodeURIComponent(state)}`;
+    } catch (err) {
+      setConnectingGoogle(false);
+      toast.error(err instanceof Error ? err.message : "Failed to start Google connection");
     }
   }
 
@@ -380,27 +434,16 @@ export default function OnboardingPage() {
                 </div>
               </div>
 
-              <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">
-                <PillButton
-                  type="button"
-                  variant="secondary"
-                  onClick={() => setCurrentStep(0)}
-                  className="w-full text-sm shadow-none sm:w-auto"
-                >
-                  <ArrowLeft className="h-4 w-4" />
-                  Back
-                </PillButton>
-                <PillButton
-                  type="button"
-                  onClick={handleOrgNext}
-                  disabled={!canContinueOrg || savingOrg}
-                  className="w-full justify-center text-sm shadow-none sm:w-auto"
-                >
-                  {savingOrg ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                  Continue
-                  {!savingOrg ? <ArrowRight className="h-4 w-4" /> : null}
-                </PillButton>
-              </div>
+              <PillButton
+                type="button"
+                onClick={handleOrgNext}
+                disabled={!canContinueOrg || savingOrg}
+                className="w-full justify-center text-sm shadow-none sm:w-auto"
+              >
+                {savingOrg ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                Continue
+                {!savingOrg ? <ArrowRight className="h-4 w-4" /> : null}
+              </PillButton>
             </div>
           )}
 
@@ -436,113 +479,129 @@ export default function OnboardingPage() {
                 )}
               </div>
 
-              <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">
+              {existingHandle ? (
                 <PillButton
                   type="button"
-                  variant="secondary"
-                  onClick={() => setCurrentStep(1)}
-                  className="w-full text-sm shadow-none sm:w-auto"
-                >
-                  <ArrowLeft className="h-4 w-4" />
-                  Back
-                </PillButton>
-                {existingHandle ? (
-                  <PillButton
-                    type="button"
-                    onClick={() => setCurrentStep(3)}
-                    className="w-full justify-center text-sm shadow-none sm:w-auto"
-                  >
-                    Continue
-                    <ArrowRight className="h-4 w-4" />
-                  </PillButton>
-                ) : (
-                  <PillButton
-                    type="button"
-                    onClick={() => claimRef.current?.()}
-                    disabled={!canClaimHandle}
-                    className="w-full justify-center text-sm shadow-none sm:w-auto"
-                  >
-                    <AtSign className="h-4 w-4" />
-                    Claim handle
-                  </PillButton>
-                )}
-              </div>
-            </div>
-          )}
-
-          {currentStep === 3 && (
-            <div className="space-y-10">
-              {!hasConnection ? (
-                <div className="rounded-xl border border-foreground/8 bg-popover/60">
-                  <div className="flex items-start justify-between gap-4 px-4 py-4">
-                    <div>
-                      <p className="text-sm font-medium text-foreground">Backsync range</p>
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        Choose how far back Prism should scan your inbox after you connect it.
-                      </p>
-                    </div>
-                    <div className="relative shrink-0">
-                      <select
-                        value={historyDays}
-                        onChange={(event) => setHistoryDays(Number(event.target.value))}
-                        className="appearance-none rounded-lg border border-foreground/8 bg-background py-2 pl-3 pr-9 text-sm text-foreground outline-none transition focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8"
-                      >
-                        {BACKSYNC_OPTIONS.map((option) => (
-                          <option key={option.days} value={option.days}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                      <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex items-start gap-3 text-base text-muted-foreground">
-                  <div className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-full bg-foreground/[0.03]">
-                    <Check className="h-4 w-4" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-foreground">Email connected</p>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      Connected as {primaryConnection?.email ?? primaryConnection?.label ?? "your account"}.
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {!hasConnection ? (
-                <PillButton
-                  type="button"
-                  variant="secondary"
-                  onClick={() => setConnectionFormOpen(true)}
-                  className="w-full justify-center text-sm shadow-none sm:w-auto"
-                >
-                  <Mail className="h-4 w-4" />
-                  Connect email
-                </PillButton>
-              ) : null}
-
-              <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">
-                <PillButton
-                  type="button"
-                  variant="secondary"
-                  onClick={() => setCurrentStep(2)}
-                  className="w-full text-sm shadow-none sm:w-auto"
-                >
-                  <ArrowLeft className="h-4 w-4" />
-                  Back
-                </PillButton>
-                <PillButton
-                  type="button"
-                  onClick={() => setCurrentStep(4)}
-                  disabled={!hasConnection}
+                  onClick={() => setCurrentStep(3)}
                   className="w-full justify-center text-sm shadow-none sm:w-auto"
                 >
                   Continue
                   <ArrowRight className="h-4 w-4" />
                 </PillButton>
-              </div>
+              ) : (
+                <PillButton
+                  type="button"
+                  onClick={() => claimRef.current?.()}
+                  disabled={!canClaimHandle}
+                  className="w-full justify-center text-sm shadow-none sm:w-auto"
+                >
+                  <AtSign className="h-4 w-4" />
+                  Claim handle
+                </PillButton>
+              )}
+            </div>
+          )}
+
+          {currentStep === 3 && (
+            <div className="space-y-8">
+              {hasConnection ? (
+                <>
+                  <div className="flex items-start gap-3 text-base text-muted-foreground">
+                    <div className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-full bg-foreground/[0.03]">
+                      <Check className="h-4 w-4" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-foreground">Email connected</p>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        Connected as {primaryConnection?.email ?? primaryConnection?.label ?? "your account"}.
+                      </p>
+                    </div>
+                  </div>
+                  <PillButton
+                    type="button"
+                    onClick={() => setCurrentStep(4)}
+                    className="w-full justify-center text-sm shadow-none sm:w-auto"
+                  >
+                    Continue
+                    <ArrowRight className="h-4 w-4" />
+                  </PillButton>
+                </>
+              ) : (
+                <>
+                  <div className="rounded-xl border border-foreground/8 bg-popover/60">
+                    <div className="flex items-start justify-between gap-4 px-4 py-4">
+                      <div>
+                        <p className="text-sm font-medium text-foreground">Backsync range</p>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          Choose how far back Prism should scan your inbox.
+                        </p>
+                      </div>
+                      <Select
+                        value={String(historyDays)}
+                        onValueChange={(value) => setHistoryDays(Number(value))}
+                      >
+                        <SelectTrigger className="shrink-0 min-w-[9rem]">
+                          <SelectValue>
+                            {
+                              BACKSYNC_OPTIONS.find((o) => o.days === historyDays)?.label
+                            }
+                          </SelectValue>
+                        </SelectTrigger>
+                        <SelectContent
+                          align="end"
+                          sideOffset={6}
+                          alignItemWithTrigger={false}
+                          className="min-w-[9rem] p-1"
+                        >
+                          {BACKSYNC_OPTIONS.map((option) => (
+                            <SelectItem
+                              key={option.days}
+                              value={String(option.days)}
+                              className="py-1.5 pr-7 pl-2"
+                            >
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <button
+                      type="button"
+                      disabled={connectingGoogle}
+                      onClick={handleConnectGoogle}
+                      className="flex w-full items-center justify-center gap-3 rounded-lg bg-foreground px-4 py-3.5 text-body-sm font-medium text-background shadow-sm transition-opacity hover:opacity-90 disabled:opacity-60"
+                    >
+                      {connectingGoogle ? (
+                        <Loader2 className="h-[18px] w-[18px] animate-spin" />
+                      ) : (
+                        <FaGoogle size={18} />
+                      )}
+                      Connect Gmail
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setImapFormOpen(true)}
+                      className="flex w-full items-center justify-center gap-3 rounded-lg border border-foreground/8 bg-popover px-4 py-3.5 text-body-sm font-medium text-foreground transition-all hover:border-foreground/15 hover:bg-foreground/[0.02]"
+                    >
+                      <Mail className="h-[18px] w-[18px]" />
+                      Connect other IMAP email
+                    </button>
+                  </div>
+
+                  <div className="flex justify-center">
+                    <button
+                      type="button"
+                      onClick={() => setCurrentStep(4)}
+                      className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+                    >
+                      Skip for now
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           )}
 
@@ -557,72 +616,91 @@ export default function OnboardingPage() {
                   <Check className="h-4 w-4 text-foreground" />
                 </div>
 
-                <div className="flex items-center justify-between rounded-xl border border-foreground/8 bg-popover/60 px-4 py-3">
-                  <div>
-                    <p className="text-sm font-medium text-foreground">Email inbox connected and synced</p>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {syncComplete
-                        ? `Synced ${primaryConnection?.email ?? primaryConnection?.label ?? "your inbox"}.`
-                        : hasConnection
-                          ? `Connected ${primaryConnection?.email ?? primaryConnection?.label ?? "your inbox"}. Initial sync is still running.`
-                          : "Waiting for an inbox connection to finish syncing."}
-                    </p>
-                  </div>
-                  {syncComplete ? (
-                    <Check className="h-4 w-4 text-foreground" />
-                  ) : (
-                    <Clock3 className="h-4 w-4 text-muted-foreground" />
-                  )}
-                </div>
+                {(() => {
+                  const label = hasConnection ? "Email inbox connected" : "Email inbox";
+                  let detail: string;
+                  let icon: ReactNode = null;
+                  let skipped = false;
+                  if (!hasConnection) {
+                    detail = "Skipped — connect your inbox any time from Settings.";
+                    skipped = true;
+                  } else if (syncComplete) {
+                    detail = `Synced ${primaryConnection?.email ?? primaryConnection?.label ?? "your inbox"}.`;
+                    icon = <Check className="h-4 w-4 text-foreground" />;
+                  } else if (syncFailed) {
+                    detail = `${primaryConnection?.email ?? "Your inbox"} couldn't sync. Retry from Settings after onboarding.`;
+                    icon = <AlertCircle className="h-4 w-4 text-muted-foreground" />;
+                  } else {
+                    detail = `Connected ${primaryConnection?.email ?? primaryConnection?.label ?? "your inbox"}. Initial sync running in the background.`;
+                    icon = <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />;
+                  }
+                  return (
+                    <div
+                      className={`flex items-center justify-between rounded-xl border border-foreground/8 bg-popover/60 px-4 py-3 transition-opacity ${skipped ? "opacity-50" : ""}`}
+                    >
+                      <div>
+                        <p className="text-sm font-medium text-foreground">{label}</p>
+                        <p className="mt-1 text-sm text-muted-foreground">{detail}</p>
+                      </div>
+                      {icon}
+                    </div>
+                  );
+                })()}
 
-                <div className="flex items-center justify-between rounded-xl border border-foreground/8 bg-popover/60 px-4 py-3">
-                  <div>
-                    <p className="text-sm font-medium text-foreground">Company information gathered from website</p>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {enrichmentState === "success"
-                        ? "Company enrichment finished. Prism filled in additional org context automatically."
-                        : enrichmentState === "error"
-                          ? "Prism couldn't gather company information automatically, but you can continue."
-                          : "Prism is still gathering company information from your website."}
-                    </p>
-                  </div>
-                  {enrichmentState === "success" ? (
-                    <Check className="h-4 w-4 text-foreground" />
-                  ) : (
-                    <Clock3 className="h-4 w-4 text-muted-foreground" />
-                  )}
-                </div>
+                {(() => {
+                  let label = "Company information gathered from website";
+                  let detail: string;
+                  let icon: ReactNode = null;
+                  let skipped = false;
+                  if (!websiteProvided) {
+                    label = "Company information";
+                    detail = "No website provided — add one in Settings to enrich your workspace later.";
+                    skipped = true;
+                  } else if (hasContext) {
+                    detail = "Prism filled in additional org context from your website.";
+                    icon = <Check className="h-4 w-4 text-foreground" />;
+                  } else if (enrichmentState === "error") {
+                    detail = "Prism couldn't gather company information automatically. You can still continue.";
+                    icon = <AlertCircle className="h-4 w-4 text-muted-foreground" />;
+                  } else {
+                    detail = "Prism is still gathering company information from your website.";
+                    icon = <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />;
+                  }
+                  return (
+                    <div
+                      className={`flex items-center justify-between rounded-xl border border-foreground/8 bg-popover/60 px-4 py-3 transition-opacity ${skipped ? "opacity-50" : ""}`}
+                    >
+                      <div>
+                        <p className="text-sm font-medium text-foreground">{label}</p>
+                        <p className="mt-1 text-sm text-muted-foreground">{detail}</p>
+                      </div>
+                      {icon}
+                    </div>
+                  );
+                })()}
               </div>
 
-              <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">
-                <PillButton
-                  type="button"
-                  variant="secondary"
-                  onClick={() => setCurrentStep(3)}
-                  className="w-full text-sm shadow-none sm:w-auto"
-                >
-                  <ArrowLeft className="h-4 w-4" />
-                  Back
-                </PillButton>
-                <PillButton
-                  type="button"
-                  onClick={handleFinish}
-                  disabled={finishing}
-                  className="w-full justify-center text-sm shadow-none sm:w-auto"
-                >
-                  {finishing ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                  Enter Prism
-                </PillButton>
-              </div>
+              <PillButton
+                type="button"
+                onClick={handleFinish}
+                disabled={finishing}
+                className="w-full justify-center text-sm shadow-none sm:w-auto"
+              >
+                {finishing ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                Continue to Prism
+                {!finishing ? <ArrowRight className="h-4 w-4" /> : null}
+              </PillButton>
             </div>
           )}
         </div>
 
       <ConnectionForm
-        open={connectionFormOpen}
-        onClose={() => setConnectionFormOpen(false)}
-        returnTo="/onboarding"
+        open={imapFormOpen}
+        onClose={() => setImapFormOpen(false)}
+        returnTo="/onboarding?step=3"
         initialHistoryDays={historyDays}
+        initialStep="imap"
+        showBack={false}
       />
     </Shell>
   );
