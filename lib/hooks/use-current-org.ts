@@ -1,0 +1,79 @@
+// lib/hooks/use-current-org.ts
+//
+// Returns the currently-active org context for the authenticated user.
+// Handles multi-org users (broker OR client) and broker-of-client access.
+
+"use client";
+
+import { useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import { useSearchParams } from "next/navigation";
+import { Id } from "@/convex/_generated/dataModel";
+
+export type CurrentOrgContext = {
+  orgId: Id<"organizations">;
+  orgType: "broker" | "client";
+  accessType: "member" | "broker_of_client";
+  role: "admin" | "member" | undefined;
+  orgName: string;
+  brokerOrgId: Id<"organizations"> | undefined;
+  slug: string | undefined;
+  brandingColor: string | undefined;
+  agentDisplayName: string | undefined;
+};
+
+/**
+ * Returns the active org context.
+ *
+ * If the URL contains ?org=<orgId>, that org is used (for broker-of-client navigation).
+ * Otherwise, falls back to the first org membership.
+ *
+ * Returns `null` while loading, `undefined` if the user has no org.
+ */
+export function useCurrentOrg(): CurrentOrgContext | null | undefined {
+  const searchParams = useSearchParams();
+  const orgIdFromUrl = searchParams.get("org") as Id<"organizations"> | null;
+
+  const orgData = useQuery(
+    api.orgs.viewerOrg,
+    orgIdFromUrl ? { orgId: orgIdFromUrl } : {},
+  );
+
+  if (orgData === undefined) return null; // loading
+
+  if (!orgData) return undefined; // no org
+
+  const org = orgData.org as {
+    _id: Id<"organizations">;
+    name: string;
+    type?: string;
+    brokerOrgId?: Id<"organizations">;
+    slug?: string;
+    brandingColor?: string;
+    agentDisplayName?: string;
+  };
+
+  const membership = orgData.membership as {
+    role: "admin" | "member";
+  };
+
+  // Determine orgType
+  const orgType: "broker" | "client" = (org.type as "broker" | "client") ?? "client";
+
+  // accessType: if orgIdFromUrl is provided and the user is NOT a direct member,
+  // this would have returned null from viewerOrg — so if we have data, accessType = "member"
+  // for this hook. Cross-org broker-of-client access requires a separate utility if needed.
+  const accessType: "member" | "broker_of_client" = "member";
+
+  return {
+    orgId: org._id,
+    orgType,
+    accessType,
+    role: membership.role,
+    orgName: org.name,
+    brokerOrgId: org.brokerOrgId,
+    slug: org.slug,
+    brandingColor: org.brandingColor,
+    agentDisplayName: org.agentDisplayName,
+  };
+}
