@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { query, mutation, internalQuery } from "./_generated/server";
 import { getAuthUserId } from "@convex-dev/auth/server";
+import { notify } from "./lib/notify";
 
 export const viewer = query({
   args: {},
@@ -90,6 +91,20 @@ export const completeOnboarding = mutation({
       .first();
     if (membership) {
       await ctx.db.patch(membership.orgId, { onboardingComplete: true });
+
+      // Notify broker if this is a client org
+      const clientOrg = await ctx.db.get(membership.orgId);
+      if (clientOrg?.type === "client" && clientOrg.brokerOrgId) {
+        await notify(ctx, {
+          orgId: clientOrg.brokerOrgId,
+          type: "client_onboarding_completed",
+          title: "Client completed onboarding",
+          body: `${clientOrg.name} finished their onboarding setup.`,
+          relatedOrgId: membership.orgId,
+          actionType: "view_client",
+          actionPayload: { clientOrgId: membership.orgId },
+        });
+      }
     }
   },
 });

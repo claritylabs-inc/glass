@@ -11,6 +11,7 @@ import { internal as _internal } from "./_generated/api";
 const internal = _internal as any;
 import { getOrgAccess, assertBrokerOrg } from "./lib/access";
 import { recordBrokerActivity } from "./lib/brokerActivity";
+import { notify } from "./lib/notify";
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
@@ -271,6 +272,17 @@ export const accept = mutation({
       actorSide: "client",
       summary: `${acceptingUser?.name ?? acceptingUser?.email ?? "A client"} accepted the invitation to join.`,
       payload: { invitationId: inv._id },
+    });
+
+    // Notify broker of invitation acceptance
+    await notify(ctx, {
+      orgId: inv.brokerOrgId,
+      type: "client_invitation_accepted",
+      title: "Client accepted your invitation",
+      body: `${args.clientOrgName} accepted your invitation and joined Glass.`,
+      relatedOrgId: clientOrgId,
+      actionType: "view_client",
+      actionPayload: { clientOrgId },
     });
 
     // Pre-fill passport with invite data
