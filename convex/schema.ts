@@ -1480,6 +1480,8 @@ export default defineSchema({
     redirectUris: v.array(v.string()),
     tokenEndpointAuthMethod: v.string(), // "none" for public clients
     createdAt: v.number(),
+    allowedScopes: v.optional(v.array(v.union(v.literal("read"), v.literal("write")))),
+    description: v.optional(v.string()),
   }).index("by_clientId", ["clientId"]),
 
   oauthAuthCodes: defineTable({
@@ -1492,6 +1494,7 @@ export default defineSchema({
     scope: v.optional(v.string()),
     expiresAt: v.number(),
     usedAt: v.optional(v.number()),
+    scopes: v.optional(v.array(v.union(v.literal("read"), v.literal("write")))),
   }).index("by_codeHash", ["codeHash"]),
 
   oauthTokens: defineTable({
@@ -1505,10 +1508,35 @@ export default defineSchema({
     refreshExpiresAt: v.optional(v.number()),
     revokedAt: v.optional(v.number()),
     createdAt: v.number(),
+    scopes: v.optional(v.array(v.union(v.literal("read"), v.literal("write")))),
   })
     .index("by_tokenHash", ["tokenHash"])
     .index("by_refreshTokenHash", ["refreshTokenHash"])
     .index("by_userId", ["userId"]),
+
+  // ── API Audit Log ──
+
+  apiAuditLog: defineTable({
+    requestId: v.string(),
+    timestamp: v.number(),
+    userId: v.id("users"),
+    orgId: v.id("organizations"),
+    method: v.string(),
+    path: v.string(),
+    status: v.number(),
+    body: v.optional(v.string()),
+    response: v.optional(v.string()),
+    tokenId: v.id("oauthTokens"),
+  }).index("by_orgId_timestamp", ["orgId", "timestamp"]),
+
+  // ── Rate Limit Counters ──
+
+  rateLimitCounters: defineTable({
+    tokenId: v.id("oauthTokens"),
+    windowStart: v.number(),
+    count: v.number(),
+    lastRequestMs: v.number(),
+  }).index("by_tokenId", ["tokenId"]),
 
   // ── Presence ──
 
