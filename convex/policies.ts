@@ -2,6 +2,8 @@ import { v } from "convex/values";
 import { mutation, query, internalQuery, internalMutation } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import { requireOrgAccess, getOrgAccess } from "./lib/orgAuth";
+import { recordBrokerActivity } from "./lib/brokerActivity";
+import type { Id as DataModelId } from "./_generated/dataModel";
 
 export const list = query({
   args: {
@@ -658,6 +660,24 @@ export const updateExtraction = mutation({
   handler: async (ctx, args) => {
     const { id, ...fields } = args;
     await ctx.db.patch(id, fields);
+
+    // Emit broker activity if extraction is now complete
+    if ((fields as { extractionStatus?: string }).extractionStatus === "complete") {
+      const policy = await ctx.db.get(id);
+      if (policy?.orgId) {
+        const org = await ctx.db.get(policy.orgId);
+        if (org && (org as { brokerOrgId?: DataModelId<"organizations"> }).brokerOrgId) {
+          await recordBrokerActivity(ctx, {
+            brokerOrgId: (org as { brokerOrgId: DataModelId<"organizations"> }).brokerOrgId,
+            clientOrgId: policy.orgId,
+            type: "policy_extraction_completed",
+            actorSide: "system",
+            summary: `Policy ${(policy as { policyNumber?: string }).policyNumber ?? id} (${(policy as { carrier?: string }).carrier ?? "unknown carrier"}) extraction completed.`,
+            payload: { policyId: id },
+          });
+        }
+      }
+    }
   },
 });
 
