@@ -23,16 +23,16 @@ Guidance for any coding agent working in this repository: Codex, Claude Code, Cu
 
 ## High-Level Architecture
 
-Prism is an insurance intelligence platform built on Next.js + Convex. It ingests insurance documents from email and uploads, extracts structured policy or quote data with `@claritylabs/cl-sdk`, stores retrieval-friendly chunks for vector search, and exposes that data to agent workflows for Q&A, application assistance, COI generation, and MCP access.
+Glass is an insurance intelligence platform built on Next.js + Convex. It has moved beyond its origin as a Glass clone into a broker/client operating workspace that combines document extraction, organization intelligence, application workflows, integrations, and API/MCP access.
 
 Core layers:
 
 - Frontend: Next.js 16 App Router, React 19, Tailwind 4
 - Backend: Convex queries, mutations, actions, scheduler, file storage, vector search
 - AI runtime: Vercel AI SDK (`ai`)
-- Extraction, query agent, and prompts: `@claritylabs/cl-sdk@0.12.x`
+- Extraction, query agent, and prompts: `@claritylabs/cl-sdk@0.16.x`
 - Providers: OpenAI, MoonshotAI, Anthropic, DeepSeek
-- Email: IMAP scanning via `imapflow`, outbound/inbound flows via Resend
+- Email: IMAP scanning via `imapflow`; outbound/inbound via Resend. All outbound Resend calls go through `convex/lib/resend.ts` (`sendResendEmail`). Sending domain comes from `AGENT_DOMAIN` (prod: `glass.claritylabs.inc`, dev: `dev.claritylabs.inc`).
 
 ## Current Model Routing
 
@@ -156,24 +156,24 @@ npx convex env set INTEGRATION_TOKEN_ENC_KEY $(openssl rand -base64 32)
 
 ## cl-sdk Integration
 
-The Prism-specific `cl-sdk` wiring lives under `convex/lib/`.
+The Glass-specific `cl-sdk` wiring lives under `convex/lib/`.
 
-- [sdkCallbacks.ts](convex/lib/sdkCallbacks.ts): adapts Prism model routing to `cl-sdk` callbacks
+- [sdkCallbacks.ts](convex/lib/sdkCallbacks.ts): adapts Glass model routing to `cl-sdk` callbacks
 - [extraction.ts](convex/lib/extraction.ts): builds a preconfigured extractor
 - [documentMapping.ts](convex/lib/documentMapping.ts): maps SDK documents to Convex policy records
 - [convexDocumentStore.ts](convex/lib/convexDocumentStore.ts): `DocumentStore` adapter
 - [convexMemoryStore.ts](convex/lib/convexMemoryStore.ts): `MemoryStore` adapter
 - [queryAgent.ts](convex/lib/queryAgent.ts): `createQueryAgent()` wrapper
-- [agentPrompts.ts](convex/lib/agentPrompts.ts): SDK prompt exports plus Prism retrieval-backed context builders
+- [agentPrompts.ts](convex/lib/agentPrompts.ts): SDK prompt exports plus Glass retrieval-backed context builders
 
 ### Callback Contract
 
-`cl-sdk v0.10` passes document content through callback `providerOptions`.
+Current `cl-sdk` passes document content through callback `providerOptions`.
 
 - `providerOptions.pdfBase64` carries the PDF for classification, planning, review, and page-scoped extraction calls.
 - `providerOptions.images` carries page images when PDF-to-image conversion is used.
 
-Prism translates those into AI SDK multipart message content in `sdkCallbacks.ts`:
+Glass translates those into AI SDK multipart message content in `sdkCallbacks.ts`:
 
 - PDFs become `{ type: "file", data, mediaType: "application/pdf" }`
 - images become `{ type: "image", image, mediaType }`
@@ -186,10 +186,10 @@ Important details:
 
 ### Token Limits
 
-Prism preserves a higher extraction token allowance for exclusion-heavy documents in `sdkCallbacks.ts`.
+Glass preserves a higher extraction token allowance for exclusion-heavy documents in `sdkCallbacks.ts`.
 
 - Default token limits come from `cl-sdk`.
-- If the prompt matches the exclusions extractor, Prism raises the effective max token count to `8192`.
+- If the prompt matches the exclusions extractor, Glass raises the effective max token count to `8192`.
 
 ## Extraction Flow
 
@@ -206,7 +206,7 @@ Primary extraction entrypoints:
 1. Fetch or receive a PDF.
 2. Store the raw PDF in Convex file storage.
 3. Run `buildExtractor().extract(pdfBase64, documentId)`.
-4. Map `InsuranceDocument` into Prism policy fields.
+4. Map `InsuranceDocument` into Glass policy fields.
 5. Persist the extracted document and metadata.
 6. Chunk the document and embed each chunk with `text-embedding-3-small`.
 7. Store chunks in `documentChunks` for semantic retrieval.
@@ -224,7 +224,7 @@ Primary extraction entrypoints:
 
 ## Retrieval And Agent Context
 
-Prism uses three vector-backed stores:
+Glass uses three vector-backed stores:
 
 - `documentChunks` — extracted policy/quote content chunks
 - `conversationTurns` — cross-thread conversation memory
@@ -256,7 +256,7 @@ Important: `git push` only deploys the Next.js frontend via Vercel. Convex funct
 Email scan pattern:
 
 - Scan windows should anchor to the newest stored email record for that connection, not only `lastScanAt`.
-- Prism intentionally rewinds the inferred scan anchor slightly and relies on `emails.messageId` deduplication so daily/manual scans do not miss boundary emails.
+- Glass intentionally rewinds the inferred scan anchor slightly and relies on `emails.messageId` deduplication so daily/manual scans do not miss boundary emails.
 - Progress counts should reflect newly inserted emails, not all provider messages returned by the upstream inbox query.
 - Classification is the only stage that should set `scanProgress.phase = "classifying"`; scan actions should avoid optimistic classifying state before the classifier actually starts.
 - Google OAuth uses server-managed state with client-side initialization: authenticated client code writes `{ userId, orgId, returnTo, sinceDate }` into `oauthStates`, the Next.js start route only sets the OAuth state cookie + redirects to Google, and the callback consumes the opaque state token instead of trusting a client-supplied `orgId`.
@@ -276,7 +276,7 @@ The onboarding flow at `/onboarding` is intentionally minimal and runs in this o
 Important onboarding behavior:
 
 - Onboarding no longer offers demo data or team invites.
-- After the org step saves, Prism kicks off website enrichment in the background via `actions/extractCompanyInfo`.
+- After the org step saves, Glass kicks off website enrichment in the background via `actions/extractCompanyInfo`.
 - That enrichment now updates both legacy user profile fields and the org record (`context`, `industry`, `industryVertical`, and relationship context fields).
 
 ### Email Scan To Policy
@@ -332,7 +332,7 @@ Glass exposes MCP functionality for remote and local AI tools.
 
 ### Tools
 
-**Legacy (client-org scoped):** `get_org_info`, `get_business_context`, `update_business_context`, `ask_glass` (was `ask_prism` — alias kept), `list_policies`, `get_policy`, `search_policies`, `list_quotes`, `get_quote`, `list_applications`, `get_application`, `list_threads`, `get_thread_messages`, `get_policy_stats`
+**Legacy (client-org scoped):** `get_org_info`, `get_business_context`, `update_business_context`, `ask_glass` (was `ask_glass` — alias kept), `list_policies`, `get_policy`, `search_policies`, `list_quotes`, `get_quote`, `list_applications`, `get_application`, `list_threads`, `get_thread_messages`, `get_policy_stats`
 
 **Broker tools:** `list_clients`, `get_client`, `list_applications_for_client`, `create_application_draft`, `add_application_question`, `send_application`, `raise_passport_flag`, `list_broker_activity`
 

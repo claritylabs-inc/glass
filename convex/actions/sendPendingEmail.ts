@@ -3,6 +3,7 @@
 import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
+import { sendResendEmail } from "../lib/resend";
 
 export const sendPending = internalAction({
   args: { id: v.id("pendingEmails") },
@@ -15,24 +16,10 @@ export const sendPending = internalAction({
     }
 
     try {
-      // Send via Resend
       const payload = JSON.parse(pending.emailPayload);
-      const res = await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${process.env.AUTH_RESEND_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
-
-      const resBody = await res.text();
-      if (!res.ok) throw new Error(`Failed to send email: ${resBody}`);
-
-      let sentMessageId: string | undefined;
-      try {
-        sentMessageId = JSON.parse(resBody).id;
-      } catch {}
+      const result = await sendResendEmail(payload);
+      if (!result.ok) throw new Error(`Failed to send email: ${result.error}`);
+      const sentMessageId = result.id;
 
       // Mark as sent
       await ctx.runMutation(internal.pendingEmails.markSent, {

@@ -8,12 +8,7 @@ import { haikuModel } from "../lib/ai";
 import { Webhook } from "svix";
 import { buildAgentSystemPrompt, buildDocumentContext, buildConversationMemoryContext, type AgentContext } from "../lib/agentPrompts";
 import { Id } from "../_generated/dataModel";
-
-const DEFAULT_AGENT_DOMAIN = "prism.claritylabs.inc";
-
-function getAgentDomain(): string {
-  return process.env.AGENT_DOMAIN ?? DEFAULT_AGENT_DOMAIN;
-}
+import { sendResendEmail, getAgentDomain } from "../lib/resend";
 
 const CONSUMER_DOMAINS = new Set([
   "gmail.com", "googlemail.com", "yahoo.com", "yahoo.co.uk",
@@ -688,25 +683,11 @@ Respond with JSON only:
           html: fullHtml,
         };
 
-        const res = await fetch("https://api.resend.com/emails", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${process.env.AUTH_RESEND_KEY}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(emailPayload),
-        });
-
-        const resBody = await res.text();
-        if (!res.ok) {
-          throw new Error(`Failed to send notification: ${resBody}`);
+        const sendResult = await sendResendEmail(emailPayload as Parameters<typeof sendResendEmail>[0]);
+        if (!sendResult.ok) {
+          throw new Error(`Failed to send notification: ${sendResult.error}`);
         }
-
-        let sentMessageId: string | undefined;
-        try {
-          const sendResult = JSON.parse(resBody);
-          sentMessageId = sendResult.id;
-        } catch { /* non-critical */ }
+        const sentMessageId = sendResult.id;
 
         await ctx.runMutation(internal.agentConversations.updateResponse, {
           id: conversationId,
@@ -746,7 +727,7 @@ Respond with JSON only:
       const policies = await ctx.runQuery(internal.policies.listAllInternal, {
         orgId,
       });
-      const siteUrl = process.env.SITE_URL ?? "https://prism.claritylabs.inc";
+      const siteUrl = process.env.SITE_URL ?? "https://glass.claritylabs.inc";
 
       // Get primary user profile for name reference
       const primaryUser = await ctx.runQuery(internal.users.getInternal, { id: primaryUserId });
@@ -969,19 +950,9 @@ For emails, compose a professional message that:
             );
           } else {
             // Send immediately (delay = 0 or no unified thread)
-            const sendRes = await fetch("https://api.resend.com/emails", {
-              method: "POST",
-              headers: {
-                Authorization: `Bearer ${process.env.AUTH_RESEND_KEY}`,
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify(sendPayload),
-            });
-            const sendResBody = await sendRes.text();
-            if (!sendRes.ok) throw new Error(`Failed to send email: ${sendResBody}`);
-
-            let sentMsgId: string | undefined;
-            try { sentMsgId = JSON.parse(sendResBody).id; } catch {}
+            const sendOutcome = await sendResendEmail(sendPayload as Parameters<typeof sendResendEmail>[0]);
+            if (!sendOutcome.ok) throw new Error(`Failed to send email: ${sendOutcome.error}`);
+            const sentMsgId = sendOutcome.id;
 
             const confirmText = `Email sent to ${thirdPartyEmail} (CC: ${fromEmail}).`;
             await ctx.runMutation(internal.agentConversations.updateResponse, {
@@ -1139,27 +1110,11 @@ For emails, compose a professional message that:
         emailPayload.headers = replyHeaders;
       }
 
-      const res = await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${process.env.AUTH_RESEND_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(emailPayload),
-      });
-
-      const resBody = await res.text();
-      if (!res.ok) {
-        throw new Error(`Failed to send reply: ${resBody}`);
+      const sendResult = await sendResendEmail(emailPayload as Parameters<typeof sendResendEmail>[0]);
+      if (!sendResult.ok) {
+        throw new Error(`Failed to send reply: ${sendResult.error}`);
       }
-
-      let sentMessageId: string | undefined;
-      try {
-        const sendResult = JSON.parse(resBody);
-        sentMessageId = sendResult.id;
-      } catch {
-        // Non-critical
-      }
+      const sentMessageId = sendResult.id;
 
       await ctx.runMutation(internal.agentConversations.updateResponse, {
         id: conversationId,

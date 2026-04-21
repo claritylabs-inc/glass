@@ -23,6 +23,7 @@ import {
   markdownToHtml,
   logAiError,
 } from "../lib/aiUtils";
+import { sendResendEmail, getAgentDomain } from "../lib/resend";
 import { buildIntelligenceContext } from "../lib/agentPrompts";
 import { makeEmbedText } from "../lib/sdkCallbacks";
 import {
@@ -485,7 +486,7 @@ export const run = internalAction({
       const userName = user?.name?.split(/\s+/)[0];
 
       const siteUrl =
-        process.env.SITE_URL ?? "https://prism.claritylabs.inc";
+        process.env.SITE_URL ?? "https://glass.claritylabs.inc";
 
       // Build system prompt (reuse direct mode)
       const systemPrompt = buildSystemPromptForContext({
@@ -871,7 +872,7 @@ When answering coverage questions, you are an expert insurance analyst, not a di
             const agentHandle = org.agentHandle;
             if (!agentHandle) throw new Error("No agent handle configured");
 
-            const agentDomain = process.env.AGENT_DOMAIN ?? "dev.claritylabs.inc";
+            const agentDomain = getAgentDomain();
             const agentAddress = thread?.threadEmail ?? `${agentHandle}@${agentDomain}`;
 
             // Find recipient — prefer the explicit address in the agent's output,
@@ -987,20 +988,9 @@ When answering coverage questions, you are an expert insurance analyst, not a di
               );
             } else {
               // Send immediately (delay = 0)
-              const res = await fetch("https://api.resend.com/emails", {
-                method: "POST",
-                headers: {
-                  Authorization: `Bearer ${process.env.AUTH_RESEND_KEY}`,
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify(emailPayload),
-              });
-
-              const resBody = await res.text();
-              if (!res.ok) throw new Error(`Failed to send email: ${resBody}`);
-
-              let sentMessageId: string | undefined;
-              try { sentMessageId = JSON.parse(resBody).id; } catch {}
+              const sendOutcome = await sendResendEmail(emailPayload as Parameters<typeof sendResendEmail>[0]);
+              if (!sendOutcome.ok) throw new Error(`Failed to send email: ${sendOutcome.error}`);
+              const sentMessageId = sendOutcome.id;
 
               // Insert the sent email as an email-channel message in the thread
               await ctx.runMutation(internal.threads.insertEmailMessage, {

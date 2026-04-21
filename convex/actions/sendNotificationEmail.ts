@@ -5,38 +5,7 @@ import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { buildNotificationEmail, NotificationEmailBranding } from "../lib/notificationEmailTemplate";
 import { NotificationType, getEffectiveEmailDefault } from "../lib/notificationTypes";
-
-const RESEND_API = "https://api.resend.com/emails";
-const FROM_ADDRESS = "notifications@glass.app";
-const MAX_RETRIES = 3;
-
-async function resendWithRetry(
-  payload: Record<string, unknown>,
-  apiKey: string,
-): Promise<{ ok: boolean; id?: string }> {
-  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-    const res = await fetch(RESEND_API, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
-    const body = await res.text();
-    if (res.ok) {
-      try {
-        return { ok: true, id: JSON.parse(body).id };
-      } catch {
-        return { ok: true };
-      }
-    }
-    if (attempt < MAX_RETRIES - 1) {
-      await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
-    }
-  }
-  return { ok: false };
-}
+import { sendResendEmail, getNotificationFromAddress } from "../lib/resend";
 
 export const send = internalAction({
   args: { notificationId: v.id("notifications") },
@@ -134,17 +103,16 @@ export const send = internalAction({
 
     // Send to all recipients
     const to = recipientsToEmail.map((r) => r.email);
-    const apiKey = process.env.AUTH_RESEND_KEY ?? "";
 
-    const result = await resendWithRetry(
+    const result = await sendResendEmail(
       {
-        from: `${emailContent.fromName} <${FROM_ADDRESS}>`,
+        from: getNotificationFromAddress(emailContent.fromName),
         to,
         subject: emailContent.subject,
         html: emailContent.html,
         text: emailContent.text,
       },
-      apiKey,
+      { retries: 2 },
     );
 
     if (result.ok) {

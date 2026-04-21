@@ -1,8 +1,25 @@
-# Prism
+# Glass
 
-Prism is an insurance intelligence platform for ingesting policy and quote documents, extracting structured insurance data, and using that data in agent workflows for Q&A, application assistance, COI generation, and MCP integrations.
+Glass is Clarity Labs' insurance intelligence platform. It has evolved well beyond the original Glass clone into a broker/client workspace that combines document extraction, conversational AI, org memory, integrations, and API/MCP surfaces in one system.
 
-For contributor-facing architecture notes, see [AGENTS.md](/Users/terrywang/Repos/prism/AGENTS.md).
+For contributor-facing implementation detail, see [AGENTS.md](AGENTS.md).
+
+## What Glass Does
+
+- Ingests insurance-related documents from email and uploads
+- Extracts structured policy, quote, and supporting business data
+- Builds a continuously-updated `orgIntelligence` memory layer
+- Supports agent workflows for Q&A, application help, COI generation, and follow-up analysis
+- Exposes capabilities through UI, REST API (`/api/v1/*`), and MCP (`/mcp` + local server)
+- Syncs external financial/HR context via Merge.dev
+
+## Stack
+
+- Next.js 16 + React 19 + Tailwind 4
+- Convex (DB, actions, scheduler, storage, vector search, HTTP)
+- Vercel AI SDK (`ai`) for model execution + tool-enabled chat
+- `@claritylabs/cl-sdk@0.16.x` for extraction and insurance-focused primitives
+- Resend + IMAP (`imapflow`) for email ingest and messaging workflows
 
 ## Getting Started
 
@@ -12,126 +29,87 @@ npm run dev
 npx convex dev
 ```
 
-Open `http://localhost:3000`.
+Then open `http://localhost:3000`.
+
+## Useful Commands
+
+- `npm run build` - production build
+- `npm run lint` - ESLint
+- `npm test` - run tests
+- `npx tsc --noEmit` - Next.js TypeScript check
+- `npx convex typecheck` - Convex type check
+- `npx convex deploy --yes` - deploy Convex functions to prod
 
 ## Environment
 
-Common environment variables:
+Common variables used across major workflows:
 
 - `CONVEX_DEPLOYMENT`
-- `ANTHROPIC_API_KEY`
 - `OPENAI_API_KEY`
+- `ANTHROPIC_API_KEY`
 - `MOONSHOTAI_API_KEY`
 - `DEEPSEEK_API_KEY`
-- `AUTH_RESEND_KEY`
+- `AUTH_RESEND_KEY` — Resend API key (shared by all outbound email)
 - `RESEND_WEBHOOK_SECRET`
-- `AGENT_DOMAIN`
+- `AGENT_DOMAIN` — verified Resend sending domain (prod: `glass.claritylabs.inc`, dev: `dev.claritylabs.inc`). Used for agent addresses and the `notifications@{domain}` sender.
+- `AUTH_EMAIL_FROM` — optional `From:` override for OTP sign-in emails. Defaults to `Clarity Labs <noreply@{AGENT_DOMAIN}>`.
 - `SITE_URL`
-- `FLATTEN_API_KEY`
+- `MERGE_API_KEY`
+- `MERGE_WEBHOOK_SECRET`
+- `INTEGRATION_TOKEN_ENC_KEY`
 
-Exact requirements depend on which workflows you are exercising.
-
-## Architecture
-
-Prism is built with:
-
-- Next.js 16 + React 19 for the app UI
-- Convex for database, actions, scheduler, file storage, and vector search
-- Vercel AI SDK for model calls
-- `@claritylabs/cl-sdk@0.9.x` for document extraction, query-agent primitives, insurance prompts, chunking, and PDF helpers
-- Resend + IMAP for inbound and outbound email workflows
-
-### Current Model Routing
-
-Model routing is centralized in [convex/lib/models.ts](/Users/terrywang/Repos/prism/convex/lib/models.ts).
-
-- `gpt-5.4-mini` handles chat, tool chat, and extraction
-- `kimi-k2.5` handles email drafting, reply writing, and analysis
-- `claude-haiku-4-5-20251001` handles classification and summary tasks
-
-If a configured provider is unavailable, Prism falls back to Claude Haiku for protected fallback paths.
+Not every flow requires every variable; requirements depend on which features you are running.
 
 ## Core Flows
 
-### Policy And Quote Extraction
+### 1) Ingest + Extract
 
-1. Fetch a PDF from IMAP or upload flow.
-2. Store the original file in Convex storage.
-3. Run `buildExtractor()` from [convex/lib/extraction.ts](/Users/terrywang/Repos/prism/convex/lib/extraction.ts).
-4. Let `cl-sdk` classify, plan, extract, review, and assemble the final `InsuranceDocument`.
-5. Map the SDK document into Prism’s policy schema.
-6. Chunk the document and embed those chunks for semantic retrieval.
+1. Scan inboxes or accept uploads.
+2. Store raw files in Convex storage.
+3. Extract structured insurance/business data via `cl-sdk`.
+4. Persist policy data and chunk + embed content for retrieval.
+5. Write key facts into `orgIntelligence` with temporal metadata.
 
-### cl-sdk Callback Wiring
+### 2) Retrieval + Agent Chat
 
-Prism’s `cl-sdk` adapter lives in [convex/lib/sdkCallbacks.ts](/Users/terrywang/Repos/prism/convex/lib/sdkCallbacks.ts).
+Agent responses are grounded in:
 
-`cl-sdk v0.9` passes document content through callback `providerOptions`:
+- `documentChunks` (policy/quote/supporting docs)
+- `orgIntelligence` (organization facts)
+- `conversationTurns` (cross-thread memory)
 
-- `providerOptions.pdfBase64`
-- `providerOptions.images`
+### 3) Application Assistance
 
-Prism converts those into AI SDK multipart content:
+Application sessions auto-fill from known context, ask for missing answers in batches, and store new non-transient facts back into intelligence.
 
-- PDFs become file parts
-- images become image parts
+### 4) Integrations + APIs
 
-Prism also preserves a higher token ceiling for exclusion-heavy extraction prompts.
+- Merge.dev sync enriches underwriting context (accounting/HR/payroll metrics)
+- REST API exposes broker/client resources under `/api/v1/*`
+- MCP enables remote and local AI tool access
 
-### Retrieval And Agent Context
+## Model Routing
 
-Prism stores semantic context in:
+Model routing is defined in `convex/lib/models.ts`:
 
-- `documentChunks` for extracted document content
-- `conversationTurns` for conversation memory
+- `chat`, `chat_with_tools`, `extraction` -> `gpt-5.4-mini`
+- `email_draft`, `email_reply`, `analysis` -> `kimi-k2.5`
+- `classification`, `summary` -> `claude-haiku-4-5-20251001`
+- `triage`, `email_extraction` -> `deepseek-chat`
 
-[convex/lib/agentPrompts.ts](/Users/terrywang/Repos/prism/convex/lib/agentPrompts.ts) builds retrieval-backed policy and quote context. When chunks are unavailable, it falls back to a keyword-scored summary.
+Fallback logic retries supported calls on Claude Haiku if the primary provider fails.
 
-### Application Assistance
+## Convex Rule Of Thumb
 
-Application workflows live primarily in [convex/actions/processApplication.ts](/Users/terrywang/Repos/prism/convex/actions/processApplication.ts).
+Internal Convex functions do not have user auth context. Do not call public auth-dependent functions from internal actions.
 
-High-level flow:
+## Key Files
 
-1. Detect likely insurance application forms.
-2. Extract fillable fields from the PDF.
-3. Auto-fill from org context, user data, prior policies, and saved answers.
-4. Ask the user for remaining data in batches.
-5. Parse replies and update the application session.
-6. Generate confirmation output and optionally a filled PDF.
-
-### Proactive Analysis
-
-After extraction, Prism can schedule follow-up analysis to:
-
-- score a policy
-- identify risks and gaps
-- compare renewals
-- produce portfolio-level observations
-
-## Important Convex Rule
-
-Internal Convex actions do not run with user auth context.
-
-- Public functions can use auth helpers like `requireAuth()`.
-- Internal functions must use internal query and mutation variants.
-- Do not call public auth-dependent functions from internal actions.
-
-## Main Files
-
-- [convex/lib/models.ts](/Users/terrywang/Repos/prism/convex/lib/models.ts): model routing
-- [convex/lib/sdkCallbacks.ts](/Users/terrywang/Repos/prism/convex/lib/sdkCallbacks.ts): `cl-sdk` callback adapter
-- [convex/lib/extraction.ts](/Users/terrywang/Repos/prism/convex/lib/extraction.ts): extractor factory
-- [convex/lib/agentPrompts.ts](/Users/terrywang/Repos/prism/convex/lib/agentPrompts.ts): retrieval-backed prompt context
-- [convex/actions/extractPolicy.ts](/Users/terrywang/Repos/prism/convex/actions/extractPolicy.ts): IMAP-backed extraction entrypoint
-- [convex/actions/processApplication.ts](/Users/terrywang/Repos/prism/convex/actions/processApplication.ts): application workflow
-- [convex/http.ts](/Users/terrywang/Repos/prism/convex/http.ts): HTTP and MCP surface area
-
-## Validation
-
-Useful checks while working:
-
-- `npx tsc --noEmit`
-- `npm run lint`
-
-Repo-wide lint currently includes unrelated legacy issues, so targeted validation is often more useful when working on a specific area.
+- `convex/lib/models.ts` - model routing
+- `convex/lib/sdkCallbacks.ts` - `cl-sdk` callback adapter
+- `convex/lib/agentPrompts.ts` - retrieval context builders
+- `convex/actions/extractPolicy.ts` - policy extraction entrypoint
+- `convex/actions/processApplication.ts` - application workflow
+- `convex/actions/dreamConsolidation.ts` - intelligence cleanup and consolidation
+- `convex/actions/mergeSync.ts` - Merge sync pipeline
+- `convex/http.ts` - HTTP, REST, and MCP routes
