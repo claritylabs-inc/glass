@@ -13,7 +13,7 @@ import { ArrowRight, Check, Loader2, X } from "lucide-react";
 
 const WORKSPACE_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "glass.claritylabs.inc";
 
-const PRESET_COLORS = [
+const DARK_PRESETS = [
   "#1E293B", // slate
   "#1E3A5F", // deep navy
   "#2C5282", // muted blue
@@ -22,6 +22,17 @@ const PRESET_COLORS = [
   "#7A5A3A", // warm taupe
   "#8B3A3A", // rust
   "#5B4A7B", // muted violet
+] as const;
+
+const PALE_PRESETS = [
+  "#E2E8F0", // slate pale
+  "#DBE5F1", // navy pale
+  "#D6E4F5", // blue pale
+  "#D4EAE7", // teal pale
+  "#DEEBDF", // forest pale
+  "#EFE6D7", // taupe pale
+  "#F1D9D6", // rust pale
+  "#E4DDEB", // violet pale
 ] as const;
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
@@ -635,30 +646,50 @@ export default function BrokerOnboardingPage() {
                       </div>
                     ) : null}
 
-                    <div className="space-y-2">
-                      <p className="text-label-sm text-muted-foreground">Curated palette</p>
-                      <div className="grid grid-cols-8 gap-2">
-                        {PRESET_COLORS.map((color) => {
-                          const selected = brandingColor.toLowerCase() === color.toLowerCase();
-                          return (
-                            <button
-                              key={color}
-                              type="button"
-                              onClick={() => setBrandingColor(color)}
-                              aria-label={`Select ${color}`}
-                              className={`relative aspect-square rounded-md ring-offset-2 ring-offset-background transition-all ${
-                                selected ? "ring-2 ring-foreground" : "hover:scale-105"
-                              }`}
-                              style={{ backgroundColor: color }}
-                            >
-                              {selected ? (
-                                <Check className="absolute inset-0 m-auto h-3.5 w-3.5 text-white drop-shadow" />
-                              ) : null}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
+                    {(() => {
+                      const renderRow = (
+                        colors: ReadonlyArray<string>,
+                        textMode: "light" | "dark",
+                        heading: string,
+                      ) => (
+                        <div className="space-y-2">
+                          <p className="text-label-sm text-muted-foreground">{heading}</p>
+                          <div className="grid grid-cols-8 gap-2">
+                            {colors.map((color) => {
+                              const selected = brandingColor.toLowerCase() === color.toLowerCase();
+                              return (
+                                <button
+                                  key={color}
+                                  type="button"
+                                  onClick={() => {
+                                    setBrandingColor(color);
+                                    setBrandingTextOnAccent(textMode);
+                                  }}
+                                  aria-label={`Select ${color}`}
+                                  className={`relative aspect-square rounded-md border border-foreground/5 ring-offset-2 ring-offset-background transition-all ${
+                                    selected ? "ring-2 ring-foreground" : "hover:scale-105"
+                                  }`}
+                                  style={{ backgroundColor: color }}
+                                >
+                                  {selected ? (
+                                    <Check
+                                      className="absolute inset-0 m-auto h-3.5 w-3.5 drop-shadow"
+                                      style={{ color: textMode === "light" ? "#FFFFFF" : "#0F172A" }}
+                                    />
+                                  ) : null}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                      return (
+                        <div className="space-y-4">
+                          {renderRow(DARK_PRESETS, "light", "Deep — pairs with light text")}
+                          {renderRow(PALE_PRESETS, "dark", "Pale — pairs with dark text")}
+                        </div>
+                      );
+                    })()}
 
                     <div className="space-y-1.5">
                       <p className="text-label-sm text-muted-foreground">Custom hex</p>
