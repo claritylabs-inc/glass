@@ -1437,6 +1437,266 @@ http.route({
   }),
 });
 
+// ── Task 16: MCP HTTP backing routes for broker + client tool calls ──
+
+// GET /mcp/broker/clients/list
+http.route({
+  path: "/mcp/broker/clients/list",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const identity = await requireMcpAuth(ctx, request);
+      const result = await ctx.runQuery((internal as any).clients.listForBroker, {
+        brokerOrgId: identity.orgId as Id<"organizations">,
+      });
+      return jsonResponse(result);
+    } catch (e) {
+      if (e instanceof Response) return e;
+      return jsonResponse({ error: String(e) }, 500);
+    }
+  }),
+});
+
+// GET /mcp/broker/clients/get
+http.route({
+  path: "/mcp/broker/clients/get",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const identity = await requireMcpAuth(ctx, request);
+      const clientOrgId = getQueryParam(request, "clientOrgId");
+      if (!clientOrgId) return jsonResponse({ error: "Missing clientOrgId" }, 400);
+      const org = await ctx.runQuery(internal.orgs.getInternal, { id: clientOrgId as Id<"organizations"> });
+      if (!org) return jsonResponse({ error: "Not found" }, 404);
+      const policies = await ctx.runQuery(internal.policies.listAllInternal, { orgId: clientOrgId as Id<"organizations"> });
+      return jsonResponse({ org, policy_count: policies.length });
+    } catch (e) {
+      if (e instanceof Response) return e;
+      return jsonResponse({ error: String(e) }, 500);
+    }
+  }),
+});
+
+// GET /mcp/broker/applications/list
+http.route({
+  path: "/mcp/broker/applications/list",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const identity = await requireMcpAuth(ctx, request);
+      const clientOrgId = getQueryParam(request, "clientOrgId");
+      if (!clientOrgId) return jsonResponse({ error: "Missing clientOrgId" }, 400);
+      const result = await ctx.runQuery((internal as any).applications.listForOrg, {
+        orgId: clientOrgId as Id<"organizations">,
+        userId: identity.userId as Id<"users">,
+        cursor: undefined,
+        limit: 50,
+      });
+      return jsonResponse(result);
+    } catch (e) {
+      if (e instanceof Response) return e;
+      return jsonResponse({ error: String(e) }, 500);
+    }
+  }),
+});
+
+// POST /mcp/broker/applications/create
+http.route({
+  path: "/mcp/broker/applications/create",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const identity = await requireMcpAuth(ctx, request);
+      const body = await request.json();
+      const { clientOrgId, creationPath, title, lineOfBusiness } = body;
+      if (!clientOrgId || !creationPath || !title) return jsonResponse({ error: "Missing required fields" }, 400);
+      const appId = await ctx.runMutation((internal as any).applications.createDraft, {
+        brokerOrgId: identity.orgId as Id<"organizations">,
+        clientOrgId: clientOrgId as Id<"organizations">,
+        creationPath, title, lineOfBusiness,
+      });
+      return jsonResponse({ id: appId }, 201);
+    } catch (e) {
+      if (e instanceof Response) return e;
+      return jsonResponse({ error: String(e) }, 500);
+    }
+  }),
+});
+
+// POST /mcp/broker/applications/add-question
+http.route({
+  path: "/mcp/broker/applications/add-question",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const identity = await requireMcpAuth(ctx, request);
+      const body = await request.json();
+      if (!body.applicationId) return jsonResponse({ error: "Missing applicationId" }, 400);
+      const qId = await ctx.runMutation((internal as any).applications.addQuestion, {
+        applicationId: body.applicationId as Id<"applications">,
+        brokerOrgId: identity.orgId as Id<"organizations">,
+        intentKey: body.intentKey,
+        customPrompt: body.customPrompt,
+        answerType: body.answerType ?? "text",
+        required: body.required ?? false,
+      });
+      return jsonResponse({ id: qId }, 201);
+    } catch (e) {
+      if (e instanceof Response) return e;
+      return jsonResponse({ error: String(e) }, 500);
+    }
+  }),
+});
+
+// POST /mcp/broker/applications/send
+http.route({
+  path: "/mcp/broker/applications/send",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const identity = await requireMcpAuth(ctx, request);
+      const body = await request.json();
+      if (!body.applicationId) return jsonResponse({ error: "Missing applicationId" }, 400);
+      await ctx.runMutation((internal as any).applications.send, {
+        applicationId: body.applicationId as Id<"applications">,
+        brokerOrgId: identity.orgId as Id<"organizations">,
+      });
+      return jsonResponse({ ok: true });
+    } catch (e) {
+      if (e instanceof Response) return e;
+      return jsonResponse({ error: String(e) }, 500);
+    }
+  }),
+});
+
+// POST /mcp/broker/passport/raise-flag
+http.route({
+  path: "/mcp/broker/passport/raise-flag",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const identity = await requireMcpAuth(ctx, request);
+      const body = await request.json();
+      const { clientOrgId, fieldPath, message } = body;
+      if (!clientOrgId || !fieldPath || !message) return jsonResponse({ error: "Missing required fields" }, 400);
+      const flagId = await ctx.runMutation((internal as any).passportFieldFlags.raise, {
+        clientOrgId: clientOrgId as Id<"organizations">,
+        brokerOrgId: identity.orgId as Id<"organizations">,
+        fieldPath, message,
+      });
+      return jsonResponse({ id: flagId }, 201);
+    } catch (e) {
+      if (e instanceof Response) return e;
+      return jsonResponse({ error: String(e) }, 500);
+    }
+  }),
+});
+
+// GET /mcp/broker/activity/list
+http.route({
+  path: "/mcp/broker/activity/list",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const identity = await requireMcpAuth(ctx, request);
+      const result = await ctx.runQuery((internal as any).brokerActivity.listPortfolio, {
+        orgId: identity.orgId as Id<"organizations">,
+        limit: 50,
+      }).catch(() => []);
+      return jsonResponse(result);
+    } catch (e) {
+      if (e instanceof Response) return e;
+      return jsonResponse({ error: String(e) }, 500);
+    }
+  }),
+});
+
+// GET /mcp/client/passport/get
+http.route({
+  path: "/mcp/client/passport/get",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const identity = await requireMcpAuth(ctx, request);
+      const passport = await ctx.runQuery((internal as any).clientPassport.getFull, { orgId: identity.orgId as Id<"organizations"> }).catch(() => null);
+      if (!passport) return jsonResponse({ error: "Not found" }, 404);
+      return jsonResponse(passport);
+    } catch (e) {
+      if (e instanceof Response) return e;
+      return jsonResponse({ error: String(e) }, 500);
+    }
+  }),
+});
+
+// POST /mcp/client/passport/update
+http.route({
+  path: "/mcp/client/passport/update",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const identity = await requireMcpAuth(ctx, request);
+      const body = await request.json();
+      if (!body.patch) return jsonResponse({ error: "Missing patch" }, 400);
+      await ctx.runMutation((internal as any).clientPassport.upsertCoreInternal, {
+        orgId: identity.orgId as Id<"organizations">,
+        ...body.patch,
+      });
+      return jsonResponse({ ok: true });
+    } catch (e) {
+      if (e instanceof Response) return e;
+      return jsonResponse({ error: String(e) }, 500);
+    }
+  }),
+});
+
+// POST /mcp/client/applications/answer
+http.route({
+  path: "/mcp/client/applications/answer",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const identity = await requireMcpAuth(ctx, request);
+      const body = await request.json();
+      if (!body.applicationId || !body.questionId || body.value === undefined) {
+        return jsonResponse({ error: "Missing required fields" }, 400);
+      }
+      await ctx.runMutation((internal as any).applications.upsertAnswer, {
+        applicationId: body.applicationId as Id<"applications">,
+        clientOrgId: identity.orgId as Id<"organizations">,
+        questionId: body.questionId as Id<"applicationQuestions">,
+        rowKey: body.rowKey,
+        value: body.value,
+      });
+      return jsonResponse({ ok: true });
+    } catch (e) {
+      if (e instanceof Response) return e;
+      return jsonResponse({ error: String(e) }, 500);
+    }
+  }),
+});
+
+// POST /mcp/client/applications/submit-section
+http.route({
+  path: "/mcp/client/applications/submit-section",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const identity = await requireMcpAuth(ctx, request);
+      const body = await request.json();
+      if (!body.applicationId || !body.groupId) return jsonResponse({ error: "Missing required fields" }, 400);
+      await ctx.runMutation((internal as any).applications.submitGroup, {
+        applicationId: body.applicationId as Id<"applications">,
+        groupId: body.groupId as Id<"applicationGroups">,
+        clientOrgId: identity.orgId as Id<"organizations">,
+      });
+      return jsonResponse({ ok: true });
+    } catch (e) {
+      if (e instanceof Response) return e;
+      return jsonResponse({ error: String(e) }, 500);
+    }
+  }),
+});
+
 // ── REST API v1 helpers ──
 
 function extractBearerToken(request: Request): string {
