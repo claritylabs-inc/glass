@@ -85,6 +85,7 @@ import type * as migrations_migrateToThreads from "../migrations/migrateToThread
 import type * as modelConfig from "../modelConfig.js";
 import type * as notifications from "../notifications.js";
 import type * as oauth from "../oauth.js";
+import type * as orgDocuments from "../orgDocuments.js";
 import type * as orgMemory from "../orgMemory.js";
 import type * as orgs from "../orgs.js";
 import type * as pendingEmails from "../pendingEmails.js";
@@ -181,6 +182,7 @@ declare const fullApi: ApiFromModules<{
   modelConfig: typeof modelConfig;
   notifications: typeof notifications;
   oauth: typeof oauth;
+  orgDocuments: typeof orgDocuments;
   orgMemory: typeof orgMemory;
   orgs: typeof orgs;
   pendingEmails: typeof pendingEmails;

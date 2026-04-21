@@ -6,6 +6,7 @@ import { api, internal } from "../_generated/api";
 import { makeEmbedText } from "../lib/sdkCallbacks";
 import { getModel, generateTextWithFallback } from "../lib/models";
 import { generateText } from "ai";
+import { parseOffice } from "officeparser";
 import { Id } from "../_generated/dataModel";
 
 /* ------------------------------------------------------------------ */
@@ -22,13 +23,41 @@ type DocumentType =
 
 interface ClassificationResult {
   documentType: DocumentType;
-  documentDate?: string;   // ISO date the document was created / effective
-  asOfDate?: string;        // ISO date the data is "as of"
-  sourceLabel?: string;     // short human-readable label, e.g. "2024 P&L"
+  documentDate?: string;
+  asOfDate?: string;
+  sourceLabel?: string;
+}
+
+type ModelInput =
+  | { kind: "text"; text: string }
+  | { kind: "pdf"; bytes: Uint8Array; fileName: string };
+
+/* ------------------------------------------------------------------ */
+/*  File type detection                                                */
+/* ------------------------------------------------------------------ */
+
+const OFFICE_EXTS = [".docx", ".xlsx", ".pptx", ".odt", ".ods", ".odp"];
+const TEXT_EXTS = [".md", ".mdx", ".csv", ".txt", ".tsv", ".json"];
+
+function extOf(name: string): string {
+  const i = name.lastIndexOf(".");
+  return i === -1 ? "" : name.slice(i).toLowerCase();
+}
+
+function isPdf(fileName: string, mimeType?: string): boolean {
+  return mimeType === "application/pdf" || extOf(fileName) === ".pdf";
+}
+
+function isOffice(fileName: string): boolean {
+  return OFFICE_EXTS.includes(extOf(fileName));
+}
+
+function isText(fileName: string): boolean {
+  return TEXT_EXTS.includes(extOf(fileName));
 }
 
 /* ------------------------------------------------------------------ */
-/*  Helpers (module-scope)                                             */
+/*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
 
 function parseEntries(raw: string): Array<{ content: string; category: string }> {
@@ -36,29 +65,51 @@ function parseEntries(raw: string): Array<{ content: string; category: string }>
     const cleaned = raw.replace(/```json\n?|```\n?/g, "").trim();
     const parsed = JSON.parse(cleaned);
     return Array.isArray(parsed?.entries) ? parsed.entries : [];
-  } catch { return []; }
+  } catch {
+    return [];
+  }
 }
 
 /* ------------------------------------------------------------------ */
-/*  Step 1 — Classify document type + extract temporal metadata        */
+/*  Step 1 — Classification                                            */
 /* ------------------------------------------------------------------ */
 
 async function classifyDocument(
   fileName: string,
-  textPreview: string,
+  input: ModelInput,
 ): Promise<ClassificationResult> {
-  const { text } = await generateText({
-    model: getModel("summary"),
-    maxOutputTokens: 512,
-    system: `You classify insurance / business documents. Given a file name and a short preview, return a JSON object:
+  const systemPrompt = `You classify insurance / business documents. Given a file and optional preview, return JSON:
 {
   "documentType": "financial_statement" | "loss_run" | "payroll_schedule" | "fleet_list" | "certificate" | "general",
   "documentDate": "<ISO date or null>",
   "asOfDate": "<ISO date or null>",
   "sourceLabel": "<short human label, e.g. '2024 P&L' or 'Q3 Loss Run'>"
 }
-Respond with ONLY valid JSON, no markdown.`,
-    prompt: `File: ${fileName}\n\n${textPreview.slice(0, 4000)}`,
+Respond with ONLY valid JSON, no markdown.`;
+
+  const header =
+    input.kind === "text"
+      ? `File: ${fileName}\n\n${input.text.slice(0, 4000)}`
+      : `File: ${fileName}`;
+
+  const userContent =
+    input.kind === "pdf"
+      ? [
+          { type: "text" as const, text: header },
+          {
+            type: "file" as const,
+            data: input.bytes,
+            mediaType: "application/pdf",
+            filename: fileName,
+          },
+        ]
+      : [{ type: "text" as const, text: header }];
+
+  const { text } = await generateText({
+    model: getModel("document_extraction"),
+    maxOutputTokens: 512,
+    system: systemPrompt,
+    messages: [{ role: "user", content: userContent }],
   });
 
   try {
@@ -80,34 +131,35 @@ Respond with ONLY valid JSON, no markdown.`,
 }
 
 /* ------------------------------------------------------------------ */
-/*  Step 2a — Structured KV extraction for financial documents         */
+/*  Step 2 — Extraction prompts                                        */
 /* ------------------------------------------------------------------ */
 
-async function extractFinancialKVs(
-  fileName: string,
-  truncated: string,
-  classification: ClassificationResult,
-): Promise<Array<{ content: string; category: string }>> {
-  const temporalHint = [
-    classification.asOfDate && `as-of date: ${classification.asOfDate}`,
-    classification.documentDate && `document date: ${classification.documentDate}`,
-  ].filter(Boolean).join(", ");
+async function runExtractionPrompt(params: {
+  system: string;
+  fileName: string;
+  input: ModelInput;
+}): Promise<Array<{ content: string; category: string }>> {
+  const { system, fileName, input } = params;
+  const header = `Document: ${fileName}`;
+
+  const userContent =
+    input.kind === "pdf"
+      ? [
+          { type: "text" as const, text: header },
+          {
+            type: "file" as const,
+            data: input.bytes,
+            mediaType: "application/pdf",
+            filename: fileName,
+          },
+        ]
+      : [{ type: "text" as const, text: `${header}\n\n${input.text}` }];
 
   const { text } = await generateTextWithFallback({
-    model: getModel("email_extraction"),
+    model: getModel("document_extraction"),
     maxOutputTokens: 16384,
-    system: `You are extracting structured financial data from a ${classification.documentType.replace(/_/g, " ")}. ${temporalHint ? `Temporal context: ${temporalHint}.` : ""}
-
-For each financial metric, produce a fact that includes:
-- The metric name and value
-- The time period or as-of date it applies to
-- Units / currency where applicable
-
-Return ONLY valid JSON:
-{ "entries": [{ "content": "...", "category": "financial" }] }
-
-If no financial data found, return { "entries": [] }.`,
-    prompt: `Document: ${fileName}\n\n${truncated}`,
+    system,
+    messages: [{ role: "user", content: userContent }],
   });
 
   return parseEntries(text);
@@ -117,112 +169,145 @@ If no financial data found, return { "entries": [] }.`,
 /*  Main action                                                        */
 /* ------------------------------------------------------------------ */
 
-/**
- * Extract business intelligence from a non-PDF document upload (md, mdx, csv, docx, etc.).
- * Three-step pipeline:
- *   1. Classify document type and extract temporal metadata
- *   2. For financial docs → structured KV extraction with time periods
- *   3. For other docs → two-agent extraction with temporal awareness
- */
 export const extractFromDocument = action({
   args: {
     fileId: v.id("_storage"),
     fileName: v.optional(v.string()),
+    documentId: v.optional(v.id("orgDocuments")),
   },
   returns: v.any(),
-  handler: async (ctx, args): Promise<{ error: string } | { success: true; entries: number }> => {
-    const viewer = await ctx.runQuery(api.users.viewer) as { _id: string } | null;
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{ error: string } | { success: true; entries: number }> => {
+    const viewer = (await ctx.runQuery(api.users.viewer)) as { _id: string } | null;
     if (!viewer) return { error: "Not authenticated" };
 
-    const orgData = await ctx.runQuery(api.orgs.viewerOrg) as { membership: { orgId: string } } | null;
+    const orgData = (await ctx.runQuery(api.orgs.viewerOrg)) as
+      | { membership: { orgId: string } }
+      | null;
     if (!orgData) return { error: "No organization" };
-
     const orgId = orgData.membership.orgId as Id<"organizations">;
 
-    const blob = await ctx.storage.get(args.fileId);
-    if (!blob) return { error: "File not found" };
+    const docId = args.documentId ?? null;
+    const fail = async (message: string) => {
+      if (docId) {
+        await ctx.runMutation(internal.orgDocuments.updateStatus, {
+          id: docId,
+          extractionStatus: "error",
+          extractionError: message,
+        });
+      }
+      return { error: message };
+    };
 
-    // Read file as text
-    let text: string;
-    try {
-      text = await blob.text();
-    } catch {
-      return { error: "Could not read file as text" };
+    if (docId) {
+      await ctx.runMutation(internal.orgDocuments.updateStatus, {
+        id: docId,
+        extractionStatus: "extracting",
+      });
     }
 
-    if (!text.trim()) return { error: "File is empty" };
+    const blob = await ctx.storage.get(args.fileId);
+    if (!blob) return fail("File not found");
 
-    // Truncate to ~16K chars for context window
-    const truncated = text.length > 16000 ? text.slice(0, 16000) + "\n... [truncated]" : text;
     const fileName = args.fileName ?? "uploaded document";
 
+    // ── Decode input based on file type ──
+    let input: ModelInput;
     try {
-      /* ── Step 1: Classify ────────────────────────────────────── */
-      const classification = await classifyDocument(fileName, truncated);
+      if (isPdf(fileName, blob.type)) {
+        const buf = new Uint8Array(await blob.arrayBuffer());
+        input = { kind: "pdf", bytes: buf, fileName };
+      } else if (isOffice(fileName)) {
+        const buf = Buffer.from(await blob.arrayBuffer());
+        const ast = await parseOffice(buf);
+        const text = ast.toText();
+        if (!text.trim()) return fail("Office document appears empty");
+        const truncated = text.length > 24000 ? text.slice(0, 24000) + "\n... [truncated]" : text;
+        input = { kind: "text", text: truncated };
+      } else if (isText(fileName)) {
+        const text = await blob.text();
+        if (!text.trim()) return fail("File is empty");
+        const truncated = text.length > 24000 ? text.slice(0, 24000) + "\n... [truncated]" : text;
+        input = { kind: "text", text: truncated };
+      } else {
+        return fail(`Unsupported file type: ${extOf(fileName) || "unknown"}`);
+      }
+    } catch (err) {
+      return fail(
+        `Failed to decode file: ${err instanceof Error ? err.message : "Unknown error"}`,
+      );
+    }
+
+    try {
+      /* ── Step 1: Classify ───────────────────────── */
+      const classification = await classifyDocument(fileName, input);
 
       const temporalHint = [
         classification.asOfDate && `as-of date: ${classification.asOfDate}`,
         classification.documentDate && `document date: ${classification.documentDate}`,
-      ].filter(Boolean).join(", ");
+      ]
+        .filter(Boolean)
+        .join(", ");
       const temporalInstruction = temporalHint
         ? `\nTemporal context for this document: ${temporalHint}. Always include dates, time periods, and as-of dates in extracted facts.`
         : "\nAlways include dates, time periods, and as-of dates in extracted facts when available.";
 
-      /* ── Step 2: Extract ─────────────────────────────────────── */
+      /* ── Step 2: Extract ────────────────────────── */
       let allEntries: Array<{ content: string; category: string }>;
 
-      if (["financial_statement", "loss_run", "payroll_schedule"].includes(classification.documentType)) {
-        // Financial docs: structured KV extraction + supplemental business context
-        const [financialEntries, businessResult] = await Promise.all([
-          extractFinancialKVs(fileName, truncated, classification),
-          generateTextWithFallback({
-            model: getModel("email_extraction"),
-            maxOutputTokens: 16384,
-            system: `You are extracting non-financial business intelligence from a document (company info, operations, relationships, ownership, addresses, etc.). Skip financial metrics — those are extracted separately. Only extract facts that are clearly stated or strongly implied.${temporalInstruction}
+      const isFinancial = ["financial_statement", "loss_run", "payroll_schedule"].includes(
+        classification.documentType,
+      );
+
+      if (isFinancial) {
+        const financialSystem = `You are extracting structured financial data from a ${classification.documentType.replace(/_/g, " ")}. ${temporalHint ? `Temporal context: ${temporalHint}.` : ""}
+
+For each financial metric, produce a fact that includes:
+- The metric name and value
+- The time period or as-of date it applies to
+- Units / currency where applicable
+
+Return ONLY valid JSON:
+{ "entries": [{ "content": "...", "category": "financial" }] }
+
+If no financial data found, return { "entries": [] }.`;
+
+        const businessSystem = `You are extracting non-financial business intelligence from a document (company info, operations, relationships, ownership, addresses, etc.). Skip financial metrics — those are extracted separately. Only extract facts that are clearly stated or strongly implied.${temporalInstruction}
 
 Format: { "entries": [{ "content": "...", "category": "company_info" | "products_services" | "operations" | "employees" | "clients" | "insurance" | "investors" | "vendors" | "partners" }] }
 Respond with ONLY valid JSON, no markdown.
-If no relevant facts found, return { "entries": [] }.`,
-            prompt: `Document: ${fileName}\n\n${truncated}`,
-          }),
-        ]);
+If no relevant facts found, return { "entries": [] }.`;
 
-        allEntries = [...financialEntries, ...parseEntries(businessResult.text)];
+        const [financialEntries, businessEntries] = await Promise.all([
+          runExtractionPrompt({ system: financialSystem, fileName, input }),
+          runExtractionPrompt({ system: businessSystem, fileName, input }),
+        ]);
+        allEntries = [...financialEntries, ...businessEntries];
       } else {
-        // Non-financial docs: two-agent extraction with temporal awareness
-        const [businessResult, riskResult] = await Promise.all([
-          generateTextWithFallback({
-            model: getModel("email_extraction"),
-            maxOutputTokens: 16384,
-            system: `You are extracting business intelligence from a document. Extract structured facts about the company, its operations, finances, and relationships. Only extract facts that are clearly stated or strongly implied.${temporalInstruction}
+        const businessSystem = `You are extracting business intelligence from a document. Extract structured facts about the company, its operations, finances, and relationships. Only extract facts that are clearly stated or strongly implied.${temporalInstruction}
 
 Format: { "entries": [{ "content": "...", "category": "company_info" | "products_services" | "operations" | "employees" | "financial" | "clients" | "insurance" | "investors" | "vendors" | "partners" }] }
 Respond with ONLY valid JSON, no markdown.
-If no relevant business facts found, return { "entries": [] }.`,
-            prompt: `Document: ${fileName}\n\n${truncated}`,
-          }),
-          generateTextWithFallback({
-            model: getModel("email_extraction"),
-            maxOutputTokens: 16384,
-            system: `You are extracting risk signals from a document. Extract information about claims, incidents, compliance issues, risk exposures, and business changes. Only extract facts that are clearly stated or strongly implied.
+If no relevant business facts found, return { "entries": [] }.`;
+
+        const riskSystem = `You are extracting risk signals from a document. Extract information about claims, incidents, compliance issues, risk exposures, and business changes. Only extract facts that are clearly stated or strongly implied.
 
 Do NOT extract insurance coverage details (limits, deductibles, policy terms) — those are handled separately by policy extraction.${temporalInstruction}
 
 Format: { "entries": [{ "content": "...", "category": "risk" | "observation" }] }
 Respond with ONLY valid JSON, no markdown.
-If no relevant risk signals found, return { "entries": [] }.`,
-            prompt: `Document: ${fileName}\n\n${truncated}`,
-          }),
+If no relevant risk signals found, return { "entries": [] }.`;
+
+        const [businessEntries, riskEntries] = await Promise.all([
+          runExtractionPrompt({ system: businessSystem, fileName, input }),
+          runExtractionPrompt({ system: riskSystem, fileName, input }),
         ]);
-
-        allEntries = [...parseEntries(businessResult.text), ...parseEntries(riskResult.text)];
+        allEntries = [...businessEntries, ...riskEntries];
       }
 
-      if (allEntries.length === 0) {
-        return { success: true, entries: 0 };
-      }
-
-      /* ── Step 3: Embed & store ───────────────────────────────── */
+      /* ── Step 3: Embed & store ──────────────────── */
       const embedText = makeEmbedText();
       let inserted = 0;
 
@@ -231,7 +316,6 @@ If no relevant risk signals found, return { "entries": [] }.`,
         try {
           const embedding = await embedText(entry.content);
 
-          // Dedup check
           const similar = await ctx.vectorSearch("orgIntelligence", "by_embedding", {
             vector: embedding,
             limit: 3,
@@ -258,9 +342,23 @@ If no relevant risk signals found, return { "entries": [] }.`,
         }
       }
 
+      if (docId) {
+        await ctx.runMutation(internal.orgDocuments.updateStatus, {
+          id: docId,
+          extractionStatus: "complete",
+          entryCount: inserted,
+          sourceLabel: classification.sourceLabel,
+          documentType: classification.documentType,
+          asOfDate: classification.asOfDate,
+          documentDate: classification.documentDate,
+        });
+      }
+
       return { success: true, entries: inserted };
     } catch (err: unknown) {
-      return { error: `Extraction failed: ${err instanceof Error ? err.message : "Unknown error"}` };
+      return fail(
+        `Extraction failed: ${err instanceof Error ? err.message : "Unknown error"}`,
+      );
     }
   },
 });

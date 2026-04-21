@@ -28,37 +28,28 @@ export const list = query({
   },
 });
 
-/** List distinct uploaded business-context documents (source=manual with a sourceRef). */
+/** List uploaded business-context documents. Sourced from the orgDocuments table. */
 export const listUploadedDocuments = query({
   args: {},
   handler: async (ctx) => {
     const access = await getOrgAccess(ctx);
     if (!access) return [];
-    const { orgId } = access;
-
-    const entries = await ctx.db
-      .query("orgIntelligence")
-      .withIndex("by_orgId", (idx) => idx.eq("orgId", orgId))
+    const docs = await ctx.db
+      .query("orgDocuments")
+      .withIndex("by_orgId", (idx) => idx.eq("orgId", access.orgId))
       .collect();
-
-    // Group manual-source entries by sourceRef to get distinct documents
-    const docs = new Map<string, { sourceRef: string; sourceLabel?: string; entryCount: number; createdAt: number }>();
-    for (const e of entries) {
-      if (e.source !== "manual" || !e.sourceRef) continue;
-      const existing = docs.get(e.sourceRef);
-      if (existing) {
-        existing.entryCount++;
-      } else {
-        docs.set(e.sourceRef, {
-          sourceRef: e.sourceRef,
-          sourceLabel: e.sourceLabel,
-          entryCount: 1,
-          createdAt: e.createdAt ?? e._creationTime,
-        });
-      }
-    }
-
-    return [...docs.values()].sort((a, b) => b.createdAt - a.createdAt);
+    return docs
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .map((d) => ({
+        _id: d._id,
+        sourceRef: d.storageId as string,
+        fileName: d.fileName,
+        sourceLabel: d.sourceLabel,
+        extractionStatus: d.extractionStatus,
+        extractionError: d.extractionError,
+        entryCount: d.entryCount ?? 0,
+        createdAt: d.createdAt,
+      }));
   },
 });
 
