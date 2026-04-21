@@ -13,6 +13,90 @@ import { ArrowRight, Check, Loader2, X } from "lucide-react";
 
 const WORKSPACE_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "glass.claritylabs.inc";
 
+const PRESET_COLORS = [
+  "#0F172A",
+  "#2563EB",
+  "#0EA5E9",
+  "#14B8A6",
+  "#10B981",
+  "#F59E0B",
+  "#EF4444",
+  "#EC4899",
+  "#8B5CF6",
+  "#6366F1",
+] as const;
+
+function normalizeHex(raw: string): string | null {
+  const v = raw.trim().replace(/^#/, "").toLowerCase();
+  if (/^[0-9a-f]{6}$/.test(v)) return `#${v.toUpperCase()}`;
+  if (/^[0-9a-f]{3}$/.test(v)) {
+    return `#${v
+      .split("")
+      .map((c) => c + c)
+      .join("")
+      .toUpperCase()}`;
+  }
+  return null;
+}
+
+function extractDomain(url: string): string | null {
+  const trimmed = url.trim();
+  if (!trimmed) return null;
+  try {
+    const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+    return new URL(withProtocol).hostname;
+  } catch {
+    return null;
+  }
+}
+
+async function sampleDominantColor(imgUrl: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        const size = 32;
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return resolve(null);
+        ctx.drawImage(img, 0, 0, size, size);
+        const { data } = ctx.getImageData(0, 0, size, size);
+        // Bucket pixels by hue, pick the most-saturated populated bucket.
+        const buckets = new Map<string, { r: number; g: number; b: number; count: number; sat: number }>();
+        for (let i = 0; i < data.length; i += 4) {
+          const r = data[i], g = data[i + 1], b = data[i + 2], a = data[i + 3];
+          if (a < 128) continue;
+          const max = Math.max(r, g, b), min = Math.min(r, g, b);
+          const sat = max === 0 ? 0 : (max - min) / max;
+          const light = (max + min) / 2 / 255;
+          if (sat < 0.2 || light < 0.15 || light > 0.9) continue;
+          const key = `${Math.round(r / 32)}-${Math.round(g / 32)}-${Math.round(b / 32)}`;
+          const existing = buckets.get(key) ?? { r: 0, g: 0, b: 0, count: 0, sat: 0 };
+          existing.r += r; existing.g += g; existing.b += b;
+          existing.count += 1; existing.sat = Math.max(existing.sat, sat);
+          buckets.set(key, existing);
+        }
+        if (buckets.size === 0) return resolve(null);
+        const best = Array.from(buckets.values()).sort(
+          (a, b) => b.count * b.sat - a.count * a.sat,
+        )[0];
+        const r = Math.round(best.r / best.count);
+        const g = Math.round(best.g / best.count);
+        const b = Math.round(best.b / best.count);
+        const hex = `#${[r, g, b].map((v) => v.toString(16).padStart(2, "0")).join("").toUpperCase()}`;
+        resolve(hex);
+      } catch {
+        resolve(null);
+      }
+    };
+    img.onerror = () => resolve(null);
+    img.src = imgUrl;
+  });
+}
+
 type Step = 0 | 1 | 2 | 3;
 
 const STEPS: ReadonlyArray<{ label: string; subtitle?: string }> = [
@@ -137,7 +221,10 @@ export default function BrokerOnboardingPage() {
   const [website, setWebsite] = useState("");
   const [slugInput, setSlugInput] = useState("");
   const [debouncedSlug, setDebouncedSlug] = useState("");
-  const [brandingColor, setBrandingColor] = useState("#4F46E5");
+  const [brandingColor, setBrandingColor] = useState("#2563EB");
+  const [hexInput, setHexInput] = useState("");
+  const [sampledColor, setSampledColor] = useState<string | null>(null);
+  const [samplingColor, setSamplingColor] = useState(false);
   const [agentDisplayName, setAgentDisplayName] = useState("");
   const [agentHandle, setAgentHandle] = useState("");
   const [error, setError] = useState("");
@@ -155,7 +242,7 @@ export default function BrokerOnboardingPage() {
     setOrgName((v) => v || org.name || "");
     setWebsite((v) => v || org.website || "");
     setSlugInput((v) => v || org.slug || "");
-    setBrandingColor((v) => (v && v !== "#4F46E5" ? v : org.brandingColor || "#4F46E5"));
+    if (org.brandingColor) setBrandingColor(org.brandingColor);
     setAgentDisplayName((v) => v || org.agentDisplayName || "");
     setAgentHandle((v) => v || org.agentHandle || "");
   }, [viewerOrg]);
@@ -164,6 +251,32 @@ export default function BrokerOnboardingPage() {
     const timer = setTimeout(() => setDebouncedSlug(slugInput), 300);
     return () => clearTimeout(timer);
   }, [slugInput]);
+
+  useEffect(() => {
+    setHexInput(brandingColor);
+  }, [brandingColor]);
+
+  useEffect(() => {
+    const domain = extractDomain(website);
+    if (!domain) {
+      setSampledColor(null);
+      return;
+    }
+    let cancelled = false;
+    setSamplingColor(true);
+    const iconUrl = `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=64`;
+    sampleDominantColor(iconUrl).then((color) => {
+      if (cancelled) return;
+      setSampledColor(color);
+      setSamplingColor(false);
+      if (color && !viewerOrg?.org?.brandingColor) {
+        setBrandingColor(color);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [website, viewerOrg]);
 
   const slugCheck = useQuery(
     api.orgs.checkSlugAvailability,
@@ -386,16 +499,92 @@ export default function BrokerOnboardingPage() {
                   className={inputClass}
                 />
               </div>
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <label className={labelClass}>Accent color</label>
-                <div className="flex items-center gap-3">
-                  <input
-                    type="color"
-                    value={brandingColor}
-                    onChange={(e) => setBrandingColor(e.target.value)}
-                    className="h-10 w-12 cursor-pointer rounded-lg border border-foreground/8 bg-popover"
+
+                {sampledColor || samplingColor ? (
+                  <button
+                    type="button"
+                    onClick={() => sampledColor && setBrandingColor(sampledColor)}
+                    disabled={!sampledColor}
+                    className={`flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors ${
+                      sampledColor && brandingColor.toLowerCase() === sampledColor.toLowerCase()
+                        ? "border-foreground/30 bg-foreground/[0.03]"
+                        : "border-foreground/8 bg-popover hover:border-foreground/20"
+                    }`}
+                  >
+                    <span
+                      className="h-8 w-8 shrink-0 rounded-md border border-foreground/10"
+                      style={{ backgroundColor: sampledColor ?? "transparent" }}
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-body-sm font-medium text-foreground">
+                        {samplingColor ? "Pulling color from your site…" : "From your website"}
+                      </span>
+                      <span className="block text-label-sm text-muted-foreground">
+                        {samplingColor ? extractDomain(website) : sampledColor}
+                      </span>
+                    </span>
+                    {samplingColor ? (
+                      <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
+                    ) : sampledColor && brandingColor.toLowerCase() === sampledColor.toLowerCase() ? (
+                      <Check className="h-4 w-4 shrink-0 text-foreground" />
+                    ) : null}
+                  </button>
+                ) : null}
+
+                <div>
+                  <p className="text-label-sm text-muted-foreground mb-2">Or pick a preset</p>
+                  <div className="grid grid-cols-10 gap-2">
+                    {PRESET_COLORS.map((color) => {
+                      const selected = brandingColor.toLowerCase() === color.toLowerCase();
+                      return (
+                        <button
+                          key={color}
+                          type="button"
+                          onClick={() => setBrandingColor(color)}
+                          aria-label={`Select ${color}`}
+                          className={`relative aspect-square rounded-md ring-offset-2 ring-offset-background transition-all ${
+                            selected ? "ring-2 ring-foreground" : "hover:scale-105"
+                          }`}
+                          style={{ backgroundColor: color }}
+                        >
+                          {selected ? (
+                            <Check className="absolute inset-0 m-auto h-3.5 w-3.5 text-white drop-shadow" />
+                          ) : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <div
+                    className="h-9 w-9 shrink-0 rounded-md border border-foreground/10"
+                    style={{ backgroundColor: brandingColor }}
                   />
-                  <span className="text-sm text-muted-foreground">{brandingColor}</span>
+                  <input
+                    type="text"
+                    value={hexInput}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      setHexInput(raw.startsWith("#") ? raw : `#${raw}`);
+                      const n = normalizeHex(raw);
+                      if (n) setBrandingColor(n);
+                    }}
+                    onBlur={() => {
+                      const n = normalizeHex(hexInput);
+                      if (n) {
+                        setHexInput(n);
+                        setBrandingColor(n);
+                      } else {
+                        setHexInput(brandingColor);
+                      }
+                    }}
+                    spellCheck={false}
+                    className={`flex-1 font-mono uppercase tracking-wider ${inputClass}`}
+                    placeholder="#2563EB"
+                  />
                 </div>
               </div>
             </div>
