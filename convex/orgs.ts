@@ -356,6 +356,8 @@ export const updateOrg = mutation({
     autoSendEmails: v.optional(v.boolean()),
     emailSendDelay: v.optional(v.number()),
     brandingColor: v.optional(v.string()),
+    brandingMode: v.optional(v.union(v.literal("light"), v.literal("dark"))),
+    brandingTextOnAccent: v.optional(v.union(v.literal("light"), v.literal("dark"), v.literal("auto"))),
     agentDisplayName: v.optional(v.string()),
   },
   handler: async (ctx, args) => {

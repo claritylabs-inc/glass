@@ -90,6 +90,8 @@ export default defineSchema({
     slug: v.optional(v.string()),
     // Broker branding
     brandingColor: v.optional(v.string()),  // hex e.g. "#4F46E5"
+    brandingMode: v.optional(v.union(v.literal("light"), v.literal("dark"))),
+    brandingTextOnAccent: v.optional(v.union(v.literal("light"), v.literal("dark"), v.literal("auto"))),
     agentDisplayName: v.optional(v.string()),
     // Broker-org: which extended passport sections are required by default
     defaultRequiredPassportSections: v.optional(v.array(v.union(

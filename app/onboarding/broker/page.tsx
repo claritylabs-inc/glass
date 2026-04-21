@@ -14,17 +14,39 @@ import { ArrowRight, Check, Loader2, X } from "lucide-react";
 const WORKSPACE_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "glass.claritylabs.inc";
 
 const PRESET_COLORS = [
-  "#0F172A",
-  "#2563EB",
-  "#0EA5E9",
-  "#14B8A6",
-  "#10B981",
-  "#F59E0B",
-  "#EF4444",
-  "#EC4899",
-  "#8B5CF6",
-  "#6366F1",
+  "#1E293B", // slate
+  "#1E3A5F", // deep navy
+  "#2C5282", // muted blue
+  "#2B6B6B", // teal
+  "#3F6B4B", // forest
+  "#7A5A3A", // warm taupe
+  "#8B3A3A", // rust
+  "#5B4A7B", // muted violet
 ] as const;
+
+function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
+  const n = hex.replace(/^#/, "");
+  if (!/^[0-9a-f]{6}$/i.test(n)) return null;
+  return {
+    r: parseInt(n.slice(0, 2), 16),
+    g: parseInt(n.slice(2, 4), 16),
+    b: parseInt(n.slice(4, 6), 16),
+  };
+}
+
+function relativeLuminance(hex: string): number {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return 0;
+  const linearize = (c: number) => {
+    const v = c / 255;
+    return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+  };
+  return 0.2126 * linearize(rgb.r) + 0.7152 * linearize(rgb.g) + 0.0722 * linearize(rgb.b);
+}
+
+function readableTextFor(accent: string): "light" | "dark" {
+  return relativeLuminance(accent) > 0.45 ? "dark" : "light";
+}
 
 function normalizeHex(raw: string): string | null {
   const v = raw.trim().replace(/^#/, "").toLowerCase();
@@ -50,21 +72,29 @@ function extractDomain(url: string): string | null {
   }
 }
 
-async function sampleDominantColor(imgUrl: string): Promise<string | null> {
+function desaturate(r: number, g: number, b: number, factor = 0.35): [number, number, number] {
+  const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+  return [
+    Math.round(r + (gray - r) * factor),
+    Math.round(g + (gray - g) * factor),
+    Math.round(b + (gray - b) * factor),
+  ];
+}
+
+async function sampleBrandColors(imgUrl: string): Promise<string[]> {
   return new Promise((resolve) => {
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.onload = () => {
       try {
         const canvas = document.createElement("canvas");
-        const size = 32;
+        const size = 48;
         canvas.width = size;
         canvas.height = size;
         const ctx = canvas.getContext("2d");
-        if (!ctx) return resolve(null);
+        if (!ctx) return resolve([]);
         ctx.drawImage(img, 0, 0, size, size);
         const { data } = ctx.getImageData(0, 0, size, size);
-        // Bucket pixels by hue, pick the most-saturated populated bucket.
         const buckets = new Map<string, { r: number; g: number; b: number; count: number; sat: number }>();
         for (let i = 0; i < data.length; i += 4) {
           const r = data[i], g = data[i + 1], b = data[i + 2], a = data[i + 3];
@@ -72,27 +102,38 @@ async function sampleDominantColor(imgUrl: string): Promise<string | null> {
           const max = Math.max(r, g, b), min = Math.min(r, g, b);
           const sat = max === 0 ? 0 : (max - min) / max;
           const light = (max + min) / 2 / 255;
-          if (sat < 0.2 || light < 0.15 || light > 0.9) continue;
-          const key = `${Math.round(r / 32)}-${Math.round(g / 32)}-${Math.round(b / 32)}`;
+          if (sat < 0.15 || light < 0.12 || light > 0.92) continue;
+          const key = `${Math.round(r / 40)}-${Math.round(g / 40)}-${Math.round(b / 40)}`;
           const existing = buckets.get(key) ?? { r: 0, g: 0, b: 0, count: 0, sat: 0 };
           existing.r += r; existing.g += g; existing.b += b;
           existing.count += 1; existing.sat = Math.max(existing.sat, sat);
           buckets.set(key, existing);
         }
-        if (buckets.size === 0) return resolve(null);
-        const best = Array.from(buckets.values()).sort(
-          (a, b) => b.count * b.sat - a.count * a.sat,
-        )[0];
-        const r = Math.round(best.r / best.count);
-        const g = Math.round(best.g / best.count);
-        const b = Math.round(best.b / best.count);
-        const hex = `#${[r, g, b].map((v) => v.toString(16).padStart(2, "0")).join("").toUpperCase()}`;
-        resolve(hex);
+        if (buckets.size === 0) return resolve([]);
+        const ranked = Array.from(buckets.values())
+          .sort((a, b) => b.count * (0.4 + b.sat) - a.count * (0.4 + a.sat))
+          .slice(0, 5);
+        const colors: string[] = [];
+        for (const b of ranked) {
+          const [dr, dg, db] = desaturate(
+            Math.round(b.r / b.count),
+            Math.round(b.g / b.count),
+            Math.round(b.b / b.count),
+            0.3,
+          );
+          const hex = `#${[dr, dg, db]
+            .map((v) => Math.max(0, Math.min(255, v)).toString(16).padStart(2, "0"))
+            .join("")
+            .toUpperCase()}`;
+          if (!colors.some((c) => c === hex)) colors.push(hex);
+          if (colors.length >= 3) break;
+        }
+        resolve(colors);
       } catch {
-        resolve(null);
+        resolve([]);
       }
     };
-    img.onerror = () => resolve(null);
+    img.onerror = () => resolve([]);
     img.src = imgUrl;
   });
 }
@@ -221,9 +262,11 @@ export default function BrokerOnboardingPage() {
   const [website, setWebsite] = useState("");
   const [slugInput, setSlugInput] = useState("");
   const [debouncedSlug, setDebouncedSlug] = useState("");
-  const [brandingColor, setBrandingColor] = useState("#2563EB");
+  const [brandingColor, setBrandingColor] = useState("#1E293B");
+  const [brandingMode, setBrandingMode] = useState<"light" | "dark">("light");
+  const [brandingTextOnAccent, setBrandingTextOnAccent] = useState<"light" | "dark" | "auto">("auto");
   const [hexInput, setHexInput] = useState("");
-  const [sampledColor, setSampledColor] = useState<string | null>(null);
+  const [sampledColors, setSampledColors] = useState<string[]>([]);
   const [samplingColor, setSamplingColor] = useState(false);
   const [agentDisplayName, setAgentDisplayName] = useState("");
   const [agentHandle, setAgentHandle] = useState("");
@@ -243,6 +286,8 @@ export default function BrokerOnboardingPage() {
     setWebsite((v) => v || org.website || "");
     setSlugInput((v) => v || org.slug || "");
     if (org.brandingColor) setBrandingColor(org.brandingColor);
+    if (org.brandingMode) setBrandingMode(org.brandingMode);
+    if (org.brandingTextOnAccent) setBrandingTextOnAccent(org.brandingTextOnAccent);
     setAgentDisplayName((v) => v || org.agentDisplayName || "");
     setAgentHandle((v) => v || org.agentHandle || "");
   }, [viewerOrg]);
@@ -259,18 +304,18 @@ export default function BrokerOnboardingPage() {
   useEffect(() => {
     const domain = extractDomain(website);
     if (!domain) {
-      setSampledColor(null);
+      setSampledColors([]);
       return;
     }
     let cancelled = false;
     setSamplingColor(true);
-    const iconUrl = `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=64`;
-    sampleDominantColor(iconUrl).then((color) => {
+    const iconUrl = `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=128`;
+    sampleBrandColors(iconUrl).then((colors) => {
       if (cancelled) return;
-      setSampledColor(color);
+      setSampledColors(colors);
       setSamplingColor(false);
-      if (color && !viewerOrg?.org?.brandingColor) {
-        setBrandingColor(color);
+      if (colors[0] && !viewerOrg?.org?.brandingColor) {
+        setBrandingColor(colors[0]);
       }
     });
     return () => {
@@ -337,6 +382,8 @@ export default function BrokerOnboardingPage() {
     try {
       await updateOrg({
         brandingColor: brandingColor || undefined,
+        brandingMode,
+        brandingTextOnAccent,
         agentDisplayName: agentDisplayName.trim() || undefined,
       });
       setCurrentStep(3);
@@ -499,104 +546,196 @@ export default function BrokerOnboardingPage() {
                   className={inputClass}
                 />
               </div>
-              <div className="space-y-3">
-                <div className="space-y-1">
-                  <label className={labelClass}>Accent color</label>
-                  <p className="text-label-sm text-muted-foreground/80">
-                    Used on buttons, links, and other branded touches your clients see across Glass.
-                  </p>
-                </div>
+              {(() => {
+                const effectiveText =
+                  brandingTextOnAccent === "auto" ? readableTextFor(brandingColor) : brandingTextOnAccent;
+                const textColor = effectiveText === "light" ? "#FFFFFF" : "#0F172A";
+                const previewBg = brandingMode === "dark" ? "#0B1220" : "#F7F5EF";
+                const previewFg = brandingMode === "dark" ? "#E5E7EB" : "#0F172A";
+                const previewMuted = brandingMode === "dark" ? "#94A3B8" : "#64748B";
+                const previewSurface = brandingMode === "dark" ? "#111827" : "#FFFFFF";
+                const previewBorder = brandingMode === "dark" ? "#1F2937" : "#E5E7EB";
 
-                {sampledColor || samplingColor ? (
-                  <button
-                    type="button"
-                    onClick={() => sampledColor && setBrandingColor(sampledColor)}
-                    disabled={!sampledColor}
-                    className={`flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors ${
-                      sampledColor && brandingColor.toLowerCase() === sampledColor.toLowerCase()
-                        ? "border-foreground/30 bg-foreground/[0.03]"
-                        : "border-foreground/8 bg-popover hover:border-foreground/20"
-                    }`}
-                  >
-                    <span
-                      className="h-8 w-8 shrink-0 rounded-md border border-foreground/10"
-                      style={{ backgroundColor: sampledColor ?? "transparent" }}
-                    />
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-body-sm font-medium text-foreground">
-                        {samplingColor ? "Pulling color from your site…" : "From your website"}
-                      </span>
-                      <span className="block text-label-sm text-muted-foreground">
-                        {samplingColor ? extractDomain(website) : sampledColor}
-                      </span>
-                    </span>
-                    {samplingColor ? (
-                      <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
-                    ) : sampledColor && brandingColor.toLowerCase() === sampledColor.toLowerCase() ? (
-                      <Check className="h-4 w-4 shrink-0 text-foreground" />
-                    ) : null}
-                  </button>
-                ) : null}
+                return (
+                  <div className="rounded-xl border border-foreground/8 bg-popover/60 p-5 space-y-5">
+                    <div className="space-y-1">
+                      <label className={labelClass}>White-label branding</label>
+                      <p className="text-label-sm text-muted-foreground/80">
+                        How your Glass workspace will look to clients — their buttons, links, and
+                        branded surfaces.
+                      </p>
+                    </div>
 
-                <div>
-                  <p className="text-label-sm text-muted-foreground mb-2">
-                    {sampledColor ? "Or choose from our palette" : "Choose from our palette"}
-                  </p>
-                  <div className="grid grid-cols-10 gap-2">
-                    {PRESET_COLORS.map((color) => {
-                      const selected = brandingColor.toLowerCase() === color.toLowerCase();
-                      return (
+                    <div
+                      className="rounded-lg border p-4 transition-colors"
+                      style={{ backgroundColor: previewBg, borderColor: previewBorder }}
+                    >
+                      <div
+                        className="rounded-md p-3 flex items-center gap-3"
+                        style={{ backgroundColor: previewSurface, border: `1px solid ${previewBorder}` }}
+                      >
+                        <div
+                          className="h-8 w-8 rounded-md shrink-0"
+                          style={{ backgroundColor: brandingColor }}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-medium truncate" style={{ color: previewFg }}>
+                            {agentDisplayName.trim() || orgName.trim() || "Your brokerage"}
+                          </div>
+                          <div className="text-xs truncate" style={{ color: previewMuted }}>
+                            Preview of your client workspace
+                          </div>
+                        </div>
                         <button
-                          key={color}
                           type="button"
-                          onClick={() => setBrandingColor(color)}
-                          aria-label={`Select ${color}`}
-                          className={`relative aspect-square rounded-md ring-offset-2 ring-offset-background transition-all ${
-                            selected ? "ring-2 ring-foreground" : "hover:scale-105"
-                          }`}
-                          style={{ backgroundColor: color }}
+                          disabled
+                          className="rounded-full px-3.5 py-1.5 text-xs font-medium"
+                          style={{ backgroundColor: brandingColor, color: textColor }}
                         >
-                          {selected ? (
-                            <Check className="absolute inset-0 m-auto h-3.5 w-3.5 text-white drop-shadow" />
-                          ) : null}
+                          Continue
                         </button>
-                      );
-                    })}
-                  </div>
-                </div>
+                      </div>
+                    </div>
 
-                <div className="space-y-1.5">
-                  <p className="text-label-sm text-muted-foreground">Or enter a custom hex</p>
-                  <div className="flex items-center gap-2">
-                  <div
-                    className="h-9 w-9 shrink-0 rounded-md border border-foreground/10"
-                    style={{ backgroundColor: brandingColor }}
-                  />
-                  <input
-                    type="text"
-                    value={hexInput}
-                    onChange={(e) => {
-                      const raw = e.target.value;
-                      setHexInput(raw.startsWith("#") ? raw : `#${raw}`);
-                      const n = normalizeHex(raw);
-                      if (n) setBrandingColor(n);
-                    }}
-                    onBlur={() => {
-                      const n = normalizeHex(hexInput);
-                      if (n) {
-                        setHexInput(n);
-                        setBrandingColor(n);
-                      } else {
-                        setHexInput(brandingColor);
-                      }
-                    }}
-                    spellCheck={false}
-                    className={`flex-1 font-mono uppercase tracking-wider ${inputClass}`}
-                    placeholder="#2563EB"
-                  />
+                    {sampledColors.length > 0 || samplingColor ? (
+                      <div className="space-y-2">
+                        <p className="text-label-sm text-muted-foreground">From your website</p>
+                        {samplingColor ? (
+                          <div className="flex items-center gap-2 text-label-sm text-muted-foreground">
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            Pulling colors from {extractDomain(website)}…
+                          </div>
+                        ) : (
+                          <div className="flex flex-wrap gap-2">
+                            {sampledColors.map((color) => {
+                              const selected = brandingColor.toLowerCase() === color.toLowerCase();
+                              return (
+                                <button
+                                  key={color}
+                                  type="button"
+                                  onClick={() => setBrandingColor(color)}
+                                  className={`flex items-center gap-2 rounded-full border pl-1 pr-3 py-1 text-label-sm transition-colors ${
+                                    selected
+                                      ? "border-foreground/30 bg-foreground/[0.04] text-foreground"
+                                      : "border-foreground/10 bg-popover text-muted-foreground hover:border-foreground/20"
+                                  }`}
+                                >
+                                  <span
+                                    className="h-5 w-5 rounded-full border border-foreground/10"
+                                    style={{ backgroundColor: color }}
+                                  />
+                                  <span className="font-mono uppercase tracking-wider text-[11px]">
+                                    {color}
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    ) : null}
+
+                    <div className="space-y-2">
+                      <p className="text-label-sm text-muted-foreground">Curated palette</p>
+                      <div className="grid grid-cols-8 gap-2">
+                        {PRESET_COLORS.map((color) => {
+                          const selected = brandingColor.toLowerCase() === color.toLowerCase();
+                          return (
+                            <button
+                              key={color}
+                              type="button"
+                              onClick={() => setBrandingColor(color)}
+                              aria-label={`Select ${color}`}
+                              className={`relative aspect-square rounded-md ring-offset-2 ring-offset-background transition-all ${
+                                selected ? "ring-2 ring-foreground" : "hover:scale-105"
+                              }`}
+                              style={{ backgroundColor: color }}
+                            >
+                              {selected ? (
+                                <Check className="absolute inset-0 m-auto h-3.5 w-3.5 text-white drop-shadow" />
+                              ) : null}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <p className="text-label-sm text-muted-foreground">Custom hex</p>
+                      <div className="flex items-center gap-2">
+                        <div
+                          className="h-9 w-9 shrink-0 rounded-md border border-foreground/10"
+                          style={{ backgroundColor: brandingColor }}
+                        />
+                        <input
+                          type="text"
+                          value={hexInput}
+                          onChange={(e) => {
+                            const raw = e.target.value;
+                            setHexInput(raw.startsWith("#") ? raw : `#${raw}`);
+                            const n = normalizeHex(raw);
+                            if (n) setBrandingColor(n);
+                          }}
+                          onBlur={() => {
+                            const n = normalizeHex(hexInput);
+                            if (n) {
+                              setHexInput(n);
+                              setBrandingColor(n);
+                            } else {
+                              setHexInput(brandingColor);
+                            }
+                          }}
+                          spellCheck={false}
+                          className={`flex-1 font-mono uppercase tracking-wider ${inputClass}`}
+                          placeholder="#1E293B"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4 pt-1">
+                      <div className="space-y-1.5">
+                        <p className="text-label-sm text-muted-foreground">Client theme</p>
+                        <div className="grid grid-cols-2 gap-1 rounded-lg border border-foreground/8 bg-popover p-1">
+                          {(["light", "dark"] as const).map((mode) => (
+                            <button
+                              key={mode}
+                              type="button"
+                              onClick={() => setBrandingMode(mode)}
+                              className={`rounded-md px-2 py-1.5 text-label-sm font-medium capitalize transition-colors ${
+                                brandingMode === mode
+                                  ? "bg-foreground text-background"
+                                  : "text-muted-foreground hover:text-foreground"
+                              }`}
+                            >
+                              {mode}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <p className="text-label-sm text-muted-foreground">Text on accent</p>
+                        <div className="grid grid-cols-3 gap-1 rounded-lg border border-foreground/8 bg-popover p-1">
+                          {(["auto", "light", "dark"] as const).map((t) => (
+                            <button
+                              key={t}
+                              type="button"
+                              onClick={() => setBrandingTextOnAccent(t)}
+                              className={`rounded-md px-2 py-1.5 text-label-sm font-medium capitalize transition-colors ${
+                                brandingTextOnAccent === t
+                                  ? "bg-foreground text-background"
+                                  : "text-muted-foreground hover:text-foreground"
+                              }`}
+                            >
+                              {t}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
+                );
+              })()}
             </div>
 
             {error ? <p className="text-sm text-muted-foreground">{error}</p> : null}
