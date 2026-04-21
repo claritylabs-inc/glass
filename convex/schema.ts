@@ -73,7 +73,20 @@ export default defineSchema({
     lastDreamAt: v.optional(v.number()),
     // Branding
     iconStorageId: v.optional(v.id("_storage")),
-  }).index("by_agentHandle", ["agentHandle"]),
+    // Dual-org: org type discriminator
+    type: v.optional(v.union(v.literal("broker"), v.literal("client"))),
+    // Set on client orgs only — ID of the managing broker org
+    brokerOrgId: v.optional(v.id("organizations")),
+    // Broker slug for URLs, [a-z0-9-]{3,40}, unique
+    slug: v.optional(v.string()),
+    // Broker branding
+    brandingColor: v.optional(v.string()),  // hex e.g. "#4F46E5"
+    agentDisplayName: v.optional(v.string()),
+  })
+    .index("by_agentHandle", ["agentHandle"])
+    .index("by_type", ["type"])
+    .index("by_brokerOrgId", ["brokerOrgId"])
+    .index("by_slug", ["slug"]),
 
   // Org memberships — links users to orgs
   orgMemberships: defineTable({
@@ -192,6 +205,42 @@ export default defineSchema({
   })
     .index("by_email", ["email"])
     .index("by_orgId", ["orgId"]),
+
+  brokerClientAssignments: defineTable({
+    orgId: v.id("organizations"),           // broker org
+    clientOrgId: v.id("organizations"),     // client org
+    producerId: v.id("users"),              // broker user
+    role: v.union(v.literal("primary"), v.literal("secondary")),
+    createdAt: v.number(),
+  })
+    .index("by_orgId_clientOrgId", ["orgId", "clientOrgId"])
+    .index("by_orgId_producerId", ["orgId", "producerId"])
+    .index("by_clientOrgId", ["clientOrgId"]),
+
+  clientInvitations: defineTable({
+    brokerOrgId: v.id("organizations"),
+    clientOrgName: v.optional(v.string()),
+    primaryContactEmail: v.optional(v.string()),
+    primaryContactName: v.optional(v.string()),
+    prefillPassport: v.optional(v.any()),
+    invitedBy: v.id("users"),
+    inviteTokenHash: v.string(),
+    linkType: v.union(v.literal("email"), v.literal("shareable")),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("accepted"),
+      v.literal("expired"),
+      v.literal("revoked"),
+    ),
+    clientOrgId: v.optional(v.id("organizations")),
+    acceptedCount: v.optional(v.number()),
+    maxUses: v.optional(v.number()),
+    expiresAt: v.optional(v.number()),
+    createdAt: v.number(),
+  })
+    .index("by_tokenHash", ["inviteTokenHash"])
+    .index("by_brokerOrgId", ["brokerOrgId"])
+    .index("by_status", ["status"]),
 
   emailConnections: defineTable({
     userId: v.optional(v.id("users")),
@@ -322,6 +371,7 @@ export default defineSchema({
     uploadedBy: v.optional(v.id("users")),
     createdAt: v.number(),
     updatedAt: v.number(),
+    visibility: v.optional(v.union(v.literal("broker_visible"), v.literal("client_internal"))),
   })
     .index("by_orgId", ["orgId"])
     .index("by_storageId", ["storageId"]),
@@ -951,6 +1001,7 @@ export default defineSchema({
       summary: v.optional(v.string()),
     })),
     legacyConversationId: v.optional(v.id("agentConversations")),
+    visibility: v.optional(v.union(v.literal("broker_visible"), v.literal("client_internal"))),
   })
     .index("by_orgId", ["orgId"])
     .index("by_orgId_lastMessageAt", ["orgId", "lastMessageAt"])
