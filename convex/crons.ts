@@ -25,4 +25,12 @@ crons.cron(
   {},
 );
 
+// Daily integration sync — jittered per-connection inside the action
+crons.daily(
+  "daily integration sync",
+  { hourUTC: 6, minuteUTC: 30 },
+  (internal as any).actions.mergeSync.scheduledSyncAll,
+  {},
+);
+
 export default crons;

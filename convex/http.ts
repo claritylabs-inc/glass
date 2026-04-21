@@ -2074,6 +2074,28 @@ http.route({
   }),
 });
 
+// ── Merge webhook ──────────────────────────────────────────────────────────
+//
+// Merge sends webhook events to this endpoint. Signature verification uses
+// MERGE_WEBHOOK_SECRET (HMAC-SHA256). DEFERRED when real credentials available:
+// replace stub HMAC check with actual Merge header names from their docs.
+
+http.route({
+  path: "/merge/webhook",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const rawBody = await request.text();
+    const sig = request.headers.get("x-merge-webhook-signature") ?? "";
+
+    await ctx.runAction((internal as any).integrations.processWebhook, {
+      rawBody,
+      signature: sig,
+    });
+
+    return new Response("OK", { status: 200 });
+  }),
+});
+
 // ── GET /.well-known/mcp.json ──
 http.route({
   path: "/.well-known/mcp.json",
