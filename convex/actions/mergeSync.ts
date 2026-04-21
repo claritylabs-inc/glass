@@ -1,4 +1,5 @@
 // convex/actions/mergeSync.ts
+"use node";
 //
 // Sync pipeline between Merge.dev (via mergeClient stub) and integrationData.
 // Runs as Convex actions (can call external APIs; not transactional).
