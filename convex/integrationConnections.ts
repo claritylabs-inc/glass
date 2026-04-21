@@ -6,10 +6,7 @@ import type { Id } from "./_generated/dataModel";
 import { getOrgAccess } from "./lib/access";
 import {
   assertCanReadIntegrationsList,
-  assertCanConnectIntegration,
-  assertCanDisconnectIntegration,
 } from "./lib/access";
-import { getMergeClient } from "./lib/mergeClient";
 import { encrypt, decrypt } from "./lib/secrets";
 import { notify } from "./lib/notify";
 
@@ -57,36 +54,8 @@ export const getByLinkedAccountIdInternal = internalQuery({
 
 // ── Mutations ───────────────────────────────────────────────────────────────
 
-/**
- * Returns a short-lived Merge Link token.
- * The client passes it to the Merge Link widget to begin OAuth.
- */
-export const createLinkToken = mutation({
-  args: {
-    clientOrgId: v.id("organizations"),
-    category: v.union(
-      v.literal("accounting"),
-      v.literal("hris"),
-      v.literal("payroll"),
-    ),
-    originatingApplicationId: v.optional(v.id("applications")),
-    integrationRequestId: v.optional(v.id("integrationRequests")),
-  },
-  handler: async (ctx, args) => {
-    const access = await getOrgAccess(ctx, args.clientOrgId);
-    assertCanConnectIntegration(access);
-
-    const org = access.org;
-    const client = getMergeClient();
-    const result = await client.createLinkToken({
-      endUserOriginId: args.clientOrgId,
-      endUserOrganizationName: org.name,
-      category: args.category,
-    });
-
-    return { linkToken: result.linkToken };
-  },
-});
+// createLinkToken has been moved to convex/actions/integrationConnectionActions.ts
+// as an action (to allow external Merge API calls). Use api.actions.integrationConnectionActions.createLinkToken.
 
 /**
  * Called from the webhook handler after `linked_account.created`.
@@ -218,30 +187,19 @@ export const markReauthRequiredInternal = internalMutation({
   },
 });
 
-/**
- * Public mutation: client user disconnects an integration.
- * Calls Merge delete, flips status, emits broker notification.
- */
-export const disconnect = mutation({
+// disconnect has been moved to convex/actions/integrationConnectionActions.ts
+// as an action (to allow external Merge API calls). Use api.actions.integrationConnectionActions.disconnect.
+
+/** Internal: flip connection to disconnected by ID (called from disconnect action). */
+export const markDisconnectedByIdInternal = internalMutation({
   args: { connectionId: v.id("integrationConnections") },
   handler: async (ctx, args) => {
     const conn = await ctx.db.get(args.connectionId);
-    if (!conn) throw new Error("Connection not found");
+    if (!conn) return;
+    await ctx.db.patch(args.connectionId, { status: "disconnected", disconnectedAt: Date.now() });
 
-    const access = await getOrgAccess(ctx, conn.clientOrgId);
-    assertCanDisconnectIntegration(access);
-
-    const mergeClient = getMergeClient();
-    await mergeClient.deleteLinkedAccount(conn.mergeLinkedAccountId);
-
-    await ctx.db.patch(args.connectionId, {
-      status: "disconnected",
-      disconnectedAt: Date.now(),
-    });
-
-    // Notify broker
-    const clientOrg = access.org;
-    if (clientOrg.brokerOrgId) {
+    const clientOrg = await ctx.db.get(conn.clientOrgId);
+    if (clientOrg?.brokerOrgId) {
       await notify(ctx, {
         orgId: clientOrg.brokerOrgId,
         type: "integration_disconnected_for_client",

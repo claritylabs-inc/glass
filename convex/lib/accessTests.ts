@@ -9,7 +9,7 @@ import { Id } from "../_generated/dataModel";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-const createUser = internalMutation({
+export const createUser = internalMutation({
   args: {},
   handler: async (ctx) => {
     return await ctx.db.insert("users", {
@@ -20,7 +20,7 @@ const createUser = internalMutation({
   },
 });
 
-const createOrg = internalMutation({
+export const createOrg = internalMutation({
   args: {},
   handler: async (ctx) => {
     return await ctx.db.insert("organizations", {
@@ -30,7 +30,7 @@ const createOrg = internalMutation({
   },
 });
 
-const createClientOrg = internalMutation({
+export const createClientOrg = internalMutation({
   args: { brokerOrgId: v.id("organizations") },
   handler: async (ctx, { brokerOrgId }) => {
     return await ctx.db.insert("organizations", {
@@ -41,7 +41,7 @@ const createClientOrg = internalMutation({
   },
 });
 
-const addMembership = internalMutation({
+export const addMembership = internalMutation({
   args: {
     orgId: v.id("organizations"),
     userId: v.id("users"),
@@ -52,7 +52,7 @@ const addMembership = internalMutation({
   },
 });
 
-const cleanup = internalMutation({
+export const cleanup = internalMutation({
   args: { ids: v.array(v.string()) },
   handler: async (ctx, { ids }) => {
     // best-effort cleanup — ignores errors

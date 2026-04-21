@@ -67,11 +67,19 @@ export const run = internalAction({
     });
 
     // Load data for context
-    const [policies, applications, allMessages] = await Promise.all([
+    const [policies, allMessages] = await Promise.all([
       ctx.runQuery(internal.policies.listAllInternal, { orgId: args.orgId }),
-      ctx.runQuery(internal.applicationSessions.listAllInternal, { orgId: args.orgId }),
       ctx.runQuery(internal.threads.messagesInternal, { threadId }),
     ]);
+    // applicationSessions retired — no application context in chat
+    const applications: Array<{
+      applicationTitle?: string;
+      sourceFileName?: string;
+      status?: string;
+      totalFields?: number;
+      filledFields?: number;
+      _id: string;
+    }> = [];
 
     const siteUrl = process.env.SITE_URL ?? "https://prism.claritylabs.inc";
 

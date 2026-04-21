@@ -58,10 +58,8 @@ export const run = internalAction({
         internal.policies.listAllInternal,
         { orgId: args.orgId },
       );
-      const applications = await ctx.runQuery(
-        internal.applicationSessions.listAllInternal,
-        { orgId: args.orgId },
-      );
+      // applicationSessions retired
+      const applications: Array<Record<string, unknown>> = [];
 
       // Get sender name
       const user = await ctx.runQuery(internal.users.getInternal, {

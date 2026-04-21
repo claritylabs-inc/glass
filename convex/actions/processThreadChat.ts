@@ -319,10 +319,8 @@ function buildTools(ctx: any, args: { orgId: string; threadId: string }, org?: R
     check_application_status: {
       ...checkApplicationStatus,
       execute: async (params: { applicationId?: string; query?: string }) => {
-        const apps = await ctx.runQuery(
-          internal.applicationSessions.listAllInternal,
-          { orgId: args.orgId },
-        );
+        // applicationSessions retired — return empty
+        const apps: Array<Record<string, unknown>> = [];
         if (params.applicationId) {
           const match = apps.find((a: Record<string, unknown>) => a._id === params.applicationId);
           return match ?? "Application not found.";
@@ -477,10 +475,8 @@ export const run = internalAction({
         internal.policies.listAllInternal,
         { orgId: args.orgId },
       );
-      const applications = await ctx.runQuery(
-        internal.applicationSessions.listAllInternal,
-        { orgId: args.orgId },
-      );
+      // applicationSessions retired
+      const applications: Array<Record<string, unknown>> = [];
 
       // Get sender name
       const user = await ctx.runQuery(internal.users.getInternal, {

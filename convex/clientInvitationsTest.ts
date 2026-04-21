@@ -6,7 +6,7 @@ import { action, internalMutation, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
 
-const setupBrokerOrg = internalMutation({
+export const setupBrokerOrg = internalMutation({
   args: {},
   handler: async (ctx) => {
     const userId = await ctx.db.insert("users", {
@@ -24,7 +24,7 @@ const setupBrokerOrg = internalMutation({
   },
 });
 
-const createClientUser = internalMutation({
+export const createClientUser = internalMutation({
   args: {},
   handler: async (ctx) => {
     return await ctx.db.insert("users", {
@@ -35,7 +35,7 @@ const createClientUser = internalMutation({
   },
 });
 
-const cleanupIds = internalMutation({
+export const cleanupIds = internalMutation({
   args: { ids: v.array(v.string()) },
   handler: async (ctx, { ids }) => {
     for (const id of ids) {
@@ -46,7 +46,7 @@ const cleanupIds = internalMutation({
   },
 });
 
-const getOrgMembership = internalQuery({
+export const getOrgMembership = internalQuery({
   args: { orgId: v.id("organizations"), userId: v.id("users") },
   handler: async (ctx, { orgId, userId }) => {
     return await ctx.db

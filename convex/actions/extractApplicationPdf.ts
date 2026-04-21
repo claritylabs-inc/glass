@@ -7,6 +7,7 @@ import { generateText } from "ai";
 import { haikuModel } from "../lib/ai";
 import { APPLICATION_CLASSIFY_PROMPT, buildFieldExtractionPrompt } from "../lib/applicationPrompts";
 import { getAcroFormFields } from "../lib/pdfFiller";
+import { PDFDocument } from "pdf-lib";
 import { mapExtractedFieldsToQuestions } from "../lib/applicationPdfExtraction";
 import type { IntentStub } from "../lib/applicationPdfExtraction";
 import { stripFences } from "../lib/extraction";
@@ -30,7 +31,7 @@ export const extractApplicationPdf = internalAction({
     fileId: v.id("_storage"),
     uploadedByUserId: v.id("users"),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<{ applicationId: string }> => {
     // 1. Fetch PDF from storage
     const pdfUrl = await ctx.storage.getUrl(args.fileId);
     if (!pdfUrl) throw new Error("File not found in storage");
@@ -44,7 +45,7 @@ export const extractApplicationPdf = internalAction({
           role: "user",
           content: [
             { type: "text", text: APPLICATION_CLASSIFY_PROMPT },
-            { type: "file", data: new URL(pdfUrl), mimeType: "application/pdf" },
+            { type: "file", data: new URL(pdfUrl), mediaType: "application/pdf" },
           ],
         },
       ],
@@ -58,8 +59,9 @@ export const extractApplicationPdf = internalAction({
 
     // 3. Extract AcroForm fields (fillable PDF widgets)
     const pdfResponse = await fetch(pdfUrl);
-    const pdfBytes = new Uint8Array(await pdfResponse.arrayBuffer());
-    const acroFields = await getAcroFormFields(pdfBytes);
+    const pdfBytes = await pdfResponse.arrayBuffer();
+    const pdfDoc = await PDFDocument.load(pdfBytes);
+    const acroFields = getAcroFormFields(pdfDoc);
 
     // 4. If no AcroForm fields, run LLM field extraction
     let rawFields: Array<{ pdfFieldName: string; label: string; widgetType: string }>;
@@ -81,7 +83,7 @@ export const extractApplicationPdf = internalAction({
             role: "user",
             content: [
               { type: "text", text: buildFieldExtractionPrompt() },
-              { type: "file", data: new URL(pdfUrl), mimeType: "application/pdf" },
+              { type: "file", data: new URL(pdfUrl), mediaType: "application/pdf" },
             ],
           },
         ],
@@ -109,7 +111,7 @@ export const extractApplicationPdf = internalAction({
 
     // 7. Create draft applications row (internal — no auth session needed)
     const title = `Extracted Application (${new Date().toLocaleDateString("en-US")})`;
-    const applicationId = await ctx.runMutation(
+    const applicationId: string = await ctx.runMutation(
       (internal as any).applicationsInternal.createDraftInternal,
       {
         brokerOrgId: args.brokerOrgId,
