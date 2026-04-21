@@ -173,7 +173,7 @@ export const mergePolicies = action({
     // 1. Auth check
     const viewer = await ctx.runQuery(api.users.viewer) as any;
     if (!viewer) throw new Error("Not authenticated");
-    const orgData = await ctx.runQuery(api.orgs.viewerOrg) as any;
+    const orgData = await ctx.runQuery(api.orgs.viewerOrg, {}) as any;
     if (!orgData) throw new Error("No organization");
     const orgId = orgData.membership.orgId;
 

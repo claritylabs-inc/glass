@@ -100,7 +100,7 @@ export function AppSidebar({
   const router = useRouter();
   const isSettingsMode = pathname.startsWith("/settings");
   const viewer = useQuery(api.users.viewer);
-  const viewerOrg = useQuery(api.orgs.viewerOrg);
+  const viewerOrg = useQuery(api.orgs.viewerOrg, {});
   const orgIcon = viewerOrg?.org?.iconUrl ?? null;
   const unifiedThreads = useQuery(api.threads.list, { archived: false });
   const webChats = useQuery(api.webChats.list, { archived: false });

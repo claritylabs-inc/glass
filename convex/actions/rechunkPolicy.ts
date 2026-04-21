@@ -127,7 +127,7 @@ export const rechunk = action({
   handler: async (ctx, args): Promise<{ error: string } | { policyId: string; oldChunks: number; newChunks: number }> => {
     const viewer = await ctx.runQuery(api.users.viewer);
     if (!viewer) return { error: "Not authenticated" };
-    const orgData = await ctx.runQuery(api.orgs.viewerOrg) as { membership: { orgId: string } } | null;
+    const orgData = await ctx.runQuery(api.orgs.viewerOrg, {}) as { membership: { orgId: string } } | null;
     if (!orgData) return { error: "No organization" };
 
     const orgId = orgData.membership.orgId as Id<"organizations">;

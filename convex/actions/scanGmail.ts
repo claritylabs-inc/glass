@@ -44,7 +44,7 @@ export const scanGmail = action({
     const userId = viewer._id;
 
     // Get org membership
-    const orgData = await ctx.runQuery(api.orgs.viewerOrg);
+    const orgData = await ctx.runQuery(api.orgs.viewerOrg, {});
     const orgId = orgData?.org?._id;
 
     const connection = await ctx.runQuery(api.connections.get, {

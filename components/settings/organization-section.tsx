@@ -27,7 +27,7 @@ import {
 
 export function OrganizationSection() {
   const viewer = useQuery(api.users.viewer);
-  const orgData = useQuery(api.orgs.viewerOrg);
+  const orgData = useQuery(api.orgs.viewerOrg, {});
   const updateOrg = useMutation(api.orgs.updateOrg);
   const resetAccount = useMutation(api.users.resetAccount);
   const restartOnboarding = useMutation(api.users.restartOnboarding);

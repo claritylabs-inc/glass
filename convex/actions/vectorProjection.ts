@@ -101,7 +101,7 @@ export const projectIntelligence = action({
   handler: async (ctx): Promise<unknown> => {
     const viewer = await ctx.runQuery(api.users.viewer);
     if (!viewer) return { error: "Not authenticated" };
-    const orgData = await ctx.runQuery(api.orgs.viewerOrg) as OrgData | null;
+    const orgData = await ctx.runQuery(api.orgs.viewerOrg, {}) as OrgData | null;
     if (!orgData) return { error: "No organization" };
 
     const orgId = orgData.membership.orgId as Id<"organizations">;
@@ -162,7 +162,7 @@ export const project = action({
   handler: async (ctx): Promise<unknown> => {
     const viewer = await ctx.runQuery(api.users.viewer);
     if (!viewer) return { error: "Not authenticated" };
-    const orgData = await ctx.runQuery(api.orgs.viewerOrg) as OrgData | null;
+    const orgData = await ctx.runQuery(api.orgs.viewerOrg, {}) as OrgData | null;
     if (!orgData) return { error: "No organization" };
 
     const orgId = orgData.membership.orgId as Id<"organizations">;

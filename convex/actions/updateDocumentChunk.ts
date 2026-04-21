@@ -16,7 +16,7 @@ export const update = action({
     const viewer = await ctx.runQuery(api.users.viewer);
     if (!viewer) return { error: "Not authenticated" };
 
-    const orgData = await ctx.runQuery(api.orgs.viewerOrg);
+    const orgData = await ctx.runQuery(api.orgs.viewerOrg, {});
     if (!orgData) return { error: "No organization" };
 
     const orgId = orgData.membership.orgId;

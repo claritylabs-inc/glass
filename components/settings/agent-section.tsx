@@ -32,7 +32,7 @@ function CoiSettingsCard({
 }) {
   const updateOrg = useMutation(api.orgs.updateOrg);
   const updateProfile = useMutation(api.users.updateProfile);
-  const viewerOrg = useQuery(api.orgs.viewerOrg);
+  const viewerOrg = useQuery(api.orgs.viewerOrg, {});
   const current = coiHandling === "member" ? "user" : (coiHandling ?? "ignore");
   const autoGenerate = autoGenerateCoi !== false; // default on
 
@@ -182,7 +182,7 @@ function CoiSettingsCard({
 
 /* ── Email notification toggle ── */
 function ChatEmailNotificationsToggle() {
-  const viewerOrg = useQuery(api.orgs.viewerOrg);
+  const viewerOrg = useQuery(api.orgs.viewerOrg, {});
   const updateOrg = useMutation(api.orgs.updateOrg);
   const org = viewerOrg?.org;
   const isAdmin = viewerOrg?.membership?.role === "admin";
@@ -230,7 +230,7 @@ function ChatEmailNotificationsToggle() {
 
 /* ── Auto-send emails toggle ── */
 function AutoSendEmailsToggle() {
-  const viewerOrg = useQuery(api.orgs.viewerOrg);
+  const viewerOrg = useQuery(api.orgs.viewerOrg, {});
   const updateOrg = useMutation(api.orgs.updateOrg);
   const org = viewerOrg?.org;
   const isAdmin = viewerOrg?.membership?.role === "admin";
@@ -278,7 +278,7 @@ function AutoSendEmailsToggle() {
 
 /* ── Email send delay setting ── */
 function EmailSendDelaySetting() {
-  const viewerOrg = useQuery(api.orgs.viewerOrg);
+  const viewerOrg = useQuery(api.orgs.viewerOrg, {});
   const updateOrg = useMutation(api.orgs.updateOrg);
   const org = viewerOrg?.org;
   const isAdmin = viewerOrg?.membership?.role === "admin";
@@ -369,7 +369,7 @@ function EmailSendDelaySetting() {
 /* ── Main Agent Section ── */
 export function AgentSection() {
   const viewer = useQuery(api.users.viewer);
-  const viewerOrg = useQuery(api.orgs.viewerOrg);
+  const viewerOrg = useQuery(api.orgs.viewerOrg, {});
   const [copied, setCopied] = useState(false);
 
   const org = viewerOrg?.org;

@@ -36,7 +36,7 @@ const COPY: Record<DocumentKind, { title: string; dropHeadline: string; dropActi
 export function DocumentUploadEmptyState({ kind, uploading, onUpload }: DocumentUploadEmptyStateProps) {
   const copy = COPY[kind];
   const viewer = useQuery(api.users.viewer);
-  const viewerOrg = useQuery(api.orgs.viewerOrg);
+  const viewerOrg = useQuery(api.orgs.viewerOrg, {});
   const [copied, setCopied] = useState(false);
 
   const agentHandle = viewerOrg?.org?.agentHandle ?? viewer?.agentHandle;

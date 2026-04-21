@@ -183,7 +183,7 @@ export const extractFromDocument = action({
     const viewer = (await ctx.runQuery(api.users.viewer)) as { _id: string } | null;
     if (!viewer) return { error: "Not authenticated" };
 
-    const orgData = (await ctx.runQuery(api.orgs.viewerOrg)) as
+    const orgData = (await ctx.runQuery(api.orgs.viewerOrg, {})) as
       | { membership: { orgId: string } }
       | null;
     if (!orgData) return { error: "No organization" };

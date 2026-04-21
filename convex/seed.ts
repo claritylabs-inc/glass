@@ -9,9 +9,19 @@ import { internal } from "./_generated/api";
 
 export const seed = action({
   args: {},
-  handler: async (ctx) => {
+  handler: async (ctx): Promise<{
+    brokerOrgId: string;
+    client1OrgId: string;
+    client2OrgId: string;
+    summary: string;
+  }> => {
     await ctx.runMutation(internal.seed.wipeDemoOrgs);
-    const result = await ctx.runMutation(internal.seed.insertDemoData);
+    const result = await ctx.runMutation(internal.seed.insertDemoData) as {
+      brokerOrgId: string;
+      client1OrgId: string;
+      client2OrgId: string;
+      summary: string;
+    };
     return result;
   },
 });

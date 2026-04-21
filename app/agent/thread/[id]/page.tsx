@@ -1301,7 +1301,7 @@ function WebChatContent({
 export default function ThreadPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const viewer = useQuery(api.users.viewer);
-  const viewerOrg = useQuery(api.orgs.viewerOrg);
+  const viewerOrg = useQuery(api.orgs.viewerOrg, {});
   const presenceUsers = usePresence(`thread:${id}`);
   const agentHandle = viewerOrg?.org?.agentHandle ?? viewer?.agentHandle;
 

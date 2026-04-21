@@ -126,7 +126,7 @@ export const extractCompanyInfo = action({
   handler: async (ctx, args) => {
     const viewer = await ctx.runQuery(api.users.viewer);
     if (!viewer) throw new Error("Not authenticated");
-    const viewerOrg = await ctx.runQuery(api.orgs.viewerOrg);
+    const viewerOrg = await ctx.runQuery(api.orgs.viewerOrg, {});
 
     // Favicon — best effort, parallel with content fetch
     if (viewerOrg?.org) {

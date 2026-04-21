@@ -22,7 +22,7 @@ import {
 
 export function TeamSection() {
   const viewer = useQuery(api.users.viewer);
-  const orgData = useQuery(api.orgs.viewerOrg);
+  const orgData = useQuery(api.orgs.viewerOrg, {});
   const members = useQuery(api.orgs.listMembers);
   const invitations = useQuery(api.orgs.listInvitations);
   const inviteMember = useMutation(api.orgs.inviteMember);

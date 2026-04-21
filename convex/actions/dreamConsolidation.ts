@@ -398,7 +398,7 @@ export const consolidate = action({
   handler: async (ctx) => {
     const viewer = await ctx.runQuery(api.users.viewer);
     if (!viewer) throw new Error("Not authenticated");
-    const orgData = await ctx.runQuery(api.orgs.viewerOrg);
+    const orgData = await ctx.runQuery(api.orgs.viewerOrg, {});
     if (!orgData?.org) throw new Error("No organization");
     await ctx.scheduler.runAfter(0, internal.actions.dreamConsolidation.dreamForOrg, {
       orgId: orgData.org._id,

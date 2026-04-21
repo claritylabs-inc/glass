@@ -235,7 +235,7 @@ export const startFromUpload = action({
     if (!viewer) return { error: "Not authenticated" };
     if (!viewer.email) return { error: "No user email found" };
 
-    const orgData = await ctx.runQuery(api.orgs.viewerOrg);
+    const orgData = await ctx.runQuery(api.orgs.viewerOrg, {});
     const org = orgData?.org;
     if (!org?._id) return { error: "No organization found" };
 
