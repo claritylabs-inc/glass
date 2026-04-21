@@ -28,8 +28,8 @@ type EnrichmentState = "idle" | "running" | "success" | "error";
 const STEPS: ReadonlyArray<{ label: string; subtitle?: string }> = [
   { label: "Create your profile" },
   { label: "Create your workspace" },
-  { label: "Claim your handle", subtitle: "Choose the email handle your team will use to reach Prism." },
-  { label: "Connect your inbox", subtitle: "Connect your inbox so Prism can find policies and related insurance activity." },
+  { label: "Claim your handle", subtitle: "Choose the email handle your team will use to reach Glass." },
+  { label: "Connect your inbox", subtitle: "Connect your inbox so Glass can find policies and related insurance activity." },
   { label: "Finish your setup" },
 ] as const;
 
@@ -558,7 +558,7 @@ export default function OnboardingPage() {
                       <div>
                         <p className="text-sm font-medium text-foreground">Backsync range</p>
                         <p className="mt-1 text-sm text-muted-foreground">
-                          Choose how far back Prism should scan your inbox.
+                          Choose how far back Glass should scan your inbox.
                         </p>
                       </div>
                       <Select
@@ -682,13 +682,13 @@ export default function OnboardingPage() {
                     detail = "No website provided — add one in Settings to enrich your workspace later.";
                     skipped = true;
                   } else if (hasContext) {
-                    detail = "Prism filled in additional org context from your website.";
+                    detail = "Glass filled in additional org context from your website.";
                     icon = <Check className="h-4 w-4 text-foreground" />;
                   } else if (enrichmentState === "error") {
-                    detail = "Prism couldn't gather company information automatically. You can still continue.";
+                    detail = "Glass couldn't gather company information automatically. You can still continue.";
                     icon = <AlertCircle className="h-4 w-4 text-muted-foreground" />;
                   } else {
-                    detail = "Prism is still gathering company information from your website.";
+                    detail = "Glass is still gathering company information from your website.";
                     icon = <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />;
                   }
                   return (
@@ -712,7 +712,7 @@ export default function OnboardingPage() {
                 className="w-full justify-center text-sm shadow-none sm:w-auto"
               >
                 {finishing ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                Continue to Prism
+                Continue to Glass
                 {!finishing ? <ArrowRight className="h-4 w-4" /> : null}
               </PillButton>
             </div>

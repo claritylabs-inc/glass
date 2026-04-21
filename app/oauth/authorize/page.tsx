@@ -160,7 +160,7 @@ export default function OAuthAuthorizePage() {
   if (!isAuthenticated) {
     return (
       <AuthShell>
-        <AuthCard title="Authorize app" subtitle="Sign in to connect your Prism account.">
+        <AuthCard title="Authorize app" subtitle="Sign in to connect your Glass account.">
 
             {loginStep === "email" ? (
               <form onSubmit={handleEmailSubmit} className="space-y-4">
@@ -264,7 +264,7 @@ export default function OAuthAuthorizePage() {
   // Authenticated — show consent screen
   return (
     <AuthShell>
-      <AuthCard title="Authorize app" subtitle={clientInfo ? `${clientInfo.clientName} wants to access your Prism account.` : "Review this request before continuing."}>
+      <AuthCard title="Authorize app" subtitle={clientInfo ? `${clientInfo.clientName} wants to access your Glass account.` : "Review this request before continuing."}>
           {clientInfo === undefined ? (
             <div className="flex justify-center py-8">
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />

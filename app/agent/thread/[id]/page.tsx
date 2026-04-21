@@ -116,7 +116,7 @@ function UnifiedThreadActions({
       if (msg.status === "processing") continue;
       const time = dayjs(msg._creationTime).format("MMM D, YYYY h:mm A");
       const sender = msg.role === "agent"
-        ? "Prism"
+        ? "Glass"
         : msg.userName ?? msg.fromName ?? msg.fromEmail ?? "User";
       const channel = msg.channel === "email" ? " [Email]" : " [Chat]";
       lines.push("");
@@ -308,7 +308,7 @@ function UnifiedMessageBubble({
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <p className="text-label-sm font-medium text-muted-foreground/50">Prism</p>
+            <p className="text-label-sm font-medium text-muted-foreground/50">Glass</p>
             {channelIcon}
             <CancelButton messageId={msg._id} show />
           </div>
@@ -381,7 +381,7 @@ function UnifiedMessageBubble({
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between gap-3 mb-1">
               <div className="flex items-center gap-2 min-w-0">
-                <p className="text-label-sm font-medium text-muted-foreground/50">Prism</p>
+                <p className="text-label-sm font-medium text-muted-foreground/50">Glass</p>
                 {channelIcon}
                 <span className="text-muted-foreground/20">·</span>
                 <span className="text-label-sm text-muted-foreground/25">{time.format("MMM D, h:mm A")}</span>
@@ -939,7 +939,7 @@ function EmailThreadActions({
     for (const msg of thread.messages) {
       const time = dayjs(msg._creationTime).format("MMM D, YYYY h:mm A");
       const sender = msg.responseBody
-        ? "Prism"
+        ? "Glass"
         : msg.fromName ?? msg.fromEmail ?? "Unknown";
       lines.push("");
       lines.push(`${sender} — ${time}`);
@@ -1137,7 +1137,7 @@ function WebChatActions({
     for (const msg of messages) {
       if (msg.status === "processing") continue;
       const time = dayjs(msg._creationTime).format("MMM D, YYYY h:mm A");
-      const sender = msg.role === "agent" ? "Prism" : (msg.userName ?? "User");
+      const sender = msg.role === "agent" ? "Glass" : (msg.userName ?? "User");
       lines.push("");
       lines.push(`${sender} — ${time}`);
       lines.push("");

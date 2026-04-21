@@ -61,7 +61,7 @@ const AUDIT_ACTION_CONFIG: Record<
   deleted: { status: "error", title: "Policy deleted" },
   restored: { status: "success", title: "Policy restored" },
   dismissed: { status: "warning", title: "Policy dismissed" },
-  agent_referenced: { status: "info", title: "Referenced by Prism" },
+  agent_referenced: { status: "info", title: "Referenced by Glass" },
 };
 
 // Actions that should have extraction log steps attached as subEntries

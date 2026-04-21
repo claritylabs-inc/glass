@@ -37,13 +37,13 @@ export default function WeatherPage() {
             rel="noopener noreferrer"
             className="text-xs font-medium  text-foreground/30 hover:text-foreground/50 transition-colors"
           >
-            Prism by Clarity Labs
+            Glass by Clarity Labs
           </Link>
           <h1 className="mt-3 text-2xl font-semibold tracking-tight">
             AI Weather Report
           </h1>
           <p className="mt-1 text-sm text-foreground/50">
-            Current model routing across Prism.
+            Current model routing across Glass.
           </p>
         </div>
 
