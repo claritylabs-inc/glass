@@ -39,8 +39,8 @@ ${args.recipientContext ? `Recipient context: ${args.recipientContext}` : ""}
 ${args.policyContext ? `Policy context:\n${JSON.stringify(args.policyContext, null, 2)}` : ""}
 ${memoryBlock}
 
-Write the email as Prism on behalf of ${org.name}. Be professional and concise.
-Do NOT include a sign-off — the "sent with Prism" signature is added automatically.
+Write the email as Glass on behalf of ${org.name}. Be professional and concise.
+Do NOT include a sign-off — the "sent with Glass" signature is added automatically.
 
 Respond with JSON:
 {
@@ -60,11 +60,11 @@ Respond with JSON:
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]);
         return {
-          subject: parsed.subject ?? "Update from Prism",
+          subject: parsed.subject ?? "Update from Glass",
           body: parsed.body ?? text,
         };
       }
-      return { subject: "Update from Prism", body: text };
+      return { subject: "Update from Glass", body: text };
     } catch (err) {
       logAiError("generateEmailBody", err, { orgId: args.orgId });
       throw err;

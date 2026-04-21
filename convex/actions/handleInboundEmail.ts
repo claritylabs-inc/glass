@@ -127,19 +127,19 @@ function extractForwardedSender(body: string): string | null {
 }
 
 function buildSignature(agentEmail: string, companyName?: string): { text: string; html: string } {
-  const siteUrl = process.env.SITE_URL ?? "https://prism.claritylabs.inc";
-  const linkText = `Sent by Prism${companyName ? ` from ${companyName}` : ""}`;
+  const siteUrl = process.env.SITE_URL ?? "https://glass.claritylabs.dev";
+  const linkText = `Sent by Glass${companyName ? ` from ${companyName}` : ""}`;
   const text = [
     "",
     "—",
-    `Prism${companyName ? ` for ${companyName}` : ""}`,
+    `Glass${companyName ? ` for ${companyName}` : ""}`,
     agentEmail,
     `${linkText} - ${siteUrl}`,
   ].join("\n");
 
   const html = [
     `<br><p style="color:#999;font-size:13px;margin:0">—</p>`,
-    `<p style="font-size:13px;margin:4px 0 2px"><span style="color:#A0D2FA;font-size:13px;font-family:'Segoe UI Symbol','Apple Symbols',sans-serif">&#x2733;&#xFE0E;</span> <strong>Prism${companyName ? ` for ${companyName}` : ""}</strong></p>`,
+    `<p style="font-size:13px;margin:4px 0 2px"><span style="color:#A0D2FA;font-size:13px;font-family:'Segoe UI Symbol','Apple Symbols',sans-serif">&#x2733;&#xFE0E;</span> <strong>Glass${companyName ? ` for ${companyName}` : ""}</strong></p>`,
     `<p style="font-size:12px;color:#999;margin:0">${agentEmail}</p>`,
     `<p style="font-size:12px;margin:12px 0 0"><a href="${siteUrl}" style="color:#A0D2FA;text-decoration:none">${linkText}</a></p>`,
   ].join("\n");
@@ -653,7 +653,7 @@ Respond with JSON only:
         }
 
         const notificationBody = [
-          `Your Prism received an email it couldn't confidently classify, so it's forwarding it to you for review.`,
+          `Your Glass agent received an email it couldn't confidently classify, so it's forwarding it to you for review.`,
           ``,
           `**From:** ${fromName ? `${fromName} <${fromEmail}>` : fromEmail}`,
           `**Subject:** ${subject}`,
@@ -678,10 +678,10 @@ Respond with JSON only:
           .join("\n");
         const fullHtml = htmlBody + signature.html;
 
-        const notifSubject = `[Prism] Help needed: ${subject}`;
+        const notifSubject = `[Glass] Help needed: ${subject}`;
 
         const emailPayload: Record<string, unknown> = {
-          from: `Prism <${agentAddress}>`,
+          from: `Glass <${agentAddress}>`,
           to: notifyEmail,
           subject: notifSubject,
           text: fullText,
@@ -764,7 +764,7 @@ Respond with JSON only:
         brokerName: org.insuranceBroker,
         brokerContactName: org.brokerContactName,
         brokerContactEmail: org.brokerContactEmail,
-        agentName: "Prism",
+        agentName: "Glass",
       };
       const systemPrompt = buildAgentSystemPrompt(agentCtx);
       const { context: policyContext, relevantPolicyIds, relevantQuoteIds } = await buildDocumentContext(
@@ -862,7 +862,7 @@ For emails, compose a professional message that:
 - Incorporates the team member's direction naturally
 - Maintains appropriate tone for the business relationship
 - References relevant policy/coverage data when applicable
-- Writes from Prism's perspective (third-person on behalf of the company). Do NOT sign off as the team member or impersonate them.`;
+- Writes from Glass's perspective (third-person on behalf of the company). Do NOT sign off as the team member or impersonate them.`;
       }
 
       // Call Claude Haiku
@@ -911,13 +911,13 @@ For emails, compose a professional message that:
             .map((p) => `<p style="margin:0 0 12px;line-height:1.5">${mdToHtml(p.replace(/\n/g, "<br>"))}</p>`)
             .join("\n") + sig.html;
 
-          const sendSubject = subject.replace(/^\[Prism\]\s*Help needed:\s*/i, "");
+          const sendSubject = subject.replace(/^\[Glass\]\s*Help needed:\s*/i, "");
           const replySub = sendSubject.startsWith("Re:") ? sendSubject : `Re: ${sendSubject}`;
 
           const sendCc = [fromEmail]; // CC the internal user who gave the instruction
 
           const sendPayload: Record<string, unknown> = {
-            from: `Prism <${agentAddress}>`,
+            from: `Glass <${agentAddress}>`,
             to: thirdPartyEmail,
             cc: sendCc,
             subject: replySub,
@@ -1105,7 +1105,7 @@ For emails, compose a professional message that:
         : `Re: ${cleanSubject}`;
 
       const emailPayload: Record<string, unknown> = {
-        from: `Prism <${agentAddress}>`,
+        from: `Glass <${agentAddress}>`,
         to: replyTo,
         subject: replySubject,
         text: fullReplyText,

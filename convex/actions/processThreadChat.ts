@@ -634,8 +634,8 @@ For email drafts, compose a professional email that:
 - Incorporates the team member's direction naturally
 - Maintains appropriate tone for the business relationship
 - References relevant policy/coverage data when applicable
-- Writes from Prism's perspective (third-person on behalf of the company, e.g. "on behalf of [company]"). Do NOT sign off as the team member or impersonate them. The "sent with Prism" signature is added automatically — do not add your own sign-off.
-- If a team member asks you to send the email "from them" or "as them", politely decline and explain that emails are always sent from Prism on behalf of the company.`
+- Writes from Glass's perspective (third-person on behalf of the company, e.g. "on behalf of [company]"). Do NOT sign off as the team member or impersonate them. The "sent with Glass" signature is added automatically — do not add your own sign-off.
+- If a team member asks you to send the email "from them" or "as them", politely decline and explain that emails are always sent from Glass on behalf of the company.`
         : `
 
 WEB CHAT MODE:
@@ -656,7 +656,7 @@ For emails, compose a professional message that:
 - Incorporates the team member's direction naturally
 - Maintains appropriate tone for the business relationship
 - References relevant policy/coverage data when applicable
-- Writes from Prism's perspective (third-person on behalf of the company). Do NOT sign off as the team member or impersonate them. The "sent with Prism" signature is added automatically — do not add your own sign-off.` : ""}`;
+- Writes from Glass's perspective (third-person on behalf of the company). Do NOT sign off as the team member or impersonate them. The "sent with Glass" signature is added automatically — do not add your own sign-off.` : ""}`;
 
       // Page context
       let pageContextBlock = "";
@@ -937,7 +937,7 @@ When answering coverage questions, you are an expert insurance analyst, not a di
             const refMessageId = lastEmailMsg?.responseMessageId ?? lastEmailMsg?.messageId;
 
             const emailPayload: Record<string, unknown> = {
-              from: `Prism <${agentAddress}>`,
+              from: `Glass <${agentAddress}>`,
               to: replyTo,
               subject: replySubject,
               text: plainText,
