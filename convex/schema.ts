@@ -217,6 +217,167 @@ export default defineSchema({
     .index("by_threadId", ["threadId"])
     .index("by_status", ["status"]),
 
+  // ── Applications v2 ──────────────────────────────────────────────────────
+
+  questionIntents: defineTable({
+    intentKey: v.string(),
+    label: v.string(),
+    defaultPrompt: v.string(),
+    answerType: v.union(
+      v.literal("text"), v.literal("long_text"), v.literal("number"),
+      v.literal("currency"), v.literal("percent"), v.literal("date"),
+      v.literal("yes_no"), v.literal("select"), v.literal("multi_select"),
+      v.literal("address"), v.literal("location_list"),
+      v.literal("subsidiary_list"), v.literal("loss_list"),
+      v.literal("file_upload"),
+    ),
+    selectOptions: v.optional(v.array(v.object({ value: v.string(), label: v.string() }))),
+    passportFieldPath: v.optional(v.string()),
+    integrationCandidates: v.optional(v.array(v.string())),
+    category: v.union(
+      v.literal("applicant_info"), v.literal("operations"), v.literal("financial"),
+      v.literal("risk"), v.literal("history"), v.literal("coverage_preferences"),
+      v.literal("supporting_docs"), v.literal("other"),
+    ),
+    validationHint: v.optional(v.string()),
+  }).index("by_intentKey", ["intentKey"]),
+
+  applicationTemplates: defineTable({
+    ownerScope: v.union(v.literal("system"), v.literal("broker")),
+    ownerBrokerOrgId: v.optional(v.id("organizations")),
+    name: v.string(),
+    description: v.optional(v.string()),
+    lineOfBusiness: v.optional(v.string()),
+    sourcePdfStorageId: v.optional(v.id("_storage")),
+    sourcePdfFieldMap: v.optional(v.any()),
+    questionSet: v.array(v.object({
+      intentKey: v.optional(v.string()),
+      promptOverride: v.optional(v.string()),
+      required: v.boolean(),
+      conditional: v.optional(v.any()),
+    })),
+    createdAt: v.number(),
+  })
+    .index("by_ownerBrokerOrgId", ["ownerBrokerOrgId"])
+    .index("by_ownerScope", ["ownerScope"]),
+
+  applications: defineTable({
+    brokerOrgId: v.id("organizations"),
+    clientOrgId: v.id("organizations"),
+    createdByUserId: v.id("users"),
+    assignedProducerId: v.optional(v.id("users")),
+    sourceTemplateId: v.optional(v.id("applicationTemplates")),
+    creationPath: v.union(v.literal("custom"), v.literal("ai"), v.literal("template")),
+    title: v.string(),
+    lineOfBusiness: v.optional(v.string()),
+    aiGenerationPrompt: v.optional(v.string()),
+    status: v.union(
+      v.literal("draft"), v.literal("sent"), v.literal("in_progress"),
+      v.literal("awaiting_review"), v.literal("complete"), v.literal("cancelled"),
+    ),
+    sentAt: v.optional(v.number()),
+    completedAt: v.optional(v.number()),
+    filledPdfStorageId: v.optional(v.id("_storage")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_brokerOrgId", ["brokerOrgId"])
+    .index("by_clientOrgId", ["clientOrgId"])
+    .index("by_clientOrgId_status", ["clientOrgId", "status"])
+    .index("by_brokerOrgId_status", ["brokerOrgId", "status"]),
+
+  applicationGroups: defineTable({
+    applicationId: v.id("applications"),
+    order: v.number(),
+    title: v.string(),
+    description: v.optional(v.string()),
+    conditional: v.optional(v.any()),
+    repeating: v.optional(v.object({
+      source: v.union(
+        v.literal("passport_locations"),
+        v.literal("passport_subsidiaries"),
+        v.literal("application_list"),
+      ),
+      minItems: v.optional(v.number()),
+      maxItems: v.optional(v.number()),
+    })),
+    status: v.union(
+      v.literal("not_started"), v.literal("in_progress"),
+      v.literal("submitted"), v.literal("returned"), v.literal("accepted"),
+    ),
+    submittedAt: v.optional(v.number()),
+    reviewedAt: v.optional(v.number()),
+  })
+    .index("by_applicationId", ["applicationId"])
+    .index("by_applicationId_order", ["applicationId", "order"]),
+
+  applicationQuestions: defineTable({
+    applicationId: v.id("applications"),
+    groupId: v.id("applicationGroups"),
+    order: v.number(),
+    intentKey: v.optional(v.string()),
+    prompt: v.string(),
+    answerType: v.string(),
+    selectOptions: v.optional(v.array(v.object({ value: v.string(), label: v.string() }))),
+    required: v.boolean(),
+    conditional: v.optional(v.any()),
+    binding: v.optional(v.object({
+      source: v.union(
+        v.literal("manual"), v.literal("passport"),
+        v.literal("integration"), v.literal("document"),
+      ),
+      target: v.optional(v.string()),
+    })),
+    helpText: v.optional(v.string()),
+    placedByAi: v.optional(v.boolean()),
+    createdAt: v.number(),
+  })
+    .index("by_applicationId", ["applicationId"])
+    .index("by_groupId", ["groupId"])
+    .index("by_groupId_order", ["groupId", "order"]),
+
+  applicationAnswers: defineTable({
+    applicationId: v.id("applications"),
+    questionId: v.id("applicationQuestions"),
+    rowKey: v.optional(v.string()),
+    value: v.optional(v.any()),
+    source: v.union(
+      v.literal("manual"), v.literal("passport"),
+      v.literal("integration"), v.literal("document"),
+    ),
+    sourceRef: v.optional(v.string()),
+    overrideOfIntegration: v.optional(v.object({
+      connectorKey: v.string(),
+      syncedValue: v.any(),
+      syncedAt: v.number(),
+      overriddenAt: v.number(),
+    })),
+    status: v.union(v.literal("answered"), v.literal("needs_new_answer")),
+    answeredAt: v.number(),
+    answeredByUserId: v.optional(v.id("users")),
+  })
+    .index("by_applicationId", ["applicationId"])
+    .index("by_questionId", ["questionId"])
+    .index("by_applicationId_questionId_rowKey", ["applicationId", "questionId", "rowKey"]),
+
+  applicationQuestionFlags: defineTable({
+    applicationId: v.id("applications"),
+    groupId: v.id("applicationGroups"),
+    questionId: v.id("applicationQuestions"),
+    rowKey: v.optional(v.string()),
+    flagType: v.union(v.literal("comment"), v.literal("needs_new_answer")),
+    authorUserId: v.id("users"),
+    message: v.string(),
+    status: v.union(v.literal("open"), v.literal("resolved"), v.literal("dismissed")),
+    createdAt: v.number(),
+    resolvedAt: v.optional(v.number()),
+  })
+    .index("by_applicationId", ["applicationId"])
+    .index("by_questionId", ["questionId"])
+    .index("by_groupId_status", ["groupId", "status"]),
+
+  // ── End Applications v2 ───────────────────────────────────────────────────
+
   // Org invitations — pending invites
   orgInvitations: defineTable({
     orgId: v.id("organizations"),
@@ -484,6 +645,14 @@ export default defineSchema({
     emailId: v.optional(v.id("emails")),
     fileId: v.optional(v.id("_storage")),
     fileName: v.optional(v.string()),
+    // Provenance — who uploaded and from which side
+    uploadedBySide: v.optional(v.union(
+      v.literal("broker"),
+      v.literal("client"),
+      v.literal("email_scan"),
+    )),
+    uploadedByUserId: v.optional(v.id("users")),
+    uploadedByBrokerOrgId: v.optional(v.id("organizations")),
     // Entity fields
     carrier: v.string(), // backward compat — prefer security for new extractions
     security: v.optional(v.string()), // insurer/underwriter company (e.g. "Lloyd's Underwriters")

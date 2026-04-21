@@ -126,6 +126,41 @@ export function assertCanUploadPolicy(access: OrgAccess): void {
   // member OR broker_of_client
 }
 
+export function assertCanDeletePolicy(
+  access: OrgAccess,
+  policy: { uploadedBySide?: string; uploadedByBrokerOrgId?: Id<"organizations"> },
+): void {
+  if (access.accessType === "broker_of_client") {
+    // Broker can only delete policies they uploaded
+    if (
+      policy.uploadedBySide !== "broker" ||
+      policy.uploadedByBrokerOrgId !== access.brokerOrgId
+    ) {
+      throw new Error("Not authorized to delete this policy");
+    }
+  }
+  // members can delete any policy in their org
+}
+
+export function assertCanReadPolicy(access: OrgAccess): void {
+  // member OR broker_of_client
+}
+
+/**
+ * Require broker-of-client access to a specific clientOrgId.
+ * Returns an OrgAccess with accessType="broker_of_client".
+ */
+export async function requireBrokerAccessToClient(
+  ctx: Ctx,
+  clientOrgId: Id<"organizations">,
+): Promise<OrgAccess & { brokerOrgId: Id<"organizations"> }> {
+  const access = await getOrgAccess(ctx, clientOrgId);
+  if (access.accessType !== "broker_of_client") {
+    throw new Error("Broker access required for this client");
+  }
+  return access as OrgAccess & { brokerOrgId: Id<"organizations"> };
+}
+
 export function assertCanSendApplication(access: OrgAccess): void {
   if (access.accessType !== "broker_of_client") {
     throw new Error("Only broker users can send applications to a client");
