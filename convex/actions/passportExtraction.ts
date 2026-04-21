@@ -2,7 +2,9 @@
 
 import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
-import { internal } from "../_generated/api";
+import { internal as _internal } from "../_generated/api";
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const internal = _internal as any;
 
 /**
  * Called at the end of extractCompanyInfo to populate passport fields with
