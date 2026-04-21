@@ -2,19 +2,31 @@ import { v } from "convex/values";
 import { query, mutation, internalQuery, internalMutation } from "./_generated/server";
 import { requireOrgAccess, requireOrgAdmin, getOrgAccess } from "./lib/orgAuth";
 import { getAuthUserId } from "@convex-dev/auth/server";
+import { getOrgAccess as getOrgAccessNew, assertBrokerOrg } from "./lib/access";
 
 // ── Queries ──
 
 export const viewerOrg = query({
-  args: {},
-  handler: async (ctx) => {
+  args: {
+    // Optional orgId — if provided, returns that specific org (for multi-org users)
+    orgId: v.optional(v.id("organizations")),
+  },
+  handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) return null;
 
-    const membership = await ctx.db
-      .query("orgMemberships")
-      .withIndex("by_userId", (q) => q.eq("userId", userId))
-      .first();
+    let membership;
+    if (args.orgId) {
+      membership = await ctx.db
+        .query("orgMemberships")
+        .withIndex("by_orgId_userId", (q) => q.eq("orgId", args.orgId!).eq("userId", userId))
+        .first();
+    } else {
+      membership = await ctx.db
+        .query("orgMemberships")
+        .withIndex("by_userId", (q) => q.eq("userId", userId))
+        .first();
+    }
 
     if (!membership) return null;
 
@@ -91,6 +103,29 @@ export const checkHandleAvailability = query({
       .first();
     const taken = !!(existingOrg || existingUser);
     return { available: !taken, normalized, reason: taken ? "Handle already taken" : undefined };
+  },
+});
+
+/** Check if a broker slug is available. No auth required. */
+export const checkSlugAvailability = query({
+  args: { slug: v.string() },
+  handler: async (ctx, args) => {
+    const normalized = args.slug.toLowerCase().replace(/[^a-z0-9-]/g, "");
+    if (normalized.length < 3 || normalized.length > 40) {
+      return { available: false, normalized, reason: "Slug must be 3-40 characters" };
+    }
+    if (!/^[a-z0-9][a-z0-9-]*[a-z0-9]$/.test(normalized) && normalized.length > 1) {
+      return { available: false, normalized, reason: "Slug must start and end with a letter or number" };
+    }
+    const existing = await ctx.db
+      .query("organizations")
+      .withIndex("by_slug", (q) => q.eq("slug", normalized))
+      .first();
+    return {
+      available: !existing,
+      normalized,
+      reason: existing ? "Slug already taken" : undefined,
+    };
   },
 });
 
@@ -195,6 +230,108 @@ export const createOrg = mutation({
     });
 
     return orgId;
+  },
+});
+
+/** Create a broker org during broker signup wizard. */
+export const createBrokerOrg = mutation({
+  args: {
+    name: v.string(),
+    website: v.optional(v.string()),
+    slug: v.string(),
+    brandingColor: v.optional(v.string()),
+    agentDisplayName: v.optional(v.string()),
+    agentHandle: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
+
+    // Validate slug
+    const normalized = args.slug.toLowerCase().replace(/[^a-z0-9-]/g, "");
+    if (normalized.length < 3 || normalized.length > 40) {
+      throw new Error("Slug must be 3-40 characters");
+    }
+    const slugTaken = await ctx.db
+      .query("organizations")
+      .withIndex("by_slug", (q) => q.eq("slug", normalized))
+      .first();
+    if (slugTaken) throw new Error("Slug already taken");
+
+    // Validate handle if provided
+    if (args.agentHandle) {
+      const handleNorm = args.agentHandle.toLowerCase().replace(/[^a-z0-9-]/g, "");
+      const handleTaken = await ctx.db
+        .query("organizations")
+        .withIndex("by_agentHandle", (q) => q.eq("agentHandle", handleNorm))
+        .first();
+      if (handleTaken) throw new Error("Handle already taken");
+    }
+
+    const orgId = await ctx.db.insert("organizations", {
+      name: args.name,
+      type: "broker",
+      slug: normalized,
+      ...(args.website && { website: args.website }),
+      ...(args.brandingColor && { brandingColor: args.brandingColor }),
+      ...(args.agentDisplayName && { agentDisplayName: args.agentDisplayName }),
+      ...(args.agentHandle && { agentHandle: args.agentHandle.toLowerCase().replace(/[^a-z0-9-]/g, "") }),
+    });
+
+    await ctx.db.insert("orgMemberships", {
+      orgId,
+      userId,
+      role: "admin",
+    });
+
+    return orgId;
+  },
+});
+
+/** List all client orgs for a broker org. */
+export const listClients = query({
+  args: { orgId: v.id("organizations") },
+  handler: async (ctx, args) => {
+    const access = await getOrgAccessNew(ctx, args.orgId);
+    assertBrokerOrg(access);
+
+    const clients = await ctx.db
+      .query("organizations")
+      .withIndex("by_brokerOrgId", (q) => q.eq("brokerOrgId", args.orgId))
+      .collect();
+
+    return await Promise.all(
+      clients.map(async (client) => {
+        const members = await ctx.db
+          .query("orgMemberships")
+          .withIndex("by_orgId", (q) => q.eq("orgId", client._id))
+          .collect();
+        return { ...client, memberCount: members.length };
+      }),
+    );
+  },
+});
+
+/** Return all org memberships for the authenticated user. */
+export const listAllOrgsForViewer = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) return [];
+
+    const memberships = await ctx.db
+      .query("orgMemberships")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .collect();
+
+    return await Promise.all(
+      memberships.map(async (m) => {
+        const org = await ctx.db.get(m.orgId);
+        if (!org) return null;
+        const iconUrl = org.iconStorageId ? await ctx.storage.getUrl(org.iconStorageId) : null;
+        return { org: { ...org, iconUrl }, membership: m };
+      }),
+    ).then((results) => results.filter(Boolean));
   },
 });
 
