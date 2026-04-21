@@ -863,6 +863,32 @@ export default defineSchema({
     .index("by_orgId_type", ["orgId", "type"])
     .index("by_userId", ["userId"]),
 
+  // ── Broker Activity ──
+
+  brokerActivity: defineTable({
+    brokerOrgId: v.id("organizations"),
+    clientOrgId: v.id("organizations"),
+    type: v.union(
+      v.literal("invitation_accepted"),
+      v.literal("onboarding_completed"),
+      v.literal("document_uploaded"),
+      v.literal("application_sent"),
+      v.literal("application_batch_submitted"),
+      v.literal("application_completed"),
+      v.literal("policy_uploaded"),
+      v.literal("policy_extraction_completed"),
+      v.literal("notification_fired"),
+    ),
+    actorUserId: v.optional(v.id("users")),
+    actorSide: v.union(v.literal("broker"), v.literal("client"), v.literal("system")),
+    payload: v.optional(v.any()),
+    summary: v.string(),
+    createdAt: v.number(),
+  })
+    .index("by_brokerOrgId_createdAt", ["brokerOrgId", "createdAt"])
+    .index("by_brokerOrgId_clientOrgId_createdAt", ["brokerOrgId", "clientOrgId", "createdAt"])
+    .index("by_clientOrgId_createdAt", ["clientOrgId", "createdAt"]),
+
   // ── Vector Search (cl-sdk 0.5.0+) ──
 
   // Document chunks for semantic search over extracted policy/quote content
