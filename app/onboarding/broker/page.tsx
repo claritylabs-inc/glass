@@ -500,7 +500,12 @@ export default function BrokerOnboardingPage() {
                 />
               </div>
               <div className="space-y-3">
-                <label className={labelClass}>Accent color</label>
+                <div className="space-y-1">
+                  <label className={labelClass}>Accent color</label>
+                  <p className="text-label-sm text-muted-foreground/80">
+                    Used on buttons, links, and other branded touches your clients see across Glass.
+                  </p>
+                </div>
 
                 {sampledColor || samplingColor ? (
                   <button
@@ -534,7 +539,9 @@ export default function BrokerOnboardingPage() {
                 ) : null}
 
                 <div>
-                  <p className="text-label-sm text-muted-foreground mb-2">Or pick a preset</p>
+                  <p className="text-label-sm text-muted-foreground mb-2">
+                    {sampledColor ? "Or choose from our palette" : "Choose from our palette"}
+                  </p>
                   <div className="grid grid-cols-10 gap-2">
                     {PRESET_COLORS.map((color) => {
                       const selected = brandingColor.toLowerCase() === color.toLowerCase();
@@ -558,7 +565,9 @@ export default function BrokerOnboardingPage() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="space-y-1.5">
+                  <p className="text-label-sm text-muted-foreground">Or enter a custom hex</p>
+                  <div className="flex items-center gap-2">
                   <div
                     className="h-9 w-9 shrink-0 rounded-md border border-foreground/10"
                     style={{ backgroundColor: brandingColor }}
@@ -585,6 +594,7 @@ export default function BrokerOnboardingPage() {
                     className={`flex-1 font-mono uppercase tracking-wider ${inputClass}`}
                     placeholder="#2563EB"
                   />
+                  </div>
                 </div>
               </div>
             </div>
