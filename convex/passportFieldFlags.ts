@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { requireOrgAccess } from "./lib/orgAuth";
+import { notify } from "./lib/notify";
 
 export const listForClient = query({
   args: { clientOrgId: v.id("organizations") },
@@ -44,7 +45,7 @@ export const create = mutation({
       .catch(() => null);
     if (!link) throw new Error("Only the client's broker can create flags");
 
-    return await ctx.db.insert("passportFieldFlags", {
+    const flagId = await ctx.db.insert("passportFieldFlags", {
       clientOrgId: args.clientOrgId,
       brokerOrgId: orgId,
       fieldPath: args.fieldPath,
@@ -53,6 +54,21 @@ export const create = mutation({
       status: "open",
       createdAt: Date.now(),
     });
+
+    // Notify client of flag raised
+    const brokerOrg = await ctx.db.get(orgId);
+    await notify(ctx, {
+      orgId: args.clientOrgId,
+      type: "passport_flag_raised_by_broker",
+      title: "Passport flag raised",
+      body: `${brokerOrg?.name ?? "Your broker"} raised a flag on your passport.`,
+      relatedOrgId: orgId,
+      actionType: "view_passport",
+      actionPayload: { flagId },
+      coalesceKeyParts: ["passport_flag_raised_by_broker", orgId, args.clientOrgId],
+    });
+
+    return flagId;
   },
 });
 
@@ -74,5 +90,19 @@ export const updateStatus = mutation({
       resolvedByUserId: userId,
       resolvedAt: Date.now(),
     });
+
+    // Notify broker if client resolved the flag
+    if (isClient && args.status === "resolved") {
+      const clientOrg = await ctx.db.get(orgId);
+      await notify(ctx, {
+        orgId: flag.brokerOrgId,
+        type: "passport_flag_resolved_by_client",
+        title: "Passport flag resolved",
+        body: `${clientOrg?.name ?? "Your client"} resolved the passport flag.`,
+        relatedOrgId: orgId,
+        actionType: "view_passport",
+        actionPayload: { flagId: args.flagId },
+      });
+    }
   },
 });

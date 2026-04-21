@@ -3,6 +3,7 @@ import { mutation, query, internalMutation, internalQuery } from "./_generated/s
 import { getOrgAccess } from "./lib/orgAuth";
 import { Id } from "./_generated/dataModel";
 import { recordBrokerActivity } from "./lib/brokerActivity";
+import { notify } from "./lib/notify";
 
 /** List uploaded org-context documents for the viewer's org. */
 export const list = query({
@@ -45,14 +46,26 @@ export const create = mutation({
     // Emit broker activity event if this org has a broker
     const org = await ctx.db.get(access.orgId);
     if (org && (org as { brokerOrgId?: Id<"organizations"> }).brokerOrgId) {
+      const brokerOrgId = (org as { brokerOrgId: Id<"organizations"> }).brokerOrgId;
       await recordBrokerActivity(ctx, {
-        brokerOrgId: (org as { brokerOrgId: Id<"organizations"> }).brokerOrgId,
+        brokerOrgId,
         clientOrgId: access.orgId,
         type: "document_uploaded",
         actorSide: "client",
         actorUserId: access.userId,
         summary: `Document "${args.fileName}" uploaded.`,
         payload: { orgDocumentId: docId, fileName: args.fileName },
+      });
+      // Notify broker of client document upload
+      await notify(ctx, {
+        orgId: brokerOrgId,
+        type: "client_document_uploaded",
+        title: "Client uploaded a document",
+        body: `${org.name ?? "Your client"} uploaded a new document.`,
+        relatedOrgId: access.orgId,
+        actionType: "view_policy",
+        actionPayload: { policyId: docId },
+        coalesceKeyParts: ["client_document_uploaded", brokerOrgId, access.orgId],
       });
     }
 
