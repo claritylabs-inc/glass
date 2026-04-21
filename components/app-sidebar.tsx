@@ -303,7 +303,7 @@ export function AppSidebar({
       <div className="flex items-center gap-2 px-3 h-12 border-b border-foreground/6">
         {!collapsed && (
           <>
-            <div className="w-7 h-7 rounded-full bg-foreground/8 flex items-center justify-center text-[11px] font-medium text-foreground shrink-0 overflow-hidden">
+            <div className={`ml-0.5 w-7 h-7 bg-foreground/8 flex items-center justify-center text-[11px] font-medium text-foreground shrink-0 overflow-hidden ${orgIcon ? "rounded-md" : "rounded-full"}`}>
               {orgIcon ? (
                 <img src={orgIcon} alt="" className="w-7 h-7 object-contain bg-white" />
               ) : viewer?.image ? (
@@ -496,17 +496,18 @@ export function AppSidebar({
                 </Link>
               );
             })}
-            <PillButton
-              type="button"
-              size="compact"
-              variant="icon"
-              onClick={handleNewChat}
-              title="New thread"
-              aria-label="New thread"
-              className="mt-0.5"
-            >
-              <Plus className="w-3.5 h-3.5" />
-            </PillButton>
+            <div className="flex items-center justify-center mt-0.5">
+              <PillButton
+                type="button"
+                size="compact"
+                variant="icon"
+                onClick={handleNewChat}
+                title="New thread"
+                aria-label="New thread"
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </PillButton>
+            </div>
           </>
         )}
       </nav>

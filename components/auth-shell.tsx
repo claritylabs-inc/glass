@@ -56,7 +56,7 @@ export function AuthCard({
         <h1 className="text-base font-medium tracking-tight">{title}</h1>
         {subtitle ? <p className="text-base text-muted-foreground">{subtitle}</p> : null}
       </div>
-      <div className="px-1 py-2">
+      <div>
         {children}
       </div>
     </div>
