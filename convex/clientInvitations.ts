@@ -271,6 +271,57 @@ export const accept = mutation({
       payload: { invitationId: inv._id },
     });
 
+    // Pre-fill passport with invite data
+    const inviteeEmail = inv.primaryContactEmail ?? acceptingUser?.email;
+    const inviteeName = inv.primaryContactName ?? acceptingUser?.name;
+    const companyName = inv.clientOrgName;
+
+    const passportPatch: Record<string, unknown> = {};
+    if (inviteeEmail) passportPatch.primaryContactEmail = inviteeEmail;
+    if (inviteeName) passportPatch.primaryContactName = inviteeName;
+    if (companyName) passportPatch.legalName = companyName;
+
+    if (Object.keys(passportPatch).length > 0) {
+      await ctx.runMutation(internal.clientPassport.upsertCoreInternal, {
+        clientOrgId,
+        patch: passportPatch,
+        actorUserId: userId,
+      });
+
+      // Write provenance rows for invite-sourced fields
+      const now = Date.now();
+      if (inviteeEmail) {
+        await ctx.runMutation(internal.passportSideTables.upsertProvenance, {
+          clientOrgId,
+          fieldPath: "primaryContactEmail",
+          source: "invite",
+          confidence: "confirmed",
+          sourceLabel: "Broker invite",
+          setAt: now,
+        });
+      }
+      if (inviteeName) {
+        await ctx.runMutation(internal.passportSideTables.upsertProvenance, {
+          clientOrgId,
+          fieldPath: "primaryContactName",
+          source: "invite",
+          confidence: "confirmed",
+          sourceLabel: "Broker invite",
+          setAt: now,
+        });
+      }
+      if (companyName) {
+        await ctx.runMutation(internal.passportSideTables.upsertProvenance, {
+          clientOrgId,
+          fieldPath: "legalName",
+          source: "invite",
+          confidence: "confirmed",
+          sourceLabel: "Broker invite",
+          setAt: now,
+        });
+      }
+    }
+
     return { clientOrgId };
   },
 });
