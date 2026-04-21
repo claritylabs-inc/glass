@@ -144,7 +144,6 @@ export default defineSchema({
     ),
     confidence: v.union(v.literal("confirmed"), v.literal("inferred")),
     sourceConversationId: v.optional(v.id("agentConversations")),
-    sourceSessionId: v.optional(v.id("applicationSessions")),
     updatedAt: v.number(),
   })
     .index("by_orgId", ["orgId"])
@@ -176,46 +175,7 @@ export default defineSchema({
     .index("by_org", ["orgId"])
     .index("by_org_type", ["orgId", "type"]),
 
-  // Insurance application sessions — tracks multi-step form filling workflow
-  applicationSessions: defineTable({
-    orgId: v.id("organizations"),
-    userId: v.id("users"),
-    conversationId: v.id("agentConversations"), // root conversation
-    threadId: v.optional(v.id("agentConversations")), // thread root for reply routing
-    sourceFileId: v.id("_storage"),
-    sourceFileName: v.string(),
-    applicationTitle: v.optional(v.string()),
-    status: v.union(
-      v.literal("extracting_fields"),
-      v.literal("filling_known"),
-      v.literal("asking_questions"),
-      v.literal("pending_confirmation"),
-      v.literal("confirmed"),
-      v.literal("complete"),
-      v.literal("cancelled"),
-      v.literal("failed"),
-    ),
-    failureReason: v.optional(v.string()),
-    lastProgressAt: v.optional(v.number()),
-    extractedFields: v.optional(v.string()), // JSON-serialized FormField[]
-    totalFields: v.optional(v.number()),
-    filledFields: v.optional(v.number()),
-    confirmedFields: v.optional(v.number()),
-    questionBatches: v.optional(v.string()), // JSON-serialized QuestionBatch[]
-    currentBatchIndex: v.optional(v.number()),
-    summaryFileId: v.optional(v.id("_storage")),
-    filledFileId: v.optional(v.id("_storage")),
-    completedAt: v.optional(v.number()),
-    cancelledAt: v.optional(v.number()),
-    rawExtractionResponse: v.optional(v.string()),
-    originalMessageId: v.optional(v.string()), // inbound Message-ID for threading
-    lastSentMessageId: v.optional(v.string()), // last outbound Message-ID for References chain
-    error: v.optional(v.string()),
-  })
-    .index("by_orgId", ["orgId"])
-    .index("by_conversationId", ["conversationId"])
-    .index("by_threadId", ["threadId"])
-    .index("by_status", ["status"]),
+  // applicationSessions retired — use applications v2 (applications table)
 
   // ── Applications v2 ──────────────────────────────────────────────────────
 

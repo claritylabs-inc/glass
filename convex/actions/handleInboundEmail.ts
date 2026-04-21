@@ -559,72 +559,8 @@ export const processInbound = internalAction({
       console.warn("Unified thread dual-write (inbound) failed:", err);
     }
 
-    // ── Application detection: reply to existing application thread ──
-    // Try multiple strategies to find the active application session:
-    // 1. By threadId (resolved from In-Reply-To or subject matching)
-    // 2. By lastSentMessageId (the reply's In-Reply-To matches an outbound app email)
-    // 3. By orgId fallback (active session exists for this org in asking/pending state)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let activeSession: any = null;
-
-    if (threadId) {
-      activeSession = await ctx.runQuery(
-        internal.applicationSessions.findByThreadId,
-        { threadId },
-      );
-    }
-
-    if (!activeSession && inReplyTo) {
-      activeSession = await ctx.runQuery(
-        internal.applicationSessions.findBySentMessageId,
-        { messageId: inReplyTo },
-      );
-    }
-
-    if (!activeSession) {
-      activeSession = await ctx.runQuery(
-        internal.applicationSessions.findActiveByOrg,
-        { orgId },
-      );
-    }
-
-    if (
-      activeSession &&
-      !["complete", "cancelled"].includes(activeSession.status)
-    ) {
-      if (activeSession.status === "pending_confirmation") {
-        await ctx.scheduler.runAfter(
-          0,
-          internal.actions.processApplication.processConfirmationReply,
-          {
-            conversationId,
-            sessionId: activeSession._id,
-            body,
-            fromEmail,
-            agentAddress,
-            subject,
-            companyName: org.name,
-            messageId,
-          },
-        );
-      } else {
-        await ctx.scheduler.runAfter(
-          0,
-          internal.actions.processApplication.processApplicationReply,
-          {
-            conversationId,
-            sessionId: activeSession._id,
-            body,
-            fromEmail,
-            agentAddress,
-            subject,
-            companyName: org.name,
-            messageId,
-          },
-        );
-      }
-      return; // skip normal agent flow
-    }
+    // Application-via-email is not supported in Glass v1.
+    // Brokers use the in-app application flow (applications v2).
 
     // ── Application detection: new application (direct mode + PDF attachment) ──
     if (effectiveMode === "direct" && attachments.length > 0) {
@@ -695,35 +631,9 @@ Respond with JSON only:
           }
 
           if (isApplication && confidence > 0.7) {
-            // Store PDF in file storage (already stored as attachmentRecords)
-            const storedRecord = attachmentRecords.find(
-              (r) =>
-                r.filename === pdfAtt.filename && r.fileId,
-            );
-            const fileId = storedRecord?.fileId;
-
-            if (fileId) {
-              await ctx.scheduler.runAfter(
-                0,
-                internal.actions.processApplication.startApplicationSession,
-                {
-                  conversationId,
-                  orgId,
-                  userId: primaryUserId,
-                  fileId: fileId as Id<"_storage">,
-                  fileName: pdfAtt.filename,
-                  pdfBase64,
-                  fromEmail,
-                  subject,
-                  agentAddress,
-                  threadId: threadId ?? conversationId,
-                  companyName: org.name,
-                  applicationTitle: applicationType ?? undefined,
-                  messageId,
-                },
-              );
-              return; // skip normal agent flow
-            }
+            // Application-via-email is not supported in Glass v1.
+            // Log and continue to normal agent flow.
+            console.log("Detected application PDF via email — application-via-email not supported in Glass v1. Continuing to normal agent flow.");
           }
         }
       }

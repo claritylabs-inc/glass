@@ -28,9 +28,10 @@ export const listForBroker = query({
       clientOrgs.map(async (org) => {
         const [openApps, activePolicies, docs, lastActivityEvent, assignments] =
           await Promise.all([
+            // applicationSessions retired — open apps now from applications v2
             ctx.db
-              .query("applicationSessions")
-              .withIndex("by_orgId", (q) => q.eq("orgId", org._id))
+              .query("applications")
+              .withIndex("by_clientOrgId", (q) => q.eq("clientOrgId", org._id))
               .filter((q) =>
                 q.and(
                   q.neq(q.field("status"), "complete"),

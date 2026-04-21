@@ -992,8 +992,9 @@ function EmailThreadContent({
   const { openWithUrl } = usePdf();
   const conversations = useQuery(api.agentConversations.list, { archived: false });
   const archivedConversations = useQuery(api.agentConversations.list, { archived: true });
-  const appThreadIds = useQuery(api.applicationSessions.threadIds);
-  const retryApp = useAction(api.actions.processApplication.retryApplication);
+  // applicationSessions retired — appThreadIds is no longer used
+  const appThreadIds: undefined = undefined;
+  const retryApp = undefined;
   const messagesRef = useRef<HTMLDivElement>(null);
   const prevThreadId = useRef<string | null>(null);
 
@@ -1071,18 +1072,9 @@ function EmailThreadContent({
     );
   }
 
+  // handleRetry: removed — applicationSessions retired
   async function handleRetry() {
-    if (!appInfo?.sessionId) return;
-    try {
-      const result = await retryApp({ sessionId: appInfo.sessionId as Id<"applicationSessions"> });
-      if (result?.error) {
-        toast.error(result.error);
-      } else {
-        toast.success("Retrying application processing...");
-      }
-    } catch {
-      toast.error("Failed to retry");
-    }
+    toast.info("Application retry not supported in Glass v1.");
   }
 
   return (

@@ -611,47 +611,21 @@ http.route({
   }),
 });
 
-// GET /mcp/applications/list
+// GET /mcp/applications/list — legacy endpoint (applicationSessions retired)
 http.route({
   path: "/mcp/applications/list",
   method: "GET",
-  handler: httpAction(async (ctx, request) => {
-    try {
-      const identity = await requireMcpAuth(ctx, request);
-      const sessions = await ctx.runQuery(
-        internal.applicationSessions.listAllInternal,
-        { orgId: identity.orgId as Id<"organizations"> },
-      );
-      return jsonResponse(sessions);
-    } catch (e) {
-      if (e instanceof Response) return e;
-      return jsonResponse({ error: String(e) }, 500);
-    }
+  handler: httpAction(async (_ctx, _request) => {
+    return jsonResponse({ error: "applicationSessions retired — use applications v2 API" }, 410);
   }),
 });
 
-// GET /mcp/applications/get
+// GET /mcp/applications/get — legacy endpoint (applicationSessions retired)
 http.route({
   path: "/mcp/applications/get",
   method: "GET",
-  handler: httpAction(async (ctx, request) => {
-    try {
-      const identity = await requireMcpAuth(ctx, request);
-      const id = getQueryParam(request, "id");
-      if (!id) return jsonResponse({ error: "Missing id parameter" }, 400);
-
-      const session = await ctx.runQuery(
-        internal.applicationSessions.getInternal,
-        { id: id as Id<"applicationSessions"> },
-      );
-      if (!session || (session as Record<string, unknown>).orgId !== identity.orgId) {
-        return jsonResponse({ error: "Not found" }, 404);
-      }
-      return jsonResponse(session);
-    } catch (e) {
-      if (e instanceof Response) return e;
-      return jsonResponse({ error: String(e) }, 500);
-    }
+  handler: httpAction(async (_ctx, _request) => {
+    return jsonResponse({ error: "applicationSessions retired — use applications v2 API" }, 410);
   }),
 });
 
@@ -798,38 +772,12 @@ http.route({
   }),
 });
 
-// POST /mcp/applications/cancel
+// POST /mcp/applications/cancel — legacy endpoint (applicationSessions retired)
 http.route({
   path: "/mcp/applications/cancel",
   method: "POST",
-  handler: httpAction(async (ctx, request) => {
-    try {
-      const identity = await requireMcpAuth(ctx, request);
-      const body = await request.json();
-      const { id } = body;
-      if (!id) return jsonResponse({ error: "Missing id" }, 400);
-
-      // Verify org ownership
-      const session = await ctx.runQuery(
-        internal.applicationSessions.getInternal,
-        { id: id as Id<"applicationSessions"> },
-      );
-      if (!session || (session as Record<string, unknown>).orgId !== identity.orgId) {
-        return jsonResponse({ error: "Not found" }, 404);
-      }
-      if (["complete", "cancelled"].includes((session as Record<string, unknown>).status as string)) {
-        return jsonResponse({ error: "Session already ended" }, 400);
-      }
-
-      await ctx.runMutation(internal.applicationSessions.updateStatus, {
-        id: id as Id<"applicationSessions">,
-        status: "cancelled" as const,
-      });
-      return jsonResponse({ success: true });
-    } catch (e) {
-      if (e instanceof Response) return e;
-      return jsonResponse({ error: String(e) }, 500);
-    }
+  handler: httpAction(async (_ctx, _request) => {
+    return jsonResponse({ error: "applicationSessions retired — use applications v2 API" }, 410);
   }),
 });
 
@@ -1067,14 +1015,12 @@ async function handleToolCall(
       return { content: [{ type: "text", text: JSON.stringify(rest, null, 2) }] };
     }
     case "list_applications": {
-      const sessions = await ctx.runQuery(internal.applicationSessions.listAllInternal, { orgId });
-      return { content: [{ type: "text", text: JSON.stringify(sessions, null, 2) }] };
+      // applicationSessions retired — return empty list
+      return { content: [{ type: "text", text: JSON.stringify([], null, 2) }] };
     }
     case "get_application": {
-      if (!args.id) throw new Error("Missing id parameter");
-      const session = await ctx.runQuery(internal.applicationSessions.getInternal, { id: args.id as Id<"applicationSessions"> });
-      if (!session || (session as Record<string, unknown>).orgId !== identity.orgId) throw new Error("Not found");
-      return { content: [{ type: "text", text: JSON.stringify(session, null, 2) }] };
+      // applicationSessions retired
+      throw new Error("applicationSessions retired — use applications v2 API");
     }
     case "list_threads": {
       const threads = await ctx.runQuery(internal.threads.listByOrg, { orgId });

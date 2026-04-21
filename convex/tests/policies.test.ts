@@ -12,58 +12,44 @@ test("policies schema accepts uploadedBySide=broker", () => {
 import { assertCanUploadPolicy, assertCanDeletePolicy } from "../lib/access";
 import type { OrgAccess } from "../lib/access";
 
-test("assertCanUploadPolicy allows member", () => {
-  const access: OrgAccess = {
+function makeMemberAccess(): OrgAccess {
+  return {
     accessType: "member",
-    orgId: "org1" as any,
     userId: "u1" as any,
-    org: {} as any,
+    org: { _id: "org1" } as any,
     orgType: "client",
     role: "admin",
     brokerOrgId: undefined,
   };
-  expect(() => assertCanUploadPolicy(access)).not.toThrow();
+}
+
+function makeBrokerAccess(brokerOrgId = "b1"): OrgAccess {
+  return {
+    accessType: "broker_of_client",
+    userId: "u1" as any,
+    org: { _id: "org1" } as any,
+    orgType: "client",
+    role: undefined,
+    brokerOrgId: brokerOrgId as any,
+  };
+}
+
+test("assertCanUploadPolicy allows member", () => {
+  expect(() => assertCanUploadPolicy(makeMemberAccess())).not.toThrow();
 });
 
 test("assertCanUploadPolicy allows broker_of_client", () => {
-  const access: OrgAccess = {
-    accessType: "broker_of_client",
-    orgId: "org1" as any,
-    userId: "u1" as any,
-    org: {} as any,
-    orgType: "client",
-    role: undefined,
-    brokerOrgId: "b1" as any,
-  };
-  expect(() => assertCanUploadPolicy(access)).not.toThrow();
+  expect(() => assertCanUploadPolicy(makeBrokerAccess())).not.toThrow();
 });
 
 test("assertCanDeletePolicy blocks broker deleting client-uploaded policy", () => {
-  const access: OrgAccess = {
-    accessType: "broker_of_client",
-    orgId: "org1" as any,
-    userId: "u1" as any,
-    org: {} as any,
-    orgType: "client",
-    role: undefined,
-    brokerOrgId: "b1" as any,
-  };
   const policy = { uploadedBySide: "client" as const, uploadedByBrokerOrgId: undefined };
-  expect(() => assertCanDeletePolicy(access, policy)).toThrow();
+  expect(() => assertCanDeletePolicy(makeBrokerAccess(), policy)).toThrow();
 });
 
 test("assertCanDeletePolicy allows broker deleting their own uploaded policy", () => {
-  const access: OrgAccess = {
-    accessType: "broker_of_client",
-    orgId: "org1" as any,
-    userId: "u1" as any,
-    org: {} as any,
-    orgType: "client",
-    role: undefined,
-    brokerOrgId: "b1" as any,
-  };
   const policy = { uploadedBySide: "broker" as const, uploadedByBrokerOrgId: "b1" as any };
-  expect(() => assertCanDeletePolicy(access, policy)).not.toThrow();
+  expect(() => assertCanDeletePolicy(makeBrokerAccess("b1"), policy)).not.toThrow();
 });
 
 // Task 3: Event type helpers
@@ -115,17 +101,8 @@ test("provenance fields are accepted in schema (structural test)", () => {
 });
 
 test("softDelete blocks broker deleting a client-uploaded policy", () => {
-  const access: OrgAccess = {
-    accessType: "broker_of_client",
-    orgId: "org1" as any,
-    userId: "u1" as any,
-    org: {} as any,
-    orgType: "client",
-    role: undefined,
-    brokerOrgId: "b1" as any,
-  };
   const policy = { uploadedBySide: "client" as const, uploadedByBrokerOrgId: undefined };
-  expect(() => assertCanDeletePolicy(access, policy)).toThrow(
+  expect(() => assertCanDeletePolicy(makeBrokerAccess(), policy)).toThrow(
     "Not authorized to delete this policy",
   );
 });

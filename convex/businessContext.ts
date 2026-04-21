@@ -207,7 +207,6 @@ export const upsertInternal = internalMutation({
     ),
     confidence: v.union(v.literal("confirmed"), v.literal("inferred")),
     sourceConversationId: v.optional(v.id("agentConversations")),
-    sourceSessionId: v.optional(v.id("applicationSessions")),
   },
   handler: async (ctx, args) => {
     const existing = await ctx.db
@@ -224,7 +223,6 @@ export const upsertInternal = internalMutation({
         source: args.source,
         confidence: args.confidence,
         sourceConversationId: args.sourceConversationId,
-        sourceSessionId: args.sourceSessionId,
         updatedAt: Date.now(),
       });
       return existing._id;
@@ -238,7 +236,6 @@ export const upsertInternal = internalMutation({
       source: args.source,
       confidence: args.confidence,
       sourceConversationId: args.sourceConversationId,
-      sourceSessionId: args.sourceSessionId,
       updatedAt: Date.now(),
     });
   },
@@ -268,7 +265,6 @@ export const bulkUpsertInternal = internalMutation({
           v.literal("manual"),
         ),
         confidence: v.union(v.literal("confirmed"), v.literal("inferred")),
-        sourceSessionId: v.optional(v.id("applicationSessions")),
       }),
     ),
   },
@@ -287,7 +283,6 @@ export const bulkUpsertInternal = internalMutation({
           fieldType: entry.fieldType,
           source: entry.source,
           confidence: entry.confidence,
-          sourceSessionId: entry.sourceSessionId,
           updatedAt: Date.now(),
         });
       } else {
@@ -299,7 +294,6 @@ export const bulkUpsertInternal = internalMutation({
           fieldType: entry.fieldType,
           source: entry.source,
           confidence: entry.confidence,
-          sourceSessionId: entry.sourceSessionId,
           updatedAt: Date.now(),
         });
       }

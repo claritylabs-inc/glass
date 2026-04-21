@@ -3,11 +3,7 @@ import { internal } from "./_generated/api";
 
 const crons = cronJobs();
 
-crons.interval(
-  "check stale application sessions",
-  { minutes: 2 },
-  internal.applicationSessions.checkStaleAndFail,
-);
+// applicationSessions retired — cron removed
 
 crons.daily(
   "daily email scan",

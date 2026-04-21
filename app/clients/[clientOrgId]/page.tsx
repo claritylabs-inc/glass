@@ -12,16 +12,17 @@ export default function ClientOverviewPage() {
     api.policies.listForOrg,
     clientOrgId ? { orgId: clientOrgId as Id<"organizations"> } : "skip",
   );
+  // applicationSessions retired — use applications v2
   const applications = useQuery(
-    api.applicationSessions.listForOrg,
-    clientOrgId ? { orgId: clientOrgId as Id<"organizations"> } : "skip",
+    (api as any).applications.listForClient,
+    clientOrgId ? { clientOrgId: clientOrgId as Id<"organizations"> } : "skip",
   );
 
   const activePolicies = policies?.filter(
-    (p) => p.documentType === "policy" && p.extractionStatus === "complete",
+    (p: any) => p.documentType === "policy" && p.extractionStatus === "complete",
   ) ?? [];
-  const openApps = applications?.filter(
-    (a) => a.status !== "complete" && a.status !== "cancelled",
+  const openApps = (applications as any[])?.filter(
+    (a: any) => a.status !== "complete" && a.status !== "cancelled",
   ) ?? [];
 
   return (
