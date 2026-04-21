@@ -1,0 +1,170 @@
+/// <reference types="vite/client" />
+import { convexTest } from "convex-test";
+import { expect, test, describe, vi } from "vitest";
+import schema from "../schema";
+import { send } from "./sendNotificationEmail";
+
+const modules = import.meta.glob("../**/*.ts");
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const sendFn = send as any;
+
+describe("sendNotificationEmail", () => {
+  test("sets emailStatus=sent on success", async () => {
+    const t = convexTest(schema, modules);
+
+    // Set up broker org and client org
+    const brokerOrgId = await t.run(async (ctx) =>
+      ctx.db.insert("organizations", {
+        name: "Smith Insurance", type: "broker",
+        agentDisplayName: "Sarah Smith",
+      })
+    );
+    const clientOrgId = await t.run(async (ctx) =>
+      ctx.db.insert("organizations", {
+        name: "Acme Co", type: "client",
+        brokerOrgId: brokerOrgId,
+      })
+    );
+    const userId = await t.run(async (ctx) =>
+      ctx.db.insert("users", { name: "Alice", email: "alice@acme.co" })
+    );
+    await t.run(async (ctx) =>
+      ctx.db.insert("orgMemberships", { orgId: clientOrgId, userId, role: "member" })
+    );
+
+    const notifId = await t.run(async (ctx) =>
+      ctx.db.insert("notifications", {
+        orgId: clientOrgId,
+        type: "application_sent_by_broker",
+        title: "Application sent",
+        body: "Smith Insurance sent you an application.",
+        severity: "info",
+        status: "unread",
+        emailStatus: "scheduled",
+        relatedOrgId: brokerOrgId,
+        createdAt: Date.now(),
+      })
+    );
+
+    // Mock fetch for Resend — "info" severity defaults email off, so we need a pref row
+    // to enable email for this user
+    await t.run(async (ctx) =>
+      ctx.db.insert("notificationPreferences", {
+        userId,
+        orgId: clientOrgId,
+        type: "application_sent_by_broker",
+        channel: "email",
+        enabled: true,
+        updatedAt: Date.now(),
+      })
+    );
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      text: async () => JSON.stringify({ id: "resend-msg-1" }),
+    });
+    vi.stubGlobal("fetch", mockFetch);
+
+    await t.action(sendFn, {
+      notificationId: notifId,
+    });
+
+    const notif = await t.run(async (ctx) => ctx.db.get(notifId));
+    expect(notif?.emailStatus).toBe("sent");
+    expect((notif as any)?.emailSentAt).toBeDefined();
+
+    // Verify branding: from name should include agent name + "via Glass"
+    // The brokerName (Smith Insurance) appears in html body; fromName uses agentDisplayName
+    const callBody = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(callBody.from).toContain("Sarah Smith");
+    expect(callBody.from).toContain("via Glass");
+    expect(callBody.html).toContain("Smith Insurance");
+
+    vi.unstubAllGlobals();
+  });
+
+  test("sets emailStatus=suppressed_by_preference when all recipients have email disabled", async () => {
+    const t = convexTest(schema, modules);
+
+    const orgId = await t.run(async (ctx) =>
+      ctx.db.insert("organizations", { name: "Broker Co", type: "broker" })
+    );
+    const userId = await t.run(async (ctx) =>
+      ctx.db.insert("users", { name: "Bob", email: "bob@broker.co" })
+    );
+    await t.run(async (ctx) =>
+      ctx.db.insert("orgMemberships", { orgId, userId, role: "member" })
+    );
+    await t.run(async (ctx) =>
+      ctx.db.insert("notificationPreferences", {
+        userId, orgId, type: "__all__", channel: "email", enabled: false, updatedAt: Date.now(),
+      })
+    );
+
+    const notifId = await t.run(async (ctx) =>
+      ctx.db.insert("notifications", {
+        orgId,
+        type: "client_invitation_accepted",
+        title: "Client joined",
+        body: "Acme Co accepted the invitation.",
+        severity: "info",
+        status: "unread",
+        emailStatus: "scheduled",
+        createdAt: Date.now(),
+      })
+    );
+
+    const mockFetch = vi.fn();
+    vi.stubGlobal("fetch", mockFetch);
+
+    await t.action(sendFn, { notificationId: notifId });
+
+    const notif = await t.run(async (ctx) => ctx.db.get(notifId));
+    expect(notif?.emailStatus).toBe("suppressed_by_preference");
+    expect(mockFetch).not.toHaveBeenCalled();
+
+    vi.unstubAllGlobals();
+  });
+
+  test("sets emailStatus=failed after Resend error, retries exhausted", async () => {
+    const t = convexTest(schema, modules);
+
+    const orgId = await t.run(async (ctx) =>
+      ctx.db.insert("organizations", { name: "Broker Co", type: "broker" })
+    );
+    const userId = await t.run(async (ctx) =>
+      ctx.db.insert("users", { name: "Bob", email: "bob@broker.co" })
+    );
+    await t.run(async (ctx) =>
+      ctx.db.insert("orgMemberships", { orgId, userId, role: "member" })
+    );
+
+    const notifId = await t.run(async (ctx) =>
+      ctx.db.insert("notifications", {
+        orgId,
+        type: "integration_disconnected_for_client",
+        title: "Integration disconnected",
+        body: "The integration was disconnected.",
+        severity: "warning",
+        status: "unread",
+        emailStatus: "scheduled",
+        createdAt: Date.now(),
+      })
+    );
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: false,
+      text: async () => "Rate limit exceeded",
+    });
+    vi.stubGlobal("fetch", mockFetch);
+
+    await t.action(sendFn, { notificationId: notifId });
+
+    expect(mockFetch).toHaveBeenCalledTimes(3); // 3 retries
+    const notif = await t.run(async (ctx) => ctx.db.get(notifId));
+    expect(notif?.emailStatus).toBe("failed");
+
+    vi.unstubAllGlobals();
+  });
+});

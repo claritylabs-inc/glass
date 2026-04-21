@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation } from "./_generated/server";
+import { mutation, internalQuery } from "./_generated/server";
 import { getOrgAccess, assertCanManageBroker } from "./lib/access";
 
 export const updateBrokerBranding = mutation({
@@ -61,4 +61,15 @@ export const generateLogoUploadUrl = mutation({
     assertCanManageBroker(access);
     return ctx.storage.generateUploadUrl();
   },
+});
+
+export const getInternal = internalQuery({
+  args: { id: v.id("organizations") },
+  handler: async (ctx, args) => ctx.db.get(args.id),
+});
+
+export const listMembershipsForOrg = internalQuery({
+  args: { orgId: v.id("organizations") },
+  handler: async (ctx, args) =>
+    ctx.db.query("orgMemberships").withIndex("by_orgId", (q) => q.eq("orgId", args.orgId)).collect(),
 });
