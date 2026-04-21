@@ -28,6 +28,8 @@ import {
 import { AnimatePresence, motion } from "framer-motion";
 import { usePageContext } from "@/hooks/use-page-context";
 import { useOnboardingCache } from "@/hooks/use-onboarding-cache";
+import { useCurrentOrg } from "@/hooks/use-current-org";
+import { Users, Activity } from "lucide-react";
 import { SETTINGS_SECTIONS } from "@/lib/settings-sections";
 import { LogoIcon } from "@/components/ui/logo-icon";
 import { PillButton } from "@/components/ui/pill-button";
@@ -51,19 +53,10 @@ const INSURANCE_ITEMS = [
 
 const ALL_NAV_ITEMS = [...INSURANCE_ITEMS];
 
-/** Map from lowercase key to href for page shortcuts.
- * Avoids: A (select all), C (copy), V (paste), X (cut), S (save),
- * P (print), I (italic/devtools), Z (undo), F (find), R (reload),
- * N (new window), T (new tab), W (close tab), Q (quit), L (address bar),
- * B (bold), H (history)
- */
-const PAGE_SHORTCUT_MAP: Record<string, string> = {
-  ...Object.fromEntries(
-    ALL_NAV_ITEMS.filter((item) => item.shortcut).map((item) => [item.shortcut!.toLowerCase(), item.href]),
-  ),
-  j: "/settings",
-  // /profile accessible via sidebar only (no shortcut)
-};
+const BROKER_NAV_ITEMS = [
+  { href: "/clients", label: "Clients", icon: Users, shortcut: "K" },
+  { href: "/activity", label: "Activity", icon: Activity, shortcut: "U" },
+];
 
 /** Returns true if focus is inside an editable element */
 function isEditableTarget(e: KeyboardEvent): boolean {
@@ -110,6 +103,16 @@ export function AppSidebar({
   const { signOut } = useAuthActions();
   const { clearCache: clearOnboardingCache } = useOnboardingCache();
   const { context: pageContext } = usePageContext();
+  const currentOrg = useCurrentOrg();
+  const isBroker = currentOrg?.isBroker ?? false;
+  const navItems = isBroker ? BROKER_NAV_ITEMS : ALL_NAV_ITEMS;
+
+  const pageShortcutMap: Record<string, string> = {
+    ...Object.fromEntries(
+      navItems.filter((item) => item.shortcut).map((item) => [item.shortcut!.toLowerCase(), item.href]),
+    ),
+    j: "/settings",
+  };
 
   const [collapsed, setCollapsed] = useState(() => {
     try {
@@ -210,7 +213,7 @@ export function AppSidebar({
         if (isEditableTarget(e)) return;
 
         // Cmd+letter — navigate to pages
-        const pageHref = PAGE_SHORTCUT_MAP[e.key.toLowerCase()];
+        const pageHref = pageShortcutMap[e.key.toLowerCase()];
         if (pageHref) {
           e.preventDefault();
           router.push(pageHref);
@@ -369,9 +372,9 @@ export function AppSidebar({
 
       {/* Nav sections */}
       <nav className="flex-1 overflow-y-auto px-2 pb-2">
-        {/* INSURANCE */}
-        <SectionHeader label="Insurance" collapsed={collapsed} />
-        {INSURANCE_ITEMS.map((item) => (
+        {/* MAIN NAV */}
+        <SectionHeader label={isBroker ? "Broker" : "Insurance"} collapsed={collapsed} />
+        {navItems.map((item) => (
           <NavItem
             key={item.href}
             href={item.href}
