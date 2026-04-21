@@ -355,6 +355,8 @@ export const updateOrg = mutation({
     chatEmailNotifications: v.optional(v.boolean()),
     autoSendEmails: v.optional(v.boolean()),
     emailSendDelay: v.optional(v.number()),
+    brandingColor: v.optional(v.string()),
+    agentDisplayName: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const { orgId } = await requireOrgAdmin(ctx);

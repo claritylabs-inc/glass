@@ -23,15 +23,23 @@ function friendlyError(raw: string): string {
   return "Something went wrong. Please try again.";
 }
 
-export function AuthEntryPage({ mode }: { mode: "login" | "signup" }) {
+export function AuthEntryPage({
+  mode,
+  role = "client",
+}: {
+  mode: "login" | "signup";
+  role?: "broker" | "client";
+}) {
   const { signIn } = useAuthActions();
   const { isAuthenticated } = useConvexAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
 
+  const isBroker = role === "broker";
   const nextPath = searchParams.get("next");
+  const defaultPostLogin = isBroker && mode === "signup" ? "/onboarding?type=broker" : "/";
   const postLoginPath =
-    nextPath && nextPath.startsWith("/") && !nextPath.startsWith("//") ? nextPath : "/";
+    nextPath && nextPath.startsWith("/") && !nextPath.startsWith("//") ? nextPath : defaultPostLogin;
 
   const [step, setStep] = useState<"email" | "code">("email");
   const [email, setEmail] = useState("");
@@ -80,9 +88,15 @@ export function AuthEntryPage({ mode }: { mode: "login" | "signup" }) {
   }
 
   const isSignup = mode === "signup";
-  const title = isSignup ? "Create account" : "Log in";
+  const title = isSignup
+    ? isBroker
+      ? "Create your brokerage account"
+      : "Create account"
+    : "Log in";
   const subtitle = isSignup
-    ? "Use your work email to get started."
+    ? isBroker
+      ? "Set up your brokerage on Glass."
+      : "Use your work email to get started."
     : "Use your work email to continue.";
   const alternateHref = isSignup ? "/login" : "/signup";
   const alternateLabel = isSignup ? "Log in" : "Sign up";

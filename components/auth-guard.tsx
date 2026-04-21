@@ -71,8 +71,8 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { onboardingComplete: cachedOnboarding, setOnboardingComplete } = useOnboardingCache();
 
-  const isPublic = PUBLIC_PATHS.some((p) => pathname === p);
-  const isOnboarding = pathname === ONBOARDING_PATH;
+  const isPublic = PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+  const isOnboarding = pathname === ONBOARDING_PATH || pathname.startsWith(`${ONBOARDING_PATH}/`);
   const isAdminPath = ADMIN_PATHS.some((p) => pathname.startsWith(p));
 
   // Only query viewer when authenticated
