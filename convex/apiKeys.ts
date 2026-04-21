@@ -52,9 +52,9 @@ export const generate = mutation({
   args: { name: v.string() },
   handler: async (ctx, args) => {
     const { userId, orgId } = await requireOrgAccess(ctx);
-    const rawKey = "prism_" + randomHex(32); // prism_ + 64 hex chars
+    const rawKey = "glass_" + randomHex(32); // glass_ + 64 hex chars
     const keyHash = await sha256Hex(rawKey);
-    const keyPrefix = rawKey.slice(0, 14); // "prism_" + 8 hex chars
+    const keyPrefix = rawKey.slice(0, 14); // "glass_" + 8 hex chars
 
     await ctx.db.insert("apiKeys", {
       orgId,

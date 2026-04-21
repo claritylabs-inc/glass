@@ -9,7 +9,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
 
-const AGENT_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "prism.claritylabs.inc";
+const AGENT_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "glass.claritylabs.inc";
 import {
   FileText,
   FileInput,
@@ -37,13 +37,13 @@ import { NotificationsPanel } from "@/components/notifications-panel";
 import { MergePolicyDialog } from "@/components/merge-policy-dialog";
 
 /** Wrapper so LogoIcon matches the lucide icon interface */
-function PrismStarIcon({ className }: { className?: string }) {
+function GlassStarIcon({ className }: { className?: string }) {
   return <LogoIcon size={16} static className={className} />;
 }
 
 const SETTINGS_SECTIONS_WITH_AGENT = [
   ...SETTINGS_SECTIONS,
-  { id: "agent", label: "Agent", icon: PrismStarIcon },
+  { id: "agent", label: "Agent", icon: GlassStarIcon },
 ];
 
 const INSURANCE_ITEMS = [

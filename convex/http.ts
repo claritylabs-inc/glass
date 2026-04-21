@@ -61,7 +61,7 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     const url = new URL(request.url);
     const issuer = url.origin;
-    const siteUrl = process.env.SITE_URL ?? "https://prism.claritylabs.inc";
+    const siteUrl = process.env.SITE_URL ?? "https://glass.claritylabs.inc";
 
     return new Response(
       JSON.stringify({
@@ -287,7 +287,7 @@ async function sha256Hex(input: string): Promise<string> {
 }
 
 /**
- * Authenticate MCP requests. Tries API key first (prism_ prefix), then OAuth token (prsm_at_ prefix).
+ * Authenticate MCP requests. Tries API key first (glass_ prefix), then OAuth token (prsm_at_ prefix).
  * Returns 401 with WWW-Authenticate: Bearer when no auth (triggers OAuth flow in MCP clients).
  */
 async function requireMcpAuth(
@@ -311,8 +311,8 @@ async function requireMcpAuth(
 
   const rawToken = authHeader.slice(7);
 
-  // Try API key auth (prism_ prefix)
-  if (rawToken.startsWith("prism_")) {
+  // Try API key auth (glass_ prefix)
+  if (rawToken.startsWith("glass_")) {
     const keyHash = await sha256Hex(rawToken);
     const result = await ctx.runQuery(internal.apiKeys.validateKey, { keyHash });
     if (!result) {
@@ -895,7 +895,7 @@ const MCP_TOOLS = [
     inputSchema: { type: "object" as const, properties: {} },
   },
   {
-    name: "ask_prism",
+    name: "ask_glass",
     description: "Alias for ask_glass (legacy name). Ask the Glass AI assistant a question about the organization's insurance portfolio.",
     inputSchema: {
       type: "object" as const,
@@ -1246,7 +1246,7 @@ async function handleToolCall(
         brokerContactName: org.brokerContactName, brokerContactEmail: org.brokerContactEmail,
       }, null, 2) }] };
     }
-    case "ask_prism":
+    case "ask_glass":
     case "ask_glass": {
       if (!args.message) throw new Error("Missing message");
       const result = await ctx.runAction(internal.actions.mcpChat.run, {
@@ -1789,7 +1789,7 @@ async function requireApiAuth(
   const orgIdHeader = request.headers.get("x-org-id") ?? request.headers.get("X-Org-Id") ?? "";
 
   // API key path
-  if (rawToken.startsWith("prism_") || rawToken.startsWith("glass_")) {
+  if (rawToken.startsWith("glass_")) {
     const keyHash = await sha256Hex(rawToken);
     const result = await ctx.runQuery(internal.apiKeys.validateKey, { keyHash });
     if (!result) {

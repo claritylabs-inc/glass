@@ -86,7 +86,7 @@ export function buildSystemPromptForContext(params: {
   siteUrl?: string;
 }): string {
   const { org, mode, userName } = params;
-  const siteUrl = params.siteUrl ?? process.env.SITE_URL ?? "https://prism.claritylabs.inc";
+  const siteUrl = params.siteUrl ?? process.env.SITE_URL ?? "https://glass.claritylabs.inc";
 
   // Fence user-controlled org context to prevent prompt injection
   const safeContext = org.context

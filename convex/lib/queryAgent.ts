@@ -3,7 +3,7 @@
 /**
  * Query agent — cl-sdk
  *
- * Wraps createQueryAgent with Prism's model routing and Convex storage.
+ * Wraps createQueryAgent with Glass's model routing and Convex storage.
  * Provides citation-backed Q&A over policy/quote documents.
  */
 
@@ -16,7 +16,7 @@ import { createConvexDocumentStore } from "./convexDocumentStore";
 import { createConvexMemoryStore } from "./convexMemoryStore";
 
 /**
- * Build a query agent pre-configured with Prism's model routing and Convex storage.
+ * Build a query agent pre-configured with Glass's model routing and Convex storage.
  * Must be called from an action context.
  */
 export function buildQueryAgent(

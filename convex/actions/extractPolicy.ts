@@ -169,7 +169,7 @@ export const extractPolicy = internalAction({
         await log(line);
       }
 
-      // Map InsuranceDocument → Prism policy fields
+      // Map InsuranceDocument → Glass policy fields
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const fields: any = insuranceDocToPolicy(result.document);
       const docName = doc.type === "quote"

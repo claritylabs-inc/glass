@@ -9,7 +9,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { ArrowUp, Asterisk, Loader2 } from "lucide-react";
 import { usePageContext } from "@/hooks/use-page-context";
 
-const AGENT_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "prism.claritylabs.inc";
+const AGENT_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "glass.claritylabs.inc";
 
 export function CommandPalette() {
   const router = useRouter();
@@ -108,7 +108,7 @@ export function CommandPalette() {
                     ref={inputRef}
                     value={value}
                     onChange={(e) => setValue(e.target.value)}
-                    placeholder="Ask Prism anything..."
+                    placeholder="Ask Glass anything..."
                     className="w-full bg-transparent outline-none text-body-sm text-foreground placeholder:text-muted-foreground/40"
                     disabled={sending}
                   />
@@ -118,7 +118,7 @@ export function CommandPalette() {
                 <div className="flex items-center justify-between px-3 pb-2.5 pt-0">
                   <div className="flex items-center gap-1.5 ml-1">
                     <Asterisk className="w-3.5 h-3.5 text-primary-light" />
-                    <span className="text-[11px] font-medium text-muted-foreground/40">Prism</span>
+                    <span className="text-[11px] font-medium text-muted-foreground/40">Glass</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <kbd className="text-[10px] px-1.5 py-0.5 rounded bg-foreground/[0.04] text-muted-foreground/40 border border-foreground/6">

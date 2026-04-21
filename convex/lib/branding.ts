@@ -1,7 +1,7 @@
 "use node";
 
 /**
- * Server-side branding context for Glass (formerly Prism).
+ * Server-side branding context for Glass (formerly Glass).
  *
  * Provides a `BrandingContext` type and a lightweight `getDefaultBranding()`
  * helper that returns Glass defaults. Future: accept an org record and read

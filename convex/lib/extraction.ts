@@ -22,16 +22,16 @@ export type { ExtractorConfig, ExtractionResult, ExtractionState, ExtractOptions
 // ── Local re-exports ──
 export { insuranceDocToPolicy, policyToInsuranceDoc } from "./documentMapping";
 
-// ── Prism extraction factory ──
+// ── Glass extraction factory ──
 import { createExtractor } from "@claritylabs/cl-sdk";
 import type { ExtractionResult, ExtractionState, LogFn, PipelineCheckpoint, TokenUsage } from "@claritylabs/cl-sdk";
 import { makeGenerateText, makeGenerateObject } from "./sdkCallbacks";
 
 /**
- * Build an extractor pre-configured with Prism's model routing.
+ * Build an extractor pre-configured with Glass's model routing.
  *
  * The SDK's coordinator uses generateText for classification and planning,
- * and generateObject for focused extraction workers. Prism routes both
+ * and generateObject for focused extraction workers. Glass routes both
  * through its multi-model config.
  */
 export function buildExtractor(opts?: {

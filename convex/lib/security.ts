@@ -4,7 +4,7 @@ import { generateText } from "ai";
 import { getModel } from "./models";
 
 /**
- * Security utilities for Prism — prompt injection detection and agent sandboxing.
+ * Security utilities for Glass — prompt injection detection and agent sandboxing.
  */
 
 /* ── Prompt injection detection ── */

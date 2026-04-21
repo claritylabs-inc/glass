@@ -3,7 +3,7 @@
 /**
  * Provider-agnostic callback adapters for cl-sdk.
  *
- * Wraps Prism's existing AI SDK model routing (lib/models.ts) into the
+ * Wraps Glass's existing AI SDK model routing (lib/models.ts) into the
  * simple callback interfaces the new SDK expects: GenerateText, GenerateObject, EmbedText.
  */
 
@@ -175,7 +175,7 @@ function extractEmbeddedPdf(
 }
 
 /**
- * Create a GenerateText callback backed by Prism's model router.
+ * Create a GenerateText callback backed by Glass's model router.
  * The task parameter selects which model to use (extraction, classification, etc.).
  */
 export function makeGenerateText(task: ModelTask = "extraction"): GenerateText {
@@ -196,7 +196,7 @@ export function makeGenerateText(task: ModelTask = "extraction"): GenerateText {
 }
 
 /**
- * Create a GenerateObject callback backed by Prism's model router.
+ * Create a GenerateObject callback backed by Glass's model router.
  * Uses AI SDK v6's generateText + Output.object() for structured output.
  */
 export function makeGenerateObject(task: ModelTask = "extraction"): GenerateObject {

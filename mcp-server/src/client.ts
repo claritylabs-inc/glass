@@ -1,7 +1,7 @@
 /**
- * PrismClient — thin HTTP client for Convex MCP routes.
+ * GlassClient — thin HTTP client for Convex MCP routes.
  */
-export class PrismClient {
+export class GlassClient {
   private baseUrl: string;
   private apiKey: string;
 
@@ -117,7 +117,7 @@ export class PrismClient {
     return this.get("/mcp/org/info");
   }
 
-  // ── Ask Prism ──
+  // ── Ask Glass ──
 
   async ask(message: string, threadId?: string) {
     return this.post<{ threadId: string; response: string }>("/mcp/ask", {

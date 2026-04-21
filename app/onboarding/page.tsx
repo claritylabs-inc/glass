@@ -483,7 +483,7 @@ export default function OnboardingPage() {
                       </div>
                       <div>
                         <p className="text-sm font-medium text-foreground">Handle claimed</p>
-                        <p className="mt-1 text-sm text-muted-foreground">{existingHandle}@{process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "prism.claritylabs.inc"}</p>
+                        <p className="mt-1 text-sm text-muted-foreground">{existingHandle}@{process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "glass.claritylabs.inc"}</p>
                       </div>
                   </div>
                 ) : (

@@ -15,7 +15,7 @@ export interface SettingsSection {
   icon: ComponentType<{ className?: string }>;
 }
 
-// The "agent" section uses PrismStarIcon (LogoIcon wrapper) defined in settings page.
+// The "agent" section uses GlassStarIcon (LogoIcon wrapper) defined in settings page.
 // This shared list covers all sections; consumers that need the agent icon should
 // override it or use the SETTINGS_SECTIONS_WITH_AGENT helper in the settings page.
 export const SETTINGS_SECTIONS: SettingsSection[] = [
@@ -26,5 +26,5 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   { id: "documents", label: "Documents", icon: FileText },
   { id: "integrations", label: "Integrations", icon: Puzzle },
   { id: "intelligence", label: "Intelligence", icon: Sparkles },
-  // "agent" section is appended by consumers that have access to PrismStarIcon
+  // "agent" section is appended by consumers that have access to GlassStarIcon
 ];

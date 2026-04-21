@@ -47,7 +47,7 @@ export function ChatMessageBubble({ message, viewerId }: { message: WebChatMessa
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <p className="text-[11px] font-medium text-muted-foreground/50">Prism</p>
+            <p className="text-[11px] font-medium text-muted-foreground/50">Glass</p>
           </div>
           {hasContent ? (
             <div className="rounded-lg bg-popover border border-foreground/6 px-3.5 py-2.5 ${PROSE_MARKDOWN_STYLES} [&_a]:text-blue-600 [&_a]:underline">
@@ -80,7 +80,7 @@ export function ChatMessageBubble({ message, viewerId }: { message: WebChatMessa
           <AlertCircle className="w-3.5 h-3.5 text-red-500" />
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-[11px] font-medium text-muted-foreground/50 mb-1">Prism</p>
+          <p className="text-[11px] font-medium text-muted-foreground/50 mb-1">Glass</p>
           <p className="text-body-sm text-red-600">
             {message.error ?? "Something went wrong. Please try again."}
           </p>
@@ -98,7 +98,7 @@ export function ChatMessageBubble({ message, viewerId }: { message: WebChatMessa
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <p className="text-[11px] font-medium text-muted-foreground/50">Prism</p>
+            <p className="text-[11px] font-medium text-muted-foreground/50">Glass</p>
             <span className="text-[10px] text-muted-foreground/25">{time}</span>
           </div>
           <div className="rounded-lg bg-popover border border-foreground/6 px-3.5 py-2.5 ${PROSE_MARKDOWN_STYLES} [&_a]:text-blue-600 [&_a]:underline">

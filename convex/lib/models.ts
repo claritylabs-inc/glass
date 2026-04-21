@@ -7,7 +7,7 @@ import { createDeepSeek } from "@ai-sdk/deepseek";
 import type { LanguageModel } from "ai";
 
 /**
- * Centralized model configuration for Prism.
+ * Centralized model configuration for Glass.
  *
  * Maps each task type to a provider + model. Tune costs and quality from one place.
  * All models accessed via Vercel AI SDK's provider-agnostic interface.

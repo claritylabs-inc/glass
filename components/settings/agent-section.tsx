@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 
 const AGENT_DOMAIN =
-  process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "prism.claritylabs.inc";
+  process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "glass.claritylabs.inc";
 
 /* ── COI Request Handling settings ── */
 function CoiSettingsCard({
@@ -414,7 +414,7 @@ export function AgentSection() {
                 <div className="flex items-center gap-2">
                   <LogoIcon size={16} static className="text-primary-light shrink-0" />
                   <span className="text-sm font-semibold text-foreground shrink-0">
-                    Prism
+                    Glass
                   </span>
                 </div>
                 <button

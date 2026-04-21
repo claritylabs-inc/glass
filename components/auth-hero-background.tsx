@@ -52,7 +52,7 @@ export function AuthHeroBackground() {
 }
 
 /** White PRISM logo for use on hero backgrounds */
-export function PrismHeroLogo() {
+export function GlassHeroLogo() {
   return (
     <div className="flex items-center justify-center gap-2 mb-8">
       <span
@@ -60,7 +60,7 @@ export function PrismHeroLogo() {
         style={{ fontSize: "clamp(2rem, 5vw, 3.5rem)", letterSpacing: "-0.03em" }}
       >
         <LogoIcon size={40} color="#ffffff" static className="shrink-0" />
-        Prism
+        Glass
       </span>
     </div>
   );

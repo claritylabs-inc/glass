@@ -15,7 +15,7 @@ import { usePdf } from "@/components/pdf-context";
 import { usePresence } from "@/hooks/use-presence";
 import { ContextReferenceCard, ReferenceCardStrip } from "@/components/context-reference-card";
 import { ChatInput, ChatInputOverlay, type ChatInputHandle } from "@/components/chat-input";
-import { PrismPromptInput, type PrismPromptInputHandle } from "@/components/prism-prompt-input";
+import { GlassPromptInput, type GlassPromptInputHandle } from "@/components/glass-prompt-input";
 import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
 import { CollapsibleReasoning } from "@/components/collapsible-reasoning";
 import Link from "next/link";
@@ -704,7 +704,7 @@ function UnifiedThreadContent({
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const messagesRef = useRef<HTMLDivElement>(null);
-  const chatInputRef = useRef<PrismPromptInputHandle>(null);
+  const chatInputRef = useRef<GlassPromptInputHandle>(null);
   const prevThreadId = useRef<string | null>(null);
 
   // Error state for chat — stored as { threadId, message } so switching threads auto-clears it
@@ -885,7 +885,7 @@ function UnifiedThreadContent({
         {messages && messages.length > 0 && thread.threadEmail && (
           <ThreadEmailLink threadEmail={thread.threadEmail} subject={thread.title !== "New chat" ? thread.title : undefined} />
         )}
-        <PrismPromptInput
+        <GlassPromptInput
           ref={chatInputRef}
           onSubmit={handleSend}
           placeholder="Reply to this thread..."

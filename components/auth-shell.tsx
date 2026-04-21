@@ -8,7 +8,7 @@ export function BrandWordmark() {
     <div className="flex items-center gap-2.5 text-foreground">
       <LogoIcon size={16} color={BRAND_BLUE} static />
       <div className="flex items-baseline gap-1.5">
-        <span className="text-sm font-medium tracking-tight">Prism</span>
+        <span className="text-sm font-medium tracking-tight">Glass</span>
         <span className="text-sm text-muted-foreground">by Clarity Labs</span>
       </div>
     </div>

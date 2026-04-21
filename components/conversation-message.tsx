@@ -304,7 +304,7 @@ export function MessageBubble({ conv, onOpenPdf, onRetry, viewerEmail }: { conv:
       {/* Agent response */}
       {conv.status === "processing" && (
         <div className="flex items-center gap-2 py-2 justify-end">
-          <span className="text-label-sm text-muted-foreground">Prism is thinking...</span>
+          <span className="text-label-sm text-muted-foreground">Glass is thinking...</span>
           <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />
         </div>
       )}
@@ -316,7 +316,7 @@ export function MessageBubble({ conv, onOpenPdf, onRetry, viewerEmail }: { conv:
               <div className="flex items-center gap-1">
                 <Asterisk className="w-3.5 h-3.5 text-primary-light" />
                 <span className="text-label-sm font-medium text-muted-foreground leading-none">
-                  Prism
+                  Glass
                 </span>
               </div>
               <span className="text-[11px] text-muted-foreground/30 shrink-0">

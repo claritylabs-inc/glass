@@ -37,7 +37,7 @@ export async function requireApiKey(
   }
 
   const rawKey = authHeader.slice(7);
-  if (!rawKey.startsWith("prism_")) {
+  if (!rawKey.startsWith("glass_")) {
     throw new Response("Invalid API key format", {
       status: 401,
       headers: { "Content-Type": "text/plain" },

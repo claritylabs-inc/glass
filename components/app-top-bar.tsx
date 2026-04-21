@@ -9,7 +9,7 @@ const BREADCRUMB_MAP: Record<string, { label: string }> = {
   "/policies": { label: "Policies" },
   "/applications": { label: "Applications" },
   "/connections": { label: "Context" },
-  "/agent": { label: "Prism" },
+  "/agent": { label: "Glass" },
   "/settings": { label: "Settings" },
   "/profile": { label: "Profile" },
 };

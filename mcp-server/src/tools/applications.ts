@@ -1,8 +1,8 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import type { PrismClient } from "../client.js";
+import type { GlassClient } from "../client.js";
 
-export function registerApplicationTools(server: McpServer, client: PrismClient) {
+export function registerApplicationTools(server: McpServer, client: GlassClient) {
   server.tool(
     "list_applications",
     "List insurance application sessions with their status and progress.",

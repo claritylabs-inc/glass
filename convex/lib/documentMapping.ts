@@ -1,7 +1,7 @@
 "use node";
 
 /**
- * Maps between cl-sdk InsuranceDocument types and Prism's policies table schema.
+ * Maps between cl-sdk InsuranceDocument types and Glass's policies table schema.
  *
  * Replaces the removed applyExtracted / applyExtractedQuote from cl-sdk v0.1.x
  * and the toPolicy / toQuote adapters from agentPrompts.ts.
@@ -15,7 +15,7 @@ import type { Doc } from "../_generated/dataModel";
 type AnyDoc = Record<string, unknown>;
 
 /**
- * Map an InsuranceDocument (extraction output) to Prism's policies table fields.
+ * Map an InsuranceDocument (extraction output) to Glass's policies table fields.
  * This is the forward mapping: SDK extraction → Convex mutation args.
  */
 export function insuranceDocToPolicy(doc: InsuranceDocument): Record<string, unknown> {
@@ -126,7 +126,7 @@ export function insuranceDocToPolicy(doc: InsuranceDocument): Record<string, unk
 }
 
 /**
- * Map a Prism policies Doc to an InsuranceDocument (SDK type).
+ * Map a Glass policies Doc to an InsuranceDocument (SDK type).
  * This is the reverse mapping: Convex Doc → SDK interface.
  * Used by DocumentStore.get/query and agent context building.
  */

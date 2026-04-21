@@ -1,8 +1,8 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import type { PrismClient } from "../client.js";
+import type { GlassClient } from "../client.js";
 
-export function registerClientTools(server: McpServer, client: PrismClient) {
+export function registerClientTools(server: McpServer, client: GlassClient) {
   server.tool(
     "get_passport",
     "Get the full passport for the caller's client org. Client only.",

@@ -6,7 +6,7 @@ import { api } from "@/convex/_generated/api";
 import { Check, Copy, Forward } from "lucide-react";
 import { FileDropZone } from "@/components/ui/file-drop";
 
-const AGENT_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "prism.claritylabs.inc";
+const AGENT_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "glass.claritylabs.inc";
 
 type DocumentKind = "policy" | "application";
 
@@ -22,14 +22,14 @@ const COPY: Record<DocumentKind, { title: string; dropHeadline: string; dropActi
     dropHeadline: "Drag and drop a policy PDF",
     dropActive: "Drop policy PDF to upload",
     uploading: "Uploading policy...",
-    emailHint: "Forward any policy email with the attachments and Prism will set it up automatically.",
+    emailHint: "Forward any policy email with the attachments and Glass will set it up automatically.",
   },
   application: {
     title: "No applications yet",
     dropHeadline: "Drag and drop an application PDF",
     dropActive: "Drop application PDF to upload",
     uploading: "Uploading application...",
-    emailHint: "Forward any application email with the attachments and Prism will start the workflow automatically.",
+    emailHint: "Forward any application email with the attachments and Glass will start the workflow automatically.",
   },
 };
 
@@ -54,7 +54,7 @@ export function DocumentUploadEmptyState({ kind, uploading, onUpload }: Document
       <div className="mb-4">
         <p className="text-body-sm font-medium text-foreground">{copy.title}</p>
         <p className="text-label-sm text-muted-foreground mt-1">
-          Email it in or drop a PDF — Prism sets it up for you, no downloads or forms to fill.
+          Email it in or drop a PDF — Glass sets it up for you, no downloads or forms to fill.
         </p>
       </div>
 

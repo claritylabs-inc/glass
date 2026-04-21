@@ -3,7 +3,7 @@ import { readFileSync } from "fs";
 import { join } from "path";
 
 /**
- * Static analysis: confirm user-facing "Prism" strings are removed from
+ * Static analysis: confirm user-facing "Glass" strings are removed from
  * agent system prompts and convex action files.
  */
 
@@ -16,22 +16,22 @@ const AGENT_ACTION_FILES = [
 // Lines that are comments, internal identifiers, or regex patterns that intentionally
 // reference the old string for backward-compat matching — allowed to remain.
 const ALLOW_PATTERNS = [
-  /\/\/.*Prism/,       // comment lines
-  /PrismClient/,       // internal type identifier
-  /PrismBot/,          // User-Agent string (not user-facing copy)
+  /\/\/.*Glass/,       // comment lines
+  /GlassClient/,       // internal type identifier
+  /GlassBot/,          // User-Agent string (not user-facing copy)
 ];
 
 function isAllowed(line: string): boolean {
   return ALLOW_PATTERNS.some((p) => p.test(line));
 }
 
-describe("Agent prompts: no user-facing Prism strings", () => {
+describe("Agent prompts: no user-facing Glass strings", () => {
   for (const relPath of AGENT_ACTION_FILES) {
-    it(`${relPath} has no user-facing "Prism" copy`, () => {
+    it(`${relPath} has no user-facing "Glass" copy`, () => {
       const src = readFileSync(join(__dirname, "..", relPath), "utf-8");
       const violations = src
         .split("\n")
-        .filter((line) => /Prism/.test(line) && !isAllowed(line));
+        .filter((line) => /Glass/.test(line) && !isAllowed(line));
       expect(violations).toEqual([]);
     });
   }

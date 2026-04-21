@@ -1087,7 +1087,7 @@ export default defineSchema({
     orgId: v.id("organizations"),
     userId: v.optional(v.id("users")), // null = org-wide
     type: v.union(
-      // Existing prism types
+      // Existing glass types
       v.literal("merge_suggestion"),
       v.literal("coverage_gap"),
       v.literal("renewal_reminder"),
@@ -1386,7 +1386,7 @@ export default defineSchema({
   }).index("by_policyId", ["policyId"])
     .index("by_orgId", ["orgId"]),
 
-  // Web chat sessions with Prism
+  // Web chat sessions with Glass
   webChats: defineTable({
     orgId: v.id("organizations"),
     title: v.string(),

@@ -6,7 +6,7 @@ import { api } from "@/convex/_generated/api";
 import { PillButton } from "@/components/ui/pill-button";
 import { Loader2, Check, X } from "lucide-react";
 
-const AGENT_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "prism.claritylabs.inc";
+const AGENT_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "glass.claritylabs.inc";
 
 interface AgentHandleFormProps {
   suggestedHandle?: string;

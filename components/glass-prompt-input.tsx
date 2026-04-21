@@ -81,11 +81,11 @@ function AttachmentTags({ roomyOnMobile = false }: { roomyOnMobile?: boolean }) 
   );
 }
 
-export interface PrismPromptInputHandle {
+export interface GlassPromptInputHandle {
   setValueAndFocus: (value: string) => void;
 }
 
-export interface PrismPromptInputProps {
+export interface GlassPromptInputProps {
   onSubmit: (message: PromptInputMessage) => void | Promise<void>;
   placeholder?: string;
   contextLabel?: string;
@@ -96,13 +96,13 @@ export interface PrismPromptInputProps {
   onStop?: () => void;
 }
 
-export const PrismPromptInput = forwardRef<
-  PrismPromptInputHandle,
-  PrismPromptInputProps
->(function PrismPromptInput(
+export const GlassPromptInput = forwardRef<
+  GlassPromptInputHandle,
+  GlassPromptInputProps
+>(function GlassPromptInput(
   {
     onSubmit,
-    placeholder = "Ask Prism...",
+    placeholder = "Ask Glass...",
     contextLabel,
     showAttach = true,
     roomyOnMobile = false,
@@ -216,7 +216,7 @@ export const PrismPromptInput = forwardRef<
             <div className={roomyOnMobile ? "flex items-center gap-1.5 ml-1.5 sm:ml-1" : "flex items-center gap-1.5 ml-1"}>
               <Asterisk className="w-3.5 h-3.5 text-primary-light" />
               <span className="hidden sm:inline text-[11px] font-medium text-muted-foreground/40">
-                Prism
+                Glass
               </span>
               {contextLabel && (
                 <span className="text-[10px] font-medium text-muted-foreground/30 bg-foreground/[0.03] px-1.5 py-0.5 rounded max-w-[200px] truncate inline-block align-middle" title={contextLabel}>

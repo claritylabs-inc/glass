@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useMutation } from "convex/react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { AppTopBar, type PresenceUser } from "@/components/app-top-bar";
-import { PrismPromptInput } from "@/components/prism-prompt-input";
+import { GlassPromptInput } from "@/components/glass-prompt-input";
 import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
@@ -22,7 +22,7 @@ import { CommandPalette } from "@/components/command-palette";
 import dynamic from "next/dynamic";
 
 const AGENT_DOMAIN =
-  process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "prism.claritylabs.inc";
+  process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "glass.claritylabs.inc";
 
 const PdfPanel = dynamic(
   () => import("@/components/ui/pdf-panel").then((m) => ({ default: m.PdfPanel })),
@@ -196,9 +196,9 @@ function PersistentChatBar() {
         }}
       >
         <div className="max-w-2xl mx-auto">
-          <PrismPromptInput
+          <GlassPromptInput
             onSubmit={handleSubmit}
-            placeholder="Ask Prism..."
+            placeholder="Ask Glass..."
             contextLabel={pageContext?.summary}
             disabled={sending}
             status={sending ? "submitted" : "ready"}

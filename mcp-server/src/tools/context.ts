@@ -1,8 +1,8 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import type { PrismClient } from "../client.js";
+import type { GlassClient } from "../client.js";
 
-export function registerContextTools(server: McpServer, client: PrismClient) {
+export function registerContextTools(server: McpServer, client: GlassClient) {
   server.tool(
     "get_business_context",
     "Get the organization's stored business context entries used for auto-filling applications.",

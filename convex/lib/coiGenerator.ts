@@ -5,7 +5,7 @@ import PDFDocument from "pdfkit";
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 /**
- * COI data interface mapping Prism's rich policy fields to ACORD 25 fields.
+ * COI data interface mapping Glass's rich policy fields to ACORD 25 fields.
  * All monetary values should be pre-formatted strings (e.g. "$1,000,000").
  */
 export interface CoiData {
@@ -66,7 +66,7 @@ export interface CoverageLine {
 // ─── Mapping helpers ──────────────────────────────────────────────────────────
 
 /**
- * Map a Prism policy document to CoiData.
+ * Map a Glass policy document to CoiData.
  * Produces one CoverageLine per detected coverage type.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

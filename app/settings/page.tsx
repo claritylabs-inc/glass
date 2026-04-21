@@ -18,7 +18,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useCurrentOrg } from "@/hooks/use-current-org";
 
 /** Wrapper so LogoIcon matches the lucide icon interface used in nav items */
-function PrismStarIcon({ className }: { className?: string }) {
+function GlassStarIcon({ className }: { className?: string }) {
   return <LogoIcon size={16} static className={className} />;
 }
 import { OrganizationSection } from "@/components/settings/organization-section";
@@ -44,7 +44,7 @@ const CLIENT_SETTINGS_SECTIONS = [
   { id: "documents", label: "Documents", icon: FileText },
   { id: "integrations", label: "Integrations", icon: Puzzle },
   { id: "intelligence", label: "Intelligence", icon: Sparkles },
-  { id: "agent", label: "Agent", icon: PrismStarIcon },
+  { id: "agent", label: "Agent", icon: GlassStarIcon },
   { id: "notifications", label: "Notifications", icon: Bell },
 ] as const;
 
@@ -52,7 +52,7 @@ const BROKER_SETTINGS_SECTIONS = [
   { id: "organization", label: "Organization", icon: Building2 },
   { id: "branding", label: "Branding", icon: Sparkles },
   { id: "team", label: "Team", icon: Users },
-  { id: "agent", label: "Agent", icon: PrismStarIcon },
+  { id: "agent", label: "Agent", icon: GlassStarIcon },
   { id: "billing", label: "Billing", icon: CreditCard },
   { id: "notifications", label: "Notifications", icon: Bell },
 ] as const;

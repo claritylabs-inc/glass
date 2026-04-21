@@ -35,7 +35,7 @@ async function fetchFavicon(siteUrl: string): Promise<Blob | null> {
   const candidates: string[] = [];
   try {
     const pageRes = await fetch(base.toString(), {
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; PrismBot/1.0)" },
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; GlassBot/1.0)" },
     });
     if (pageRes.ok) {
       const html = await pageRes.text();
@@ -59,7 +59,7 @@ async function fetchFavicon(siteUrl: string): Promise<Blob | null> {
     try {
       const absolute = new URL(candidate, base).toString();
       const res = await fetch(absolute, {
-        headers: { "User-Agent": "Mozilla/5.0 (compatible; PrismBot/1.0)" },
+        headers: { "User-Agent": "Mozilla/5.0 (compatible; GlassBot/1.0)" },
       });
       if (!res.ok) continue;
       const contentType = res.headers.get("content-type") ?? "";
@@ -103,7 +103,7 @@ async function fetchWithExa(url: string): Promise<string | null> {
 async function fetchWithRawHtml(url: string): Promise<string | null> {
   try {
     const response = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; PrismBot/1.0)" },
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; GlassBot/1.0)" },
     });
     if (!response.ok) return null;
     let html = await response.text();

@@ -61,7 +61,7 @@ export type ProseMarkdownProps = {
 };
 
 /**
- * Unified markdown renderer used across Prism.
+ * Unified markdown renderer used across Glass.
  *
  * Handles table styling, heading sizes, list spacing, code blocks, etc.
  * in one place so every surface stays consistent.

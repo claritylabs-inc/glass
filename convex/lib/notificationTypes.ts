@@ -1,7 +1,7 @@
 // convex/lib/notificationTypes.ts
 
 export const ALL_NOTIFICATION_TYPES = [
-  // Existing prism types (unchanged)
+  // Existing glass types (unchanged)
   "merge_suggestion",
   "coverage_gap",
   "renewal_reminder",

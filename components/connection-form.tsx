@@ -194,7 +194,7 @@ export function ConnectionForm({
                       </label>
                     </div>
                     <p className="text-label-sm text-muted-foreground/50 mb-3">
-                      Prism will scan this period for policies and business intelligence. You can always pull more later.
+                      Glass will scan this period for policies and business intelligence. You can always pull more later.
                     </p>
                     <div className="grid grid-cols-5 gap-1.5">
                       {HISTORY_OPTIONS.map((opt) => {

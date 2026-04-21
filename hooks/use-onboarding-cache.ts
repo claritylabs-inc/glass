@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 
-const ONBOARDING_CACHE_KEY = "prism:onboarding-complete";
+const ONBOARDING_CACHE_KEY = "glass:onboarding-complete";
 
 export type OnboardingCacheState = {
   /** Whether onboarding is complete - null means unknown/not cached */

@@ -171,12 +171,12 @@ export function ApiKeysSection() {
           <pre className="text-[12px] bg-foreground/[0.03] border border-foreground/6 rounded-lg p-4 overflow-x-auto text-muted-foreground">
 {JSON.stringify({
   mcpServers: {
-    prism: {
+    glass: {
       command: "node",
-      args: ["<path-to-prism>/mcp-server/dist/index.js"],
+      args: ["<path-to-glass>/mcp-server/dist/index.js"],
       env: {
         PRISM_CONVEX_SITE_URL: (process.env.NEXT_PUBLIC_CONVEX_URL ?? "").replace(".cloud", ".site"),
-        PRISM_API_KEY: "prism_...",
+        PRISM_API_KEY: "glass_...",
       },
     },
   },

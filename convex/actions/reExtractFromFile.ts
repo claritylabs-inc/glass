@@ -67,7 +67,7 @@ export const reExtractFromFile = action({
 
       await log(`Extraction complete. Type: ${doc.type}. ${chunks.length} chunks. Tokens: ${tokenUsage.inputTokens}in/${tokenUsage.outputTokens}out`);
 
-      // Map InsuranceDocument → Prism policy fields
+      // Map InsuranceDocument → Glass policy fields
       const fields = insuranceDocToPolicy(result.document);
       const docName = doc.type === "quote"
         ? (doc.quoteNumber || "quote")

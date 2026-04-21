@@ -1,8 +1,8 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import type { PrismClient } from "../client.js";
+import type { GlassClient } from "../client.js";
 
-export function registerAgentTools(server: McpServer, client: PrismClient) {
+export function registerAgentTools(server: McpServer, client: GlassClient) {
   const askHandler = async ({ message, threadId }: { message: string; threadId?: string }) => {
     const result = await client.ask(message, threadId);
     const text = `**Thread:** ${result.threadId}\n\n${result.response}`;
@@ -24,7 +24,7 @@ export function registerAgentTools(server: McpServer, client: PrismClient) {
 
   // Legacy alias
   server.tool(
-    "ask_prism",
+    "ask_glass",
     "Alias for ask_glass (legacy name). Ask the Glass AI assistant a question.",
     {
       message: z.string().describe("The question or message to send to Glass"),

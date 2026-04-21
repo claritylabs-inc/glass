@@ -14,10 +14,10 @@ describe("getDefaultBranding", () => {
     expect(b.logoUrl).toBeTruthy();
   });
 
-  it("does not contain Prism in any user-facing field", () => {
+  it("does not contain Glass in any user-facing field", () => {
     const b = getDefaultBranding();
     for (const val of Object.values(b)) {
-      expect(val).not.toMatch(/Prism/i);
+      expect(val).not.toMatch(/Glass/i);
     }
   });
 });

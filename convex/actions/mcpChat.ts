@@ -81,7 +81,7 @@ export const run = internalAction({
       _id: string;
     }> = [];
 
-    const siteUrl = process.env.SITE_URL ?? "https://prism.claritylabs.inc";
+    const siteUrl = process.env.SITE_URL ?? "https://glass.claritylabs.inc";
 
     // Build system prompt
     const systemPrompt = buildSystemPromptForContext({

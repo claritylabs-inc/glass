@@ -1,8 +1,8 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import type { PrismClient } from "../client.js";
+import type { GlassClient } from "../client.js";
 
-export function registerPolicyTools(server: McpServer, client: PrismClient) {
+export function registerPolicyTools(server: McpServer, client: GlassClient) {
   server.tool(
     "list_policies",
     "List insurance policies. Optionally filter by carrier, year, or policy type.",
