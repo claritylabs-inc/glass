@@ -33,6 +33,8 @@ import { BrokerBrandingTab } from "@/components/settings/broker-branding-tab";
 import { BrokerTeamTab } from "@/components/settings/broker-team-tab";
 import { BrokerAgentTab } from "@/components/settings/broker-agent-tab";
 import { BrokerBillingPlaceholder } from "@/components/settings/broker-billing-placeholder";
+import NotificationPreferencesPage from "./notifications/page";
+import { Bell } from "lucide-react";
 
 const CLIENT_SETTINGS_SECTIONS = [
   { id: "organization", label: "Organization", icon: Building2 },
@@ -43,6 +45,7 @@ const CLIENT_SETTINGS_SECTIONS = [
   { id: "integrations", label: "Integrations", icon: Puzzle },
   { id: "intelligence", label: "Intelligence", icon: Sparkles },
   { id: "agent", label: "Agent", icon: PrismStarIcon },
+  { id: "notifications", label: "Notifications", icon: Bell },
 ] as const;
 
 const BROKER_SETTINGS_SECTIONS = [
@@ -51,6 +54,7 @@ const BROKER_SETTINGS_SECTIONS = [
   { id: "team", label: "Team", icon: Users },
   { id: "agent", label: "Agent", icon: PrismStarIcon },
   { id: "billing", label: "Billing", icon: CreditCard },
+  { id: "notifications", label: "Notifications", icon: Bell },
 ] as const;
 
 type ClientSection = (typeof CLIENT_SETTINGS_SECTIONS)[number]["id"];
@@ -120,6 +124,8 @@ export default function SettingsPage() {
 }
 
 function SectionContent({ section, isBroker }: { section: SettingsSection; isBroker: boolean }) {
+  const currentOrg = useCurrentOrg();
+
   if (isBroker) {
     return (
       <div>
@@ -127,7 +133,10 @@ function SectionContent({ section, isBroker }: { section: SettingsSection; isBro
          section === "branding" ? <BrokerBrandingTab /> :
          section === "team" ? <BrokerTeamTab /> :
          section === "agent" ? <BrokerAgentTab /> :
-         section === "billing" ? <BrokerBillingPlaceholder /> : null}
+         section === "billing" ? <BrokerBillingPlaceholder /> :
+         section === "notifications" && currentOrg?.orgId ? (
+           <NotificationPreferencesPage orgId={currentOrg.orgId} />
+         ) : null}
       </div>
     );
   }
@@ -149,6 +158,8 @@ function SectionContent({ section, isBroker }: { section: SettingsSection; isBro
         <IntelligenceSection />
       ) : section === "agent" ? (
         <AgentSection />
+      ) : section === "notifications" && currentOrg?.orgId ? (
+        <NotificationPreferencesPage orgId={currentOrg.orgId} />
       ) : null}
     </div>
   );
