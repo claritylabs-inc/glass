@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { mutation, query, internalMutation, internalQuery } from "./_generated/server";
 import { getOrgAccess } from "./lib/orgAuth";
 import { Id } from "./_generated/dataModel";
+import { recordBrokerActivity } from "./lib/brokerActivity";
 
 /** List uploaded org-context documents for the viewer's org. */
 export const list = query({
@@ -29,7 +30,7 @@ export const create = mutation({
     const access = await getOrgAccess(ctx);
     if (!access) throw new Error("No organization");
     const now = Date.now();
-    return await ctx.db.insert("orgDocuments", {
+    const docId = await ctx.db.insert("orgDocuments", {
       orgId: access.orgId,
       storageId: args.storageId,
       fileName: args.fileName,
@@ -40,6 +41,22 @@ export const create = mutation({
       createdAt: now,
       updatedAt: now,
     });
+
+    // Emit broker activity event if this org has a broker
+    const org = await ctx.db.get(access.orgId);
+    if (org && (org as { brokerOrgId?: Id<"organizations"> }).brokerOrgId) {
+      await recordBrokerActivity(ctx, {
+        brokerOrgId: (org as { brokerOrgId: Id<"organizations"> }).brokerOrgId,
+        clientOrgId: access.orgId,
+        type: "document_uploaded",
+        actorSide: "client",
+        actorUserId: access.userId,
+        summary: `Document "${args.fileName}" uploaded.`,
+        payload: { orgDocumentId: docId, fileName: args.fileName },
+      });
+    }
+
+    return docId;
   },
 });
 
