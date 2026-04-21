@@ -1,15 +1,30 @@
-const SITE_URL = process.env.SITE_URL ?? "https://prism.claritylabs.inc";
+import type { BrandingContext } from "./branding";
+import { getDefaultBranding } from "./branding";
 
-/** Prism + Clarity Labs lockup for email headers — JPEG for Gmail reliability */
-export const EMAIL_PRISM_LOGO = `
+const SITE_URL = process.env.SITE_URL ?? "https://glass.claritylabs.dev";
+
+/** Glass + Clarity Labs lockup for email headers — JPEG for Gmail reliability */
+export function buildEmailLogoHtml(branding: BrandingContext = getDefaultBranding()): string {
+  const logoUrl = branding.logoUrl.startsWith("http")
+    ? branding.logoUrl
+    : `${SITE_URL}${branding.logoUrl}`;
+  return `
 <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;">
   <tr>
-    <td align="center"><img src="${SITE_URL}/prism-logo-email.jpg" alt="Prism by Clarity Labs" width="206" height="58" style="display:block;border:0;outline:none;text-decoration:none;" /></td>
+    <td align="center"><img src="${logoUrl}" alt="${branding.brandName} by Clarity Labs" width="206" height="58" style="display:block;border:0;outline:none;text-decoration:none;" /></td>
   </tr>
 </table>`;
+}
+
+/**
+ * @deprecated Use buildEmailLogoHtml(branding) instead.
+ * Kept for backward-compat with any callers that reference this export directly.
+ */
+export const EMAIL_PRISM_LOGO = buildEmailLogoHtml();
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-export function buildOtpEmail(token: string, _siteUrl?: string): { html: string; text: string } {
+export function buildOtpEmail(token: string, _siteUrl?: string, branding: BrandingContext = getDefaultBranding()): { html: string; text: string } {
+  const logo = buildEmailLogoHtml(branding);
   const digits = token.split("");
 
   const digitCells = digits
@@ -38,7 +53,7 @@ export function buildOtpEmail(token: string, _siteUrl?: string): { html: string;
 
 <!-- Logo -->
 <tr><td align="center" style="padding:36px 40px 0 40px;">
-  ${EMAIL_PRISM_LOGO}
+  ${logo}
 </td></tr>
 
 <!-- Heading -->
@@ -78,7 +93,7 @@ export function buildOtpEmail(token: string, _siteUrl?: string): { html: string;
 </body>
 </html>`;
 
-  const text = `Your Prism sign-in code is: ${token}\n\nEnter this code in the browser window where you started signing in. It expires in 15 minutes.\n\nIf you didn't request this code, you can safely ignore this email.`;
+  const text = `Your ${branding.brandName} sign-in code is: ${token}\n\nEnter this code in the browser window where you started signing in. It expires in 15 minutes.\n\nIf you didn't request this code, you can safely ignore this email.`;
 
   return { html, text };
 }
