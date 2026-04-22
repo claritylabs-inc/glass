@@ -267,6 +267,7 @@ export default function BrokerOnboardingPage() {
   const [samplingColor, setSamplingColor] = useState(false);
   const [agentDisplayName, setAgentDisplayName] = useState("");
   const [agentHandle, setAgentHandle] = useState("");
+  const [debouncedHandle, setDebouncedHandle] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -295,6 +296,11 @@ export default function BrokerOnboardingPage() {
   }, [slugInput]);
 
   useEffect(() => {
+    const timer = setTimeout(() => setDebouncedHandle(agentHandle), 300);
+    return () => clearTimeout(timer);
+  }, [agentHandle]);
+
+  useEffect(() => {
     const domain = extractDomain(website);
     if (!domain) {
       setSampledColors([]);
@@ -321,6 +327,17 @@ export default function BrokerOnboardingPage() {
     debouncedSlug.length >= 3 ? { slug: debouncedSlug } : "skip",
   );
   const slugChecking = slugInput.length >= 3 && (slugInput !== debouncedSlug || slugCheck === undefined);
+
+  const handleCheck = useQuery(
+    api.orgs.checkHandleAvailability,
+    debouncedHandle.length >= 3 && debouncedHandle !== viewerOrg?.org?.agentHandle
+      ? { handle: debouncedHandle }
+      : "skip",
+  );
+  const handleChecking =
+    agentHandle.length >= 3 &&
+    agentHandle !== viewerOrg?.org?.agentHandle &&
+    (agentHandle !== debouncedHandle || handleCheck === undefined);
 
   async function handleLogout() {
     clearOnboardingCache();
@@ -728,9 +745,45 @@ export default function BrokerOnboardingPage() {
                   @{WORKSPACE_DOMAIN}
                 </div>
               </div>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Clients will email this address to reach your AI agent.
-              </p>
+              <div className="mt-2 flex items-center gap-2 min-h-[20px]">
+                {handleChecking ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />
+                    <span className="text-label-sm text-muted-foreground">Checking…</span>
+                  </>
+                ) : null}
+                {!handleChecking &&
+                debouncedHandle.length >= 3 &&
+                debouncedHandle !== viewerOrg?.org?.agentHandle &&
+                handleCheck?.available ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                    <span className="text-body-sm text-emerald-600">
+                      {debouncedHandle}@{WORKSPACE_DOMAIN} is available
+                    </span>
+                  </>
+                ) : null}
+                {!handleChecking &&
+                debouncedHandle.length >= 3 &&
+                debouncedHandle !== viewerOrg?.org?.agentHandle &&
+                handleCheck &&
+                !handleCheck.available ? (
+                  <>
+                    <X className="w-3.5 h-3.5 text-red-500" />
+                    <span className="text-body-sm text-red-500">
+                      {handleCheck.reason ?? "Not available"}
+                    </span>
+                  </>
+                ) : null}
+                {agentHandle.length > 0 && agentHandle.length < 3 ? (
+                  <span className="text-body-sm text-muted-foreground/50">Minimum 3 characters</span>
+                ) : null}
+                {agentHandle.length === 0 ? (
+                  <span className="text-label-sm text-muted-foreground">
+                    Clients will email this address to reach your AI agent.
+                  </span>
+                ) : null}
+              </div>
             </div>
 
             {error ? <p className="text-sm text-muted-foreground">{error}</p> : null}
@@ -738,7 +791,14 @@ export default function BrokerOnboardingPage() {
             <PillButton
               type="button"
               onClick={handleFinish}
-              disabled={submitting}
+              disabled={
+                submitting ||
+                (agentHandle.length > 0 &&
+                  agentHandle.length < 3) ||
+                (agentHandle.length >= 3 &&
+                  agentHandle !== viewerOrg?.org?.agentHandle &&
+                  (handleChecking || !handleCheck?.available))
+              }
               className="w-full justify-center text-sm shadow-none sm:w-auto"
             >
               {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
