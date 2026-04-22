@@ -35,6 +35,8 @@ import { X } from "lucide-react";
 
 import { PolicySummary } from "./policy-summary";
 import { ExtractionCards } from "./extraction-panel";
+import { PolicyExtractionBanner } from "@/components/shared/extraction-banner";
+import type { PipelineStatus, LogEntry } from "@claritylabs/cl-pipelines";
 
 
 // ─── Activity tab ─────────────────────────────────────────────────────────────
@@ -786,6 +788,13 @@ export default function PolicyDetailPage({
       {/* ── Details tab ── */}
       {activeTab === "details" && (
         <FadeIn when={true} staggerIndex={1} duration={0.5}>
+          {/* Pipeline extraction banner — shows live status, error, and retry buttons */}
+          <PolicyExtractionBanner
+            policyId={policy._id}
+            status={(p.pipelineStatus as PipelineStatus | undefined)}
+            error={p.pipelineError as string | undefined}
+            log={p.pipelineLog as LogEntry[] | undefined}
+          />
           {/* 1. Summary card — always visible, scannable */}
           <PolicySummary
             policyNumber={policy.policyNumber}
