@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { mutation, query, internalMutation, internalQuery } from "./_generated/server";
 import { getOrgAccess } from "./lib/orgAuth";
 import { Id } from "./_generated/dataModel";
+import { makePipelineMutations } from "./lib/pipelineMutations";
 import { recordBrokerActivity } from "./lib/brokerActivity";
 import { notify } from "./lib/notify";
 
@@ -150,3 +151,11 @@ export const findByStorageId = internalMutation({
 });
 
 export type OrgDocumentId = Id<"orgDocuments">;
+
+// ── cl-pipelines contract mutations for orgDocuments ──────────────────────────
+const _orgDocPipeline = makePipelineMutations("orgDocuments");
+export const pipelineGetJob = _orgDocPipeline.getJob;
+export const pipelineSetStatus = _orgDocPipeline.setStatus;
+export const pipelineSetCheckpoint = _orgDocPipeline.setCheckpoint;
+export const pipelineAppendLog = _orgDocPipeline.appendLog;
+export const pipelineClearLog = _orgDocPipeline.clearLog;

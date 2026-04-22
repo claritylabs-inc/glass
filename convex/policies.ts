@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query, internalQuery, internalMutation } from "./_generated/server";
+import { makePipelineMutations } from "./lib/pipelineMutations";
 import { api, internal } from "./_generated/api";
 import { requireOrgAccess, getOrgAccess } from "./lib/orgAuth";
 import {
@@ -1177,3 +1178,11 @@ export const listForOrg = query({
       .take(100);
   },
 });
+
+// ── cl-pipelines contract mutations for policies ───────────────────────────────
+const _policyPipeline = makePipelineMutations("policies");
+export const pipelineGetJob = _policyPipeline.getJob;
+export const pipelineSetStatus = _policyPipeline.setStatus;
+export const pipelineSetCheckpoint = _policyPipeline.setCheckpoint;
+export const pipelineAppendLog = _policyPipeline.appendLog;
+export const pipelineClearLog = _policyPipeline.clearLog;

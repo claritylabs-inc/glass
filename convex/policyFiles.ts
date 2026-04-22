@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { query, internalQuery, internalMutation } from "./_generated/server";
 import { getOrgAccess } from "./lib/orgAuth";
+import { makePipelineMutations } from "./lib/pipelineMutations";
 
 export const listByPolicy = query({
   args: { policyId: v.id("policies") },
@@ -111,3 +112,11 @@ export const reassignToPolicy = internalMutation({
     await ctx.db.patch(args.id, { policyId: args.newPolicyId });
   },
 });
+
+// ── cl-pipelines contract mutations for policyFiles ────────────────────────────
+const _policyFilesPipeline = makePipelineMutations("policyFiles");
+export const pipelineGetJob = _policyFilesPipeline.getJob;
+export const pipelineSetStatus = _policyFilesPipeline.setStatus;
+export const pipelineSetCheckpoint = _policyFilesPipeline.setCheckpoint;
+export const pipelineAppendLog = _policyFilesPipeline.appendLog;
+export const pipelineClearLog = _policyFilesPipeline.clearLog;
