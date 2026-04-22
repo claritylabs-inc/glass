@@ -8,6 +8,9 @@ import { api as _api } from "@/convex/_generated/api";
 import { PillButton } from "@/components/ui/pill-button";
 import { FileDropZone } from "@/components/ui/file-drop";
 import { toast } from "sonner";
+import { OrgDocumentExtractionBanner } from "@/components/shared/extraction-banner";
+import type { PipelineStatus, LogEntry } from "@claritylabs/cl-pipelines";
+import type { Id } from "@/convex/_generated/dataModel";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const api = _api as any;
@@ -75,16 +78,15 @@ export function SectionDocuments() {
         mimeType: file.type || EXT_TYPE_MAP[ext] || undefined,
         size: file.size,
       });
-      toast.success("Uploaded, extracting business context...");
-      // NOTE: extractFromDocument runs synchronously in one Convex action (not backgrounded).
-      // This works for typical documents but can time-out on very large files.
-      // Future: migrate to cl-pipelines similar to applicationExtraction.
-      const outcome = await extractFromDocument({
+      // Fire-and-forget — pipeline runs in background, banner shows live status
+      void extractFromDocument({
         fileId: storageId,
         fileName: file.name,
         documentId,
+      }).catch((err) => {
+        toast.error(`Extraction failed to start: ${err instanceof Error ? err.message : "Unknown error"}`);
       });
-      if ("error" in outcome) toast.error(outcome.error);
+      toast.success("Extraction started — safe to continue");
     } catch {
       toast.error("Upload failed");
     } finally {
@@ -106,36 +108,45 @@ export function SectionDocuments() {
 
       {orgDocuments && orgDocuments.length > 0 ? (
         <ul className="divide-y divide-foreground/4 rounded-lg border border-foreground/8 overflow-hidden">
-          {(orgDocuments as Array<{ _id: string; fileName?: string; sourceLabel?: string; extractionStatus?: string }>).map((doc) => (
-            <li key={doc._id} className="flex items-center gap-3 px-3 py-2">
-              <div className="flex-1 min-w-0">
-                <p className="text-sm text-foreground truncate">
-                  {doc.sourceLabel || doc.fileName || "Document"}
-                </p>
+          {(orgDocuments as Array<{ _id: string; fileName?: string; sourceLabel?: string; extractionStatus?: string; pipelineStatus?: string; pipelineError?: string; pipelineLog?: unknown[] }>).map((doc) => (
+            <li key={doc._id} className="flex flex-col gap-1 px-3 py-2">
+              <div className="flex items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-foreground truncate">
+                    {doc.sourceLabel || doc.fileName || "Document"}
+                  </p>
+                </div>
+                {(doc.extractionStatus === "extracting" || doc.extractionStatus === "pending") && !doc.pipelineStatus ? (
+                  <span className="inline-flex items-center gap-1 text-xs text-muted-foreground shrink-0">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    Extracting
+                  </span>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setRemovingId(doc._id);
+                    try {
+                      await removeOrgDocument({ id: doc._id as Parameters<typeof removeOrgDocument>[0]["id"] });
+                    } catch {
+                      toast.error("Failed to remove document");
+                    } finally {
+                      setRemovingId(null);
+                    }
+                  }}
+                  disabled={removingId === doc._id}
+                  className="text-xs text-muted-foreground/60 hover:text-red-500 transition-colors shrink-0"
+                >
+                  Remove
+                </button>
               </div>
-              {doc.extractionStatus === "extracting" || doc.extractionStatus === "pending" ? (
-                <span className="inline-flex items-center gap-1 text-xs text-muted-foreground shrink-0">
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                  Extracting
-                </span>
-              ) : null}
-              <button
-                type="button"
-                onClick={async () => {
-                  setRemovingId(doc._id);
-                  try {
-                    await removeOrgDocument({ id: doc._id as Parameters<typeof removeOrgDocument>[0]["id"] });
-                  } catch {
-                    toast.error("Failed to remove document");
-                  } finally {
-                    setRemovingId(null);
-                  }
-                }}
-                disabled={removingId === doc._id}
-                className="text-xs text-muted-foreground/60 hover:text-red-500 transition-colors shrink-0"
-              >
-                Remove
-              </button>
+              {/* Pipeline extraction banner — shows live status and retry buttons */}
+              <OrgDocumentExtractionBanner
+                orgDocumentId={doc._id as Id<"orgDocuments">}
+                status={doc.pipelineStatus as PipelineStatus | undefined}
+                error={doc.pipelineError}
+                log={doc.pipelineLog as LogEntry[] | undefined}
+              />
             </li>
           ))}
         </ul>

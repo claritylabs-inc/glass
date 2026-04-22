@@ -13,6 +13,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useFileDrop } from "@/components/ui/file-drop";
 import { Id } from "@/convex/_generated/dataModel";
+import { OrgDocumentExtractionBanner } from "@/components/shared/extraction-banner";
+import type { PipelineStatus, LogEntry } from "@claritylabs/cl-pipelines";
 
 type DocumentTab = "org-context" | "policy-extractions";
 
@@ -165,17 +167,15 @@ export function DocumentsSection() {
         mimeType: ct,
         size: file.size,
       });
-      toast.success("Uploaded, extracting business context...");
-      const outcome = await extractFromDocument({
+      // Fire-and-forget — pipeline runs in background, banner will show live status
+      void extractFromDocument({
         fileId: storageId,
         fileName: file.name,
         documentId,
+      }).catch((err) => {
+        toast.error(`Extraction failed to start: ${err instanceof Error ? err.message : "Unknown error"}`);
       });
-      if ("error" in outcome) {
-        toast.error(outcome.error);
-      } else {
-        toast.success(`${outcome.entries} intelligence entries extracted`);
-      }
+      toast.success("Extraction started — safe to navigate away");
     } catch {
       toast.error("Upload failed");
     } finally {
@@ -354,8 +354,9 @@ export function DocumentsSection() {
                       return (
                         <div
                           key={doc._id}
-                          className="px-5 py-3 group flex items-center gap-3 hover:bg-foreground/[0.015] transition-colors"
+                          className="px-5 py-3 group flex flex-col gap-2 hover:bg-foreground/[0.015] transition-colors"
                         >
+                          <div className="flex items-center gap-3">
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium text-foreground truncate">
                               {doc.sourceLabel || doc.fileName || "Document"}
@@ -363,11 +364,6 @@ export function DocumentsSection() {
                             <p className="text-xs text-muted-foreground/55 truncate mt-0.5">
                               {doc.entryCount} {doc.entryCount === 1 ? "entry" : "entries"} · {formatCreatedAt(doc.createdAt)}
                             </p>
-                            {status === "error" && doc.extractionError ? (
-                              <p className="text-xs text-red-500/70 mt-1 line-clamp-2">
-                                {doc.extractionError}
-                              </p>
-                            ) : null}
                           </div>
                           {statusChip}
                           <button
@@ -388,6 +384,14 @@ export function DocumentsSection() {
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
+                          </div>
+                          {/* Pipeline extraction banner — shows live status and retry */}
+                          <OrgDocumentExtractionBanner
+                            orgDocumentId={doc._id as Id<"orgDocuments">}
+                            status={(doc as any).pipelineStatus as PipelineStatus | undefined}
+                            error={(doc as any).pipelineError as string | undefined}
+                            log={(doc as any).pipelineLog as LogEntry[] | undefined}
+                          />
                         </div>
                       );
                     })}
