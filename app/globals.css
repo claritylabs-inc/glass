@@ -215,6 +215,17 @@
     }
   }
 
+  /* Remove the default webkit inset shadow on form fields */
+  input, select, textarea {
+    -webkit-appearance: none;
+    appearance: none;
+    box-shadow: none;
+  }
+  input[type="color"] {
+    -webkit-appearance: auto;
+    appearance: auto;
+  }
+
   h1, h2, h3, h4, h5, h6 {
     font-family: var(--font-geist-sans), system-ui, sans-serif;
     font-weight: 500;
