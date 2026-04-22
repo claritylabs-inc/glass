@@ -32,7 +32,9 @@ import type * as actions_integrationConnectionActions from "../actions/integrati
 import type * as actions_mcpChat from "../actions/mcpChat.js";
 import type * as actions_mergeSync from "../actions/mergeSync.js";
 import type * as actions_migrateIntelligence from "../actions/migrateIntelligence.js";
+import type * as actions_orgDocumentExtraction from "../actions/orgDocumentExtraction.js";
 import type * as actions_passportExtraction from "../actions/passportExtraction.js";
+import type * as actions_policyExtraction from "../actions/policyExtraction.js";
 import type * as actions_proactiveAnalysis from "../actions/proactiveAnalysis.js";
 import type * as actions_processThreadChat from "../actions/processThreadChat.js";
 import type * as actions_processWebChat from "../actions/processWebChat.js";
@@ -120,6 +122,7 @@ import type * as lib_orgRelationships from "../lib/orgRelationships.js";
 import type * as lib_passportCompletion from "../lib/passportCompletion.js";
 import type * as lib_passportIntelligence from "../lib/passportIntelligence.js";
 import type * as lib_pdfFiller from "../lib/pdfFiller.js";
+import type * as lib_pipelineMutations from "../lib/pipelineMutations.js";
 import type * as lib_policyTypes from "../lib/policyTypes.js";
 import type * as lib_queryAgent from "../lib/queryAgent.js";
 import type * as lib_resend from "../lib/resend.js";
@@ -184,7 +187,9 @@ declare const fullApi: ApiFromModules<{
   "actions/mcpChat": typeof actions_mcpChat;
   "actions/mergeSync": typeof actions_mergeSync;
   "actions/migrateIntelligence": typeof actions_migrateIntelligence;
+  "actions/orgDocumentExtraction": typeof actions_orgDocumentExtraction;
   "actions/passportExtraction": typeof actions_passportExtraction;
+  "actions/policyExtraction": typeof actions_policyExtraction;
   "actions/proactiveAnalysis": typeof actions_proactiveAnalysis;
   "actions/processThreadChat": typeof actions_processThreadChat;
   "actions/processWebChat": typeof actions_processWebChat;
@@ -272,6 +277,7 @@ declare const fullApi: ApiFromModules<{
   "lib/passportCompletion": typeof lib_passportCompletion;
   "lib/passportIntelligence": typeof lib_passportIntelligence;
   "lib/pdfFiller": typeof lib_pdfFiller;
+  "lib/pipelineMutations": typeof lib_pipelineMutations;
   "lib/policyTypes": typeof lib_policyTypes;
   "lib/queryAgent": typeof lib_queryAgent;
   "lib/resend": typeof lib_resend;
