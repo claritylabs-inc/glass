@@ -1,6 +1,7 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 import { authTables } from "@convex-dev/auth/server";
+import { pipelineFields } from "@claritylabs/cl-pipelines/convex";
 
 const addressObject = v.object({
   street1: v.string(),
@@ -212,6 +213,8 @@ export default defineSchema({
     completedAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
+    // Pipeline fields for cl-pipelines phase-runner
+    ...pipelineFields(),
   })
     .index("by_brokerOrgId", ["brokerOrgId"])
     .index("by_clientOrgId", ["clientOrgId"])
@@ -254,6 +257,13 @@ export default defineSchema({
     selectOptions: v.optional(v.array(v.object({ value: v.string(), label: v.string() }))),
     required: v.boolean(),
     conditional: v.optional(v.any()),
+    repeating: v.optional(v.object({
+      collectionKey: v.string(),
+      itemLabel: v.string(),
+      dependsOnQuestionId: v.optional(v.id("applicationQuestions")),
+      minItems: v.optional(v.number()),
+      maxItems: v.optional(v.number()),
+    })),
     binding: v.optional(v.object({
       source: v.union(
         v.literal("manual"), v.literal("passport"),
