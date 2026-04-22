@@ -78,7 +78,8 @@ function PolicyActivityTab({ policyId, policy }: { policyId: string; policy: Rec
     policyId: policyId as Id<"policies">,
   });
 
-  const isLive = policy.extractionStatus === "extracting";
+  // TODO(Task9): prefer pipelineStatus === "running" once old docs are migrated
+  const isLive = policy.extractionStatus === "extracting" || (policy as any).pipelineStatus === "running";
 
   if (entries === undefined) {
     return (
