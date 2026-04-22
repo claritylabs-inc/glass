@@ -33,10 +33,7 @@ export default function ClientApplicationsPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">
-          Applications
-        </p>
+      <div className="flex justify-end">
         <PillButton
           type="button"
           size="compact"
@@ -44,7 +41,7 @@ export default function ClientApplicationsPage() {
           onClick={() => setDrawerOpen(true)}
         >
           <Plus className="w-3.5 h-3.5" />
-          New
+          New application
         </PillButton>
       </div>
 

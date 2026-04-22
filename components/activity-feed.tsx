@@ -88,17 +88,18 @@ export function ActivityFeed({
 
   return (
     <div className="space-y-6">
-      {/* Type filter */}
-      <Tabs value={typeFilter} onValueChange={setTypeFilter}>
-        <TabsList variant="pill">
-          <TabsTrigger value="all">All</TabsTrigger>
-          {allTypes.map((t) => (
-            <TabsTrigger key={t} value={t}>
-              {TYPE_LABELS[t] ?? t}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-      </Tabs>
+      {allTypes.length > 1 ? (
+        <Tabs value={typeFilter} onValueChange={setTypeFilter}>
+          <TabsList variant="pill">
+            <TabsTrigger value="all">All</TabsTrigger>
+            {allTypes.map((t) => (
+              <TabsTrigger key={t} value={t}>
+                {TYPE_LABELS[t] ?? t}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+      ) : null}
 
       {events === undefined ? (
         <p className="text-sm text-muted-foreground">Loading…</p>

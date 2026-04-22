@@ -7,6 +7,7 @@ import {
   assertCanUploadPolicy,
   assertCanDeletePolicy,
   assertCanReadPolicy,
+  getOrgAccess as getOrgAccessFor,
 } from "./lib/access";
 import { recordBrokerActivity } from "./lib/brokerActivity";
 import { notify } from "./lib/notify";
@@ -773,7 +774,7 @@ export const listForBroker = query({
     documentType: v.optional(v.union(v.literal("policy"), v.literal("quote"))),
   },
   handler: async (ctx, args) => {
-    const access = await requireBrokerAccessToClient(ctx, args.clientOrgId);
+    const access = await getOrgAccessFor(ctx, args.clientOrgId);
     assertCanReadPolicy(access);
     const all = await ctx.db
       .query("policies")

@@ -23,11 +23,9 @@ export default function ClientActivityPage() {
   );
 
   return (
-    <div className="space-y-4">
-      <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">
-        Activity
-      </p>
-      <ActivityFeed events={events as ActivityEvent[] | undefined} showClientColumn={false} />
-    </div>
+    <ActivityFeed
+      events={events as ActivityEvent[] | undefined}
+      showClientColumn={false}
+    />
   );
 }

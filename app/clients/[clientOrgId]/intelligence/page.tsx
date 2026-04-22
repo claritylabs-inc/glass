@@ -35,9 +35,6 @@ export default function ClientIntelligencePage() {
 
   return (
     <div className="space-y-4">
-      <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">
-        Intelligence — broker-filtered view
-      </p>
       <div className="space-y-2">
         {entries === undefined ? (
           <div className="py-16 text-center">

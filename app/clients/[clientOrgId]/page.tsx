@@ -4,50 +4,43 @@ import { useParams } from "next/navigation";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { useCurrentOrg } from "@/lib/hooks/use-current-org";
 
-export default function ClientOverviewPage() {
+export default function ClientDetailsPage() {
   const { clientOrgId } = useParams<{ clientOrgId: string }>();
-  const orgCtx = useCurrentOrg();
-
-  const policies = useQuery(
-    api.policies.listForOrg,
+  const org = useQuery(
+    api.orgs.getById,
     clientOrgId ? { orgId: clientOrgId as Id<"organizations"> } : "skip",
   );
-  const applications = useQuery(
-    (api as any).applications.listForBroker,
-    orgCtx && clientOrgId
-      ? {
-          brokerOrgId: orgCtx.orgId,
-          clientOrgId: clientOrgId as Id<"organizations">,
-        }
-      : "skip",
-  );
 
-  const activePolicies = policies?.filter(
-    (p: any) => p.documentType === "policy" && p.extractionStatus === "complete",
-  ) ?? [];
-  const openApps = (applications as any[])?.filter(
-    (a: any) => a.status !== "complete" && a.status !== "cancelled",
-  ) ?? [];
+  if (!org) return null;
+
+  const rows: [string, string | undefined][] = [
+    ["Company name", org.name],
+    ["Website", (org as { website?: string }).website],
+    ["Industry", (org as { industry?: string }).industry],
+    ["Context", (org as { context?: string }).context],
+  ];
+  const filled = rows.filter(([, v]) => v);
 
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-        <div className="rounded-lg border bg-card p-4">
-          <p className="text-xs text-muted-foreground">Active policies</p>
-          <p className="text-2xl font-bold mt-1">{activePolicies.length}</p>
-        </div>
-        <div className="rounded-lg border bg-card p-4">
-          <p className="text-xs text-muted-foreground">Open applications</p>
-          <p className="text-2xl font-bold mt-1">{openApps.length}</p>
-        </div>
-      </div>
-      <div>
-        <p className="text-sm text-muted-foreground">
-          Use the tabs above to view passport, applications, policies, intelligence, and activity.
+    <div className="rounded-lg border border-foreground/6 bg-card divide-y divide-foreground/6">
+      {filled.length === 0 ? (
+        <p className="px-5 py-4 text-sm text-muted-foreground">
+          No details yet.
         </p>
-      </div>
+      ) : (
+        filled.map(([label, value]) => (
+          <div
+            key={label}
+            className="flex flex-col gap-1 px-5 py-4 sm:flex-row sm:items-baseline sm:gap-6"
+          >
+            <dt className="text-label-sm font-medium text-muted-foreground sm:w-40 shrink-0">
+              {label}
+            </dt>
+            <dd className="text-sm text-foreground">{value}</dd>
+          </div>
+        ))
+      )}
     </div>
   );
 }
