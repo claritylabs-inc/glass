@@ -95,7 +95,10 @@ export default function SettingsPage() {
 
   return (
     <SettingsActionsContext.Provider value={{ setActions: setHeaderActions }}>
-      <AppShell breadcrumbDetail={activeLabel} actions={headerActions}>
+      <AppShell
+        breadcrumbDetail={activeLabel === "Settings" ? undefined : activeLabel}
+        actions={headerActions}
+      >
         {/* Mobile: horizontal scrollable tabs */}
         <div className="lg:hidden mb-6 -mx-6 px-6 overflow-x-auto scrollbar-hide">
           <Tabs

@@ -30,7 +30,7 @@ import { usePageContext } from "@/hooks/use-page-context";
 import { useOnboardingCache } from "@/hooks/use-onboarding-cache";
 import { useCurrentOrg } from "@/hooks/use-current-org";
 import { Users, Activity } from "lucide-react";
-import { SETTINGS_SECTIONS } from "@/lib/settings-sections";
+import { CLIENT_SETTINGS_SECTIONS, BROKER_SETTINGS_SECTIONS } from "@/lib/settings-sections";
 import { LogoIcon } from "@/components/ui/logo-icon";
 import { PillButton } from "@/components/ui/pill-button";
 import { NotificationsPanel } from "@/components/notifications-panel";
@@ -41,9 +41,15 @@ function GlassStarIcon({ className }: { className?: string }) {
   return <LogoIcon size={16} static className={className} />;
 }
 
-const SETTINGS_SECTIONS_WITH_AGENT = [
-  ...SETTINGS_SECTIONS,
+const CLIENT_SETTINGS_WITH_AGENT = [
+  ...CLIENT_SETTINGS_SECTIONS,
   { id: "agent", label: "Agent", icon: GlassStarIcon },
+];
+
+const BROKER_SETTINGS_WITH_AGENT = [
+  ...BROKER_SETTINGS_SECTIONS.filter((s) => s.id !== "billing"),
+  { id: "agent", label: "Agent", icon: GlassStarIcon },
+  ...BROKER_SETTINGS_SECTIONS.filter((s) => s.id === "billing"),
 ];
 
 const INSURANCE_ITEMS = [
@@ -285,7 +291,7 @@ export function AppSidebar({
           </p>
         )}
         {collapsed && <div className="pt-4 pb-1" />}
-        {SETTINGS_SECTIONS_WITH_AGENT.map((item) => {
+        {(isBroker ? BROKER_SETTINGS_WITH_AGENT : CLIENT_SETTINGS_WITH_AGENT).map((item) => {
           const isItemActive = item.id === activeSettingsSection;
           return (
             <NavItem

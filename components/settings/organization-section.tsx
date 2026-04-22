@@ -13,6 +13,8 @@ import {
   Sparkles,
   AlertTriangle,
   RotateCcw,
+  Check,
+  X,
 } from "lucide-react";
 import { INDUSTRIES } from "@/convex/lib/industries";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -25,6 +27,9 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+
+const WORKSPACE_DOMAIN =
+  process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "glass.claritylabs.inc";
 
 export function OrganizationSection() {
   const viewer = useQuery(api.users.viewer);
@@ -51,10 +56,37 @@ export function OrganizationSection() {
   const isBroker = currentOrg?.isBroker ?? false;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const updateSlug = useMutation((api as any).organizations.updateSlug);
-  const [slug, setSlug] = useState(
-    (currentOrg?.org as { slug?: string } | undefined)?.slug ?? "",
-  );
+  const currentSlug =
+    (currentOrg?.org as { slug?: string } | undefined)?.slug ?? "";
+  const [slug, setSlug] = useState(currentSlug);
+  const [debouncedSlug, setDebouncedSlug] = useState(currentSlug);
   const [savingSlug, setSavingSlug] = useState(false);
+  const slugHydratedRef = useRef(false);
+
+  useEffect(() => {
+    if (!slugHydratedRef.current && currentSlug) {
+      setSlug(currentSlug);
+      setDebouncedSlug(currentSlug);
+      slugHydratedRef.current = true;
+    }
+  }, [currentSlug]);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSlug(slug), 300);
+    return () => clearTimeout(t);
+  }, [slug]);
+
+  const slugCheck = useQuery(
+    api.orgs.checkSlugAvailability,
+    debouncedSlug.length >= 3 && debouncedSlug !== currentSlug
+      ? { slug: debouncedSlug }
+      : "skip",
+  );
+  const slugChecking =
+    isBroker &&
+    slug.length >= 3 &&
+    slug !== currentSlug &&
+    (slug !== debouncedSlug || slugCheck === undefined);
 
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
@@ -64,22 +96,45 @@ export function OrganizationSection() {
   const [showResetDialog, setShowResetDialog] = useState(false);
   const [resetting, setResetting] = useState(false);
 
-  async function handleSlugSave() {
+  // Auto-save slug when debounced value is valid, available, and differs from current.
+  useEffect(() => {
+    if (!isBroker) return;
     if (!currentOrg?.orgId) return;
-    setSavingSlug(true);
-    try {
-      const normalized = await updateSlug({
-        brokerOrgId: currentOrg.orgId as Id<"organizations">,
-        slug,
-      });
-      setSlug(normalized);
-      toast.success("Slug saved");
-    } catch (err) {
-      toast.error(String(err));
-    } finally {
-      setSavingSlug(false);
-    }
-  }
+    if (debouncedSlug.length < 3) return;
+    if (debouncedSlug === currentSlug) return;
+    if (slug !== debouncedSlug) return;
+    if (!slugCheck || !slugCheck.available) return;
+    let cancelled = false;
+    (async () => {
+      setSavingSlug(true);
+      try {
+        const normalized = await updateSlug({
+          brokerOrgId: currentOrg.orgId as Id<"organizations">,
+          slug: debouncedSlug,
+        });
+        if (!cancelled) {
+          setSlug(normalized);
+          setDebouncedSlug(normalized);
+          toast.success("Slug saved");
+        }
+      } catch (err) {
+        if (!cancelled) toast.error(String(err));
+      } finally {
+        if (!cancelled) setSavingSlug(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    isBroker,
+    debouncedSlug,
+    slug,
+    currentSlug,
+    slugCheck,
+    currentOrg?.orgId,
+    updateSlug,
+  ]);
 
   const { setActions } = useSettingsActions();
 
@@ -251,28 +306,67 @@ export function OrganizationSection() {
             {isBroker && (
               <div>
                 <label className="text-label-sm font-medium text-muted-foreground block mb-1.5">
-                  URL slug
+                  Workspace link
                 </label>
-                <div className="flex gap-2 items-center">
+                <div className="flex items-stretch gap-0 max-w-md">
+                  <div className="flex items-center rounded-l-lg border border-r-0 border-foreground/8 bg-foreground/[0.02] px-3 py-2 text-label-sm text-muted-foreground/60 select-none whitespace-nowrap">
+                    {WORKSPACE_DOMAIN}/
+                  </div>
                   <input
                     type="text"
                     value={slug}
-                    onChange={(e) => setSlug(e.target.value)}
+                    onChange={(e) =>
+                      setSlug(
+                        e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""),
+                      )
+                    }
                     placeholder="my-brokerage"
-                    className="rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm font-mono placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors max-w-xs"
+                    className="flex-1 min-w-0 rounded-r-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
                   />
-                  <button
-                    type="button"
-                    onClick={handleSlugSave}
-                    disabled={savingSlug}
-                    className="px-3 py-2 text-sm rounded-lg border border-foreground/8 bg-popover hover:bg-foreground/[0.02] disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-                  >
-                    {savingSlug ? "Saving…" : "Save slug"}
-                  </button>
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Used in shareable invite links: glass.claritylabs.inc/join/{slug || "your-slug"}
-                </p>
+                <div className="flex items-center gap-2 min-h-[20px] pt-1">
+                  {savingSlug ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />
+                      <span className="text-label-sm text-muted-foreground">Saving…</span>
+                    </>
+                  ) : slugChecking ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />
+                      <span className="text-label-sm text-muted-foreground">Checking…</span>
+                    </>
+                  ) : slug.length >= 3 &&
+                    slug === currentSlug ? (
+                    <span className="text-label-sm text-muted-foreground/60">
+                      Current workspace link
+                    </span>
+                  ) : !slugChecking &&
+                    debouncedSlug.length >= 3 &&
+                    debouncedSlug !== currentSlug &&
+                    slugCheck?.available ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-600" />
+                      <span className="text-body-sm text-emerald-600">
+                        {WORKSPACE_DOMAIN}/{debouncedSlug} is available
+                      </span>
+                    </>
+                  ) : !slugChecking &&
+                    debouncedSlug.length >= 3 &&
+                    debouncedSlug !== currentSlug &&
+                    slugCheck &&
+                    !slugCheck.available ? (
+                    <>
+                      <X className="w-3.5 h-3.5 text-red-500" />
+                      <span className="text-body-sm text-red-500">
+                        {slugCheck.reason ?? "Not available"}
+                      </span>
+                    </>
+                  ) : slug.length > 0 && slug.length < 3 ? (
+                    <span className="text-body-sm text-muted-foreground/50">
+                      Minimum 3 characters
+                    </span>
+                  ) : null}
+                </div>
               </div>
             )}
 

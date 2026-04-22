@@ -6,6 +6,7 @@ import {
   Key,
   FileText,
   Puzzle,
+  CreditCard,
 } from "lucide-react";
 import type { ComponentType } from "react";
 
@@ -18,7 +19,7 @@ export interface SettingsSection {
 // The "agent" section uses GlassStarIcon (LogoIcon wrapper) defined in settings page.
 // This shared list covers all sections; consumers that need the agent icon should
 // override it or use the SETTINGS_SECTIONS_WITH_AGENT helper in the settings page.
-export const SETTINGS_SECTIONS: SettingsSection[] = [
+export const CLIENT_SETTINGS_SECTIONS: SettingsSection[] = [
   { id: "organization", label: "Organization", icon: Building2 },
   { id: "team", label: "Team", icon: Users },
   { id: "api-keys", label: "API Keys", icon: Key },
@@ -28,3 +29,14 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   { id: "intelligence", label: "Intelligence", icon: Sparkles },
   // "agent" section is appended by consumers that have access to GlassStarIcon
 ];
+
+export const BROKER_SETTINGS_SECTIONS: SettingsSection[] = [
+  { id: "organization", label: "Organization", icon: Building2 },
+  { id: "branding", label: "Branding", icon: Sparkles },
+  { id: "team", label: "Team", icon: Users },
+  // "agent" section is appended by consumers that have access to GlassStarIcon
+  { id: "billing", label: "Billing", icon: CreditCard },
+];
+
+// Backwards-compatible export (client list).
+export const SETTINGS_SECTIONS = CLIENT_SETTINGS_SECTIONS;
