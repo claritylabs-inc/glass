@@ -133,6 +133,39 @@ export const getInternal = internalQuery({
   },
 });
 
+// Full joined application data — mirrors the public `applications.get` shape
+// without the auth gate. Used by pipeline phases (internal actions) which have
+// no user session but have already been auth-checked at the public entry point.
+export const getFullForPipeline = internalQuery({
+  args: { applicationId: v.id("applications") },
+  handler: async (ctx, args) => {
+    const app = await ctx.db.get(args.applicationId);
+    if (!app) return null;
+
+    const groups = await ctx.db
+      .query("applicationGroups")
+      .withIndex("by_applicationId_order", (q) => q.eq("applicationId", args.applicationId))
+      .collect();
+
+    const questions = await ctx.db
+      .query("applicationQuestions")
+      .withIndex("by_applicationId", (q) => q.eq("applicationId", args.applicationId))
+      .collect();
+
+    const answers = await ctx.db
+      .query("applicationAnswers")
+      .withIndex("by_applicationId", (q) => q.eq("applicationId", args.applicationId))
+      .collect();
+
+    const flags = await ctx.db
+      .query("applicationQuestionFlags")
+      .withIndex("by_applicationId", (q) => q.eq("applicationId", args.applicationId))
+      .collect();
+
+    return { app, groups, questions, answers, flags };
+  },
+});
+
 // ─── cl-pipelines CONTRACT FUNCTIONS ──────────────────────────────────────────
 // These five functions implement the ConvexPipelineMutations contract required
 // by @claritylabs/cl-pipelines/convex adapters.

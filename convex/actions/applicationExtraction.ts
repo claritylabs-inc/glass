@@ -3,6 +3,7 @@
 import { v } from "convex/values";
 import { internalAction, action } from "../_generated/server";
 import { internal } from "../_generated/api";
+import type { Id } from "../_generated/dataModel";
 import { advancePhase, runPipeline } from "@claritylabs/cl-pipelines";
 import {
   createConvexStorageAdapter,
@@ -430,8 +431,8 @@ ${sample}`,
       await pCtx.log("Pruning non-digitizable questions…");
 
       const data = (await convexCtx.runQuery(
-        (internal as any).applications.get,
-        { applicationId },
+        internal.applicationsInternal.getFullForPipeline,
+        { applicationId: applicationId as Id<"applications"> },
       )) as {
         questions: Array<{
           _id: string;
@@ -489,8 +490,8 @@ ${sample}`,
       await pCtx.log("Rewriting question prompts…");
 
       const data = (await convexCtx.runQuery(
-        (internal as any).applications.get,
-        { applicationId },
+        internal.applicationsInternal.getFullForPipeline,
+        { applicationId: applicationId as Id<"applications"> },
       )) as {
         questions: Array<{
           _id: string;
@@ -566,8 +567,8 @@ ${JSON.stringify(chunk, null, 2)}`,
 
       // Fetch the now-rewritten questions
       const refreshedData = (await convexCtx.runQuery(
-        (internal as any).applications.get,
-        { applicationId },
+        internal.applicationsInternal.getFullForPipeline,
+        { applicationId: applicationId as Id<"applications"> },
       )) as {
         questions: Array<{
           _id: string;
@@ -741,8 +742,8 @@ ${JSON.stringify(repeatCandidates, null, 2)}`,
       const model = getModel("application_authoring");
 
       const data = (await convexCtx.runQuery(
-        (internal as any).applications.get,
-        { applicationId },
+        internal.applicationsInternal.getFullForPipeline,
+        { applicationId: applicationId as Id<"applications"> },
       )) as {
         questions: Array<{ _id: string; prompt: string }>;
       } | null;
@@ -829,8 +830,8 @@ ${taxonomyPromptList}`,
       const model = getModel("application_authoring");
 
       const data = (await convexCtx.runQuery(
-        (internal as any).applications.get,
-        { applicationId },
+        internal.applicationsInternal.getFullForPipeline,
+        { applicationId: applicationId as Id<"applications"> },
       )) as {
         questions: Array<{
           _id: string;
@@ -929,8 +930,8 @@ Return one assignment per question.`,
       await pCtx.log("Applying group ordering…");
 
       const data = (await convexCtx.runQuery(
-        (internal as any).applications.get,
-        { applicationId },
+        internal.applicationsInternal.getFullForPipeline,
+        { applicationId: applicationId as Id<"applications"> },
       )) as {
         groups: Array<{ _id: string; title: string }>;
         questions: Array<{
@@ -1017,8 +1018,8 @@ Return one assignment per question.`,
 
       // Cleanup empty groups
       const refreshedGroups = (await convexCtx.runQuery(
-        (internal as any).applications.get,
-        { applicationId },
+        internal.applicationsInternal.getFullForPipeline,
+        { applicationId: applicationId as Id<"applications"> },
       )) as {
         groups: Array<{ _id: string }>;
         questions: Array<{ groupId: string }>;
