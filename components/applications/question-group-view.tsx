@@ -447,13 +447,7 @@ export function QuestionGroupView({
                       key={rowKey}
                       className="space-y-3 rounded-lg border border-foreground/10 p-3"
                     >
-                      <p
-                        className={
-                          mode === "fill"
-                            ? "text-xs font-medium text-muted-foreground"
-                            : "text-xs font-semibold uppercase tracking-wider text-muted-foreground"
-                        }
-                      >
+                      <p className="text-xs font-medium text-muted-foreground">
                         {titleCase(collection.itemLabel)} {idx + 1}
                       </p>
                       {collection.questions.map((q) => renderQuestion(q, rowKey))}
