@@ -12,6 +12,7 @@ const internal = _internal as any;
 import { getOrgAccess, assertBrokerOrg } from "./lib/access";
 import { recordBrokerActivity } from "./lib/brokerActivity";
 import { notify } from "./lib/notify";
+import { sendResendEmail, getNotificationFromAddress } from "./lib/resend";
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
@@ -78,6 +79,76 @@ export const createEmail = action({
       expiresAt,
       createdAt: Date.now(),
     });
+
+    const brokerOrg = await ctx.runQuery(internal.clientInvitations.getOrgInternal, {
+      orgId: args.orgId,
+    });
+    const brokerName = brokerOrg?.name ?? "Your broker";
+    const siteUrl = process.env.SITE_URL ?? "https://glass.claritylabs.dev";
+    const inviteUrl = `${siteUrl}/invite/${rawToken}`;
+    const recipient = args.primaryContactName
+      ? `${args.primaryContactName} <${args.primaryContactEmail}>`
+      : args.primaryContactEmail;
+
+    const brokerLogoUrl = brokerOrg?.iconStorageId
+      ? await ctx.storage.getUrl(brokerOrg.iconStorageId)
+      : null;
+    const glassLogoUrl = `${siteUrl}/glass-logo-email.jpg`;
+    const headerLogoHtml = brokerLogoUrl
+      ? `<img src="${brokerLogoUrl}" alt="${brokerName}" height="48" style="display:block;border:0;border-radius:8px;" />`
+      : `<img src="${glassLogoUrl}" alt="Glass by Clarity Labs" height="48" style="display:block;border:0;" />`;
+
+    const subject = `${brokerName} invited you to Glass`;
+    const text = `${brokerName} has invited you${args.clientOrgName ? ` (${args.clientOrgName})` : ""} to Glass.\n\nAccept your invitation:\n${inviteUrl}\n\nThis link expires in 14 days.\n\n—\nGlass by Clarity Labs`;
+    const html = `<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${subject}</title></head>
+<body style="margin:0;padding:0;background-color:#f9fafb;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f9fafb;">
+<tr><td align="center" style="padding:40px 16px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background-color:#ffffff;border-radius:12px;border:1px solid rgba(0,0,0,0.06);">
+<tr><td align="center" style="padding:32px 40px 0 40px;">${headerLogoHtml}</td></tr>
+<tr><td style="padding:24px 40px 0 40px;">
+  <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:15px;color:#374151;line-height:1.6;">
+    <strong>${brokerName}</strong> has invited you${args.clientOrgName ? ` (<strong>${args.clientOrgName}</strong>)` : ""} to Glass — a shared workspace for your applications, policies, and documents.
+  </p>
+</td></tr>
+<tr><td align="center" style="padding:28px 40px 0 40px;">
+  <a href="${inviteUrl}" style="display:inline-block;padding:12px 24px;background-color:#111827;color:#ffffff;font-family:-apple-system,sans-serif;font-size:14px;font-weight:500;text-decoration:none;border-radius:999px;">Accept invitation</a>
+</td></tr>
+<tr><td style="padding:20px 40px 0 40px;">
+  <p style="margin:0;font-family:-apple-system,sans-serif;font-size:12px;color:#6b7280;line-height:1.6;">
+    Or copy this link:<br><a href="${inviteUrl}" style="color:#6b7280;word-break:break-all;">${inviteUrl}</a>
+  </p>
+</td></tr>
+<tr><td style="padding:20px 40px 0 40px;">
+  <p style="margin:0;font-family:-apple-system,sans-serif;font-size:11px;color:#9ca3af;">This invitation expires in 14 days.</p>
+</td></tr>
+<tr><td style="padding:28px 40px 0 40px;"><div style="height:1px;background-color:rgba(0,0,0,0.06);"></div></td></tr>
+<tr><td align="center" style="padding:20px 40px 28px 40px;">
+  <img src="${glassLogoUrl}" alt="Glass by Clarity Labs" height="24" style="display:block;border:0;margin:0 auto 8px auto;" />
+  <p style="margin:0;font-family:-apple-system,sans-serif;font-size:11px;color:#9ca3af;line-height:1.5;">
+    Sent via Glass by Clarity Labs${brokerOrg ? ` on behalf of ${brokerName}` : ""}
+  </p>
+</td></tr>
+</table>
+</td></tr>
+</table>
+</body></html>`;
+
+    const result = await sendResendEmail(
+      {
+        from: getNotificationFromAddress(brokerName),
+        to: recipient,
+        subject,
+        html,
+        text,
+      },
+      { retries: 2 },
+    );
+
+    if (!result.ok) {
+      throw new Error(`Failed to send invite email: ${result.error}`);
+    }
 
     return { token: rawToken };
   },

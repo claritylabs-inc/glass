@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import type { Id } from "@/convex/_generated/dataModel";
+import { EmptyStateCard } from "@/components/ui/empty-state-card";
 
 export type ActivityEvent = {
   _id: Id<"brokerActivity">;
@@ -102,7 +103,11 @@ export function ActivityFeed({
       {events === undefined ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
       ) : grouped.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No activity yet.</p>
+        <EmptyStateCard
+          icon={<Bell className="w-5 h-5" />}
+          title="No activity yet"
+          description="Client events like invitations, document uploads, and policy changes will appear here."
+        />
       ) : (
         grouped.map((group) => (
           <div key={group.date.toISOString()}>

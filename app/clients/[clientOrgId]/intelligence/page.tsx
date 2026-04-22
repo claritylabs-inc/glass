@@ -6,6 +6,8 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { formatDistanceToNow } from "date-fns";
 import { Badge } from "@/components/ui/badge";
+import { EmptyStateCard } from "@/components/ui/empty-state-card";
+import { Sparkles } from "lucide-react";
 
 const CATEGORY_LABELS: Record<string, string> = {
   company_info: "Company",
@@ -42,11 +44,11 @@ export default function ClientIntelligencePage() {
             <p className="text-sm text-muted-foreground/60">Loading…</p>
           </div>
         ) : entries.length === 0 ? (
-          <div className="py-16 text-center">
-            <p className="text-sm text-muted-foreground/60">
-              No intelligence entries yet.
-            </p>
-          </div>
+          <EmptyStateCard
+            icon={<Sparkles className="w-5 h-5" />}
+            title="No intelligence entries yet"
+            description="As the client shares documents and conversations, extracted facts about their business will appear here."
+          />
         ) : (
           entries.map((e) => (
             <div key={e._id} className="rounded-md border bg-card px-4 py-3 space-y-1">

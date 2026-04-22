@@ -11,6 +11,7 @@ import { PolicyListItem } from "@/components/policy-list-item";
 import { PolicyUploadDrawer } from "@/components/policy-upload-drawer";
 import { toast } from "sonner";
 import { Upload } from "lucide-react";
+import { EmptyStateCard } from "@/components/ui/empty-state-card";
 
 const DOC_TYPE_TABS = [
   { id: "policy", label: "Policies" },
@@ -118,11 +119,13 @@ export default function PoliciesPage() {
         {isLoading ? (
           <PoliciesLoadingSkeleton />
         ) : (policies as any[]).length === 0 ? (
-          <div className="py-16 text-center">
-            <p className="text-sm text-muted-foreground/60">
-              No {docTypeTab === "quote" ? "quotes" : "policies"} yet.
-            </p>
-          </div>
+          <EmptyStateCard
+            icon={<Upload className="w-5 h-5" />}
+            title={`No ${docTypeTab === "quote" ? "quotes" : "policies"} yet`}
+            description={`Upload a ${docTypeTab === "quote" ? "quote" : "policy"} PDF and we'll extract the coverage details automatically.`}
+            actionLabel="Upload"
+            onAction={() => setUploaderOpen(true)}
+          />
         ) : (
           <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
             {(policies as any[]).map((p: any) => (

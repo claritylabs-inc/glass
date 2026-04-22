@@ -12,6 +12,7 @@ import { PolicyUploadDrawer } from "@/components/policy-upload-drawer";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import { Upload } from "lucide-react";
+import { EmptyStateCard } from "@/components/ui/empty-state-card";
 
 type DocTypeTab = "policy" | "quote";
 
@@ -107,11 +108,13 @@ export default function ClientPoliciesPage() {
           ))}
         </div>
       ) : (policies as any[]).length === 0 ? (
-        <div className="py-16 text-center">
-          <p className="text-sm text-muted-foreground/60">
-            No {docTypeTab === "quote" ? "quotes" : "policies"} yet.
-          </p>
-        </div>
+        <EmptyStateCard
+          icon={<Upload className="w-5 h-5" />}
+          title={`No ${docTypeTab === "quote" ? "quotes" : "policies"} yet`}
+          description={`Upload a ${docTypeTab === "quote" ? "quote" : "policy"} PDF to extract coverage details automatically.`}
+          actionLabel={`Upload ${docTypeTab === "quote" ? "quote" : "policy"}`}
+          onAction={() => setUploaderOpen(true)}
+        />
       ) : (
         <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
           {(policies as any[]).map((p: any) => (

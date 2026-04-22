@@ -5,8 +5,9 @@ import { api } from "@/convex/_generated/api";
 import { useCurrentOrg } from "@/lib/hooks/use-current-org";
 import { PillButton } from "@/components/ui/pill-button";
 import { Badge } from "@/components/ui/badge";
-import { Plus } from "lucide-react";
+import { Plus, FileText } from "lucide-react";
 import { CreateApplicationDrawer } from "@/components/applications/create-drawer";
+import { EmptyStateCard } from "@/components/ui/empty-state-card";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -52,11 +53,13 @@ export default function ClientApplicationsPage() {
           <p className="text-sm text-muted-foreground/60">Loading…</p>
         </div>
       ) : applications.length === 0 ? (
-        <div className="py-16 text-center">
-          <p className="text-sm text-muted-foreground/60">
-            No applications yet.
-          </p>
-        </div>
+        <EmptyStateCard
+          icon={<FileText className="w-5 h-5" />}
+          title="No applications yet"
+          description="Create an application to start collecting coverage info from this client."
+          actionLabel="New application"
+          onAction={() => setDrawerOpen(true)}
+        />
       ) : (
         <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden divide-y divide-foreground/6">
           {applications.map((app) => (

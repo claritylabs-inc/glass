@@ -5,21 +5,18 @@ import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { PillButton } from "@/components/ui/pill-button";
 import { UserPlus } from "lucide-react";
+import { EmptyStateCard } from "@/components/ui/empty-state-card";
 import { ClientListRow, type ClientRow } from "@/components/client-list-row";
-import { InviteClientDrawer } from "@/components/invite-client-drawer";
 
 type StatusFilter = "all" | "invited" | "onboarding" | "active";
 
 export function ClientList({
   brokerOrgId,
-  inviteOpen,
-  onInviteOpenChange,
+  onInvite,
 }: {
   brokerOrgId: Id<"organizations">;
-  inviteOpen: boolean;
-  onInviteOpenChange: (open: boolean) => void;
+  onInvite: () => void;
 }) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const rows = useQuery((api as any).clients.listForBroker, { brokerOrgId }) as any[] | undefined;
@@ -95,13 +92,20 @@ export function ClientList({
           <p className="text-sm text-muted-foreground/60">Loading…</p>
         </div>
       ) : filteredRows.length === 0 ? (
-        <div className="py-16 text-center">
-          <p className="text-sm text-muted-foreground/60">
-            {rows.length === 0
-              ? "No clients yet. Invite your first client to get started."
-              : "No clients match this filter."}
-          </p>
-        </div>
+        rows.length === 0 ? (
+          <EmptyStateCard
+            icon={<UserPlus className="w-5 h-5" />}
+            title="No clients yet"
+            description="Invite your first client to start managing their applications, policies, and documents in one place."
+            actionLabel="Invite client"
+            onAction={onInvite}
+          />
+        ) : (
+          <EmptyStateCard
+            title="No clients match this filter"
+            description="Try a different status filter to see more clients."
+          />
+        )
       ) : (
         <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
           {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
@@ -118,11 +122,6 @@ export function ClientList({
         </div>
       )}
 
-      <InviteClientDrawer
-        brokerOrgId={brokerOrgId}
-        open={inviteOpen}
-        onOpenChange={onInviteOpenChange}
-      />
     </div>
   );
 }

@@ -34,11 +34,13 @@ function ShellContent({
   actions,
   breadcrumbDetail,
   presenceUsers,
+  rightPanel,
 }: {
   children: React.ReactNode;
   actions?: React.ReactNode;
   breadcrumbDetail?: React.ReactNode;
   presenceUsers?: PresenceUser[];
+  rightPanel?: React.ReactNode;
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const { isPdfOpen, fileUrl } = usePdf();
@@ -91,6 +93,9 @@ function ShellContent({
         <div className="hidden lg:flex shrink-0 h-full">
           <EntityPreviewPanel />
         </div>
+      )}
+      {rightPanel && (
+        <div className="hidden lg:flex shrink-0 h-full">{rightPanel}</div>
       )}
     </div>
   );
@@ -214,18 +219,25 @@ export function AppShell({
   actions,
   breadcrumbDetail,
   presenceUsers,
+  rightPanel,
 }: {
   children: React.ReactNode;
   actions?: React.ReactNode;
   breadcrumbDetail?: React.ReactNode;
   presenceUsers?: PresenceUser[];
+  rightPanel?: React.ReactNode;
 }) {
   return (
     <PageContextProvider>
       <PdfProvider>
         <EntityPreviewProvider>
           <LogDetailProvider>
-            <ShellContent actions={actions} breadcrumbDetail={breadcrumbDetail} presenceUsers={presenceUsers}>
+            <ShellContent
+              actions={actions}
+              breadcrumbDetail={breadcrumbDetail}
+              presenceUsers={presenceUsers}
+              rightPanel={rightPanel}
+            >
               {children}
             </ShellContent>
           </LogDetailProvider>

@@ -8,6 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import Link from "next/link";
 import type { Id } from "@/convex/_generated/dataModel";
+import { EmptyStateCard } from "@/components/ui/empty-state-card";
+import { FileText } from "lucide-react";
 
 const STATUS_COLORS: Record<string, string> = {
   draft:            "bg-gray-100 text-gray-600",
@@ -60,11 +62,11 @@ export default function ApplicationsPage() {
         {isLoading ? (
           <ApplicationsLoadingSkeleton />
         ) : applications.length === 0 ? (
-          <div className="py-16 text-center">
-            <p className="text-sm text-muted-foreground/60">
-              No applications yet. Your broker will send you one when ready.
-            </p>
-          </div>
+          <EmptyStateCard
+            icon={<FileText className="w-5 h-5" />}
+            title="No applications yet"
+            description="Your broker will send you an application when they're ready to gather coverage info."
+          />
         ) : (
           <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
             {applications.map((app) => (

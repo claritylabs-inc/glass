@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useCurrentOrg } from "@/hooks/use-current-org";
 import { AppShell } from "@/components/app-shell";
 import { ClientList } from "@/components/client-list";
+import { InviteClientDrawer } from "@/components/invite-client-drawer";
 import { PillButton } from "@/components/ui/pill-button";
 import { UserPlus } from "lucide-react";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -41,12 +42,22 @@ export default function ClientsPage() {
     </PillButton>
   );
 
+  const brokerOrgId = currentOrg.orgId as Id<"organizations">;
+
   return (
-    <AppShell actions={headerActions}>
+    <AppShell
+      actions={headerActions}
+      rightPanel={
+        <InviteClientDrawer
+          brokerOrgId={brokerOrgId}
+          open={inviteOpen}
+          onOpenChange={setInviteOpen}
+        />
+      }
+    >
       <ClientList
-        brokerOrgId={currentOrg.orgId as Id<"organizations">}
-        inviteOpen={inviteOpen}
-        onInviteOpenChange={setInviteOpen}
+        brokerOrgId={brokerOrgId}
+        onInvite={() => setInviteOpen(true)}
       />
     </AppShell>
   );
