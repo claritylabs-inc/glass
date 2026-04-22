@@ -115,32 +115,27 @@ function ExtractionBannerBase({
       error={error}
       log={log}
       className={[
-        "mb-4 flex items-center gap-3 rounded-md border-l-2 px-4 py-2.5",
+        "mb-4 flex items-center gap-3 rounded-xl border px-4 py-2.5",
         isError
-          ? "border-l-destructive bg-destructive/5 text-destructive"
-          : "border-l-foreground/40 bg-muted/50 text-foreground",
+          ? "border-destructive bg-destructive text-destructive-foreground"
+          : "border-border bg-foreground text-background",
       ].join(" ")}
     >
       <StatusBanner.Indicator
         render={(s) =>
           s === "running" ? (
-            <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />
+            <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin opacity-80" />
           ) : s === "error" ? (
-            <AlertCircle className="h-3.5 w-3.5 shrink-0 text-destructive" />
+            <AlertCircle className="h-3.5 w-3.5 shrink-0" />
           ) : null
         }
       />
 
       <div className="flex min-w-0 flex-1 items-baseline gap-2">
-        <span
-          className={[
-            "shrink-0 text-[11px] font-semibold uppercase tracking-wider",
-            isError ? "text-destructive" : "text-muted-foreground",
-          ].join(" ")}
-        >
+        <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wider">
           {isError ? "Extraction failed" : "Extracting"}
         </span>
-        <span className="truncate text-xs text-muted-foreground">
+        <span className="truncate text-xs opacity-75">
           {isError
             ? error ?? "Unknown error"
             : latestLog?.message ?? "Starting…"}
