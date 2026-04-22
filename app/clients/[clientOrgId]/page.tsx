@@ -4,18 +4,24 @@ import { useParams } from "next/navigation";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { useCurrentOrg } from "@/lib/hooks/use-current-org";
 
 export default function ClientOverviewPage() {
   const { clientOrgId } = useParams<{ clientOrgId: string }>();
+  const orgCtx = useCurrentOrg();
 
   const policies = useQuery(
     api.policies.listForOrg,
     clientOrgId ? { orgId: clientOrgId as Id<"organizations"> } : "skip",
   );
-  // applicationSessions retired — use applications v2
   const applications = useQuery(
-    (api as any).applications.listForClient,
-    clientOrgId ? { clientOrgId: clientOrgId as Id<"organizations"> } : "skip",
+    (api as any).applications.listForBroker,
+    orgCtx && clientOrgId
+      ? {
+          brokerOrgId: orgCtx.orgId,
+          clientOrgId: clientOrgId as Id<"organizations">,
+        }
+      : "skip",
   );
 
   const activePolicies = policies?.filter(
