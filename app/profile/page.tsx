@@ -100,30 +100,17 @@ export default function ProfilePage() {
                       />
                     </div>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
-                        Title
-                      </label>
-                      <input
-                        type="text"
-                        value={title}
-                        onChange={(e) => setTitle(e.target.value)}
-                        placeholder="e.g. Risk Manager, CFO"
-                        className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
-                        Phone
-                      </label>
-                      <input
-                        type="text"
-                        value={viewer?.phone ?? ""}
-                        disabled
-                        className="w-full rounded-lg border border-foreground/8 bg-foreground/[0.02] px-3 py-2 text-body-sm text-muted-foreground/60 cursor-not-allowed"
-                      />
-                    </div>
+                  <div>
+                    <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
+                      Title
+                    </label>
+                    <input
+                      type="text"
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                      placeholder="e.g. Risk Manager, CFO"
+                      className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                    />
                   </div>
                 </div>
               </div>

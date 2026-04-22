@@ -2,7 +2,7 @@
 
 import { v } from "convex/values";
 import { z } from "zod";
-import { generateObject } from "ai";
+import { generateText, Output } from "ai";
 import { action } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import { getModel } from "../lib/models";
@@ -152,9 +152,9 @@ export const extractCompanyInfo = action({
       return { error: "Could not retrieve website content" };
     }
 
-    const { object } = await generateObject({
+    const { output: object } = await generateText({
       model: getModel("triage"),
-      schema: CompanyInfoSchema,
+      output: Output.object({ schema: CompanyInfoSchema }),
       maxOutputTokens: 1024,
       prompt: `Extract company information from the website content below.
 

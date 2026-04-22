@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation } from "convex/react";
+import { useAction, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
@@ -47,7 +47,7 @@ export function InviteClientDrawer({
   const [linkLabel, setLinkLabel] = useState("");
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const createEmail = useMutation((api as any).clientInvitations.createEmail);
+  const createEmail = useAction((api as any).clientInvitations.createEmail);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const createShareable = useMutation((api as any).clientInvitations.createShareable);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

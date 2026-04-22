@@ -228,6 +228,7 @@ export default function BrokerOnboardingPage() {
   const updateOrg = useMutation(api.orgs.updateOrg);
   const claimAgentHandle = useMutation(api.orgs.claimAgentHandle);
   const completeOnboarding = useMutation(api.users.completeOnboarding);
+  const updateProfile = useMutation(api.users.updateProfile);
   const { setOnboardingComplete, clearCache: clearOnboardingCache } = useOnboardingCache();
 
   const stepParam = searchParams?.get("step");
@@ -266,6 +267,8 @@ export default function BrokerOnboardingPage() {
       router.replace("/");
     }
   }, [viewerOrg, router]);
+  const [userName, setUserName] = useState("");
+  const [userTitle, setUserTitle] = useState("");
   const [orgName, setOrgName] = useState("");
   const [website, setWebsite] = useState("");
   const [slugInput, setSlugInput] = useState("");
@@ -283,6 +286,8 @@ export default function BrokerOnboardingPage() {
 
   useEffect(() => {
     if (!viewer) return;
+    setUserName((v) => v || viewer.name || "");
+    setUserTitle((v) => v || viewer.title || "");
     setOrgName((v) => v || "");
     setWebsite((v) => v || "");
   }, [viewer]);
@@ -359,6 +364,7 @@ export default function BrokerOnboardingPage() {
     setSubmitting(true);
     setError("");
     try {
+      await updateProfile({ name: userName.trim(), title: userTitle.trim() });
       if (viewerOrg?.org) {
         await updateOrg({
           name: orgName.trim(),
@@ -427,7 +433,8 @@ export default function BrokerOnboardingPage() {
     }
   }
 
-  const canContinueName = orgName.trim().length > 0;
+  const canContinueName =
+    orgName.trim().length > 0 && userName.trim().length > 0 && userTitle.trim().length > 0;
   const canContinueSlug =
     debouncedSlug.length >= 3 && slugInput === debouncedSlug && slugCheck?.available === true;
 
@@ -444,6 +451,29 @@ export default function BrokerOnboardingPage() {
         {currentStep === 0 && (
           <div className="space-y-10">
             <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className={labelClass}>Your name</label>
+                  <input
+                    type="text"
+                    value={userName}
+                    onChange={(e) => setUserName(e.target.value)}
+                    placeholder="Jane Smith"
+                    autoFocus
+                    className={inputClass}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className={labelClass}>Your role</label>
+                  <input
+                    type="text"
+                    value={userTitle}
+                    onChange={(e) => setUserTitle(e.target.value)}
+                    placeholder="Producer"
+                    className={inputClass}
+                  />
+                </div>
+              </div>
               <div className="space-y-2">
                 <label className={labelClass}>Brokerage name</label>
                 <input
@@ -451,7 +481,6 @@ export default function BrokerOnboardingPage() {
                   value={orgName}
                   onChange={(e) => setOrgName(e.target.value)}
                   placeholder="Acme Insurance Brokers"
-                  autoFocus
                   className={inputClass}
                 />
               </div>
