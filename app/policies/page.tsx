@@ -91,7 +91,16 @@ export default function PoliciesPage() {
   const isLoading = policies === undefined;
 
   return (
-    <AppShell>
+    <AppShell
+      rightPanel={
+        <PolicyUploadDrawer
+          open={uploaderOpen}
+          onClose={() => setUploaderOpen(false)}
+          onUpload={handleUpload}
+          uploading={uploading}
+        />
+      }
+    >
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <Tabs
@@ -142,12 +151,6 @@ export default function PoliciesPage() {
           </div>
         )}
 
-        <PolicyUploadDrawer
-          open={uploaderOpen}
-          onClose={() => setUploaderOpen(false)}
-          onUpload={handleUpload}
-          uploading={uploading}
-        />
       </div>
     </AppShell>
   );

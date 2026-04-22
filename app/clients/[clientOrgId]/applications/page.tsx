@@ -26,7 +26,7 @@ export default function ClientApplicationsPage() {
   const { clientOrgId } = useParams<{ clientOrgId: string }>();
   const orgCtx = useCurrentOrg();
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const { setActions } = useClientDetailActions();
+  const { setActions, setRightPanel } = useClientDetailActions();
 
   useEffect(() => {
     setActions(
@@ -42,6 +42,17 @@ export default function ClientApplicationsPage() {
     );
     return () => setActions(null);
   }, [setActions]);
+
+  useEffect(() => {
+    setRightPanel(
+      <CreateApplicationDrawer
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        clientOrgId={clientOrgId as Id<"organizations">}
+      />,
+    );
+    return () => setRightPanel(null);
+  }, [setRightPanel, drawerOpen, clientOrgId]);
 
   const applications = useQuery(
     (api as any).applications.listForBroker,
@@ -84,13 +95,6 @@ export default function ClientApplicationsPage() {
         </div>
       )}
 
-      {orgCtx && (
-        <CreateApplicationDrawer
-          open={drawerOpen}
-          onClose={() => setDrawerOpen(false)}
-          clientOrgId={clientOrgId as Id<"organizations">}
-        />
-      )}
     </div>
   );
 }

@@ -22,7 +22,7 @@ export default function ClientPoliciesPage() {
   const [docType, setDocType] = useState<DocType>("policy");
   const [uploaderOpen, setUploaderOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const { setActions } = useClientDetailActions();
+  const { setActions, setRightPanel } = useClientDetailActions();
 
   const label = docType === "quote" ? "quote" : "policy";
   const plural = docType === "quote" ? "quotes" : "policies";
@@ -109,6 +109,19 @@ export default function ClientPoliciesPage() {
     ],
   );
 
+  useEffect(() => {
+    setRightPanel(
+      <PolicyUploadDrawer
+        open={uploaderOpen}
+        onClose={() => setUploaderOpen(false)}
+        onUpload={handleUpload}
+        uploading={uploading}
+        showApplicationOption={docType === "policy"}
+      />,
+    );
+    return () => setRightPanel(null);
+  }, [setRightPanel, uploaderOpen, uploading, docType, handleUpload]);
+
   const isLoading = policies === undefined;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const rows = (policies as any[]) ?? [];
@@ -153,13 +166,6 @@ export default function ClientPoliciesPage() {
         </div>
       )}
 
-      <PolicyUploadDrawer
-        open={uploaderOpen}
-        onClose={() => setUploaderOpen(false)}
-        onUpload={handleUpload}
-        uploading={uploading}
-        showApplicationOption={docType === "policy"}
-      />
     </div>
   );
 }

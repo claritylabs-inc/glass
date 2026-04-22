@@ -772,8 +772,11 @@ export const updateDreamResults = internalMutation({
 export const getById = query({
   args: { orgId: v.id("organizations") },
   handler: async (ctx, args) => {
-    const access = await getOrgAccess(ctx);
-    if (!access) return null;
+    try {
+      await getOrgAccessNew(ctx, args.orgId);
+    } catch {
+      return null;
+    }
     return ctx.db.get(args.orgId);
   },
 });

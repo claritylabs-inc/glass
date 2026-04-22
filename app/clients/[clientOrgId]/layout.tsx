@@ -10,7 +10,8 @@ import { Badge } from "@/components/ui/badge";
 
 const ClientDetailActionsContext = createContext<{
   setActions: (node: ReactNode) => void;
-}>({ setActions: () => {} });
+  setRightPanel: (node: ReactNode) => void;
+}>({ setActions: () => {}, setRightPanel: () => {} });
 
 export function useClientDetailActions() {
   return useContext(ClientDetailActionsContext);
@@ -23,6 +24,7 @@ export default function ClientDetailLayout({
 }) {
   const { clientOrgId } = useParams<{ clientOrgId: string }>();
   const [pageActions, setPageActions] = useState<ReactNode>(null);
+  const [rightPanel, setRightPanel] = useState<ReactNode>(null);
 
   const clientOrg = useQuery(
     api.orgs.getById,
@@ -47,10 +49,13 @@ export default function ClientDetailLayout({
   );
 
   return (
-    <ClientDetailActionsContext.Provider value={{ setActions: setPageActions }}>
+    <ClientDetailActionsContext.Provider
+      value={{ setActions: setPageActions, setRightPanel }}
+    >
       <AppShell
         breadcrumbDetail={clientOrg?.name ?? "Client"}
         actions={actions}
+        rightPanel={rightPanel}
       >
         {children}
       </AppShell>
