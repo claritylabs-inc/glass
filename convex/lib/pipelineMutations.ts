@@ -2,9 +2,13 @@
  * Factory that creates the 5 cl-pipelines contract mutations for a given table.
  *
  * Usage:
- *   // In your table's module (e.g. convex/policiesInternal.ts):
+ *   // Default pipeline prefix ("pipeline*" fields):
  *   export const { getJob, setStatus, setCheckpoint, appendLog, clearLog } =
  *     makePipelineMutations("policies");
+ *
+ *   // Custom prefix — e.g. "prefill*" fields:
+ *   export const { getJob, setStatus, setCheckpoint, appendLog, clearLog } =
+ *     makePipelineMutations("applications", "prefill");
  *
  * The returned functions are Convex internalQuery / internalMutation functions
  * ready to be exported from any Convex module.
@@ -14,9 +18,14 @@ import { v } from "convex/values";
 import { internalMutation, internalQuery } from "../_generated/server";
 import type { PipelineStatus } from "@claritylabs/cl-pipelines";
 
-type SupportedTable = "policies" | "policyFiles" | "orgDocuments" | "emailConnections";
+type SupportedTable = "policies" | "policyFiles" | "orgDocuments" | "emailConnections" | "applications";
 
-export function makePipelineMutations(tableName: SupportedTable) {
+export function makePipelineMutations(tableName: SupportedTable, fieldPrefix: string = "pipeline") {
+  const statusField = `${fieldPrefix}Status` as const;
+  const errorField = `${fieldPrefix}Error` as const;
+  const checkpointField = `${fieldPrefix}Checkpoint` as const;
+  const logField = `${fieldPrefix}Log` as const;
+
   const getJob = internalQuery({
     args: { jobId: v.string() },
     handler: async (ctx, { jobId }) => {
@@ -26,9 +35,9 @@ export function makePipelineMutations(tableName: SupportedTable) {
         .first();
       if (!doc) return null;
       return {
-        status: ((doc as any).pipelineStatus ?? "idle") as PipelineStatus,
-        checkpoint: (doc as any).pipelineCheckpoint ?? null,
-        error: (doc as any).pipelineError,
+        status: ((doc as any)[statusField] ?? "idle") as PipelineStatus,
+        checkpoint: (doc as any)[checkpointField] ?? null,
+        error: (doc as any)[errorField],
       };
     },
   });
@@ -49,8 +58,8 @@ export function makePipelineMutations(tableName: SupportedTable) {
     },
     handler: async (ctx, { jobId, status, error }) => {
       await ctx.db.patch(jobId as any, {
-        pipelineStatus: status,
-        pipelineError: error ?? undefined, // clears on null
+        [statusField]: status,
+        [errorField]: error ?? undefined, // clears on null
       });
     },
   });
@@ -59,7 +68,7 @@ export function makePipelineMutations(tableName: SupportedTable) {
     args: { jobId: v.string(), checkpoint: v.optional(v.any()) },
     handler: async (ctx, { jobId, checkpoint }) => {
       await ctx.db.patch(jobId as any, {
-        pipelineCheckpoint: checkpoint ?? undefined,
+        [checkpointField]: checkpoint ?? undefined,
       });
     },
   });
@@ -75,9 +84,9 @@ export function makePipelineMutations(tableName: SupportedTable) {
     handler: async (ctx, { jobId, timestamp, message, phase, level }) => {
       const doc = await ctx.db.get(jobId as any);
       if (!doc) return;
-      const log = (doc as any).pipelineLog ?? [];
+      const log = (doc as any)[logField] ?? [];
       await ctx.db.patch(jobId as any, {
-        pipelineLog: [...log, { timestamp, message, phase, level }],
+        [logField]: [...log, { timestamp, message, phase, level }],
       });
     },
   });
@@ -85,7 +94,7 @@ export function makePipelineMutations(tableName: SupportedTable) {
   const clearLog = internalMutation({
     args: { jobId: v.string() },
     handler: async (ctx, { jobId }) => {
-      await ctx.db.patch(jobId as any, { pipelineLog: [] });
+      await ctx.db.patch(jobId as any, { [logField]: [] });
     },
   });
 

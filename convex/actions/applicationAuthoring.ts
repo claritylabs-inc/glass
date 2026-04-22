@@ -73,6 +73,55 @@ Keep to 15-30 questions. Focus on what underwriters need for this line of busine
 // pipeline completes. Callers that display groupCount should read from live
 // query data instead.
 
+// Internal: schedules the regroup slice. Called by `applications.send` mutation
+// (which has already auth-checked the broker) and by the public wrapper below.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function runRegroupPipeline(ctx: any, applicationId: string): Promise<void> {
+  const mutations = {
+    getJob: internal.applicationsInternal.getJob,
+    setStatus: internal.applicationsInternal.setStatus,
+    setCheckpoint: internal.applicationsInternal.setCheckpoint,
+    appendLog: internal.applicationsInternal.appendLog,
+    clearLog: internal.applicationsInternal.clearLog,
+  };
+  const storage = createConvexStorageAdapter<ApplicationExtractionState>({
+    ctx: ctx as any,
+    mutations,
+  });
+  const scheduler = createConvexSchedulerAdapter({
+    ctx: ctx as any,
+    advanceAction: internal.actions.applicationExtraction.advance,
+  });
+  const app = (await ctx.runQuery(
+    (internal as any).applicationsInternal.getInternal,
+    { applicationId },
+  )) as {
+    brokerOrgId: string;
+    clientOrgId: string;
+    createdByUserId: string;
+    pipelineCheckpoint?: { state?: ApplicationExtractionState };
+  } | null;
+  if (!app) throw new Error("Application not found");
+
+  const { makePhases } = await import("./applicationExtraction");
+  const phases = makePhases(ctx);
+
+  await runPipeline<ApplicationExtractionState>({
+    jobId: String(applicationId),
+    phases,
+    storage,
+    scheduler,
+    initialPhase: "prune",
+    retryMode: "full",
+    initialState: {
+      sourceKind: app.pipelineCheckpoint?.state?.sourceKind ?? "prompt",
+      brokerOrgId: String(app.brokerOrgId),
+      clientOrgId: String(app.clientOrgId),
+      uploadedByUserId: String(app.createdByUserId),
+    },
+  });
+}
+
 export const regroupAndOrderPublic = action({
   args: { applicationId: v.id("applications") },
   returns: v.object({ groupCount: v.number() }),
@@ -81,55 +130,8 @@ export const regroupAndOrderPublic = action({
       (internal as any).applicationsInternal.requireBrokerAccessForApplication,
       { applicationId: args.applicationId },
     );
-
-    const mutations = {
-      getJob: internal.applicationsInternal.getJob,
-      setStatus: internal.applicationsInternal.setStatus,
-      setCheckpoint: internal.applicationsInternal.setCheckpoint,
-      appendLog: internal.applicationsInternal.appendLog,
-      clearLog: internal.applicationsInternal.clearLog,
-    };
-
-    const storage = createConvexStorageAdapter<ApplicationExtractionState>({
-      ctx: ctx as any,
-      mutations,
-    });
-    const scheduler = createConvexSchedulerAdapter({
-      ctx: ctx as any,
-      advanceAction: internal.actions.applicationExtraction.advance,
-    });
-
-    const app = (await ctx.runQuery(
-      (internal as any).applicationsInternal.getInternal,
-      { applicationId: args.applicationId },
-    )) as {
-      brokerOrgId: string;
-      clientOrgId: string;
-      createdByUserId: string;
-      pipelineCheckpoint?: { state?: ApplicationExtractionState };
-    } | null;
-    if (!app) throw new Error("Application not found");
-
-    // Import makePhases at call time to avoid circular reference issues at module load
-    const { makePhases } = await import("./applicationExtraction");
-
-    const phases = makePhases(ctx);
-
-    await runPipeline<ApplicationExtractionState>({
-      jobId: String(args.applicationId),
-      phases,
-      storage,
-      scheduler,
-      initialPhase: "prune",
-      retryMode: "full",
-      initialState: {
-        sourceKind: app.pipelineCheckpoint?.state?.sourceKind ?? "prompt",
-        brokerOrgId: String(app.brokerOrgId),
-        clientOrgId: String(app.clientOrgId),
-        uploadedByUserId: String(app.createdByUserId),
-      },
-    });
-
+    await runRegroupPipeline(ctx, String(args.applicationId));
     return { groupCount: 0 };
   },
 });
+

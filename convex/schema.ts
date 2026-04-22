@@ -213,8 +213,22 @@ export default defineSchema({
     completedAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
-    // Pipeline fields for cl-pipelines phase-runner
+    // Pipeline fields for cl-pipelines phase-runner (extraction)
     ...pipelineFields(),
+    // Prefill pipeline — second independent pipeline on the same table.
+    // Hand-rolled with "prefill" prefix to avoid colliding with pipelineFields().
+    prefillStatus: v.optional(v.union(
+      v.literal("idle"), v.literal("running"), v.literal("paused"),
+      v.literal("complete"), v.literal("error"),
+    )),
+    prefillError: v.optional(v.string()),
+    prefillCheckpoint: v.optional(v.any()),
+    prefillLog: v.optional(v.array(v.object({
+      timestamp: v.number(),
+      message: v.string(),
+      phase: v.optional(v.string()),
+      level: v.optional(v.string()),
+    }))),
   })
     .index("by_brokerOrgId", ["brokerOrgId"])
     .index("by_clientOrgId", ["clientOrgId"])

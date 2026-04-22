@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server";
 import { requireAuth } from "./lib/access";
 import type { PipelineStatus } from "@claritylabs/cl-pipelines";
+import { makePipelineMutations } from "./lib/pipelineMutations";
 
 // Internal query used by Node actions to authorize a caller as a broker-org
 // member for a given application. Actions don't have ctx.db, so this runs in
@@ -241,3 +242,14 @@ export const clearLog = internalMutation({
     await ctx.db.patch(jobId as any, { pipelineLog: [] });
   },
 });
+
+// ─── Prefill Pipeline Mutations ───────────────────────────────────────────────
+// Second pipeline on the applications table — uses "prefill" prefix fields
+// (prefillStatus, prefillCheckpoint, prefillLog, prefillError).
+
+const _prefillFns = makePipelineMutations("applications", "prefill");
+export const prefillGetJob = _prefillFns.getJob;
+export const prefillSetStatus = _prefillFns.setStatus;
+export const prefillSetCheckpoint = _prefillFns.setCheckpoint;
+export const prefillAppendLog = _prefillFns.appendLog;
+export const prefillClearLog = _prefillFns.clearLog;
