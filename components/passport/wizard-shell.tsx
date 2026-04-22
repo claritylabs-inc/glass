@@ -47,7 +47,7 @@ export function WizardShell({
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <header className="w-full px-6 py-6 sm:px-8">
+      <header className="sticky top-0 z-20 w-full bg-background/95 backdrop-blur px-6 py-6 sm:px-8">
         <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-4">
           <div className="justify-self-start">
             <div className="sm:hidden">
