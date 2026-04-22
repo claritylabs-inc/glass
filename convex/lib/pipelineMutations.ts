@@ -14,7 +14,7 @@ import { v } from "convex/values";
 import { internalMutation, internalQuery } from "../_generated/server";
 import type { PipelineStatus } from "@claritylabs/cl-pipelines";
 
-type SupportedTable = "policies" | "policyFiles" | "orgDocuments";
+type SupportedTable = "policies" | "policyFiles" | "orgDocuments" | "emailConnections";
 
 export function makePipelineMutations(tableName: SupportedTable) {
   const getJob = internalQuery({
