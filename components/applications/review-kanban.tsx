@@ -4,7 +4,7 @@ import { useAction, useMutation, useQuery } from "convex/react";
 import { useRouter } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import { ReviewGroupPane } from "./review-group-pane";
-import { ApplicationExtractionBanner } from "@/components/shared/extraction-banner";
+import { ApplicationExtractionBanner, ApplicationPrefillBanner } from "@/components/shared/extraction-banner";
 import { Badge } from "@/components/ui/badge";
 import { PillButton } from "@/components/ui/pill-button";
 import { toast } from "sonner";
@@ -184,6 +184,12 @@ export function ReviewKanban({ applicationId }: Props) {
         error={(app as any).pipelineError}
         log={(app as any).pipelineLog}
       />
+      <ApplicationPrefillBanner
+        applicationId={applicationId}
+        status={(app as any).prefillStatus}
+        error={(app as any).prefillError}
+        log={(app as any).prefillLog}
+      />
       {app.status === "draft" ? (
         <DraftPreview
           applicationId={applicationId}
@@ -192,6 +198,7 @@ export function ReviewKanban({ applicationId }: Props) {
           groups={groups}
           questions={questions}
           answers={answers}
+          prefillStatus={(app as any).prefillStatus}
         />
       ) : (
         <div className="h-full min-h-0">
@@ -265,12 +272,14 @@ function DraftPreview({
   groups,
   questions,
   answers,
+  prefillStatus,
 }: {
   applicationId: Id<"applications">;
   title: string;
   lineOfBusiness?: string;
   groups: Doc<"applicationGroups">[];
   questions: Doc<"applicationQuestions">[];
+  prefillStatus?: string;
   answers: Doc<"applicationAnswers">[];
 }) {
   const answerByQuestionId = useMemo(() => {
@@ -299,7 +308,6 @@ function DraftPreview({
   const [draftTitle, setDraftTitle] = useState(title);
   const [draftLob, setDraftLob] = useState(lineOfBusiness ?? "");
   const [regrouping, setRegrouping] = useState(false);
-  const [prefilling, setPrefilling] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const toggleCollapsed = (id: string) =>
     setCollapsed((prev) => {
@@ -313,7 +321,7 @@ function DraftPreview({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const regroup = (useAction as any)((api as any).actions.applicationAuthoring.regroupAndOrderPublic) as (args: { applicationId: Id<"applications"> }) => Promise<{ groupCount: number }>;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const prefill = (useAction as any)((api as any).actions.applicationPrefill.prefillFromIntelligence) as (args: { applicationId: Id<"applications"> }) => Promise<{ filledCount: number; skippedCount: number }>;
+  const startPrefill = (useAction as any)((api as any).actions.applicationPrefillPipeline.startApplicationPrefill) as (args: { applicationId: Id<"applications"> }) => Promise<null>;
 
   const sortedQuestions = useMemo(
     () => [...questions].sort((a, b) => a.order - b.order),
@@ -429,7 +437,7 @@ function DraftPreview({
                 type="button"
                 size="compact"
                 variant="secondary"
-                disabled={regrouping || prefilling}
+                disabled={regrouping || prefillStatus === "running"}
                 onClick={async () => {
                   setRegrouping(true);
                   try {
@@ -448,22 +456,15 @@ function DraftPreview({
                 type="button"
                 size="compact"
                 variant="secondary"
-                disabled={regrouping || prefilling}
-                onClick={async () => {
-                  setPrefilling(true);
-                  try {
-                    const res = await prefill({ applicationId });
-                    toast.success(
-                      `Prefilled ${res.filledCount} answers${res.skippedCount ? ` (${res.skippedCount} low-confidence skipped)` : ""}`,
-                    );
-                  } catch (error) {
-                    toast.error(error instanceof Error ? error.message : "Prefill failed");
-                  } finally {
-                    setPrefilling(false);
-                  }
+                disabled={regrouping || prefillStatus === "running"}
+                onClick={() => {
+                  void startPrefill({ applicationId }).catch((error: unknown) => {
+                    toast.error(error instanceof Error ? error.message : "Failed to start prefill");
+                  });
+                  toast.success("Prefill started — safe to navigate away.");
                 }}
               >
-                {prefilling ? "Prefilling…" : "Prefill from intelligence"}
+                {prefillStatus === "running" ? "Prefilling…" : "Prefill from intelligence"}
               </PillButton>
             </div>
           )}

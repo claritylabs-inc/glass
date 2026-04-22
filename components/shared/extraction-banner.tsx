@@ -91,23 +91,54 @@ export function OrgDocumentExtractionBanner({
   );
 }
 
+// ─── Application Prefill Banner ───────────────────────────────────────────────
+
+export function ApplicationPrefillBanner({
+  applicationId,
+  status,
+  error,
+  log,
+}: {
+  applicationId: Id<"applications">;
+  status: PipelineStatus | undefined;
+  error?: string;
+  log?: LogEntry[];
+}) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const retry = useAction((api as any).actions.applicationPrefillPipeline.retryApplicationPrefill);
+
+  return (
+    <ExtractionBannerBase
+      status={status}
+      error={error}
+      log={log}
+      labels={{ running: "Prefilling", error: "Prefill failed" }}
+      onRetry={(mode) => void retry({ applicationId, mode })}
+    />
+  );
+}
+
 // ─── Base banner ───────────────────────────────────────────────────────────────
 
 function ExtractionBannerBase({
   status,
   error,
   log,
+  labels,
   onRetry,
 }: {
   status: PipelineStatus | undefined;
   error?: string;
   log?: LogEntry[];
+  labels?: { running?: string; error?: string };
   onRetry: (mode: "resume" | "full") => void;
 }) {
   if (!status || status === "idle" || status === "complete") return null;
 
   const isError = status === "error";
   const latestLog = log && log.length > 0 ? log[log.length - 1] : undefined;
+  const runningLabel = labels?.running ?? "Extracting";
+  const errorLabel = labels?.error ?? "Extraction failed";
 
   return (
     <StatusBanner
@@ -133,7 +164,7 @@ function ExtractionBannerBase({
 
       <div className="flex min-w-0 flex-1 items-baseline gap-2">
         <span className="shrink-0 text-sm font-medium">
-          {isError ? "Extraction failed" : "Extracting"}
+          {isError ? errorLabel : runningLabel}
         </span>
         <span className="truncate text-sm opacity-75">
           {isError
