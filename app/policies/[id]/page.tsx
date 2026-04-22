@@ -19,7 +19,6 @@ import Link from "next/link";
 import { StructuredLog, type StructuredLogEntry } from "@/components/structured-log";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Id } from "@/convex/_generated/dataModel";
-import { Button } from "@/components/ui/button";
 import { PillButton } from "@/components/ui/pill-button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -637,13 +636,13 @@ export default function PolicyDetailPage({
             <p className="text-body-sm text-red-700 dark:text-red-400 flex-1">
               This policy has been deleted.
             </p>
-            <Button
-              variant="outline"
+            <PillButton
+              variant="secondary"
+              size="compact"
               onClick={() => restorePolicy({ id: policy._id })}
-              className="text-label-sm"
             >
               Restore
-            </Button>
+            </PillButton>
           </div>
         )}
 

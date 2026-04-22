@@ -6,7 +6,7 @@ import { api } from "@/convex/_generated/api";
 import { AppShell } from "@/components/app-shell";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Button } from "@/components/ui/button";
+import { PillButton } from "@/components/ui/pill-button";
 import { PolicyListItem } from "@/components/policy-list-item";
 import { PolicyUploadDrawer } from "@/components/policy-upload-drawer";
 import { toast } from "sonner";
@@ -105,14 +105,14 @@ export default function PoliciesPage() {
               ))}
             </TabsList>
           </Tabs>
-          <Button
-            variant="outline"
-            size="sm"
+          <PillButton
+            size="compact"
+            variant="secondary"
             onClick={() => setUploaderOpen(true)}
           >
-            <Upload className="h-4 w-4 mr-2" />
+            <Upload className="h-3.5 w-3.5" />
             Upload
-          </Button>
+          </PillButton>
         </div>
 
         {isLoading ? (
