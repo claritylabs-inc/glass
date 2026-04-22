@@ -108,121 +108,167 @@ export function ReviewGroupPane({
     }
   }
 
+  // Split into non-repeating questions and repeating collections grouped by collectionKey.
+  const nonRepeatingQuestions = groupQuestions.filter((q) => !(q as any).repeating);
+  const repeatingCollections = (() => {
+    const map = new Map<
+      string,
+      {
+        collectionKey: string;
+        itemLabel: string;
+        dependsOnQuestionId?: Id<"applicationQuestions">;
+        questions: Doc<"applicationQuestions">[];
+        rowCount: number;
+      }
+    >();
+    for (const q of groupQuestions) {
+      const r = (q as any).repeating as
+        | { collectionKey: string; itemLabel: string; dependsOnQuestionId?: Id<"applicationQuestions"> }
+        | undefined;
+      if (!r) continue;
+      const existing = map.get(r.collectionKey);
+      if (existing) {
+        existing.questions.push(q);
+        existing.rowCount = Math.max(existing.rowCount, repeatingCount(q));
+        if (!existing.dependsOnQuestionId && r.dependsOnQuestionId) {
+          existing.dependsOnQuestionId = r.dependsOnQuestionId;
+        }
+      } else {
+        map.set(r.collectionKey, {
+          collectionKey: r.collectionKey,
+          itemLabel: r.itemLabel,
+          dependsOnQuestionId: r.dependsOnQuestionId,
+          questions: [q],
+          rowCount: repeatingCount(q),
+        });
+      }
+    }
+    return Array.from(map.values());
+  })();
+
+  function renderQuestionAnswer(
+    q: Doc<"applicationQuestions">,
+    rowKey: string,
+  ) {
+    const answer = answerMap[`${String(q._id)}:${rowKey}`];
+    const qFlags = flags.filter(
+      (f) => f.questionId === q._id && (f.rowKey ?? "") === rowKey,
+    );
+    return (
+      <div key={`${q._id}-${rowKey}`} className="space-y-1">
+        <div className="text-sm font-medium">{q.prompt}</div>
+        <div className="text-sm text-muted-foreground bg-muted/30 rounded px-2 py-1">
+          {answer?.value !== undefined && answer?.value !== null ? (
+            String(answer.value)
+          ) : (
+            <span className="italic text-xs">No answer</span>
+          )}
+        </div>
+        {answer?.source && answer.source !== "manual" && (
+          <div className="text-xs text-muted-foreground">Source: {answer.source}</div>
+        )}
+        <QuestionFieldBadges flags={qFlags as any} />
+        {flaggingQuestion === q._id ? (
+          <div className="space-y-1 mt-1">
+            <Input
+              placeholder="Flag message…"
+              value={flagMessage}
+              onChange={(e) => setFlagMessage(e.target.value)}
+              autoFocus
+              size={1}
+            />
+            <div className="flex gap-1">
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-xs"
+                onClick={() => handleFlag(q._id, "comment")}
+              >
+                Comment
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-xs border-red-300 text-red-600"
+                onClick={() => handleFlag(q._id, "needs_new_answer")}
+              >
+                Needs new answer
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-xs"
+                onClick={() => {
+                  setFlaggingQuestion(null);
+                  setFlagMessage("");
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <button
+            className="text-xs text-muted-foreground hover:text-foreground"
+            onClick={() => setFlaggingQuestion(q._id)}
+          >
+            + Add flag
+          </button>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       <div className="space-y-4">
-        {groupQuestions.map((q) => {
-          const repeating = (q as any).repeating as
-            | { collectionKey: string; itemLabel: string; dependsOnQuestionId?: Id<"applicationQuestions"> }
-            | undefined;
-          const qFlags = flags.filter((f) => f.questionId === q._id);
-          const dependencyQuestion = repeating?.dependsOnQuestionId
-            ? questions.find((dq) => String(dq._id) === String(repeating.dependsOnQuestionId))
-            : null;
-          const rowCount = repeating ? repeatingCount(q) : 1;
+        {nonRepeatingQuestions.map((q) => (
+          <div key={q._id} className="space-y-1 border-b border-foreground/5 pb-3">
+            {renderQuestionAnswer(q, "")}
+          </div>
+        ))}
 
+        {repeatingCollections.map((collection) => {
+          const dependencyQuestion = collection.dependsOnQuestionId
+            ? questions.find((dq) => String(dq._id) === String(collection.dependsOnQuestionId))
+            : null;
           return (
-            <div key={q._id} className="space-y-1 border-b border-foreground/5 pb-3">
+            <div
+              key={collection.collectionKey}
+              className="space-y-3 rounded-xl border border-foreground/10 bg-card p-4"
+            >
               <div className="flex flex-wrap items-center gap-2">
-                <div className="text-sm font-medium">{q.prompt}</div>
-                {repeating ? (
-                  <Badge variant="outline" className="text-[11px]">Repeats ({rowCount})</Badge>
-                ) : null}
+                <div className="text-sm font-medium">
+                  {titleCase(collection.itemLabel)} details
+                </div>
+                <Badge variant="outline" className="text-[11px]">
+                  Repeating chunk ({collection.rowCount})
+                </Badge>
                 {dependencyQuestion ? (
-                  <Badge variant="outline" className="text-[11px]">Depends on: {dependencyQuestion.prompt}</Badge>
+                  <Badge variant="outline" className="text-[11px]">
+                    Depends on: {dependencyQuestion.prompt}
+                  </Badge>
                 ) : null}
               </div>
 
-              {!repeating ? (
-                (() => {
-                  const answer = answerMap[`${String(q._id)}:`];
+              <div className="space-y-4">
+                {Array.from({ length: collection.rowCount }).map((_, idx) => {
+                  const rowKey = `${collection.collectionKey}:${idx}`;
                   return (
-                    <>
-                      <div className="text-sm text-muted-foreground bg-muted/30 rounded px-2 py-1">
-                        {answer?.value !== undefined && answer?.value !== null
-                          ? String(answer.value)
-                          : <span className="italic text-xs">No answer</span>}
+                    <div
+                      key={rowKey}
+                      className="space-y-3 rounded-lg border border-foreground/10 p-3"
+                    >
+                      <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                        {titleCase(collection.itemLabel)} {idx + 1}
                       </div>
-                      {answer?.source && answer.source !== "manual" && (
-                        <div className="text-xs text-muted-foreground">Source: {answer.source}</div>
+                      {collection.questions.map((q) =>
+                        renderQuestionAnswer(q, rowKey),
                       )}
-                      <QuestionFieldBadges flags={qFlags as any} />
-                    </>
+                    </div>
                   );
-                })()
-              ) : (
-                <div className="space-y-2">
-                  {Array.from({ length: rowCount }).map((_, idx) => {
-                    const rowKey = `${repeating.collectionKey}:${idx}`;
-                    const answer = answerMap[`${String(q._id)}:${rowKey}`];
-                    const rowFlags = qFlags.filter((f) => (f.rowKey ?? "") === rowKey);
-                    return (
-                      <div key={rowKey} className="rounded-md border border-foreground/10 px-3 py-2">
-                        <div className="text-xs font-medium text-muted-foreground mb-1">
-                          {titleCase(repeating.itemLabel)} {idx + 1}
-                        </div>
-                        <div className="text-sm text-muted-foreground bg-muted/30 rounded px-2 py-1">
-                          {answer?.value !== undefined && answer?.value !== null
-                            ? String(answer.value)
-                            : <span className="italic text-xs">No answer</span>}
-                        </div>
-                        {answer?.source && answer.source !== "manual" && (
-                          <div className="text-xs text-muted-foreground mt-1">Source: {answer.source}</div>
-                        )}
-                        <QuestionFieldBadges flags={rowFlags as any} />
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {flaggingQuestion === q._id ? (
-                <div className="space-y-1 mt-1">
-                  <Input
-                    placeholder="Flag message…"
-                    value={flagMessage}
-                    onChange={(e) => setFlagMessage(e.target.value)}
-                    autoFocus
-                    size={1}
-                  />
-                  <div className="flex gap-1">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="text-xs"
-                      onClick={() => handleFlag(q._id, "comment")}
-                    >
-                      Comment
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="text-xs border-red-300 text-red-600"
-                      onClick={() => handleFlag(q._id, "needs_new_answer")}
-                    >
-                      Needs new answer
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="text-xs"
-                      onClick={() => {
-                        setFlaggingQuestion(null);
-                        setFlagMessage("");
-                      }}
-                    >
-                      Cancel
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <button
-                  className="text-xs text-muted-foreground hover:text-foreground"
-                  onClick={() => setFlaggingQuestion(q._id)}
-                >
-                  + Add flag
-                </button>
-              )}
+                })}
+              </div>
             </div>
           );
         })}
