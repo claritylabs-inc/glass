@@ -586,6 +586,7 @@ export default defineSchema({
 
   // Uploaded org context documents — one row per file, persists regardless of extraction outcome
   orgDocuments: defineTable({
+    ...pipelineFields(),
     orgId: v.id("organizations"),
     storageId: v.id("_storage"),
     fileName: v.string(),
@@ -691,6 +692,7 @@ export default defineSchema({
     .index("by_orgId", ["orgId"]),
 
   policies: defineTable({
+    ...pipelineFields(),
     userId: v.optional(v.id("users")),
     orgId: v.optional(v.id("organizations")),
     emailId: v.optional(v.id("emails")),
@@ -1030,6 +1032,7 @@ export default defineSchema({
 
   // Each policy can have multiple source files (declaration, wording, endorsements, etc.)
   policyFiles: defineTable({
+    ...pipelineFields(),
     policyId: v.id("policies"),
     fileId: v.id("_storage"),
     emailId: v.optional(v.id("emails")),
