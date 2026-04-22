@@ -412,6 +412,8 @@ If no relevant risk signals found, return { "entries": [] }.`;
 
       // Count inserted entries — we stored them in the previous phase so don't have exact count.
       // Update the document row with classification metadata and mark legacy status "complete".
+      // Also write legacy extractionStatus for backwards read compat during rollout.
+      // TODO(Task9): remove extractionStatus once old docs are all migrated.
       await convexCtx.runMutation(
         (internal as any).orgDocuments.updateStatus,
         {
