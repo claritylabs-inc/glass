@@ -132,10 +132,10 @@ function ExtractionBannerBase({
       />
 
       <div className="flex min-w-0 flex-1 items-baseline gap-2">
-        <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wider">
+        <span className="shrink-0 text-sm font-medium">
           {isError ? "Extraction failed" : "Extracting"}
         </span>
-        <span className="truncate text-xs opacity-75">
+        <span className="truncate text-sm opacity-75">
           {isError
             ? error ?? "Unknown error"
             : latestLog?.message ?? "Starting…"}
