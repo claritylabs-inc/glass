@@ -20,14 +20,11 @@ export default function PortfolioActivityPage() {
   );
 
   return (
-    <AppShell breadcrumbDetail="Activity">
-      <div className="space-y-4">
-        <h2 className="text-lg font-semibold">Portfolio Activity</h2>
-        <ActivityFeed
-          events={events as ActivityEvent[] | undefined}
-          showClientColumn={true}
-        />
-      </div>
+    <AppShell>
+      <ActivityFeed
+        events={events as ActivityEvent[] | undefined}
+        showClientColumn={true}
+      />
     </AppShell>
   );
 }

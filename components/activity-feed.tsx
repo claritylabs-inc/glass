@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { formatDistanceToNow, format } from "date-fns";
-import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   UserCheck,
   CheckCircle,
@@ -88,25 +88,16 @@ export function ActivityFeed({
   return (
     <div className="space-y-6">
       {/* Type filter */}
-      <div className="flex gap-2 flex-wrap">
-        <Badge
-          variant={typeFilter === "all" ? "default" : "outline"}
-          className="cursor-pointer"
-          onClick={() => setTypeFilter("all")}
-        >
-          All
-        </Badge>
-        {allTypes.map((t) => (
-          <Badge
-            key={t}
-            variant={typeFilter === t ? "default" : "outline"}
-            className="cursor-pointer"
-            onClick={() => setTypeFilter(t)}
-          >
-            {TYPE_LABELS[t] ?? t}
-          </Badge>
-        ))}
-      </div>
+      <Tabs value={typeFilter} onValueChange={setTypeFilter}>
+        <TabsList variant="pill">
+          <TabsTrigger value="all">All</TabsTrigger>
+          {allTypes.map((t) => (
+            <TabsTrigger key={t} value={t}>
+              {TYPE_LABELS[t] ?? t}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
 
       {events === undefined ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
