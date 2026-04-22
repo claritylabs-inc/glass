@@ -175,7 +175,7 @@ function Shell({
 }) {
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <header className="sticky top-0 z-20 w-full bg-background/95 backdrop-blur px-6 py-6 sm:px-8">
+      <header className="sticky top-0 z-20 w-full bg-background px-6 py-6 sm:px-8">
         <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-4 text-sm text-muted-foreground">
           <div className="justify-self-start min-w-0">
             <div className="sm:hidden">
@@ -558,7 +558,8 @@ export default function BrokerOnboardingPage() {
                     <div className="space-y-1">
                       <label className={labelClass}>White-label branding</label>
                       <p className="text-label-sm text-muted-foreground/80">
-                        How your workspace will look to clients.
+                        How your workspace will look to clients. Fine-tune theme, text contrast, and
+                        add a custom color from Settings after onboarding.
                       </p>
                     </div>
 
@@ -688,10 +689,6 @@ export default function BrokerOnboardingPage() {
                       );
                     })()}
 
-                    <p className="text-label-sm text-muted-foreground/70">
-                      You can fine-tune the client theme, text contrast, and add a custom color from
-                      Settings after onboarding.
-                    </p>
                   </div>
                 );
               })()}
