@@ -1,18 +1,20 @@
 "use client";
 
 import { useQuery } from "convex/react";
-import { useParams, usePathname, useRouter } from "next/navigation";
+import { useParams, usePathname } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { AppShell } from "@/components/app-shell";
 import { ClientDetailHeader } from "@/components/client-detail-header";
 import { useCurrentOrg } from "@/hooks/use-current-org";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import Link from "next/link";
+import { cn } from "@/lib/utils";
 
-const TABS = [
+const NAV = [
   { id: "details", label: "Details", href: "" },
   { id: "applications", label: "Applications", href: "/applications" },
   { id: "policies", label: "Policies", href: "/policies" },
+  { id: "quotes", label: "Quotes", href: "/quotes" },
   { id: "intelligence", label: "Intelligence", href: "/intelligence" },
   { id: "activity", label: "Activity", href: "/activity" },
   { id: "settings", label: "Settings", href: "/settings" },
@@ -25,7 +27,6 @@ export default function ClientDetailLayout({
 }) {
   const { clientOrgId } = useParams<{ clientOrgId: string }>();
   const pathname = usePathname();
-  const router = useRouter();
   const currentOrg = useCurrentOrg();
 
   const clientOrg = useQuery(
@@ -35,53 +36,49 @@ export default function ClientDetailLayout({
 
   const baseHref = `/clients/${clientOrgId}`;
 
-  const activeTab =
-    TABS.find((t) => {
-      const full = `${baseHref}${t.href}`;
-      if (t.href === "") return pathname === baseHref || pathname === `${baseHref}/`;
-      return pathname.startsWith(full);
-    })?.id ?? "details";
-
-  const firstMembership = useQuery(
-    api.orgs.listMembersForOrg,
-    clientOrgId ? { orgId: clientOrgId as Id<"organizations"> } : "skip",
-  );
-  const primaryContact = firstMembership?.[0];
+  function isActive(href: string) {
+    const full = `${baseHref}${href}`;
+    if (href === "")
+      return pathname === baseHref || pathname === `${baseHref}/`;
+    return pathname === full || pathname.startsWith(`${full}/`);
+  }
 
   return (
     <AppShell breadcrumbDetail={clientOrg?.name ?? "Client"}>
       {clientOrg && currentOrg && (
         <ClientDetailHeader
           clientName={clientOrg.name}
-          primaryContactName={primaryContact?.name}
-          primaryContactEmail={primaryContact?.email}
           onboardingStatus={
             (clientOrg as { onboardingComplete?: boolean }).onboardingComplete
               ? "active"
               : "onboarding"
           }
-          brokerOrgName={currentOrg.org.name}
         />
       )}
 
-      <Tabs
-        value={activeTab}
-        onValueChange={(v) => {
-          const tab = TABS.find((t) => t.id === v);
-          if (tab) router.push(`${baseHref}${tab.href}`);
-        }}
-        className="mb-6"
-      >
-        <TabsList variant="pill" className="flex-wrap">
-          {TABS.map((tab) => (
-            <TabsTrigger key={tab.id} value={tab.id}>
-              {tab.label}
-            </TabsTrigger>
+      <div className="grid gap-6 md:grid-cols-[200px_1fr]">
+        <nav
+          aria-label="Client sections"
+          className="flex gap-1 overflow-x-auto scrollbar-hide md:flex-col md:overflow-visible"
+        >
+          {NAV.map((item) => (
+            <Link
+              key={item.id}
+              href={`${baseHref}${item.href}`}
+              className={cn(
+                "whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                isActive(item.href)
+                  ? "bg-accent text-foreground"
+                  : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+              )}
+            >
+              {item.label}
+            </Link>
           ))}
-        </TabsList>
-      </Tabs>
+        </nav>
 
-      {children}
+        <div className="min-w-0">{children}</div>
+      </div>
     </AppShell>
   );
 }
