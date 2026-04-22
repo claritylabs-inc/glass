@@ -9,7 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useOnboardingCache } from "@/hooks/use-onboarding-cache";
 import { Loader2 } from "lucide-react";
 
-const PUBLIC_PATHS = ["/login", "/signup", "/oauth/authorize", "/weather"];
+const PUBLIC_PATHS = ["/login", "/signup", "/oauth/authorize", "/weather", "/invite"];
 const ONBOARDING_PATH = "/onboarding";
 const ADMIN_PATHS = ["/settings"];
 

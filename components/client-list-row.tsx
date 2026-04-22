@@ -62,35 +62,33 @@ export function ClientListRow({ row }: { row: ClientRow }) {
 
   if (row.kind === "invite") {
     return (
-      <div className="flex flex-col gap-2 px-4 py-3 border-b last:border-0 opacity-60 hover:opacity-80 transition-opacity sm:flex-row sm:items-center sm:gap-4">
+      <div className="flex items-center gap-4 px-4 py-3 border-b border-foreground/6 last:border-0 opacity-70 hover:opacity-100 transition-opacity">
         <div className="flex-1 min-w-0">
-          <p className="font-medium text-sm truncate">{row.name}</p>
+          <p className="text-sm font-medium text-foreground truncate">{row.name}</p>
           <p className="text-xs text-muted-foreground truncate">
             {row.primaryContactEmail ?? "No email"}
           </p>
         </div>
-        <div className="flex items-center gap-3 sm:gap-4">
-          <Badge variant={STATUS_VARIANTS[row.onboardingStatus]}>
-            {STATUS_LABELS[row.onboardingStatus]}
-          </Badge>
-          <span className="text-xs text-muted-foreground sm:w-28 sm:text-right">
-            {formatDistanceToNow(new Date(row.createdAt), { addSuffix: true })}
-          </span>
-          <PillButton
-            type="button"
-            size="compact"
-            variant="destructive"
-            className="ml-auto sm:ml-0"
-            onClick={async (e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              await revokeInvite({ invitationId: row.invitationId, orgId: row.brokerOrgId });
-              toast.success("Invite revoked");
-            }}
-          >
-            Revoke
-          </PillButton>
-        </div>
+        <Badge variant={STATUS_VARIANTS[row.onboardingStatus]} className="shrink-0">
+          {STATUS_LABELS[row.onboardingStatus]}
+        </Badge>
+        <span className="hidden sm:block text-xs text-muted-foreground shrink-0 whitespace-nowrap tabular-nums">
+          {formatDistanceToNow(new Date(row.createdAt), { addSuffix: true })}
+        </span>
+        <PillButton
+          type="button"
+          size="compact"
+          variant="destructive"
+          className="shrink-0"
+          onClick={async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            await revokeInvite({ invitationId: row.invitationId, orgId: row.brokerOrgId });
+            toast.success("Invite revoked");
+          }}
+        >
+          Revoke
+        </PillButton>
       </div>
     );
   }
@@ -98,29 +96,22 @@ export function ClientListRow({ row }: { row: ClientRow }) {
   return (
     <Link
       href={`/clients/${row.clientOrgId}`}
-      className="flex flex-col gap-2 px-4 py-3 border-b last:border-0 hover:bg-muted/50 transition-colors sm:flex-row sm:items-center sm:gap-4"
+      className="flex items-center gap-4 px-4 py-3 border-b border-foreground/6 last:border-0 hover:bg-muted/50 transition-colors"
     >
       <div className="flex-1 min-w-0">
-        <p className="font-medium text-sm truncate">{row.name}</p>
+        <p className="text-sm font-medium text-foreground truncate">{row.name}</p>
         <p className="text-xs text-muted-foreground truncate">
           {row.primaryContactName
             ? `${row.primaryContactName}${row.primaryContactEmail ? ` · ${row.primaryContactEmail}` : ""}`
             : row.primaryContactEmail ?? "No contact"}
         </p>
       </div>
-      <div className="flex items-center gap-3 sm:gap-4">
-        <Badge variant={STATUS_VARIANTS[row.onboardingStatus]}>
-          {STATUS_LABELS[row.onboardingStatus]}
-        </Badge>
-        <span className="text-xs text-muted-foreground hidden md:block md:w-28 md:text-right">
-          {activityLabel}
-        </span>
-        <div className="hidden lg:flex gap-4 text-xs text-muted-foreground">
-          <span title="Open applications">{row.openApplicationsCount} apps</span>
-          <span title="Active policies">{row.activePoliciesCount} policies</span>
-          <span title="Documents">{row.documentsCount} docs</span>
-        </div>
-      </div>
+      <Badge variant={STATUS_VARIANTS[row.onboardingStatus]} className="shrink-0">
+        {STATUS_LABELS[row.onboardingStatus]}
+      </Badge>
+      <span className="hidden sm:block text-xs text-muted-foreground shrink-0 whitespace-nowrap tabular-nums">
+        {activityLabel}
+      </span>
     </Link>
   );
 }
