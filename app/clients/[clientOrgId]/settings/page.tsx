@@ -12,7 +12,7 @@ import { toast } from "sonner";
 type Verification = "strict" | "domain" | "open";
 
 const INPUT_CLASSES =
-  "flex-1 rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors disabled:opacity-50";
+  "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors disabled:opacity-50";
 
 export default function ClientSettingsPage() {
   const { clientOrgId } = useParams<{ clientOrgId: string }>();
@@ -46,7 +46,6 @@ export default function ClientSettingsPage() {
     hydratedRef.current = true;
   }, [org]);
 
-  // Autosave after any change to verification / emails / domains
   useEffect(() => {
     if (!hydratedRef.current || !clientOrgId) return;
     const handle = setTimeout(() => {
@@ -100,39 +99,46 @@ export default function ClientSettingsPage() {
 
   return (
     <div className="max-w-3xl space-y-6">
-      <div className="rounded-lg border border-foreground/6 bg-card p-6 space-y-6">
-        <div>
-          <h3 className="text-sm font-medium text-foreground">
+      <section className="rounded-xl border border-foreground/6 bg-card overflow-hidden">
+        <header className="px-6 py-5 border-b border-foreground/6">
+          <h2 className="text-base font-medium text-foreground">
             Email verification
-          </h3>
-          <p className="text-label-sm text-muted-foreground mt-1">
+          </h2>
+          <p className="mt-1 text-body-sm text-muted-foreground">
             Choose which inbound senders count as this client when they email
             your agent handle.
           </p>
+        </header>
+
+        <div className="px-6 py-5 space-y-5">
+          <Tabs
+            value={verification}
+            onValueChange={(v) => setVerification(v as Verification)}
+          >
+            <TabsList variant="pill">
+              <TabsTrigger value="strict">Strict</TabsTrigger>
+              <TabsTrigger value="domain">Domain</TabsTrigger>
+              <TabsTrigger value="open">Open</TabsTrigger>
+            </TabsList>
+          </Tabs>
+          <p className="text-body-sm text-muted-foreground">
+            {verification === "strict"
+              ? "Only the emails listed below are recognized as this client."
+              : verification === "domain"
+                ? "Emails and matching domains below are recognized as this client."
+                : "Any sender with a membership to this client is recognized."}
+          </p>
         </div>
 
-        <Tabs
-          value={verification}
-          onValueChange={(v) => setVerification(v as Verification)}
-        >
-          <TabsList variant="pill">
-            <TabsTrigger value="strict">Strict</TabsTrigger>
-            <TabsTrigger value="domain">Domain</TabsTrigger>
-            <TabsTrigger value="open">Open</TabsTrigger>
-          </TabsList>
-        </Tabs>
-        <p className="text-label-sm text-muted-foreground -mt-3">
-          {verification === "strict"
-            ? "Only the emails listed below will be recognized as this client."
-            : verification === "domain"
-              ? "Emails and matching domains below will be recognized as this client."
-              : "Any sender with a membership to this client will be recognized."}
-        </p>
-
-        <div className="space-y-2">
-          <label className="text-label-sm font-medium text-muted-foreground block">
-            Allowed emails
-          </label>
+        <div className="px-6 py-5 border-t border-foreground/6 space-y-3">
+          <div>
+            <h3 className="text-body-sm font-medium text-foreground">
+              Allowed emails
+            </h3>
+            <p className="text-label-sm text-muted-foreground">
+              Exact senders that should route to this client.
+            </p>
+          </div>
           <input
             type="email"
             value={emailInput}
@@ -171,10 +177,15 @@ export default function ClientSettingsPage() {
           ) : null}
         </div>
 
-        <div className="space-y-2">
-          <label className="text-label-sm font-medium text-muted-foreground block">
-            Allowed domains
-          </label>
+        <div className="px-6 py-5 border-t border-foreground/6 space-y-3">
+          <div>
+            <h3 className="text-body-sm font-medium text-foreground">
+              Allowed domains
+            </h3>
+            <p className="text-label-sm text-muted-foreground">
+              Anyone sending from these domains is recognized as this client.
+            </p>
+          </div>
           <input
             type="text"
             value={domainInput}
@@ -232,7 +243,7 @@ export default function ClientSettingsPage() {
             </div>
           ) : null}
         </div>
-      </div>
+      </section>
     </div>
   );
 }
