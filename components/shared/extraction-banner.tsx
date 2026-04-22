@@ -5,7 +5,7 @@
  * Renders a live pipeline status banner with retry buttons.
  */
 
-import { StatusBanner, ProgressLog, RetryButtons } from "@claritylabs/cl-pipelines/ui";
+import { StatusBanner, RetryButtons } from "@claritylabs/cl-pipelines/ui";
 import type { PipelineStatus, LogEntry } from "@claritylabs/cl-pipelines";
 import { PillButton } from "@/components/ui/pill-button";
 import { Loader2, AlertCircle } from "lucide-react";
@@ -80,58 +80,68 @@ function ExtractionBannerBase({
 }) {
   if (!status || status === "idle" || status === "complete") return null;
 
+  const isError = status === "error";
+  const latestLog = log && log.length > 0 ? log[log.length - 1] : undefined;
+
   return (
     <StatusBanner
       status={status}
       error={error}
       log={log}
-      className="rounded-xl border border-border bg-card p-4 shadow-sm mb-4"
+      className={[
+        "mb-4 flex items-center gap-3 rounded-md border-l-2 px-4 py-2.5",
+        isError
+          ? "border-l-destructive bg-destructive/5 text-destructive"
+          : "border-l-foreground/40 bg-muted/50 text-foreground",
+      ].join(" ")}
     >
-      <div className="flex items-start gap-3">
-        <StatusBanner.Indicator
-          render={(s) =>
-            s === "running" ? (
-              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground mt-0.5 shrink-0" />
-            ) : s === "error" ? (
-              <AlertCircle className="h-4 w-4 text-destructive mt-0.5 shrink-0" />
-            ) : null
-          }
-        />
-        <div className="flex-1 min-w-0">
-          <StatusBanner.Title className="text-sm font-medium" />
-          <StatusBanner.Description className="text-xs text-muted-foreground mt-0.5" />
-          <ProgressLog
-            entries={log}
-            latestOnly
-            className="mt-2 list-none p-0 m-0"
-            renderEntry={(entry, i) => (
-              <li key={`${entry.timestamp}-${i}`} className="text-xs text-muted-foreground truncate">
-                {entry.message}
-              </li>
+      <StatusBanner.Indicator
+        render={(s) =>
+          s === "running" ? (
+            <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />
+          ) : s === "error" ? (
+            <AlertCircle className="h-3.5 w-3.5 shrink-0 text-destructive" />
+          ) : null
+        }
+      />
+
+      <div className="flex min-w-0 flex-1 items-baseline gap-2">
+        <span
+          className={[
+            "shrink-0 text-[11px] font-semibold uppercase tracking-wider",
+            isError ? "text-destructive" : "text-muted-foreground",
+          ].join(" ")}
+        >
+          {isError ? "Extraction failed" : "Extracting"}
+        </span>
+        <span className="truncate text-xs text-muted-foreground">
+          {isError
+            ? error ?? "Unknown error"
+            : latestLog?.message ?? "Starting…"}
+        </span>
+      </div>
+
+      {isError && (
+        <StatusBanner.Actions className="shrink-0">
+          <RetryButtons
+            onRetry={onRetry}
+            className="flex gap-1.5"
+            labels={{ resume: "Resume", full: "Restart" }}
+            renderButton={(mode, onClick, label, disabled) => (
+              <PillButton
+                key={mode}
+                type="button"
+                size="compact"
+                onClick={onClick}
+                disabled={disabled}
+                variant={mode === "full" ? "ghost" : "secondary"}
+              >
+                {label}
+              </PillButton>
             )}
           />
-        </div>
-        <StatusBanner.Actions className="shrink-0">
-          {status === "error" && (
-            <RetryButtons
-              onRetry={onRetry}
-              className="flex gap-2"
-              renderButton={(mode, onClick, label, disabled) => (
-                <PillButton
-                  key={mode}
-                  type="button"
-                  size="compact"
-                  onClick={onClick}
-                  disabled={disabled}
-                  variant={mode === "full" ? "ghost" : "secondary"}
-                >
-                  {label}
-                </PillButton>
-              )}
-            />
-          )}
         </StatusBanner.Actions>
-      </div>
+      )}
     </StatusBanner>
   );
 }
