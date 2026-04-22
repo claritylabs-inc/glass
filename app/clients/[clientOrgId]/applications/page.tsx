@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useCurrentOrg } from "@/lib/hooks/use-current-org";
@@ -11,6 +11,7 @@ import { EmptyStateCard } from "@/components/ui/empty-state-card";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import type { Id } from "@/convex/_generated/dataModel";
+import { useClientDetailActions } from "../layout";
 
 const STATUS_COLORS: Record<string, string> = {
   draft:            "bg-gray-100 text-gray-600",
@@ -25,6 +26,22 @@ export default function ClientApplicationsPage() {
   const { clientOrgId } = useParams<{ clientOrgId: string }>();
   const orgCtx = useCurrentOrg();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const { setActions } = useClientDetailActions();
+
+  useEffect(() => {
+    setActions(
+      <PillButton
+        type="button"
+        size="compact"
+        variant="primary"
+        onClick={() => setDrawerOpen(true)}
+      >
+        <Plus className="w-3.5 h-3.5" />
+        New application
+      </PillButton>,
+    );
+    return () => setActions(null);
+  }, [setActions]);
 
   const applications = useQuery(
     (api as any).applications.listForBroker,
@@ -33,18 +50,6 @@ export default function ClientApplicationsPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
-        <PillButton
-          type="button"
-          size="compact"
-          variant="primary"
-          onClick={() => setDrawerOpen(true)}
-        >
-          <Plus className="w-3.5 h-3.5" />
-          New application
-        </PillButton>
-      </div>
-
       {applications === undefined ? (
         <div className="py-16 text-center">
           <p className="text-sm text-muted-foreground/60">Loading…</p>

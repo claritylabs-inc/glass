@@ -98,6 +98,9 @@ export function AppSidebar({
   const searchParams = useSearchParams();
   const router = useRouter();
   const isSettingsMode = pathname.startsWith("/settings");
+  const clientDetailMatch = pathname.match(/^\/clients\/([^/]+)(\/.*)?$/);
+  const isClientDetailMode = !!clientDetailMatch;
+  const clientDetailId = clientDetailMatch?.[1];
   const viewer = useQuery(api.users.viewer);
   const viewerOrg = useQuery(api.orgs.viewerOrg, {});
   const orgIcon = viewerOrg?.brokerOrg?.iconUrl ?? viewerOrg?.org?.iconUrl ?? null;
@@ -561,7 +564,74 @@ export function AppSidebar({
     </div>
   );
 
-  const activeContent = isSettingsMode ? settingsSidebarContent : sidebarContent;
+  const clientDetailBase = clientDetailId ? `/clients/${clientDetailId}` : "";
+  const CLIENT_DETAIL_NAV: {
+    id: string;
+    label: string;
+    href: string;
+    icon: React.ComponentType<{ className?: string }>;
+  }[] = [
+    { id: "details", label: "Details", href: "", icon: User },
+    { id: "applications", label: "Applications", href: "/applications", icon: FileInput },
+    { id: "policies", label: "Policies", href: "/policies", icon: FileText },
+    { id: "intelligence", label: "Intelligence", href: "/intelligence", icon: GlassStarIcon },
+    { id: "activity", label: "Activity", href: "/activity", icon: Activity },
+    { id: "settings", label: "Settings", href: "/settings", icon: Settings },
+  ];
+
+  function isClientNavActive(href: string) {
+    const full = `${clientDetailBase}${href}`;
+    if (href === "") return pathname === clientDetailBase || pathname === `${clientDetailBase}/`;
+    return pathname === full || pathname.startsWith(`${full}/`);
+  }
+
+  const clientDetailSidebarContent = (
+    <div className="flex flex-col h-full">
+      <div className="flex items-center gap-2 px-3 h-12 border-b border-foreground/6">
+        {!collapsed && (
+          <Link
+            href="/clients"
+            className="flex items-center gap-1.5 text-body-sm text-muted-foreground hover:text-foreground transition-colors flex-1 min-w-0"
+          >
+            <ArrowLeft className="w-3.5 h-3.5 shrink-0" />
+            <span>Clients</span>
+          </Link>
+        )}
+        <button
+          type="button"
+          onClick={toggleCollapse}
+          className="w-7 h-7 hidden lg:flex items-center justify-center rounded-md text-muted-foreground/40 hover:text-foreground hover:bg-foreground/[0.04] transition-colors cursor-pointer shrink-0"
+        >
+          {collapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronLeft className="w-3.5 h-3.5" />}
+        </button>
+      </div>
+      <nav className="flex-1 overflow-y-auto px-2 py-2">
+        {!collapsed && (
+          <p className="text-[11px] font-medium text-muted-foreground/50 px-3 pt-3 pb-1.5">
+            Client
+          </p>
+        )}
+        {collapsed && <div className="pt-4 pb-1" />}
+        {CLIENT_DETAIL_NAV.map((item) => (
+          <NavItem
+            key={item.id}
+            href={`${clientDetailBase}${item.href}`}
+            label={item.label}
+            icon={item.icon}
+            active={isClientNavActive(item.href)}
+            collapsed={collapsed}
+            cmdHeld={false}
+          />
+        ))}
+      </nav>
+    </div>
+  );
+
+  const activeContent = isClientDetailMode
+    ? clientDetailSidebarContent
+    : isSettingsMode
+      ? settingsSidebarContent
+      : sidebarContent;
 
   return (
     <>
