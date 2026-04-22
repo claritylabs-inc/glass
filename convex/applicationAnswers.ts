@@ -55,6 +55,7 @@ export const brokerSetAnswer = mutation({
   args: {
     applicationId: v.id("applications"),
     questionId: v.id("applicationQuestions"),
+    rowKey: v.optional(v.string()),
     value: v.any(),
   },
   handler: async (ctx, args) => {
@@ -65,7 +66,7 @@ export const brokerSetAnswer = mutation({
         q
           .eq("applicationId", args.applicationId)
           .eq("questionId", args.questionId)
-          .eq("rowKey", undefined),
+          .eq("rowKey", args.rowKey),
       )
       .first();
     const now = Date.now();
@@ -82,7 +83,7 @@ export const brokerSetAnswer = mutation({
     return await ctx.db.insert("applicationAnswers", {
       applicationId: args.applicationId,
       questionId: args.questionId,
-      rowKey: undefined,
+      rowKey: args.rowKey,
       value: args.value,
       source: "manual",
       status: "answered",
@@ -97,6 +98,7 @@ export const brokerRemoveAnswer = mutation({
   args: {
     applicationId: v.id("applications"),
     questionId: v.id("applicationQuestions"),
+    rowKey: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     await assertCanEditApplicationDraft(ctx, args.applicationId);
@@ -106,7 +108,7 @@ export const brokerRemoveAnswer = mutation({
         q
           .eq("applicationId", args.applicationId)
           .eq("questionId", args.questionId)
-          .eq("rowKey", undefined),
+          .eq("rowKey", args.rowKey),
       )
       .first();
     if (existing) await ctx.db.delete(existing._id);

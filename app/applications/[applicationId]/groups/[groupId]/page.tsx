@@ -1,5 +1,5 @@
 import { GroupFiller } from "@/components/applications/group-filler";
-import { AppShell } from "@/components/app-shell";
+import { ClientApplicationShell } from "@/components/applications/client-application-shell";
 import type { Id } from "@/convex/_generated/dataModel";
 
 export default async function GroupFillerPage({
@@ -9,11 +9,15 @@ export default async function GroupFillerPage({
 }) {
   const { applicationId, groupId } = await params;
   return (
-    <AppShell>
+    <ClientApplicationShell
+      applicationId={applicationId as Id<"applications">}
+      currentGroupId={groupId as Id<"applicationGroups">}
+      subtitle="Fill in this section with the most accurate and up-to-date information."
+    >
       <GroupFiller
         applicationId={applicationId as Id<"applications">}
         groupId={groupId as Id<"applicationGroups">}
       />
-    </AppShell>
+    </ClientApplicationShell>
   );
 }

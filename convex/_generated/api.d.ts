@@ -10,6 +10,7 @@
 
 import type * as actions_addFileToPolicy from "../actions/addFileToPolicy.js";
 import type * as actions_applicationAuthoring from "../actions/applicationAuthoring.js";
+import type * as actions_applicationExtraction from "../actions/applicationExtraction.js";
 import type * as actions_applicationPrefill from "../actions/applicationPrefill.js";
 import type * as actions_backfillChunks from "../actions/backfillChunks.js";
 import type * as actions_classifyEmails from "../actions/classifyEmails.js";
@@ -161,6 +162,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   "actions/addFileToPolicy": typeof actions_addFileToPolicy;
   "actions/applicationAuthoring": typeof actions_applicationAuthoring;
+  "actions/applicationExtraction": typeof actions_applicationExtraction;
   "actions/applicationPrefill": typeof actions_applicationPrefill;
   "actions/backfillChunks": typeof actions_backfillChunks;
   "actions/classifyEmails": typeof actions_classifyEmails;

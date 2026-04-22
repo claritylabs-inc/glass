@@ -20,9 +20,11 @@ type Props = {
   answer: Answer;
   flags: Flag[];
   onChange: (value: unknown, source?: "manual") => void;
+  label?: string;
+  inputName?: string;
 };
 
-export function QuestionField({ question, answer, flags, onChange }: Props) {
+export function QuestionField({ question, answer, flags, onChange, label, inputName }: Props) {
   const value = answer?.value;
   const source = answer?.source;
   const override = answer?.overrideOfIntegration;
@@ -31,7 +33,7 @@ export function QuestionField({ question, answer, flags, onChange }: Props) {
     <div className="space-y-1.5">
       <div className="flex items-center gap-2">
         <label className="text-sm font-medium text-foreground">
-          {question.prompt}
+          {label ?? question.prompt}
           {question.required && <span className="text-red-500 ml-0.5">*</span>}
         </label>
         {source && (
@@ -51,6 +53,7 @@ export function QuestionField({ question, answer, flags, onChange }: Props) {
         answerType={question.answerType}
         value={value}
         selectOptions={question.selectOptions}
+        inputName={inputName ?? `q-${question._id}`}
         onChange={(v) => onChange(v, "manual")}
       />
 
@@ -63,11 +66,13 @@ function FieldInput({
   answerType,
   value,
   selectOptions,
+  inputName,
   onChange,
 }: {
   answerType: string;
   value: unknown;
   selectOptions?: { value: string; label: string }[];
+  inputName: string;
   onChange: (v: unknown) => void;
 }) {
   switch (answerType) {
@@ -110,7 +115,7 @@ function FieldInput({
           <label className="flex items-center gap-1.5 text-sm cursor-pointer">
             <input
               type="radio"
-              name={`yn-${answerType}`}
+              name={`yn-${inputName}`}
               checked={value === true}
               onChange={() => onChange(true)}
             />
@@ -119,7 +124,7 @@ function FieldInput({
           <label className="flex items-center gap-1.5 text-sm cursor-pointer">
             <input
               type="radio"
-              name={`yn-${answerType}`}
+              name={`yn-${inputName}`}
               checked={value === false}
               onChange={() => onChange(false)}
             />
