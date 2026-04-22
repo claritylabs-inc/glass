@@ -76,6 +76,9 @@ export function SectionDocuments() {
         size: file.size,
       });
       toast.success("Uploaded, extracting business context...");
+      // NOTE: extractFromDocument runs synchronously in one Convex action (not backgrounded).
+      // This works for typical documents but can time-out on very large files.
+      // Future: migrate to cl-pipelines similar to applicationExtraction.
       const outcome = await extractFromDocument({
         fileId: storageId,
         fileName: file.name,
