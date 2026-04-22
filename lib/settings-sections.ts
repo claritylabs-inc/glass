@@ -7,6 +7,7 @@ import {
   FileText,
   Puzzle,
   CreditCard,
+  Plug,
 } from "lucide-react";
 import type { ComponentType } from "react";
 
@@ -23,6 +24,7 @@ export const CLIENT_SETTINGS_SECTIONS: SettingsSection[] = [
   { id: "organization", label: "Organization", icon: Building2 },
   { id: "team", label: "Team", icon: Users },
   { id: "api-keys", label: "API Keys", icon: Key },
+  { id: "sources", label: "Sources", icon: Plug },
   { id: "email-connections", label: "Email Connections", icon: Mail },
   { id: "documents", label: "Documents", icon: FileText },
   { id: "integrations", label: "Integrations", icon: Puzzle },

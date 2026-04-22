@@ -60,11 +60,3 @@ export async function assertCanReviewApplication(
   if (app.brokerOrgId !== access.orgId) throw new Error("Forbidden: broker org only");
   return { access, app };
 }
-
-export async function assertCanCreateBrokerTemplate(ctx: Ctx) {
-  return await requireOrgAccess(ctx);
-}
-
-export async function assertCanUseSystemTemplate(ctx: Ctx) {
-  return await requireOrgAccess(ctx);
-}

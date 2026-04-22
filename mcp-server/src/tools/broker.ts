@@ -38,7 +38,6 @@ export function registerBrokerTools(server: McpServer, client: GlassClient) {
     "Create a new application draft for a client. Broker only. Write scope required.",
     {
       clientOrgId: z.string(),
-      creationPath: z.enum(["blank", "template", "upload"]),
       title: z.string(),
       lineOfBusiness: z.string().optional(),
     },

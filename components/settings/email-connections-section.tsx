@@ -153,7 +153,12 @@ export function EmailConnectionsSection() {
         state,
         returnTo: "/settings?section=email-connections",
       });
-      window.location.href = `/api/auth/google/start?state=${encodeURIComponent(state)}`;
+      window.open(
+        `/api/auth/google/start?state=${encodeURIComponent(state)}`,
+        "_blank",
+        "noopener,noreferrer",
+      );
+      setReconnectingId(null);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to start Google reconnect");
       setReconnectingId(null);

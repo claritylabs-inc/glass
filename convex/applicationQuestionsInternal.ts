@@ -56,3 +56,39 @@ export const patch = internalMutation({
     });
   },
 });
+
+// Delete a question and any dependent answers/flags. Used by AI cleanup
+// to prune non-digitizable fields (signatures, broker-only fields, dates, etc).
+export const deleteQuestion = internalMutation({
+  args: { questionId: v.id("applicationQuestions") },
+  handler: async (ctx, args) => {
+    const q = await ctx.db.get(args.questionId);
+    if (!q) return;
+    const answers = await ctx.db
+      .query("applicationAnswers")
+      .withIndex("by_questionId", (idx) => idx.eq("questionId", args.questionId))
+      .collect();
+    for (const a of answers) await ctx.db.delete(a._id);
+    const flags = await ctx.db
+      .query("applicationQuestionFlags")
+      .withIndex("by_questionId", (idx) => idx.eq("questionId", args.questionId))
+      .collect();
+    for (const f of flags) await ctx.db.delete(f._id);
+    await ctx.db.delete(args.questionId);
+  },
+});
+
+// Rewrite a question's prompt. Preserves the original in rawPrompt on first rewrite.
+export const rewritePrompt = internalMutation({
+  args: {
+    questionId: v.id("applicationQuestions"),
+    prompt: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db.get(args.questionId);
+    if (!existing) return;
+    const patch: Record<string, unknown> = { prompt: args.prompt };
+    if (!existing.rawPrompt) patch.rawPrompt = existing.prompt;
+    await ctx.db.patch(args.questionId, patch as any);
+  },
+});

@@ -23,10 +23,8 @@ const CONTEXT_SUPPORTED_EXTENSIONS = [
   ".csv",
   ".docx",
   ".xlsx",
-  ".pptx",
-  ".odt",
+  ".xls",
   ".ods",
-  ".odp",
   ".txt",
   ".tsv",
   ".json",
@@ -154,7 +152,7 @@ export function DocumentsSection() {
     const ext = file.name.toLowerCase().slice(file.name.lastIndexOf("."));
     if (!CONTEXT_SUPPORTED_EXTENSIONS.includes(ext as (typeof CONTEXT_SUPPORTED_EXTENSIONS)[number])) {
       // Keep client validation aligned with server-side parsers to avoid guaranteed upload failures.
-      toast.error("Supported: PDF, DOCX/XLSX/PPTX, ODT/ODS/ODP, CSV/TSV, Markdown, TXT, JSON");
+      toast.error("Supported: PDF, DOCX, XLSX/XLS/ODS, CSV/TSV, Markdown, TXT, JSON");
       return;
     }
     setUploading(true);
@@ -274,7 +272,7 @@ export function DocumentsSection() {
       <input
         ref={contextFileInputRef}
         type="file"
-        accept=".pdf,.md,.mdx,.csv,.docx,.xlsx,.pptx,.odt,.ods,.odp,.txt,.tsv,.json"
+        accept=".pdf,.md,.mdx,.csv,.docx,.xlsx,.xls,.ods,.txt,.tsv,.json"
         className="hidden"
         onChange={(e) => {
           const f = e.target.files?.[0];

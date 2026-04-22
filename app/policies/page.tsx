@@ -92,6 +92,16 @@ export default function PoliciesPage() {
 
   return (
     <AppShell
+      actions={
+        <PillButton
+          size="compact"
+          variant="secondary"
+          onClick={() => setUploaderOpen(true)}
+        >
+          <Upload className="h-3.5 w-3.5" />
+          Upload
+        </PillButton>
+      }
       rightPanel={
         <PolicyUploadDrawer
           open={uploaderOpen}
@@ -102,28 +112,18 @@ export default function PoliciesPage() {
       }
     >
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <Tabs
-            value={docTypeTab}
-            onValueChange={(v) => setDocTypeTab(v as DocTypeTab)}
-          >
-            <TabsList variant="pill">
-              {DOC_TYPE_TABS.map((tab) => (
-                <TabsTrigger key={tab.id} value={tab.id}>
-                  {tab.label}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
-          <PillButton
-            size="compact"
-            variant="secondary"
-            onClick={() => setUploaderOpen(true)}
-          >
-            <Upload className="h-3.5 w-3.5" />
-            Upload
-          </PillButton>
-        </div>
+        <Tabs
+          value={docTypeTab}
+          onValueChange={(v) => setDocTypeTab(v as DocTypeTab)}
+        >
+          <TabsList variant="pill">
+            {DOC_TYPE_TABS.map((tab) => (
+              <TabsTrigger key={tab.id} value={tab.id}>
+                {tab.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
 
         {isLoading ? (
           <PoliciesLoadingSkeleton />

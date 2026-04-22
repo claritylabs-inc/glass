@@ -41,10 +41,7 @@ function GlassStarIcon({ className }: { className?: string }) {
   return <LogoIcon size={16} static className={className} />;
 }
 
-const CLIENT_SETTINGS_WITH_AGENT = [
-  ...CLIENT_SETTINGS_SECTIONS,
-  { id: "agent", label: "Agent", icon: GlassStarIcon },
-];
+const CLIENT_SETTINGS_WITH_AGENT = [...CLIENT_SETTINGS_SECTIONS];
 
 const BROKER_SETTINGS_WITH_AGENT = [
   ...BROKER_SETTINGS_SECTIONS.filter((s) => s.id !== "billing"),
@@ -103,7 +100,6 @@ export function AppSidebar({
   const clientDetailId = clientDetailMatch?.[1];
   const viewer = useQuery(api.users.viewer);
   const viewerOrg = useQuery(api.orgs.viewerOrg, {});
-  const orgIcon = viewerOrg?.brokerOrg?.iconUrl ?? viewerOrg?.org?.iconUrl ?? null;
   const unifiedThreads = useQuery(api.threads.list, { archived: false });
   const webChats = useQuery(api.webChats.list, { archived: false });
   const emailConvs = useQuery(api.agentConversations.list, { archived: false });
@@ -260,7 +256,9 @@ export function AppSidebar({
     };
   }, [collapsed, router, conversations]);
 
-  const initials = getInitials(viewer?.name, viewer?.email);
+  const headerOrgName = viewerOrg?.brokerOrg?.name ?? viewerOrg?.org?.name ?? viewer?.name ?? viewer?.email ?? "";
+  const headerOrgIcon = viewerOrg?.brokerOrg?.iconUrl ?? viewerOrg?.org?.iconUrl ?? null;
+  const initials = getInitials(headerOrgName, viewer?.email);
 
   const activeSettingsSection = searchParams.get("section") ?? "organization";
 
@@ -318,9 +316,9 @@ export function AppSidebar({
       <div className="flex items-center gap-2 px-3 h-12 border-b border-foreground/6">
         {!collapsed && (
           <>
-            <div className={`ml-0.5 w-7 h-7 bg-foreground/8 flex items-center justify-center text-[11px] font-medium text-foreground shrink-0 overflow-hidden ${orgIcon ? "rounded-md" : "rounded-full"}`}>
-              {orgIcon ? (
-                <img src={orgIcon} alt="" className="w-7 h-7 object-contain bg-white" />
+            <div className={`ml-0.5 w-7 h-7 bg-foreground/8 flex items-center justify-center text-[11px] font-medium text-foreground shrink-0 overflow-hidden ${headerOrgIcon ? "rounded-md" : "rounded-full"}`}>
+              {headerOrgIcon ? (
+                <img src={headerOrgIcon} alt="" className="w-7 h-7 object-contain bg-white" />
               ) : viewer?.image ? (
                 <img src={viewer.image} alt="" className="w-7 h-7 rounded-full object-cover" />
               ) : (
@@ -328,9 +326,7 @@ export function AppSidebar({
               )}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-body-sm font-medium text-foreground truncate">
-                {viewer?.name || viewer?.email || ""}
-              </p>
+              <p className="text-body-sm font-medium text-foreground truncate">{headerOrgName}</p>
             </div>
           </>
         )}
@@ -589,13 +585,20 @@ export function AppSidebar({
     <div className="flex flex-col h-full">
       <div className="flex items-center gap-2 px-3 h-12 border-b border-foreground/6">
         {!collapsed && (
-          <Link
-            href="/clients"
-            className="flex items-center gap-1.5 text-body-sm text-muted-foreground hover:text-foreground transition-colors flex-1 min-w-0"
-          >
-            <ArrowLeft className="w-3.5 h-3.5 shrink-0" />
-            <span>Clients</span>
-          </Link>
+          <>
+            <div className={`ml-0.5 w-7 h-7 bg-foreground/8 flex items-center justify-center text-[11px] font-medium text-foreground shrink-0 overflow-hidden ${headerOrgIcon ? "rounded-md" : "rounded-full"}`}>
+              {headerOrgIcon ? (
+                <img src={headerOrgIcon} alt="" className="w-7 h-7 object-contain bg-white" />
+              ) : viewer?.image ? (
+                <img src={viewer.image} alt="" className="w-7 h-7 rounded-full object-cover" />
+              ) : (
+                initials
+              )}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-body-sm font-medium text-foreground truncate">{headerOrgName}</p>
+            </div>
+          </>
         )}
         <button
           type="button"
@@ -612,6 +615,14 @@ export function AppSidebar({
           </p>
         )}
         {collapsed && <div className="pt-4 pb-1" />}
+        <NavItem
+          href="/clients"
+          label="Clients"
+          icon={ArrowLeft}
+          active={false}
+          collapsed={collapsed}
+          cmdHeld={false}
+        />
         {CLIENT_DETAIL_NAV.map((item) => (
           <NavItem
             key={item.id}

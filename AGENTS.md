@@ -265,19 +265,23 @@ Email scan pattern:
 
 ### Onboarding
 
-The onboarding flow at `/onboarding` is intentionally minimal and runs in this order:
+Onboarding is role-specific:
 
-1. User profile (`name`, `title`)
-2. Org profile (`name`, `website`)
-3. Agent handle claim
-4. Email connection
-5. Complete
+1. `/onboarding` is now a router-only entrypoint.
+2. Broker users (or users without an org) are sent to `/onboarding/broker`.
+3. Client users are sent to `/onboarding/passport`.
 
 Important onboarding behavior:
 
-- Onboarding no longer offers demo data or team invites.
-- After the org step saves, Glass kicks off website enrichment in the background via `actions/extractCompanyInfo`.
-- That enrichment now updates both legacy user profile fields and the org record (`context`, `industry`, `industryVertical`, and relationship context fields).
+- The old generic onboarding wizard at `/onboarding` is deprecated and no longer used as a form flow.
+- Client invite acceptance creates the client org, then onboarding continues in the passport wizard.
+- Passport onboarding completion now calls `users.completeOnboarding` so returning logins do not re-enter onboarding.
+- Passport now starts with a welcome step, then three context-first steps before passport questions:
+  1. `/onboarding/passport/welcome` (intro to the passport and what to expect)
+  2. `/onboarding/passport/context` (website + document uploads)
+  3. `/onboarding/passport/email` (inbox connections)
+  4. `/onboarding/passport/integrations` (Merge/integration connections)
+- A lightweight autofill runner executes on each passport page load/reload in `components/passport/passport-autofill-runner.tsx` and re-attempts website extraction when a website is present.
 
 ### Email Scan To Policy
 

@@ -2,6 +2,7 @@
 
 import { type ReactNode } from "react";
 import { Check, X } from "lucide-react";
+import { LogoIcon } from "@/components/ui/logo-icon";
 
 export type ProvenanceRow = {
   fieldPath: string;
@@ -44,51 +45,35 @@ export function FieldWithProvenance({
       </label>
       {children}
       {hasSuggestion && (
-        <div className="flex items-start gap-2 rounded-md border border-foreground/8 bg-foreground/[0.02] px-3 py-2 text-sm">
-          <div className="flex-1 min-w-0">
-            {hasConflict ? (
-              <span className="text-muted-foreground">
-                Different value detected:{" "}
-                <span className="font-medium text-foreground">
-                  {String(provenance!.suggestedValue)}
-                </span>
-                {provenance?.sourceLabel ? ` (source: ${provenance.sourceLabel})` : ""}
+        <div className="flex items-start gap-1.5 rounded-md bg-foreground/[0.02] px-2 py-1.5 text-xs">
+          <LogoIcon size={12} color="#A0D2FA" static className="mt-0.5 shrink-0 opacity-70" />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-muted-foreground" title={String(provenance!.suggestedValue)}>
+              {hasConflict ? "Different: " : "Suggested: "}
+              <span className="font-medium text-foreground">
+                {String(provenance!.suggestedValue)}
               </span>
-            ) : (
-              <span className="text-muted-foreground">
-                Suggested:{" "}
-                <span className="font-medium text-foreground">
-                  {String(provenance!.suggestedValue)}
-                </span>
-                {provenance?.sourceLabel ? ` — ${provenance.sourceLabel}` : ""}
-              </span>
-            )}
+            </p>
           </div>
-          <div className="flex shrink-0 items-center gap-1">
+          <div className="flex items-center gap-0.5 shrink-0">
             {onAccept && (
               <button
                 type="button"
                 onClick={onAccept}
-                className="flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium text-foreground hover:bg-foreground/5 transition-colors"
+                aria-label={hasConflict ? "Replace with suggestion" : "Accept suggestion"}
+                title={hasConflict ? "Replace" : "Accept"}
+                className="rounded p-1 text-muted-foreground hover:bg-foreground/5 hover:text-foreground transition-colors"
               >
                 <Check className="h-3 w-3" />
-                {hasConflict ? "Replace" : "Accept"}
-              </button>
-            )}
-            {hasConflict && onAccept && (
-              <button
-                type="button"
-                className="rounded px-2 py-0.5 text-xs text-muted-foreground hover:bg-foreground/5 transition-colors"
-              >
-                Keep current
               </button>
             )}
             {onDismiss && (
               <button
                 type="button"
                 onClick={onDismiss}
-                className="rounded px-1.5 py-0.5 text-muted-foreground hover:bg-foreground/5 transition-colors"
                 aria-label="Dismiss suggestion"
+                title="Dismiss"
+                className="rounded p-1 text-muted-foreground hover:bg-foreground/5 hover:text-foreground transition-colors"
               >
                 <X className="h-3 w-3" />
               </button>

@@ -2,6 +2,8 @@
 
 import { useSearchParams, useRouter } from "next/navigation";
 import { useState, createContext, useContext } from "react";
+import { useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
 import { AppShell } from "@/components/app-shell";
 import {
   Mail,
@@ -12,10 +14,12 @@ import {
   FileText,
   Puzzle,
   CreditCard,
+  Plug,
 } from "lucide-react";
 import { LogoIcon } from "@/components/ui/logo-icon";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useCurrentOrg } from "@/hooks/use-current-org";
+import { BrokerContactCard } from "@/components/settings/broker-contact-card";
 
 /** Wrapper so LogoIcon matches the lucide icon interface used in nav items */
 function GlassStarIcon({ className }: { className?: string }) {
@@ -28,7 +32,7 @@ import { EmailConnectionsSection } from "@/components/settings/email-connections
 import { DocumentsSection } from "@/components/settings/documents-section";
 import { IntegrationsSection } from "@/components/settings/integrations-section";
 import { IntelligenceSection } from "@/components/settings/intelligence-section";
-import { AgentSection } from "@/components/settings/agent-section";
+import { SourcesSection } from "@/components/settings/sources-section";
 import { BrokerBrandingTab } from "@/components/settings/broker-branding-tab";
 import { BrokerTeamTab } from "@/components/settings/broker-team-tab";
 import { BrokerAgentTab } from "@/components/settings/broker-agent-tab";
@@ -40,11 +44,11 @@ const CLIENT_SETTINGS_SECTIONS = [
   { id: "organization", label: "Organization", icon: Building2 },
   { id: "team", label: "Team", icon: Users },
   { id: "api-keys", label: "API Keys", icon: Key },
+  { id: "sources", label: "Sources", icon: Plug },
   { id: "email-connections", label: "Email Connections", icon: Mail },
   { id: "documents", label: "Documents", icon: FileText },
   { id: "integrations", label: "Integrations", icon: Puzzle },
   { id: "intelligence", label: "Intelligence", icon: Sparkles },
-  { id: "agent", label: "Agent", icon: GlassStarIcon },
   { id: "notifications", label: "Notifications", icon: Bell },
 ] as const;
 
@@ -79,6 +83,8 @@ export default function SettingsPage() {
   const [headerActions, setHeaderActions] = useState<React.ReactNode>(null);
   const currentOrg = useCurrentOrg();
   const isBroker = currentOrg?.isBroker ?? false;
+  const viewerOrgData = useQuery(api.orgs.viewerOrg, {});
+  const brokerOrg = !isBroker ? viewerOrgData?.brokerOrg : null;
 
   const SETTINGS_SECTIONS_ACTIVE = isBroker ? BROKER_SETTINGS_SECTIONS : CLIENT_SETTINGS_SECTIONS;
 
@@ -99,6 +105,9 @@ export default function SettingsPage() {
         breadcrumbDetail={activeLabel === "Settings" ? undefined : activeLabel}
         actions={headerActions}
       >
+        {/* Broker contact card — shown at the top for client users */}
+        {brokerOrg ? <BrokerContactCard broker={brokerOrg} /> : null}
+
         {/* Mobile: horizontal scrollable tabs */}
         <div className="lg:hidden mb-6 -mx-6 px-6 overflow-x-auto scrollbar-hide">
           <Tabs
@@ -151,6 +160,8 @@ function SectionContent({ section, isBroker }: { section: SettingsSection; isBro
         <TeamSection />
       ) : section === "api-keys" ? (
         <ApiKeysSection />
+      ) : section === "sources" ? (
+        <SourcesSection />
       ) : section === "email-connections" ? (
         <EmailConnectionsSection />
       ) : section === "documents" ? (
@@ -159,8 +170,6 @@ function SectionContent({ section, isBroker }: { section: SettingsSection; isBro
         <IntegrationsSection />
       ) : section === "intelligence" ? (
         <IntelligenceSection />
-      ) : section === "agent" ? (
-        <AgentSection />
       ) : section === "notifications" && currentOrg?.orgId ? (
         <NotificationPreferencesPage orgId={currentOrg.orgId} />
       ) : null}

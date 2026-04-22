@@ -3,7 +3,6 @@
 import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal as _internal } from "../_generated/api";
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const internal = _internal as any;
 
 /**
@@ -17,6 +16,10 @@ export const mapWebsiteToPassport = internalAction({
     extracted: v.object({
       companyContext: v.optional(v.string()),
       industry: v.optional(v.string()),
+      naicsCode: v.optional(v.string()),
+      yearsInBusiness: v.optional(v.number()),
+      numberOfEmployees: v.optional(v.number()),
+      annualRevenue: v.optional(v.string()),
     }),
     websiteUrl: v.string(),
   },
@@ -29,6 +32,22 @@ export const mapWebsiteToPassport = internalAction({
         fieldPath: "businessDescription",
         value: args.extracted.companyContext,
       });
+      suggestions.push({
+        fieldPath: "operationsSummary",
+        value: args.extracted.companyContext,
+      });
+    }
+    if (args.extracted.naicsCode) {
+      suggestions.push({ fieldPath: "naicsCode", value: args.extracted.naicsCode });
+    }
+    if (args.extracted.yearsInBusiness !== undefined) {
+      suggestions.push({ fieldPath: "yearsInBusiness", value: args.extracted.yearsInBusiness });
+    }
+    if (args.extracted.numberOfEmployees !== undefined) {
+      suggestions.push({ fieldPath: "numberOfEmployees", value: args.extracted.numberOfEmployees });
+    }
+    if (args.extracted.annualRevenue) {
+      suggestions.push({ fieldPath: "annualRevenue", value: args.extracted.annualRevenue });
     }
     if (args.websiteUrl) {
       suggestions.push({ fieldPath: "website", value: args.websiteUrl });

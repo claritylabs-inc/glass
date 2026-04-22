@@ -52,7 +52,7 @@ export const viewerOrg = query({
         title?: string;
       } | null;
     } | null = null;
-    if (org.type === "client" && org.brokerOrgId) {
+    if ((org.type ?? "client") === "client" && org.brokerOrgId) {
       const broker = await ctx.db.get(org.brokerOrgId);
       if (broker) {
         const brokerIconUrl = broker.iconStorageId
@@ -244,43 +244,6 @@ export const pendingInvitationForViewer = query({
 });
 
 // ── Mutations ──
-
-export const createOrg = mutation({
-  args: {
-    name: v.string(),
-    website: v.optional(v.string()),
-    context: v.optional(v.string()),
-    industry: v.optional(v.string()),
-    industryVertical: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
-
-    // Check if user already has an org
-    const existing = await ctx.db
-      .query("orgMemberships")
-      .withIndex("by_userId", (q) => q.eq("userId", userId))
-      .first();
-    if (existing) throw new Error("Already in an organization");
-
-    const orgId = await ctx.db.insert("organizations", {
-      name: args.name,
-      ...(args.website && { website: args.website }),
-      ...(args.context && { context: args.context }),
-      ...(args.industry && { industry: args.industry }),
-      ...(args.industryVertical && { industryVertical: args.industryVertical }),
-    });
-
-    await ctx.db.insert("orgMemberships", {
-      orgId,
-      userId,
-      role: "admin",
-    });
-
-    return orgId;
-  },
-});
 
 /** Create a broker org during broker signup wizard. */
 export const createBrokerOrg = mutation({
@@ -701,6 +664,22 @@ export const resolveClientBySender = internalQuery({
   },
 });
 
+export const getOrgsByUserId = internalQuery({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    const memberships = await ctx.db
+      .query("orgMemberships")
+      .withIndex("by_userId", (q) => q.eq("userId", args.userId))
+      .collect();
+
+    const orgs = await Promise.all(
+      memberships.map((membership) => ctx.db.get(membership.orgId)),
+    );
+
+    return orgs.filter(Boolean);
+  },
+});
+
 export const getInternal = internalQuery({
   args: { id: v.id("organizations") },
   handler: async (ctx, args) => {
@@ -721,6 +700,22 @@ export const getMembersInternal = internalQuery({
         return { ...m, user };
       }),
     );
+  },
+});
+
+export const hasMembershipInternal = internalQuery({
+  args: {
+    orgId: v.id("organizations"),
+    userId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    const membership = await ctx.db
+      .query("orgMemberships")
+      .withIndex("by_orgId_userId", (q) =>
+        q.eq("orgId", args.orgId).eq("userId", args.userId),
+      )
+      .first();
+    return !!membership;
   },
 });
 
@@ -784,8 +779,11 @@ export const getById = query({
 export const listMembersForOrg = query({
   args: { orgId: v.id("organizations") },
   handler: async (ctx, args) => {
-    const access = await getOrgAccess(ctx);
-    if (!access) return [];
+    try {
+      await getOrgAccessNew(ctx, args.orgId);
+    } catch {
+      return [];
+    }
     const memberships = await ctx.db
       .query("orgMemberships")
       .withIndex("by_orgId", (q) => q.eq("orgId", args.orgId))

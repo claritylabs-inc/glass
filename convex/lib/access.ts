@@ -174,17 +174,12 @@ export function assertCanCompleteApplication(access: OrgAccess): void {
 }
 
 /**
- * Returns an optional source filter for broker-of-client viewers.
- * Broker viewers must not see intelligence derived from emails or chat.
+ * Returns an optional source filter for intelligence viewers.
  */
 export function assertCanReadIntelligence(
   access: OrgAccess,
 ): { sourceFilter?: (entry: { source: string }) => boolean } {
-  if (access.accessType === "broker_of_client") {
-    return {
-      sourceFilter: (entry) => entry.source !== "email" && entry.source !== "chat",
-    };
-  }
+  void access;
   return {};
 }
 

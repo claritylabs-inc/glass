@@ -96,6 +96,14 @@ export const insertDemoData = internalMutation({
       role: "admin",
     });
 
+    await ctx.db.insert("brokerClientAssignments", {
+      orgId: brokerOrgId,
+      clientOrgId: client1OrgId,
+      producerId: brokerUserId,
+      role: "primary",
+      createdAt: Date.now(),
+    });
+
     // --- Client org 2 ---
     const client2OrgId = await ctx.db.insert("organizations", {
       name: "[DEMO] Green Leaf Consulting",
@@ -117,6 +125,14 @@ export const insertDemoData = internalMutation({
       orgId: client2OrgId,
       userId: client2UserId,
       role: "admin",
+    });
+
+    await ctx.db.insert("brokerClientAssignments", {
+      orgId: brokerOrgId,
+      clientOrgId: client2OrgId,
+      producerId: brokerUserId,
+      role: "primary",
+      createdAt: Date.now(),
     });
 
     return {

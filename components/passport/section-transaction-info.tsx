@@ -1,11 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { useRouter } from "next/navigation";
 import { api as _api } from "@/convex/_generated/api";
 import { ArrowLeft, ArrowRight, Loader2 } from "lucide-react";
 import { PillButton } from "@/components/ui/pill-button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { toast } from "sonner";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -29,12 +36,27 @@ export function SectionTransactionInfo() {
   const passportData = useQuery(api.clientPassport.getFull, {});
   const upsertTransactionInfo = useMutation(api.clientPassport.upsertTransactionInfo);
 
-  const passport = passportData?.passport as any;
+  const passport = passportData?.passport as
+    | {
+        desiredEffectiveDate?: string;
+        desiredPolicyTerm?: string;
+        desiredLinesOfBusiness?: string[];
+      }
+    | undefined;
 
-  const [desiredEffectiveDate, setDesiredEffectiveDate] = useState(passport?.desiredEffectiveDate ?? "");
-  const [desiredPolicyTerm, setDesiredPolicyTerm] = useState(passport?.desiredPolicyTerm ?? "");
-  const [selectedLines, setSelectedLines] = useState<string[]>(passport?.desiredLinesOfBusiness ?? []);
+  const [desiredEffectiveDate, setDesiredEffectiveDate] = useState("");
+  const [desiredPolicyTerm, setDesiredPolicyTerm] = useState("");
+  const [selectedLines, setSelectedLines] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
+  const hydratedRef = useRef(false);
+
+  useEffect(() => {
+    if (hydratedRef.current || !passportData) return;
+    if (passport?.desiredEffectiveDate) setDesiredEffectiveDate(passport.desiredEffectiveDate);
+    if (passport?.desiredPolicyTerm) setDesiredPolicyTerm(passport.desiredPolicyTerm);
+    if (passport?.desiredLinesOfBusiness?.length) setSelectedLines(passport.desiredLinesOfBusiness);
+    hydratedRef.current = true;
+  }, [passportData, passport]);
 
   const inputClass = "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
 
@@ -73,12 +95,19 @@ export function SectionTransactionInfo() {
 
       <div className="space-y-1.5">
         <label className="text-label-sm font-medium text-muted-foreground block">Policy term</label>
-        <select value={desiredPolicyTerm} onChange={(e) => setDesiredPolicyTerm(e.target.value)} className={inputClass}>
-          <option value="">Select...</option>
-          <option value="annual">Annual (1 year)</option>
-          <option value="3-year">3-year</option>
-          <option value="other">Other</option>
-        </select>
+        <Select
+          value={desiredPolicyTerm || null}
+          onValueChange={(value) => setDesiredPolicyTerm(value ?? "")}
+        >
+          <SelectTrigger className={inputClass}>
+            <SelectValue placeholder="Select…" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="annual">Annual (1 year)</SelectItem>
+            <SelectItem value="3-year">3-year</SelectItem>
+            <SelectItem value="other">Other</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="space-y-2">

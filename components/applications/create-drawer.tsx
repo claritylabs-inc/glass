@@ -1,47 +1,17 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import { useMutation } from "convex/react";
+import { useAction, useMutation } from "convex/react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
-import { X } from "lucide-react";
+import { FileText, Loader2, Upload, X } from "lucide-react";
+import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { PillButton } from "@/components/ui/pill-button";
-import { EditorCustom } from "./editor-custom";
-import { EditorAi } from "./editor-ai";
-import { EditorTemplate } from "./editor-template";
-
-type CreationPath = "custom" | "ai" | "template";
 
 const EASE = [0.16, 1, 0.3, 1] as const;
-const MIN_WIDTH = 360;
-const MAX_WIDTH = 720;
-const DEFAULT_WIDTH = 480;
-
-const INPUT_CLASSES =
-  "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
-
-const LABEL_CLASSES =
-  "text-label-sm font-medium text-muted-foreground block mb-1";
-
-const PATH_OPTIONS = [
-  {
-    path: "custom" as const,
-    label: "Build manually",
-    desc: "Pick questions from the catalog or write your own.",
-  },
-  {
-    path: "ai" as const,
-    label: "Generate with AI",
-    desc: "Describe the risk and let Glass generate the question set.",
-  },
-  {
-    path: "template" as const,
-    label: "Use a template",
-    desc: "Start from a saved template (e.g. ACORD 126 CGL).",
-  },
-];
+const WIDTH = 560;
 
 type Props = {
   open: boolean;
@@ -50,71 +20,126 @@ type Props = {
 };
 
 export function CreateApplicationDrawer({ open, onClose, clientOrgId }: Props) {
-  const [step, setStep] = useState<"choose" | "name" | "build">("choose");
-  const [path, setPath] = useState<CreationPath>("custom");
-  const [title, setTitle] = useState("");
-  const [applicationId, setApplicationId] =
-    useState<Id<"applications"> | null>(null);
+  const router = useRouter();
+  const [prompt, setPrompt] = useState("");
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState<null | "generate" | "pdf">(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const createDraft = useMutation((api as any).applications.createDraft);
-  const router = useRouter();
-
-  const [width, setWidth] = useState(DEFAULT_WIDTH);
-  const [isDraggingState, setIsDraggingState] = useState(false);
-  const isDragging = useRef(false);
-
-  const onPointerDown = useCallback(
-    (e: React.PointerEvent) => {
-      e.preventDefault();
-      isDragging.current = true;
-      setIsDraggingState(true);
-      const startX = e.clientX;
-      const startWidth = width;
-
-      const onMove = (ev: PointerEvent) => {
-        if (!isDragging.current) return;
-        const delta = startX - ev.clientX;
-        setWidth(Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, startWidth + delta)));
-      };
-      const onUp = () => {
-        isDragging.current = false;
-        setIsDraggingState(false);
-        document.removeEventListener("pointermove", onMove);
-        document.removeEventListener("pointerup", onUp);
-        document.body.style.cursor = "";
-        document.body.style.userSelect = "";
-      };
-      document.body.style.cursor = "col-resize";
-      document.body.style.userSelect = "none";
-      document.addEventListener("pointermove", onMove);
-      document.addEventListener("pointerup", onUp);
-    },
-    [width],
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const generateUploadUrl = useMutation((api as any).applications.generateUploadUrl);
+  const generateQuestions = useAction(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (api as any).actions.applicationAuthoring.generateQuestionSet,
+  );
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const addQuestion = useMutation((api as any).applications.addQuestion);
+  const extractFromPdf = useAction(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (api as any).actions.extractApplicationPdf.extractQuestionsFromPdf,
   );
 
-  async function handleNameSubmit() {
-    if (!title.trim()) return;
-    const id = await createDraft({
-      clientOrgId,
-      creationPath: path,
-      title: title.trim(),
-    });
-    setApplicationId(id as Id<"applications">);
-    setStep("build");
-  }
-
-  function handleSent() {
-    handleClose();
-    router.refresh();
-  }
-
   function handleClose() {
-    setStep("choose");
-    setPath("custom");
-    setTitle("");
-    setApplicationId(null);
+    setPrompt("");
+    setPdfFile(null);
+    setBusy(null);
     onClose();
   }
+
+  function navigateToApp(id: Id<"applications">) {
+    router.push(`/clients/${clientOrgId}/applications/${id}`);
+    handleClose();
+  }
+
+  async function handleGenerate() {
+    const p = prompt.trim();
+    if (!p) return;
+    setBusy("generate");
+    try {
+      const title = p.length > 60 ? `${p.slice(0, 57)}…` : p;
+      const applicationId = (await createDraft({
+        clientOrgId,
+        title,
+        aiGenerationPrompt: p,
+      })) as Id<"applications">;
+
+      const questions = (await generateQuestions({ prompt: p, clientOrgId })) as Array<{
+        intentKey?: string;
+        customPrompt?: string;
+        answerType: string;
+        required: boolean;
+      }>;
+
+      for (const q of questions) {
+        await addQuestion({
+          applicationId,
+          intentKey: q.intentKey,
+          prompt: q.customPrompt ?? q.intentKey ?? "Question",
+          answerType: q.answerType,
+          required: q.required,
+        });
+      }
+      toast.success(`Generated ${questions.length} questions`);
+      navigateToApp(applicationId);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to generate");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const handleFileSelect = useCallback((file: File) => {
+    if (file.type !== "application/pdf") {
+      toast.error("Please upload a PDF file.");
+      return;
+    }
+    setPdfFile(file);
+  }, []);
+
+  async function handleUploadPdf(file: File) {
+    setBusy("pdf");
+    try {
+      const title = file.name.replace(/\.pdf$/i, "");
+      const applicationId = (await createDraft({
+        clientOrgId,
+        title,
+      })) as Id<"applications">;
+
+      const uploadUrl = await generateUploadUrl();
+      const res = await fetch(uploadUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/pdf" },
+        body: file,
+      });
+      if (!res.ok) throw new Error("Upload failed");
+      const { storageId } = await res.json();
+
+      const result = (await extractFromPdf({
+        applicationId,
+        fileId: storageId as Id<"_storage">,
+      })) as { questionCount: number };
+
+      toast.success(`Extracted ${result.questionCount} questions`);
+      navigateToApp(applicationId);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to process PDF");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const onDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      const file = e.dataTransfer.files[0];
+      if (file) handleFileSelect(file);
+    },
+    [handleFileSelect],
+  );
+
+  const disabled = busy !== null;
 
   return (
     <AnimatePresence mode="popLayout">
@@ -122,25 +147,18 @@ export function CreateApplicationDrawer({ open, onClose, clientOrgId }: Props) {
         <motion.div
           layout
           initial={{ width: 0 }}
-          animate={{ width }}
+          animate={{ width: WIDTH }}
           exit={{ width: 0 }}
-          transition={
-            isDraggingState ? { duration: 0 } : { duration: 0.4, ease: EASE }
-          }
-          className="flex shrink-0 overflow-hidden h-full relative"
+          transition={{ duration: 0.35, ease: EASE }}
+          className="flex shrink-0 overflow-hidden h-full"
         >
-          <div
-            onPointerDown={onPointerDown}
-            className="absolute left-0 top-0 bottom-0 z-10 w-1 cursor-col-resize hover:bg-foreground/8 active:bg-foreground/12 transition-colors"
-          />
-
           <motion.div
             initial={{ opacity: 0, x: 30 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 30 }}
-            transition={{ duration: 0.35, ease: EASE, delay: 0.05 }}
+            transition={{ duration: 0.3, ease: EASE, delay: 0.05 }}
             className="flex flex-col flex-1 min-h-0 border-l border-foreground/6 bg-background"
-            style={{ width }}
+            style={{ width: WIDTH }}
           >
             <div className="h-12 flex items-center gap-3 px-4 border-b border-foreground/6 shrink-0">
               <span className="text-body-sm font-medium text-foreground truncate flex-1">
@@ -156,102 +174,112 @@ export function CreateApplicationDrawer({ open, onClose, clientOrgId }: Props) {
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
-              {step === "choose" && (
-                <>
-                  <p className="text-body-sm text-muted-foreground">
-                    Choose how to build this application:
-                  </p>
-                  <div className="grid gap-3">
-                    {PATH_OPTIONS.map(({ path: p, label, desc }) => (
-                      <button
-                        key={p}
-                        type="button"
-                        className={`text-left p-4 rounded-lg border transition-colors ${
-                          path === p
-                            ? "border-primary bg-primary/5"
-                            : "border-foreground/10 hover:bg-accent"
-                        }`}
-                        onClick={() => setPath(p)}
-                      >
-                        <div className="font-medium text-body-sm">{label}</div>
-                        <div className="text-xs text-muted-foreground mt-0.5">
-                          {desc}
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                  <PillButton
-                    variant="primary"
-                    className="w-full"
-                    onClick={() => setStep("name")}
-                  >
-                    Continue
-                  </PillButton>
-                </>
-              )}
+            <div className="flex-1 overflow-y-auto px-5 py-5 space-y-6">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Describe the application</label>
+                <textarea
+                  placeholder="e.g. CGL application for a roofing contractor in Texas with 15 employees, $2M revenue, and prior claims…"
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  rows={4}
+                  disabled={disabled}
+                  className="w-full resize-none rounded-lg border border-foreground/10 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors"
+                />
+                <PillButton
+                  variant="secondary"
+                  className="w-full"
+                  onClick={handleGenerate}
+                  disabled={!prompt.trim() || disabled}
+                >
+                  {busy === "generate" ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Generating…
+                    </>
+                  ) : (
+                    "Generate Question Set"
+                  )}
+                </PillButton>
+              </div>
 
-              {step === "name" && (
-                <>
-                  <div>
-                    <label htmlFor="app-title" className={LABEL_CLASSES}>
-                      Application title
-                    </label>
+              <div className="flex items-center gap-3">
+                <div className="h-px flex-1 bg-foreground/8" />
+                <span className="text-xs text-muted-foreground">or</span>
+                <div className="h-px flex-1 bg-foreground/8" />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">
+                  Upload an existing application PDF
+                </label>
+                {!pdfFile ? (
+                  <div
+                    onDrop={onDrop}
+                    onDragOver={(e) => e.preventDefault()}
+                    onClick={() => !disabled && fileInputRef.current?.click()}
+                    className={`rounded-lg border border-dashed border-foreground/15 bg-muted/20 px-4 py-10 text-center transition-colors ${
+                      disabled
+                        ? "opacity-50 cursor-not-allowed"
+                        : "cursor-pointer hover:bg-muted/30"
+                    }`}
+                  >
+                    <Upload className="mx-auto h-6 w-6 text-muted-foreground" />
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      Drag and drop a PDF, or click to browse
+                    </p>
+                    <p className="text-xs text-muted-foreground/60">
+                      Application forms only
+                    </p>
                     <input
-                      id="app-title"
-                      type="text"
-                      placeholder="e.g. 2026 CGL Renewal"
-                      value={title}
-                      onChange={(e) => setTitle(e.target.value)}
-                      onKeyDown={(e) =>
-                        e.key === "Enter" && handleNameSubmit()
-                      }
-                      autoFocus
-                      className={INPUT_CLASSES}
+                      ref={fileInputRef}
+                      type="file"
+                      accept="application/pdf"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) handleFileSelect(file);
+                        e.target.value = "";
+                      }}
                     />
                   </div>
-                  <div className="flex gap-2">
-                    <PillButton
-                      variant="secondary"
-                      onClick={() => setStep("choose")}
-                    >
-                      Back
-                    </PillButton>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-3 rounded-lg border border-foreground/10 bg-muted/20 px-3 py-2">
+                      <FileText className="h-5 w-5 text-muted-foreground shrink-0" />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium">{pdfFile.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {(pdfFile.size / 1024 / 1024).toFixed(2)} MB
+                        </p>
+                      </div>
+                      {!disabled && (
+                        <button
+                          type="button"
+                          onClick={() => setPdfFile(null)}
+                          className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      )}
+                    </div>
                     <PillButton
                       variant="primary"
-                      className="flex-1"
-                      onClick={handleNameSubmit}
-                      disabled={!title.trim()}
+                      className="w-full"
+                      onClick={() => handleUploadPdf(pdfFile)}
+                      disabled={disabled}
                     >
-                      Continue
+                      {busy === "pdf" ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Extracting…
+                        </>
+                      ) : (
+                        "Extract Questions"
+                      )}
                     </PillButton>
-                  </div>
-                </>
-              )}
-
-              {step === "build" && applicationId && (
-                <>
-                  {path === "custom" && (
-                    <EditorCustom
-                      applicationId={applicationId}
-                      onSend={handleSent}
-                    />
-                  )}
-                  {path === "ai" && (
-                    <EditorAi
-                      applicationId={applicationId}
-                      clientOrgId={clientOrgId}
-                      onSend={handleSent}
-                    />
-                  )}
-                  {path === "template" && (
-                    <EditorTemplate
-                      applicationId={applicationId}
-                      onSend={handleSent}
-                    />
-                  )}
-                </>
-              )}
+                  </>
+                )}
+              </div>
             </div>
           </motion.div>
         </motion.div>

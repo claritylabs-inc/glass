@@ -78,11 +78,9 @@ export const get = query({
 export const createDraft = mutation({
   args: {
     clientOrgId: v.id("organizations"),
-    creationPath: v.union(v.literal("custom"), v.literal("ai"), v.literal("template")),
     title: v.string(),
     lineOfBusiness: v.optional(v.string()),
     aiGenerationPrompt: v.optional(v.string()),
-    sourceTemplateId: v.optional(v.id("applicationTemplates")),
   },
   handler: async (ctx, args) => {
     const access = await assertCanCreateApplication(ctx, args.clientOrgId);
@@ -91,11 +89,10 @@ export const createDraft = mutation({
       brokerOrgId: access.orgId,
       clientOrgId: args.clientOrgId,
       createdByUserId: access.userId,
-      creationPath: args.creationPath,
+      creationPath: "ai",
       title: args.title,
       lineOfBusiness: args.lineOfBusiness,
       aiGenerationPrompt: args.aiGenerationPrompt,
-      sourceTemplateId: args.sourceTemplateId,
       status: "draft",
       createdAt: now,
       updatedAt: now,
@@ -221,6 +218,62 @@ export const cancel = mutation({
   },
 });
 
+export const updateDraftMeta = mutation({
+  args: {
+    applicationId: v.id("applications"),
+    title: v.optional(v.string()),
+    lineOfBusiness: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await assertCanEditApplicationDraft(ctx, args.applicationId);
+    const patch: Record<string, unknown> = { updatedAt: Date.now() };
+
+    if (args.title !== undefined) {
+      const title = args.title.trim();
+      if (!title) throw new Error("Title is required");
+      patch.title = title;
+    }
+    if (args.lineOfBusiness !== undefined) {
+      const lob = args.lineOfBusiness.trim();
+      patch.lineOfBusiness = lob || undefined;
+    }
+
+    await ctx.db.patch(args.applicationId, patch as any);
+  },
+});
+
+export const deleteDraft = mutation({
+  args: { applicationId: v.id("applications") },
+  handler: async (ctx, args) => {
+    await assertCanEditApplicationDraft(ctx, args.applicationId);
+
+    const [flags, answers, questions, groups] = await Promise.all([
+      ctx.db
+        .query("applicationQuestionFlags")
+        .withIndex("by_applicationId", (q) => q.eq("applicationId", args.applicationId))
+        .collect(),
+      ctx.db
+        .query("applicationAnswers")
+        .withIndex("by_applicationId", (q) => q.eq("applicationId", args.applicationId))
+        .collect(),
+      ctx.db
+        .query("applicationQuestions")
+        .withIndex("by_applicationId", (q) => q.eq("applicationId", args.applicationId))
+        .collect(),
+      ctx.db
+        .query("applicationGroups")
+        .withIndex("by_applicationId", (q) => q.eq("applicationId", args.applicationId))
+        .collect(),
+    ]);
+
+    for (const flag of flags) await ctx.db.delete(flag._id);
+    for (const answer of answers) await ctx.db.delete(answer._id);
+    for (const question of questions) await ctx.db.delete(question._id);
+    for (const group of groups) await ctx.db.delete(group._id);
+    await ctx.db.delete(args.applicationId);
+  },
+});
+
 /** Recompute and persist application status from group statuses. Called after any group state change. */
 export const recomputeStatus = mutation({
   args: { applicationId: v.id("applications") },
@@ -253,76 +306,13 @@ export const recomputeStatus = mutation({
       });
     }
 
-    // Trigger filled PDF generation for template-derived apps on completion
-    if (derived === "complete" && app.sourceTemplateId) {
-      const template = await ctx.db.get(app.sourceTemplateId);
-      if (template?.sourcePdfStorageId) {
-        await ctx.scheduler.runAfter(0, (internal as any).actions.applicationOutput.generateFilledPdf, {
-          applicationId: args.applicationId,
-        });
-      }
-    }
   },
 });
 
-export const cloneTemplateQuestions = mutation({
-  args: {
-    applicationId: v.id("applications"),
-    templateId: v.id("applicationTemplates"),
-  },
-  handler: async (ctx, args) => {
-    await assertCanEditApplicationDraft(ctx, args.applicationId);
-    const template = await ctx.db.get(args.templateId);
-    if (!template) throw new Error("Template not found");
-
-    const app = await ctx.db.get(args.applicationId);
-    if (!app) throw new Error("Application not found");
-
-    // Ensure no questions already exist (idempotent guard)
-    const existing = await ctx.db
-      .query("applicationQuestions")
-      .withIndex("by_applicationId", (q) => q.eq("applicationId", args.applicationId))
-      .collect();
-    if (existing.length > 0) throw new Error("Questions already loaded for this application");
-
-    // Create a single placeholder group; AI will regroup on send
-    const groupId = await ctx.db.insert("applicationGroups", {
-      applicationId: args.applicationId,
-      order: 0,
-      title: "Template Questions",
-      status: "not_started",
-    });
-
-    const now = Date.now();
-    for (let i = 0; i < template.questionSet.length; i++) {
-      const item = template.questionSet[i];
-      let prompt = item.promptOverride ?? "";
-      let answerType = "text";
-      if (item.intentKey) {
-        const intent = await ctx.db
-          .query("questionIntents")
-          .withIndex("by_intentKey", (q) => q.eq("intentKey", item.intentKey!))
-          .first();
-        if (intent) {
-          prompt = item.promptOverride ?? intent.defaultPrompt;
-          answerType = intent.answerType;
-        }
-      }
-      await ctx.db.insert("applicationQuestions", {
-        applicationId: args.applicationId,
-        groupId,
-        order: i,
-        intentKey: item.intentKey,
-        prompt,
-        answerType,
-        required: item.required,
-        conditional: item.conditional,
-        createdAt: now,
-      });
-    }
-    await ctx.db.patch(args.applicationId, {
-      sourceTemplateId: args.templateId,
-      updatedAt: now,
-    });
+export const generateUploadUrl = mutation({
+  args: {},
+  handler: async (ctx) => {
+    await requireOrgAccess(ctx);
+    return await ctx.storage.generateUploadUrl();
   },
 });

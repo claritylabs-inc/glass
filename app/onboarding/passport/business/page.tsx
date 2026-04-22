@@ -19,7 +19,12 @@ export default function NatureOfBusinessPage() {
   }
 
   return (
-    <WizardShell currentStep="business" email={viewer?.email ?? undefined}>
+    <WizardShell
+      currentStep="business"
+      email={viewer?.email ?? undefined}
+      title="Your business"
+      subtitle="Describe what your company does and the high-level numbers underwriters use to size the account."
+    >
       <SectionNatureOfBusiness clientOrgId={viewerOrg?.org._id ?? ""} />
     </WizardShell>
   );

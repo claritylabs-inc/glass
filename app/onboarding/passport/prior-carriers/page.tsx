@@ -18,7 +18,12 @@ export default function PriorCarriersPage() {
   }
 
   return (
-    <WizardShell currentStep="extended" email={viewer?.email ?? undefined}>
+    <WizardShell
+      currentStep="extended"
+      email={viewer?.email ?? undefined}
+      title="Prior carriers"
+      subtitle="List the insurance carriers you have worked with recently."
+    >
       <SectionPriorCarriers />
     </WizardShell>
   );

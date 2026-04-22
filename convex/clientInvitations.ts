@@ -7,7 +7,6 @@ import { v } from "convex/values";
 import { query, mutation, action, internalMutation, internalQuery } from "./_generated/server";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { internal as _internal } from "./_generated/api";
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const internal = _internal as any;
 import { getOrgAccess, assertBrokerOrg } from "./lib/access";
 import { recordBrokerActivity } from "./lib/brokerActivity";
@@ -34,6 +33,48 @@ function randomToken(): string {
   return Array.from(bytes)
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
+}
+
+function isEmailLike(value: string | undefined | null): boolean {
+  if (!value) return false;
+  const normalized = value.trim();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized);
+}
+
+function companyNameFromEmail(email: string | undefined): string | null {
+  if (!email) return null;
+  const domain = email.split("@")[1]?.toLowerCase();
+  if (!domain) return null;
+  const root = domain.split(".")[0]?.trim();
+  if (!root) return null;
+  const cleaned = root.replace(/[^a-z0-9-_ ]/gi, "");
+  if (!cleaned) return null;
+  const words = cleaned
+    .split(/[-_\s]+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (words.length === 0) return null;
+  return words
+    .map((part) => part[0]!.toUpperCase() + part.slice(1))
+    .join(" ")
+    .slice(0, 80);
+}
+
+function resolveClientOrgName(args: {
+  requestedName: string;
+  invitationName?: string;
+  fallbackEmail?: string;
+}): string {
+  const requested = args.requestedName.trim();
+  if (requested && !isEmailLike(requested)) return requested;
+
+  const invitationName = args.invitationName?.trim();
+  if (invitationName && !isEmailLike(invitationName)) return invitationName;
+
+  const fromEmail = companyNameFromEmail(args.fallbackEmail);
+  if (fromEmail) return fromEmail;
+
+  return "Client Organization";
 }
 
 // ── Public mutations / queries ─────────────────────────────────────────────────
@@ -260,6 +301,10 @@ export const getByToken = action({
       invitationId: inv._id,
       linkType: inv.linkType,
       brokerName: brokerOrg?.name ?? "Your Broker",
+      brokerIconUrl: brokerOrg?.iconStorageId
+        ? await ctx.storage.getUrl(brokerOrg.iconStorageId)
+        : null,
+      brokerWebsite: brokerOrg?.website,
       brokerSlug: brokerOrg?.slug,
       brandingColor: brokerOrg?.brandingColor,
       agentDisplayName: brokerOrg?.agentDisplayName,
@@ -314,9 +359,16 @@ export const accept = mutation({
       throw new Error("This invitation link has reached its maximum uses");
     }
 
+    const acceptingUser = await ctx.db.get(userId);
+    const orgName = resolveClientOrgName({
+      requestedName: args.clientOrgName,
+      invitationName: inv.clientOrgName,
+      fallbackEmail: inv.primaryContactEmail ?? acceptingUser?.email,
+    });
+
     // Create the client org
     const clientOrgId = await ctx.db.insert("organizations", {
-      name: args.clientOrgName,
+      name: orgName,
       type: "client",
       brokerOrgId: inv.brokerOrgId,
     });
@@ -326,6 +378,15 @@ export const accept = mutation({
       orgId: clientOrgId,
       userId,
       role: "admin",
+    });
+
+    // Record explicit broker–client assignment
+    await ctx.db.insert("brokerClientAssignments", {
+      orgId: inv.brokerOrgId,
+      clientOrgId,
+      producerId: inv.invitedBy,
+      role: "primary",
+      createdAt: Date.now(),
     });
 
     // Update invitation
@@ -339,7 +400,6 @@ export const accept = mutation({
     }
 
     // Record broker activity
-    const acceptingUser = await ctx.db.get(userId);
     await recordBrokerActivity(ctx, {
       brokerOrgId: inv.brokerOrgId,
       clientOrgId,
@@ -355,7 +415,7 @@ export const accept = mutation({
       orgId: inv.brokerOrgId,
       type: "client_invitation_accepted",
       title: "Client accepted your invitation",
-      body: `${args.clientOrgName} accepted your invitation and joined Glass.`,
+      body: `${orgName} accepted your invitation and joined Glass.`,
       relatedOrgId: clientOrgId,
       actionType: "view_client",
       actionPayload: { clientOrgId },
@@ -364,7 +424,7 @@ export const accept = mutation({
     // Pre-fill passport with invite data
     const inviteeEmail = inv.primaryContactEmail ?? acceptingUser?.email;
     const inviteeName = inv.primaryContactName ?? acceptingUser?.name;
-    const companyName = inv.clientOrgName;
+    const companyName = orgName;
 
     const passportPatch: Record<string, unknown> = {};
     if (inviteeEmail) passportPatch.primaryContactEmail = inviteeEmail;

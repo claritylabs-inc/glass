@@ -18,7 +18,12 @@ export default function AdditionalInterestsPage() {
   }
 
   return (
-    <WizardShell currentStep="extended" email={viewer?.email ?? undefined}>
+    <WizardShell
+      currentStep="extended"
+      email={viewer?.email ?? undefined}
+      title="Additional interests"
+      subtitle="Add landlords, lenders, or other parties that need to appear on certificates."
+    >
       <SectionAdditionalInterests />
     </WizardShell>
   );

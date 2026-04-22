@@ -73,19 +73,7 @@ export function ReviewGroupPane({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-semibold">{group.title}</h2>
-          <Badge variant="outline" className="text-xs capitalize mt-1">
-            {group.status.replace("_", " ")}
-          </Badge>
-        </div>
-        <button className="text-muted-foreground hover:text-foreground" onClick={onClose}>
-          ✕
-        </button>
-      </div>
-
-      <div className="space-y-4 max-h-[60vh] overflow-y-auto">
+      <div className="space-y-4">
         {groupQuestions.map((q) => {
           const answer = answerMap[String(q._id)];
           const qFlags = flags.filter((f) => f.questionId === q._id);

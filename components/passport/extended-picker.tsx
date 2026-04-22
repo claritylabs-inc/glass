@@ -1,11 +1,12 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { api as _api } from "@/convex/_generated/api";
 import { ArrowRight, Check, Loader2, Shield, Clock, Users, Calendar } from "lucide-react";
 import { PillButton } from "@/components/ui/pill-button";
 import { useState } from "react";
+import { useOnboardingCache } from "@/hooks/use-onboarding-cache";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const api = _api as any;
@@ -23,6 +24,8 @@ export function ExtendedPicker() {
   const router = useRouter();
   const completionStatus = useQuery(api.clientPassport.getCompletionStatus, {});
   const viewerOrg = useQuery(api.orgs.viewerOrg, {});
+  const completeOnboarding = useMutation(api.users.completeOnboarding);
+  const { setOnboardingComplete } = useOnboardingCache();
   const [finishing, setFinishing] = useState(false);
 
   const required = ((completionStatus?.missingSections ?? []) as ExtendedSection[]);
@@ -33,6 +36,8 @@ export function ExtendedPicker() {
     if (!isComplete) return;
     setFinishing(true);
     try {
+      await completeOnboarding({});
+      setOnboardingComplete(true);
       router.push("/");
     } finally {
       setFinishing(false);
@@ -52,10 +57,6 @@ export function ExtendedPicker() {
 
   return (
     <div className="space-y-6">
-      <p className="text-sm text-muted-foreground">
-        Core information saved. Complete any additional sections your broker requires, or skip for now.
-      </p>
-
       <div className="grid gap-3">
         {allSections.map((section) => {
           const meta = SECTION_META[section];

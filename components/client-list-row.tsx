@@ -99,12 +99,12 @@ export function ClientListRow({ row }: { row: ClientRow }) {
       className="flex items-center gap-4 px-4 py-3 border-b border-foreground/6 last:border-0 hover:bg-muted/50 transition-colors"
     >
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-foreground truncate">{row.name}</p>
-        <p className="text-xs text-muted-foreground truncate">
-          {row.primaryContactName
-            ? `${row.primaryContactName}${row.primaryContactEmail ? ` · ${row.primaryContactEmail}` : ""}`
-            : row.primaryContactEmail ?? "No contact"}
-        </p>
+        <div className="flex flex-col gap-0.5 md:flex-row md:items-center md:gap-2">
+          <p className="text-sm font-medium text-foreground truncate">{row.name}</p>
+          <p className="text-sm text-muted-foreground truncate">
+            {row.primaryContactName ?? "No primary contact"}
+          </p>
+        </div>
       </div>
       <Badge variant={STATUS_VARIANTS[row.onboardingStatus]} className="shrink-0">
         {STATUS_LABELS[row.onboardingStatus]}

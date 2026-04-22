@@ -2,10 +2,16 @@
 
 import { useAction, useMutation, useConvexAuth } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthActions } from "@convex-dev/auth/react";
-import { AuthCard, AuthMinimalShell, BrandWordmark } from "@/components/auth-shell";
+import {
+  AuthCard,
+  AuthMinimalShell,
+  BrandWordmark,
+  PartnerWordmark,
+  PoweredByGlassWordmark,
+} from "@/components/auth-shell";
 import { PillButton } from "@/components/ui/pill-button";
 import { ArrowRight, Loader2 } from "lucide-react";
 
@@ -13,6 +19,8 @@ type InviteData = {
   invitationId: string;
   linkType: "email" | "shareable";
   brokerName: string;
+  brokerIconUrl?: string | null;
+  brokerWebsite?: string;
   brokerSlug?: string;
   brandingColor?: string;
   agentDisplayName?: string;
@@ -43,6 +51,10 @@ function friendlyError(raw: string): string {
   return "Something went wrong. Please try again.";
 }
 
+function isEmailLike(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
+
 export default function InviteAcceptance({ token }: { token: string }) {
   const router = useRouter();
   const getByToken = useAction(api.clientInvitations.getByToken);
@@ -60,7 +72,7 @@ export default function InviteAcceptance({ token }: { token: string }) {
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [accepting, setAccepting] = useState(false);
+  const acceptingRef = useRef(false);
 
   useEffect(() => {
     getByToken({ token })
@@ -75,21 +87,25 @@ export default function InviteAcceptance({ token }: { token: string }) {
 
   // Once OTP verifies, auth becomes true — accept the invitation then redirect.
   useEffect(() => {
-    if (!isAuthenticated || accepting) return;
-    setAccepting(true);
+    if (!isAuthenticated || acceptingRef.current) return;
+    acceptingRef.current = true;
     acceptInvitation({ token, clientOrgName: companyName.trim() })
       .then(({ clientOrgId }) => {
         router.replace(`/?org=${clientOrgId}`);
       })
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : "Could not accept invitation");
-        setAccepting(false);
+        acceptingRef.current = false;
       });
-  }, [isAuthenticated, accepting, acceptInvitation, token, companyName, router]);
+  }, [isAuthenticated, acceptInvitation, token, companyName, router]);
 
   async function handleDetailsSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!companyName.trim() || !email.trim()) return;
+    if (isEmailLike(companyName)) {
+      setError("Enter your company name, not an email address.");
+      return;
+    }
     setLoading(true);
     setError("");
     try {
@@ -117,7 +133,7 @@ export default function InviteAcceptance({ token }: { token: string }) {
 
   if (fetching) {
     return (
-      <AuthMinimalShell>
+      <AuthMinimalShell footer={<PoweredByGlassWordmark />}>
         <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
       </AuthMinimalShell>
     );
@@ -125,7 +141,7 @@ export default function InviteAcceptance({ token }: { token: string }) {
 
   if (fetchError && !inviteData) {
     return (
-      <AuthMinimalShell>
+      <AuthMinimalShell footer={<PoweredByGlassWordmark />}>
         <AuthCard
           title="Invitation unavailable"
           subtitle={fetchError}
@@ -150,8 +166,18 @@ export default function InviteAcceptance({ token }: { token: string }) {
       : undefined;
 
   return (
-    <AuthMinimalShell>
-      <AuthCard title={title} subtitle={subtitle} logo={<BrandWordmark />}>
+    <AuthMinimalShell footer={<PoweredByGlassWordmark />}>
+      <AuthCard
+        title={title}
+        subtitle={subtitle}
+        logo={
+          <PartnerWordmark
+            name={inviteData?.brokerName}
+            iconUrl={inviteData?.brokerIconUrl}
+            website={inviteData?.brokerWebsite}
+          />
+        }
+      >
         {step === "details" ? (
           <form onSubmit={handleDetailsSubmit} className="space-y-4">
             <div>
@@ -256,18 +282,14 @@ export default function InviteAcceptance({ token }: { token: string }) {
             <div className="flex flex-col items-start gap-5 pt-6">
               <PillButton
                 type="submit"
-                disabled={loading || accepting || code.length < 6}
+                disabled={loading || code.length < 6}
                 className="w-full justify-center text-sm shadow-none sm:w-auto"
               >
-                {loading || accepting ? (
+                {loading ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : null}
-                {accepting
-                  ? "Setting up your account..."
-                  : loading
-                    ? "Verifying..."
-                    : "Verify and continue"}
-                {!loading && !accepting ? (
+                {loading ? "Verifying..." : "Verify and continue"}
+                {!loading ? (
                   <ArrowRight className="h-4 w-4" />
                 ) : null}
               </PillButton>

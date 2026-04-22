@@ -6,6 +6,13 @@ import { useRouter } from "next/navigation";
 import { api as _api } from "@/convex/_generated/api";
 import { ArrowLeft, ArrowRight, Loader2, Plus, Trash2 } from "lucide-react";
 import { PillButton } from "@/components/ui/pill-button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { toast } from "sonner";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -27,7 +34,14 @@ export function SectionLossHistory() {
   const [status, setStatus] = useState<"open" | "closed" | "">("");
   const [saving, setSaving] = useState(false);
 
-  const losses = (passportData?.losses ?? []) as any[];
+  const losses = (passportData?.losses ?? []) as Array<{
+    _id: string;
+    lineOfBusiness?: string;
+    dateOfLoss?: string;
+    description?: string;
+    amountPaid?: string;
+    confidence?: "suggested" | "confirmed";
+  }>;
 
   const inputClass = "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
 
@@ -61,7 +75,7 @@ export function SectionLossHistory() {
         <p className="text-sm text-muted-foreground">No losses recorded.</p>
       )}
 
-      {losses.map((l: any) => (
+      {losses.map((l) => (
         <div key={l._id} className="flex items-start justify-between rounded-xl border border-foreground/8 bg-popover/60 px-4 py-3">
           <div>
             <p className="text-sm font-medium text-foreground">
@@ -97,7 +111,7 @@ export function SectionLossHistory() {
           </div>
           <div className="space-y-1.5">
             <label className="text-label-sm font-medium text-muted-foreground block">Description</label>
-            <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} placeholder="Brief description of the loss..." className={inputClass} />
+            <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} placeholder="Brief description of the loss..." className={`${inputClass} min-h-20 resize-y`} />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
@@ -106,11 +120,18 @@ export function SectionLossHistory() {
             </div>
             <div className="space-y-1.5">
               <label className="text-label-sm font-medium text-muted-foreground block">Status</label>
-              <select value={status} onChange={(e) => setStatus(e.target.value as "open" | "closed" | "")} className={inputClass}>
-                <option value="">Select...</option>
-                <option value="open">Open</option>
-                <option value="closed">Closed</option>
-              </select>
+              <Select
+                value={status || null}
+                onValueChange={(value) => setStatus((value as "open" | "closed" | null) ?? "")}
+              >
+                <SelectTrigger className={inputClass}>
+                  <SelectValue placeholder="Select…" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="open">Open</SelectItem>
+                  <SelectItem value="closed">Closed</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
           <button

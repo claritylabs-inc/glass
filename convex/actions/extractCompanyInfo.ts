@@ -7,6 +7,7 @@ import { action } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import { getModel } from "../lib/models";
 import { INDUSTRIES } from "../lib/industries";
+import { makeEmbedText } from "../lib/sdkCallbacks";
 
 // Build a compact reference of valid industry/vertical values for the prompt
 const INDUSTRY_REF = INDUSTRIES.map(
@@ -17,6 +18,10 @@ const CompanyInfoSchema = z.object({
   companyContext: z.string().describe("2-4 sentence factual description: what the company does, industry, size if known, location, key products/services."),
   industry: z.string().describe("Best-matching industry value from the provided list. Empty string if unclear."),
   industryVertical: z.string().describe("Best-matching vertical value for that industry. Empty string if unclear."),
+  naicsCode: z.string().describe("NAICS code if explicitly visible. Empty string if not evident."),
+  yearsInBusiness: z.string().describe("Years in business if explicitly visible as a number. Empty string if not evident."),
+  numberOfEmployees: z.string().describe("Employee count if explicitly visible as a number. Empty string if not evident."),
+  annualRevenue: z.string().describe("Annual revenue if explicitly visible. Preserve units/currency. Empty string if not evident."),
   clientsContext: z.string().describe("Typical clients/customers. Empty string if not evident."),
   vendorsContext: z.string().describe("Vendors, suppliers, or service providers. Empty string if not evident."),
   insuranceContext: z.string().describe("Insurance brokers, carriers, or relationships. Empty string if not evident."),
@@ -162,6 +167,7 @@ Valid industry values and their verticals:
 ${INDUSTRY_REF}
 
 For industry/industryVertical fields, only return a value that exactly matches the list above. Otherwise return an empty string. For text fields, return an empty string if the answer is not evident — do not guess.
+Only return NAICS, yearsInBusiness, numberOfEmployees, and annualRevenue when explicitly stated on the site.
 
 Website content:
 ${content}`,
@@ -185,6 +191,94 @@ ${content}`,
       if (object.investorsContext) orgUpdates.investorsContext = object.investorsContext;
       if (object.partnersContext) orgUpdates.partnersContext = object.partnersContext;
       await ctx.runMutation(api.orgs.updateOrg, orgUpdates);
+
+      const embedText = makeEmbedText();
+      let host = args.url;
+      try {
+        host = new URL(args.url).hostname;
+      } catch {
+        // Keep raw URL when parsing fails.
+      }
+      const sourceLabel = `Website enrichment: ${host}`;
+      const intelligenceEntries = [
+        { content: companyContext, category: "company_info" as const },
+        {
+          content: object.naicsCode ? `NAICS code: ${object.naicsCode}` : "",
+          category: "company_info" as const,
+        },
+        {
+          content: object.yearsInBusiness
+            ? `Years in business: ${object.yearsInBusiness}`
+            : "",
+          category: "operations" as const,
+        },
+        {
+          content: object.numberOfEmployees
+            ? `Employee count: ${object.numberOfEmployees}`
+            : "",
+          category: "employees" as const,
+        },
+        {
+          content: object.annualRevenue
+            ? `Annual revenue: ${object.annualRevenue}`
+            : "",
+          category: "financial" as const,
+        },
+        { content: object.clientsContext, category: "clients" as const },
+        { content: object.vendorsContext, category: "vendors" as const },
+        { content: object.insuranceContext, category: "insurance" as const },
+        { content: object.investorsContext, category: "investors" as const },
+        { content: object.partnersContext, category: "partners" as const },
+      ].filter((entry) => entry.content?.trim());
+
+      for (const entry of intelligenceEntries) {
+        const content = entry.content.trim();
+        let embedding: number[] | undefined;
+        try {
+          embedding = await embedText(content);
+          const similar = await ctx.vectorSearch("orgIntelligence", "by_embedding", {
+            vector: embedding,
+            limit: 3,
+            filter: (q) => q.eq("orgId", viewerOrg.org._id),
+          });
+          if (similar.some((s: { _score?: number }) => (s._score ?? 0) > 0.97)) {
+            continue;
+          }
+        } catch (err) {
+          console.error("extractCompanyInfo: embed failed, inserting without embedding", err);
+        }
+        try {
+          await ctx.runMutation(internal.intelligence.insert, {
+            orgId: viewerOrg.org._id,
+            content,
+            category: entry.category,
+            confidence: "confirmed",
+            source: "manual",
+            sourceRef: args.url,
+            sourceLabel,
+            embedding,
+          });
+        } catch (err) {
+          console.error("extractCompanyInfo: intelligence insert failed", err);
+        }
+      }
+
+      if ((viewerOrg.org.type ?? "client") === "client") {
+        const years = parseInt(object.yearsInBusiness, 10);
+        const employees = parseInt(object.numberOfEmployees, 10);
+        await ctx.runAction(internal.actions.passportExtraction.mapWebsiteToPassport, {
+          clientOrgId: viewerOrg.org._id,
+          websiteUrl: args.url,
+          extracted: {
+            companyContext,
+            industry,
+            naicsCode: object.naicsCode || undefined,
+            yearsInBusiness: Number.isFinite(years) ? years : undefined,
+            numberOfEmployees: Number.isFinite(employees) ? employees : undefined,
+            annualRevenue: object.annualRevenue || undefined,
+          },
+        });
+      }
     }
 
     return {
@@ -192,6 +286,10 @@ ${content}`,
       companyContext,
       industry,
       industryVertical,
+      naicsCode: object.naicsCode || undefined,
+      yearsInBusiness: object.yearsInBusiness || undefined,
+      numberOfEmployees: object.numberOfEmployees || undefined,
+      annualRevenue: object.annualRevenue || undefined,
       clientsContext: object.clientsContext || undefined,
       vendorsContext: object.vendorsContext || undefined,
       insuranceContext: object.insuranceContext || undefined,

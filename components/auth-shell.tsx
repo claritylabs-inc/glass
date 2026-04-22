@@ -15,6 +15,58 @@ export function BrandWordmark() {
   );
 }
 
+function faviconFromWebsite(website?: string | null) {
+  if (!website) return null;
+  try {
+    const withProtocol = /^https?:\/\//i.test(website) ? website : `https://${website}`;
+    const hostname = new URL(withProtocol).hostname;
+    if (!hostname) return null;
+    return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(hostname)}&sz=128`;
+  } catch {
+    return null;
+  }
+}
+
+export function PartnerWordmark({
+  name,
+  iconUrl,
+  website,
+}: {
+  name?: string | null;
+  iconUrl?: string | null;
+  website?: string | null;
+}) {
+  const fallbackFavicon = faviconFromWebsite(website);
+  const source = iconUrl ?? fallbackFavicon;
+
+  return (
+    <div className="flex items-center gap-2.5 text-foreground">
+      <div className="h-4 w-4 overflow-hidden rounded-sm bg-white/90">
+        {source ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={source} alt="" className="h-full w-full object-contain" />
+        ) : (
+          <LogoIcon size={16} color={BRAND_BLUE} static />
+        )}
+      </div>
+      <span className="text-sm font-medium tracking-tight">{name?.trim() || "Glass by Clarity Labs"}</span>
+    </div>
+  );
+}
+
+export function PoweredByGlassWordmark() {
+  return (
+    <div className="flex items-center justify-center gap-2.5 text-xs text-muted-foreground">
+      <span>Powered by</span>
+      <div className="flex items-center gap-1.5 text-foreground">
+        <LogoIcon size={12} color={BRAND_BLUE} static />
+        <span className="text-xs font-medium tracking-tight">Glass</span>
+        <span className="text-xs text-muted-foreground">by Clarity Labs</span>
+      </div>
+    </div>
+  );
+}
+
 export function AuthShell({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -28,11 +80,18 @@ export function AuthShell({ children }: { children: ReactNode }) {
   );
 }
 
-export function AuthMinimalShell({ children }: { children: ReactNode }) {
+export function AuthMinimalShell({
+  children,
+  footer,
+}: {
+  children: ReactNode;
+  footer?: ReactNode;
+}) {
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <div className="mx-auto flex min-h-screen w-full max-w-6xl px-6 py-8 sm:px-8 sm:py-10">
+      <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-6 py-8 sm:px-8 sm:py-10">
         <main className="flex flex-1 items-center justify-center py-12 sm:py-20">{children}</main>
+        {footer ? <footer className="pb-2 sm:pb-4">{footer}</footer> : null}
       </div>
     </div>
   );

@@ -18,9 +18,13 @@ export async function assertBrokerOfClient(
       q.eq("orgId", brokerOrgId).eq("clientOrgId", clientOrgId),
     )
     .first();
-  if (!assignment) {
-    throw new Error("Forbidden: no broker–client relationship found");
-  }
+  if (assignment) return;
+
+  // Fallback: legacy implicit relationship via organizations.brokerOrgId
+  const clientOrg = await ctx.db.get(clientOrgId);
+  if (clientOrg?.brokerOrgId === brokerOrgId) return;
+
+  throw new Error("Forbidden: no broker–client relationship found");
 }
 
 /**

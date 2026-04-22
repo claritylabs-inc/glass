@@ -1,6 +1,7 @@
 import { v } from "convex/values";
-import { query, mutation, internalMutation } from "./_generated/server";
+import { query, mutation, internalMutation, internalQuery } from "./_generated/server";
 import { requireOrgAccess, getOrgAccess } from "./lib/orgAuth";
+import { getOrgAccess as getOrgAccessNew } from "./lib/access";
 import {
   getRequiredSections,
   buildPassportFact,
@@ -12,6 +13,25 @@ import { resolveCompletionStatus } from "./lib/passportCompletion";
 
 /** Returns the passport record for the calling user's org (client) or for a
  *  connected client org (broker). Returns null if none exists yet. */
+// Internal, no-auth version for node actions that already validated access.
+export const getFullInternal = internalQuery({
+  args: { clientOrgId: v.id("organizations") },
+  handler: async (ctx, args) => {
+    const passport = await ctx.db
+      .query("clientPassport")
+      .withIndex("by_clientOrgId", (q) => q.eq("clientOrgId", args.clientOrgId))
+      .first();
+    const [locations, subsidiaries, priorCarriers, losses, additionalInterests] = await Promise.all([
+      ctx.db.query("passportLocations").withIndex("by_clientOrgId", (q) => q.eq("clientOrgId", args.clientOrgId)).collect(),
+      ctx.db.query("passportSubsidiaries").withIndex("by_clientOrgId", (q) => q.eq("clientOrgId", args.clientOrgId)).collect(),
+      ctx.db.query("passportPriorCarriers").withIndex("by_clientOrgId", (q) => q.eq("clientOrgId", args.clientOrgId)).collect(),
+      ctx.db.query("passportLosses").withIndex("by_clientOrgId", (q) => q.eq("clientOrgId", args.clientOrgId)).collect(),
+      ctx.db.query("passportAdditionalInterests").withIndex("by_clientOrgId", (q) => q.eq("clientOrgId", args.clientOrgId)).collect(),
+    ]);
+    return { passport, locations, subsidiaries, priorCarriers, losses, additionalInterests };
+  },
+});
+
 export const getFull = query({
   args: { clientOrgId: v.optional(v.id("organizations")) },
   handler: async (ctx, args) => {
@@ -20,15 +40,9 @@ export const getFull = query({
 
     const targetOrgId = args.clientOrgId ?? access.orgId;
 
-    // If accessing another org's passport, verify broker-client relationship
+    // If accessing another org's passport, validate via the current access layer.
     if (targetOrgId !== access.orgId) {
-      const link = await ctx.db
-        .query("brokerClientAssignments")
-        .withIndex("by_orgId_clientOrgId", (q) =>
-          q.eq("orgId", access.orgId).eq("clientOrgId", targetOrgId)
-        )
-        .first();
-      if (!link) throw new Error("No access to this client's passport");
+      await getOrgAccessNew(ctx, targetOrgId);
     }
 
     const passport = await ctx.db

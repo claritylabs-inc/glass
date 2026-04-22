@@ -195,32 +195,12 @@ export default defineSchema({
     validationHint: v.optional(v.string()),
   }).index("by_intentKey", ["intentKey"]),
 
-  applicationTemplates: defineTable({
-    ownerScope: v.union(v.literal("system"), v.literal("broker")),
-    ownerBrokerOrgId: v.optional(v.id("organizations")),
-    name: v.string(),
-    description: v.optional(v.string()),
-    lineOfBusiness: v.optional(v.string()),
-    sourcePdfStorageId: v.optional(v.id("_storage")),
-    sourcePdfFieldMap: v.optional(v.any()),
-    questionSet: v.array(v.object({
-      intentKey: v.optional(v.string()),
-      promptOverride: v.optional(v.string()),
-      required: v.boolean(),
-      conditional: v.optional(v.any()),
-    })),
-    createdAt: v.number(),
-  })
-    .index("by_ownerBrokerOrgId", ["ownerBrokerOrgId"])
-    .index("by_ownerScope", ["ownerScope"]),
-
   applications: defineTable({
     brokerOrgId: v.id("organizations"),
     clientOrgId: v.id("organizations"),
     createdByUserId: v.id("users"),
     assignedProducerId: v.optional(v.id("users")),
-    sourceTemplateId: v.optional(v.id("applicationTemplates")),
-    creationPath: v.union(v.literal("custom"), v.literal("ai"), v.literal("template"), v.literal("extracted_pdf")),
+    creationPath: v.union(v.literal("ai"), v.literal("extracted_pdf")),
     title: v.string(),
     lineOfBusiness: v.optional(v.string()),
     aiGenerationPrompt: v.optional(v.string()),
@@ -230,7 +210,6 @@ export default defineSchema({
     ),
     sentAt: v.optional(v.number()),
     completedAt: v.optional(v.number()),
-    filledPdfStorageId: v.optional(v.id("_storage")),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -270,6 +249,7 @@ export default defineSchema({
     order: v.number(),
     intentKey: v.optional(v.string()),
     prompt: v.string(),
+    rawPrompt: v.optional(v.string()),
     answerType: v.string(),
     selectOptions: v.optional(v.array(v.object({ value: v.string(), label: v.string() }))),
     required: v.boolean(),
@@ -297,6 +277,7 @@ export default defineSchema({
     source: v.union(
       v.literal("manual"), v.literal("passport"),
       v.literal("integration"), v.literal("document"),
+      v.literal("auto_prefill"),
     ),
     sourceRef: v.optional(v.string()),
     overrideOfIntegration: v.optional(v.object({

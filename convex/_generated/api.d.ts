@@ -10,7 +10,7 @@
 
 import type * as actions_addFileToPolicy from "../actions/addFileToPolicy.js";
 import type * as actions_applicationAuthoring from "../actions/applicationAuthoring.js";
-import type * as actions_applicationOutput from "../actions/applicationOutput.js";
+import type * as actions_applicationPrefill from "../actions/applicationPrefill.js";
 import type * as actions_backfillChunks from "../actions/backfillChunks.js";
 import type * as actions_classifyEmails from "../actions/classifyEmails.js";
 import type * as actions_dailyScan from "../actions/dailyScan.js";
@@ -35,6 +35,7 @@ import type * as actions_passportExtraction from "../actions/passportExtraction.
 import type * as actions_proactiveAnalysis from "../actions/proactiveAnalysis.js";
 import type * as actions_processThreadChat from "../actions/processThreadChat.js";
 import type * as actions_processWebChat from "../actions/processWebChat.js";
+import type * as actions_proposePassportFields from "../actions/proposePassportFields.js";
 import type * as actions_reExtractFromFile from "../actions/reExtractFromFile.js";
 import type * as actions_rechunkPolicy from "../actions/rechunkPolicy.js";
 import type * as actions_reconcilePolicy from "../actions/reconcilePolicy.js";
@@ -54,8 +55,6 @@ import type * as applicationGroups from "../applicationGroups.js";
 import type * as applicationGroupsMutationsInternal from "../applicationGroupsMutationsInternal.js";
 import type * as applicationQuestionFlags from "../applicationQuestionFlags.js";
 import type * as applicationQuestionsInternal from "../applicationQuestionsInternal.js";
-import type * as applicationTemplates from "../applicationTemplates.js";
-import type * as applicationTemplatesInternal from "../applicationTemplatesInternal.js";
 import type * as applications from "../applications.js";
 import type * as applicationsInternal from "../applicationsInternal.js";
 import type * as auth from "../auth.js";
@@ -162,7 +161,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   "actions/addFileToPolicy": typeof actions_addFileToPolicy;
   "actions/applicationAuthoring": typeof actions_applicationAuthoring;
-  "actions/applicationOutput": typeof actions_applicationOutput;
+  "actions/applicationPrefill": typeof actions_applicationPrefill;
   "actions/backfillChunks": typeof actions_backfillChunks;
   "actions/classifyEmails": typeof actions_classifyEmails;
   "actions/dailyScan": typeof actions_dailyScan;
@@ -187,6 +186,7 @@ declare const fullApi: ApiFromModules<{
   "actions/proactiveAnalysis": typeof actions_proactiveAnalysis;
   "actions/processThreadChat": typeof actions_processThreadChat;
   "actions/processWebChat": typeof actions_processWebChat;
+  "actions/proposePassportFields": typeof actions_proposePassportFields;
   "actions/reExtractFromFile": typeof actions_reExtractFromFile;
   "actions/rechunkPolicy": typeof actions_rechunkPolicy;
   "actions/reconcilePolicy": typeof actions_reconcilePolicy;
@@ -206,8 +206,6 @@ declare const fullApi: ApiFromModules<{
   applicationGroupsMutationsInternal: typeof applicationGroupsMutationsInternal;
   applicationQuestionFlags: typeof applicationQuestionFlags;
   applicationQuestionsInternal: typeof applicationQuestionsInternal;
-  applicationTemplates: typeof applicationTemplates;
-  applicationTemplatesInternal: typeof applicationTemplatesInternal;
   applications: typeof applications;
   applicationsInternal: typeof applicationsInternal;
   auth: typeof auth;

@@ -18,7 +18,12 @@ export default function ExtendedPage() {
   }
 
   return (
-    <WizardShell currentStep="extended" email={viewer?.email ?? undefined}>
+    <WizardShell
+      currentStep="extended"
+      email={viewer?.email ?? undefined}
+      title="Add more detail"
+      subtitle="Your core profile is saved. Complete any additional sections your broker needs, or skip for now."
+    >
       <ExtendedPicker />
     </WizardShell>
   );

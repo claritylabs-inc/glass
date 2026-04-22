@@ -6,12 +6,26 @@ import { useRouter } from "next/navigation";
 import { api as _api } from "@/convex/_generated/api";
 import { ArrowLeft, ArrowRight, Loader2, Plus, Trash2 } from "lucide-react";
 import { PillButton } from "@/components/ui/pill-button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { toast } from "sonner";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const api = _api as any;
 
 type Role = "mortgagee" | "loss_payee" | "additional_insured";
+
+type AdditionalInterestRow = {
+  _id: string;
+  name: string;
+  role: Role;
+  relationship?: string;
+};
 
 export function SectionAdditionalInterests() {
   const router = useRouter();
@@ -26,7 +40,7 @@ export function SectionAdditionalInterests() {
   const [scope, setScope] = useState("");
   const [saving, setSaving] = useState(false);
 
-  const interests = (passportData?.additionalInterests ?? []) as any[];
+  const interests = (passportData?.additionalInterests ?? []) as AdditionalInterestRow[];
 
   const inputClass = "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
 
@@ -63,7 +77,7 @@ export function SectionAdditionalInterests() {
         <p className="text-sm text-muted-foreground">No additional interests added.</p>
       )}
 
-      {interests.map((i: any) => (
+      {interests.map((i) => (
         <div key={i._id} className="flex items-start justify-between rounded-xl border border-foreground/8 bg-popover/60 px-4 py-3">
           <div>
             <p className="text-sm font-medium text-foreground">{i.name}</p>
@@ -88,12 +102,19 @@ export function SectionAdditionalInterests() {
           </div>
           <div className="space-y-1.5">
             <label className="text-label-sm font-medium text-muted-foreground block">Role *</label>
-            <select value={role} onChange={(e) => setRole(e.target.value as Role | "")} className={inputClass}>
-              <option value="">Select role...</option>
-              <option value="mortgagee">Mortgagee</option>
-              <option value="loss_payee">Loss Payee</option>
-              <option value="additional_insured">Additional Insured</option>
-            </select>
+            <Select
+              value={role || null}
+              onValueChange={(value) => setRole((value as Role | null) ?? "")}
+            >
+              <SelectTrigger className={inputClass}>
+                <SelectValue placeholder="Select role…" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="mortgagee">Mortgagee</SelectItem>
+                <SelectItem value="loss_payee">Loss Payee</SelectItem>
+                <SelectItem value="additional_insured">Additional Insured</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-1.5">
             <label className="text-label-sm font-medium text-muted-foreground block">Relationship</label>

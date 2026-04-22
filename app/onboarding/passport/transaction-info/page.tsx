@@ -18,7 +18,12 @@ export default function TransactionInfoPage() {
   }
 
   return (
-    <WizardShell currentStep="extended" email={viewer?.email ?? undefined}>
+    <WizardShell
+      currentStep="extended"
+      email={viewer?.email ?? undefined}
+      title="Transaction info"
+      subtitle="Tell us what kind of coverage you are shopping for and when."
+    >
       <SectionTransactionInfo />
     </WizardShell>
   );

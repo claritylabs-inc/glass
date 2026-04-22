@@ -19,7 +19,12 @@ export default function LocationsPage() {
   }
 
   return (
-    <WizardShell currentStep="locations" email={viewer?.email ?? undefined}>
+    <WizardShell
+      currentStep="locations"
+      email={viewer?.email ?? undefined}
+      title="Business locations"
+      subtitle="Add every place the business operates from."
+    >
       <SectionLocations clientOrgId={viewerOrg?.org._id ?? ""} />
     </WizardShell>
   );

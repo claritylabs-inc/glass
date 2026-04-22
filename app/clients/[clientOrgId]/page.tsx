@@ -7,18 +7,20 @@ import type { Id } from "@/convex/_generated/dataModel";
 
 export default function ClientDetailsPage() {
   const { clientOrgId } = useParams<{ clientOrgId: string }>();
-  const org = useQuery(
-    api.orgs.getById,
-    clientOrgId ? { orgId: clientOrgId as Id<"organizations"> } : "skip",
+  const client = useQuery(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (api as any).clients.getDetail,
+    clientOrgId ? { clientOrgId: clientOrgId as Id<"organizations"> } : "skip",
   );
 
-  if (!org) return null;
+  if (!client) return null;
 
   const rows: [string, string | undefined][] = [
-    ["Company name", org.name],
-    ["Website", (org as { website?: string }).website],
-    ["Industry", (org as { industry?: string }).industry],
-    ["Context", (org as { context?: string }).context],
+    ["Company name", (client as { name?: string }).name],
+    ["Legal name", (client as { legalName?: string }).legalName],
+    ["Website", (client as { website?: string }).website],
+    ["Industry", (client as { industry?: string }).industry],
+    ["Context", (client as { context?: string }).context],
   ];
   const filled = rows.filter(([, v]) => v);
 

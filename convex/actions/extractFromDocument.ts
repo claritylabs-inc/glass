@@ -6,7 +6,8 @@ import { api, internal } from "../_generated/api";
 import { makeEmbedText } from "../lib/sdkCallbacks";
 import { getModel, generateTextWithFallback } from "../lib/models";
 import { generateText } from "ai";
-import { parseOffice } from "officeparser";
+import mammoth from "mammoth";
+import * as XLSX from "xlsx";
 import { Id } from "../_generated/dataModel";
 
 /* ------------------------------------------------------------------ */
@@ -36,7 +37,9 @@ type ModelInput =
 /*  File type detection                                                */
 /* ------------------------------------------------------------------ */
 
-const OFFICE_EXTS = [".docx", ".xlsx", ".pptx", ".odt", ".ods", ".odp"];
+const DOCX_EXTS = [".docx"];
+const XLSX_EXTS = [".xlsx", ".xls", ".ods", ".csv"];
+const OFFICE_EXTS = [...DOCX_EXTS, ...XLSX_EXTS];
 const TEXT_EXTS = [".md", ".mdx", ".csv", ".txt", ".tsv", ".json"];
 
 function extOf(name: string): string {
@@ -232,9 +235,19 @@ export const extractFromDocument = action({
         const buf = new Uint8Array(await blob.arrayBuffer());
         input = { kind: "pdf", bytes: buf, fileName };
       } else if (isOffice(fileName)) {
+        const ext = extOf(fileName);
         const buf = Buffer.from(await blob.arrayBuffer());
-        const ast = await parseOffice(buf);
-        const text = ast.toText();
+        let text: string;
+        if (DOCX_EXTS.includes(ext)) {
+          const { value } = await mammoth.extractRawText({ buffer: buf });
+          text = value;
+        } else {
+          const wb = XLSX.read(buf, { type: "buffer" });
+          text = wb.SheetNames.map((name) => {
+            const csv = XLSX.utils.sheet_to_csv(wb.Sheets[name]);
+            return `# ${name}\n${csv}`;
+          }).join("\n\n");
+        }
         if (!text.trim()) return fail("Office document appears empty");
         const truncated = text.length > 24000 ? text.slice(0, 24000) + "\n... [truncated]" : text;
         input = { kind: "text", text: truncated };
@@ -325,16 +338,19 @@ If no relevant risk signals found, return { "entries": [] }.`;
 
       for (const entry of allEntries) {
         if (!entry.content?.trim()) continue;
+        let embedding: number[] | undefined;
         try {
-          const embedding = await embedText(entry.content);
-
+          embedding = await embedText(entry.content);
           const similar = await ctx.vectorSearch("orgIntelligence", "by_embedding", {
             vector: embedding,
             limit: 3,
             filter: (q) => q.eq("orgId", orgId),
           });
           if (similar.some((s: { _score?: number }) => (s._score ?? 0) > 0.95)) continue;
-
+        } catch (err) {
+          console.error("extractFromDocument: embed failed, inserting without embedding", err);
+        }
+        try {
           await ctx.runMutation(internal.intelligence.insert, {
             orgId,
             content: entry.content,
@@ -349,8 +365,8 @@ If no relevant risk signals found, return { "entries": [] }.`;
             embedding,
           });
           inserted++;
-        } catch {
-          // Skip individual entry failures
+        } catch (err) {
+          console.error("extractFromDocument: intelligence insert failed", err);
         }
       }
 

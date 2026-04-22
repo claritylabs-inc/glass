@@ -70,6 +70,11 @@ export default function ClientSettingsPage() {
     return Array.from(set);
   }, [members]);
 
+  const suggestedDomains = useMemo(
+    () => memberDomains.filter((d) => !domains.includes(d)),
+    [memberDomains, domains],
+  );
+
   function addEmail() {
     const v = emailInput.trim().toLowerCase();
     if (!v || !v.includes("@") || emails.includes(v)) {
@@ -98,7 +103,7 @@ export default function ClientSettingsPage() {
   }
 
   return (
-    <div className="max-w-3xl space-y-6">
+    <div className="w-full space-y-6">
       <section className="rounded-xl border border-foreground/6 bg-card overflow-hidden">
         <header className="px-6 py-5 border-b border-foreground/6">
           <h2 className="text-base font-medium text-foreground">
@@ -110,32 +115,34 @@ export default function ClientSettingsPage() {
           </p>
         </header>
 
-        <div className="px-6 py-5 space-y-5">
-          <Tabs
-            value={verification}
-            onValueChange={(v) => setVerification(v as Verification)}
-          >
-            <TabsList variant="pill">
-              <TabsTrigger value="strict">Strict</TabsTrigger>
-              <TabsTrigger value="domain">Domain</TabsTrigger>
-              <TabsTrigger value="open">Open</TabsTrigger>
-            </TabsList>
-          </Tabs>
-          <p className="text-body-sm text-muted-foreground">
-            {verification === "strict"
-              ? "Only the emails listed below are recognized as this client."
-              : verification === "domain"
-                ? "Emails and matching domains below are recognized as this client."
-                : "Any sender with a membership to this client is recognized."}
-          </p>
+        <div className="px-6 py-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-body-sm text-muted-foreground">
+              {verification === "strict"
+                ? "Only the emails listed below are recognized as this client."
+                : verification === "domain"
+                  ? "Emails and matching domains below are recognized as this client."
+                  : "Any sender with a membership to this client is recognized."}
+            </p>
+            <Tabs
+              value={verification}
+              onValueChange={(v) => setVerification(v as Verification)}
+            >
+              <TabsList variant="pill">
+                <TabsTrigger value="strict">Strict</TabsTrigger>
+                <TabsTrigger value="domain">Domain</TabsTrigger>
+                <TabsTrigger value="open">Open</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </div>
         </div>
 
-        <div className="px-6 py-5 border-t border-foreground/6 space-y-3">
+        <div className="px-6 py-5 border-t border-foreground/6 space-y-4">
           <div>
             <h3 className="text-body-sm font-medium text-foreground">
               Allowed emails
             </h3>
-            <p className="text-label-sm text-muted-foreground">
+            <p className="mt-1 text-body-sm text-muted-foreground">
               Exact senders that should route to this client.
             </p>
           </div>
@@ -177,12 +184,12 @@ export default function ClientSettingsPage() {
           ) : null}
         </div>
 
-        <div className="px-6 py-5 border-t border-foreground/6 space-y-3">
+        <div className="px-6 py-5 border-t border-foreground/6 space-y-4">
           <div>
             <h3 className="text-body-sm font-medium text-foreground">
               Allowed domains
             </h3>
-            <p className="text-label-sm text-muted-foreground">
+            <p className="mt-1 text-body-sm text-muted-foreground">
               Anyone sending from these domains is recognized as this client.
             </p>
           </div>
@@ -223,23 +230,21 @@ export default function ClientSettingsPage() {
               ))}
             </div>
           ) : null}
-          {memberDomains.length > 0 && verification !== "strict" ? (
+          {suggestedDomains.length > 0 && verification !== "strict" ? (
             <div className="flex flex-wrap items-center gap-2 pt-1">
               <span className="text-label-sm text-muted-foreground/70">
                 Suggested from members:
               </span>
-              {memberDomains
-                .filter((d) => !domains.includes(d))
-                .map((d) => (
-                  <button
-                    key={d}
-                    type="button"
-                    onClick={() => addDomain(d)}
-                    className="rounded-full border border-dashed border-foreground/15 px-2.5 py-0.5 text-label-sm text-muted-foreground hover:text-foreground hover:border-foreground/30"
-                  >
-                    + @{d}
-                  </button>
-                ))}
+              {suggestedDomains.map((d) => (
+                <button
+                  key={d}
+                  type="button"
+                  onClick={() => addDomain(d)}
+                  className="rounded-full border border-dashed border-foreground/15 px-2.5 py-0.5 text-label-sm text-muted-foreground hover:text-foreground hover:border-foreground/30"
+                >
+                  + @{d}
+                </button>
+              ))}
             </div>
           ) : null}
         </div>

@@ -1242,7 +1242,6 @@ async function handleToolCall(
         industryVertical: org.industryVertical, context: org.context,
       }, null, 2) }] };
     }
-    case "ask_glass":
     case "ask_glass": {
       if (!args.message) throw new Error("Missing message");
       const result = await ctx.runAction(internal.actions.mcpChat.run, {
@@ -1273,7 +1272,7 @@ async function handleToolCall(
       requireWriteScope(identity);
       const appId = await ctx.runMutation((internal as any).applications.createDraft, {
         brokerOrgId: orgId, clientOrgId: args.client_org_id as Id<"organizations">,
-        creationPath: args.creation_path, title: args.title, lineOfBusiness: args.line_of_business,
+        title: args.title, lineOfBusiness: args.line_of_business,
       });
       return { content: [{ type: "text", text: JSON.stringify({ id: appId }, null, 2) }] };
     }
@@ -1310,7 +1309,9 @@ async function handleToolCall(
     }
     // ── Client tools ──
     case "get_passport": {
-      const passport = await ctx.runQuery((internal as any).clientPassport.getFull, { orgId }).catch(() => null);
+      const passport = await ctx.runQuery((internal as any).clientPassport.getFull, {
+        clientOrgId: orgId,
+      }).catch(() => null);
       if (!passport) throw new Error("not_found: passport not found");
       return { content: [{ type: "text", text: JSON.stringify(passport, null, 2) }] };
     }
@@ -1324,7 +1325,10 @@ async function handleToolCall(
         else if (k === "annual_revenue") convexPatch.annualRevenue = v;
         else convexPatch[k] = v;
       }
-      await ctx.runMutation((internal as any).clientPassport.upsertCoreInternal, { orgId, ...convexPatch });
+      await ctx.runMutation((internal as any).clientPassport.upsertCoreInternal, {
+        clientOrgId: orgId,
+        patch: convexPatch,
+      });
       return { content: [{ type: "text", text: JSON.stringify({ ok: true }, null, 2) }] };
     }
     case "answer_application_question": {
@@ -1576,12 +1580,12 @@ http.route({
     try {
       const identity = await requireMcpAuth(ctx, request);
       const body = await request.json();
-      const { clientOrgId, creationPath, title, lineOfBusiness } = body;
-      if (!clientOrgId || !creationPath || !title) return jsonResponse({ error: "Missing required fields" }, 400);
+      const { clientOrgId, title, lineOfBusiness } = body;
+      if (!clientOrgId || !title) return jsonResponse({ error: "Missing required fields" }, 400);
       const appId = await ctx.runMutation((internal as any).applications.createDraft, {
         brokerOrgId: identity.orgId as Id<"organizations">,
         clientOrgId: clientOrgId as Id<"organizations">,
-        creationPath, title, lineOfBusiness,
+        title, lineOfBusiness,
       });
       return jsonResponse({ id: appId }, 201);
     } catch (e) {
@@ -1686,7 +1690,9 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     try {
       const identity = await requireMcpAuth(ctx, request);
-      const passport = await ctx.runQuery((internal as any).clientPassport.getFull, { orgId: identity.orgId as Id<"organizations"> }).catch(() => null);
+      const passport = await ctx.runQuery((internal as any).clientPassport.getFull, {
+        clientOrgId: identity.orgId as Id<"organizations">,
+      }).catch(() => null);
       if (!passport) return jsonResponse({ error: "Not found" }, 404);
       return jsonResponse(passport);
     } catch (e) {
@@ -1706,8 +1712,8 @@ http.route({
       const body = await request.json();
       if (!body.patch) return jsonResponse({ error: "Missing patch" }, 400);
       await ctx.runMutation((internal as any).clientPassport.upsertCoreInternal, {
-        orgId: identity.orgId as Id<"organizations">,
-        ...body.patch,
+        clientOrgId: identity.orgId as Id<"organizations">,
+        patch: body.patch,
       });
       return jsonResponse({ ok: true });
     } catch (e) {
@@ -1774,7 +1780,10 @@ function extractBearerToken(request: Request): string {
 }
 
 async function requireApiAuth(
-  ctx: { runQuery: (...args: any[]) => Promise<any>; runMutation: (...args: any[]) => Promise<any> },
+  ctx: {
+    runQuery: (...args: any[]) => Promise<any>;
+    runMutation: (...args: any[]) => Promise<any>;
+  },
   request: Request,
 ): Promise<{ userId: Id<"users">; orgId: Id<"organizations">; scopes: ("read" | "write")[]; tokenId: Id<"oauthTokens">; requestId: string }> {
   const requestId = crypto.randomUUID();
@@ -1783,6 +1792,25 @@ async function requireApiAuth(
     throw jsonResponse({ error: { code: "unauthorized", message: "Missing bearer token", request_id: requestId } }, 401);
   }
   const orgIdHeader = request.headers.get("x-org-id") ?? request.headers.get("X-Org-Id") ?? "";
+
+  async function assertMembership(userId: Id<"users">, orgId: Id<"organizations">) {
+    const hasMembership = await ctx.runQuery((internal as any).orgs.hasMembershipInternal, {
+      orgId,
+      userId,
+    });
+    if (!hasMembership) {
+      throw jsonResponse(
+        {
+          error: {
+            code: "forbidden",
+            message: "User does not have access to the requested org",
+            request_id: requestId,
+          },
+        },
+        403,
+      );
+    }
+  }
 
   // API key path
   if (rawToken.startsWith("glass_")) {
@@ -1793,9 +1821,11 @@ async function requireApiAuth(
     }
     await ctx.runMutation(internal.apiKeys.touchLastUsed, { id: result.keyId });
     // Find a token record for audit log — skip rate limit for API keys, use a sentinel
+    const resolvedOrgId = (orgIdHeader || result.orgId) as Id<"organizations">;
+    await assertMembership(result.userId as Id<"users">, resolvedOrgId);
     return {
       userId: result.userId as Id<"users">,
-      orgId: (orgIdHeader || result.orgId) as Id<"organizations">,
+      orgId: resolvedOrgId,
       scopes: ["read", "write"],
       tokenId: "sentinel" as Id<"oauthTokens">,
       requestId,
@@ -1813,6 +1843,7 @@ async function requireApiAuth(
   }
 
   const orgId = (orgIdHeader || tokenData.orgId) as Id<"organizations">;
+  await assertMembership(tokenData.userId as Id<"users">, orgId);
 
   return {
     userId: tokenData.userId as Id<"users">,
@@ -1867,9 +1898,27 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     try {
       const identity = await requireApiAuth(ctx, request);
-      const result = await ctx.runQuery((internal as any).clients.listForBroker, { brokerOrgId: identity.orgId });
-      const data = Array.isArray(result) ? result : (result?.clients ?? []);
-      return jsonResponse({ data, next_cursor: result?.nextCursor });
+      const rows = await ctx.runQuery((internal as any).clients.listForBrokerInternal, {
+        brokerOrgId: identity.orgId,
+        userId: identity.userId,
+      });
+      const data = (rows ?? []).map((row: any) =>
+        row.onboardingStatus === "invited"
+          ? {
+              invitation_id: row.invitationId,
+              name: row.name,
+              onboarding_status: "invited",
+              created_at: row.createdAt,
+            }
+          : {
+              id: row.clientOrgId,
+              name: row.name,
+              onboarding_status: row.onboardingStatus,
+              created_at: row.createdAt,
+              last_activity_at: row.lastActivityAt,
+            },
+      );
+      return jsonResponse({ data, next_cursor: null });
     } catch (e) {
       if (e instanceof Response) return e;
       return jsonResponse({ error: { code: "internal_error", message: String(e) } }, 500);
@@ -1885,10 +1934,24 @@ http.route({
     try {
       const identity = await requireApiAuth(ctx, request);
       const clientOrgId = new URL(request.url).pathname.split("/").pop() as Id<"organizations">;
-      const org = await ctx.runQuery(internal.orgs.getInternal, { id: clientOrgId });
-      if (!org) return jsonResponse({ error: { code: "not_found", message: "Client not found" } }, 404);
+      const detail = await ctx.runQuery((internal as any).clients.getDetailInternal, {
+        brokerOrgId: identity.orgId,
+        clientOrgId,
+        userId: identity.userId,
+      });
+      if (!detail) {
+        return jsonResponse({ error: { code: "not_found", message: "Client not found" } }, 404);
+      }
       const policies = await ctx.runQuery(internal.policies.listAllInternal, { orgId: clientOrgId });
-      return jsonResponse({ id: org._id, name: org.name, policy_count: policies.length });
+      return jsonResponse({
+        id: detail.clientOrgId,
+        name: detail.name,
+        legal_name: detail.legalName ?? null,
+        website: detail.website ?? null,
+        industry: detail.industry ?? null,
+        context: detail.context ?? null,
+        policy_count: policies.length,
+      });
     } catch (e) {
       if (e instanceof Response) return e;
       return jsonResponse({ error: { code: "internal_error", message: String(e) } }, 500);
@@ -1928,15 +1991,17 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     try {
       const identity = await requireApiAuth(ctx, request);
-      const passport = await ctx.runQuery((internal as any).clientPassport.getFull, { orgId: identity.orgId }).catch(() => null);
+      const passport = await ctx.runQuery((internal as any).clientPassport.getFull, {
+        clientOrgId: identity.orgId,
+      }).catch(() => null);
       if (!passport) return jsonResponse({ error: { code: "not_found", message: "Passport not found" } }, 404);
       return jsonResponse({
-        id: passport._id ?? identity.orgId,
-        legal_name: passport.legalName,
-        full_time_employees: passport.fullTimeEmployees,
-        annual_revenue: passport.annualRevenue,
-        created_at: passport._creationTime,
-        updated_at: passport.lastUpdated,
+        id: passport.passport?._id ?? identity.orgId,
+        legal_name: passport.passport?.legalName,
+        full_time_employees: passport.passport?.fullTimeEmployees,
+        annual_revenue: passport.passport?.annualRevenue,
+        created_at: passport.passport?._creationTime,
+        updated_at: passport.passport?.lastEditedAt,
       });
     } catch (e) {
       if (e instanceof Response) return e;
@@ -1964,7 +2029,10 @@ http.route({
         else if (k === "annual_revenue") patch.annualRevenue = v;
         else patch[k] = v;
       }
-      await ctx.runMutation((internal as any).clientPassport.upsertCoreInternal, { orgId: identity.orgId, ...patch });
+      await ctx.runMutation((internal as any).clientPassport.upsertCoreInternal, {
+        clientOrgId: identity.orgId,
+        patch,
+      });
       return jsonResponse({ ok: true });
     } catch (e) {
       if (e instanceof Response) return e;

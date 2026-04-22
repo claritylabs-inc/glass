@@ -1,6 +1,10 @@
 import { v } from "convex/values";
 import { mutation, query, internalMutation, internalQuery } from "./_generated/server";
 import { getOrgAccess } from "./lib/orgAuth";
+import {
+  getOrgAccess as getOrgAccessNew,
+  assertCanReadIntelligence,
+} from "./lib/access";
 
 // ── Queries ──
 
@@ -332,19 +336,27 @@ export const removeLegacyTags = mutation({
   },
 });
 
-/** Broker-filtered view: drops source="email" and source="chat" per the access model. */
 export const listForBroker = query({
   args: { orgId: v.id("organizations") },
   handler: async (ctx, args) => {
-    const access = await getOrgAccess(ctx);
-    if (!access) return [];
+    let access;
+    try {
+      access = await getOrgAccessNew(ctx, args.orgId);
+    } catch {
+      return [];
+    }
+
+    const { sourceFilter } = assertCanReadIntelligence(access);
     const entries = await ctx.db
       .query("orgIntelligence")
       .withIndex("by_orgId", (q) => q.eq("orgId", args.orgId))
       .order("desc")
       .take(200);
-    return entries.filter(
-      (e) => e.source !== "email" && e.source !== "chat",
-    );
+
+    return entries.filter((entry) => {
+      if (entry.supersededBy || entry.confidence === "stale") return false;
+      if (sourceFilter && !sourceFilter(entry)) return false;
+      return true;
+    });
   },
 });

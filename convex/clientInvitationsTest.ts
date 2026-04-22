@@ -216,6 +216,14 @@ export const simulateAccept = internalMutation({
       role: "admin",
     });
 
+    await ctx.db.insert("brokerClientAssignments", {
+      orgId: inv.brokerOrgId,
+      clientOrgId,
+      producerId: inv.invitedBy,
+      role: "primary",
+      createdAt: Date.now(),
+    });
+
     if (inv.linkType === "email") {
       await ctx.db.patch(invitationId, { status: "accepted", clientOrgId });
     } else {

@@ -84,7 +84,12 @@ export function ConnectionForm({
 
       try {
         await createOAuthState({ state, sinceDate, returnTo });
-        window.location.href = `/api/auth/google/start?state=${encodeURIComponent(state)}`;
+        window.open(
+          `/api/auth/google/start?state=${encodeURIComponent(state)}`,
+          "_blank",
+          "noopener,noreferrer",
+        );
+        handleClose();
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Failed to start Google connection");
       }

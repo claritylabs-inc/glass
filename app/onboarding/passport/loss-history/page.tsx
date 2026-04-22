@@ -18,7 +18,12 @@ export default function LossHistoryPage() {
   }
 
   return (
-    <WizardShell currentStep="extended" email={viewer?.email ?? undefined}>
+    <WizardShell
+      currentStep="extended"
+      email={viewer?.email ?? undefined}
+      title="Loss history"
+      subtitle="Log prior claims or incidents so underwriters see the full picture."
+    >
       <SectionLossHistory />
     </WizardShell>
   );
