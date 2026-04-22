@@ -121,7 +121,7 @@ function makeMutations() {
 
 // ─── Phase factory (requires Convex ctx for runQuery/runMutation) ──────────────
 
-function makePhases(convexCtx: ActionCtx): Phase<ApplicationExtractionState>[] {
+export function makePhases(convexCtx: ActionCtx): Phase<ApplicationExtractionState>[] {
   // ── Phase 1: extract_fields ───────────────────────────────────────────────────
   const extractFieldsPhase: Phase<ApplicationExtractionState> = {
     name: "extract_fields",
