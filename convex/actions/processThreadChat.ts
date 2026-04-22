@@ -369,8 +369,8 @@ function buildTools(ctx: any, args: { orgId: string; threadId: string }, org?: R
         const autoGenerate = org?.autoGenerateCoi !== false;
         if (!autoGenerate) {
           const handling = org?.coiHandling ?? "ignore";
-          if (handling === "broker" && org?.brokerContactName) {
-            return `COI auto-generation is off. Please contact your broker, ${org.brokerContactName}${org.brokerContactEmail ? ` (${org.brokerContactEmail})` : ""}, to obtain this certificate.`;
+          if (handling === "broker") {
+            return `COI auto-generation is off. Please contact your broker to obtain this certificate.`;
           }
           if (handling === "member") {
             return `COI auto-generation is off. Please route this COI request to your primary insurance contact.`;

@@ -54,21 +54,11 @@ export const seedUsers = mutation({
   },
 });
 
-// Personal profile fields only — company fields moved to org settings
+// Personal profile fields only — company fields live on organizations.
 export const updateProfile = mutation({
   args: {
     name: v.optional(v.string()),
     title: v.optional(v.string()),
-    // Legacy company fields — still accepted during transition
-    companyName: v.optional(v.string()),
-    insuranceBroker: v.optional(v.string()),
-    brokerContactName: v.optional(v.string()),
-    brokerContactEmail: v.optional(v.string()),
-    companyWebsite: v.optional(v.string()),
-    companyContext: v.optional(v.string()),
-    industry: v.optional(v.string()),
-    industryVertical: v.optional(v.string()),
-    coiHandling: v.optional(v.union(v.literal("broker"), v.literal("user"), v.literal("ignore"))),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
@@ -106,71 +96,6 @@ export const completeOnboarding = mutation({
         });
       }
     }
-  },
-});
-
-// Legacy: keep for backward compat during transition
-export const checkHandleAvailability = query({
-  args: { handle: v.string() },
-  handler: async (ctx, args) => {
-    const normalized = args.handle.toLowerCase().replace(/[^a-z0-9-]/g, "");
-    if (normalized.length < 3 || normalized.length > 30) {
-      return { available: false, normalized, reason: "Handle must be 3-30 characters" };
-    }
-    if (!/^[a-z][a-z0-9-]*[a-z0-9]$/.test(normalized) && normalized.length > 1) {
-      return { available: false, normalized, reason: "Must start with a letter and end with a letter or number" };
-    }
-    // Check both tables
-    const existingOrg = await ctx.db
-      .query("organizations")
-      .withIndex("by_agentHandle", (q) => q.eq("agentHandle", normalized))
-      .first();
-    const existingUser = await ctx.db
-      .query("users")
-      .withIndex("by_agentHandle", (q) => q.eq("agentHandle", normalized))
-      .first();
-    const taken = !!(existingOrg || existingUser);
-    return { available: !taken, normalized, reason: taken ? "Handle already taken" : undefined };
-  },
-});
-
-// Legacy: keep for backward compat during transition
-export const claimAgentHandle = mutation({
-  args: { handle: v.string() },
-  handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
-
-    // Prefer setting on org if user has one
-    const membership = await ctx.db
-      .query("orgMemberships")
-      .withIndex("by_userId", (q) => q.eq("userId", userId))
-      .first();
-
-    const normalized = args.handle.toLowerCase().replace(/[^a-z0-9-]/g, "");
-    if (normalized.length < 3 || normalized.length > 30) {
-      throw new Error("Handle must be 3-30 characters");
-    }
-
-    const existingOrg = await ctx.db
-      .query("organizations")
-      .withIndex("by_agentHandle", (q) => q.eq("agentHandle", normalized))
-      .first();
-    const existingUser = await ctx.db
-      .query("users")
-      .withIndex("by_agentHandle", (q) => q.eq("agentHandle", normalized))
-      .first();
-    if (existingOrg || existingUser) throw new Error("Handle already taken");
-
-    if (membership) {
-      const org = await ctx.db.get(membership.orgId);
-      if (org && !org.agentHandle) {
-        await ctx.db.patch(membership.orgId, { agentHandle: normalized });
-      }
-    }
-    // Also set on user for backward compat
-    await ctx.db.patch(userId, { agentHandle: normalized });
-    return normalized;
   },
 });
 
@@ -265,16 +190,6 @@ export const resetAccount = mutation({
 
     // Reset user profile fields
     await ctx.db.patch(userId, {
-      companyName: undefined,
-      insuranceBroker: undefined,
-      brokerContactName: undefined,
-      brokerContactEmail: undefined,
-      companyWebsite: undefined,
-      companyContext: undefined,
-      industry: undefined,
-      industryVertical: undefined,
-      coiHandling: undefined,
-      agentHandle: undefined,
       onboardingComplete: false,
     });
 
@@ -286,9 +201,6 @@ export const resetAccount = mutation({
         context: undefined,
         industry: undefined,
         industryVertical: undefined,
-        insuranceBroker: undefined,
-        brokerContactName: undefined,
-        brokerContactEmail: undefined,
         coiHandling: undefined,
         agentHandle: undefined,
         onboardingComplete: false,

@@ -225,7 +225,6 @@ export default function BrokerOnboardingPage() {
   const viewer = useQuery(api.users.viewer);
   const viewerOrg = useQuery(api.orgs.viewerOrg, {});
   const createBrokerOrg = useMutation(api.orgs.createBrokerOrg);
-  const updateProfile = useMutation(api.users.updateProfile);
   const updateOrg = useMutation(api.orgs.updateOrg);
   const claimAgentHandle = useMutation(api.orgs.claimAgentHandle);
   const completeOnboarding = useMutation(api.users.completeOnboarding);
@@ -256,6 +255,17 @@ export default function BrokerOnboardingPage() {
       setCurrentStepState(parsedStep as Step);
     }
   }, [stepParam, parsedStep, currentStep]);
+
+  // A user already belonging to a non-broker org can't run this wizard — the
+  // broker-org creation step would be skipped and they'd finish onboarding
+  // still attached to their client org. Bounce them home.
+  useEffect(() => {
+    if (!viewerOrg?.org) return;
+    const type = (viewerOrg.org as { type?: "broker" | "client" }).type;
+    if (type && type !== "broker") {
+      router.replace("/");
+    }
+  }, [viewerOrg, router]);
   const [orgName, setOrgName] = useState("");
   const [website, setWebsite] = useState("");
   const [slugInput, setSlugInput] = useState("");
@@ -273,8 +283,8 @@ export default function BrokerOnboardingPage() {
 
   useEffect(() => {
     if (!viewer) return;
-    setOrgName((v) => v || viewer.companyName || "");
-    setWebsite((v) => v || viewer.companyWebsite || "");
+    setOrgName((v) => v || "");
+    setWebsite((v) => v || "");
   }, [viewer]);
 
   useEffect(() => {
@@ -349,10 +359,6 @@ export default function BrokerOnboardingPage() {
     setSubmitting(true);
     setError("");
     try {
-      await updateProfile({
-        companyName: orgName.trim(),
-        companyWebsite: website.trim(),
-      });
       if (viewerOrg?.org) {
         await updateOrg({
           name: orgName.trim(),

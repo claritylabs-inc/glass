@@ -39,7 +39,7 @@ export function DocumentUploadEmptyState({ kind, uploading, onUpload }: Document
   const viewerOrg = useQuery(api.orgs.viewerOrg, {});
   const [copied, setCopied] = useState(false);
 
-  const agentHandle = viewerOrg?.org?.agentHandle ?? viewer?.agentHandle;
+  const agentHandle = viewerOrg?.brokerOrg?.agentHandle ?? viewerOrg?.org?.agentHandle;
   const agentEmail = agentHandle ? `${agentHandle}@${AGENT_DOMAIN}` : null;
 
   const handleCopy = () => {

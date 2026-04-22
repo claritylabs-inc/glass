@@ -1,12 +1,11 @@
 "use client";
 
 import { useAuthActions } from "@convex-dev/auth/react";
-import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import { AuthCard, AuthMinimalShell, BrandWordmark } from "@/components/auth-shell";
-import { AgentHandleForm } from "@/components/agent-handle-form";
 import { ConnectionForm } from "@/components/connection-form";
 import { PillButton } from "@/components/ui/pill-button";
 import { LogoIcon } from "@/components/ui/logo-icon";
@@ -17,18 +16,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { AlertCircle, ArrowRight, AtSign, Check, Loader2, Mail } from "lucide-react";
+import { AlertCircle, ArrowRight, Check, Loader2, Mail } from "lucide-react";
 import { FaGoogle } from "react-icons/fa";
 import { toast } from "sonner";
 import { useOnboardingCache } from "@/hooks/use-onboarding-cache";
 
-type Step = 0 | 1 | 2 | 3 | 4;
+type Step = 0 | 1 | 2 | 3;
 type EnrichmentState = "idle" | "running" | "success" | "error";
 
 const STEPS: ReadonlyArray<{ label: string; subtitle?: string }> = [
   { label: "Create your profile" },
   { label: "Create your workspace" },
-  { label: "Claim your handle", subtitle: "Choose the email handle your team will use to reach Glass." },
   { label: "Connect your inbox", subtitle: "Connect your inbox so Glass can find policies and related insurance activity." },
   { label: "Finish your setup" },
 ] as const;
@@ -153,14 +151,13 @@ export default function OnboardingPage() {
   const stepParam = searchParams?.get("step");
   const parsedStep = stepParam ? Number(stepParam) : NaN;
   const initialStep: Step =
-    Number.isFinite(parsedStep) && parsedStep >= 0 && parsedStep <= 4
+    Number.isFinite(parsedStep) && parsedStep >= 0 && parsedStep <= 3
       ? (parsedStep as Step)
       : 0;
 
   const [currentStep, setCurrentStepState] = useState<Step>(initialStep);
   const [imapFormOpen, setImapFormOpen] = useState(false);
   const [connectingGoogle, setConnectingGoogle] = useState(false);
-  const claimRef = useRef<(() => Promise<void>) | null>(null);
 
   const setCurrentStep = useCallback(
     (next: Step) => {
@@ -191,7 +188,6 @@ export default function OnboardingPage() {
   const [finishing, setFinishing] = useState(false);
   const [acceptingInvite, setAcceptingInvite] = useState(false);
   const [enrichmentState, setEnrichmentState] = useState<EnrichmentState>("idle");
-  const [canClaimHandle, setCanClaimHandle] = useState(false);
 
   useEffect(() => {
     if (!viewer) return;
@@ -201,24 +197,19 @@ export default function OnboardingPage() {
 
   useEffect(() => {
     const org = viewerOrg?.org;
-    if (!org) {
-      setCompanyName(viewer?.companyName ?? "");
-      setCompanyWebsite(viewer?.companyWebsite ?? "");
-      return;
-    }
-    setCompanyName(org.name ?? viewer?.companyName ?? "");
-    setCompanyWebsite(org.website ?? viewer?.companyWebsite ?? "");
-  }, [viewer, viewerOrg]);
+    if (!org) return;
+    setCompanyName(org.name ?? "");
+    setCompanyWebsite(org.website ?? "");
+  }, [viewerOrg]);
 
   const nonDemoConnections = connections?.filter((connection) => !connection.isDemo) ?? [];
   const hasConnection = nonDemoConnections.length > 0;
   const primaryConnection = nonDemoConnections[0];
-  const existingHandle = viewerOrg?.org?.agentHandle ?? viewer?.agentHandle;
   const scanStatus = primaryConnection?.lastScanStatus;
   const syncComplete = scanStatus === "success";
   const syncFailed = scanStatus === "error" || scanStatus === "disconnected";
   const hasContext = Boolean(viewerOrg?.org?.context);
-  const websiteProvided = Boolean((viewerOrg?.org?.website ?? viewer?.companyWebsite)?.trim());
+  const websiteProvided = Boolean(viewerOrg?.org?.website?.trim());
 
   async function handleLogout() {
     clearOnboardingCache();
@@ -241,11 +232,6 @@ export default function OnboardingPage() {
     setSavingOrg(true);
 
     try {
-      await updateProfile({
-        companyName: companyName.trim(),
-        companyWebsite: normalizedWebsite,
-      });
-
       if (viewerOrg?.org) {
         await updateOrg({
           name: companyName.trim(),
@@ -259,6 +245,7 @@ export default function OnboardingPage() {
       }
 
       setCurrentStep(2);
+      // Note: previously step 2 was handle-claim; it's been removed.
       setEnrichmentState(normalizedWebsite ? "running" : "idle");
 
       if (normalizedWebsite) {
@@ -286,7 +273,7 @@ export default function OnboardingPage() {
         .toISOString()
         .split("T")[0];
       const state = crypto.randomUUID();
-      await createOAuthState({ state, sinceDate, returnTo: "/onboarding?step=3" });
+      await createOAuthState({ state, sinceDate, returnTo: "/onboarding?step=2" });
       window.location.href = `/api/auth/google/start?state=${encodeURIComponent(state)}`;
     } catch (err) {
       setConnectingGoogle(false);
@@ -473,61 +460,6 @@ export default function OnboardingPage() {
           )}
 
           {currentStep === 2 && (
-            <div className="space-y-10">
-              <div className="space-y-3">
-                <label className="text-label-sm font-medium text-muted-foreground block mb-1.5">Agent handle</label>
-                {existingHandle ? (
-                  <div className="flex items-start gap-3 text-base text-muted-foreground">
-                      <div className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-full bg-foreground/[0.03]">
-                        <Check className="h-4 w-4" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-foreground">Handle claimed</p>
-                        <p className="mt-1 text-sm text-muted-foreground">{existingHandle}@{process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "glass.claritylabs.inc"}</p>
-                      </div>
-                  </div>
-                ) : (
-                  <AgentHandleForm
-                    suggestedHandle={
-                      companyName
-                        ? companyName
-                            .toLowerCase()
-                            .replace(/[^a-z0-9]+/g, "-")
-                            .replace(/^-|-$/g, "")
-                        : undefined
-                    }
-                    hideButton
-                    claimRef={claimRef}
-                    onAvailabilityChange={setCanClaimHandle}
-                    onClaimed={() => setCurrentStep(3)}
-                  />
-                )}
-              </div>
-
-              {existingHandle ? (
-                <PillButton
-                  type="button"
-                  onClick={() => setCurrentStep(3)}
-                  className="w-full justify-center text-sm shadow-none sm:w-auto"
-                >
-                  Continue
-                  <ArrowRight className="h-4 w-4" />
-                </PillButton>
-              ) : (
-                <PillButton
-                  type="button"
-                  onClick={() => claimRef.current?.()}
-                  disabled={!canClaimHandle}
-                  className="w-full justify-center text-sm shadow-none sm:w-auto"
-                >
-                  <AtSign className="h-4 w-4" />
-                  Claim handle
-                </PillButton>
-              )}
-            </div>
-          )}
-
-          {currentStep === 3 && (
             <div className="space-y-8">
               {hasConnection ? (
                 <>
@@ -544,7 +476,7 @@ export default function OnboardingPage() {
                   </div>
                   <PillButton
                     type="button"
-                    onClick={() => setCurrentStep(4)}
+                    onClick={() => setCurrentStep(3)}
                     className="w-full justify-center text-sm shadow-none sm:w-auto"
                   >
                     Continue
@@ -619,7 +551,7 @@ export default function OnboardingPage() {
                   <div className="flex justify-center">
                     <button
                       type="button"
-                      onClick={() => setCurrentStep(4)}
+                      onClick={() => setCurrentStep(3)}
                       className="text-sm text-muted-foreground transition-colors hover:text-foreground"
                     >
                       Skip for now
@@ -630,7 +562,7 @@ export default function OnboardingPage() {
             </div>
           )}
 
-          {currentStep === 4 && (
+          {currentStep === 3 && (
             <div className="space-y-10 text-left">
               <div className="space-y-3">
                 <div className="flex items-center justify-between rounded-xl border border-foreground/8 bg-popover/60 px-4 py-3">
@@ -722,7 +654,7 @@ export default function OnboardingPage() {
       <ConnectionForm
         open={imapFormOpen}
         onClose={() => setImapFormOpen(false)}
-        returnTo="/onboarding?step=3"
+        returnTo="/onboarding?step=2"
         initialHistoryDays={historyDays}
         initialStep="imap"
         showBack={false}

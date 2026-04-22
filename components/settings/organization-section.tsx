@@ -47,9 +47,6 @@ export function OrganizationSection() {
   const [insuranceContext, setInsuranceContext] = useState("");
   const [investorsContext, setInvestorsContext] = useState("");
   const [partnersContext, setPartnersContext] = useState("");
-  const [insuranceBroker, setInsuranceBroker] = useState("");
-  const [brokerContactName, setBrokerContactName] = useState("");
-  const [brokerContactEmail, setBrokerContactEmail] = useState("");
   const currentOrg = useCurrentOrg();
   const isBroker = currentOrg?.isBroker ?? false;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -107,9 +104,6 @@ export function OrganizationSection() {
       setInsuranceContext(org.insuranceContext ?? "");
       setInvestorsContext(org.investorsContext ?? "");
       setPartnersContext(org.partnersContext ?? "");
-      setInsuranceBroker(org.insuranceBroker ?? "");
-      setBrokerContactName(org.brokerContactName ?? "");
-      setBrokerContactEmail(org.brokerContactEmail ?? "");
       hydratedRef.current = true;
     }
   }, [org]);
@@ -130,9 +124,6 @@ export function OrganizationSection() {
         insuranceContext: insuranceContext || undefined,
         investorsContext: investorsContext || undefined,
         partnersContext: partnersContext || undefined,
-        insuranceBroker: insuranceBroker || undefined,
-        brokerContactName: brokerContactName || undefined,
-        brokerContactEmail: brokerContactEmail || undefined,
       });
       setSavedAt(Date.now());
     } catch {
@@ -144,7 +135,6 @@ export function OrganizationSection() {
     updateOrg,
     name, website, context, industry, industryVertical,
     clientsContext, vendorsContext, insuranceContext, investorsContext, partnersContext,
-    insuranceBroker, brokerContactName, brokerContactEmail,
   ]);
 
   useEffect(() => {
@@ -515,53 +505,7 @@ export function OrganizationSection() {
               </div>
             );
           })()
-        ) : (
-          <div className="rounded-lg border border-foreground/6 bg-card mb-4">
-            <div className="px-5 py-3.5 border-b border-foreground/6">
-              <h3 className="!mb-0 text-sm font-medium text-foreground">Insurance Broker</h3>
-            </div>
-            <div className="px-5 py-5">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
-                    Broker (Company)
-                  </label>
-                  <input
-                    type="text"
-                    value={insuranceBroker}
-                    onChange={(e) => setInsuranceBroker(e.target.value)}
-                    placeholder="Marsh McLennan"
-                    className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
-                  />
-                </div>
-                <div>
-                  <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
-                    Contact Name
-                  </label>
-                  <input
-                    type="text"
-                    value={brokerContactName}
-                    onChange={(e) => setBrokerContactName(e.target.value)}
-                    placeholder="Jane Smith"
-                    className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
-                  />
-                </div>
-                <div>
-                  <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
-                    Contact Email
-                  </label>
-                  <input
-                    type="email"
-                    value={brokerContactEmail}
-                    onChange={(e) => setBrokerContactEmail(e.target.value)}
-                    placeholder="jane@broker.com"
-                    className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
+        ) : null}
       </div>
 
       {/* Onboarding section */}

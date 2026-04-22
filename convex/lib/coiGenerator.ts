@@ -215,10 +215,10 @@ export function policyToCoiData(policy: any, org?: any): CoiData {
   }
 
   return {
-    producerAgency: org?.insuranceBroker ?? policy.brokerAgency ?? policy.broker,
-    producerContact: org?.brokerContactName ?? policy.brokerContactName,
+    producerAgency: org?.broker?.name ?? policy.brokerAgency ?? policy.broker,
+    producerContact: org?.broker?.contactName ?? policy.brokerContactName,
     producerLicense: policy.brokerLicenseNumber,
-    producerEmail: org?.brokerContactEmail ?? policy.brokerContactEmail,
+    producerEmail: org?.broker?.contactEmail ?? policy.brokerContactEmail,
     insuredName: policy.insuredName ?? "N/A",
     insuredDba: policy.insuredDba,
     insuredAddress: policy.insuredAddress,

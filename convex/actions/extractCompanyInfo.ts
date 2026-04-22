@@ -175,11 +175,6 @@ ${content}`,
 
     const companyContext = object.companyContext;
 
-    const updates: Record<string, string> = { companyContext };
-    if (industry) updates.industry = industry;
-    if (industryVertical) updates.industryVertical = industryVertical;
-    await ctx.runMutation(api.users.updateProfile, updates);
-
     if (viewerOrg?.org) {
       const orgUpdates: Record<string, string> = { context: companyContext };
       if (industry) orgUpdates.industry = industry;

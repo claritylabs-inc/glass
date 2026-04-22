@@ -735,9 +735,6 @@ http.route({
         industry: org.industry,
         industryVertical: org.industryVertical,
         context: org.context,
-        insuranceBroker: org.insuranceBroker,
-        brokerContactName: org.brokerContactName,
-        brokerContactEmail: org.brokerContactEmail,
       });
     } catch (e) {
       if (e instanceof Response) return e;
@@ -1242,8 +1239,7 @@ async function handleToolCall(
       if (!org) throw new Error("Not found");
       return { content: [{ type: "text", text: JSON.stringify({
         _id: org._id, name: org.name, website: org.website, industry: org.industry,
-        industryVertical: org.industryVertical, context: org.context, insuranceBroker: org.insuranceBroker,
-        brokerContactName: org.brokerContactName, brokerContactEmail: org.brokerContactEmail,
+        industryVertical: org.industryVertical, context: org.context,
       }, null, 2) }] };
     }
     case "ask_glass":

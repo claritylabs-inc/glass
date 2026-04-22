@@ -128,7 +128,6 @@ import type * as lib_secrets from "../lib/secrets.js";
 import type * as lib_security from "../lib/security.js";
 import type * as migrations from "../migrations.js";
 import type * as migrations_migrateOnboarding from "../migrations/migrateOnboarding.js";
-import type * as migrations_migrateToOrgs from "../migrations/migrateToOrgs.js";
 import type * as migrations_migrateToThreads from "../migrations/migrateToThreads.js";
 import type * as modelConfig from "../modelConfig.js";
 import type * as notificationPreferences from "../notificationPreferences.js";
@@ -280,7 +279,6 @@ declare const fullApi: ApiFromModules<{
   "lib/security": typeof lib_security;
   migrations: typeof migrations;
   "migrations/migrateOnboarding": typeof migrations_migrateOnboarding;
-  "migrations/migrateToOrgs": typeof migrations_migrateToOrgs;
   "migrations/migrateToThreads": typeof migrations_migrateToThreads;
   modelConfig: typeof modelConfig;
   notificationPreferences: typeof notificationPreferences;

@@ -74,9 +74,11 @@ interface OrgContext {
   name: string;
   context?: string;
   coiHandling?: string;
-  insuranceBroker?: string;
-  brokerContactName?: string;
-  brokerContactEmail?: string;
+  broker?: {
+    name?: string;
+    contactName?: string;
+    contactEmail?: string;
+  };
 }
 
 export function buildSystemPromptForContext(params: {
@@ -104,9 +106,9 @@ export function buildSystemPromptForContext(params: {
     siteUrl,
     userName,
     coiHandling: org.coiHandling as "broker" | "user" | "ignore" | "member" | undefined,
-    brokerName: org.insuranceBroker,
-    brokerContactName: org.brokerContactName,
-    brokerContactEmail: org.brokerContactEmail,
+    brokerName: org.broker?.name,
+    brokerContactName: org.broker?.contactName,
+    brokerContactEmail: org.broker?.contactEmail,
     agentName: "Glass",
   };
 

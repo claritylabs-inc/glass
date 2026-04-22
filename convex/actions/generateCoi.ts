@@ -25,7 +25,23 @@ export const run = internalAction({
 
       if (!policy) throw new Error("Policy not found");
 
-      const coiData = policyToCoiData(policy, org ?? undefined);
+      let broker: { name?: string; contactName?: string; contactEmail?: string } | undefined;
+      if (org?.type === "client" && org.brokerOrgId) {
+        const brokerOrg = await ctx.runQuery(internal.orgs.getInternal, { id: org.brokerOrgId });
+        if (brokerOrg) {
+          broker = { name: brokerOrg.name };
+          if (brokerOrg.primaryInsuranceContactId) {
+            const contact = await ctx.runQuery(internal.users.getInternal, {
+              id: brokerOrg.primaryInsuranceContactId,
+            });
+            if (contact) {
+              broker.contactName = contact.name;
+              broker.contactEmail = contact.email;
+            }
+          }
+        }
+      }
+      const coiData = policyToCoiData(policy, { ...(org ?? {}), broker });
       if (args.certificateHolder) {
         coiData.certificateHolder = args.certificateHolder;
       }

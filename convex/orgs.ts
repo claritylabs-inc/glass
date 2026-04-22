@@ -146,17 +146,11 @@ export const checkHandleAvailability = query({
     if (!/^[a-z][a-z0-9-]*[a-z0-9]$/.test(normalized) && normalized.length > 1) {
       return { available: false, normalized, reason: "Must start with a letter and end with a letter or number" };
     }
-    // Check organizations table
     const existingOrg = await ctx.db
       .query("organizations")
       .withIndex("by_agentHandle", (q) => q.eq("agentHandle", normalized))
       .first();
-    // Also check legacy users table for transition period
-    const existingUser = await ctx.db
-      .query("users")
-      .withIndex("by_agentHandle", (q) => q.eq("agentHandle", normalized))
-      .first();
-    const taken = !!(existingOrg || existingUser);
+    const taken = !!existingOrg;
     return { available: !taken, normalized, reason: taken ? "Handle already taken" : undefined };
   },
 });
@@ -402,14 +396,14 @@ export const updateOrg = mutation({
     insuranceContext: v.optional(v.string()),
     investorsContext: v.optional(v.string()),
     partnersContext: v.optional(v.string()),
-    insuranceBroker: v.optional(v.string()),
-    brokerContactName: v.optional(v.string()),
-    brokerContactEmail: v.optional(v.string()),
     coiHandling: v.optional(v.union(v.literal("broker"), v.literal("member"), v.literal("ignore"))),
     autoGenerateCoi: v.optional(v.boolean()),
     chatEmailNotifications: v.optional(v.boolean()),
     autoSendEmails: v.optional(v.boolean()),
     emailSendDelay: v.optional(v.number()),
+    allowedEmails: v.optional(v.array(v.string())),
+    allowedDomains: v.optional(v.array(v.string())),
+    emailVerification: v.optional(v.union(v.literal("strict"), v.literal("domain"), v.literal("open"))),
     brandingColor: v.optional(v.string()),
     brandingMode: v.optional(v.union(v.literal("light"), v.literal("dark"))),
     brandingTextOnAccent: v.optional(v.union(v.literal("light"), v.literal("dark"), v.literal("auto"))),
@@ -425,6 +419,7 @@ export const claimAgentHandle = mutation({
   args: { handle: v.string() },
   handler: async (ctx, args) => {
     const { orgId, org } = await requireOrgAdmin(ctx);
+    if (org.type !== "broker") throw new Error("Only broker orgs can claim an agent handle");
     if (org.agentHandle) throw new Error("Handle already claimed");
 
     const normalized = args.handle.toLowerCase().replace(/[^a-z0-9-]/g, "");
@@ -432,16 +427,11 @@ export const claimAgentHandle = mutation({
       throw new Error("Handle must be 3-30 characters");
     }
 
-    // Check both tables during transition
     const existingOrg = await ctx.db
       .query("organizations")
       .withIndex("by_agentHandle", (q) => q.eq("agentHandle", normalized))
       .first();
-    const existingUser = await ctx.db
-      .query("users")
-      .withIndex("by_agentHandle", (q) => q.eq("agentHandle", normalized))
-      .first();
-    if (existingOrg || existingUser) throw new Error("Handle already taken");
+    if (existingOrg) throw new Error("Handle already taken");
 
     await ctx.db.patch(orgId, { agentHandle: normalized });
     return normalized;
@@ -613,29 +603,63 @@ export const cancelInvitation = mutation({
 export const getByHandle = internalQuery({
   args: { handle: v.string() },
   handler: async (ctx, args) => {
-    // Check organizations first
-    const org = await ctx.db
+    return await ctx.db
       .query("organizations")
       .withIndex("by_agentHandle", (q) => q.eq("agentHandle", args.handle))
       .first();
-    if (org) return org;
+  },
+});
 
-    // Fallback: check legacy users table during transition
-    const user = await ctx.db
-      .query("users")
+/**
+ * Resolve which client org a sender is authorized to act on behalf of, for
+ * email addressed to the given broker-owned handle. Returns null when the
+ * sender doesn't match any client attached to the broker.
+ */
+export const resolveClientBySender = internalQuery({
+  args: { handle: v.string(), senderEmail: v.string() },
+  handler: async (ctx, args) => {
+    const brokerOrg = await ctx.db
+      .query("organizations")
       .withIndex("by_agentHandle", (q) => q.eq("agentHandle", args.handle))
       .first();
-    if (user) {
-      // Return in org-like shape for backward compat
-      const membership = await ctx.db
-        .query("orgMemberships")
-        .withIndex("by_userId", (q) => q.eq("userId", user._id))
-        .first();
-      if (membership) {
-        return await ctx.db.get(membership.orgId);
+    if (!brokerOrg || brokerOrg.type !== "broker") return null;
+
+    const email = args.senderEmail.toLowerCase();
+    const domain = email.split("@")[1] ?? "";
+
+    const clientOrgs = await ctx.db
+      .query("organizations")
+      .withIndex("by_brokerOrgId", (q) => q.eq("brokerOrgId", brokerOrg._id))
+      .collect();
+
+    // 1. Strict: explicit allowedEmails match
+    for (const client of clientOrgs) {
+      const allowed = (client.allowedEmails ?? []).map((e) => e.toLowerCase());
+      if (allowed.includes(email)) return { brokerOrg, clientOrg: client, matchedBy: "email" as const };
+    }
+    // 2. Domain: allowedDomains match (skipping clients in "strict" mode)
+    for (const client of clientOrgs) {
+      if (client.emailVerification === "strict") continue;
+      const domains = (client.allowedDomains ?? []).map((d) => d.toLowerCase());
+      if (domain && domains.includes(domain)) {
+        return { brokerOrg, clientOrg: client, matchedBy: "domain" as const };
       }
     }
-    return null;
+    // 3. Membership: sender is an admin/member of the client org
+    for (const client of clientOrgs) {
+      if (client.emailVerification === "strict") continue;
+      const memberships = await ctx.db
+        .query("orgMemberships")
+        .withIndex("by_orgId", (q) => q.eq("orgId", client._id))
+        .collect();
+      for (const m of memberships) {
+        const u = await ctx.db.get(m.userId);
+        if (u?.email?.toLowerCase() === email) {
+          return { brokerOrg, clientOrg: client, matchedBy: "member" as const };
+        }
+      }
+    }
+    return { brokerOrg, clientOrg: null, matchedBy: null };
   },
 });
 

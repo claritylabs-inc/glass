@@ -26,24 +26,12 @@ export default defineSchema({
     isAnonymous: v.optional(v.boolean()),
     // Personal profile fields
     title: v.optional(v.string()),
-    // Legacy company fields (kept for backward compat, will be removed after migration)
-    companyName: v.optional(v.string()),
-    insuranceBroker: v.optional(v.string()),
-    companyWebsite: v.optional(v.string()),
-    companyContext: v.optional(v.string()),
-    brokerContactName: v.optional(v.string()),
-    brokerContactEmail: v.optional(v.string()),
-    coiHandling: v.optional(v.union(v.literal("broker"), v.literal("user"), v.literal("ignore"))),
-    industry: v.optional(v.string()),
-    industryVertical: v.optional(v.string()),
     // Onboarding & admin
     onboardingComplete: v.optional(v.boolean()),
     isAdmin: v.optional(v.boolean()),
-    agentHandle: v.optional(v.string()),
   })
     .index("email", ["email"])
-    .index("phone", ["phone"])
-    .index("by_agentHandle", ["agentHandle"]),
+    .index("phone", ["phone"]),
 
   // Organizations — owns company data, agent, broker info
   organizations: defineTable({
@@ -58,10 +46,13 @@ export default defineSchema({
     insuranceContext: v.optional(v.string()),  // brokers, carriers, insurance relationships
     investorsContext: v.optional(v.string()),  // investors, shareholders, funding
     partnersContext: v.optional(v.string()),   // joint ventures, affiliates, partners
-    // Broker info
-    insuranceBroker: v.optional(v.string()),
-    brokerContactName: v.optional(v.string()),
-    brokerContactEmail: v.optional(v.string()),
+    // Client-org verification: which sender emails/domains count as "this client"
+    // when routing inbound email sent to the broker's agent handle.
+    allowedEmails: v.optional(v.array(v.string())),
+    allowedDomains: v.optional(v.array(v.string())),
+    emailVerification: v.optional(
+      v.union(v.literal("strict"), v.literal("domain"), v.literal("open")),
+    ),
     // COI handling preference
     coiHandling: v.optional(v.union(v.literal("broker"), v.literal("member"), v.literal("ignore"))),
     autoGenerateCoi: v.optional(v.boolean()), // when true, generate COI PDFs automatically on request

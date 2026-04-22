@@ -22,6 +22,12 @@ export const run = internalAction({
   handler: async (ctx, args): Promise<{ subject: string; body: string }> => {
     const org = await ctx.runQuery(internal.orgs.getInternal, { id: args.orgId });
     if (!org) throw new Error("Organization not found");
+    const brokerOrg = org.type === "client" && org.brokerOrgId
+      ? await ctx.runQuery(internal.orgs.getInternal, { id: org.brokerOrgId })
+      : null;
+    const brokerContact = brokerOrg?.primaryInsuranceContactId
+      ? await ctx.runQuery(internal.users.getInternal, { id: brokerOrg.primaryInsuranceContactId })
+      : null;
 
     const memoryBlock = await buildIntelligenceContext(ctx, args.orgId, args.intent);
     const tone = args.tone ?? "professional";
@@ -30,7 +36,7 @@ export const run = internalAction({
 
 Organization: ${org.name}
 Industry: ${org.industry ?? "N/A"}
-Broker: ${org.insuranceBroker ?? "N/A"} (Contact: ${org.brokerContactName ?? "N/A"})
+Broker: ${brokerOrg?.name ?? "N/A"} (Contact: ${brokerContact?.name ?? "N/A"})
 Tone: ${tone}
 
 Intent: ${args.intent}

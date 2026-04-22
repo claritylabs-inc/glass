@@ -307,14 +307,26 @@ export const processInbound = internalAction({
     }
     const { handle, threadSuffix } = handleResult;
 
-    // Resolve org by handle (org-first, then legacy user fallback)
-    const org = await ctx.runQuery(internal.orgs.getByHandle, { handle });
-    if (!org) {
+    // Resolve the broker org that owns this handle, then figure out which of
+    // their clients the sender is acting for.
+    const resolved = await ctx.runQuery(internal.orgs.resolveClientBySender, {
+      handle,
+      senderEmail: fromEmail,
+    });
+    if (!resolved) {
       console.log("No organization found for handle:", handle);
       return;
     }
-
+    const { brokerOrg, clientOrg } = resolved;
+    // If the handle matches the broker but no client matches the sender, fall
+    // back to operating in the broker's own workspace (e.g. internal mail).
+    const org = clientOrg ?? brokerOrg;
     const orgId = org._id;
+    if (!clientOrg) {
+      console.log(
+        `No client matched for sender ${fromEmail} on handle ${handle}; operating on broker org ${brokerOrg._id}.`,
+      );
+    }
 
     // Get all org members for domain detection and primary contact resolution
     const orgMembers = await ctx.runQuery(internal.orgs.getMembersInternal, { orgId });
@@ -733,7 +745,23 @@ Respond with JSON only:
       const primaryUser = await ctx.runQuery(internal.users.getInternal, { id: primaryUserId });
       const userName = primaryUser?.name?.split(/\s+/)[0];
 
-      // Build prompt using org fields
+      // Resolve the connected broker (if this is a client org) for COI/broker prompts.
+      let brokerName: string | undefined;
+      let brokerContactName: string | undefined;
+      let brokerContactEmail: string | undefined;
+      if (org.type === "client" && org.brokerOrgId) {
+        const brokerRecord = await ctx.runQuery(internal.orgs.getInternal, { id: org.brokerOrgId });
+        if (brokerRecord) {
+          brokerName = brokerRecord.name;
+          if (brokerRecord.primaryInsuranceContactId) {
+            const brokerContact = await ctx.runQuery(internal.users.getInternal, {
+              id: brokerRecord.primaryInsuranceContactId,
+            });
+            brokerContactName = brokerContact?.name;
+            brokerContactEmail = brokerContact?.email;
+          }
+        }
+      }
       const agentCtx: AgentContext = {
         platform: "email",
         intent: effectiveMode === "direct" ? "direct" : effectiveMode === "cc" ? "mediated" : "observed",
@@ -742,9 +770,9 @@ Respond with JSON only:
         siteUrl,
         userName,
         coiHandling: org.coiHandling as "broker" | "user" | "ignore" | "member" | undefined,
-        brokerName: org.insuranceBroker,
-        brokerContactName: org.brokerContactName,
-        brokerContactEmail: org.brokerContactEmail,
+        brokerName,
+        brokerContactName,
+        brokerContactEmail,
         agentName: "Glass",
       };
       const systemPrompt = buildAgentSystemPrompt(agentCtx);

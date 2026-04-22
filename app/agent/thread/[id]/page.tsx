@@ -1295,7 +1295,7 @@ export default function ThreadPage({ params }: { params: Promise<{ id: string }>
   const viewer = useQuery(api.users.viewer);
   const viewerOrg = useQuery(api.orgs.viewerOrg, {});
   const presenceUsers = usePresence(`thread:${id}`);
-  const agentHandle = viewerOrg?.org?.agentHandle ?? viewer?.agentHandle;
+  const agentHandle = viewerOrg?.brokerOrg?.agentHandle ?? viewerOrg?.org?.agentHandle;
 
   // Thread metadata lifted from child components for AppShell header
   const [threadMeta, setThreadMeta] = useState<{ detail: string; actions: React.ReactNode }>({
