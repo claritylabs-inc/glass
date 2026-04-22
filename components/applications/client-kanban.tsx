@@ -31,13 +31,13 @@ export function ClientKanban({ applicationId }: Props) {
 
   const router = useRouter();
 
+  const sortedGroups = useMemo(
+    () => (data ? [...data.groups].sort((a, b) => a.order - b.order) : []),
+    [data],
+  );
+
   if (!data) return null;
 
-  const { groups } = data;
-  const sortedGroups = useMemo(
-    () => [...groups].sort((a, b) => a.order - b.order),
-    [groups],
-  );
   const nextGroup =
     sortedGroups.find((g) => g.status === "returned") ??
     sortedGroups.find((g) => g.status === "in_progress") ??
