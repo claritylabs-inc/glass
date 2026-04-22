@@ -11,17 +11,25 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { PillButton } from "@/components/ui/pill-button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Copy, Check } from "lucide-react";
 
 type InviteMode = "email" | "shareable";
 
 type SuccessStateEmail = { kind: "email"; sentTo: string };
-type SuccessStateLink = { kind: "link"; url: string; maxUses?: number; invitationId: Id<"clientInvitations"> };
+type SuccessStateLink = {
+  kind: "link";
+  url: string;
+  maxUses?: number;
+  invitationId: Id<"clientInvitations">;
+};
+
+const INPUT_CLASSES =
+  "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
+
+const LABEL_CLASSES =
+  "text-label-sm font-medium text-muted-foreground block mb-1";
 
 export function InviteClientDrawer({
   brokerOrgId,
@@ -33,7 +41,9 @@ export function InviteClientDrawer({
   onOpenChange: (v: boolean) => void;
 }) {
   const [mode, setMode] = useState<InviteMode>("email");
-  const [success, setSuccess] = useState<SuccessStateEmail | SuccessStateLink | null>(null);
+  const [success, setSuccess] = useState<
+    SuccessStateEmail | SuccessStateLink | null
+  >(null);
   const [copied, setCopied] = useState(false);
 
   // Email mode state
@@ -49,13 +59,16 @@ export function InviteClientDrawer({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const createEmail = useAction((api as any).clientInvitations.createEmail);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const createShareable = useMutation((api as any).clientInvitations.createShareable);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const revokeInvite = useMutation((api as any).clientInvitations.revoke);
+  const createShareable = useMutation(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (api as any).clientInvitations.createShareable,
+  );
+
+  const emailValid = contactEmail.includes("@") && contactEmail.includes(".");
 
   async function handleEmailSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!contactEmail.includes("@")) {
+    if (!emailValid) {
       toast.error("Enter a valid email address");
       return;
     }
@@ -80,13 +93,10 @@ export function InviteClientDrawer({
         maxUses: maxUses ? Number(maxUses) : undefined,
       });
       const inviteUrl = `${window.location.origin}/invite/${result.token}`;
-      // We need the invitation id — use a workaround since createShareable returns only token
       setSuccess({
         kind: "link",
         url: inviteUrl,
         maxUses: maxUses ? Number(maxUses) : undefined,
-        // invitationId is not returned by createShareable, so we use a placeholder
-        // The revoke button won't work without it; hide revoke for now
         invitationId: "" as Id<"clientInvitations">,
       });
     } catch (err) {
@@ -124,7 +134,7 @@ export function InviteClientDrawer({
             onValueChange={(v) => setMode(v as InviteMode)}
             className="mt-6"
           >
-            <TabsList className="w-full">
+            <TabsList variant="pill" className="w-full">
               <TabsTrigger value="email" className="flex-1">
                 Email invite
               </TabsTrigger>
@@ -135,84 +145,111 @@ export function InviteClientDrawer({
 
             <TabsContent value="email" className="mt-6 space-y-4">
               <form onSubmit={handleEmailSubmit} className="space-y-4">
-                <div className="space-y-1">
-                  <Label htmlFor="companyName">Client company name</Label>
-                  <Input
+                <div>
+                  <label htmlFor="companyName" className={LABEL_CLASSES}>
+                    Client company name
+                  </label>
+                  <input
                     id="companyName"
+                    type="text"
                     value={companyName}
                     onChange={(e) => setCompanyName(e.target.value)}
                     placeholder="Acme Corp"
+                    className={INPUT_CLASSES}
                   />
                 </div>
-                <div className="space-y-1">
-                  <Label htmlFor="contactName">Primary contact name</Label>
-                  <Input
+                <div>
+                  <label htmlFor="contactName" className={LABEL_CLASSES}>
+                    Primary contact name
+                  </label>
+                  <input
                     id="contactName"
+                    type="text"
                     value={contactName}
                     onChange={(e) => setContactName(e.target.value)}
                     placeholder="Jane Smith"
+                    className={INPUT_CLASSES}
                   />
                 </div>
-                <div className="space-y-1">
-                  <Label htmlFor="contactEmail">
-                    Primary contact email <span className="text-destructive">*</span>
-                  </Label>
-                  <Input
+                <div>
+                  <label htmlFor="contactEmail" className={LABEL_CLASSES}>
+                    Primary contact email
+                  </label>
+                  <input
                     id="contactEmail"
                     type="email"
-                    required
                     value={contactEmail}
                     onChange={(e) => setContactEmail(e.target.value)}
                     placeholder="jane@acmecorp.com"
+                    className={INPUT_CLASSES}
                   />
                 </div>
-                <div className="space-y-1">
-                  <Label htmlFor="message">Optional message</Label>
-                  <Textarea
+                <div>
+                  <label htmlFor="message" className={LABEL_CLASSES}>
+                    Optional message
+                  </label>
+                  <textarea
                     id="message"
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
                     placeholder="We'd love to help with your insurance…"
                     rows={3}
+                    className={INPUT_CLASSES}
                   />
                 </div>
-                <Button type="submit" className="w-full">
+                <PillButton
+                  type="submit"
+                  variant="primary"
+                  disabled={!emailValid}
+                  className="w-full"
+                >
                   Send invite
-                </Button>
+                </PillButton>
               </form>
             </TabsContent>
 
             <TabsContent value="shareable" className="mt-6 space-y-4">
               <form onSubmit={handleShareableSubmit} className="space-y-4">
-                <div className="space-y-1">
-                  <Label htmlFor="maxUses">
+                <div>
+                  <label htmlFor="maxUses" className={LABEL_CLASSES}>
                     Max uses{" "}
-                    <span className="text-muted-foreground text-xs">(leave blank for unlimited)</span>
-                  </Label>
-                  <Input
+                    <span className="text-muted-foreground/60 font-normal">
+                      (leave blank for unlimited)
+                    </span>
+                  </label>
+                  <input
                     id="maxUses"
                     type="number"
                     min="1"
                     value={maxUses}
                     onChange={(e) => setMaxUses(e.target.value)}
                     placeholder="Unlimited"
+                    className={INPUT_CLASSES}
                   />
                 </div>
-                <div className="space-y-1">
-                  <Label htmlFor="linkLabel">
+                <div>
+                  <label htmlFor="linkLabel" className={LABEL_CLASSES}>
                     Label{" "}
-                    <span className="text-muted-foreground text-xs">(broker-facing only)</span>
-                  </Label>
-                  <Input
+                    <span className="text-muted-foreground/60 font-normal">
+                      (broker-facing only)
+                    </span>
+                  </label>
+                  <input
                     id="linkLabel"
+                    type="text"
                     value={linkLabel}
                     onChange={(e) => setLinkLabel(e.target.value)}
                     placeholder="Conference 2026"
+                    className={INPUT_CLASSES}
                   />
                 </div>
-                <Button type="submit" className="w-full">
-                  Generate link
-                </Button>
+                <PillButton
+                  type="submit"
+                  variant="primary"
+                  className="w-full"
+                >
+                  Create link
+                </PillButton>
               </form>
             </TabsContent>
           </Tabs>
@@ -222,36 +259,46 @@ export function InviteClientDrawer({
               Email sent to{" "}
               <span className="font-semibold">{success.sentTo}</span>.
             </p>
-            <Button variant="outline" onClick={handleClose} className="w-full">
+            <PillButton
+              type="button"
+              variant="secondary"
+              onClick={handleClose}
+              className="w-full"
+            >
               Close
-            </Button>
+            </PillButton>
           </div>
         ) : (
           <div className="mt-8 space-y-4">
             <p className="text-sm font-medium">Shareable link generated</p>
-            <div className="flex items-center gap-2 p-3 rounded-md bg-muted text-xs font-mono break-all">
+            <div className="flex items-center gap-2 p-3 rounded-lg border border-foreground/8 bg-popover text-xs font-mono break-all">
               <span className="flex-1">{success.url}</span>
-              <Button
-                size="icon"
-                variant="ghost"
-                className="shrink-0"
+              <button
+                type="button"
                 onClick={() => handleCopy(success.url)}
+                className="shrink-0 rounded-md p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                aria-label="Copy link"
               >
                 {copied ? (
                   <Check className="w-4 h-4 text-green-500" />
                 ) : (
                   <Copy className="w-4 h-4" />
                 )}
-              </Button>
+              </button>
             </div>
             {success.maxUses !== undefined && (
               <p className="text-xs text-muted-foreground">
                 Max {success.maxUses} use{success.maxUses !== 1 ? "s" : ""}
               </p>
             )}
-            <Button variant="outline" onClick={handleClose} className="w-full">
+            <PillButton
+              type="button"
+              variant="secondary"
+              onClick={handleClose}
+              className="w-full"
+            >
               Done
-            </Button>
+            </PillButton>
           </div>
         )}
       </SheetContent>

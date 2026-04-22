@@ -6,6 +6,7 @@ import { api } from "@/convex/_generated/api";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthActions } from "@convex-dev/auth/react";
+import { PillButton } from "@/components/ui/pill-button";
 
 type InviteData = {
   invitationId: string;
@@ -19,6 +20,12 @@ type InviteData = {
   primaryContactName?: string;
   prefillPassport?: unknown;
 };
+
+const INPUT_CLASSES =
+  "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
+
+const LABEL_CLASSES =
+  "text-label-sm font-medium text-muted-foreground block mb-1";
 
 export default function InviteAcceptance({ token }: { token: string }) {
   const router = useRouter();
@@ -50,13 +57,16 @@ export default function InviteAcceptance({ token }: { token: string }) {
     if (!companyName.trim()) return;
     setSubmitting(true);
     try {
-      // Sign up or sign in
-      await signIn("password", { email, password, flow: "signUp" }).catch(async () => {
-        // If signUp fails (user exists), try signIn
-        await signIn("password", { email, password, flow: "signIn" });
-      });
+      await signIn("password", { email, password, flow: "signUp" }).catch(
+        async () => {
+          await signIn("password", { email, password, flow: "signIn" });
+        },
+      );
 
-      const { clientOrgId } = await acceptInvitation({ token, clientOrgName: companyName.trim() });
+      const { clientOrgId } = await acceptInvitation({
+        token,
+        clientOrgName: companyName.trim(),
+      });
       router.push(`/?org=${clientOrgId}`);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "An error occurred");
@@ -68,18 +78,20 @@ export default function InviteAcceptance({ token }: { token: string }) {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="text-sm text-gray-500">Loading…</div>
+        <p className="text-sm text-muted-foreground/60">Loading…</p>
       </div>
     );
   }
 
-  if (error) {
+  if (error && !inviteData) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="max-w-md w-full px-6 py-8 text-center">
-          <h1 className="text-xl font-semibold text-gray-900 mb-2">Invitation unavailable</h1>
-          <p className="text-gray-600 text-sm">{error}</p>
-          <p className="text-gray-400 text-xs mt-4">
+        <div className="max-w-md w-full px-6 py-16 text-center">
+          <h1 className="text-xl font-semibold text-foreground mb-2">
+            Invitation unavailable
+          </h1>
+          <p className="text-sm text-muted-foreground/60">{error}</p>
+          <p className="text-xs text-muted-foreground/60 mt-4">
             If you believe this is an error, ask your broker to resend the invitation.
           </p>
         </div>
@@ -87,22 +99,24 @@ export default function InviteAcceptance({ token }: { token: string }) {
     );
   }
 
-  const accentColor = inviteData?.brandingColor ?? "#4F46E5";
-  const agentName = inviteData?.agentDisplayName ?? inviteData?.brokerName ?? "Your Broker";
+  const accentColor = inviteData?.brandingColor ?? "var(--foreground)";
+  const agentName =
+    inviteData?.agentDisplayName ?? inviteData?.brokerName ?? "Your Broker";
+  const formValid = companyName.trim() && email.trim() && password.trim();
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <div className="max-w-md w-full px-6 py-8 bg-white rounded-2xl shadow-sm border border-gray-100">
+    <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="max-w-md w-full px-6 py-8 bg-card rounded-2xl border border-foreground/6 shadow-sm">
         {/* Broker branding header */}
         <div className="mb-6 text-center">
           <div
             className="inline-block w-12 h-12 rounded-full mb-3"
             style={{ backgroundColor: accentColor }}
           />
-          <h1 className="text-lg font-semibold text-gray-900">
+          <h1 className="text-lg font-semibold text-foreground">
             {agentName} has invited you to Glass
           </h1>
-          <p className="text-sm text-gray-500 mt-1">
+          <p className="text-sm text-muted-foreground mt-1">
             {inviteData?.linkType === "email"
               ? `You've been invited by ${inviteData.brokerName}`
               : `Join via ${inviteData?.brokerName}'s link`}
@@ -111,55 +125,57 @@ export default function InviteAcceptance({ token }: { token: string }) {
 
         <form onSubmit={handleAccept} className="space-y-4">
           <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">
+            <label htmlFor="inv-company" className={LABEL_CLASSES}>
               Your company name
             </label>
             <input
+              id="inv-company"
               type="text"
-              required
               value={companyName}
               onChange={(e) => setCompanyName(e.target.value)}
               placeholder="Acme Corp"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className={INPUT_CLASSES}
             />
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Email</label>
+            <label htmlFor="inv-email" className={LABEL_CLASSES}>
+              Email
+            </label>
             <input
+              id="inv-email"
               type="email"
-              required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@example.com"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className={INPUT_CLASSES}
             />
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Password</label>
+            <label htmlFor="inv-password" className={LABEL_CLASSES}>
+              Password
+            </label>
             <input
+              id="inv-password"
               type="password"
-              required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Choose a password (or enter existing)"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className={INPUT_CLASSES}
             />
           </div>
 
-          {error && (
-            <p className="text-xs text-red-600">{error}</p>
-          )}
+          {error && <p className="text-xs text-destructive">{error}</p>}
 
-          <button
+          <PillButton
             type="submit"
-            disabled={submitting}
-            style={{ backgroundColor: accentColor }}
-            className="w-full py-2.5 text-white text-sm font-medium rounded-lg disabled:opacity-50"
+            variant="primary"
+            disabled={!formValid || submitting}
+            className="w-full"
           >
-            {submitting ? "Setting up your account…" : "Accept Invitation"}
-          </button>
+            {submitting ? "Setting up your account…" : "Accept invitation"}
+          </PillButton>
         </form>
       </div>
     </div>

@@ -38,9 +38,15 @@ export default function ClientIntelligencePage() {
       </p>
       <div className="space-y-2">
         {entries === undefined ? (
-          <p className="text-sm text-muted-foreground">Loading…</p>
+          <div className="py-16 text-center">
+            <p className="text-sm text-muted-foreground/60">Loading…</p>
+          </div>
         ) : entries.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No intelligence entries yet.</p>
+          <div className="py-16 text-center">
+            <p className="text-sm text-muted-foreground/60">
+              No intelligence entries yet.
+            </p>
+          </div>
         ) : (
           entries.map((e) => (
             <div key={e._id} className="rounded-md border bg-card px-4 py-3 space-y-1">

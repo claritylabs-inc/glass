@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { PillButton } from "@/components/ui/pill-button";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -76,17 +76,19 @@ export function ClientListRow({ row }: { row: ClientRow }) {
           {formatDistanceToNow(new Date(row.createdAt), { addSuffix: true })}
         </span>
         <div className="flex gap-2">
-          <Button
-            size="sm"
-            variant="ghost"
-            className="text-destructive"
-            onClick={async () => {
+          <PillButton
+            type="button"
+            size="compact"
+            variant="destructive"
+            onClick={async (e) => {
+              e.preventDefault();
+              e.stopPropagation();
               await revokeInvite({ invitationId: row.invitationId, orgId: row.brokerOrgId });
               toast.success("Invite revoked");
             }}
           >
             Revoke
-          </Button>
+          </PillButton>
         </div>
       </div>
     );

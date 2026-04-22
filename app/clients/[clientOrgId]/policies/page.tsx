@@ -6,7 +6,7 @@ import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Button } from "@/components/ui/button";
+import { PillButton } from "@/components/ui/pill-button";
 import { PolicyListItem } from "@/components/policy-list-item";
 import { PolicyUploadDrawer } from "@/components/policy-upload-drawer";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -89,10 +89,15 @@ export default function ClientPoliciesPage() {
             <TabsTrigger value="quote">Quotes</TabsTrigger>
           </TabsList>
         </Tabs>
-        <Button variant="outline" size="sm" onClick={() => setUploaderOpen(true)}>
-          <Upload className="h-4 w-4 mr-2" />
+        <PillButton
+          type="button"
+          size="compact"
+          variant="secondary"
+          onClick={() => setUploaderOpen(true)}
+        >
+          <Upload className="h-3.5 w-3.5" />
           Upload {docTypeTab === "quote" ? "quote" : "policy"}
-        </Button>
+        </PillButton>
       </div>
 
       {isLoading ? (
@@ -102,9 +107,11 @@ export default function ClientPoliciesPage() {
           ))}
         </div>
       ) : (policies as any[]).length === 0 ? (
-        <p className="text-sm text-muted-foreground py-8 text-center">
-          No {docTypeTab === "quote" ? "quotes" : "policies"} yet.
-        </p>
+        <div className="py-16 text-center">
+          <p className="text-sm text-muted-foreground/60">
+            No {docTypeTab === "quote" ? "quotes" : "policies"} yet.
+          </p>
+        </div>
       ) : (
         <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
           {(policies as any[]).map((p: any) => (
