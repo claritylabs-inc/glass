@@ -83,6 +83,9 @@ async function sampleBrandColors(imgUrl: string): Promise<string[]> {
   return new Promise((resolve) => {
     const img = new Image();
     img.crossOrigin = "anonymous";
+    // CORS-taint failures (e.g. Google favicon service has no CORS) silently
+    // resolve with an empty palette instead of logging to the console.
+    img.onerror = () => resolve([]);
     img.onload = () => {
       try {
         const canvas = document.createElement("canvas");
