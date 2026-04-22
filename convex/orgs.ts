@@ -337,6 +337,44 @@ export const createBrokerOrg = mutation({
   },
 });
 
+/**
+ * Update email-verification settings on a client org (allowedEmails,
+ * allowedDomains, emailVerification mode). Only the managing broker's admins
+ * can call this.
+ */
+export const updateClientEmailSettings = mutation({
+  args: {
+    clientOrgId: v.id("organizations"),
+    allowedEmails: v.optional(v.array(v.string())),
+    allowedDomains: v.optional(v.array(v.string())),
+    emailVerification: v.optional(
+      v.union(v.literal("strict"), v.literal("domain"), v.literal("open")),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const client = await ctx.db.get(args.clientOrgId);
+    if (!client || client.type !== "client" || !client.brokerOrgId) {
+      throw new Error("Not a managed client org");
+    }
+    const access = await getOrgAccessNew(ctx, client.brokerOrgId);
+    assertBrokerOrg(access);
+    if (access.role !== "admin") {
+      throw new Error("Only broker admins can update client email settings");
+    }
+    const normEmails = args.allowedEmails
+      ?.map((e) => e.trim().toLowerCase())
+      .filter((e) => e.includes("@"));
+    const normDomains = args.allowedDomains
+      ?.map((d) => d.trim().toLowerCase().replace(/^@/, ""))
+      .filter(Boolean);
+    const patch: Record<string, unknown> = {};
+    if (normEmails !== undefined) patch.allowedEmails = normEmails;
+    if (normDomains !== undefined) patch.allowedDomains = normDomains;
+    if (args.emailVerification !== undefined) patch.emailVerification = args.emailVerification;
+    await ctx.db.patch(args.clientOrgId, patch);
+  },
+});
+
 /** List all client orgs for a broker org. */
 export const listClients = query({
   args: { orgId: v.id("organizations") },

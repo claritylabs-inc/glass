@@ -17,6 +17,7 @@ const TABS = [
   { id: "policies", label: "Policies", href: "/policies" },
   { id: "intelligence", label: "Intelligence", href: "/intelligence" },
   { id: "activity", label: "Activity", href: "/activity" },
+  { id: "settings", label: "Settings", href: "/settings" },
 ] as const;
 
 export default function ClientDetailLayout({
