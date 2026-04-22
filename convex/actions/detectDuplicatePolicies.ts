@@ -208,7 +208,7 @@ export const mergePolicies = action({
       fileId: f.fileId,
       fileName: f.fileName,
       fileType: f.fileType,
-      status: f.extractionStatus,
+      status: f.pipelineStatus ?? "idle",
     }));
     const mergedFiles = [
       ...existingFiles,

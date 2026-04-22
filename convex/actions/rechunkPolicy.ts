@@ -83,7 +83,7 @@ export const rechunkAll = internalAction({
       orgId: args.orgId,
     });
     const allDocs = [...policies, ...quotes].filter(
-      (p) => p.extractionStatus === "complete",
+      (p) => p.pipelineStatus === "complete",
     );
 
     console.log(`Re-chunk: ${allDocs.length} policies to process for org ${args.orgId}`);

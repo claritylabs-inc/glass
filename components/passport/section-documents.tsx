@@ -108,7 +108,7 @@ export function SectionDocuments() {
 
       {orgDocuments && orgDocuments.length > 0 ? (
         <ul className="divide-y divide-foreground/4 rounded-lg border border-foreground/8 overflow-hidden">
-          {(orgDocuments as Array<{ _id: string; fileName?: string; sourceLabel?: string; extractionStatus?: string; pipelineStatus?: string; pipelineError?: string; pipelineLog?: unknown[] }>).map((doc) => (
+          {(orgDocuments as Array<{ _id: string; fileName?: string; sourceLabel?: string; pipelineStatus?: string; pipelineError?: string; pipelineLog?: unknown[] }>).map((doc) => (
             <li key={doc._id} className="flex flex-col gap-1 px-3 py-2">
               <div className="flex items-center gap-3">
                 <div className="flex-1 min-w-0">
@@ -116,7 +116,7 @@ export function SectionDocuments() {
                     {doc.sourceLabel || doc.fileName || "Document"}
                   </p>
                 </div>
-                {(doc.extractionStatus === "extracting" || doc.extractionStatus === "pending") && !doc.pipelineStatus ? (
+                {(doc.pipelineStatus === "running" || !doc.pipelineStatus) ? (
                   <span className="inline-flex items-center gap-1 text-xs text-muted-foreground shrink-0">
                     <Loader2 className="h-3 w-3 animate-spin" />
                     Extracting

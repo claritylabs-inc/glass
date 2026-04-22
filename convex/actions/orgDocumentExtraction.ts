@@ -410,16 +410,12 @@ If no relevant risk signals found, return { "entries": [] }.`;
       const orgId = state.orgId as Id<"organizations">;
       const classification = state.classification!;
 
-      // Count inserted entries — we stored them in the previous phase so don't have exact count.
-      // Update the document row with classification metadata and mark legacy status "complete".
-      // Also write legacy extractionStatus for backwards read compat during rollout.
-      // TODO(Task9): remove extractionStatus once old docs are all migrated.
+      // Update the document row with classification metadata.
       await convexCtx.runMutation(
         (internal as any).orgDocuments.updateStatus,
         {
           id: orgDocumentId,
           orgId,
-          extractionStatus: "complete",
           sourceLabel: classification.sourceLabel,
           documentType: classification.documentType,
           asOfDate: classification.asOfDate,

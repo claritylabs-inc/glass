@@ -49,7 +49,6 @@ export const extractFromUpload = action({
       isRenewal: false,
       coverages: [],
       insuredName: "Extracting...",
-      extractionStatus: "extracting",
     });
 
     // Create policyFile record for multi-file tracking
@@ -60,7 +59,6 @@ export const extractFromUpload = action({
         fileId: args.fileId,
         fileName: args.fileName || "upload.pdf",
         fileType: "unknown" as const,
-        extractionStatus: "extracting" as const,
         orgId,
       },
     );

@@ -38,7 +38,6 @@ export const create = mutation({
       fileName: args.fileName,
       mimeType: args.mimeType,
       size: args.size,
-      extractionStatus: "pending",
       uploadedBy: access.userId,
       createdAt: now,
       updatedAt: now,
@@ -104,13 +103,6 @@ export const updateStatus = internalMutation({
   args: {
     id: v.id("orgDocuments"),
     orgId: v.id("organizations"),
-    extractionStatus: v.union(
-      v.literal("pending"),
-      v.literal("extracting"),
-      v.literal("complete"),
-      v.literal("error"),
-    ),
-    extractionError: v.optional(v.string()),
     entryCount: v.optional(v.number()),
     sourceLabel: v.optional(v.string()),
     documentType: v.optional(v.string()),

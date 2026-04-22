@@ -213,7 +213,7 @@ export const extractAll = internalAction({
       orgId: args.orgId,
     });
     const allDocs = [...policies, ...quotes].filter(
-      (p) => p.fileId && !p.supplementaryFacts?.length && p.extractionStatus === "complete",
+      (p) => p.fileId && !p.supplementaryFacts?.length && p.pipelineStatus === "complete",
     );
 
     console.log(`Supplementary backfill: ${allDocs.length} policies to process for org ${args.orgId}`);

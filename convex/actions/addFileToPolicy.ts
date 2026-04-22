@@ -44,7 +44,6 @@ export const addFileToPolicy = action({
         fileId: args.fileId,
         fileName: args.fileName,
         fileType: "unknown" as const,
-        extractionStatus: "extracting" as const,
         orgId,
       },
     );
@@ -107,7 +106,6 @@ export const addFileToPolicy = action({
         (internal as any).policyFiles.updateExtraction,
         {
           id: policyFileId,
-          extractionStatus: "complete",
           extractedData: result.document,
         },
       );
@@ -119,11 +117,7 @@ export const addFileToPolicy = action({
       try {
         await ctx.runMutation(
           (internal as any).policyFiles.updateExtraction,
-          {
-            id: policyFileId,
-            extractionStatus: "error",
-            extractionError: errMsg,
-          },
+          { id: policyFileId },
         );
       } catch {
         /* non-critical */

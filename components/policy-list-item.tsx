@@ -9,7 +9,7 @@ interface PolicyListItemProps {
   policyNumber: string;
   effectiveDate?: string;
   expirationDate?: string;
-  extractionStatus: string;
+  pipelineStatus?: string;
   uploadedBySide?: UploadedBySide;
   onClick?: () => void;
 }
@@ -37,7 +37,7 @@ export function PolicyListItem({
   policyNumber,
   effectiveDate,
   expirationDate,
-  extractionStatus,
+  pipelineStatus,
   uploadedBySide,
   onClick,
 }: PolicyListItemProps) {
@@ -49,7 +49,7 @@ export function PolicyListItem({
       <div className="space-y-1">
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium">{carrier}</span>
-          {extractionStatus === "pending" || extractionStatus === "extracting" ? (
+          {(pipelineStatus === "running" || !pipelineStatus) ? (
             <Badge variant="outline" className="text-xs text-muted-foreground">
               Processing
             </Badge>

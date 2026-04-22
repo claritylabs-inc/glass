@@ -227,7 +227,6 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
           (internal as any).policyFiles.updateExtraction,
           {
             id: state.policyFileId,
-            extractionStatus: "complete",
             extractedData: result.document,
           },
         );

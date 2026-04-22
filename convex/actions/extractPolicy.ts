@@ -35,7 +35,6 @@ export const extractPolicy = internalAction({
       isRenewal: false,
       coverages: [],
       insuredName: "Extracting...",
-      extractionStatus: "extracting",
     });
 
     // Audit

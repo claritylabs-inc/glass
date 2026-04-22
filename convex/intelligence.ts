@@ -49,8 +49,8 @@ export const listUploadedDocuments = query({
         sourceRef: d.storageId as string,
         fileName: d.fileName,
         sourceLabel: d.sourceLabel,
-        extractionStatus: d.extractionStatus,
-        extractionError: d.extractionError,
+        pipelineStatus: d.pipelineStatus,
+        pipelineError: d.pipelineError,
         entryCount: d.entryCount ?? 0,
         createdAt: d.createdAt,
       }));

@@ -42,16 +42,14 @@ function formatCreatedAt(timestamp: number) {
 
 function extractionStatusLabel(status?: string) {
   switch (status) {
-    case "extracting":
+    case "running":
       return "Extracting";
     case "paused":
       return "Paused";
     case "error":
       return "Failed";
-    case "pending":
+    case "idle":
       return "Queued";
-    case "not_insurance":
-      return "Dismissed";
     case "complete":
       return "Extracted";
     default:
@@ -335,9 +333,9 @@ export function DocumentsSection() {
                 ) : (
                   <div className="divide-y divide-foreground/4">
                     {contextDocs.map((doc) => {
-                      const status = doc.extractionStatus;
+                      const status = (doc as any).pipelineStatus;
                       const statusChip =
-                        status === "extracting" || status === "pending" ? (
+                        status === "running" || !status ? (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 shrink-0">
                             <Loader2 className="w-3 h-3 animate-spin" />
                             Extracting
@@ -455,8 +453,8 @@ export function DocumentsSection() {
                       carrier?: string;
                       security?: string;
                       documentType?: string;
-                      extractionStatus?: string;
-                      extractionError?: string;
+                      pipelineStatus?: string;
+                      pipelineError?: string;
                       fileId?: string;
                       emailId?: string;
                       isDemo?: boolean;
@@ -472,17 +470,17 @@ export function DocumentsSection() {
                             </p>
                             <p className="text-xs text-muted-foreground/55 truncate mt-0.5">
                               {doc.carrier ? `${doc.security || doc.carrier} · ` : ""}
-                              {extractionStatusLabel(doc.extractionStatus)}
+                              {extractionStatusLabel(doc.pipelineStatus)}
                             </p>
-                            {doc.extractionStatus === "error" && doc.extractionError ? (
+                            {doc.pipelineStatus === "error" && doc.pipelineError ? (
                               <p className="text-xs text-red-500/70 mt-1 line-clamp-2">
-                                {doc.extractionError}
+                                {doc.pipelineError}
                               </p>
                             ) : null}
                           </div>
 
                           <div className="flex items-center gap-1.5 shrink-0">
-                            {doc.extractionStatus === "extracting" && (
+                            {doc.pipelineStatus === "running" && (
                               <>
                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 mr-1">
                                   <Loader2 className="w-3 h-3 animate-spin" />
@@ -509,7 +507,7 @@ export function DocumentsSection() {
                               </>
                             )}
 
-                            {doc.extractionStatus === "paused" && (
+                            {doc.pipelineStatus === "paused" && (
                               <button
                                 type="button"
                                 disabled={runningActionKey !== null}
@@ -530,9 +528,9 @@ export function DocumentsSection() {
                               </button>
                             )}
 
-                            {(doc.extractionStatus === "paused" ||
-                              doc.extractionStatus === "error" ||
-                              doc.extractionStatus === "pending") && (
+                            {(doc.pipelineStatus === "paused" ||
+                              doc.pipelineStatus === "error" ||
+                              !doc.pipelineStatus) && (
                               <button
                                 type="button"
                                 disabled={runningActionKey !== null}
@@ -554,7 +552,7 @@ export function DocumentsSection() {
                             )}
 
                             {(doc.fileId || doc.emailId) && !doc.isDemo &&
-                              (doc.extractionStatus === "complete" || doc.extractionStatus === "error") && (
+                              (doc.pipelineStatus === "complete" || doc.pipelineStatus === "error") && (
                                 <button
                                   type="button"
                                   disabled={runningActionKey !== null}
@@ -578,7 +576,7 @@ export function DocumentsSection() {
                                 </button>
                               )}
 
-                            {doc.extractionStatus === "complete" && (
+                            {doc.pipelineStatus === "complete" && (
                               <button
                                 type="button"
                                 onClick={() => router.push(`/policies/${doc._id}`)}

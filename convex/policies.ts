@@ -29,7 +29,7 @@ export const list = query({
       .collect();
     return all.filter(
       (p) =>
-        p.extractionStatus === "complete" &&
+        p.pipelineStatus === "complete" &&
         !p.deletedAt &&
         (!args.carrier || p.carrier === args.carrier) &&
         (!args.policyYear || p.policyYear === args.policyYear)
@@ -53,7 +53,7 @@ export const listQuotes = query({
     return all.filter(
       (p) =>
         p.documentType === "quote" &&
-        p.extractionStatus === "complete" &&
+        p.pipelineStatus === "complete" &&
         !p.deletedAt &&
         (!args.carrier || p.carrier === args.carrier) &&
         (!args.quoteYear || p.policyYear === args.quoteYear)
@@ -72,14 +72,12 @@ export const quoteStats = query({
       .withIndex("by_orgId", (idx) => idx.eq("orgId", orgId))
       .collect();
 
-    const quotes = allPolicies.filter((p) => p.documentType === "quote" && p.extractionStatus === "complete" && !p.deletedAt);
+    const quotes = allPolicies.filter((p) => p.documentType === "quote" && p.pipelineStatus === "complete" && !p.deletedAt);
     const pendingExtractions = allPolicies.filter(
       (p) =>
         p.documentType === "quote" &&
         !p.deletedAt &&
-        (p.extractionStatus === "pending" ||
-        p.extractionStatus === "extracting" ||
-        p.extractionStatus === "error")
+        (p.pipelineStatus === "running" || p.pipelineStatus === "error" || !p.pipelineStatus)
     ).length;
 
     const byType: Record<string, number> = {};
@@ -118,10 +116,10 @@ export const listPending = query({
     const pending = all.filter(
       (p) =>
         !p.deletedAt &&
-        (p.extractionStatus === "pending" ||
-        p.extractionStatus === "extracting" ||
-        p.extractionStatus === "paused" ||
-        p.extractionStatus === "error")
+        (p.pipelineStatus === "running" ||
+        p.pipelineStatus === "paused" ||
+        p.pipelineStatus === "error" ||
+        !p.pipelineStatus)
     );
 
     const enriched = await Promise.all(
@@ -163,7 +161,7 @@ export const listExtractionLog = query({
     const completed = all.filter(
       (p) =>
         !p.deletedAt &&
-        (p.extractionStatus === "complete" || p.extractionStatus === "not_insurance")
+        (p.pipelineStatus === "complete" || p.dismissed === true)
     );
 
     const enriched = await Promise.all(
@@ -226,7 +224,7 @@ export const emailIdsWithPolicies = query({
     for (const p of all) {
       if (
         p.emailId &&
-        p.extractionStatus !== "not_insurance" &&
+        !p.dismissed &&
         !p.deletedAt
       ) {
         ids.add(p.emailId);
@@ -245,7 +243,7 @@ export const listAllInternal = internalQuery({
       .withIndex("by_orgId", (idx) => idx.eq("orgId", args.orgId))
       .collect();
     return all.filter(
-      (p) => p.extractionStatus === "complete" && !p.deletedAt
+      (p) => p.pipelineStatus === "complete" && !p.deletedAt
     );
   },
 });
@@ -259,7 +257,7 @@ export const listAllQuotesInternal = internalQuery({
       .withIndex("by_orgId", (idx) => idx.eq("orgId", args.orgId))
       .collect();
     return all.filter(
-      (p) => p.documentType === "quote" && p.extractionStatus === "complete" && !p.deletedAt
+      (p) => p.documentType === "quote" && p.pipelineStatus === "complete" && !p.deletedAt
     );
   },
 });
@@ -273,7 +271,7 @@ export const listAllInternalByUser = internalQuery({
       .withIndex("by_userId", (idx) => idx.eq("userId", args.userId as unknown as never))
       .collect();
     return all.filter(
-      (p) => p.extractionStatus === "complete" && !p.deletedAt
+      (p) => p.pipelineStatus === "complete" && !p.deletedAt
     );
   },
 });
@@ -288,7 +286,7 @@ export const emailIdsWithPoliciesInternal = internalQuery({
       .collect();
     const ids = new Set<string>();
     for (const p of all) {
-      if (p.emailId && p.extractionStatus !== "not_insurance" && !p.deletedAt) {
+      if (p.emailId && !p.dismissed && !p.deletedAt) {
         ids.add(p.emailId);
       }
     }
@@ -311,13 +309,11 @@ export const stats = query({
       .withIndex("by_orgId", (idx) => idx.eq("orgId", orgId))
       .collect();
 
-    const policies = allPolicies.filter((p) => p.extractionStatus === "complete" && !p.deletedAt);
+    const policies = allPolicies.filter((p) => p.pipelineStatus === "complete" && !p.deletedAt);
     const pendingExtractions = allPolicies.filter(
       (p) =>
         !p.deletedAt &&
-        (p.extractionStatus === "pending" ||
-        p.extractionStatus === "extracting" ||
-        p.extractionStatus === "error")
+        (p.pipelineStatus === "running" || p.pipelineStatus === "error" || !p.pipelineStatus)
     ).length;
 
     const byType: Record<string, number> = {};
@@ -517,14 +513,6 @@ export const insert = mutation({
     summary: v.optional(v.string()),
     metadataSource: v.optional(metadataSourceValidator),
     document: v.optional(documentValidator),
-    extractionStatus: v.union(
-      v.literal("pending"),
-      v.literal("extracting"),
-      v.literal("paused"),
-      v.literal("complete"),
-      v.literal("error"),
-      v.literal("not_insurance")
-    ),
   },
   handler: async (ctx, args) => {
     return await ctx.db.insert("policies", args);
@@ -617,20 +605,8 @@ export const updateExtraction = mutation({
     summary: v.optional(v.string()),
     metadataSource: v.optional(metadataSourceValidator),
     document: v.optional(documentValidator),
-    extractionStatus: v.optional(
-      v.union(
-        v.literal("pending"),
-        v.literal("extracting"),
-        v.literal("paused"),
-        v.literal("complete"),
-        v.literal("error"),
-        v.literal("not_insurance")
-      )
-    ),
     fileId: v.optional(v.id("_storage")),
     fileName: v.optional(v.string()),
-    extractionError: v.optional(v.string()),
-    extractionCheckpoint: v.optional(v.any()),
     rawExtractionResponse: v.optional(v.string()),
     rawMetadataResponse: v.optional(v.string()),
     // Typed declarations (cl-sdk 1.4+)
@@ -671,7 +647,7 @@ export const updateExtraction = mutation({
     await ctx.db.patch(id, fields);
 
     // Emit broker activity if extraction is now complete
-    if ((fields as { extractionStatus?: string }).extractionStatus === "complete") {
+    if ((fields as { pipelineStatus?: string }).pipelineStatus === "complete") {
       const policy = await ctx.db.get(id);
       if (policy?.orgId) {
         const org = await ctx.db.get(policy.orgId);
@@ -726,7 +702,6 @@ export const createBrokerUpload = mutation({
       isRenewal: false,
       coverages: [],
       insuredName: "Extracting...",
-      extractionStatus: "pending",
       uploadedBySide: "broker",
       uploadedByUserId: access.userId,
       uploadedByBrokerOrgId: access.brokerOrgId,
@@ -804,7 +779,7 @@ export const listForClient = query({
       .collect();
     return all.filter(
       (p) =>
-        p.extractionStatus !== "not_insurance" &&
+        !p.dismissed &&
         !p.deletedAt &&
         (!args.documentType || p.documentType === args.documentType),
     );
@@ -819,7 +794,7 @@ export const dismiss = mutation({
     const { userId, orgId } = await requireOrgAccess(ctx);
     const policy = await ctx.db.get(args.id);
     if (!policy || policy.orgId !== orgId) throw new Error("Not found");
-    await ctx.db.patch(args.id, { extractionStatus: "not_insurance" as const });
+    await ctx.db.patch(args.id, { dismissed: true });
     await ctx.db.insert("policyAuditLog", {
       policyId: args.id,
       userId,
@@ -854,8 +829,8 @@ export const pauseExtraction = mutation({
     const { userId, orgId } = await requireOrgAccess(ctx);
     const policy = await ctx.db.get(args.id);
     if (!policy || policy.orgId !== orgId) throw new Error("Not found");
-    if (policy.extractionStatus !== "extracting") throw new Error("Can only pause extracting policies");
-    await ctx.db.patch(args.id, { extractionStatus: "paused" });
+    if (policy.pipelineStatus !== "running") throw new Error("Can only pause extracting policies");
+    await ctx.db.patch(args.id, { pipelineStatus: "paused" });
     await ctx.db.insert("policyAuditLog", {
       policyId: args.id,
       userId,
@@ -871,8 +846,8 @@ export const resumeExtraction = mutation({
     const { userId, orgId } = await requireOrgAccess(ctx);
     const policy = await ctx.db.get(args.id);
     if (!policy || policy.orgId !== orgId) throw new Error("Not found");
-    if (policy.extractionStatus !== "paused") throw new Error("Can only resume paused policies");
-    await ctx.db.patch(args.id, { extractionStatus: "extracting" });
+    if (policy.pipelineStatus !== "paused") throw new Error("Can only resume paused policies");
+    await ctx.db.patch(args.id, { pipelineStatus: "running" });
     await ctx.db.insert("policyAuditLog", {
       policyId: args.id,
       userId,
@@ -889,11 +864,11 @@ export const cancelExtraction = mutation({
     const policy = await ctx.db.get(args.id);
     if (!policy || policy.orgId !== orgId) throw new Error("Not found");
     // Allow cancel from any non-complete status
-    const cancelable = ["pending", "extracting", "paused", "error"];
-    if (!cancelable.includes(policy.extractionStatus)) {
+    const cancelable = ["idle", "running", "paused", "error"];
+    if (policy.pipelineStatus && !cancelable.includes(policy.pipelineStatus)) {
       throw new Error("Cannot cancel a completed extraction");
     }
-    await ctx.db.patch(args.id, { extractionStatus: "not_insurance" as const, extractionError: "Cancelled by user" });
+    await ctx.db.patch(args.id, { dismissed: true, pipelineError: "Cancelled by user" });
     await ctx.db.insert("policyAuditLog", {
       policyId: args.id,
       userId,
@@ -912,8 +887,10 @@ export const restartExtraction = mutation({
 
     // Clear all extracted data for a fresh start
     await ctx.db.patch(args.id, {
-      extractionStatus: "pending",
-      extractionError: undefined,
+      pipelineStatus: "idle",
+      pipelineError: undefined,
+      pipelineLog: undefined,
+      dismissed: undefined,
       carrier: "Extracting...",
       policyNumber: "Extracting...",
       insuredName: "Extracting...",
@@ -923,7 +900,6 @@ export const restartExtraction = mutation({
       rawMetadataResponse: undefined,
       document: undefined,
       metadataSource: undefined,
-      extractionLog: undefined,
     });
 
     // Schedule fresh extraction — use stored file if available, fall back to IMAP
@@ -996,16 +972,16 @@ export const appendExtractionLog = internalMutation({
   handler: async (ctx, args) => {
     const policy = await ctx.db.get(args.id);
     if (!policy) return;
-    const log = policy.extractionLog ?? [];
+    const log = policy.pipelineLog ?? [];
     log.push({ timestamp: Date.now(), message: args.message });
-    await ctx.db.patch(args.id, { extractionLog: log });
+    await ctx.db.patch(args.id, { pipelineLog: log });
   },
 });
 
 export const clearExtractionLog = internalMutation({
   args: { id: v.id("policies") },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.id, { extractionLog: [] });
+    await ctx.db.patch(args.id, { pipelineLog: [] });
   },
 });
 

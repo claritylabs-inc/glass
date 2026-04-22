@@ -90,7 +90,6 @@ test("provenance fields are accepted in schema (structural test)", () => {
     isRenewal: false,
     coverages: [] as never[],
     insuredName: "Extracting...",
-    extractionStatus: "pending" as const,
     uploadedBySide: "broker" as const,
     uploadedByUserId: "userId" as any,
     uploadedByBrokerOrgId: "brokerOrgId" as any,

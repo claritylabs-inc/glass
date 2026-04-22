@@ -431,7 +431,7 @@ export const countLinkedPolicies = query({
       .withIndex("by_orgId", (idx) => idx.eq("orgId", orgId))
       .collect();
     const linked = allPolicies.filter(
-      (p) => p.emailId && emailIds.has(p.emailId) && p.extractionStatus === "complete"
+      (p) => p.emailId && emailIds.has(p.emailId) && p.pipelineStatus === "complete"
     );
 
     return { emailCount: emails.length, policyCount: linked.length };

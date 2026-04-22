@@ -478,6 +478,7 @@ export default defineSchema({
     .index("by_status", ["status"]),
 
   emailConnections: defineTable({
+    ...pipelineFields(),
     userId: v.optional(v.id("users")),
     orgId: v.optional(v.id("organizations")),
     provider: v.optional(v.union(v.literal("google"), v.literal("imap"))),
@@ -592,12 +593,8 @@ export default defineSchema({
     fileName: v.string(),
     mimeType: v.optional(v.string()),
     size: v.optional(v.number()),
-    extractionStatus: v.union(
-      v.literal("pending"),
-      v.literal("extracting"),
-      v.literal("complete"),
-      v.literal("error"),
-    ),
+    // Deprecated — kept optional for migration. Remove after removeDeprecatedExtractionFields runs.
+    extractionStatus: v.optional(v.string()),
     extractionError: v.optional(v.string()),
     entryCount: v.optional(v.number()),
     sourceLabel: v.optional(v.string()),
@@ -948,21 +945,14 @@ export default defineSchema({
     // Extracted document structure (sections, endorsements, conditions, etc.)
     // Uses v.any() because the cl-sdk document schema evolves frequently
     document: v.optional(v.any()),
-    // Extraction state
-    extractionStatus: v.union(
-      v.literal("pending"),
-      v.literal("extracting"),
-      v.literal("paused"),
-      v.literal("complete"),
-      v.literal("error"),
-      v.literal("not_insurance")
-    ),
+    // Dismissal flag — set when a policy row is dismissed/marked not-insurance.
+    // Replaces the old extractionStatus: "not_insurance" value.
+    dismissed: v.optional(v.boolean()),
+    // Deprecated — kept optional for migration. Remove after removeDeprecatedExtractionFields runs.
+    extractionStatus: v.optional(v.string()),
     extractionError: v.optional(v.string()),
-    extractionCheckpoint: v.optional(v.any()), // PipelineCheckpoint<ExtractionState> for resume
-    extractionLog: v.optional(v.array(v.object({
-      timestamp: v.number(),
-      message: v.string(),
-    }))),
+    extractionCheckpoint: v.optional(v.any()),
+    extractionLog: v.optional(v.any()),
     rawExtractionResponse: v.optional(v.string()),
     rawMetadataResponse: v.optional(v.string()),
     // Typed declarations (cl-sdk 1.4+) — line-specific structured data
@@ -1046,19 +1036,11 @@ export default defineSchema({
       v.literal("certificate"),
       v.literal("unknown"),
     ),
-    extractionStatus: v.union(
-      v.literal("pending"),
-      v.literal("extracting"),
-      v.literal("complete"),
-      v.literal("error"),
-      v.literal("not_insurance"),
-    ),
-    extractionError: v.optional(v.string()),
     extractedData: v.optional(v.any()), // Raw per-file extraction result (InsuranceDocument)
-    extractionLog: v.optional(v.array(v.object({
-      timestamp: v.number(),
-      message: v.string(),
-    }))),
+    // Deprecated — kept optional for migration. Remove after removeDeprecatedExtractionFields runs.
+    extractionStatus: v.optional(v.string()),
+    extractionError: v.optional(v.string()),
+    extractionLog: v.optional(v.any()),
     pageCount: v.optional(v.number()),
     createdAt: v.number(),
     orgId: v.id("organizations"),
