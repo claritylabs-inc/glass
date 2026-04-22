@@ -24,7 +24,6 @@ export function ClientList({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const rows = useQuery((api as any).clients.listForBroker, { brokerOrgId }) as any[] | undefined;
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-  const [searchQuery, setSearchQuery] = useState("");
 
   const STATUS_FILTERS: { id: StatusFilter; label: string }[] = [
     { id: "all", label: "All" },
@@ -39,17 +38,8 @@ export function ClientList({
     if (statusFilter !== "all") {
       result = result.filter((r) => r.onboardingStatus === statusFilter);
     }
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      result = result.filter(
-        (r) =>
-          r.name.toLowerCase().includes(q) ||
-          (r.primaryContactName?.toLowerCase().includes(q) ?? false) ||
-          (r.primaryContactEmail?.toLowerCase().includes(q) ?? false),
-      );
-    }
     return result;
-  }, [rows, statusFilter, searchQuery]);
+  }, [rows, statusFilter]);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function toClientRow(r: any): ClientRow {
@@ -97,13 +87,6 @@ export function ClientList({
             ))}
           </TabsList>
         </Tabs>
-        <input
-          type="text"
-          placeholder="Search clients…"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-48 rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
-        />
       </div>
 
       {/* List */}
@@ -116,7 +99,7 @@ export function ClientList({
           <p className="text-sm text-muted-foreground/60">
             {rows.length === 0
               ? "No clients yet. Invite your first client to get started."
-              : "No clients match your filter."}
+              : "No clients match this filter."}
           </p>
         </div>
       ) : (
