@@ -713,18 +713,23 @@ export default function BrokerOnboardingPage() {
           <div className="space-y-10">
             <div className="space-y-2">
               <label className={labelClass}>Agent handle (optional)</label>
-              <input
-                type="text"
-                value={agentHandle}
-                onChange={(e) =>
-                  setAgentHandle(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))
-                }
-                placeholder="acme"
-                autoFocus
-                className={inputClass}
-              />
+              <div className="flex items-stretch gap-0">
+                <input
+                  type="text"
+                  value={agentHandle}
+                  onChange={(e) =>
+                    setAgentHandle(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 30))
+                  }
+                  placeholder="acme"
+                  autoFocus
+                  className="flex-1 min-w-0 rounded-l-lg border border-r-0 border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                />
+                <div className="flex items-center rounded-r-lg border border-l-0 border-foreground/8 bg-foreground/[0.02] px-3 py-2 text-label-sm text-muted-foreground/60 select-none whitespace-nowrap">
+                  @{WORKSPACE_DOMAIN}
+                </div>
+              </div>
               <p className="mt-2 text-sm text-muted-foreground">
-                Clients will email this handle to reach your AI agent.
+                Clients will email this address to reach your AI agent.
               </p>
             </div>
 
