@@ -4,7 +4,7 @@ import { useAction, useMutation, useQuery } from "convex/react";
 import { useRouter } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import { ReviewGroupPane } from "./review-group-pane";
-import { ExtractionBanner } from "./extraction-banner";
+import { ApplicationExtractionBanner } from "@/components/shared/extraction-banner";
 import { Badge } from "@/components/ui/badge";
 import { PillButton } from "@/components/ui/pill-button";
 import { toast } from "sonner";
@@ -178,7 +178,7 @@ export function ReviewKanban({ applicationId }: Props) {
 
   return (
     <div className="h-full space-y-4">
-      <ExtractionBanner
+      <ApplicationExtractionBanner
         applicationId={applicationId}
         status={(app as any).pipelineStatus}
         error={(app as any).pipelineError}

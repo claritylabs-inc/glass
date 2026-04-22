@@ -13,6 +13,32 @@ import { useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 
+// ─── Application Extraction Banner ────────────────────────────────────────────
+
+export function ApplicationExtractionBanner({
+  applicationId,
+  status,
+  error,
+  log,
+}: {
+  applicationId: Id<"applications">;
+  status: PipelineStatus | undefined;
+  error?: string;
+  log?: LogEntry[];
+}) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const retry = useAction((api as any).actions.applicationExtraction.retryExtraction);
+
+  return (
+    <ExtractionBannerBase
+      status={status}
+      error={error}
+      log={log}
+      onRetry={(mode) => void retry({ applicationId, mode })}
+    />
+  );
+}
+
 // ─── Policy Extraction Banner ──────────────────────────────────────────────────
 
 export function PolicyExtractionBanner({
