@@ -38,7 +38,9 @@ export default function ClientPassportPage() {
           )}
         </dl>
       ) : (
-        <p className="text-sm text-muted-foreground">Loading…</p>
+        <div className="py-16 text-center">
+          <p className="text-sm text-muted-foreground/60">Loading…</p>
+        </div>
       )}
       <p className="text-xs text-muted-foreground pt-4 border-t">
         Full passport editor arrives in Subsystem 3.

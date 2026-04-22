@@ -3,8 +3,9 @@ import { useState } from "react";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useCurrentOrg } from "@/lib/hooks/use-current-org";
-import { Button } from "@/components/ui/button";
+import { PillButton } from "@/components/ui/pill-button";
 import { Badge } from "@/components/ui/badge";
+import { Plus } from "lucide-react";
 import { CreateApplicationDrawer } from "@/components/applications/create-drawer";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -35,18 +36,30 @@ export default function ClientApplicationsPage() {
         <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">
           Applications
         </p>
-        <Button size="sm" onClick={() => setDrawerOpen(true)}>+ New</Button>
+        <PillButton
+          type="button"
+          size="compact"
+          variant="primary"
+          onClick={() => setDrawerOpen(true)}
+        >
+          <Plus className="w-3.5 h-3.5" />
+          New
+        </PillButton>
       </div>
 
-      <div className="rounded-lg border bg-card divide-y">
-        {applications === undefined ? (
-          <div className="py-8 text-center text-sm text-muted-foreground">Loading…</div>
-        ) : applications.length === 0 ? (
-          <div className="py-8 text-center text-sm text-muted-foreground">
-            No applications yet. Click New to create one.
-          </div>
-        ) : (
-          applications.map((app) => (
+      {applications === undefined ? (
+        <div className="py-16 text-center">
+          <p className="text-sm text-muted-foreground/60">Loading…</p>
+        </div>
+      ) : applications.length === 0 ? (
+        <div className="py-16 text-center">
+          <p className="text-sm text-muted-foreground/60">
+            No applications yet.
+          </p>
+        </div>
+      ) : (
+        <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden divide-y divide-foreground/6">
+          {applications.map((app) => (
             <Link
               key={app._id}
               href={`/clients/${clientOrgId}/applications/${app._id}`}
@@ -62,9 +75,9 @@ export default function ClientApplicationsPage() {
                 {app.status.replace(/_/g, " ")}
               </Badge>
             </Link>
-          ))
-        )}
-      </div>
+          ))}
+        </div>
+      )}
 
       {orgCtx && (
         <CreateApplicationDrawer
