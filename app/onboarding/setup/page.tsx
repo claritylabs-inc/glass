@@ -5,7 +5,7 @@ import { useAction, useMutation, useQuery } from "convex/react";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/convex/_generated/api";
-import { BrandWordmark } from "@/components/auth-shell";
+import { BrandWordmark, PartnerWordmark } from "@/components/auth-shell";
 import { PillButton } from "@/components/ui/pill-button";
 import { LogoIcon } from "@/components/ui/logo-icon";
 import { ArrowRight, Check, Loader2, Mail, Upload, Sparkles } from "lucide-react";
@@ -49,11 +49,13 @@ function Shell({
   currentStep,
   email,
   onLogout,
+  broker,
 }: {
   children: ReactNode;
   currentStep?: Step;
   email?: string;
   onLogout?: () => Promise<void> | void;
+  broker?: { name?: string | null; iconUrl?: string | null; website?: string | null } | null;
 }) {
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -64,7 +66,11 @@ function Shell({
               <LogoIcon size={18} color="#A0D2FA" static />
             </div>
             <div className="hidden sm:block">
-              <BrandWordmark />
+              {broker ? (
+                <PartnerWordmark name={broker.name} iconUrl={broker.iconUrl} website={broker.website} />
+              ) : (
+                <BrandWordmark />
+              )}
             </div>
           </div>
           <div className="justify-self-center">
@@ -248,7 +254,7 @@ export default function ClientOnboardingSetupPage() {
   const policyCount = policies?.length ?? 0;
 
   return (
-    <Shell currentStep={currentStep} email={viewer?.email} onLogout={handleLogout}>
+    <Shell currentStep={currentStep} email={viewer?.email} onLogout={handleLogout} broker={viewerOrg?.brokerOrg ?? null}>
       <div className="w-full max-w-md space-y-8">
         <div className="space-y-3 text-left">
           <h1 className="text-base font-medium tracking-tight">{STEPS[currentStep].label}</h1>
