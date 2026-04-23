@@ -11,7 +11,7 @@ export function getNotificationFromAddress(fromName: string): string {
 
 export function getAuthFromAddress(fromName?: string): string {
   if (fromName) return `${fromName} <noreply@${getAgentDomain()}>`;
-  return process.env.AUTH_EMAIL_FROM ?? `Clarity Labs <noreply@${getAgentDomain()}>`;
+  return process.env.AUTH_EMAIL_FROM ?? `Glass from Clarity Labs <noreply@${getAgentDomain()}>`;
 }
 
 export type ResendPayload = {
