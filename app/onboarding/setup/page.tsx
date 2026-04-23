@@ -19,7 +19,7 @@ type Step = 0 | 1 | 2 | 3;
 const STEPS: ReadonlyArray<{ label: string; subtitle?: string }> = [
   { label: "Welcome to Glass", subtitle: "Start by telling us a little about yourself." },
   { label: "Your organization", subtitle: "Confirm your company name and website." },
-  { label: "Your policies", subtitle: "Add the policies you want Glass to know about." },
+  { label: "Your policies", subtitle: "Add policies so you can manage them, get answers and generate COIs." },
   { label: "You're all set", subtitle: "Here's what you can do next." },
 ] as const;
 
@@ -134,6 +134,7 @@ export default function ClientOnboardingSetupPage() {
   const [orgName, setOrgName] = useState("");
   const [website, setWebsite] = useState("");
   const [enrichStarted, setEnrichStarted] = useState(false);
+  const [enrichDone, setEnrichDone] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
@@ -197,9 +198,12 @@ export default function ClientOnboardingSetupPage() {
       // Fire-and-forget enrichment — don't block the UI on it.
       if (trimmedSite) {
         setEnrichStarted(true);
-        void extractCompanyInfo({ url: trimmedSite }).catch(() => {
-          // swallow — enrichment is best-effort
-        });
+        setEnrichDone(false);
+        void extractCompanyInfo({ url: trimmedSite })
+          .catch(() => {
+            // swallow — enrichment is best-effort
+          })
+          .finally(() => setEnrichDone(true));
       }
       setCurrentStep(2);
     } catch (e) {
@@ -360,10 +364,15 @@ export default function ClientOnboardingSetupPage() {
 
         {currentStep === 2 && (
           <div className="space-y-8">
-            {enrichStarted ? (
+            {enrichStarted && !enrichDone ? (
+              <div className="flex items-center gap-2 rounded-md border border-foreground/6 bg-card px-3 py-2 text-label-sm text-muted-foreground">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Enriching your profile…
+              </div>
+            ) : enrichStarted && enrichDone ? (
               <div className="flex items-center gap-2 rounded-md border border-foreground/6 bg-card px-3 py-2 text-label-sm text-muted-foreground">
                 <Sparkles className="h-3.5 w-3.5" />
-                Enriching your profile…
+                Profile enriched.
               </div>
             ) : null}
 
