@@ -848,24 +848,31 @@ function UnifiedThreadContent({
           {(() => {
             const lastAgentIdx = messages?.reduce((acc, m, i) => m.role === "agent" ? i : acc, -1) ?? -1;
             const firstUserIdx = messages?.findIndex((m) => m.role === "user") ?? -1;
-            return messages?.map((msg, idx) => (
-              <div key={msg._id}>
-                <UnifiedMessageBubble
-                  msg={msg}
-                  viewerId={viewerId}
-                  viewerEmail={viewerEmail}
-                  isMixedThread={isMixedThread}
-                  isLastAgentMessage={idx === lastAgentIdx}
-                  isFirstUserMessage={false}
-                  threadContext={undefined}
-                />
-                {idx === firstUserIdx && thread?.initialContext && (
-                  <div className="mt-2 ml-9.5">
-                    <ThreadContextLink context={thread.initialContext} />
-                  </div>
-                )}
-              </div>
-            ));
+            return messages?.map((msg, idx) => {
+              const isFirstUser = idx === firstUserIdx;
+              const firstUserIsOwn =
+                isFirstUser &&
+                ((viewerId && msg.userId === viewerId) ||
+                  (viewerEmail && msg.fromEmail?.toLowerCase() === viewerEmail.toLowerCase()));
+              return (
+                <div key={msg._id}>
+                  <UnifiedMessageBubble
+                    msg={msg}
+                    viewerId={viewerId}
+                    viewerEmail={viewerEmail}
+                    isMixedThread={isMixedThread}
+                    isLastAgentMessage={idx === lastAgentIdx}
+                    isFirstUserMessage={false}
+                    threadContext={undefined}
+                  />
+                  {isFirstUser && thread?.initialContext && (
+                    <div className={`mt-2 flex ${firstUserIsOwn ? "justify-end mr-9.5" : "ml-9.5"}`}>
+                      <ThreadContextLink context={thread.initialContext} />
+                    </div>
+                  )}
+                </div>
+              );
+            });
           })()}
           {chatError && (
             <div className="mx-4 mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
