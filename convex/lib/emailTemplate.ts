@@ -2,9 +2,8 @@ import type { BrandingContext } from "./branding";
 import { getDefaultBranding } from "./branding";
 
 const SITE_URL = process.env.SITE_URL ?? "https://glass.claritylabs.dev";
-void SITE_URL;
 
-/** Brand name + "from Clarity Labs" lockup, rendered in HTML so it themes correctly. */
+/** Brand name + mark lockup for the email header. No "from Clarity Labs" — reserved for footer. */
 export function buildEmailLogoHtml(branding: BrandingContext = getDefaultBranding()): string {
   const name = branding.brandName;
   const isAbsoluteLogo = /^https?:\/\//i.test(branding.logoUrl);
@@ -17,20 +16,22 @@ export function buildEmailLogoHtml(branding: BrandingContext = getDefaultBrandin
     <td align="center" style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:18px;line-height:1;color:#111827;">
       ${mark}
       <span style="font-weight:600;vertical-align:middle;">${name}</span>
-      <span style="font-weight:400;color:#9ca3af;vertical-align:middle;"> from Clarity Labs</span>
     </td>
   </tr>
 </table>`;
 }
 
-/** Small "Glass from Clarity Labs" lockup for email footer platform attribution. */
-export function buildPlatformFooterHtml(): string {
+/** Glass wordmark + "Sent via Glass by Clarity Labs" — mirrors the invite email footer. */
+export function buildPlatformFooterHtml(siteUrl: string = SITE_URL): string {
+  const glassLogoUrl = `${siteUrl}/glass-logo-email.jpg`;
   return `
 <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;">
   <tr>
-    <td align="center" style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:11px;line-height:1;color:#9ca3af;">
-      <span style="font-weight:600;color:#6b7280;">Glass</span>
-      <span style="font-weight:400;"> from Clarity Labs</span>
+    <td align="center">
+      <img src="${glassLogoUrl}" alt="Glass by Clarity Labs" height="24" style="display:block;border:0;margin:0 auto 8px auto;" />
+      <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:11px;color:#9ca3af;line-height:1.5;">
+        Sent via Glass by Clarity Labs
+      </p>
     </td>
   </tr>
 </table>`;
@@ -39,8 +40,7 @@ export function buildPlatformFooterHtml(): string {
 /** @deprecated Use buildEmailLogoHtml(branding). */
 export const EMAIL_PRISM_LOGO = buildEmailLogoHtml();
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export function buildOtpEmail(token: string, _siteUrl?: string, branding: BrandingContext = getDefaultBranding()): { html: string; text: string } {
+export function buildOtpEmail(token: string, siteUrl: string = SITE_URL, branding: BrandingContext = getDefaultBranding()): { html: string; text: string } {
   const logo = buildEmailLogoHtml(branding);
   const digits = token.split("");
 
@@ -108,7 +108,7 @@ export function buildOtpEmail(token: string, _siteUrl?: string, branding: Brandi
 
 <!-- Platform attribution -->
 <div style="padding:16px 0 0 0;text-align:center;">
-  ${buildPlatformFooterHtml()}
+  ${buildPlatformFooterHtml(siteUrl)}
 </div>
 </td></tr>
 </table>
