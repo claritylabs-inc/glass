@@ -2,13 +2,14 @@
 
 import { useAuthActions } from "@convex-dev/auth/react";
 import { useAction, useMutation, useQuery } from "convex/react";
-import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import { BrandWordmark, PartnerWordmark } from "@/components/auth-shell";
+import { PolicyEmptyState } from "@/components/policy-empty-state";
 import { PillButton } from "@/components/ui/pill-button";
 import { LogoIcon } from "@/components/ui/logo-icon";
-import { ArrowRight, Check, Loader2, Mail, Upload, Sparkles } from "lucide-react";
+import { ArrowRight, Check, Loader2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
 const AGENT_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "glass.claritylabs.inc";
@@ -136,7 +137,6 @@ export default function ClientOnboardingSetupPage() {
   const [submitting, setSubmitting] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // If already complete, bounce home.
   useEffect(() => {
@@ -209,23 +209,29 @@ export default function ClientOnboardingSetupPage() {
     }
   }, [updateOrg, orgName, website, extractCompanyInfo]);
 
-  const handleFilePick = useCallback(
-    async (file: File) => {
+  const handleFilesUpload = useCallback(
+    async (files: File[]) => {
       setUploading(true);
       try {
-        const uploadUrl = await generateUploadUrl();
-        const res = await fetch(uploadUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/pdf" },
-          body: file,
-        });
-        if (!res.ok) throw new Error("Upload failed");
-        const { storageId } = (await res.json()) as { storageId: string };
-        await extractFromUpload({
-          fileId: storageId as never,
-          fileName: file.name,
-        });
-        toast.success("Upload started — extraction runs in the background.");
+        for (const file of files) {
+          const uploadUrl = await generateUploadUrl();
+          const res = await fetch(uploadUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/pdf" },
+            body: file,
+          });
+          if (!res.ok) throw new Error("Upload failed");
+          const { storageId } = (await res.json()) as { storageId: string };
+          await extractFromUpload({
+            fileId: storageId as never,
+            fileName: file.name,
+          });
+        }
+        toast.success(
+          files.length > 1
+            ? `${files.length} uploads started — extraction runs in the background.`
+            : "Upload started — extraction runs in the background.",
+        );
       } catch (err) {
         console.error(err);
         toast.error("Upload failed. Please try again.");
@@ -410,64 +416,14 @@ export default function ClientOnboardingSetupPage() {
 
             <div className="space-y-3">
               <div className={labelClass + " mb-0"}>Add more</div>
-
-              <div className="rounded-lg border border-foreground/6 bg-card p-4 space-y-3">
-                <div className="flex items-start gap-3">
-                  <Upload className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
-                  <div className="min-w-0 flex-1">
-                    <div className="text-body-sm font-medium">Upload a PDF</div>
-                    <div className="text-label-sm text-muted-foreground">
-                      Extraction happens in the background — we'll notify you when done.
-                    </div>
-                  </div>
-                </div>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="application/pdf"
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) void handleFilePick(file);
-                    e.target.value = "";
-                  }}
-                />
-                <PillButton
-                  type="button"
-                  variant="secondary"
-                  size="compact"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={uploading}
-                >
-                  {uploading ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Upload className="h-3.5 w-3.5" />
-                  )}
-                  {uploading ? "Uploading…" : "Choose PDF"}
-                </PillButton>
-              </div>
-
-              {brokerAgentEmail ? (
-                <div className="rounded-lg border border-foreground/6 bg-card p-4">
-                  <div className="flex items-start gap-3">
-                    <Mail className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
-                    <div className="min-w-0 flex-1">
-                      <div className="text-body-sm font-medium">Or email your agent</div>
-                      <div className="text-label-sm text-muted-foreground">
-                        Forward any policy PDF to{" "}
-                        <a
-                          href={`mailto:${brokerAgentEmail}`}
-                          className="font-medium text-foreground hover:underline break-all"
-                        >
-                          {brokerAgentEmail}
-                        </a>{" "}
-                        and we'll extract it automatically.
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ) : null}
+              <PolicyEmptyState
+                docType="policy"
+                agentEmail={brokerAgentEmail}
+                uploading={uploading}
+                onUpload={handleFilesUpload}
+                title="Add a policy"
+                subtitle="Drop a PDF or forward an email — Glass extracts it for you."
+              />
             </div>
 
             {error ? <p className="text-sm text-muted-foreground">{error}</p> : null}
