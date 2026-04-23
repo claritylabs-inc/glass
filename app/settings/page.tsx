@@ -8,6 +8,7 @@ import {
   Users,
   Puzzle,
   Network,
+  Brain,
 } from "lucide-react";
 import { LogoIcon } from "@/components/ui/logo-icon";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -21,6 +22,7 @@ import { OrganizationSection } from "@/components/settings/organization-section"
 import { TeamSection } from "@/components/settings/team-section";
 import { ConnectionsSection } from "@/components/settings/connections-section";
 import { IntegrationsSection } from "@/components/settings/integrations-section";
+import { MemorySection } from "@/components/settings/memory-section";
 import { BrokerTeamTab } from "@/components/settings/broker-team-tab";
 import { BrokerAgentTab } from "@/components/settings/broker-agent-tab";
 import NotificationPreferencesPage from "./notifications/page";
@@ -29,6 +31,7 @@ import { Bell } from "lucide-react";
 const CLIENT_SETTINGS_SECTIONS = [
   { id: "organization", label: "Organization", icon: Building2 },
   { id: "team", label: "Team", icon: Users },
+  { id: "memory", label: "Memory", icon: Brain },
   { id: "connections", label: "Connections", icon: Network },
   { id: "integrations", label: "Integrations", icon: Puzzle },
   { id: "notifications", label: "Notifications", icon: Bell },
@@ -136,6 +139,8 @@ function SectionContent({ section, isBroker }: { section: SettingsSection; isBro
         <OrganizationSection />
       ) : section === "team" ? (
         <TeamSection />
+      ) : section === "memory" ? (
+        <MemorySection />
       ) : section === "connections" ? (
         <ConnectionsSection />
       ) : section === "integrations" ? (
