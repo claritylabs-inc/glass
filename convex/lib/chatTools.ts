@@ -64,3 +64,12 @@ export const generateCoi = tool({
     certificateHolder: z.string().optional().describe("Name/address of the certificate holder"),
   }),
 });
+
+export const extractPolicyAttachment = tool({
+  description:
+    "Extract a policy or quote from a PDF attachment that was included with the email. Use this when the sender has attached a policy document, declarations page, quote, or other insurance PDF that should be ingested into the organization's policy library. The attachment's storageId and fileName come from the email's attachment list provided in context.",
+  inputSchema: z.object({
+    storageId: z.string().describe("The Convex storage ID of the PDF attachment"),
+    fileName: z.string().describe("The original filename of the attachment"),
+  }),
+});

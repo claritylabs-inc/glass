@@ -1,7 +1,7 @@
 "use node";
 
 import { v } from "convex/values";
-import { action } from "../_generated/server";
+import { action, internalAction } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 
@@ -88,5 +88,77 @@ export const extractFromUpload = action({
     });
 
     return { success: true, type: "policy", id: String(policyId) };
+  },
+});
+
+/**
+ * Internal variant — callable from other actions (e.g. inbound email agent)
+ * that already have orgId/userId resolved and can't rely on the viewer query.
+ */
+export const extractFromUploadInternal = internalAction({
+  args: {
+    fileId: v.id("_storage"),
+    fileName: v.optional(v.string()),
+    orgId: v.id("organizations"),
+    userId: v.id("users"),
+  },
+  returns: v.any(),
+  handler: async (ctx, args): Promise<{ error: string } | { success: true; policyId: string }> => {
+    const pdfUrl = await ctx.storage.getUrl(args.fileId);
+    if (!pdfUrl) return { error: "File not found in storage" };
+
+    const policyId: Id<"policies"> = await ctx.runMutation(api.policies.insert, {
+      userId: args.userId,
+      orgId: args.orgId,
+      fileId: args.fileId,
+      fileName: args.fileName,
+      carrier: "Extracting...",
+      policyNumber: "Extracting...",
+      policyTypes: ["other"],
+      documentType: "policy",
+      policyYear: new Date().getFullYear(),
+      effectiveDate: "Extracting...",
+      expirationDate: "Extracting...",
+      isRenewal: false,
+      coverages: [],
+      insuredName: "Extracting...",
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const policyFileId: Id<"policyFiles"> = await ctx.runMutation(
+      (internal as any).policyFiles.insert,
+      {
+        policyId,
+        fileId: args.fileId,
+        fileName: args.fileName || "upload.pdf",
+        fileType: "unknown" as const,
+        orgId: args.orgId,
+      },
+    );
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await ctx.runMutation((internal as any).policies.updateFiles, {
+      id: policyId,
+      files: [{ fileId: args.fileId, fileName: args.fileName || "upload.pdf", fileType: "unknown", status: "extracting" }],
+      reconciliationStatus: "pending" as const,
+    });
+
+    await ctx.runMutation(internal.policyAuditLog.append, {
+      policyId,
+      userId: args.userId,
+      orgId: args.orgId,
+      action: "extraction_started",
+    });
+
+    await ctx.runAction(internal.actions.policyExtraction.startPolicyExtractionFromUpload, {
+      policyId,
+      fileId: args.fileId,
+      fileName: args.fileName,
+      orgId: args.orgId,
+      userId: args.userId,
+      policyFileId,
+    });
+
+    return { success: true, policyId: String(policyId) };
   },
 });

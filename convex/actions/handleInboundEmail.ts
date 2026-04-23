@@ -3,8 +3,17 @@
 import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
-import { generateText, type ModelMessage } from "ai";
+import { generateText, stepCountIs, type ModelMessage } from "ai";
 import { haikuModel } from "../lib/ai";
+import { getModel } from "../lib/models";
+import {
+  lookupPolicy,
+  lookupPolicySection,
+  compareCoverages,
+  saveNote,
+  generateCoi as generateCoiTool,
+  extractPolicyAttachment,
+} from "../lib/chatTools";
 import { Webhook } from "svix";
 import { buildAgentSystemPrompt, buildDocumentContext, buildConversationMemoryContext, type AgentContext } from "../lib/agentPrompts";
 import { Id } from "../_generated/dataModel";
@@ -794,15 +803,230 @@ For emails, compose a professional message that:
 - Writes from Glass's perspective (third-person on behalf of the company). Do NOT sign off as the team member or impersonate them.`;
       }
 
-      // Call Claude Haiku
-      const { text: responseBody_ } = await generateText({
-        model: haikuModel,
-        maxOutputTokens: 2048,
+      // ── Build agentic tool set — the model decides whether to answer,
+      // generate a COI, or extract an uploaded policy from attachments. ──
+      // Map attachment filenames -> storageIds so the agent can reference them.
+      const attachmentIndex: Record<string, { fileId: string; contentType: string }> = {};
+      for (const rec of attachmentRecords) {
+        if (rec.fileId) {
+          attachmentIndex[rec.filename] = { fileId: rec.fileId, contentType: rec.contentType };
+        }
+      }
+
+      const emailTools = {
+        lookup_policy: {
+          ...lookupPolicy,
+          execute: async (params: { query: string; policyType?: string; carrier?: string }) => {
+            const q = params.query.toLowerCase();
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const matches = (policies as any[]).filter((p) => {
+              const matchesQuery =
+                p.insuredName?.toLowerCase().includes(q) ||
+                p.security?.toLowerCase().includes(q) ||
+                p.policyNumber?.toLowerCase().includes(q) ||
+                p.policyTypes?.some((t: string) => t.toLowerCase().includes(q));
+              const matchesType = !params.policyType || p.policyTypes?.includes(params.policyType);
+              const matchesCarrier = !params.carrier ||
+                p.security?.toLowerCase().includes(params.carrier.toLowerCase());
+              return matchesQuery && matchesType && matchesCarrier;
+            });
+            if (matches.length === 0) return "No matching policies found.";
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            return matches.slice(0, 5).map((p: any) => ({
+              id: p._id,
+              insured: p.insuredName,
+              carrier: p.security,
+              type: p.policyTypes?.join(", "),
+              number: p.policyNumber,
+              effective: p.effectiveDate,
+              expiration: p.expirationDate,
+              premium: p.premium,
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              coverages: (p.coverages ?? []).map((c: any) => ({
+                name: c.name, limit: c.limit, deductible: c.deductible,
+              })),
+            }));
+          },
+        },
+        lookup_policy_section: {
+          ...lookupPolicySection,
+          execute: async (params: { policyId: string; query: string }) => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const policy: any = await ctx.runQuery(
+              internal.policies.getInternal,
+              { id: params.policyId as Id<"policies"> },
+            );
+            if (!policy || policy.orgId !== orgId) return "Policy not found.";
+            const doc = policy.document;
+            if (!doc) return "No document data available for this policy.";
+            const q = params.query.toLowerCase();
+            const results: Array<{ title: string; type: string; content: string }> = [];
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            for (const s of (doc.sections ?? []) as any[]) {
+              const text = `${s.title ?? ""} ${s.content ?? ""}`.toLowerCase();
+              if (text.includes(q)) {
+                results.push({
+                  title: s.title,
+                  type: "section",
+                  content: String(s.content ?? "").slice(0, 4000),
+                });
+              }
+            }
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            for (const e of (doc.endorsements ?? []) as any[]) {
+              const text = `${e.title ?? ""} ${e.content ?? ""}`.toLowerCase();
+              if (text.includes(q)) {
+                results.push({
+                  title: e.title,
+                  type: "endorsement",
+                  content: String(e.content ?? "").slice(0, 4000),
+                });
+              }
+            }
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            for (const cov of (policy.coverages ?? []) as any[]) {
+              const text = `${cov.name ?? ""} ${cov.limit ?? ""}`.toLowerCase();
+              if (text.includes(q)) {
+                const parts = [cov.name];
+                if (cov.limit) parts.push(`Limit: ${cov.limit}`);
+                if (cov.deductible) parts.push(`Deductible: ${cov.deductible}`);
+                results.push({
+                  title: cov.name,
+                  type: "coverage",
+                  content: parts.join("\n"),
+                });
+              }
+            }
+            return results.slice(0, 5);
+          },
+        },
+        compare_coverages: {
+          ...compareCoverages,
+          execute: async (params: { policyId1: string; policyId2: string }) => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const p1 = (policies as any[]).find((p) => p._id === params.policyId1);
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const p2 = (policies as any[]).find((p) => p._id === params.policyId2);
+            if (!p1 || !p2) return "One or both policies not found.";
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const mapP = (p: any) => ({
+              id: p._id, carrier: p.security, type: p.policyTypes, limits: p.limits,
+              deductibles: p.deductibles, premium: p.premium,
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              coverages: (p.coverages ?? []).map((c: any) => ({
+                name: c.name, limit: c.limit, deductible: c.deductible,
+              })),
+            });
+            return { policy1: mapP(p1), policy2: mapP(p2) };
+          },
+        },
+        save_note: {
+          ...saveNote,
+          execute: async (params: { content: string; type: string; policyId?: string }) => {
+            const typeMap: Record<string, "fact" | "preference" | "risk_note" | "observation"> = {
+              fact: "fact", preference: "preference", risk_note: "risk_note", observation: "observation",
+            };
+            await ctx.runMutation(internal.orgMemory.upsert, {
+              orgId,
+              type: typeMap[params.type] ?? "observation",
+              content: params.content,
+              source: "email" as const,
+              policyId: params.policyId as Id<"policies"> | undefined,
+            });
+            return "Note saved.";
+          },
+        },
+        generate_coi: {
+          ...generateCoiTool,
+          execute: async (params: { policyId: string; certificateHolder?: string }) => {
+            const autoGenerate = org.autoGenerateCoi !== false;
+            if (!autoGenerate) {
+              const handling = org.coiHandling ?? "ignore";
+              if (handling === "broker") {
+                return `COI auto-generation is off. Please contact your broker to obtain this certificate.`;
+              }
+              if (handling === "member") {
+                return `COI auto-generation is off. Please route this COI request to your primary insurance contact.`;
+              }
+              return `COI auto-generation is disabled for this organization.`;
+            }
+            try {
+              await ctx.scheduler.runAfter(
+                0,
+                internal.actions.generateCoi.run,
+                {
+                  policyId: params.policyId as Id<"policies">,
+                  orgId,
+                  certificateHolder: params.certificateHolder,
+                },
+              );
+              return "COI generation started. It will be emailed or available for download shortly.";
+            } catch (err) {
+              return `Failed to generate COI: ${err instanceof Error ? err.message : String(err)}`;
+            }
+          },
+        },
+        extract_policy_attachment: {
+          ...extractPolicyAttachment,
+          execute: async (params: { storageId: string; fileName: string }) => {
+            // Validate the storageId belongs to one of this email's attachments
+            const matched = Object.entries(attachmentIndex).find(
+              ([, v]) => v.fileId === params.storageId,
+            );
+            if (!matched) {
+              return "Storage ID does not match any attachment on this email.";
+            }
+            try {
+              const result = await ctx.runAction(
+                internal.actions.extractFromUpload.extractFromUploadInternal,
+                {
+                  fileId: params.storageId as Id<"_storage">,
+                  fileName: params.fileName,
+                  orgId,
+                  userId: primaryUserId,
+                },
+              );
+              if ("error" in result) return `Extraction failed: ${result.error}`;
+              return `Extraction started for ${params.fileName}. Policy ID: ${result.policyId}. It will appear in the policy library once processing completes.`;
+            } catch (err) {
+              return `Failed to start extraction: ${err instanceof Error ? err.message : String(err)}`;
+            }
+          },
+        },
+      };
+
+      // Tell the agent about available attachments and their storage IDs.
+      let attachmentToolHint = "";
+      if (claudeAttachments.length > 0) {
+        const pdfAttachments = claudeAttachments
+          .filter((a) => a.content_type === "application/pdf")
+          .map((a) => {
+            const rec = attachmentRecords.find((r) => r.filename === a.filename);
+            return rec?.fileId ? `- "${a.filename}" (storageId: ${rec.fileId})` : null;
+          })
+          .filter(Boolean);
+        if (pdfAttachments.length > 0) {
+          attachmentToolHint = `\n\nATTACHMENT TOOLS:
+If any attached PDF appears to be a policy, declarations page, quote, binder, or other insurance document that should be added to the organization's policy library, call the extract_policy_attachment tool with the storageId and fileName. PDFs are contents you may also read inline for answering questions.
+Available PDF attachments:
+${pdfAttachments.join("\n")}`;
+        }
+      }
+
+      systemContext += attachmentToolHint;
+      systemContext += `\n\nYou have tools to look up policies, look up policy sections, compare coverages, save notes, generate COIs, and extract uploaded policy attachments. Use them as needed before answering. Decide yourself whether the email requires answering a question, generating a COI, and/or extracting an attached policy — you may do more than one.`;
+
+      // Agentic loop — the model decides tools (COI, policy extraction, Q&A)
+      const result = await generateText({
+        model: getModel("chat"),
+        maxOutputTokens: 4096,
         system: systemContext,
         messages,
+        tools: emailTools,
+        stopWhen: stepCountIs(10),
       });
 
-      let responseBody = responseBody_;
+      let responseBody = result.text;
 
       // ── Detect "Sending email to..." pattern for third-party sends ──
       const sendMatch = responseBody.match(/\*?\*?Sending email to (.+?)\.\.\.\*?\*?\s*\n([\s\S]+)$/i);
@@ -1098,6 +1322,51 @@ For emails, compose a professional message that:
         } catch (err) {
           console.warn("Unified thread dual-write (agent response) failed:", err);
         }
+      }
+
+      // ── Phase E: extract durable facts from this email exchange into orgMemory ──
+      try {
+        const memoryExtraction = await generateText({
+          model: haikuModel,
+          maxOutputTokens: 600,
+          system: `You extract durable facts, preferences, risk notes, or observations about an organization from a single email exchange to persist across conversations.
+Output a strict JSON array of up to 5 items, each: {"type": "fact"|"preference"|"risk_note"|"observation", "content": string}.
+Only include items worth remembering long-term (company details, operational facts, stated preferences, noted risks, decisions made). Skip pleasantries, one-off questions, and anything ephemeral. If nothing is worth saving, output [].
+Output ONLY the JSON array — no prose, no code fences.`,
+          messages: [
+            {
+              role: "user",
+              content: `INBOUND EMAIL (from ${fromEmail}):\nSubject: ${subject}\n\n${body}\n\n---\nAGENT REPLY:\n${responseBody}`,
+            },
+          ],
+        });
+        let parsed: Array<{ type: string; content: string }> = [];
+        try {
+          const cleaned = memoryExtraction.text
+            .trim()
+            .replace(/^```(?:json)?\s*/i, "")
+            .replace(/\s*```$/i, "");
+          const arr = JSON.parse(cleaned);
+          if (Array.isArray(arr)) parsed = arr;
+        } catch {
+          // ignore parse failures
+        }
+        const allowedTypes = new Set(["fact", "preference", "risk_note", "observation"]);
+        const items = parsed
+          .filter((it) => it && typeof it.content === "string" && allowedTypes.has(it.type))
+          .slice(0, 5)
+          .map((it) => ({
+            orgId,
+            type: it.type as "fact" | "preference" | "risk_note" | "observation",
+            content: it.content.trim(),
+            source: "email" as const,
+          }))
+          .filter((it) => it.content.length > 0);
+        if (items.length > 0) {
+          await ctx.runMutation(internal.orgMemory.bulkInsert, { items });
+        }
+      } catch (err) {
+        console.warn("orgMemory extraction (email) failed:", err);
       }
 
       // Audit: log agent references to policies
