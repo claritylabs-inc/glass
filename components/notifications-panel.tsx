@@ -160,17 +160,8 @@ export function NotificationsPanel({ orgId, onClose, onMergeSuggestion }: Notifi
     if (notification.actionType && notification.actionPayload) {
       const p = notification.actionPayload as Record<string, string>;
       switch (notification.actionType) {
-        case "view_application":
-          router.push(`/applications/${p.applicationId}`);
-          break;
         case "view_policy":
           router.push(`/policies/${p.policyId}`);
-          break;
-        case "view_passport":
-          router.push(`/passport/${p.flagId}`);
-          break;
-        case "view_integration":
-          router.push(`/connections/${p.connectionId}`);
           break;
         default:
           break;

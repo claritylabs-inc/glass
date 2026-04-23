@@ -108,7 +108,7 @@ export function ClientList({
           <EmptyStateCard
             icon={<UserPlus className="w-5 h-5" />}
             title="No clients yet"
-            description="Invite your first client to start managing their applications, policies, and documents in one place."
+            description="Invite your first client to start managing their policies and documents in one place."
             actionLabel="Invite client"
             onAction={onInvite}
           />

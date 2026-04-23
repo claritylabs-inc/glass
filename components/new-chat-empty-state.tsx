@@ -4,10 +4,6 @@ const EXAMPLE_PROMPTS = [
     prompt: "Summarize my active policies",
   },
   {
-    label: "What applications still need information from me?",
-    prompt: "What applications still need information from me?",
-  },
-  {
     label: "What coverage gaps should I fix first?",
     prompt: "What coverage gaps should I fix first?",
   },

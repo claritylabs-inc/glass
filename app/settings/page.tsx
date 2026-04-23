@@ -4,11 +4,8 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { useState, createContext, useContext } from "react";
 import { AppShell } from "@/components/app-shell";
 import {
-  Mail,
-  Sparkles,
   Building2,
   Users,
-  FileText,
   Puzzle,
   Network,
 } from "lucide-react";
@@ -23,10 +20,7 @@ function GlassStarIcon({ className }: { className?: string }) {
 import { OrganizationSection } from "@/components/settings/organization-section";
 import { TeamSection } from "@/components/settings/team-section";
 import { ConnectionsSection } from "@/components/settings/connections-section";
-import { EmailConnectionsSection } from "@/components/settings/email-connections-section";
-import { DocumentsSection } from "@/components/settings/documents-section";
 import { IntegrationsSection } from "@/components/settings/integrations-section";
-import { IntelligenceSection } from "@/components/settings/intelligence-section";
 import { BrokerTeamTab } from "@/components/settings/broker-team-tab";
 import { BrokerAgentTab } from "@/components/settings/broker-agent-tab";
 import NotificationPreferencesPage from "./notifications/page";
@@ -36,10 +30,7 @@ const CLIENT_SETTINGS_SECTIONS = [
   { id: "organization", label: "Organization", icon: Building2 },
   { id: "team", label: "Team", icon: Users },
   { id: "connections", label: "Connections", icon: Network },
-  { id: "email-connections", label: "Email Connections", icon: Mail },
-  { id: "documents", label: "Documents", icon: FileText },
   { id: "integrations", label: "Integrations", icon: Puzzle },
-  { id: "intelligence", label: "Intelligence", icon: Sparkles },
   { id: "notifications", label: "Notifications", icon: Bell },
 ] as const;
 
@@ -147,14 +138,8 @@ function SectionContent({ section, isBroker }: { section: SettingsSection; isBro
         <TeamSection />
       ) : section === "connections" ? (
         <ConnectionsSection />
-      ) : section === "email-connections" ? (
-        <EmailConnectionsSection />
-      ) : section === "documents" ? (
-        <DocumentsSection />
       ) : section === "integrations" ? (
         <IntegrationsSection />
-      ) : section === "intelligence" ? (
-        <IntelligenceSection />
       ) : section === "notifications" && currentOrg?.orgId ? (
         <NotificationPreferencesPage orgId={currentOrg.orgId} />
       ) : null}

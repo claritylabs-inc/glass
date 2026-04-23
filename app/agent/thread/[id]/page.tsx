@@ -10,7 +10,7 @@ import { ModeBadge } from "@/components/mode-badge";
 import { MessageBubble, splitQuotedReply, QuotedContent, type Conversation } from "@/components/conversation-message";
 import { ChatMessageBubble, type WebChatMessage } from "@/components/chat-message-bubble";
 import { toast } from "sonner";
-import { Loader2, Archive, ArchiveRestore, FileText, FileInput, Pencil, Check, ClipboardList, Asterisk, Mail as MailIcon, MessageSquare, Paperclip, Download, Copy, Lock, RotateCcw } from "lucide-react";
+import { Loader2, Archive, ArchiveRestore, FileText, Pencil, Check, ClipboardList, Asterisk, Mail as MailIcon, MessageSquare, Paperclip, Download, Copy, Lock } from "lucide-react";
 import { usePdf } from "@/components/pdf-context";
 import { usePresence } from "@/hooks/use-presence";
 import { ContextReferenceCard, ReferenceCardStrip } from "@/components/context-reference-card";
@@ -629,7 +629,6 @@ function ThreadContextLink({
   const routeMap: Record<string, string> = {
     policy: "/policies",
     quote: "/policies",
-    application: "/applications",
   };
   const base = routeMap[context.pageType];
   if (!base) return null;
@@ -638,14 +637,12 @@ function ThreadContextLink({
   const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
     policy: FileText,
     quote: ClipboardList,
-    application: FileInput,
   };
   const Icon = iconMap[context.pageType] ?? FileText;
 
   const labelMap: Record<string, string> = {
     policy: "Policy",
     quote: "Quote",
-    application: "Application",
   };
   const typeLabel = labelMap[context.pageType] ?? context.pageType;
 
@@ -910,10 +907,8 @@ type Thread = {
 /* ── Email thread actions (lifted to AppShell header) ── */
 function EmailThreadActions({
   thread,
-  appInfo,
 }: {
   thread: Thread;
-  appInfo: { sessionId?: string } | undefined;
 }) {
   const archiveConv = useMutation(api.agentConversations.archive);
   const unarchiveConv = useMutation(api.agentConversations.unarchive);
@@ -959,16 +954,8 @@ function EmailThreadActions({
 
   return (
     <>
-      <ModeBadge mode={appInfo ? "application" : root.mode} />
+      <ModeBadge mode={root.mode} />
       <div className="w-px h-4 bg-foreground/10" />
-      {appInfo?.sessionId && (
-        <Link href={`/applications/${appInfo.sessionId}`}>
-          <PillButton size="compact" variant="secondary">
-            <FileText className="w-3.5 h-3.5" />
-            Application
-          </PillButton>
-        </Link>
-      )}
       <PillButton size="compact" variant="icon" onClick={handleCopyThread} label="Copy thread">
         <Copy className="w-3.5 h-3.5" />
       </PillButton>
@@ -992,8 +979,6 @@ function EmailThreadContent({
   const { openWithUrl } = usePdf();
   const conversations = useQuery(api.agentConversations.list, { archived: false });
   const archivedConversations = useQuery(api.agentConversations.list, { archived: true });
-  // applicationSessions retired — appThreadIds is no longer used
-  const appThreadIds: undefined = undefined;
   const retryApp = undefined;
   const messagesRef = useRef<HTMLDivElement>(null);
   const prevThreadId = useRef<string | null>(null);
@@ -1037,16 +1022,14 @@ function EmailThreadContent({
       );
   }, [conversations, archivedConversations, threadId]);
 
-  const appInfo = thread ? appThreadIds?.[String(thread.root._id)] : undefined;
-
   // Push subject + actions to parent for AppShell header
   useEffect(() => {
     if (!thread || !onMeta) return;
     onMeta({
       subject: thread.root.subject,
-      actions: <EmailThreadActions thread={thread} appInfo={appInfo} />,
+      actions: <EmailThreadActions thread={thread} />,
     });
-  }, [thread, appInfo, onMeta]);
+  }, [thread, onMeta]);
 
   useEffect(() => {
     const el = messagesRef.current;
@@ -1072,17 +1055,12 @@ function EmailThreadContent({
     );
   }
 
-  // handleRetry: removed — applicationSessions retired
-  async function handleRetry() {
-    toast.info("Application retry not supported in Glass v1.");
-  }
-
   return (
     <div className="flex flex-col h-full">
       <div ref={messagesRef} className="flex-1 overflow-y-auto p-4 pr-5">
         <div className="max-w-2xl mx-auto space-y-4">
           {thread.messages.map((msg) => (
-            <MessageBubble key={msg._id} conv={msg} onOpenPdf={openWithUrl} onRetry={appInfo ? handleRetry : undefined} viewerEmail={viewerEmail} />
+            <MessageBubble key={msg._id} conv={msg} onOpenPdf={openWithUrl} viewerEmail={viewerEmail} />
           ))}
           {thread.messages.length > 0 && <div className="h-[50vh]" />}
         </div>

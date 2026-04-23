@@ -1,8 +1,7 @@
 "use client";
 
 /**
- * Shared ExtractionBanner used across policy, org-document, and application surfaces.
- * Renders a live pipeline status banner with retry buttons.
+ * Policy extraction banner — live pipeline status with retry buttons.
  */
 
 import { StatusBanner, RetryButtons } from "@claritylabs/cl-pipelines/ui";
@@ -12,34 +11,6 @@ import { Loader2, AlertCircle } from "lucide-react";
 import { useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-
-// ─── Application Extraction Banner ────────────────────────────────────────────
-
-export function ApplicationExtractionBanner({
-  applicationId,
-  status,
-  error,
-  log,
-}: {
-  applicationId: Id<"applications">;
-  status: PipelineStatus | undefined;
-  error?: string;
-  log?: LogEntry[];
-}) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const retry = useAction((api as any).actions.applicationExtraction.retryExtraction);
-
-  return (
-    <ExtractionBannerBase
-      status={status}
-      error={error}
-      log={log}
-      onRetry={(mode) => void retry({ applicationId, mode })}
-    />
-  );
-}
-
-// ─── Policy Extraction Banner ──────────────────────────────────────────────────
 
 export function PolicyExtractionBanner({
   policyId,
@@ -63,62 +34,6 @@ export function PolicyExtractionBanner({
     />
   );
 }
-
-// ─── Org Document Extraction Banner ───────────────────────────────────────────
-
-export function OrgDocumentExtractionBanner({
-  orgDocumentId,
-  status,
-  error,
-  log,
-}: {
-  orgDocumentId: Id<"orgDocuments">;
-  status: PipelineStatus | undefined;
-  error?: string;
-  log?: LogEntry[];
-}) {
-  const retry = useAction(
-    (api as any).actions.orgDocumentExtraction.retryOrgDocumentExtraction,
-  );
-
-  return (
-    <ExtractionBannerBase
-      status={status}
-      error={error}
-      log={log}
-      onRetry={(mode) => void retry({ orgDocumentId, mode })}
-    />
-  );
-}
-
-// ─── Application Prefill Banner ───────────────────────────────────────────────
-
-export function ApplicationPrefillBanner({
-  applicationId,
-  status,
-  error,
-  log,
-}: {
-  applicationId: Id<"applications">;
-  status: PipelineStatus | undefined;
-  error?: string;
-  log?: LogEntry[];
-}) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const retry = useAction((api as any).actions.applicationPrefillPipeline.retryApplicationPrefill);
-
-  return (
-    <ExtractionBannerBase
-      status={status}
-      error={error}
-      log={log}
-      labels={{ running: "Prefilling", error: "Prefill failed" }}
-      onRetry={(mode) => void retry({ applicationId, mode })}
-    />
-  );
-}
-
-// ─── Base banner ───────────────────────────────────────────────────────────────
 
 function ExtractionBannerBase({
   status,

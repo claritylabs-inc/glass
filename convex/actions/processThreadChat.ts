@@ -10,7 +10,6 @@ import {
   lookupPolicy,
   lookupPolicySection,
   compareCoverages,
-  checkApplicationStatus,
   saveNote,
   generateCoi,
 } from "../lib/chatTools";
@@ -317,26 +316,6 @@ function buildTools(ctx: any, args: { orgId: string; threadId: string }, org?: R
         return top.map((r) => r.data);
       },
     },
-    check_application_status: {
-      ...checkApplicationStatus,
-      execute: async (params: { applicationId?: string; query?: string }) => {
-        // applicationSessions retired — return empty
-        const apps: Array<Record<string, unknown>> = [];
-        if (params.applicationId) {
-          const match = apps.find((a: Record<string, unknown>) => a._id === params.applicationId);
-          return match ?? "Application not found.";
-        }
-        if (params.query) {
-          const q = params.query.toLowerCase();
-          const matches = apps.filter((a: Record<string, unknown>) =>
-            (a.applicationTitle as string)?.toLowerCase().includes(q) ||
-            (a.sourceFileName as string)?.toLowerCase().includes(q),
-          );
-          return matches.length > 0 ? matches : "No matching applications found.";
-        }
-        return apps.slice(0, 5);
-      },
-    },
     save_note: {
       ...saveNote,
       execute: async (params: { content: string; type: string; policyId?: string }) => {
@@ -471,13 +450,10 @@ export const run = internalAction({
         }
       }
 
-      // Load policies, quotes, and applications
       const policies = await ctx.runQuery(
         internal.policies.listAllInternal,
         { orgId: args.orgId },
       );
-      // applicationSessions retired
-      const applications: Array<Record<string, unknown>> = [];
 
       // Get sender name
       const user = await ctx.runQuery(internal.users.getInternal, {
@@ -666,19 +642,6 @@ For emails, compose a professional message that:
         }
       }
 
-      // Build application context
-      let applicationContext = "";
-      if (applications.length > 0) {
-        const appLines = applications.map((a: Record<string, unknown>) => {
-          const title = a.applicationTitle ?? a.sourceFileName;
-          const progress = a.totalFields
-            ? `${a.filledFields ?? 0}/${a.totalFields} fields filled`
-            : "";
-          return `- ${title} | Status: ${a.status}${progress ? ` | ${progress}` : ""} | ID: ${a._id}`;
-        });
-        applicationContext = `\n\nAPPLICATION SESSIONS (${applications.length}):\n${appLines.join("\n")}`;
-      }
-
       const toolInstructions = `
 
 TOOLS — POLICY LOOKUP:
@@ -715,7 +678,6 @@ When answering coverage questions, you are an expert insurance analyst, not a di
         "\n\n" +
         docContext +
         toolInstructions +
-        applicationContext +
         memoryContext +
         orgMemoryBlock +
         attachmentNote;
@@ -737,7 +699,6 @@ When answering coverage questions, you are an expert insurance analyst, not a di
         lookup_policy: "Searching policies...",
         lookup_policy_section: "Reading policy sections...",
         compare_coverages: "Comparing coverages...",
-        check_application_status: "Checking application...",
         send_email: "Drafting email...",
         save_note: "Saving note...",
         generate_coi: "Generating COI...",

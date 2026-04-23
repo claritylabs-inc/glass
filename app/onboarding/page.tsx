@@ -28,7 +28,7 @@ export default function OnboardingRoutePage() {
       return;
     }
 
-    router.replace("/onboarding/passport");
+    router.replace("/onboarding/setup");
   }, [viewer, viewerOrg, router, searchParams]);
 
   return (

@@ -12,7 +12,6 @@ import { toast } from "sonner";
 const AGENT_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "glass.claritylabs.inc";
 import {
   FileText,
-  FileInput,
   Mail,
   Settings,
   ChevronLeft,
@@ -50,7 +49,6 @@ const BROKER_SETTINGS_WITH_AGENT = [
 
 const INSURANCE_ITEMS = [
   { href: "/policies", label: "Policies", icon: FileText, shortcut: "O" },
-  { href: "/applications", label: "Applications", icon: FileInput, shortcut: "Y" },
 ];
 
 const ALL_NAV_ITEMS = [...INSURANCE_ITEMS];
@@ -572,9 +570,7 @@ export function AppSidebar({
     icon: React.ComponentType<{ className?: string }>;
   }[] = [
     { id: "details", label: "Details", href: "", icon: User },
-    { id: "applications", label: "Applications", href: "/applications", icon: FileInput },
     { id: "policies", label: "Policies", href: "/policies", icon: FileText },
-    { id: "intelligence", label: "Intelligence", href: "/intelligence", icon: GlassStarIcon },
     { id: "activity", label: "Activity", href: "/activity", icon: Activity },
     { id: "settings", label: "Settings", href: "/settings", icon: Settings },
   ];

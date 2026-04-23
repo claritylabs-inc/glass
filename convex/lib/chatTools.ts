@@ -37,15 +37,6 @@ export const sendEmail = tool({
   }),
 });
 
-export const checkApplicationStatus = tool({
-  description:
-    "Look up the progress of an insurance application session — status, filled fields, pending questions.",
-  inputSchema: z.object({
-    applicationId: z.string().optional().describe("Application session ID"),
-    query: z.string().optional().describe("Search by application title or file name"),
-  }),
-});
-
 export const saveNote = tool({
   description:
     "Save an observation or note about a policy or the organization for future reference.",
