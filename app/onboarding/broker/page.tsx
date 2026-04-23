@@ -230,6 +230,7 @@ export default function BrokerOnboardingPage() {
   const viewerOrg = useQuery(api.orgs.viewerOrg, {});
   const createBrokerOrg = useMutation(api.orgs.createBrokerOrg);
   const updateOrg = useMutation(api.orgs.updateOrg);
+  const updateBrokerBranding = useMutation(api.organizations.updateBrokerBranding);
   const claimAgentHandle = useMutation(api.orgs.claimAgentHandle);
   const completeOnboarding = useMutation(api.users.completeOnboarding);
   const updateProfile = useMutation(api.users.updateProfile);
@@ -402,7 +403,9 @@ export default function BrokerOnboardingPage() {
     setSubmitting(true);
     setError("");
     try {
-      await updateOrg({
+      if (!viewerOrg?.org?._id) throw new Error("Organization not ready");
+      await updateBrokerBranding({
+        brokerOrgId: viewerOrg.org._id,
         brandingColor: brandingColor || undefined,
         brandingTextOnAccent,
       });
