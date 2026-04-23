@@ -137,7 +137,7 @@ export const listInvitations = query({
 });
 
 export const checkHandleAvailability = query({
-  args: { handle: v.string() },
+  args: { handle: v.string(), excludeOrgId: v.optional(v.id("organizations")) },
   handler: async (ctx, args) => {
     const normalized = args.handle.toLowerCase().replace(/[^a-z0-9-]/g, "");
     if (normalized.length < 3 || normalized.length > 30) {
@@ -150,7 +150,7 @@ export const checkHandleAvailability = query({
       .query("organizations")
       .withIndex("by_agentHandle", (q) => q.eq("agentHandle", normalized))
       .first();
-    const taken = !!existingOrg;
+    const taken = !!existingOrg && existingOrg._id !== args.excludeOrgId;
     return { available: !taken, normalized, reason: taken ? "Handle already taken" : undefined };
   },
 });
@@ -443,18 +443,18 @@ export const claimAgentHandle = mutation({
   handler: async (ctx, args) => {
     const { orgId, org } = await requireOrgAdmin(ctx);
     if (org.type !== "broker") throw new Error("Only broker orgs can claim an agent handle");
-    if (org.agentHandle) throw new Error("Handle already claimed");
 
     const normalized = args.handle.toLowerCase().replace(/[^a-z0-9-]/g, "");
     if (normalized.length < 3 || normalized.length > 30) {
       throw new Error("Handle must be 3-30 characters");
     }
+    if (org.agentHandle === normalized) return normalized;
 
     const existingOrg = await ctx.db
       .query("organizations")
       .withIndex("by_agentHandle", (q) => q.eq("agentHandle", normalized))
       .first();
-    if (existingOrg) throw new Error("Handle already taken");
+    if (existingOrg && existingOrg._id !== orgId) throw new Error("Handle already taken");
 
     await ctx.db.patch(orgId, { agentHandle: normalized });
     return normalized;

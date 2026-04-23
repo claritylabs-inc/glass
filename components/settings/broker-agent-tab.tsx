@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { useSettingsActions } from "@/app/settings/page";
@@ -10,15 +11,23 @@ import { useSettingsActions } from "@/app/settings/page";
 export function BrokerAgentTab() {
   const viewerOrg = useQuery(api.orgs.viewerOrg, {});
   const updateOrg = useMutation(api.orgs.updateOrg);
+  const claimAgentHandle = useMutation(api.orgs.claimAgentHandle);
 
   const org = viewerOrg?.org as
     | {
+        _id?: string;
+        agentHandle?: string;
         chatEmailNotifications?: boolean;
         autoSendEmails?: boolean;
         emailSendDelay?: number;
       }
     | undefined;
 
+  const agentDomain = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "glass.claritylabs.inc";
+
+  const [agentHandle, setAgentHandle] = useState("");
+  const [handleError, setHandleError] = useState<string | null>(null);
+  const [savingHandle, setSavingHandle] = useState(false);
   const [chatEmailNotifications, setChatEmailNotifications] = useState(false);
   const [autoSendEmails, setAutoSendEmails] = useState(false);
   const [emailSendDelay, setEmailSendDelay] = useState<number>(5);
@@ -32,6 +41,7 @@ export function BrokerAgentTab() {
 
   useEffect(() => {
     if (org && !hydratedRef.current) {
+      setAgentHandle(org.agentHandle ?? "");
       setChatEmailNotifications(org.chatEmailNotifications ?? false);
       setAutoSendEmails(org.autoSendEmails ?? false);
       setEmailSendDelay(org.emailSendDelay ?? 5);
@@ -93,8 +103,82 @@ export function BrokerAgentTab() {
 
   const delayOptions = [0, 3, 5, 10, 15];
 
+  const currentHandle = (org?.agentHandle ?? "").trim();
+  const normalizedInput = agentHandle.toLowerCase().replace(/[^a-z0-9-]/g, "");
+  const handleDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const shouldCheck =
+    !!normalizedInput && normalizedInput !== currentHandle;
+  const availability = useQuery(
+    api.orgs.checkHandleAvailability,
+    shouldCheck && org?._id
+      ? { handle: normalizedInput, excludeOrgId: org._id as Id<"organizations"> }
+      : "skip",
+  );
+
+  useEffect(() => {
+    if (!hydratedRef.current) return;
+    if (!shouldCheck) return;
+    if (availability === undefined) return;
+    if (!availability.available) {
+      setHandleError(availability.reason ?? "Handle unavailable");
+      return;
+    }
+    setHandleError(null);
+    if (handleDebounceRef.current) clearTimeout(handleDebounceRef.current);
+    handleDebounceRef.current = setTimeout(async () => {
+      setSavingHandle(true);
+      try {
+        await claimAgentHandle({ handle: availability.normalized });
+        setSavedAt(Date.now());
+      } catch (err) {
+        setHandleError(err instanceof Error ? err.message : "Failed to update handle");
+      } finally {
+        setSavingHandle(false);
+      }
+    }, 600);
+    return () => {
+      if (handleDebounceRef.current) clearTimeout(handleDebounceRef.current);
+    };
+  }, [shouldCheck, availability, claimAgentHandle]);
+
   return (
     <div className="space-y-4">
+      {/* Agent handle */}
+      <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
+        <div className="px-5 py-3.5 border-b border-foreground/6">
+          <h3 className="!mb-0 text-sm font-medium text-foreground">Agent email handle</h3>
+        </div>
+        <div className="px-5 py-5 space-y-3">
+          <p className="text-body-sm text-muted-foreground/70">
+            Clients and carriers email your agent at this address. Forwarding a
+            policy or asking a question routes to the Glass agent for this org.
+          </p>
+          <div className="flex items-stretch gap-0">
+            <input
+              type="text"
+              value={agentHandle}
+              onChange={(e) => setAgentHandle(e.target.value)}
+              placeholder="your-broker-name"
+              spellCheck={false}
+              autoCapitalize="off"
+              autoCorrect="off"
+              className="flex-1 min-w-0 rounded-l-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+            />
+            <span className="inline-flex items-center px-3 border border-l-0 border-foreground/8 bg-foreground/[0.03] text-body-sm text-muted-foreground rounded-r-lg">
+              @{agentDomain}
+            </span>
+          </div>
+          {handleError ? (
+            <p className="text-label-sm text-red-500">{handleError}</p>
+          ) : (
+            <p className="text-label-sm text-muted-foreground/50">
+              Lowercase letters, numbers, and hyphens only.
+            </p>
+          )}
+        </div>
+      </div>
+
       {/* Email behavior */}
       <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
         <div className="px-5 py-3.5 border-b border-foreground/6">

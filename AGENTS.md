@@ -21,9 +21,9 @@ Guidance for any coding agent working in this repository: Codex, Claude Code, Cu
 - `npx convex run seed:seed` — seed demo data
 - `npx convex run actions/backfillChunks:backfill --args '{"orgId":"..."}'` — embed existing documents for vector search
 
-## High-Level Architecture
+## High-Level Architecture (v0.2.0)
 
-Glass is an insurance intelligence platform built on Next.js + Convex. It has moved beyond its origin as a Glass clone into a broker/client operating workspace that combines document extraction, organization intelligence, application workflows, integrations, and API/MCP access.
+Glass is an insurance intelligence platform built on Next.js + Convex. v0.2.0 is a deliberate simplification: the product is now focused on policies, an agentic chat assistant, an agentic inbound email agent, and a lightweight per-org knowledge store (`orgMemory`). Applications v2, Client Passport / ACORD 125, email inbox scanning, org context documents, and the Merge.dev sync backend have all been removed.
 
 Core layers:
 
@@ -32,7 +32,7 @@ Core layers:
 - AI runtime: Vercel AI SDK (`ai`)
 - Extraction, query agent, and prompts: `@claritylabs/cl-sdk@0.16.x`
 - Providers: OpenAI, MoonshotAI, Anthropic, DeepSeek
-- Email: IMAP scanning via `imapflow`; outbound/inbound via Resend. All outbound Resend calls go through `convex/lib/resend.ts` (`sendResendEmail`). Sending domain comes from `AGENT_DOMAIN` (prod: `glass.claritylabs.inc`, dev: `dev.claritylabs.inc`).
+- Email: outbound + inbound via Resend (no IMAP, no Gmail OAuth). All outbound Resend calls go through `convex/lib/resend.ts` (`sendResendEmail`). Sending domain comes from `AGENT_DOMAIN` (prod: `glass.claritylabs.inc`, dev: `dev.claritylabs.inc`). Inbound webhook at `POST /resend-inbound`.
 
 ## Current Model Routing
 
@@ -41,118 +41,40 @@ Model routing lives in [convex/lib/models.ts](convex/lib/models.ts).
 - `chat`, `chat_with_tools`, `extraction` → `gpt-5.4-mini`
 - `email_draft`, `email_reply`, `analysis` → `kimi-k2.5` (256K context)
 - `classification`, `summary` → `claude-haiku-4-5-20251001`
-- `triage`, `email_extraction` → `deepseek-chat`
+
+Usage notes:
+
+- The email agent (`handleInboundEmail`) uses `getModel("chat")` with tool calling.
+- `orgMemory` extraction from website enrichment and post-email summaries uses Haiku (`getModel("summary")`).
 
 Fallback behavior:
 
 - `getModel()` falls back to Claude Haiku if a provider is unavailable.
 - `generateTextWithFallback()` and `generateStructuredWithFallback()` retry failed calls on Claude Haiku unless the original model already was Haiku.
 
-## Org Intelligence Pipeline
+## Org Memory
 
-The org intelligence system is a unified, continuously-growing knowledge base about each organization. All intelligence flows into the `orgIntelligence` table.
+`orgMemory` is the single per-org knowledge store. It replaces the old `orgIntelligence`, `businessContext`, dream consolidation, and proactive analysis pipelines.
 
-### Schema: `orgIntelligence`
+### Schema: `orgMemory`
 
 Each entry has:
-- `content` — free-text fact string
-- `category` — `company_info`, `operations`, `financial`, `coverage`, `risk`, `relationship`, `observation`
-- `confidence` — `confirmed`, `inferred`, `stale`
-- `source` — `email`, `application`, `chat`, `extraction`, `dream`, `manual`
-- `sourceRef` — ID of the originating record (email, thread, policy, etc.)
-- `sourceLabel` — human-readable source name ("2025 P&L Statement", "GL Policy #ABC")
-- `asOfDate` — when the fact was true (ISO date string, e.g. "2025-12-31")
-- `documentDate` — when the source document was created/effective
-- `embedding` — 1536-dim vector (text-embedding-3-small)
-- `supersededBy` — links to a newer entry when replaced
+- `orgId`
+- `kind` — `fact` | `preference` | `risk_note` | `observation`
+- `content` — free-text string
+- `source` — `extraction` | `analysis` | `chat` | `email`
+- `sourceRef` — optional ID of originating record
+- `createdAt`
 
-### Intelligence Sources (all write to `orgIntelligence`)
+No embeddings, no supersession graph, no category taxonomy. Retrieval is list-based and filtered by `kind` / `source`.
 
-| Source | File | Trigger | Details |
-|--------|------|---------|---------|
-| Email scanning | `convex/actions/extractEmailIntelligence.ts` | Daily cron | Two-agent parallel extraction (business + risk). Temporal awareness in prompts. |
-| Document upload | `convex/actions/extractFromDocument.ts` | User upload | 3-step pipeline: classify document type → structured KV extraction (financial) or 2-agent (general) → store with temporal metadata. `confidence: "confirmed"`. |
-| Chat threads | `convex/actions/extractChatIntelligence.ts` | After each agent response | Lightweight post-chat extraction of facts the USER revealed. Scheduled non-blocking. |
-| Chat `save_note` tool | `convex/actions/processThreadChat.ts` (buildTools) | Agent tool call | Writes to orgIntelligence with embeddings (not the old orgMemory table). |
-| Policy extraction | `convex/actions/extractPolicy.ts` | After PDF extraction | Synthesizes coverage, premium, carrier, insured info into intelligence entries. |
-| Proactive analysis | `convex/actions/proactiveAnalysis.ts` | After policy extraction | Coverage gaps, recommendations, strengths → orgIntelligence (redirected from old orgMemory). |
-| Application filling | `convex/actions/processApplication.ts` | During app processing | Auto-filled and user-answered fields saved with `sourceLabel`. |
-| Dream consolidation | `convex/actions/dreamConsolidation.ts` | Weekly cron + manual trigger | Dedup, prune noise, consolidate, identify gaps (see below). |
+### Writers
 
-### Dream Consolidation (Fan-Out Architecture)
-
-Weekly automated intelligence cleanup. Runs as a 3-step fan-out:
-
-1. **`dreamForOrg`** (coordinator): Creates a streaming log entry (`status: "running"`), groups entries by category, schedules one `dreamCategory` action per category, then schedules `dreamFinalize` after a delay.
-
-2. **`dreamCategory`** (per-category worker): Each runs as its own Convex action with independent timeout. Sub-batches at 80 entries per LLM call for large categories. Operations:
-   - Delete duplicates, near-duplicates, outdated entries
-   - Delete low-value noise (receipts, individual transactions, routine vendor mentions)
-   - Consolidate related facts into richer entries
-   - Stream progress + LLM reasoning into the shared `dreamLogs` entry in real time
-
-3. **`dreamFinalize`**: Runs after category workers complete. Does cross-category gap analysis and generates an org intelligence summary.
-
-Key files:
-- `convex/actions/dreamConsolidation.ts` — all three steps
-- `convex/dreamLogs.ts` — streaming log CRUD (insert, update, get, list)
-- `components/dream-log.tsx` — real-time log display in Activity tab
-
-Logs are displayed in the Activity tab at `/connections` with real-time streaming via Convex reactivity. Each log shows: status (running/success/error), stats (reviewed/deleted/consolidated/gaps), progress lines, LLM reasoning (indigo-styled), and duration.
-
-Manual trigger: `api.actions.dreamConsolidation.consolidate` (public action).
-
-### Unified Retrieval
-
-`buildIntelligenceContext()` in `convex/lib/agentPrompts.ts` does vector search over `orgIntelligence` and:
-- Accepts optional `excludePolicyIds` to deduplicate against policy document chunks already in context
-- Includes temporal metadata tags `[source | as of YYYY-MM-DD | sourceLabel]` in the prompt output
-- Searches 15 entries (up from 10)
-
-Both `processThreadChat.ts` and `mcpChat.ts` pass `relevantPolicyIds` to avoid duplicating policy-derived intelligence.
-
-## Integrations (Merge.dev) — ACTIVE
-
-Glass syncs financial and HR data from client-connected systems via [Merge.dev](https://merge.dev).
-
-### Architecture
-
-- **`convex/lib/mergeClient.ts`** — `MergeClient` interface + real SDK implementation (backed by `@mergeapi/merge-node-client`) with a stub fallback.
-- **`convex/actions/mergeSync.ts`** — Sync pipeline actions: `runInitialSync`, `runScheduledSync`, `runWebhookDrivenSync`, `syncMetric`, `scheduledSyncAll`.
-- **`convex/integrations.ts`** — Webhook dispatcher (`processWebhook`). Verifies HMAC-SHA256 signature, routes events to connection/sync mutations.
-- **`convex/lib/secrets.ts`** — AES-256-GCM encryption for Merge `account_token` values stored at rest in `integrationConnections.mergeAccountTokenEncrypted`.
-
-### Environment Variables
-
-| Variable | Purpose |
-|----------|---------|
-| `MERGE_API_KEY` | Merge API key (dev/sandbox or production). When unset, the stub client is used automatically. |
-| `MERGE_WEBHOOK_SECRET` | HMAC-SHA256 secret for verifying `X-Merge-Webhook-Signature` on inbound webhooks. |
-| `INTEGRATION_TOKEN_ENC_KEY` | Base64-encoded 32-byte AES-256 key for encrypting Merge account tokens at rest. Generate with `openssl rand -base64 32`. If unset, a dev key (all-zeros) is used with a warning — **do not use the dev key in production**. |
-
-### Stub Fallback
-
-`getMergeClient()` reads `MERGE_API_KEY` at call time (not module load). When the variable is absent, `stubMergeClient` is returned automatically. CI and dev environments without credentials continue to work using deterministic fake data.
-
-### Webhook Signature Verification
-
-`verifyMergeWebhookSignature(rawBody, signature)` performs HMAC-SHA256 verification. If `MERGE_WEBHOOK_SECRET` is unset, a warning is logged and verification is skipped (to support local dev). In production the secret must be set.
-
-### Metric Keys
-
-Normalized `metricKey` values stored in `integrationData`:
-
-- `accounting.annual_revenue`, `accounting.prior_year_revenue`, `accounting.company_legal_name`, `accounting.company_ein`
-- `hris.headcount`, `hris.company_address`
-- `payroll.total_payroll_ytd`, `payroll.total_payroll_trailing_12`
-
-### Setting up credentials
-
-```sh
-npx convex env set MERGE_API_KEY <your-key>
-npx convex env set MERGE_WEBHOOK_SECRET <your-secret>
-npx convex env set INTEGRATION_TOKEN_ENC_KEY $(openssl rand -base64 32)
-```
+| Source | Where | Trigger |
+|--------|-------|---------|
+| `save_note` chat tool | `convex/actions/processThreadChat.ts` (buildTools) | Agent tool call during chat |
+| Website enrichment | `convex/actions/extractCompanyInfo.ts` | Client onboarding step 2 + manual refresh |
+| Email agent post-reply summary | `convex/actions/handleInboundEmail.ts` | After a tool-using email reply resolves |
 
 ## cl-sdk Integration
 
@@ -178,11 +100,9 @@ Glass translates those into AI SDK multipart message content in `sdkCallbacks.ts
 - PDFs become `{ type: "file", data, mediaType: "application/pdf" }`
 - images become `{ type: "image", image, mediaType }`
 
-Important details:
+Notes:
 
-- The `providerOptions.images` items from `cl-sdk` do not carry a `type` field.
-- The AI SDK message parts created from them must carry `type: "image"`.
-- The application pipeline (`createApplicationPipeline`) embeds raw base64 PDF content directly in the prompt text instead of using `providerOptions.pdfBase64`. `sdkCallbacks.ts` detects this (via the `%PDF` magic bytes in base64: `JVBER`) and converts it to a proper file content part so the model can read the PDF.
+- The `providerOptions.images` items from `cl-sdk` do not carry a `type` field; Glass adds `type: "image"` when building AI SDK parts.
 
 ### Token Limits
 
@@ -191,17 +111,15 @@ Glass preserves a higher extraction token allowance for exclusion-heavy document
 - Default token limits come from `cl-sdk`.
 - If the prompt matches the exclusions extractor, Glass raises the effective max token count to `8192`.
 
-## Extraction Flow
+## Policy Extraction
 
-Primary extraction entrypoints:
+Two entrypoints, both PDF-only:
 
-- [convex/actions/extractPolicy.ts](convex/actions/extractPolicy.ts) — email-attached PDFs
-- [convex/actions/extractFromUpload.ts](convex/actions/extractFromUpload.ts) — user-uploaded PDFs
-- [convex/actions/extractFromDocument.ts](convex/actions/extractFromDocument.ts) — non-PDF documents (CSV, DOCX, etc.) with classification pipeline
-- [convex/actions/reExtractFromFile.ts](convex/actions/reExtractFromFile.ts) — re-extraction
-- [convex/actions/retryExtraction.ts](convex/actions/retryExtraction.ts) — retry failed extractions
+- [convex/actions/extractFromUpload.ts](convex/actions/extractFromUpload.ts) — `extractFromUpload` (public action) for direct user uploads; `extractFromUploadInternal` (internal action) for the email agent.
+- [convex/actions/extractPolicy.ts](convex/actions/extractPolicy.ts) — internal helpers used by the email agent via the `extract_policy_attachment` tool.
+- [convex/actions/reExtractFromFile.ts](convex/actions/reExtractFromFile.ts) / [retryExtraction.ts](convex/actions/retryExtraction.ts) — re-run and retry.
 
-### PDF Extraction Flow
+### Flow
 
 1. Fetch or receive a PDF.
 2. Store the raw PDF in Convex file storage.
@@ -210,31 +128,20 @@ Primary extraction entrypoints:
 5. Persist the extracted document and metadata.
 6. Chunk the document and embed each chunk with `text-embedding-3-small`.
 7. Store chunks in `documentChunks` for semantic retrieval.
-8. Synthesize key policy facts into `orgIntelligence` (coverage, premium, carrier, insured).
-9. Schedule proactive analysis and renewal comparison jobs.
-
-### Document (Non-PDF) Extraction Flow
-
-1. Read file as text (truncated to 16K chars).
-2. **Classify** document type using `getModel("summary")`: `financial_statement`, `loss_run`, `payroll_schedule`, `fleet_list`, `certificate`, `general`. Also extracts `documentDate` and `asOfDate`.
-3. **Extract** based on type:
-   - Financial/payroll/loss run → structured KV extraction with temporal context
-   - All others → standard two-agent extraction (business + risk)
-4. **Store** with `confidence: "confirmed"`, temporal metadata, and dedup via vector similarity.
 
 ## Retrieval And Agent Context
 
-Glass uses three vector-backed stores:
+Glass uses two vector-backed stores plus one list-based store:
 
-- `documentChunks` — extracted policy/quote content chunks
-- `conversationTurns` — cross-thread conversation memory
-- `orgIntelligence` — business intelligence facts with temporal metadata
+- `documentChunks` — extracted policy/quote content chunks (vector)
+- `conversationTurns` — cross-thread conversation memory (vector)
+- `orgMemory` — business facts/preferences/risk notes/observations (list, filtered by kind/source)
 
-[agentPrompts.ts](convex/lib/agentPrompts.ts) builds agent context like this:
+[agentPrompts.ts](convex/lib/agentPrompts.ts) builds agent context:
 
-- `buildDocumentContext()` — if chunks exist, embed query and search `documentChunks`; otherwise fall back to keyword-scored document summary
-- `buildIntelligenceContext()` — vector search over `orgIntelligence`, deduplicated against policy IDs already in document context, with temporal metadata tags
-- `buildConversationMemoryContext()` — vector search over `conversationTurns` for cross-thread memory
+- `buildDocumentContext()` — if chunks exist, embed query and search `documentChunks`; otherwise fall back to keyword-scored document summary.
+- `buildOrgMemoryContext()` — lists recent `orgMemory` entries, grouped by kind.
+- `buildConversationMemoryContext()` — vector search over `conversationTurns` for cross-thread memory.
 
 ## Convex Patterns
 
@@ -246,93 +153,54 @@ Auth pattern:
 
 Storage and retrieval pattern:
 
-- `policies.document` stores the structured extracted document
-- `documentChunks` stores semantic chunks plus embeddings
-- `orgIntelligence` stores all business intelligence (replaces old `orgMemory` and `orgBusinessContext`)
-- `dreamLogs` stores dream consolidation run history with streaming progress
+- `policies.document` stores the structured extracted document.
+- `documentChunks` stores semantic chunks plus embeddings.
+- `orgMemory` stores all per-org knowledge.
 
 Important: `git push` only deploys the Next.js frontend via Vercel. Convex functions require a separate `npx convex dev --once` (dev) or `npx convex deploy --yes` (prod) to go live.
-
-Email scan pattern:
-
-- Scan windows should anchor to the newest stored email record for that connection, not only `lastScanAt`.
-- Glass intentionally rewinds the inferred scan anchor slightly and relies on `emails.messageId` deduplication so daily/manual scans do not miss boundary emails.
-- Progress counts should reflect newly inserted emails, not all provider messages returned by the upstream inbox query.
-- Classification is the only stage that should set `scanProgress.phase = "classifying"`; scan actions should avoid optimistic classifying state before the classifier actually starts.
-- Google OAuth uses server-managed state with client-side initialization: authenticated client code writes `{ userId, orgId, returnTo, sinceDate }` into `oauthStates`, the Next.js start route only sets the OAuth state cookie + redirects to Google, and the callback consumes the opaque state token instead of trusting a client-supplied `orgId`.
 
 ## Main Product Flows
 
 ### Onboarding
 
-Onboarding is role-specific:
+Onboarding is role-specific.
 
-1. `/onboarding` is now a router-only entrypoint.
-2. Broker users (or users without an org) are sent to `/onboarding/broker`.
-3. Client users are sent to `/onboarding/passport`.
+- `/onboarding` is a router-only entrypoint.
+- Broker users (or users without an org) are sent to `/onboarding/broker` (unchanged from v0.1.x).
+- Client users are sent to `/onboarding/setup`, a 4-step wizard:
+  1. **Identity** — name + role.
+  2. **Org** — organization name + website; on continue, `extractCompanyInfo` runs server-side enrichment from the website and writes `orgMemory` facts.
+  3. **Policies** — list current policies; user can upload PDFs (extracted via `extractFromUpload`) or forward them to the org's inbound address.
+  4. **Finish** — intro to the chat assistant + MCP connection info.
 
-Important onboarding behavior:
+Passport onboarding (`/onboarding/passport/*`) has been removed.
 
-- The old generic onboarding wizard at `/onboarding` is deprecated and no longer used as a form flow.
-- Client invite acceptance creates the client org, then onboarding continues in the passport wizard.
-- Passport onboarding completion now calls `users.completeOnboarding` so returning logins do not re-enter onboarding.
-- Passport now starts with a welcome step, then three context-first steps before passport questions:
-  1. `/onboarding/passport/welcome` (intro to the passport and what to expect)
-  2. `/onboarding/passport/context` (website + document uploads)
-  3. `/onboarding/passport/email` (inbox connections)
-  4. `/onboarding/passport/integrations` (Merge/integration connections)
-- A lightweight autofill runner executes on each passport page load/reload in `components/passport/passport-autofill-runner.tsx` and re-attempts website extraction when a website is present.
+### Email Agent (Inbound)
 
-### Email Scan To Policy
+Inbound email arrives at `POST /resend-inbound` and is handled by `convex/actions/handleInboundEmail.ts`.
 
-1. Scan IMAP/Gmail inboxes (daily cron + manual).
-2. Triage emails (skip newsletters, OTP, automated notifications).
-3. Extract intelligence from substantive emails (two-agent: business + risk) with temporal awareness.
-4. Extract PDFs through `cl-sdk` for policy/quote documents.
-5. Store documents, chunks, embeddings, analysis, and intelligence.
+- No hardcoded intent routing. The agent runs `streamText` with `getModel("chat")` and a tool set:
+  - `lookup_policy`
+  - `lookup_policy_section`
+  - `compare_coverages`
+  - `save_note` — writes to `orgMemory`
+  - `generate_coi`
+  - `extract_policy_attachment` — extracts PDF attachments via `extractFromUploadInternal`
+- After a reply is produced, a Haiku summarization pass writes a `source: "email"` observation to `orgMemory`.
 
-### Agent Q&A
+### Agent Q&A (Chat)
 
-1. Load org context, policies, quotes, and intelligence.
-2. Build retrieval-backed document context + deduplicated intelligence context.
+1. Load org context, policies, and `orgMemory`.
+2. Build retrieval-backed document context + orgMemory context + conversation memory.
 3. If the user message has attachments (images, PDFs, text), read them from Convex storage and include as AI SDK multipart content parts.
-4. Run chat model via `streamText` with tools (`lookup_policy`, `lookup_policy_section`, `compare_coverages`, `check_application_status`, `save_note`, `generate_coi`).
+4. Run chat model via `streamText` with tools: `lookup_policy`, `lookup_policy_section`, `compare_coverages`, `save_note`, `generate_coi`.
 5. Persist conversation state.
-6. Schedule post-response intelligence extraction (captures new facts the user revealed).
 
-### Application Assistance
+## UI
 
-Application workflows live mainly in [convex/actions/processApplication.ts](convex/actions/processApplication.ts).
-
-Users can also start an application directly from the `/applications` page by uploading a PDF. The upload flow stores the file, validates that it looks like an application form, creates an application session + legacy conversation, and schedules the same `startApplicationSession` pipeline used by inbound email.
-
-The pipeline:
-
-1. Detect application forms from inbound email or uploads.
-2. Extract fillable fields.
-3. Auto-fill from intelligence, profile data, policies, and prior answers.
-4. Ask for missing information in batches.
-5. Parse replies, update answers, and save non-transient business facts to `orgIntelligence` with `sourceLabel`.
-6. Generate confirmation output and optionally a filled PDF.
-
-Digital-first application behavior:
-
-- `regroupAndOrder` (`convex/actions/applicationAuthoring.ts`) now runs an LLM-assisted repeat/dependency inference pass after prompt rewrites.
-- The pass identifies ordinal/duplicated paper-form questions and folds them into one canonical repeatable question with `applicationQuestions.repeating` metadata.
-- Repeatables can depend on a count question via `repeating.dependsOnQuestionId`.
-- Client fill UI uses `applicationAnswers.rowKey` (`<collectionKey>:<index>`) for repeated rows and enforces required answers per expected row on submit.
-- Client application pages (`/applications/[applicationId]` and `/applications/[applicationId]/groups/[groupId]`) use a passport-style auth shell (`components/applications/client-application-shell.tsx`) instead of `AppShell`.
-
-## UI: Intelligence Page
-
-The Intelligence tab at `/connections` → "Intelligence" has two sub-tabs:
-
-- **Org Intelligence** — intelligence entries grouped by month → day (newest first), with inline editing (pencil icon), collapsible date sections, and 3D vector visualization
-- **Policy Extractions** — policy document chunk index with per-policy breakdown and reindex buttons (moved from Settings)
-
-The Activity tab shows:
-- **Dream Consolidation** — real-time streaming logs with progress, LLM reasoning, and stats
-- **Extraction History** — policy extraction log with status and re-extract buttons
+- `/policies` — list, detail, upload, re-extract.
+- `/chat` — threaded assistant.
+- `/settings` — org settings, branding, members, and an **Integrations** section rendered as a coming-soon grid. The Merge.dev backend and all integration sync tables/actions have been removed; only the static grid remains.
 
 ## MCP
 
@@ -342,13 +210,18 @@ Glass exposes MCP functionality for remote and local AI tools.
 - Local MCP support lives under [mcp-server/](mcp-server/).
 - MCP discovery: `GET /.well-known/mcp.json`
 
-### Tools
+### Tools (trimmed in v0.2.0)
 
-**Legacy (client-org scoped):** `get_org_info`, `get_business_context`, `update_business_context`, `ask_glass` (was `ask_glass` — alias kept), `list_policies`, `get_policy`, `search_policies`, `list_quotes`, `get_quote`, `list_applications`, `get_application`, `list_threads`, `get_thread_messages`, `get_policy_stats`
+- `list_policies`, `get_policy`
+- `list_quotes`, `get_quote`
+- `list_threads`, `get_thread_messages`
+- `get_org_info`
+- `ask_glass`
+- `list_clients`, `get_client` (broker)
+- `list_broker_activity` (broker)
+- `list_my_policies` (client)
 
-**Broker tools:** `list_clients`, `get_client`, `list_applications_for_client`, `create_application_draft`, `add_application_question`, `send_application`, `raise_passport_flag`, `list_broker_activity`
-
-**Client tools:** `get_passport`, `update_passport`, `answer_application_question`, `submit_application_section`, `list_my_policies`
+Application, passport, business-context, and integration tools are gone.
 
 All MCP tool invocations require a Bearer token (OAuth or API key) and resolve org from session metadata. Write tools require a token with `write` scope.
 
@@ -358,7 +231,7 @@ Versioned REST API under `/api/v1/*`. All routes require:
 - `Authorization: Bearer <token>` (OAuth token from `/oauth/token`)
 - `X-Org-Id: <orgId>` header
 
-Scopes: `read` (default for legacy tokens) and `write`. Write endpoints require a token with `write` scope.
+Scopes: `read` (default) and `write`. Write endpoints require a `write` token.
 
 Error shape: `{ "error": { "code": "...", "message": "...", "request_id": "..." } }`
 
@@ -370,18 +243,15 @@ OpenAPI spec: `GET /api/v1/openapi.json`
 
 ### Resources
 
-- `GET /api/v1/me` — current user + accessible orgs
-- `GET /api/v1/org` — current org (scoped by X-Org-Id)
-- `GET /api/v1/clients` — broker's clients (broker org only)
-- `GET /api/v1/clients/:id` — client detail
-- `POST /api/v1/clients/invitations` — create invite (write)
-- `GET|PATCH /api/v1/passport` — passport read/edit
-- `GET|POST /api/v1/applications` + `GET /api/v1/applications/:id`
-- `GET /api/v1/policies` + `GET /api/v1/policies/:id`
-- `GET /api/v1/notifications` — list notifications
-- `GET /api/v1/activity` — activity feed
+- `GET /api/v1/me`
+- `GET /api/v1/org`
+- `GET /api/v1/clients` / `GET /api/v1/clients/:id` (broker)
+- `POST /api/v1/clients/invitations` (write)
+- `GET /api/v1/policies` / `GET /api/v1/policies/:id`
+- `GET /api/v1/notifications`
+- `GET /api/v1/activity`
 
-Write requests are audit-logged to `apiAuditLog` table.
+Write requests are audit-logged to `apiAuditLog`.
 
 ## Documentation Maintenance
 
