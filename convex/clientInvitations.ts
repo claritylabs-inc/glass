@@ -356,7 +356,7 @@ export const sendDraftInvite = action({
       orgId: draft.brokerOrgId,
     });
     const brokerName = brokerOrg?.name ?? "Your broker";
-    const siteUrl = process.env.SITE_URL ?? "https://glass.claritylabs.dev";
+    const siteUrl = process.env.SITE_URL ?? "https://glass.claritylabs.inc";
     const inviteUrl = `${siteUrl}/invite/${rawToken}`;
     const recipient = draft.primaryContactName
       ? `${draft.primaryContactName} <${draft.primaryContactEmail}>`

@@ -25,7 +25,7 @@ export type BrandingContext = {
 
 const DEFAULT_LOGO_URL = "/glass-logo-email.jpg";
 const DEFAULT_BRAND_COLOR = "#2563EB";
-const DEFAULT_SUPPORT_URL = "https://glass.claritylabs.dev/support";
+const DEFAULT_SUPPORT_URL = "https://glass.claritylabs.inc/support";
 
 /** Returns the default Glass branding context. */
 export function getDefaultBranding(): BrandingContext {

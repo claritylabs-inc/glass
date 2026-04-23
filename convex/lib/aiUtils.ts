@@ -35,7 +35,7 @@ export function markdownToHtml(text: string): string {
 /* ── Email signature ── */
 
 export function buildSignature(): { text: string; html: string } {
-  const siteUrl = process.env.SITE_URL ?? "https://glass.claritylabs.dev";
+  const siteUrl = process.env.SITE_URL ?? "https://glass.claritylabs.inc";
   const text = "\n\nsent with Glass";
   const html = `<p style="font-size:12px;color:#999;margin:24px 0 0"><a href="${siteUrl}" style="color:#999;text-decoration:none">sent with Glass</a></p>`;
   return { text, html };

@@ -145,7 +145,7 @@ function getAgentFromName(broker?: BrokerBranding): string {
 }
 
 function buildSignature(agentEmail: string, broker?: BrokerBranding): { text: string; html: string } {
-  const poweredByUrl = process.env.SITE_URL ?? "https://glass.claritylabs.dev";
+  const poweredByUrl = process.env.SITE_URL ?? "https://glass.claritylabs.inc";
   const hasBroker = !!(broker?.name || broker?.agentDisplayName);
   const agentName = getAgentFromName(broker);
 

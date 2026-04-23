@@ -1,7 +1,9 @@
+// Note: Gmail's image proxy strips data: URIs, so email logos must be absolute
+// URLs pointing to a publicly-reachable host serving the asset (e.g. SITE_URL).
 import type { BrandingContext } from "./branding";
 import { getDefaultBranding } from "./branding";
 
-const SITE_URL = process.env.SITE_URL ?? "https://glass.claritylabs.dev";
+const SITE_URL = process.env.SITE_URL ?? "https://glass.claritylabs.inc";
 
 /** Resolve a logo URL to an absolute URL usable from an email client. */
 function absoluteLogoUrl(logoUrl: string, siteUrl: string = SITE_URL): string {
@@ -14,10 +16,10 @@ function absoluteLogoUrl(logoUrl: string, siteUrl: string = SITE_URL): string {
 /** Brand name + mark lockup for the email header. Big squircle logo mirrors the in-app sidebar brand. */
 export function buildEmailLogoHtml(branding: BrandingContext = getDefaultBranding(), siteUrl: string = SITE_URL): string {
   const name = branding.brandName;
+  const isDefaultBrand = name === "Glass";
   const src = absoluteLogoUrl(branding.logoUrl, siteUrl);
   const mark = `<img src="${src}" alt="" width="28" height="28" style="display:inline-block;vertical-align:middle;width:28px;height:28px;border-radius:7px;margin-right:10px;object-fit:cover;border:0;" />`;
-  const isDefault = name === "Glass";
-  const suffix = isDefault
+  const suffix = isDefaultBrand
     ? `<span style="font-weight:400;color:#6b7280;vertical-align:middle;margin-left:6px;">from Clarity Labs</span>`
     : "";
   return `
