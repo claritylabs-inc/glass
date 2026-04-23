@@ -37,10 +37,10 @@ const UPCOMING: {
     logo: "https://cdn.simpleicons.org/github/181717",
   },
   {
-    key: "ramp",
-    label: "Ramp",
-    description: "Spend + vendor risk signals",
-    logo: "https://cdn.simpleicons.org/ramp/000000",
+    key: "datadog",
+    label: "Datadog",
+    description: "Uptime + incident signals for cyber",
+    logo: "https://cdn.simpleicons.org/datadog/632CA6",
   },
 ];
 
