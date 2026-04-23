@@ -28,7 +28,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { usePageContext } from "@/hooks/use-page-context";
 import { useOnboardingCache } from "@/hooks/use-onboarding-cache";
 import { useCurrentOrg } from "@/hooks/use-current-org";
-import { Users, Activity } from "lucide-react";
+import { Users, Activity, UserPlus } from "lucide-react";
 import { CLIENT_SETTINGS_SECTIONS, BROKER_SETTINGS_SECTIONS } from "@/lib/settings-sections";
 import { LogoIcon } from "@/components/ui/logo-icon";
 import { PillButton } from "@/components/ui/pill-button";
@@ -775,6 +775,50 @@ function SidebarBrokerContact({
   const agentEmail = broker.agentHandle ? `${broker.agentHandle}@${AGENT_DOMAIN}` : null;
   const brandColor = broker.brandingColor ?? "#1e293b";
   const initial = broker.name.charAt(0).toUpperCase();
+  const agentDisplayName = `${broker.name} Agent`;
+
+  const handleSaveContact = async () => {
+    if (!agentEmail) return;
+    let photoEntry = "";
+    if (broker.iconUrl) {
+      try {
+        const res = await fetch(broker.iconUrl);
+        const blob = await res.blob();
+        const base64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const s = reader.result as string;
+            resolve(s.split(",")[1] ?? "");
+          };
+          reader.onerror = () => reject(reader.error);
+          reader.readAsDataURL(blob);
+        });
+        const mime = blob.type || "image/png";
+        const type = mime.split("/")[1]?.toUpperCase() ?? "PNG";
+        if (base64) photoEntry = `\nPHOTO;ENCODING=b;TYPE=${type}:${base64}`;
+      } catch {
+        // best-effort — omit photo on fetch failure
+      }
+    }
+    const vcard =
+      "BEGIN:VCARD\n" +
+      "VERSION:3.0\n" +
+      `FN:${agentDisplayName}\n` +
+      `N:Agent;${broker.name};;;\n` +
+      `ORG:${broker.name}\n` +
+      `EMAIL;TYPE=INTERNET:${agentEmail}` +
+      photoEntry +
+      "\nEND:VCARD\n";
+    const blob = new Blob([vcard], { type: "text/vcard;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${agentDisplayName}.vcf`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
   return (
     <div className="border-t border-foreground/6 px-3 py-3">
       <p className="text-[11px] font-medium text-muted-foreground/50 px-1 pb-2">
@@ -825,6 +869,26 @@ function SidebarBrokerContact({
             ) : null}
           </div>
         )}
+        {agentEmail ? (
+          <div className="mt-2.5 flex items-center gap-1.5">
+            <a
+              href={`mailto:${agentEmail}`}
+              className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-md border border-foreground/6 bg-background px-2 py-1.5 text-label-sm text-foreground hover:bg-foreground/[0.03] transition-colors"
+            >
+              <Mail className="h-3 w-3" />
+              Email agent
+            </a>
+            <button
+              type="button"
+              onClick={handleSaveContact}
+              className="inline-flex items-center justify-center gap-1.5 rounded-md border border-foreground/6 bg-background px-2 py-1.5 text-label-sm text-foreground hover:bg-foreground/[0.03] transition-colors"
+              title="Save as contact"
+              aria-label="Save as contact"
+            >
+              <UserPlus className="h-3 w-3" />
+            </button>
+          </div>
+        ) : null}
       </div>
     </div>
   );
