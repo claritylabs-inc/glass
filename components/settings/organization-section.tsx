@@ -340,9 +340,9 @@ export function OrganizationSection() {
                   Workspace link
                 </label>
                 <div className="flex items-stretch gap-0">
-                  <div className="flex items-center rounded-l-lg border border-r-0 border-foreground/8 bg-foreground/[0.02] px-3 py-2 text-label-sm text-muted-foreground/60 select-none whitespace-nowrap">
+                  <span className="inline-flex items-center rounded-l-lg border border-r-0 border-foreground/8 bg-foreground/[0.03] px-3 text-body-sm text-muted-foreground select-none whitespace-nowrap">
                     {WORKSPACE_DOMAIN}/
-                  </div>
+                  </span>
                   <input
                     type="text"
                     value={slug}
