@@ -130,22 +130,43 @@ function extractForwardedSender(body: string): string | null {
   return null;
 }
 
-function buildSignature(agentEmail: string, companyName?: string): { text: string; html: string } {
-  const siteUrl = process.env.SITE_URL ?? "https://glass.claritylabs.dev";
-  const linkText = `Sent by Glass${companyName ? ` from ${companyName}` : ""}`;
+interface BrokerBranding {
+  name?: string;
+  logoUrl?: string | null;
+  agentDisplayName?: string | null;
+}
+
+function getAgentFromName(broker?: BrokerBranding): string {
+  if (broker?.name || broker?.agentDisplayName) {
+    const base = broker.agentDisplayName || broker.name;
+    return `${base} Agent`;
+  }
+  return "Glass from Clarity Labs";
+}
+
+function buildSignature(agentEmail: string, broker?: BrokerBranding): { text: string; html: string } {
+  const poweredByUrl = process.env.SITE_URL ?? "https://glass.claritylabs.dev";
+  const hasBroker = !!(broker?.name || broker?.agentDisplayName);
+  const agentName = getAgentFromName(broker);
+
   const text = [
     "",
     "—",
-    `Glass${companyName ? ` for ${companyName}` : ""}`,
+    agentName,
     agentEmail,
-    `${linkText} - ${siteUrl}`,
+    "",
+    `powered by Glass from Clarity Labs — ${poweredByUrl}`,
   ].join("\n");
+
+  const logoHtml = hasBroker && broker?.logoUrl
+    ? `<img src="${broker.logoUrl}" alt="" width="20" height="20" style="display:inline-block;vertical-align:middle;width:20px;height:20px;border-radius:4px;margin-right:8px;object-fit:cover;border:0;" />`
+    : `<span style="color:#A0D2FA;font-size:15px;font-family:'Segoe UI Symbol','Apple Symbols',sans-serif;margin-right:6px">&#x2733;&#xFE0E;</span>`;
 
   const html = [
     `<br><p style="color:#999;font-size:13px;margin:0">—</p>`,
-    `<p style="font-size:13px;margin:4px 0 2px"><span style="color:#A0D2FA;font-size:13px;font-family:'Segoe UI Symbol','Apple Symbols',sans-serif">&#x2733;&#xFE0E;</span> <strong>Glass${companyName ? ` for ${companyName}` : ""}</strong></p>`,
+    `<p style="font-size:13px;margin:4px 0 2px">${logoHtml}<strong>${agentName}</strong></p>`,
     `<p style="font-size:12px;color:#999;margin:0">${agentEmail}</p>`,
-    `<p style="font-size:12px;margin:12px 0 0"><a href="${siteUrl}" style="color:#A0D2FA;text-decoration:none">${linkText}</a></p>`,
+    `<p style="font-size:12px;margin:12px 0 0"><a href="${poweredByUrl}" style="color:#A0D2FA;text-decoration:none">powered by Glass from Clarity Labs</a></p>`,
   ].join("\n");
 
   return { text, html };
@@ -337,6 +358,7 @@ export const processInbound = internalAction({
       );
     }
 
+
     // Get all org members for domain detection and primary contact resolution
     const orgMembers = await ctx.runQuery(internal.orgs.getMembersInternal, { orgId });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -373,6 +395,17 @@ export const processInbound = internalAction({
     // The actual recipient may include +threadSuffix, so also match that
     const agentAddressWithSuffix = threadSuffix ? `${handle}+${threadSuffix}@${getAgentDomain()}` : null;
     const isAgentAddr = (addr: string) => addr === agentAddress || addr === agentAddressWithSuffix;
+
+    // Resolve broker branding once — used for outbound from-name and signature.
+    const brokerLogoUrl = brokerOrg.iconStorageId
+      ? await ctx.storage.getUrl(brokerOrg.iconStorageId)
+      : null;
+    const brokerBranding: BrokerBranding = {
+      name: brokerOrg.name,
+      logoUrl: brokerLogoUrl,
+      agentDisplayName: brokerOrg.agentDisplayName,
+    };
+    const fromHeader = `${getAgentFromName(brokerBranding)} <${agentAddress}>`;
     const agentInTo = toAddresses.some(isAgentAddr);
     const agentInCc = ccAddresses.some(isAgentAddr);
     const otherToRecipients = toAddresses.filter((a) => !isAgentAddr(a));
@@ -603,7 +636,7 @@ export const processInbound = internalAction({
           `Please reply to the original sender directly if a response is needed. The agent has not sent any reply.`,
         ].join("\n");
 
-        const signature = buildSignature(agentAddress, org.name);
+        const signature = buildSignature(agentAddress, brokerBranding);
         const fullText = notificationBody + signature.text;
 
         const autoLink = (text: string) =>
@@ -617,7 +650,7 @@ export const processInbound = internalAction({
         const notifSubject = `[Glass] Help needed: ${subject}`;
 
         const emailPayload: Record<string, unknown> = {
-          from: `Glass <${agentAddress}>`,
+          from: fromHeader,
           to: notifyEmail,
           subject: notifSubject,
           text: fullText,
@@ -1070,7 +1103,7 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
             return r;
           };
 
-          const sig = buildSignature(agentAddress, org.name);
+          const sig = buildSignature(agentAddress, brokerBranding);
           const plainText = stripMd(emailBody) + sig.text;
           const htmlBody = emailBody
             .split("\n\n")
@@ -1083,7 +1116,7 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
           const sendCc = [fromEmail]; // CC the internal user who gave the instruction
 
           const sendPayload: Record<string, unknown> = {
-            from: `Glass <${agentAddress}>`,
+            from: fromHeader,
             to: thirdPartyEmail,
             cc: sendCc,
             subject: replySub,
@@ -1203,7 +1236,7 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
         return result;
       };
       const plainTextBody = stripMarkdown(responseBody);
-      const signature = buildSignature(agentAddress, org.name);
+      const signature = buildSignature(agentAddress, brokerBranding);
       const fullReplyText = plainTextBody + signature.text;
 
       const linkStyle = 'style="color:#2563eb;text-decoration:underline"';
@@ -1261,7 +1294,7 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
         : `Re: ${cleanSubject}`;
 
       const emailPayload: Record<string, unknown> = {
-        from: `Glass <${agentAddress}>`,
+        from: fromHeader,
         to: replyTo,
         subject: replySubject,
         text: fullReplyText,
