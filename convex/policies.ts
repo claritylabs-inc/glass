@@ -168,7 +168,7 @@ export const get = query({
   args: { id: v.id("policies") },
   handler: async (ctx, args) => {
     const policy = await ctx.db.get(args.id);
-    if (!policy) return null;
+    if (!policy || !policy.orgId) return null;
     try {
       await getOrgAccessFor(ctx, policy.orgId);
     } catch {
