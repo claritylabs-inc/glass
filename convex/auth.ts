@@ -71,7 +71,7 @@ import { internalQuery, mutation } from "./_generated/server";
 import { v } from "convex/values";
 
 /** Public mutation: record a broker-branding hint for an upcoming sign-in.
- * Called from the /broker/[slug]/(login|signup) pages right before signIn. */
+ * Called from the /login/[slug] page right before signIn. */
 export const setBrandingHint = mutation({
   args: { email: v.string(), brokerSlug: v.string() },
   handler: async (ctx, { email, brokerSlug }) => {

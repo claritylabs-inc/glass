@@ -157,7 +157,7 @@ export default defineSchema({
     .index("by_clientOrgId", ["clientOrgId"]),
 
   // Short-lived hint so sendVerificationRequest knows which broker a login
-  // attempt came from (white-label /broker/[slug]/login routes). Written
+  // attempt came from (white-label /login/[slug] routes). Written
   // immediately before signIn("resend-otp"); read once by the email send.
   brandingHints: defineTable({
     email: v.string(),
