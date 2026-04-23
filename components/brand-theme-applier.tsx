@@ -51,14 +51,6 @@ export function BrandThemeApplier() {
     }
 
     applyBrandTheme({ light, dark });
-    try {
-      localStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify({ accent, light, dark }),
-      );
-    } catch {
-      // localStorage may be unavailable (e.g. private mode) — ignore.
-    }
   }, [viewerOrg]);
 
   return null;
@@ -114,6 +106,6 @@ function clearBrandTheme() {
   try {
     localStorage.removeItem(STORAGE_KEY);
   } catch {
-    // ignore
+    // ignore — best-effort cleanup of legacy cache
   }
 }

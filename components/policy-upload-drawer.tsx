@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X } from "lucide-react";
+import { X, FileText } from "lucide-react";
 import { toast } from "sonner";
 import { PillButton } from "@/components/ui/pill-button";
 
@@ -28,11 +28,28 @@ interface PolicyUploadDrawerProps {
   open: boolean;
   onClose: () => void;
   onUpload: (
-    file: File,
+    files: File[],
     documentType: DocumentType,
     note: string,
   ) => Promise<void>;
   uploading: boolean;
+}
+
+function filterPdfs(incoming: File[]): File[] {
+  const pdfs: File[] = [];
+  let rejected = 0;
+  for (const f of incoming) {
+    if (f.name.toLowerCase().endsWith(".pdf")) pdfs.push(f);
+    else rejected++;
+  }
+  if (rejected > 0) {
+    toast.error(
+      rejected === 1
+        ? "Skipped a non-PDF file."
+        : `Skipped ${rejected} non-PDF files.`,
+    );
+  }
+  return pdfs;
 }
 
 export function PolicyUploadDrawer({
@@ -44,6 +61,7 @@ export function PolicyUploadDrawer({
   const [documentType, setDocumentType] = useState<DocumentType>("policy");
   const [note, setNote] = useState("");
   const [dragOver, setDragOver] = useState(false);
+  const [files, setFiles] = useState<File[]>([]);
 
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   const [isDraggingState, setIsDraggingState] = useState(false);
@@ -79,18 +97,32 @@ export function PolicyUploadDrawer({
     [width],
   );
 
-  const handleFile = useCallback(
-    async (file: File) => {
-      if (!file.name.toLowerCase().endsWith(".pdf")) {
-        toast.error("Please upload a PDF file.");
-        return;
-      }
-      await onUpload(file, documentType, note);
-      setNote("");
-      onClose();
-    },
-    [documentType, note, onUpload, onClose],
-  );
+  const addFiles = useCallback((incoming: File[]) => {
+    const pdfs = filterPdfs(incoming);
+    if (pdfs.length === 0) return;
+    setFiles((prev) => {
+      const existing = new Set(prev.map((f) => `${f.name}:${f.size}`));
+      const deduped = pdfs.filter(
+        (f) => !existing.has(`${f.name}:${f.size}`),
+      );
+      return [...prev, ...deduped];
+    });
+  }, []);
+
+  const removeFile = useCallback((index: number) => {
+    setFiles((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
+  const handleUploadClick = useCallback(async () => {
+    if (files.length === 0) {
+      fileInputRef.current?.click();
+      return;
+    }
+    await onUpload(files, documentType, note);
+    setFiles([]);
+    setNote("");
+    onClose();
+  }, [files, documentType, note, onUpload, onClose]);
 
   const types = TYPE_OPTIONS;
 
@@ -136,7 +168,7 @@ export function PolicyUploadDrawer({
 
             <div className="flex-1 overflow-y-auto px-4 py-4 space-y-5">
               <div
-                className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
+                className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${
                   dragOver
                     ? "border-primary bg-primary/5"
                     : "border-foreground/12"
@@ -149,12 +181,12 @@ export function PolicyUploadDrawer({
                 onDrop={(e) => {
                   e.preventDefault();
                   setDragOver(false);
-                  const file = e.dataTransfer.files[0];
-                  if (file) handleFile(file);
+                  const dropped = Array.from(e.dataTransfer.files);
+                  if (dropped.length > 0) addFiles(dropped);
                 }}
               >
                 <p className="text-body-sm text-muted-foreground mb-3">
-                  Drop a PDF here or
+                  Drop PDFs here or
                 </p>
                 <PillButton
                   variant="secondary"
@@ -163,18 +195,55 @@ export function PolicyUploadDrawer({
                 >
                   Browse files
                 </PillButton>
+                <p className="text-label-sm text-muted-foreground/60 mt-3">
+                  Multiple PDFs will be combined into a single {documentType}.
+                </p>
                 <input
                   ref={fileInputRef}
                   type="file"
                   accept="application/pdf,.pdf"
+                  multiple
                   className="sr-only"
                   onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) handleFile(f);
+                    const picked = Array.from(e.target.files ?? []);
+                    if (picked.length > 0) addFiles(picked);
                     e.target.value = "";
                   }}
                 />
               </div>
+
+              {files.length > 0 ? (
+                <div className="space-y-1.5">
+                  <div className={LABEL_CLASSES}>
+                    Files{" "}
+                    <span className="text-muted-foreground/60 font-normal">
+                      ({files.length})
+                    </span>
+                  </div>
+                  <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
+                    {files.map((file, i) => (
+                      <div
+                        key={`${file.name}:${file.size}:${i}`}
+                        className="flex items-center gap-2 px-3 py-2 border-t border-foreground/4 first:border-t-0"
+                      >
+                        <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                        <span className="text-body-sm truncate flex-1">
+                          {file.name}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => removeFile(i)}
+                          disabled={uploading}
+                          className="w-6 h-6 flex items-center justify-center rounded-md text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.04] transition-colors cursor-pointer shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                          aria-label={`Remove ${file.name}`}
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
 
               <div>
                 <span className={LABEL_CLASSES}>Document type</span>
@@ -218,10 +287,14 @@ export function PolicyUploadDrawer({
               <PillButton
                 variant="primary"
                 className="w-full"
-                disabled={uploading}
-                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading || files.length === 0}
+                onClick={handleUploadClick}
               >
-                {uploading ? "Uploading…" : "Upload"}
+                {uploading
+                  ? "Uploading…"
+                  : files.length > 1
+                    ? `Upload ${files.length} files`
+                    : "Upload"}
               </PillButton>
             </div>
           </motion.div>

@@ -59,11 +59,6 @@ export default function RootLayout({
             __html: `(function(){try{var t=localStorage.getItem("theme");if(t==="dark"||(t!=="light"&&matchMedia("(prefers-color-scheme:dark)").matches))document.documentElement.classList.add("dark")}catch(e){}})()`,
           }}
         />
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `(function(){try{var raw=localStorage.getItem("brandTheme");if(!raw)return;var b=JSON.parse(raw);var isDark=document.documentElement.classList.contains("dark");var t=isDark?b.dark:b.light;if(!t)return;var s=document.documentElement.style;for(var k in t){s.setProperty(k,t[k])}document.documentElement.dataset.brandTokensLight=JSON.stringify(b.light);document.documentElement.dataset.brandTokensDark=JSON.stringify(b.dark)}catch(e){}})()`,
-          }}
-        />
       </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} ${instrumentSerif.variable} antialiased`}

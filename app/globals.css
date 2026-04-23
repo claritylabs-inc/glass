@@ -133,6 +133,8 @@
   --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
+  --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
   --color-primary-light: var(--primary-light);
   --color-primary-muted: var(--primary-muted);
   --color-secondary: var(--secondary);

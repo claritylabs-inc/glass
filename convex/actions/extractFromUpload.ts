@@ -97,21 +97,36 @@ export const extractFromUpload = action({
  */
 export const extractFromUploadInternal = internalAction({
   args: {
-    fileId: v.id("_storage"),
-    fileName: v.optional(v.string()),
+    files: v.array(
+      v.object({
+        fileId: v.id("_storage"),
+        fileName: v.optional(v.string()),
+      }),
+    ),
     orgId: v.id("organizations"),
     userId: v.id("users"),
   },
   returns: v.any(),
-  handler: async (ctx, args): Promise<{ error: string } | { success: true; policyId: string }> => {
-    const pdfUrl = await ctx.storage.getUrl(args.fileId);
-    if (!pdfUrl) return { error: "File not found in storage" };
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{ error: string } | { success: true; policyId: string }> => {
+    if (args.files.length < 1) return { error: "No files provided" };
+
+    // Verify every file exists in storage first
+    for (const f of args.files) {
+      const url = await ctx.storage.getUrl(f.fileId);
+      if (!url) return { error: `File not found in storage: ${f.fileName ?? f.fileId}` };
+    }
+
+    const [firstFile, ...restFiles] = args.files;
+    const firstFileName = firstFile.fileName || "upload.pdf";
 
     const policyId: Id<"policies"> = await ctx.runMutation(api.policies.insert, {
       userId: args.userId,
       orgId: args.orgId,
-      fileId: args.fileId,
-      fileName: args.fileName,
+      fileId: firstFile.fileId,
+      fileName: firstFile.fileName,
       carrier: "Extracting...",
       policyNumber: "Extracting...",
       policyTypes: ["other"],
@@ -125,21 +140,55 @@ export const extractFromUploadInternal = internalAction({
     });
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const policyFileId: Id<"policyFiles"> = await ctx.runMutation(
+    const firstPolicyFileId: Id<"policyFiles"> = await ctx.runMutation(
       (internal as any).policyFiles.insert,
       {
         policyId,
-        fileId: args.fileId,
-        fileName: args.fileName || "upload.pdf",
+        fileId: firstFile.fileId,
+        fileName: firstFileName,
         fileType: "unknown" as const,
         orgId: args.orgId,
       },
     );
 
+    // Seed denormalized files array with the first file
+    const denormFiles: Array<{
+      fileId: Id<"_storage">;
+      fileName: string;
+      fileType: string;
+      status: string;
+    }> = [
+      {
+        fileId: firstFile.fileId,
+        fileName: firstFileName,
+        fileType: "unknown",
+        status: "extracting",
+      },
+    ];
+
+    // Insert policyFiles rows + append to denorm array for each additional file
+    for (const extra of restFiles) {
+      const extraName = extra.fileName || "upload.pdf";
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await ctx.runMutation((internal as any).policyFiles.insert, {
+        policyId,
+        fileId: extra.fileId,
+        fileName: extraName,
+        fileType: "unknown" as const,
+        orgId: args.orgId,
+      });
+      denormFiles.push({
+        fileId: extra.fileId,
+        fileName: extraName,
+        fileType: "unknown",
+        status: "extracting",
+      });
+    }
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await ctx.runMutation((internal as any).policies.updateFiles, {
       id: policyId,
-      files: [{ fileId: args.fileId, fileName: args.fileName || "upload.pdf", fileType: "unknown", status: "extracting" }],
+      files: denormFiles,
       reconciliationStatus: "pending" as const,
     });
 
@@ -150,14 +199,20 @@ export const extractFromUploadInternal = internalAction({
       action: "extraction_started",
     });
 
-    await ctx.runAction(internal.actions.policyExtraction.startPolicyExtractionFromUpload, {
-      policyId,
-      fileId: args.fileId,
-      fileName: args.fileName,
-      orgId: args.orgId,
-      userId: args.userId,
-      policyFileId,
-    });
+    // Kick off extraction against the first file (primary). Additional files
+    // are attached as chunks via the supplementary path below so vector search
+    // covers all of them.
+    await ctx.runAction(
+      internal.actions.policyExtraction.startPolicyExtractionFromUpload,
+      {
+        policyId,
+        fileId: firstFile.fileId,
+        fileName: firstFile.fileName,
+        orgId: args.orgId,
+        userId: args.userId,
+        policyFileId: firstPolicyFileId,
+      },
+    );
 
     return { success: true, policyId: String(policyId) };
   },

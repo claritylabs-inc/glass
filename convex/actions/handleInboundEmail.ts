@@ -968,26 +968,36 @@ For emails, compose a professional message that:
         },
         extract_policy_attachment: {
           ...extractPolicyAttachment,
-          execute: async (params: { storageId: string; fileName: string }) => {
-            // Validate the storageId belongs to one of this email's attachments
-            const matched = Object.entries(attachmentIndex).find(
-              ([, v]) => v.fileId === params.storageId,
-            );
-            if (!matched) {
-              return "Storage ID does not match any attachment on this email.";
+          execute: async (params: {
+            files: Array<{ storageId: string; fileName: string }>;
+          }) => {
+            if (!params.files || params.files.length === 0) {
+              return "No files provided.";
+            }
+            // Validate every storageId belongs to one of this email's attachments
+            for (const f of params.files) {
+              const matched = Object.entries(attachmentIndex).find(
+                ([, v]) => v.fileId === f.storageId,
+              );
+              if (!matched) {
+                return `Storage ID ${f.storageId} does not match any attachment on this email.`;
+              }
             }
             try {
               const result = await ctx.runAction(
                 internal.actions.extractFromUpload.extractFromUploadInternal,
                 {
-                  fileId: params.storageId as Id<"_storage">,
-                  fileName: params.fileName,
+                  files: params.files.map((f) => ({
+                    fileId: f.storageId as Id<"_storage">,
+                    fileName: f.fileName,
+                  })),
                   orgId,
                   userId: primaryUserId,
                 },
               );
               if ("error" in result) return `Extraction failed: ${result.error}`;
-              return `Extraction started for ${params.fileName}. Policy ID: ${result.policyId}. It will appear in the policy library once processing completes.`;
+              const names = params.files.map((f) => f.fileName).join(", ");
+              return `Extraction started for ${params.files.length} file(s) [${names}] as a single policy. Policy ID: ${result.policyId}. It will appear in the policy library once processing completes.`;
             } catch (err) {
               return `Failed to start extraction: ${err instanceof Error ? err.message : String(err)}`;
             }
@@ -1007,9 +1017,12 @@ For emails, compose a professional message that:
           .filter(Boolean);
         if (pdfAttachments.length > 0) {
           attachmentToolHint = `\n\nATTACHMENT TOOLS:
-If any attached PDF appears to be a policy, declarations page, quote, binder, or other insurance document that should be added to the organization's policy library, call the extract_policy_attachment tool with the storageId and fileName. PDFs are contents you may also read inline for answering questions.
-Available PDF attachments:
-${pdfAttachments.join("\n")}`;
+If any attached PDF appears to be a policy, declarations page, quote, binder, COI, or other insurance document that should be added to the organization's policy library, call the extract_policy_attachment tool. PDFs are also provided inline so you may read them to answer questions.
+
+PDF ATTACHMENT MANIFEST (storageId -> fileName):
+${pdfAttachments.join("\n")}
+
+IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs in the SAME email (for example: COI + declarations + full policy wording). If multiple PDFs in this email describe the SAME policy, call extract_policy_attachment ONCE with ALL of them in the files array — they will be combined into a single policy record. Only make separate extract_policy_attachment calls when the attachments clearly belong to DIFFERENT policies.`;
         }
       }
 

@@ -67,9 +67,20 @@ export const generateCoi = tool({
 
 export const extractPolicyAttachment = tool({
   description:
-    "Extract a policy or quote from a PDF attachment that was included with the email. Use this when the sender has attached a policy document, declarations page, quote, or other insurance PDF that should be ingested into the organization's policy library. The attachment's storageId and fileName come from the email's attachment list provided in context.",
+    "Extract a policy from one OR MORE PDF attachments that were included with the email. " +
+    "When multiple PDFs appear in the same email and together describe the same policy " +
+    "(e.g. COI + declarations + policy wording), pass ALL of them in a single call so they " +
+    "are combined into one policy record. Only split into separate calls if the email contains " +
+    "attachments for DIFFERENT policies.",
   inputSchema: z.object({
-    storageId: z.string().describe("The Convex storage ID of the PDF attachment"),
-    fileName: z.string().describe("The original filename of the attachment"),
+    files: z
+      .array(
+        z.object({
+          storageId: z.string().describe("Convex storage ID of the PDF attachment"),
+          fileName: z.string().describe("Original filename of the attachment"),
+        }),
+      )
+      .min(1)
+      .describe("One entry per PDF that belongs to this policy"),
   }),
 });

@@ -57,29 +57,54 @@ export default function ClientPoliciesPage() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const createBrokerUpload = useMutation((api as any).policies.createBrokerUpload);
   const extractFromUpload = useAction(api.actions.extractFromUpload.extractFromUpload);
+  const addFileToPolicy = useAction(api.actions.addFileToPolicy.addFileToPolicy);
+
+  const uploadStorage = useCallback(
+    async (file: File): Promise<string> => {
+      const uploadUrl = await generateUploadUrl();
+      const res = await fetch(uploadUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/pdf" },
+        body: file,
+      });
+      if (!res.ok) throw new Error("Storage upload failed");
+      const { storageId } = (await res.json()) as { storageId: string };
+      return storageId;
+    },
+    [generateUploadUrl],
+  );
 
   const handleUpload = useCallback(
-    async (file: File, uploadedType: "policy" | "quote", note: string) => {
-      if (!clientOrgId) return;
+    async (files: File[], uploadedType: "policy" | "quote", note: string) => {
+      if (!clientOrgId || files.length === 0) return;
       setUploading(true);
       try {
-        const uploadUrl = await generateUploadUrl();
-        const res = await fetch(uploadUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/pdf" },
-          body: file,
-        });
-        if (!res.ok) throw new Error("Storage upload failed");
-        const { storageId } = await res.json();
-
-        const policyId = await createBrokerUpload({
+        toast.info(`Uploading 1 of ${files.length}…`);
+        const firstStorageId = await uploadStorage(files[0]);
+        const policyId = (await createBrokerUpload({
           clientOrgId: clientOrgId as Id<"organizations">,
-          fileId: storageId,
-          fileName: file.name,
+          fileId: firstStorageId,
+          fileName: files[0].name,
           documentType: uploadedType,
           note: note || undefined,
+        })) as Id<"policies">;
+        await extractFromUpload({
+          fileId: firstStorageId as Id<"_storage">,
+          fileName: files[0].name,
+          policyId,
         });
-        await extractFromUpload({ fileId: storageId, fileName: file.name, policyId });
+
+        for (let i = 1; i < files.length; i++) {
+          toast.info(`Uploading ${i + 1} of ${files.length}…`);
+          const storageId = await uploadStorage(files[i]);
+          const r = (await addFileToPolicy({
+            policyId,
+            fileId: storageId as Id<"_storage">,
+            fileName: files[i].name,
+          })) as { error: string } | { success: true };
+          if ("error" in r) throw new Error(r.error);
+        }
+
         toast.success("Upload started — the client will see it shortly.");
       } catch (err) {
         toast.error("Upload failed. Please try again.");
@@ -90,9 +115,10 @@ export default function ClientPoliciesPage() {
     },
     [
       clientOrgId,
-      generateUploadUrl,
+      uploadStorage,
       createBrokerUpload,
       extractFromUpload,
+      addFileToPolicy,
     ],
   );
 
