@@ -22,7 +22,7 @@ const DURATION = 0.32;
 const variantConfig = {
   primary: {
     classes:
-      "font-medium cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed bg-[var(--brand)] text-[var(--brand-foreground)]",
+      "font-medium cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed bg-brand text-brand-foreground",
     rest: {},
     hover: { filter: "brightness(1.15)" },
   },

@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, FileText } from "lucide-react";
+import { X, FileText, FileUp } from "lucide-react";
 import { toast } from "sonner";
 import { PillButton } from "@/components/ui/pill-button";
 
@@ -13,25 +13,13 @@ const MIN_WIDTH = 360;
 const MAX_WIDTH = 720;
 const DEFAULT_WIDTH = 480;
 
-const INPUT_CLASSES =
-  "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
-
 const LABEL_CLASSES =
-  "text-label-sm font-medium text-muted-foreground block mb-1";
-
-const TYPE_OPTIONS: { value: DocumentType; label: string }[] = [
-  { value: "policy", label: "Policy" },
-  { value: "quote", label: "Quote" },
-];
+  "text-label-sm font-medium text-muted-foreground block mb-1.5";
 
 interface PolicyUploadDrawerProps {
   open: boolean;
   onClose: () => void;
-  onUpload: (
-    files: File[],
-    documentType: DocumentType,
-    note: string,
-  ) => Promise<void>;
+  onUpload: (files: File[], documentType: DocumentType, note: string) => Promise<void>;
   uploading: boolean;
 }
 
@@ -102,10 +90,10 @@ export function PolicyUploadDrawer({
     if (pdfs.length === 0) return;
     setFiles((prev) => {
       const existing = new Set(prev.map((f) => `${f.name}:${f.size}`));
-      const deduped = pdfs.filter(
-        (f) => !existing.has(`${f.name}:${f.size}`),
-      );
-      return [...prev, ...deduped];
+      return [
+        ...prev,
+        ...pdfs.filter((f) => !existing.has(`${f.name}:${f.size}`)),
+      ];
     });
   }, []);
 
@@ -124,7 +112,8 @@ export function PolicyUploadDrawer({
     onClose();
   }, [files, documentType, note, onUpload, onClose]);
 
-  const types = TYPE_OPTIONS;
+  const typeLabel = documentType === "quote" ? "quote" : "policy";
+  const canUpload = files.length > 0 && !uploading;
 
   return (
     <AnimatePresence mode="popLayout">
@@ -154,7 +143,7 @@ export function PolicyUploadDrawer({
           >
             <div className="h-12 flex items-center gap-3 px-4 border-b border-foreground/6 shrink-0">
               <span className="text-body-sm font-medium text-foreground truncate flex-1">
-                Upload policy / quote
+                Upload {typeLabel}
               </span>
               <button
                 type="button"
@@ -166,13 +155,11 @@ export function PolicyUploadDrawer({
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto px-4 py-4 space-y-5">
-              <div
-                className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${
-                  dragOver
-                    ? "border-primary bg-primary/5"
-                    : "border-foreground/12"
-                }`}
+            <div className="flex-1 overflow-y-auto px-5 py-5 space-y-5">
+              {/* Drop zone */}
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
                 onDragOver={(e) => {
                   e.preventDefault();
                   setDragOver(true);
@@ -184,19 +171,23 @@ export function PolicyUploadDrawer({
                   const dropped = Array.from(e.dataTransfer.files);
                   if (dropped.length > 0) addFiles(dropped);
                 }}
+                className={`w-full rounded-lg border-2 border-dashed transition-colors px-6 py-10 text-center cursor-pointer ${
+                  dragOver
+                    ? "border-foreground/25 bg-foreground/[0.03]"
+                    : "border-foreground/10 hover:border-foreground/20"
+                }`}
               >
-                <p className="text-body-sm text-muted-foreground mb-3">
-                  Drop PDFs here or
+                <div className="mx-auto h-10 w-10 flex items-center justify-center rounded-full bg-foreground/[0.04] text-muted-foreground mb-3">
+                  <FileUp className="h-4 w-4" />
+                </div>
+                <p className="text-base font-semibold text-foreground">
+                  Drag and drop a {typeLabel} PDF
                 </p>
-                <PillButton
-                  variant="secondary"
-                  size="compact"
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  Browse files
-                </PillButton>
+                <p className="text-body-sm text-muted-foreground mt-1">
+                  or click to choose {files.length > 0 ? "more" : "a"} file
+                </p>
                 <p className="text-label-sm text-muted-foreground/60 mt-3">
-                  Multiple PDFs will be combined into a single {documentType}.
+                  Multiple PDFs will be combined into a single {typeLabel}.
                 </p>
                 <input
                   ref={fileInputRef}
@@ -210,16 +201,14 @@ export function PolicyUploadDrawer({
                     e.target.value = "";
                   }}
                 />
-              </div>
+              </button>
 
+              {/* Staged files */}
               {files.length > 0 ? (
-                <div className="space-y-1.5">
-                  <div className={LABEL_CLASSES}>
-                    Files{" "}
-                    <span className="text-muted-foreground/60 font-normal">
-                      ({files.length})
-                    </span>
-                  </div>
+                <div>
+                  <label className={LABEL_CLASSES}>
+                    {files.length} file{files.length === 1 ? "" : "s"} selected
+                  </label>
                   <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
                     {files.map((file, i) => (
                       <div
@@ -227,9 +216,7 @@ export function PolicyUploadDrawer({
                         className="flex items-center gap-2 px-3 py-2 border-t border-foreground/4 first:border-t-0"
                       >
                         <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                        <span className="text-body-sm truncate flex-1">
-                          {file.name}
-                        </span>
+                        <span className="text-body-sm truncate flex-1">{file.name}</span>
                         <button
                           type="button"
                           onClick={() => removeFile(i)}
@@ -245,56 +232,59 @@ export function PolicyUploadDrawer({
                 </div>
               ) : null}
 
+              {/* Type segmented picker */}
               <div>
-                <span className={LABEL_CLASSES}>Document type</span>
-                <div className="flex flex-col gap-2">
-                  {types.map((t) => (
-                    <label
-                      key={t.value}
-                      className="flex items-center gap-2 text-body-sm cursor-pointer"
-                    >
-                      <input
-                        type="radio"
-                        name="doc-type"
-                        value={t.value}
-                        checked={documentType === t.value}
-                        onChange={() => setDocumentType(t.value)}
-                        className="accent-primary"
-                      />
-                      {t.label}
-                    </label>
-                  ))}
+                <label className={LABEL_CLASSES}>Document type</label>
+                <div className="inline-flex items-center rounded-lg border border-foreground/8 bg-popover p-0.5 gap-0.5">
+                  {(["policy", "quote"] as const).map((t) => {
+                    const selected = documentType === t;
+                    return (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => setDocumentType(t)}
+                        className={`px-3 py-1.5 rounded-md text-body-sm transition-colors cursor-pointer ${
+                          selected
+                            ? "bg-foreground text-background"
+                            : "text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04]"
+                        }`}
+                      >
+                        {t === "policy" ? "Policy" : "Quote"}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
+              {/* Note */}
               <div>
-                <label htmlFor="note" className={LABEL_CLASSES}>
-                  Note{" "}
-                  <span className="text-muted-foreground/60 font-normal">
-                    (optional)
-                  </span>
+                <label className={LABEL_CLASSES}>
+                  Note <span className="text-muted-foreground/60 font-normal">(optional)</span>
                 </label>
                 <textarea
-                  id="note"
-                  placeholder="Add context for the client…"
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
                   rows={3}
-                  className={INPUT_CLASSES}
+                  placeholder="Add context for the client…"
+                  className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors resize-y min-h-20"
                 />
               </div>
+            </div>
 
+            <div className="border-t border-foreground/6 px-5 py-4 shrink-0">
               <PillButton
                 variant="primary"
                 className="w-full"
-                disabled={uploading || files.length === 0}
+                disabled={!canUpload}
                 onClick={handleUploadClick}
               >
                 {uploading
                   ? "Uploading…"
                   : files.length > 1
                     ? `Upload ${files.length} files`
-                    : "Upload"}
+                    : files.length === 1
+                      ? "Upload"
+                      : "Choose files to upload"}
               </PillButton>
             </div>
           </motion.div>

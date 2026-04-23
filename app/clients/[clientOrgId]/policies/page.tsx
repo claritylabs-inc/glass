@@ -9,8 +9,8 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PillButton } from "@/components/ui/pill-button";
 import { PolicyListItem } from "@/components/policy-list-item";
 import { PolicyUploadDrawer } from "@/components/policy-upload-drawer";
+import { PolicyEmptyState } from "@/components/policy-empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
-import { EmptyStateCard } from "@/components/ui/empty-state-card";
 import { Upload } from "lucide-react";
 import { toast } from "sonner";
 import { useClientDetailActions } from "../layout";
@@ -25,7 +25,12 @@ export default function ClientPoliciesPage() {
   const { setActions, setRightPanel } = useClientDetailActions();
 
   const label = docType === "quote" ? "quote" : "policy";
-  const plural = docType === "quote" ? "quotes" : "policies";
+
+  // Broker's own agent email (shown in empty state for easy forwarding)
+  const viewerOrg = useQuery(api.orgs.viewerOrg, {});
+  const AGENT_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "glass.claritylabs.inc";
+  const agentHandle = viewerOrg?.org?.agentHandle;
+  const agentEmail = agentHandle ? `${agentHandle}@${AGENT_DOMAIN}` : null;
 
   useEffect(() => {
     setActions(
@@ -154,12 +159,11 @@ export default function ClientPoliciesPage() {
           ))}
         </div>
       ) : rows.length === 0 ? (
-        <EmptyStateCard
-          icon={<Upload className="w-5 h-5" />}
-          title={`No ${plural} yet`}
-          description={`Upload a ${label} PDF to extract coverage details automatically.`}
-          actionLabel={`Upload ${label}`}
-          onAction={() => setUploaderOpen(true)}
+        <PolicyEmptyState
+          docType={docType}
+          agentEmail={agentEmail}
+          uploading={uploading}
+          onUpload={(files) => handleUpload(files, docType, "")}
         />
       ) : (
         <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
