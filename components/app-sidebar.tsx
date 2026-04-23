@@ -413,8 +413,8 @@ export function AppSidebar({
           />
         ))}
 
-        {/* CONVERSATIONS */}
-        {!collapsed ? (
+        {/* CONVERSATIONS — brokers don't get an agent chat; they view client threads via /clients/[id]/threads */}
+        {isBroker ? null : !collapsed ? (
           <>
             <div className="flex items-center justify-between px-3 pt-5 pb-1.5">
               <span className="text-[11px] font-medium text-muted-foreground/50 ">
@@ -586,7 +586,6 @@ export function AppSidebar({
   }[] = [
     { id: "details", label: "Details", href: "", icon: User },
     { id: "policies", label: "Policies", href: "/policies", icon: FileText },
-    { id: "threads", label: "Threads", href: "/threads", icon: MessageSquare },
     { id: "activity", label: "Activity", href: "/activity", icon: Activity },
     { id: "settings", label: "Settings", href: "/settings", icon: Settings },
   ];
