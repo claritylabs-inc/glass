@@ -875,11 +875,11 @@ function SidebarBrokerContact({
           </div>
         )}
         {agentEmail ? (
-          <div className="mt-2.5 flex items-center gap-1.5">
+          <div className="mt-2.5 flex items-stretch gap-1.5">
             <PillButton
               variant="secondary"
               size="compact"
-              className="flex-1 justify-center"
+              className="flex-1 justify-center shrink-0"
               onClick={() => {
                 window.location.href = `mailto:${agentEmail}`;
               }}
@@ -890,6 +890,7 @@ function SidebarBrokerContact({
             <PillButton
               variant="secondary"
               size="compact"
+              className="shrink-0 w-7 px-0"
               onClick={handleSaveContact}
               title="Save as contact"
               aria-label="Save as contact"
