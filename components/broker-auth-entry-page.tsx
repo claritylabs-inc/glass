@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useAuthActions } from "@convex-dev/auth/react";
-import { useConvexAuth } from "convex/react";
+import { useConvexAuth, useMutation } from "convex/react";
+import { api } from "@/convex/_generated/api";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AuthCard, AuthMinimalShell, PartnerWordmark, PoweredByGlassWordmark } from "@/components/auth-shell";
 import { PillButton } from "@/components/ui/pill-button";
@@ -41,6 +42,7 @@ export function BrokerAuthEntryPage({
 }) {
   const { signIn } = useAuthActions();
   const { isAuthenticated } = useConvexAuth();
+  const setBrandingHint = useMutation(api.auth.setBrandingHint);
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -70,6 +72,9 @@ export function BrokerAuthEntryPage({
     setLoading(true);
     setError("");
     try {
+      if (broker.slug) {
+        await setBrandingHint({ email, brokerSlug: broker.slug }).catch(() => {});
+      }
       await signIn("resend-otp", { email });
       setStep("code");
     } catch (err: unknown) {

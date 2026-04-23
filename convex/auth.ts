@@ -67,14 +67,51 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
 });
 
 // ── Internal query: find a broker to brand the sign-in email for ─────────────
-import { internalQuery } from "./_generated/server";
+import { internalQuery, mutation } from "./_generated/server";
 import { v } from "convex/values";
+
+/** Public mutation: record a broker-branding hint for an upcoming sign-in.
+ * Called from the /broker/[slug]/(login|signup) pages right before signIn. */
+export const setBrandingHint = mutation({
+  args: { email: v.string(), brokerSlug: v.string() },
+  handler: async (ctx, { email, brokerSlug }) => {
+    const normalized = email.trim().toLowerCase();
+    if (!normalized) return;
+    const broker = await ctx.db
+      .query("organizations")
+      .withIndex("by_slug", (q) => q.eq("slug", brokerSlug))
+      .first();
+    if (!broker || broker.type !== "broker") return;
+
+    // Overwrite any existing hint for this email.
+    const existing = await ctx.db
+      .query("brandingHints")
+      .withIndex("by_email", (q) => q.eq("email", normalized))
+      .collect();
+    for (const h of existing) await ctx.db.delete(h._id);
+    await ctx.db.insert("brandingHints", {
+      email: normalized,
+      brokerOrgId: broker._id,
+      createdAt: Date.now(),
+    });
+  },
+});
+
+const BRANDING_HINT_TTL_MS = 15 * 60 * 1000;
 
 export const brokerBrandingForEmail = internalQuery({
   args: { email: v.string() },
   handler: async (ctx, { email }) => {
     const normalized = email.trim().toLowerCase();
     if (!normalized) return null;
+
+    // 0. Check short-lived branding hint (from whitelabeled login page).
+    const hint = await ctx.db
+      .query("brandingHints")
+      .withIndex("by_email", (q) => q.eq("email", normalized))
+      .order("desc")
+      .first();
+    const fresh = hint && Date.now() - hint.createdAt < BRANDING_HINT_TTL_MS;
 
     // 1. Check for a pending client invitation with this email, pick most recent.
     const invites = await ctx.db
@@ -85,7 +122,7 @@ export const brokerBrandingForEmail = internalQuery({
       .filter((i) => i.primaryContactEmail?.trim().toLowerCase() === normalized)
       .sort((a, b) => b.createdAt - a.createdAt)[0];
 
-    let brokerOrgId = match?.brokerOrgId;
+    let brokerOrgId = fresh ? hint!.brokerOrgId : match?.brokerOrgId;
 
     // 2. Otherwise, if the user already exists and belongs to a client org,
     //    use that client's broker.
