@@ -10,7 +10,7 @@ import { ModeBadge } from "@/components/mode-badge";
 import { MessageBubble, splitQuotedReply, QuotedContent, type Conversation } from "@/components/conversation-message";
 import { ChatMessageBubble, type WebChatMessage } from "@/components/chat-message-bubble";
 import { toast } from "sonner";
-import { Loader2, Archive, ArchiveRestore, FileText, Pencil, Check, ClipboardList, Asterisk, Mail as MailIcon, MessageSquare, Paperclip, Download, Copy, Lock } from "lucide-react";
+import { Loader2, Archive, ArchiveRestore, FileText, Pencil, Check, ClipboardList, Asterisk, Mail as MailIcon, MessageSquare, Paperclip, Download, Copy, Lock, RotateCcw } from "lucide-react";
 import { usePdf } from "@/components/pdf-context";
 import { usePresence } from "@/hooks/use-presence";
 import { ContextReferenceCard, ReferenceCardStrip } from "@/components/context-reference-card";
