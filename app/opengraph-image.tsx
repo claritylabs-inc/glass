@@ -18,29 +18,27 @@ function globeDataUri(size: number): string {
 }
 
 export function BrandLockup({
-  iconSize = 96,
-  glassSize = 96,
-  suffixSize = 96,
+  iconSize,
+  textSize = 64,
   gap,
 }: {
   iconSize?: number;
-  glassSize?: number;
-  suffixSize?: number;
+  textSize?: number;
   gap?: number;
 }) {
-  // Defaults: icon+Glass gap ~18, Glass→suffix gap ~24 (scaled by icon size)
-  const iconToGlassGap = gap ?? Math.round(iconSize * 0.1875); // 18 at 96
-  const glassToSuffixGap = gap ?? Math.round(glassSize * 0.25); // 24 at 96
+  const icon = iconSize ?? Math.round(textSize * 0.75);
+  const iconToText = gap ?? Math.round(textSize * 0.2);
+  const glassToSuffix = Math.round(textSize * 0.28);
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: iconToGlassGap }}>
+    <div style={{ display: "flex", alignItems: "center", gap: iconToText }}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={globeDataUri(iconSize)} alt="" width={iconSize} height={iconSize} />
-      <div style={{ display: "flex", alignItems: "baseline", gap: glassToSuffixGap }}>
+      <img src={globeDataUri(icon)} alt="" width={icon} height={icon} />
+      <div style={{ display: "flex", alignItems: "baseline", gap: glassToSuffix }}>
         <span
           style={{
             fontFamily: "Geist",
-            fontSize: glassSize,
-            fontWeight: 500,
+            fontSize: textSize,
+            fontWeight: 600,
             color: "#111827",
             letterSpacing: "-0.03em",
             lineHeight: 1,
@@ -51,7 +49,7 @@ export function BrandLockup({
         <span
           style={{
             fontFamily: "Geist",
-            fontSize: suffixSize,
+            fontSize: textSize,
             fontWeight: 400,
             color: "#6b7280",
             letterSpacing: "-0.01em",

@@ -54,20 +54,20 @@ export default async function Image({ params }: { params: { token: string } }) {
           fontFamily: "Geist",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 32 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
           {data.brokerIconUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={data.brokerIconUrl}
               alt=""
-              width={132}
-              height={132}
-              style={{ borderRadius: 24, objectFit: "cover" }}
+              width={96}
+              height={96}
+              style={{ borderRadius: 20, objectFit: "cover" }}
             />
           ) : null}
           <span
             style={{
-              fontSize: 100,
+              fontSize: 72,
               fontWeight: 500,
               color: "#111827",
               letterSpacing: "-0.03em",
@@ -86,13 +86,13 @@ export default async function Image({ params }: { params: { token: string } }) {
             display: "flex",
             justifyContent: "center",
             alignItems: "center",
-            gap: 8,
-            fontSize: 20,
+            gap: 6,
+            fontSize: 18,
             color: "#9ca3af",
           }}
         >
           <span>Powered by</span>
-          <BrandLockup iconSize={22} glassSize={22} suffixSize={22} gap={6} />
+          <BrandLockup textSize={18} gap={5} />
         </div>
       </div>
     ),

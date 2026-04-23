@@ -34,59 +34,38 @@ const DEFAULT_TITLE = "Glass from Clarity Labs";
 const DEFAULT_DESCRIPTION = "Insurance policy intelligence by Clarity Labs";
 
 export async function generateMetadata(): Promise<Metadata> {
-  const branding = await getViewerBranding().catch(() => null);
-
-  if (branding) {
-    const icons = branding.iconUrl ? { icon: branding.iconUrl } : undefined;
-    return {
-      title: {
-        default: branding.name,
-        template: `%s | ${branding.name}`,
-      },
-      description: DEFAULT_DESCRIPTION,
-      icons,
-      openGraph: {
-        title: branding.name,
-        description: DEFAULT_DESCRIPTION,
-        siteName: branding.name,
-        type: "website",
-      },
-      twitter: {
-        card: "summary_large_image",
-        title: branding.name,
-        description: DEFAULT_DESCRIPTION,
-      },
-    };
-  }
+  const branding = await getViewerBranding();
+  const title = branding?.name ?? DEFAULT_TITLE;
+  const icon = branding?.iconUrl ?? undefined;
 
   return {
     title: {
-      default: DEFAULT_TITLE,
-      template: "%s | Glass",
+      default: title,
+      template: branding ? `%s | ${title}` : "%s | Glass",
     },
     description: DEFAULT_DESCRIPTION,
+    icons: icon ? { icon } : undefined,
     openGraph: {
-      title: DEFAULT_TITLE,
+      title,
       description: DEFAULT_DESCRIPTION,
-      siteName: DEFAULT_TITLE,
+      siteName: title,
       type: "website",
+      ...(icon ? { images: [{ url: icon }] } : {}),
     },
     twitter: {
       card: "summary_large_image",
-      title: DEFAULT_TITLE,
+      title,
       description: DEFAULT_DESCRIPTION,
+      ...(icon ? { images: [icon] } : {}),
     },
   };
 }
 
-export default async function RootLayout({
+export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const branding = await getViewerBranding().catch(() => null);
-  const showPoweredBy = !!branding?.isClientUnderBroker;
-
   return (
     <ConvexAuthNextjsServerProvider>
       <html lang="en" suppressHydrationWarning>
@@ -103,7 +82,7 @@ export default async function RootLayout({
           <ConvexClientProvider>
             <BrandThemeApplier />
             <AuthGuard>{children}</AuthGuard>
-            {showPoweredBy ? <PoweredByFooter /> : null}
+            <PoweredByFooter />
             <AppToaster />
           </ConvexClientProvider>
         </body>

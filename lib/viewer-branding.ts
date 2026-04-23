@@ -6,13 +6,16 @@ import { api } from "@/convex/_generated/api";
 export type ViewerBranding = {
   name: string;
   iconUrl: string | null;
-  brandingColor?: string;
+  brandingColor: string | null;
   isBroker: boolean;
   isClient: boolean;
-  /** True when the viewer is a client operating under a broker org. */
   isClientUnderBroker: boolean;
 };
 
+/**
+ * Server-side fetch of the viewer's effective branding (broker > own org).
+ * Returns null when unauthenticated, no membership, or any failure — never throws.
+ */
 export async function getViewerBranding(): Promise<ViewerBranding | null> {
   let token: string | undefined;
   try {
@@ -22,35 +25,35 @@ export async function getViewerBranding(): Promise<ViewerBranding | null> {
   }
   if (!token) return null;
 
-  let result: Awaited<ReturnType<typeof fetchQuery<typeof api.orgs.viewerOrg>>>;
+  let viewer: Awaited<ReturnType<typeof fetchQuery<typeof api.orgs.viewerOrg>>>;
   try {
-    result = await fetchQuery(api.orgs.viewerOrg, {}, { token });
+    viewer = await fetchQuery(api.orgs.viewerOrg, {}, { token });
   } catch {
     return null;
   }
-  if (!result) return null;
+  if (!viewer || !viewer.org) return null;
 
-  const { org, brokerOrg } = result;
-  const orgType = (org.type ?? "client") as string;
+  const orgType = (viewer.org.type ?? "client") as string;
   const isBroker = orgType === "broker";
   const isClient = !isBroker;
-  const isClientUnderBroker = isClient && !!brokerOrg;
+  const isClientUnderBroker = isClient && !!viewer.brokerOrg;
 
-  if (isClientUnderBroker && brokerOrg) {
+  if (isClientUnderBroker && viewer.brokerOrg) {
     return {
-      name: brokerOrg.name,
-      iconUrl: brokerOrg.iconUrl ?? null,
-      brandingColor: brokerOrg.brandingColor,
+      name: viewer.brokerOrg.name,
+      iconUrl: viewer.brokerOrg.iconUrl ?? null,
+      brandingColor: viewer.brokerOrg.brandingColor ?? null,
       isBroker: false,
       isClient: true,
       isClientUnderBroker: true,
     };
   }
 
+  // Broker staff viewing their own broker org, OR client without broker
   return {
-    name: org.name,
-    iconUrl: org.iconUrl ?? null,
-    brandingColor: org.brandingColor,
+    name: viewer.org.name,
+    iconUrl: viewer.org.iconUrl ?? null,
+    brandingColor: (viewer.org.brandingColor as string | undefined) ?? null,
     isBroker,
     isClient,
     isClientUnderBroker: false,
