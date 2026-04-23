@@ -9,7 +9,7 @@ export function BrandWordmark() {
       <LogoIcon size={16} color={BRAND_BLUE} static />
       <div className="flex items-baseline gap-1.5">
         <span className="text-sm font-medium tracking-tight">Glass</span>
-        <span className="text-sm text-muted-foreground">by Clarity Labs</span>
+        <span className="text-sm text-muted-foreground">from Clarity Labs</span>
       </div>
     </div>
   );
@@ -49,19 +49,19 @@ export function PartnerWordmark({
           <LogoIcon size={24} color={BRAND_BLUE} static />
         )}
       </div>
-      <span className="text-sm font-medium tracking-tight">{name?.trim() || "Glass by Clarity Labs"}</span>
+      <span className="text-sm font-medium tracking-tight">{name?.trim() || "Glass from Clarity Labs"}</span>
     </div>
   );
 }
 
 export function PoweredByGlassWordmark() {
   return (
-    <div className="flex items-center justify-center gap-2.5 text-xs text-muted-foreground">
+    <div className="flex items-center justify-center gap-2 text-xs leading-none text-muted-foreground">
       <span>Powered by</span>
-      <div className="flex items-center gap-1.5 text-foreground">
+      <div className="flex items-center gap-1.5 leading-none">
         <LogoIcon size={12} color={BRAND_BLUE} static />
-        <span className="text-xs font-medium tracking-tight">Glass</span>
-        <span className="text-xs text-muted-foreground">by Clarity Labs</span>
+        <span className="font-medium tracking-tight text-foreground">Glass</span>
+        <span>from Clarity Labs</span>
       </div>
     </div>
   );
