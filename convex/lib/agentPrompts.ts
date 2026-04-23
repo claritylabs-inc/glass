@@ -135,7 +135,7 @@ async function buildVectorContext(
   if (policies.length > 0) {
     const indexLines = policies.map((p, i) => {
       const types = p.policyTypes?.join(", ") ?? "unknown";
-      const carrier = p.security || p.carrier;
+      const carrier = p.mga || p.carrier || p.security;
       const covSummary = (p.coverages ?? []).slice(0, 8).map((c: any) => {
         const parts = [c.name];
         if (c.limit) parts.push(c.limit);
@@ -148,7 +148,7 @@ async function buildVectorContext(
   }
   if (quotes.length > 0) {
     const indexLines = quotes.map((q, i) => {
-      const carrier = q.security || q.carrier;
+      const carrier = q.mga || q.carrier || q.security;
       return `[Q${i + 1}] ${carrier} | #${q.quoteNumber ?? q.policyNumber} | Insured: ${q.insuredName} | Premium: ${q.premium ?? "N/A"}`;
     });
     parts.push(`QUOTE INDEX (${quotes.length} quotes):\n${indexLines.join("\n")}`);
@@ -174,7 +174,7 @@ async function buildVectorContext(
       relevantPolicyIdSet.add(policyId as Id<"policies">);
     }
 
-    const carrier = policy.security || policy.carrier;
+    const carrier = policy.mga || policy.carrier || policy.security;
     const docLabel = isQuote ? "QUOTE" : "POLICY";
     const number = isQuote ? (policy.quoteNumber ?? policy.policyNumber) : policy.policyNumber;
 
@@ -256,7 +256,7 @@ function buildFallbackContext(
   if (policies.length > 0) {
     const indexLines = policies.map((p, i) => {
       const types = p.policyTypes?.join(", ") ?? "unknown";
-      const carrier = p.security || p.carrier;
+      const carrier = p.mga || p.carrier || p.security;
       const coverages = p.coverages?.slice(0, 5).map((c: { name?: string; limit?: string }) => `${c.name}: ${c.limit}`).join("; ") ?? "";
       return `[${i + 1}] ${carrier} | #${p.policyNumber} | Types: ${types} | ${p.effectiveDate} to ${p.expirationDate ?? "continuous"} | Insured: ${p.insuredName} | Coverages: ${coverages}`;
     });
