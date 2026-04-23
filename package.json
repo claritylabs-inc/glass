@@ -45,6 +45,7 @@
     "dayjs": "^1.11.19",
     "embla-carousel-react": "^8.6.0",
     "framer-motion": "^12.35.0",
+    "google-auth-library": "^10.6.2",
     "googleapis": "^171.4.0",
     "imapflow": "^1.2.12",
     "lucide-react": "^0.577.0",
