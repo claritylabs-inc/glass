@@ -148,6 +148,7 @@ export const patchMany = internalMutation({
       groupId: v.optional(v.id("applicationGroups")),
       order: v.optional(v.number()),
       prompt: v.optional(v.string()),
+      answerType: v.optional(v.string()),
       repeating: v.optional(v.object({
         collectionKey: v.string(),
         itemLabel: v.string(),
@@ -163,6 +164,7 @@ export const patchMany = internalMutation({
       if (item.groupId !== undefined) patch.groupId = item.groupId;
       if (item.order !== undefined) patch.order = item.order;
       if (item.prompt !== undefined) patch.prompt = item.prompt;
+      if (item.answerType !== undefined) patch.answerType = item.answerType;
       if (item.repeating !== undefined) patch.repeating = item.repeating;
       await ctx.db.patch(item.questionId, patch as any);
     }

@@ -1,10 +1,18 @@
 "use client";
 import { useMemo, useState } from "react";
+import { useMutation } from "convex/react";
+import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/button";
+import { PillButton } from "@/components/ui/pill-button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { QuestionField } from "./question-field";
 import { QuestionFieldBadges } from "./question-field-badges";
+import {
+  AddItemButton,
+  RepeatingCollectionShell,
+  RepeatingItemCard,
+} from "./repeating-collection";
 import { evaluateConditional } from "@/lib/applicationConditionals";
 import type { Id, Doc } from "@/convex/_generated/dataModel";
 
@@ -93,7 +101,7 @@ function buildRepeatingCollections(
     const existing = map.get(r.collectionKey);
     if (existing) {
       existing.questions.push(q);
-      existing.minItems = Math.max(existing.minItems, r.minItems ?? 1);
+      existing.minItems = Math.max(existing.minItems, r.minItems ?? 0);
       existing.maxItems = Math.max(existing.maxItems, r.maxItems ?? 25);
       if (!existing.dependsOnQuestionId && r.dependsOnQuestionId) {
         existing.dependsOnQuestionId = r.dependsOnQuestionId;
@@ -103,7 +111,7 @@ function buildRepeatingCollections(
         collectionKey: r.collectionKey,
         itemLabel: r.itemLabel,
         dependsOnQuestionId: r.dependsOnQuestionId,
-        minItems: Math.max(1, r.minItems ?? 1),
+        minItems: Math.max(0, r.minItems ?? 0),
         maxItems: Math.max(1, r.maxItems ?? 25),
         questions: [q],
       });
@@ -137,6 +145,7 @@ export function QuestionGroupView({
   const [manualCountByCollection, setManualCountByCollection] = useState<Record<string, number>>(
     {},
   );
+  const removeRow = useMutation((api as any).applicationAnswers.removeRow);
 
   // review-mode: one question/row flagged at a time
   const [flaggingState, setFlaggingState] = useState<{
@@ -204,9 +213,18 @@ export function QuestionGroupView({
         existingCount = Math.max(existingCount, idx + 1);
       }
 
-      const manual = manualCountByCollection[collection.collectionKey] ?? 0;
-      const resolved = Math.max(collection.minItems, dependencyCount, existingCount, manual, 1);
-      result[collection.collectionKey] = Math.min(collection.maxItems, resolved);
+      const manual = manualCountByCollection[collection.collectionKey];
+      const manualCount = typeof manual === "number" ? manual : -1;
+      const resolved = Math.max(
+        collection.minItems,
+        dependencyCount,
+        existingCount,
+        manualCount,
+      );
+      result[collection.collectionKey] = Math.min(
+        collection.maxItems,
+        Math.max(0, resolved),
+      );
     }
     return result;
   }, [repeatingCollections, answers, answerValueMap, manualCountByCollection]);
@@ -335,22 +353,10 @@ export function QuestionGroupView({
 
   // ----- Layout -----
 
-  const outerClassName =
-    mode === "fill"
-      ? "max-w-2xl mx-auto py-8 px-4 space-y-8"
-      : "space-y-4";
+  const outerClassName = mode === "fill" ? "space-y-8" : "space-y-4";
 
   return (
     <div className={outerClassName}>
-      {mode === "fill" && (
-        <div className="space-y-1">
-          <h1 className="text-2xl font-semibold">{group.title}</h1>
-          {group.description && (
-            <p className="text-muted-foreground">{group.description}</p>
-          )}
-        </div>
-      )}
-
       <div className={mode === "fill" ? "space-y-6" : "space-y-4"}>
         {/* Non-repeating questions */}
         {nonRepeatingQuestions.map((q) =>
@@ -371,57 +377,63 @@ export function QuestionGroupView({
                 (dq) => String(dq._id) === String(collection.dependsOnQuestionId),
               )
             : null;
+          const countLocked = mode === "fill" && !!collection.dependsOnQuestionId;
+          const canRemove = mode === "fill" && !countLocked && count > collection.minItems;
 
-          return (
-            <div
-              key={collection.collectionKey}
-              className={
-                mode === "fill"
-                  ? "space-y-4 rounded-xl border border-foreground/10 bg-card p-4"
-                  : "space-y-3 rounded-xl border border-foreground/10 bg-card p-4"
-              }
-            >
-              {/* Chunk header */}
+          if (mode === "review") {
+            return (
               <div
-                className={
-                  mode === "fill"
-                    ? "flex flex-wrap items-center justify-between gap-3"
-                    : "flex flex-wrap items-center gap-2"
-                }
+                key={collection.collectionKey}
+                className="space-y-3 rounded-xl border border-foreground/10 bg-card p-4"
               >
-                <div className={mode === "fill" ? "space-y-1" : undefined}>
+                <div className="flex flex-wrap items-center gap-2">
                   <p className="text-sm font-medium text-foreground">
                     {titleCase(collection.itemLabel)} details
                   </p>
-                  {mode === "fill" ? (
-                    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                      <span className="rounded-full border border-foreground/15 px-2 py-0.5">
-                        Repeating chunk ({count})
-                      </span>
-                      {dependencyQuestion && (
-                        <span className="rounded-full border border-foreground/15 px-2 py-0.5">
-                          Depends on: {dependencyQuestion.prompt}
-                        </span>
-                      )}
-                    </div>
-                  ) : (
-                    <>
-                      <Badge variant="outline" className="text-[11px]">
-                        Repeating chunk ({count})
-                      </Badge>
-                      {dependencyQuestion && (
-                        <Badge variant="outline" className="text-[11px]">
-                          Depends on: {dependencyQuestion.prompt}
-                        </Badge>
-                      )}
-                    </>
+                  <Badge variant="outline" className="text-[11px]">
+                    Repeating chunk ({count})
+                  </Badge>
+                  {dependencyQuestion && (
+                    <Badge variant="outline" className="text-[11px]">
+                      Depends on: {dependencyQuestion.prompt}
+                    </Badge>
                   )}
                 </div>
-                {mode === "fill" && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
+                <div className="space-y-4">
+                  {Array.from({ length: count }).map((_, idx) => {
+                    const rowKey = `${collection.collectionKey}:${idx}`;
+                    return (
+                      <div
+                        key={rowKey}
+                        className="space-y-3 rounded-lg border border-foreground/10 p-3"
+                      >
+                        <p className="text-xs font-medium text-muted-foreground">
+                          {titleCase(collection.itemLabel)} {idx + 1}
+                        </p>
+                        {collection.questions.map((q) => renderQuestion(q, rowKey))}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          }
+
+          const canAdd = !countLocked && count < collection.maxItems;
+          const itemLabel = collection.itemLabel;
+          const canRemoveAt = (idx: number) =>
+            mode === "fill" && !countLocked && count - 1 >= collection.minItems && idx < count;
+
+          return (
+            <RepeatingCollectionShell
+              key={collection.collectionKey}
+              label={`${titleCase(itemLabel)} details`}
+              addButton={
+                canAdd ? (
+                  <AddItemButton
+                    label={
+                      count === 0 ? `Add ${itemLabel}` : `Add another ${itemLabel}`
+                    }
                     onClick={() =>
                       setManualCountByCollection((prev) => ({
                         ...prev,
@@ -431,45 +443,69 @@ export function QuestionGroupView({
                         ),
                       }))
                     }
-                    disabled={count >= collection.maxItems}
-                  >
-                    Add {collection.itemLabel}
-                  </Button>
-                )}
-              </div>
-
-              {/* Rows */}
-              <div className={mode === "fill" ? "space-y-5" : "space-y-4"}>
-                {Array.from({ length: count }).map((_, idx) => {
-                  const rowKey = `${collection.collectionKey}:${idx}`;
-                  return (
-                    <div
-                      key={rowKey}
-                      className="space-y-3 rounded-lg border border-foreground/10 p-3"
-                    >
-                      <p className="text-xs font-medium text-muted-foreground">
-                        {titleCase(collection.itemLabel)} {idx + 1}
-                      </p>
-                      {collection.questions.map((q) => renderQuestion(q, rowKey))}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
+                  />
+                ) : null
+              }
+            >
+              {count === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No {itemLabel} added yet.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {Array.from({ length: count }).map((_, idx) => {
+                    const rowKey = `${collection.collectionKey}:${idx}`;
+                    return (
+                      <RepeatingItemCard
+                        key={rowKey}
+                        title={`${titleCase(itemLabel)} ${idx + 1}`}
+                        removeAriaLabel={`Remove ${itemLabel} ${idx + 1}`}
+                        onRemove={
+                          canRemoveAt(idx)
+                            ? () => {
+                                void removeRow({
+                                  applicationId,
+                                  collectionKey: collection.collectionKey,
+                                  rowIndex: idx,
+                                });
+                                setManualCountByCollection((prev) => {
+                                  const current = prev[collection.collectionKey];
+                                  const next =
+                                    typeof current === "number"
+                                      ? current - 1
+                                      : count - 1;
+                                  return {
+                                    ...prev,
+                                    [collection.collectionKey]: Math.max(
+                                      collection.minItems,
+                                      next,
+                                    ),
+                                  };
+                                });
+                              }
+                            : undefined
+                        }
+                      >
+                        {collection.questions.map((q) => renderQuestion(q, rowKey))}
+                      </RepeatingItemCard>
+                    );
+                  })}
+                </div>
+              )}
+            </RepeatingCollectionShell>
           );
         })}
       </div>
 
-      {/* Bottom actions */}
       {mode === "fill" && (
-        <div className="sticky bottom-4 flex justify-end">
-          <Button
-            onClick={onSubmit}
+        <div className="flex justify-start pt-2">
+          <PillButton
+            variant="primary"
+            onClick={() => void onSubmit?.()}
             disabled={group.status === "accepted" || group.status === "submitted"}
-            size="lg"
           >
-            Submit Section
-          </Button>
+            Submit section
+          </PillButton>
         </div>
       )}
 

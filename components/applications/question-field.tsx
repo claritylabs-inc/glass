@@ -1,6 +1,4 @@
 "use client";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -10,6 +8,7 @@ import {
 } from "@/components/ui/select";
 import { PrefillChip } from "./prefill-chip";
 import { QuestionFieldBadges } from "./question-field-badges";
+import { AddressField, type AddressValue } from "./address-field";
 import type { Doc } from "@/convex/_generated/dataModel";
 
 type Answer = Doc<"applicationAnswers"> | undefined;
@@ -24,6 +23,9 @@ type Props = {
   inputName?: string;
 };
 
+const INPUT_CLASS =
+  "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
+
 export function QuestionField({ question, answer, flags, onChange, label, inputName }: Props) {
   const value = answer?.value;
   const source = answer?.source;
@@ -32,7 +34,7 @@ export function QuestionField({ question, answer, flags, onChange, label, inputN
   return (
     <div className="space-y-1.5">
       <div className="flex items-center gap-2">
-        <label className="text-sm font-medium text-foreground">
+        <label className="text-label-sm font-medium text-muted-foreground block">
           {label ?? question.prompt}
           {question.required && <span className="text-red-500 ml-0.5">*</span>}
         </label>
@@ -76,16 +78,26 @@ function FieldInput({
   onChange: (v: unknown) => void;
 }) {
   switch (answerType) {
+    case "address":
+      return (
+        <AddressField
+          value={(value as AddressValue) ?? undefined}
+          onChange={(next) => onChange(next)}
+        />
+      );
     case "text":
       return (
-        <Input
+        <input
+          type="text"
+          className={INPUT_CLASS}
           value={typeof value === "string" ? value : ""}
           onChange={(e) => onChange(e.target.value)}
         />
       );
     case "long_text":
       return (
-        <Textarea
+        <textarea
+          className={INPUT_CLASS}
           value={typeof value === "string" ? value : ""}
           onChange={(e) => onChange(e.target.value)}
           rows={4}
@@ -95,41 +107,45 @@ function FieldInput({
     case "currency":
     case "percent":
       return (
-        <Input
+        <input
           type="number"
+          className={INPUT_CLASS}
           value={typeof value === "number" ? value : ""}
           onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
         />
       );
     case "date":
       return (
-        <Input
+        <input
           type="date"
+          className={INPUT_CLASS}
           value={typeof value === "string" ? value : ""}
           onChange={(e) => onChange(e.target.value)}
         />
       );
     case "yes_no":
       return (
-        <div className="flex items-center gap-3">
-          <label className="flex items-center gap-1.5 text-sm cursor-pointer">
-            <input
-              type="radio"
-              name={`yn-${inputName}`}
-              checked={value === true}
-              onChange={() => onChange(true)}
-            />
-            Yes
-          </label>
-          <label className="flex items-center gap-1.5 text-sm cursor-pointer">
-            <input
-              type="radio"
-              name={`yn-${inputName}`}
-              checked={value === false}
-              onChange={() => onChange(false)}
-            />
-            No
-          </label>
+        <div className="flex items-center gap-2">
+          {[
+            { v: true, label: "Yes" },
+            { v: false, label: "No" },
+          ].map((opt) => {
+            const selected = value === opt.v;
+            return (
+              <button
+                key={opt.label}
+                type="button"
+                onClick={() => onChange(opt.v)}
+                className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                  selected
+                    ? "border-foreground/20 bg-foreground text-background"
+                    : "border-foreground/8 bg-popover text-muted-foreground hover:border-foreground/20"
+                }`}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
         </div>
       );
     case "select":
@@ -138,7 +154,7 @@ function FieldInput({
           value={typeof value === "string" ? value : ""}
           onValueChange={onChange}
         >
-          <SelectTrigger>
+          <SelectTrigger className={INPUT_CLASS}>
             <SelectValue placeholder="Select…" />
           </SelectTrigger>
           <SelectContent>
@@ -152,33 +168,37 @@ function FieldInput({
       );
     case "multi_select":
       return (
-        <div className="flex flex-col gap-1.5">
+        <div className="flex flex-wrap gap-1.5">
           {(selectOptions ?? []).map((o) => {
             const selected =
               Array.isArray(value) && (value as string[]).includes(o.value);
             return (
-              <label key={o.value} className="flex items-center gap-2 text-sm cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={selected}
-                  onChange={(e) => {
-                    const prev = Array.isArray(value) ? (value as string[]) : [];
-                    onChange(
-                      e.target.checked
-                        ? [...prev, o.value]
-                        : prev.filter((v) => v !== o.value),
-                    );
-                  }}
-                />
+              <button
+                key={o.value}
+                type="button"
+                onClick={() => {
+                  const prev = Array.isArray(value) ? (value as string[]) : [];
+                  onChange(
+                    selected ? prev.filter((v) => v !== o.value) : [...prev, o.value],
+                  );
+                }}
+                className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                  selected
+                    ? "border-foreground/20 bg-foreground text-background"
+                    : "border-foreground/8 bg-popover text-muted-foreground hover:border-foreground/20"
+                }`}
+              >
                 {o.label}
-              </label>
+              </button>
             );
           })}
         </div>
       );
     default:
       return (
-        <Input
+        <input
+          type="text"
+          className={INPUT_CLASS}
           value={typeof value === "string" ? value : ""}
           onChange={(e) => onChange(e.target.value)}
           placeholder={`(${answerType})`}

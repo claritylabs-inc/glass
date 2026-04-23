@@ -1,10 +1,13 @@
 "use client";
 
 import { type ReactNode } from "react";
+import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { BrandWordmark, PartnerWordmark } from "@/components/auth-shell";
 import { LogoIcon } from "@/components/ui/logo-icon";
+import { ApplicationPrefillBanner } from "@/components/shared/extraction-banner";
 import type { Id } from "@/convex/_generated/dataModel";
 
 function StepBar({ current, total }: { current: number; total: number }) {
@@ -40,8 +43,18 @@ export function ClientApplicationShell({
   children: ReactNode;
 }) {
   const data = useQuery((api as any).applications.get, { applicationId }) as {
-    app: { title: string };
-    groups: Array<{ _id: Id<"applicationGroups">; order: number }>;
+    app: {
+      title: string;
+      prefillStatus?: string;
+      prefillError?: string;
+      prefillLog?: unknown[];
+    };
+    groups: Array<{
+      _id: Id<"applicationGroups">;
+      order: number;
+      title: string;
+      description?: string;
+    }>;
   } | null | undefined;
   const viewer = useQuery(api.users.viewer);
   const viewerOrg = useQuery(api.orgs.viewerOrg, {});
@@ -51,6 +64,11 @@ export function ClientApplicationShell({
   const currentIndex = currentGroupId
     ? Math.max(0, sortedGroups.findIndex((g) => String(g._id) === String(currentGroupId)))
     : 0;
+  const currentGroup = currentGroupId
+    ? sortedGroups.find((g) => String(g._id) === String(currentGroupId))
+    : undefined;
+  const resolvedTitle = title ?? currentGroup?.title ?? data?.app?.title ?? "Application";
+  const resolvedSubtitle = subtitle ?? currentGroup?.description;
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -94,9 +112,26 @@ export function ClientApplicationShell({
       <main className="mx-auto flex w-full max-w-6xl justify-center px-6 pt-20 pb-12 sm:px-8 sm:pt-24 sm:pb-16">
         <div className="w-full max-w-3xl space-y-8">
           <div className="space-y-3 text-left">
-            <h1 className="text-base font-medium tracking-tight">{title ?? data?.app?.title ?? "Application"}</h1>
-            {subtitle ? <p className="text-base text-muted-foreground">{subtitle}</p> : null}
+            {currentGroupId ? (
+              <Link
+                href={`/applications/${applicationId}`}
+                className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <ArrowLeft className="h-3.5 w-3.5" />
+                All sections
+              </Link>
+            ) : null}
+            <h1 className="text-base font-medium tracking-tight">{resolvedTitle}</h1>
+            {resolvedSubtitle ? (
+              <p className="text-base text-muted-foreground">{resolvedSubtitle}</p>
+            ) : null}
           </div>
+          <ApplicationPrefillBanner
+            applicationId={applicationId}
+            status={data?.app?.prefillStatus as any}
+            error={data?.app?.prefillError}
+            log={data?.app?.prefillLog as any}
+          />
           <div>{children}</div>
         </div>
       </main>

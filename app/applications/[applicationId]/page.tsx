@@ -13,9 +13,7 @@ export default async function ApplicationOverviewPage({
       applicationId={applicationId as Id<"applications">}
       subtitle="Complete each section in order. Your broker will review and can request updates if needed."
     >
-      <div className="rounded-2xl border border-foreground/10 bg-card p-5 sm:p-6">
-        <ClientKanban applicationId={applicationId as Id<"applications">} />
-      </div>
+      <ClientKanban applicationId={applicationId as Id<"applications">} />
     </ClientApplicationShell>
   );
 }

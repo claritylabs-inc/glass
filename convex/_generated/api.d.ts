@@ -97,6 +97,7 @@ import type * as lib_applicationCapabilities from "../lib/applicationCapabilitie
 import type * as lib_applicationConditionals from "../lib/applicationConditionals.js";
 import type * as lib_applicationDerivation from "../lib/applicationDerivation.js";
 import type * as lib_applicationGrouping from "../lib/applicationGrouping.js";
+import type * as lib_applicationIntentGraph from "../lib/applicationIntentGraph.js";
 import type * as lib_applicationPdfExtraction from "../lib/applicationPdfExtraction.js";
 import type * as lib_applicationPrefill from "../lib/applicationPrefill.js";
 import type * as lib_applicationPrompts from "../lib/applicationPrompts.js";
@@ -255,6 +256,7 @@ declare const fullApi: ApiFromModules<{
   "lib/applicationConditionals": typeof lib_applicationConditionals;
   "lib/applicationDerivation": typeof lib_applicationDerivation;
   "lib/applicationGrouping": typeof lib_applicationGrouping;
+  "lib/applicationIntentGraph": typeof lib_applicationIntentGraph;
   "lib/applicationPdfExtraction": typeof lib_applicationPdfExtraction;
   "lib/applicationPrefill": typeof lib_applicationPrefill;
   "lib/applicationPrompts": typeof lib_applicationPrompts;

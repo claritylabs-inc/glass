@@ -3,9 +3,11 @@ import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useMemo } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import type { Id } from "@/convex/_generated/dataModel";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { PillButton } from "@/components/ui/pill-button";
+import { cn } from "@/lib/utils";
+import { ArrowRight } from "lucide-react";
 
 type Props = { applicationId: Id<"applications"> };
 
@@ -14,7 +16,15 @@ const STATUS_LABELS: Record<string, string> = {
   in_progress: "In progress",
   returned: "Needs updates",
   submitted: "Submitted",
-  accepted: "Accepted",
+  accepted: "Approved",
+};
+
+const STATUS_TONE: Record<string, string> = {
+  not_started: "text-muted-foreground",
+  in_progress: "text-foreground",
+  returned: "text-amber-600 dark:text-amber-400",
+  submitted: "text-foreground",
+  accepted: "text-emerald-600 dark:text-emerald-400",
 };
 
 export function ClientKanban({ applicationId }: Props) {
@@ -38,50 +48,57 @@ export function ClientKanban({ applicationId }: Props) {
 
   if (!data) return null;
 
-  const nextGroup =
-    sortedGroups.find((g) => g.status === "returned") ??
-    sortedGroups.find((g) => g.status === "in_progress") ??
-    sortedGroups.find((g) => g.status === "not_started") ??
-    sortedGroups[0];
-  const completedCount = sortedGroups.filter((g) => g.status === "accepted").length;
+  const allComplete =
+    sortedGroups.length > 0 &&
+    sortedGroups.every(
+      (g) => g.status === "submitted" || g.status === "accepted",
+    );
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-foreground/10 bg-background/40 px-4 py-3">
-        <p className="text-sm text-muted-foreground">
-          {completedCount} of {sortedGroups.length} sections approved
-        </p>
-        {nextGroup ? (
-          <Button
-            size="sm"
-            onClick={() => router.push(`/applications/${applicationId}/groups/${nextGroup._id}`)}
-          >
-            Continue
-          </Button>
-        ) : null}
-      </div>
-
-      <div className="space-y-3">
+    <div className="space-y-4">
+      <div className="space-y-2">
         {sortedGroups.map((g, idx) => (
           <button
             key={g._id}
-            className="w-full rounded-xl border border-foreground/10 bg-card px-4 py-4 text-left transition-colors hover:bg-accent/30"
+            className="w-full flex items-center justify-between gap-4 rounded-lg border border-foreground/6 bg-white px-4 py-3.5 text-left transition-colors hover:bg-accent/30 hover:border-foreground/10"
             onClick={() => router.push(`/applications/${applicationId}/groups/${g._id}`)}
           >
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <p className="text-xs text-muted-foreground">Section {idx + 1}</p>
-                <p className="text-sm font-medium">{g.title}</p>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-baseline gap-2">
+                <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                  {String(idx + 1).padStart(2, "0")}
+                </span>
+                <p className="text-sm font-medium truncate">{g.title}</p>
               </div>
-              <Badge variant="outline" className="text-xs">
-                {STATUS_LABELS[g.status] ?? g.status.replace(/_/g, " ")}
-              </Badge>
+              {g.description ? (
+                <p className="mt-0.5 text-xs text-muted-foreground line-clamp-1">
+                  {g.description}
+                </p>
+              ) : null}
             </div>
-            {g.description ? (
-              <p className="mt-1.5 text-xs text-muted-foreground line-clamp-2">{g.description}</p>
-            ) : null}
+            <span
+              className={cn(
+                "text-xs whitespace-nowrap",
+                STATUS_TONE[g.status] ?? "text-muted-foreground",
+              )}
+            >
+              {STATUS_LABELS[g.status] ?? g.status.replace(/_/g, " ")}
+            </span>
           </button>
         ))}
+      </div>
+
+      <div className="pt-2">
+        <PillButton
+          type="button"
+          variant="primary"
+          disabled={!allComplete}
+          onClick={() => toast.success("Application submitted to your broker.")}
+          className="w-full justify-center text-sm shadow-none sm:w-auto"
+        >
+          Submit application
+          <ArrowRight className="h-4 w-4" />
+        </PillButton>
       </div>
     </div>
   );

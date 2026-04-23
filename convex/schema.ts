@@ -260,6 +260,70 @@ export default defineSchema({
     .index("by_applicationId", ["applicationId"])
     .index("by_applicationId_order", ["applicationId", "order"]),
 
+  // Application templates — reusable intent graphs keyed by line of business
+  // (and optionally carrier). Extraction can seed from a matching template to
+  // run in "differential" mode and cut token spend.
+  //
+  // Share scope: `private` = owner user only, `org` = broker org (default),
+  // `public` = Clarity-curated (e.g. ACORD 125/126/130/140).
+  applicationTemplates: defineTable({
+    name: v.string(),
+    lineOfBusiness: v.string(),
+    carrier: v.optional(v.string()),
+    ownerOrgId: v.id("organizations"),
+    createdByUserId: v.optional(v.id("users")),
+    shareScope: v.union(
+      v.literal("private"),
+      v.literal("org"),
+      v.literal("public"),
+    ),
+    // Canonical intent graph — see convex/lib/applicationIntentGraph.ts
+    intentGraph: v.any(),
+    // Fingerprint used for fast candidate lookup & match scoring.
+    fingerprint: v.object({
+      normalizedPrompts: v.array(v.string()),
+      fieldTypeHistogram: v.array(
+        v.object({ fieldType: v.string(), count: v.number() }),
+      ),
+      pageCount: v.optional(v.number()),
+    }),
+    // Rolling telemetry from extractions that matched this template. Updated
+    // by the learning loop.
+    stats: v.optional(
+      v.object({
+        matchCount: v.number(),
+        lastMatchedAt: v.optional(v.number()),
+        avgDeltaRatio: v.optional(v.number()),
+      }),
+    ),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_ownerOrgId_line", ["ownerOrgId", "lineOfBusiness"])
+    .index("by_line_carrier", ["lineOfBusiness", "carrier"])
+    .index("by_shareScope_line", ["shareScope", "lineOfBusiness"]),
+
+  // Telemetry row per extraction run. Powers the eval harness and the learning
+  // loop. One row per application extraction attempt.
+  applicationExtractionRuns: defineTable({
+    applicationId: v.id("applications"),
+    templateId: v.optional(v.id("applicationTemplates")),
+    templateMatchScore: v.optional(v.number()),
+    tokensUsed: v.number(),
+    criticRounds: v.number(),
+    qualityScore: v.optional(v.number()),
+    status: v.union(
+      v.literal("succeeded"),
+      v.literal("failed"),
+      v.literal("capped"),
+    ),
+    error: v.optional(v.string()),
+    startedAt: v.number(),
+    finishedAt: v.optional(v.number()),
+  })
+    .index("by_applicationId", ["applicationId"])
+    .index("by_templateId", ["templateId"]),
+
   applicationQuestions: defineTable({
     applicationId: v.id("applications"),
     groupId: v.id("applicationGroups"),

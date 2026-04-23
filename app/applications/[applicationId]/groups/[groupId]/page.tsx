@@ -12,7 +12,6 @@ export default async function GroupFillerPage({
     <ClientApplicationShell
       applicationId={applicationId as Id<"applications">}
       currentGroupId={groupId as Id<"applicationGroups">}
-      subtitle="Fill in this section with the most accurate and up-to-date information."
     >
       <GroupFiller
         applicationId={applicationId as Id<"applications">}

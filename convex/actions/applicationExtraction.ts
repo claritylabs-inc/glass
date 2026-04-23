@@ -665,12 +665,8 @@ ${JSON.stringify(repeatCandidates, null, 2)}`,
         const keep =
           members.find((m) => !effectiveAnsweredIds.has(String(m._id))) ??
           members[0];
-        const observedCount = members.length;
-        const minItems = Math.max(
-          1,
-          group.minItems ?? observedCount,
-          observedCount,
-        );
+        // Start every repeating collection at 0 — users add rows as needed.
+        const minItems = 0;
         const maxItems = group.maxItems
           ? Math.max(minItems, group.maxItems)
           : 50;
@@ -721,6 +717,81 @@ ${JSON.stringify(repeatCandidates, null, 2)}`,
       await pCtx.log(
         `Folded ${foldedQuestionIds.size} repeated questions into digital repeatables`,
       );
+
+      // ── Pass 0.6: typed-field recognition & intra-collection dedup ──
+      // Refetch after the fold so we see the settled state.
+      const afterFold = (await convexCtx.runQuery(
+        internal.applicationsInternal.getFullForPipeline,
+        { applicationId: applicationId as Id<"applications"> },
+      )) as {
+        questions: Array<{
+          _id: string;
+          prompt: string;
+          answerType: string;
+        }>;
+      } | null;
+
+      if (afterFold) {
+        const ADDRESS_RE =
+          /\b(address|street address|premises address|mailing address|physical location|location address|enter (each|the) location)\b/i;
+        const retypePatches: Array<{ questionId: string; answerType: string; prompt?: string }> =
+          [];
+        for (const q of afterFold.questions) {
+          if (q.answerType !== "text" && q.answerType !== "long_text") continue;
+          if (ADDRESS_RE.test(q.prompt)) {
+            retypePatches.push({ questionId: q._id, answerType: "address" });
+          }
+        }
+        if (retypePatches.length > 0) {
+          await batch(retypePatches, 100, async (chunk) => {
+            await convexCtx.runMutation(
+              (internal as any).applicationQuestionsInternal.patchMany,
+              { patches: chunk as any },
+            );
+          });
+          await pCtx.log(
+            `Retyped ${retypePatches.length} address-like prompts to answerType=address`,
+          );
+        }
+
+        // Dedup: within a repeating collection, if multiple surviving questions
+        // have the same normalized prompt, keep the first and delete the rest.
+        const refetched = (await convexCtx.runQuery(
+          internal.applicationsInternal.getFullForPipeline,
+          { applicationId: applicationId as Id<"applications"> },
+        )) as {
+          questions: Array<{
+            _id: string;
+            prompt: string;
+            repeating?: { collectionKey: string };
+          }>;
+        } | null;
+        if (refetched) {
+          const norm = (s: string) =>
+            s.trim().toLowerCase().replace(/\s+/g, " ").replace(/[^\w\s]/g, "");
+          const seen = new Map<string, string>(); // key -> first questionId
+          const toDelete: string[] = [];
+          for (const q of refetched.questions) {
+            const ck = (q as any).repeating?.collectionKey;
+            if (!ck) continue;
+            const key = `${ck}::${norm(q.prompt)}`;
+            const first = seen.get(key);
+            if (first && first !== q._id) toDelete.push(q._id);
+            else seen.set(key, q._id);
+          }
+          if (toDelete.length > 0) {
+            await batch(toDelete, 100, async (chunk) => {
+              await convexCtx.runMutation(
+                (internal as any).applicationQuestionsInternal.deleteQuestions,
+                { questionIds: chunk as any },
+              );
+            });
+            await pCtx.log(
+              `Removed ${toDelete.length} duplicate prompts within repeating collections`,
+            );
+          }
+        }
+      }
 
       return {
         kind: "next",
@@ -965,11 +1036,73 @@ Return one assignment per question.`,
         byTitle.get(title)!.push(String(q._id));
       }
 
+      // Reorder within each group so that:
+      //   • questions sharing a repeating.collectionKey are contiguous
+      //   • conditional questions follow their parent question immediately
+      // This keeps related blocks visually bunched in the form.
+      const questionById = new Map<string, (typeof questions)[number]>();
+      for (const q of questions) questionById.set(String(q._id), q);
+
+      const conditionalChildren = new Map<string, string[]>();
+      for (const q of questions) {
+        const parent = (q as any).conditional?.questionId as string | undefined;
+        if (!parent) continue;
+        const arr = conditionalChildren.get(String(parent)) ?? [];
+        arr.push(String(q._id));
+        conditionalChildren.set(String(parent), arr);
+      }
+
+      function reorderGroup(ids: string[]): string[] {
+        const placed = new Set<string>();
+        const out: string[] = [];
+
+        const emit = (id: string) => {
+          if (placed.has(id)) return;
+          placed.add(id);
+          out.push(id);
+          for (const childId of conditionalChildren.get(id) ?? []) {
+            if (!ids.includes(childId)) continue;
+            emitBlock(childId);
+          }
+        };
+
+        const emitBlock = (id: string) => {
+          const q = questionById.get(id);
+          const collectionKey = (q as any)?.repeating?.collectionKey as
+            | string
+            | undefined;
+          if (!collectionKey) {
+            emit(id);
+            return;
+          }
+          for (const sibId of ids) {
+            const sib = questionById.get(sibId);
+            if ((sib as any)?.repeating?.collectionKey === collectionKey) {
+              emit(sibId);
+            }
+          }
+        };
+
+        for (const id of ids) {
+          if (placed.has(id)) continue;
+          // Skip conditional children at top level — they are emitted under their parent
+          const parent = (questionById.get(id) as any)?.conditional?.questionId as
+            | string
+            | undefined;
+          if (parent && ids.includes(String(parent))) continue;
+          emitBlock(id);
+        }
+
+        // Safety net: append any stragglers (e.g. cycles, missing parents)
+        for (const id of ids) if (!placed.has(id)) emit(id);
+        return out;
+      }
+
       const normalizedOutput = {
         groups: taxonomy.map((g) => ({
           title: g.title,
           description: g.description as string | undefined,
-          questionIds: byTitle.get(g.title) ?? [],
+          questionIds: reorderGroup(byTitle.get(g.title) ?? []),
           order: g.order,
         })),
       };

@@ -115,6 +115,36 @@ export const brokerRemoveAnswer = mutation({
   },
 });
 
+// Remove a repeating row: delete all answers for the given rowKey, then shift
+// any later rows in the same collection down by one index so the numbering
+// stays contiguous.
+export const removeRow = mutation({
+  args: {
+    applicationId: v.id("applications"),
+    collectionKey: v.string(),
+    rowIndex: v.number(),
+  },
+  handler: async (ctx, args) => {
+    await assertCanAnswerApplication(ctx, args.applicationId);
+    const all = await ctx.db
+      .query("applicationAnswers")
+      .withIndex("by_applicationId", (q) => q.eq("applicationId", args.applicationId))
+      .collect();
+    const prefix = `${args.collectionKey}:`;
+    for (const a of all) {
+      if (!a.rowKey || !a.rowKey.startsWith(prefix)) continue;
+      const suffix = a.rowKey.slice(prefix.length);
+      const idx = Number(suffix);
+      if (!Number.isFinite(idx)) continue;
+      if (idx === args.rowIndex) {
+        await ctx.db.delete(a._id);
+      } else if (idx > args.rowIndex) {
+        await ctx.db.patch(a._id, { rowKey: `${args.collectionKey}:${idx - 1}` });
+      }
+    }
+  },
+});
+
 export const upsert = mutation({
   args: {
     applicationId: v.id("applications"),
@@ -152,6 +182,7 @@ export const upsert = mutation({
       .first();
 
     const now = Date.now();
+    let answerId;
     if (existing) {
       await ctx.db.patch(existing._id, {
         value: args.value,
@@ -162,9 +193,9 @@ export const upsert = mutation({
         answeredAt: now,
         answeredByUserId: access.userId,
       });
-      return existing._id;
+      answerId = existing._id;
     } else {
-      return await ctx.db.insert("applicationAnswers", {
+      answerId = await ctx.db.insert("applicationAnswers", {
         applicationId: args.applicationId,
         questionId: args.questionId,
         rowKey: args.rowKey,
@@ -177,5 +208,16 @@ export const upsert = mutation({
         answeredByUserId: access.userId,
       });
     }
+
+    // Bump the containing group to "in_progress" on first answer
+    const question = await ctx.db.get(args.questionId);
+    if (question) {
+      const group = await ctx.db.get(question.groupId);
+      if (group && group.status === "not_started") {
+        await ctx.db.patch(group._id, { status: "in_progress" });
+      }
+    }
+
+    return answerId;
   },
 });

@@ -53,7 +53,7 @@ export const submit = mutation({
         continue;
       }
 
-      const minItems = Math.max(1, repeating.minItems ?? 1);
+      const minItems = Math.max(0, repeating.minItems ?? 0);
       const maxItems = Math.max(minItems, repeating.maxItems ?? 50);
       let expectedCount = minItems;
       if (repeating.dependsOnQuestionId) {
