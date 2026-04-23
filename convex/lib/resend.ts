@@ -9,7 +9,8 @@ export function getNotificationFromAddress(fromName: string): string {
   return `${fromName} <notifications@${getAgentDomain()}>`;
 }
 
-export function getAuthFromAddress(): string {
+export function getAuthFromAddress(fromName?: string): string {
+  if (fromName) return `${fromName} <noreply@${getAgentDomain()}>`;
   return process.env.AUTH_EMAIL_FROM ?? `Clarity Labs <noreply@${getAgentDomain()}>`;
 }
 

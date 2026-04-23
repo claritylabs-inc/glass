@@ -3,17 +3,17 @@ import { getDefaultBranding } from "./branding";
 
 const SITE_URL = process.env.SITE_URL ?? "https://glass.claritylabs.dev";
 
-/** Brand name + mark lockup for the email header. No "from Clarity Labs" — reserved for footer. */
+/** Brand name + mark lockup for the email header. Big squircle logo mirrors the in-app sidebar brand. */
 export function buildEmailLogoHtml(branding: BrandingContext = getDefaultBranding()): string {
   const name = branding.brandName;
   const isAbsoluteLogo = /^https?:\/\//i.test(branding.logoUrl);
   const mark = isAbsoluteLogo
-    ? `<img src="${branding.logoUrl}" alt="" width="20" height="20" style="display:inline-block;vertical-align:middle;width:20px;height:20px;border-radius:50%;margin-right:8px;object-fit:cover;border:0;" />`
-    : `<span style="display:inline-block;vertical-align:middle;width:18px;height:18px;border-radius:50%;border:1.5px solid ${branding.brandColor};margin-right:8px;"></span>`;
+    ? `<img src="${branding.logoUrl}" alt="" width="32" height="32" style="display:inline-block;vertical-align:middle;width:32px;height:32px;border-radius:8px;margin-right:10px;object-fit:cover;border:0;" />`
+    : `<span style="display:inline-block;vertical-align:middle;width:30px;height:30px;border-radius:8px;border:1.5px solid ${branding.brandColor};margin-right:10px;"></span>`;
   return `
 <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;">
   <tr>
-    <td align="center" style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:18px;line-height:1;color:#111827;">
+    <td align="center" style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:22px;line-height:1;color:#111827;">
       ${mark}
       <span style="font-weight:600;vertical-align:middle;">${name}</span>
     </td>
@@ -21,15 +21,17 @@ export function buildEmailLogoHtml(branding: BrandingContext = getDefaultBrandin
 </table>`;
 }
 
-/** "Glass from Clarity Labs" platform attribution — text-only, no distortable image. */
+/** "Powered by {icon} Glass from Clarity Labs" platform attribution. */
 export function buildPlatformFooterHtml(siteUrl: string = SITE_URL): string {
+  const iconUrl = `https://www.google.com/s2/favicons?domain=glass.claritylabs.inc&sz=64`;
   return `
 <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;">
   <tr>
-    <td align="center">
-      <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:11px;color:#9ca3af;line-height:1.5;">
-        <a href="${siteUrl}" style="color:#9ca3af;text-decoration:none;">Glass</a> from Clarity Labs
-      </p>
+    <td align="center" style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:12px;color:#9ca3af;line-height:1;">
+      <span style="vertical-align:middle;">Powered by</span>
+      <img src="${iconUrl}" alt="" width="14" height="14" style="display:inline-block;vertical-align:middle;width:14px;height:14px;border-radius:3px;margin:0 6px 0 8px;object-fit:cover;border:0;" />
+      <a href="${siteUrl}" style="color:#111827;font-weight:600;text-decoration:none;vertical-align:middle;">Glass</a>
+      <span style="vertical-align:middle;margin-left:4px;">from Clarity Labs</span>
     </td>
   </tr>
 </table>`;
