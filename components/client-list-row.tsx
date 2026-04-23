@@ -99,7 +99,7 @@ export function ClientListRow({ row }: { row: ClientRow }) {
   if (row.kind === "draft") {
     const subline =
       row.onboardingStatus === "draft"
-        ? `Draft · ${row.activePoliciesCount} policy${row.activePoliciesCount === 1 ? "" : "ies"}`
+        ? `Draft · ${row.activePoliciesCount} ${row.activePoliciesCount === 1 ? "policy" : "policies"}`
         : `Invited · ${row.primaryContactEmail ?? "no email"}`;
     return (
       <div className="flex items-center gap-4 px-4 py-3 border-b border-foreground/6 last:border-0 opacity-70 hover:opacity-100 transition-opacity">
