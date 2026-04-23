@@ -86,12 +86,6 @@ export default function ClientThreadReadOnlyPage() {
 
   return (
     <div className="max-w-2xl mx-auto space-y-4">
-      <div className="pb-2">
-        <h1 className="text-xl font-semibold text-foreground !mb-0">
-          {thread.title}
-        </h1>
-      </div>
-
       {messages.length === 0 && (
         <div className="text-center py-16">
           <p className="text-body-sm text-muted-foreground/40">No messages</p>

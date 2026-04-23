@@ -3,7 +3,7 @@
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
-import { ArrowRight } from "lucide-react";
+import { FileText } from "lucide-react";
 import { useEntityPreview } from "@/hooks/use-entity-preview";
 import { POLICY_TYPE_LABELS } from "@/convex/lib/policyTypes";
 
@@ -38,14 +38,24 @@ export function extractEntityRefs(content: string): { type: "policy"; id: string
   return refs;
 }
 
-function PolicyReferenceCard({ id, page, citedSections, citedCoverageNames }: { id: string; page?: number; citedSections?: string[]; citedCoverageNames?: string[] }) {
+export function PolicyReferenceCard({
+  id,
+  page,
+  citedSections,
+  citedCoverageNames,
+}: {
+  id: string;
+  page?: number;
+  citedSections?: string[];
+  citedCoverageNames?: string[];
+}) {
   const policy = useQuery(api.policies.get, { id: id as Id<"policies"> });
   const { openPreview } = useEntityPreview();
 
   if (!policy) {
     return (
-      <div className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-foreground/8 bg-card text-body-sm">
-        <span className="text-foreground/70">Loading…</span>
+      <div className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-foreground/6 bg-card text-label-sm max-w-sm">
+        <span className="text-muted-foreground/50">Loading…</span>
       </div>
     );
   }
@@ -53,35 +63,24 @@ function PolicyReferenceCard({ id, page, citedSections, citedCoverageNames }: { 
   const carrier = policy.security || policy.carrier || "Unknown carrier";
   const policyNum = policy.policyNumber;
   const types = policy.policyTypes ?? (policy.policyType ? [policy.policyType] : []);
+  const primaryType = types[0] ? (POLICY_TYPE_LABELS[types[0]] ?? types[0]) : null;
+
+  const summaryParts = [carrier, policyNum].filter(Boolean).join(" ");
+  const summary = primaryType ? `${summaryParts} — ${primaryType}` : summaryParts;
+
   return (
     <button
       type="button"
       onClick={() => openPreview({ type: "policy", id, page, citedSections, citedCoverageNames })}
-      className="relative flex items-start gap-2.5 px-3 py-2.5 rounded-lg border border-foreground/8 bg-card hover:border-foreground/12 transition-all duration-150 cursor-pointer text-left group w-[260px] shrink-0 overflow-hidden"
+      className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-foreground/6 bg-card hover:bg-foreground/[0.02] hover:border-foreground/10 transition-colors text-left max-w-sm cursor-pointer"
     >
-      {/* Hover overlay */}
-      <div className="absolute inset-0 bg-primary/0 group-hover:bg-primary/[0.04] transition-colors duration-150 pointer-events-none" />
-      <div className="min-w-0 flex-1 space-y-0.5 relative">
-        <p className="text-body-sm font-medium text-foreground leading-tight truncate !my-0">
-          {carrier}
-        </p>
-        <p className="text-label-sm text-muted-foreground/50 truncate !my-0">
-          #{policyNum}
-        </p>
-        {types.length > 0 && (
-          <div className="flex flex-wrap gap-1 pt-0.5 !my-0">
-            {types.slice(0, 3).map((t) => (
-              <span
-                key={t}
-                className="inline-block px-1.5 py-px rounded text-label-sm text-muted-foreground/60 bg-foreground/[0.04] leading-tight"
-              >
-                {POLICY_TYPE_LABELS[t] ?? t}
-              </span>
-            ))}
-          </div>
-        )}
+      <div className="w-6 h-6 rounded-md bg-foreground/[0.04] flex items-center justify-center shrink-0">
+        <FileText className="w-3.5 h-3.5 text-muted-foreground/50" />
       </div>
-      <ArrowRight className="relative w-3.5 h-3.5 text-muted-foreground/15 group-hover:text-primary/50 transition-colors shrink-0 mt-1" />
+      <div className="min-w-0 flex-1">
+        <p className="text-label-sm text-muted-foreground/40 font-medium leading-none mb-0.5">Policy</p>
+        <p className="text-label-sm text-foreground truncate">{summary}</p>
+      </div>
     </button>
   );
 }
@@ -112,15 +111,21 @@ export function ReferenceCardStrip({
   refs,
   citedSections,
   citedCoverageNames,
+  rightAligned,
 }: {
   refs: { type: "policy"; id: string; page?: number }[];
   citedSections?: string[];
   citedCoverageNames?: string[];
+  rightAligned?: boolean;
 }) {
   if (refs.length === 0) return null;
 
   return (
-    <div className="flex gap-2 flex-wrap mt-2 ml-[38px]">
+    <div
+      className={`flex gap-2 flex-wrap mt-2 ${
+        rightAligned ? "mr-[38px] justify-end" : "ml-[38px]"
+      }`}
+    >
       {refs.map((ref) => (
         <PolicyReferenceCard key={`${ref.type}:${ref.id}`} id={ref.id} page={ref.page} citedSections={citedSections} citedCoverageNames={citedCoverageNames} />
       ))}

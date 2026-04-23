@@ -13,7 +13,7 @@ import { toast } from "sonner";
 import { Loader2, Archive, ArchiveRestore, FileText, Pencil, Check, ClipboardList, Asterisk, Mail as MailIcon, MessageSquare, Paperclip, Download, Copy, Lock, RotateCcw } from "lucide-react";
 import { usePdf } from "@/components/pdf-context";
 import { usePresence } from "@/hooks/use-presence";
-import { ContextReferenceCard, ReferenceCardStrip } from "@/components/context-reference-card";
+import { ContextReferenceCard, PolicyReferenceCard, ReferenceCardStrip } from "@/components/context-reference-card";
 import { ChatInput, ChatInputOverlay, type ChatInputHandle } from "@/components/chat-input";
 import { GlassPromptInput, type GlassPromptInputHandle } from "@/components/glass-prompt-input";
 import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
@@ -273,6 +273,7 @@ export function UnifiedMessageBubble({
   isFirstUserMessage,
   threadContext,
   brokerPerspective,
+  agentBranding,
 }: {
   msg: ThreadMessage;
   viewerId?: string;
@@ -283,6 +284,8 @@ export function UnifiedMessageBubble({
   threadContext?: { pageType: string; entityId?: string; summary?: string };
   /** When true, render agent messages as if sent "by the broker" — right-aligned. */
   brokerPerspective?: boolean;
+  /** Optional branding — when set, replaces generic "Glass" + asterisk on agent bubble. */
+  agentBranding?: { name: string; iconUrl?: string | null };
 }) {
   const [showQuoted, setShowQuoted] = useState(false);
   const [showToolCalls, setShowToolCalls] = useState(false);
@@ -306,12 +309,17 @@ export function UnifiedMessageBubble({
 
     return (
       <div className="flex items-start gap-2.5 max-w-lg">
-        <div className="w-7 h-7 rounded-full bg-primary-light/15 flex items-center justify-center shrink-0">
-          <Asterisk className="w-3.5 h-3.5 text-primary-light" />
+        <div className="w-7 h-7 rounded-full bg-primary-light/15 flex items-center justify-center shrink-0 overflow-hidden">
+          {agentBranding?.iconUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={agentBranding.iconUrl} alt="" className="w-7 h-7 object-cover" />
+          ) : (
+            <Asterisk className="w-3.5 h-3.5 text-primary-light" />
+          )}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <p className="text-label-sm font-medium text-muted-foreground/50">Glass</p>
+            <p className="text-label-sm font-medium text-muted-foreground/50">{agentBranding?.name ?? "Glass"}</p>
             {channelIcon}
             <CancelButton messageId={msg._id} show />
           </div>
@@ -378,13 +386,18 @@ export function UnifiedMessageBubble({
     return (
       <div>
         <div className={`flex items-start gap-2.5 max-w-lg w-fit ${brokerPerspective ? "ml-auto flex-row-reverse" : ""}`}>
-          <div className="w-7 h-7 rounded-full bg-primary-light/15 flex items-center justify-center shrink-0">
-            <Asterisk className="w-3.5 h-3.5 text-primary-light" />
+          <div className="w-7 h-7 rounded-full bg-primary-light/15 flex items-center justify-center shrink-0 overflow-hidden">
+            {agentBranding?.iconUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={agentBranding.iconUrl} alt="" className="w-7 h-7 object-cover" />
+            ) : (
+              <Asterisk className="w-3.5 h-3.5 text-primary-light" />
+            )}
           </div>
           <div className="flex-1 min-w-0">
             <div className={`flex items-center justify-between gap-3 mb-1 ${brokerPerspective ? "flex-row-reverse" : ""}`}>
               <div className="flex items-center gap-2 min-w-0">
-                <p className="text-label-sm font-medium text-muted-foreground/50">Glass</p>
+                <p className="text-label-sm font-medium text-muted-foreground/50">{agentBranding?.name ?? "Glass"}</p>
                 {channelIcon}
                 <span className="text-muted-foreground/20">·</span>
                 <span className="text-label-sm text-muted-foreground/25">{time.format("MMM D, h:mm A")}</span>
@@ -449,7 +462,7 @@ export function UnifiedMessageBubble({
             )}
           </div>
         </div>
-        <ReferenceCardStrip refs={allRefs} citedSections={citedSections} citedCoverageNames={citedCoverageNames} />
+        <ReferenceCardStrip refs={allRefs} citedSections={citedSections} citedCoverageNames={citedCoverageNames} rightAligned={brokerPerspective} />
         {isLastAgentMessage && (!msg.content || msg.content.trim().length === 0) && (
           <RetryButton messageId={msg._id} />
         )}
@@ -627,42 +640,33 @@ export function ThreadContextLink({
 }: {
   context: { pageType: string; entityId?: string; summary?: string };
 }) {
-  if (!context.entityId || !context.summary) return null;
+  if (!context.entityId) return null;
 
-  const routeMap: Record<string, string> = {
-    policy: "/policies",
-    quote: "/policies",
-  };
-  const base = routeMap[context.pageType];
-  if (!base) return null;
-  const href = `${base}/${context.entityId}`;
+  // Policy: delegate to the unified PolicyReferenceCard (opens preview side panel).
+  if (context.pageType === "policy") {
+    return <PolicyReferenceCard id={context.entityId} />;
+  }
 
-  const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
-    policy: FileText,
-    quote: ClipboardList,
-  };
-  const Icon = iconMap[context.pageType] ?? FileText;
+  // Quote fallback: no openPreview path today, keep the link-style card.
+  if (context.pageType === "quote" && context.summary) {
+    const href = `/policies/${context.entityId}`;
+    return (
+      <Link
+        href={href}
+        className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-foreground/6 bg-card hover:bg-foreground/[0.02] hover:border-foreground/10 transition-colors text-left max-w-sm"
+      >
+        <div className="w-6 h-6 rounded-md bg-foreground/[0.04] flex items-center justify-center shrink-0">
+          <ClipboardList className="w-3.5 h-3.5 text-muted-foreground/50" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-label-sm text-muted-foreground/40 font-medium leading-none mb-0.5">Quote</p>
+          <p className="text-label-sm text-foreground truncate">{context.summary}</p>
+        </div>
+      </Link>
+    );
+  }
 
-  const labelMap: Record<string, string> = {
-    policy: "Policy",
-    quote: "Quote",
-  };
-  const typeLabel = labelMap[context.pageType] ?? context.pageType;
-
-  return (
-    <Link
-      href={href}
-      className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-foreground/6 bg-card hover:bg-foreground/[0.02] hover:border-foreground/10 transition-colors text-left max-w-sm"
-    >
-      <div className="w-6 h-6 rounded-md bg-foreground/[0.04] flex items-center justify-center shrink-0">
-        <Icon className="w-3.5 h-3.5 text-muted-foreground/50" />
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="text-label-sm text-muted-foreground/40 font-medium leading-none mb-0.5">{typeLabel}</p>
-        <p className="text-label-sm text-foreground truncate">{context.summary}</p>
-      </div>
-    </Link>
-  );
+  return null;
 }
 
 /* ── Thread email mailto link ── */
@@ -689,12 +693,14 @@ function UnifiedThreadContent({
   onMeta,
   viewerId,
   viewerEmail,
+  agentBranding,
 }: {
   threadId: Id<"threads">;
   onMeta?: (meta: { detail: string; actions: React.ReactNode }) => void;
   viewerId?: string;
   viewerEmail?: string;
   agentHandle?: string;
+  agentBranding?: { name: string; iconUrl?: string | null };
 }) {
   const thread = useQuery(api.threads.get, { id: threadId });
   const messages = useQuery(api.threads.messages, { threadId }) as ThreadMessage[] | undefined;
@@ -867,6 +873,7 @@ function UnifiedThreadContent({
                     isLastAgentMessage={idx === lastAgentIdx}
                     isFirstUserMessage={false}
                     threadContext={undefined}
+                    agentBranding={agentBranding}
                   />
                   {isFirstUser && thread?.initialContext && (
                     <div className={`mt-2 flex ${firstUserIsOwn ? "justify-end mr-9.5" : "ml-9.5"}`}>
@@ -1284,6 +1291,9 @@ export default function ThreadPage({ params }: { params: Promise<{ id: string }>
   const viewerOrg = useQuery(api.orgs.viewerOrg, {});
   const presenceUsers = usePresence(`thread:${id}`);
   const agentHandle = viewerOrg?.brokerOrg?.agentHandle ?? viewerOrg?.org?.agentHandle;
+  const agentBranding = viewerOrg?.brokerOrg
+    ? { name: `${viewerOrg.brokerOrg.name} Agent`, iconUrl: viewerOrg.brokerOrg.iconUrl }
+    : undefined;
 
   // Thread metadata lifted from child components for AppShell header
   const [threadMeta, setThreadMeta] = useState<{ detail: string; actions: React.ReactNode }>({
@@ -1336,6 +1346,7 @@ export default function ThreadPage({ params }: { params: Promise<{ id: string }>
               viewerId={viewer?._id}
               viewerEmail={viewer?.email ?? undefined}
               agentHandle={agentHandle ?? undefined}
+              agentBranding={agentBranding}
             />
           </div>
         </div>
