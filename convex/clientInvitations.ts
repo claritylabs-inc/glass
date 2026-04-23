@@ -355,7 +355,7 @@ ${messageBlock}
 </td></tr>
 <tr><td style="padding:28px 40px 0 40px;"><div style="height:1px;background-color:rgba(0,0,0,0.06);"></div></td></tr>
 <tr><td align="center" style="padding:20px 40px 28px 40px;">
-  <div style="display:inline-block;padding:8px 16px;background-color:#ffffff;border-radius:6px;margin:0 auto 8px auto;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13px;color:#111827;"><strong style="color:#111827;">Glass</strong> <span style="color:#6b7280;">by Clarity Labs</span></div>
+  <img src="${glassLogoUrl}" alt="Glass by Clarity Labs" height="24" style="display:block;border:0;margin:0 auto 8px auto;" />
   <p style="margin:0;font-family:-apple-system,sans-serif;font-size:11px;color:#9ca3af;line-height:1.5;">
     Sent via Glass by Clarity Labs${brokerOrg ? ` on behalf of ${brokerName}` : ""}
   </p>
@@ -471,7 +471,7 @@ export const createEmail = action({
 </td></tr>
 <tr><td style="padding:28px 40px 0 40px;"><div style="height:1px;background-color:rgba(0,0,0,0.06);"></div></td></tr>
 <tr><td align="center" style="padding:20px 40px 28px 40px;">
-  <div style="display:inline-block;padding:8px 16px;background-color:#ffffff;border-radius:6px;margin:0 auto 8px auto;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13px;color:#111827;"><strong style="color:#111827;">Glass</strong> <span style="color:#6b7280;">by Clarity Labs</span></div>
+  <img src="${glassLogoUrl}" alt="Glass by Clarity Labs" height="24" style="display:block;border:0;margin:0 auto 8px auto;" />
   <p style="margin:0;font-family:-apple-system,sans-serif;font-size:11px;color:#9ca3af;line-height:1.5;">
     Sent via Glass by Clarity Labs${brokerOrg ? ` on behalf of ${brokerName}` : ""}
   </p>
