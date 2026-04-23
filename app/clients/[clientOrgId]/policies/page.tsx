@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -19,6 +19,7 @@ type DocType = "policy" | "quote";
 
 export default function ClientPoliciesPage() {
   const { clientOrgId } = useParams<{ clientOrgId: string }>();
+  const router = useRouter();
   const [docType, setDocType] = useState<DocType>("policy");
   const [uploaderOpen, setUploaderOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -178,6 +179,7 @@ export default function ClientPoliciesPage() {
               expirationDate={p.expirationDate}
               pipelineStatus={(p as any).pipelineStatus}
               uploadedBySide={p.uploadedBySide}
+              onClick={() => router.push(`/policies/${p._id}`)}
             />
           ))}
         </div>

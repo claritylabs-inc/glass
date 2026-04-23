@@ -167,9 +167,13 @@ export const listExtractionLog = query({
 export const get = query({
   args: { id: v.id("policies") },
   handler: async (ctx, args) => {
-    const { orgId } = await requireOrgAccess(ctx);
     const policy = await ctx.db.get(args.id);
-    if (!policy || policy.orgId !== orgId) return null;
+    if (!policy) return null;
+    try {
+      await getOrgAccessFor(ctx, policy.orgId);
+    } catch {
+      return null;
+    }
     return {
       ...policy,
       hasRawResponse: !!policy.rawExtractionResponse,

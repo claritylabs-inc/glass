@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -50,6 +51,7 @@ function PoliciesLoadingSkeleton() {
 }
 
 export default function PoliciesPage() {
+  const router = useRouter();
   const [docTypeTab, setDocTypeTab] = useState<DocTypeTab>("policy");
   const [uploaderOpen, setUploaderOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -216,6 +218,7 @@ export default function PoliciesPage() {
                 expirationDate={p.expirationDate}
                 pipelineStatus={p.pipelineStatus}
                 uploadedBySide={p.uploadedBySide}
+                onClick={() => router.push(`/policies/${p._id}`)}
               />
             ))}
           </div>
