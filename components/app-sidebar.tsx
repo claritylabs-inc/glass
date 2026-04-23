@@ -888,10 +888,10 @@ function SidebarBrokerContact({
               Email agent
             </PillButton>
             <PillButton
-              variant="icon"
+              variant="secondary"
               size="compact"
               onClick={handleSaveContact}
-              label="Save as contact"
+              title="Save as contact"
               aria-label="Save as contact"
             >
               <UserPlus className="h-3 w-3" />
