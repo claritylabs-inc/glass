@@ -272,6 +272,7 @@ export function UnifiedMessageBubble({
   isLastAgentMessage,
   isFirstUserMessage,
   threadContext,
+  brokerPerspective,
 }: {
   msg: ThreadMessage;
   viewerId?: string;
@@ -280,6 +281,8 @@ export function UnifiedMessageBubble({
   isLastAgentMessage?: boolean;
   isFirstUserMessage?: boolean;
   threadContext?: { pageType: string; entityId?: string; summary?: string };
+  /** When true, render agent messages as if sent "by the broker" — right-aligned. */
+  brokerPerspective?: boolean;
 }) {
   const [showQuoted, setShowQuoted] = useState(false);
   const [showToolCalls, setShowToolCalls] = useState(false);
@@ -374,12 +377,12 @@ export function UnifiedMessageBubble({
     }
     return (
       <div>
-        <div className="flex items-start gap-2.5 max-w-lg w-fit">
+        <div className={`flex items-start gap-2.5 max-w-lg w-fit ${brokerPerspective ? "ml-auto flex-row-reverse" : ""}`}>
           <div className="w-7 h-7 rounded-full bg-primary-light/15 flex items-center justify-center shrink-0">
             <Asterisk className="w-3.5 h-3.5 text-primary-light" />
           </div>
           <div className="flex-1 min-w-0">
-            <div className="flex items-center justify-between gap-3 mb-1">
+            <div className={`flex items-center justify-between gap-3 mb-1 ${brokerPerspective ? "flex-row-reverse" : ""}`}>
               <div className="flex items-center gap-2 min-w-0">
                 <p className="text-label-sm font-medium text-muted-foreground/50">Glass</p>
                 {channelIcon}

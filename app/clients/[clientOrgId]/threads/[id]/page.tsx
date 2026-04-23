@@ -115,6 +115,7 @@ export default function ClientThreadReadOnlyPage() {
               isLastAgentMessage={idx === lastAgentIdx}
               isFirstUserMessage={false}
               threadContext={undefined}
+              brokerPerspective
             />
             {isFirstUser && thread.initialContext && (
               <div
