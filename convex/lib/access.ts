@@ -154,11 +154,33 @@ export async function requireBrokerAccessToClient(
   ctx: Ctx,
   clientOrgId: Id<"organizations">,
 ): Promise<OrgAccess & { brokerOrgId: Id<"organizations"> }> {
-  const access = await getOrgAccess(ctx, clientOrgId);
-  if (access.accessType !== "broker_of_client") {
+  const { userId } = await requireAuth(ctx);
+  const org = await ctx.db.get(clientOrgId);
+  if (!org) throw new Error("Organization not found");
+
+  const orgType: "broker" | "client" = (org.type as "broker" | "client") ?? "client";
+  if (orgType !== "client" || !org.brokerOrgId) {
     throw new Error("Broker access required for this client");
   }
-  return access as OrgAccess & { brokerOrgId: Id<"organizations"> };
+
+  const brokerMembership = await ctx.db
+    .query("orgMemberships")
+    .withIndex("by_orgId_userId", (q) =>
+      q.eq("orgId", org.brokerOrgId!).eq("userId", userId),
+    )
+    .first();
+  if (!brokerMembership) {
+    throw new Error("Broker access required for this client");
+  }
+
+  return {
+    userId,
+    org,
+    orgType: "client",
+    accessType: "broker_of_client",
+    role: undefined,
+    brokerOrgId: org.brokerOrgId,
+  };
 }
 
 
