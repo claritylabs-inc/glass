@@ -278,7 +278,6 @@ export default function BrokerOnboardingPage() {
   const [slugInput, setSlugInput] = useState("");
   const [debouncedSlug, setDebouncedSlug] = useState("");
   const [brandingColor, setBrandingColor] = useState("#1E293B");
-  const [brandingMode, setBrandingMode] = useState<"light" | "dark">("light");
   const [brandingTextOnAccent, setBrandingTextOnAccent] = useState<"light" | "dark" | "auto">("auto");
   const [sampledColors, setSampledColors] = useState<string[]>([]);
   const [samplingColor, setSamplingColor] = useState(false);
@@ -302,7 +301,6 @@ export default function BrokerOnboardingPage() {
     setWebsite((v) => v || org.website || "");
     setSlugInput((v) => v || org.slug || "");
     if (org.brandingColor) setBrandingColor(org.brandingColor);
-    if (org.brandingMode) setBrandingMode(org.brandingMode);
     if (org.brandingTextOnAccent) setBrandingTextOnAccent(org.brandingTextOnAccent);
     setAgentHandle((v) => v || org.agentHandle || "");
   }, [viewerOrg]);
@@ -406,7 +404,6 @@ export default function BrokerOnboardingPage() {
     try {
       await updateOrg({
         brandingColor: brandingColor || undefined,
-        brandingMode,
         brandingTextOnAccent,
       });
       setCurrentStep(3);
@@ -580,39 +577,32 @@ export default function BrokerOnboardingPage() {
 
         {currentStep === 2 && (
           <div className="space-y-10">
-            <div className="space-y-4">
+            <div className="space-y-6">
               {(() => {
-                const effectiveText =
-                  brandingTextOnAccent === "auto" ? readableTextFor(brandingColor) : brandingTextOnAccent;
-                const textColor = effectiveText === "light" ? "#FFFFFF" : "#0F172A";
-                const previewBg = brandingMode === "dark" ? "#0B1220" : "#F7F5EF";
-                const previewFg = brandingMode === "dark" ? "#E5E7EB" : "#0F172A";
-                const previewMuted = brandingMode === "dark" ? "#94A3B8" : "#64748B";
-                const previewSurface = brandingMode === "dark" ? "#111827" : "#FFFFFF";
-                const previewBorder = brandingMode === "dark" ? "#1F2937" : "#E5E7EB";
+                const textColor =
+                  readableTextFor(brandingColor) === "light" ? "#FFFFFF" : "#0F172A";
                 const previewDomain = extractDomain(website);
                 const faviconUrl = previewDomain
                   ? `https://www.google.com/s2/favicons?domain=${encodeURIComponent(previewDomain)}&sz=64`
                   : null;
 
                 return (
-                  <div className="rounded-xl border border-foreground/8 bg-popover/60 p-5 space-y-5">
-                    <div className="space-y-1">
-                      <label className={labelClass}>White-label branding</label>
-                      <p className="text-label-sm text-muted-foreground/80">
-                        How your workspace will look to clients. Fine-tune theme, text contrast, and
-                        add a custom color from Settings after onboarding.
-                      </p>
+                  <>
+                    <div className="space-y-2">
+                      <label className={labelClass}>Accent color</label>
+                      <AccentColorPicker
+                        value={brandingColor}
+                        onChange={(c) => {
+                          setBrandingColor(c);
+                          setBrandingTextOnAccent("auto");
+                        }}
+                        website={website}
+                      />
                     </div>
 
-                    <div
-                      className="rounded-lg border p-4 transition-colors"
-                      style={{ backgroundColor: previewBg, borderColor: previewBorder }}
-                    >
-                      <div
-                        className="rounded-md p-3 flex items-center gap-3"
-                        style={{ backgroundColor: previewSurface, border: `1px solid ${previewBorder}` }}
-                      >
+                    <div className="space-y-2">
+                      <label className={labelClass}>Preview</label>
+                      <div className="rounded-md p-3 flex items-center gap-3 border border-foreground/8 bg-card">
                         <div
                           className="h-8 w-8 rounded-md shrink-0 overflow-hidden flex items-center justify-center"
                           style={{ backgroundColor: faviconUrl ? "#FFFFFF" : brandingColor }}
@@ -630,10 +620,10 @@ export default function BrokerOnboardingPage() {
                           ) : null}
                         </div>
                         <div className="min-w-0 flex-1">
-                          <div className="text-sm font-medium truncate" style={{ color: previewFg }}>
+                          <div className="text-sm font-medium truncate text-foreground">
                             {orgName.trim() || "Your brokerage"}
                           </div>
-                          <div className="text-xs truncate" style={{ color: previewMuted }}>
+                          <div className="text-xs truncate text-muted-foreground">
                             Preview of your client workspace
                           </div>
                         </div>
@@ -647,20 +637,7 @@ export default function BrokerOnboardingPage() {
                         </button>
                       </div>
                     </div>
-
-                    <div className="space-y-2">
-                      <p className="text-label-sm text-muted-foreground">Accent color</p>
-                      <AccentColorPicker
-                        value={brandingColor}
-                        onChange={(c) => {
-                          setBrandingColor(c);
-                          setBrandingTextOnAccent("auto");
-                        }}
-                        website={website}
-                      />
-                    </div>
-
-                  </div>
+                  </>
                 );
               })()}
             </div>
