@@ -36,7 +36,8 @@ export default function SignupPage() {
                 I&apos;m logging in as a client
               </div>
               <div className="text-label-sm text-muted-foreground">
-                Clients join by invitation from their broker. Check your email for an invite link, or{" "}
+                Use the signup link your broker shared with you (it looks like
+                glass.claritylabs.inc/signup/your-broker), or{" "}
                 <Link href="/login" className="font-medium text-foreground underline-offset-2 hover:underline">
                   log in
                 </Link>{" "}

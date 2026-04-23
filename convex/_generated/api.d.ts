@@ -37,6 +37,7 @@ import type * as clientInvitationsTest from "../clientInvitationsTest.js";
 import type * as clients from "../clients.js";
 import type * as conversationTurns from "../conversationTurns.js";
 import type * as crons from "../crons.js";
+import type * as devClear from "../devClear.js";
 import type * as documentChunks from "../documentChunks.js";
 import type * as http from "../http.js";
 import type * as lib_access from "../lib/access.js";
@@ -134,6 +135,7 @@ declare const fullApi: ApiFromModules<{
   clients: typeof clients;
   conversationTurns: typeof conversationTurns;
   crons: typeof crons;
+  devClear: typeof devClear;
   documentChunks: typeof documentChunks;
   http: typeof http;
   "lib/access": typeof lib_access;

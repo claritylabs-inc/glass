@@ -1,0 +1,93 @@
+import { v } from "convex/values";
+import { internalMutation, mutation } from "./_generated/server";
+import { internal } from "./_generated/api";
+import type { TableNames } from "./_generated/dataModel";
+
+// Tables to wipe. Excludes Convex system tables (_storage, _scheduled_functions)
+// and authTables (managed by @convex-dev/auth — wipe via dashboard if needed).
+const TABLES: TableNames[] = [
+  "users",
+  "organizations",
+  "orgMemberships",
+  "orgMemory",
+  "orgInvitations",
+  "brokerClientAssignments",
+  "clientInvitations",
+  "policies",
+  "policyFiles",
+  "notifications",
+  "notificationPreferences",
+  "brokerActivity",
+  "documentChunks",
+  "conversationTurns",
+  "policyAuditLog",
+  "webChats",
+  "webChatMessages",
+  "agentConversations",
+  "threads",
+  "threadMessages",
+  "pendingEmails",
+  "apiKeys",
+  "oauthClients",
+  "oauthAuthCodes",
+  "oauthTokens",
+  "apiAuditLog",
+  "rateLimitCounters",
+  "presence",
+];
+
+const BATCH_SIZE = 500;
+
+function assertDev() {
+  // Set via: `npx convex env set ALLOW_DEV_CLEAR true` on dev only.
+  // Never set this on prod.
+  if (process.env.ALLOW_DEV_CLEAR !== "true") {
+    throw new Error(
+      "devClear is disabled. Set ALLOW_DEV_CLEAR=true on the dev deployment only."
+    );
+  }
+}
+
+export const clearAll = mutation({
+  args: {},
+  handler: async (ctx) => {
+    assertDev();
+    for (const table of TABLES) {
+      await ctx.scheduler.runAfter(0, internal.devClear.clearTableBatch, {
+        table,
+      });
+    }
+    await ctx.scheduler.runAfter(0, internal.devClear.clearStorageBatch, {});
+    return { scheduled: TABLES.length + 1 };
+  },
+});
+
+export const clearStorageBatch = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    assertDev();
+    const files = await ctx.db.system.query("_storage").take(BATCH_SIZE);
+    for (const file of files) {
+      await ctx.storage.delete(file._id);
+    }
+    if (files.length === BATCH_SIZE) {
+      await ctx.scheduler.runAfter(0, internal.devClear.clearStorageBatch, {});
+    }
+  },
+});
+
+export const clearTableBatch = internalMutation({
+  args: { table: v.string() },
+  handler: async (ctx, { table }) => {
+    assertDev();
+    const rows = await ctx.db.query(table as TableNames).take(BATCH_SIZE);
+    for (const row of rows) {
+      await ctx.db.delete(row._id);
+    }
+    if (rows.length === BATCH_SIZE) {
+      await ctx.scheduler.runAfter(0, internal.devClear.clearTableBatch, {
+        table,
+      });
+    }
+  },
+});

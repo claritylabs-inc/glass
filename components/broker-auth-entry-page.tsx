@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAuthActions } from "@convex-dev/auth/react";
 import { useConvexAuth, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
@@ -42,13 +42,18 @@ export function BrokerAuthEntryPage({
 }) {
   const { signIn } = useAuthActions();
   const { isAuthenticated } = useConvexAuth();
-  const setBrandingHint = useMutation(api.auth.setBrandingHint);
+  const joinBroker = useMutation(api.clientInvitations.joinBroker);
   const router = useRouter();
   const searchParams = useSearchParams();
 
+  const isSignup = mode === "signup";
   const nextPath = searchParams.get("next");
+  const defaultPostPath = isSignup ? "/onboarding" : "/";
   const postLoginPath =
-    nextPath && nextPath.startsWith("/") && !nextPath.startsWith("//") ? nextPath : "/";
+    nextPath && nextPath.startsWith("/") && !nextPath.startsWith("//")
+      ? nextPath
+      : defaultPostPath;
+  const joiningRef = useRef(false);
 
   const [step, setStep] = useState<"email" | "code">("email");
   const [email, setEmail] = useState("");
@@ -62,8 +67,17 @@ export function BrokerAuthEntryPage({
   }, [searchParams, email]);
 
   useEffect(() => {
-    if (isAuthenticated) router.replace(postLoginPath);
-  }, [isAuthenticated, postLoginPath, router]);
+    if (!isAuthenticated) return;
+    if (isSignup && broker.slug) {
+      if (joiningRef.current) return;
+      joiningRef.current = true;
+      joinBroker({ slug: broker.slug })
+        .catch(() => {})
+        .finally(() => router.replace(postLoginPath));
+      return;
+    }
+    router.replace(postLoginPath);
+  }, [isAuthenticated, postLoginPath, router, isSignup, broker.slug, joinBroker]);
 
   if (isAuthenticated) return null;
 
@@ -72,9 +86,6 @@ export function BrokerAuthEntryPage({
     setLoading(true);
     setError("");
     try {
-      if (broker.slug) {
-        await setBrandingHint({ email, brokerSlug: broker.slug }).catch(() => {});
-      }
       await signIn("resend-otp", { email });
       setStep("code");
     } catch (err: unknown) {
@@ -97,10 +108,9 @@ export function BrokerAuthEntryPage({
     }
   }
 
-  const isSignup = mode === "signup";
   const title = isSignup ? `Join ${broker.name}` : `Sign in to ${broker.name}`;
   const subtitle = isSignup
-    ? `${broker.name} has invited you to their Glass workspace.`
+    ? `Join ${broker.name} to manage your policies, share documents, and get instant answers about your coverage.`
     : "Use your work email to continue.";
 
   const accentStyle = broker.brandingColor

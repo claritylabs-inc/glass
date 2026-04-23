@@ -427,12 +427,9 @@ export default function ClientOnboardingSetupPage() {
             <div className="space-y-4 text-body-sm text-muted-foreground leading-relaxed">
               <p>
                 <span className="text-foreground font-medium">Glass is your system of record</span>{" "}
-                for insurance data.
-              </p>
-              <p>
-                Ask questions about your policies and coverage over chat or by emailing your
-                agent. Generate certificates of insurance in seconds. Everything stays in one
-                place, always up to date.
+                for insurance data. Ask questions about your policies and coverage over chat or by
+                emailing your agent. Generate certificates of insurance in seconds. Everything
+                stays in one place, always up to date.
               </p>
             </div>
 

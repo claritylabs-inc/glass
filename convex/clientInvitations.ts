@@ -15,12 +15,11 @@ import { notify } from "./lib/notify";
 import { sendResendEmail, getNotificationFromAddress } from "./lib/resend";
 import { buildEmailShell } from "./lib/emailTemplate";
 import { getBrandingContext } from "./lib/branding";
+import type { MutationCtx } from "./_generated/server";
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
-/**
- * Hash a raw token string to SHA-256 hex using Web Crypto API.
- */
+/** Hash a raw token string to SHA-256 hex using Web Crypto API. */
 async function sha256Hex(token: string): Promise<string> {
   const encoded = new TextEncoder().encode(token);
   const hashBuffer = await crypto.subtle.digest("SHA-256", encoded);
@@ -38,13 +37,7 @@ function randomToken(): string {
     .join("");
 }
 
-function isEmailLike(value: string | undefined | null): boolean {
-  if (!value) return false;
-  const normalized = value.trim();
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized);
-}
-
-function companyNameFromEmail(email: string | undefined): string | null {
+function companyNameFromEmail(email: string | undefined | null): string | null {
   if (!email) return null;
   const domain = email.split("@")[1]?.toLowerCase();
   if (!domain) return null;
@@ -63,65 +56,117 @@ function companyNameFromEmail(email: string | undefined): string | null {
     .slice(0, 80);
 }
 
-function resolveClientOrgName(args: {
-  requestedName: string;
-  invitationName?: string;
-  fallbackEmail?: string;
-}): string {
-  const requested = args.requestedName.trim();
-  if (requested && !isEmailLike(requested)) return requested;
+/**
+ * Ensure the user has a membership on a client org for the given broker.
+ * Idempotent: returns existing membership if present; otherwise either
+ * promotes an existing draft org or inserts a fresh one.
+ */
+async function ensureClientMembership(
+  ctx: MutationCtx,
+  args: {
+    userId: DataModelId<"users">;
+    brokerOrgId: DataModelId<"organizations">;
+    draftOrgId?: DataModelId<"organizations">;
+    nameHint?: string;
+  },
+): Promise<{ clientOrgId: DataModelId<"organizations">; reused: boolean }> {
+  const memberships = await ctx.db
+    .query("orgMemberships")
+    .withIndex("by_userId", (q) => q.eq("userId", args.userId))
+    .collect();
+  for (const m of memberships) {
+    const org = await ctx.db.get(m.orgId);
+    if (
+      org &&
+      org.type === "client" &&
+      org.brokerOrgId === args.brokerOrgId
+    ) {
+      return { clientOrgId: m.orgId, reused: true };
+    }
+  }
 
-  const invitationName = args.invitationName?.trim();
-  if (invitationName && !isEmailLike(invitationName)) return invitationName;
+  const user = await ctx.db.get(args.userId);
+  const resolvedName =
+    companyNameFromEmail(user?.email ?? undefined) ??
+    (args.nameHint?.trim() || "Client organization");
 
-  const fromEmail = companyNameFromEmail(args.fallbackEmail);
-  if (fromEmail) return fromEmail;
+  if (args.draftOrgId) {
+    const draft = await ctx.db.get(args.draftOrgId);
+    if (!draft) throw new Error("Client organization missing");
+    await ctx.db.patch(args.draftOrgId, {
+      name: resolvedName,
+      inviteStatus: undefined,
+      draftCreatedByUserId: undefined,
+    });
+    await ctx.db.insert("orgMemberships", {
+      orgId: args.draftOrgId,
+      userId: args.userId,
+      role: "admin",
+    });
+    return { clientOrgId: args.draftOrgId, reused: false };
+  }
 
-  return "Client Organization";
+  const clientOrgId = await ctx.db.insert("organizations", {
+    name: resolvedName,
+    type: "client",
+    brokerOrgId: args.brokerOrgId,
+  });
+  await ctx.db.insert("orgMemberships", {
+    orgId: clientOrgId,
+    userId: args.userId,
+    role: "admin",
+  });
+  return { clientOrgId, reused: false };
 }
 
 // ── Public mutations / queries ─────────────────────────────────────────────────
 
-// ── Permanent shareable link (one per broker org) ────────────────────────────
-
 /**
- * Get or create the broker's permanent shareable invite link.
- * Returns the raw token so the broker can copy `/invite/<token>` any time.
+ * Open broker signup — user lands on /signup/{brokerSlug} and creates an
+ * account. Idempotent per broker.
  */
-export const getOrCreatePermaInviteLink = action({
-  args: { brokerOrgId: v.id("organizations") },
-  handler: async (ctx, args) => {
+export const joinBroker = mutation({
+  args: { slug: v.string() },
+  handler: async (ctx, { slug }) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("Not authenticated");
 
-    const access = await ctx.runQuery(internal.clientInvitations.resolveAccessInternal, {
+    const normalized = slug.toLowerCase().replace(/[^a-z0-9-]/g, "");
+    const broker = await ctx.db
+      .query("organizations")
+      .withIndex("by_slug", (q) => q.eq("slug", normalized))
+      .first();
+    if (!broker || broker.type !== "broker") throw new Error("Broker not found");
+
+    const { clientOrgId, reused } = await ensureClientMembership(ctx, {
       userId,
-      orgId: args.brokerOrgId,
-    });
-    if (!access) throw new Error("Unauthorized");
-    if (access.orgType !== "broker") throw new Error("Only broker orgs have shareable links");
-    if (access.accessType !== "member") throw new Error("Must be a broker org member");
-
-    const existing = await ctx.runQuery(internal.clientInvitations.findPermaInternal, {
-      brokerOrgId: args.brokerOrgId,
-    });
-    if (existing && existing.rawToken) return { token: existing.rawToken };
-
-    const rawToken = randomToken();
-    const tokenHash = await sha256Hex(rawToken);
-    await ctx.runMutation(internal.clientInvitations.insertInvitation, {
-      brokerOrgId: args.brokerOrgId,
-      invitedBy: userId,
-      inviteTokenHash: tokenHash,
-      linkType: "shareable",
-      status: "pending",
-      acceptedCount: 0,
-      createdAt: Date.now(),
-      isPerma: true,
-      rawToken,
+      brokerOrgId: broker._id,
     });
 
-    return { token: rawToken };
+    if (!reused) {
+      const user = await ctx.db.get(userId);
+      const orgDoc = await ctx.db.get(clientOrgId);
+      await recordBrokerActivity(ctx, {
+        brokerOrgId: broker._id,
+        clientOrgId,
+        type: "invitation_accepted",
+        actorUserId: userId,
+        actorSide: "client",
+        summary: `${user?.name ?? user?.email ?? "A client"} signed up via your signup link.`,
+        payload: { source: "signup_slug" },
+      });
+      await notify(ctx, {
+        orgId: broker._id,
+        type: "client_invitation_accepted",
+        title: "New client joined",
+        body: `${orgDoc?.name ?? "A client"} signed up via your signup link.`,
+        relatedOrgId: clientOrgId,
+        actionType: "view_client",
+        actionPayload: { clientOrgId },
+      });
+    }
+
+    return { clientOrgId };
   },
 });
 
@@ -296,7 +341,6 @@ export const sendDraftInvite = action({
       primaryContactName: draft.primaryContactName,
       invitedBy: userId,
       inviteTokenHash: tokenHash,
-      linkType: "email",
       status: "pending",
       expiresAt,
       createdAt: Date.now(),
@@ -371,147 +415,6 @@ ${messageBlock}
   },
 });
 
-/**
- * Create an email client invitation.
- * Broker admins/members create these for a specific contact.
- */
-export const createEmail = action({
-  args: {
-    orgId: v.id("organizations"),
-    clientOrgName: v.optional(v.string()),
-    primaryContactEmail: v.string(),
-    primaryContactName: v.optional(v.string()),
-    prefillPassport: v.optional(v.any()),
-  },
-  handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
-
-    const access = await ctx.runQuery(internal.clientInvitations.resolveAccessInternal, {
-      userId,
-      orgId: args.orgId,
-    });
-    if (!access) throw new Error("Unauthorized");
-    if (access.orgType !== "broker") throw new Error("Only broker orgs can invite clients");
-    if (access.accessType !== "member") throw new Error("Must be a broker org member");
-
-    const rawToken = randomToken();
-    const tokenHash = await sha256Hex(rawToken);
-    const expiresAt = Date.now() + 14 * 24 * 60 * 60 * 1000; // 14 days
-
-    await ctx.runMutation(internal.clientInvitations.insertInvitation, {
-      brokerOrgId: args.orgId,
-      clientOrgName: args.clientOrgName,
-      primaryContactEmail: args.primaryContactEmail,
-      primaryContactName: args.primaryContactName,
-      prefillPassport: args.prefillPassport,
-      invitedBy: userId,
-      inviteTokenHash: tokenHash,
-      linkType: "email",
-      status: "pending",
-      expiresAt,
-      createdAt: Date.now(),
-    });
-
-    const brokerOrg = await ctx.runQuery(internal.clientInvitations.getOrgInternal, {
-      orgId: args.orgId,
-    });
-    const brokerName = brokerOrg?.name ?? "Your broker";
-    const siteUrl = process.env.SITE_URL ?? "https://glass.claritylabs.dev";
-    const inviteUrl = `${siteUrl}/invite/${rawToken}`;
-    const recipient = args.primaryContactName
-      ? `${args.primaryContactName} <${args.primaryContactEmail}>`
-      : args.primaryContactEmail;
-
-    const brokerLogoUrl = brokerOrg?.iconStorageId
-      ? await ctx.storage.getUrl(brokerOrg.iconStorageId)
-      : null;
-    const branding = getBrandingContext({
-      agentDisplayName: brokerOrg?.name,
-      brandingColor: brokerOrg?.brandingColor,
-      logoUrl: brokerLogoUrl ?? undefined,
-    });
-
-    const subject = `${brokerName} invited you to Glass`;
-    const text = `${brokerName} has invited you${args.clientOrgName ? ` (${args.clientOrgName})` : ""} to Glass.\n\nAccept your invitation:\n${inviteUrl}\n\nThis link expires in 14 days.\n\n—\nGlass from Clarity Labs`;
-    const bodyHtml = `
-<tr><td style="padding:28px 40px 0 40px;">
-  <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:15px;color:#374151;line-height:1.6;">
-    <strong>${brokerName}</strong> has invited you${args.clientOrgName ? ` (<strong>${args.clientOrgName}</strong>)` : ""} to Glass — a shared workspace for your policies and documents.
-  </p>
-</td></tr>
-<tr><td align="center" style="padding:24px 40px 0 40px;">
-  <a href="${inviteUrl}" style="display:inline-block;padding:8px 22px;background-color:#111827;color:#ffffff;font-family:-apple-system,sans-serif;font-size:14px;font-weight:500;text-decoration:none;border-radius:999px;line-height:1.4;">Accept invitation</a>
-</td></tr>
-<tr><td style="padding:20px 40px 0 40px;">
-  <p style="margin:0;font-family:-apple-system,sans-serif;font-size:12px;color:#6b7280;line-height:1.6;">
-    Or copy this link:<br><a href="${inviteUrl}" style="color:#6b7280;word-break:break-all;">${inviteUrl}</a>
-  </p>
-</td></tr>
-<tr><td style="padding:16px 40px 32px 40px;">
-  <p style="margin:0;font-family:-apple-system,sans-serif;font-size:11px;color:#9ca3af;">This invitation expires in 14 days.</p>
-</td></tr>`;
-    const html = buildEmailShell({ title: subject, bodyHtml, branding, siteUrl });
-
-    const result = await sendResendEmail(
-      {
-        from: getNotificationFromAddress(brokerName),
-        to: recipient,
-        subject,
-        html,
-        text,
-      },
-      { retries: 2 },
-    );
-
-    if (!result.ok) {
-      throw new Error(`Failed to send invite email: ${result.error}`);
-    }
-
-    return { token: rawToken };
-  },
-});
-
-/**
- * Create a shareable client invitation link.
- */
-export const createShareable = action({
-  args: {
-    orgId: v.id("organizations"),
-    maxUses: v.optional(v.number()),
-    expiresAt: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
-
-    const access = await ctx.runQuery(internal.clientInvitations.resolveAccessInternal, {
-      userId,
-      orgId: args.orgId,
-    });
-    if (!access) throw new Error("Unauthorized");
-    if (access.orgType !== "broker") throw new Error("Only broker orgs can create shareable links");
-    if (access.accessType !== "member") throw new Error("Must be a broker org member");
-
-    const rawToken = randomToken();
-    const tokenHash = await sha256Hex(rawToken);
-
-    await ctx.runMutation(internal.clientInvitations.insertInvitation, {
-      brokerOrgId: args.orgId,
-      invitedBy: userId,
-      inviteTokenHash: tokenHash,
-      linkType: "shareable",
-      status: "pending",
-      acceptedCount: 0,
-      maxUses: args.maxUses,
-      expiresAt: args.expiresAt,
-      createdAt: Date.now(),
-    });
-
-    return { token: rawToken };
-  },
-});
-
 /** Revoke a pending invitation. Broker admin only. */
 export const revoke = mutation({
   args: {
@@ -563,11 +466,8 @@ export const getByToken = action({
       await ctx.runMutation(internal.clientInvitations.markExpired, { invitationId: inv._id });
       throw new Error("This invitation has expired");
     }
-    if (inv.linkType === "email" && inv.status === "accepted") {
+    if (inv.status === "accepted") {
       throw new Error("This invitation has already been accepted");
-    }
-    if (inv.maxUses !== undefined && (inv.acceptedCount ?? 0) >= inv.maxUses) {
-      throw new Error("This invitation link has reached its maximum uses");
     }
 
     const brokerOrg = await ctx.runQuery(internal.clientInvitations.getOrgInternal, {
@@ -576,7 +476,6 @@ export const getByToken = action({
 
     return {
       invitationId: inv._id,
-      linkType: inv.linkType,
       brokerName: brokerOrg?.name ?? "Your Broker",
       brokerIconUrl: brokerOrg?.iconStorageId
         ? await ctx.storage.getUrl(brokerOrg.iconStorageId)
@@ -594,29 +493,16 @@ export const getByToken = action({
 });
 
 /**
- * Accept a client invitation.
- * Creates a new client org + makes the calling user an admin of it.
- * Caller must already be authenticated (signed up or logged in just before calling this).
+ * Accept a client invitation. Caller must already be authenticated.
+ * Idempotent per broker (reuses existing membership if present).
  */
-export const accept = mutation({
-  args: {
-    token: v.string(),
-    clientOrgName: v.string(),
-  },
+export const acceptInvite = mutation({
+  args: { token: v.string() },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("Not authenticated");
 
-    // We can't call the action sha256Hex inside a mutation — token lookup uses
-    // a pre-hashed index. Accept receives the raw token, hashes it inline using
-    // Web Crypto (available in Convex mutation runtime via TextEncoder).
-    // Convex mutations run in V8; use subtle crypto.
-    const encoder = new TextEncoder();
-    const data = encoder.encode(args.token);
-    const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const tokenHash = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-
+    const tokenHash = await sha256Hex(args.token);
     const inv = await ctx.db
       .query("clientInvitations")
       .withIndex("by_tokenHash", (q) => q.eq("inviteTokenHash", tokenHash))
@@ -629,86 +515,38 @@ export const accept = mutation({
       await ctx.db.patch(inv._id, { status: "expired" });
       throw new Error("This invitation has expired");
     }
-    if (inv.linkType === "email" && inv.status === "accepted") {
-      throw new Error("This invitation has already been accepted");
-    }
-    if (inv.maxUses !== undefined && (inv.acceptedCount ?? 0) >= inv.maxUses) {
-      throw new Error("This invitation link has reached its maximum uses");
-    }
 
-    const acceptingUser = await ctx.db.get(userId);
-    const orgName = resolveClientOrgName({
-      requestedName: args.clientOrgName,
-      invitationName: inv.clientOrgName,
-      fallbackEmail: inv.primaryContactEmail ?? acceptingUser?.email,
-    });
-
-    // If the invitation was created from a draft, the client org already exists —
-    // reuse it instead of creating a duplicate.
-    let clientOrgId: DataModelId<"organizations">;
-    if (inv.clientOrgId && inv.linkType === "email") {
-      const existing = await ctx.db.get(inv.clientOrgId);
-      if (!existing) throw new Error("Client organization missing");
-      clientOrgId = inv.clientOrgId;
-      await ctx.db.patch(clientOrgId, {
-        name: orgName,
-        inviteStatus: undefined,
-        draftCreatedByUserId: undefined,
-      });
-    } else {
-      clientOrgId = await ctx.db.insert("organizations", {
-        name: orgName,
-        type: "client",
-        brokerOrgId: inv.brokerOrgId,
-      });
-      // Record explicit broker–client assignment (only for legacy/shareable path)
-      await ctx.db.insert("brokerClientAssignments", {
-        orgId: inv.brokerOrgId,
-        clientOrgId,
-        producerId: inv.invitedBy,
-        role: "primary",
-        createdAt: Date.now(),
-      });
-    }
-
-    // Make the accepting user admin of the client org
-    await ctx.db.insert("orgMemberships", {
-      orgId: clientOrgId,
+    const { clientOrgId, reused } = await ensureClientMembership(ctx, {
       userId,
-      role: "admin",
+      brokerOrgId: inv.brokerOrgId,
+      draftOrgId: inv.clientOrgId,
+      nameHint: inv.clientOrgName,
     });
 
-    // Update invitation
-    if (inv.linkType === "email") {
-      await ctx.db.patch(inv._id, { status: "accepted", clientOrgId });
-    } else {
-      await ctx.db.patch(inv._id, {
-        acceptedCount: (inv.acceptedCount ?? 0) + 1,
-        clientOrgId, // last accepted org for reference
+    await ctx.db.patch(inv._id, { status: "accepted", clientOrgId });
+
+    if (!reused) {
+      const acceptingUser = await ctx.db.get(userId);
+      const orgDoc = await ctx.db.get(clientOrgId);
+      await recordBrokerActivity(ctx, {
+        brokerOrgId: inv.brokerOrgId,
+        clientOrgId,
+        type: "invitation_accepted",
+        actorUserId: userId,
+        actorSide: "client",
+        summary: `${acceptingUser?.name ?? acceptingUser?.email ?? "A client"} accepted the invitation to join.`,
+        payload: { invitationId: inv._id },
+      });
+      await notify(ctx, {
+        orgId: inv.brokerOrgId,
+        type: "client_invitation_accepted",
+        title: "Client accepted your invitation",
+        body: `${orgDoc?.name ?? "A client"} accepted your invitation and joined Glass.`,
+        relatedOrgId: clientOrgId,
+        actionType: "view_client",
+        actionPayload: { clientOrgId },
       });
     }
-
-    // Record broker activity
-    await recordBrokerActivity(ctx, {
-      brokerOrgId: inv.brokerOrgId,
-      clientOrgId,
-      type: "invitation_accepted",
-      actorUserId: userId,
-      actorSide: "client",
-      summary: `${acceptingUser?.name ?? acceptingUser?.email ?? "A client"} accepted the invitation to join.`,
-      payload: { invitationId: inv._id },
-    });
-
-    // Notify broker of invitation acceptance
-    await notify(ctx, {
-      orgId: inv.brokerOrgId,
-      type: "client_invitation_accepted",
-      title: "Client accepted your invitation",
-      body: `${orgName} accepted your invitation and joined Glass.`,
-      relatedOrgId: clientOrgId,
-      actionType: "view_client",
-      actionPayload: { clientOrgId },
-    });
 
     return { clientOrgId };
   },
@@ -725,14 +563,9 @@ export const insertInvitation = internalMutation({
     prefillPassport: v.optional(v.any()),
     invitedBy: v.id("users"),
     inviteTokenHash: v.string(),
-    linkType: v.union(v.literal("email"), v.literal("shareable")),
     status: v.union(v.literal("pending"), v.literal("accepted"), v.literal("expired"), v.literal("revoked")),
-    acceptedCount: v.optional(v.number()),
-    maxUses: v.optional(v.number()),
     expiresAt: v.optional(v.number()),
     createdAt: v.number(),
-    isPerma: v.optional(v.boolean()),
-    rawToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     return await ctx.db.insert("clientInvitations", args);
@@ -753,18 +586,6 @@ export const getOrgInternal = internalQuery({
   args: { orgId: v.id("organizations") },
   handler: async (ctx, { orgId }) => {
     return await ctx.db.get(orgId);
-  },
-});
-
-export const findPermaInternal = internalQuery({
-  args: { brokerOrgId: v.id("organizations") },
-  handler: async (ctx, { brokerOrgId }) => {
-    return await ctx.db
-      .query("clientInvitations")
-      .withIndex("by_brokerOrgId_isPerma", (q) =>
-        q.eq("brokerOrgId", brokerOrgId).eq("isPerma", true),
-      )
-      .first();
   },
 });
 

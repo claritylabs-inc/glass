@@ -17,7 +17,6 @@ import { ArrowRight, Loader2 } from "lucide-react";
 
 type InviteData = {
   invitationId: string;
-  linkType: "email" | "shareable";
   brokerName: string;
   brokerIconUrl?: string | null;
   brokerWebsite?: string;
@@ -58,7 +57,7 @@ function isEmailLike(value: string): boolean {
 export default function InviteAcceptance({ token }: { token: string }) {
   const router = useRouter();
   const getByToken = useAction(api.clientInvitations.getByToken);
-  const acceptInvitation = useMutation(api.clientInvitations.accept);
+  const acceptInvitation = useMutation(api.clientInvitations.acceptInvite);
   const { signIn } = useAuthActions();
   const { isAuthenticated } = useConvexAuth();
 
@@ -67,7 +66,6 @@ export default function InviteAcceptance({ token }: { token: string }) {
   const [fetching, setFetching] = useState(true);
 
   const [step, setStep] = useState<"details" | "code">("details");
-  const [companyName, setCompanyName] = useState("");
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
@@ -78,32 +76,32 @@ export default function InviteAcceptance({ token }: { token: string }) {
     getByToken({ token })
       .then((data) => {
         setInviteData(data as InviteData);
-        if (data.clientOrgName) setCompanyName(data.clientOrgName);
         if (data.primaryContactEmail) setEmail(data.primaryContactEmail);
       })
       .catch((err: Error) => setFetchError(err.message))
       .finally(() => setFetching(false));
   }, [token, getByToken]);
 
-  // Once OTP verifies, auth becomes true — accept the invitation then redirect.
+  // Once OTP verifies, auth becomes true — accept the invitation then redirect
+  // to onboarding, which collects the organization name and other details.
   useEffect(() => {
     if (!isAuthenticated || acceptingRef.current) return;
     acceptingRef.current = true;
-    acceptInvitation({ token, clientOrgName: companyName.trim() })
-      .then(({ clientOrgId }) => {
-        router.replace(`/?org=${clientOrgId}`);
+    acceptInvitation({ token })
+      .then(() => {
+        router.replace("/onboarding");
       })
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : "Could not accept invitation");
         acceptingRef.current = false;
       });
-  }, [isAuthenticated, acceptInvitation, token, companyName, router]);
+  }, [isAuthenticated, acceptInvitation, token, router]);
 
   async function handleDetailsSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!companyName.trim() || !email.trim()) return;
-    if (isEmailLike(companyName)) {
-      setError("Enter your company name, not an email address.");
+    if (!email.trim()) return;
+    if (isEmailLike(email) === false) {
+      setError("Enter a valid email address.");
       return;
     }
     setLoading(true);
@@ -162,7 +160,7 @@ export default function InviteAcceptance({ token }: { token: string }) {
       : "Verify your email";
   const subtitle =
     step === "details"
-      ? `Join ${brokerName}'s workspace.`
+      ? `Join ${brokerName} to manage your policies, share documents, and get instant answers about your coverage.`
       : undefined;
 
   return (
@@ -181,22 +179,6 @@ export default function InviteAcceptance({ token }: { token: string }) {
         {step === "details" ? (
           <form onSubmit={handleDetailsSubmit} className="space-y-4">
             <div>
-              <label htmlFor="inv-company" className={LABEL_CLASSES}>
-                Your company name
-              </label>
-              <input
-                id="inv-company"
-                type="text"
-                value={companyName}
-                onChange={(e) => setCompanyName(e.target.value)}
-                placeholder="Acme Corp"
-                required
-                autoFocus={!companyName}
-                className={INPUT_CLASSES}
-              />
-            </div>
-
-            <div>
               <label htmlFor="inv-email" className={LABEL_CLASSES}>
                 Email
               </label>
@@ -207,7 +189,7 @@ export default function InviteAcceptance({ token }: { token: string }) {
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@company.com"
                 required
-                autoFocus={!!companyName && !email}
+                autoFocus
                 className={INPUT_CLASSES}
               />
             </div>
@@ -218,7 +200,7 @@ export default function InviteAcceptance({ token }: { token: string }) {
 
             <PillButton
               type="submit"
-              disabled={loading || !companyName.trim() || !email.trim()}
+              disabled={loading || !email.trim()}
               className="w-full justify-center text-sm shadow-none sm:w-auto"
             >
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}

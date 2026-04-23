@@ -3,19 +3,30 @@ import { getDefaultBranding } from "./branding";
 
 const SITE_URL = process.env.SITE_URL ?? "https://glass.claritylabs.dev";
 
+/** Resolve a logo URL to an absolute URL usable from an email client. */
+function absoluteLogoUrl(logoUrl: string, siteUrl: string = SITE_URL): string {
+  if (/^https?:\/\//i.test(logoUrl)) return logoUrl;
+  const base = siteUrl.replace(/\/$/, "");
+  const path = logoUrl.startsWith("/") ? logoUrl : `/${logoUrl}`;
+  return `${base}${path}`;
+}
+
 /** Brand name + mark lockup for the email header. Big squircle logo mirrors the in-app sidebar brand. */
-export function buildEmailLogoHtml(branding: BrandingContext = getDefaultBranding()): string {
+export function buildEmailLogoHtml(branding: BrandingContext = getDefaultBranding(), siteUrl: string = SITE_URL): string {
   const name = branding.brandName;
-  const isAbsoluteLogo = /^https?:\/\//i.test(branding.logoUrl);
-  const mark = isAbsoluteLogo
-    ? `<img src="${branding.logoUrl}" alt="" width="32" height="32" style="display:inline-block;vertical-align:middle;width:32px;height:32px;border-radius:8px;margin-right:10px;object-fit:cover;border:0;" />`
-    : `<span style="display:inline-block;vertical-align:middle;width:30px;height:30px;border-radius:8px;border:1.5px solid ${branding.brandColor};margin-right:10px;"></span>`;
+  const src = absoluteLogoUrl(branding.logoUrl, siteUrl);
+  const mark = `<img src="${src}" alt="" width="28" height="28" style="display:inline-block;vertical-align:middle;width:28px;height:28px;border-radius:7px;margin-right:10px;object-fit:cover;border:0;" />`;
+  const isDefault = name === "Glass";
+  const suffix = isDefault
+    ? `<span style="font-weight:400;color:#6b7280;vertical-align:middle;margin-left:6px;">from Clarity Labs</span>`
+    : "";
   return `
 <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;">
   <tr>
-    <td align="center" style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:22px;line-height:1;color:#111827;">
+    <td align="center" style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:16px;line-height:1;color:#111827;">
       ${mark}
       <span style="font-weight:600;vertical-align:middle;">${name}</span>
+      ${suffix}
     </td>
   </tr>
 </table>`;
@@ -23,7 +34,7 @@ export function buildEmailLogoHtml(branding: BrandingContext = getDefaultBrandin
 
 /** "Powered by {icon} Glass from Clarity Labs" platform attribution. */
 export function buildPlatformFooterHtml(siteUrl: string = SITE_URL): string {
-  const iconUrl = `https://www.google.com/s2/favicons?domain=glass.claritylabs.inc&sz=64`;
+  const iconUrl = absoluteLogoUrl("/glass-logo-email.jpg", siteUrl);
   return `
 <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;">
   <tr>
@@ -53,7 +64,7 @@ export function buildEmailShell({
   branding?: BrandingContext;
   siteUrl?: string;
 }): string {
-  const logo = buildEmailLogoHtml(branding);
+  const logo = buildEmailLogoHtml(branding, siteUrl);
   return `<!DOCTYPE html>
 <html lang="en">
 <head>

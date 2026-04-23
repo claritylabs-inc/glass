@@ -156,15 +156,6 @@ export default defineSchema({
     .index("by_orgId_producerId", ["orgId", "producerId"])
     .index("by_clientOrgId", ["clientOrgId"]),
 
-  // Short-lived hint so sendVerificationRequest knows which broker a login
-  // attempt came from (white-label /login/[slug] routes). Written
-  // immediately before signIn("resend-otp"); read once by the email send.
-  brandingHints: defineTable({
-    email: v.string(),
-    brokerOrgId: v.id("organizations"),
-    createdAt: v.number(),
-  }).index("by_email", ["email"]),
-
   clientInvitations: defineTable({
     brokerOrgId: v.id("organizations"),
     clientOrgName: v.optional(v.string()),
@@ -173,7 +164,6 @@ export default defineSchema({
     prefillPassport: v.optional(v.any()),
     invitedBy: v.id("users"),
     inviteTokenHash: v.string(),
-    linkType: v.union(v.literal("email"), v.literal("shareable")),
     status: v.union(
       v.literal("pending"),
       v.literal("accepted"),
@@ -181,19 +171,12 @@ export default defineSchema({
       v.literal("revoked"),
     ),
     clientOrgId: v.optional(v.id("organizations")),
-    acceptedCount: v.optional(v.number()),
-    maxUses: v.optional(v.number()),
     expiresAt: v.optional(v.number()),
     createdAt: v.number(),
-    // Permanent per-broker shareable link (one per broker org).
-    // Stores raw token so the broker can copy it repeatedly.
-    isPerma: v.optional(v.boolean()),
-    rawToken: v.optional(v.string()),
   })
     .index("by_tokenHash", ["inviteTokenHash"])
     .index("by_brokerOrgId", ["brokerOrgId"])
-    .index("by_status", ["status"])
-    .index("by_brokerOrgId_isPerma", ["brokerOrgId", "isPerma"]),
+    .index("by_status", ["status"]),
 
   policies: defineTable({
     ...pipelineFields(),

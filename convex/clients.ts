@@ -140,7 +140,6 @@ async function listRowsForBroker(ctx: QueryCtx, brokerOrgId: Id<"organizations">
     lastActivityAt: undefined,
     activePoliciesCount: 0,
     assignedProducerIds: [] as string[],
-    linkType: inv.linkType,
   }));
 
   return [...clientRows, ...resolvedDraftRows, ...inviteRows].sort((a, b) => {
