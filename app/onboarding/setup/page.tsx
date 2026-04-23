@@ -257,7 +257,11 @@ export default function ClientOnboardingSetupPage() {
     <Shell currentStep={currentStep} email={viewer?.email} onLogout={handleLogout} broker={viewerOrg?.brokerOrg ?? null}>
       <div className="w-full max-w-md space-y-8">
         <div className="space-y-3 text-left">
-          <h1 className="text-base font-medium tracking-tight">{STEPS[currentStep].label}</h1>
+          <h1 className="text-base font-medium tracking-tight">
+            {currentStep === 0 && viewerOrg?.brokerOrg?.name
+              ? `Welcome to ${viewerOrg.brokerOrg.name}`
+              : STEPS[currentStep].label}
+          </h1>
           {STEPS[currentStep].subtitle ? (
             <p className="text-base text-muted-foreground">{STEPS[currentStep].subtitle}</p>
           ) : null}
