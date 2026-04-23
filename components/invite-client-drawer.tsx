@@ -7,7 +7,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
 import { PillButton } from "@/components/ui/pill-button";
-import { X, Paperclip, Trash2, FileText } from "lucide-react";
+import { X } from "lucide-react";
 
 const EASE = [0.16, 1, 0.3, 1] as const;
 const MIN_WIDTH = 360;
@@ -36,14 +36,12 @@ export function InviteClientDrawer({
   const [companyName, setCompanyName] = useState("");
   const [contactName, setContactName] = useState("");
   const [contactEmail, setContactEmail] = useState("");
-  const [message, setMessage] = useState("");
-  const [uploading, setUploading] = useState(false);
   const [sending, setSending] = useState(false);
+  const [savingDraft, setSavingDraft] = useState(false);
 
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   const [isDraggingState, setIsDraggingState] = useState(false);
   const isDragging = useRef(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const hydratedFor = useRef<Id<"organizations"> | null>(null);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -52,17 +50,6 @@ export function InviteClientDrawer({
   const updateDraft = useMutation((api as any).clientInvitations.updateDraftClient);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sendInvite = useAction((api as any).clientInvitations.sendDraftInvite);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const generateUploadUrl = useMutation((api as any).policies.generateUploadUrl);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const createBrokerUpload = useMutation((api as any).policies.createBrokerUpload);
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const draftPolicies = useQuery(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (api as any).policies.listForBroker,
-    draftId ? { clientOrgId: draftId } : "skip",
-  ) as { _id: Id<"policies">; fileName?: string }[] | undefined;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const hydrateDraft = useQuery(
@@ -82,7 +69,6 @@ export function InviteClientDrawer({
     setCompanyName(hydrateDraft.name ?? "");
     setContactName(hydrateDraft.primaryContactName ?? "");
     setContactEmail(hydrateDraft.primaryContactEmail ?? "");
-    setMessage(hydrateDraft.customMessage ?? "");
   }, [open, resumeClientOrgId, hydrateDraft]);
 
   const emailValid = contactEmail.includes("@") && contactEmail.includes(".");
@@ -97,7 +83,6 @@ export function InviteClientDrawer({
         clientOrgName: companyName.trim(),
         primaryContactEmail: contactEmail.trim(),
         primaryContactName: contactName.trim() || undefined,
-        customMessage: message.trim() || undefined,
       });
       setDraftId(clientOrgId);
       return clientOrgId;
@@ -115,7 +100,7 @@ export function InviteClientDrawer({
   }, [canCreateDraft]);
 
   // Patch draft on field blur.
-  async function commitField(field: "clientOrgName" | "primaryContactName" | "primaryContactEmail" | "customMessage", value: string) {
+  async function commitField(field: "clientOrgName" | "primaryContactName" | "primaryContactEmail", value: string) {
     if (!draftId) return;
     try {
       await updateDraft({ clientOrgId: draftId, [field]: value });
@@ -124,41 +109,13 @@ export function InviteClientDrawer({
     }
   }
 
-  async function handleFiles(files: FileList | null) {
-    if (!files || files.length === 0) return;
-    const id = await ensureDraft();
-    if (!id) {
-      toast.error("Fill in company name and email first");
-      return;
-    }
-    setUploading(true);
-    try {
-      for (const file of Array.from(files)) {
-        if (!file.name.toLowerCase().endsWith(".pdf")) {
-          toast.error(`${file.name}: only PDFs are supported`);
-          continue;
-        }
-        const uploadUrl = await generateUploadUrl({});
-        const res = await fetch(uploadUrl, {
-          method: "POST",
-          headers: { "Content-Type": file.type || "application/pdf" },
-          body: file,
-        });
-        if (!res.ok) throw new Error(`Upload failed for ${file.name}`);
-        const { storageId } = (await res.json()) as { storageId: Id<"_storage"> };
-        await createBrokerUpload({
-          clientOrgId: id,
-          fileId: storageId,
-          fileName: file.name,
-          documentType: "policy",
-        });
-      }
-      toast.success("Policies uploaded");
-    } catch (err) {
-      toast.error(String(err));
-    } finally {
-      setUploading(false);
-    }
+  async function persistPendingEdits(id: Id<"organizations">) {
+    await updateDraft({
+      clientOrgId: id,
+      clientOrgName: companyName.trim(),
+      primaryContactName: contactName.trim(),
+      primaryContactEmail: contactEmail.trim(),
+    });
   }
 
   async function handleSend(e: React.FormEvent) {
@@ -170,14 +127,7 @@ export function InviteClientDrawer({
     }
     setSending(true);
     try {
-      // Persist any pending edits before sending.
-      await updateDraft({
-        clientOrgId: id,
-        clientOrgName: companyName.trim(),
-        primaryContactName: contactName.trim(),
-        primaryContactEmail: contactEmail.trim(),
-        customMessage: message.trim(),
-      });
+      await persistPendingEdits(id);
       await sendInvite({ clientOrgId: id });
       toast.success(`Invite sent to ${contactEmail}`);
       resetAndClose();
@@ -188,12 +138,29 @@ export function InviteClientDrawer({
     }
   }
 
+  async function handleCreateWithoutSending() {
+    const id = await ensureDraft();
+    if (!id) {
+      toast.error("Fill in company name and email first");
+      return;
+    }
+    setSavingDraft(true);
+    try {
+      await persistPendingEdits(id);
+      toast.success(`Client created — you can now add policies`);
+      resetAndClose();
+    } catch (err) {
+      toast.error(String(err));
+    } finally {
+      setSavingDraft(false);
+    }
+  }
+
   function resetAndClose() {
     setDraftId(null);
     setCompanyName("");
     setContactName("");
     setContactEmail("");
-    setMessage("");
     hydratedFor.current = null;
     onOpenChange(false);
   }
@@ -313,77 +280,25 @@ export function InviteClientDrawer({
                   className={INPUT_CLASSES}
                 />
               </div>
-              <div>
-                <label htmlFor="message" className={LABEL_CLASSES}>
-                  Optional message
-                </label>
-                <textarea
-                  id="message"
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  onBlur={() => commitField("customMessage", message.trim())}
-                  placeholder="We'd love to help with your insurance…"
-                  rows={3}
-                  className={INPUT_CLASSES}
-                />
-              </div>
-
-              {/* Policies */}
-              <div className="space-y-2">
-                <span className={LABEL_CLASSES}>
-                  Policies{" "}
-                  <span className="text-muted-foreground/60 font-normal">
-                    (optional — attach for the client to see on accept)
-                  </span>
-                </span>
-                {draftPolicies && draftPolicies.length > 0 && (
-                  <ul className="space-y-1">
-                    {draftPolicies.map((p) => (
-                      <li
-                        key={p._id}
-                        className="flex items-center gap-2 rounded-md border border-foreground/8 bg-popover px-3 py-2 text-body-sm"
-                      >
-                        <FileText className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
-                        <span className="flex-1 truncate">{p.fileName ?? "Document"}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={uploading || !canCreateDraft && !draftId}
-                  className="w-full flex items-center justify-center gap-2 rounded-lg border border-dashed border-foreground/12 bg-transparent px-3 py-3 text-body-sm text-muted-foreground hover:text-foreground hover:border-foreground/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              <div className="flex flex-col gap-2">
+                <PillButton
+                  type="submit"
+                  variant="primary"
+                  disabled={!emailValid || sending || savingDraft || !companyName.trim()}
+                  className="w-full"
                 >
-                  <Paperclip className="w-3.5 h-3.5" />
-                  {uploading ? "Uploading…" : "Attach policy PDFs"}
-                </button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="application/pdf,.pdf"
-                  multiple
-                  className="sr-only"
-                  onChange={(e) => {
-                    void handleFiles(e.target.files);
-                    e.target.value = "";
-                  }}
-                />
-                {!draftId && !canCreateDraft && (
-                  <p className="text-xs text-muted-foreground/60">
-                    Fill in company name and email to attach policies.
-                  </p>
-                )}
+                  {sending ? "Sending…" : "Send invite"}
+                </PillButton>
+                <PillButton
+                  type="button"
+                  variant="secondary"
+                  disabled={!emailValid || sending || savingDraft || !companyName.trim()}
+                  onClick={handleCreateWithoutSending}
+                  className="w-full"
+                >
+                  {savingDraft ? "Saving…" : "Create without sending"}
+                </PillButton>
               </div>
-
-              <PillButton
-                type="submit"
-                variant="primary"
-                disabled={!emailValid || sending || !companyName.trim()}
-                className="w-full"
-              >
-                {sending ? "Sending…" : "Send invite"}
-              </PillButton>
             </form>
           </motion.div>
         </motion.div>
