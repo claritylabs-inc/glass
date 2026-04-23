@@ -725,7 +725,7 @@ function SidebarBrokerContact({
           >
             {broker.iconUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={broker.iconUrl} alt="" className="h-full w-full object-contain p-1 bg-white" />
+              <img src={broker.iconUrl} alt="" className="h-full w-full object-contain p-1.5 bg-white" />
             ) : (
               <span className="text-sm font-semibold text-white">{initial}</span>
             )}
