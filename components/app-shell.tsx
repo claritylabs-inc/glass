@@ -2,7 +2,7 @@
 
 import { Suspense, useState, useCallback } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { useMutation } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { AppTopBar, type PresenceUser } from "@/components/app-top-bar";
 import { GlassPromptInput } from "@/components/glass-prompt-input";
@@ -115,6 +115,8 @@ function PersistentChatBar() {
   const [sending, setSending] = useState(false);
   const isThreadPage = pathname.startsWith("/agent/thread/");
   const hasContext = !!pageContext;
+  const viewerOrg = useQuery(api.orgs.viewerOrg, {});
+  const isBroker = (viewerOrg?.org as { type?: "broker" | "client" } | undefined)?.type === "broker";
 
   const handleSubmit = useCallback(
     async (message: PromptInputMessage) => {
@@ -183,7 +185,7 @@ function PersistentChatBar() {
     ],
   );
 
-  if (isThreadPage || !hasContext) return null;
+  if (isThreadPage || !hasContext || isBroker) return null;
 
   return (
     <div className="absolute bottom-0 left-0 right-0 z-10 pointer-events-none">
