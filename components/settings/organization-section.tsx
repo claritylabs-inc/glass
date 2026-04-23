@@ -229,6 +229,8 @@ export function OrganizationSection() {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       await updateOrg({ website: url });
       setWebsite(url);
+      // Synchronous await is intentional — website scrape typically < 5s.
+      // Not a long-running pipeline; cl-pipelines not required here.
       const result = await extractCompanyInfo({ url });
       if (result.companyContext) setContext(result.companyContext);
       if (result.industry) {

@@ -30,16 +30,10 @@ export function CreateApplicationDrawer({ open, onClose, clientOrgId }: Props) {
   const createDraft = useMutation((api as any).applications.createDraft);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const generateUploadUrl = useMutation((api as any).applications.generateUploadUrl);
-  const generateQuestions = useAction(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (api as any).actions.applicationAuthoring.generateQuestionSet,
-  );
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const addQuestion = useMutation((api as any).applications.addQuestion);
-  const extractFromPdf = useAction(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (api as any).actions.extractApplicationPdf.extractQuestionsFromPdf,
-  );
+  const startExtraction = useAction((api as any).actions.applicationExtraction.startExtractionFromPdf);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const startGeneration = useAction((api as any).actions.applicationExtraction.startGenerationFromPrompt);
 
   function handleClose() {
     setPrompt("");
@@ -65,23 +59,9 @@ export function CreateApplicationDrawer({ open, onClose, clientOrgId }: Props) {
         aiGenerationPrompt: p,
       })) as Id<"applications">;
 
-      const questions = (await generateQuestions({ prompt: p, clientOrgId })) as Array<{
-        intentKey?: string;
-        customPrompt?: string;
-        answerType: string;
-        required: boolean;
-      }>;
-
-      for (const q of questions) {
-        await addQuestion({
-          applicationId,
-          intentKey: q.intentKey,
-          prompt: q.customPrompt ?? q.intentKey ?? "Question",
-          answerType: q.answerType,
-          required: q.required,
-        });
-      }
-      toast.success(`Generated ${questions.length} questions`);
+      // Fire-and-forget — generation runs as a background pipeline
+      await startGeneration({ applicationId, generationPrompt: p });
+      toast.success("Generation started — you can safely navigate away.");
       navigateToApp(applicationId);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to generate");
@@ -116,12 +96,9 @@ export function CreateApplicationDrawer({ open, onClose, clientOrgId }: Props) {
       if (!res.ok) throw new Error("Upload failed");
       const { storageId } = await res.json();
 
-      const result = (await extractFromPdf({
-        applicationId,
-        fileId: storageId as Id<"_storage">,
-      })) as { questionCount: number };
-
-      toast.success(`Extracted ${result.questionCount} questions`);
+      // Await enqueue (fast), then navigate — extraction runs in background
+      await startExtraction({ applicationId, fileId: storageId as Id<"_storage"> });
+      toast.success("Extraction started — you can safely navigate away.");
       navigateToApp(applicationId);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to process PDF");

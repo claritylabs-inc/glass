@@ -46,8 +46,6 @@ export function insuranceDocToPolicy(doc: InsuranceDocument): Record<string, unk
     premium: d.premium ?? undefined,
     insuredName: d.insuredName || "Unknown",
     summary: d.summary ?? undefined,
-    extractionStatus: "complete" as const,
-    extractionError: "",
   };
 
   // Enriched entity fields

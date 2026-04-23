@@ -18,3 +18,14 @@ export const insert = internalMutation({
     });
   },
 });
+
+export const deleteMany = internalMutation({
+  args: {
+    groupIds: v.array(v.id("applicationGroups")),
+  },
+  handler: async (ctx, args) => {
+    for (const groupId of args.groupIds) {
+      await ctx.db.delete(groupId);
+    }
+  },
+});

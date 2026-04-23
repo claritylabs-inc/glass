@@ -280,6 +280,20 @@ export const listByConnection = internalQuery({
   },
 });
 
+/** Return emails for a connection that are classified as insurance and have attachments but not yet extracted. */
+export const listUnprocessedWithAttachments = internalQuery({
+  args: { connectionId: v.id("emailConnections") },
+  handler: async (ctx, args) => {
+    const emails = await ctx.db
+      .query("emails")
+      .withIndex("by_connection_processed", (q) => q.eq("connectionId", args.connectionId))
+      .collect();
+    return emails.filter(
+      (e) => e.isInsuranceRelated === true && e.hasAttachments && !e.processed
+    );
+  },
+});
+
 export const latestImportedAtByConnection = internalQuery({
   args: { connectionId: v.id("emailConnections") },
   handler: async (ctx, args) => {

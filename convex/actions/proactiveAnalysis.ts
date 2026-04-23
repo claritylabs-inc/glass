@@ -74,7 +74,7 @@ export const analyzePolicy = internalAction({
     try {
       const policy = await ctx.runQuery(internal.policies.getInternal, { id: args.policyId });
 
-      if (!policy || policy.extractionStatus !== "complete") return;
+      if (!policy || policy.pipelineStatus !== "complete") return;
       if (policy.analysis) return; // already analyzed
 
       const guidance = getGuidance(policy.policyTypes);

@@ -188,10 +188,6 @@ export const send = mutation({
       sentAt: Date.now(),
       updatedAt: Date.now(),
     });
-    // Trigger AI grouping + ordering
-    await ctx.scheduler.runAfter(0, (internal as any).actions.applicationAuthoring.regroupAndOrder, {
-      applicationId: args.applicationId,
-    });
     // Notify client org
     if (app) {
       const brokerOrg = await ctx.db.get(app.brokerOrgId);

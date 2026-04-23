@@ -11,6 +11,12 @@ import type { Id } from "../_generated/dataModel";
  * Attach an additional file (extra pages, endorsements, schedules, etc.)
  * to an existing policy. Extracts chunks for vector search and appends them
  * to the policy's existing chunks. Does not modify parent policy fields.
+ *
+ * NOTE: This is intentionally kept synchronous (not on cl-pipelines) because:
+ * - It's a chunks-only supplementary operation that runs quickly
+ * - It does not modify the parent policy's extraction status
+ * - It always runs within a single action invocation lifetime
+ * TODO: migrate to cl-pipelines on policyFiles table in a follow-up.
  */
 export const addFileToPolicy = action({
   args: {
@@ -32,14 +38,12 @@ export const addFileToPolicy = action({
     if (!orgId) return { error: "Policy has no organization" };
 
     const policyFileId: Id<"policyFiles"> = await ctx.runMutation(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (internal as any).policyFiles.insert,
       {
         policyId: args.policyId,
         fileId: args.fileId,
         fileName: args.fileName,
         fileType: "unknown" as const,
-        extractionStatus: "extracting" as const,
         orgId,
       },
     );
@@ -99,11 +103,9 @@ export const addFileToPolicy = action({
       }
 
       await ctx.runMutation(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (internal as any).policyFiles.updateExtraction,
         {
           id: policyFileId,
-          extractionStatus: "complete",
           extractedData: result.document,
         },
       );
@@ -114,13 +116,8 @@ export const addFileToPolicy = action({
       await log(`Failed to process ${args.fileName}: ${errMsg}`);
       try {
         await ctx.runMutation(
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           (internal as any).policyFiles.updateExtraction,
-          {
-            id: policyFileId,
-            extractionStatus: "error",
-            extractionError: errMsg,
-          },
+          { id: policyFileId },
         );
       } catch {
         /* non-critical */

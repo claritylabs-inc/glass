@@ -159,7 +159,7 @@ export default function ClientPoliciesPage() {
               policyNumber={p.policyNumber}
               effectiveDate={p.effectiveDate}
               expirationDate={p.expirationDate}
-              extractionStatus={p.extractionStatus}
+              pipelineStatus={(p as any).pipelineStatus}
               uploadedBySide={p.uploadedBySide}
             />
           ))}

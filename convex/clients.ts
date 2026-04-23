@@ -66,7 +66,7 @@ async function listRowsForBroker(ctx: QueryCtx, brokerOrgId: Id<"organizations">
           .filter((q) =>
             q.and(
               q.eq(q.field("documentType"), "policy"),
-              q.eq(q.field("extractionStatus"), "complete"),
+              q.eq(q.field("pipelineStatus"), "complete"),
             ),
           )
           .collect()

@@ -10,12 +10,15 @@
 
 import type * as actions_addFileToPolicy from "../actions/addFileToPolicy.js";
 import type * as actions_applicationAuthoring from "../actions/applicationAuthoring.js";
+import type * as actions_applicationExtraction from "../actions/applicationExtraction.js";
 import type * as actions_applicationPrefill from "../actions/applicationPrefill.js";
+import type * as actions_applicationPrefillPipeline from "../actions/applicationPrefillPipeline.js";
 import type * as actions_backfillChunks from "../actions/backfillChunks.js";
 import type * as actions_classifyEmails from "../actions/classifyEmails.js";
 import type * as actions_dailyScan from "../actions/dailyScan.js";
 import type * as actions_detectDuplicatePolicies from "../actions/detectDuplicatePolicies.js";
 import type * as actions_dreamConsolidation from "../actions/dreamConsolidation.js";
+import type * as actions_emailScanPipeline from "../actions/emailScanPipeline.js";
 import type * as actions_extractApplicationPdf from "../actions/extractApplicationPdf.js";
 import type * as actions_extractChatIntelligence from "../actions/extractChatIntelligence.js";
 import type * as actions_extractCompanyInfo from "../actions/extractCompanyInfo.js";
@@ -31,7 +34,9 @@ import type * as actions_integrationConnectionActions from "../actions/integrati
 import type * as actions_mcpChat from "../actions/mcpChat.js";
 import type * as actions_mergeSync from "../actions/mergeSync.js";
 import type * as actions_migrateIntelligence from "../actions/migrateIntelligence.js";
+import type * as actions_orgDocumentExtraction from "../actions/orgDocumentExtraction.js";
 import type * as actions_passportExtraction from "../actions/passportExtraction.js";
+import type * as actions_policyExtraction from "../actions/policyExtraction.js";
 import type * as actions_proactiveAnalysis from "../actions/proactiveAnalysis.js";
 import type * as actions_processThreadChat from "../actions/processThreadChat.js";
 import type * as actions_processWebChat from "../actions/processWebChat.js";
@@ -92,6 +97,7 @@ import type * as lib_applicationCapabilities from "../lib/applicationCapabilitie
 import type * as lib_applicationConditionals from "../lib/applicationConditionals.js";
 import type * as lib_applicationDerivation from "../lib/applicationDerivation.js";
 import type * as lib_applicationGrouping from "../lib/applicationGrouping.js";
+import type * as lib_applicationIntentGraph from "../lib/applicationIntentGraph.js";
 import type * as lib_applicationPdfExtraction from "../lib/applicationPdfExtraction.js";
 import type * as lib_applicationPrefill from "../lib/applicationPrefill.js";
 import type * as lib_applicationPrompts from "../lib/applicationPrompts.js";
@@ -119,6 +125,7 @@ import type * as lib_orgRelationships from "../lib/orgRelationships.js";
 import type * as lib_passportCompletion from "../lib/passportCompletion.js";
 import type * as lib_passportIntelligence from "../lib/passportIntelligence.js";
 import type * as lib_pdfFiller from "../lib/pdfFiller.js";
+import type * as lib_pipelineMutations from "../lib/pipelineMutations.js";
 import type * as lib_policyTypes from "../lib/policyTypes.js";
 import type * as lib_queryAgent from "../lib/queryAgent.js";
 import type * as lib_resend from "../lib/resend.js";
@@ -129,6 +136,7 @@ import type * as lib_threadAccess from "../lib/threadAccess.js";
 import type * as migrations from "../migrations.js";
 import type * as migrations_migrateOnboarding from "../migrations/migrateOnboarding.js";
 import type * as migrations_migrateToThreads from "../migrations/migrateToThreads.js";
+import type * as migrations_removeDeprecatedExtractionFields from "../migrations/removeDeprecatedExtractionFields.js";
 import type * as modelConfig from "../modelConfig.js";
 import type * as notificationPreferences from "../notificationPreferences.js";
 import type * as notifications from "../notifications.js";
@@ -161,12 +169,15 @@ import type {
 declare const fullApi: ApiFromModules<{
   "actions/addFileToPolicy": typeof actions_addFileToPolicy;
   "actions/applicationAuthoring": typeof actions_applicationAuthoring;
+  "actions/applicationExtraction": typeof actions_applicationExtraction;
   "actions/applicationPrefill": typeof actions_applicationPrefill;
+  "actions/applicationPrefillPipeline": typeof actions_applicationPrefillPipeline;
   "actions/backfillChunks": typeof actions_backfillChunks;
   "actions/classifyEmails": typeof actions_classifyEmails;
   "actions/dailyScan": typeof actions_dailyScan;
   "actions/detectDuplicatePolicies": typeof actions_detectDuplicatePolicies;
   "actions/dreamConsolidation": typeof actions_dreamConsolidation;
+  "actions/emailScanPipeline": typeof actions_emailScanPipeline;
   "actions/extractApplicationPdf": typeof actions_extractApplicationPdf;
   "actions/extractChatIntelligence": typeof actions_extractChatIntelligence;
   "actions/extractCompanyInfo": typeof actions_extractCompanyInfo;
@@ -182,7 +193,9 @@ declare const fullApi: ApiFromModules<{
   "actions/mcpChat": typeof actions_mcpChat;
   "actions/mergeSync": typeof actions_mergeSync;
   "actions/migrateIntelligence": typeof actions_migrateIntelligence;
+  "actions/orgDocumentExtraction": typeof actions_orgDocumentExtraction;
   "actions/passportExtraction": typeof actions_passportExtraction;
+  "actions/policyExtraction": typeof actions_policyExtraction;
   "actions/proactiveAnalysis": typeof actions_proactiveAnalysis;
   "actions/processThreadChat": typeof actions_processThreadChat;
   "actions/processWebChat": typeof actions_processWebChat;
@@ -243,6 +256,7 @@ declare const fullApi: ApiFromModules<{
   "lib/applicationConditionals": typeof lib_applicationConditionals;
   "lib/applicationDerivation": typeof lib_applicationDerivation;
   "lib/applicationGrouping": typeof lib_applicationGrouping;
+  "lib/applicationIntentGraph": typeof lib_applicationIntentGraph;
   "lib/applicationPdfExtraction": typeof lib_applicationPdfExtraction;
   "lib/applicationPrefill": typeof lib_applicationPrefill;
   "lib/applicationPrompts": typeof lib_applicationPrompts;
@@ -270,6 +284,7 @@ declare const fullApi: ApiFromModules<{
   "lib/passportCompletion": typeof lib_passportCompletion;
   "lib/passportIntelligence": typeof lib_passportIntelligence;
   "lib/pdfFiller": typeof lib_pdfFiller;
+  "lib/pipelineMutations": typeof lib_pipelineMutations;
   "lib/policyTypes": typeof lib_policyTypes;
   "lib/queryAgent": typeof lib_queryAgent;
   "lib/resend": typeof lib_resend;
@@ -280,6 +295,7 @@ declare const fullApi: ApiFromModules<{
   migrations: typeof migrations;
   "migrations/migrateOnboarding": typeof migrations_migrateOnboarding;
   "migrations/migrateToThreads": typeof migrations_migrateToThreads;
+  "migrations/removeDeprecatedExtractionFields": typeof migrations_removeDeprecatedExtractionFields;
   modelConfig: typeof modelConfig;
   notificationPreferences: typeof notificationPreferences;
   notifications: typeof notifications;

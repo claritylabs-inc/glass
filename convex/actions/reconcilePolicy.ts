@@ -4,7 +4,7 @@
  * reconcilePolicy — merge extracted data from multiple policy files into a
  * single unified policy record, then re-chunk for vector search.
  *
- * Called after all policyFiles for a policy reach extractionStatus "complete".
+ * Called after all policyFiles for a policy reach pipelineStatus "complete".
  */
 
 import { v } from "convex/values";
@@ -43,7 +43,7 @@ export const reconcilePolicy = internalAction({
       ) as any[];
 
       const completeFiles = allFiles.filter(
-        (f: any) => f.extractionStatus === "complete" && f.extractedData,
+        (f: any) => f.pipelineStatus === "complete" && f.extractedData,
       );
 
       await log(`Reconciliation: ${completeFiles.length} complete file(s) found.`);

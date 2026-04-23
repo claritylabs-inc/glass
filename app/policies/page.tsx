@@ -144,7 +144,7 @@ export default function PoliciesPage() {
                 policyNumber={p.policyNumber}
                 effectiveDate={p.effectiveDate}
                 expirationDate={p.expirationDate}
-                extractionStatus={p.extractionStatus}
+                pipelineStatus={(p as any).pipelineStatus}
                 uploadedBySide={p.uploadedBySide}
               />
             ))}

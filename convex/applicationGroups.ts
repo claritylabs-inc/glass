@@ -23,9 +23,61 @@ export const submit = mutation({
     const answerMap = Object.fromEntries(
       answers.map((a) => [`${a.questionId}:${a.rowKey ?? ""}`, a]),
     );
+
+    const toSafeCount = (value: unknown): number | null => {
+      if (typeof value === "number" && Number.isFinite(value)) return Math.floor(value);
+      if (typeof value === "string" && value.trim()) {
+        const parsed = Number(value);
+        if (Number.isFinite(parsed)) return Math.floor(parsed);
+      }
+      return null;
+    };
+
     for (const q of questions) {
-      if (q.required && !answerMap[`${q._id}:`]) {
-        throw new Error(`Required question "${q.prompt}" has no answer`);
+      if (!q.required) continue;
+
+      const repeating = (q as any).repeating as
+        | {
+            collectionKey: string;
+            itemLabel: string;
+            dependsOnQuestionId?: string;
+            minItems?: number;
+            maxItems?: number;
+          }
+        | undefined;
+
+      if (!repeating) {
+        if (!answerMap[`${q._id}:`]) {
+          throw new Error(`Required question "${q.prompt}" has no answer`);
+        }
+        continue;
+      }
+
+      const minItems = Math.max(0, repeating.minItems ?? 0);
+      const maxItems = Math.max(minItems, repeating.maxItems ?? 50);
+      let expectedCount = minItems;
+      if (repeating.dependsOnQuestionId) {
+        const dep = answerMap[`${repeating.dependsOnQuestionId}:`];
+        const resolved = toSafeCount(dep?.value);
+        if (resolved !== null) expectedCount = Math.max(minItems, Math.min(maxItems, resolved));
+      }
+
+      let observedCount = 0;
+      for (const a of answers) {
+        if (a.questionId !== q._id) continue;
+        if (!a.rowKey || !a.rowKey.startsWith(`${repeating.collectionKey}:`)) continue;
+        const suffix = a.rowKey.slice(repeating.collectionKey.length + 1);
+        const idx = Number(suffix);
+        if (!Number.isFinite(idx) || idx < 0) continue;
+        observedCount = Math.max(observedCount, idx + 1);
+      }
+      expectedCount = Math.max(expectedCount, observedCount);
+
+      for (let idx = 0; idx < expectedCount; idx += 1) {
+        const rowKey = `${repeating.collectionKey}:${idx}`;
+        if (!answerMap[`${q._id}:${rowKey}`]) {
+          throw new Error(`Required question "${q.prompt}" is missing ${repeating.itemLabel} ${idx + 1}`);
+        }
       }
     }
 

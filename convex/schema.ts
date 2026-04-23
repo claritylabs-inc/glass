@@ -1,6 +1,7 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 import { authTables } from "@convex-dev/auth/server";
+import { pipelineFields } from "@claritylabs/cl-pipelines/convex";
 
 const addressObject = v.object({
   street1: v.string(),
@@ -212,6 +213,22 @@ export default defineSchema({
     completedAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
+    // Pipeline fields for cl-pipelines phase-runner (extraction)
+    ...pipelineFields(),
+    // Prefill pipeline — second independent pipeline on the same table.
+    // Hand-rolled with "prefill" prefix to avoid colliding with pipelineFields().
+    prefillStatus: v.optional(v.union(
+      v.literal("idle"), v.literal("running"), v.literal("paused"),
+      v.literal("complete"), v.literal("error"),
+    )),
+    prefillError: v.optional(v.string()),
+    prefillCheckpoint: v.optional(v.any()),
+    prefillLog: v.optional(v.array(v.object({
+      timestamp: v.number(),
+      message: v.string(),
+      phase: v.optional(v.string()),
+      level: v.optional(v.string()),
+    }))),
   })
     .index("by_brokerOrgId", ["brokerOrgId"])
     .index("by_clientOrgId", ["clientOrgId"])
@@ -243,6 +260,70 @@ export default defineSchema({
     .index("by_applicationId", ["applicationId"])
     .index("by_applicationId_order", ["applicationId", "order"]),
 
+  // Application templates — reusable intent graphs keyed by line of business
+  // (and optionally carrier). Extraction can seed from a matching template to
+  // run in "differential" mode and cut token spend.
+  //
+  // Share scope: `private` = owner user only, `org` = broker org (default),
+  // `public` = Clarity-curated (e.g. ACORD 125/126/130/140).
+  applicationTemplates: defineTable({
+    name: v.string(),
+    lineOfBusiness: v.string(),
+    carrier: v.optional(v.string()),
+    ownerOrgId: v.id("organizations"),
+    createdByUserId: v.optional(v.id("users")),
+    shareScope: v.union(
+      v.literal("private"),
+      v.literal("org"),
+      v.literal("public"),
+    ),
+    // Canonical intent graph — see convex/lib/applicationIntentGraph.ts
+    intentGraph: v.any(),
+    // Fingerprint used for fast candidate lookup & match scoring.
+    fingerprint: v.object({
+      normalizedPrompts: v.array(v.string()),
+      fieldTypeHistogram: v.array(
+        v.object({ fieldType: v.string(), count: v.number() }),
+      ),
+      pageCount: v.optional(v.number()),
+    }),
+    // Rolling telemetry from extractions that matched this template. Updated
+    // by the learning loop.
+    stats: v.optional(
+      v.object({
+        matchCount: v.number(),
+        lastMatchedAt: v.optional(v.number()),
+        avgDeltaRatio: v.optional(v.number()),
+      }),
+    ),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_ownerOrgId_line", ["ownerOrgId", "lineOfBusiness"])
+    .index("by_line_carrier", ["lineOfBusiness", "carrier"])
+    .index("by_shareScope_line", ["shareScope", "lineOfBusiness"]),
+
+  // Telemetry row per extraction run. Powers the eval harness and the learning
+  // loop. One row per application extraction attempt.
+  applicationExtractionRuns: defineTable({
+    applicationId: v.id("applications"),
+    templateId: v.optional(v.id("applicationTemplates")),
+    templateMatchScore: v.optional(v.number()),
+    tokensUsed: v.number(),
+    criticRounds: v.number(),
+    qualityScore: v.optional(v.number()),
+    status: v.union(
+      v.literal("succeeded"),
+      v.literal("failed"),
+      v.literal("capped"),
+    ),
+    error: v.optional(v.string()),
+    startedAt: v.number(),
+    finishedAt: v.optional(v.number()),
+  })
+    .index("by_applicationId", ["applicationId"])
+    .index("by_templateId", ["templateId"]),
+
   applicationQuestions: defineTable({
     applicationId: v.id("applications"),
     groupId: v.id("applicationGroups"),
@@ -254,6 +335,13 @@ export default defineSchema({
     selectOptions: v.optional(v.array(v.object({ value: v.string(), label: v.string() }))),
     required: v.boolean(),
     conditional: v.optional(v.any()),
+    repeating: v.optional(v.object({
+      collectionKey: v.string(),
+      itemLabel: v.string(),
+      dependsOnQuestionId: v.optional(v.id("applicationQuestions")),
+      minItems: v.optional(v.number()),
+      maxItems: v.optional(v.number()),
+    })),
     binding: v.optional(v.object({
       source: v.union(
         v.literal("manual"), v.literal("passport"),
@@ -468,6 +556,7 @@ export default defineSchema({
     .index("by_status", ["status"]),
 
   emailConnections: defineTable({
+    ...pipelineFields(),
     userId: v.optional(v.id("users")),
     orgId: v.optional(v.id("organizations")),
     provider: v.optional(v.union(v.literal("google"), v.literal("imap"))),
@@ -576,17 +665,14 @@ export default defineSchema({
 
   // Uploaded org context documents — one row per file, persists regardless of extraction outcome
   orgDocuments: defineTable({
+    ...pipelineFields(),
     orgId: v.id("organizations"),
     storageId: v.id("_storage"),
     fileName: v.string(),
     mimeType: v.optional(v.string()),
     size: v.optional(v.number()),
-    extractionStatus: v.union(
-      v.literal("pending"),
-      v.literal("extracting"),
-      v.literal("complete"),
-      v.literal("error"),
-    ),
+    // Deprecated — kept optional for migration. Remove after removeDeprecatedExtractionFields runs.
+    extractionStatus: v.optional(v.string()),
     extractionError: v.optional(v.string()),
     entryCount: v.optional(v.number()),
     sourceLabel: v.optional(v.string()),
@@ -681,6 +767,7 @@ export default defineSchema({
     .index("by_orgId", ["orgId"]),
 
   policies: defineTable({
+    ...pipelineFields(),
     userId: v.optional(v.id("users")),
     orgId: v.optional(v.id("organizations")),
     emailId: v.optional(v.id("emails")),
@@ -936,21 +1023,14 @@ export default defineSchema({
     // Extracted document structure (sections, endorsements, conditions, etc.)
     // Uses v.any() because the cl-sdk document schema evolves frequently
     document: v.optional(v.any()),
-    // Extraction state
-    extractionStatus: v.union(
-      v.literal("pending"),
-      v.literal("extracting"),
-      v.literal("paused"),
-      v.literal("complete"),
-      v.literal("error"),
-      v.literal("not_insurance")
-    ),
+    // Dismissal flag — set when a policy row is dismissed/marked not-insurance.
+    // Replaces the old extractionStatus: "not_insurance" value.
+    dismissed: v.optional(v.boolean()),
+    // Deprecated — kept optional for migration. Remove after removeDeprecatedExtractionFields runs.
+    extractionStatus: v.optional(v.string()),
     extractionError: v.optional(v.string()),
-    extractionCheckpoint: v.optional(v.any()), // PipelineCheckpoint<ExtractionState> for resume
-    extractionLog: v.optional(v.array(v.object({
-      timestamp: v.number(),
-      message: v.string(),
-    }))),
+    extractionCheckpoint: v.optional(v.any()),
+    extractionLog: v.optional(v.any()),
     rawExtractionResponse: v.optional(v.string()),
     rawMetadataResponse: v.optional(v.string()),
     // Typed declarations (cl-sdk 1.4+) — line-specific structured data
@@ -1020,6 +1100,7 @@ export default defineSchema({
 
   // Each policy can have multiple source files (declaration, wording, endorsements, etc.)
   policyFiles: defineTable({
+    ...pipelineFields(),
     policyId: v.id("policies"),
     fileId: v.id("_storage"),
     emailId: v.optional(v.id("emails")),
@@ -1033,19 +1114,11 @@ export default defineSchema({
       v.literal("certificate"),
       v.literal("unknown"),
     ),
-    extractionStatus: v.union(
-      v.literal("pending"),
-      v.literal("extracting"),
-      v.literal("complete"),
-      v.literal("error"),
-      v.literal("not_insurance"),
-    ),
-    extractionError: v.optional(v.string()),
     extractedData: v.optional(v.any()), // Raw per-file extraction result (InsuranceDocument)
-    extractionLog: v.optional(v.array(v.object({
-      timestamp: v.number(),
-      message: v.string(),
-    }))),
+    // Deprecated — kept optional for migration. Remove after removeDeprecatedExtractionFields runs.
+    extractionStatus: v.optional(v.string()),
+    extractionError: v.optional(v.string()),
+    extractionLog: v.optional(v.any()),
     pageCount: v.optional(v.number()),
     createdAt: v.number(),
     orgId: v.id("organizations"),

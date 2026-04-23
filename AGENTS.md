@@ -315,6 +315,14 @@ The pipeline:
 5. Parse replies, update answers, and save non-transient business facts to `orgIntelligence` with `sourceLabel`.
 6. Generate confirmation output and optionally a filled PDF.
 
+Digital-first application behavior:
+
+- `regroupAndOrder` (`convex/actions/applicationAuthoring.ts`) now runs an LLM-assisted repeat/dependency inference pass after prompt rewrites.
+- The pass identifies ordinal/duplicated paper-form questions and folds them into one canonical repeatable question with `applicationQuestions.repeating` metadata.
+- Repeatables can depend on a count question via `repeating.dependsOnQuestionId`.
+- Client fill UI uses `applicationAnswers.rowKey` (`<collectionKey>:<index>`) for repeated rows and enforces required answers per expected row on submit.
+- Client application pages (`/applications/[applicationId]` and `/applications/[applicationId]/groups/[groupId]`) use a passport-style auth shell (`components/applications/client-application-shell.tsx`) instead of `AppShell`.
+
 ## UI: Intelligence Page
 
 The Intelligence tab at `/connections` → "Intelligence" has two sub-tabs:

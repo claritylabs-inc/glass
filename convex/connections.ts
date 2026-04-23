@@ -3,6 +3,7 @@ import { mutation, query, internalQuery, internalMutation } from "./_generated/s
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { requireOrgAccess, requireOrgAdmin, getOrgAccess } from "./lib/orgAuth";
+import { makePipelineMutations } from "./lib/pipelineMutations";
 
 function normalizeReturnTo(returnTo?: string) {
   if (!returnTo || !returnTo.startsWith("/") || returnTo.startsWith("//")) {
@@ -431,9 +432,18 @@ export const countLinkedPolicies = query({
       .withIndex("by_orgId", (idx) => idx.eq("orgId", orgId))
       .collect();
     const linked = allPolicies.filter(
-      (p) => p.emailId && emailIds.has(p.emailId) && p.extractionStatus === "complete"
+      (p) => p.emailId && emailIds.has(p.emailId) && p.pipelineStatus === "complete"
     );
 
     return { emailCount: emails.length, policyCount: linked.length };
   },
 });
+
+
+// ── cl-pipelines contract mutations for emailConnections ──────────────────────
+const _emailConnPipeline = makePipelineMutations("emailConnections");
+export const pipelineGetJob = _emailConnPipeline.getJob;
+export const pipelineSetStatus = _emailConnPipeline.setStatus;
+export const pipelineSetCheckpoint = _emailConnPipeline.setCheckpoint;
+export const pipelineAppendLog = _emailConnPipeline.appendLog;
+export const pipelineClearLog = _emailConnPipeline.clearLog;

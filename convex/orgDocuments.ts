@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { mutation, query, internalMutation, internalQuery } from "./_generated/server";
 import { getOrgAccess } from "./lib/orgAuth";
 import { Id } from "./_generated/dataModel";
+import { makePipelineMutations } from "./lib/pipelineMutations";
 import { recordBrokerActivity } from "./lib/brokerActivity";
 import { notify } from "./lib/notify";
 
@@ -37,7 +38,6 @@ export const create = mutation({
       fileName: args.fileName,
       mimeType: args.mimeType,
       size: args.size,
-      extractionStatus: "pending",
       uploadedBy: access.userId,
       createdAt: now,
       updatedAt: now,
@@ -103,13 +103,6 @@ export const updateStatus = internalMutation({
   args: {
     id: v.id("orgDocuments"),
     orgId: v.id("organizations"),
-    extractionStatus: v.union(
-      v.literal("pending"),
-      v.literal("extracting"),
-      v.literal("complete"),
-      v.literal("error"),
-    ),
-    extractionError: v.optional(v.string()),
     entryCount: v.optional(v.number()),
     sourceLabel: v.optional(v.string()),
     documentType: v.optional(v.string()),
@@ -150,3 +143,11 @@ export const findByStorageId = internalMutation({
 });
 
 export type OrgDocumentId = Id<"orgDocuments">;
+
+// ── cl-pipelines contract mutations for orgDocuments ──────────────────────────
+const _orgDocPipeline = makePipelineMutations("orgDocuments");
+export const pipelineGetJob = _orgDocPipeline.getJob;
+export const pipelineSetStatus = _orgDocPipeline.setStatus;
+export const pipelineSetCheckpoint = _orgDocPipeline.setCheckpoint;
+export const pipelineAppendLog = _orgDocPipeline.appendLog;
+export const pipelineClearLog = _orgDocPipeline.clearLog;

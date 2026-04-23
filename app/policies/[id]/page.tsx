@@ -35,6 +35,8 @@ import { X } from "lucide-react";
 
 import { PolicySummary } from "./policy-summary";
 import { ExtractionCards } from "./extraction-panel";
+import { PolicyExtractionBanner } from "@/components/shared/extraction-banner";
+import type { PipelineStatus, LogEntry } from "@claritylabs/cl-pipelines";
 
 
 // ─── Activity tab ─────────────────────────────────────────────────────────────
@@ -76,7 +78,7 @@ function PolicyActivityTab({ policyId, policy }: { policyId: string; policy: Rec
     policyId: policyId as Id<"policies">,
   });
 
-  const isLive = policy.extractionStatus === "extracting";
+  const isLive = (policy as any).pipelineStatus === "running";
 
   if (entries === undefined) {
     return (
@@ -114,8 +116,8 @@ function PolicyActivityTab({ policyId, policy }: { policyId: string; policy: Rec
 
   // Build extraction sub-entries from the raw extraction log
   const rawLog: { timestamp: number; message: string }[] =
-    Array.isArray(policy.extractionLog)
-      ? (policy.extractionLog as { timestamp: number; message: string }[])
+    Array.isArray((policy as any).pipelineLog)
+      ? ((policy as any).pipelineLog as { timestamp: number; message: string }[])
       : [];
   const extractionSubEntries: StructuredLogEntry["subEntries"] = rawLog.map(
     (entry) => ({
@@ -182,11 +184,11 @@ const FILE_TYPE_COLORS: Record<string, string> = {
 };
 
 const EXTRACTION_STATUS_CONFIG: Record<string, { label: string; color: string }> = {
-  pending: {
+  idle: {
     label: "Pending",
     color: "bg-gray-100 text-gray-600 dark:bg-gray-800/40 dark:text-gray-400",
   },
-  extracting: {
+  running: {
     label: "Extracting",
     color: "bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400",
   },
@@ -194,7 +196,7 @@ const EXTRACTION_STATUS_CONFIG: Record<string, { label: string; color: string }>
     label: "Complete",
     color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400",
   },
-  failed: {
+  error: {
     label: "Failed",
     color: "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400",
   },
@@ -368,7 +370,7 @@ function PolicyFilesTab({ policyId, policy }: { policyId: string; policy: any })
         const url = urlsByIndex[i];
         const typeLabel = FILE_TYPE_LABELS[file.fileType] ?? file.fileType;
         const typeColor = FILE_TYPE_COLORS[file.fileType] ?? FILE_TYPE_COLORS.unknown;
-        const statusCfg = EXTRACTION_STATUS_CONFIG[file.extractionStatus] ?? EXTRACTION_STATUS_CONFIG.pending;
+        const statusCfg = EXTRACTION_STATUS_CONFIG[(file as any).pipelineStatus ?? "idle"] ?? EXTRACTION_STATUS_CONFIG.idle;
 
         return (
           <div
@@ -720,7 +722,7 @@ export default function PolicyDetailPage({
             <PillButton
               variant="secondary"
               onClick={handleReindex}
-              disabled={policy.extractionStatus !== "complete" || reExtracting || rechunking}
+              disabled={(policy as any).pipelineStatus !== "complete" || reExtracting || rechunking}
             >
               {rechunking && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
               Reindex
@@ -786,6 +788,13 @@ export default function PolicyDetailPage({
       {/* ── Details tab ── */}
       {activeTab === "details" && (
         <FadeIn when={true} staggerIndex={1} duration={0.5}>
+          {/* Pipeline extraction banner — shows live status, error, and retry buttons */}
+          <PolicyExtractionBanner
+            policyId={policy._id}
+            status={(p.pipelineStatus as PipelineStatus | undefined)}
+            error={p.pipelineError as string | undefined}
+            log={p.pipelineLog as LogEntry[] | undefined}
+          />
           {/* 1. Summary card — always visible, scannable */}
           <PolicySummary
             policyNumber={policy.policyNumber}

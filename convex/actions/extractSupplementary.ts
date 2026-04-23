@@ -5,6 +5,11 @@
  * before cl-sdk 0.13. Extracts auxiliary facts for better querying without
  * re-running the full extraction pipeline.
  *
+ * NOTE: Intentionally NOT migrated to cl-pipelines. This is a batch backfill
+ * operation (not a user-visible upload flow) that runs per-policy in a loop.
+ * The UX does not need a live progress banner. Migrating would complicate the
+ * backfill scheduling logic without user-visible benefit.
+ *
  * Single policy: npx convex run actions/extractSupplementary:extractOne --args '{"policyId": "..."}'
  * All in org:    npx convex run actions/extractSupplementary:extractAll --args '{"orgId": "..."}'
  */
@@ -208,7 +213,7 @@ export const extractAll = internalAction({
       orgId: args.orgId,
     });
     const allDocs = [...policies, ...quotes].filter(
-      (p) => p.fileId && !p.supplementaryFacts?.length && p.extractionStatus === "complete",
+      (p) => p.fileId && !p.supplementaryFacts?.length && p.pipelineStatus === "complete",
     );
 
     console.log(`Supplementary backfill: ${allDocs.length} policies to process for org ${args.orgId}`);

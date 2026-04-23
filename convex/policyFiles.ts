@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { query, internalQuery, internalMutation } from "./_generated/server";
 import { getOrgAccess } from "./lib/orgAuth";
+import { makePipelineMutations } from "./lib/pipelineMutations";
 
 export const listByPolicy = query({
   args: { policyId: v.id("policies") },
@@ -42,14 +43,6 @@ export const insert = internalMutation({
       v.literal("certificate"),
       v.literal("unknown"),
     ),
-    extractionStatus: v.union(
-      v.literal("pending"),
-      v.literal("extracting"),
-      v.literal("complete"),
-      v.literal("error"),
-      v.literal("not_insurance"),
-    ),
-    extractionError: v.optional(v.string()),
     extractedData: v.optional(v.any()),
     pageCount: v.optional(v.number()),
     orgId: v.id("organizations"),
@@ -65,14 +58,6 @@ export const insert = internalMutation({
 export const updateExtraction = internalMutation({
   args: {
     id: v.id("policyFiles"),
-    extractionStatus: v.union(
-      v.literal("pending"),
-      v.literal("extracting"),
-      v.literal("complete"),
-      v.literal("error"),
-      v.literal("not_insurance"),
-    ),
-    extractionError: v.optional(v.string()),
     extractedData: v.optional(v.any()),
   },
   handler: async (ctx, args) => {
@@ -89,9 +74,9 @@ export const appendExtractionLog = internalMutation({
   handler: async (ctx, args) => {
     const file = await ctx.db.get(args.id);
     if (!file) return;
-    const log = file.extractionLog ?? [];
+    const log = file.pipelineLog ?? [];
     log.push({ timestamp: Date.now(), message: args.message });
-    await ctx.db.patch(args.id, { extractionLog: log });
+    await ctx.db.patch(args.id, { pipelineLog: log });
   },
 });
 
@@ -111,3 +96,11 @@ export const reassignToPolicy = internalMutation({
     await ctx.db.patch(args.id, { policyId: args.newPolicyId });
   },
 });
+
+// ── cl-pipelines contract mutations for policyFiles ────────────────────────────
+const _policyFilesPipeline = makePipelineMutations("policyFiles");
+export const pipelineGetJob = _policyFilesPipeline.getJob;
+export const pipelineSetStatus = _policyFilesPipeline.setStatus;
+export const pipelineSetCheckpoint = _policyFilesPipeline.setCheckpoint;
+export const pipelineAppendLog = _policyFilesPipeline.appendLog;
+export const pipelineClearLog = _policyFilesPipeline.clearLog;

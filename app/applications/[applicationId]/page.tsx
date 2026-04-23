@@ -1,5 +1,5 @@
 import { ClientKanban } from "@/components/applications/client-kanban";
-import { AppShell } from "@/components/app-shell";
+import { ClientApplicationShell } from "@/components/applications/client-application-shell";
 import type { Id } from "@/convex/_generated/dataModel";
 
 export default async function ApplicationOverviewPage({
@@ -9,10 +9,11 @@ export default async function ApplicationOverviewPage({
 }) {
   const { applicationId } = await params;
   return (
-    <AppShell>
-      <div className="max-w-6xl mx-auto py-8 px-4">
-        <ClientKanban applicationId={applicationId as Id<"applications">} />
-      </div>
-    </AppShell>
+    <ClientApplicationShell
+      applicationId={applicationId as Id<"applications">}
+      subtitle="Complete each section in order. Your broker will review and can request updates if needed."
+    >
+      <ClientKanban applicationId={applicationId as Id<"applications">} />
+    </ClientApplicationShell>
   );
 }

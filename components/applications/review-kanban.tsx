@@ -4,6 +4,7 @@ import { useAction, useMutation, useQuery } from "convex/react";
 import { useRouter } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import { ReviewGroupPane } from "./review-group-pane";
+import { ApplicationExtractionBanner, ApplicationPrefillBanner } from "@/components/shared/extraction-banner";
 import { Badge } from "@/components/ui/badge";
 import { PillButton } from "@/components/ui/pill-button";
 import { toast } from "sonner";
@@ -177,6 +178,18 @@ export function ReviewKanban({ applicationId }: Props) {
 
   return (
     <div className="h-full space-y-4">
+      <ApplicationExtractionBanner
+        applicationId={applicationId}
+        status={(app as any).pipelineStatus}
+        error={(app as any).pipelineError}
+        log={(app as any).pipelineLog}
+      />
+      <ApplicationPrefillBanner
+        applicationId={applicationId}
+        status={(app as any).prefillStatus}
+        error={(app as any).prefillError}
+        log={(app as any).prefillLog}
+      />
       {app.status === "draft" ? (
         <DraftPreview
           applicationId={applicationId}
@@ -185,6 +198,7 @@ export function ReviewKanban({ applicationId }: Props) {
           groups={groups}
           questions={questions}
           answers={answers}
+          prefillStatus={(app as any).prefillStatus}
         />
       ) : (
         <div className="h-full min-h-0">
@@ -258,12 +272,14 @@ function DraftPreview({
   groups,
   questions,
   answers,
+  prefillStatus,
 }: {
   applicationId: Id<"applications">;
   title: string;
   lineOfBusiness?: string;
   groups: Doc<"applicationGroups">[];
   questions: Doc<"applicationQuestions">[];
+  prefillStatus?: string;
   answers: Doc<"applicationAnswers">[];
 }) {
   const answerByQuestionId = useMemo(() => {
@@ -274,10 +290,24 @@ function DraftPreview({
     }
     return m;
   }, [answers]);
+  const answerByQuestionAndRow = useMemo(() => {
+    const m = new Map<string, Doc<"applicationAnswers">>();
+    for (const a of answers) {
+      m.set(`${String(a.questionId)}:${a.rowKey ?? ""}`, a);
+    }
+    return m;
+  }, [answers]);
+  const rootAnswerValueMap = useMemo(() => {
+    const m = new Map<string, unknown>();
+    for (const a of answers) {
+      if (a.rowKey) continue;
+      m.set(String(a.questionId), a.value);
+    }
+    return m;
+  }, [answers]);
   const [draftTitle, setDraftTitle] = useState(title);
   const [draftLob, setDraftLob] = useState(lineOfBusiness ?? "");
   const [regrouping, setRegrouping] = useState(false);
-  const [prefilling, setPrefilling] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const toggleCollapsed = (id: string) =>
     setCollapsed((prev) => {
@@ -291,7 +321,7 @@ function DraftPreview({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const regroup = (useAction as any)((api as any).actions.applicationAuthoring.regroupAndOrderPublic) as (args: { applicationId: Id<"applications"> }) => Promise<{ groupCount: number }>;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const prefill = (useAction as any)((api as any).actions.applicationPrefill.prefillFromIntelligence) as (args: { applicationId: Id<"applications"> }) => Promise<{ filledCount: number; skippedCount: number }>;
+  const startPrefill = (useAction as any)((api as any).actions.applicationPrefillPipeline.startApplicationPrefill) as (args: { applicationId: Id<"applications"> }) => Promise<null>;
 
   const sortedQuestions = useMemo(
     () => [...questions].sort((a, b) => a.order - b.order),
@@ -314,6 +344,34 @@ function DraftPreview({
     const orphans = sortedQuestions.filter((q) => !knownIds.has(String(q.groupId)));
     return { buckets, orphans };
   }, [groups, sortedQuestions]);
+
+  const toSafeCount = (value: unknown): number | null => {
+    if (typeof value === "number" && Number.isFinite(value)) return Math.floor(value);
+    if (typeof value === "string" && value.trim()) {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) return Math.floor(parsed);
+    }
+    return null;
+  };
+
+  const repeatingCount = (q: Doc<"applicationQuestions">): number => {
+    const repeating = (q as any).repeating as
+      | {
+          dependsOnQuestionId?: Id<"applicationQuestions">;
+          minItems?: number;
+          maxItems?: number;
+        }
+      | undefined;
+    if (!repeating) return 1;
+    const minItems = Math.max(1, repeating.minItems ?? 1);
+    const maxItems = Math.max(minItems, repeating.maxItems ?? 25);
+    if (repeating.dependsOnQuestionId) {
+      const raw = rootAnswerValueMap.get(String(repeating.dependsOnQuestionId));
+      const resolved = toSafeCount(raw);
+      if (resolved !== null) return Math.max(minItems, Math.min(maxItems, resolved));
+    }
+    return minItems;
+  };
 
   async function commitTitle(next: string) {
     if (next === title) return;
@@ -379,7 +437,7 @@ function DraftPreview({
                 type="button"
                 size="compact"
                 variant="secondary"
-                disabled={regrouping || prefilling}
+                disabled={regrouping || prefillStatus === "running"}
                 onClick={async () => {
                   setRegrouping(true);
                   try {
@@ -398,22 +456,15 @@ function DraftPreview({
                 type="button"
                 size="compact"
                 variant="secondary"
-                disabled={regrouping || prefilling}
-                onClick={async () => {
-                  setPrefilling(true);
-                  try {
-                    const res = await prefill({ applicationId });
-                    toast.success(
-                      `Prefilled ${res.filledCount} answers${res.skippedCount ? ` (${res.skippedCount} low-confidence skipped)` : ""}`,
-                    );
-                  } catch (error) {
-                    toast.error(error instanceof Error ? error.message : "Prefill failed");
-                  } finally {
-                    setPrefilling(false);
-                  }
+                disabled={regrouping || prefillStatus === "running"}
+                onClick={() => {
+                  void startPrefill({ applicationId }).catch((error: unknown) => {
+                    toast.error(error instanceof Error ? error.message : "Failed to start prefill");
+                  });
+                  toast.success("Prefill started — safe to navigate away.");
                 }}
               >
-                {prefilling ? "Prefilling…" : "Prefill from intelligence"}
+                {prefillStatus === "running" ? "Prefilling…" : "Prefill from intelligence"}
               </PillButton>
             </div>
           )}
@@ -453,12 +504,53 @@ function DraftPreview({
                     <div className="divide-y divide-foreground/6">
                       {qs.map((q) => (
                         <div key={q._id} className="px-5 py-3">
-                          <p className="text-sm font-medium text-foreground">{q.prompt}</p>
-                          <AnswerRow
-                            applicationId={applicationId}
-                            questionId={q._id}
-                            answer={answerByQuestionId.get(String(q._id))}
-                          />
+                          {(() => {
+                            const repeating = (q as any).repeating as { dependsOnQuestionId?: Id<"applicationQuestions"> } | undefined;
+                            const depQuestion = repeating?.dependsOnQuestionId
+                              ? questions.find((dq) => String(dq._id) === String(repeating.dependsOnQuestionId))
+                              : null;
+                            return (
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="text-sm font-medium text-foreground">{q.prompt}</p>
+                            {(q as any).repeating ? (
+                              <Badge variant="outline" className="text-[11px]">
+                                Repeating ({repeatingCount(q)})
+                              </Badge>
+                            ) : null}
+                            {depQuestion ? (
+                              <Badge variant="outline" className="text-[11px]">
+                                Depends on: {depQuestion.prompt}
+                              </Badge>
+                            ) : null}
+                          </div>
+                            );
+                          })()}
+                          {(q as any).repeating ? (
+                            <div className="mt-2 space-y-2">
+                              {Array.from({ length: repeatingCount(q) }).map((_, idx) => {
+                                const repeating = (q as any).repeating as { collectionKey: string; itemLabel: string };
+                                const rowKey = `${repeating.collectionKey}:${idx}`;
+                                const answer = answerByQuestionAndRow.get(`${String(q._id)}:${rowKey}`);
+                                return (
+                                  <div key={rowKey}>
+                                    <p className="text-xs text-muted-foreground mb-0.5">{repeating.itemLabel} {idx + 1}</p>
+                                    <AnswerRow
+                                      applicationId={applicationId}
+                                      questionId={q._id}
+                                      rowKey={rowKey}
+                                      answer={answer}
+                                    />
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <AnswerRow
+                              applicationId={applicationId}
+                              questionId={q._id}
+                              answer={answerByQuestionId.get(String(q._id))}
+                            />
+                          )}
                         </div>
                       ))}
                     </div>
@@ -515,10 +607,12 @@ function DraftPreview({
 function AnswerRow({
   applicationId,
   questionId,
+  rowKey,
   answer,
 }: {
   applicationId: Id<"applications">;
   questionId: Id<"applicationQuestions">;
+  rowKey?: string;
   answer: Doc<"applicationAnswers"> | undefined;
 }) {
   const hasValue =
@@ -545,7 +639,7 @@ function AnswerRow({
   async function commit(next: string) {
     setBusy(true);
     try {
-      await setAnswer({ applicationId, questionId, value: next });
+      await setAnswer({ applicationId, questionId, rowKey, value: next });
       setEditing(false);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to save");
