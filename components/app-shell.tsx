@@ -95,7 +95,7 @@ function ShellContent({
         </div>
       )}
       {rightPanel && (
-        <div className="hidden lg:flex shrink-0 h-full">{rightPanel}</div>
+        <div className="contents lg:flex lg:shrink-0 lg:h-full">{rightPanel}</div>
       )}
     </div>
   );

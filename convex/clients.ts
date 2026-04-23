@@ -47,10 +47,24 @@ async function listRowsForBroker(ctx: QueryCtx, brokerOrgId: Id<"organizations">
     .query("clientInvitations")
     .withIndex("by_brokerOrgId", (q) => q.eq("brokerOrgId", brokerOrgId))
     .collect();
+  // Legacy invites created without a pre-existing client org.
   const activeInvites = pendingInvitations.filter((i) => i.status === "pending" && !i.clientOrgId);
 
+  // Drafts + invited-but-not-accepted orgs are surfaced as their own rows.
+  const draftOrgs = clientOrgs.filter((o) => o.inviteStatus === "draft" || o.inviteStatus === "invited");
+  const acceptedOrgs = clientOrgs.filter((o) => !o.inviteStatus);
+
+  const draftRows = draftOrgs.map((org) => {
+    const policiesCountPromise = ctx.db
+      .query("policies")
+      .withIndex("by_orgId", (q) => q.eq("orgId", org._id))
+      .collect()
+      .then((r) => r.filter((p) => !p.deletedAt).length);
+    return { org, policiesCountPromise };
+  });
+
   const clientRows = await Promise.all(
-    clientOrgs.map(async (org) => {
+    acceptedOrgs.map(async (org) => {
       const [openApps, activePolicies, docs, lastActivityEvent, assignments, passport] = await Promise.all([
         ctx.db
           .query("applications")
@@ -124,6 +138,26 @@ async function listRowsForBroker(ctx: QueryCtx, brokerOrgId: Id<"organizations">
     }),
   );
 
+  const resolvedDraftRows = await Promise.all(
+    draftRows.map(async ({ org, policiesCountPromise }) => {
+      const policiesCount = await policiesCountPromise;
+      const status = org.inviteStatus === "invited" ? "invited" : "draft";
+      return {
+        clientOrgId: org._id,
+        name: org.name,
+        primaryContactName: org.primaryContactName,
+        primaryContactEmail: org.primaryContactEmail,
+        onboardingStatus: status as "invited" | "draft",
+        createdAt: org._creationTime,
+        lastActivityAt: undefined,
+        openApplicationsCount: 0,
+        activePoliciesCount: policiesCount,
+        documentsCount: 0,
+        assignedProducerIds: [] as string[],
+      };
+    }),
+  );
+
   const inviteRows = activeInvites.map((inv) => ({
     invitationId: inv._id,
     name: inv.clientOrgName ?? "Invited client",
@@ -139,7 +173,7 @@ async function listRowsForBroker(ctx: QueryCtx, brokerOrgId: Id<"organizations">
     linkType: inv.linkType,
   }));
 
-  return [...clientRows, ...inviteRows].sort((a, b) => {
+  return [...clientRows, ...resolvedDraftRows, ...inviteRows].sort((a, b) => {
     const aTime = a.lastActivityAt ?? a.createdAt;
     const bTime = b.lastActivityAt ?? b.createdAt;
     return bTime - aTime;

@@ -22,8 +22,8 @@ const DURATION = 0.32;
 const variantConfig = {
   primary: {
     classes:
-      "font-medium shadow-lg shadow-black/10 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed",
-    rest: { backgroundColor: "var(--brand)", color: "var(--brand-foreground)" },
+      "font-medium cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed bg-foreground text-background",
+    rest: {},
     hover: { filter: "brightness(1.15)" },
   },
   secondary: {

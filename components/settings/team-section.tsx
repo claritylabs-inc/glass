@@ -11,21 +11,13 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { PillButton } from "@/components/ui/pill-button";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
+import { InviteMemberDrawer } from "@/components/settings/invite-member-drawer";
 
 export function TeamSection() {
   const viewer = useQuery(api.users.viewer);
   const orgData = useQuery(api.orgs.viewerOrg, {});
   const members = useQuery(api.orgs.listMembers);
   const invitations = useQuery(api.orgs.listInvitations);
-  const inviteMember = useMutation(api.orgs.inviteMember);
   const removeMember = useMutation(api.orgs.removeMember);
   const updateMemberRole = useMutation(api.orgs.updateMemberRole);
   const setPrimaryContact = useMutation(api.orgs.setPrimaryInsuranceContact);
@@ -33,16 +25,13 @@ export function TeamSection() {
 
   const org = orgData?.org;
 
-  const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteRole, setInviteRole] = useState<"admin" | "member">("member");
-  const [inviting, setInviting] = useState(false);
-  const [showInviteDialog, setShowInviteDialog] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
 
-  const { setActions } = useSettingsActions();
+  const { setActions, setRightPanel } = useSettingsActions();
 
   useEffect(() => {
     setActions(
-      <PillButton size="compact" variant="secondary" onClick={() => setShowInviteDialog(true)}>
+      <PillButton size="compact" variant="secondary" onClick={() => setInviteOpen(true)}>
         <UserPlus className="w-3.5 h-3.5" />
         Invite Member
       </PillButton>
@@ -51,21 +40,10 @@ export function TeamSection() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function handleInvite() {
-    if (!inviteEmail) return;
-    setInviting(true);
-    try {
-      await inviteMember({ email: inviteEmail, role: inviteRole });
-      toast.success(`Invitation sent to ${inviteEmail}`);
-      setInviteEmail("");
-      setShowInviteDialog(false);
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "Failed to send invitation";
-      toast.error(msg);
-    } finally {
-      setInviting(false);
-    }
-  }
+  useEffect(() => {
+    setRightPanel(<InviteMemberDrawer open={inviteOpen} onOpenChange={setInviteOpen} />);
+    return () => setRightPanel(null);
+  }, [inviteOpen, setRightPanel]);
 
   if (viewer === undefined || orgData === undefined || members === undefined) {
     return (
@@ -204,68 +182,6 @@ export function TeamSection() {
         </div>
       </div>
 
-      {/* Invite Dialog */}
-      <Dialog open={showInviteDialog} onOpenChange={(v) => !v && setShowInviteDialog(false)}>
-        <DialogContent showCloseButton={false}>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <UserPlus className="w-5 h-5 text-muted-foreground" />
-              Invite Team Member
-            </DialogTitle>
-            <DialogDescription>
-              Send an invitation to join your organization. They&apos;ll receive an email with instructions.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div>
-              <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
-                Email Address
-              </label>
-              <input
-                type="email"
-                value={inviteEmail}
-                onChange={(e) => setInviteEmail(e.target.value)}
-                placeholder="colleague@company.com"
-                className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
-              />
-            </div>
-            <div>
-              <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
-                Role
-              </label>
-              <div className="flex gap-2">
-                {(["member", "admin"] as const).map((role) => (
-                  <button
-                    key={role}
-                    type="button"
-                    onClick={() => setInviteRole(role)}
-                    className={`flex-1 py-2 rounded-lg border text-body-sm font-medium transition-colors cursor-pointer ${
-                      inviteRole === role
-                        ? "border-foreground/15 bg-foreground/[0.03] text-foreground"
-                        : "border-foreground/6 text-muted-foreground hover:border-foreground/10"
-                    }`}
-                  >
-                    {role === "admin" ? "Admin" : "Member"}
-                  </button>
-                ))}
-              </div>
-              <p className="text-label-sm text-muted-foreground/50 mt-1.5">
-                {inviteRole === "admin"
-                  ? "Admins can manage connections, settings, and team members."
-                  : "Members can view policies and use the agent, but can't manage connections or settings."}
-              </p>
-            </div>
-          </div>
-          <DialogFooter>
-            <PillButton variant="secondary" onClick={() => setShowInviteDialog(false)} disabled={inviting}>
-              Cancel
-            </PillButton>
-            <PillButton onClick={handleInvite} disabled={inviting || !inviteEmail}>
-              {inviting ? "Sending..." : "Send Invitation"}
-            </PillButton>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

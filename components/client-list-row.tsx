@@ -24,6 +24,17 @@ export type ClientRow =
       documentsCount: number;
     }
   | {
+      kind: "draft";
+      clientOrgId: Id<"organizations">;
+      name: string;
+      primaryContactName?: string;
+      primaryContactEmail?: string;
+      onboardingStatus: "draft" | "invited";
+      createdAt: number;
+      activePoliciesCount: number;
+      onResume: (clientOrgId: Id<"organizations">) => void;
+    }
+  | {
       kind: "invite";
       brokerOrgId: Id<"organizations">;
       invitationId: Id<"clientInvitations">;
@@ -32,19 +43,17 @@ export type ClientRow =
       primaryContactEmail?: string;
       onboardingStatus: "invited";
       createdAt: number;
-      lastActivityAt?: undefined;
-      openApplicationsCount: 0;
-      activePoliciesCount: 0;
-      documentsCount: 0;
     };
 
 const STATUS_LABELS: Record<string, string> = {
+  draft: "Draft",
   invited: "Invited",
   onboarding: "Onboarding",
   active: "Active",
 };
 
 const STATUS_VARIANTS: Record<string, "secondary" | "outline" | "default"> = {
+  draft: "outline",
   invited: "outline",
   onboarding: "secondary",
   active: "default",
@@ -53,12 +62,8 @@ const STATUS_VARIANTS: Record<string, "secondary" | "outline" | "default"> = {
 export function ClientListRow({ row }: { row: ClientRow }) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const revokeInvite = useMutation((api as any).clientInvitations.revoke);
-
-  const activityLabel = row.lastActivityAt
-    ? formatDistanceToNow(new Date(row.lastActivityAt), { addSuffix: true })
-    : row.onboardingStatus === "invited"
-      ? "—"
-      : "No activity yet";
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const deleteDraft = useMutation((api as any).clientInvitations.deleteDraftClient);
 
   if (row.kind === "invite") {
     return (
@@ -92,6 +97,63 @@ export function ClientListRow({ row }: { row: ClientRow }) {
       </div>
     );
   }
+
+  if (row.kind === "draft") {
+    const subline =
+      row.onboardingStatus === "draft"
+        ? `Draft · ${row.activePoliciesCount} policy${row.activePoliciesCount === 1 ? "" : "ies"}`
+        : `Invited · ${row.primaryContactEmail ?? "no email"}`;
+    return (
+      <div className="flex items-center gap-4 px-4 py-3 border-b border-foreground/6 last:border-0 opacity-70 hover:opacity-100 transition-opacity">
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-foreground truncate">{row.name}</p>
+          <p className="text-xs text-muted-foreground truncate">{subline}</p>
+        </div>
+        <Badge variant={STATUS_VARIANTS[row.onboardingStatus]} className="shrink-0">
+          {STATUS_LABELS[row.onboardingStatus]}
+        </Badge>
+        <span className="hidden sm:block text-xs text-muted-foreground shrink-0 whitespace-nowrap tabular-nums">
+          {formatDistanceToNow(new Date(row.createdAt), { addSuffix: true })}
+        </span>
+        <PillButton
+          type="button"
+          size="compact"
+          variant="secondary"
+          className="shrink-0"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            row.onResume(row.clientOrgId);
+          }}
+        >
+          {row.onboardingStatus === "draft" ? "Resume" : "View"}
+        </PillButton>
+        <PillButton
+          type="button"
+          size="compact"
+          variant="destructive"
+          className="shrink-0"
+          onClick={async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (!confirm(`Delete ${row.name}? This cannot be undone.`)) return;
+            try {
+              await deleteDraft({ clientOrgId: row.clientOrgId });
+              toast.success("Deleted");
+            } catch (err) {
+              toast.error(String(err));
+            }
+          }}
+        >
+          Delete
+        </PillButton>
+      </div>
+    );
+  }
+
+  const activityLabel = row.lastActivityAt
+    ? formatDistanceToNow(new Date(row.lastActivityAt), { addSuffix: true })
+    : "No activity yet";
 
   return (
     <Link

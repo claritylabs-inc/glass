@@ -41,12 +41,12 @@ export function PartnerWordmark({
 
   return (
     <div className="flex items-center gap-2.5 text-foreground">
-      <div className="h-4 w-4 overflow-hidden rounded-sm bg-white/90">
+      <div className="h-6 w-6 overflow-hidden rounded-md bg-white/90">
         {source ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={source} alt="" className="h-full w-full object-contain" />
         ) : (
-          <LogoIcon size={16} color={BRAND_BLUE} static />
+          <LogoIcon size={24} color={BRAND_BLUE} static />
         )}
       </div>
       <span className="text-sm font-medium tracking-tight">{name?.trim() || "Glass by Clarity Labs"}</span>

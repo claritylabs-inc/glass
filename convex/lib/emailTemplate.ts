@@ -2,24 +2,41 @@ import type { BrandingContext } from "./branding";
 import { getDefaultBranding } from "./branding";
 
 const SITE_URL = process.env.SITE_URL ?? "https://glass.claritylabs.dev";
+void SITE_URL;
 
-/** Glass + Clarity Labs lockup for email headers — JPEG for Gmail reliability */
+/** Brand name + "from Clarity Labs" lockup, rendered in HTML so it themes correctly. */
 export function buildEmailLogoHtml(branding: BrandingContext = getDefaultBranding()): string {
-  const logoUrl = branding.logoUrl.startsWith("http")
-    ? branding.logoUrl
-    : `${SITE_URL}${branding.logoUrl}`;
+  const name = branding.brandName;
+  const isAbsoluteLogo = /^https?:\/\//i.test(branding.logoUrl);
+  const mark = isAbsoluteLogo
+    ? `<img src="${branding.logoUrl}" alt="" width="20" height="20" style="display:inline-block;vertical-align:middle;width:20px;height:20px;border-radius:50%;margin-right:8px;object-fit:cover;border:0;" />`
+    : `<span style="display:inline-block;vertical-align:middle;width:18px;height:18px;border-radius:50%;border:1.5px solid ${branding.brandColor};margin-right:8px;"></span>`;
   return `
 <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;">
   <tr>
-    <td align="center"><img src="${logoUrl}" alt="${branding.brandName} by Clarity Labs" width="206" height="58" style="display:block;border:0;outline:none;text-decoration:none;" /></td>
+    <td align="center" style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:18px;line-height:1;color:#111827;">
+      ${mark}
+      <span style="font-weight:600;vertical-align:middle;">${name}</span>
+      <span style="font-weight:400;color:#9ca3af;vertical-align:middle;"> from Clarity Labs</span>
+    </td>
   </tr>
 </table>`;
 }
 
-/**
- * @deprecated Use buildEmailLogoHtml(branding) instead.
- * Kept for backward-compat with any callers that reference this export directly.
- */
+/** Small "Glass from Clarity Labs" lockup for email footer platform attribution. */
+export function buildPlatformFooterHtml(): string {
+  return `
+<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;">
+  <tr>
+    <td align="center" style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:11px;line-height:1;color:#9ca3af;">
+      <span style="font-weight:600;color:#6b7280;">Glass</span>
+      <span style="font-weight:400;"> from Clarity Labs</span>
+    </td>
+  </tr>
+</table>`;
+}
+
+/** @deprecated Use buildEmailLogoHtml(branding). */
 export const EMAIL_PRISM_LOGO = buildEmailLogoHtml();
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -88,6 +105,11 @@ export function buildOtpEmail(token: string, _siteUrl?: string, branding: Brandi
 </td></tr>
 
 </table>
+
+<!-- Platform attribution -->
+<div style="padding:16px 0 0 0;text-align:center;">
+  ${buildPlatformFooterHtml()}
+</div>
 </td></tr>
 </table>
 </body>

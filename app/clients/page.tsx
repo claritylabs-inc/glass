@@ -12,6 +12,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 export default function ClientsPage() {
   const currentOrg = useCurrentOrg();
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [resumeClientOrgId, setResumeClientOrgId] = useState<Id<"organizations"> | null>(null);
 
   if (!currentOrg) {
     return (
@@ -35,8 +36,18 @@ export default function ClientsPage() {
     );
   }
 
+  const openNew = () => {
+    setResumeClientOrgId(null);
+    setInviteOpen(true);
+  };
+
+  const openResume = (clientOrgId: Id<"organizations">) => {
+    setResumeClientOrgId(clientOrgId);
+    setInviteOpen(true);
+  };
+
   const headerActions = (
-    <PillButton size="compact" onClick={() => setInviteOpen(true)}>
+    <PillButton size="compact" onClick={openNew}>
       <UserPlus className="h-3.5 w-3.5" />
       Invite client
     </PillButton>
@@ -51,13 +62,18 @@ export default function ClientsPage() {
         <InviteClientDrawer
           brokerOrgId={brokerOrgId}
           open={inviteOpen}
-          onOpenChange={setInviteOpen}
+          onOpenChange={(v) => {
+            setInviteOpen(v);
+            if (!v) setResumeClientOrgId(null);
+          }}
+          resumeClientOrgId={resumeClientOrgId}
         />
       }
     >
       <ClientList
         brokerOrgId={brokerOrgId}
-        onInvite={() => setInviteOpen(true)}
+        onInvite={openNew}
+        onResumeDraft={openResume}
       />
     </AppShell>
   );

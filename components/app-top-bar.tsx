@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Menu } from "lucide-react";
+import { BrokerShareLinkButton } from "@/components/broker-share-link-button";
 
 const BREADCRUMB_MAP: Record<string, { label: string }> = {
   "/": { label: "Dashboard" },
@@ -129,6 +130,7 @@ export function AppTopBar({
             <div className="w-px h-4 bg-foreground/10" />
           </>
         )}
+        <BrokerShareLinkButton />
         {actions && (
           <div className="flex items-center gap-2">
             {actions}

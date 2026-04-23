@@ -155,6 +155,28 @@ export const checkHandleAvailability = query({
   },
 });
 
+/** Public broker profile for client-facing login page. No auth required. */
+export const publicBrokerBySlug = query({
+  args: { slug: v.string() },
+  handler: async (ctx, args) => {
+    const normalized = args.slug.toLowerCase().replace(/[^a-z0-9-]/g, "");
+    const org = await ctx.db
+      .query("organizations")
+      .withIndex("by_slug", (q) => q.eq("slug", normalized))
+      .first();
+    if (!org || org.type !== "broker") return null;
+    const iconUrl = org.iconStorageId ? await ctx.storage.getUrl(org.iconStorageId) : null;
+    return {
+      name: org.name,
+      slug: org.slug,
+      website: org.website,
+      brandingColor: org.brandingColor,
+      agentDisplayName: org.agentDisplayName,
+      iconUrl,
+    };
+  },
+});
+
 /** Check if a broker slug is available. No auth required. */
 export const checkSlugAvailability = query({
   args: { slug: v.string() },

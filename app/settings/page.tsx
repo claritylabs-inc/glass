@@ -10,7 +10,6 @@ import {
   Users,
   FileText,
   Puzzle,
-  CreditCard,
   Network,
 } from "lucide-react";
 import { LogoIcon } from "@/components/ui/logo-icon";
@@ -30,7 +29,6 @@ import { IntegrationsSection } from "@/components/settings/integrations-section"
 import { IntelligenceSection } from "@/components/settings/intelligence-section";
 import { BrokerTeamTab } from "@/components/settings/broker-team-tab";
 import { BrokerAgentTab } from "@/components/settings/broker-agent-tab";
-import { BrokerBillingPlaceholder } from "@/components/settings/broker-billing-placeholder";
 import NotificationPreferencesPage from "./notifications/page";
 import { Bell } from "lucide-react";
 
@@ -50,7 +48,6 @@ const BROKER_SETTINGS_SECTIONS = [
   { id: "team", label: "Team", icon: Users },
   { id: "agent", label: "Agent", icon: GlassStarIcon },
   { id: "connections", label: "Connections", icon: Network },
-  { id: "billing", label: "Billing", icon: CreditCard },
   { id: "notifications", label: "Notifications", icon: Bell },
 ] as const;
 
@@ -61,10 +58,11 @@ type SettingsSection = ClientSection | BrokerSection;
 // Keep for backwards-compatible export
 export const SETTINGS_SECTIONS = CLIENT_SETTINGS_SECTIONS;
 
-// ── Context for sections to inject header actions ──
+// ── Context for sections to inject header actions and a right-side drawer panel ──
 export const SettingsActionsContext = createContext<{
   setActions: (node: React.ReactNode) => void;
-}>({ setActions: () => {} });
+  setRightPanel: (node: React.ReactNode) => void;
+}>({ setActions: () => {}, setRightPanel: () => {} });
 
 export function useSettingsActions() {
   return useContext(SettingsActionsContext);
@@ -74,6 +72,7 @@ export default function SettingsPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [headerActions, setHeaderActions] = useState<React.ReactNode>(null);
+  const [rightPanel, setRightPanel] = useState<React.ReactNode>(null);
   const currentOrg = useCurrentOrg();
   const isBroker = currentOrg?.isBroker ?? false;
 
@@ -91,10 +90,11 @@ export default function SettingsPage() {
     SETTINGS_SECTIONS_ACTIVE.find((s) => s.id === activeSection)?.label ?? "Settings";
 
   return (
-    <SettingsActionsContext.Provider value={{ setActions: setHeaderActions }}>
+    <SettingsActionsContext.Provider value={{ setActions: setHeaderActions, setRightPanel }}>
       <AppShell
         breadcrumbDetail={activeLabel === "Settings" ? undefined : activeLabel}
         actions={headerActions}
+        rightPanel={rightPanel}
       >
         {/* Mobile: horizontal scrollable tabs */}
         <div className="lg:hidden mb-6 -mx-6 px-6 overflow-x-auto scrollbar-hide">
@@ -133,7 +133,6 @@ function SectionContent({ section, isBroker }: { section: SettingsSection; isBro
          section === "team" ? <BrokerTeamTab /> :
          section === "agent" ? <BrokerAgentTab /> :
          section === "connections" ? <ConnectionsSection /> :
-         section === "billing" ? <BrokerBillingPlaceholder /> :
          section === "notifications" && currentOrg?.orgId ? (
            <NotificationPreferencesPage orgId={currentOrg.orgId} />
          ) : null}

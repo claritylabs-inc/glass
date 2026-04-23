@@ -15,19 +15,11 @@ import {
   Check,
   X,
 } from "lucide-react";
-import { readableTextFor } from "@/lib/branding";
 import { AccentColorPicker } from "@/components/ui/accent-color-picker";
 import { INDUSTRIES } from "@/convex/lib/industries";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { PillButton } from "@/components/ui/pill-button";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
+import { SettingsDrawer } from "@/components/settings/settings-drawer";
 
 const WORKSPACE_DOMAIN =
   process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "glass.claritylabs.inc";
@@ -137,7 +129,7 @@ export function OrganizationSection() {
     updateSlug,
   ]);
 
-  const { setActions } = useSettingsActions();
+  const { setActions, setRightPanel } = useSettingsActions();
 
   const contextRef = useRef<HTMLTextAreaElement>(null);
   const autoResize = useCallback(() => {
@@ -231,6 +223,40 @@ export function OrganizationSection() {
     return () => setActions(null);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [saving, savedAt, extracting, website]);
+
+  useEffect(() => {
+    setRightPanel(
+      <SettingsDrawer
+        open={showResetDialog}
+        onOpenChange={(v) => setShowResetDialog(v)}
+        title="Reset organization"
+        footer={
+          <>
+            <PillButton
+              variant="secondary"
+              onClick={() => setShowResetDialog(false)}
+              disabled={resetting}
+            >
+              Cancel
+            </PillButton>
+            <PillButton variant="destructive" onClick={handleReset} disabled={resetting}>
+              {resetting ? "Resetting…" : "Yes, reset everything"}
+            </PillButton>
+          </>
+        }
+      >
+        <div className="flex items-start gap-3">
+          <AlertTriangle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+          <p className="text-body-sm text-muted-foreground">
+            This will permanently delete all policies (including stored files), emails,
+            connections, and conversations for your organization. This action cannot be undone.
+          </p>
+        </div>
+      </SettingsDrawer>,
+    );
+    return () => setRightPanel(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showResetDialog, resetting]);
 
   async function handleExtract() {
     if (!website) return;
@@ -388,56 +414,61 @@ export function OrganizationSection() {
               />
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
-                  Industry
-                </label>
-                <SearchableSelect
-                  options={INDUSTRIES.map((ind) => ({ value: ind.value, label: ind.label }))}
-                  value={industry}
-                  onChange={(v) => {
-                    setIndustry(v);
-                    setIndustryVertical("");
-                  }}
-                  placeholder="Select industry..."
-                />
+            {!isBroker && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
+                    Industry
+                  </label>
+                  <SearchableSelect
+                    options={INDUSTRIES.map((ind) => ({ value: ind.value, label: ind.label }))}
+                    value={industry}
+                    onChange={(v) => {
+                      setIndustry(v);
+                      setIndustryVertical("");
+                    }}
+                    placeholder="Select industry..."
+                  />
+                </div>
+                <div>
+                  <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
+                    Vertical
+                  </label>
+                  <SearchableSelect
+                    options={INDUSTRIES.find((i) => i.value === industry)?.verticals.map((v) => ({ value: v.value, label: v.label })) ?? []}
+                    value={industryVertical}
+                    onChange={setIndustryVertical}
+                    placeholder="Select vertical..."
+                    disabled={!industry}
+                  />
+                </div>
               </div>
-              <div>
-                <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
-                  Vertical
-                </label>
-                <SearchableSelect
-                  options={INDUSTRIES.find((i) => i.value === industry)?.verticals.map((v) => ({ value: v.value, label: v.label })) ?? []}
-                  value={industryVertical}
-                  onChange={setIndustryVertical}
-                  placeholder="Select vertical..."
-                  disabled={!industry}
-                />
-              </div>
-            </div>
+            )}
 
-            <div>
-              <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
-                Company Context
-              </label>
-              <textarea
-                ref={contextRef}
-                value={context}
-                onChange={(e) => setContext(e.target.value)}
-                onInput={autoResize}
-                placeholder="Brief description of your company, industry, and insurance needs..."
-                rows={4}
-                className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors resize-none overflow-hidden"
-              />
-            </div>
+            {!isBroker && (
+              <div>
+                <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
+                  Company Context
+                </label>
+                <textarea
+                  ref={contextRef}
+                  value={context}
+                  onChange={(e) => setContext(e.target.value)}
+                  onInput={autoResize}
+                  placeholder="Brief description of your company, industry, and insurance needs..."
+                  rows={4}
+                  className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors resize-none overflow-hidden"
+                />
+              </div>
+            )}
 
           </div>
         </div>
 
         {isBroker && <BrandingCard orgName={name} website={website} />}
 
-        {/* Relationship Context section */}
+        {/* Relationship Context section — client orgs only */}
+        {!isBroker && (
         <div className="rounded-lg border border-foreground/6 bg-card mb-4">
           <div className="px-5 py-3.5 border-b border-foreground/6">
             <h3 className="!mb-0 text-sm font-medium text-foreground">Relationship Context</h3>
@@ -507,6 +538,7 @@ export function OrganizationSection() {
             </div>
           </div>
         </div>
+        )}
 
       </div>
 
@@ -569,28 +601,6 @@ export function OrganizationSection() {
         </div>
       )}
 
-      {/* Reset Dialog */}
-      <Dialog open={showResetDialog} onOpenChange={(v) => !v && setShowResetDialog(false)}>
-        <DialogContent showCloseButton={false}>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="w-5 h-5 text-red-500" />
-              Reset Organization
-            </DialogTitle>
-            <DialogDescription>
-              This will permanently delete all policies (including stored files), emails, connections, and conversations for your organization. This action cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <PillButton variant="secondary" onClick={() => setShowResetDialog(false)} disabled={resetting}>
-              Cancel
-            </PillButton>
-            <PillButton variant="destructive" onClick={handleReset} disabled={resetting}>
-              {resetting ? "Resetting..." : "Yes, Reset Everything"}
-            </PillButton>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
@@ -688,8 +698,6 @@ function BrandingCard({
       ? `/api/storage/${org.iconStorageId}`
       : null;
 
-  const textColor = readableTextFor(brandingColor) === "light" ? "#FFFFFF" : "#0F172A";
-
   return (
     <div className="rounded-lg border border-foreground/6 bg-card mb-4">
       <div className="px-5 py-3.5 border-b border-foreground/6">
@@ -759,39 +767,6 @@ function BrandingCard({
           />
         </div>
 
-        {/* Preview */}
-        <div>
-          <label className={brandingLabelClass}>Preview</label>
-          <div
-            className="rounded-md p-3 flex items-center gap-3 border border-foreground/8 bg-popover"
-          >
-            <div
-              className="h-8 w-8 rounded-md shrink-0 overflow-hidden flex items-center justify-center border border-foreground/8"
-              style={{ backgroundColor: logoUrl ? "#FFFFFF" : brandingColor }}
-            >
-              {logoUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={logoUrl} alt="" className="h-full w-full object-contain" />
-              ) : null}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="text-body-sm font-medium truncate">
-                {orgName || "Your brokerage"}
-              </div>
-              <div className="text-label-sm text-muted-foreground/70 truncate">
-                How your brand appears to clients
-              </div>
-            </div>
-            <button
-              type="button"
-              disabled
-              className="rounded-full px-3 py-1 text-xs font-medium"
-              style={{ backgroundColor: brandingColor, color: textColor }}
-            >
-              Continue
-            </button>
-          </div>
-        </div>
       </div>
     </div>
   );

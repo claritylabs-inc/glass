@@ -9,14 +9,16 @@ import { UserPlus } from "lucide-react";
 import { EmptyStateCard } from "@/components/ui/empty-state-card";
 import { ClientListRow, type ClientRow } from "@/components/client-list-row";
 
-type StatusFilter = "all" | "invited" | "onboarding" | "active";
+type StatusFilter = "all" | "draft" | "invited" | "onboarding" | "active";
 
 export function ClientList({
   brokerOrgId,
   onInvite,
+  onResumeDraft,
 }: {
   brokerOrgId: Id<"organizations">;
   onInvite: () => void;
+  onResumeDraft: (clientOrgId: Id<"organizations">) => void;
 }) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const rows = useQuery((api as any).clients.listForBroker, { brokerOrgId }) as any[] | undefined;
@@ -24,6 +26,7 @@ export function ClientList({
 
   const STATUS_FILTERS: { id: StatusFilter; label: string }[] = [
     { id: "all", label: "All" },
+    { id: "draft", label: "Draft" },
     { id: "invited", label: "Invited" },
     { id: "onboarding", label: "Onboarding" },
     { id: "active", label: "Active" },
@@ -40,7 +43,8 @@ export function ClientList({
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function toClientRow(r: any): ClientRow {
-    if (r.onboardingStatus === "invited") {
+    // Legacy pending invite (no clientOrgId yet)
+    if (r.onboardingStatus === "invited" && r.invitationId && !r.clientOrgId) {
       return {
         kind: "invite",
         brokerOrgId,
@@ -50,10 +54,20 @@ export function ClientList({
         primaryContactEmail: r.primaryContactEmail,
         onboardingStatus: "invited",
         createdAt: r.createdAt,
-        lastActivityAt: undefined,
-        openApplicationsCount: 0,
-        activePoliciesCount: 0,
-        documentsCount: 0,
+      };
+    }
+    // Draft or invited (backed by a draft client org)
+    if (r.onboardingStatus === "draft" || r.onboardingStatus === "invited") {
+      return {
+        kind: "draft",
+        clientOrgId: r.clientOrgId as Id<"organizations">,
+        name: r.name,
+        primaryContactName: r.primaryContactName,
+        primaryContactEmail: r.primaryContactEmail,
+        onboardingStatus: r.onboardingStatus as "draft" | "invited",
+        createdAt: r.createdAt,
+        activePoliciesCount: r.activePoliciesCount ?? 0,
+        onResume: onResumeDraft,
       };
     }
     return {
@@ -73,7 +87,6 @@ export function ClientList({
 
   return (
     <div className="space-y-4">
-      {/* Toolbar */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <Tabs value={statusFilter} onValueChange={(v) => setStatusFilter(v as StatusFilter)}>
           <TabsList variant="pill">
@@ -86,7 +99,6 @@ export function ClientList({
         </Tabs>
       </div>
 
-      {/* List */}
       {rows === undefined ? (
         <div className="py-16 text-center">
           <p className="text-sm text-muted-foreground/60">Loading…</p>
@@ -109,19 +121,16 @@ export function ClientList({
       ) : (
         <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
           {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-          {filteredRows.map((row: any) => (
-            <ClientListRow
-              key={
-                row.onboardingStatus === "invited"
-                  ? `invite-${row.invitationId}`
-                  : `client-${row.clientOrgId}`
-              }
-              row={toClientRow(row)}
-            />
-          ))}
+          {filteredRows.map((row: any) => {
+            const mapped = toClientRow(row);
+            const key =
+              mapped.kind === "invite"
+                ? `invite-${mapped.invitationId}`
+                : `client-${mapped.clientOrgId}`;
+            return <ClientListRow key={key} row={mapped} />;
+          })}
         </div>
       )}
-
     </div>
   );
 }

@@ -44,9 +44,8 @@ function GlassStarIcon({ className }: { className?: string }) {
 const CLIENT_SETTINGS_WITH_AGENT = [...CLIENT_SETTINGS_SECTIONS];
 
 const BROKER_SETTINGS_WITH_AGENT = [
-  ...BROKER_SETTINGS_SECTIONS.filter((s) => s.id !== "billing"),
+  ...BROKER_SETTINGS_SECTIONS,
   { id: "agent", label: "Agent", icon: GlassStarIcon },
-  ...BROKER_SETTINGS_SECTIONS.filter((s) => s.id === "billing"),
 ];
 
 const INSURANCE_ITEMS = [

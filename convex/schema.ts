@@ -78,6 +78,19 @@ export default defineSchema({
     type: v.optional(v.union(v.literal("broker"), v.literal("client"))),
     // Set on client orgs only — ID of the managing broker org
     brokerOrgId: v.optional(v.id("organizations")),
+    // Client-org lifecycle: "draft" = broker is preparing, "invited" = invite sent and pending,
+    // undefined = legacy/active (accepted or pre-dates this field).
+    inviteStatus: v.optional(v.union(
+      v.literal("draft"),
+      v.literal("invited"),
+    )),
+    // Draft/invite contact details captured by broker before the client accepts.
+    // Mirrored into clientPassport on accept.
+    primaryContactName: v.optional(v.string()),
+    primaryContactEmail: v.optional(v.string()),
+    inviteCustomMessage: v.optional(v.string()),
+    // Broker user who created the draft.
+    draftCreatedByUserId: v.optional(v.id("users")),
     // Broker slug for URLs, [a-z0-9-]{3,40}, unique
     slug: v.optional(v.string()),
     // Broker branding
@@ -550,10 +563,15 @@ export default defineSchema({
     maxUses: v.optional(v.number()),
     expiresAt: v.optional(v.number()),
     createdAt: v.number(),
+    // Permanent per-broker shareable link (one per broker org).
+    // Stores raw token so the broker can copy it repeatedly.
+    isPerma: v.optional(v.boolean()),
+    rawToken: v.optional(v.string()),
   })
     .index("by_tokenHash", ["inviteTokenHash"])
     .index("by_brokerOrgId", ["brokerOrgId"])
-    .index("by_status", ["status"]),
+    .index("by_status", ["status"])
+    .index("by_brokerOrgId_isPerma", ["brokerOrgId", "isPerma"]),
 
   emailConnections: defineTable({
     ...pipelineFields(),

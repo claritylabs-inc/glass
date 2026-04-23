@@ -5,7 +5,6 @@ import {
   Users,
   FileText,
   Puzzle,
-  CreditCard,
   Network,
 } from "lucide-react";
 import type { ComponentType } from "react";
@@ -35,7 +34,6 @@ export const BROKER_SETTINGS_SECTIONS: SettingsSection[] = [
   { id: "team", label: "Team", icon: Users },
   // "agent" section is appended by consumers that have access to GlassStarIcon
   { id: "connections", label: "Connections", icon: Network },
-  { id: "billing", label: "Billing", icon: CreditCard },
 ];
 
 // Backwards-compatible export (client list).

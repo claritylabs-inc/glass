@@ -19,14 +19,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { PillButton } from "@/components/ui/pill-button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { useSettingsActions } from "@/app/settings/page";
 import { Id } from "@/convex/_generated/dataModel";
 
@@ -56,11 +49,155 @@ export function ConnectionsSection() {
   const [copiedKey, setCopiedKey] = useState(false);
   const [showRevokeKeyDialog, setShowRevokeKeyDialog] = useState<string | null>(null);
 
-  const { setActions } = useSettingsActions();
+  const { setActions, setRightPanel } = useSettingsActions();
   useEffect(() => {
     setActions(null);
     return () => setActions(null);
   }, [setActions]);
+
+  useEffect(() => {
+    setRightPanel(
+      <>
+        <SettingsDrawer
+          open={showGenerateKeyDialog}
+          onOpenChange={(v) => !v && closeGenerateDialog()}
+          title={generatedKey ? "API key generated" : "Generate API key"}
+          footer={
+            <>
+              <PillButton
+                variant="secondary"
+                onClick={closeGenerateDialog}
+                disabled={generatingKey}
+              >
+                {generatedKey ? "Done" : "Cancel"}
+              </PillButton>
+              {!generatedKey && (
+                <PillButton onClick={handleGenerate} disabled={generatingKey || !newKeyName}>
+                  {generatingKey ? "Generating…" : "Generate"}
+                </PillButton>
+              )}
+            </>
+          }
+        >
+          {generatedKey ? (
+            <>
+              <p className="text-body-sm text-muted-foreground">
+                Copy this key now. You won&apos;t be able to see it again.
+              </p>
+              <div className="flex items-center gap-2 bg-foreground/[0.03] border border-foreground/6 rounded-lg p-3">
+                <code className="text-[12px] font-mono text-foreground flex-1 break-all select-all">
+                  {generatedKey}
+                </code>
+                <button
+                  type="button"
+                  onClick={handleCopyKey}
+                  className="shrink-0 p-1.5 rounded hover:bg-foreground/5 transition-colors cursor-pointer"
+                >
+                  {copiedKey ? (
+                    <Check className="w-4 h-4 text-green-500" />
+                  ) : (
+                    <Copy className="w-4 h-4 text-muted-foreground" />
+                  )}
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-body-sm text-muted-foreground">
+                Create a new API key for programmatic MCP access.
+              </p>
+              <div>
+                <label className="text-label-sm font-medium text-muted-foreground block mb-1.5">
+                  Key name
+                </label>
+                <input
+                  type="text"
+                  value={newKeyName}
+                  onChange={(e) => setNewKeyName(e.target.value)}
+                  placeholder="e.g. CI pipeline, ingestion script"
+                  className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                />
+              </div>
+            </>
+          )}
+        </SettingsDrawer>
+
+        <SettingsDrawer
+          open={!!revokeTarget}
+          onOpenChange={(v) => !v && setRevokeTarget(null)}
+          title="Revoke connection"
+          footer={
+            <>
+              <PillButton
+                variant="secondary"
+                onClick={() => setRevokeTarget(null)}
+                disabled={revoking}
+              >
+                Cancel
+              </PillButton>
+              <PillButton variant="destructive" onClick={handleRevokeApp} disabled={revoking}>
+                {revoking ? "Revoking…" : "Revoke"}
+              </PillButton>
+            </>
+          }
+        >
+          <div className="flex items-start gap-3">
+            <Trash2 className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+            <p className="text-body-sm text-muted-foreground">
+              This will disconnect <strong>{revokeTarget?.clientName}</strong> and revoke its
+              access to your Glass data.
+            </p>
+          </div>
+        </SettingsDrawer>
+
+        <SettingsDrawer
+          open={!!showRevokeKeyDialog}
+          onOpenChange={(v) => !v && setShowRevokeKeyDialog(null)}
+          title="Revoke API key"
+          footer={
+            <>
+              <PillButton variant="secondary" onClick={() => setShowRevokeKeyDialog(null)}>
+                Cancel
+              </PillButton>
+              <PillButton
+                variant="destructive"
+                onClick={async () => {
+                  if (!showRevokeKeyDialog) return;
+                  try {
+                    await revokeApiKey({ id: showRevokeKeyDialog as Id<"apiKeys"> });
+                    setShowRevokeKeyDialog(null);
+                    toast.success("API key revoked");
+                  } catch {
+                    toast.error("Failed to revoke key");
+                  }
+                }}
+              >
+                Yes, revoke
+              </PillButton>
+            </>
+          }
+        >
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+            <p className="text-body-sm text-muted-foreground">
+              This key will immediately stop working. Any integrations using it will lose access.
+            </p>
+          </div>
+        </SettingsDrawer>
+      </>,
+    );
+    return () => setRightPanel(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    showGenerateKeyDialog,
+    revokeTarget,
+    showRevokeKeyDialog,
+    generatedKey,
+    generatingKey,
+    newKeyName,
+    copiedKey,
+    revoking,
+  ]);
 
   const siteUrl = typeof window !== "undefined" ? window.location.origin : "";
   const mcpUrl = `${siteUrl}/.well-known/mcp.json`;
@@ -137,45 +274,16 @@ export function ConnectionsSection() {
 
   return (
     <div className="space-y-4">
-      {/* Local tools */}
+      {/* MCP connections */}
       <div className="rounded-lg border border-foreground/6 bg-card">
         <div className="px-5 py-3.5 border-b border-foreground/6">
-          <h3 className="!mb-0 text-sm font-medium text-foreground">Local tools</h3>
-        </div>
-        <div className="px-5 py-5 space-y-3">
-          <p className="text-body-sm text-muted-foreground">
-            For Claude Code, Cursor, Codex, and other local MCP clients. Paste this into your MCP
-            config (e.g. <code className="text-[12px] bg-foreground/5 px-1 py-0.5 rounded">~/.claude/mcp.json</code> or
-            <code className="text-[12px] bg-foreground/5 px-1 py-0.5 rounded ml-1">~/.cursor/mcp.json</code>).
-            On first run, a browser window will open to sign in.
-          </p>
-          <div className="relative">
-            <pre className="text-[12px] bg-foreground/[0.03] border border-foreground/6 rounded-lg p-4 overflow-x-auto text-muted-foreground">
-              {localSnippet}
-            </pre>
-            <button
-              type="button"
-              onClick={() => copyTo(localSnippet, "local")}
-              className="absolute top-2 right-2 p-1.5 rounded hover:bg-foreground/5 transition-colors cursor-pointer"
-            >
-              {copiedLocal ? (
-                <Check className="w-4 h-4 text-green-500" />
-              ) : (
-                <Copy className="w-4 h-4 text-muted-foreground" />
-              )}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Remote tools */}
-      <div className="rounded-lg border border-foreground/6 bg-card">
-        <div className="px-5 py-3.5 border-b border-foreground/6">
-          <h3 className="!mb-0 text-sm font-medium text-foreground">Remote tools</h3>
+          <h3 className="!mb-0 text-sm font-medium text-foreground">MCP connections</h3>
         </div>
         <div className="px-5 py-5 space-y-4">
           <p className="text-body-sm text-muted-foreground">
-            For Claude.ai, ChatGPT, and other remote MCP clients. Point your tool at this discovery URL:
+            Connect Glass to Claude.ai, ChatGPT, or another AI assistant. In your assistant&apos;s
+            connector or integration settings, add a new MCP connection and paste the URL below.
+            You&apos;ll be asked to sign in to Glass the first time you use it.
           </p>
           <div className="flex items-center gap-2 bg-foreground/[0.03] border border-foreground/6 rounded-lg p-3">
             <Globe className="w-4 h-4 text-muted-foreground shrink-0" />
@@ -256,19 +364,49 @@ export function ConnectionsSection() {
             ) : (
               <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
             )}
-            Advanced — API keys
+            Advanced
           </span>
           <span className="text-label-sm text-muted-foreground/60">
-            For scripts and CI
+            For developers
           </span>
         </button>
         {showAdvanced && (
           <div>
+            <div className="px-5 py-5 border-b border-foreground/6 space-y-3">
+              <div>
+                <h4 className="text-body-sm font-medium text-foreground mb-1">Local MCP</h4>
+                <p className="text-body-sm text-muted-foreground">
+                  For Claude Code, Cursor, Codex, and other local MCP clients. Paste this into your MCP
+                  config (e.g. <code className="text-[12px] bg-foreground/5 px-1 py-0.5 rounded">~/.claude/mcp.json</code> or
+                  <code className="text-[12px] bg-foreground/5 px-1 py-0.5 rounded ml-1">~/.cursor/mcp.json</code>).
+                  On first run, a browser window will open to sign in.
+                </p>
+              </div>
+              <div className="relative">
+                <pre className="text-[12px] bg-foreground/[0.03] border border-foreground/6 rounded-lg p-4 overflow-x-auto text-muted-foreground">
+                  {localSnippet}
+                </pre>
+                <button
+                  type="button"
+                  onClick={() => copyTo(localSnippet, "local")}
+                  className="absolute top-2 right-2 p-1.5 rounded hover:bg-foreground/5 transition-colors cursor-pointer"
+                >
+                  {copiedLocal ? (
+                    <Check className="w-4 h-4 text-green-500" />
+                  ) : (
+                    <Copy className="w-4 h-4 text-muted-foreground" />
+                  )}
+                </button>
+              </div>
+            </div>
             <div className="px-5 py-4 border-b border-foreground/6 flex items-start justify-between gap-3">
-              <p className="text-body-sm text-muted-foreground">
-                Long-lived bearer tokens for programmatic access. Prefer the OAuth flow above for
-                interactive tools.
-              </p>
+              <div>
+                <h4 className="text-body-sm font-medium text-foreground mb-1">API keys</h4>
+                <p className="text-body-sm text-muted-foreground">
+                  Long-lived bearer tokens for programmatic access. Prefer the OAuth flow above for
+                  interactive tools.
+                </p>
+              </div>
               <PillButton size="compact" variant="secondary" onClick={openGenerateDialog}>
                 <Plus className="w-3.5 h-3.5" />
                 Generate key
@@ -340,132 +478,6 @@ export function ConnectionsSection() {
         )}
       </div>
 
-      {/* Revoke connected app dialog */}
-      <Dialog open={!!revokeTarget} onOpenChange={(v) => !v && setRevokeTarget(null)}>
-        <DialogContent showCloseButton={false}>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Trash2 className="w-5 h-5 text-red-500" />
-              Revoke connection
-            </DialogTitle>
-            <DialogDescription>
-              This will disconnect <strong>{revokeTarget?.clientName}</strong> and revoke its access
-              to your Glass data.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <PillButton variant="secondary" onClick={() => setRevokeTarget(null)} disabled={revoking}>
-              Cancel
-            </PillButton>
-            <PillButton variant="destructive" onClick={handleRevokeApp} disabled={revoking}>
-              {revoking ? "Revoking..." : "Revoke"}
-            </PillButton>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Generate API key dialog */}
-      <Dialog
-        open={showGenerateKeyDialog}
-        onOpenChange={(v) => {
-          if (!v) closeGenerateDialog();
-        }}
-      >
-        <DialogContent showCloseButton={false}>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Key className="w-5 h-5 text-muted-foreground" />
-              {generatedKey ? "API key generated" : "Generate API key"}
-            </DialogTitle>
-            <DialogDescription>
-              {generatedKey
-                ? "Copy this key now. You won't be able to see it again."
-                : "Create a new API key for programmatic MCP access."}
-            </DialogDescription>
-          </DialogHeader>
-          {generatedKey ? (
-            <div className="py-2">
-              <div className="flex items-center gap-2 bg-foreground/[0.03] border border-foreground/6 rounded-lg p-3">
-                <code className="text-[12px] font-mono text-foreground flex-1 break-all select-all">
-                  {generatedKey}
-                </code>
-                <button
-                  type="button"
-                  onClick={handleCopyKey}
-                  className="shrink-0 p-1.5 rounded hover:bg-foreground/5 transition-colors cursor-pointer"
-                >
-                  {copiedKey ? (
-                    <Check className="w-4 h-4 text-green-500" />
-                  ) : (
-                    <Copy className="w-4 h-4 text-muted-foreground" />
-                  )}
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="py-2">
-              <label className="text-label-sm font-medium text-muted-foreground block mb-1.5">
-                Key name
-              </label>
-              <input
-                type="text"
-                value={newKeyName}
-                onChange={(e) => setNewKeyName(e.target.value)}
-                placeholder="e.g. CI pipeline, ingestion script"
-                className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
-              />
-            </div>
-          )}
-          <DialogFooter>
-            <PillButton variant="secondary" onClick={closeGenerateDialog} disabled={generatingKey}>
-              {generatedKey ? "Done" : "Cancel"}
-            </PillButton>
-            {!generatedKey && (
-              <PillButton onClick={handleGenerate} disabled={generatingKey || !newKeyName}>
-                {generatingKey ? "Generating..." : "Generate"}
-              </PillButton>
-            )}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Revoke API key dialog */}
-      <Dialog
-        open={!!showRevokeKeyDialog}
-        onOpenChange={(v) => !v && setShowRevokeKeyDialog(null)}
-      >
-        <DialogContent showCloseButton={false}>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="w-5 h-5 text-red-500" />
-              Revoke API key
-            </DialogTitle>
-            <DialogDescription>
-              This key will immediately stop working. Any integrations using it will lose access.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <PillButton variant="secondary" onClick={() => setShowRevokeKeyDialog(null)}>
-              Cancel
-            </PillButton>
-            <PillButton
-              variant="destructive"
-              onClick={async () => {
-                if (!showRevokeKeyDialog) return;
-                try {
-                  await revokeApiKey({ id: showRevokeKeyDialog as Id<"apiKeys"> });
-                  setShowRevokeKeyDialog(null);
-                  toast.success("API key revoked");
-                } catch {
-                  toast.error("Failed to revoke key");
-                }
-              }}
-            >
-              Yes, revoke
-            </PillButton>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
