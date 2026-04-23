@@ -281,7 +281,6 @@ export default function BrokerOnboardingPage() {
   const [brandingTextOnAccent, setBrandingTextOnAccent] = useState<"light" | "dark" | "auto">("auto");
   const [sampledColors, setSampledColors] = useState<string[]>([]);
   const [samplingColor, setSamplingColor] = useState(false);
-  const [agentDisplayName, setAgentDisplayName] = useState("");
   const [agentHandle, setAgentHandle] = useState("");
   const [debouncedHandle, setDebouncedHandle] = useState("");
   const [error, setError] = useState("");
@@ -304,7 +303,6 @@ export default function BrokerOnboardingPage() {
     if (org.brandingColor) setBrandingColor(org.brandingColor);
     if (org.brandingMode) setBrandingMode(org.brandingMode);
     if (org.brandingTextOnAccent) setBrandingTextOnAccent(org.brandingTextOnAccent);
-    setAgentDisplayName((v) => v || org.agentDisplayName || "");
     setAgentHandle((v) => v || org.agentHandle || "");
   }, [viewerOrg]);
 
@@ -409,7 +407,6 @@ export default function BrokerOnboardingPage() {
         brandingColor: brandingColor || undefined,
         brandingMode,
         brandingTextOnAccent,
-        agentDisplayName: agentDisplayName.trim() || undefined,
       });
       setCurrentStep(3);
     } catch (e: unknown) {
@@ -583,17 +580,6 @@ export default function BrokerOnboardingPage() {
         {currentStep === 2 && (
           <div className="space-y-10">
             <div className="space-y-4">
-              <div className="space-y-2">
-                <label className={labelClass}>Agent display name</label>
-                <input
-                  type="text"
-                  value={agentDisplayName}
-                  onChange={(e) => setAgentDisplayName(e.target.value)}
-                  placeholder="Acme Agent"
-                  autoFocus
-                  className={inputClass}
-                />
-              </div>
               {(() => {
                 const effectiveText =
                   brandingTextOnAccent === "auto" ? readableTextFor(brandingColor) : brandingTextOnAccent;
@@ -644,7 +630,7 @@ export default function BrokerOnboardingPage() {
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="text-sm font-medium truncate" style={{ color: previewFg }}>
-                            {agentDisplayName.trim() || orgName.trim() || "Your brokerage"}
+                            {orgName.trim() || "Your brokerage"}
                           </div>
                           <div className="text-xs truncate" style={{ color: previewMuted }}>
                             Preview of your client workspace
