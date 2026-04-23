@@ -94,6 +94,8 @@ export interface GlassPromptInputProps {
   disabled?: boolean;
   status?: ChatStatus;
   onStop?: () => void;
+  /** Override the default "Glass" branding shown in the footer. */
+  agentBranding?: { name: string; iconUrl?: string | null };
 }
 
 export const GlassPromptInput = forwardRef<
@@ -109,6 +111,7 @@ export const GlassPromptInput = forwardRef<
     disabled = false,
     status,
     onStop,
+    agentBranding,
   },
   ref,
 ) {
@@ -214,9 +217,18 @@ export const GlassPromptInput = forwardRef<
           {/* Left side: branding + context */}
           <PromptInputTools>
             <div className={roomyOnMobile ? "flex items-center gap-1.5 ml-1.5 sm:ml-1" : "flex items-center gap-1.5 ml-1"}>
-              <Asterisk className="w-3.5 h-3.5 text-primary-light" />
+              {agentBranding?.iconUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={agentBranding.iconUrl}
+                  alt=""
+                  className="w-3.5 h-3.5 rounded-sm object-cover"
+                />
+              ) : (
+                <Asterisk className="w-3.5 h-3.5 text-primary-light" />
+              )}
               <span className="hidden sm:inline text-[11px] font-medium text-muted-foreground/40">
-                Glass
+                {agentBranding?.name ?? "Glass"}
               </span>
               {contextLabel && (
                 <span className="text-[10px] font-medium text-muted-foreground/30 bg-foreground/[0.03] px-1.5 py-0.5 rounded max-w-[200px] truncate inline-block align-middle" title={contextLabel}>

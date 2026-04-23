@@ -904,6 +904,7 @@ function UnifiedThreadContent({
           onSubmit={handleSend}
           placeholder="Reply to this thread..."
           showAttach
+          agentBranding={agentBranding}
           status={messages?.some((m) => m.role === "agent" && m.status === "processing") ? "submitted" : undefined}
         />
       </ChatInputOverlay>

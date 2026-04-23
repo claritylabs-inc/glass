@@ -117,6 +117,9 @@ function PersistentChatBar() {
   const hasContext = !!pageContext;
   const viewerOrg = useQuery(api.orgs.viewerOrg, {});
   const isBroker = (viewerOrg?.org as { type?: "broker" | "client" } | undefined)?.type === "broker";
+  const agentBranding = viewerOrg?.brokerOrg
+    ? { name: `${viewerOrg.brokerOrg.name} Agent`, iconUrl: viewerOrg.brokerOrg.iconUrl }
+    : undefined;
 
   const handleSubmit = useCallback(
     async (message: PromptInputMessage) => {
@@ -205,10 +208,11 @@ function PersistentChatBar() {
         <div className="max-w-2xl mx-auto">
           <GlassPromptInput
             onSubmit={handleSubmit}
-            placeholder="Ask Glass..."
+            placeholder={agentBranding ? `Ask ${agentBranding.name}...` : "Ask Glass..."}
             contextLabel={pageContext?.summary}
             disabled={sending}
             status={sending ? "submitted" : "ready"}
+            agentBranding={agentBranding}
           />
         </div>
       </div>
