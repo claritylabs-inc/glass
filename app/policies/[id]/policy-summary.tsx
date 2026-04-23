@@ -97,6 +97,7 @@ function PdfThumbnail({ url }: { url: string }) {
 export interface PolicySummaryProps {
   policyNumber?: string;
   carrier?: string;
+  administrator?: string;
   insuredName?: string;
   effectiveDate?: string;
   expirationDate?: string;
@@ -115,6 +116,7 @@ export interface PolicySummaryProps {
 export function PolicySummary({
   policyNumber: _policyNumber,
   carrier,
+  administrator,
   insuredName,
   effectiveDate,
   expirationDate,
@@ -206,6 +208,9 @@ export function PolicySummary({
             />
           )}
 
+          {administrator && (
+            <SummaryRow label="Administrator" value={administrator} />
+          )}
           {carrier && (
             <SummaryRow label="Carrier" value={carrier} />
           )}

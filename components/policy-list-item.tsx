@@ -6,6 +6,7 @@ type UploadedBySide = "broker" | "client" | "email_scan" | undefined;
 
 interface PolicyListItemProps {
   carrier: string;
+  administrator?: string;
   policyNumber: string;
   effectiveDate?: string;
   expirationDate?: string;
@@ -42,6 +43,7 @@ function cleanField(value: string | undefined): string | undefined {
 
 export function PolicyListItem({
   carrier,
+  administrator,
   policyNumber,
   effectiveDate,
   expirationDate,
@@ -51,11 +53,13 @@ export function PolicyListItem({
 }: PolicyListItemProps) {
   const isProcessing = pipelineStatus === "running" || !pipelineStatus;
   const carrierClean = cleanField(carrier);
+  const administratorClean = cleanField(administrator);
   const policyNumberClean = cleanField(policyNumber);
   const effectiveClean = cleanField(effectiveDate);
   const expirationClean = cleanField(expirationDate);
 
-  const title = carrierClean ?? (isProcessing ? "New upload" : "Untitled policy");
+  const title =
+    administratorClean ?? carrierClean ?? (isProcessing ? "New upload" : "Untitled policy");
   const hasDates = effectiveClean && expirationClean;
 
   return (

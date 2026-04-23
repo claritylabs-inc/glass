@@ -964,12 +964,16 @@ export const updateFiles = internalMutation({
       v.literal("reconciled"),
       v.literal("error"),
     )),
+    primaryFileId: v.optional(v.id("_storage")),
+    primaryFileName: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const { id, ...fields } = args;
     const patch: Record<string, any> = {};
     if (fields.files !== undefined) patch.files = fields.files;
     if (fields.reconciliationStatus !== undefined) patch.reconciliationStatus = fields.reconciliationStatus;
+    if (fields.primaryFileId !== undefined) patch.fileId = fields.primaryFileId;
+    if (fields.primaryFileName !== undefined) patch.fileName = fields.primaryFileName;
     await ctx.db.patch(id, patch);
   },
 });

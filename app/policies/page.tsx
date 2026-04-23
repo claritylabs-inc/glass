@@ -65,9 +65,6 @@ export default function PoliciesPage() {
   const extractFromUpload = useAction(
     api.actions.extractFromUpload.extractFromUpload,
   );
-  const addFileToPolicy = useAction(
-    api.actions.addFileToPolicy.addFileToPolicy,
-  );
 
   const uploadOne = useCallback(
     async (file: File): Promise<string> => {
@@ -92,30 +89,30 @@ export default function PoliciesPage() {
       if (files.length === 0) return;
       setUploading(true);
       try {
-        // First file creates the policy.
-        toast.info(`Uploading 1 of ${files.length}…`);
-        const firstStorageId = await uploadOne(files[0]);
-        const firstResult = (await extractFromUpload({
-          fileId: firstStorageId as Id<"_storage">,
+        const storageIds: Id<"_storage">[] = [];
+        for (let i = 0; i < files.length; i++) {
+          toast.info(`Uploading ${i + 1} of ${files.length}…`);
+          const id = await uploadOne(files[i]);
+          storageIds.push(id as Id<"_storage">);
+        }
+
+        if (files.length > 1) {
+          toast.info(`Merging ${files.length} files…`);
+        }
+
+        const result = (await extractFromUpload({
+          fileId: storageIds[0],
           fileName: files[0].name,
+          additionalFiles: storageIds.slice(1).map((fileId, i) => ({
+            fileId,
+            fileName: files[i + 1].name,
+          })),
         })) as
           | { error: string }
           | { success: true; type: string; id: string };
 
-        if ("error" in firstResult) {
-          throw new Error(firstResult.error);
-        }
-        const policyId = firstResult.id as Id<"policies">;
-
-        for (let i = 1; i < files.length; i++) {
-          toast.info(`Uploading ${i + 1} of ${files.length}…`);
-          const storageId = await uploadOne(files[i]);
-          const r = (await addFileToPolicy({
-            policyId,
-            fileId: storageId as Id<"_storage">,
-            fileName: files[i].name,
-          })) as { error: string } | { success: true };
-          if ("error" in r) throw new Error(r.error);
+        if ("error" in result) {
+          throw new Error(result.error);
         }
 
         toast.success(
@@ -128,7 +125,7 @@ export default function PoliciesPage() {
         setUploading(false);
       }
     },
-    [uploadOne, extractFromUpload, addFileToPolicy],
+    [uploadOne, extractFromUpload],
   );
 
   const handleDrawerUpload = useCallback(
@@ -213,6 +210,7 @@ export default function PoliciesPage() {
               <PolicyListItem
                 key={p._id}
                 carrier={p.carrier}
+                administrator={p.mga}
                 policyNumber={p.policyNumber}
                 effectiveDate={p.effectiveDate}
                 expirationDate={p.expirationDate}

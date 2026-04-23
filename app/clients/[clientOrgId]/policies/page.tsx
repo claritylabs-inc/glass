@@ -63,7 +63,6 @@ export default function ClientPoliciesPage() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const createBrokerUpload = useMutation((api as any).policies.createBrokerUpload);
   const extractFromUpload = useAction(api.actions.extractFromUpload.extractFromUpload);
-  const addFileToPolicy = useAction(api.actions.addFileToPolicy.addFileToPolicy);
 
   const uploadStorage = useCallback(
     async (file: File): Promise<string> => {
@@ -85,30 +84,28 @@ export default function ClientPoliciesPage() {
       if (!clientOrgId || files.length === 0) return;
       setUploading(true);
       try {
-        toast.info(`Uploading 1 of ${files.length}…`);
-        const firstStorageId = await uploadStorage(files[0]);
+        const storageIds: string[] = [];
+        for (let i = 0; i < files.length; i++) {
+          toast.info(`Uploading ${i + 1} of ${files.length}…`);
+          storageIds.push(await uploadStorage(files[i]));
+        }
         const policyId = (await createBrokerUpload({
           clientOrgId: clientOrgId as Id<"organizations">,
-          fileId: firstStorageId,
+          fileId: storageIds[0],
           fileName: files[0].name,
           documentType: docType,
         })) as Id<"policies">;
+
+        if (files.length > 1) toast.info(`Merging ${files.length} files…`);
         await extractFromUpload({
-          fileId: firstStorageId as Id<"_storage">,
+          fileId: storageIds[0] as Id<"_storage">,
           fileName: files[0].name,
           policyId,
+          additionalFiles: storageIds.slice(1).map((fileId, i) => ({
+            fileId: fileId as Id<"_storage">,
+            fileName: files[i + 1].name,
+          })),
         });
-
-        for (let i = 1; i < files.length; i++) {
-          toast.info(`Uploading ${i + 1} of ${files.length}…`);
-          const storageId = await uploadStorage(files[i]);
-          const r = (await addFileToPolicy({
-            policyId,
-            fileId: storageId as Id<"_storage">,
-            fileName: files[i].name,
-          })) as { error: string } | { success: true };
-          if ("error" in r) throw new Error(r.error);
-        }
 
         toast.success("Upload started — the client will see it shortly.");
       } catch (err) {
@@ -124,7 +121,6 @@ export default function ClientPoliciesPage() {
       uploadStorage,
       createBrokerUpload,
       extractFromUpload,
-      addFileToPolicy,
     ],
   );
 
@@ -174,6 +170,7 @@ export default function ClientPoliciesPage() {
             <PolicyListItem
               key={p._id}
               carrier={p.carrier}
+              administrator={p.mga}
               policyNumber={p.policyNumber}
               effectiveDate={p.effectiveDate}
               expirationDate={p.expirationDate}

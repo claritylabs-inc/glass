@@ -8,7 +8,6 @@
  * @module
  */
 
-import type * as actions_addFileToPolicy from "../actions/addFileToPolicy.js";
 import type * as actions_backfillChunks from "../actions/backfillChunks.js";
 import type * as actions_detectDuplicatePolicies from "../actions/detectDuplicatePolicies.js";
 import type * as actions_extractCompanyInfo from "../actions/extractCompanyInfo.js";
@@ -62,6 +61,7 @@ import type * as lib_emailTemplate from "../lib/emailTemplate.js";
 import type * as lib_extraction from "../lib/extraction.js";
 import type * as lib_industries from "../lib/industries.js";
 import type * as lib_mcpAuth from "../lib/mcpAuth.js";
+import type * as lib_mergePdfs from "../lib/mergePdfs.js";
 import type * as lib_models from "../lib/models.js";
 import type * as lib_notificationEmailTemplate from "../lib/notificationEmailTemplate.js";
 import type * as lib_notificationTypes from "../lib/notificationTypes.js";
@@ -105,7 +105,6 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
-  "actions/addFileToPolicy": typeof actions_addFileToPolicy;
   "actions/backfillChunks": typeof actions_backfillChunks;
   "actions/detectDuplicatePolicies": typeof actions_detectDuplicatePolicies;
   "actions/extractCompanyInfo": typeof actions_extractCompanyInfo;
@@ -159,6 +158,7 @@ declare const fullApi: ApiFromModules<{
   "lib/extraction": typeof lib_extraction;
   "lib/industries": typeof lib_industries;
   "lib/mcpAuth": typeof lib_mcpAuth;
+  "lib/mergePdfs": typeof lib_mergePdfs;
   "lib/models": typeof lib_models;
   "lib/notificationEmailTemplate": typeof lib_notificationEmailTemplate;
   "lib/notificationTypes": typeof lib_notificationTypes;
