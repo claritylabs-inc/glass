@@ -6,6 +6,10 @@ export const updateBrokerBranding = mutation({
   args: {
     brokerOrgId: v.id("organizations"),
     brandingColor: v.optional(v.string()),
+    brandingMode: v.optional(v.union(v.literal("light"), v.literal("dark"))),
+    brandingTextOnAccent: v.optional(
+      v.union(v.literal("light"), v.literal("dark"), v.literal("auto")),
+    ),
     agentDisplayName: v.optional(v.string()),
     logoStorageId: v.optional(v.id("_storage")),
   },
@@ -17,6 +21,10 @@ export const updateBrokerBranding = mutation({
     const patch: Record<string, unknown> = {};
     if (updates.brandingColor !== undefined)
       patch.brandingColor = updates.brandingColor;
+    if (updates.brandingMode !== undefined)
+      patch.brandingMode = updates.brandingMode;
+    if (updates.brandingTextOnAccent !== undefined)
+      patch.brandingTextOnAccent = updates.brandingTextOnAccent;
     if (updates.agentDisplayName !== undefined)
       patch.agentDisplayName = updates.agentDisplayName;
     if (updates.logoStorageId !== undefined)

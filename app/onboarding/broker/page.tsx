@@ -8,6 +8,7 @@ import { api } from "@/convex/_generated/api";
 import { BrandWordmark } from "@/components/auth-shell";
 import { PillButton } from "@/components/ui/pill-button";
 import { LogoIcon } from "@/components/ui/logo-icon";
+import { AccentColorPicker } from "@/components/ui/accent-color-picker";
 import { useOnboardingCache } from "@/hooks/use-onboarding-cache";
 import { ArrowRight, Check, Loader2, X } from "lucide-react";
 
@@ -647,88 +648,17 @@ export default function BrokerOnboardingPage() {
                       </div>
                     </div>
 
-                    {sampledColors.length > 0 || samplingColor ? (
-                      <div className="space-y-2">
-                        <p className="text-label-sm text-muted-foreground">From your website</p>
-                        {samplingColor ? (
-                          <div className="flex items-center gap-2 text-label-sm text-muted-foreground">
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            Pulling colors from {extractDomain(website)}…
-                          </div>
-                        ) : (
-                          <div className="flex flex-wrap gap-2">
-                            {sampledColors.map((color) => {
-                              const selected = brandingColor.toLowerCase() === color.toLowerCase();
-                              return (
-                                <button
-                                  key={color}
-                                  type="button"
-                                  onClick={() => setBrandingColor(color)}
-                                  className={`flex items-center gap-2 rounded-full border pl-1 pr-3 py-1 text-label-sm transition-colors ${
-                                    selected
-                                      ? "border-foreground/30 bg-foreground/[0.04] text-foreground"
-                                      : "border-foreground/10 bg-popover text-muted-foreground hover:border-foreground/20"
-                                  }`}
-                                >
-                                  <span
-                                    className="h-5 w-5 rounded-full border border-foreground/10"
-                                    style={{ backgroundColor: color }}
-                                  />
-                                  <span className="font-mono uppercase tracking-wider text-[11px]">
-                                    {color}
-                                  </span>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    ) : null}
-
-                    {(() => {
-                      const renderRow = (
-                        colors: ReadonlyArray<string>,
-                        textMode: "light" | "dark",
-                        heading: string,
-                      ) => (
-                        <div className="space-y-2">
-                          <p className="text-label-sm text-muted-foreground">{heading}</p>
-                          <div className="grid grid-cols-8 gap-2">
-                            {colors.map((color) => {
-                              const selected = brandingColor.toLowerCase() === color.toLowerCase();
-                              return (
-                                <button
-                                  key={color}
-                                  type="button"
-                                  onClick={() => {
-                                    setBrandingColor(color);
-                                    setBrandingTextOnAccent(textMode);
-                                  }}
-                                  aria-label={`Select ${color}`}
-                                  className={`relative aspect-square rounded-md border border-foreground/5 ring-offset-2 ring-offset-background transition-all ${
-                                    selected ? "ring-2 ring-foreground" : "hover:scale-105"
-                                  }`}
-                                  style={{ backgroundColor: color }}
-                                >
-                                  {selected ? (
-                                    <Check
-                                      className="absolute inset-0 m-auto h-3.5 w-3.5 drop-shadow"
-                                      style={{ color: textMode === "light" ? "#FFFFFF" : "#0F172A" }}
-                                    />
-                                  ) : null}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      );
-                      return (
-                        <div className="space-y-4">
-                          {renderRow(DARK_PRESETS, "light", "Deep — pairs with light text")}
-                          {renderRow(PALE_PRESETS, "dark", "Pale — pairs with dark text")}
-                        </div>
-                      );
-                    })()}
+                    <div className="space-y-2">
+                      <p className="text-label-sm text-muted-foreground">Accent color</p>
+                      <AccentColorPicker
+                        value={brandingColor}
+                        onChange={(c) => {
+                          setBrandingColor(c);
+                          setBrandingTextOnAccent("auto");
+                        }}
+                        website={website}
+                      />
+                    </div>
 
                   </div>
                 );

@@ -24,6 +24,12 @@
   --primary-foreground: #ffffff;
   --primary-light: #a0d2fa;
   --primary-muted: #5ba3d9;
+  /* `--brand` is the themable accent used by primary CTAs. Defaults to the
+     foreground color so the platform's default (dark on cream) look is
+     unchanged. `BrandThemeApplier` overrides these per-broker on client
+     workspaces. */
+  --brand: #111827;
+  --brand-foreground: #faf8f4;
   --secondary: #f0eeea;
   --secondary-foreground: #111827;
   --muted: #f0eeea;
@@ -79,6 +85,8 @@
   --primary-foreground: #ffffff;
   --primary-light: #5bb3ff;
   --primary-muted: #2a7acc;
+  --brand: #e5e2dc;
+  --brand-foreground: #000000;
   --secondary: #2a2725;
   --secondary-foreground: #e5e2dc;
   --muted: #2a2725;

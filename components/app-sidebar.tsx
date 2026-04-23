@@ -307,6 +307,11 @@ export function AppSidebar({
           );
         })}
       </nav>
+
+      {/* Broker contact footer — only for clients */}
+      {!isBroker && viewerOrg?.brokerOrg && !collapsed ? (
+        <SidebarBrokerContact broker={viewerOrg.brokerOrg} />
+      ) : null}
     </div>
   );
 
@@ -688,6 +693,80 @@ export function AppSidebar({
         notificationId={mergeDialog.notificationId}
       />
     </>
+  );
+}
+
+function SidebarBrokerContact({
+  broker,
+}: {
+  broker: {
+    name: string;
+    iconUrl?: string | null;
+    brandingColor?: string;
+    agentHandle?: string;
+    primaryContact: {
+      userId: string;
+      name?: string;
+      email?: string;
+      title?: string;
+    } | null;
+  };
+}) {
+  const agentEmail = broker.agentHandle ? `${broker.agentHandle}@${AGENT_DOMAIN}` : null;
+  const brandColor = broker.brandingColor ?? "#1e293b";
+  const initial = broker.name.charAt(0).toUpperCase();
+  return (
+    <div className="border-t border-foreground/6 px-3 py-3">
+      <p className="text-[11px] font-medium text-muted-foreground/50 px-1 pb-2">
+        Your broker
+      </p>
+      <div className="rounded-lg border border-foreground/6 bg-card px-3 py-2.5">
+        <div className="flex items-center gap-2.5">
+          <div
+            className="h-8 w-8 shrink-0 overflow-hidden rounded-md flex items-center justify-center ring-1 ring-inset ring-white/10"
+            style={{
+              background: `linear-gradient(135deg, ${brandColor} 0%, ${brandColor}cc 60%, ${brandColor}88 100%)`,
+            }}
+          >
+            {broker.iconUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={broker.iconUrl} alt="" className="h-full w-full object-contain p-1 bg-white" />
+            ) : (
+              <span className="text-sm font-semibold text-white">{initial}</span>
+            )}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-body-sm font-medium text-foreground truncate">{broker.name}</p>
+            {broker.primaryContact?.name ? (
+              <p className="text-label-sm text-muted-foreground truncate">
+                {broker.primaryContact.name}
+              </p>
+            ) : null}
+          </div>
+        </div>
+        {(broker.primaryContact?.email || agentEmail) && (
+          <div className="mt-2 space-y-1">
+            {broker.primaryContact?.email ? (
+              <a
+                href={`mailto:${broker.primaryContact.email}`}
+                className="block text-label-sm text-muted-foreground hover:text-foreground truncate"
+              >
+                {broker.primaryContact.email}
+              </a>
+            ) : null}
+            {agentEmail ? (
+              <a
+                href={`mailto:${agentEmail}`}
+                className="block text-label-sm text-muted-foreground hover:text-foreground truncate"
+                title="Broker assistant"
+              >
+                {agentEmail}
+              </a>
+            ) : null}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 

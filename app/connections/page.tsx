@@ -1,4 +1,4 @@
 import { redirect } from "next/navigation";
 export default function ConnectionsPage() {
-  redirect("/settings?section=sources");
+  redirect("/settings?section=connections");
 }

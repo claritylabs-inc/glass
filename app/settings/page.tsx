@@ -2,24 +2,20 @@
 
 import { useSearchParams, useRouter } from "next/navigation";
 import { useState, createContext, useContext } from "react";
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
 import { AppShell } from "@/components/app-shell";
 import {
   Mail,
   Sparkles,
   Building2,
   Users,
-  Key,
   FileText,
   Puzzle,
   CreditCard,
-  Plug,
+  Network,
 } from "lucide-react";
 import { LogoIcon } from "@/components/ui/logo-icon";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useCurrentOrg } from "@/hooks/use-current-org";
-import { BrokerContactCard } from "@/components/settings/broker-contact-card";
 
 /** Wrapper so LogoIcon matches the lucide icon interface used in nav items */
 function GlassStarIcon({ className }: { className?: string }) {
@@ -27,13 +23,11 @@ function GlassStarIcon({ className }: { className?: string }) {
 }
 import { OrganizationSection } from "@/components/settings/organization-section";
 import { TeamSection } from "@/components/settings/team-section";
-import { ApiKeysSection } from "@/components/settings/api-keys-section";
+import { ConnectionsSection } from "@/components/settings/connections-section";
 import { EmailConnectionsSection } from "@/components/settings/email-connections-section";
 import { DocumentsSection } from "@/components/settings/documents-section";
 import { IntegrationsSection } from "@/components/settings/integrations-section";
 import { IntelligenceSection } from "@/components/settings/intelligence-section";
-import { SourcesSection } from "@/components/settings/sources-section";
-import { BrokerBrandingTab } from "@/components/settings/broker-branding-tab";
 import { BrokerTeamTab } from "@/components/settings/broker-team-tab";
 import { BrokerAgentTab } from "@/components/settings/broker-agent-tab";
 import { BrokerBillingPlaceholder } from "@/components/settings/broker-billing-placeholder";
@@ -43,8 +37,7 @@ import { Bell } from "lucide-react";
 const CLIENT_SETTINGS_SECTIONS = [
   { id: "organization", label: "Organization", icon: Building2 },
   { id: "team", label: "Team", icon: Users },
-  { id: "api-keys", label: "API Keys", icon: Key },
-  { id: "sources", label: "Sources", icon: Plug },
+  { id: "connections", label: "Connections", icon: Network },
   { id: "email-connections", label: "Email Connections", icon: Mail },
   { id: "documents", label: "Documents", icon: FileText },
   { id: "integrations", label: "Integrations", icon: Puzzle },
@@ -54,9 +47,9 @@ const CLIENT_SETTINGS_SECTIONS = [
 
 const BROKER_SETTINGS_SECTIONS = [
   { id: "organization", label: "Organization", icon: Building2 },
-  { id: "branding", label: "Branding", icon: Sparkles },
   { id: "team", label: "Team", icon: Users },
   { id: "agent", label: "Agent", icon: GlassStarIcon },
+  { id: "connections", label: "Connections", icon: Network },
   { id: "billing", label: "Billing", icon: CreditCard },
   { id: "notifications", label: "Notifications", icon: Bell },
 ] as const;
@@ -83,8 +76,6 @@ export default function SettingsPage() {
   const [headerActions, setHeaderActions] = useState<React.ReactNode>(null);
   const currentOrg = useCurrentOrg();
   const isBroker = currentOrg?.isBroker ?? false;
-  const viewerOrgData = useQuery(api.orgs.viewerOrg, {});
-  const brokerOrg = !isBroker ? viewerOrgData?.brokerOrg : null;
 
   const SETTINGS_SECTIONS_ACTIVE = isBroker ? BROKER_SETTINGS_SECTIONS : CLIENT_SETTINGS_SECTIONS;
 
@@ -105,9 +96,6 @@ export default function SettingsPage() {
         breadcrumbDetail={activeLabel === "Settings" ? undefined : activeLabel}
         actions={headerActions}
       >
-        {/* Broker contact card — shown at the top for client users */}
-        {brokerOrg ? <BrokerContactCard broker={brokerOrg} /> : null}
-
         {/* Mobile: horizontal scrollable tabs */}
         <div className="lg:hidden mb-6 -mx-6 px-6 overflow-x-auto scrollbar-hide">
           <Tabs
@@ -142,9 +130,9 @@ function SectionContent({ section, isBroker }: { section: SettingsSection; isBro
     return (
       <div>
         {section === "organization" ? <OrganizationSection /> :
-         section === "branding" ? <BrokerBrandingTab /> :
          section === "team" ? <BrokerTeamTab /> :
          section === "agent" ? <BrokerAgentTab /> :
+         section === "connections" ? <ConnectionsSection /> :
          section === "billing" ? <BrokerBillingPlaceholder /> :
          section === "notifications" && currentOrg?.orgId ? (
            <NotificationPreferencesPage orgId={currentOrg.orgId} />
@@ -158,10 +146,8 @@ function SectionContent({ section, isBroker }: { section: SettingsSection; isBro
         <OrganizationSection />
       ) : section === "team" ? (
         <TeamSection />
-      ) : section === "api-keys" ? (
-        <ApiKeysSection />
-      ) : section === "sources" ? (
-        <SourcesSection />
+      ) : section === "connections" ? (
+        <ConnectionsSection />
       ) : section === "email-connections" ? (
         <EmailConnectionsSection />
       ) : section === "documents" ? (

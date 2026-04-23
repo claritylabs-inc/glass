@@ -3,11 +3,10 @@ import {
   Sparkles,
   Building2,
   Users,
-  Key,
   FileText,
   Puzzle,
   CreditCard,
-  Plug,
+  Network,
 } from "lucide-react";
 import type { ComponentType } from "react";
 
@@ -23,8 +22,7 @@ export interface SettingsSection {
 export const CLIENT_SETTINGS_SECTIONS: SettingsSection[] = [
   { id: "organization", label: "Organization", icon: Building2 },
   { id: "team", label: "Team", icon: Users },
-  { id: "api-keys", label: "API Keys", icon: Key },
-  { id: "sources", label: "Sources", icon: Plug },
+  { id: "connections", label: "Connections", icon: Network },
   { id: "email-connections", label: "Email Connections", icon: Mail },
   { id: "documents", label: "Documents", icon: FileText },
   { id: "integrations", label: "Integrations", icon: Puzzle },
@@ -34,9 +32,9 @@ export const CLIENT_SETTINGS_SECTIONS: SettingsSection[] = [
 
 export const BROKER_SETTINGS_SECTIONS: SettingsSection[] = [
   { id: "organization", label: "Organization", icon: Building2 },
-  { id: "branding", label: "Branding", icon: Sparkles },
   { id: "team", label: "Team", icon: Users },
   // "agent" section is appended by consumers that have access to GlassStarIcon
+  { id: "connections", label: "Connections", icon: Network },
   { id: "billing", label: "Billing", icon: CreditCard },
 ];
 

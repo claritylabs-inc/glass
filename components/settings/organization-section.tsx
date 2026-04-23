@@ -10,12 +10,13 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
 import {
   Loader2,
-  Sparkles,
   AlertTriangle,
   RotateCcw,
   Check,
   X,
 } from "lucide-react";
+import { readableTextFor } from "@/lib/branding";
+import { AccentColorPicker } from "@/components/ui/accent-color-picker";
 import { INDUSTRIES } from "@/convex/lib/industries";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { PillButton } from "@/components/ui/pill-button";
@@ -203,20 +204,33 @@ export function OrganizationSection() {
 
   useEffect(() => {
     setActions(
-      <span className="text-label-sm text-muted-foreground flex items-center gap-1.5">
-        {saving ? (
-          <>
-            <Loader2 className="w-3 h-3 animate-spin" />
-            Saving
-          </>
-        ) : savedAt ? (
-          "Saved"
-        ) : null}
-      </span>
+      <div className="flex items-center gap-3">
+        <span className="text-label-sm text-muted-foreground flex items-center gap-1.5">
+          {saving ? (
+            <>
+              <Loader2 className="w-3 h-3 animate-spin" />
+              Saving
+            </>
+          ) : savedAt ? (
+            "Saved"
+          ) : null}
+        </span>
+        <PillButton
+          variant="secondary"
+          size="compact"
+          onClick={handleExtract}
+          disabled={extracting || !website}
+        >
+          {extracting ? (
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          ) : null}
+          {extracting ? "Extracting…" : "Extract from website"}
+        </PillButton>
+      </div>,
     );
     return () => setActions(null);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [saving, savedAt]);
+  }, [saving, savedAt, extracting, website]);
 
   async function handleExtract() {
     if (!website) return;
@@ -281,28 +295,17 @@ export function OrganizationSection() {
             <h3 className="!mb-0 text-sm font-medium text-foreground">Organization</h3>
           </div>
           <div className="px-5 py-5 space-y-4">
-            <div className="flex items-center gap-4">
-              <div className="w-[3.75rem] h-[3.75rem] rounded-lg border border-foreground/8 bg-popover flex items-center justify-center overflow-hidden shrink-0">
-                {org?.iconUrl ? (
-                  <img src={org.iconUrl} alt="" className="w-full h-full object-contain bg-white" />
-                ) : (
-                  <span className="text-body-sm font-medium text-muted-foreground/60">
-                    {(name || "?").slice(0, 2).toUpperCase()}
-                  </span>
-                )}
-              </div>
-              <div className="flex-1">
-                <label className="text-label-sm font-medium text-muted-foreground block mb-1.5">
-                  Organization Name
-                </label>
-                <input
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Acme Corp"
-                  className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
-                />
-              </div>
+            <div>
+              <label className="text-label-sm font-medium text-muted-foreground block mb-1.5">
+                Organization Name
+              </label>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Acme Corp"
+                className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+              />
             </div>
 
             {isBroker && (
@@ -310,7 +313,7 @@ export function OrganizationSection() {
                 <label className="text-label-sm font-medium text-muted-foreground block mb-1.5">
                   Workspace link
                 </label>
-                <div className="flex items-stretch gap-0 max-w-md">
+                <div className="flex items-stretch gap-0">
                   <div className="flex items-center rounded-l-lg border border-r-0 border-foreground/8 bg-foreground/[0.02] px-3 py-2 text-label-sm text-muted-foreground/60 select-none whitespace-nowrap">
                     {WORKSPACE_DOMAIN}/
                   </div>
@@ -376,30 +379,13 @@ export function OrganizationSection() {
               <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
                 Website
               </label>
-              <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <input
-                    type="text"
-                    value={website}
-                    onChange={(e) => setWebsite(e.target.value)}
-                    placeholder="https://yourcompany.com"
-                    className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={handleExtract}
-                  disabled={extracting || !website}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-foreground/8 bg-popover text-label-sm font-medium text-muted-foreground hover:text-foreground hover:border-foreground/15 hover:bg-foreground/[0.02] transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
-                >
-                  {extracting ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Sparkles className="w-3.5 h-3.5" />
-                  )}
-                  <span className="hidden sm:inline">{extracting ? "Extracting..." : "Extract Info"}</span>
-                </button>
-              </div>
+              <input
+                type="text"
+                value={website}
+                onChange={(e) => setWebsite(e.target.value)}
+                placeholder="https://yourcompany.com"
+                className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+              />
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -445,8 +431,11 @@ export function OrganizationSection() {
                 className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors resize-none overflow-hidden"
               />
             </div>
+
           </div>
         </div>
+
+        {isBroker && <BrandingCard orgName={name} website={website} />}
 
         {/* Relationship Context section */}
         <div className="rounded-lg border border-foreground/6 bg-card mb-4">
@@ -605,3 +594,207 @@ export function OrganizationSection() {
     </div>
   );
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Branding card (broker only)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const brandingLabelClass =
+  "text-label-sm font-medium text-muted-foreground block mb-1.5";
+
+type BrandingMode = "light" | "dark";
+type TextOnAccent = "light" | "dark" | "auto";
+
+function BrandingCard({
+  website,
+  orgName,
+}: {
+  website: string;
+  orgName: string;
+}) {
+  const currentOrg = useCurrentOrg();
+  const org = currentOrg?.org as
+    | {
+        brandingColor?: string;
+        brandingMode?: BrandingMode;
+        brandingTextOnAccent?: TextOnAccent;
+        iconStorageId?: string;
+        iconUrl?: string | null;
+      }
+    | undefined;
+  const orgId = currentOrg?.orgId as Id<"organizations"> | undefined;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const updateBranding = useMutation((api as any).organizations.updateBrokerBranding);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const generateUploadUrl = useMutation((api as any).organizations.generateLogoUploadUrl);
+
+  const [brandingColor, setBrandingColor] = useState("#1E293B");
+  const [dragActive, setDragActive] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const hydratedRef = useRef(false);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (org && !hydratedRef.current) {
+      setBrandingColor(org.brandingColor ?? "#1E293B");
+      hydratedRef.current = true;
+    }
+  }, [org]);
+
+  const saveNow = useCallback(async () => {
+    if (!orgId) return;
+    try {
+      await updateBranding({
+        brokerOrgId: orgId,
+        brandingColor,
+        brandingTextOnAccent: "auto",
+      });
+    } catch {
+      toast.error("Failed to save branding");
+    }
+  }, [orgId, updateBranding, brandingColor]);
+
+  useEffect(() => {
+    if (!hydratedRef.current) return;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      void saveNow();
+    }, 600);
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
+  }, [saveNow]);
+
+  async function handleLogoUpload(file: File) {
+    if (!orgId) return;
+    try {
+      const uploadUrl = await generateUploadUrl({ brokerOrgId: orgId });
+      const res = await fetch(uploadUrl, {
+        method: "POST",
+        body: file,
+        headers: { "Content-Type": file.type },
+      });
+      const { storageId } = await res.json();
+      await updateBranding({ brokerOrgId: orgId, logoStorageId: storageId });
+    } catch {
+      toast.error("Failed to upload logo");
+    }
+  }
+
+  const logoUrl = org?.iconUrl
+    ? org.iconUrl
+    : org?.iconStorageId
+      ? `/api/storage/${org.iconStorageId}`
+      : null;
+
+  const textColor = readableTextFor(brandingColor) === "light" ? "#FFFFFF" : "#0F172A";
+
+  return (
+    <div className="rounded-lg border border-foreground/6 bg-card mb-4">
+      <div className="px-5 py-3.5 border-b border-foreground/6">
+        <h3 className="!mb-0 text-sm font-medium text-foreground">Brand</h3>
+      </div>
+      <div className="px-5 py-5 space-y-5">
+        {/* Logo */}
+        <div>
+          <label className={brandingLabelClass}>Logo</label>
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            onDragEnter={(e) => {
+              e.preventDefault();
+              setDragActive(true);
+            }}
+            onDragOver={(e) => e.preventDefault()}
+            onDragLeave={() => setDragActive(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragActive(false);
+              const file = e.dataTransfer.files?.[0];
+              if (file) handleLogoUpload(file);
+            }}
+            className={`flex w-full items-center gap-4 rounded-lg border border-dashed px-4 py-3 text-left transition-colors cursor-pointer ${
+              dragActive
+                ? "border-foreground/30 bg-foreground/[0.03]"
+                : "border-foreground/12 bg-popover hover:border-foreground/20"
+            }`}
+          >
+            <div className="h-10 w-10 rounded-md border border-foreground/8 bg-white flex items-center justify-center overflow-hidden shrink-0">
+              {logoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={logoUrl} alt="Logo" className="h-full w-full object-contain" />
+              ) : (
+                <span className="text-label-sm text-muted-foreground/60">—</span>
+              )}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-body-sm font-medium text-foreground">
+                {logoUrl ? "Replace logo" : "Upload logo"}
+              </div>
+              <div className="text-label-sm text-muted-foreground/70">
+                Drop an image, or click to browse. Auto-filled from your website.
+              </div>
+            </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) handleLogoUpload(file);
+              }}
+            />
+          </button>
+        </div>
+
+        {/* Accent color */}
+        <div>
+          <label className={brandingLabelClass}>Accent color</label>
+          <AccentColorPicker
+            value={brandingColor}
+            onChange={setBrandingColor}
+            website={website}
+          />
+        </div>
+
+        {/* Preview */}
+        <div>
+          <label className={brandingLabelClass}>Preview</label>
+          <div
+            className="rounded-md p-3 flex items-center gap-3 border border-foreground/8 bg-popover"
+          >
+            <div
+              className="h-8 w-8 rounded-md shrink-0 overflow-hidden flex items-center justify-center border border-foreground/8"
+              style={{ backgroundColor: logoUrl ? "#FFFFFF" : brandingColor }}
+            >
+              {logoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={logoUrl} alt="" className="h-full w-full object-contain" />
+              ) : null}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-body-sm font-medium truncate">
+                {orgName || "Your brokerage"}
+              </div>
+              <div className="text-label-sm text-muted-foreground/70 truncate">
+                How your brand appears to clients
+              </div>
+            </div>
+            <button
+              type="button"
+              disabled
+              className="rounded-full px-3 py-1 text-xs font-medium"
+              style={{ backgroundColor: brandingColor, color: textColor }}
+            >
+              Continue
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+

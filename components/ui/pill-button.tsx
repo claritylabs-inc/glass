@@ -23,7 +23,7 @@ const variantConfig = {
   primary: {
     classes:
       "font-medium shadow-lg shadow-black/10 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed",
-    rest: { backgroundColor: "var(--foreground)", color: "var(--background)" },
+    rest: { backgroundColor: "var(--brand)", color: "var(--brand-foreground)" },
     hover: { filter: "brightness(1.15)" },
   },
   secondary: {
