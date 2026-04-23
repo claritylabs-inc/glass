@@ -60,12 +60,13 @@ export function PolicyReferenceCard({
     );
   }
 
-  const carrier = policy.security || policy.carrier || "Unknown carrier";
+  const administrator =
+    (policy as { mga?: string }).mga || policy.carrier || policy.security || "Unknown";
   const policyNum = policy.policyNumber;
   const types = policy.policyTypes ?? (policy.policyType ? [policy.policyType] : []);
   const primaryType = types[0] ? (POLICY_TYPE_LABELS[types[0]] ?? types[0]) : null;
 
-  const summaryParts = [carrier, policyNum].filter(Boolean).join(" ");
+  const summaryParts = [administrator, policyNum].filter(Boolean).join(" ");
   const summary = primaryType ? `${summaryParts} — ${primaryType}` : summaryParts;
 
   return (
