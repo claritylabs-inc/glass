@@ -176,7 +176,9 @@ export default function ClientPoliciesPage() {
               expirationDate={p.expirationDate}
               pipelineStatus={(p as any).pipelineStatus}
               uploadedBySide={p.uploadedBySide}
-              onClick={() => router.push(`/policies/${p._id}`)}
+              onClick={() =>
+                router.push(`/clients/${clientOrgId}/policies/${p._id}`)
+              }
             />
           ))}
         </div>
