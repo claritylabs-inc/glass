@@ -19,16 +19,16 @@ const UPCOMING: {
     logo: "https://cdn.simpleicons.org/quickbooks/2CA01C",
   },
   {
-    key: "rippling",
-    label: "Rippling",
+    key: "gusto",
+    label: "Gusto",
     description: "Headcount + payroll for WC, EPLI, benefits",
-    logo: "https://cdn.simpleicons.org/rippling",
+    logo: "https://cdn.simpleicons.org/gusto/F45D48",
   },
   {
-    key: "aws",
-    label: "AWS",
+    key: "vercel",
+    label: "Vercel",
     description: "Cloud footprint for cyber underwriting",
-    logo: "https://cdn.simpleicons.org/amazonwebservices/FF9900",
+    logo: "https://cdn.simpleicons.org/vercel/000000",
   },
   {
     key: "github",
@@ -37,10 +37,10 @@ const UPCOMING: {
     logo: "https://cdn.simpleicons.org/github/181717",
   },
   {
-    key: "google-workspace",
-    label: "Google Workspace",
-    description: "Identity, email, and document access",
-    logo: "https://cdn.simpleicons.org/googleworkspace/4285F4",
+    key: "ramp",
+    label: "Ramp",
+    description: "Spend + vendor risk signals",
+    logo: "https://cdn.simpleicons.org/ramp/000000",
   },
 ];
 
