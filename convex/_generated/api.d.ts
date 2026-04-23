@@ -81,6 +81,7 @@ import type * as lib_threadAccess from "../lib/threadAccess.js";
 import type * as migrations from "../migrations.js";
 import type * as migrations_migrateOnboarding from "../migrations/migrateOnboarding.js";
 import type * as migrations_migrateToThreads from "../migrations/migrateToThreads.js";
+import type * as migrations_stripInvitationLegacyFields from "../migrations/stripInvitationLegacyFields.js";
 import type * as modelConfig from "../modelConfig.js";
 import type * as notificationPreferences from "../notificationPreferences.js";
 import type * as notifications from "../notifications.js";
@@ -179,6 +180,7 @@ declare const fullApi: ApiFromModules<{
   migrations: typeof migrations;
   "migrations/migrateOnboarding": typeof migrations_migrateOnboarding;
   "migrations/migrateToThreads": typeof migrations_migrateToThreads;
+  "migrations/stripInvitationLegacyFields": typeof migrations_stripInvitationLegacyFields;
   modelConfig: typeof modelConfig;
   notificationPreferences: typeof notificationPreferences;
   notifications: typeof notifications;
