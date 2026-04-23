@@ -140,10 +140,10 @@ export function LogDetailPanel() {
                             key={i}
                             className="flex items-start gap-4 py-1 px-3 hover:bg-foreground/[0.02] transition-colors"
                           >
-                            <span className="text-sm tabular-nums text-muted-foreground/60 font-mono shrink-0 w-[64px] text-left pt-px">
+                            <span className="text-xs tabular-nums text-muted-foreground/60 font-mono shrink-0 w-[56px] text-left pt-px">
                               {dayjs(sub.timestamp).format("HH:mm:ss")}
                             </span>
-                            <span className="text-sm font-mono text-foreground/85 leading-relaxed break-words min-w-0">
+                            <span className="text-xs font-mono text-foreground/85 leading-relaxed break-words min-w-0">
                               {sub.message}
                             </span>
                           </div>

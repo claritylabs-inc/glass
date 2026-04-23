@@ -57,10 +57,10 @@ export function buildNotificationEmail(
 <meta name="color-scheme" content="light dark">
 <title>${title}</title>
 </head>
-<body style="margin:0;padding:0;background-color:#f9fafb;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f9fafb;">
+<body style="margin:0;padding:0;background-color:#ffffff;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#ffffff;">
 <tr><td align="center" style="padding:40px 16px;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background-color:#ffffff;border-radius:12px;border:1px solid rgba(0,0,0,0.06);box-shadow:0 1px 3px rgba(0,0,0,0.04);">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;">
 
 <!-- Logo -->
 <tr><td align="center" style="padding:32px 40px 0 40px;">
@@ -90,7 +90,7 @@ export function buildNotificationEmail(
 <!-- Footer -->
 <tr><td align="center" style="padding:16px 40px 28px 40px;">
   <p style="margin:0;font-family:-apple-system,sans-serif;font-size:11px;color:#9ca3af;line-height:1.5;">
-    ${branding.kind === "broker" ? `Sent via <a href="${siteUrl}" style="color:#9ca3af;">Glass</a> by Clarity Labs on behalf of ${senderLabel}` : `Glass by Clarity Labs · <a href="${siteUrl}" style="color:#9ca3af;">${siteUrl}</a>`}
+    ${branding.kind === "broker" ? `Sent via <a href="${siteUrl}" style="color:#9ca3af;text-decoration:none;">Glass</a> from Clarity Labs on behalf of ${senderLabel}` : `<a href="${siteUrl}" style="color:#9ca3af;text-decoration:none;">Glass</a> from Clarity Labs`}
   </p>
 </td></tr>
 

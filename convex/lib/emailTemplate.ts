@@ -21,16 +21,14 @@ export function buildEmailLogoHtml(branding: BrandingContext = getDefaultBrandin
 </table>`;
 }
 
-/** Glass wordmark + "Sent via Glass by Clarity Labs" — mirrors the invite email footer. */
+/** "Glass from Clarity Labs" platform attribution — text-only, no distortable image. */
 export function buildPlatformFooterHtml(siteUrl: string = SITE_URL): string {
-  const glassLogoUrl = `${siteUrl}/glass-logo-email.jpg`;
   return `
 <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;">
   <tr>
     <td align="center">
-      <img src="${glassLogoUrl}" alt="Glass by Clarity Labs" height="24" style="display:block;border:0;margin:0 auto 8px auto;" />
       <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:11px;color:#9ca3af;line-height:1.5;">
-        Sent via Glass by Clarity Labs
+        <a href="${siteUrl}" style="color:#9ca3af;text-decoration:none;">Glass</a> from Clarity Labs
       </p>
     </td>
   </tr>
@@ -63,10 +61,10 @@ export function buildOtpEmail(token: string, siteUrl: string = SITE_URL, brandin
 <style>table{border-collapse:collapse;}td{padding:0;}</style>
 <![endif]-->
 </head>
-<body style="margin:0;padding:0;background-color:#faf8f4;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#faf8f4;">
+<body style="margin:0;padding:0;background-color:#ffffff;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#ffffff;">
 <tr><td align="center" style="padding:40px 16px 40px 16px;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:440px;background-color:#ffffff;border-radius:16px;border:1px solid rgba(17,24,39,0.06);box-shadow:0 1px 3px rgba(0,0,0,0.04);">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:440px;">
 
 <!-- Logo -->
 <tr><td align="center" style="padding:36px 40px 0 40px;">
