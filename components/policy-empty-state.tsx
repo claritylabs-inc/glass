@@ -40,7 +40,7 @@ export function PolicyEmptyState({
       <p className="text-body-sm text-muted-foreground mt-1">{sub}</p>
 
       {agentEmail ? (
-        <AgentForwardCard email={agentEmail} label={label} className="mt-5" />
+        <AgentForwardCard email={agentEmail} className="mt-5" />
       ) : null}
 
       <DropZone
@@ -55,11 +55,9 @@ export function PolicyEmptyState({
 
 function AgentForwardCard({
   email,
-  label,
   className,
 }: {
   email: string;
-  label: string;
   className?: string;
 }) {
   const handleCopy = useCallback(() => {
@@ -78,18 +76,12 @@ function AgentForwardCard({
           <CornerUpRight className="h-4 w-4 text-muted-foreground" />
         </div>
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-body-sm font-medium text-foreground">
-              Email or forward to your agent
-            </span>
-            <span className="text-body-sm text-muted-foreground truncate">
-              {email}
-            </span>
+          <div className="text-body-sm font-medium text-foreground">
+            Email or forward to your agent
           </div>
-          <p className="text-label-sm text-muted-foreground mt-1">
-            Forward any {label} email with attachments and Glass will extract it
-            automatically.
-          </p>
+          <div className="text-body-sm text-muted-foreground truncate mt-0.5">
+            {email}
+          </div>
         </div>
         <button
           type="button"
@@ -179,13 +171,13 @@ function DropZone({
         <div className="mx-auto h-10 w-10 flex items-center justify-center rounded-full bg-foreground/[0.04] text-muted-foreground mb-3">
           <FileUp className="h-4.5 w-4.5" />
         </div>
-        <p className="text-base font-semibold text-foreground">
+        <p className="text-body-sm font-semibold text-foreground">
           Drag and drop a {label} PDF
         </p>
         <p className="text-body-sm text-muted-foreground mt-1">
           or click to choose {staged.length > 0 ? "more" : "a"} file
         </p>
-        <p className="text-label-sm text-muted-foreground/60 mt-3">
+        <p className="text-body-sm text-muted-foreground/60 mt-3">
           Multiple PDFs will be combined into a single {label}.
         </p>
         <input
