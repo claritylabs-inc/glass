@@ -161,27 +161,6 @@ export async function requireBrokerAccessToClient(
   return access as OrgAccess & { brokerOrgId: Id<"organizations"> };
 }
 
-export function assertCanSendApplication(access: OrgAccess): void {
-  if (access.accessType !== "broker_of_client") {
-    throw new Error("Only broker users can send applications to a client");
-  }
-}
-
-export function assertCanCompleteApplication(access: OrgAccess): void {
-  if (access.accessType !== "member") {
-    throw new Error("Only client org members can complete applications");
-  }
-}
-
-/**
- * Returns an optional source filter for intelligence viewers.
- */
-export function assertCanReadIntelligence(
-  access: OrgAccess,
-): { sourceFilter?: (entry: { source: string }) => boolean } {
-  void access;
-  return {};
-}
 
 export function assertCanManageBroker(access: OrgAccess): void {
   assertBrokerOrg(access);

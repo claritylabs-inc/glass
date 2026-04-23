@@ -18,7 +18,7 @@ import { v } from "convex/values";
 import { internalMutation, internalQuery } from "../_generated/server";
 import type { PipelineStatus } from "@claritylabs/cl-pipelines";
 
-type SupportedTable = "policies" | "policyFiles" | "orgDocuments" | "emailConnections" | "applications";
+type SupportedTable = "policies" | "policyFiles";
 
 export function makePipelineMutations(tableName: SupportedTable, fieldPrefix: string = "pipeline") {
   const statusField = `${fieldPrefix}Status` as const;

@@ -138,14 +138,8 @@ function buildCtaUrl(
   if (!actionType || !actionPayload) return `${siteUrl}/notifications`;
   const p = actionPayload as Record<string, string>;
   switch (actionType) {
-    case "view_application":
-      return `${siteUrl}/applications/${p.applicationId}`;
     case "view_policy":
       return `${siteUrl}/policies/${p.policyId}`;
-    case "view_passport":
-      return `${siteUrl}/passport/${p.flagId}`;
-    case "view_integration":
-      return `${siteUrl}/connections/${p.connectionId}`;
     default:
       return `${siteUrl}/notifications`;
   }

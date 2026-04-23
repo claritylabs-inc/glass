@@ -19,9 +19,7 @@ export type ClientRow =
       onboardingStatus: "onboarding" | "active";
       createdAt: number;
       lastActivityAt?: number;
-      openApplicationsCount: number;
       activePoliciesCount: number;
-      documentsCount: number;
     }
   | {
       kind: "draft";

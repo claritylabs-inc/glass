@@ -16,30 +16,21 @@ import {
 } from "../lib/extraction";
 import type { ExtractionState, PipelineCheckpoint } from "../lib/extraction";
 import { makeEmbedText } from "../lib/sdkCallbacks";
-import { ImapFlow } from "imapflow";
 import type { ActionCtx } from "../_generated/server";
 
 // ─── State Type ────────────────────────────────────────────────────────────────
 
 export type PolicyExtractionState = {
-  /** "upload" = direct file upload; "email" = PDF fetched from IMAP */
-  sourceKind: "upload" | "email";
-  /** Convex storage ID of the PDF (set after load_pdf phase) */
+  /** "upload" = direct file upload; "agent_email" = attachment forwarded to the email agent */
+  sourceKind: "upload" | "agent_email";
+  /** Convex storage ID of the PDF */
   fileId?: string;
-  /** Original file name hint */
   fileName?: string;
   orgId: string;
   userId: string;
-  /** Populated for email-sourced policies */
-  emailId?: string;
-  connectionId?: string;
-  /** The policyFiles row for this extraction job */
   policyFileId?: string;
-  /** cl-sdk internal checkpoint for mid-extract resume */
   clSdkCheckpoint?: PipelineCheckpoint<ExtractionState>;
-  /** Extracted chunks stored for embed phase */
   extractedDocumentJson?: string;
-  /** Extracted chunks stored for embed phase */
   chunkIds?: string[];
 };
 
@@ -64,89 +55,14 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
     run: async (pCtx): Promise<PhaseResult<PolicyExtractionState>> => {
       const { state } = pCtx.checkpoint;
 
-      if (state.sourceKind === "upload") {
-        if (!state.fileId) {
-          return { kind: "error", error: "load_pdf: missing fileId for upload source" };
-        }
-        await pCtx.log("Loading PDF from storage…");
-        const url = await convexCtx.storage.getUrl(state.fileId as any);
-        if (!url) return { kind: "error", error: "File not found in storage" };
-        await pCtx.log("PDF ready for extraction");
-        return { kind: "next", nextPhase: "extract", state };
+      if (!state.fileId) {
+        return { kind: "error", error: "load_pdf: missing fileId" };
       }
-
-      // email source: download from IMAP and store
-      if (!state.emailId || !state.connectionId) {
-        return { kind: "error", error: "load_pdf: missing emailId or connectionId for email source" };
-      }
-
-      await pCtx.log("Connecting to email server…");
-      const thisEmail = await convexCtx.runQuery(
-        (internal as any).emails.getInternal,
-        { id: state.emailId },
-      ) as { uid?: number } | null;
-      if (!thisEmail) return { kind: "error", error: "Email not found" };
-
-      const connection = await convexCtx.runQuery(
-        (internal as any).connections.getInternal,
-        { id: state.connectionId },
-      ) as {
-        imapHost?: string;
-        imapPort?: number;
-        password?: string;
-        email: string;
-      } | null;
-      if (!connection) return { kind: "error", error: "Connection not found" };
-      if (!connection.imapHost || !connection.imapPort || !connection.password) {
-        return { kind: "error", error: "IMAP connection missing host, port, or password" };
-      }
-
-      const client = new ImapFlow({
-        host: connection.imapHost,
-        port: connection.imapPort,
-        secure: true,
-        auth: { user: connection.email, pass: connection.password },
-        logger: false,
-      });
-
-      let pdfBuffer: Buffer;
-      try {
-        await client.connect();
-        await pCtx.log("Downloading PDF attachment…");
-        const lock = await client.getMailboxLock("INBOX");
-        try {
-          const { content } = await client.download(
-            String(thisEmail.uid ?? 0),
-            "2",
-            { uid: true },
-          );
-          const chunks: Buffer[] = [];
-          for await (const chunk of content) {
-            chunks.push(Buffer.from(chunk));
-          }
-          pdfBuffer = Buffer.concat(chunks);
-        } finally {
-          lock.release();
-        }
-        await client.logout();
-      } catch (err) {
-        try { await client.logout(); } catch { /* ignore */ }
-        return { kind: "error", error: `IMAP download failed: ${err instanceof Error ? err.message : String(err)}` };
-      }
-
-      const sizeKB = Math.round(pdfBuffer.length / 1024);
-      await pCtx.log(`PDF downloaded (${sizeKB} KB). Storing…`);
-      const blob = new Blob([new Uint8Array(pdfBuffer)], { type: "application/pdf" });
-      const fileId = String(await convexCtx.storage.store(blob));
-
-      // Update the policy row with fileId so retry can find the stored PDF
-      await convexCtx.runMutation(
-        (internal as any).policies.updateExtractionInternal,
-        { id: pCtx.jobId, fields: { fileId } },
-      );
-
-      await pCtx.log(`PDF stored (${sizeKB} KB)`);
-      return { kind: "next", nextPhase: "extract", state: { ...state, fileId } };
+      await pCtx.log("Loading PDF from storage…");
+      const url = await convexCtx.storage.getUrl(state.fileId as any);
+      if (!url) return { kind: "error", error: "File not found in storage" };
+      await pCtx.log("PDF ready for extraction");
+      return { kind: "next", nextPhase: "extract", state };
     },
   };
 
@@ -435,48 +351,6 @@ export const startPolicyExtractionFromUpload = internalAction({
   },
 });
 
-// ─── Entry point: start from email ────────────────────────────────────────────
-
-export const startPolicyExtractionFromEmail = internalAction({
-  args: {
-    policyId: v.id("policies"),
-    emailId: v.id("emails"),
-    connectionId: v.id("emailConnections"),
-    orgId: v.id("organizations"),
-    userId: v.id("users"),
-    policyFileId: v.optional(v.id("policyFiles")),
-  },
-  handler: async (ctx, { policyId, emailId, connectionId, orgId, userId, policyFileId }) => {
-    const mutations = makeMutations();
-    const storage = createConvexStorageAdapter<PolicyExtractionState>({
-      ctx: ctx as any,
-      mutations,
-    });
-    const scheduler = createConvexSchedulerAdapter({
-      ctx: ctx as any,
-      advanceAction: internal.actions.policyExtraction.advance,
-    });
-    await ctx.runMutation(internal.policies.pipelineClearLog, {
-      jobId: String(policyId),
-    });
-    const phases = makePhases(ctx);
-    await runPipeline<PolicyExtractionState>({
-      jobId: String(policyId),
-      phases,
-      storage,
-      scheduler,
-      initialState: {
-        sourceKind: "email",
-        emailId: String(emailId),
-        connectionId: String(connectionId),
-        orgId: String(orgId),
-        userId: String(userId),
-        policyFileId: policyFileId ? String(policyFileId) : undefined,
-      },
-    });
-  },
-});
-
 // ─── Entry point: retry ────────────────────────────────────────────────────────
 
 export const retryPolicyExtraction = internalAction({
@@ -509,7 +383,6 @@ export const retryPolicyExtraction = internalAction({
       orgId?: string;
       userId?: string;
       fileId?: string;
-      emailId?: string;
       pipelineCheckpoint?: { state?: PolicyExtractionState };
     } | null;
     if (!policy) throw new Error("Policy not found");
@@ -524,11 +397,10 @@ export const retryPolicyExtraction = internalAction({
       scheduler,
       retryMode: mode,
       initialState: {
-        sourceKind: existingState?.sourceKind ?? (policy.fileId ? "upload" : "email"),
+        sourceKind: existingState?.sourceKind ?? "upload",
         fileId: existingState?.fileId ?? (policy.fileId ? String(policy.fileId) : undefined),
         orgId: existingState?.orgId ?? String(policy.orgId ?? ""),
         userId: existingState?.userId ?? String(policy.userId ?? ""),
-        emailId: existingState?.emailId ?? (policy.emailId ? String(policy.emailId) : undefined),
       },
     });
   },

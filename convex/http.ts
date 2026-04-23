@@ -614,24 +614,6 @@ http.route({
   }),
 });
 
-// GET /mcp/applications/list — legacy endpoint (applicationSessions retired)
-http.route({
-  path: "/mcp/applications/list",
-  method: "GET",
-  handler: httpAction(async (_ctx, _request) => {
-    return jsonResponse({ error: "applicationSessions retired — use applications v2 API" }, 410);
-  }),
-});
-
-// GET /mcp/applications/get — legacy endpoint (applicationSessions retired)
-http.route({
-  path: "/mcp/applications/get",
-  method: "GET",
-  handler: httpAction(async (_ctx, _request) => {
-    return jsonResponse({ error: "applicationSessions retired — use applications v2 API" }, 410);
-  }),
-});
-
 // GET /mcp/threads/list
 http.route({
   path: "/mcp/threads/list",
@@ -699,24 +681,6 @@ http.route({
   }),
 });
 
-// GET /mcp/context/list
-http.route({
-  path: "/mcp/context/list",
-  method: "GET",
-  handler: httpAction(async (ctx, request) => {
-    try {
-      const identity = await requireMcpAuth(ctx, request);
-      const entries = await ctx.runQuery(internal.businessContext.listInternal, {
-        orgId: identity.orgId as Id<"organizations">,
-      });
-      return jsonResponse(entries);
-    } catch (e) {
-      if (e instanceof Response) return e;
-      return jsonResponse({ error: String(e) }, 500);
-    }
-  }),
-});
-
 // GET /mcp/org/info
 http.route({
   path: "/mcp/org/info",
@@ -740,44 +704,6 @@ http.route({
       if (e instanceof Response) return e;
       return jsonResponse({ error: String(e) }, 500);
     }
-  }),
-});
-
-// POST /mcp/context/upsert
-http.route({
-  path: "/mcp/context/upsert",
-  method: "POST",
-  handler: httpAction(async (ctx, request) => {
-    try {
-      const identity = await requireMcpAuth(ctx, request);
-      const body = await request.json();
-      const { category, key, value } = body;
-      if (!category || !key || !value) {
-        return jsonResponse({ error: "Missing required fields: category, key, value" }, 400);
-      }
-
-      await ctx.runMutation(internal.businessContext.upsertInternal, {
-        orgId: identity.orgId as Id<"organizations">,
-        category,
-        key,
-        value,
-        source: "manual" as const,
-        confidence: "confirmed" as const,
-      });
-      return jsonResponse({ success: true });
-    } catch (e) {
-      if (e instanceof Response) return e;
-      return jsonResponse({ error: String(e) }, 500);
-    }
-  }),
-});
-
-// POST /mcp/applications/cancel — legacy endpoint (applicationSessions retired)
-http.route({
-  path: "/mcp/applications/cancel",
-  method: "POST",
-  handler: httpAction(async (_ctx, _request) => {
-    return jsonResponse({ error: "applicationSessions retired — use applications v2 API" }, 410);
   }),
 });
 
@@ -841,20 +767,6 @@ const MCP_TOOLS = [
     },
   },
   {
-    name: "list_applications",
-    description: "List insurance application sessions with their status and progress.",
-    inputSchema: { type: "object" as const, properties: {} },
-  },
-  {
-    name: "get_application",
-    description: "Get full details of an application session including extracted fields and question batches.",
-    inputSchema: {
-      type: "object" as const,
-      properties: { id: { type: "string", description: "The application session ID" } },
-      required: ["id"],
-    },
-  },
-  {
     name: "list_threads",
     description: "List recent conversation threads (up to 50, newest first).",
     inputSchema: { type: "object" as const, properties: {} },
@@ -866,24 +778,6 @@ const MCP_TOOLS = [
       type: "object" as const,
       properties: { threadId: { type: "string", description: "The thread ID" } },
       required: ["threadId"],
-    },
-  },
-  {
-    name: "get_business_context",
-    description: "Get the organization's stored business context entries used for auto-filling applications.",
-    inputSchema: { type: "object" as const, properties: {} },
-  },
-  {
-    name: "update_business_context",
-    description: "Create or update a business context entry. Used to store reusable company data for application auto-fill.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        category: { type: "string", description: "Category: company_info, operations, financial, coverage, loss_history, or custom" },
-        key: { type: "string", description: "Normalized field name (e.g. 'annual_revenue', 'employee_count')" },
-        value: { type: "string", description: "The value to store" },
-      },
-      required: ["category", "key", "value"],
     },
   },
   {
@@ -905,7 +799,7 @@ const MCP_TOOLS = [
   },
   {
     name: "ask_glass",
-    description: "Ask the Glass AI assistant a question about the organization's insurance portfolio, policies, quotes, applications, or coverage details. Glass has full context about all policies and quotes and can answer complex insurance questions. Optionally pass a threadId to continue an existing conversation.",
+    description: "Ask the Glass AI assistant a question about the organization's insurance portfolio, policies, quotes, or coverage details. Glass has full context about all policies and quotes and can answer complex insurance questions. Optionally pass a threadId to continue an existing conversation.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -923,7 +817,7 @@ const MCP_TOOLS = [
   },
   {
     name: "get_client",
-    description: "Get passport summary and policy count for a client org. Broker only.",
+    description: "Get client org info and policy count. Broker only.",
     inputSchema: {
       type: "object" as const,
       properties: { client_org_id: { type: "string", description: "Client org ID" } },
@@ -931,153 +825,14 @@ const MCP_TOOLS = [
     },
   },
   {
-    name: "list_applications_for_client",
-    description: "List applications for a specific client. Broker only.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        client_org_id: { type: "string", description: "Client org ID" },
-        status: { type: "string", description: "Optional status filter" },
-      },
-      required: ["client_org_id"],
-    },
-  },
-  {
-    name: "create_application_draft",
-    description: "Create a new application draft for a client. Broker only. Write scope required.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        client_org_id: { type: "string" },
-        creation_path: { type: "string", enum: ["blank", "template", "upload"] },
-        title: { type: "string" },
-        line_of_business: { type: "string" },
-      },
-      required: ["client_org_id", "creation_path", "title"],
-    },
-  },
-  {
-    name: "add_application_question",
-    description: "Add a question to a draft application. Broker only. Write scope required.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        application_id: { type: "string" },
-        intent_key: { type: "string" },
-        custom_prompt: { type: "string" },
-        answer_type: { type: "string" },
-        required: { type: "boolean" },
-      },
-      required: ["application_id"],
-    },
-  },
-  {
-    name: "send_application",
-    description: "Send an application to a client. Broker only. Write scope required.",
-    inputSchema: {
-      type: "object" as const,
-      properties: { application_id: { type: "string" } },
-      required: ["application_id"],
-    },
-  },
-  {
-    name: "raise_passport_flag",
-    description: "Raise a flag on a client passport field. Broker only. Write scope required.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        client_org_id: { type: "string" },
-        field_path: { type: "string" },
-        message: { type: "string" },
-      },
-      required: ["client_org_id", "field_path", "message"],
-    },
-  },
-  {
     name: "list_broker_activity",
     description: "List broker portfolio activity feed.",
     inputSchema: { type: "object" as const, properties: {} },
-  },
-  // ── Client tools ──
-  {
-    name: "get_passport",
-    description: "Get the full passport for the caller's client org. Client only.",
-    inputSchema: { type: "object" as const, properties: {} },
-  },
-  {
-    name: "update_passport",
-    description: "Update passport fields. Client only. Write scope required.",
-    inputSchema: {
-      type: "object" as const,
-      properties: { patch: { type: "object", description: "Fields to update (snake_case)" } },
-      required: ["patch"],
-    },
-  },
-  {
-    name: "answer_application_question",
-    description: "Upsert an answer to an application question. Client only. Write scope required.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        application_id: { type: "string" },
-        question_id: { type: "string" },
-        row_key: { type: "string" },
-        value: {},
-      },
-      required: ["application_id", "question_id", "value"],
-    },
-  },
-  {
-    name: "submit_application_section",
-    description: "Submit a section of an application for broker review. Client only. Write scope required.",
-    inputSchema: {
-      type: "object" as const,
-      properties: { application_id: { type: "string" }, group_id: { type: "string" } },
-      required: ["application_id", "group_id"],
-    },
   },
   {
     name: "list_my_policies",
     description: "List policies for the caller's client org. Client only.",
     inputSchema: { type: "object" as const, properties: {} },
-  },
-  // ── Integration tools ──
-  {
-    name: "list_integrations",
-    description:
-      "List all connected integrations for the calling org (or a client org if broker). " +
-      "Returns category, provider, status, and last sync timestamp.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        clientOrgId: {
-          type: "string",
-          description: "Client org ID to query. Required when calling as a broker.",
-        },
-      },
-    },
-  },
-  {
-    name: "request_integration",
-    description:
-      "Broker tool: request that a client connect a specific integration category " +
-      "(accounting, hris, or payroll). Sends a notification to the client.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        clientOrgId: { type: "string", description: "Client org ID" },
-        category: {
-          type: "string",
-          enum: ["accounting", "hris", "payroll"],
-          description: "Integration category to request",
-        },
-        message: {
-          type: "string",
-          description: "Optional message to the client explaining why the data is needed",
-        },
-      },
-      required: ["clientOrgId", "category"],
-    },
   },
 ];
 
@@ -1197,14 +952,6 @@ async function handleToolCall(
       const { rawExtractionResponse: _rawExtractionResponse, rawMetadataResponse: _rawMetadataResponse, ...rest } = found as any;
       return { content: [{ type: "text", text: JSON.stringify(rest, null, 2) }] };
     }
-    case "list_applications": {
-      // applicationSessions retired — return empty list
-      return { content: [{ type: "text", text: JSON.stringify([], null, 2) }] };
-    }
-    case "get_application": {
-      // applicationSessions retired
-      throw new Error("applicationSessions retired — use applications v2 API");
-    }
     case "list_threads": {
       const threads = await ctx.runQuery(internal.threads.listByOrg, { orgId });
       return { content: [{ type: "text", text: JSON.stringify(threads.map(// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1221,18 +968,6 @@ async function handleToolCall(
 (m: any) => ({
         _id: m._id, role: m.role, channel: m.channel, content: m.content, userName: m.userName, fromEmail: m.fromEmail, _creationTime: m._creationTime,
       })), null, 2) }] };
-    }
-    case "get_business_context": {
-      const entries = await ctx.runQuery(internal.businessContext.listInternal, { orgId });
-      return { content: [{ type: "text", text: JSON.stringify(entries, null, 2) }] };
-    }
-    case "update_business_context": {
-      if (!args.category || !args.key || !args.value) throw new Error("Missing required fields: category, key, value");
-      await ctx.runMutation(internal.businessContext.upsertInternal, {
-        orgId, category: args.category as string, key: args.key as string,
-        value: args.value as string, source: "manual" as const, confidence: "confirmed" as const,
-      });
-      return { content: [{ type: "text", text: `Updated business context: ${args.category}/${args.key}` }] };
     }
     case "get_org_info": {
       const org = await ctx.runQuery(internal.orgs.getInternal, { id: orgId });
@@ -1261,94 +996,11 @@ async function handleToolCall(
       const policies = await ctx.runQuery(internal.policies.listAllInternal, { orgId: clientOrgId });
       return { content: [{ type: "text", text: JSON.stringify({ org: clientOrg, policy_count: policies.length }, null, 2) }] };
     }
-    case "list_applications_for_client": {
-      const clientOrgId = args.client_org_id as Id<"organizations">;
-      const apps = await ctx.runQuery((internal as any).applications.listForOrg, {
-        orgId: clientOrgId, userId, cursor: undefined, limit: 50,
-      });
-      return { content: [{ type: "text", text: JSON.stringify(apps, null, 2) }] };
-    }
-    case "create_application_draft": {
-      requireWriteScope(identity);
-      const appId = await ctx.runMutation((internal as any).applications.createDraft, {
-        brokerOrgId: orgId, clientOrgId: args.client_org_id as Id<"organizations">,
-        title: args.title, lineOfBusiness: args.line_of_business,
-      });
-      return { content: [{ type: "text", text: JSON.stringify({ id: appId }, null, 2) }] };
-    }
-    case "add_application_question": {
-      requireWriteScope(identity);
-      const qId = await ctx.runMutation((internal as any).applications.addQuestion, {
-        applicationId: args.application_id as Id<"applications">,
-        brokerOrgId: orgId, intentKey: args.intent_key,
-        customPrompt: args.custom_prompt, answerType: args.answer_type ?? "text",
-        required: args.required ?? false,
-      });
-      return { content: [{ type: "text", text: JSON.stringify({ id: qId }, null, 2) }] };
-    }
-    case "send_application": {
-      requireWriteScope(identity);
-      await ctx.runMutation((internal as any).applications.send, {
-        applicationId: args.application_id as Id<"applications">, brokerOrgId: orgId,
-      });
-      return { content: [{ type: "text", text: JSON.stringify({ ok: true }, null, 2) }] };
-    }
-    case "raise_passport_flag": {
-      requireWriteScope(identity);
-      const flagId = await ctx.runMutation((internal as any).passportFieldFlags.raise, {
-        clientOrgId: args.client_org_id as Id<"organizations">, brokerOrgId: orgId,
-        fieldPath: args.field_path, message: args.message,
-      });
-      return { content: [{ type: "text", text: JSON.stringify({ id: flagId }, null, 2) }] };
-    }
     case "list_broker_activity": {
       const activity = await ctx.runQuery((internal as any).brokerActivity.listPortfolio, {
         orgId, limit: 50,
       }).catch(() => []);
       return { content: [{ type: "text", text: JSON.stringify(activity, null, 2) }] };
-    }
-    // ── Client tools ──
-    case "get_passport": {
-      const passport = await ctx.runQuery((internal as any).clientPassport.getFull, {
-        clientOrgId: orgId,
-      }).catch(() => null);
-      if (!passport) throw new Error("not_found: passport not found");
-      return { content: [{ type: "text", text: JSON.stringify(passport, null, 2) }] };
-    }
-    case "update_passport": {
-      requireWriteScope(identity);
-      const patch = args.patch as Record<string, any>;
-      const convexPatch: Record<string, any> = {};
-      for (const [k, v] of Object.entries(patch)) {
-        if (k === "legal_name") convexPatch.legalName = v;
-        else if (k === "full_time_employees") convexPatch.fullTimeEmployees = v;
-        else if (k === "annual_revenue") convexPatch.annualRevenue = v;
-        else convexPatch[k] = v;
-      }
-      await ctx.runMutation((internal as any).clientPassport.upsertCoreInternal, {
-        clientOrgId: orgId,
-        patch: convexPatch,
-      });
-      return { content: [{ type: "text", text: JSON.stringify({ ok: true }, null, 2) }] };
-    }
-    case "answer_application_question": {
-      requireWriteScope(identity);
-      await ctx.runMutation((internal as any).applications.upsertAnswer, {
-        applicationId: args.application_id as Id<"applications">,
-        clientOrgId: orgId,
-        questionId: args.question_id as Id<"applicationQuestions">,
-        rowKey: args.row_key, value: args.value,
-      });
-      return { content: [{ type: "text", text: JSON.stringify({ ok: true }, null, 2) }] };
-    }
-    case "submit_application_section": {
-      requireWriteScope(identity);
-      await ctx.runMutation((internal as any).applications.submitGroup, {
-        applicationId: args.application_id as Id<"applications">,
-        groupId: args.group_id as Id<"applicationGroups">,
-        clientOrgId: orgId,
-      });
-      return { content: [{ type: "text", text: JSON.stringify({ ok: true }, null, 2) }] };
     }
     case "list_my_policies": {
       const policies = await ctx.runQuery(internal.policies.listAllInternal, { orgId });
@@ -1356,40 +1008,6 @@ async function handleToolCall(
         _id: p._id, carrier: p.carrier, policyNumber: p.policyNumber,
         policyTypes: p.policyTypes, effectiveDate: p.effectiveDate, expirationDate: p.expirationDate, premium: p.premium,
       })), null, 2) }] };
-    }
-    case "list_integrations": {
-      const targetOrgId = (args.clientOrgId as string) ?? orgId;
-      const connections = await ctx.runQuery(
-        (internal as any).integrationConnections.listForClient,
-        { clientOrgId: targetOrgId },
-      );
-      return {
-        content: [{
-          type: "text",
-          text: JSON.stringify(
-            connections.map((c: any) => ({
-              id: c._id,
-              category: c.category,
-              provider: c.providerDisplayName,
-              status: c.status,
-              lastSyncAt: c.lastSyncAt ?? null,
-            })),
-            null, 2,
-          ),
-        }],
-      };
-    }
-    case "request_integration": {
-      requireWriteScope(identity);
-      const requestId = await ctx.runMutation(
-        (internal as any).integrationRequests.create,
-        {
-          clientOrgId: args.clientOrgId as string,
-          category: args.category as string,
-          message: args.message as string | undefined,
-        },
-      );
-      return { content: [{ type: "text", text: JSON.stringify({ success: true, integrationRequestId: requestId }) }] };
     }
     default:
       throw new Error(`Unknown tool: ${name}`);
@@ -1442,7 +1060,7 @@ http.route({
                 },
               ],
             },
-            instructions: "Glass is an insurance intelligence platform. Use Glass tools to look up policies, quotes, applications, passport data, and broker-client workflows. Use ask_glass for complex insurance questions.",
+            instructions: "Glass is an insurance intelligence platform. Use Glass tools to look up policies, quotes, threads, and org info. Use ask_glass for complex insurance questions.",
           });
         }
         case "tools/list": {
@@ -1549,121 +1167,6 @@ http.route({
   }),
 });
 
-// GET /mcp/broker/applications/list
-http.route({
-  path: "/mcp/broker/applications/list",
-  method: "GET",
-  handler: httpAction(async (ctx, request) => {
-    try {
-      const identity = await requireMcpAuth(ctx, request);
-      const clientOrgId = getQueryParam(request, "clientOrgId");
-      if (!clientOrgId) return jsonResponse({ error: "Missing clientOrgId" }, 400);
-      const result = await ctx.runQuery((internal as any).applications.listForOrg, {
-        orgId: clientOrgId as Id<"organizations">,
-        userId: identity.userId as Id<"users">,
-        cursor: undefined,
-        limit: 50,
-      });
-      return jsonResponse(result);
-    } catch (e) {
-      if (e instanceof Response) return e;
-      return jsonResponse({ error: String(e) }, 500);
-    }
-  }),
-});
-
-// POST /mcp/broker/applications/create
-http.route({
-  path: "/mcp/broker/applications/create",
-  method: "POST",
-  handler: httpAction(async (ctx, request) => {
-    try {
-      const identity = await requireMcpAuth(ctx, request);
-      const body = await request.json();
-      const { clientOrgId, title, lineOfBusiness } = body;
-      if (!clientOrgId || !title) return jsonResponse({ error: "Missing required fields" }, 400);
-      const appId = await ctx.runMutation((internal as any).applications.createDraft, {
-        brokerOrgId: identity.orgId as Id<"organizations">,
-        clientOrgId: clientOrgId as Id<"organizations">,
-        title, lineOfBusiness,
-      });
-      return jsonResponse({ id: appId }, 201);
-    } catch (e) {
-      if (e instanceof Response) return e;
-      return jsonResponse({ error: String(e) }, 500);
-    }
-  }),
-});
-
-// POST /mcp/broker/applications/add-question
-http.route({
-  path: "/mcp/broker/applications/add-question",
-  method: "POST",
-  handler: httpAction(async (ctx, request) => {
-    try {
-      const identity = await requireMcpAuth(ctx, request);
-      const body = await request.json();
-      if (!body.applicationId) return jsonResponse({ error: "Missing applicationId" }, 400);
-      const qId = await ctx.runMutation((internal as any).applications.addQuestion, {
-        applicationId: body.applicationId as Id<"applications">,
-        brokerOrgId: identity.orgId as Id<"organizations">,
-        intentKey: body.intentKey,
-        customPrompt: body.customPrompt,
-        answerType: body.answerType ?? "text",
-        required: body.required ?? false,
-      });
-      return jsonResponse({ id: qId }, 201);
-    } catch (e) {
-      if (e instanceof Response) return e;
-      return jsonResponse({ error: String(e) }, 500);
-    }
-  }),
-});
-
-// POST /mcp/broker/applications/send
-http.route({
-  path: "/mcp/broker/applications/send",
-  method: "POST",
-  handler: httpAction(async (ctx, request) => {
-    try {
-      const identity = await requireMcpAuth(ctx, request);
-      const body = await request.json();
-      if (!body.applicationId) return jsonResponse({ error: "Missing applicationId" }, 400);
-      await ctx.runMutation((internal as any).applications.send, {
-        applicationId: body.applicationId as Id<"applications">,
-        brokerOrgId: identity.orgId as Id<"organizations">,
-      });
-      return jsonResponse({ ok: true });
-    } catch (e) {
-      if (e instanceof Response) return e;
-      return jsonResponse({ error: String(e) }, 500);
-    }
-  }),
-});
-
-// POST /mcp/broker/passport/raise-flag
-http.route({
-  path: "/mcp/broker/passport/raise-flag",
-  method: "POST",
-  handler: httpAction(async (ctx, request) => {
-    try {
-      const identity = await requireMcpAuth(ctx, request);
-      const body = await request.json();
-      const { clientOrgId, fieldPath, message } = body;
-      if (!clientOrgId || !fieldPath || !message) return jsonResponse({ error: "Missing required fields" }, 400);
-      const flagId = await ctx.runMutation((internal as any).passportFieldFlags.raise, {
-        clientOrgId: clientOrgId as Id<"organizations">,
-        brokerOrgId: identity.orgId as Id<"organizations">,
-        fieldPath, message,
-      });
-      return jsonResponse({ id: flagId }, 201);
-    } catch (e) {
-      if (e instanceof Response) return e;
-      return jsonResponse({ error: String(e) }, 500);
-    }
-  }),
-});
-
 // GET /mcp/broker/activity/list
 http.route({
   path: "/mcp/broker/activity/list",
@@ -1676,94 +1179,6 @@ http.route({
         limit: 50,
       }).catch(() => []);
       return jsonResponse(result);
-    } catch (e) {
-      if (e instanceof Response) return e;
-      return jsonResponse({ error: String(e) }, 500);
-    }
-  }),
-});
-
-// GET /mcp/client/passport/get
-http.route({
-  path: "/mcp/client/passport/get",
-  method: "GET",
-  handler: httpAction(async (ctx, request) => {
-    try {
-      const identity = await requireMcpAuth(ctx, request);
-      const passport = await ctx.runQuery((internal as any).clientPassport.getFull, {
-        clientOrgId: identity.orgId as Id<"organizations">,
-      }).catch(() => null);
-      if (!passport) return jsonResponse({ error: "Not found" }, 404);
-      return jsonResponse(passport);
-    } catch (e) {
-      if (e instanceof Response) return e;
-      return jsonResponse({ error: String(e) }, 500);
-    }
-  }),
-});
-
-// POST /mcp/client/passport/update
-http.route({
-  path: "/mcp/client/passport/update",
-  method: "POST",
-  handler: httpAction(async (ctx, request) => {
-    try {
-      const identity = await requireMcpAuth(ctx, request);
-      const body = await request.json();
-      if (!body.patch) return jsonResponse({ error: "Missing patch" }, 400);
-      await ctx.runMutation((internal as any).clientPassport.upsertCoreInternal, {
-        clientOrgId: identity.orgId as Id<"organizations">,
-        patch: body.patch,
-      });
-      return jsonResponse({ ok: true });
-    } catch (e) {
-      if (e instanceof Response) return e;
-      return jsonResponse({ error: String(e) }, 500);
-    }
-  }),
-});
-
-// POST /mcp/client/applications/answer
-http.route({
-  path: "/mcp/client/applications/answer",
-  method: "POST",
-  handler: httpAction(async (ctx, request) => {
-    try {
-      const identity = await requireMcpAuth(ctx, request);
-      const body = await request.json();
-      if (!body.applicationId || !body.questionId || body.value === undefined) {
-        return jsonResponse({ error: "Missing required fields" }, 400);
-      }
-      await ctx.runMutation((internal as any).applications.upsertAnswer, {
-        applicationId: body.applicationId as Id<"applications">,
-        clientOrgId: identity.orgId as Id<"organizations">,
-        questionId: body.questionId as Id<"applicationQuestions">,
-        rowKey: body.rowKey,
-        value: body.value,
-      });
-      return jsonResponse({ ok: true });
-    } catch (e) {
-      if (e instanceof Response) return e;
-      return jsonResponse({ error: String(e) }, 500);
-    }
-  }),
-});
-
-// POST /mcp/client/applications/submit-section
-http.route({
-  path: "/mcp/client/applications/submit-section",
-  method: "POST",
-  handler: httpAction(async (ctx, request) => {
-    try {
-      const identity = await requireMcpAuth(ctx, request);
-      const body = await request.json();
-      if (!body.applicationId || !body.groupId) return jsonResponse({ error: "Missing required fields" }, 400);
-      await ctx.runMutation((internal as any).applications.submitGroup, {
-        applicationId: body.applicationId as Id<"applications">,
-        groupId: body.groupId as Id<"applicationGroups">,
-        clientOrgId: identity.orgId as Id<"organizations">,
-      });
-      return jsonResponse({ ok: true });
     } catch (e) {
       if (e instanceof Response) return e;
       return jsonResponse({ error: String(e) }, 500);
@@ -1984,107 +1399,7 @@ http.route({
   }),
 });
 
-// ── Task 9: GET /api/v1/passport ──
-http.route({
-  path: "/api/v1/passport",
-  method: "GET",
-  handler: httpAction(async (ctx, request) => {
-    try {
-      const identity = await requireApiAuth(ctx, request);
-      const passport = await ctx.runQuery((internal as any).clientPassport.getFull, {
-        clientOrgId: identity.orgId,
-      }).catch(() => null);
-      if (!passport) return jsonResponse({ error: { code: "not_found", message: "Passport not found" } }, 404);
-      return jsonResponse({
-        id: passport.passport?._id ?? identity.orgId,
-        legal_name: passport.passport?.legalName,
-        full_time_employees: passport.passport?.fullTimeEmployees,
-        annual_revenue: passport.passport?.annualRevenue,
-        created_at: passport.passport?._creationTime,
-        updated_at: passport.passport?.lastEditedAt,
-      });
-    } catch (e) {
-      if (e instanceof Response) return e;
-      return jsonResponse({ error: { code: "internal_error", message: String(e) } }, 500);
-    }
-  }),
-});
-
-// ── PATCH /api/v1/passport ──
-http.route({
-  path: "/api/v1/passport",
-  method: "PATCH",
-  handler: httpAction(async (ctx, request) => {
-    try {
-      const identity = await requireApiAuth(ctx, request);
-      if (!identity.scopes.includes("write")) {
-        return jsonResponse({ error: { code: "insufficient_scope", message: "Write scope required", request_id: identity.requestId } }, 403);
-      }
-      const body = await request.json();
-      // Convert snake_case → camelCase
-      const patch: Record<string, any> = {};
-      for (const [k, v] of Object.entries(body)) {
-        if (k === "legal_name") patch.legalName = v;
-        else if (k === "full_time_employees") patch.fullTimeEmployees = v;
-        else if (k === "annual_revenue") patch.annualRevenue = v;
-        else patch[k] = v;
-      }
-      await ctx.runMutation((internal as any).clientPassport.upsertCoreInternal, {
-        clientOrgId: identity.orgId,
-        patch,
-      });
-      return jsonResponse({ ok: true });
-    } catch (e) {
-      if (e instanceof Response) return e;
-      return jsonResponse({ error: { code: "internal_error", message: String(e) } }, 500);
-    }
-  }),
-});
-
-// ── Task 10: GET /api/v1/applications ──
-http.route({
-  path: "/api/v1/applications",
-  method: "GET",
-  handler: httpAction(async (ctx, request) => {
-    try {
-      const identity = await requireApiAuth(ctx, request);
-      const limit = Math.min(parseInt(getQueryParam(request, "limit") ?? "50"), 100);
-      const cursor = getQueryParam(request, "cursor") ?? undefined;
-      const result = await ctx.runQuery((internal as any).applications.listForOrg, {
-        orgId: identity.orgId,
-        userId: identity.userId,
-        cursor,
-        limit,
-      });
-      const data = Array.isArray(result) ? result : (result?.page ?? result?.applications ?? []);
-      const nextCursor = result?.continueCursor ?? result?.nextCursor;
-      return jsonResponse({ data: data.map((a: any) => ({ id: a._id, title: a.title, status: a.status, created_at: a._creationTime })), next_cursor: nextCursor });
-    } catch (e) {
-      if (e instanceof Response) return e;
-      return jsonResponse({ error: { code: "internal_error", message: String(e) } }, 500);
-    }
-  }),
-});
-
-// ── GET /api/v1/applications/:id ──
-http.route({
-  path: "/api/v1/applications/:id",
-  method: "GET",
-  handler: httpAction(async (ctx, request) => {
-    try {
-      const identity = await requireApiAuth(ctx, request);
-      const appId = new URL(request.url).pathname.split("/").pop() as Id<"applications">;
-      const app = await ctx.runQuery((internal as any).applications.getInternal, { id: appId }).catch(() => null);
-      if (!app) return jsonResponse({ error: { code: "not_found", message: "Application not found" } }, 404);
-      return jsonResponse({ id: app._id, title: app.title, status: app.status, created_at: app._creationTime });
-    } catch (e) {
-      if (e instanceof Response) return e;
-      return jsonResponse({ error: { code: "internal_error", message: String(e) } }, 500);
-    }
-  }),
-});
-
-// ── Task 11: GET /api/v1/policies ──
+// ── GET /api/v1/policies ──
 http.route({
   path: "/api/v1/policies",
   method: "GET",
@@ -2195,49 +1510,12 @@ http.route({
         "/api/v1/clients": { get: { tags: ["Clients"], summary: "List broker clients", responses: { "200": { description: "Paginated client list" } } } },
         "/api/v1/clients/{id}": { get: { tags: ["Clients"], summary: "Get client detail", responses: { "200": { description: "Client detail" } } } },
         "/api/v1/clients/invitations": { post: { tags: ["Clients"], summary: "Create client invitation (write)", responses: { "201": { description: "Invitation created" } } } },
-        "/api/v1/passport": {
-          get: { tags: ["Passport"], summary: "Get passport", responses: { "200": { description: "Passport" } } },
-          patch: { tags: ["Passport"], summary: "Update passport (write)", responses: { "200": { description: "Updated" } } },
-        },
-        "/api/v1/applications": { get: { tags: ["Applications"], summary: "List applications", responses: { "200": { description: "Applications" } } } },
-        "/api/v1/applications/{id}": { get: { tags: ["Applications"], summary: "Get application", responses: { "200": { description: "Application" } } } },
         "/api/v1/policies": { get: { tags: ["Policies"], summary: "List policies", responses: { "200": { description: "Policies" } } } },
         "/api/v1/policies/{id}": { get: { tags: ["Policies"], summary: "Get policy", responses: { "200": { description: "Policy" } } } },
         "/api/v1/notifications": { get: { tags: ["Notifications"], summary: "List notifications", responses: { "200": { description: "Notifications" } } } },
         "/api/v1/activity": { get: { tags: ["Activity"], summary: "Activity feed", responses: { "200": { description: "Activity" } } } },
-        "/api/v1/integrations": { get: { tags: ["Integrations"], summary: "List integrations", responses: { "200": { description: "List of integration connections" }, "401": { description: "Unauthorized" } } } },
-        "/api/v1/integrations/{connectionId}": {
-          get: { tags: ["Integrations"], summary: "Get integration connection", responses: { "200": { description: "Connection detail" }, "404": { description: "Not found" } } },
-          delete: { tags: ["Integrations"], summary: "Disconnect integration", responses: { "204": { description: "Disconnected" }, "401": { description: "Unauthorized" } } },
-        },
-        "/api/v1/integration-requests": {
-          get: { tags: ["Integrations"], summary: "List integration requests", responses: { "200": { description: "List of requests" } } },
-          post: { tags: ["Integrations"], summary: "Create integration request (broker only)", responses: { "201": { description: "Request created" }, "403": { description: "Broker access required" } } },
-        },
       },
     });
-  }),
-});
-
-// ── Merge webhook ──────────────────────────────────────────────────────────
-//
-// Merge sends webhook events to this endpoint. Signature verification uses
-// MERGE_WEBHOOK_SECRET (HMAC-SHA256). DEFERRED when real credentials available:
-// replace stub HMAC check with actual Merge header names from their docs.
-
-http.route({
-  path: "/merge/webhook",
-  method: "POST",
-  handler: httpAction(async (ctx, request) => {
-    const rawBody = await request.text();
-    const sig = request.headers.get("x-merge-webhook-signature") ?? "";
-
-    await ctx.runAction((internal as any).integrations.processWebhook, {
-      rawBody,
-      signature: sig,
-    });
-
-    return new Response("OK", { status: 200 });
   }),
 });
 
@@ -2251,7 +1529,7 @@ http.route({
       mcpServers: {
         glass: {
           uri: `sse://${url.host}/mcp`,
-          instructions: "Glass is an insurance intelligence platform. Use Glass tools to look up policies, quotes, applications, passport data, and broker-client workflows.",
+          instructions: "Glass is an insurance intelligence platform. Use Glass tools to look up policies, quotes, threads, and broker-client workflows.",
         },
       },
     });

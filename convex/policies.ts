@@ -122,27 +122,14 @@ export const listPending = query({
         !p.pipelineStatus)
     );
 
-    const enriched = await Promise.all(
-      pending.map(async (p) => {
-        let emailSubject: string | undefined;
-        let emailFrom: string | undefined;
-        if (p.emailId) {
-          const email = await ctx.db.get(p.emailId);
-          if (email) {
-            emailSubject = email.subject;
-            emailFrom = email.from;
-          }
-        }
-        const { rawExtractionResponse, rawMetadataResponse, ...rest } = p;
-        return {
-          ...rest,
-          emailSubject,
-          emailFrom,
-          hasRawResponse: !!rawExtractionResponse,
-          hasRawMetadata: !!rawMetadataResponse,
-        };
-      })
-    );
+    const enriched = pending.map((p) => {
+      const { rawExtractionResponse, rawMetadataResponse, ...rest } = p;
+      return {
+        ...rest,
+        hasRawResponse: !!rawExtractionResponse,
+        hasRawMetadata: !!rawMetadataResponse,
+      };
+    });
 
     return enriched;
   },
@@ -164,27 +151,14 @@ export const listExtractionLog = query({
         (p.pipelineStatus === "complete" || p.dismissed === true)
     );
 
-    const enriched = await Promise.all(
-      completed.map(async (p) => {
-        let emailSubject: string | undefined;
-        let emailFrom: string | undefined;
-        if (p.emailId) {
-          const email = await ctx.db.get(p.emailId);
-          if (email) {
-            emailSubject = email.subject;
-            emailFrom = email.from;
-          }
-        }
-        const { rawExtractionResponse, rawMetadataResponse, ...rest } = p;
-        return {
-          ...rest,
-          emailSubject,
-          emailFrom,
-          hasRawResponse: !!rawExtractionResponse,
-          hasRawMetadata: !!rawMetadataResponse,
-        };
-      })
-    );
+    const enriched = completed.map((p) => {
+      const { rawExtractionResponse, rawMetadataResponse, ...rest } = p;
+      return {
+        ...rest,
+        hasRawResponse: !!rawExtractionResponse,
+        hasRawMetadata: !!rawMetadataResponse,
+      };
+    });
 
     return enriched;
   },
@@ -209,28 +183,6 @@ export const getFileUrl = query({
   handler: async (ctx, args) => {
     await requireOrgAccess(ctx);
     return await ctx.storage.getUrl(args.fileId);
-  },
-});
-
-export const emailIdsWithPolicies = query({
-  args: {},
-  handler: async (ctx) => {
-    const { orgId } = await requireOrgAccess(ctx);
-    const all = await ctx.db
-      .query("policies")
-      .withIndex("by_orgId", (idx) => idx.eq("orgId", orgId))
-      .collect();
-    const ids = new Set<string>();
-    for (const p of all) {
-      if (
-        p.emailId &&
-        !p.dismissed &&
-        !p.deletedAt
-      ) {
-        ids.add(p.emailId);
-      }
-    }
-    return [...ids];
   },
 });
 
@@ -276,24 +228,6 @@ export const listAllInternalByUser = internalQuery({
   },
 });
 
-// Internal version for scheduled actions (no auth context)
-export const emailIdsWithPoliciesInternal = internalQuery({
-  args: { orgId: v.id("organizations") },
-  handler: async (ctx, args) => {
-    const all = await ctx.db
-      .query("policies")
-      .withIndex("by_orgId", (idx) => idx.eq("orgId", args.orgId))
-      .collect();
-    const ids = new Set<string>();
-    for (const p of all) {
-      if (p.emailId && !p.dismissed && !p.deletedAt) {
-        ids.add(p.emailId);
-      }
-    }
-    return [...ids];
-  },
-});
-
 export const stats = query({
   args: {},
   handler: async (ctx) => {
@@ -304,11 +238,6 @@ export const stats = query({
       .query("policies")
       .withIndex("by_orgId", (idx) => idx.eq("orgId", orgId))
       .collect();
-    const connections = await ctx.db
-      .query("emailConnections")
-      .withIndex("by_orgId", (idx) => idx.eq("orgId", orgId))
-      .collect();
-
     const policies = allPolicies.filter((p) => p.pipelineStatus === "complete" && !p.deletedAt);
     const pendingExtractions = allPolicies.filter(
       (p) =>
@@ -330,15 +259,10 @@ export const stats = query({
       byYear[p.policyYear] = (byYear[p.policyYear] || 0) + 1;
     }
 
-    const lastScan = connections.reduce<number | null>((latest, c) => {
-      if (!c.lastScanAt) return latest;
-      return latest ? Math.max(latest, c.lastScanAt) : c.lastScanAt;
-    }, null);
-
     return {
       totalPolicies: policies.length,
-      activeConnections: connections.length,
-      lastScanAt: lastScan,
+      activeConnections: 0,
+      lastScanAt: null,
       pendingExtractions,
       byType,
       byCarrier,
@@ -492,7 +416,6 @@ export const insert = mutation({
   args: {
     userId: v.optional(v.id("users")),
     orgId: v.optional(v.id("organizations")),
-    emailId: v.optional(v.id("emails")),
     fileId: v.optional(v.id("_storage")),
     fileName: v.optional(v.string()),
     carrier: v.string(),
@@ -902,22 +825,12 @@ export const restartExtraction = mutation({
       metadataSource: undefined,
     });
 
-    // Schedule fresh extraction — use stored file if available, fall back to IMAP
+    // Schedule fresh extraction from stored file
     if (policy.fileId) {
       await ctx.scheduler.runAfter(0, api.actions.retryExtraction.retryExtraction, {
         policyId: args.id,
         mode: "full" as const,
       });
-    } else if (policy.emailId) {
-      const email = await ctx.db.get(policy.emailId);
-      if (email) {
-        await ctx.scheduler.runAfter(0, internal.actions.extractPolicy.extractPolicy, {
-          emailId: policy.emailId,
-          connectionId: email.connectionId,
-          userId,
-          orgId,
-        });
-      }
     }
 
     await ctx.db.insert("policyAuditLog", {
@@ -1047,15 +960,12 @@ export const updateFiles = internalMutation({
       v.literal("reconciled"),
       v.literal("error"),
     )),
-    emailIds: v.optional(v.array(v.id("emails"))),
   },
   handler: async (ctx, args) => {
     const { id, ...fields } = args;
-    // Strip undefined values so we don't accidentally unset fields
     const patch: Record<string, any> = {};
     if (fields.files !== undefined) patch.files = fields.files;
     if (fields.reconciliationStatus !== undefined) patch.reconciliationStatus = fields.reconciliationStatus;
-    if (fields.emailIds !== undefined) patch.emailIds = fields.emailIds;
     await ctx.db.patch(id, patch);
   },
 });
@@ -1124,17 +1034,6 @@ export const remove = mutation({
       .collect();
     for (const chunk of chunks) {
       await ctx.db.delete(chunk._id);
-    }
-
-    // Delete associated intelligence entries (sourceRef = policyId)
-    const intel = await ctx.db
-      .query("orgIntelligence")
-      .withIndex("by_orgId", (idx) => idx.eq("orgId", orgId))
-      .collect();
-    for (const entry of intel) {
-      if (entry.sourceRef === args.id) {
-        await ctx.db.delete(entry._id);
-      }
     }
 
     await ctx.db.delete(args.id);

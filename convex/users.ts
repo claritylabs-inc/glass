@@ -164,22 +164,6 @@ export const resetAccount = mutation({
       await ctx.db.delete(policy._id);
     }
 
-    // Delete all emails
-    const emails = orgId
-      ? await ctx.db.query("emails").withIndex("by_orgId", (q) => q.eq("orgId", orgId)).collect()
-      : await ctx.db.query("emails").withIndex("by_userId", (q) => q.eq("userId", userId)).collect();
-    for (const email of emails) {
-      await ctx.db.delete(email._id);
-    }
-
-    // Delete all connections
-    const connections = orgId
-      ? await ctx.db.query("emailConnections").withIndex("by_orgId", (q) => q.eq("orgId", orgId)).collect()
-      : await ctx.db.query("emailConnections").withIndex("by_userId", (q) => q.eq("userId", userId)).collect();
-    for (const conn of connections) {
-      await ctx.db.delete(conn._id);
-    }
-
     // Delete all agent conversations
     const conversations = orgId
       ? await ctx.db.query("agentConversations").withIndex("by_orgId", (q) => q.eq("orgId", orgId)).collect()

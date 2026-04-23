@@ -6,7 +6,7 @@ import { X } from "lucide-react";
 import { toast } from "sonner";
 import { PillButton } from "@/components/ui/pill-button";
 
-export type DocumentType = "policy" | "quote" | "application";
+export type DocumentType = "policy" | "quote";
 
 const EASE = [0.16, 1, 0.3, 1] as const;
 const MIN_WIDTH = 360;
@@ -22,7 +22,6 @@ const LABEL_CLASSES =
 const TYPE_OPTIONS: { value: DocumentType; label: string }[] = [
   { value: "policy", label: "Policy" },
   { value: "quote", label: "Quote" },
-  { value: "application", label: "Application form" },
 ];
 
 interface PolicyUploadDrawerProps {
@@ -34,7 +33,6 @@ interface PolicyUploadDrawerProps {
     note: string,
   ) => Promise<void>;
   uploading: boolean;
-  showApplicationOption?: boolean;
 }
 
 export function PolicyUploadDrawer({
@@ -42,7 +40,6 @@ export function PolicyUploadDrawer({
   onClose,
   onUpload,
   uploading,
-  showApplicationOption = false,
 }: PolicyUploadDrawerProps) {
   const [documentType, setDocumentType] = useState<DocumentType>("policy");
   const [note, setNote] = useState("");
@@ -95,9 +92,7 @@ export function PolicyUploadDrawer({
     [documentType, note, onUpload, onClose],
   );
 
-  const types = showApplicationOption
-    ? TYPE_OPTIONS
-    : TYPE_OPTIONS.filter((t) => t.value !== "application");
+  const types = TYPE_OPTIONS;
 
   return (
     <AnimatePresence mode="popLayout">

@@ -13,11 +13,6 @@ async function getClientDetailRecord(ctx: QueryCtx, clientOrgId: Id<"organizatio
   const org = await ctx.db.get(clientOrgId);
   if (!org || org.type !== "client") return null;
 
-  const passport = await ctx.db
-    .query("clientPassport")
-    .withIndex("by_clientOrgId", (q) => q.eq("clientOrgId", clientOrgId))
-    .first();
-
   const firstMembership = await ctx.db
     .query("orgMemberships")
     .withIndex("by_orgId", (q) => q.eq("orgId", clientOrgId))
@@ -26,14 +21,14 @@ async function getClientDetailRecord(ctx: QueryCtx, clientOrgId: Id<"organizatio
 
   return {
     clientOrgId: org._id,
-    name: org.name?.trim() || passport?.legalName || "Client",
-    legalName: passport?.legalName,
-    website: org.website ?? passport?.website,
+    name: org.name?.trim() || "Client",
+    legalName: org.name,
+    website: org.website,
     industry: org.industry,
-    context: org.context ?? passport?.operationsSummary ?? passport?.businessDescription,
+    context: org.context,
     onboardingComplete: !!org.onboardingComplete,
-    primaryContactName: passport?.primaryContactName ?? primaryUser?.name,
-    primaryContactEmail: passport?.primaryContactEmail ?? primaryUser?.email,
+    primaryContactName: primaryUser?.name,
+    primaryContactEmail: primaryUser?.email,
   };
 }
 
@@ -65,15 +60,7 @@ async function listRowsForBroker(ctx: QueryCtx, brokerOrgId: Id<"organizations">
 
   const clientRows = await Promise.all(
     acceptedOrgs.map(async (org) => {
-      const [openApps, activePolicies, docs, lastActivityEvent, assignments, passport] = await Promise.all([
-        ctx.db
-          .query("applications")
-          .withIndex("by_clientOrgId", (q) => q.eq("clientOrgId", org._id))
-          .filter((q) =>
-            q.and(q.neq(q.field("status"), "complete"), q.neq(q.field("status"), "cancelled")),
-          )
-          .collect()
-          .then((r) => r.length),
+      const [activePolicies, lastActivityEvent, assignments] = await Promise.all([
         ctx.db
           .query("policies")
           .withIndex("by_orgId", (q) => q.eq("orgId", org._id))
@@ -83,11 +70,6 @@ async function listRowsForBroker(ctx: QueryCtx, brokerOrgId: Id<"organizations">
               q.eq(q.field("pipelineStatus"), "complete"),
             ),
           )
-          .collect()
-          .then((r) => r.length),
-        ctx.db
-          .query("orgDocuments")
-          .withIndex("by_orgId", (q) => q.eq("orgId", org._id))
           .collect()
           .then((r) => r.length),
         ctx.db
@@ -101,10 +83,6 @@ async function listRowsForBroker(ctx: QueryCtx, brokerOrgId: Id<"organizations">
           .query("brokerClientAssignments")
           .withIndex("by_clientOrgId", (q) => q.eq("clientOrgId", org._id))
           .collect(),
-        ctx.db
-          .query("clientPassport")
-          .withIndex("by_clientOrgId", (q) => q.eq("clientOrgId", org._id))
-          .first(),
       ]);
 
       const firstMembership = await ctx.db
@@ -117,10 +95,8 @@ async function listRowsForBroker(ctx: QueryCtx, brokerOrgId: Id<"organizations">
 
       const orgName = org.name?.trim();
       const displayName =
-        orgName && !isEmailLike(orgName)
-          ? orgName
-          : (passport?.legalName?.trim() || "Client organization");
-      const primaryContactName = passport?.primaryContactName?.trim() || primaryUser?.name;
+        orgName && !isEmailLike(orgName) ? orgName : "Client organization";
+      const primaryContactName = primaryUser?.name;
 
       return {
         clientOrgId: org._id,
@@ -130,9 +106,7 @@ async function listRowsForBroker(ctx: QueryCtx, brokerOrgId: Id<"organizations">
         onboardingStatus,
         createdAt: org._creationTime,
         lastActivityAt: lastActivityEvent?.createdAt,
-        openApplicationsCount: openApps,
         activePoliciesCount: activePolicies,
-        documentsCount: docs,
         assignedProducerIds: assignments.map((a) => a.producerId),
       };
     }),
@@ -150,9 +124,7 @@ async function listRowsForBroker(ctx: QueryCtx, brokerOrgId: Id<"organizations">
         onboardingStatus: status as "invited" | "draft",
         createdAt: org._creationTime,
         lastActivityAt: undefined,
-        openApplicationsCount: 0,
         activePoliciesCount: policiesCount,
-        documentsCount: 0,
         assignedProducerIds: [] as string[],
       };
     }),
@@ -166,9 +138,7 @@ async function listRowsForBroker(ctx: QueryCtx, brokerOrgId: Id<"organizations">
     onboardingStatus: "invited" as const,
     createdAt: inv.createdAt,
     lastActivityAt: undefined,
-    openApplicationsCount: 0,
     activePoliciesCount: 0,
-    documentsCount: 0,
     assignedProducerIds: [] as string[],
     linkType: inv.linkType,
   }));

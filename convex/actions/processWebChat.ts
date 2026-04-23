@@ -53,13 +53,10 @@ export const run = internalAction({
         }
       }
 
-      // Load policies, quotes, and applications
       const policies = await ctx.runQuery(
         internal.policies.listAllInternal,
         { orgId: args.orgId },
       );
-      // applicationSessions retired
-      const applications: Array<Record<string, unknown>> = [];
 
       // Get sender name
       const user = await ctx.runQuery(internal.users.getInternal, {
@@ -139,26 +136,12 @@ WEB CHAT MODE:
         }
       }
 
-      // Build application context
-      let applicationContext = "";
-      if (applications.length > 0) {
-        const appLines = applications.map((a: Record<string, unknown>) => {
-          const title = a.applicationTitle ?? a.sourceFileName;
-          const progress = a.totalFields
-            ? `${a.filledFields ?? 0}/${a.totalFields} fields filled`
-            : "";
-          return `- ${title} | Status: ${a.status}${progress ? ` | ${progress}` : ""} | ID: ${a._id}`;
-        });
-        applicationContext = `\n\nAPPLICATION SESSIONS (${applications.length}):\n${appLines.join("\n")}`;
-      }
-
       const fullSystemPrompt =
         systemPrompt +
         webChatAddendum +
         pageContextBlock +
         "\n\n" +
         docContext +
-        applicationContext +
         memoryContext;
 
       // Call Claude with streaming

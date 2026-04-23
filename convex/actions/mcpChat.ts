@@ -71,16 +71,6 @@ export const run = internalAction({
       ctx.runQuery(internal.policies.listAllInternal, { orgId: args.orgId }),
       ctx.runQuery(internal.threads.messagesInternal, { threadId }),
     ]);
-    // applicationSessions retired — no application context in chat
-    const applications: Array<{
-      applicationTitle?: string;
-      sourceFileName?: string;
-      status?: string;
-      totalFields?: number;
-      filledFields?: number;
-      _id: string;
-    }> = [];
-
     const siteUrl = process.env.SITE_URL ?? "https://glass.claritylabs.inc";
 
     // Build system prompt
@@ -104,19 +94,6 @@ export const run = internalAction({
       relevantPolicyIds.map((id: unknown) => id as string),
     );
 
-    // Application context
-    let applicationContext = "";
-    if (applications.length > 0) {
-      const appLines = applications.map((a: { applicationTitle?: string; sourceFileName?: string; status?: string; totalFields?: number; filledFields?: number; _id: string }) => {
-        const title = a.applicationTitle ?? a.sourceFileName;
-        const progress = a.totalFields
-          ? `${a.filledFields ?? 0}/${a.totalFields} fields filled`
-          : "";
-        return `- ${title} | Status: ${a.status}${progress ? ` | ${progress}` : ""} | ID: ${a._id}`;
-      });
-      applicationContext = `\n\nAPPLICATION SESSIONS (${applications.length}):\n${appLines.join("\n")}`;
-    }
-
     const mcpAddendum = `
 
 MCP MODE:
@@ -130,7 +107,6 @@ MCP MODE:
       mcpAddendum +
       "\n\n" +
       docContext +
-      applicationContext +
       memoryContext +
       orgMemoryBlock;
 

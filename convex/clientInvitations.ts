@@ -338,7 +338,7 @@ export const sendDraftInvite = action({
 <tr><td align="center" style="padding:32px 40px 0 40px;">${headerLogoHtml}</td></tr>
 <tr><td style="padding:24px 40px 0 40px;">
   <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:15px;color:#374151;line-height:1.6;">
-    <strong>${brokerName}</strong> has invited you${draft.name ? ` (<strong>${draft.name}</strong>)` : ""} to Glass — a shared workspace for your applications, policies, and documents.
+    <strong>${brokerName}</strong> has invited you${draft.name ? ` (<strong>${draft.name}</strong>)` : ""} to Glass — a shared workspace for your policies and documents.
   </p>
 </td></tr>
 ${messageBlock}
@@ -455,7 +455,7 @@ export const createEmail = action({
 <tr><td align="center" style="padding:32px 40px 0 40px;">${headerLogoHtml}</td></tr>
 <tr><td style="padding:24px 40px 0 40px;">
   <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:15px;color:#374151;line-height:1.6;">
-    <strong>${brokerName}</strong> has invited you${args.clientOrgName ? ` (<strong>${args.clientOrgName}</strong>)` : ""} to Glass — a shared workspace for your applications, policies, and documents.
+    <strong>${brokerName}</strong> has invited you${args.clientOrgName ? ` (<strong>${args.clientOrgName}</strong>)` : ""} to Glass — a shared workspace for your policies and documents.
   </p>
 </td></tr>
 <tr><td align="center" style="padding:28px 40px 0 40px;">
@@ -737,57 +737,6 @@ export const accept = mutation({
       actionType: "view_client",
       actionPayload: { clientOrgId },
     });
-
-    // Pre-fill passport with invite data
-    const inviteeEmail = inv.primaryContactEmail ?? acceptingUser?.email;
-    const inviteeName = inv.primaryContactName ?? acceptingUser?.name;
-    const companyName = orgName;
-
-    const passportPatch: Record<string, unknown> = {};
-    if (inviteeEmail) passportPatch.primaryContactEmail = inviteeEmail;
-    if (inviteeName) passportPatch.primaryContactName = inviteeName;
-    if (companyName) passportPatch.legalName = companyName;
-
-    if (Object.keys(passportPatch).length > 0) {
-      await ctx.runMutation(internal.clientPassport.upsertCoreInternal, {
-        clientOrgId,
-        patch: passportPatch,
-        actorUserId: userId,
-      });
-
-      // Write provenance rows for invite-sourced fields
-      const now = Date.now();
-      if (inviteeEmail) {
-        await ctx.runMutation(internal.passportSideTables.upsertProvenance, {
-          clientOrgId,
-          fieldPath: "primaryContactEmail",
-          source: "invite",
-          confidence: "confirmed",
-          sourceLabel: "Broker invite",
-          setAt: now,
-        });
-      }
-      if (inviteeName) {
-        await ctx.runMutation(internal.passportSideTables.upsertProvenance, {
-          clientOrgId,
-          fieldPath: "primaryContactName",
-          source: "invite",
-          confidence: "confirmed",
-          sourceLabel: "Broker invite",
-          setAt: now,
-        });
-      }
-      if (companyName) {
-        await ctx.runMutation(internal.passportSideTables.upsertProvenance, {
-          clientOrgId,
-          fieldPath: "legalName",
-          source: "invite",
-          confidence: "confirmed",
-          sourceLabel: "Broker invite",
-          setAt: now,
-        });
-      }
-    }
 
     return { clientOrgId };
   },

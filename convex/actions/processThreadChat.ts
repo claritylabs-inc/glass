@@ -24,7 +24,6 @@ import {
 } from "../lib/aiUtils";
 import { sendResendEmail, getAgentDomain } from "../lib/resend";
 import { buildIntelligenceContext } from "../lib/agentPrompts";
-import { makeEmbedText } from "../lib/sdkCallbacks";
 import {
   classifyPromptInjection,
   validateEmailRecipient,
@@ -319,26 +318,21 @@ function buildTools(ctx: any, args: { orgId: string; threadId: string }, org?: R
     save_note: {
       ...saveNote,
       execute: async (params: { content: string; type: string; policyId?: string }) => {
-        const embedText = makeEmbedText();
-        const embedding = await embedText(params.content);
-        const categoryMap: Record<string, string> = {
-          fact: "company_info",
-          risk_note: "risk",
-          coverage_note: "coverage",
-          action_item: "observation",
+        const typeMap: Record<string, "fact" | "preference" | "risk_note" | "observation"> = {
+          fact: "fact",
+          preference: "preference",
+          risk_note: "risk_note",
+          observation: "observation",
         };
-        const category = categoryMap[params.type] ?? "observation";
-        await ctx.runMutation(internal.intelligence.insert, {
+        const memoryType = typeMap[params.type] ?? "observation";
+        await ctx.runMutation(internal.orgMemory.upsert, {
           orgId: args.orgId,
+          type: memoryType,
           content: params.content,
-          category: category as "company_info" | "risk" | "coverage" | "observation",
-          confidence: "confirmed" as const,
           source: "chat" as const,
-          sourceRef: args.threadId as string,
-          sourceLabel: "Saved from chat",
-          embedding,
+          policyId: params.policyId as Id<"policies"> | undefined,
         });
-        return "Note saved to organization intelligence.";
+        return "Note saved to organization memory.";
       },
     },
     generate_coi: {
@@ -813,16 +807,6 @@ When answering coverage questions, you are an expert insurance analyst, not a di
       await ctx.runMutation(internal.threads.touchThread, {
         threadId: args.threadId,
       });
-
-      // Schedule post-response intelligence extraction (non-blocking)
-      if (latestUserContent && content) {
-        await ctx.scheduler.runAfter(0, internal.actions.extractChatIntelligence.extractFromChat, {
-          orgId: args.orgId,
-          threadId: args.threadId,
-          userMessage: latestUserContent,
-          agentResponse: content,
-        });
-      }
 
       // ── Send email if agent confirmed a send ──
       if (canSendEmail) {

@@ -55,85 +55,42 @@ export async function buildDocumentContext(
 }
 
 /**
- * Build business intelligence context using vector search over orgIntelligence.
- * Replaces the old buildMemoryContext which used key-based orgMemory lookups.
+ * Build org memory context — recent facts/preferences/observations captured
+ * via chat tool calls, agent email conversations, and website pulls.
  */
 export async function buildIntelligenceContext(
   ctx: ActionCtx,
   orgId: Id<"organizations">,
-  queryText: string,
-  excludePolicyIds?: string[],
+  _queryText: string,
+  _excludePolicyIds?: string[],
 ): Promise<string> {
   try {
-    const embed = makeEmbedText();
-    const queryEmbedding = await embed(queryText);
-
-    // Vector search must be called from action context directly
-    const searchResults = await ctx.vectorSearch("orgIntelligence", "by_embedding", {
-      vector: queryEmbedding,
-      limit: 15,
-      filter: (q) => q.eq("orgId", orgId),
+    const memories = await ctx.runQuery(internal.orgMemory.listByOrg, {
+      orgId,
+      limit: 30,
     });
+    if (!memories || memories.length === 0) return "";
 
-    if (searchResults.length === 0) return "";
+    const grouped: Record<string, string[]> = {};
+    for (const m of memories) {
+      const bucket = m.type ?? "observation";
+      if (!grouped[bucket]) grouped[bucket] = [];
+      const tag = m.source ? ` [${m.source}]` : "";
+      grouped[bucket].push(`- ${m.content}${tag}`);
+    }
 
-    // Hydrate results via query
-    const results = await ctx.runQuery(internal.intelligence.hydrateSearchResults, {
-      ids: searchResults.map((r) => r._id),
-    });
-
-    if (!results || results.length === 0) return "";
-
-    // Filter out policy-derived facts already covered by documentChunks
-    const excludeSet = new Set(excludePolicyIds ?? []);
-    const filtered = results.filter((entry: { source?: string; sourceRef?: string } | null) => {
-      if (!entry) return false;
-      if (entry.source === "extraction" && entry.sourceRef && excludeSet.has(entry.sourceRef)) {
-        return false;
-      }
-      return true;
-    });
-
-    if (filtered.length === 0) return "";
-
-    const categoryLabels: Record<string, string> = {
-      company_info: "Company Information",
-      products_services: "Products & Services",
-      operations: "Operations",
-      employees: "Employees & Workforce",
-      financial: "Financial",
-      coverage: "Coverage & Insurance",
-      risk: "Risk Signals",
-      relationship: "Relationships",
-      clients: "Client Relationships",
-      insurance: "Broker & Insurance Relationships",
-      investors: "Investor Relationships",
-      vendors: "Vendors & Service Providers",
-      partners: "Partners",
+    const labels: Record<string, string> = {
+      fact: "Facts",
+      preference: "Preferences",
+      risk_note: "Risk Notes",
       observation: "Observations",
     };
 
-    // Group by category
-    const grouped: Record<string, string[]> = {};
-    for (const entry of filtered) {
-      if (!entry) continue;
-      const cat = entry.category || "observation";
-      if (!grouped[cat]) grouped[cat] = [];
-      const tags: string[] = [];
-      if (entry.source && entry.source !== "manual") tags.push(entry.source);
-      if (entry.asOfDate) tags.push(`as of ${entry.asOfDate}`);
-      if (entry.sourceLabel) tags.push(entry.sourceLabel);
-      const tagStr = tags.length > 0 ? ` [${tags.join(" | ")}]` : "";
-      grouped[cat].push(`- ${entry.content}${tagStr}`);
-    }
-
     const sections: string[] = [];
-    for (const [cat, items] of Object.entries(grouped)) {
-      const label = categoryLabels[cat] || cat;
-      sections.push(`${label}:\n${items.join("\n")}`);
+    for (const [bucket, items] of Object.entries(grouped)) {
+      sections.push(`${labels[bucket] ?? bucket}:\n${items.join("\n")}`);
     }
-
-    return `\n\nBUSINESS INTELLIGENCE:\n${sections.join("\n\n")}`;
+    return `\n\nORG MEMORY:\n${sections.join("\n\n")}`;
   } catch {
     return "";
   }

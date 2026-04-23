@@ -7,7 +7,6 @@ import { action } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import { getModel } from "../lib/models";
 import { INDUSTRIES } from "../lib/industries";
-import { makeEmbedText } from "../lib/sdkCallbacks";
 
 // Build a compact reference of valid industry/vertical values for the prompt
 const INDUSTRY_REF = INDUSTRIES.map(
@@ -192,91 +191,28 @@ ${content}`,
       if (object.partnersContext) orgUpdates.partnersContext = object.partnersContext;
       await ctx.runMutation(api.orgs.updateOrg, orgUpdates);
 
-      const embedText = makeEmbedText();
-      let host = args.url;
-      try {
-        host = new URL(args.url).hostname;
-      } catch {
-        // Keep raw URL when parsing fails.
-      }
-      const sourceLabel = `Website enrichment: ${host}`;
-      const intelligenceEntries = [
-        { content: companyContext, category: "company_info" as const },
-        {
-          content: object.naicsCode ? `NAICS code: ${object.naicsCode}` : "",
-          category: "company_info" as const,
-        },
-        {
-          content: object.yearsInBusiness
-            ? `Years in business: ${object.yearsInBusiness}`
-            : "",
-          category: "operations" as const,
-        },
-        {
-          content: object.numberOfEmployees
-            ? `Employee count: ${object.numberOfEmployees}`
-            : "",
-          category: "employees" as const,
-        },
-        {
-          content: object.annualRevenue
-            ? `Annual revenue: ${object.annualRevenue}`
-            : "",
-          category: "financial" as const,
-        },
-        { content: object.clientsContext, category: "clients" as const },
-        { content: object.vendorsContext, category: "vendors" as const },
-        { content: object.insuranceContext, category: "insurance" as const },
-        { content: object.investorsContext, category: "investors" as const },
-        { content: object.partnersContext, category: "partners" as const },
-      ].filter((entry) => entry.content?.trim());
+      // Write extracted facts to orgMemory (website source)
+      const memoryItems: { content: string }[] = [
+        { content: companyContext },
+        object.naicsCode ? { content: `NAICS code: ${object.naicsCode}` } : null,
+        object.yearsInBusiness ? { content: `Years in business: ${object.yearsInBusiness}` } : null,
+        object.numberOfEmployees ? { content: `Employee count: ${object.numberOfEmployees}` } : null,
+        object.annualRevenue ? { content: `Annual revenue: ${object.annualRevenue}` } : null,
+        object.clientsContext ? { content: `Typical clients: ${object.clientsContext}` } : null,
+        object.vendorsContext ? { content: `Vendors: ${object.vendorsContext}` } : null,
+        object.insuranceContext ? { content: `Insurance context: ${object.insuranceContext}` } : null,
+        object.investorsContext ? { content: `Investors: ${object.investorsContext}` } : null,
+        object.partnersContext ? { content: `Partners: ${object.partnersContext}` } : null,
+      ].filter((m): m is { content: string } => !!m && !!m.content?.trim());
 
-      for (const entry of intelligenceEntries) {
-        const content = entry.content.trim();
-        let embedding: number[] | undefined;
-        try {
-          embedding = await embedText(content);
-          const similar = await ctx.vectorSearch("orgIntelligence", "by_embedding", {
-            vector: embedding,
-            limit: 3,
-            filter: (q) => q.eq("orgId", viewerOrg.org._id),
-          });
-          if (similar.some((s: { _score?: number }) => (s._score ?? 0) > 0.97)) {
-            continue;
-          }
-        } catch (err) {
-          console.error("extractCompanyInfo: embed failed, inserting without embedding", err);
-        }
-        try {
-          await ctx.runMutation(internal.intelligence.insert, {
+      if (memoryItems.length > 0) {
+        await ctx.runMutation(internal.orgMemory.bulkInsert, {
+          items: memoryItems.map((m) => ({
             orgId: viewerOrg.org._id,
-            content,
-            category: entry.category,
-            confidence: "confirmed",
-            source: "manual",
-            sourceRef: args.url,
-            sourceLabel,
-            embedding,
-          });
-        } catch (err) {
-          console.error("extractCompanyInfo: intelligence insert failed", err);
-        }
-      }
-
-      if ((viewerOrg.org.type ?? "client") === "client") {
-        const years = parseInt(object.yearsInBusiness, 10);
-        const employees = parseInt(object.numberOfEmployees, 10);
-        await ctx.runAction(internal.actions.passportExtraction.mapWebsiteToPassport, {
-          clientOrgId: viewerOrg.org._id,
-          websiteUrl: args.url,
-          extracted: {
-            companyContext,
-            industry,
-            naicsCode: object.naicsCode || undefined,
-            yearsInBusiness: Number.isFinite(years) ? years : undefined,
-            numberOfEmployees: Number.isFinite(employees) ? employees : undefined,
-            annualRevenue: object.annualRevenue || undefined,
-          },
+            type: "fact" as const,
+            content: m.content,
+            source: "extraction" as const,
+          })),
         });
       }
     }

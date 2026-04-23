@@ -57,13 +57,9 @@ export default function ClientPoliciesPage() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const createBrokerUpload = useMutation((api as any).policies.createBrokerUpload);
   const extractFromUpload = useAction(api.actions.extractFromUpload.extractFromUpload);
-  const extractApplicationPdfPublic = useAction(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (api as any).actions.extractApplicationPdf.extractApplicationPdfPublic,
-  );
 
   const handleUpload = useCallback(
-    async (file: File, uploadedType: "policy" | "quote" | "application", note: string) => {
+    async (file: File, uploadedType: "policy" | "quote", note: string) => {
       if (!clientOrgId) return;
       setUploading(true);
       try {
@@ -76,23 +72,15 @@ export default function ClientPoliciesPage() {
         if (!res.ok) throw new Error("Storage upload failed");
         const { storageId } = await res.json();
 
-        if (uploadedType === "application") {
-          await extractApplicationPdfPublic({
-            clientOrgId: clientOrgId as Id<"organizations">,
-            fileId: storageId,
-          });
-          toast.success("Application extracted — review the draft in Applications.");
-        } else {
-          const policyId = await createBrokerUpload({
-            clientOrgId: clientOrgId as Id<"organizations">,
-            fileId: storageId,
-            fileName: file.name,
-            documentType: uploadedType,
-            note: note || undefined,
-          });
-          await extractFromUpload({ fileId: storageId, fileName: file.name, policyId });
-          toast.success("Upload started — the client will see it shortly.");
-        }
+        const policyId = await createBrokerUpload({
+          clientOrgId: clientOrgId as Id<"organizations">,
+          fileId: storageId,
+          fileName: file.name,
+          documentType: uploadedType,
+          note: note || undefined,
+        });
+        await extractFromUpload({ fileId: storageId, fileName: file.name, policyId });
+        toast.success("Upload started — the client will see it shortly.");
       } catch (err) {
         toast.error("Upload failed. Please try again.");
         console.error(err);
@@ -105,7 +93,6 @@ export default function ClientPoliciesPage() {
       generateUploadUrl,
       createBrokerUpload,
       extractFromUpload,
-      extractApplicationPdfPublic,
     ],
   );
 
@@ -116,7 +103,6 @@ export default function ClientPoliciesPage() {
         onClose={() => setUploaderOpen(false)}
         onUpload={handleUpload}
         uploading={uploading}
-        showApplicationOption={docType === "policy"}
       />,
     );
     return () => setRightPanel(null);

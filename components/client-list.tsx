@@ -79,9 +79,7 @@ export function ClientList({
       onboardingStatus: r.onboardingStatus as "onboarding" | "active",
       createdAt: r.createdAt,
       lastActivityAt: r.lastActivityAt,
-      openApplicationsCount: r.openApplicationsCount,
       activePoliciesCount: r.activePoliciesCount,
-      documentsCount: r.documentsCount,
     };
   }
 
