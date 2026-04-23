@@ -7,6 +7,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { useSettingsActions } from "@/app/settings/page";
+import { HandleAvailability } from "@/components/settings/handle-availability";
 
 export function BrokerAgentTab() {
   const viewerOrg = useQuery(api.orgs.viewerOrg, {});
@@ -26,7 +27,7 @@ export function BrokerAgentTab() {
   const agentDomain = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "glass.claritylabs.inc";
 
   const [agentHandle, setAgentHandle] = useState("");
-  const [handleError, setHandleError] = useState<string | null>(null);
+  const [debouncedHandle, setDebouncedHandle] = useState("");
   const [savingHandle, setSavingHandle] = useState(false);
   const [chatEmailNotifications, setChatEmailNotifications] = useState(false);
   const [autoSendEmails, setAutoSendEmails] = useState(false);
@@ -42,6 +43,7 @@ export function BrokerAgentTab() {
   useEffect(() => {
     if (org && !hydratedRef.current) {
       setAgentHandle(org.agentHandle ?? "");
+      setDebouncedHandle(org.agentHandle ?? "");
       setChatEmailNotifications(org.chatEmailNotifications ?? false);
       setAutoSendEmails(org.autoSendEmails ?? false);
       setEmailSendDelay(org.emailSendDelay ?? 5);
@@ -58,6 +60,7 @@ export function BrokerAgentTab() {
         emailSendDelay,
       });
       setSavedAt(Date.now());
+      toast.success("Agent settings saved");
     } catch {
       toast.error("Failed to save agent settings");
     } finally {
@@ -93,6 +96,56 @@ export function BrokerAgentTab() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [saving, savedAt]);
 
+  const currentHandle = (org?.agentHandle ?? "").trim();
+  const normalizedInput = agentHandle.toLowerCase().replace(/[^a-z0-9-]/g, "");
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedHandle(normalizedInput), 300);
+    return () => clearTimeout(t);
+  }, [normalizedInput]);
+
+  const shouldCheck =
+    !!debouncedHandle && debouncedHandle !== currentHandle;
+  const availability = useQuery(
+    api.orgs.checkHandleAvailability,
+    shouldCheck && org?._id
+      ? { handle: debouncedHandle, excludeOrgId: org._id as Id<"organizations"> }
+      : "skip",
+  );
+  const handleChecking =
+    !!normalizedInput &&
+    normalizedInput !== currentHandle &&
+    normalizedInput.length >= 3 &&
+    (normalizedInput !== debouncedHandle || availability === undefined);
+
+  // Auto-save handle when debounced value is valid, available, and differs from current.
+  useEffect(() => {
+    if (!hydratedRef.current) return;
+    if (!shouldCheck) return;
+    if (normalizedInput !== debouncedHandle) return;
+    if (availability === undefined) return;
+    if (!availability.available) return;
+    let cancelled = false;
+    (async () => {
+      setSavingHandle(true);
+      try {
+        const normalized = await claimAgentHandle({ handle: availability.normalized });
+        if (!cancelled) {
+          setAgentHandle(normalized);
+          setDebouncedHandle(normalized);
+          toast.success("Agent handle saved");
+        }
+      } catch (err) {
+        if (!cancelled) toast.error(err instanceof Error ? err.message : "Failed to update handle");
+      } finally {
+        if (!cancelled) setSavingHandle(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [shouldCheck, normalizedInput, debouncedHandle, availability, claimAgentHandle]);
+
   if (viewerOrg === undefined) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -103,45 +156,6 @@ export function BrokerAgentTab() {
 
   const delayOptions = [0, 3, 5, 10, 15];
 
-  const currentHandle = (org?.agentHandle ?? "").trim();
-  const normalizedInput = agentHandle.toLowerCase().replace(/[^a-z0-9-]/g, "");
-  const handleDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const shouldCheck =
-    !!normalizedInput && normalizedInput !== currentHandle;
-  const availability = useQuery(
-    api.orgs.checkHandleAvailability,
-    shouldCheck && org?._id
-      ? { handle: normalizedInput, excludeOrgId: org._id as Id<"organizations"> }
-      : "skip",
-  );
-
-  useEffect(() => {
-    if (!hydratedRef.current) return;
-    if (!shouldCheck) return;
-    if (availability === undefined) return;
-    if (!availability.available) {
-      setHandleError(availability.reason ?? "Handle unavailable");
-      return;
-    }
-    setHandleError(null);
-    if (handleDebounceRef.current) clearTimeout(handleDebounceRef.current);
-    handleDebounceRef.current = setTimeout(async () => {
-      setSavingHandle(true);
-      try {
-        await claimAgentHandle({ handle: availability.normalized });
-        setSavedAt(Date.now());
-      } catch (err) {
-        setHandleError(err instanceof Error ? err.message : "Failed to update handle");
-      } finally {
-        setSavingHandle(false);
-      }
-    }, 600);
-    return () => {
-      if (handleDebounceRef.current) clearTimeout(handleDebounceRef.current);
-    };
-  }, [shouldCheck, availability, claimAgentHandle]);
-
   return (
     <div className="space-y-4">
       {/* Agent handle */}
@@ -149,8 +163,8 @@ export function BrokerAgentTab() {
         <div className="px-5 py-3.5 border-b border-foreground/6">
           <h3 className="!mb-0 text-sm font-medium text-foreground">Agent email handle</h3>
         </div>
-        <div className="px-5 py-5 space-y-3">
-          <p className="text-body-sm text-muted-foreground/70">
+        <div className="px-5 py-5 space-y-1">
+          <p className="text-body-sm text-muted-foreground/70 mb-3">
             Clients and carriers email your agent at this address. Forwarding a
             policy or asking a question routes to the Glass agent for this org.
           </p>
@@ -158,24 +172,28 @@ export function BrokerAgentTab() {
             <input
               type="text"
               value={agentHandle}
-              onChange={(e) => setAgentHandle(e.target.value)}
+              onChange={(e) =>
+                setAgentHandle(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))
+              }
               placeholder="your-broker-name"
               spellCheck={false}
               autoCapitalize="off"
               autoCorrect="off"
               className="flex-1 min-w-0 rounded-l-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
             />
-            <span className="inline-flex items-center px-3 border border-l-0 border-foreground/8 bg-foreground/[0.03] text-body-sm text-muted-foreground rounded-r-lg">
+            <span className="inline-flex items-center rounded-r-lg border border-l-0 border-foreground/8 bg-foreground/[0.03] px-3 text-body-sm text-muted-foreground select-none whitespace-nowrap">
               @{agentDomain}
             </span>
           </div>
-          {handleError ? (
-            <p className="text-label-sm text-red-500">{handleError}</p>
-          ) : (
-            <p className="text-label-sm text-muted-foreground/50">
-              Lowercase letters, numbers, and hyphens only.
-            </p>
-          )}
+          <HandleAvailability
+            saving={savingHandle}
+            checking={handleChecking}
+            input={normalizedInput}
+            current={currentHandle}
+            availability={normalizedInput === debouncedHandle ? availability : undefined}
+            currentLabel="Current agent handle"
+            renderAvailablePreview={(s) => `${s}@${agentDomain} is available`}
+          />
         </div>
       </div>
 

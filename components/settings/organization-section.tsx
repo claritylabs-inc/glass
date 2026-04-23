@@ -20,6 +20,7 @@ import { INDUSTRIES } from "@/convex/lib/industries";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { PillButton } from "@/components/ui/pill-button";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
+import { HandleAvailability } from "@/components/settings/handle-availability";
 
 const WORKSPACE_DOMAIN =
   process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "glass.claritylabs.inc";
@@ -355,49 +356,15 @@ export function OrganizationSection() {
                     className="flex-1 min-w-0 rounded-r-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
                   />
                 </div>
-                <div className="flex items-center gap-2 min-h-[20px] pt-1">
-                  {savingSlug ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />
-                      <span className="text-label-sm text-muted-foreground">Saving…</span>
-                    </>
-                  ) : slugChecking ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />
-                      <span className="text-label-sm text-muted-foreground">Checking…</span>
-                    </>
-                  ) : slug.length >= 3 &&
-                    slug === currentSlug ? (
-                    <span className="text-label-sm text-muted-foreground/60">
-                      Current workspace link
-                    </span>
-                  ) : !slugChecking &&
-                    debouncedSlug.length >= 3 &&
-                    debouncedSlug !== currentSlug &&
-                    slugCheck?.available ? (
-                    <>
-                      <Check className="w-3.5 h-3.5 text-emerald-600" />
-                      <span className="text-body-sm text-emerald-600">
-                        {WORKSPACE_DOMAIN}/{debouncedSlug} is available
-                      </span>
-                    </>
-                  ) : !slugChecking &&
-                    debouncedSlug.length >= 3 &&
-                    debouncedSlug !== currentSlug &&
-                    slugCheck &&
-                    !slugCheck.available ? (
-                    <>
-                      <X className="w-3.5 h-3.5 text-red-500" />
-                      <span className="text-body-sm text-red-500">
-                        {slugCheck.reason ?? "Not available"}
-                      </span>
-                    </>
-                  ) : slug.length > 0 && slug.length < 3 ? (
-                    <span className="text-body-sm text-muted-foreground/50">
-                      Minimum 3 characters
-                    </span>
-                  ) : null}
-                </div>
+                <HandleAvailability
+                  saving={savingSlug}
+                  checking={slugChecking}
+                  input={slug}
+                  current={currentSlug}
+                  availability={slug === debouncedSlug ? slugCheck : undefined}
+                  currentLabel="Current workspace link"
+                  renderAvailablePreview={(s) => `${WORKSPACE_DOMAIN}/${s} is available`}
+                />
               </div>
             )}
 
