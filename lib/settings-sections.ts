@@ -1,4 +1,4 @@
-import { Building2, Users, Puzzle, Network } from "lucide-react";
+import { Building2, Users, Puzzle, Network, Brain } from "lucide-react";
 import type { ComponentType } from "react";
 
 export interface SettingsSection {
@@ -10,6 +10,7 @@ export interface SettingsSection {
 export const CLIENT_SETTINGS_SECTIONS: SettingsSection[] = [
   { id: "organization", label: "Organization", icon: Building2 },
   { id: "team", label: "Team", icon: Users },
+  { id: "memory", label: "Memory", icon: Brain },
   { id: "connections", label: "Connections", icon: Network },
   { id: "integrations", label: "Integrations", icon: Puzzle },
 ];
