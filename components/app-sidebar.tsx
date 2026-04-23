@@ -541,6 +541,11 @@ export function AppSidebar({
         )}
       </nav>
 
+      {/* Broker contact footer — only for clients */}
+      {!isBroker && viewerOrg?.brokerOrg && !collapsed ? (
+        <SidebarBrokerContact broker={viewerOrg.brokerOrg} />
+      ) : null}
+
       {/* Bottom section */}
       <div className="border-t border-foreground/6 px-2 py-2 space-y-0.5">
         <NavItem
@@ -871,22 +876,26 @@ function SidebarBrokerContact({
         )}
         {agentEmail ? (
           <div className="mt-2.5 flex items-center gap-1.5">
-            <a
-              href={`mailto:${agentEmail}`}
-              className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-md border border-foreground/6 bg-background px-2 py-1.5 text-label-sm text-foreground hover:bg-foreground/[0.03] transition-colors"
+            <PillButton
+              variant="secondary"
+              size="compact"
+              className="flex-1 justify-center"
+              onClick={() => {
+                window.location.href = `mailto:${agentEmail}`;
+              }}
             >
               <Mail className="h-3 w-3" />
               Email agent
-            </a>
-            <button
-              type="button"
+            </PillButton>
+            <PillButton
+              variant="icon"
+              size="compact"
               onClick={handleSaveContact}
-              className="inline-flex items-center justify-center gap-1.5 rounded-md border border-foreground/6 bg-background px-2 py-1.5 text-label-sm text-foreground hover:bg-foreground/[0.03] transition-colors"
-              title="Save as contact"
+              label="Save as contact"
               aria-label="Save as contact"
             >
               <UserPlus className="h-3 w-3" />
-            </button>
+            </PillButton>
           </div>
         ) : null}
       </div>
