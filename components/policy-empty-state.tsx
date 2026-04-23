@@ -36,7 +36,7 @@ export function PolicyEmptyState({
 
   return (
     <div className="rounded-lg border border-foreground/6 bg-card p-5 sm:p-6">
-      <h3 className="text-base font-semibold text-foreground">{heading}</h3>
+      <h3 className="text-body-sm font-semibold text-foreground">{heading}</h3>
       <p className="text-body-sm text-muted-foreground mt-1">{sub}</p>
 
       {agentEmail ? (

@@ -19,8 +19,10 @@ const LABEL_CLASSES =
 interface PolicyUploadDrawerProps {
   open: boolean;
   onClose: () => void;
-  onUpload: (files: File[], documentType: DocumentType, note: string) => Promise<void>;
+  onUpload: (files: File[]) => Promise<void>;
   uploading: boolean;
+  /** Drives the drawer title + copy only — actual type is inferred during extraction. */
+  docType?: DocumentType;
 }
 
 function filterPdfs(incoming: File[]): File[] {
@@ -45,9 +47,8 @@ export function PolicyUploadDrawer({
   onClose,
   onUpload,
   uploading,
+  docType = "policy",
 }: PolicyUploadDrawerProps) {
-  const [documentType, setDocumentType] = useState<DocumentType>("policy");
-  const [note, setNote] = useState("");
   const [dragOver, setDragOver] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
 
@@ -106,13 +107,12 @@ export function PolicyUploadDrawer({
       fileInputRef.current?.click();
       return;
     }
-    await onUpload(files, documentType, note);
+    await onUpload(files);
     setFiles([]);
-    setNote("");
     onClose();
-  }, [files, documentType, note, onUpload, onClose]);
+  }, [files, onUpload, onClose]);
 
-  const typeLabel = documentType === "quote" ? "quote" : "policy";
+  const typeLabel = docType === "quote" ? "quote" : "policy";
   const canUpload = files.length > 0 && !uploading;
 
   return (
@@ -232,43 +232,6 @@ export function PolicyUploadDrawer({
                 </div>
               ) : null}
 
-              {/* Type segmented picker */}
-              <div>
-                <label className={LABEL_CLASSES}>Document type</label>
-                <div className="inline-flex items-center rounded-lg border border-foreground/8 bg-popover p-0.5 gap-0.5">
-                  {(["policy", "quote"] as const).map((t) => {
-                    const selected = documentType === t;
-                    return (
-                      <button
-                        key={t}
-                        type="button"
-                        onClick={() => setDocumentType(t)}
-                        className={`px-3 py-1.5 rounded-md text-body-sm transition-colors cursor-pointer ${
-                          selected
-                            ? "bg-foreground text-background"
-                            : "text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04]"
-                        }`}
-                      >
-                        {t === "policy" ? "Policy" : "Quote"}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Note */}
-              <div>
-                <label className={LABEL_CLASSES}>
-                  Note <span className="text-muted-foreground/60 font-normal">(optional)</span>
-                </label>
-                <textarea
-                  value={note}
-                  onChange={(e) => setNote(e.target.value)}
-                  rows={3}
-                  placeholder="Add context for the client…"
-                  className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors resize-y min-h-20"
-                />
-              </div>
             </div>
 
             <div className="border-t border-foreground/6 px-5 py-4 shrink-0">

@@ -80,7 +80,7 @@ export default function ClientPoliciesPage() {
   );
 
   const handleUpload = useCallback(
-    async (files: File[], uploadedType: "policy" | "quote", note: string) => {
+    async (files: File[]) => {
       if (!clientOrgId || files.length === 0) return;
       setUploading(true);
       try {
@@ -90,8 +90,7 @@ export default function ClientPoliciesPage() {
           clientOrgId: clientOrgId as Id<"organizations">,
           fileId: firstStorageId,
           fileName: files[0].name,
-          documentType: uploadedType,
-          note: note || undefined,
+          documentType: docType,
         })) as Id<"policies">;
         await extractFromUpload({
           fileId: firstStorageId as Id<"_storage">,
@@ -120,6 +119,7 @@ export default function ClientPoliciesPage() {
     },
     [
       clientOrgId,
+      docType,
       uploadStorage,
       createBrokerUpload,
       extractFromUpload,
@@ -134,6 +134,7 @@ export default function ClientPoliciesPage() {
         onClose={() => setUploaderOpen(false)}
         onUpload={handleUpload}
         uploading={uploading}
+        docType={docType}
       />,
     );
     return () => setRightPanel(null);
@@ -163,7 +164,7 @@ export default function ClientPoliciesPage() {
           docType={docType}
           agentEmail={agentEmail}
           uploading={uploading}
-          onUpload={(files) => handleUpload(files, docType, "")}
+          onUpload={handleUpload}
         />
       ) : (
         <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">

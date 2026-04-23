@@ -130,11 +130,11 @@ export default function PoliciesPage() {
   );
 
   const handleDrawerUpload = useCallback(
-    async (files: File[], documentType: "policy" | "quote") => {
-      await uploadMany(files, documentType);
+    async (files: File[]) => {
+      await uploadMany(files, docTypeTab);
       setUploaderOpen(false);
     },
-    [uploadMany],
+    [uploadMany, docTypeTab],
   );
 
   const handleEmptyStateFiles = useCallback(
@@ -177,6 +177,7 @@ export default function PoliciesPage() {
           onClose={() => setUploaderOpen(false)}
           onUpload={handleDrawerUpload}
           uploading={uploading}
+          docType={docTypeTab}
         />
       }
     >
