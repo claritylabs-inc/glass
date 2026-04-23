@@ -98,6 +98,21 @@ export function AppSidebar({
   const viewer = useQuery(api.users.viewer);
   const viewerOrg = useQuery(api.orgs.viewerOrg, {});
   const unifiedThreads = useQuery(api.threads.list, { archived: false });
+  const clientThreads = useQuery(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (api as any).threads.listForClient,
+    clientDetailId
+      ? { clientOrgId: clientDetailId as Id<"organizations">, archived: false }
+      : "skip",
+  ) as
+    | Array<{
+        _id: string;
+        _creationTime: number;
+        title: string;
+        lastMessageAt?: number;
+        legacyConversationId?: string;
+      }>
+    | undefined;
   const webChats = useQuery(api.webChats.list, { archived: false });
   const emailConvs = useQuery(api.agentConversations.list, { archived: false });
   const createThread = useMutation(api.threads.create);
@@ -571,6 +586,7 @@ export function AppSidebar({
   }[] = [
     { id: "details", label: "Details", href: "", icon: User },
     { id: "policies", label: "Policies", href: "/policies", icon: FileText },
+    { id: "threads", label: "Threads", href: "/threads", icon: MessageSquare },
     { id: "activity", label: "Activity", href: "/activity", icon: Activity },
     { id: "settings", label: "Settings", href: "/settings", icon: Settings },
   ];
@@ -634,6 +650,56 @@ export function AppSidebar({
             cmdHeld={false}
           />
         ))}
+
+        {/* Client threads — read-only list for brokers */}
+        {!collapsed && clientDetailId && (
+          <>
+            <div className="flex items-center justify-between px-3 pt-5 pb-1.5">
+              <span className="text-[11px] font-medium text-muted-foreground/50">
+                Threads
+              </span>
+            </div>
+            {clientThreads === undefined && (
+              <p className="px-3 py-1 text-label-sm text-muted-foreground/40">
+                Loading…
+              </p>
+            )}
+            {clientThreads && clientThreads.length === 0 && (
+              <p className="px-3 py-1 text-label-sm text-muted-foreground/40">
+                No threads
+              </p>
+            )}
+            {clientThreads?.slice(0, 8).map((item) => {
+              const href = `/clients/${clientDetailId}/threads/${item._id}`;
+              const isConvActive = pathname === href;
+              return (
+                <Link
+                  key={item._id}
+                  href={href}
+                  className={`group flex items-center gap-2 px-3 py-1.5 rounded-md text-body-sm transition-colors ${
+                    isConvActive
+                      ? "text-foreground bg-foreground/[0.05]"
+                      : "text-muted-foreground hover:bg-foreground/[0.04]"
+                  }`}
+                >
+                  {item.legacyConversationId ? (
+                    <Mail className="w-3.5 h-3.5 shrink-0" />
+                  ) : (
+                    <MessageSquare className="w-3.5 h-3.5 shrink-0" />
+                  )}
+                  <span className="truncate flex-1">{item.title}</span>
+                </Link>
+              );
+            })}
+            <Link
+              href={`/clients/${clientDetailId}/threads`}
+              className="flex items-center gap-2 px-3 py-1 rounded-md text-label-sm text-muted-foreground/40 hover:text-muted-foreground/60 hover:bg-foreground/[0.03] transition-colors mt-0.5"
+            >
+              <MessageSquare className="w-3 h-3 shrink-0" />
+              <span>All threads</span>
+            </Link>
+          </>
+        )}
       </nav>
     </div>
   );

@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { query, mutation, internalQuery, internalMutation } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { requireOrgAccess, getOrgAccess } from "./lib/orgAuth";
+import { requireBrokerAccessToClient } from "./lib/access";
 
 // Note: mutations/queries don't have process.env
 // The domain is stored on the org via setAgentDomain action, or passed by the client
@@ -69,6 +70,56 @@ export const messages = query({
     const { orgId } = await requireOrgAccess(ctx);
     const thread = await ctx.db.get(args.threadId);
     if (!thread || thread.orgId !== orgId) return [];
+    return await ctx.db
+      .query("threadMessages")
+      .withIndex("by_threadId", (q) => q.eq("threadId", args.threadId))
+      .collect();
+  },
+});
+
+// ── Broker-scoped read-only queries ──
+
+export const listForClient = query({
+  args: {
+    clientOrgId: v.id("organizations"),
+    archived: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    await requireBrokerAccessToClient(ctx, args.clientOrgId);
+    const all = await ctx.db
+      .query("threads")
+      .withIndex("by_orgId_lastMessageAt", (q) => q.eq("orgId", args.clientOrgId))
+      .order("desc")
+      .collect();
+    if (args.archived) {
+      return all.filter((t) => !!t.archivedAt);
+    }
+    return all.filter((t) => !t.archivedAt);
+  },
+});
+
+export const getForClient = query({
+  args: {
+    clientOrgId: v.id("organizations"),
+    id: v.id("threads"),
+  },
+  handler: async (ctx, args) => {
+    await requireBrokerAccessToClient(ctx, args.clientOrgId);
+    const thread = await ctx.db.get(args.id);
+    if (!thread || thread.orgId !== args.clientOrgId) return null;
+    return thread;
+  },
+});
+
+export const messagesForClient = query({
+  args: {
+    clientOrgId: v.id("organizations"),
+    threadId: v.id("threads"),
+  },
+  handler: async (ctx, args) => {
+    await requireBrokerAccessToClient(ctx, args.clientOrgId);
+    const thread = await ctx.db.get(args.threadId);
+    if (!thread || thread.orgId !== args.clientOrgId) return [];
     return await ctx.db
       .query("threadMessages")
       .withIndex("by_threadId", (q) => q.eq("threadId", args.threadId))

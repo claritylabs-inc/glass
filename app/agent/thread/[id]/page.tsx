@@ -30,7 +30,7 @@ import { NewChatEmptyState } from "@/components/new-chat-empty-state";
    Unified Thread View (new threads table)
    ═══════════════════════════════════════════════════ */
 
-type ThreadMessage = {
+export type ThreadMessage = {
   _id: Id<"threadMessages">;
   _creationTime: number;
   threadId: Id<"threads">;
@@ -264,7 +264,7 @@ function PendingSendCountdown({ pendingEmailId }: { pendingEmailId: Id<"pendingE
 }
 
 /* ── Unified message bubble ── */
-function UnifiedMessageBubble({
+export function UnifiedMessageBubble({
   msg,
   viewerId,
   viewerEmail,
@@ -619,7 +619,7 @@ function RetryButton({ messageId }: { messageId: string }) {
 }
 
 /* ── Initial context link (shows which entity the chat was started from) ── */
-function ThreadContextLink({
+export function ThreadContextLink({
   context,
 }: {
   context: { pageType: string; entityId?: string; summary?: string };
