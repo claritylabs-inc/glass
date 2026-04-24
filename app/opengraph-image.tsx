@@ -102,6 +102,30 @@ export async function ogFonts(): Promise<LoadedFont[] | undefined> {
 
 export default async function Image() {
   const fonts = await ogFonts();
+  const { getViewerBranding } = await import("@/lib/viewer-branding");
+  const branding = await getViewerBranding();
+
+  if (!branding) {
+    return new ImageResponse(
+      (
+        <div
+          style={{
+            width: "100%",
+            height: "100%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            backgroundColor: "#faf8f4",
+            fontFamily: "Geist",
+          }}
+        >
+          <BrandLockup />
+        </div>
+      ),
+      { ...size, ...(fonts ? { fonts } : {}) },
+    );
+  }
+
   return new ImageResponse(
     (
       <div
@@ -112,10 +136,52 @@ export default async function Image() {
           alignItems: "center",
           justifyContent: "center",
           backgroundColor: "#faf8f4",
+          position: "relative",
           fontFamily: "Geist",
         }}
       >
-        <BrandLockup />
+        <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
+          {branding.iconUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={branding.iconUrl}
+              alt=""
+              width={96}
+              height={96}
+              style={{ borderRadius: 20, objectFit: "cover" }}
+            />
+          ) : null}
+          <span
+            style={{
+              fontSize: 72,
+              fontWeight: 600,
+              color: "#111827",
+              letterSpacing: "-0.03em",
+              lineHeight: 1,
+            }}
+          >
+            {branding.name}
+          </span>
+        </div>
+        {branding.isClientUnderBroker ? (
+          <div
+            style={{
+              position: "absolute",
+              bottom: 48,
+              left: 0,
+              right: 0,
+              display: "flex",
+              justifyContent: "center",
+              alignItems: "center",
+              gap: 6,
+              fontSize: 18,
+              color: "#9ca3af",
+            }}
+          >
+            <span>Powered by</span>
+            <BrandLockup textSize={18} gap={5} />
+          </div>
+        ) : null}
       </div>
     ),
     { ...size, ...(fonts ? { fonts } : {}) },

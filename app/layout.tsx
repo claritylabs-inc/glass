@@ -41,7 +41,7 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title: {
       default: title,
-      template: branding ? `%s | ${title}` : "%s | Glass",
+      template: `${title} - %s`,
     },
     description: DEFAULT_DESCRIPTION,
     icons: icon ? { icon } : undefined,
