@@ -329,8 +329,11 @@ export function AppSidebar({
       </nav>
 
       {/* Partner contact footer — only for clients */}
-      {!isBroker && viewerOrg?.brokerOrg && !collapsed ? (
-        <SidebarBrokerContact broker={viewerOrg.brokerOrg} />
+      {!isBroker && viewerOrg && !collapsed ? (
+        <SidebarBrokerContact
+          broker={viewerOrg.brokerOrg ?? null}
+          fallbackAgentHandle={viewerOrg.org?.agentHandle}
+        />
       ) : null}
     </div>
   );
@@ -552,8 +555,11 @@ export function AppSidebar({
       </nav>
 
       {/* Partner contact footer — only for clients */}
-      {!isBroker && viewerOrg?.brokerOrg && !collapsed ? (
-        <SidebarBrokerContact broker={viewerOrg.brokerOrg} />
+      {!isBroker && viewerOrg && !collapsed ? (
+        <SidebarBrokerContact
+          broker={viewerOrg.brokerOrg ?? null}
+          fallbackAgentHandle={viewerOrg.org?.agentHandle}
+        />
       ) : null}
 
       {/* Bottom section */}
@@ -773,6 +779,7 @@ export function AppSidebar({
 
 function SidebarBrokerContact({
   broker,
+  fallbackAgentHandle,
 }: {
   broker: {
     name: string;
@@ -785,19 +792,29 @@ function SidebarBrokerContact({
       email?: string;
       title?: string;
     } | null;
-  };
+  } | null;
+  fallbackAgentHandle?: string;
 }) {
-  const agentEmail = broker.agentHandle ? `${broker.agentHandle}@${AGENT_DOMAIN}` : null;
-  const brandColor = broker.brandingColor ?? "#1e293b";
-  const initial = broker.name.charAt(0).toUpperCase();
-  const agentDisplayName = `${broker.name} Agent`;
+  // When no broker is linked, fall back to Glass defaults so the user still
+  // sees who to contact (the standard agent email).
+  const isGlassFallback = !broker;
+  const name = broker?.name ?? "Ask Glass";
+  const iconUrl = broker?.iconUrl ?? null;
+  const brandColor = broker?.brandingColor ?? "#111827";
+  const primaryContact = broker?.primaryContact ?? null;
+  const handle = broker?.agentHandle ?? fallbackAgentHandle;
+  const agentEmail = handle ? `${handle}@${AGENT_DOMAIN}` : `agent@${AGENT_DOMAIN}`;
+  const initial = name.charAt(0).toUpperCase();
+  const agentDisplayName = broker ? `${broker.name} Agent` : "Ask Glass";
 
   const handleSaveContact = async () => {
     if (!agentEmail) return;
     let photoEntry = "";
-    if (broker.iconUrl) {
+    // Glass fallback uses an inline SVG — skip the photo entry rather than
+    // try to fetch a raster asset.
+    if (iconUrl) {
       try {
-        const res = await fetch(broker.iconUrl);
+        const res = await fetch(iconUrl);
         const blob = await res.blob();
         const base64 = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader();
@@ -819,8 +836,8 @@ function SidebarBrokerContact({
       "BEGIN:VCARD\n" +
       "VERSION:3.0\n" +
       `FN:${agentDisplayName}\n` +
-      `N:Agent;${broker.name};;;\n` +
-      `ORG:${broker.name}\n` +
+      `N:Agent;${name};;;\n` +
+      `ORG:${name}\n` +
       `EMAIL;TYPE=INTERNET:${agentEmail}` +
       photoEntry +
       "\nEND:VCARD\n";
@@ -839,42 +856,54 @@ function SidebarBrokerContact({
       <div className="rounded-lg border border-foreground/6 bg-card px-3 py-2.5">
         <div className="flex items-center gap-2.5">
           <div
-            className="h-8 w-8 shrink-0 overflow-hidden rounded-md flex items-center justify-center ring-1 ring-inset ring-white/10"
-            style={{
-              background: `linear-gradient(135deg, ${brandColor} 0%, ${brandColor}cc 60%, ${brandColor}88 100%)`,
-            }}
+            className={`h-8 w-8 shrink-0 overflow-hidden rounded-md flex items-center justify-center ${
+              isGlassFallback
+                ? "bg-white ring-1 ring-inset ring-foreground/10"
+                : "ring-1 ring-inset ring-white/10"
+            }`}
+            style={
+              isGlassFallback
+                ? undefined
+                : {
+                    background: `linear-gradient(135deg, ${brandColor} 0%, ${brandColor}cc 60%, ${brandColor}88 100%)`,
+                  }
+            }
           >
-            {broker.iconUrl ? (
+            {isGlassFallback ? (
+              // Glass globe is rendered at text scale (not filling the tile)
+              // because that's how the brand mark is meant to read.
+              <LogoIcon size={14} static color="#000000" />
+            ) : iconUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={broker.iconUrl} alt="" className="h-full w-full object-contain bg-white" />
+              <img src={iconUrl} alt="" className="h-full w-full object-contain bg-white" />
             ) : (
               <span className="text-sm font-semibold text-white">{initial}</span>
             )}
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-body-sm font-medium text-foreground truncate">{broker.name}</p>
-            {broker.primaryContact?.name ? (
+            <p className="text-body-sm font-medium text-foreground truncate">{name}</p>
+            {primaryContact?.name ? (
               <p className="text-label-sm text-muted-foreground truncate">
-                {broker.primaryContact.name}
+                {primaryContact.name}
               </p>
             ) : null}
           </div>
         </div>
-        {(broker.primaryContact?.email || agentEmail) && (
+        {(primaryContact?.email || agentEmail) && (
           <div className="mt-2 space-y-1">
-            {broker.primaryContact?.email ? (
+            {primaryContact?.email ? (
               <a
-                href={`mailto:${broker.primaryContact.email}`}
+                href={`mailto:${primaryContact.email}`}
                 className="block text-label-sm text-muted-foreground hover:text-foreground truncate"
               >
-                {broker.primaryContact.email}
+                {primaryContact.email}
               </a>
             ) : null}
             {agentEmail ? (
               <a
                 href={`mailto:${agentEmail}`}
                 className="block text-label-sm text-muted-foreground hover:text-foreground truncate"
-                title="Partner assistant"
+                title={broker ? "Partner assistant" : "Glass assistant"}
               >
                 {agentEmail}
               </a>

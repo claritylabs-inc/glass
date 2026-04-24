@@ -12,6 +12,7 @@ import { PillButton } from "@/components/ui/pill-button";
 import { PolicyListItem } from "@/components/policy-list-item";
 import { PolicyUploadDrawer } from "@/components/policy-upload-drawer";
 import { PolicyEmptyState } from "@/components/policy-empty-state";
+import { AgentContactCallout } from "@/components/agent-contact-callout";
 import { toast } from "sonner";
 import { Upload } from "lucide-react";
 
@@ -157,6 +158,8 @@ export default function PoliciesPage() {
   const agentHandle =
     viewerOrg?.brokerOrg?.agentHandle ?? viewerOrg?.org?.agentHandle ?? null;
   const agentEmail = agentHandle ? `${agentHandle}@${AGENT_DOMAIN}` : null;
+  const brokerForCallout = viewerOrg?.brokerOrg ?? null;
+  const fallbackHandle = viewerOrg?.org?.agentHandle ?? null;
 
   return (
     <AppShell
@@ -181,6 +184,10 @@ export default function PoliciesPage() {
       }
     >
       <div className="space-y-4">
+        <AgentContactCallout
+          broker={brokerForCallout}
+          fallbackAgentHandle={fallbackHandle}
+        />
         <Tabs
           value={docTypeTab}
           onValueChange={(v) => setDocTypeTab(v as DocTypeTab)}
