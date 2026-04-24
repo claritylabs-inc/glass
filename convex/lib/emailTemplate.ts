@@ -36,7 +36,7 @@ export function buildEmailLogoHtml(branding: BrandingContext = getDefaultBrandin
 
 /** "Powered by {icon} Glass from Clarity Labs" platform attribution. */
 export function buildPlatformFooterHtml(siteUrl: string = SITE_URL): string {
-  const iconUrl = absoluteLogoUrl("/glass-logo-email.jpg", siteUrl);
+  const iconUrl = absoluteLogoUrl("/glass-icon.svg", siteUrl);
   return `
 <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;">
   <tr>
