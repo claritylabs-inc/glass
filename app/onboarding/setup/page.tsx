@@ -168,6 +168,7 @@ export default function ClientOnboardingSetupPage() {
   const [submitting, setSubmitting] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
+  const [stagedPolicies, setStagedPolicies] = useState<File[]>([]);
 
   // If already complete, bounce home.
   useEffect(() => {
@@ -248,7 +249,7 @@ export default function ClientOnboardingSetupPage() {
 
   const handleFilesUpload = useCallback(
     async (files: File[]) => {
-      if (files.length === 0) return;
+      if (files.length === 0) return false;
       setUploading(true);
       try {
         const storageIds: string[] = [];
@@ -278,15 +279,26 @@ export default function ClientOnboardingSetupPage() {
             ? `${files.length} files uploaded and merged — extraction runs in the background.`
             : "Upload started — extraction runs in the background.",
         );
+        return true;
       } catch (err) {
         console.error(err);
         toast.error("Upload failed. Please try again.");
+        return false;
       } finally {
         setUploading(false);
       }
     },
     [generateUploadUrl, extractFromUpload],
   );
+
+  const handleStep2Continue = useCallback(async () => {
+    if (stagedPolicies.length > 0) {
+      const ok = await handleFilesUpload(stagedPolicies);
+      if (!ok) return;
+      setStagedPolicies([]);
+    }
+    setCurrentStep(3);
+  }, [stagedPolicies, handleFilesUpload]);
 
   const handleFinish = useCallback(async () => {
     setSubmitting(true);
@@ -444,26 +456,36 @@ export default function ClientOnboardingSetupPage() {
                 onUpload={handleFilesUpload}
                 title=""
                 subtitle=""
+                bare
+                staged={stagedPolicies}
+                onStagedChange={setStagedPolicies}
+                hideUploadButton
               />
             )}
 
             {error ? <p className="text-sm text-muted-foreground">{error}</p> : null}
 
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between -mt-4">
               <button
                 type="button"
                 onClick={() => setCurrentStep(3)}
-                className="text-label-sm text-muted-foreground hover:text-foreground transition self-start"
+                disabled={uploading}
+                className="text-label-sm text-muted-foreground hover:text-foreground transition self-start sm:self-center disabled:opacity-50"
               >
                 Skip for now
               </button>
               <PillButton
                 type="button"
-                onClick={() => setCurrentStep(3)}
+                onClick={() => void handleStep2Continue()}
+                disabled={
+                  uploading ||
+                  (policyCount === 0 && stagedPolicies.length === 0)
+                }
                 className="w-full justify-center text-sm shadow-none sm:w-auto"
               >
+                {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                 Continue
-                <ArrowRight className="h-4 w-4" />
+                {!uploading ? <ArrowRight className="h-4 w-4" /> : null}
               </PillButton>
             </div>
           </div>

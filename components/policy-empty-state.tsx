@@ -17,6 +17,14 @@ export interface PolicyEmptyStateProps {
   /** Override the default title/subtitle if needed. */
   title?: string;
   subtitle?: string;
+  /** When true, render without the outer card wrapper. Use in auth/onboarding layouts. */
+  bare?: boolean;
+  /** Optional controlled staged-files state. Pair with `onStagedChange`. */
+  staged?: File[];
+  /** Called when the staged-files list changes (controlled mode). */
+  onStagedChange?: (files: File[]) => void;
+  /** When true, hide the internal "Upload" button so the parent can drive uploading. */
+  hideUploadButton?: boolean;
 }
 
 export function PolicyEmptyState({
@@ -26,6 +34,10 @@ export function PolicyEmptyState({
   onUpload,
   title,
   subtitle,
+  bare = false,
+  staged,
+  onStagedChange,
+  hideUploadButton = false,
 }: PolicyEmptyStateProps) {
   const plural = docType === "quote" ? "quotes" : "policies";
   const heading = title === "" ? null : (title ?? `No ${plural} yet`);
@@ -36,8 +48,8 @@ export function PolicyEmptyState({
         `Email it in or drop a PDF — Glass sets it up for you, no forms to fill.`);
   const hasHeader = heading || sub;
 
-  return (
-    <div className="rounded-lg border border-foreground/6 bg-card p-5 sm:p-6">
+  const content = (
+    <>
       {heading ? (
         <h3 className="text-body-sm font-semibold text-foreground">{heading}</h3>
       ) : null}
@@ -54,7 +66,20 @@ export function PolicyEmptyState({
         uploading={uploading}
         onUpload={onUpload}
         className={agentEmail ? "mt-3" : hasHeader ? "mt-5" : ""}
+        staged={staged}
+        onStagedChange={onStagedChange}
+        hideUploadButton={hideUploadButton}
       />
+    </>
+  );
+
+  if (bare) {
+    return <div>{content}</div>;
+  }
+
+  return (
+    <div className="rounded-lg border border-foreground/6 bg-card p-5 sm:p-6">
+      {content}
     </div>
   );
 }
@@ -107,50 +132,75 @@ function DropZone({
   uploading,
   onUpload,
   className,
+  staged: stagedProp,
+  onStagedChange,
+  hideUploadButton = false,
 }: {
   docType: "policy" | "quote";
   uploading: boolean;
   onUpload: (files: File[]) => void;
   className?: string;
+  staged?: File[];
+  onStagedChange?: (files: File[]) => void;
+  hideUploadButton?: boolean;
 }) {
   const label = docType === "quote" ? "quote" : "policy";
   const [dragOver, setDragOver] = useState(false);
-  const [staged, setStaged] = useState<File[]>([]);
+  const [internalStaged, setInternalStaged] = useState<File[]>([]);
+  const isControlled = stagedProp !== undefined;
+  const staged = isControlled ? stagedProp : internalStaged;
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const addFiles = useCallback((incoming: File[]) => {
-    const pdfs: File[] = [];
-    let rejected = 0;
-    for (const f of incoming) {
-      if (f.name.toLowerCase().endsWith(".pdf")) pdfs.push(f);
-      else rejected++;
-    }
-    if (rejected > 0) {
-      toast.error(
-        rejected === 1
-          ? "Skipped a non-PDF file."
-          : `Skipped ${rejected} non-PDF files.`,
-      );
-    }
-    if (pdfs.length === 0) return;
-    setStaged((prev) => {
-      const existing = new Set(prev.map((f) => `${f.name}:${f.size}`));
-      return [
-        ...prev,
+  const updateStaged = useCallback(
+    (next: File[]) => {
+      if (isControlled) {
+        onStagedChange?.(next);
+      } else {
+        setInternalStaged(next);
+        onStagedChange?.(next);
+      }
+    },
+    [isControlled, onStagedChange],
+  );
+
+  const addFiles = useCallback(
+    (incoming: File[]) => {
+      const pdfs: File[] = [];
+      let rejected = 0;
+      for (const f of incoming) {
+        if (f.name.toLowerCase().endsWith(".pdf")) pdfs.push(f);
+        else rejected++;
+      }
+      if (rejected > 0) {
+        toast.error(
+          rejected === 1
+            ? "Skipped a non-PDF file."
+            : `Skipped ${rejected} non-PDF files.`,
+        );
+      }
+      if (pdfs.length === 0) return;
+      const existing = new Set(staged.map((f) => `${f.name}:${f.size}`));
+      const next = [
+        ...staged,
         ...pdfs.filter((f) => !existing.has(`${f.name}:${f.size}`)),
       ];
-    });
-  }, []);
+      updateStaged(next);
+    },
+    [staged, updateStaged],
+  );
 
-  const removeAt = useCallback((i: number) => {
-    setStaged((prev) => prev.filter((_, idx) => idx !== i));
-  }, []);
+  const removeAt = useCallback(
+    (i: number) => {
+      updateStaged(staged.filter((_, idx) => idx !== i));
+    },
+    [staged, updateStaged],
+  );
 
   const handleUpload = useCallback(() => {
     if (staged.length === 0) return;
     onUpload(staged);
-    setStaged([]);
-  }, [staged, onUpload]);
+    updateStaged([]);
+  }, [staged, onUpload, updateStaged]);
 
   return (
     <div className={`space-y-3 ${className ?? ""}`}>
@@ -201,7 +251,7 @@ function DropZone({
       </button>
 
       {staged.length > 0 ? (
-        <div className="rounded-lg border border-foreground/6 bg-background overflow-hidden">
+        <div className="rounded-lg border border-foreground/6 bg-white overflow-hidden">
           {staged.map((file, i) => (
             <div
               key={`${file.name}:${file.size}:${i}`}
@@ -223,7 +273,7 @@ function DropZone({
         </div>
       ) : null}
 
-      {staged.length > 0 ? (
+      {staged.length > 0 && !hideUploadButton ? (
         <PillButton
           variant="primary"
           className="w-full"
