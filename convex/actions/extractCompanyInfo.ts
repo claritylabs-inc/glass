@@ -27,6 +27,20 @@ const CompanyInfoSchema = z.object({
   insuranceContext: z.string().describe("Insurance brokers, carriers, or relationships. Empty string if not evident."),
   investorsContext: z.string().describe("Investors, funding sources, shareholders. Empty string if not evident."),
   partnersContext: z.string().describe("Business partners, affiliates, joint ventures. Empty string if not evident."),
+  atomicFacts: z.array(z.string()).describe(
+    [
+      "Atomic, durable facts about the company that are useful as long-term memory.",
+      "Each entry MUST follow these rules:",
+      "- Exactly ONE fact per entry. Never combine facts with 'and', commas, or semicolons.",
+      "- A single short declarative sentence, ideally under 15 words.",
+      "- Self-contained and unambiguous when read in isolation (use the company's name, not 'we'/'the company'/'they').",
+      "- Only include facts explicitly evident from the website content. Do not speculate, summarize broadly, or hedge ('appears to', 'likely', 'may').",
+      "- Prefer concrete, structured statements (products, services, locations, named clients/partners/investors, headcount, founding year, NAICS, revenue) over generic marketing language.",
+      "- Do NOT prefix entries with labels like 'NAICS:' or 'Clients:' — write a complete sentence instead (e.g. 'Acme's NAICS code is 541512.').",
+      "- Skip duplicates and near-duplicates. Return [] if nothing reliable is evident.",
+      "Examples: 'Acme builds AI software for commercial insurance brokers.', 'Acme is headquartered in San Francisco, California.', 'Acme employs about 25 people.', 'Acme's investors include Sequoia Capital.'",
+    ].join(" "),
+  ),
 });
 
 type CompanyInfo = z.infer<typeof CompanyInfoSchema>;
@@ -173,7 +187,7 @@ export const extractCompanyInfo = action({
     const { output: object } = (await generateText({
       model: await getModelForOrg(ctx, viewerOrg.org._id, "triage"),
       output: Output.object({ schema: CompanyInfoSchema }),
-      maxOutputTokens: 1024,
+      maxOutputTokens: 2048,
       prompt: `Extract company information from the website content below.
 
 Valid industry values and their verticals:
@@ -181,6 +195,8 @@ ${INDUSTRY_REF}
 
 For industry/industryVertical fields, only return a value that exactly matches the list above. Otherwise return an empty string. For text fields, return an empty string if the answer is not evident — do not guess.
 Only return NAICS, yearsInBusiness, numberOfEmployees, and annualRevenue when explicitly stated on the site.
+
+For atomicFacts, decompose what's on the site into the smallest possible standalone facts (one idea each, one short sentence each). Do not paraphrase the same fact twice. Do not include the verbose companyContext sentence as an atomicFact.
 
 Website content:
 ${content}`,
@@ -205,28 +221,32 @@ ${content}`,
       if (object.partnersContext) orgUpdates.partnersContext = object.partnersContext;
       await ctx.runMutation(api.orgs.updateOrg, orgUpdates);
 
-      // Write extracted facts to orgMemory (website source)
-      const memoryItems: { content: string }[] = [
-        { content: companyContext },
-        object.naicsCode ? { content: `NAICS code: ${object.naicsCode}` } : null,
-        object.yearsInBusiness ? { content: `Years in business: ${object.yearsInBusiness}` } : null,
-        object.numberOfEmployees ? { content: `Employee count: ${object.numberOfEmployees}` } : null,
-        object.annualRevenue ? { content: `Annual revenue: ${object.annualRevenue}` } : null,
-        object.clientsContext ? { content: `Typical clients: ${object.clientsContext}` } : null,
-        object.vendorsContext ? { content: `Vendors: ${object.vendorsContext}` } : null,
-        object.insuranceContext ? { content: `Insurance context: ${object.insuranceContext}` } : null,
-        object.investorsContext ? { content: `Investors: ${object.investorsContext}` } : null,
-        object.partnersContext ? { content: `Partners: ${object.partnersContext}` } : null,
-      ].filter((m): m is { content: string } => !!m && !!m.content?.trim());
+      // Write extracted facts to orgMemory (website source).
+      // Each memory entry is a single atomic fact — no verbose paragraphs,
+      // no label-prefixed blobs. The verbose companyContext / *Context blobs
+      // continue to live on the organization record itself for UI display.
+      const seen = new Set<string>();
+      const memoryItems = (object.atomicFacts ?? [])
+        .map((fact) => fact.trim())
+        .filter((fact) => {
+          if (!fact) return false;
+          // Skip multi-fact runs that slipped past the prompt rules.
+          if (fact.length > 240) return false;
+          const key = fact.toLowerCase();
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        })
+        .map((content) => ({
+          orgId: viewerOrg.org._id,
+          type: "fact" as const,
+          content,
+          source: "extraction" as const,
+        }));
 
       if (memoryItems.length > 0) {
         await ctx.runMutation(internal.orgMemory.bulkInsert, {
-          items: memoryItems.map((m) => ({
-            orgId: viewerOrg.org._id,
-            type: "fact" as const,
-            content: m.content,
-            source: "extraction" as const,
-          })),
+          items: memoryItems,
         });
       }
     }
