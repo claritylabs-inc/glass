@@ -10,14 +10,27 @@ import {
   lookupPolicy,
   lookupPolicySection,
   compareCoverages,
+  sendEmail,
   saveNote,
   generateCoi as generateCoiTool,
   extractPolicyAttachment,
 } from "../lib/chatTools";
 import { Webhook } from "svix";
-import { buildAgentSystemPrompt, buildDocumentContext, buildConversationMemoryContext, type AgentContext } from "../lib/agentPrompts";
+import { buildDocumentContext, buildConversationMemoryContext, buildIntelligenceContext } from "../lib/agentPrompts";
 import { Id } from "../_generated/dataModel";
 import { sendResendEmail, getAgentDomain } from "../lib/resend";
+import {
+  buildSystemPromptForContext,
+  buildChannelInstructions,
+  buildPolicyToolInstructions,
+  policySearchScore,
+} from "../lib/aiUtils";
+import {
+  classifyPromptInjection,
+  collectAllowedRecipients,
+  enforceInputLimits,
+  validateEmailRecipient,
+} from "../lib/security";
 
 const CONSUMER_DOMAINS = new Set([
   "gmail.com", "googlemail.com", "yahoo.com", "yahoo.co.uk",
@@ -186,6 +199,13 @@ interface DownloadedAttachment {
   size: number;
   buffer: Buffer;
 }
+
+type ToolSentEmail = {
+  responseBody: string;
+  responseTo: string;
+  responseCc?: string[];
+  responseMessageId?: string;
+};
 
 const SUPPORTED_ATTACHMENT_TYPES = new Set([
   "application/pdf",
@@ -388,6 +408,16 @@ export const processInbound = internalAction({
     const body = stripQuotedText(rawBody);
     const bodyHtml = emailContent.html ?? undefined;
     const attachments = await fetchAttachments(data.email_id);
+
+    const guardedInput = enforceInputLimits([data.subject ?? "", body].join("\n\n"));
+    const injectionCheck = await classifyPromptInjection(guardedInput);
+    if (!injectionCheck.safe) {
+      console.warn("[security] Prompt injection blocked in inbound email", {
+        fromEmail,
+        reason: injectionCheck.reason,
+      });
+      return;
+    }
 
     // Detect mode
     // agentAddress is the canonical address (without +suffix) — used for outbound from and reply-to
@@ -724,20 +754,23 @@ export const processInbound = internalAction({
           }
         }
       }
-      const agentCtx: AgentContext = {
-        platform: "email",
-        intent: effectiveMode === "direct" ? "direct" : effectiveMode === "cc" ? "mediated" : "observed",
-        companyName: org.name,
-        companyContext: org.context,
-        siteUrl,
+      const systemPrompt = buildSystemPromptForContext({
+        org: {
+          name: org.name,
+          context: org.context,
+          coiHandling: org.coiHandling,
+          broker: brokerName
+            ? {
+              name: brokerName,
+              contactName: brokerContactName,
+              contactEmail: brokerContactEmail,
+            }
+            : undefined,
+        },
+        mode: effectiveMode === "direct" ? "direct" : effectiveMode === "cc" ? "cc" : "forward",
         userName,
-        coiHandling: org.coiHandling as "broker" | "user" | "ignore" | "member" | undefined,
-        brokerName,
-        brokerContactName,
-        brokerContactEmail,
-        agentName: "Glass",
-      };
-      const systemPrompt = buildAgentSystemPrompt(agentCtx);
+        siteUrl,
+      });
       const { context: policyContext, relevantPolicyIds, relevantQuoteIds } = await buildDocumentContext(
         ctx,
         orgId,
@@ -748,15 +781,27 @@ export const processInbound = internalAction({
 
       // Cross-thread conversation memory (vector search)
       const memoryContext = await buildConversationMemoryContext(ctx, orgId, subject + " " + body);
+      const orgMemoryBlock = await buildIntelligenceContext(
+        ctx,
+        orgId,
+        subject + " " + body,
+        relevantPolicyIds.map((id: string) => id),
+      );
 
       // Build messages — include thread history for context
       const messages: ModelMessage[] = [];
+      let threadMessagesForGuards: Array<{
+        fromEmail?: string;
+        toAddresses?: string[];
+        ccAddresses?: string[];
+      }> = [];
 
       if (threadId) {
         const threadMessages = await ctx.runQuery(
           internal.agentConversations.getThreadMessages,
           { threadId },
         );
+        threadMessagesForGuards = threadMessages;
         for (const msg of threadMessages) {
           if (msg._id === conversationId) continue;
           messages.push({
@@ -812,28 +857,21 @@ export const processInbound = internalAction({
       }
 
       // Build system context with optional attachment note and conversation memory
-      let systemContext = `${systemPrompt}\n\n${policyContext}${memoryContext}`;
+      let systemContext =
+        systemPrompt +
+        buildChannelInstructions({
+          platform: "email",
+          autoSendEmails: org.autoSendEmails === true,
+          effectiveMode,
+        }) +
+        "\n\n" +
+        policyContext +
+        buildPolicyToolInstructions(10) +
+        memoryContext +
+        orgMemoryBlock;
       if (claudeAttachments.length > 0) {
         const filenames = claudeAttachments.map((a) => a.filename).join(", ");
         systemContext += `\n\nATTACHMENTS: The user's email includes ${claudeAttachments.length} attachment(s): ${filenames}. The content has been provided to you. Reference relevant information from attachments in your response when applicable.`;
-      }
-
-      // Email-sending instructions for internal users in direct mode
-      if (isInternal && effectiveMode === "direct") {
-        const autoSend = org.autoSendEmails === true;
-        systemContext += `\n\nEMAIL SENDING:
-You can send emails on behalf of team members. When a team member asks you to send/email/forward something to someone:
-${autoSend
-  ? `- Output ONLY "**Sending email to Name (email@example.com)...**" followed by a newline and then the final email body to send. Always include the recipient's email address in parentheses. Do NOT include any other text before or after.`
-  : `- ALWAYS draft first: show the email labeled as "**Draft email to Name (email@example.com):**" followed by the draft content. Then ask explicitly: "Ready to send?" Do NOT send without drafting first — even if the user says "send" or "email", always show the draft for review first.
-- Only after they explicitly approve the draft (e.g. "yes", "send it", "looks good", "go ahead"): output ONLY "**Sending email to Name (email@example.com)...**" followed by a newline and then the final email body to send. Always include the recipient's email address in parentheses. Do NOT include any other text before or after.`}
-
-For emails, compose a professional message that:
-- Addresses the recipient by name
-- Incorporates the team member's direction naturally
-- Maintains appropriate tone for the business relationship
-- References relevant policy/coverage data when applicable
-- Writes from Glass's perspective (third-person on behalf of the company). Do NOT sign off as the team member or impersonate them.`;
       }
 
       // ── Build agentic tool set — the model decides whether to answer,
@@ -846,24 +884,51 @@ For emails, compose a professional message that:
         }
       }
 
+      const validateThirdPartyRecipient = (recipient: string) => {
+        const recipientDomain = recipient.split("@")[1]?.toLowerCase();
+        if (recipientDomain && companyDomains.includes(recipientDomain)) {
+          return;
+        }
+        const allowedRecipients = collectAllowedRecipients(
+          [
+            ...threadMessagesForGuards.map((m) => ({ ...m, channel: "email" })),
+            {
+              channel: "email",
+              fromEmail,
+              toAddresses,
+              ccAddresses,
+            },
+          ],
+          memberEmails,
+        );
+        const recipientCheck = validateEmailRecipient(recipient, allowedRecipients);
+        if (!recipientCheck.allowed) {
+          console.warn("[security] Inbound email recipient blocked", {
+            conversationId,
+            recipient,
+            reason: recipientCheck.reason,
+          });
+          throw new Error(recipientCheck.reason!);
+        }
+      };
+      let toolSentEmail: ToolSentEmail | null = null;
+
       const emailTools = {
         lookup_policy: {
           ...lookupPolicy,
           execute: async (params: { query: string; policyType?: string; carrier?: string }) => {
-            const q = params.query.toLowerCase();
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const matches = (policies as any[]).filter((p) => {
-              const matchesQuery =
-                p.insuredName?.toLowerCase().includes(q) ||
-                p.security?.toLowerCase().includes(q) ||
-                p.policyNumber?.toLowerCase().includes(q) ||
-                p.policyTypes?.some((t: string) => t.toLowerCase().includes(q));
-              const matchesType = !params.policyType || p.policyTypes?.includes(params.policyType);
-              const matchesCarrier = !params.carrier ||
-                p.security?.toLowerCase().includes(params.carrier.toLowerCase());
-              return matchesQuery && matchesType && matchesCarrier;
-            });
-            if (matches.length === 0) return "No matching policies found.";
+            const scored = (policies as any[])
+              .map((p) => ({
+                policy: p,
+                score: policySearchScore(p, params.query, params.policyType, params.carrier),
+              }))
+              .filter((p) => p.score > 0)
+              .sort((a, b) => b.score - a.score);
+            const matches = scored.length > 0
+              ? scored.map((s) => s.policy)
+              : (policies as any[]).slice(0, 5);
+            if (matches.length === 0) return "No policies found for this organization.";
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             return matches.slice(0, 5).map((p: any) => ({
               id: p._id,
@@ -951,6 +1016,90 @@ For emails, compose a professional message that:
               })),
             });
             return { policy1: mapP(p1), policy2: mapP(p2) };
+          },
+        },
+        send_email: {
+          ...sendEmail,
+          execute: async (params: { to: string; subject: string; body: string; cc?: string[] }) => {
+            if (!isInternal || effectiveMode !== "direct") {
+              return "Email sending is only available for authenticated team members in direct mode.";
+            }
+            validateThirdPartyRecipient(params.to);
+            const requestedCc = (params.cc ?? []).filter(Boolean);
+            for (const cc of requestedCc) validateThirdPartyRecipient(cc);
+
+            if (org.autoSendEmails !== true) {
+              return [
+                `Draft email to ${params.to}:`,
+                "",
+                `Subject: ${params.subject}`,
+                "",
+                params.body,
+                "",
+                "Ready to send?",
+              ].join("\n");
+            }
+
+            const sig = buildSignature(agentAddress, brokerBranding);
+            const plainText = params.body + sig.text;
+            const htmlBody = params.body
+              .split("\n\n")
+              .map((p) => `<p style="margin:0 0 12px;line-height:1.5">${p.replace(/\n/g, "<br>")}</p>`)
+              .join("\n") + sig.html;
+            const sendCc = [...new Set([fromEmail, ...requestedCc].filter((e) => e !== params.to))];
+            const sendPayload: Record<string, unknown> = {
+              from: fromHeader,
+              to: params.to,
+              cc: sendCc,
+              subject: params.subject,
+              text: plainText,
+              html: htmlBody,
+            };
+            if (messageId) {
+              sendPayload.headers = {
+                "In-Reply-To": messageId,
+                "References": messageId,
+              };
+            }
+
+            const sendDelay = org?.emailSendDelay ?? 5;
+            if (sendDelay > 0 && unifiedThreadId) {
+              const scheduledSendTime = Date.now() + sendDelay * 1000;
+              const pendingEmailId = await ctx.runMutation(internal.pendingEmails.create, {
+                orgId,
+                threadId: unifiedThreadId,
+                emailPayload: JSON.stringify(sendPayload),
+                scheduledSendTime,
+                legacyConversationId: conversationId,
+                recipientEmail: params.to,
+                ccAddresses: sendCc,
+                subject: params.subject,
+                emailBody: params.body,
+                referencedPolicyIds: relevantPolicyIds.length > 0 ? (relevantPolicyIds as Id<"policies">[]) : undefined,
+                referencedQuoteIds: relevantQuoteIds.length > 0 ? (relevantQuoteIds as Id<"policies">[]) : undefined,
+              });
+              await ctx.scheduler.runAfter(
+                sendDelay * 1000,
+                internal.actions.sendPendingEmail.sendPending,
+                { id: pendingEmailId },
+              );
+              toolSentEmail = {
+                responseBody: `Sending email to ${params.to} (CC: ${sendCc.join(", ")})...`,
+                responseTo: params.to,
+                responseCc: sendCc,
+              };
+              return toolSentEmail.responseBody;
+            }
+
+            const sendOutcome = await sendResendEmail(sendPayload as Parameters<typeof sendResendEmail>[0]);
+            if (!sendOutcome.ok) throw new Error(`Failed to send email: ${sendOutcome.error}`);
+            toolSentEmail = {
+              responseBody: `Email sent to ${params.to} (CC: ${sendCc.join(", ")}).`,
+              responseTo: params.to,
+              responseCc: sendCc,
+              responseMessageId: sendOutcome.id,
+            };
+            return toolSentEmail.responseBody;
           },
         },
         save_note: {
@@ -1074,6 +1223,20 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
 
       let responseBody = result.text;
 
+      const sentByTool = toolSentEmail as ToolSentEmail | null;
+      if (sentByTool) {
+        await ctx.runMutation(internal.agentConversations.updateResponse, {
+          id: conversationId,
+          responseBody: sentByTool.responseBody,
+          responseTo: sentByTool.responseTo,
+          responseCc: sentByTool.responseCc,
+          responseMessageId: sentByTool.responseMessageId,
+          referencedPolicyIds: relevantPolicyIds.length > 0 ? (relevantPolicyIds as Id<"policies">[]) : undefined,
+          referencedQuoteIds: relevantQuoteIds.length > 0 ? (relevantQuoteIds as Id<"policies">[]) : undefined,
+        });
+        return;
+      }
+
       // ── Detect "Sending email to..." pattern for third-party sends ──
       const sendMatch = responseBody.match(/\*?\*?Sending email to (.+?)\.\.\.\*?\*?\s*\n([\s\S]+)$/i);
       if (isInternal && sendMatch) {
@@ -1083,6 +1246,7 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
           const hintEmailMatch = recipientHint.match(/[\w.+-]+@[\w.-]+\.\w+/);
           const thirdPartyEmail = hintEmailMatch?.[0];
           if (!thirdPartyEmail) throw new Error("No recipient email found in agent output");
+          validateThirdPartyRecipient(thirdPartyEmail);
 
           const stripMd = (text: string) => {
             let r = text;

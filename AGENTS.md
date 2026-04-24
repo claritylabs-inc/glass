@@ -143,6 +143,13 @@ Glass uses two vector-backed stores plus one list-based store:
 - `buildOrgMemoryContext()` — lists recent `orgMemory` entries, grouped by kind.
 - `buildConversationMemoryContext()` — vector search over `conversationTurns` for cross-thread memory.
 
+[aiUtils.ts](convex/lib/aiUtils.ts) owns shared agent instructions for web chat and email:
+
+- `buildSystemPromptForContext()` builds the Glass-specific capability and safety prompt. It deliberately allows the agent's real insurance operations: answer questions, draft/send/forward validated emails, read/upload policies for extraction, generate COIs, and save durable notes.
+- `buildChannelInstructions()` adds channel-specific web-chat/email behavior without duplicating the base prompt.
+- `buildPolicyToolInstructions()` adds shared policy lookup and analysis standards.
+- `policySearchScore()` provides shared policy search ranking for natural language requests such as "what's my policy number?"
+
 ## Convex Patterns
 
 Auth pattern:

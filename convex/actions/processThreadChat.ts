@@ -20,6 +20,9 @@ import {
   buildSignature,
   stripMarkdown,
   markdownToHtml,
+  buildChannelInstructions,
+  buildPolicyToolInstructions,
+  policySearchScore,
   logAiError,
 } from "../lib/aiUtils";
 import { sendResendEmail, getAgentDomain } from "../lib/resend";
@@ -43,19 +46,17 @@ function buildTools(ctx: any, args: { orgId: string; threadId: string }, org?: R
           internal.policies.listAllInternal,
           { orgId: args.orgId },
         );
-        const q = params.query.toLowerCase();
-        const matches = policies.filter((p: Record<string, unknown>) => {
-          const matchesQuery =
-            (p.insuredName as string)?.toLowerCase().includes(q) ||
-            (p.security as string)?.toLowerCase().includes(q) ||
-            (p.policyNumber as string)?.toLowerCase().includes(q) ||
-            (p.policyTypes as string[])?.some((t: string) => t.toLowerCase().includes(q));
-          const matchesType = !params.policyType || (p.policyTypes as string[])?.includes(params.policyType);
-          const matchesCarrier = !params.carrier ||
-            (p.security as string)?.toLowerCase().includes(params.carrier.toLowerCase());
-          return matchesQuery && matchesType && matchesCarrier;
-        });
-        if (matches.length === 0) return "No matching policies found.";
+        const scored = policies
+          .map((p: Record<string, unknown>) => ({
+            policy: p,
+            score: policySearchScore(p, params.query, params.policyType, params.carrier),
+          }))
+          .filter((p: { score: number }) => p.score > 0)
+          .sort((a: { score: number }, b: { score: number }) => b.score - a.score);
+        const matches = scored.length > 0
+          ? scored.map((s: { policy: Record<string, unknown> }) => s.policy)
+          : policies.slice(0, 5);
+        if (matches.length === 0) return "No policies found for this organization.";
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         return matches.slice(0, 5).map((p: any) => ({
           id: p._id,
@@ -575,55 +576,12 @@ export const run = internalAction({
 
       // Web chat addendum — adjust email flow based on autoSendEmails setting
       const autoSend = org.autoSendEmails === true; // default false (require confirmation)
-      const emailInstructionBlock = autoSend
-        ? `- INSTRUCTION: They want you to compose/send a message to the external participant(s).
-  - Output ONLY "**Sending email to Name (email@example.com)...**" followed by a newline and then the final email body to send. Always include the recipient's email address in parentheses. Do NOT include any other text before or after. Do NOT draft first — send immediately.`
-        : `- INSTRUCTION: They want you to compose/send a message to the external participant(s).
-  - ALWAYS draft first: show the email labeled as "**Draft email to Name (email@example.com):**" followed by the draft content. Then ask explicitly: "Ready to send?" Do NOT send without drafting first — even if the user says "send" or "email", always show the draft for review first.
-  - Only after they explicitly approve the draft (e.g. "yes", "send it", "looks good", "go ahead"): output ONLY "**Sending email to Name (email@example.com)...**" followed by a newline and then the final email body to send. Always include the recipient's email address in parentheses. Do NOT include any other text before or after.`;
-
-      const webChatAddendum = isMixedThread
-        ? `
-
-MIXED THREAD MODE:
-- This thread includes both web chat messages (visible only to the team) and email messages (visible to external participants).
-- Use markdown freely -- **bold**, *italic*, headers, bullet points, code blocks are all rendered properly.
-- Multiple team members may participate in the same chat. Their name appears in brackets before their message.
-- Do NOT include email-style sign-offs or greetings.
-
-When a team member sends a chat message, determine their intent:
-- QUESTION: They're asking you something directly — answer normally.
-${emailInstructionBlock}
-- BOTH: They're asking a question AND giving an instruction — handle both in your response.
-
-For email drafts, compose a professional email that:
-- Addresses the recipient by name
-- Incorporates the team member's direction naturally
-- Maintains appropriate tone for the business relationship
-- References relevant policy/coverage data when applicable
-- Writes from Glass's perspective (third-person on behalf of the company, e.g. "on behalf of [company]"). Do NOT sign off as the team member or impersonate them. The "sent with Glass" signature is added automatically — do not add your own sign-off.
-- If a team member asks you to send the email "from them" or "as them", politely decline and explain that emails are always sent from Glass on behalf of the company.`
-        : `
-
-WEB CHAT MODE:
-- This is a web chat conversation, not email. Use markdown freely -- **bold**, *italic*, headers, bullet points, code blocks are all rendered properly.
-- Keep the conversational style but you can use richer formatting.
-- Multiple team members may participate in the same chat. Their name appears in brackets before their message.
-- Do NOT include email-style sign-offs or greetings.${canSendEmail ? `
-
-EMAIL SENDING:
-You can send emails on behalf of team members. When a team member asks you to send/email something to someone:
-${autoSend
-  ? `- Output ONLY "**Sending email to Name (email@example.com)...**" followed by a newline and then the final email body to send. Always include the recipient's email address in parentheses. Do NOT include any other text before or after.`
-  : `- ALWAYS draft first: show the email labeled as "**Draft email to Name (email@example.com):**" followed by the draft content. Then ask explicitly: "Ready to send?" Do NOT send without drafting first — even if the user says "send" or "email", always show the draft for review first.
-- Only after they explicitly approve the draft (e.g. "yes", "send it", "looks good", "go ahead"): output ONLY "**Sending email to Name (email@example.com)...**" followed by a newline and then the final email body to send. Always include the recipient's email address in parentheses. Do NOT include any other text before or after.`}
-
-For emails, compose a professional message that:
-- Addresses the recipient by name
-- Incorporates the team member's direction naturally
-- Maintains appropriate tone for the business relationship
-- References relevant policy/coverage data when applicable
-- Writes from Glass's perspective (third-person on behalf of the company). Do NOT sign off as the team member or impersonate them. The "sent with Glass" signature is added automatically — do not add your own sign-off.` : ""}`;
+      const webChatAddendum = buildChannelInstructions({
+        platform: "web",
+        isMixedThread,
+        canSendEmail,
+        autoSendEmails: autoSend,
+      });
 
       // Page context
       let pageContextBlock = "";
@@ -636,25 +594,7 @@ For emails, compose a professional message that:
         }
       }
 
-      const toolInstructions = `
-
-TOOLS — POLICY LOOKUP:
-You have tools to search and retrieve detailed policy information. You MUST use them aggressively:
-- ALWAYS look up the actual policy/endorsement wording before answering coverage questions. NEVER say "I can't confirm without the wording" or "I'd need the endorsement text" — you HAVE the text, use lookup_policy_section to find it.
-- When asked about a specific endorsement (e.g. PR650END, PR091END), search for it by form number, title, AND related keywords. Try multiple searches if the first doesn't return what you need.
-- When asked about exclusions or conditions, search for the specific exclusion clause (e.g. "B.2" or "Electrical Damage") to get the full text.
-- Search for related sections too — e.g. if asked about Equipment Breakdown, also check the base form exclusions that the endorsement might override.
-- You have up to 25 tool calls per response. Use as many as needed to give a thorough, wording-backed answer.
-
-ANALYTICAL STANDARDS:
-When answering coverage questions, you are an expert insurance analyst, not a disclaimer machine:
-- Be CONCISE. Lead with the answer, not the reasoning. Use short paragraphs. No filler phrases like "based on my review" or "it's important to note." Every sentence should add information the user doesn't already have.
-- Be assertive about industry practice. If a coverage pattern is standard (e.g. Equipment Breakdown endorsements are designed to override base form electrical damage exclusions), say so clearly rather than treating it as unknowable.
-- ALWAYS check for coinsurance provisions when analyzing property claims. Coinsurance penalties are one of the most common and impactful coverage traps. If BPP or building coverage has 80%/90%/100% coinsurance, search for the coinsurance percentage, calculate whether the insured meets the requirement, and flag the penalty if they don't. This applies to Equipment Breakdown claims too — the BPP coinsurance can reduce every claim proportionally.
-- Flag coverage adequacy issues proactively. If a sublimit seems low for the insured's business type (e.g. $25,000 spoilage for a full-service restaurant), call it out as a gap worth reviewing — especially when your own analysis just showed the insured eating a loss above the sublimit.
-- When analyzing overlapping coverages, explain the hierarchy clearly: which coverage responds first, whether limits stack or erode each other, and how deductibles interact.
-- Distinguish between what the policy text says vs. what would require carrier confirmation. Some things genuinely need the carrier (e.g. ambiguous manuscripted endorsements), but standard ISO/AAIS forms have well-understood interpretations.
-- When a coverage question involves the physical cause of loss, analyze the causal chain: where did the loss originate, what's the proximate cause, and how does that interact with each relevant coverage grant and exclusion. Be direct about the most likely outcome — don't present it as a coin flip when industry practice strongly favors one reading.`;
+      const toolInstructions = buildPolicyToolInstructions(25);
 
       // Attachment context note
       let attachmentNote = "";
