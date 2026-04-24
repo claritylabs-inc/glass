@@ -182,7 +182,7 @@ export const joinBroker = mutation({
 export const createDraftClient = mutation({
   args: {
     brokerOrgId: v.id("organizations"),
-    clientOrgName: v.string(),
+    clientOrgName: v.optional(v.string()),
     primaryContactEmail: v.string(),
     primaryContactName: v.optional(v.string()),
     customMessage: v.optional(v.string()),
@@ -191,7 +191,10 @@ export const createDraftClient = mutation({
     const access = await getOrgAccess(ctx, args.brokerOrgId);
     assertBrokerOrg(access);
 
-    const name = args.clientOrgName.trim() || "Draft client";
+    const name =
+      args.clientOrgName?.trim() ||
+      companyNameFromEmail(args.primaryContactEmail) ||
+      "Draft client";
     const clientOrgId = await ctx.db.insert("organizations", {
       name,
       type: "client",
@@ -489,6 +492,25 @@ export const getByToken = action({
       primaryContactName: inv.primaryContactName,
       prefillPassport: inv.prefillPassport,
     };
+  },
+});
+
+/**
+ * Retrieve the stashed OTP code for this invite's email. The invite token
+ * itself proves email ownership, so we hand back the code so the client can
+ * auto-submit it via signIn() without the user retyping anything.
+ */
+export const getInviteOtpCode = action({
+  args: { token: v.string() },
+  handler: async (ctx, args): Promise<{ email: string; code: string } | null> => {
+    const tokenHash = await sha256Hex(args.token);
+    const inv = await ctx.runQuery(internal.clientInvitations.getByHashInternal, { tokenHash });
+    if (!inv) return null;
+    if (inv.status !== "pending") return null;
+    if (inv.expiresAt && inv.expiresAt < Date.now()) return null;
+    if (!inv.otpCode || !inv.primaryContactEmail) return null;
+    if (inv.otpCodeExpiresAt && inv.otpCodeExpiresAt < Date.now()) return null;
+    return { email: inv.primaryContactEmail, code: inv.otpCode };
   },
 });
 

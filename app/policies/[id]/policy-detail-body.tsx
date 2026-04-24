@@ -545,9 +545,9 @@ export function PolicyDetailBody({
         <TabsList variant="pill">
           {(
             [
-              { id: "details" as const, label: "Details" },
+              { id: "details" as const, label: "Summary" },
+              { id: "extraction" as const, label: "Breakdown" },
               { id: "activity" as const, label: "Activity" },
-              { id: "extraction" as const, label: "Full Data" },
             ] as const
           ).map((tab) => (
             <TabsTrigger key={tab.id} value={tab.id}>

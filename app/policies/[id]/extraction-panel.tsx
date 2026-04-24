@@ -878,17 +878,6 @@ export function ExtractionCards({
             getBadges={(ex) => {
               if (typeof ex === "string") return [];
               return [
-                ex?.isAbsolute
-                  ? {
-                      label: "Absolute",
-                      className:
-                        "bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400",
-                    }
-                  : {
-                      label: "Limited",
-                      className:
-                        "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400",
-                    },
                 ex?.buybackAvailable
                   ? {
                       label: "Buyback",

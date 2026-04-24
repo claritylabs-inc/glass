@@ -29,6 +29,24 @@ const sendVerificationRequest = async function (this: unknown, ...args: any[]) {
       brokerBranding = null;
     }
 
+    // Stash the OTP on any pending client invitations for this email so that
+    // the invite-acceptance UI can auto-verify — the invite link itself proves
+    // email ownership, so the user shouldn't have to enter the code.
+    let hasPendingInvite = false;
+    try {
+      const stashed = await ctx.runMutation(internal.auth.stashInviteOtp, {
+        email,
+        code: token,
+      });
+      hasPendingInvite = !!stashed;
+    } catch {
+      // Non-fatal: fall back to normal OTP flow.
+    }
+
+    // When the user is arriving via an invite link, suppress the generic OTP
+    // email — the invite email already covers verification.
+    if (hasPendingInvite) return;
+
     const branding = brokerBranding
       ? getBrandingContext({
           agentDisplayName: brokerBranding.agentDisplayName ?? brokerBranding.name,
@@ -68,8 +86,32 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
 });
 
 // ── Internal query: find a broker to brand the sign-in email for ─────────────
-import { internalQuery } from "./_generated/server";
+import { internalQuery, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
+
+export const stashInviteOtp = internalMutation({
+  args: { email: v.string(), code: v.string() },
+  handler: async (ctx, { email, code }) => {
+    const normalized = email.trim().toLowerCase();
+    if (!normalized) return false;
+    const pendingInvites = await ctx.db
+      .query("clientInvitations")
+      .withIndex("by_status", (q) => q.eq("status", "pending"))
+      .collect();
+    const expiresAt = Date.now() + 15 * 60 * 1000; // mirror OTP maxAge
+    let matched = false;
+    for (const inv of pendingInvites) {
+      if (inv.primaryContactEmail?.trim().toLowerCase() === normalized) {
+        await ctx.db.patch(inv._id, {
+          otpCode: code,
+          otpCodeExpiresAt: expiresAt,
+        });
+        matched = true;
+      }
+    }
+    return matched;
+  },
+});
 
 export const brokerBrandingForEmail = internalQuery({
   args: { email: v.string() },

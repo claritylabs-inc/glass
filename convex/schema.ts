@@ -173,6 +173,8 @@ export default defineSchema({
     clientOrgId: v.optional(v.id("organizations")),
     expiresAt: v.optional(v.number()),
     createdAt: v.number(),
+    otpCode: v.optional(v.string()),
+    otpCodeExpiresAt: v.optional(v.number()),
   })
     .index("by_tokenHash", ["inviteTokenHash"])
     .index("by_brokerOrgId", ["brokerOrgId"])

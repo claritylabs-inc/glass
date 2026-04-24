@@ -33,8 +33,6 @@ export function InviteClientDrawer({
 }) {
   const [draftId, setDraftId] = useState<Id<"organizations"> | null>(null);
 
-  const [companyName, setCompanyName] = useState("");
-  const [contactName, setContactName] = useState("");
   const [contactEmail, setContactEmail] = useState("");
   const [sending, setSending] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
@@ -66,13 +64,11 @@ export function InviteClientDrawer({
     if (!hydrateDraft) return;
     hydratedFor.current = resumeClientOrgId;
     setDraftId(resumeClientOrgId);
-    setCompanyName(hydrateDraft.name ?? "");
-    setContactName(hydrateDraft.primaryContactName ?? "");
     setContactEmail(hydrateDraft.primaryContactEmail ?? "");
   }, [open, resumeClientOrgId, hydrateDraft]);
 
   const emailValid = contactEmail.includes("@") && contactEmail.includes(".");
-  const canCreateDraft = companyName.trim().length > 0 && emailValid && !draftId;
+  const canCreateDraft = emailValid && !draftId;
 
   async function ensureDraft(): Promise<Id<"organizations"> | null> {
     if (draftId) return draftId;
@@ -80,9 +76,7 @@ export function InviteClientDrawer({
     try {
       const { clientOrgId } = await createDraft({
         brokerOrgId,
-        clientOrgName: companyName.trim(),
         primaryContactEmail: contactEmail.trim(),
-        primaryContactName: contactName.trim() || undefined,
       });
       setDraftId(clientOrgId);
       return clientOrgId;
@@ -100,7 +94,7 @@ export function InviteClientDrawer({
   }, [canCreateDraft]);
 
   // Patch draft on field blur.
-  async function commitField(field: "clientOrgName" | "primaryContactName" | "primaryContactEmail", value: string) {
+  async function commitField(field: "primaryContactEmail", value: string) {
     if (!draftId) return;
     try {
       await updateDraft({ clientOrgId: draftId, [field]: value });
@@ -112,8 +106,6 @@ export function InviteClientDrawer({
   async function persistPendingEdits(id: Id<"organizations">) {
     await updateDraft({
       clientOrgId: id,
-      clientOrgName: companyName.trim(),
-      primaryContactName: contactName.trim(),
       primaryContactEmail: contactEmail.trim(),
     });
   }
@@ -122,7 +114,7 @@ export function InviteClientDrawer({
     e.preventDefault();
     const id = await ensureDraft();
     if (!id) {
-      toast.error("Fill in company name and email first");
+      toast.error("Enter a valid email first");
       return;
     }
     setSending(true);
@@ -141,7 +133,7 @@ export function InviteClientDrawer({
   async function handleCreateWithoutSending() {
     const id = await ensureDraft();
     if (!id) {
-      toast.error("Fill in company name and email first");
+      toast.error("Enter a valid email first");
       return;
     }
     setSavingDraft(true);
@@ -158,8 +150,6 @@ export function InviteClientDrawer({
 
   function resetAndClose() {
     setDraftId(null);
-    setCompanyName("");
-    setContactName("");
     setContactEmail("");
     hydratedFor.current = null;
     onOpenChange(false);
@@ -239,36 +229,8 @@ export function InviteClientDrawer({
               className="flex-1 overflow-y-auto px-4 py-4 space-y-4"
             >
               <div>
-                <label htmlFor="companyName" className={LABEL_CLASSES}>
-                  Client company name
-                </label>
-                <input
-                  id="companyName"
-                  type="text"
-                  value={companyName}
-                  onChange={(e) => setCompanyName(e.target.value)}
-                  onBlur={() => commitField("clientOrgName", companyName.trim())}
-                  placeholder="Acme Corp"
-                  className={INPUT_CLASSES}
-                />
-              </div>
-              <div>
-                <label htmlFor="contactName" className={LABEL_CLASSES}>
-                  Primary contact name
-                </label>
-                <input
-                  id="contactName"
-                  type="text"
-                  value={contactName}
-                  onChange={(e) => setContactName(e.target.value)}
-                  onBlur={() => commitField("primaryContactName", contactName.trim())}
-                  placeholder="Jane Smith"
-                  className={INPUT_CLASSES}
-                />
-              </div>
-              <div>
                 <label htmlFor="contactEmail" className={LABEL_CLASSES}>
-                  Primary contact email
+                  Client email
                 </label>
                 <input
                   id="contactEmail"
@@ -284,7 +246,7 @@ export function InviteClientDrawer({
                 <PillButton
                   type="submit"
                   variant="primary"
-                  disabled={!emailValid || sending || savingDraft || !companyName.trim()}
+                  disabled={!emailValid || sending || savingDraft}
                   className="w-full"
                 >
                   {sending ? "Sending…" : "Send invite"}
@@ -292,7 +254,7 @@ export function InviteClientDrawer({
                 <PillButton
                   type="button"
                   variant="secondary"
-                  disabled={!emailValid || sending || savingDraft || !companyName.trim()}
+                  disabled={!emailValid || sending || savingDraft}
                   onClick={handleCreateWithoutSending}
                   className="w-full"
                 >

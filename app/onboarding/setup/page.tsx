@@ -9,10 +9,36 @@ import { BrandWordmark, PartnerWordmark } from "@/components/auth-shell";
 import { PolicyEmptyState } from "@/components/policy-empty-state";
 import { PillButton } from "@/components/ui/pill-button";
 import { LogoIcon } from "@/components/ui/logo-icon";
-import { ArrowRight, Check, Loader2, Sparkles } from "lucide-react";
+import { ArrowRight, Check, Copy, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 const AGENT_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "glass.claritylabs.inc";
+
+function companyNameFromEmail(email?: string | null): string {
+  if (!email) return "";
+  const domain = email.split("@")[1]?.toLowerCase();
+  if (!domain) return "";
+  const root = domain.split(".")[0]?.replace(/[^a-z0-9-_ ]/gi, "").trim();
+  if (!root) return "";
+  return root
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((p) => p[0]!.toUpperCase() + p.slice(1))
+    .join(" ")
+    .slice(0, 80);
+}
+
+function websiteFromEmail(email?: string | null): string {
+  if (!email) return "";
+  const domain = email.split("@")[1]?.toLowerCase().trim();
+  if (!domain) return "";
+  const free = new Set([
+    "gmail.com", "yahoo.com", "hotmail.com", "outlook.com", "icloud.com",
+    "proton.me", "protonmail.com", "aol.com", "me.com", "live.com",
+  ]);
+  if (free.has(domain)) return "";
+  return domain;
+}
 
 type Step = 0 | 1 | 2 | 3;
 
@@ -157,10 +183,10 @@ export default function ClientOnboardingSetupPage() {
 
   useEffect(() => {
     const org = viewerOrg?.org;
-    if (!org) return;
-    setOrgName((v) => v || org.name || "");
-    setWebsite((v) => v || org.website || "");
-  }, [viewerOrg]);
+    const email = viewer?.email;
+    setOrgName((v) => v || org?.name || companyNameFromEmail(email));
+    setWebsite((v) => v || org?.website || websiteFromEmail(email));
+  }, [viewerOrg, viewer]);
 
   const brokerAgentHandle = viewerOrg?.brokerOrg?.agentHandle ?? viewerOrg?.org?.agentHandle;
   const brokerAgentEmail = brokerAgentHandle ? `${brokerAgentHandle}@${AGENT_DOMAIN}` : null;
@@ -359,46 +385,31 @@ export default function ClientOnboardingSetupPage() {
         {currentStep === 2 && (
           <div className="space-y-8">
             {policyCount > 0 ? (
-              <div className="space-y-3">
-                <div className={labelClass + " mb-0"}>
-                  Policies on file
-                  <span className="ml-1.5 text-muted-foreground/60">({policyCount})</span>
+              <div className="rounded-lg border border-foreground/6 bg-card p-5 sm:p-6 flex items-start gap-3">
+                <div className="mt-0.5 h-8 w-8 rounded-full bg-foreground/[0.04] flex items-center justify-center shrink-0">
+                  <Check className="h-4 w-4 text-muted-foreground" />
                 </div>
-                <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
-                  {(policies ?? []).map((p) => (
-                    <div
-                      key={p._id}
-                      className="flex items-center justify-between px-4 py-3 border-t border-foreground/4 first:border-t-0"
-                    >
-                      <div className="min-w-0">
-                        <div className="text-body-sm font-medium truncate">
-                          {p.carrier || "Untitled policy"}
-                        </div>
-                        {p.policyNumber ? (
-                          <div className="text-body-sm text-muted-foreground truncate">
-                            {p.policyNumber}
-                          </div>
-                        ) : null}
-                      </div>
-                      {p.pipelineStatus && p.pipelineStatus !== "ready" ? (
-                        <span className="text-body-sm text-muted-foreground/70 ml-3 shrink-0">
-                          Processing…
-                        </span>
-                      ) : null}
-                    </div>
-                  ))}
+                <div className="min-w-0 flex-1">
+                  <div className="text-body-sm font-semibold text-foreground">
+                    {policyCount === 1
+                      ? "1 policy uploaded"
+                      : `${policyCount} policies uploaded`}
+                  </div>
+                  <div className="text-body-sm text-muted-foreground mt-0.5">
+                    We're extracting the details in the background — you can move on.
+                  </div>
                 </div>
               </div>
-            ) : null}
-
-            <PolicyEmptyState
-              docType="policy"
-              agentEmail={brokerAgentEmail}
-              uploading={uploading}
-              onUpload={handleFilesUpload}
-              title={policyCount > 0 ? "Add a policy" : "Add your first policy"}
-              subtitle="Drop a PDF or forward an email — Glass extracts it for you."
-            />
+            ) : (
+              <PolicyEmptyState
+                docType="policy"
+                agentEmail={brokerAgentEmail}
+                uploading={uploading}
+                onUpload={handleFilesUpload}
+                title=""
+                subtitle=""
+              />
+            )}
 
             {error ? <p className="text-sm text-muted-foreground">{error}</p> : null}
 
@@ -424,30 +435,27 @@ export default function ClientOnboardingSetupPage() {
 
         {currentStep === 3 && (
           <div className="space-y-10">
-            <div className="space-y-4 text-body-sm text-muted-foreground leading-relaxed">
-              <p>
-                <span className="text-foreground font-medium">Glass is your system of record</span>{" "}
-                for insurance data. Ask questions about your policies and coverage over chat or by
-                emailing your agent. Generate certificates of insurance in seconds. Everything
-                stays in one place, always up to date.
-              </p>
-            </div>
-
-            <a
-              href="/settings?section=connections"
-              className="block rounded-lg border border-foreground/8 bg-card p-4 hover:bg-foreground/[0.02] transition-colors"
-            >
-              <div className="flex items-start gap-3">
-                <Sparkles className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
-                <div className="min-w-0 flex-1">
-                  <div className="text-body-sm font-medium">Connect ChatGPT or Claude via MCP</div>
-                  <div className="text-label-sm text-muted-foreground">
-                    Query your policies directly from your favorite AI assistant.
-                  </div>
-                </div>
-                <ArrowRight className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
-              </div>
-            </a>
+            <p className="text-base text-muted-foreground">
+              Email your agent{" "}
+              {brokerAgentEmail ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    void navigator.clipboard
+                      .writeText(brokerAgentEmail)
+                      .then(() => toast.success("Copied to clipboard"))
+                      .catch(() => toast.error("Couldn't copy"));
+                  }}
+                  className="inline-flex items-center gap-1 font-medium text-foreground underline decoration-foreground/20 underline-offset-4 hover:decoration-foreground/50 transition-colors"
+                >
+                  {brokerAgentEmail}
+                  <Copy className="h-3.5 w-3.5" />
+                </button>
+              ) : (
+                <span className="font-medium text-foreground">your agent</span>
+              )}{" "}
+              to get instant answers to questions and get certificates of insurance for your policies.
+            </p>
 
             {error ? <p className="text-sm text-muted-foreground">{error}</p> : null}
 

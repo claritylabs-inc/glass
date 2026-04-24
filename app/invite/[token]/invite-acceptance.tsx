@@ -57,6 +57,7 @@ function isEmailLike(value: string): boolean {
 export default function InviteAcceptance({ token }: { token: string }) {
   const router = useRouter();
   const getByToken = useAction(api.clientInvitations.getByToken);
+  const getInviteOtpCode = useAction(api.clientInvitations.getInviteOtpCode);
   const acceptInvitation = useMutation(api.clientInvitations.acceptInvite);
   const { signIn } = useAuthActions();
   const { isAuthenticated } = useConvexAuth();
@@ -70,7 +71,9 @@ export default function InviteAcceptance({ token }: { token: string }) {
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [autoVerifying, setAutoVerifying] = useState(false);
   const acceptingRef = useRef(false);
+  const autoStartedRef = useRef(false);
 
   useEffect(() => {
     getByToken({ token })
@@ -81,6 +84,41 @@ export default function InviteAcceptance({ token }: { token: string }) {
       .catch((err: Error) => setFetchError(err.message))
       .finally(() => setFetching(false));
   }, [token, getByToken]);
+
+  // Auto-verify: the invite link itself proves email ownership, so we trigger
+  // the OTP send, read the stashed code back, and sign in — no code entry.
+  useEffect(() => {
+    if (!inviteData?.primaryContactEmail) return;
+    if (isAuthenticated) return;
+    if (autoStartedRef.current) return;
+    autoStartedRef.current = true;
+    const targetEmail = inviteData.primaryContactEmail;
+    void (async () => {
+      setAutoVerifying(true);
+      try {
+        await signIn("resend-otp", { email: targetEmail });
+        // Poll briefly for the stashed code to appear (sendVerificationRequest
+        // writes it via an internal mutation).
+        let stashed: { email: string; code: string } | null = null;
+        for (let i = 0; i < 10; i++) {
+          stashed = await getInviteOtpCode({ token });
+          if (stashed) break;
+          await new Promise((r) => setTimeout(r, 400));
+        }
+        if (!stashed) throw new Error("Could not auto-verify — please try again.");
+        await signIn("resend-otp", { email: stashed.email, code: stashed.code });
+      } catch (err) {
+        setError(
+          err instanceof Error && err.message
+            ? err.message
+            : "Could not auto-verify. Please try again.",
+        );
+        autoStartedRef.current = false;
+      } finally {
+        setAutoVerifying(false);
+      }
+    })();
+  }, [inviteData, isAuthenticated, signIn, getInviteOtpCode, token]);
 
   // Once OTP verifies, auth becomes true — accept the invitation then redirect
   // to onboarding, which collects the organization name and other details.
@@ -154,12 +192,14 @@ export default function InviteAcceptance({ token }: { token: string }) {
   }
 
   const brokerName = inviteData?.brokerName ?? "Your broker";
-  const title =
-    step === "details"
+  const isAutoFlow = !!inviteData?.primaryContactEmail;
+  const title = isAutoFlow
+    ? `${brokerName} invited you to Glass`
+    : step === "details"
       ? `${brokerName} invited you to Glass`
       : "Verify your email";
   const subtitle =
-    step === "details"
+    isAutoFlow || step === "details"
       ? `Join ${brokerName} to manage your policies, share documents, and get instant answers about your coverage.`
       : undefined;
 
@@ -176,7 +216,19 @@ export default function InviteAcceptance({ token }: { token: string }) {
           />
         }
       >
-        {step === "details" ? (
+        {isAutoFlow ? (
+          <div className="space-y-4">
+            <div className="flex items-center gap-3 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span>
+                {autoVerifying ? "Signing you in…" : "Opening your workspace…"}
+              </span>
+            </div>
+            {error && (
+              <p className="px-1 py-1 text-sm text-muted-foreground">{error}</p>
+            )}
+          </div>
+        ) : step === "details" ? (
           <form onSubmit={handleDetailsSubmit} className="space-y-4">
             <div>
               <label htmlFor="inv-email" className={LABEL_CLASSES}>

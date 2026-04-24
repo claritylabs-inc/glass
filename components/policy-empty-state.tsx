@@ -27,27 +27,33 @@ export function PolicyEmptyState({
   title,
   subtitle,
 }: PolicyEmptyStateProps) {
-  const label = docType === "quote" ? "quote" : "policy";
   const plural = docType === "quote" ? "quotes" : "policies";
-  const heading = title ?? `No ${plural} yet`;
+  const heading = title === "" ? null : (title ?? `No ${plural} yet`);
   const sub =
-    subtitle ??
-    `Email it in or drop a PDF — Glass sets it up for you, no forms to fill.`;
+    subtitle === ""
+      ? null
+      : (subtitle ??
+        `Email it in or drop a PDF — Glass sets it up for you, no forms to fill.`);
+  const hasHeader = heading || sub;
 
   return (
     <div className="rounded-lg border border-foreground/6 bg-card p-5 sm:p-6">
-      <h3 className="text-body-sm font-semibold text-foreground">{heading}</h3>
-      <p className="text-body-sm text-muted-foreground mt-1">{sub}</p>
+      {heading ? (
+        <h3 className="text-body-sm font-semibold text-foreground">{heading}</h3>
+      ) : null}
+      {sub ? (
+        <p className="text-body-sm text-muted-foreground mt-1">{sub}</p>
+      ) : null}
 
       {agentEmail ? (
-        <AgentForwardCard email={agentEmail} className="mt-5" />
+        <AgentForwardCard email={agentEmail} className={hasHeader ? "mt-5" : ""} />
       ) : null}
 
       <DropZone
         docType={docType}
         uploading={uploading}
         onUpload={onUpload}
-        className={agentEmail ? "mt-3" : "mt-5"}
+        className={agentEmail ? "mt-3" : hasHeader ? "mt-5" : ""}
       />
     </div>
   );
