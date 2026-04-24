@@ -1,7 +1,7 @@
 import { ImageResponse } from "next/og";
 import { fetchQuery } from "convex/nextjs";
 import { api } from "@/convex/_generated/api";
-import { BrandLockup, ogFonts } from "../../../opengraph-image";
+import { BrandLockup, ogFonts } from "../../opengraph-image";
 
 export const runtime = "edge";
 export const alt = "Glass from Clarity Labs";
