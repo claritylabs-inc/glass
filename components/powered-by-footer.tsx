@@ -1,15 +1,29 @@
-import { getViewerBranding } from "@/lib/viewer-branding";
+"use client";
+
+import { usePathname } from "next/navigation";
+import { useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
 import { PoweredByGlassWordmark } from "@/components/auth-shell";
 
-/**
- * Server-rendered "Powered by Glass" footer — shown only for clients viewing
- * under a broker's white-label. On auth pages (/login, /signup, /invite) the
- * viewer is pre-auth so `getViewerBranding()` returns null and nothing renders.
- * No flicker: decision is made on the server before hydration.
- */
-export async function PoweredByFooter() {
-  const branding = await getViewerBranding();
-  if (!branding?.isClientUnderBroker) return null;
+const SKIP_PREFIXES = [
+  "/login",
+  "/signup",
+  "/invite",
+  "/agent",
+  "/threads",
+  "/webchats",
+];
+
+export function PoweredByFooter() {
+  const pathname = usePathname();
+  const viewer = useQuery(api.orgs.viewerOrg, {});
+
+  if (!pathname || SKIP_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/"))) {
+    return null;
+  }
+
+  const isClientUnderBroker = viewer?.org?.type === "client" && !!viewer?.brokerOrg;
+  if (!isClientUnderBroker) return null;
 
   return (
     <div className="fixed bottom-3 left-0 right-0 flex justify-center pointer-events-none opacity-70 z-10">
