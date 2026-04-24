@@ -14,7 +14,7 @@ import { recordBrokerActivity } from "./lib/brokerActivity";
 import { notify } from "./lib/notify";
 import { sendResendEmail, getNotificationFromAddress } from "./lib/resend";
 import { buildEmailShell } from "./lib/emailTemplate";
-import { getBrandingContext } from "./lib/branding";
+import { getBrandingContext, isWhiteLabelingEnabled } from "./lib/branding";
 import type { MutationCtx } from "./_generated/server";
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
@@ -365,14 +365,17 @@ export const sendDraftInvite = action({
       ? `${draft.primaryContactName} <${draft.primaryContactEmail}>`
       : draft.primaryContactEmail;
 
-    const brokerLogoUrl = brokerOrg?.iconStorageId
+    const whiteLabelingEnabled = isWhiteLabelingEnabled(brokerOrg);
+    const brokerLogoUrl = whiteLabelingEnabled && brokerOrg?.iconStorageId
       ? await ctx.storage.getUrl(brokerOrg.iconStorageId)
       : null;
-    const branding = getBrandingContext({
-      agentDisplayName: brokerOrg?.name,
-      brandingColor: brokerOrg?.brandingColor,
-      logoUrl: brokerLogoUrl ?? undefined,
-    });
+    const branding = whiteLabelingEnabled
+      ? getBrandingContext({
+          agentDisplayName: brokerOrg?.name,
+          brandingColor: brokerOrg?.brandingColor,
+          logoUrl: brokerLogoUrl ?? undefined,
+        })
+      : getBrandingContext();
 
     const subject = `${brokerName} invited you to Glass`;
     const messageBlock = draft.customMessage
@@ -480,13 +483,14 @@ export const getByToken = action({
     return {
       invitationId: inv._id,
       brokerName: brokerOrg?.name ?? "Your Broker",
-      brokerIconUrl: brokerOrg?.iconStorageId
+      whiteLabelingEnabled: isWhiteLabelingEnabled(brokerOrg),
+      brokerIconUrl: isWhiteLabelingEnabled(brokerOrg) && brokerOrg?.iconStorageId
         ? await ctx.storage.getUrl(brokerOrg.iconStorageId)
         : null,
       brokerWebsite: brokerOrg?.website,
       brokerSlug: brokerOrg?.slug,
-      brandingColor: brokerOrg?.brandingColor,
-      agentDisplayName: brokerOrg?.agentDisplayName,
+      brandingColor: isWhiteLabelingEnabled(brokerOrg) ? brokerOrg?.brandingColor : undefined,
+      agentDisplayName: isWhiteLabelingEnabled(brokerOrg) ? brokerOrg?.agentDisplayName : undefined,
       clientOrgName: inv.clientOrgName,
       primaryContactEmail: inv.primaryContactEmail,
       primaryContactName: inv.primaryContactName,

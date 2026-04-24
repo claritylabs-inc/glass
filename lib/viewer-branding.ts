@@ -38,7 +38,21 @@ export async function getViewerBranding(): Promise<ViewerBranding | null> {
   const isClient = !isBroker;
   const isClientUnderBroker = isClient && !!viewer.brokerOrg;
 
+  if (isBroker && viewer.org.whiteLabelingEnabled === false) {
+    return null;
+  }
+
   if (isClientUnderBroker && viewer.brokerOrg) {
+    if (viewer.brokerOrg.whiteLabelingEnabled === false) {
+      return {
+        name: viewer.org.name,
+        iconUrl: viewer.org.iconUrl ?? null,
+        brandingColor: (viewer.org.brandingColor as string | undefined) ?? null,
+        isBroker: false,
+        isClient: true,
+        isClientUnderBroker: false,
+      };
+    }
     return {
       name: viewer.brokerOrg.name,
       iconUrl: viewer.brokerOrg.iconUrl ?? null,

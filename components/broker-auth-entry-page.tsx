@@ -5,7 +5,13 @@ import { useAuthActions } from "@convex-dev/auth/react";
 import { useConvexAuth, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AuthCard, AuthMinimalShell, PartnerWordmark, PoweredByGlassWordmark } from "@/components/auth-shell";
+import {
+  AuthCard,
+  AuthMinimalShell,
+  BrandWordmark,
+  PartnerWordmark,
+  PoweredByGlassWordmark,
+} from "@/components/auth-shell";
 import { PillButton } from "@/components/ui/pill-button";
 import { ArrowRight, Loader2 } from "lucide-react";
 
@@ -13,6 +19,7 @@ type BrokerProfile = {
   name: string;
   slug?: string;
   website?: string;
+  whiteLabelingEnabled?: boolean;
   brandingColor?: string;
   agentDisplayName?: string;
   iconUrl?: string | null;
@@ -108,12 +115,14 @@ export function BrokerAuthEntryPage({
     }
   }
 
-  const title = isSignup ? `Join ${broker.name}` : `Sign in to ${broker.name}`;
+  const whiteLabelingEnabled = broker.whiteLabelingEnabled !== false;
+  const displayName = whiteLabelingEnabled ? broker.name : "Glass";
+  const title = isSignup ? `Join ${displayName}` : `Sign in to ${displayName}`;
   const subtitle = isSignup
-    ? `Join ${broker.name} to manage your policies, share documents, and get instant answers about your coverage.`
+    ? `Join ${displayName} to manage your policies, share documents, and get instant answers about your coverage.`
     : "Use your work email to continue.";
 
-  const accentStyle = broker.brandingColor
+  const accentStyle = whiteLabelingEnabled && broker.brandingColor
     ? ({ "--brand-accent": broker.brandingColor } as React.CSSProperties)
     : undefined;
 
@@ -124,11 +133,15 @@ export function BrokerAuthEntryPage({
           title={title}
           subtitle={subtitle}
           logo={
-            <PartnerWordmark
-              name={broker.name}
-              iconUrl={broker.iconUrl ?? undefined}
-              website={broker.website}
-            />
+            whiteLabelingEnabled ? (
+              <PartnerWordmark
+                name={broker.name}
+                iconUrl={broker.iconUrl ?? undefined}
+                website={broker.website}
+              />
+            ) : (
+              <BrandWordmark />
+            )
           }
         >
           {step === "email" ? (
@@ -153,7 +166,7 @@ export function BrokerAuthEntryPage({
                 disabled={loading || !email}
                 className="w-full justify-center text-sm shadow-none sm:w-auto"
                 style={
-                  broker.brandingColor
+                  whiteLabelingEnabled && broker.brandingColor
                     ? { backgroundColor: broker.brandingColor, borderColor: broker.brandingColor }
                     : undefined
                 }
@@ -214,7 +227,7 @@ export function BrokerAuthEntryPage({
                   disabled={loading || code.length < 6}
                   className="w-full justify-center text-sm shadow-none sm:w-auto"
                   style={
-                    broker.brandingColor
+                    whiteLabelingEnabled && broker.brandingColor
                       ? { backgroundColor: broker.brandingColor, borderColor: broker.brandingColor }
                       : undefined
                   }

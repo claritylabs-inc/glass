@@ -268,8 +268,15 @@ export function AppSidebar({
     };
   }, [collapsed, router, conversations]);
 
-  const headerOrgName = viewerOrg?.brokerOrg?.name ?? viewerOrg?.org?.name ?? viewer?.name ?? viewer?.email ?? "";
-  const headerOrgIcon = viewerOrg?.brokerOrg?.iconUrl ?? viewerOrg?.org?.iconUrl ?? null;
+  const brokerWhiteLabelingEnabled = viewerOrg?.brokerOrg?.whiteLabelingEnabled !== false;
+  const headerOrgName =
+    brokerWhiteLabelingEnabled && viewerOrg?.brokerOrg
+      ? viewerOrg.brokerOrg.name
+      : viewerOrg?.org?.name ?? viewer?.name ?? viewer?.email ?? "";
+  const headerOrgIcon =
+    brokerWhiteLabelingEnabled && viewerOrg?.brokerOrg
+      ? viewerOrg.brokerOrg.iconUrl
+      : viewerOrg?.org?.iconUrl ?? null;
   const initials = getInitials(headerOrgName, viewer?.email);
 
   const activeSettingsSection = searchParams.get("section") ?? "organization";

@@ -1292,7 +1292,7 @@ export default function ThreadPage({ params }: { params: Promise<{ id: string }>
   const viewerOrg = useQuery(api.orgs.viewerOrg, {});
   const presenceUsers = usePresence(`thread:${id}`);
   const agentHandle = viewerOrg?.brokerOrg?.agentHandle ?? viewerOrg?.org?.agentHandle;
-  const agentBranding = viewerOrg?.brokerOrg
+  const agentBranding = viewerOrg?.brokerOrg?.whiteLabelingEnabled !== false && viewerOrg?.brokerOrg
     ? { name: `${viewerOrg.brokerOrg.name} Agent`, iconUrl: viewerOrg.brokerOrg.iconUrl }
     : undefined;
 

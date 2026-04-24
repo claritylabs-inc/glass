@@ -117,7 +117,7 @@ function PersistentChatBar() {
   const hasContext = !!pageContext;
   const viewerOrg = useQuery(api.orgs.viewerOrg, {});
   const isBroker = (viewerOrg?.org as { type?: "broker" | "client" } | undefined)?.type === "broker";
-  const agentBranding = viewerOrg?.brokerOrg
+  const agentBranding = viewerOrg?.brokerOrg?.whiteLabelingEnabled !== false && viewerOrg?.brokerOrg
     ? { name: `${viewerOrg.brokerOrg.name} Agent`, iconUrl: viewerOrg.brokerOrg.iconUrl }
     : undefined;
 

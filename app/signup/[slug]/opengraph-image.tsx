@@ -14,7 +14,7 @@ export default async function Image({ params }: { params: { slug: string } }) {
     () => null,
   );
 
-  if (!broker) {
+  if (!broker || broker.whiteLabelingEnabled === false) {
     return new ImageResponse(
       (
         <div
@@ -51,7 +51,6 @@ export default async function Image({ params }: { params: { slug: string } }) {
       >
         <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
           {broker.iconUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
             <img
               src={broker.iconUrl}
               alt=""

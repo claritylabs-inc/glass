@@ -11,7 +11,11 @@ export const contentType = "image/png";
 export default async function Image({ params }: { params: { token: string } }) {
   const fonts = await ogFonts();
 
-  type BrokerData = { brokerName?: string; brokerIconUrl?: string | null };
+  type BrokerData = {
+    brokerName?: string;
+    whiteLabelingEnabled?: boolean;
+    brokerIconUrl?: string | null;
+  };
   let data: BrokerData | null = null;
   try {
     const result = await fetchAction(api.clientInvitations.getByToken, { token: params.token });
@@ -36,7 +40,7 @@ export default async function Image({ params }: { params: { token: string } }) {
     </div>
   );
 
-  if (!data?.brokerName) {
+  if (!data?.brokerName || data.whiteLabelingEnabled === false) {
     return new ImageResponse(Fallback, { ...size, ...(fonts ? { fonts } : {}) });
   }
 
@@ -56,7 +60,6 @@ export default async function Image({ params }: { params: { token: string } }) {
       >
         <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
           {data.brokerIconUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
             <img
               src={data.brokerIconUrl}
               alt=""

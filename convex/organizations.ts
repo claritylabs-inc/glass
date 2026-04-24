@@ -5,6 +5,7 @@ import { getOrgAccess, assertCanManageBroker } from "./lib/access";
 export const updateBrokerBranding = mutation({
   args: {
     brokerOrgId: v.id("organizations"),
+    whiteLabelingEnabled: v.optional(v.boolean()),
     brandingColor: v.optional(v.string()),
     brandingMode: v.optional(v.union(v.literal("light"), v.literal("dark"))),
     brandingTextOnAccent: v.optional(
@@ -19,6 +20,8 @@ export const updateBrokerBranding = mutation({
 
     const { brokerOrgId, ...updates } = args;
     const patch: Record<string, unknown> = {};
+    if (updates.whiteLabelingEnabled !== undefined)
+      patch.whiteLabelingEnabled = updates.whiteLabelingEnabled;
     if (updates.brandingColor !== undefined)
       patch.brandingColor = updates.brandingColor;
     if (updates.brandingMode !== undefined)

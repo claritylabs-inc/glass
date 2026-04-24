@@ -35,8 +35,11 @@ export function BrandThemeApplier() {
 
   useEffect(() => {
     if (viewerOrg === undefined) return;
-    const broker = viewerOrg?.brokerOrg as { brandingColor?: string } | null | undefined;
-    const accent = broker?.brandingColor;
+    const broker = viewerOrg?.brokerOrg as
+      | { brandingColor?: string; whiteLabelingEnabled?: boolean }
+      | null
+      | undefined;
+    const accent = broker?.whiteLabelingEnabled === false ? undefined : broker?.brandingColor;
 
     if (!accent) {
       clearBrandTheme();

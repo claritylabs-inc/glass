@@ -12,8 +12,6 @@ import {
   Loader2,
   AlertTriangle,
   RotateCcw,
-  Check,
-  X,
 } from "lucide-react";
 import { AccentColorPicker } from "@/components/ui/accent-color-picker";
 import { INDUSTRIES } from "@/convex/lib/industries";
@@ -432,7 +430,7 @@ export function OrganizationSection() {
           </div>
         </div>
 
-        {isBroker && <BrandingCard orgName={name} website={website} />}
+        {isBroker && <BrandingCard website={website} />}
 
         {/* Relationship Context section — client orgs only */}
         {!isBroker && (
@@ -584,15 +582,14 @@ type TextOnAccent = "light" | "dark" | "auto";
 
 function BrandingCard({
   website,
-  orgName,
 }: {
   website: string;
-  orgName: string;
 }) {
   const currentOrg = useCurrentOrg();
   const org = currentOrg?.org as
     | {
         brandingColor?: string;
+        whiteLabelingEnabled?: boolean;
         brandingMode?: BrandingMode;
         brandingTextOnAccent?: TextOnAccent;
         iconStorageId?: string;
@@ -607,6 +604,7 @@ function BrandingCard({
   const generateUploadUrl = useMutation((api as any).organizations.generateLogoUploadUrl);
 
   const [brandingColor, setBrandingColor] = useState("#1E293B");
+  const [whiteLabelingEnabled, setWhiteLabelingEnabled] = useState(true);
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const hydratedRef = useRef(false);
@@ -615,6 +613,7 @@ function BrandingCard({
   useEffect(() => {
     if (org && !hydratedRef.current) {
       setBrandingColor(org.brandingColor ?? "#1E293B");
+      setWhiteLabelingEnabled(org.whiteLabelingEnabled !== false);
       hydratedRef.current = true;
     }
   }, [org]);
@@ -624,13 +623,14 @@ function BrandingCard({
     try {
       await updateBranding({
         brokerOrgId: orgId,
+        whiteLabelingEnabled,
         brandingColor,
         brandingTextOnAccent: "auto",
       });
     } catch {
       toast.error("Failed to save branding");
     }
-  }, [orgId, updateBranding, brandingColor]);
+  }, [orgId, updateBranding, whiteLabelingEnabled, brandingColor]);
 
   useEffect(() => {
     if (!hydratedRef.current) return;
@@ -671,11 +671,38 @@ function BrandingCard({
         <h3 className="!mb-0 text-sm font-medium text-foreground">Brand</h3>
       </div>
       <div className="px-5 py-5 space-y-5">
+        <div className="flex items-center justify-between gap-4 rounded-lg border border-foreground/6 bg-popover px-4 py-3">
+          <div>
+            <p className="text-body-sm font-medium text-foreground">
+              White labeling
+            </p>
+            <p className="text-label-sm text-muted-foreground/60 mt-0.5 max-w-md">
+              Apply your broker logo, accent color, agent name, and branded emails to client-facing surfaces.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setWhiteLabelingEnabled((v) => !v)}
+            role="switch"
+            aria-checked={whiteLabelingEnabled}
+            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors cursor-pointer shrink-0 ml-4 ${
+              whiteLabelingEnabled ? "bg-foreground" : "bg-foreground/15"
+            }`}
+          >
+            <span
+              className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                whiteLabelingEnabled ? "translate-x-4.5" : "translate-x-0.5"
+              }`}
+            />
+          </button>
+        </div>
+
         {/* Logo */}
-        <div>
+        <div className={!whiteLabelingEnabled ? "opacity-50" : undefined}>
           <label className={brandingLabelClass}>Logo</label>
           <button
             type="button"
+            disabled={!whiteLabelingEnabled}
             onClick={() => fileInputRef.current?.click()}
             onDragEnter={(e) => {
               e.preventDefault();
@@ -689,8 +716,10 @@ function BrandingCard({
               const file = e.dataTransfer.files?.[0];
               if (file) handleLogoUpload(file);
             }}
-            className={`flex w-full items-center gap-4 rounded-lg border border-dashed px-4 py-3 text-left transition-colors cursor-pointer ${
-              dragActive
+            className={`flex w-full items-center gap-4 rounded-lg border border-dashed px-4 py-3 text-left transition-colors ${
+              whiteLabelingEnabled ? "cursor-pointer" : "cursor-not-allowed"
+            } ${
+              dragActive && whiteLabelingEnabled
                 ? "border-foreground/30 bg-foreground/[0.03]"
                 : "border-foreground/12 bg-popover hover:border-foreground/20"
             }`}
@@ -725,7 +754,7 @@ function BrandingCard({
         </div>
 
         {/* Accent color */}
-        <div>
+        <div className={!whiteLabelingEnabled ? "pointer-events-none opacity-50" : undefined}>
           <label className={brandingLabelClass}>Accent color</label>
           <AccentColorPicker
             value={brandingColor}
@@ -738,5 +767,3 @@ function BrandingCard({
     </div>
   );
 }
-
-

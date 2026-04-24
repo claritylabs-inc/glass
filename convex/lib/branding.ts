@@ -23,6 +23,12 @@ export type BrandingContext = {
   agentDisplayName: string;
 };
 
+export function isWhiteLabelingEnabled(org?: {
+  whiteLabelingEnabled?: boolean;
+} | null): boolean {
+  return org?.whiteLabelingEnabled !== false;
+}
+
 const DEFAULT_LOGO_URL = "/glass-icon.jpg";
 const DEFAULT_BRAND_COLOR = "#2563EB";
 const DEFAULT_SUPPORT_URL = "https://glass.claritylabs.inc/support";

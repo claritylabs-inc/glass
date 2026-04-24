@@ -18,6 +18,7 @@ import { ArrowRight, Loader2 } from "lucide-react";
 type InviteData = {
   invitationId: string;
   brokerName: string;
+  whiteLabelingEnabled?: boolean;
   brokerIconUrl?: string | null;
   brokerWebsite?: string;
   brokerSlug?: string;
@@ -192,6 +193,7 @@ export default function InviteAcceptance({ token }: { token: string }) {
   }
 
   const brokerName = inviteData?.brokerName ?? "Your broker";
+  const whiteLabelingEnabled = inviteData?.whiteLabelingEnabled !== false;
   const isAutoFlow = !!inviteData?.primaryContactEmail;
   const title = isAutoFlow
     ? `${brokerName} invited you to Glass`
@@ -209,11 +211,15 @@ export default function InviteAcceptance({ token }: { token: string }) {
         title={title}
         subtitle={subtitle}
         logo={
-          <PartnerWordmark
-            name={inviteData?.brokerName}
-            iconUrl={inviteData?.brokerIconUrl}
-            website={inviteData?.brokerWebsite}
-          />
+          whiteLabelingEnabled ? (
+            <PartnerWordmark
+              name={inviteData?.brokerName}
+              iconUrl={inviteData?.brokerIconUrl}
+              website={inviteData?.brokerWebsite}
+            />
+          ) : (
+            <BrandWordmark />
+          )
         }
       >
         {isAutoFlow ? (

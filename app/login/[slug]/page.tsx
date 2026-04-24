@@ -12,20 +12,22 @@ export async function generateMetadata({
   const { slug } = await params;
   const broker = await fetchQuery(api.orgs.publicBrokerBySlug, { slug }).catch(() => null);
   if (!broker) return {};
-  const description = `Sign in to ${broker.name}.`;
+  const whiteLabelingEnabled = broker.whiteLabelingEnabled !== false;
+  const title = whiteLabelingEnabled ? broker.name : "Glass from Clarity Labs";
+  const description = `Sign in to ${title}.`;
   return {
-    title: { absolute: broker.name },
+    title: { absolute: title },
     description,
     openGraph: {
-      title: broker.name,
-      siteName: broker.name,
+      title,
+      siteName: title,
       description,
     },
     twitter: {
-      title: broker.name,
+      title,
       description,
     },
-    ...(broker.iconUrl ? { icons: { icon: broker.iconUrl } } : {}),
+    ...(whiteLabelingEnabled && broker.iconUrl ? { icons: { icon: broker.iconUrl } } : {}),
   };
 }
 

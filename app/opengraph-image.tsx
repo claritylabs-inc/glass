@@ -38,7 +38,7 @@ export function BrandLockup({
           style={{
             fontFamily: "Geist",
             fontSize: textSize,
-            fontWeight: 600,
+            fontWeight: 500,
             color: "#111827",
             letterSpacing: "-0.03em",
             lineHeight: 1,
@@ -52,7 +52,7 @@ export function BrandLockup({
             fontSize: textSize,
             fontWeight: 400,
             color: "#6b7280",
-            letterSpacing: "-0.01em",
+            letterSpacing: "-0.03em",
             lineHeight: 1,
           }}
         >

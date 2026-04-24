@@ -85,6 +85,7 @@ export default defineSchema({
     // Broker slug for URLs, [a-z0-9-]{3,40}, unique
     slug: v.optional(v.string()),
     // Broker branding
+    whiteLabelingEnabled: v.optional(v.boolean()),
     brandingColor: v.optional(v.string()),  // hex e.g. "#4F46E5"
     brandingMode: v.optional(v.union(v.literal("light"), v.literal("dark"))),
     brandingTextOnAccent: v.optional(v.union(v.literal("light"), v.literal("dark"), v.literal("auto"))),

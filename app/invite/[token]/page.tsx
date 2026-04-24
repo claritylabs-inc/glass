@@ -19,23 +19,26 @@ export async function generateMetadata({
     const result = await fetchAction(api.clientInvitations.getByToken, { token });
     const data = result as unknown as {
       brokerName?: string;
+      whiteLabelingEnabled?: boolean;
       brokerIconUrl?: string | null;
     } | null;
     if (!data?.brokerName) return { title: { absolute: "Invitation" } };
-    const description = `Join ${data.brokerName} to manage your insurance and coverage.`;
+    const whiteLabelingEnabled = data.whiteLabelingEnabled !== false;
+    const title = whiteLabelingEnabled ? data.brokerName : "Glass from Clarity Labs";
+    const description = `Join ${title} to manage your insurance and coverage.`;
     return {
-      title: { absolute: data.brokerName },
+      title: { absolute: title },
       description,
       openGraph: {
-        title: data.brokerName,
-        siteName: data.brokerName,
+        title,
+        siteName: title,
         description,
       },
       twitter: {
-        title: data.brokerName,
+        title,
         description,
       },
-      ...(data.brokerIconUrl ? { icons: { icon: data.brokerIconUrl } } : {}),
+      ...(whiteLabelingEnabled && data.brokerIconUrl ? { icons: { icon: data.brokerIconUrl } } : {}),
     };
   } catch {
     return { title: { absolute: "Invitation" } };

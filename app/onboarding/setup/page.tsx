@@ -82,7 +82,12 @@ function Shell({
   currentStep?: Step;
   email?: string;
   onLogout?: () => Promise<void> | void;
-  broker?: { name?: string | null; iconUrl?: string | null; website?: string | null } | null;
+  broker?: {
+    name?: string | null;
+    iconUrl?: string | null;
+    website?: string | null;
+    whiteLabelingEnabled?: boolean;
+  } | null;
 }) {
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -93,7 +98,7 @@ function Shell({
               <LogoIcon size={18} color="#A0D2FA" static />
             </div>
             <div className="hidden sm:block">
-              {broker ? (
+              {broker?.whiteLabelingEnabled !== false && broker ? (
                 <PartnerWordmark name={broker.name} iconUrl={broker.iconUrl} website={broker.website} />
               ) : (
                 <BrandWordmark />
@@ -288,7 +293,9 @@ export default function ClientOnboardingSetupPage() {
       <div className="w-full max-w-md space-y-8">
         <div className="space-y-3 text-left">
           <h1 className="text-base font-medium tracking-tight">
-            {currentStep === 0 && viewerOrg?.brokerOrg?.name
+            {currentStep === 0 &&
+            viewerOrg?.brokerOrg?.whiteLabelingEnabled !== false &&
+            viewerOrg?.brokerOrg?.name
               ? `Welcome to ${viewerOrg.brokerOrg.name}`
               : STEPS[currentStep].label}
           </h1>

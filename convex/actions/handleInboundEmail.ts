@@ -31,6 +31,7 @@ import {
   enforceInputLimits,
   validateEmailRecipient,
 } from "../lib/security";
+import { isWhiteLabelingEnabled } from "../lib/branding";
 
 const CONSUMER_DOMAINS = new Set([
   "gmail.com", "googlemail.com", "yahoo.com", "yahoo.co.uk",
@@ -427,14 +428,17 @@ export const processInbound = internalAction({
     const isAgentAddr = (addr: string) => addr === agentAddress || addr === agentAddressWithSuffix;
 
     // Resolve broker branding once — used for outbound from-name and signature.
-    const brokerLogoUrl = brokerOrg.iconStorageId
+    const whiteLabelingEnabled = isWhiteLabelingEnabled(brokerOrg);
+    const brokerLogoUrl = whiteLabelingEnabled && brokerOrg.iconStorageId
       ? await ctx.storage.getUrl(brokerOrg.iconStorageId)
       : null;
-    const brokerBranding: BrokerBranding = {
-      name: brokerOrg.name,
-      logoUrl: brokerLogoUrl,
-      agentDisplayName: brokerOrg.agentDisplayName,
-    };
+    const brokerBranding: BrokerBranding | undefined = whiteLabelingEnabled
+      ? {
+          name: brokerOrg.name,
+          logoUrl: brokerLogoUrl,
+          agentDisplayName: brokerOrg.agentDisplayName,
+        }
+      : undefined;
     const fromHeader = `${getAgentFromName(brokerBranding)} <${agentAddress}>`;
     const agentInTo = toAddresses.some(isAgentAddr);
     const agentInCc = ccAddresses.some(isAgentAddr);

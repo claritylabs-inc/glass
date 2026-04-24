@@ -1,7 +1,7 @@
 import { convexAuth } from "@convex-dev/auth/server";
 import { Email } from "@convex-dev/auth/providers/Email";
 import { buildOtpEmail } from "./lib/emailTemplate";
-import { getBrandingContext } from "./lib/branding";
+import { getBrandingContext, isWhiteLabelingEnabled } from "./lib/branding";
 import { sendResendEmail, getAuthFromAddress } from "./lib/resend";
 import { internal } from "./_generated/api";
 
@@ -154,6 +154,7 @@ export const brokerBrandingForEmail = internalQuery({
     if (!brokerOrgId) return null;
     const broker = await ctx.db.get(brokerOrgId);
     if (!broker || broker.type !== "broker") return null;
+    if (!isWhiteLabelingEnabled(broker)) return null;
 
     const iconUrl = broker.iconStorageId
       ? await ctx.storage.getUrl(broker.iconStorageId)

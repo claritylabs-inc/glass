@@ -6,6 +6,7 @@ import { internal } from "../_generated/api";
 import { buildNotificationEmail, NotificationEmailBranding } from "../lib/notificationEmailTemplate";
 import { NotificationType, getEffectiveEmailDefault } from "../lib/notificationTypes";
 import { sendResendEmail, getNotificationFromAddress } from "../lib/resend";
+import { isWhiteLabelingEnabled } from "../lib/branding";
 
 export const send = internalAction({
   args: { notificationId: v.id("notifications") },
@@ -75,16 +76,19 @@ export const send = internalAction({
       );
       // Get logo URL via storage if iconStorageId is set
       let logoUrl: string | null = null;
-      if (brokerOrg?.iconStorageId) {
+      const whiteLabelingEnabled = !!brokerOrg && isWhiteLabelingEnabled(brokerOrg);
+      if (whiteLabelingEnabled && brokerOrg?.iconStorageId) {
         logoUrl = await ctx.storage.getUrl(brokerOrg.iconStorageId);
       }
-      branding = {
-        kind: "broker",
-        brokerName: brokerOrg?.name ?? "Your broker",
-        agentDisplayName: brokerOrg?.agentDisplayName ?? null,
-        accentColor: brokerOrg?.brandingColor ?? null,
-        logoUrl,
-      };
+      branding = whiteLabelingEnabled
+        ? {
+            kind: "broker",
+            brokerName: brokerOrg?.name ?? "Your broker",
+            agentDisplayName: brokerOrg?.agentDisplayName ?? null,
+            accentColor: brokerOrg?.brandingColor ?? null,
+            logoUrl,
+          }
+        : { kind: "glass" };
     } else {
       branding = { kind: "glass" };
     }

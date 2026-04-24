@@ -4,6 +4,7 @@ import { requireOrgAccess, requireOrgAdmin, getOrgAccess } from "./lib/orgAuth";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { getOrgAccess as getOrgAccessNew, assertBrokerOrg } from "./lib/access";
 import type { Id } from "./_generated/dataModel";
+import { isWhiteLabelingEnabled } from "./lib/branding";
 
 // ── Queries ──
 
@@ -42,6 +43,7 @@ export const viewerOrg = query({
       slug?: string;
       website?: string;
       brandingColor?: string;
+      whiteLabelingEnabled?: boolean;
       agentHandle?: string;
       agentDisplayName?: string;
       iconUrl: string | null;
@@ -55,7 +57,8 @@ export const viewerOrg = query({
     if ((org.type ?? "client") === "client" && org.brokerOrgId) {
       const broker = await ctx.db.get(org.brokerOrgId);
       if (broker) {
-        const brokerIconUrl = broker.iconStorageId
+        const whiteLabelingEnabled = isWhiteLabelingEnabled(broker);
+        const brokerIconUrl = whiteLabelingEnabled && broker.iconStorageId
           ? await ctx.storage.getUrl(broker.iconStorageId)
           : null;
         let primaryContact: {
@@ -81,9 +84,10 @@ export const viewerOrg = query({
           name: broker.name,
           slug: broker.slug,
           website: broker.website,
-          brandingColor: broker.brandingColor,
+          whiteLabelingEnabled,
+          brandingColor: whiteLabelingEnabled ? broker.brandingColor : undefined,
           agentHandle: broker.agentHandle,
-          agentDisplayName: broker.agentDisplayName,
+          agentDisplayName: whiteLabelingEnabled ? broker.agentDisplayName : undefined,
           iconUrl: brokerIconUrl,
           primaryContact,
         };
@@ -165,13 +169,17 @@ export const publicBrokerBySlug = query({
       .withIndex("by_slug", (q) => q.eq("slug", normalized))
       .first();
     if (!org || org.type !== "broker") return null;
-    const iconUrl = org.iconStorageId ? await ctx.storage.getUrl(org.iconStorageId) : null;
+    const whiteLabelingEnabled = isWhiteLabelingEnabled(org);
+    const iconUrl = whiteLabelingEnabled && org.iconStorageId
+      ? await ctx.storage.getUrl(org.iconStorageId)
+      : null;
     return {
       name: org.name,
       slug: org.slug,
       website: org.website,
-      brandingColor: org.brandingColor,
-      agentDisplayName: org.agentDisplayName,
+      whiteLabelingEnabled,
+      brandingColor: whiteLabelingEnabled ? org.brandingColor : undefined,
+      agentDisplayName: whiteLabelingEnabled ? org.agentDisplayName : undefined,
       iconUrl,
     };
   },
@@ -274,6 +282,7 @@ export const createBrokerOrg = mutation({
     website: v.optional(v.string()),
     slug: v.string(),
     brandingColor: v.optional(v.string()),
+    whiteLabelingEnabled: v.optional(v.boolean()),
     agentDisplayName: v.optional(v.string()),
     agentHandle: v.optional(v.string()),
   },
@@ -307,6 +316,9 @@ export const createBrokerOrg = mutation({
       type: "broker",
       slug: normalized,
       ...(args.website && { website: args.website }),
+      ...(args.whiteLabelingEnabled !== undefined && {
+        whiteLabelingEnabled: args.whiteLabelingEnabled,
+      }),
       ...(args.brandingColor && { brandingColor: args.brandingColor }),
       ...(args.agentDisplayName && { agentDisplayName: args.agentDisplayName }),
       ...(args.agentHandle && { agentHandle: args.agentHandle.toLowerCase().replace(/[^a-z0-9-]/g, "") }),
@@ -428,6 +440,7 @@ export const updateOrg = mutation({
     allowedDomains: v.optional(v.array(v.string())),
     emailVerification: v.optional(v.union(v.literal("strict"), v.literal("domain"), v.literal("open"))),
     brandingColor: v.optional(v.string()),
+    whiteLabelingEnabled: v.optional(v.boolean()),
     brandingMode: v.optional(v.union(v.literal("light"), v.literal("dark"))),
     brandingTextOnAccent: v.optional(v.union(v.literal("light"), v.literal("dark"), v.literal("auto"))),
     agentDisplayName: v.optional(v.string()),

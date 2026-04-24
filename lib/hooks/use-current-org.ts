@@ -18,6 +18,7 @@ export type CurrentOrgContext = {
   orgName: string;
   brokerOrgId: Id<"organizations"> | undefined;
   slug: string | undefined;
+  whiteLabelingEnabled: boolean;
   brandingColor: string | undefined;
   agentDisplayName: string | undefined;
 };
@@ -49,6 +50,7 @@ export function useCurrentOrg(): CurrentOrgContext | null | undefined {
     type?: string;
     brokerOrgId?: Id<"organizations">;
     slug?: string;
+    whiteLabelingEnabled?: boolean;
     brandingColor?: string;
     agentDisplayName?: string;
   };
@@ -73,6 +75,7 @@ export function useCurrentOrg(): CurrentOrgContext | null | undefined {
     orgName: org.name,
     brokerOrgId: org.brokerOrgId,
     slug: org.slug,
+    whiteLabelingEnabled: org.whiteLabelingEnabled !== false,
     brandingColor: org.brandingColor,
     agentDisplayName: org.agentDisplayName,
   };
