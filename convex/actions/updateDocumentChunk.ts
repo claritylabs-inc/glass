@@ -35,7 +35,7 @@ export const update = action({
       const nextText = args.text.trim();
       patch.text = nextText;
       if (nextText !== chunk.text) {
-        const embedText = makeEmbedText();
+        const embedText = makeEmbedText(ctx, orgId);
         patch.embedding = await embedText(nextText);
       }
     }

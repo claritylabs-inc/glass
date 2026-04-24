@@ -6,7 +6,6 @@ import { ConvexClientProvider } from "@/components/providers";
 import { AuthGuard } from "@/components/auth-guard";
 import { AppToaster } from "@/components/ui/toaster";
 import { BrandThemeApplier } from "@/components/brand-theme-applier";
-import { PoweredByFooter } from "@/components/powered-by-footer";
 import { getViewerBranding } from "@/lib/viewer-branding";
 import "./globals.css";
 
@@ -82,7 +81,6 @@ export default function RootLayout({
           <ConvexClientProvider>
             <BrandThemeApplier />
             <AuthGuard>{children}</AuthGuard>
-            <PoweredByFooter />
             <AppToaster />
           </ConvexClientProvider>
         </body>

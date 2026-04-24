@@ -150,6 +150,7 @@ export default function ClientOnboardingSetupPage() {
   const viewerOrg = useQuery(api.orgs.viewerOrg, {});
   const updateProfile = useMutation(api.users.updateProfile);
   const updateOrg = useMutation(api.orgs.updateOrg);
+  const createClientOrg = useMutation(api.orgs.createClientOrg);
   const completeOnboarding = useMutation(api.users.completeOnboarding);
   const generateUploadUrl = useMutation(api.policies.generateUploadUrl);
   const extractFromUpload = useAction(api.actions.extractFromUpload.extractFromUpload);
@@ -220,10 +221,17 @@ export default function ClientOnboardingSetupPage() {
     try {
       const trimmedName = orgName.trim();
       const trimmedSite = website.trim();
-      await updateOrg({
-        name: trimmedName || undefined,
-        website: trimmedSite || undefined,
-      });
+      if (viewerOrg?.org) {
+        await updateOrg({
+          name: trimmedName || undefined,
+          website: trimmedSite || undefined,
+        });
+      } else {
+        await createClientOrg({
+          name: trimmedName,
+          website: trimmedSite || undefined,
+        });
+      }
       if (trimmedSite) {
         const enrichToast = toast.loading("Enriching your profile from your website…");
         void extractCompanyInfo({ url: trimmedSite })
@@ -236,29 +244,38 @@ export default function ClientOnboardingSetupPage() {
     } finally {
       setSubmitting(false);
     }
-  }, [updateOrg, orgName, website, extractCompanyInfo]);
+  }, [updateOrg, createClientOrg, viewerOrg, orgName, website, extractCompanyInfo]);
 
   const handleFilesUpload = useCallback(
     async (files: File[]) => {
+      if (files.length === 0) return;
       setUploading(true);
       try {
-        for (const file of files) {
+        const storageIds: string[] = [];
+        for (let i = 0; i < files.length; i++) {
           const uploadUrl = await generateUploadUrl();
           const res = await fetch(uploadUrl, {
             method: "POST",
             headers: { "Content-Type": "application/pdf" },
-            body: file,
+            body: files[i],
           });
           if (!res.ok) throw new Error("Upload failed");
           const { storageId } = (await res.json()) as { storageId: string };
-          await extractFromUpload({
-            fileId: storageId as never,
-            fileName: file.name,
-          });
+          storageIds.push(storageId);
         }
+
+        await extractFromUpload({
+          fileId: storageIds[0] as never,
+          fileName: files[0].name,
+          additionalFiles: storageIds.slice(1).map((fileId, i) => ({
+            fileId: fileId as never,
+            fileName: files[i + 1].name,
+          })),
+        });
+
         toast.success(
           files.length > 1
-            ? `${files.length} uploads started — extraction runs in the background.`
+            ? `${files.length} files uploaded and merged — extraction runs in the background.`
             : "Upload started — extraction runs in the background.",
         );
       } catch (err) {

@@ -67,7 +67,6 @@ export function BrokerContactCard({ broker }: BrokerContactCardProps) {
         <div className="border-t border-foreground/6 px-5 py-4 flex flex-col sm:flex-row sm:items-center sm:gap-8 gap-3">
           {broker.primaryContact ? (
             <div className="min-w-0">
-              <div className="text-label-sm text-muted-foreground mb-0.5">Your broker</div>
               <div className="text-body-sm font-medium text-foreground truncate">
                 {broker.primaryContact.name ?? "Contact"}
                 {broker.primaryContact.title ? (

@@ -5,7 +5,7 @@ import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import { generateText, streamText, stepCountIs } from "ai";
-import { getModel } from "../lib/models";
+import { getModelForOrg } from "../lib/models";
 import {
   lookupPolicy,
   lookupPolicySection,
@@ -639,7 +639,7 @@ export const run = internalAction({
       };
 
       const result = streamText({
-        model: getModel("chat"),
+        model: await getModelForOrg(ctx, args.orgId, "chat"),
         maxOutputTokens: 4096,
         system: fullSystemPrompt,
         messages: messageHistory,
@@ -912,7 +912,7 @@ export const run = internalAction({
       if (userMessages.length === 1) {
         try {
           const { text: titleText } = await generateText({
-            model: getModel("summary"),
+            model: await getModelForOrg(ctx, args.orgId, "summary"),
             maxOutputTokens: 12,
             system:
               "You are a title generator. Given a user question and an assistant reply, output a short 2-4 word title that captures the topic. Rules:\n- Output ONLY the title, no quotes, no punctuation, no explanation\n- Use title case\n- Examples: \"GL Coverage Limits\", \"Cyber Liability Quotes\", \"Workers Comp App\", \"Renewal Timeline\"",

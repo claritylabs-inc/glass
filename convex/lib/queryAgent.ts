@@ -23,7 +23,7 @@ export function buildQueryAgent(
   ctx: ActionCtx,
   orgId: Id<"organizations">,
 ) {
-  const embed = makeEmbedText();
+  const embed = makeEmbedText(ctx, orgId);
 
   return createQueryAgent({
     generateText: makeGenerateText("chat"),

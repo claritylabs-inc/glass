@@ -4,7 +4,21 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createMoonshotAI } from "@ai-sdk/moonshotai";
 import { createDeepSeek } from "@ai-sdk/deepseek";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { createXai } from "@ai-sdk/xai";
+import { createMistral } from "@ai-sdk/mistral";
+import { createCohere } from "@ai-sdk/cohere";
 import type { LanguageModel } from "ai";
+import { internal } from "../_generated/api";
+import type { Id } from "../_generated/dataModel";
+import type { ActionCtx } from "../_generated/server";
+import {
+  FALLBACK_MODEL,
+  MODEL_ROUTING,
+  type ModelProvider,
+  type ModelRoute,
+  type ModelTask,
+} from "./modelCatalog";
 
 /**
  * Centralized model configuration for Glass.
@@ -23,6 +37,10 @@ let _anthropic: ReturnType<typeof createAnthropic> | null = null;
 let _openai: ReturnType<typeof createOpenAI> | null = null;
 let _moonshot: ReturnType<typeof createMoonshotAI> | null = null;
 let _deepseek: ReturnType<typeof createDeepSeek> | null = null;
+let _google: ReturnType<typeof createGoogleGenerativeAI> | null = null;
+let _xai: ReturnType<typeof createXai> | null = null;
+let _mistral: ReturnType<typeof createMistral> | null = null;
+let _cohere: ReturnType<typeof createCohere> | null = null;
 
 function anthropic() {
   if (!_anthropic) _anthropic = createAnthropic();
@@ -39,57 +57,34 @@ function moonshot() {
   return _moonshot;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function deepseek() {
   if (!_deepseek) _deepseek = createDeepSeek();
   return _deepseek;
 }
 
-/**
- * Task types used throughout the codebase.
- */
-export type ModelTask =
-  | "chat"
-  | "email_draft"
-  | "email_reply"
-  | "extraction"
-  | "classification"
-  | "analysis"
-  | "summary"
-  | "triage"
-  | "email_extraction"
-  | "document_extraction"
-  | "security"
-  | "application_authoring";
+function google() {
+  if (!_google) _google = createGoogleGenerativeAI();
+  return _google;
+}
 
-/**
- * Model routing.
- *
- * GPT-5.4 mini: chat, tools, extraction (strong structured output)
- * GPT-5.4 nano: triage, email extraction (cheap, high token limits)
- * GPT-4.1 nano: security classification (cheapest available)
- * Kimi K2.5: analysis, email drafting (256K context)
- * Claude Haiku: classification, summary (fast, cheap) + fallback
- */
-/** Static metadata for each task — exposed via the /weather page. */
-export const MODEL_ROUTING: Record<ModelTask, { model: string; provider: string }> = {
-  chat:                   { model: "gpt-5.4-mini",              provider: "OpenAI" },
-  email_draft:            { model: "kimi-k2.5",                 provider: "MoonshotAI" },
-  email_reply:            { model: "kimi-k2.5",                 provider: "MoonshotAI" },
-  analysis:               { model: "kimi-k2.5",                 provider: "MoonshotAI" },
-  summary:                { model: "claude-haiku-4-5-20251001",  provider: "Anthropic" },
-  classification:         { model: "claude-haiku-4-5-20251001",  provider: "Anthropic" },
-  extraction:             { model: "gpt-5.4-mini",              provider: "OpenAI" },
-  triage:                 { model: "gpt-5.4-nano",              provider: "OpenAI" },
-  email_extraction:       { model: "gpt-5.4-nano",              provider: "OpenAI" },
-  document_extraction:    { model: "claude-haiku-4-5-20251001", provider: "Anthropic" },
-  security:               { model: "gpt-4.1-nano",              provider: "OpenAI" },
-  application_authoring:  { model: "gpt-5.4-mini",              provider: "OpenAI" },
-};
+function xai() {
+  if (!_xai) _xai = createXai();
+  return _xai;
+}
 
-export const FALLBACK_MODEL = { model: "gpt-5.4-mini", provider: "OpenAI" };
+function mistral() {
+  if (!_mistral) _mistral = createMistral();
+  return _mistral;
+}
 
-const MODEL_CONFIG: Record<ModelTask, () => LanguageModel> = {
+function cohere() {
+  if (!_cohere) _cohere = createCohere();
+  return _cohere;
+}
+
+export { FALLBACK_MODEL, MODEL_ROUTING, type ModelProvider, type ModelRoute, type ModelTask };
+
+const MODEL_CONFIG: Record<Exclude<ModelTask, "embeddings">, () => LanguageModel> = {
   chat:             () => openai()("gpt-5.4-mini"),
   email_draft:      () => moonshot()("kimi-k2.5"),
   email_reply:      () => moonshot()("kimi-k2.5"),
@@ -104,7 +99,36 @@ const MODEL_CONFIG: Record<ModelTask, () => LanguageModel> = {
   application_authoring: () => openai()("gpt-5.4-mini"),
 };
 
+function providerModel(provider: ModelProvider, model: string, apiKey?: string): LanguageModel {
+  switch (provider) {
+    case "openai":
+      return (apiKey ? createOpenAI({ apiKey }) : openai())(model);
+    case "anthropic":
+      return (apiKey ? createAnthropic({ apiKey }) : anthropic())(model);
+    case "google":
+      return (apiKey ? createGoogleGenerativeAI({ apiKey }) : google())(model);
+    case "xai":
+      return (apiKey ? createXai({ apiKey }) : xai())(model);
+    case "mistral":
+      return (apiKey ? createMistral({ apiKey }) : mistral())(model);
+    case "cohere":
+      return (apiKey ? createCohere({ apiKey }) : cohere())(model);
+    case "moonshot":
+      return (apiKey ? createMoonshotAI({ apiKey }) : moonshot())(model);
+    case "deepseek":
+      return (apiKey ? createDeepSeek({ apiKey }) : deepseek())(model);
+  }
+}
+
+function modelFromRoute(route: ModelRoute, apiKey?: string): LanguageModel {
+  return providerModel(route.provider, route.model, apiKey);
+}
+
 export function getModel(task: ModelTask): LanguageModel {
+  if (task === "embeddings") {
+    console.warn('Embeddings requested through getModel(), falling back to chat');
+    return MODEL_CONFIG.chat();
+  }
   const factory = MODEL_CONFIG[task];
   if (!factory) {
     console.warn(`Unknown model task "${task}", falling back to chat`);
@@ -115,6 +139,30 @@ export function getModel(task: ModelTask): LanguageModel {
   } catch {
     console.warn(`Provider for task "${task}" not available, falling back to Claude Haiku`);
     return anthropic()("claude-haiku-4-5-20251001");
+  }
+}
+
+export async function getModelForOrg(
+  ctx: ActionCtx,
+  orgId: Id<"organizations">,
+  task: ModelTask,
+): Promise<LanguageModel> {
+  try {
+    const settings = await ctx.runQuery(internal.modelSettings.resolveForOrg, { orgId });
+    const configuredRoute = settings?.routes?.[task];
+    const configuredApiKey = configuredRoute
+      ? settings?.providerKeys?.[configuredRoute.provider]
+      : undefined;
+    const route = configuredRoute && configuredApiKey ? configuredRoute : MODEL_ROUTING[task];
+    const apiKey = configuredRoute && configuredApiKey ? configuredApiKey : undefined;
+    return modelFromRoute(route, apiKey);
+  } catch (err) {
+    console.warn(
+      `Configured model for task "${task}" unavailable: ${
+        err instanceof Error ? err.message : String(err)
+      }. Falling back to static routing.`,
+    );
+    return getModel(task);
   }
 }
 

@@ -15,9 +15,10 @@ export const CLIENT_SETTINGS_SECTIONS: SettingsSection[] = [
   { id: "integrations", label: "Integrations", icon: Puzzle },
 ];
 
-export const BROKER_SETTINGS_SECTIONS: SettingsSection[] = [
+export const PARTNER_SETTINGS_SECTIONS: SettingsSection[] = [
   { id: "organization", label: "Organization", icon: Building2 },
   { id: "team", label: "Team", icon: Users },
+  { id: "models", label: "Models", icon: Brain },
   { id: "connections", label: "Connections", icon: Network },
 ];
 

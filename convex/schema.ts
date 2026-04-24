@@ -3,6 +3,22 @@ import { v } from "convex/values";
 import { authTables } from "@convex-dev/auth/server";
 import { pipelineFields } from "@claritylabs/cl-pipelines/convex";
 
+const modelProviderValidator = v.union(
+  v.literal("openai"),
+  v.literal("anthropic"),
+  v.literal("google"),
+  v.literal("xai"),
+  v.literal("mistral"),
+  v.literal("cohere"),
+  v.literal("moonshot"),
+  v.literal("deepseek"),
+);
+
+const modelRouteValidator = v.object({
+  provider: modelProviderValidator,
+  model: v.string(),
+});
+
 export default defineSchema({
   ...authTables,
 
@@ -67,6 +83,13 @@ export default defineSchema({
     iconStorageId: v.optional(v.id("_storage")),
     // Dual-org: org type discriminator
     type: v.optional(v.union(v.literal("broker"), v.literal("client"))),
+    // Partner type — only meaningful when type === "broker"
+    partnerType: v.optional(v.union(
+      v.literal("broker"),
+      v.literal("program_admin"),
+      v.literal("carrier"),
+      v.literal("other"),
+    )),
     // Set on client orgs only — ID of the managing broker org
     brokerOrgId: v.optional(v.id("organizations")),
     // Client-org lifecycle: "draft" = broker is preparing, "invited" = invite sent and pending,
@@ -105,6 +128,37 @@ export default defineSchema({
     .index("by_userId", ["userId"])
     .index("by_orgId", ["orgId"])
     .index("by_orgId_userId", ["orgId", "userId"]),
+
+  brokerModelSettings: defineTable({
+    brokerOrgId: v.id("organizations"),
+    providerKeys: v.optional(v.object({
+      openai: v.optional(v.string()),
+      anthropic: v.optional(v.string()),
+      google: v.optional(v.string()),
+      xai: v.optional(v.string()),
+      mistral: v.optional(v.string()),
+      cohere: v.optional(v.string()),
+      moonshot: v.optional(v.string()),
+      deepseek: v.optional(v.string()),
+    })),
+    routes: v.optional(v.object({
+      chat: v.optional(modelRouteValidator),
+      email_draft: v.optional(modelRouteValidator),
+      email_reply: v.optional(modelRouteValidator),
+      extraction: v.optional(modelRouteValidator),
+      classification: v.optional(modelRouteValidator),
+      analysis: v.optional(modelRouteValidator),
+      summary: v.optional(modelRouteValidator),
+      triage: v.optional(modelRouteValidator),
+      email_extraction: v.optional(modelRouteValidator),
+      document_extraction: v.optional(modelRouteValidator),
+      security: v.optional(modelRouteValidator),
+      application_authoring: v.optional(modelRouteValidator),
+      embeddings: v.optional(modelRouteValidator),
+    })),
+    updatedBy: v.id("users"),
+    updatedAt: v.number(),
+  }).index("by_brokerOrgId", ["brokerOrgId"]),
 
   // Org memory — persistent AI knowledge (facts, preferences, risk notes, observations)
   orgMemory: defineTable({

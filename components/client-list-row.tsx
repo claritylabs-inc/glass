@@ -34,7 +34,7 @@ export type ClientRow =
     }
   | {
       kind: "invite";
-      brokerOrgId: Id<"organizations">;
+      partnerOrgId: Id<"organizations">;
       invitationId: Id<"clientInvitations">;
       name: string;
       primaryContactName?: string;
@@ -105,7 +105,7 @@ export function ClientListRow({ row }: { row: ClientRow }) {
           onClick={async (e) => {
             e.preventDefault();
             e.stopPropagation();
-            await revokeInvite({ invitationId: row.invitationId, orgId: row.brokerOrgId });
+            await revokeInvite({ invitationId: row.invitationId, orgId: row.partnerOrgId });
             toast.success("Invite revoked");
           }}
         >

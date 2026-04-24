@@ -107,7 +107,7 @@ async function buildVectorContext(
   quotes: Doc<"policies">[],
   queryText: string,
 ): Promise<{ context: string; relevantPolicyIds: Id<"policies">[]; relevantQuoteIds: Id<"policies">[] }> {
-  const embed = makeEmbedText();
+  const embed = makeEmbedText(ctx, orgId);
   const queryEmbedding = await embed(queryText);
 
   const results = await ctx.vectorSearch("documentChunks", "by_embedding", {
@@ -295,7 +295,7 @@ export async function buildConversationMemoryContext(
   queryText: string,
 ): Promise<string> {
   try {
-    const embed = makeEmbedText();
+    const embed = makeEmbedText(ctx, orgId);
     const queryEmbedding = await embed(queryText);
 
     const results = await ctx.vectorSearch("conversationTurns", "by_embedding", {

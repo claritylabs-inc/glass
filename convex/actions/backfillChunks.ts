@@ -25,7 +25,7 @@ export const backfill = internalAction({
   },
   handler: async (ctx, args) => {
     const batchSize = args.batchSize ?? 10;
-    const embed = makeEmbedText();
+    const embed = makeEmbedText(ctx, args.orgId);
 
     // Load all complete, non-deleted policies for this org
     const policies = await ctx.runQuery(internal.policies.listAllInternal, {

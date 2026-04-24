@@ -171,7 +171,7 @@ export const extractOne = internalAction({
       const newChunks = allChunks.filter((c) => c.type === "supplementary");
 
       if (newChunks.length > 0) {
-        const embed = makeEmbedText();
+        const embed = makeEmbedText(ctx, policy.orgId as Id<"organizations">);
         for (const chunk of newChunks) {
           const embedding = await embed(chunk.text);
           await ctx.runMutation(internal.documentChunks.insert, {

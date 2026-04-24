@@ -5,7 +5,7 @@ import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { generateText, stepCountIs, type ModelMessage } from "ai";
 import { haikuModel } from "../lib/ai";
-import { getModel } from "../lib/models";
+import { getModelForOrg } from "../lib/models";
 import {
   lookupPolicy,
   lookupPolicySection,
@@ -1217,7 +1217,7 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
 
       // Agentic loop — the model decides tools (COI, policy extraction, Q&A)
       const result = await generateText({
-        model: getModel("chat"),
+        model: await getModelForOrg(ctx, orgId, "chat"),
         maxOutputTokens: 4096,
         system: systemContext,
         messages,

@@ -25,6 +25,7 @@ import { IntegrationsSection } from "@/components/settings/integrations-section"
 import { MemorySection } from "@/components/settings/memory-section";
 import { BrokerTeamTab } from "@/components/settings/broker-team-tab";
 import { BrokerAgentTab } from "@/components/settings/broker-agent-tab";
+import { ModelsSection } from "@/components/settings/models-section";
 import NotificationPreferencesPage from "./notifications/page";
 import { Bell } from "lucide-react";
 
@@ -41,6 +42,7 @@ const BROKER_SETTINGS_SECTIONS = [
   { id: "organization", label: "Organization", icon: Building2 },
   { id: "team", label: "Team", icon: Users },
   { id: "agent", label: "Agent", icon: GlassStarIcon },
+  { id: "models", label: "Models", icon: Brain },
   { id: "connections", label: "Connections", icon: Network },
   { id: "notifications", label: "Notifications", icon: Bell },
 ] as const;
@@ -126,6 +128,7 @@ function SectionContent({ section, isBroker }: { section: SettingsSection; isBro
         {section === "organization" ? <OrganizationSection /> :
          section === "team" ? <BrokerTeamTab /> :
          section === "agent" ? <BrokerAgentTab /> :
+         section === "models" ? <ModelsSection /> :
          section === "connections" ? <ConnectionsSection /> :
          section === "notifications" && currentOrg?.orgId ? (
            <NotificationPreferencesPage orgId={currentOrg.orgId} />

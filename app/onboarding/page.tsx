@@ -23,7 +23,7 @@ export default function OnboardingRoutePage() {
     const requestedBrokerFlow = searchParams?.get("type") === "broker";
     const orgType = (viewerOrg?.org as { type?: "broker" | "client" } | undefined)?.type;
 
-    if (requestedBrokerFlow || orgType === "broker" || !viewerOrg?.org) {
+    if (requestedBrokerFlow || orgType === "broker") {
       router.replace("/onboarding/broker");
       return;
     }

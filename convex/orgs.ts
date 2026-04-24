@@ -275,7 +275,7 @@ export const pendingInvitationForViewer = query({
 
 // ── Mutations ──
 
-/** Create a broker org during broker signup wizard. */
+/** Create a broker org during partner signup wizard. */
 export const createBrokerOrg = mutation({
   args: {
     name: v.string(),
@@ -285,6 +285,12 @@ export const createBrokerOrg = mutation({
     whiteLabelingEnabled: v.optional(v.boolean()),
     agentDisplayName: v.optional(v.string()),
     agentHandle: v.optional(v.string()),
+    partnerType: v.optional(v.union(
+      v.literal("broker"),
+      v.literal("program_admin"),
+      v.literal("carrier"),
+      v.literal("other"),
+    )),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
@@ -314,6 +320,7 @@ export const createBrokerOrg = mutation({
     const orgId = await ctx.db.insert("organizations", {
       name: args.name,
       type: "broker",
+      partnerType: args.partnerType ?? "broker",
       slug: normalized,
       ...(args.website && { website: args.website }),
       ...(args.whiteLabelingEnabled !== undefined && {
@@ -322,6 +329,41 @@ export const createBrokerOrg = mutation({
       ...(args.brandingColor && { brandingColor: args.brandingColor }),
       ...(args.agentDisplayName && { agentDisplayName: args.agentDisplayName }),
       ...(args.agentHandle && { agentHandle: args.agentHandle.toLowerCase().replace(/[^a-z0-9-]/g, "") }),
+    });
+
+    await ctx.db.insert("orgMemberships", {
+      orgId,
+      userId,
+      role: "admin",
+    });
+
+    return orgId;
+  },
+});
+
+/** Create a client org during orphan client signup wizard. */
+export const createClientOrg = mutation({
+  args: {
+    name: v.string(),
+    website: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
+
+    // Check if user already has an org membership
+    const existingMembership = await ctx.db
+      .query("orgMemberships")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .first();
+    if (existingMembership) {
+      throw new Error("User already belongs to an organization");
+    }
+
+    const orgId = await ctx.db.insert("organizations", {
+      name: args.name,
+      type: "client",
+      ...(args.website && { website: args.website }),
     });
 
     await ctx.db.insert("orgMemberships", {

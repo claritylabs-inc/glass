@@ -36,19 +36,24 @@ Core layers:
 
 ## Current Model Routing
 
-Model routing lives in [convex/lib/models.ts](convex/lib/models.ts).
+Default model routing lives in [convex/lib/models.ts](convex/lib/models.ts), with broker-visible catalogs in [convex/lib/modelCatalog.ts](convex/lib/modelCatalog.ts).
 
 - `chat`, `chat_with_tools`, `extraction` → `gpt-5.4-mini`
 - `email_draft`, `email_reply`, `analysis` → `kimi-k2.5` (256K context)
 - `classification`, `summary` → `claude-haiku-4-5-20251001`
+- `embeddings` → `text-embedding-3-small` at 1536 dimensions
 
 Usage notes:
 
-- The email agent (`handleInboundEmail`) uses `getModel("chat")` with tool calling.
-- `orgMemory` extraction from website enrichment and post-email summaries uses Haiku (`getModel("summary")`).
+- Broker admins can configure their own provider API keys and per-use-case model routes in `/settings?section=models`.
+- Broker model settings are stored in `brokerModelSettings`, keyed by broker org. Client-org workflows inherit the managing broker's settings.
+- The UI never exposes Glass's exact default model configuration; model selectors unlock only for providers where the broker has supplied an API key.
+- `embeddings` is routed separately from language-model use cases and is restricted to embedding models. Embeddings remain 1536-dimensional to match Convex vector indexes.
+- Main org-aware actions use `getModelForOrg(ctx, orgId, task)`, which applies broker overrides only when a matching broker-owned provider key exists.
 
 Fallback behavior:
 
+- If no broker key exists for a route, Glass uses its opaque default configuration.
 - `getModel()` falls back to Claude Haiku if a provider is unavailable.
 - `generateTextWithFallback()` and `generateStructuredWithFallback()` retry failed calls on Claude Haiku unless the original model already was Haiku.
 

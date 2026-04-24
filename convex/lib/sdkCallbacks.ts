@@ -13,6 +13,9 @@ import type { ProviderOptions } from "@ai-sdk/provider-utils";
 import { createOpenAI } from "@ai-sdk/openai";
 import { getModel, type ModelTask } from "./models";
 import type { GenerateText, GenerateObject, EmbedText, TokenUsage } from "@claritylabs/cl-sdk";
+import { internal } from "../_generated/api";
+import type { Id } from "../_generated/dataModel";
+import type { ActionCtx } from "../_generated/server";
 
 function mapUsage(aiSdkUsage?: LanguageModelUsage): TokenUsage {
   return {
@@ -240,13 +243,27 @@ function openai() {
 }
 
 /**
- * Create an EmbedText callback using OpenAI text-embedding-3-small (1536 dims).
- * Cost: ~$0.02 per 1M tokens.
+ * Create an EmbedText callback. Broker overrides are only used when the broker
+ * has supplied a matching provider key; otherwise Glass uses its default config.
  */
-export function makeEmbedText(): EmbedText {
+export function makeEmbedText(ctx?: ActionCtx, orgId?: Id<"organizations">): EmbedText {
   return async (text: string) => {
+    let provider = openai();
+    let model = "text-embedding-3-small";
+    if (ctx && orgId) {
+      const settings = await ctx.runQuery(internal.modelSettings.resolveForOrg, { orgId });
+      const route = settings?.routes?.embeddings;
+      const apiKey = route?.provider === "openai" ? settings?.providerKeys?.openai : undefined;
+      if (route?.provider === "openai" && apiKey) {
+        provider = createOpenAI({ apiKey });
+        model = route.model;
+      }
+    }
     const { embedding } = await embed({
-      model: openai().embedding("text-embedding-3-small"),
+      model: provider.embedding(model),
+      providerOptions: {
+        openai: { dimensions: EMBEDDING_DIMENSIONS },
+      },
       value: text,
     });
     return embedding;

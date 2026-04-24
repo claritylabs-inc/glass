@@ -63,6 +63,7 @@ import type * as lib_extraction from "../lib/extraction.js";
 import type * as lib_industries from "../lib/industries.js";
 import type * as lib_mcpAuth from "../lib/mcpAuth.js";
 import type * as lib_mergePdfs from "../lib/mergePdfs.js";
+import type * as lib_modelCatalog from "../lib/modelCatalog.js";
 import type * as lib_models from "../lib/models.js";
 import type * as lib_notificationEmailTemplate from "../lib/notificationEmailTemplate.js";
 import type * as lib_notificationTypes from "../lib/notificationTypes.js";
@@ -84,6 +85,7 @@ import type * as migrations_migrateOnboarding from "../migrations/migrateOnboard
 import type * as migrations_migrateToThreads from "../migrations/migrateToThreads.js";
 import type * as migrations_stripInvitationLegacyFields from "../migrations/stripInvitationLegacyFields.js";
 import type * as modelConfig from "../modelConfig.js";
+import type * as modelSettings from "../modelSettings.js";
 import type * as notificationPreferences from "../notificationPreferences.js";
 import type * as notifications from "../notifications.js";
 import type * as oauth from "../oauth.js";
@@ -163,6 +165,7 @@ declare const fullApi: ApiFromModules<{
   "lib/industries": typeof lib_industries;
   "lib/mcpAuth": typeof lib_mcpAuth;
   "lib/mergePdfs": typeof lib_mergePdfs;
+  "lib/modelCatalog": typeof lib_modelCatalog;
   "lib/models": typeof lib_models;
   "lib/notificationEmailTemplate": typeof lib_notificationEmailTemplate;
   "lib/notificationTypes": typeof lib_notificationTypes;
@@ -184,6 +187,7 @@ declare const fullApi: ApiFromModules<{
   "migrations/migrateToThreads": typeof migrations_migrateToThreads;
   "migrations/stripInvitationLegacyFields": typeof migrations_stripInvitationLegacyFields;
   modelConfig: typeof modelConfig;
+  modelSettings: typeof modelSettings;
   notificationPreferences: typeof notificationPreferences;
   notifications: typeof notifications;
   oauth: typeof oauth;

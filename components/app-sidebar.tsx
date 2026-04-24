@@ -29,7 +29,7 @@ import { usePageContext } from "@/hooks/use-page-context";
 import { useOnboardingCache } from "@/hooks/use-onboarding-cache";
 import { useCurrentOrg } from "@/hooks/use-current-org";
 import { Users, Activity, UserPlus } from "lucide-react";
-import { CLIENT_SETTINGS_SECTIONS, BROKER_SETTINGS_SECTIONS } from "@/lib/settings-sections";
+import { CLIENT_SETTINGS_SECTIONS, PARTNER_SETTINGS_SECTIONS } from "@/lib/settings-sections";
 import { LogoIcon } from "@/components/ui/logo-icon";
 import { PillButton } from "@/components/ui/pill-button";
 import { NotificationsPanel } from "@/components/notifications-panel";
@@ -42,8 +42,8 @@ function GlassStarIcon({ className }: { className?: string }) {
 
 const CLIENT_SETTINGS_WITH_AGENT = [...CLIENT_SETTINGS_SECTIONS];
 
-const BROKER_SETTINGS_WITH_AGENT = [
-  ...BROKER_SETTINGS_SECTIONS,
+const PARTNER_SETTINGS_WITH_AGENT = [
+  ...PARTNER_SETTINGS_SECTIONS,
   { id: "agent", label: "Agent", icon: GlassStarIcon },
 ];
 
@@ -268,13 +268,13 @@ export function AppSidebar({
     };
   }, [collapsed, router, conversations]);
 
-  const brokerWhiteLabelingEnabled = viewerOrg?.brokerOrg?.whiteLabelingEnabled !== false;
+  const partnerWhiteLabelingEnabled = viewerOrg?.brokerOrg?.whiteLabelingEnabled !== false;
   const headerOrgName =
-    brokerWhiteLabelingEnabled && viewerOrg?.brokerOrg
+    partnerWhiteLabelingEnabled && viewerOrg?.brokerOrg
       ? viewerOrg.brokerOrg.name
       : viewerOrg?.org?.name ?? viewer?.name ?? viewer?.email ?? "";
   const headerOrgIcon =
-    brokerWhiteLabelingEnabled && viewerOrg?.brokerOrg
+    partnerWhiteLabelingEnabled && viewerOrg?.brokerOrg
       ? viewerOrg.brokerOrg.iconUrl
       : viewerOrg?.org?.iconUrl ?? null;
   const initials = getInitials(headerOrgName, viewer?.email);
@@ -311,7 +311,7 @@ export function AppSidebar({
           </p>
         )}
         {collapsed && <div className="pt-4 pb-1" />}
-        {(isBroker ? BROKER_SETTINGS_WITH_AGENT : CLIENT_SETTINGS_WITH_AGENT).map((item) => {
+        {(isBroker ? PARTNER_SETTINGS_WITH_AGENT : CLIENT_SETTINGS_WITH_AGENT).map((item) => {
           const isItemActive = item.id === activeSettingsSection;
           return (
             <NavItem
@@ -327,7 +327,7 @@ export function AppSidebar({
         })}
       </nav>
 
-      {/* Broker contact footer — only for clients */}
+      {/* Partner contact footer — only for clients */}
       {!isBroker && viewerOrg?.brokerOrg && !collapsed ? (
         <SidebarBrokerContact broker={viewerOrg.brokerOrg} />
       ) : null}
@@ -406,7 +406,7 @@ export function AppSidebar({
       {/* Nav sections */}
       <nav className="flex-1 overflow-y-auto px-2 pb-2">
         {/* MAIN NAV */}
-        <SectionHeader label={isBroker ? "Broker" : "Insurance"} collapsed={collapsed} />
+        <SectionHeader label={isBroker ? "Partner" : "Insurance"} collapsed={collapsed} />
         {navItems.map((item) => (
           <NavItem
             key={item.href}
@@ -548,7 +548,7 @@ export function AppSidebar({
         )}
       </nav>
 
-      {/* Broker contact footer — only for clients */}
+      {/* Partner contact footer — only for clients */}
       {!isBroker && viewerOrg?.brokerOrg && !collapsed ? (
         <SidebarBrokerContact broker={viewerOrg.brokerOrg} />
       ) : null}
@@ -833,9 +833,6 @@ function SidebarBrokerContact({
   };
   return (
     <div className="border-t border-foreground/6 px-3 py-3">
-      <p className="text-[11px] font-medium text-muted-foreground/50 px-1 pb-2">
-        Your broker
-      </p>
       <div className="rounded-lg border border-foreground/6 bg-card px-3 py-2.5">
         <div className="flex items-center gap-2.5">
           <div
@@ -874,7 +871,7 @@ function SidebarBrokerContact({
               <a
                 href={`mailto:${agentEmail}`}
                 className="block text-label-sm text-muted-foreground hover:text-foreground truncate"
-                title="Broker assistant"
+                title="Partner assistant"
               >
                 {agentEmail}
               </a>

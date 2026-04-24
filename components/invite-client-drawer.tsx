@@ -21,12 +21,12 @@ const LABEL_CLASSES =
   "text-label-sm font-medium text-muted-foreground block mb-1";
 
 export function InviteClientDrawer({
-  brokerOrgId,
+  partnerOrgId,
   open,
   onOpenChange,
   resumeClientOrgId,
 }: {
-  brokerOrgId: Id<"organizations">;
+  partnerOrgId: Id<"organizations">;
   open: boolean;
   onOpenChange: (v: boolean) => void;
   resumeClientOrgId?: Id<"organizations"> | null;
@@ -75,7 +75,7 @@ export function InviteClientDrawer({
     if (!canCreateDraft) return null;
     try {
       const { clientOrgId } = await createDraft({
-        brokerOrgId,
+        brokerOrgId: partnerOrgId,
         primaryContactEmail: contactEmail.trim(),
       });
       setDraftId(clientOrgId);

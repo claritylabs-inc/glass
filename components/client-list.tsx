@@ -12,16 +12,16 @@ import { ClientListRow, type ClientRow } from "@/components/client-list-row";
 type StatusFilter = "all" | "draft" | "invited" | "onboarding" | "active";
 
 export function ClientList({
-  brokerOrgId,
+  partnerOrgId,
   onInvite,
   onResumeDraft,
 }: {
-  brokerOrgId: Id<"organizations">;
+  partnerOrgId: Id<"organizations">;
   onInvite: () => void;
   onResumeDraft: (clientOrgId: Id<"organizations">) => void;
 }) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const rows = useQuery((api as any).clients.listForBroker, { brokerOrgId }) as any[] | undefined;
+  const rows = useQuery((api as any).clients.listForBroker, { brokerOrgId: partnerOrgId }) as any[] | undefined;
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
 
   const STATUS_FILTERS: { id: StatusFilter; label: string }[] = [
@@ -47,7 +47,7 @@ export function ClientList({
     if (r.onboardingStatus === "invited" && r.invitationId && !r.clientOrgId) {
       return {
         kind: "invite",
-        brokerOrgId,
+        partnerOrgId,
         invitationId: r.invitationId as Id<"clientInvitations">,
         name: r.name,
         primaryContactName: r.primaryContactName,

@@ -53,14 +53,14 @@ export default function ClientsPage() {
     </PillButton>
   );
 
-  const brokerOrgId = currentOrg.orgId as Id<"organizations">;
+  const partnerOrgId = currentOrg.orgId as Id<"organizations">;
 
   return (
     <AppShell
       actions={headerActions}
       rightPanel={
         <InviteClientDrawer
-          brokerOrgId={brokerOrgId}
+          partnerOrgId={partnerOrgId}
           open={inviteOpen}
           onOpenChange={(v) => {
             setInviteOpen(v);
@@ -71,7 +71,7 @@ export default function ClientsPage() {
       }
     >
       <ClientList
-        brokerOrgId={brokerOrgId}
+        partnerOrgId={partnerOrgId}
         onInvite={openNew}
         onResumeDraft={openResume}
       />

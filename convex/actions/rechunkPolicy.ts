@@ -45,7 +45,7 @@ export const rechunkOne = internalAction({
 
     // Embed and store new chunks
     if (chunks.length > 0) {
-      const embed = makeEmbedText();
+      const embed = makeEmbedText(ctx, args.orgId);
       for (const chunk of chunks) {
         const embedding = await embed(chunk.text);
         await ctx.runMutation(internal.documentChunks.insert, {

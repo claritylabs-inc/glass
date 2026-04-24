@@ -11,7 +11,7 @@ import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { generateText } from "ai";
-import { getModel } from "../lib/models";
+import { getModelForOrg } from "../lib/models";
 import { insuranceDocToPolicy } from "../lib/documentMapping";
 import { makeEmbedText } from "../lib/sdkCallbacks";
 
@@ -97,7 +97,7 @@ Output: a single JSON object representing the merged InsuranceDocument.`;
       await log(`Reconciliation: sending ${n} documents to reasoning model for merge.`);
 
       const result = await generateText({
-        model: getModel("analysis"),
+        model: await getModelForOrg(ctx, args.orgId, "analysis"),
         prompt,
       });
 
@@ -143,7 +143,7 @@ Output: a single JSON object representing the merged InsuranceDocument.`;
       }
 
       if (chunks.length > 0) {
-        const embed = makeEmbedText();
+        const embed = makeEmbedText(ctx, args.orgId);
         for (const chunk of chunks) {
           try {
             const embedding = await embed(chunk.text);

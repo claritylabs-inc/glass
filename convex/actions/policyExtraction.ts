@@ -16,6 +16,7 @@ import {
 } from "../lib/extraction";
 import type { ExtractionState, PipelineCheckpoint } from "../lib/extraction";
 import { makeEmbedText } from "../lib/sdkCallbacks";
+import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 
 // ─── State Type ────────────────────────────────────────────────────────────────
@@ -191,7 +192,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
           (internal as any).documentChunks.deleteByPolicy,
           { policyId },
         );
-        const embed = makeEmbedText();
+        const embed = makeEmbedText(convexCtx, state.orgId as Id<"organizations">);
         let embedded = 0;
         for (const chunk of chunks) {
           try {

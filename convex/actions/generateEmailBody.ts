@@ -3,7 +3,7 @@
 import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
-import { getModel, generateTextWithFallback } from "../lib/models";
+import { generateTextWithFallback, getModelForOrg } from "../lib/models";
 import { buildIntelligenceContext } from "../lib/agentPrompts";
 import { logAiError } from "../lib/aiUtils";
 
@@ -56,7 +56,7 @@ Respond with JSON:
 
     try {
       const { text } = await generateTextWithFallback({
-        model: getModel("email_draft"),
+        model: await getModelForOrg(ctx, args.orgId, "email_draft"),
         maxOutputTokens: 1024,
         messages: [{ role: "user", content: prompt }],
       });

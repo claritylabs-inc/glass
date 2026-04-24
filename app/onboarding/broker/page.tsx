@@ -143,7 +143,7 @@ async function sampleBrandColors(imgUrl: string): Promise<string[]> {
 type Step = 0 | 1 | 2 | 3;
 
 const STEPS: ReadonlyArray<{ label: string; subtitle?: string }> = [
-  { label: "Set up your brokerage", subtitle: "Tell us about your firm." },
+  { label: "Set up your organization", subtitle: "Tell us about your firm." },
   { label: "Claim your workspace link", subtitle: "Pick the web address your clients will use to reach you." },
   { label: "Brand your agent", subtitle: "Choose how your AI agent shows up to clients." },
   { label: "Set up your email handle", subtitle: "Optional — your clients can email this to reach your agent. You can set this up later." },
@@ -276,6 +276,7 @@ export default function BrokerOnboardingPage() {
   const [userTitle, setUserTitle] = useState("");
   const [orgName, setOrgName] = useState("");
   const [website, setWebsite] = useState("");
+  const [partnerType, setPartnerType] = useState<"broker" | "program_admin" | "carrier" | "other">("broker");
   const [slugInput, setSlugInput] = useState("");
   const [debouncedSlug, setDebouncedSlug] = useState("");
   const [brandingColor, setBrandingColor] = useState("#1E293B");
@@ -389,6 +390,7 @@ export default function BrokerOnboardingPage() {
           name: orgName.trim(),
           website: website.trim() || undefined,
           slug: slugInput.trim(),
+          partnerType,
         });
       }
       setCurrentStep(2);
@@ -476,7 +478,7 @@ export default function BrokerOnboardingPage() {
                 </div>
               </div>
               <div className="space-y-2">
-                <label className={labelClass}>Brokerage name</label>
+                <label className={labelClass}>Organization name</label>
                 <input
                   type="text"
                   value={orgName}
@@ -484,6 +486,19 @@ export default function BrokerOnboardingPage() {
                   placeholder="Acme Insurance Brokers"
                   className={inputClass}
                 />
+              </div>
+              <div className="space-y-2">
+                <label className={labelClass}>Partner type</label>
+                <select
+                  value={partnerType}
+                  onChange={(e) => setPartnerType(e.target.value as typeof partnerType)}
+                  className={inputClass}
+                >
+                  <option value="broker">Insurance broker</option>
+                  <option value="program_admin">Program administrator</option>
+                  <option value="carrier">Carrier / insurer</option>
+                  <option value="other">Other partner</option>
+                </select>
               </div>
               <div className="space-y-2">
                 <label className={labelClass}>Website (optional)</label>
@@ -624,7 +639,7 @@ export default function BrokerOnboardingPage() {
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="text-sm font-medium truncate text-foreground">
-                            {orgName.trim() || "Your brokerage"}
+                            {orgName.trim() || "Your organization"}
                           </div>
                           <div className="text-xs truncate text-muted-foreground">
                             Preview of your client workspace

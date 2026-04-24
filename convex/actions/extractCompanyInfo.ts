@@ -5,7 +5,8 @@ import { z } from "zod";
 import { generateText, Output } from "ai";
 import { action } from "../_generated/server";
 import { api, internal } from "../_generated/api";
-import { getModel } from "../lib/models";
+import type { Id } from "../_generated/dataModel";
+import { getModelForOrg } from "../lib/models";
 import { INDUSTRIES } from "../lib/industries";
 
 // Build a compact reference of valid industry/vertical values for the prompt
@@ -27,6 +28,15 @@ const CompanyInfoSchema = z.object({
   investorsContext: z.string().describe("Investors, funding sources, shareholders. Empty string if not evident."),
   partnersContext: z.string().describe("Business partners, affiliates, joint ventures. Empty string if not evident."),
 });
+
+type CompanyInfo = z.infer<typeof CompanyInfoSchema>;
+type ExtractCompanyInfoResult = {
+  error?: string;
+  success?: true;
+  companyContext?: string;
+  industry?: string;
+  industryVertical?: string;
+} & Partial<Omit<CompanyInfo, "companyContext" | "industry" | "industryVertical">>;
 
 async function fetchFavicon(siteUrl: string): Promise<Blob | null> {
   let base: URL;
@@ -127,13 +137,17 @@ async function fetchWithRawHtml(url: string): Promise<string | null> {
 export const extractCompanyInfo = action({
   args: { url: v.string() },
   returns: v.any(),
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<ExtractCompanyInfoResult> => {
     const viewer = await ctx.runQuery(api.users.viewer);
     if (!viewer) throw new Error("Not authenticated");
-    const viewerOrg = await ctx.runQuery(api.orgs.viewerOrg, {});
+    const viewerOrg: { org: { _id: Id<"organizations"> } } | null = await ctx.runQuery(
+      api.orgs.viewerOrg,
+      {},
+    );
+    if (!viewerOrg?.org) throw new Error("Organization not found");
 
     // Favicon — best effort, parallel with content fetch
-    if (viewerOrg?.org) {
+    if (viewerOrg.org) {
       void (async () => {
         try {
           const iconBlob = await fetchFavicon(args.url);
@@ -156,8 +170,8 @@ export const extractCompanyInfo = action({
       return { error: "Could not retrieve website content" };
     }
 
-    const { output: object } = await generateText({
-      model: getModel("triage"),
+    const { output: object } = (await generateText({
+      model: await getModelForOrg(ctx, viewerOrg.org._id, "triage"),
       output: Output.object({ schema: CompanyInfoSchema }),
       maxOutputTokens: 1024,
       prompt: `Extract company information from the website content below.
@@ -170,7 +184,7 @@ Only return NAICS, yearsInBusiness, numberOfEmployees, and annualRevenue when ex
 
 Website content:
 ${content}`,
-    });
+    })) as { output: CompanyInfo };
 
     const matchedIndustry = INDUSTRIES.find((i) => i.value === object.industry);
     const industry = matchedIndustry?.value;
