@@ -27,10 +27,6 @@ export default function ArchivePage() {
   return (
     <AppShell breadcrumbDetail="Archive">
       <FadeIn when={threads !== undefined} duration={0.4}>
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="!mb-0">Archived Threads</h1>
-        </div>
-
         {threads === undefined && (
           <div className="flex items-center justify-center py-16">
             <Loader2 className="w-5 h-5 animate-spin text-muted-foreground/30" />

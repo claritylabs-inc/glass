@@ -98,6 +98,7 @@ export function AppSidebar({
   const viewer = useQuery(api.users.viewer);
   const viewerOrg = useQuery(api.orgs.viewerOrg, {});
   const unifiedThreads = useQuery(api.threads.list, { archived: false });
+  const archivedThreads = useQuery(api.threads.list, { archived: true });
   const clientThreads = useQuery(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (api as any).threads.listForClient,
@@ -500,13 +501,15 @@ export function AppSidebar({
               </Link>
               );
             })}
-            <Link
-              href="/agent/archive"
-              className="flex items-center gap-2 px-3 py-1 rounded-md text-label-sm text-muted-foreground/40 hover:text-muted-foreground/60 hover:bg-foreground/[0.03] transition-colors mt-0.5"
-            >
-              <Archive className="w-3 h-3 shrink-0" />
-              <span>Archived</span>
-            </Link>
+            {archivedThreads && archivedThreads.length > 0 && (
+              <Link
+                href="/agent/archive"
+                className="flex items-center gap-2 px-3 py-1 rounded-md text-label-sm text-muted-foreground/40 hover:text-muted-foreground/60 hover:bg-foreground/[0.03] transition-colors mt-0.5"
+              >
+                <Archive className="w-3 h-3 shrink-0" />
+                <span>Archived</span>
+              </Link>
+            )}
           </>
         ) : (
           <>

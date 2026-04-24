@@ -5,13 +5,13 @@ import { usePathname } from "next/navigation";
 import { Menu } from "lucide-react";
 import { BrokerShareLinkButton } from "@/components/broker-share-link-button";
 
-const BREADCRUMB_MAP: Record<string, { label: string }> = {
+const BREADCRUMB_MAP: Record<string, { label: string; href?: string }> = {
   "/": { label: "Dashboard" },
   "/policies": { label: "Policies" },
   "/clients": { label: "Clients" },
   "/activity": { label: "Activity" },
   "/connections": { label: "Context" },
-  "/agent": { label: "Glass" },
+  "/agent": { label: "Agent Threads", href: "/policies" },
   "/settings": { label: "Settings" },
   "/profile": { label: "Profile" },
 };
@@ -90,6 +90,7 @@ export function AppTopBar({
   }
 
   const label = crumb?.label ?? "Page";
+  const href = crumb?.href ?? matchedPath;
 
   return (
     <header className="h-12 flex items-center gap-3 px-6 lg:px-8 border-b border-foreground/6 shrink-0">
@@ -106,7 +107,7 @@ export function AppTopBar({
       <div className="flex items-center gap-1.5 min-w-0 flex-1">
         {breadcrumbDetail ? (
           <>
-            <Link href={matchedPath} className="hidden sm:inline text-body-sm font-medium text-muted-foreground/60 hover:text-foreground transition-colors truncate shrink-0">
+            <Link href={href} className="hidden sm:inline text-body-sm font-medium text-muted-foreground/60 hover:text-foreground transition-colors truncate shrink-0">
               {label}
             </Link>
             <span className="hidden sm:inline text-muted-foreground/30 text-body-sm">/</span>
