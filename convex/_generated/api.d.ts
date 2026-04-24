@@ -79,6 +79,7 @@ import type * as lib_sdkCallbacks from "../lib/sdkCallbacks.js";
 import type * as lib_security from "../lib/security.js";
 import type * as lib_threadAccess from "../lib/threadAccess.js";
 import type * as migrations from "../migrations.js";
+import type * as migrations_cleanOrphanAuth from "../migrations/cleanOrphanAuth.js";
 import type * as migrations_migrateOnboarding from "../migrations/migrateOnboarding.js";
 import type * as migrations_migrateToThreads from "../migrations/migrateToThreads.js";
 import type * as migrations_stripInvitationLegacyFields from "../migrations/stripInvitationLegacyFields.js";
@@ -178,6 +179,7 @@ declare const fullApi: ApiFromModules<{
   "lib/security": typeof lib_security;
   "lib/threadAccess": typeof lib_threadAccess;
   migrations: typeof migrations;
+  "migrations/cleanOrphanAuth": typeof migrations_cleanOrphanAuth;
   "migrations/migrateOnboarding": typeof migrations_migrateOnboarding;
   "migrations/migrateToThreads": typeof migrations_migrateToThreads;
   "migrations/stripInvitationLegacyFields": typeof migrations_stripInvitationLegacyFields;
