@@ -3,12 +3,19 @@ import { internalMutation, mutation } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { TableNames } from "./_generated/dataModel";
 
-// Tables to wipe. Excludes Convex system tables (_storage, _scheduled_functions)
-// and authTables (managed by @convex-dev/auth — wipe via dashboard if needed).
+// Tables to wipe. Excludes Convex system tables (_storage, _scheduled_functions).
+// Includes authTables from @convex-dev/auth so dev resets fully clear auth state.
 const TABLES: TableNames[] = [
+  "authAccounts",
+  "authSessions",
+  "authRefreshTokens",
+  "authVerificationCodes",
+  "authVerifiers",
+  "authRateLimits",
   "users",
   "organizations",
   "orgMemberships",
+  "brokerModelSettings",
   "orgMemory",
   "orgInvitations",
   "brokerClientAssignments",

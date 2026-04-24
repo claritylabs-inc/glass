@@ -45,7 +45,7 @@ type Step = 0 | 1 | 2 | 3;
 const STEPS: ReadonlyArray<{ label: string; subtitle?: string }> = [
   { label: "Welcome to Glass", subtitle: "Start by telling us a little about yourself." },
   { label: "Your organization", subtitle: "Confirm your company name and website." },
-  { label: "Your policies", subtitle: "Add policies so you can manage them, get answers and generate COIs." },
+  { label: "Add your policies", subtitle: "Add policies so you can manage them, get answers and generate COIs." },
   { label: "You're all set", subtitle: "Here's what you can do next." },
 ] as const;
 
@@ -322,7 +322,14 @@ export default function ClientOnboardingSetupPage() {
         </div>
 
         {currentStep === 0 && (
-          <div className="space-y-10">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!canContinueStep0 || submitting) return;
+              void handleStep0Next();
+            }}
+            className="space-y-10"
+          >
             <div className="space-y-4">
               <div className="space-y-2">
                 <label className={labelClass}>Your name</label>
@@ -350,8 +357,7 @@ export default function ClientOnboardingSetupPage() {
             {error ? <p className="text-sm text-muted-foreground">{error}</p> : null}
 
             <PillButton
-              type="button"
-              onClick={handleStep0Next}
+              type="submit"
               disabled={!canContinueStep0 || submitting}
               className="w-full justify-center text-sm shadow-none sm:w-auto"
             >
@@ -359,11 +365,18 @@ export default function ClientOnboardingSetupPage() {
               Continue
               {!submitting ? <ArrowRight className="h-4 w-4" /> : null}
             </PillButton>
-          </div>
+          </form>
         )}
 
         {currentStep === 1 && (
-          <div className="space-y-10">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!canContinueStep1 || submitting) return;
+              void handleStep1Next();
+            }}
+            className="space-y-10"
+          >
             <div className="space-y-4">
               <div className="space-y-2">
                 <label className={labelClass}>Organization name</label>
@@ -394,8 +407,7 @@ export default function ClientOnboardingSetupPage() {
             {error ? <p className="text-sm text-muted-foreground">{error}</p> : null}
 
             <PillButton
-              type="button"
-              onClick={handleStep1Next}
+              type="submit"
               disabled={!canContinueStep1 || submitting}
               className="w-full justify-center text-sm shadow-none sm:w-auto"
             >
@@ -403,7 +415,7 @@ export default function ClientOnboardingSetupPage() {
               Continue
               {!submitting ? <ArrowRight className="h-4 w-4" /> : null}
             </PillButton>
-          </div>
+          </form>
         )}
 
         {currentStep === 2 && (

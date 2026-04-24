@@ -452,7 +452,14 @@ export default function BrokerOnboardingPage() {
         </div>
 
         {currentStep === 0 && (
-          <div className="space-y-10">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!canContinueName || submitting) return;
+              void handleNameNext();
+            }}
+            className="space-y-10"
+          >
             <div className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
@@ -515,8 +522,7 @@ export default function BrokerOnboardingPage() {
             {error ? <p className="text-sm text-muted-foreground">{error}</p> : null}
 
             <PillButton
-              type="button"
-              onClick={handleNameNext}
+              type="submit"
               disabled={!canContinueName || submitting}
               className="w-full justify-center text-sm shadow-none sm:w-auto"
             >
@@ -524,11 +530,18 @@ export default function BrokerOnboardingPage() {
               Continue
               {!submitting ? <ArrowRight className="h-4 w-4" /> : null}
             </PillButton>
-          </div>
+          </form>
         )}
 
         {currentStep === 1 && (
-          <div className="space-y-10">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if ((!viewerOrg?.org && !canContinueSlug) || submitting) return;
+              void handleSlugNext();
+            }}
+            className="space-y-10"
+          >
             <div className="space-y-2">
               <label className={labelClass}>Workspace link</label>
               <div className="flex items-stretch gap-0">
@@ -581,8 +594,7 @@ export default function BrokerOnboardingPage() {
             {error ? <p className="text-sm text-muted-foreground">{error}</p> : null}
 
             <PillButton
-              type="button"
-              onClick={handleSlugNext}
+              type="submit"
               disabled={(!viewerOrg?.org && !canContinueSlug) || submitting}
               className="w-full justify-center text-sm shadow-none sm:w-auto"
             >
@@ -590,7 +602,7 @@ export default function BrokerOnboardingPage() {
               Continue
               {!submitting ? <ArrowRight className="h-4 w-4" /> : null}
             </PillButton>
-          </div>
+          </form>
         )}
 
         {currentStep === 2 && (
@@ -676,7 +688,19 @@ export default function BrokerOnboardingPage() {
         )}
 
         {currentStep === 3 && (
-          <div className="space-y-10">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              const handleInvalid =
+                (agentHandle.length > 0 && agentHandle.length < 3) ||
+                (agentHandle.length >= 3 &&
+                  agentHandle !== viewerOrg?.org?.agentHandle &&
+                  (handleChecking || !handleCheck?.available));
+              if (submitting || handleInvalid) return;
+              void handleFinish();
+            }}
+            className="space-y-10"
+          >
             <div className="space-y-2">
               <label className={labelClass}>Agent handle (optional)</label>
               <div className="flex items-stretch gap-0">
@@ -738,8 +762,7 @@ export default function BrokerOnboardingPage() {
             {error ? <p className="text-sm text-muted-foreground">{error}</p> : null}
 
             <PillButton
-              type="button"
-              onClick={handleFinish}
+              type="submit"
               disabled={
                 submitting ||
                 (agentHandle.length > 0 &&
@@ -753,7 +776,7 @@ export default function BrokerOnboardingPage() {
               {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
               {submitting ? "Finishing…" : "Finish setup"}
             </PillButton>
-          </div>
+          </form>
         )}
       </div>
     </Shell>
