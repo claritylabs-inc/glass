@@ -196,7 +196,9 @@ export default function ClientOnboardingSetupPage() {
   }, [viewerOrg, viewer]);
 
   const brokerAgentHandle = viewerOrg?.brokerOrg?.agentHandle ?? viewerOrg?.org?.agentHandle;
-  const brokerAgentEmail = brokerAgentHandle ? `${brokerAgentHandle}@${AGENT_DOMAIN}` : null;
+  const brokerAgentEmail = brokerAgentHandle
+    ? `${brokerAgentHandle}@${AGENT_DOMAIN}`
+    : `agent@${AGENT_DOMAIN}`;
 
   const handleLogout = useCallback(async () => {
     await signOut();
@@ -493,27 +495,40 @@ export default function ClientOnboardingSetupPage() {
 
         {currentStep === 3 && (
           <div className="space-y-10">
-            <p className="text-base text-muted-foreground">
-              Email your agent{" "}
-              {brokerAgentEmail ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    void navigator.clipboard
-                      .writeText(brokerAgentEmail)
-                      .then(() => toast.success("Copied to clipboard"))
-                      .catch(() => toast.error("Couldn't copy"));
-                  }}
-                  className="inline-flex items-center gap-1 font-medium text-foreground underline decoration-foreground/20 underline-offset-4 hover:decoration-foreground/50 transition-colors"
-                >
-                  {brokerAgentEmail}
-                  <Copy className="h-3.5 w-3.5" />
-                </button>
-              ) : (
-                <span className="font-medium text-foreground">your agent</span>
-              )}{" "}
-              to get instant answers to questions and get certificates of insurance for your policies.
-            </p>
+            <ol className="list-none space-y-4 text-base text-muted-foreground [&>li]:flex [&>li]:gap-4">
+              <li>
+                <span className="shrink-0 tabular-nums text-foreground/30">1.</span>
+                <span>See all of your policies, organized, in one place.</span>
+              </li>
+              <li>
+                <span className="shrink-0 tabular-nums text-foreground/30">2.</span>
+                <span>Get proactive alerts about expiring policies and renewals.</span>
+              </li>
+              <li>
+                <span className="shrink-0 tabular-nums text-foreground/30">3.</span>
+                <span>Generate certificates of insurance for customers, vendors and investors.</span>
+              </li>
+              <li>
+                <span className="shrink-0 tabular-nums text-foreground/30">4.</span>
+                <span>
+                  Email{" "}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void navigator.clipboard
+                        .writeText(brokerAgentEmail)
+                        .then(() => toast.success("Copied to clipboard"))
+                        .catch(() => toast.error("Couldn't copy"));
+                    }}
+                    className="mx-1 inline-flex items-center gap-1 font-medium text-foreground underline decoration-foreground/20 underline-offset-4 hover:decoration-foreground/50 transition-colors"
+                  >
+                    {brokerAgentEmail}
+                    <Copy className="h-3.5 w-3.5" />
+                  </button>{" "}
+                  to get instant answers about your insurance coverage.
+                </span>
+              </li>
+            </ol>
 
             {error ? <p className="text-sm text-muted-foreground">{error}</p> : null}
 
