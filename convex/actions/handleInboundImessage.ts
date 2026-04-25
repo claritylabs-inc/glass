@@ -24,7 +24,6 @@ import {
   buildChannelInstructions,
   buildPolicyToolInstructions,
   policySearchScore,
-  logAiError,
 } from "../lib/aiUtils";
 import { classifyPromptInjection, enforceInputLimits } from "../lib/security";
 import type { Id } from "../_generated/dataModel";
@@ -72,6 +71,88 @@ type ImessageResponse = {
   response: string;
   attachments?: Array<{ url: string; filename: string; mimeType: string }>;
 };
+
+function cleanJsonText(text: string): string {
+  return text
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "");
+}
+
+async function sendImmediateImessage(params: {
+  toPhone: string;
+  message: string;
+}): Promise<boolean> {
+  const workerUrl = process.env.IMESSAGE_WORKER_URL;
+  if (!workerUrl) return false;
+
+  try {
+    const res = await fetch(`${workerUrl}/send`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.IMESSAGE_WORKER_SECRET ?? ""}`,
+      },
+      body: JSON.stringify({
+        toPhone: params.toPhone,
+        message: params.message,
+      }),
+    });
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      console.warn(`[imessage] Status cue send failed ${res.status}: ${body}`);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn("[imessage] Status cue send failed:", err);
+    return false;
+  }
+}
+
+async function generateImessageStatusCue(params: {
+  messageText: string;
+  hasAttachments: boolean;
+  userName?: string;
+}): Promise<string | null> {
+  try {
+    const result = await generateText({
+      model: haikuModel,
+      maxOutputTokens: 120,
+      system: `You decide whether an insurance SMS assistant should send a quick status cue before doing retrieval or tool work.
+Return strict JSON only: {"send": boolean, "message": string | null}.
+
+Send only when the user's latest text is a substantive insurance question, document/attachment request, COI request, comparison, lookup, or task likely to require checking policy data/tools.
+Do not send for greetings, thanks, acknowledgements, corrections, jokes, spam, or messages that can be answered immediately without checking anything.
+
+If sending, write one warm, natural SMS sentence under 70 characters. It should say you're checking or taking a look, without promising a result.
+No markdown, no emoji, no greeting, no sign-off.`,
+      messages: [
+        {
+          role: "user",
+          content: JSON.stringify({
+            userName: params.userName ?? null,
+            messageText: params.messageText,
+            hasAttachments: params.hasAttachments,
+          }),
+        },
+      ],
+    });
+
+    const parsed = JSON.parse(cleanJsonText(result.text)) as {
+      send?: unknown;
+      message?: unknown;
+    };
+    if (parsed.send !== true || typeof parsed.message !== "string") return null;
+    const message = parsed.message.trim().replace(/\s+/g, " ");
+    if (message.length === 0 || message.length > 90) return null;
+    return message;
+  } catch (err) {
+    console.warn("[imessage] Status cue generation failed:", err);
+    return null;
+  }
+}
 
 export const processInbound = internalAction({
   args: {
@@ -161,6 +242,29 @@ export const processInbound = internalAction({
 
     const userName = user.name?.split(/\s+/)[0];
 
+    // Send a model-decided status cue before heavier retrieval/tool work so SMS
+    // users get immediate feedback when the agent needs to check policy data.
+    const statusCue = await generateImessageStatusCue({
+      messageText: args.messageText,
+      hasAttachments: (args.attachments?.length ?? 0) > 0,
+      userName,
+    });
+    if (statusCue) {
+      const sent = await sendImmediateImessage({
+        toPhone: fromPhone,
+        message: statusCue,
+      });
+      if (sent) {
+        await ctx.runMutation(internal.threads.insertImessageMessage, {
+          threadId,
+          orgId,
+          role: "agent",
+          content: statusCue,
+          responseMessageId: `${eventKey}:status`,
+        });
+      }
+    }
+
     // ── 6. Store attachments in Convex file storage ───────────────────────
     type AttachmentRecord = {
       filename: string;
@@ -235,6 +339,8 @@ export const processInbound = internalAction({
       if (msg.status === "processing") continue;
       // Skip the message we just inserted (the inbound one)
       if (msg.role === "user" && msg.content === args.messageText) continue;
+      // Status cues are sent for responsiveness and should not steer the final answer.
+      if (msg.role === "agent" && msg.responseMessageId === `${eventKey}:status`) continue;
       if (msg.role === "user") {
         modelMessages.push({ role: "user", content: msg.userName ? `[${msg.userName}]: ${msg.content}` : msg.content });
       } else if (msg.role === "agent" && msg.content) {
@@ -314,7 +420,6 @@ export const processInbound = internalAction({
       lookup_policy: {
         ...lookupPolicy,
         execute: async (params: { query: string; policyType?: string; carrier?: string }) => {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const scored = (policies as any[])
             .map((p) => ({
               policy: p,
@@ -326,7 +431,6 @@ export const processInbound = internalAction({
             ? scored.map((s) => s.policy)
             : (policies as any[]).slice(0, 5);
           if (matches.length === 0) return "No policies found.";
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           return matches.slice(0, 5).map((p: any) => ({
             id: p._id,
             insured: p.insuredName,
@@ -336,7 +440,6 @@ export const processInbound = internalAction({
             effective: p.effectiveDate,
             expiration: p.expirationDate,
             premium: p.premium,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             coverages: (p.coverages ?? []).map((c: any) => ({
               name: c.name, limit: c.limit, deductible: c.deductible,
             })),
@@ -346,7 +449,6 @@ export const processInbound = internalAction({
       lookup_policy_section: {
         ...lookupPolicySection,
         execute: async (params: { policyId: string; query: string }) => {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const policy: any = await ctx.runQuery(internal.policies.getInternal, {
             id: params.policyId as Id<"policies">,
           });
@@ -355,14 +457,12 @@ export const processInbound = internalAction({
           if (!doc) return "No document data available.";
           const q = params.query.toLowerCase();
           const results: Array<{ title: string; type: string; content: string }> = [];
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           for (const s of (doc.sections ?? []) as any[]) {
             const text = `${s.title ?? ""} ${s.content ?? ""}`.toLowerCase();
             if (text.includes(q)) {
               results.push({ title: s.title, type: "section", content: String(s.content ?? "").slice(0, 4000) });
             }
           }
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           for (const e of (doc.endorsements ?? []) as any[]) {
             const text = `${e.title ?? ""} ${e.content ?? ""}`.toLowerCase();
             if (text.includes(q)) {
@@ -375,15 +475,11 @@ export const processInbound = internalAction({
       compare_coverages: {
         ...compareCoverages,
         execute: async (params: { policyId1: string; policyId2: string }) => {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const p1 = (policies as any[]).find((p) => p._id === params.policyId1);
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const p2 = (policies as any[]).find((p) => p._id === params.policyId2);
           if (!p1 || !p2) return "One or both policies not found.";
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const mapP = (p: any) => ({
             id: p._id, carrier: p.security, type: p.policyTypes, limits: p.limits,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             coverages: (p.coverages ?? []).map((c: any) => ({ name: c.name, limit: c.limit })),
           });
           return { policy1: mapP(p1), policy2: mapP(p2) };
@@ -496,9 +592,7 @@ Only include items worth remembering long-term. Skip pleasantries and one-off qu
       });
       let parsed: Array<{ type: string; content: string }> = [];
       try {
-        const cleaned = memoryExtraction.text.trim()
-          .replace(/^```(?:json)?\s*/i, "")
-          .replace(/\s*```$/i, "");
+        const cleaned = cleanJsonText(memoryExtraction.text);
         const arr = JSON.parse(cleaned);
         if (Array.isArray(arr)) parsed = arr;
       } catch {
