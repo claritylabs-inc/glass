@@ -920,40 +920,41 @@ function SidebarBrokerContact({
           </div>
         )}
         {agentEmail ? (
-          <div className="mt-2.5 flex items-stretch gap-1.5">
+          <div className="mt-2.5 grid gap-1.5">
             <PillButton
               variant="secondary"
               size="compact"
-              className="flex-1 justify-center shrink-0"
+              className="w-full"
               onClick={() => {
                 window.location.href = `mailto:${agentEmail}`;
               }}
             >
               <Mail className="h-3 w-3" />
-              Email agent
+              <span className="whitespace-nowrap">Email agent</span>
             </PillButton>
             {userPhone ? (
               <PillButton
                 variant="secondary"
                 size="compact"
-                className="flex-1 justify-center shrink-0"
+                className="w-full"
                 onClick={() => {
                   window.location.href = `sms:${userPhone}`;
                 }}
               >
                 <MessageSquare className="h-3 w-3" />
-                Text My Agent
+                <span className="whitespace-nowrap">Text My Agent</span>
               </PillButton>
             ) : null}
             <PillButton
               variant="secondary"
               size="compact"
-              className="shrink-0 w-7 px-0"
+              className="w-full"
               onClick={handleSaveContact}
               title="Save as contact"
               aria-label="Save as contact"
             >
               <UserPlus className="h-3 w-3" />
+              <span className="whitespace-nowrap">Save contact</span>
             </PillButton>
           </div>
         ) : null}
