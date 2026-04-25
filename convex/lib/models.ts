@@ -9,6 +9,7 @@ import { createXai } from "@ai-sdk/xai";
 import { createMistral } from "@ai-sdk/mistral";
 import { createCohere } from "@ai-sdk/cohere";
 import type { LanguageModel } from "ai";
+import type { ProviderOptions } from "@ai-sdk/provider-utils";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
@@ -27,8 +28,8 @@ import {
  * All models accessed via Vercel AI SDK's provider-agnostic interface.
  *
  * Env vars needed:
- *   ANTHROPIC_API_KEY — Claude Haiku (classification), Claude Sonnet (extraction/fallback)
- *   DEEPSEEK_API_KEY — DeepSeek V3 (primary for chat/tool-calling Q&A)
+ *   OPENAI_API_KEY — GPT-5.5 for core agent/extraction work, GPT-5.4 mini for fast isolated work
+ *   ANTHROPIC_API_KEY — Claude Haiku fallback if the primary provider cannot initialize
  *   MOONSHOTAI_API_KEY — Kimi K2.5 (reasoning: analysis, email writing)
  */
 
@@ -84,20 +85,63 @@ function cohere() {
 
 export { FALLBACK_MODEL, MODEL_ROUTING, type ModelProvider, type ModelRoute, type ModelTask };
 
+const GPT_55 = "gpt-5.5";
+const GPT_54_MINI = "gpt-5.4-mini";
+const CLAUDE_HAIKU = "claude-haiku-4-5-20251001";
+
 const MODEL_CONFIG: Record<Exclude<ModelTask, "embeddings">, () => LanguageModel> = {
-  chat:             () => openai()("gpt-5.4-mini"),
+  chat:             () => openai()(GPT_55),
   email_draft:      () => moonshot()("kimi-k2.5"),
   email_reply:      () => moonshot()("kimi-k2.5"),
   analysis:         () => moonshot()("kimi-k2.5"),
-  summary:          () => anthropic()("claude-haiku-4-5-20251001"),
-  classification:   () => anthropic()("claude-haiku-4-5-20251001"),
-  extraction:       () => openai()("gpt-5.4-mini"),
-  triage:           () => openai()("gpt-5.4-nano"),
-  email_extraction: () => openai()("gpt-5.4-nano"),
-  document_extraction:   () => anthropic()("claude-haiku-4-5-20251001"),
-  security:              () => openai()("gpt-4.1-nano"),
-  application_authoring: () => openai()("gpt-5.4-mini"),
+  summary:          () => openai()(GPT_54_MINI),
+  classification:   () => openai()(GPT_54_MINI),
+  extraction:       () => openai()(GPT_55),
+  triage:           () => openai()(GPT_54_MINI),
+  email_extraction: () => openai()(GPT_54_MINI),
+  document_extraction:   () => openai()(GPT_54_MINI),
+  security:              () => openai()(GPT_54_MINI),
+  application_authoring: () => openai()(GPT_55),
 };
+
+export function getProviderOptionsForRoute(route: ModelRoute): ProviderOptions | undefined {
+  if (route.provider === "openai" && route.model === GPT_55) {
+    return { openai: { reasoningEffort: "none" } };
+  }
+  return undefined;
+}
+
+export function getProviderOptionsForTask(task: ModelTask): ProviderOptions | undefined {
+  return getProviderOptionsForRoute(MODEL_ROUTING[task]);
+}
+
+export function mergeProviderOptions(
+  ...options: Array<ProviderOptions | undefined>
+): ProviderOptions | undefined {
+  const merged: Record<string, unknown> = {};
+  for (const option of options) {
+    if (!option) continue;
+    for (const [provider, value] of Object.entries(option)) {
+      const existing = merged[provider];
+      if (
+        value &&
+        typeof value === "object" &&
+        !Array.isArray(value) &&
+        existing &&
+        typeof existing === "object" &&
+        !Array.isArray(existing)
+      ) {
+        merged[provider] = {
+          ...(existing as Record<string, unknown>),
+          ...(value as Record<string, unknown>),
+        };
+      } else {
+        merged[provider] = value;
+      }
+    }
+  }
+  return Object.keys(merged).length > 0 ? (merged as ProviderOptions) : undefined;
+}
 
 function providerModel(provider: ModelProvider, model: string, apiKey?: string): LanguageModel {
   switch (provider) {
@@ -138,7 +182,7 @@ export function getModel(task: ModelTask): LanguageModel {
     return factory();
   } catch {
     console.warn(`Provider for task "${task}" not available, falling back to Claude Haiku`);
-    return anthropic()("claude-haiku-4-5-20251001");
+    return anthropic()(CLAUDE_HAIKU);
   }
 }
 
@@ -175,13 +219,17 @@ export async function generateTextWithFallback(
   } catch (err: unknown) {
     const modelId = (options.model as Record<string, unknown>)?.modelId as string || "unknown";
     // If already on a fallback model, don't retry
-    if (modelId.includes("gpt-5.4-mini") || modelId.includes("claude-haiku")) throw err;
+    if (modelId.includes(GPT_55) || modelId.includes("claude-haiku")) throw err;
     console.warn(
-      `Primary model (${modelId}) failed: ${err instanceof Error ? err.message : String(err)}. Retrying with GPT-5.4-mini.`,
+      `Primary model (${modelId}) failed: ${err instanceof Error ? err.message : String(err)}. Retrying with GPT-5.5.`,
     );
     return await generateText({
       ...options,
-      model: openai()("gpt-5.4-mini"),
+      model: openai()(GPT_55),
+      providerOptions: mergeProviderOptions(
+        getProviderOptionsForRoute(FALLBACK_MODEL),
+        options.providerOptions,
+      ),
     });
   }
 }
@@ -194,13 +242,17 @@ export async function generateStructuredWithFallback(
     return await generateText(options);
   } catch (err: unknown) {
     const modelId = (options.model as Record<string, unknown>)?.modelId as string || "unknown";
-    if (modelId.includes("gpt-5.4-mini") || modelId.includes("claude-haiku")) throw err;
+    if (modelId.includes(GPT_55) || modelId.includes("claude-haiku")) throw err;
     console.warn(
-      `Primary model (${modelId}) failed for structured output: ${err instanceof Error ? err.message : String(err)}. Retrying with GPT-5.4-mini.`,
+      `Primary model (${modelId}) failed for structured output: ${err instanceof Error ? err.message : String(err)}. Retrying with GPT-5.5.`,
     );
     return await generateText({
       ...options,
-      model: openai()("gpt-5.4-mini"),
+      model: openai()(GPT_55),
+      providerOptions: mergeProviderOptions(
+        getProviderOptionsForRoute(FALLBACK_MODEL),
+        options.providerOptions,
+      ),
     });
   }
 }

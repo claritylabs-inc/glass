@@ -92,12 +92,11 @@ Application sessions auto-fill from known context, ask for missing answers in ba
 
 Model routing is defined in `convex/lib/models.ts`:
 
-- `chat`, `chat_with_tools`, `extraction` -> `gpt-5.4-mini`
+- `chat`, `chat_with_tools`, `extraction`, `application_authoring` -> `gpt-5.5` with OpenAI `reasoningEffort: "none"`
 - `email_draft`, `email_reply`, `analysis` -> `kimi-k2.5`
-- `classification`, `summary` -> `claude-haiku-4-5-20251001`
-- `triage`, `email_extraction` -> `deepseek-chat`
+- `classification`, `summary`, `triage`, `email_extraction`, `document_extraction`, `security` -> `gpt-5.4-mini`
 
-Fallback logic retries supported calls on Claude Haiku if the primary provider fails.
+Fallback logic retries supported calls on `gpt-5.5` with reasoning disabled if the primary provider fails.
 
 ## Convex Rule Of Thumb
 

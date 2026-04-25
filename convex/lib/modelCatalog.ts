@@ -73,6 +73,8 @@ export const MODEL_TASK_DESCRIPTIONS: Record<ModelTask, string> = {
 
 export const LANGUAGE_MODEL_CATALOG: Record<ModelProvider, string[]> = {
   openai: [
+    "gpt-5.5",
+    "gpt-5.5-pro",
     "gpt-5.4-nano",
     "gpt-5.4-mini",
     "gpt-5.4",
@@ -110,22 +112,22 @@ export const EMBEDDING_MODEL_CATALOG: Partial<Record<ModelProvider, string[]>> =
 };
 
 export const MODEL_ROUTING: Record<ModelTask, ModelRoute> = {
-  chat: { model: "gpt-5.4-mini", provider: "openai" },
+  chat: { model: "gpt-5.5", provider: "openai" },
   email_draft: { model: "kimi-k2.5", provider: "moonshot" },
   email_reply: { model: "kimi-k2.5", provider: "moonshot" },
   analysis: { model: "kimi-k2.5", provider: "moonshot" },
-  summary: { model: "claude-haiku-4-5-20251001", provider: "anthropic" },
-  classification: { model: "claude-haiku-4-5-20251001", provider: "anthropic" },
-  extraction: { model: "gpt-5.4-mini", provider: "openai" },
-  triage: { model: "gpt-5.4-nano", provider: "openai" },
-  email_extraction: { model: "gpt-5.4-nano", provider: "openai" },
-  document_extraction: { model: "claude-haiku-4-5-20251001", provider: "anthropic" },
-  security: { model: "gpt-4.1-nano", provider: "openai" },
-  application_authoring: { model: "gpt-5.4-mini", provider: "openai" },
+  summary: { model: "gpt-5.4-mini", provider: "openai" },
+  classification: { model: "gpt-5.4-mini", provider: "openai" },
+  extraction: { model: "gpt-5.5", provider: "openai" },
+  triage: { model: "gpt-5.4-mini", provider: "openai" },
+  email_extraction: { model: "gpt-5.4-mini", provider: "openai" },
+  document_extraction: { model: "gpt-5.4-mini", provider: "openai" },
+  security: { model: "gpt-5.4-mini", provider: "openai" },
+  application_authoring: { model: "gpt-5.5", provider: "openai" },
   embeddings: { model: "text-embedding-3-small", provider: "openai" },
 };
 
-export const FALLBACK_MODEL: ModelRoute = { model: "gpt-5.4-mini", provider: "openai" };
+export const FALLBACK_MODEL: ModelRoute = { model: "gpt-5.5", provider: "openai" };
 
 export const MODEL_TASKS = Object.keys(MODEL_ROUTING) as ModelTask[];
 export const MODEL_PROVIDERS = Object.keys(PROVIDER_LABELS) as ModelProvider[];

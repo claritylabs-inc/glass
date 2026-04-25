@@ -12,7 +12,7 @@ import { getModel } from "./models";
 /**
  * LLM-based prompt injection classifier.
  *
- * Uses gpt-4.1-nano (cheapest available model) to evaluate whether user input
+ * Uses the configured fast classification model to evaluate whether user input
  * contains prompt injection attempts before passing it to the main agent.
  * This is an agentic guard — it understands context and intent, not just
  * regex patterns.

@@ -4,7 +4,7 @@ import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { streamText, generateText, type ModelMessage } from "ai";
-import { haikuModel } from "../lib/ai";
+import { getModelForOrg, getProviderOptionsForTask } from "../lib/models";
 import {
   buildDocumentContext,
   buildConversationMemoryContext,
@@ -144,13 +144,14 @@ WEB CHAT MODE:
         docContext +
         memoryContext;
 
-      // Call Claude with streaming
+      // Stream the agent response
       let content = "";
       let lastFlush = 0;
       const FLUSH_INTERVAL = 150; // ms between DB updates
 
       const result = streamText({
-        model: haikuModel,
+        model: await getModelForOrg(ctx, args.orgId, "chat"),
+        providerOptions: getProviderOptionsForTask("chat"),
         maxOutputTokens: 2048,
         system: fullSystemPrompt,
         messages: messageHistory,
@@ -184,7 +185,8 @@ WEB CHAT MODE:
       if (userMessages.length === 1) {
         try {
           const { text: titleText } = await generateText({
-            model: haikuModel,
+            model: await getModelForOrg(ctx, args.orgId, "summary"),
+            providerOptions: getProviderOptionsForTask("summary"),
             maxOutputTokens: 12,
             system:
               "You are a title generator. Given a user question and an assistant reply, output a short 2-4 word title that captures the topic. Rules:\n- Output ONLY the title, no quotes, no punctuation, no explanation\n- Use title case\n- Examples: \"GL Coverage Limits\", \"Cyber Liability Quotes\", \"Workers Comp App\", \"Renewal Timeline\"",

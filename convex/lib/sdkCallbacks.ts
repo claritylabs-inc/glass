@@ -11,7 +11,12 @@ import { generateText, Output, embed } from "ai";
 import type { LanguageModelUsage } from "ai";
 import type { ProviderOptions } from "@ai-sdk/provider-utils";
 import { createOpenAI } from "@ai-sdk/openai";
-import { getModel, type ModelTask } from "./models";
+import {
+  getModel,
+  getProviderOptionsForTask,
+  mergeProviderOptions,
+  type ModelTask,
+} from "./models";
 import type { GenerateText, GenerateObject, EmbedText, TokenUsage } from "@claritylabs/cl-sdk";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
@@ -189,7 +194,10 @@ export function makeGenerateText(task: ModelTask = "extraction"): GenerateText {
       system,
       ...buildPromptInput(prompt, providerOptions),
       maxOutputTokens: effectiveMaxTokens,
-      providerOptions: providerOptions as ProviderOptions,
+      providerOptions: mergeProviderOptions(
+        getProviderOptionsForTask(task),
+        providerOptions as ProviderOptions,
+      ),
     });
     return {
       text: result.text,
@@ -212,7 +220,10 @@ export function makeGenerateObject(task: ModelTask = "extraction"): GenerateObje
         ...buildPromptInput(prompt, providerOptions),
         output: Output.object({ schema }),
         maxOutputTokens: effectiveMaxTokens,
-        providerOptions: providerOptions as ProviderOptions,
+        providerOptions: mergeProviderOptions(
+          getProviderOptionsForTask(task),
+          providerOptions as ProviderOptions,
+        ),
       });
       return {
         object: result.output!,

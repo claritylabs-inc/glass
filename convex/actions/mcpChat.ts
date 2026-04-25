@@ -4,7 +4,7 @@ import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { generateText } from "ai";
-import { getModelForOrg } from "../lib/models";
+import { getModelForOrg, getProviderOptionsForTask } from "../lib/models";
 import { buildDocumentContext, buildConversationMemoryContext } from "../lib/agentPrompts";
 import {
   buildSystemPromptForContext,
@@ -116,6 +116,7 @@ MCP MODE:
     // Generate response (non-streaming)
     const { text: content } = await generateText({
       model: await getModelForOrg(ctx, args.orgId, "chat"),
+      providerOptions: getProviderOptionsForTask("chat"),
       maxOutputTokens: 2048,
       system: fullSystemPrompt,
       messages: messageHistory,
@@ -140,6 +141,7 @@ MCP MODE:
       try {
         const { text: titleText } = await generateText({
           model: await getModelForOrg(ctx, args.orgId, "summary"),
+          providerOptions: getProviderOptionsForTask("summary"),
           maxOutputTokens: 12,
           system:
             "You are a title generator. Given a user question and an assistant reply, output a short 2-4 word title that captures the topic. Rules:\n- Output ONLY the title, no quotes, no punctuation, no explanation\n- Use title case\n- Examples: \"GL Coverage Limits\", \"Cyber Liability Quotes\", \"Workers Comp App\", \"Renewal Timeline\"",

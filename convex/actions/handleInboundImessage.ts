@@ -5,7 +5,7 @@ import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { generateText, stepCountIs, type ModelMessage } from "ai";
-import { getModelForOrg } from "../lib/models";
+import { getModelForOrg, getProviderOptionsForTask } from "../lib/models";
 import { haikuModel } from "../lib/ai";
 import {
   lookupPolicy,
@@ -115,6 +115,7 @@ async function generateImessageStatusCue(params: {
   messageText: string;
   hasAttachments: boolean;
   userName?: string;
+  recentContext?: string;
 }): Promise<string | null> {
   try {
     const result = await generateText({
@@ -123,10 +124,13 @@ async function generateImessageStatusCue(params: {
       system: `You decide whether an insurance SMS assistant should send a quick status cue before doing retrieval or tool work.
 Return strict JSON only: {"send": boolean, "message": string | null}.
 
+Use recent conversation context to resolve short follow-ups like "yes", "that", "it", or "what about this".
 Send only when the user's latest text is a substantive insurance question, document/attachment request, COI request, comparison, lookup, or task likely to require checking policy data/tools.
 Do not send for greetings, thanks, acknowledgements, corrections, jokes, spam, or messages that can be answered immediately without checking anything.
 
-If sending, write one warm, natural SMS sentence under 70 characters. It should say you're checking or taking a look, without promising a result.
+If sending, write one warm, natural SMS sentence under 70 characters. Use casual texting language.
+Avoid formal punctuation: no em dashes, semicolons, colons, or parentheses.
+Do not use stiff phrases like "policy details on that for you".
 No markdown, no emoji, no greeting, no sign-off.`,
       messages: [
         {
@@ -135,6 +139,7 @@ No markdown, no emoji, no greeting, no sign-off.`,
             userName: params.userName ?? null,
             messageText: params.messageText,
             hasAttachments: params.hasAttachments,
+            recentContext: params.recentContext ?? null,
           }),
         },
       ],
@@ -152,6 +157,28 @@ No markdown, no emoji, no greeting, no sign-off.`,
     console.warn("[imessage] Status cue generation failed:", err);
     return null;
   }
+}
+
+function isImessageStatusCue(message: { responseMessageId?: string }): boolean {
+  return message.responseMessageId?.endsWith(":status") === true;
+}
+
+function buildRecentTextContext(messages: Array<{
+  role: string;
+  content: string;
+  status?: string;
+  userName?: string;
+  responseMessageId?: string;
+}>): string {
+  return messages
+    .filter((msg) => msg.status !== "processing")
+    .filter((msg) => !isImessageStatusCue(msg))
+    .slice(-8)
+    .map((msg) => {
+      const speaker = msg.role === "user" ? (msg.userName ?? "User") : "Glass";
+      return `${speaker}: ${msg.content}`;
+    })
+    .join("\n");
 }
 
 export const processInbound = internalAction({
@@ -242,29 +269,6 @@ export const processInbound = internalAction({
 
     const userName = user.name?.split(/\s+/)[0];
 
-    // Send a model-decided status cue before heavier retrieval/tool work so SMS
-    // users get immediate feedback when the agent needs to check policy data.
-    const statusCue = await generateImessageStatusCue({
-      messageText: args.messageText,
-      hasAttachments: (args.attachments?.length ?? 0) > 0,
-      userName,
-    });
-    if (statusCue) {
-      const sent = await sendImmediateImessage({
-        toPhone: fromPhone,
-        message: statusCue,
-      });
-      if (sent) {
-        await ctx.runMutation(internal.threads.insertImessageMessage, {
-          threadId,
-          orgId,
-          role: "agent",
-          content: statusCue,
-          responseMessageId: `${eventKey}:status`,
-        });
-      }
-    }
-
     // ── 6. Store attachments in Convex file storage ───────────────────────
     type AttachmentRecord = {
       filename: string;
@@ -312,35 +316,70 @@ export const processInbound = internalAction({
           : undefined,
     });
 
-    // ── 8. Build retrieval context ────────────────────────────────────────
+    // ── 8. Build recent thread context ────────────────────────────────────
+    const history = await ctx.runQuery(internal.threads.getImessageHistory, {
+      threadId,
+      limit: 16,
+    });
+    const historyForContext = history.filter((msg) => {
+      if (msg.status === "processing") return false;
+      if (isImessageStatusCue(msg)) return false;
+      return !(msg.role === "user" && msg.content === args.messageText);
+    });
+    const recentConversationContext = buildRecentTextContext(historyForContext);
+    const retrievalQuery = [recentConversationContext, `User: ${args.messageText}`]
+      .filter((part) => part.trim().length > 0)
+      .join("\n");
+
+    // Send a model-decided status cue before heavier retrieval/tool work so SMS
+    // users get immediate feedback when the agent needs to check policy data.
+    const statusCue = await generateImessageStatusCue({
+      messageText: args.messageText,
+      hasAttachments: attachmentRecords.length > 0,
+      userName,
+      recentContext: recentConversationContext || undefined,
+    });
+    if (statusCue) {
+      const sent = await sendImmediateImessage({
+        toPhone: fromPhone,
+        message: statusCue,
+      });
+      if (sent) {
+        await ctx.runMutation(internal.threads.insertImessageMessage, {
+          threadId,
+          orgId,
+          role: "agent",
+          content: statusCue,
+          responseMessageId: `${eventKey}:status`,
+        });
+      }
+    }
+
+    // ── 9. Build retrieval context ────────────────────────────────────────
     const policies = await ctx.runQuery(internal.policies.listAllInternal, { orgId });
     const { context: policyContext, relevantPolicyIds } = await buildDocumentContext(
       ctx,
       orgId,
       policies,
       [],
-      args.messageText,
+      retrievalQuery,
     );
-    const memoryContext = await buildConversationMemoryContext(ctx, orgId, args.messageText);
+    const memoryContext = await buildConversationMemoryContext(ctx, orgId, retrievalQuery);
     const orgMemoryBlock = await buildIntelligenceContext(
       ctx,
       orgId,
-      args.messageText,
+      retrievalQuery,
       relevantPolicyIds.map(String),
     );
 
-    // ── 9. Build message history from thread ──────────────────────────────
-    const history = await ctx.runQuery(internal.threads.getImessageHistory, {
-      threadId,
-      limit: 16,
-    });
+    // ── 10. Build message history from thread ─────────────────────────────
     const modelMessages: ModelMessage[] = [];
     for (const msg of history) {
       if (msg.status === "processing") continue;
       // Skip the message we just inserted (the inbound one)
       if (msg.role === "user" && msg.content === args.messageText) continue;
       // Status cues are sent for responsiveness and should not steer the final answer.
-      if (msg.role === "agent" && msg.responseMessageId === `${eventKey}:status`) continue;
+      if (isImessageStatusCue(msg)) continue;
       if (msg.role === "user") {
         modelMessages.push({ role: "user", content: msg.userName ? `[${msg.userName}]: ${msg.content}` : msg.content });
       } else if (msg.role === "agent" && msg.content) {
@@ -350,7 +389,7 @@ export const processInbound = internalAction({
     // Append current message
     modelMessages.push({ role: "user", content: args.messageText });
 
-    // ── 10. Attach PDF/image content for model context ────────────────────
+    // ── 11. Attach PDF/image content for model context ────────────────────
     if (attachmentRecords.length > 0) {
       const lastMsg = modelMessages[modelMessages.length - 1];
       if (lastMsg.role === "user" && typeof lastMsg.content === "string") {
@@ -374,7 +413,7 @@ export const processInbound = internalAction({
       }
     }
 
-    // ── 11. Build system prompt ───────────────────────────────────────────
+    // ── 12. Build system prompt ───────────────────────────────────────────
     let brokerName: string | undefined;
     let brokerContactName: string | undefined;
     let brokerContactEmail: string | undefined;
@@ -413,7 +452,7 @@ export const processInbound = internalAction({
       memoryContext +
       orgMemoryBlock;
 
-    // ── 12. Wire up tools ─────────────────────────────────────────────────
+    // ── 13. Wire up tools ─────────────────────────────────────────────────
     const coiAttachments: Array<{ storageId: Id<"_storage">; filename: string }> = [];
 
     const imessageTools = {
@@ -531,9 +570,10 @@ export const processInbound = internalAction({
       },
     };
 
-    // ── 13. Run model ─────────────────────────────────────────────────────
+    // ── 14. Run model ─────────────────────────────────────────────────────
     const result = await generateText({
       model: await getModelForOrg(ctx, orgId, "chat"),
+      providerOptions: getProviderOptionsForTask("chat"),
       // iMessage responses should be short — cap at 512 tokens
       maxOutputTokens: 512,
       system: systemPrompt,
@@ -544,7 +584,7 @@ export const processInbound = internalAction({
 
     const responseText = result.text;
 
-    // ── 14. Resolve COI attachment URLs ───────────────────────────────────
+    // ── 15. Resolve COI attachment URLs ───────────────────────────────────
     const responseAttachments: Array<{ url: string; filename: string; mimeType: string }> = [];
     for (const coi of coiAttachments) {
       try {
@@ -557,7 +597,7 @@ export const processInbound = internalAction({
       }
     }
 
-    // ── 15. Persist agent response ────────────────────────────────────────
+    // ── 16. Persist agent response ────────────────────────────────────────
     const agentAttachments = coiAttachments.map((c) => ({
       filename: c.filename,
       contentType: "application/pdf",
@@ -575,7 +615,7 @@ export const processInbound = internalAction({
       attachments: agentAttachments.length > 0 ? agentAttachments : undefined,
     });
 
-    // ── 16. Post-exchange orgMemory extraction ────────────────────────────
+    // ── 17. Post-exchange orgMemory extraction ────────────────────────────
     try {
       const memoryExtraction = await generateText({
         model: haikuModel,

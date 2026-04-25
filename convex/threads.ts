@@ -616,11 +616,12 @@ export const insertImessageMessage = internalMutation({
 export const getImessageHistory = internalQuery({
   args: { threadId: v.id("threads"), limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
-    return await ctx.db
+    const messages = await ctx.db
       .query("threadMessages")
       .withIndex("by_threadId", (q) => q.eq("threadId", args.threadId))
-      .order("asc")
+      .order("desc")
       .take(args.limit ?? 20);
+    return messages.reverse();
   },
 });
 

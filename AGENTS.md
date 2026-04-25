@@ -38,9 +38,9 @@ Core layers:
 
 Default model routing lives in [convex/lib/models.ts](convex/lib/models.ts), with broker-visible catalogs in [convex/lib/modelCatalog.ts](convex/lib/modelCatalog.ts).
 
-- `chat`, `chat_with_tools`, `extraction` → `gpt-5.4-mini`
+- `chat`, `chat_with_tools`, `extraction`, `application_authoring` → `gpt-5.5` with OpenAI `reasoningEffort: "none"`
 - `email_draft`, `email_reply`, `analysis` → `kimi-k2.5` (256K context)
-- `classification`, `summary` → `claude-haiku-4-5-20251001`
+- `classification`, `summary`, `triage`, `email_extraction`, `document_extraction`, `security` → `gpt-5.4-mini`
 - `embeddings` → `text-embedding-3-small` at 1536 dimensions
 
 Usage notes:
@@ -55,7 +55,7 @@ Fallback behavior:
 
 - If no broker key exists for a route, Glass uses its opaque default configuration.
 - `getModel()` falls back to Claude Haiku if a provider is unavailable.
-- `generateTextWithFallback()` and `generateStructuredWithFallback()` retry failed calls on Claude Haiku unless the original model already was Haiku.
+- `generateTextWithFallback()` and `generateStructuredWithFallback()` retry failed calls on `gpt-5.5` with reasoning disabled unless the original model already was GPT-5.5 or Claude Haiku.
 
 ## Org Memory
 
