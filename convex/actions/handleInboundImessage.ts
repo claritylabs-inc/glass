@@ -1,5 +1,6 @@
 "use node";
 
+import { createHash } from "node:crypto";
 import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
@@ -34,6 +35,26 @@ function normalizePhone(raw: string): string {
   return cleaned.startsWith("+") ? cleaned : `+${cleaned}`;
 }
 
+function buildInboundEventKey(args: {
+  fromPhone: string;
+  messageText: string;
+  sourceMessageId?: string;
+  receivedAt?: number;
+  attachments?: Array<{ mimeType: string; name: string; data: string }>;
+}): string {
+  const hash = createHash("sha256");
+  if (args.sourceMessageId) {
+    hash.update(`source:${args.fromPhone}:${args.sourceMessageId}`);
+  } else {
+    const minuteBucket = Math.floor((args.receivedAt ?? Date.now()) / 60000);
+    hash.update(`fallback:${args.fromPhone}:${minuteBucket}:${args.messageText}`);
+    for (const attachment of args.attachments ?? []) {
+      hash.update(`:${attachment.name}:${attachment.mimeType}:${attachment.data.length}`);
+    }
+  }
+  return hash.digest("hex");
+}
+
 const SUPPORTED_MIME_TYPES = new Set([
   "application/pdf",
   "text/plain",
@@ -56,6 +77,8 @@ export const processInbound = internalAction({
   args: {
     fromPhone: v.string(),
     messageText: v.string(),
+    sourceMessageId: v.optional(v.string()),
+    receivedAt: v.optional(v.number()),
     attachments: v.optional(
       v.array(
         v.object({
@@ -69,11 +92,42 @@ export const processInbound = internalAction({
   handler: async (ctx, args): Promise<ImessageResponse> => {
     const fromPhone = normalizePhone(args.fromPhone);
     const siteUrl = process.env.SITE_URL ?? "https://glass.claritylabs.inc";
+    const eventKey = buildInboundEventKey({
+      fromPhone,
+      messageText: args.messageText,
+      sourceMessageId: args.sourceMessageId,
+      receivedAt: args.receivedAt,
+      attachments: args.attachments,
+    });
+
+    const claim = await ctx.runMutation(internal.imessageInboundEvents.claim, {
+      eventKey,
+      fromPhone,
+      messageText: args.messageText,
+      sourceMessageId: args.sourceMessageId,
+      receivedAt: args.receivedAt,
+    });
+    if (claim.duplicate) {
+      console.log("[imessage] Duplicate inbound event ignored", {
+        fromPhone,
+        sourceMessageId: args.sourceMessageId,
+        status: claim.status,
+      });
+      return { response: "" };
+    }
+
+    const finish = async (response: string, attachments?: ImessageResponse["attachments"]) => {
+      await ctx.runMutation(internal.imessageInboundEvents.complete, {
+        eventKey,
+        response,
+      });
+      return { response, attachments };
+    };
 
     // ── 1. Resolve user by phone ──────────────────────────────────────────
     const user = await ctx.runQuery(internal.users.findByPhone, { phone: fromPhone });
     if (!user) {
-      return { response: `Sign up to use Glass: ${siteUrl}/signup/client` };
+      return await finish(`Sign up to use Glass: ${siteUrl}/signup/client`);
     }
 
     // ── 2. Resolve org ────────────────────────────────────────────────────
@@ -81,7 +135,7 @@ export const processInbound = internalAction({
       userId: user._id,
     });
     if (!membership) {
-      return { response: `Sign up to use Glass: ${siteUrl}/signup/client` };
+      return await finish(`Sign up to use Glass: ${siteUrl}/signup/client`);
     }
     const orgId = membership.orgId;
 
@@ -90,7 +144,7 @@ export const processInbound = internalAction({
     const injectionCheck = await classifyPromptInjection(guardedText);
     if (!injectionCheck.safe) {
       console.warn("[security] iMessage prompt injection blocked", { fromPhone });
-      return { response: "I can't process that request." };
+      return await finish("I can't process that request.");
     }
 
     // ── 4. Thread routing ─────────────────────────────────────────────────
@@ -103,7 +157,7 @@ export const processInbound = internalAction({
 
     // ── 5. Fetch org context ──────────────────────────────────────────────
     const org = await ctx.runQuery(internal.orgs.getInternal, { id: orgId });
-    if (!org) return { response: "Unable to find your account." };
+    if (!org) return await finish("Unable to find your account.");
 
     const userName = user.name?.split(/\s+/)[0];
 
@@ -142,6 +196,7 @@ export const processInbound = internalAction({
       userId: user._id,
       userName: user.name,
       content: args.messageText,
+      messageId: args.sourceMessageId ?? eventKey,
       attachments:
         attachmentRecords.length > 0
           ? attachmentRecords.map((a) => ({
@@ -418,6 +473,7 @@ export const processInbound = internalAction({
       orgId,
       role: "agent",
       content: responseText,
+      responseMessageId: `${eventKey}:response`,
       referencedPolicyIds:
         relevantPolicyIds.length > 0 ? (relevantPolicyIds as Id<"policies">[]) : undefined,
       attachments: agentAttachments.length > 0 ? agentAttachments : undefined,
@@ -466,9 +522,9 @@ Only include items worth remembering long-term. Skip pleasantries and one-off qu
       console.warn("[imessage] orgMemory extraction failed:", err);
     }
 
-    return {
-      response: responseText,
-      attachments: responseAttachments.length > 0 ? responseAttachments : undefined,
-    };
+    return await finish(
+      responseText,
+      responseAttachments.length > 0 ? responseAttachments : undefined,
+    );
   },
 });

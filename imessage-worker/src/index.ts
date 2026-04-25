@@ -19,6 +19,40 @@ if (!CONVEX_SITE_URL) {
   process.exit(1);
 }
 
+function readStringField(value: unknown, fieldNames: string[]): string | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const record = value as Record<string, unknown>;
+  for (const fieldName of fieldNames) {
+    const field = record[fieldName];
+    if (typeof field === "string" && field.trim().length > 0) {
+      return field;
+    }
+    if (typeof field === "number" && Number.isFinite(field)) {
+      return String(field);
+    }
+  }
+  return undefined;
+}
+
+function readTimestamp(value: unknown, fieldNames: string[]): number | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const record = value as Record<string, unknown>;
+  for (const fieldName of fieldNames) {
+    const field = record[fieldName];
+    if (typeof field === "number" && Number.isFinite(field)) {
+      return field < 10_000_000_000 ? field * 1000 : field;
+    }
+    if (typeof field === "string") {
+      const parsed = Date.parse(field);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+    if (field instanceof Date) {
+      return field.getTime();
+    }
+  }
+  return undefined;
+}
+
 // ── Start ────────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -105,6 +139,20 @@ async function main() {
     if (message.platform !== "iMessage") continue;
 
     const senderId = message.sender.id;
+    const sourceMessageId = readStringField(message, [
+      "id",
+      "messageId",
+      "guid",
+      "externalId",
+      "eventId",
+    ]);
+    const receivedAt = readTimestamp(message, [
+      "timestamp",
+      "createdAt",
+      "sentAt",
+      "receivedAt",
+      "date",
+    ]) ?? Date.now();
 
     // Ignore non-text/attachment messages
     if (message.content.type !== "text" && message.content.type !== "attachment") {
@@ -139,6 +187,8 @@ async function main() {
           const result = await sendToConvex(CONVEX_SITE_URL!, WORKER_SECRET, {
             fromPhone: senderId,
             messageText: messageText || "(attachment)",
+            sourceMessageId,
+            receivedAt,
             attachments: attachments.length > 0 ? attachments : undefined,
           });
 

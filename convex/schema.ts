@@ -909,6 +909,25 @@ export default defineSchema({
     .index("by_threadId", ["threadId"])
     .index("by_messageId", ["messageId"]),
 
+  imessageInboundEvents: defineTable({
+    eventKey: v.string(),
+    fromPhone: v.string(),
+    messageText: v.string(),
+    sourceMessageId: v.optional(v.string()),
+    receivedAt: v.optional(v.number()),
+    status: v.union(
+      v.literal("processing"),
+      v.literal("completed"),
+      v.literal("error"),
+    ),
+    response: v.optional(v.string()),
+    error: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_eventKey", ["eventKey"])
+    .index("by_fromPhone", ["fromPhone"]),
+
   // ── Pending Emails (send delay queue) ──
 
   pendingEmails: defineTable({

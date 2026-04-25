@@ -9,6 +9,8 @@ export interface ImessageAttachment {
 export interface ImessageRequest {
   fromPhone: string;
   messageText: string;
+  sourceMessageId?: string;
+  receivedAt?: number;
   attachments?: ImessageAttachment[];
 }
 

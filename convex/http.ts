@@ -44,6 +44,8 @@ http.route({
     let body: {
       fromPhone: string;
       messageText: string;
+      sourceMessageId?: string;
+      receivedAt?: number;
       attachments?: Array<{ data: string; mimeType: string; name: string }>;
     };
     try {
@@ -68,6 +70,8 @@ http.route({
         {
           fromPhone: body.fromPhone,
           messageText: body.messageText,
+          sourceMessageId: body.sourceMessageId,
+          receivedAt: body.receivedAt,
           attachments: body.attachments,
         },
       );

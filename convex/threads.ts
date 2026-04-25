@@ -576,6 +576,8 @@ export const insertImessageMessage = internalMutation({
     userId: v.optional(v.id("users")),
     userName: v.optional(v.string()),
     content: v.string(),
+    messageId: v.optional(v.string()),
+    responseMessageId: v.optional(v.string()),
     attachments: v.optional(
       v.array(
         v.object({
@@ -599,6 +601,8 @@ export const insertImessageMessage = internalMutation({
       userId: args.userId,
       userName: args.userName,
       content: args.content,
+      messageId: args.messageId,
+      responseMessageId: args.responseMessageId,
       attachments: args.attachments,
       referencedPolicyIds: args.referencedPolicyIds,
       status: args.status,

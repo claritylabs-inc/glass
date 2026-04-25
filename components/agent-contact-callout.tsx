@@ -106,7 +106,7 @@ export function AgentContactCallout({
           </div>
         </div>
 
-        <div className="flex shrink-0 items-center gap-2 mb-1">
+        <div className="flex flex-col sm:flex-row shrink-0 items-stretch sm:items-center gap-2 mb-1">
           <PillButton variant="primary" onClick={handleEmail}>
             <Mail className="h-4 w-4" />
             Email {agentEmail}

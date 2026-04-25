@@ -42,6 +42,7 @@ import type * as crons from "../crons.js";
 import type * as devClear from "../devClear.js";
 import type * as documentChunks from "../documentChunks.js";
 import type * as http from "../http.js";
+import type * as imessageInboundEvents from "../imessageInboundEvents.js";
 import type * as lib_access from "../lib/access.js";
 import type * as lib_accessTests from "../lib/accessTests.js";
 import type * as lib_agentEmailTemplate from "../lib/agentEmailTemplate.js";
@@ -146,6 +147,7 @@ declare const fullApi: ApiFromModules<{
   devClear: typeof devClear;
   documentChunks: typeof documentChunks;
   http: typeof http;
+  imessageInboundEvents: typeof imessageInboundEvents;
   "lib/access": typeof lib_access;
   "lib/accessTests": typeof lib_accessTests;
   "lib/agentEmailTemplate": typeof lib_agentEmailTemplate;

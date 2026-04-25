@@ -53,3 +53,5 @@ next-env.d.ts
 # mcp-server
 mcp-server/node_modules
 mcp-server/dist
+imessage-worker/node_modules
+imessage-worker/dist
