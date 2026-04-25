@@ -1,6 +1,10 @@
 "use client";
 
-import { Mail, UserPlus } from "lucide-react";
+import { useState } from "react";
+import { Mail, MessageSquare, UserPlus, Loader2 } from "lucide-react";
+import { useAction } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import { toast } from "sonner";
 import { PillButton } from "@/components/ui/pill-button";
 
 const AGENT_DOMAIN =
@@ -16,6 +20,8 @@ interface AgentContactCalloutProps {
   } | null;
   /** Optional client-org agentHandle to use when no broker is linked. */
   fallbackAgentHandle?: string | null;
+  /** Optional user phone number for starting a Messages/iMessage conversation. */
+  userPhone?: string | null;
   /** Optional className to merge on the outer card. */
   className?: string;
 }
@@ -29,6 +35,7 @@ interface AgentContactCalloutProps {
 export function AgentContactCallout({
   broker,
   fallbackAgentHandle,
+  userPhone,
   className,
 }: AgentContactCalloutProps) {
   const name = broker?.name ?? "Glass";
@@ -41,8 +48,30 @@ export function AgentContactCallout({
       ? `${broker.name} Agent`
       : "Glass Agent";
 
+  const sendIntro = useAction(api.actions.sendIntroImessage.sendIntroImessage);
+  const [sendingIntro, setSendingIntro] = useState(false);
+
   const handleEmail = () => {
     window.location.href = `mailto:${agentEmail}`;
+  };
+
+  const handleText = async () => {
+    if (!userPhone) return;
+    setSendingIntro(true);
+    try {
+      const result = await sendIntro({}) as { ok: boolean; error?: string };
+      if (result.ok) {
+        toast.success("Intro text sent — check your iMessages!");
+      } else if (result.error === "no_phone") {
+        toast.error("No phone number on file. Add one in your profile.");
+      } else {
+        toast.error("Couldn't send the intro text. Please try again.");
+      }
+    } catch {
+      toast.error("Couldn't send the intro text. Please try again.");
+    } finally {
+      setSendingIntro(false);
+    }
   };
 
   const handleSaveContact = async () => {
@@ -105,6 +134,20 @@ export function AgentContactCallout({
             <Mail className="h-4 w-4" />
             Email {agentEmail}
           </PillButton>
+          {userPhone ? (
+            <PillButton
+              variant="secondary"
+              onClick={() => void handleText()}
+              disabled={sendingIntro}
+            >
+              {sendingIntro ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <MessageSquare className="h-4 w-4" />
+              )}
+              {sendingIntro ? "Sending…" : "Text My Agent"}
+            </PillButton>
+          ) : null}
           <PillButton variant="secondary" onClick={handleSaveContact}>
             <UserPlus className="h-4 w-4" />
             <span className="hidden sm:block">Save contact</span>

@@ -334,6 +334,7 @@ export function AppSidebar({
         <SidebarBrokerContact
           broker={viewerOrg.brokerOrg ?? null}
           fallbackAgentHandle={viewerOrg.org?.agentHandle}
+          userPhone={viewer?.phone}
         />
       ) : null}
     </div>
@@ -564,6 +565,7 @@ export function AppSidebar({
         <SidebarBrokerContact
           broker={viewerOrg.brokerOrg ?? null}
           fallbackAgentHandle={viewerOrg.org?.agentHandle}
+          userPhone={viewer?.phone}
         />
       ) : null}
 
@@ -785,6 +787,7 @@ export function AppSidebar({
 function SidebarBrokerContact({
   broker,
   fallbackAgentHandle,
+  userPhone,
 }: {
   broker: {
     name: string;
@@ -799,6 +802,7 @@ function SidebarBrokerContact({
     } | null;
   } | null;
   fallbackAgentHandle?: string;
+  userPhone?: string | null;
 }) {
   // When no broker is linked, fall back to Glass defaults so the user still
   // sees who to contact (the standard agent email).
@@ -928,6 +932,19 @@ function SidebarBrokerContact({
               <Mail className="h-3 w-3" />
               Email agent
             </PillButton>
+            {userPhone ? (
+              <PillButton
+                variant="secondary"
+                size="compact"
+                className="flex-1 justify-center shrink-0"
+                onClick={() => {
+                  window.location.href = `sms:${userPhone}`;
+                }}
+              >
+                <MessageSquare className="h-3 w-3" />
+                Text My Agent
+              </PillButton>
+            ) : null}
             <PillButton
               variant="secondary"
               size="compact"

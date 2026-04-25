@@ -25,6 +25,7 @@ import type * as actions_reExtractFromFile from "../actions/reExtractFromFile.js
 import type * as actions_rechunkPolicy from "../actions/rechunkPolicy.js";
 import type * as actions_reconcilePolicy from "../actions/reconcilePolicy.js";
 import type * as actions_retryExtraction from "../actions/retryExtraction.js";
+import type * as actions_sendIntroImessage from "../actions/sendIntroImessage.js";
 import type * as actions_sendNotificationEmail from "../actions/sendNotificationEmail.js";
 import type * as actions_sendPendingEmail from "../actions/sendPendingEmail.js";
 import type * as actions_updateDocumentChunk from "../actions/updateDocumentChunk.js";
@@ -128,6 +129,7 @@ declare const fullApi: ApiFromModules<{
   "actions/rechunkPolicy": typeof actions_rechunkPolicy;
   "actions/reconcilePolicy": typeof actions_reconcilePolicy;
   "actions/retryExtraction": typeof actions_retryExtraction;
+  "actions/sendIntroImessage": typeof actions_sendIntroImessage;
   "actions/sendNotificationEmail": typeof actions_sendNotificationEmail;
   "actions/sendPendingEmail": typeof actions_sendPendingEmail;
   "actions/updateDocumentChunk": typeof actions_updateDocumentChunk;

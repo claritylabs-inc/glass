@@ -1,3 +1,4 @@
+import http from "node:http";
 import { Spectrum, attachment } from "spectrum-ts";
 import { imessage } from "spectrum-ts/providers/imessage";
 import { sendToConvex, type ImessageAttachment } from "./convex.js";
@@ -31,9 +32,68 @@ async function main() {
 
   console.log("[glass-imessage] Connected. Waiting for messages...");
 
+  // ── Outbound HTTP server ──────────────────────────────────────────────────
+  // POST /send { toPhone, message } — sends a proactive iMessage to a phone number.
+  // Protected by the same IMESSAGE_WORKER_SECRET used for inbound verification.
+  const httpPort = Number(process.env.WORKER_HTTP_PORT ?? "3001");
+  const httpServer = http.createServer(async (req, res) => {
+    if (req.method !== "POST" || req.url !== "/send") {
+      res.writeHead(404, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Not found" }));
+      return;
+    }
+
+    const authHeader = req.headers["authorization"] ?? "";
+    if (WORKER_SECRET && authHeader !== `Bearer ${WORKER_SECRET}`) {
+      res.writeHead(401, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Unauthorized" }));
+      return;
+    }
+
+    const body = await new Promise<string>((resolve, reject) => {
+      let data = "";
+      req.on("data", (chunk: Buffer | string) => { data += chunk.toString(); });
+      req.on("end", () => resolve(data));
+      req.on("error", reject);
+    });
+
+    let payload: { toPhone?: string; message?: string };
+    try {
+      payload = JSON.parse(body);
+    } catch {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Invalid JSON" }));
+      return;
+    }
+
+    if (!payload.toPhone || !payload.message) {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "toPhone and message are required" }));
+      return;
+    }
+
+    try {
+      const im = imessage(app);
+      const user = await im.user(payload.toPhone);
+      const space = await im.space(user);
+      await space.send(payload.message);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true }));
+    } catch (err) {
+      console.error("[glass-imessage] Failed to send outbound message:", err);
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Failed to send message" }));
+    }
+  });
+
+  httpServer.listen(httpPort, () => {
+    console.log(`[glass-imessage] Outbound HTTP server listening on port ${httpPort}`);
+  });
+
   // Graceful shutdown
   const shutdown = async () => {
     console.log("[glass-imessage] Shutting down...");
+    httpServer.close();
     await app.stop();
     process.exit(0);
   };
