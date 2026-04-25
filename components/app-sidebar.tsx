@@ -10,6 +10,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
 
 const AGENT_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "glass.claritylabs.inc";
+const AGENT_TEXT_NUMBER = "+14155909221";
 import {
   FileText,
   Mail,
@@ -334,7 +335,6 @@ export function AppSidebar({
         <SidebarBrokerContact
           broker={viewerOrg.brokerOrg ?? null}
           fallbackAgentHandle={viewerOrg.org?.agentHandle}
-          userPhone={viewer?.phone}
         />
       ) : null}
     </div>
@@ -565,7 +565,6 @@ export function AppSidebar({
         <SidebarBrokerContact
           broker={viewerOrg.brokerOrg ?? null}
           fallbackAgentHandle={viewerOrg.org?.agentHandle}
-          userPhone={viewer?.phone}
         />
       ) : null}
 
@@ -787,7 +786,6 @@ export function AppSidebar({
 function SidebarBrokerContact({
   broker,
   fallbackAgentHandle,
-  userPhone,
 }: {
   broker: {
     name: string;
@@ -802,7 +800,6 @@ function SidebarBrokerContact({
     } | null;
   } | null;
   fallbackAgentHandle?: string;
-  userPhone?: string | null;
 }) {
   // When no broker is linked, fall back to Glass defaults so the user still
   // sees who to contact (the standard agent email).
@@ -847,7 +844,8 @@ function SidebarBrokerContact({
       `FN:${agentDisplayName}\n` +
       `N:Agent;${name};;;\n` +
       `ORG:${name}\n` +
-      `EMAIL;TYPE=INTERNET:${agentEmail}` +
+      `EMAIL;TYPE=INTERNET:${agentEmail}\n` +
+      `TEL;TYPE=CELL:${AGENT_TEXT_NUMBER}` +
       photoEntry +
       "\nEND:VCARD\n";
     const blob = new Blob([vcard], { type: "text/vcard;charset=utf-8" });
@@ -917,6 +915,12 @@ function SidebarBrokerContact({
                 {agentEmail}
               </a>
             ) : null}
+            <a
+              href={`sms:${AGENT_TEXT_NUMBER}`}
+              className="block text-label-sm text-muted-foreground hover:text-foreground truncate"
+            >
+              {AGENT_TEXT_NUMBER}
+            </a>
           </div>
         )}
         {agentEmail ? (
@@ -932,19 +936,17 @@ function SidebarBrokerContact({
               <Mail className="h-3 w-3" />
               <span className="whitespace-nowrap">Email agent</span>
             </PillButton>
-            {userPhone ? (
-              <PillButton
-                variant="secondary"
-                size="compact"
-                className="w-full"
-                onClick={() => {
-                  window.location.href = `sms:${userPhone}`;
-                }}
-              >
-                <MessageSquare className="h-3 w-3" />
-                <span className="whitespace-nowrap">Text My Agent</span>
-              </PillButton>
-            ) : null}
+            <PillButton
+              variant="secondary"
+              size="compact"
+              className="w-full"
+              onClick={() => {
+                window.location.href = `sms:${AGENT_TEXT_NUMBER}`;
+              }}
+            >
+              <MessageSquare className="h-3 w-3" />
+              <span className="whitespace-nowrap">Text My Agent</span>
+            </PillButton>
             <PillButton
               variant="secondary"
               size="compact"

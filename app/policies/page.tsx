@@ -61,7 +61,6 @@ export default function PoliciesPage() {
     documentType: docTypeTab,
   });
   const viewerOrg = useQuery(api.orgs.viewerOrg, {});
-  const viewer = useQuery(api.users.viewer, {});
 
   const generateUploadUrl = useMutation(api.policies.generateUploadUrl);
   const extractFromUpload = useAction(
@@ -188,7 +187,6 @@ export default function PoliciesPage() {
         <AgentContactCallout
           broker={brokerForCallout}
           fallbackAgentHandle={fallbackHandle}
-          userPhone={viewer?.phone ?? null}
         />
         <Tabs
           value={docTypeTab}
