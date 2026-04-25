@@ -26,12 +26,10 @@ import { MemorySection } from "@/components/settings/memory-section";
 import { BrokerTeamTab } from "@/components/settings/broker-team-tab";
 import { BrokerAgentTab } from "@/components/settings/broker-agent-tab";
 import { ModelsSection } from "@/components/settings/models-section";
-import { ProfileSection } from "@/components/settings/profile-section";
 import NotificationPreferencesPage from "./notifications/page";
 import { Bell } from "lucide-react";
 
 const CLIENT_SETTINGS_SECTIONS = [
-  { id: "profile", label: "Profile", icon: Users },
   { id: "organization", label: "Organization", icon: Building2 },
   { id: "team", label: "Team", icon: Users },
   { id: "memory", label: "Memory", icon: Brain },
@@ -41,7 +39,6 @@ const CLIENT_SETTINGS_SECTIONS = [
 ] as const;
 
 const BROKER_SETTINGS_SECTIONS = [
-  { id: "profile", label: "Profile", icon: Users },
   { id: "organization", label: "Organization", icon: Building2 },
   { id: "team", label: "Team", icon: Users },
   { id: "agent", label: "Agent", icon: GlassStarIcon },
@@ -76,8 +73,10 @@ export default function SettingsPage() {
   const isBroker = currentOrg?.isBroker ?? false;
 
   const SETTINGS_SECTIONS_ACTIVE = isBroker ? BROKER_SETTINGS_SECTIONS : CLIENT_SETTINGS_SECTIONS;
-
-  const activeSection = (searchParams.get("section") as SettingsSection) ?? "organization";
+  const requestedSection = searchParams.get("section") as SettingsSection | null;
+  const activeSection: SettingsSection = SETTINGS_SECTIONS_ACTIVE.some((section) => section.id === requestedSection)
+    ? requestedSection!
+    : "organization";
 
   function handleSectionChange(id: SettingsSection) {
     const params = new URLSearchParams(searchParams.toString());
@@ -128,8 +127,7 @@ function SectionContent({ section, isBroker }: { section: SettingsSection; isBro
   if (isBroker) {
     return (
       <div>
-        {section === "profile" ? <ProfileSection /> :
-         section === "organization" ? <OrganizationSection /> :
+        {section === "organization" ? <OrganizationSection /> :
          section === "team" ? <BrokerTeamTab /> :
          section === "agent" ? <BrokerAgentTab /> :
          section === "models" ? <ModelsSection /> :
@@ -142,9 +140,7 @@ function SectionContent({ section, isBroker }: { section: SettingsSection; isBro
   }
   return (
     <div>
-      {section === "profile" ? (
-        <ProfileSection />
-      ) : section === "organization" ? (
+      {section === "organization" ? (
         <OrganizationSection />
       ) : section === "team" ? (
         <TeamSection />

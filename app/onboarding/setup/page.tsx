@@ -9,6 +9,7 @@ import { BrandWordmark, PartnerWordmark } from "@/components/auth-shell";
 import { PolicyEmptyState } from "@/components/policy-empty-state";
 import { PillButton } from "@/components/ui/pill-button";
 import { LogoIcon } from "@/components/ui/logo-icon";
+import { PhoneInput } from "@/components/ui/phone-input";
 import { ArrowRight, Check, Copy, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -186,16 +187,20 @@ export default function ClientOnboardingSetupPage() {
   // Hydrate inputs from server data.
   useEffect(() => {
     if (!viewer) return;
-    setUserName((v) => v || viewer.name || "");
-    setUserRole((v) => v || viewer.title || "");
-    setUserPhone((v) => v || viewer.phone || "");
+    queueMicrotask(() => {
+      setUserName((v) => v || viewer.name || "");
+      setUserRole((v) => v || viewer.title || "");
+      setUserPhone((v) => v || viewer.phone || "");
+    });
   }, [viewer]);
 
   useEffect(() => {
     const org = viewerOrg?.org;
     const email = viewer?.email;
-    setOrgName((v) => v || org?.name || companyNameFromEmail(email));
-    setWebsite((v) => v || org?.website || websiteFromEmail(email));
+    queueMicrotask(() => {
+      setOrgName((v) => v || org?.name || companyNameFromEmail(email));
+      setWebsite((v) => v || org?.website || websiteFromEmail(email));
+    });
   }, [viewerOrg, viewer]);
 
   const brokerAgentHandle = viewerOrg?.brokerOrg?.agentHandle ?? viewerOrg?.org?.agentHandle;
@@ -375,12 +380,11 @@ export default function ClientOnboardingSetupPage() {
               </div>
               <div className="space-y-2">
                 <label className={labelClass}>Mobile number (optional)</label>
-                <input
-                  type="tel"
-                  value={userPhone}
-                  onChange={(e) => setUserPhone(e.target.value)}
-                  placeholder="+1 (555) 000-0000"
-                  className={inputClass}
+                <PhoneInput
+                  value={userPhone || undefined}
+                  onChange={(value) => setUserPhone(value ?? "")}
+                  defaultCountry="US"
+                  placeholder="Enter phone number"
                 />
                 <p className="text-label-sm text-muted-foreground/70">
                   Used for iMessage access to your Glass agent.
@@ -433,7 +437,7 @@ export default function ClientOnboardingSetupPage() {
                   className={inputClass}
                 />
                 <p className="text-label-sm text-muted-foreground/70">
-                  We'll use this to enrich your company profile automatically.
+                  We&apos;ll use this to enrich your company profile automatically.
                 </p>
               </div>
             </div>
@@ -466,7 +470,7 @@ export default function ClientOnboardingSetupPage() {
                       : `${policyCount} policies uploaded`}
                   </div>
                   <div className="text-body-sm text-muted-foreground mt-0.5">
-                    We're extracting the details in the background — you can move on.
+                    We&apos;re extracting the details in the background — you can move on.
                   </div>
                 </div>
               </div>
