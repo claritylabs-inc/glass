@@ -74,16 +74,18 @@ export function AgentContactCallout({
         // best-effort — omit photo on fetch failure
       }
     }
-    const vcard =
-      "BEGIN:VCARD\n" +
-      "VERSION:3.0\n" +
-      `FN:${agentDisplayName}\n` +
-      `N:Agent;${name};;;\n` +
-      `ORG:${name}\n` +
-      `EMAIL;TYPE=INTERNET:${agentEmail}\n` +
-      `TEL;TYPE=CELL:${AGENT_TEXT_NUMBER}` +
-      photoEntry +
-      "\nEND:VCARD\n";
+    const lines = [
+      "BEGIN:VCARD",
+      "VERSION:3.0",
+      `FN:${agentDisplayName}`,
+      `N:Agent;${name};;;`,
+      `ORG:${name}`,
+      `EMAIL;TYPE=INTERNET:${agentEmail}`,
+      `TEL;TYPE=CELL,VOICE,pref:${AGENT_TEXT_NUMBER}`,
+    ];
+    if (photoEntry) lines.push(photoEntry.replace(/^\n/, ""));
+    lines.push("END:VCARD");
+    const vcard = lines.join("\r\n") + "\r\n";
     const blob = new Blob([vcard], { type: "text/vcard;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -106,21 +108,30 @@ export function AgentContactCallout({
           </div>
         </div>
 
-        <div className="flex shrink-0 items-center gap-2 mb-1">
-          <PillButton variant="primary" onClick={handleEmail}>
-            <Mail className="h-4 w-4" />
-            Email {agentEmail}
+        <div className="flex flex-col sm:flex-row sm:shrink-0 sm:items-center gap-2 mb-1">
+          <PillButton
+            variant="primary"
+            onClick={handleEmail}
+            className="w-full sm:w-auto"
+          >
+            <Mail className="h-4 w-4 shrink-0" />
+            <span className="truncate">Email {agentEmail}</span>
           </PillButton>
           <PillButton
             variant="secondary"
             onClick={handleText}
+            className="w-full sm:w-auto"
           >
-            <MessageSquare className="h-4 w-4" />
+            <MessageSquare className="h-4 w-4 shrink-0" />
             Text My Agent
           </PillButton>
-          <PillButton variant="secondary" onClick={handleSaveContact}>
-            <UserPlus className="h-4 w-4" />
-            <span className="hidden sm:block">Save contact</span>
+          <PillButton
+            variant="secondary"
+            onClick={handleSaveContact}
+            className="w-full sm:w-auto"
+          >
+            <UserPlus className="h-4 w-4 shrink-0" />
+            Save contact
           </PillButton>
         </div>
       </div>
