@@ -11,6 +11,7 @@ import { toast } from "sonner";
 
 const AGENT_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "glass.claritylabs.inc";
 const AGENT_TEXT_NUMBER = "+14155909221";
+const AGENT_TEXT_NUMBER_DISPLAY = "+1 (415) 590-9221";
 import {
   FileText,
   Mail,
@@ -151,8 +152,8 @@ export function AppSidebar({
     secondaryPolicyId: string;
     notificationId?: Id<"notifications">;
   }>({ open: false, primaryPolicyId: "", secondaryPolicyId: "" });
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const unreadCount = useQuery(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (api as any).notifications.unreadCount,
     currentOrg?.orgId ? { orgId: currentOrg.orgId } : "skip",
   ) as number | undefined;
@@ -919,16 +920,16 @@ function SidebarBrokerContact({
               href={`sms:${AGENT_TEXT_NUMBER}`}
               className="block text-label-sm text-muted-foreground hover:text-foreground truncate"
             >
-              {AGENT_TEXT_NUMBER}
+              {AGENT_TEXT_NUMBER_DISPLAY}
             </a>
           </div>
         )}
         {agentEmail ? (
-          <div className="mt-2.5 grid gap-1.5">
+          <div className="mt-2.5 flex flex-col gap-1.5 lg:flex-row">
             <PillButton
-              variant="secondary"
+              variant="primary"
               size="compact"
-              className="w-full"
+              className="hidden lg:inline-flex flex-1"
               onClick={() => {
                 window.location.href = `mailto:${agentEmail}`;
               }}
@@ -937,9 +938,9 @@ function SidebarBrokerContact({
               <span className="whitespace-nowrap">Email agent</span>
             </PillButton>
             <PillButton
-              variant="secondary"
+              variant="primary"
               size="compact"
-              className="w-full"
+              className="w-full lg:hidden"
               onClick={() => {
                 window.location.href = `sms:${AGENT_TEXT_NUMBER}`;
               }}
@@ -950,13 +951,12 @@ function SidebarBrokerContact({
             <PillButton
               variant="secondary"
               size="compact"
-              className="w-full"
               onClick={handleSaveContact}
               title="Save as contact"
               aria-label="Save as contact"
             >
               <UserPlus className="h-3 w-3" />
-              <span className="whitespace-nowrap">Save contact</span>
+              <span className="whitespace-nowrap lg:hidden">Save contact</span>
             </PillButton>
           </div>
         ) : null}

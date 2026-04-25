@@ -2,6 +2,7 @@
 
 import { Mail, MessageSquare, UserPlus } from "lucide-react";
 import { PillButton } from "@/components/ui/pill-button";
+import { LogoIcon } from "@/components/ui/logo-icon";
 
 const AGENT_DOMAIN =
   process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "glass.claritylabs.inc";
@@ -99,28 +100,34 @@ export function AgentContactCallout({
     <div
       className={`mb-6 sm:min-h-56 flex items-stretch rounded-xl bg-card text-card-foreground border px-6 py-6 sm:px-8 sm:py-7 ${className ?? ""}`}
     >
-      <div className="w-full flex flex-col gap-6 justify-between">
+      <div className="w-full flex flex-col gap-10 sm:gap-6 justify-between">
         <div className="min-w-0 max-w-xl">
           <div className="text-3xl sm:text-4xl font-medium tracking-tight leading-[1.1]">
             Get answers about your insurance coverage, wherever you are
+            <LogoIcon className="inline -mt-0.5 ml-2.5 h-6 w-6"/>
           </div>
         </div>
 
         <div className="flex flex-col sm:flex-row shrink-0 items-stretch sm:items-center gap-2 mb-1">
-          <PillButton variant="primary" onClick={handleEmail}>
+          <PillButton variant="primary" className="hidden sm:inline-flex" onClick={handleEmail}>
             <Mail className="h-4 w-4" />
             Email {agentEmail}
           </PillButton>
           <PillButton
             variant="secondary"
+            className="hidden sm:inline-flex"
             onClick={handleText}
           >
             <MessageSquare className="h-4 w-4" />
             Text My Agent
           </PillButton>
+          <PillButton variant="primary" className="sm:hidden" onClick={handleText}>
+            <MessageSquare className="h-4 w-4" />
+            Text My Agent
+          </PillButton>
           <PillButton variant="secondary" onClick={handleSaveContact}>
             <UserPlus className="h-4 w-4" />
-            <span className="hidden sm:block">Save contact</span>
+            Save contact
           </PillButton>
         </div>
       </div>
