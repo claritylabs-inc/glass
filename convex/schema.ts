@@ -175,6 +175,7 @@ export default defineSchema({
       v.literal("analysis"),
       v.literal("chat"),
       v.literal("email"),
+      v.literal("imessage"),
     ),
     policyId: v.optional(v.id("policies")),
     quoteId: v.optional(v.any()), // legacy: may contain old quotes table IDs // quotes now stored in policies table with documentType="quote"
@@ -843,16 +844,18 @@ export default defineSchema({
     })),
     legacyConversationId: v.optional(v.id("agentConversations")),
     visibility: v.optional(v.union(v.literal("broker_visible"), v.literal("client_internal"))),
+    threadPhone: v.optional(v.string()),
   })
     .index("by_orgId", ["orgId"])
     .index("by_orgId_lastMessageAt", ["orgId", "lastMessageAt"])
     .index("by_threadEmail", ["threadEmail"])
+    .index("by_threadPhone", ["threadPhone"])
     .index("by_legacyConversationId", ["legacyConversationId"]),
 
   threadMessages: defineTable({
     threadId: v.id("threads"),
     orgId: v.id("organizations"),
-    channel: v.union(v.literal("chat"), v.literal("email")),
+    channel: v.union(v.literal("chat"), v.literal("email"), v.literal("imessage")),
     role: v.union(v.literal("user"), v.literal("agent"), v.literal("system")),
     // User messages
     userId: v.optional(v.id("users")),

@@ -59,11 +59,20 @@ export const updateProfile = mutation({
   args: {
     name: v.optional(v.string()),
     title: v.optional(v.string()),
+    phone: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("Not authenticated");
-    await ctx.db.patch(userId, args);
+    const patch: { name?: string; title?: string; phone?: string } = {};
+    if (args.name !== undefined) patch.name = args.name;
+    if (args.title !== undefined) patch.title = args.title;
+    if (args.phone !== undefined) {
+      // Normalize to E.164: keep digits and leading +
+      const normalized = args.phone.replace(/[^+\d]/g, "");
+      patch.phone = normalized.startsWith("+") ? normalized : `+${normalized}`;
+    }
+    await ctx.db.patch(userId, patch);
   },
 });
 
@@ -120,6 +129,16 @@ export const getInternal = internalQuery({
   args: { id: v.id("users") },
   handler: async (ctx, args) => {
     return await ctx.db.get(args.id);
+  },
+});
+
+export const findByPhone = internalQuery({
+  args: { phone: v.string() },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("users")
+      .withIndex("phone", (q) => q.eq("phone", args.phone))
+      .first();
   },
 });
 

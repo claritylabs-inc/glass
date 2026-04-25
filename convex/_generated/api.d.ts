@@ -16,6 +16,7 @@ import type * as actions_extractSupplementary from "../actions/extractSupplement
 import type * as actions_generateCoi from "../actions/generateCoi.js";
 import type * as actions_generateEmailBody from "../actions/generateEmailBody.js";
 import type * as actions_handleInboundEmail from "../actions/handleInboundEmail.js";
+import type * as actions_handleInboundImessage from "../actions/handleInboundImessage.js";
 import type * as actions_mcpChat from "../actions/mcpChat.js";
 import type * as actions_policyExtraction from "../actions/policyExtraction.js";
 import type * as actions_processThreadChat from "../actions/processThreadChat.js";
@@ -118,6 +119,7 @@ declare const fullApi: ApiFromModules<{
   "actions/generateCoi": typeof actions_generateCoi;
   "actions/generateEmailBody": typeof actions_generateEmailBody;
   "actions/handleInboundEmail": typeof actions_handleInboundEmail;
+  "actions/handleInboundImessage": typeof actions_handleInboundImessage;
   "actions/mcpChat": typeof actions_mcpChat;
   "actions/policyExtraction": typeof actions_policyExtraction;
   "actions/processThreadChat": typeof actions_processThreadChat;

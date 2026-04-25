@@ -13,6 +13,7 @@ import { ArrowRight, Check, Copy, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 const AGENT_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "glass.claritylabs.inc";
+const GLASS_IMESSAGE_NUMBER = process.env.NEXT_PUBLIC_GLASS_IMESSAGE_NUMBER ?? "";
 
 function companyNameFromEmail(email?: string | null): string {
   if (!email) return "";
@@ -163,6 +164,7 @@ export default function ClientOnboardingSetupPage() {
   const [currentStep, setCurrentStep] = useState<Step>(0);
   const [userName, setUserName] = useState("");
   const [userRole, setUserRole] = useState("");
+  const [userPhone, setUserPhone] = useState("");
   const [orgName, setOrgName] = useState("");
   const [website, setWebsite] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -186,6 +188,7 @@ export default function ClientOnboardingSetupPage() {
     if (!viewer) return;
     setUserName((v) => v || viewer.name || "");
     setUserRole((v) => v || viewer.title || "");
+    setUserPhone((v) => v || viewer.phone || "");
   }, [viewer]);
 
   useEffect(() => {
@@ -209,14 +212,18 @@ export default function ClientOnboardingSetupPage() {
     setSubmitting(true);
     setError("");
     try {
-      await updateProfile({ name: userName.trim(), title: userRole.trim() });
+      await updateProfile({
+        name: userName.trim(),
+        title: userRole.trim(),
+        phone: userPhone.trim() || undefined,
+      });
       setCurrentStep(1);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to save");
     } finally {
       setSubmitting(false);
     }
-  }, [updateProfile, userName, userRole]);
+  }, [updateProfile, userName, userRole, userPhone]);
 
   const handleStep1Next = useCallback(async () => {
     setSubmitting(true);
@@ -365,6 +372,19 @@ export default function ClientOnboardingSetupPage() {
                   placeholder="Founder, Ops Lead, etc."
                   className={inputClass}
                 />
+              </div>
+              <div className="space-y-2">
+                <label className={labelClass}>Mobile number (optional)</label>
+                <input
+                  type="tel"
+                  value={userPhone}
+                  onChange={(e) => setUserPhone(e.target.value)}
+                  placeholder="+1 (555) 000-0000"
+                  className={inputClass}
+                />
+                <p className="text-label-sm text-muted-foreground/70">
+                  Used for iMessage access to your Glass agent.
+                </p>
               </div>
             </div>
 
@@ -528,6 +548,28 @@ export default function ClientOnboardingSetupPage() {
                   to get instant answers about your insurance coverage.
                 </span>
               </li>
+              {GLASS_IMESSAGE_NUMBER ? (
+                <li>
+                  <span className="shrink-0 tabular-nums text-foreground/30">5.</span>
+                  <span>
+                    Or text{" "}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void navigator.clipboard
+                          .writeText(GLASS_IMESSAGE_NUMBER)
+                          .then(() => toast.success("Copied to clipboard"))
+                          .catch(() => toast.error("Couldn't copy"));
+                      }}
+                      className="mx-1 inline-flex items-center gap-1 font-medium text-foreground underline decoration-foreground/20 underline-offset-4 hover:decoration-foreground/50 transition-colors"
+                    >
+                      {GLASS_IMESSAGE_NUMBER}
+                      <Copy className="h-3.5 w-3.5" />
+                    </button>{" "}
+                    via iMessage to ask questions from your phone.
+                  </span>
+                </li>
+              ) : null}
             </ol>
 
             {error ? <p className="text-sm text-muted-foreground">{error}</p> : null}

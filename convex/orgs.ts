@@ -780,6 +780,16 @@ export const getMembersInternal = internalQuery({
   },
 });
 
+export const getUserMembership = internalQuery({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("orgMemberships")
+      .withIndex("by_userId", (q) => q.eq("userId", args.userId))
+      .first();
+  },
+});
+
 export const hasMembershipInternal = internalQuery({
   args: {
     orgId: v.id("organizations"),

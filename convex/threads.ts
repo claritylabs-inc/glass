@@ -541,6 +541,85 @@ export const findByLegacyId = internalQuery({
   },
 });
 
+export const findOrCreateByPhone = internalMutation({
+  args: {
+    orgId: v.id("organizations"),
+    userId: v.id("users"),
+    fromPhone: v.string(),
+    userName: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("threads")
+      .withIndex("by_threadPhone", (q) => q.eq("threadPhone", args.fromPhone))
+      .first();
+    if (existing) {
+      await ctx.db.patch(existing._id, { lastMessageAt: Date.now() });
+      return existing._id;
+    }
+    const displayName = args.userName ?? args.fromPhone;
+    return await ctx.db.insert("threads", {
+      orgId: args.orgId,
+      title: `iMessage — ${displayName}`,
+      createdBy: args.userId,
+      lastMessageAt: Date.now(),
+      threadPhone: args.fromPhone,
+    });
+  },
+});
+
+export const insertImessageMessage = internalMutation({
+  args: {
+    threadId: v.id("threads"),
+    orgId: v.id("organizations"),
+    role: v.union(v.literal("user"), v.literal("agent")),
+    userId: v.optional(v.id("users")),
+    userName: v.optional(v.string()),
+    content: v.string(),
+    attachments: v.optional(
+      v.array(
+        v.object({
+          filename: v.string(),
+          contentType: v.string(),
+          size: v.number(),
+          fileId: v.optional(v.id("_storage")),
+        })
+      )
+    ),
+    referencedPolicyIds: v.optional(v.array(v.id("policies"))),
+    status: v.optional(v.union(v.literal("processing"), v.literal("error"))),
+    error: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const messageId = await ctx.db.insert("threadMessages", {
+      threadId: args.threadId,
+      orgId: args.orgId,
+      channel: "imessage",
+      role: args.role,
+      userId: args.userId,
+      userName: args.userName,
+      content: args.content,
+      attachments: args.attachments,
+      referencedPolicyIds: args.referencedPolicyIds,
+      status: args.status,
+      error: args.error,
+    });
+    await ctx.db.patch(args.threadId, { lastMessageAt: Date.now() });
+    return messageId;
+  },
+});
+
+export const getImessageHistory = internalQuery({
+  args: { threadId: v.id("threads"), limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("threadMessages")
+      .withIndex("by_threadId", (q) => q.eq("threadId", args.threadId))
+      .order("asc")
+      .take(args.limit ?? 20);
+  },
+});
+
 export const findOrCreateForEmail = internalMutation({
   args: {
     orgId: v.id("organizations"),

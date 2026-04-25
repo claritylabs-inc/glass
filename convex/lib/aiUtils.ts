@@ -227,7 +227,7 @@ export function policySearchScore(
 }
 
 export function buildChannelInstructions(params: {
-  platform: "web" | "email";
+  platform: "web" | "email" | "imessage";
   isMixedThread?: boolean;
   canSendEmail?: boolean;
   autoSendEmails?: boolean;
@@ -244,6 +244,19 @@ export function buildChannelInstructions(params: {
 - Reference relevant policy/coverage data when applicable.
 - Write from Glass's perspective on behalf of the company.
 - Do not add a personal sign-off as the team member; the platform adds the signature.`;
+
+  if (params.platform === "imessage") {
+    return `
+
+iMESSAGE MODE:
+- You are responding via iMessage (SMS). The user is on their phone.
+- Target 140 characters or fewer per response. Never exceed 320 characters.
+- Plain text only. No markdown, no bold, no bullets, no headers, no links unless critical.
+- Lead with the direct answer. Skip preamble, filler, and generic disclaimers.
+- If a complete answer requires more detail, give the essential fact and end with "Want more detail?" or "Ask me to expand."
+- For multi-part questions, answer the most important part first and ask if they want the rest.
+- Never include email-style greetings or sign-offs.`;
+  }
 
   if (params.platform === "email") {
     return `

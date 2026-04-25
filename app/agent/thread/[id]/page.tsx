@@ -10,7 +10,7 @@ import { ModeBadge } from "@/components/mode-badge";
 import { MessageBubble, splitQuotedReply, QuotedContent, type Conversation } from "@/components/conversation-message";
 import { ChatMessageBubble, type WebChatMessage } from "@/components/chat-message-bubble";
 import { toast } from "sonner";
-import { Loader2, Archive, ArchiveRestore, FileText, Pencil, Check, ClipboardList, Asterisk, Mail as MailIcon, MessageSquare, Paperclip, Download, Copy, Lock, RotateCcw } from "lucide-react";
+import { Loader2, Archive, ArchiveRestore, FileText, Pencil, Check, ClipboardList, Asterisk, Mail as MailIcon, MessageSquare, Phone as PhoneIcon, Paperclip, Download, Copy, Lock, RotateCcw } from "lucide-react";
 import { usePdf } from "@/components/pdf-context";
 import { usePresence } from "@/hooks/use-presence";
 import { ContextReferenceCard, PolicyReferenceCard, ReferenceCardStrip } from "@/components/context-reference-card";
@@ -35,7 +35,7 @@ export type ThreadMessage = {
   _creationTime: number;
   threadId: Id<"threads">;
   orgId: Id<"organizations">;
-  channel: "chat" | "email";
+  channel: "chat" | "email" | "imessage";
   role: "user" | "agent" | "system";
   userId?: Id<"users">;
   userName?: string;
@@ -118,7 +118,7 @@ function UnifiedThreadActions({
       const sender = msg.role === "agent"
         ? "Glass"
         : msg.userName ?? msg.fromName ?? msg.fromEmail ?? "User";
-      const channel = msg.channel === "email" ? " [Email]" : " [Chat]";
+      const channel = msg.channel === "email" ? " [Email]" : msg.channel === "imessage" ? " [iMessage]" : " [Chat]";
       lines.push("");
       lines.push(`${sender}${channel} — ${time}`);
       if (msg.fromEmail) lines.push(`From: ${msg.fromEmail}`);
@@ -293,7 +293,9 @@ export function UnifiedMessageBubble({
   const time = dayjs(msg._creationTime);
   const channelIcon = msg.channel === "email"
     ? <MailIcon className="w-3 h-3 text-muted-foreground/30" />
-    : <MessageSquare className="w-3 h-3 text-muted-foreground/30" />;
+    : msg.channel === "imessage"
+      ? <PhoneIcon className="w-3 h-3 text-muted-foreground/30" />
+      : <MessageSquare className="w-3 h-3 text-muted-foreground/30" />;
 
   // Processing state — unified bubble with thinking, tool status, and streaming content
   if (msg.role === "agent" && msg.status === "processing") {
