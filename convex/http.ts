@@ -27,6 +27,64 @@ http.route({
   }),
 });
 
+http.route({
+  path: "/imessage-inbound",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    // Validate shared secret
+    const secret = process.env.IMESSAGE_WORKER_SECRET;
+    const authHeader = request.headers.get("Authorization") ?? "";
+    if (secret && authHeader !== `Bearer ${secret}`) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    let body: {
+      fromPhone: string;
+      messageText: string;
+      attachments?: Array<{ data: string; mimeType: string; name: string }>;
+    };
+    try {
+      body = await request.json();
+    } catch {
+      return new Response(JSON.stringify({ error: "Invalid JSON" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (!body.fromPhone || !body.messageText) {
+      return new Response(JSON.stringify({ error: "fromPhone and messageText are required" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    try {
+      const result = await ctx.runAction(
+        internal.actions.handleInboundImessage.processInbound,
+        {
+          fromPhone: body.fromPhone,
+          messageText: body.messageText,
+          attachments: body.attachments,
+        },
+      );
+      return new Response(JSON.stringify(result), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    } catch (err) {
+      console.error("[imessage-inbound] Error:", err);
+      return new Response(
+        JSON.stringify({ error: "Internal server error" }),
+        { status: 500, headers: { "Content-Type": "application/json" } },
+      );
+    }
+  }),
+});
+
 // ── OAuth 2.1 Routes ──
 
 const CORS_HEADERS = {

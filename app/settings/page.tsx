@@ -73,8 +73,10 @@ export default function SettingsPage() {
   const isBroker = currentOrg?.isBroker ?? false;
 
   const SETTINGS_SECTIONS_ACTIVE = isBroker ? BROKER_SETTINGS_SECTIONS : CLIENT_SETTINGS_SECTIONS;
-
-  const activeSection = (searchParams.get("section") as SettingsSection) ?? "organization";
+  const requestedSection = searchParams.get("section") as SettingsSection | null;
+  const activeSection: SettingsSection = SETTINGS_SECTIONS_ACTIVE.some((section) => section.id === requestedSection)
+    ? requestedSection!
+    : "organization";
 
   function handleSectionChange(id: SettingsSection) {
     const params = new URLSearchParams(searchParams.toString());

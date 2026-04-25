@@ -3,6 +3,13 @@ import { query, mutation, internalQuery } from "./_generated/server";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { notify } from "./lib/notify";
 
+function normalizePhone(phone: string): string | undefined {
+  const compact = phone.trim().replace(/[^+\d]/g, "").replace(/(?!^)\+/g, "");
+  const digits = compact.replace(/\D/g, "");
+  if (!digits) return undefined;
+  return compact.startsWith("+") ? compact : `+${compact}`;
+}
+
 export const viewer = query({
   args: {},
   handler: async (ctx) => {
@@ -20,6 +27,28 @@ export const checkEmail = query({
       .withIndex("email", (q) => q.eq("email", args.email))
       .first();
     return { exists: !!user };
+  },
+});
+
+export const checkPhoneAvailability = query({
+  args: { phone: v.string() },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
+
+    const normalized = normalizePhone(args.phone);
+    if (!normalized) return { available: false, normalized: "" };
+
+    const existing = await ctx.db
+      .query("users")
+      .withIndex("phone", (q) => q.eq("phone", normalized))
+      .first();
+
+    return {
+      available: !existing || existing._id === userId,
+      current: existing?._id === userId,
+      normalized,
+    };
   },
 });
 
@@ -59,11 +88,30 @@ export const updateProfile = mutation({
   args: {
     name: v.optional(v.string()),
     title: v.optional(v.string()),
+    phone: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("Not authenticated");
-    await ctx.db.patch(userId, args);
+    const patch: { name?: string; title?: string; phone?: string | undefined } = {};
+    if (args.name !== undefined) patch.name = args.name;
+    if (args.title !== undefined) patch.title = args.title;
+    if (args.phone !== undefined) {
+      const normalized = normalizePhone(args.phone);
+      if (normalized) {
+        const existing = await ctx.db
+          .query("users")
+          .withIndex("phone", (q) => q.eq("phone", normalized))
+          .first();
+        if (existing && existing._id !== userId) {
+          throw new Error("Phone number is already in use");
+        }
+        patch.phone = normalized;
+      } else {
+        patch.phone = undefined;
+      }
+    }
+    await ctx.db.patch(userId, patch);
   },
 });
 
@@ -120,6 +168,16 @@ export const getInternal = internalQuery({
   args: { id: v.id("users") },
   handler: async (ctx, args) => {
     return await ctx.db.get(args.id);
+  },
+});
+
+export const findByPhone = internalQuery({
+  args: { phone: v.string() },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("users")
+      .withIndex("phone", (q) => q.eq("phone", args.phone))
+      .first();
   },
 });
 

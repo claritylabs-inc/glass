@@ -23,6 +23,7 @@ import {
   Archive,
   ArrowLeft,
   Bell,
+  Phone,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { usePageContext } from "@/hooks/use-page-context";
@@ -157,12 +158,12 @@ export function AppSidebar({
 
   // Unified thread list — prefers unified threads table, falls back to legacy merge
   const conversations = useMemo(() => {
-    type ConvItem = { kind: "email" | "chat"; id: string; label: string; time: number };
+    type ConvItem = { kind: "email" | "chat" | "imessage"; id: string; label: string; time: number };
 
     // If unified threads have data, use them directly
     if (unifiedThreads && unifiedThreads.length > 0) {
       return unifiedThreads.slice(0, 8).map((t): ConvItem => ({
-        kind: t.legacyConversationId ? "email" : "chat",
+        kind: t.legacyConversationId ? "email" : (t as { threadPhone?: string }).threadPhone ? "imessage" : "chat",
         id: t._id,
         label: t.title,
         time: t.lastMessageAt ?? t._creationTime,
@@ -466,7 +467,9 @@ export function AppSidebar({
                     : "text-muted-foreground hover:bg-foreground/[0.04]"
                 }`}
               >
-                {item.kind === "chat" ? (
+                {item.kind === "imessage" ? (
+                  <Phone className="w-3.5 h-3.5 shrink-0" />
+                ) : item.kind === "chat" ? (
                   <MessageSquare className="w-3.5 h-3.5 shrink-0" />
                 ) : (
                   <Mail className="w-3.5 h-3.5 shrink-0" />
@@ -530,11 +533,13 @@ export function AppSidebar({
                       : "text-muted-foreground/40 hover:text-foreground hover:bg-foreground/[0.04]"
                   }`}
                 >
-                  {item.kind === "chat" ? (
-                    <MessageSquare className="w-3.5 h-3.5" />
-                  ) : (
-                    <Mail className="w-3.5 h-3.5" />
-                  )}
+                {item.kind === "imessage" ? (
+                  <Phone className="w-3.5 h-3.5" />
+                ) : item.kind === "chat" ? (
+                  <MessageSquare className="w-3.5 h-3.5" />
+                ) : (
+                  <Mail className="w-3.5 h-3.5" />
+                )}
                 </Link>
               );
             })}

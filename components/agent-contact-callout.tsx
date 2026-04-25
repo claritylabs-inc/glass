@@ -96,11 +96,11 @@ export function AgentContactCallout({
       <div className="w-full flex flex-col gap-6 justify-between">
         <div className="min-w-0 max-w-xl">
           <div className="text-3xl sm:text-4xl font-medium tracking-tight leading-[1.1]">
-            Get answers about your insurance coverage wherever you are
+            Get answers about your insurance coverage, wherever you are
           </div>
         </div>
 
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2 mb-1">
           <PillButton variant="primary" onClick={handleEmail}>
             <Mail className="h-4 w-4" />
             Email {agentEmail}
