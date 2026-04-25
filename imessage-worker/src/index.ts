@@ -67,9 +67,10 @@ async function main() {
           // Collect attachment if present
           const attachments: ImessageAttachment[] = [];
           if (message.content.type === "attachment") {
-            const { data, mimeType, name } = message.content;
+            const { mimeType, name } = message.content;
+            const bytes = await message.content.read();
             attachments.push({
-              data: Buffer.from(data).toString("base64"),
+              data: Buffer.from(bytes).toString("base64"),
               mimeType,
               name: name ?? "attachment",
             });
