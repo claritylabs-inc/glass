@@ -1,7 +1,7 @@
 "use node";
 
 import { v } from "convex/values";
-import { internalAction, action } from "../_generated/server";
+import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { advancePhase, runPipeline } from "@claritylabs/cl-pipelines";
 import {
@@ -19,6 +19,8 @@ import { makeEmbedText } from "../lib/sdkCallbacks";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 
+const CANCELLED_BY_USER = "Cancelled by user";
+
 // ─── State Type ────────────────────────────────────────────────────────────────
 
 export type PolicyExtractionState = {
@@ -34,6 +36,16 @@ export type PolicyExtractionState = {
   extractedDocumentJson?: string;
   chunkIds?: string[];
 };
+
+async function isExtractionCancelled(
+  ctx: ActionCtx,
+  policyId: string,
+): Promise<boolean> {
+  const policy = await ctx.runQuery(internal.policies.getInternal, {
+    id: policyId as Id<"policies">,
+  });
+  return policy?.pipelineError === CANCELLED_BY_USER;
+}
 
 // ─── Convex mutations ref builder ──────────────────────────────────────────────
 
@@ -55,6 +67,9 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
     name: "load_pdf",
     run: async (pCtx): Promise<PhaseResult<PolicyExtractionState>> => {
       const { state } = pCtx.checkpoint;
+      if (await isExtractionCancelled(convexCtx, pCtx.jobId)) {
+        return { kind: "error", error: CANCELLED_BY_USER };
+      }
 
       if (!state.fileId) {
         return { kind: "error", error: "load_pdf: missing fileId" };
@@ -74,6 +89,9 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
     name: "extract",
     run: async (pCtx): Promise<PhaseResult<PolicyExtractionState>> => {
       const { state } = pCtx.checkpoint;
+      if (await isExtractionCancelled(convexCtx, pCtx.jobId)) {
+        return { kind: "error", error: CANCELLED_BY_USER };
+      }
 
       if (!state.fileId) {
         return { kind: "error", error: "extract: missing fileId — load_pdf phase must run first" };
@@ -107,6 +125,10 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         policyId,
         extractOptions,
       );
+
+      if (await isExtractionCancelled(convexCtx, pCtx.jobId)) {
+        return { kind: "error", error: CANCELLED_BY_USER };
+      }
 
       const doc = result.document as Record<string, unknown>;
       const chunks = result.chunks;
@@ -173,6 +195,9 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
     run: async (pCtx): Promise<PhaseResult<PolicyExtractionState>> => {
       const { state } = pCtx.checkpoint;
       const policyId = pCtx.jobId;
+      if (await isExtractionCancelled(convexCtx, policyId)) {
+        return { kind: "error", error: CANCELLED_BY_USER };
+      }
 
       // chunks may have been passed in-state from extract phase (same execution)
       // or we skip re-embedding since chunks are not re-fetchable without re-extracting.
@@ -195,6 +220,9 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         const embed = makeEmbedText(convexCtx, state.orgId as Id<"organizations">);
         let embedded = 0;
         for (const chunk of chunks) {
+          if (await isExtractionCancelled(convexCtx, policyId)) {
+            return { kind: "error", error: CANCELLED_BY_USER };
+          }
           try {
             const embedding = await embed(chunk.text);
             await convexCtx.runMutation(
@@ -233,6 +261,9 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
     run: async (pCtx): Promise<PhaseResult<PolicyExtractionState>> => {
       const { state } = pCtx.checkpoint;
       const policyId = pCtx.jobId;
+      if (await isExtractionCancelled(convexCtx, policyId)) {
+        return { kind: "error", error: CANCELLED_BY_USER };
+      }
 
       // Audit log
       try {

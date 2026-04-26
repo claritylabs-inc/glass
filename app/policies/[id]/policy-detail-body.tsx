@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useRef, useEffect, type ReactNode } from "react";
+import { useState, useRef, useEffect, useCallback, type ReactNode } from "react";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
 import { FadeIn } from "@/components/ui/fade-in";
-import { Loader2, RotateCw, Trash2, Eye, X } from "lucide-react";
+import { CircleStop, Loader2, RotateCw, Trash2, Eye, X } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import Link from "next/link";
 import { StructuredLog, type StructuredLogEntry } from "@/components/structured-log";
@@ -188,11 +188,13 @@ export function PolicyDetailBody({
 
   const softDelete = useMutation(api.policies.softDelete);
   const restorePolicy = useMutation(api.policies.restore);
+  const cancelExtraction = useMutation(api.policies.cancelExtraction);
   const retryExtraction = useAction(api.actions.retryExtraction.retryExtraction);
   const rechunk = useAction(api.actions.rechunkPolicy.rechunk);
 
   const [reExtracting, setReExtracting] = useState(false);
   const [rechunking, setRechunking] = useState(false);
+  const [cancelingExtraction, setCancelingExtraction] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialPage = Number(searchParams.get("page")) || undefined;
@@ -241,6 +243,9 @@ export function PolicyDetailBody({
   const displayName = administratorName || carrierName;
   const policyNumber = (p.policyNumber as string | undefined) ?? "";
   const isDeleted = !!p.deletedAt;
+  const pipelineStatus = p.pipelineStatus as PipelineStatus | undefined;
+  const canCancelExtraction =
+    pipelineStatus === "running" || pipelineStatus === "paused";
   const policyDocument: Record<string, unknown> | undefined = p.document as
     | Record<string, unknown>
     | undefined;
@@ -334,6 +339,19 @@ export function PolicyDetailBody({
     }
   };
 
+  const handleCancelExtraction = useCallback(async () => {
+    if (!policy) return;
+    setCancelingExtraction(true);
+    try {
+      await cancelExtraction({ id: policy._id });
+      toast.success("Extraction cancelled");
+    } catch {
+      toast.error("Failed to cancel extraction");
+    } finally {
+      setCancelingExtraction(false);
+    }
+  }, [cancelExtraction, policy]);
+
   useEffect(() => {
     if (!onActions) return;
     if (!policy) {
@@ -357,7 +375,7 @@ export function PolicyDetailBody({
             size="compact"
             variant="icon"
             label="Re-extract"
-            disabled={reExtracting || rechunking}
+            disabled={reExtracting || rechunking || cancelingExtraction}
             onClick={() => setShowRefreshDialog(true)}
           >
             {reExtracting || rechunking ? (
@@ -367,11 +385,36 @@ export function PolicyDetailBody({
             )}
           </PillButton>
         )}
+        {!isDeleted && canCancelExtraction && (
+          <PillButton
+            size="compact"
+            variant="icon"
+            label="Cancel extraction"
+            disabled={cancelingExtraction}
+            onClick={handleCancelExtraction}
+          >
+            {cancelingExtraction ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <CircleStop className="w-4 h-4" />
+            )}
+          </PillButton>
+        )}
         <ViewPdfButton url={fileUrl} />
       </>,
     );
     return () => onActions(null);
-  }, [onActions, policy, isDeleted, reExtracting, rechunking, fileUrl]);
+  }, [
+    onActions,
+    policy,
+    isDeleted,
+    reExtracting,
+    rechunking,
+    cancelingExtraction,
+    canCancelExtraction,
+    handleCancelExtraction,
+    fileUrl,
+  ]);
 
   if (policy === undefined) {
     return (

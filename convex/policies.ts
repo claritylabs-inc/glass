@@ -796,12 +796,25 @@ export const cancelExtraction = mutation({
     const { userId, orgId } = await requireOrgAccess(ctx);
     const policy = await ctx.db.get(args.id);
     if (!policy || policy.orgId !== orgId) throw new Error("Not found");
-    // Allow cancel from any non-complete status
     const cancelable = ["idle", "running", "paused", "error"];
     if (policy.pipelineStatus && !cancelable.includes(policy.pipelineStatus)) {
       throw new Error("Cannot cancel a completed extraction");
     }
-    await ctx.db.patch(args.id, { dismissed: true, pipelineError: "Cancelled by user" });
+    const log = policy.pipelineLog ?? [];
+    await ctx.db.patch(args.id, {
+      pipelineStatus: "error",
+      pipelineError: "Cancelled by user",
+      pipelineCheckpoint: undefined,
+      pipelineLog: [
+        ...log,
+        {
+          timestamp: Date.now(),
+          message: "Extraction cancelled by user",
+          phase: "cancel",
+          level: "warn",
+        },
+      ],
+    });
     await ctx.db.insert("policyAuditLog", {
       policyId: args.id,
       userId,
