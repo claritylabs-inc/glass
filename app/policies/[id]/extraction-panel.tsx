@@ -328,6 +328,10 @@ function objectEntries(value?: Record<string, unknown>) {
 type DataRow = { label: string; value: string; section?: string; pageNumber?: number };
 type DataSection = { label: string; rows: DataRow[] };
 
+const STRUCTURED_BODY_LABEL_CLASS = "sm:pl-[2.625rem]";
+const STRUCTURED_BODY_VALUE_CLASS = "sm:pr-5";
+const STRUCTURED_BODY_TEXT_CLASS = "px-5 sm:pl-[2.625rem] sm:pr-5";
+
 function firstNumericPage(...values: unknown[]) {
   for (const value of values) {
     if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -471,8 +475,18 @@ function ExclusionBody({ ex }: { ex: PolicyExclusion }) {
 
   return (
     <div className="space-y-3">
-      {metaItems.length > 0 && <KeyValueTable rows={metaItems} />}
-      {ex?.content && <DocContent>{ex.content}</DocContent>}
+      {metaItems.length > 0 && (
+        <KeyValueTable
+          rows={metaItems}
+          labelCellClassName={STRUCTURED_BODY_LABEL_CLASS}
+          valueCellClassName={STRUCTURED_BODY_VALUE_CLASS}
+        />
+      )}
+      {ex?.content && (
+        <div className={STRUCTURED_BODY_TEXT_CLASS}>
+          <DocContent>{ex.content}</DocContent>
+        </div>
+      )}
     </div>
   );
 }
@@ -487,9 +501,15 @@ function ConditionBody({ c }: { c: PolicyCondition }) {
             label: formatStructuredLabel(entry.key) ?? entry.key,
             value: entry.value,
           }))}
+          labelCellClassName={STRUCTURED_BODY_LABEL_CLASS}
+          valueCellClassName={STRUCTURED_BODY_VALUE_CLASS}
         />
       )}
-      {c?.content && <DocContent>{c.content}</DocContent>}
+      {c?.content && (
+        <div className={STRUCTURED_BODY_TEXT_CLASS}>
+          <DocContent>{c.content}</DocContent>
+        </div>
+      )}
     </div>
   );
 }
@@ -504,8 +524,18 @@ function EndorsementBody({ e }: { e: PolicyEndorsement }) {
 
   return (
     <div className="space-y-3">
-      {metaItems.length > 0 && <KeyValueTable rows={metaItems} />}
-      {e?.content && <DocContent>{e.content}</DocContent>}
+      {metaItems.length > 0 && (
+        <KeyValueTable
+          rows={metaItems}
+          labelCellClassName={STRUCTURED_BODY_LABEL_CLASS}
+          valueCellClassName={STRUCTURED_BODY_VALUE_CLASS}
+        />
+      )}
+      {e?.content && (
+        <div className={STRUCTURED_BODY_TEXT_CLASS}>
+          <DocContent>{e.content}</DocContent>
+        </div>
+      )}
     </div>
   );
 }
@@ -525,8 +555,18 @@ function CoverageBody({ coverage }: { coverage: CoverageEntry }) {
 
   return (
     <div className="space-y-3">
-      {metaItems.length > 0 && <KeyValueTable rows={metaItems} />}
-      {coverage.originalContent && <DocContent>{coverage.originalContent}</DocContent>}
+      {metaItems.length > 0 && (
+        <KeyValueTable
+          rows={metaItems}
+          labelCellClassName={STRUCTURED_BODY_LABEL_CLASS}
+          valueCellClassName={STRUCTURED_BODY_VALUE_CLASS}
+        />
+      )}
+      {coverage.originalContent && (
+        <div className={STRUCTURED_BODY_TEXT_CLASS}>
+          <DocContent>{coverage.originalContent}</DocContent>
+        </div>
+      )}
     </div>
   );
 }
@@ -540,8 +580,18 @@ function DefinitionBody({ definition }: { definition: DefinitionEntry }) {
 
   return (
     <div className="space-y-3">
-      {metaItems.length > 0 && <KeyValueTable rows={metaItems} />}
-      {definition.definition && <DocContent>{definition.definition}</DocContent>}
+      {metaItems.length > 0 && (
+        <KeyValueTable
+          rows={metaItems}
+          labelCellClassName={STRUCTURED_BODY_LABEL_CLASS}
+          valueCellClassName={STRUCTURED_BODY_VALUE_CLASS}
+        />
+      )}
+      {definition.definition && (
+        <div className={STRUCTURED_BODY_TEXT_CLASS}>
+          <DocContent>{definition.definition}</DocContent>
+        </div>
+      )}
     </div>
   );
 }
@@ -557,8 +607,18 @@ function CoveredReasonBody({ reason }: { reason: CoveredReasonEntry }) {
 
   return (
     <div className="space-y-3">
-      {metaItems.length > 0 && <KeyValueTable rows={metaItems} />}
-      {reason.content && <DocContent>{reason.content}</DocContent>}
+      {metaItems.length > 0 && (
+        <KeyValueTable
+          rows={metaItems}
+          labelCellClassName={STRUCTURED_BODY_LABEL_CLASS}
+          valueCellClassName={STRUCTURED_BODY_VALUE_CLASS}
+        />
+      )}
+      {reason.content && (
+        <div className={STRUCTURED_BODY_TEXT_CLASS}>
+          <DocContent>{reason.content}</DocContent>
+        </div>
+      )}
       {reason.conditions?.length ? (
         <div>
           <p className="text-xs font-semibold text-muted-foreground mb-1.5">Conditions</p>
@@ -654,9 +714,9 @@ function StructuredItemsCard<T>({
               {page != null && <PageRef page={page} />}
             </button>
             {expanded.has(i) && (
-              <div className="space-y-3 px-5 pt-2 pb-3">
+              <div className="space-y-3 pt-2 pb-3">
                 {badges.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 md:hidden">
+                  <div className="flex flex-wrap gap-1.5 px-5 md:hidden">
                     {badges.map((badge) => (
                       <span
                         key={badge.label}
@@ -884,10 +944,12 @@ function KeyValueTable({
   rows,
   className = "",
   labelCellClassName = "",
+  valueCellClassName = "",
 }: {
   rows: DataRow[];
   className?: string;
   labelCellClassName?: string;
+  valueCellClassName?: string;
 }) {
   if (!rows.length) return null;
   return (
@@ -899,7 +961,7 @@ function KeyValueTable({
             className="block border-t border-foreground/4 first:border-t-0 hover:bg-foreground/[0.015] transition-colors sm:table-row"
           >
             <td
-              className={`block px-4 pt-3 pb-1 text-xs font-medium text-muted-foreground align-top sm:table-cell sm:w-1/3 sm:py-2.5 sm:text-sm sm:font-normal ${labelCellClassName}`}
+              className={`block px-5 pt-3 pb-1 text-xs font-medium text-muted-foreground align-top sm:table-cell sm:w-1/3 sm:py-2.5 sm:text-sm sm:font-normal ${labelCellClassName}`}
             >
               <span>{row.label}</span>
               {row.section && (
@@ -908,7 +970,7 @@ function KeyValueTable({
                 </span>
               )}
             </td>
-            <td className="block px-4 pt-0 pb-3 text-sm text-foreground font-normal sm:table-cell sm:py-2.5">
+            <td className={`block px-5 pt-0 pb-3 text-sm text-foreground font-normal sm:table-cell sm:py-2.5 ${valueCellClassName}`}>
               <span className="inline-flex items-center gap-1.5 break-words">
                 <span>{row.value}</span>
                 {row.pageNumber != null && <PageRef page={row.pageNumber} />}
