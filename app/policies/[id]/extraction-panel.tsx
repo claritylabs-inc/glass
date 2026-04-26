@@ -930,9 +930,11 @@ function ClaimsContactStructured({ data }: { data: ClaimsContact }) {
 function KeyValueTable({
   rows,
   className = "",
+  labelCellClassName = "",
 }: {
   rows: DataRow[];
   className?: string;
+  labelCellClassName?: string;
 }) {
   if (!rows.length) return null;
   return (
@@ -943,7 +945,7 @@ function KeyValueTable({
             key={`${row.section ?? ""}-${row.label}-${i}`}
             className="border-t border-foreground/4 first:border-t-0 hover:bg-foreground/[0.015] transition-colors"
           >
-            <td className="px-4 py-2.5 text-sm text-muted-foreground align-top w-1/3">
+            <td className={`px-4 py-2.5 text-sm text-muted-foreground align-top w-1/3 ${labelCellClassName}`}>
               <span>{row.label}</span>
               {row.section && (
                 <span className="block text-[11px] text-muted-foreground/60 mt-0.5">
@@ -1003,7 +1005,7 @@ function SectionedDataCard({
           label={`${section.label} (${section.rows.length})`}
           defaultOpen={index === 0}
         >
-          <KeyValueTable rows={section.rows} className="ml-11 w-[calc(100%-2.75rem)]" />
+          <KeyValueTable rows={section.rows} labelCellClassName="pl-11" />
         </GroupSection>
       ))}
     </div>
