@@ -326,6 +326,7 @@ function objectEntries(value?: Record<string, unknown>) {
 }
 
 type DataRow = { label: string; value: string; section?: string; pageNumber?: number };
+type DataSection = { label: string; rows: DataRow[] };
 
 function firstNumericPage(...values: unknown[]) {
   for (const value of values) {
@@ -340,6 +341,26 @@ function declarationsFallbackPage(sections: PolicySection[]) {
     return section.type === "declarations" || title.includes("declaration");
   });
   return declarationsSection?.pageStart;
+}
+
+function groupRowsBySection(rows: DataRow[]) {
+  const sections: DataSection[] = [];
+  const sectionIndexes = new Map<string, number>();
+
+  for (const row of rows) {
+    const label = row.section || "Other";
+    const index = sectionIndexes.get(label);
+    const rowWithoutSection = { ...row, section: undefined };
+
+    if (index == null) {
+      sectionIndexes.set(label, sections.length);
+      sections.push({ label, rows: [rowWithoutSection] });
+    } else {
+      sections[index]?.rows.push(rowWithoutSection);
+    }
+  }
+
+  return sections;
 }
 
 // ─── Section / Exclusion / Condition / Endorsement cards ─────────────────────
@@ -928,7 +949,7 @@ function KeyValueTable({
                 </span>
               )}
             </td>
-            <td className="px-4 py-2.5 text-sm text-foreground font-medium">
+            <td className="px-4 py-2.5 text-sm text-foreground font-normal">
               <span className="inline-flex items-center gap-1.5">
                 <span>{row.value}</span>
                 {row.pageNumber != null && <PageRef page={row.pageNumber} />}
@@ -955,6 +976,34 @@ function DataCard({
         <p className="text-sm font-medium text-foreground">{title}</p>
       </div>
       <KeyValueTable rows={rows} />
+    </div>
+  );
+}
+
+function SectionedDataCard({
+  title,
+  sections,
+}: {
+  title: string;
+  sections: DataSection[];
+}) {
+  const nonEmptySections = sections.filter((section) => section.rows.length > 0);
+  if (!nonEmptySections.length) return null;
+
+  return (
+    <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
+      <div className="px-5 py-3 border-b border-foreground/4">
+        <p className="text-sm font-medium text-foreground">{title}</p>
+      </div>
+      {nonEmptySections.map((section, index) => (
+        <GroupSection
+          key={`${section.label}-${index}`}
+          label={`${section.label} (${section.rows.length})`}
+          defaultOpen={index === 0}
+        >
+          <KeyValueTable rows={section.rows} />
+        </GroupSection>
+      ))}
     </div>
   );
 }
@@ -1031,6 +1080,16 @@ export function ExtractionCards({
   const fees = costsAndFees?.fees ?? [];
   const exclusions = policyDocument?.exclusions ?? [];
   const conditions = policyDocument?.conditions ?? [];
+  const declarationRows = declarations
+    .map((field) => ({
+      label: formatStructuredLabel(field.field) ?? field.field ?? "Field",
+      value: field.value ?? "",
+      section: field.section
+        ? formatStructuredLabel(field.section) ?? field.section
+        : undefined,
+      pageNumber: firstNumericPage(field.pageNumber, field.pageStart, declarationsPage),
+    }))
+    .filter((row) => row.value);
 
   const hasAnyData =
     coverages.length > 0 ||
@@ -1083,14 +1142,9 @@ export function ExtractionCards({
       )}
 
       {declarations.length > 0 && (
-        <DataCard
+        <SectionedDataCard
           title="Declarations"
-          rows={declarations.map((field) => ({
-            label: formatStructuredLabel(field.field) ?? field.field ?? "Field",
-            value: field.value ?? "",
-            section: field.section ? formatStructuredLabel(field.section) ?? field.section : undefined,
-            pageNumber: firstNumericPage(field.pageNumber, field.pageStart, declarationsPage),
-          })).filter((row) => row.value)}
+          sections={groupRowsBySection(declarationRows)}
         />
       )}
 
