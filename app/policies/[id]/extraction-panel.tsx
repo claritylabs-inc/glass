@@ -330,7 +330,8 @@ type DataSection = { label: string; rows: DataRow[] };
 
 const STRUCTURED_BODY_LABEL_CLASS = "sm:pl-[2.625rem]";
 const STRUCTURED_BODY_VALUE_CLASS = "sm:pr-5";
-const STRUCTURED_BODY_TEXT_CLASS = "px-5 sm:pl-[2.625rem] sm:pr-5";
+const STRUCTURED_BODY_TEXT_CLASS =
+  "border-t border-foreground/4 px-5 pt-3 sm:pl-[2.625rem] sm:pr-5";
 
 function firstNumericPage(...values: unknown[]) {
   for (const value of values) {
