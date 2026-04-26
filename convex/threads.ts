@@ -412,6 +412,12 @@ export const updateAgentMessage = internalMutation({
       name: v.string(),
       input: v.optional(v.string()),
     }))),
+    attachments: v.optional(v.array(v.object({
+      filename: v.string(),
+      contentType: v.string(),
+      size: v.number(),
+      fileId: v.optional(v.id("_storage")),
+    }))),
     pendingEmailId: v.optional(v.id("pendingEmails")),
     status: v.optional(v.union(v.literal("pending_send"), v.literal("processing"), v.literal("error"))),
   },
@@ -425,6 +431,7 @@ export const updateAgentMessage = internalMutation({
       citedCoverageNames: args.citedCoverageNames,
       usedTools: args.usedTools,
       toolCalls: args.toolCalls,
+      attachments: args.attachments,
       pendingEmailId: args.pendingEmailId,
     });
   },

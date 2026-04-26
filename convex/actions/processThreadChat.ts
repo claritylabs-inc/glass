@@ -352,16 +352,21 @@ function buildTools(ctx: any, args: { orgId: string; threadId: string }, org?: R
           return `COI auto-generation is disabled for this organization.`;
         }
         try {
-          await ctx.scheduler.runAfter(
-            0,
-            internal.actions.generateCoi.run,
-            {
-              policyId: input.policyId,
-              orgId: args.orgId,
-              certificateHolder: input.certificateHolder,
+          const storageId = await ctx.runAction(internal.actions.generateCoi.run, {
+            policyId: input.policyId as Id<"policies">,
+            orgId: args.orgId,
+            certificateHolder: input.certificateHolder,
+          });
+          if (!storageId) return "Failed to generate COI.";
+          return {
+            message: "COI generated and attached to this response.",
+            attachment: {
+              filename: "certificate-of-insurance.pdf",
+              contentType: "application/pdf",
+              size: 0,
+              fileId: storageId as Id<"_storage">,
             },
-          );
-          return "COI generation started. It will be available for download shortly.";
+          };
         } catch (err) {
           return `Failed to generate COI: ${err instanceof Error ? err.message : String(err)}`;
         }
@@ -656,6 +661,12 @@ export const run = internalAction({
       const citedPolicyIds = new Set<string>(); // policy IDs actually looked up via lookup_policy_section
       const usedTools: string[] = [];
       const toolCalls: Array<{ name: string; input?: string }> = [];
+      const responseAttachments: Array<{
+        filename: string;
+        contentType: string;
+        size: number;
+        fileId?: Id<"_storage">;
+      }> = [];
       let lastToolName = "";
       let lastToolPolicyId = "";
 
@@ -700,6 +711,20 @@ export const run = internalAction({
             content: content ? content + `\n\n*${label}*` : `*${label}*`,
           });
         } else if (part.type === "tool-result") {
+          if (lastToolName === "generate_coi" && (part as Record<string, unknown>).output) {
+            const output = (part as Record<string, unknown>).output;
+            if (output && typeof output === "object" && "attachment" in output) {
+              const attachment = (output as Record<string, unknown>).attachment;
+              if (attachment && typeof attachment === "object") {
+                responseAttachments.push(attachment as {
+                  filename: string;
+                  contentType: string;
+                  size: number;
+                  fileId?: Id<"_storage">;
+                });
+              }
+            }
+          }
           // Capture cited section titles and policy IDs from lookup_policy_section results
           if (lastToolName === "lookup_policy_section" && (part as Record<string, unknown>).output) {
             const output = (part as Record<string, unknown>).output;
@@ -736,6 +761,7 @@ export const run = internalAction({
         citedCoverageNames: citedCoverageNames.size > 0 ? [...citedCoverageNames] : undefined,
         usedTools: usedTools.length > 0 ? usedTools : undefined,
         toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+        attachments: responseAttachments.length > 0 ? responseAttachments : undefined,
       });
       // Save final reasoning if any
       if (reasoning) {
