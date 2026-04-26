@@ -929,12 +929,14 @@ function ClaimsContactStructured({ data }: { data: ClaimsContact }) {
 
 function KeyValueTable({
   rows,
+  className = "",
 }: {
   rows: DataRow[];
+  className?: string;
 }) {
   if (!rows.length) return null;
   return (
-    <table className="w-full text-left">
+    <table className={`w-full text-left ${className}`}>
       <tbody>
         {rows.map((row, i) => (
           <tr
@@ -1001,7 +1003,7 @@ function SectionedDataCard({
           label={`${section.label} (${section.rows.length})`}
           defaultOpen={index === 0}
         >
-          <KeyValueTable rows={section.rows} />
+          <KeyValueTable rows={section.rows} className="ml-11 w-[calc(100%-2.75rem)]" />
         </GroupSection>
       ))}
     </div>
