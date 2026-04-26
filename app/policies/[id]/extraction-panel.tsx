@@ -943,9 +943,11 @@ function KeyValueTable({
         {rows.map((row, i) => (
           <tr
             key={`${row.section ?? ""}-${row.label}-${i}`}
-            className="border-t border-foreground/4 first:border-t-0 hover:bg-foreground/[0.015] transition-colors"
+            className="block border-t border-foreground/4 first:border-t-0 hover:bg-foreground/[0.015] transition-colors sm:table-row"
           >
-            <td className={`px-4 py-2.5 text-sm text-muted-foreground align-top w-1/3 ${labelCellClassName}`}>
+            <td
+              className={`block px-4 pt-3 pb-1 text-xs font-medium text-muted-foreground align-top sm:table-cell sm:w-1/3 sm:py-2.5 sm:text-sm sm:font-normal ${labelCellClassName}`}
+            >
               <span>{row.label}</span>
               {row.section && (
                 <span className="block text-[11px] text-muted-foreground/60 mt-0.5">
@@ -953,8 +955,8 @@ function KeyValueTable({
                 </span>
               )}
             </td>
-            <td className="px-4 py-2.5 text-sm text-foreground font-normal">
-              <span className="inline-flex items-center gap-1.5">
+            <td className="block px-4 pt-0 pb-3 text-sm text-foreground font-normal sm:table-cell sm:py-2.5">
+              <span className="inline-flex items-center gap-1.5 break-words">
                 <span>{row.value}</span>
                 {row.pageNumber != null && <PageRef page={row.pageNumber} />}
               </span>
