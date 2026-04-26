@@ -76,12 +76,77 @@ type FeeEntry = {
   name: string;
   amount?: string;
   type?: string;
+  description?: string;
 };
 
 type PolicyFee = {
   content?: string;
   pageNumber?: number;
   fees?: FeeEntry[];
+};
+
+type CoverageEntry = {
+  name?: string;
+  coverageCode?: string;
+  limit?: string;
+  limitType?: string;
+  deductible?: string;
+  formNumber?: string;
+  pageNumber?: number;
+  sectionRef?: string;
+  originalContent?: string;
+};
+
+type DefinitionEntry = {
+  term?: string;
+  definition?: string;
+  pageNumber?: number;
+  formNumber?: string;
+  formTitle?: string;
+  sectionRef?: string;
+  originalContent?: string;
+};
+
+type CoveredReasonEntry = {
+  coverageName?: string;
+  reasonNumber?: string;
+  title?: string;
+  content?: string;
+  conditions?: string[];
+  exceptions?: string[];
+  appliesTo?: string[];
+  pageNumber?: number;
+  formNumber?: string;
+  formTitle?: string;
+  sectionRef?: string;
+  originalContent?: string;
+};
+
+type DeclarationField = {
+  field?: string;
+  value?: string;
+  section?: string;
+};
+
+type FormInventoryEntry = {
+  formNumber?: string;
+  editionDate?: string;
+  title?: string;
+  formType?: string;
+  pageStart?: number;
+  pageEnd?: number;
+};
+
+type SupplementaryFact = {
+  key?: string;
+  value?: string;
+  subject?: string;
+  context?: string;
+};
+
+type PremiumLine = {
+  line?: string;
+  amount?: string;
 };
 
 type RegulatoryDetail = { label: string; value: string };
@@ -110,7 +175,21 @@ type ComplaintContact = {
 };
 
 type PolicyDocument = {
+  coverages?: CoverageEntry[];
+  premium?: string;
+  totalCost?: string;
+  minPremium?: string;
+  depositPremium?: string;
+  taxesAndFees?: FeeEntry[];
+  premiumBreakdown?: PremiumLine[];
+  limits?: Record<string, unknown>;
+  deductibles?: Record<string, unknown>;
+  declarations?: { fields?: DeclarationField[] } | Record<string, unknown>;
+  formInventory?: FormInventoryEntry[];
+  supplementaryFacts?: SupplementaryFact[];
   sections?: PolicySection[];
+  definitions?: DefinitionEntry[];
+  coveredReasons?: CoveredReasonEntry[];
   endorsements?: PolicyEndorsement[];
   costsAndFees?: PolicyFee;
   exclusions?: (PolicyExclusion | string)[];
@@ -212,6 +291,24 @@ function formatStructuredLabel(value?: string | null) {
   return value
     .replace(/_/g, " ")
     .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function stringifyValue(value: unknown): string {
+  if (value == null || value === "") return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value)) return value.map(stringifyValue).filter(Boolean).join(", ");
+  return JSON.stringify(value);
+}
+
+function objectEntries(value?: Record<string, unknown>) {
+  if (!value) return [] as { label: string; value: string }[];
+  return Object.entries(value)
+    .map(([key, raw]) => ({
+      label: formatStructuredLabel(key) ?? key,
+      value: stringifyValue(raw),
+    }))
+    .filter((entry) => entry.value);
 }
 
 // ─── Section / Exclusion / Condition / Endorsement cards ─────────────────────
@@ -377,6 +474,106 @@ function EndorsementBody({ e }: { e: PolicyEndorsement }) {
         </div>
       )}
       {e?.content && <DocContent>{e.content}</DocContent>}
+    </div>
+  );
+}
+
+function CoverageBody({ coverage }: { coverage: CoverageEntry }) {
+  const metaItems = [
+    coverage.coverageCode && { label: "Code", value: coverage.coverageCode },
+    coverage.limit && { label: "Limit", value: coverage.limit },
+    coverage.limitType && {
+      label: "Limit type",
+      value: formatStructuredLabel(coverage.limitType) ?? coverage.limitType,
+    },
+    coverage.deductible && { label: "Deductible", value: coverage.deductible },
+    coverage.formNumber && { label: "Form", value: coverage.formNumber },
+    coverage.sectionRef && { label: "Section", value: coverage.sectionRef },
+  ].filter(Boolean) as { label: string; value: string }[];
+
+  return (
+    <div className="space-y-3">
+      {metaItems.length > 0 && (
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
+          {metaItems.map((m) => (
+            <span key={m.label}>
+              <span className="text-muted-foreground/60">{m.label}:</span>{" "}
+              <span className="text-foreground">{m.value}</span>
+            </span>
+          ))}
+        </div>
+      )}
+      {coverage.originalContent && <DocContent>{coverage.originalContent}</DocContent>}
+    </div>
+  );
+}
+
+function DefinitionBody({ definition }: { definition: DefinitionEntry }) {
+  const metaItems = [
+    definition.formNumber && { label: "Form", value: definition.formNumber },
+    definition.formTitle && { label: "Form title", value: definition.formTitle },
+    definition.sectionRef && { label: "Section", value: definition.sectionRef },
+  ].filter(Boolean) as { label: string; value: string }[];
+
+  return (
+    <div className="space-y-3">
+      {metaItems.length > 0 && (
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
+          {metaItems.map((m) => (
+            <span key={m.label}>
+              <span className="text-muted-foreground/60">{m.label}:</span>{" "}
+              <span className="text-foreground">{m.value}</span>
+            </span>
+          ))}
+        </div>
+      )}
+      {definition.definition && <DocContent>{definition.definition}</DocContent>}
+    </div>
+  );
+}
+
+function CoveredReasonBody({ reason }: { reason: CoveredReasonEntry }) {
+  const metaItems = [
+    reason.coverageName && { label: "Coverage", value: reason.coverageName },
+    reason.formNumber && { label: "Form", value: reason.formNumber },
+    reason.formTitle && { label: "Form title", value: reason.formTitle },
+    reason.sectionRef && { label: "Section", value: reason.sectionRef },
+    reason.appliesTo?.length && { label: "Applies to", value: reason.appliesTo.join(", ") },
+  ].filter(Boolean) as { label: string; value: string }[];
+
+  return (
+    <div className="space-y-3">
+      {metaItems.length > 0 && (
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
+          {metaItems.map((m) => (
+            <span key={m.label}>
+              <span className="text-muted-foreground/60">{m.label}:</span>{" "}
+              <span className="text-foreground">{m.value}</span>
+            </span>
+          ))}
+        </div>
+      )}
+      {reason.content && <DocContent>{reason.content}</DocContent>}
+      {reason.conditions?.length ? (
+        <div>
+          <p className="text-xs font-semibold text-muted-foreground mb-1.5">Conditions</p>
+          <ul className="space-y-1.5">
+            {reason.conditions.map((condition, i) => (
+              <li key={i} className="text-sm text-foreground">{condition}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {reason.exceptions?.length ? (
+        <div>
+          <p className="text-xs font-semibold text-muted-foreground mb-1.5">Exceptions</p>
+          <ul className="space-y-1.5">
+            {reason.exceptions.map((exception, i) => (
+              <li key={i} className="text-sm text-foreground">{exception}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -678,6 +875,56 @@ function ClaimsContactStructured({ data }: { data: ClaimsContact }) {
   );
 }
 
+function KeyValueTable({
+  rows,
+}: {
+  rows: { label: string; value: string; section?: string }[];
+}) {
+  if (!rows.length) return null;
+  return (
+    <table className="w-full text-left">
+      <tbody>
+        {rows.map((row, i) => (
+          <tr
+            key={`${row.section ?? ""}-${row.label}-${i}`}
+            className="border-t border-foreground/4 first:border-t-0 hover:bg-foreground/[0.015] transition-colors"
+          >
+            <td className="px-4 py-2.5 text-sm text-muted-foreground align-top w-1/3">
+              <span>{row.label}</span>
+              {row.section && (
+                <span className="block text-[11px] text-muted-foreground/60 mt-0.5">
+                  {row.section}
+                </span>
+              )}
+            </td>
+            <td className="px-4 py-2.5 text-sm text-foreground font-medium">
+              {row.value}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function DataCard({
+  title,
+  rows,
+}: {
+  title: string;
+  rows: { label: string; value: string; section?: string }[];
+}) {
+  if (!rows.length) return null;
+  return (
+    <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
+      <div className="px-5 py-3 border-b border-foreground/4">
+        <p className="text-sm font-medium text-foreground">{title}</p>
+      </div>
+      <KeyValueTable rows={rows} />
+    </div>
+  );
+}
+
 // ─── Group wrapper ─────────────────────────────────────────────────────────────
 
 export function GroupSection({
@@ -725,7 +972,25 @@ export function ExtractionCards({
   policyDocument,
   initialPage,
 }: ExtractionPanelProps) {
+  const coverages = policyDocument?.coverages ?? [];
+  const declarations = Array.isArray((policyDocument?.declarations as { fields?: DeclarationField[] } | undefined)?.fields)
+    ? ((policyDocument?.declarations as { fields?: DeclarationField[] }).fields ?? [])
+    : [];
+  const premiumRows = [
+    policyDocument?.premium && { label: "Premium", value: policyDocument.premium },
+    policyDocument?.totalCost && { label: "Total cost", value: policyDocument.totalCost },
+    policyDocument?.minPremium && { label: "Minimum premium", value: policyDocument.minPremium },
+    policyDocument?.depositPremium && { label: "Deposit premium", value: policyDocument.depositPremium },
+  ].filter(Boolean) as { label: string; value: string }[];
+  const taxesAndFees = policyDocument?.taxesAndFees ?? [];
+  const premiumBreakdown = policyDocument?.premiumBreakdown ?? [];
+  const limits = objectEntries(policyDocument?.limits);
+  const deductibles = objectEntries(policyDocument?.deductibles);
+  const formInventory = policyDocument?.formInventory ?? [];
+  const supplementaryFacts = policyDocument?.supplementaryFacts ?? [];
   const sections = policyDocument?.sections ?? [];
+  const definitions = policyDocument?.definitions ?? [];
+  const coveredReasons = policyDocument?.coveredReasons ?? [];
   const endorsements = policyDocument?.endorsements ?? [];
   const costsAndFees = policyDocument?.costsAndFees;
   const fees = costsAndFees?.fees ?? [];
@@ -733,7 +998,18 @@ export function ExtractionCards({
   const conditions = policyDocument?.conditions ?? [];
 
   const hasAnyData =
+    coverages.length > 0 ||
+    declarations.length > 0 ||
+    premiumRows.length > 0 ||
+    taxesAndFees.length > 0 ||
+    premiumBreakdown.length > 0 ||
+    limits.length > 0 ||
+    deductibles.length > 0 ||
+    formInventory.length > 0 ||
+    supplementaryFacts.length > 0 ||
     sections.length > 0 ||
+    definitions.length > 0 ||
+    coveredReasons.length > 0 ||
     endorsements.length > 0 ||
     costsAndFees ||
     exclusions.length > 0 ||
@@ -746,6 +1022,163 @@ export function ExtractionCards({
 
   return (
     <div className="space-y-4">
+      {premiumRows.length > 0 && (
+        <DataCard title="Premium" rows={premiumRows} />
+      )}
+
+      {taxesAndFees.length > 0 && (
+        <DataCard
+          title="Taxes & fees"
+          rows={taxesAndFees.map((item) => ({
+            label: item.name,
+            value: item.amount ?? "",
+            section: item.type ? formatStructuredLabel(item.type) ?? item.type : item.description,
+          })).filter((row) => row.label && row.value)}
+        />
+      )}
+
+      {premiumBreakdown.length > 0 && (
+        <DataCard
+          title="Premium breakdown"
+          rows={premiumBreakdown.map((item) => ({
+            label: item.line ?? "Premium line",
+            value: item.amount ?? "",
+          })).filter((row) => row.value)}
+        />
+      )}
+
+      {declarations.length > 0 && (
+        <DataCard
+          title="Declarations"
+          rows={declarations.map((field) => ({
+            label: formatStructuredLabel(field.field) ?? field.field ?? "Field",
+            value: field.value ?? "",
+            section: field.section,
+          })).filter((row) => row.value)}
+        />
+      )}
+
+      {coverages.length > 0 && (
+        <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
+          <StructuredItemsCard
+            id="ep-coverages"
+            title="Coverages"
+            items={coverages}
+            getTitle={(coverage) => coverage.name ?? "Unnamed coverage"}
+            getPage={(coverage) => coverage.pageNumber}
+            getBadges={(coverage) =>
+              [
+                coverage.limit
+                  ? {
+                      label: coverage.limit,
+                      className:
+                        "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400",
+                    }
+                  : undefined,
+                coverage.deductible
+                  ? {
+                      label: "Deductible",
+                      className: "bg-foreground/5 text-muted-foreground",
+                    }
+                  : undefined,
+              ].filter(Boolean) as { label: string; className: string }[]
+            }
+            renderBody={(coverage) => <CoverageBody coverage={coverage} />}
+          />
+        </div>
+      )}
+
+      {limits.length > 0 && <DataCard title="Limits" rows={limits} />}
+      {deductibles.length > 0 && <DataCard title="Deductibles" rows={deductibles} />}
+
+      {definitions.length > 0 && (
+        <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
+          <StructuredItemsCard
+            id="ep-definitions"
+            title="Definitions"
+            items={definitions}
+            getTitle={(definition) => definition.term ?? "Unnamed definition"}
+            getPage={(definition) => definition.pageNumber}
+            getBadges={(definition) =>
+              definition.sectionRef
+                ? [
+                    {
+                      label: definition.sectionRef,
+                      className:
+                        "bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-400",
+                    },
+                  ]
+                : []
+            }
+            renderBody={(definition) => <DefinitionBody definition={definition} />}
+          />
+        </div>
+      )}
+
+      {coveredReasons.length > 0 && (
+        <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
+          <StructuredItemsCard
+            id="ep-covered-reasons"
+            title="Covered reasons"
+            items={coveredReasons}
+            getTitle={(reason) =>
+              [
+                reason.reasonNumber,
+                reason.title ?? reason.coverageName ?? "Covered reason",
+              ].filter(Boolean).join(". ")
+            }
+            getPage={(reason) => reason.pageNumber}
+            getBadges={(reason) =>
+              [
+                reason.coverageName
+                  ? {
+                      label: reason.coverageName,
+                      className:
+                        "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400",
+                    }
+                  : undefined,
+                reason.conditions?.length
+                  ? {
+                      label: "Conditions",
+                      className:
+                        "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400",
+                    }
+                  : undefined,
+              ].filter(Boolean) as { label: string; className: string }[]
+            }
+            renderBody={(reason) => <CoveredReasonBody reason={reason} />}
+          />
+        </div>
+      )}
+
+      {formInventory.length > 0 && (
+        <DataCard
+          title="Form inventory"
+          rows={formInventory.map((form) => ({
+            label: form.title || form.formNumber || "Untitled form",
+            value: [
+              form.formType ? formatStructuredLabel(form.formType) ?? form.formType : null,
+              form.formNumber,
+              form.editionDate,
+              form.pageStart != null
+                ? `Pages ${form.pageStart}${form.pageEnd && form.pageEnd !== form.pageStart ? `-${form.pageEnd}` : ""}`
+                : null,
+            ].filter(Boolean).join(" | "),
+          })).filter((row) => row.value)}
+        />
+      )}
+
+      {supplementaryFacts.length > 0 && (
+        <DataCard
+          title="Supplementary facts"
+          rows={supplementaryFacts.map((fact) => ({
+            label: formatStructuredLabel(fact.key) ?? fact.key ?? "Fact",
+            value: fact.value ?? "",
+            section: [fact.subject, fact.context].filter(Boolean).join(" | ") || undefined,
+          })).filter((row) => row.value)}
+        />
+      )}
+
       {/* Document Sections */}
       {sections.length > 0 && (
         <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">

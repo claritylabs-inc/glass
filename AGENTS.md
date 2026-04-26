@@ -30,7 +30,7 @@ Core layers:
 - Frontend: Next.js 16 App Router, React 19, Tailwind 4
 - Backend: Convex queries, mutations, actions, scheduler, file storage, vector search
 - AI runtime: Vercel AI SDK (`ai`)
-- Extraction, query agent, and prompts: `@claritylabs/cl-sdk@0.16.x`
+- Extraction, query agent, and prompts: `@claritylabs/cl-sdk@0.17.x`
 - Providers: OpenAI, MoonshotAI, Anthropic, DeepSeek
 - Email: outbound + inbound via Resend (no IMAP, no Gmail OAuth). All outbound Resend calls go through `convex/lib/resend.ts` (`sendResendEmail`). Sending domain comes from `AGENT_DOMAIN` (prod: `glass.claritylabs.inc`, dev: `dev.claritylabs.inc`). Inbound webhook at `POST /resend-inbound`.
 
@@ -108,6 +108,16 @@ Glass translates those into AI SDK multipart message content in `sdkCallbacks.ts
 Notes:
 
 - The `providerOptions.images` items from `cl-sdk` do not carry a `type` field; Glass adds `type: "image"` when building AI SDK parts.
+
+### Extraction Shape
+
+`cl-sdk` 0.17 adds first-class `definitions` and `coveredReasons` arrays, plus premium promotion from declaration fields into `premium`, `totalCost`, and `taxesAndFees`.
+
+Glass persists:
+
+- Top-level policy financials: `premium`, `totalCost`, `taxesAndFees`, `premiumBreakdown`, `minPremium`, `depositPremium`
+- Document detail: `document.sections`, `document.definitions`, `document.coveredReasons`, `document.endorsements`, `document.exclusions`, `document.conditions`
+- Declarations, form inventory, and supplementary facts as top-level policy fields
 
 ### Token Limits
 

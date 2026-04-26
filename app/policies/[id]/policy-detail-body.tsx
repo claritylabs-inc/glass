@@ -71,7 +71,7 @@ function PolicyActivityTab({
     policyId: policyId as Id<"policies">,
   });
 
-  const isLive = (policy as any).pipelineStatus === "running";
+  const isLive = policy.pipelineStatus === "running";
 
   if (entries === undefined) {
     return (
@@ -104,9 +104,9 @@ function PolicyActivityTab({
     });
 
   const rawLog: { timestamp: number; message: string }[] = Array.isArray(
-    (policy as any).pipelineLog,
+    policy.pipelineLog,
   )
-    ? ((policy as any).pipelineLog as { timestamp: number; message: string }[])
+    ? (policy.pipelineLog as { timestamp: number; message: string }[])
     : [];
   const extractionSubEntries: StructuredLogEntry["subEntries"] = rawLog.map(
     (entry) => ({
@@ -214,7 +214,7 @@ export function PolicyDetailBody({
       setPageContext({
         pageType: "policy",
         entityId: policy._id,
-        summary: `${(policy as any).mga ?? policy.carrier ?? "Unknown"} ${policy.policyNumber ?? ""} — ${types.join(", ")}`,
+        summary: `${policy.mga ?? policy.carrier ?? "Unknown"} ${policy.policyNumber ?? ""} — ${types.join(", ")}`,
       });
     }
     return () => setPageContext(null);
@@ -250,6 +250,21 @@ export function PolicyDetailBody({
   const deductibles: Record<string, unknown> | undefined = p.deductibles as
     | Record<string, unknown>
     | undefined;
+  const extractionData: Record<string, unknown> = {
+    ...(policyDocument ?? {}),
+    coverages: p.coverages,
+    premium: p.premium,
+    totalCost: p.totalCost,
+    minPremium: p.minPremium,
+    depositPremium: p.depositPremium,
+    taxesAndFees: p.taxesAndFees,
+    premiumBreakdown: p.premiumBreakdown,
+    limits,
+    deductibles,
+    declarations: p.declarations,
+    formInventory: p.formInventory,
+    supplementaryFacts: p.supplementaryFacts,
+  };
 
   useEffect(() => {
     if (!onBreadcrumb) return;
@@ -494,7 +509,7 @@ export function PolicyDetailBody({
               variant="secondary"
               onClick={handleReindex}
               disabled={
-                (policy as any).pipelineStatus !== "complete" ||
+                policy.pipelineStatus !== "complete" ||
                 reExtracting ||
                 rechunking
               }
@@ -594,13 +609,12 @@ export function PolicyDetailBody({
         <PolicyActivityTab policyId={id} policy={policy} />
       )}
 
-      {activeTab === "extraction" &&
-        policyDocument && (
-          <ExtractionCards
-            policyDocument={policyDocument}
-            initialPage={initialPage}
-          />
-        )}
+      {activeTab === "extraction" && (
+        <ExtractionCards
+          policyDocument={extractionData}
+          initialPage={initialPage}
+        />
+      )}
     </>
   );
 }

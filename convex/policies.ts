@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query, internalQuery, internalMutation } from "./_generated/server";
 import { makePipelineMutations } from "./lib/pipelineMutations";
-import { api, internal } from "./_generated/api";
+import { api } from "./_generated/api";
 import { requireOrgAccess, getOrgAccess } from "./lib/orgAuth";
 import {
   requireBrokerAccessToClient,
@@ -290,6 +290,11 @@ const coverageValidator = v.object({
   originalContent: v.optional(v.string()),
 });
 
+const premiumLineValidator = v.object({
+  line: v.string(),
+  amount: v.string(),
+});
+
 const addressValidator = v.object({
   street1: v.string(),
   street2: v.optional(v.string()),
@@ -518,6 +523,7 @@ export const updateExtraction = mutation({
     classifications: v.optional(v.array(classificationValidator)),
     formInventory: v.optional(v.array(formReferenceValidator)),
     taxesAndFees: v.optional(v.array(taxFeeValidator)),
+    premiumBreakdown: v.optional(v.array(premiumLineValidator)),
     // Standard fields
     policyNumber: v.optional(v.string()),
     policyTypes: v.optional(v.array(v.string())),
@@ -528,6 +534,7 @@ export const updateExtraction = mutation({
     isRenewal: v.optional(v.boolean()),
     coverages: v.optional(v.array(coverageValidator)),
     premium: v.optional(v.string()),
+    totalCost: v.optional(v.string()),
     insuredName: v.optional(v.string()),
     summary: v.optional(v.string()),
     metadataSource: v.optional(metadataSourceValidator),
@@ -557,7 +564,6 @@ export const updateExtraction = mutation({
     quoteExpirationDate: v.optional(v.string()),
     subjectivities: v.optional(v.any()),
     underwritingConditions: v.optional(v.any()),
-    premiumBreakdown: v.optional(v.any()),
     enrichedSubjectivities: v.optional(v.any()),
     enrichedUnderwritingConditions: v.optional(v.any()),
     warrantyRequirements: v.optional(v.any()),
