@@ -471,16 +471,7 @@ function ExclusionBody({ ex }: { ex: PolicyExclusion }) {
 
   return (
     <div className="space-y-3">
-      {metaItems.length > 0 && (
-        <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
-          {metaItems.map((m) => (
-            <span key={m.label}>
-              <span className="text-muted-foreground/60">{m.label}:</span>{" "}
-              <span className="text-foreground">{m.value}</span>
-            </span>
-          ))}
-        </div>
-      )}
+      {metaItems.length > 0 && <KeyValueTable rows={metaItems} />}
       {ex?.content && <DocContent>{ex.content}</DocContent>}
     </div>
   );
@@ -491,14 +482,12 @@ function ConditionBody({ c }: { c: PolicyCondition }) {
   return (
     <div className="space-y-3">
       {keyValues && keyValues.length > 0 && (
-        <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
-          {keyValues.map((entry, i) => (
-            <span key={i} className="text-foreground">
-              <span className="text-muted-foreground/60">{entry.key.replace(/([A-Z])/g, " $1").replace(/^./, (c) => c.toUpperCase()).trim()}:</span>{" "}
-              {entry.value}
-            </span>
-          ))}
-        </div>
+        <KeyValueTable
+          rows={keyValues.map((entry) => ({
+            label: formatStructuredLabel(entry.key) ?? entry.key,
+            value: entry.value,
+          }))}
+        />
       )}
       {c?.content && <DocContent>{c.content}</DocContent>}
     </div>
@@ -515,16 +504,7 @@ function EndorsementBody({ e }: { e: PolicyEndorsement }) {
 
   return (
     <div className="space-y-3">
-      {metaItems.length > 0 && (
-        <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
-          {metaItems.map((m) => (
-            <span key={m.label}>
-              <span className="text-muted-foreground/60">{m.label}:</span>{" "}
-              <span className="text-foreground">{m.value}</span>
-            </span>
-          ))}
-        </div>
-      )}
+      {metaItems.length > 0 && <KeyValueTable rows={metaItems} />}
       {e?.content && <DocContent>{e.content}</DocContent>}
     </div>
   );
@@ -545,16 +525,7 @@ function CoverageBody({ coverage }: { coverage: CoverageEntry }) {
 
   return (
     <div className="space-y-3">
-      {metaItems.length > 0 && (
-        <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
-          {metaItems.map((m) => (
-            <span key={m.label}>
-              <span className="text-muted-foreground/60">{m.label}:</span>{" "}
-              <span className="text-foreground">{m.value}</span>
-            </span>
-          ))}
-        </div>
-      )}
+      {metaItems.length > 0 && <KeyValueTable rows={metaItems} />}
       {coverage.originalContent && <DocContent>{coverage.originalContent}</DocContent>}
     </div>
   );
@@ -569,16 +540,7 @@ function DefinitionBody({ definition }: { definition: DefinitionEntry }) {
 
   return (
     <div className="space-y-3">
-      {metaItems.length > 0 && (
-        <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
-          {metaItems.map((m) => (
-            <span key={m.label}>
-              <span className="text-muted-foreground/60">{m.label}:</span>{" "}
-              <span className="text-foreground">{m.value}</span>
-            </span>
-          ))}
-        </div>
-      )}
+      {metaItems.length > 0 && <KeyValueTable rows={metaItems} />}
       {definition.definition && <DocContent>{definition.definition}</DocContent>}
     </div>
   );
@@ -595,16 +557,7 @@ function CoveredReasonBody({ reason }: { reason: CoveredReasonEntry }) {
 
   return (
     <div className="space-y-3">
-      {metaItems.length > 0 && (
-        <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
-          {metaItems.map((m) => (
-            <span key={m.label}>
-              <span className="text-muted-foreground/60">{m.label}:</span>{" "}
-              <span className="text-foreground">{m.value}</span>
-            </span>
-          ))}
-        </div>
-      )}
+      {metaItems.length > 0 && <KeyValueTable rows={metaItems} />}
       {reason.content && <DocContent>{reason.content}</DocContent>}
       {reason.conditions?.length ? (
         <div>
@@ -701,7 +654,7 @@ function StructuredItemsCard<T>({
               {page != null && <PageRef page={page} />}
             </button>
             {expanded.has(i) && (
-              <div className="space-y-3 px-5 pt-2 pb-3 pl-11">
+              <div className="space-y-3 px-5 pt-2 pb-3">
                 {badges.length > 0 && (
                   <div className="flex flex-wrap gap-1.5 md:hidden">
                     {badges.map((badge) => (
@@ -1007,7 +960,7 @@ function SectionedDataCard({
           label={`${section.label} (${section.rows.length})`}
           defaultOpen={index === 0}
         >
-          <KeyValueTable rows={section.rows} labelCellClassName="pl-11" />
+          <KeyValueTable rows={section.rows} labelCellClassName="sm:pl-11" />
         </GroupSection>
       ))}
     </div>
