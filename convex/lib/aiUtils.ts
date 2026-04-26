@@ -179,8 +179,11 @@ You have tools to search policies, retrieve detailed policy sections, compare co
 - Use tools before answering when the request depends on policy numbers, coverage details, exclusions, endorsements, limits, deductibles, premiums, or COI generation.
 - For simple policy-number requests, look up the relevant policy and answer with the carrier/type/context needed to disambiguate.
 - Before answering coverage questions, look up actual policy or endorsement wording. Do not say you need the wording when the tools/context can retrieve it.
+- For covered-reason questions, use this chain before answering: identify the relevant policy, search covered reasons and matching policy wording, then check exclusions, endorsements, conditions, and relevant definitions for limits or changes.
+- If a user's wording is plain language, search related insurance terms too, for example job/start work/employment, cancellation/cancel, illness/sickness, travelling companion/companion, or work requirement/presence at work.
 - When asked about a specific endorsement, search by form number, title, and related keywords. Try more than one query when the first result is weak.
 - When asked about exclusions or conditions, search for the clause label and related plain-language terms.
+- When a result depends on a defined term, search the definitions for that term before giving a final yes/no.
 - You may use up to ${maxToolCalls} tool calls. Use enough to be accurate.
 
 ANALYTICAL STANDARDS:
@@ -224,6 +227,182 @@ export function policySearchScore(
   }
   if (/\b(policy|policies|number|coverage|limit|deductible|premium)\b/i.test(query)) score += 1;
   return score;
+}
+
+function textValue(value: unknown): string {
+  if (value == null) return "";
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function queryTerms(query: string): string[] {
+  const raw = query
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((word) => word.length > 2);
+  const terms = new Set<string>();
+  const add = (term: string) => {
+    if (term.length > 2) terms.add(term);
+  };
+
+  for (const word of raw) {
+    add(word);
+    if (word.endsWith("s")) add(word.slice(0, -1));
+    if (word.endsWith("ed")) add(word.slice(0, -2));
+    if (word.endsWith("ing")) add(word.slice(0, -3));
+  }
+
+  const synonymGroups = [
+    ["job", "employment", "employer", "work", "occupation"],
+    ["start", "secure", "secured", "obtain", "obtains", "accept", "accepted"],
+    ["cancel", "cancellation", "cancelled", "canceled"],
+    ["travel", "trip", "journey"],
+    ["companion", "travelling", "traveling"],
+    ["unable", "requires", "require", "presence"],
+    ["permanent", "paid", "fulltime", "full", "time"],
+  ];
+  for (const group of synonymGroups) {
+    if (group.some((term) => terms.has(term))) {
+      for (const term of group) add(term);
+    }
+  }
+
+  return [...terms];
+}
+
+export function searchPolicyDocument(
+  policy: Record<string, unknown>,
+  query: string,
+  maxResults = 8,
+): Array<Record<string, unknown>> | string {
+  const doc = policy.document as Record<string, unknown> | undefined;
+  if (!doc) return "No document data available for this policy.";
+
+  const q = query.toLowerCase().trim();
+  const terms = queryTerms(query);
+
+  function scoreText(text: string): number {
+    const lower = text.toLowerCase();
+    let score = q && lower.includes(q) ? 6 : 0;
+    for (const term of terms) {
+      if (lower.includes(term)) score++;
+    }
+    return score;
+  }
+
+  type ScoredResult = { title: string; score: number; data: Record<string, unknown> };
+  const results: ScoredResult[] = [];
+  const addResult = (
+    source: string,
+    title: unknown,
+    content: unknown,
+    extra: Record<string, unknown> = {},
+    boost = 0,
+  ) => {
+    const contentText = textValue(content);
+    const titleText = textValue(title) || source;
+    const score = scoreText(`${titleText} ${contentText} ${textValue(extra)}`) + boost;
+    if (score <= 0) return;
+    results.push({
+      title: titleText,
+      score,
+      data: {
+        title: titleText,
+        type: source,
+        ...extra,
+        content: contentText.slice(0, 6000),
+      },
+    });
+  };
+
+  for (const s of (doc.sections as Record<string, unknown>[] | undefined) ?? []) {
+    const subsections = (s.subsections as Record<string, unknown>[] | undefined) ?? [];
+    const subsectionText = subsections
+      .map((sub) => `${textValue(sub.title)}\n${textValue(sub.content)}`)
+      .join("\n\n");
+    const content = [s.content, subsectionText].filter(Boolean).join("\n\n");
+    addResult("section", s.title, content, {
+      sectionType: s.type,
+      coverageType: s.coverageType,
+      pages: s.pageStart ? `${s.pageStart}${s.pageEnd ? `-${s.pageEnd}` : ""}` : undefined,
+    });
+  }
+
+  for (const reason of (doc.coveredReasons as Record<string, unknown>[] | undefined) ?? []) {
+    addResult("covered_reason", reason.title ?? reason.reason ?? reason.name, reason.content ?? reason.description ?? reason, {
+      pages: reason.pageStart ? `${reason.pageStart}${reason.pageEnd ? `-${reason.pageEnd}` : ""}` : reason.pageNumber,
+    }, 2);
+  }
+
+  for (const e of (doc.endorsements as Record<string, unknown>[] | undefined) ?? []) {
+    addResult("endorsement", e.title ?? e.name ?? e.formNumber, e.content ?? e.description ?? e, {
+      formNumber: e.formNumber,
+      effectType: e.effectType,
+      pages: e.pageStart ? `${e.pageStart}${e.pageEnd ? `-${e.pageEnd}` : ""}` : e.pageNumber,
+    }, 1);
+  }
+
+  for (const ex of (doc.exclusions as Array<Record<string, unknown> | string> | undefined) ?? []) {
+    const exclusion = typeof ex === "string" ? { title: "Exclusion", content: ex } : ex;
+    addResult("exclusion", exclusion.title ?? exclusion.name, exclusion.content ?? exclusion.description ?? exclusion, {}, 1);
+  }
+
+  for (const c of (doc.conditions as Record<string, unknown>[] | undefined) ?? []) {
+    addResult("condition", c.title ?? c.name, c.content ?? c.description ?? c, {
+      pages: c.pageNumber,
+    });
+  }
+
+  for (const d of (doc.definitions as Record<string, unknown>[] | undefined) ?? []) {
+    addResult("definition", d.term ?? d.title ?? d.name, d.definition ?? d.content ?? d.description ?? d, {}, 1);
+  }
+
+  for (const cov of (policy.coverages as Record<string, unknown>[] | undefined) ?? []) {
+    const parts = [cov.name];
+    if (cov.limit) parts.push(`Limit: ${cov.limit}`);
+    if (cov.deductible) parts.push(`Deductible: ${cov.deductible}`);
+    if (cov.coverageCode) parts.push(`Code: ${cov.coverageCode}`);
+    if (cov.originalContent) parts.push(cov.originalContent);
+    addResult("coverage", cov.name, parts.join("\n"), {}, 1);
+  }
+
+  if (policy.declarations) {
+    addResult("declarations", "Declarations", policy.declarations);
+  }
+
+  if (q.includes("coverage") || q.includes("limit") || q.includes("deductible")) {
+    const coverages = (policy.coverages as Record<string, unknown>[] | undefined) ?? [];
+    if (coverages.length > 0) {
+      results.push({
+        title: "All Coverages",
+        score: 2,
+        data: {
+          title: "All Coverages",
+          type: "coverage_summary",
+          content: coverages
+            .map((c) => [c.name, c.limit ? `Limit: ${c.limit}` : undefined, c.deductible ? `Deductible: ${c.deductible}` : undefined]
+              .filter(Boolean)
+              .join(" - "))
+            .join("\n")
+            .slice(0, 6000),
+        },
+      });
+    }
+  }
+
+  results.sort((a, b) => b.score - a.score);
+  const top = results.slice(0, maxResults);
+  if (top.length === 0) {
+    const listTitles = (items: unknown[] | undefined, key: string) =>
+      (items ?? []).map((item) => typeof item === "string" ? item : textValue((item as Record<string, unknown>)[key])).filter(Boolean).join(", ");
+    return `No matches for "${query}". Available covered reasons: ${listTitles(doc.coveredReasons as unknown[] | undefined, "title") || "none"}. Exclusions: ${listTitles(doc.exclusions as unknown[] | undefined, "title") || "none"}. Endorsements: ${listTitles(doc.endorsements as unknown[] | undefined, "title") || "none"}. Definitions: ${listTitles(doc.definitions as unknown[] | undefined, "term") || "none"}.`;
+  }
+
+  return top.map((result) => result.data);
 }
 
 export function buildChannelInstructions(params: {

@@ -24,6 +24,7 @@ import {
   buildChannelInstructions,
   buildPolicyToolInstructions,
   policySearchScore,
+  searchPolicyDocument,
 } from "../lib/aiUtils";
 import { classifyPromptInjection, enforceInputLimits } from "../lib/security";
 import type { Id } from "../_generated/dataModel";
@@ -492,23 +493,7 @@ export const processInbound = internalAction({
             id: params.policyId as Id<"policies">,
           });
           if (!policy || policy.orgId !== orgId) return "Policy not found.";
-          const doc = policy.document;
-          if (!doc) return "No document data available.";
-          const q = params.query.toLowerCase();
-          const results: Array<{ title: string; type: string; content: string }> = [];
-          for (const s of (doc.sections ?? []) as any[]) {
-            const text = `${s.title ?? ""} ${s.content ?? ""}`.toLowerCase();
-            if (text.includes(q)) {
-              results.push({ title: s.title, type: "section", content: String(s.content ?? "").slice(0, 4000) });
-            }
-          }
-          for (const e of (doc.endorsements ?? []) as any[]) {
-            const text = `${e.title ?? ""} ${e.content ?? ""}`.toLowerCase();
-            if (text.includes(q)) {
-              results.push({ title: e.title, type: "endorsement", content: String(e.content ?? "").slice(0, 4000) });
-            }
-          }
-          return results.slice(0, 5);
+          return searchPolicyDocument(policy, params.query, 8);
         },
       },
       compare_coverages: {
