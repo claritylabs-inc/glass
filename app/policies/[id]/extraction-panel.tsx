@@ -126,6 +126,8 @@ type DeclarationField = {
   field?: string;
   value?: string;
   section?: string;
+  pageNumber?: number;
+  pageStart?: number;
 };
 
 type FormInventoryEntry = {
@@ -288,9 +290,21 @@ function DocContent({ children }: { children: string }) {
 
 function formatStructuredLabel(value?: string | null) {
   if (!value) return null;
+  const acronyms = new Set(["dba", "fein", "vin", "naic", "mga"]);
   return value
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (char) => char.toUpperCase());
+    .replace(/[_-]+/g, " ")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
+    .replace(/([A-Za-z])(\d)/g, "$1 $2")
+    .replace(/(\d)([A-Za-z])/g, "$1 $2")
+    .trim()
+    .split(/\s+/)
+    .map((word) => {
+      const lower = word.toLowerCase();
+      if (acronyms.has(lower)) return lower.toUpperCase();
+      return `${lower.charAt(0).toUpperCase()}${lower.slice(1)}`;
+    })
+    .join(" ");
 }
 
 function stringifyValue(value: unknown): string {
@@ -309,6 +323,23 @@ function objectEntries(value?: Record<string, unknown>) {
       value: stringifyValue(raw),
     }))
     .filter((entry) => entry.value);
+}
+
+type DataRow = { label: string; value: string; section?: string; pageNumber?: number };
+
+function firstNumericPage(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+  }
+  return undefined;
+}
+
+function declarationsFallbackPage(sections: PolicySection[]) {
+  const declarationsSection = sections.find((section) => {
+    const title = section.title?.toLowerCase() ?? "";
+    return section.type === "declarations" || title.includes("declaration");
+  });
+  return declarationsSection?.pageStart;
 }
 
 // ─── Section / Exclusion / Condition / Endorsement cards ─────────────────────
@@ -878,7 +909,7 @@ function ClaimsContactStructured({ data }: { data: ClaimsContact }) {
 function KeyValueTable({
   rows,
 }: {
-  rows: { label: string; value: string; section?: string }[];
+  rows: DataRow[];
 }) {
   if (!rows.length) return null;
   return (
@@ -898,7 +929,10 @@ function KeyValueTable({
               )}
             </td>
             <td className="px-4 py-2.5 text-sm text-foreground font-medium">
-              {row.value}
+              <span className="inline-flex items-center gap-1.5">
+                <span>{row.value}</span>
+                {row.pageNumber != null && <PageRef page={row.pageNumber} />}
+              </span>
             </td>
           </tr>
         ))}
@@ -912,7 +946,7 @@ function DataCard({
   rows,
 }: {
   title: string;
-  rows: { label: string; value: string; section?: string }[];
+  rows: DataRow[];
 }) {
   if (!rows.length) return null;
   return (
@@ -989,6 +1023,7 @@ export function ExtractionCards({
   const formInventory = policyDocument?.formInventory ?? [];
   const supplementaryFacts = policyDocument?.supplementaryFacts ?? [];
   const sections = policyDocument?.sections ?? [];
+  const declarationsPage = declarationsFallbackPage(sections);
   const definitions = policyDocument?.definitions ?? [];
   const coveredReasons = policyDocument?.coveredReasons ?? [];
   const endorsements = policyDocument?.endorsements ?? [];
@@ -1053,7 +1088,8 @@ export function ExtractionCards({
           rows={declarations.map((field) => ({
             label: formatStructuredLabel(field.field) ?? field.field ?? "Field",
             value: field.value ?? "",
-            section: field.section,
+            section: field.section ? formatStructuredLabel(field.section) ?? field.section : undefined,
+            pageNumber: firstNumericPage(field.pageNumber, field.pageStart, declarationsPage),
           })).filter((row) => row.value)}
         />
       )}

@@ -37,6 +37,7 @@ import { LogoIcon } from "@/components/ui/logo-icon";
 import { PillButton } from "@/components/ui/pill-button";
 import { NotificationsPanel } from "@/components/notifications-panel";
 import { MergePolicyDialog } from "@/components/merge-policy-dialog";
+import { buildAgentContactVCard, downloadVCard } from "@/components/lib/agent-contact-vcard";
 
 /** Wrapper so LogoIcon matches the lucide icon interface */
 function GlassStarIcon({ className }: { className?: string }) {
@@ -791,6 +792,7 @@ function SidebarBrokerContact({
   broker: {
     name: string;
     iconUrl?: string | null;
+    whiteLabelingEnabled?: boolean;
     brandingColor?: string;
     agentHandle?: string;
     primaryContact: {
@@ -812,52 +814,15 @@ function SidebarBrokerContact({
   const handle = broker?.agentHandle ?? fallbackAgentHandle;
   const agentEmail = handle ? `${handle}@${AGENT_DOMAIN}` : `agent@${AGENT_DOMAIN}`;
   const initial = name.charAt(0).toUpperCase();
-  const agentDisplayName = broker ? `${broker.name} Agent` : "Ask Glass";
 
   const handleSaveContact = async () => {
     if (!agentEmail) return;
-    let photoEntry = "";
-    // Glass fallback uses an inline SVG — skip the photo entry rather than
-    // try to fetch a raster asset.
-    if (iconUrl) {
-      try {
-        const res = await fetch(iconUrl);
-        const blob = await res.blob();
-        const base64 = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => {
-            const s = reader.result as string;
-            resolve(s.split(",")[1] ?? "");
-          };
-          reader.onerror = () => reject(reader.error);
-          reader.readAsDataURL(blob);
-        });
-        const mime = blob.type || "image/png";
-        const type = mime.split("/")[1]?.toUpperCase() ?? "PNG";
-        if (base64) photoEntry = `\nPHOTO;ENCODING=b;TYPE=${type}:${base64}`;
-      } catch {
-        // best-effort — omit photo on fetch failure
-      }
-    }
-    const vcard =
-      "BEGIN:VCARD\n" +
-      "VERSION:3.0\n" +
-      `FN:${agentDisplayName}\n` +
-      `N:Agent;${name};;;\n` +
-      `ORG:${name}\n` +
-      `EMAIL;TYPE=INTERNET:${agentEmail}\n` +
-      `TEL;TYPE=CELL:${AGENT_TEXT_NUMBER}` +
-      photoEntry +
-      "\nEND:VCARD\n";
-    const blob = new Blob([vcard], { type: "text/vcard;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${agentDisplayName}.vcf`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    const { vcard, fileName } = await buildAgentContactVCard({
+      broker,
+      email: agentEmail,
+      phone: AGENT_TEXT_NUMBER,
+    });
+    downloadVCard(vcard, fileName);
   };
   return (
     <div className="border-t border-foreground/6 px-3 py-3">
