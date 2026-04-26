@@ -116,6 +116,7 @@ export function AppSidebar({
         title: string;
         lastMessageAt?: number;
         legacyConversationId?: string;
+        threadPhone?: string;
       }>
     | undefined;
   const webChats = useQuery(api.webChats.list, { archived: false });
@@ -166,7 +167,7 @@ export function AppSidebar({
     // If unified threads have data, use them directly
     if (unifiedThreads && unifiedThreads.length > 0) {
       return unifiedThreads.slice(0, 8).map((t): ConvItem => ({
-        kind: t.legacyConversationId ? "email" : (t as { threadPhone?: string }).threadPhone ? "imessage" : "chat",
+        kind: t.threadPhone ? "imessage" : t.legacyConversationId ? "email" : "chat",
         id: t._id,
         label: t.title,
         time: t.lastMessageAt ?? t._creationTime,
@@ -710,7 +711,9 @@ export function AppSidebar({
                       : "text-muted-foreground hover:bg-foreground/[0.04]"
                   }`}
                 >
-                  {item.legacyConversationId ? (
+                  {item.threadPhone ? (
+                    <Phone className="w-3.5 h-3.5 shrink-0" />
+                  ) : item.legacyConversationId ? (
                     <Mail className="w-3.5 h-3.5 shrink-0" />
                   ) : (
                     <MessageSquare className="w-3.5 h-3.5 shrink-0" />

@@ -854,6 +854,7 @@ export default defineSchema({
     .index("by_orgId_lastMessageAt", ["orgId", "lastMessageAt"])
     .index("by_threadEmail", ["threadEmail"])
     .index("by_threadPhone", ["threadPhone"])
+    .index("by_orgId_threadPhone", ["orgId", "threadPhone"])
     .index("by_legacyConversationId", ["legacyConversationId"]),
 
   threadMessages: defineTable({

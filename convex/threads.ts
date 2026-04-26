@@ -558,7 +558,9 @@ export const findOrCreateByPhone = internalMutation({
   handler: async (ctx, args) => {
     const existing = await ctx.db
       .query("threads")
-      .withIndex("by_threadPhone", (q) => q.eq("threadPhone", args.fromPhone))
+      .withIndex("by_orgId_threadPhone", (q) =>
+        q.eq("orgId", args.orgId).eq("threadPhone", args.fromPhone)
+      )
       .first();
     if (existing) {
       await ctx.db.patch(existing._id, { lastMessageAt: Date.now() });
