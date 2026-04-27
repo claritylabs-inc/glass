@@ -48,8 +48,8 @@ importers:
         specifier: 0.1.0
         version: 0.1.0(ai@6.0.168(zod@4.3.6))(convex@1.36.0(react@19.2.3))(react@19.2.3)(zod@4.3.6)
       '@claritylabs/cl-sdk':
-        specifier: ^0.16.2
-        version: 0.16.2(pdf-lib@1.17.1)(zod@4.3.6)
+        specifier: ^0.17.0
+        version: 0.17.0(pdf-lib@1.17.1)(zod@4.3.6)
       '@convex-dev/auth':
         specifier: ^0.0.91
         version: 0.0.91(@auth/core@0.37.4)(convex@1.36.0(react@19.2.3))(react@19.2.3)
@@ -623,8 +623,8 @@ packages:
       react:
         optional: true
 
-  '@claritylabs/cl-sdk@0.16.2':
-    resolution: {integrity: sha512-pEPvE7+ksJdV+xwN2j9Mpnt4yYv9dPmsf5xPITx0dWdzw2YhnW8WKl4TZ8pbiY/n7Pb8YA3E4/8m4Cq5ywnI0A==}
+  '@claritylabs/cl-sdk@0.17.0':
+    resolution: {integrity: sha512-u63nnR0sWPI8q65sMrDLUUBCHZq5IQMp3b3WftpzxpPwI4Rpr1mX0tsqaTsMLtUVwugT10s1PN+dE5PCvZsucw==}
     peerDependencies:
       better-sqlite3: '*'
       pdf-lib: '>=1.17.0'
@@ -7782,7 +7782,7 @@ snapshots:
       convex: 1.36.0(react@19.2.3)
       react: 19.2.3
 
-  '@claritylabs/cl-sdk@0.16.2(pdf-lib@1.17.1)(zod@4.3.6)':
+  '@claritylabs/cl-sdk@0.17.0(pdf-lib@1.17.1)(zod@4.3.6)':
     dependencies:
       pdf-lib: 1.17.1
       zod: 4.3.6

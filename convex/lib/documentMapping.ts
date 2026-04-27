@@ -9,18 +9,12 @@
 
 import type { InsuranceDocument, PolicyDocument, QuoteDocument } from "@claritylabs/cl-sdk";
 import { sanitizeNulls } from "@claritylabs/cl-sdk";
-import type { Doc } from "../_generated/dataModel";
-
-// Type alias to work around Zod discriminated union inference issues
-type AnyDoc = Record<string, unknown>;
 
 /**
  * Map an InsuranceDocument (extraction output) to Glass's policies table fields.
  * This is the forward mapping: SDK extraction → Convex mutation args.
  */
 export function insuranceDocToPolicy(doc: InsuranceDocument): Record<string, unknown> {
-  // Cast to any for property access — the SDK's Zod schema guarantees structure at runtime
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const d = doc as any;
   const isQuote = d.type === "quote";
   const policyTypes = Array.isArray(d.policyTypes) && d.policyTypes.length > 0
@@ -44,6 +38,7 @@ export function insuranceDocToPolicy(doc: InsuranceDocument): Record<string, unk
     isRenewal: d.isRenewal ?? false,
     coverages: sanitizeNulls(d.coverages || []),
     premium: d.premium ?? undefined,
+    totalCost: d.totalCost ?? undefined,
     insuredName: d.insuredName || "Unknown",
     summary: d.summary ?? undefined,
   };
@@ -87,10 +82,15 @@ export function insuranceDocToPolicy(doc: InsuranceDocument): Record<string, unk
   if (d.classifications?.length) fields.classifications = sanitizeNulls(d.classifications);
   if (d.formInventory?.length) fields.formInventory = sanitizeNulls(d.formInventory);
   if (d.taxesAndFees?.length) fields.taxesAndFees = sanitizeNulls(d.taxesAndFees);
+  if (d.premiumBreakdown?.length) fields.premiumBreakdown = sanitizeNulls(d.premiumBreakdown);
+  if (d.minimumPremium) fields.minPremium = d.minimumPremium;
+  if (d.depositPremium) fields.depositPremium = d.depositPremium;
 
-  // Document structure (sections, endorsements, conditions, exclusions)
+  // Document structure (sections, endorsements, definitions, covered reasons, conditions, exclusions)
   const document: Record<string, unknown> = {};
   if (d.sections?.length) document.sections = sanitizeNulls(d.sections);
+  if (d.definitions?.length) document.definitions = sanitizeNulls(d.definitions);
+  if (d.coveredReasons?.length) document.coveredReasons = sanitizeNulls(d.coveredReasons);
   if (d.endorsements?.length) document.endorsements = sanitizeNulls(d.endorsements);
   if (d.exclusions?.length) document.exclusions = sanitizeNulls(d.exclusions);
   if (d.conditions?.length) document.conditions = sanitizeNulls(d.conditions);
@@ -117,7 +117,6 @@ export function insuranceDocToPolicy(doc: InsuranceDocument): Record<string, unk
     if (d.underwritingConditions?.length) {
       fields.underwritingConditions = sanitizeNulls(d.underwritingConditions);
     }
-    if (d.premiumBreakdown?.length) fields.premiumBreakdown = sanitizeNulls(d.premiumBreakdown);
   }
 
   return fields;
@@ -128,7 +127,6 @@ export function insuranceDocToPolicy(doc: InsuranceDocument): Record<string, unk
  * This is the reverse mapping: Convex Doc → SDK interface.
  * Used by DocumentStore.get/query and agent context building.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function policyToInsuranceDoc(p: any): InsuranceDocument {
   const isQuote = p.documentType === "quote";
 
@@ -138,6 +136,7 @@ export function policyToInsuranceDoc(p: any): InsuranceDocument {
     security: p.security,
     insuredName: p.insuredName,
     premium: p.premium,
+    totalCost: p.totalCost,
     summary: p.summary,
     policyTypes: p.policyTypes,
     coverages: p.coverages as unknown[] || [],
@@ -180,8 +179,13 @@ export function policyToInsuranceDoc(p: any): InsuranceDocument {
     classifications: p.classifications as unknown,
     formInventory: p.formInventory as unknown,
     taxesAndFees: p.taxesAndFees as unknown,
+    premiumBreakdown: p.premiumBreakdown as unknown,
+    minimumPremium: p.minPremium,
+    depositPremium: p.depositPremium,
     // Document structure
     sections: p.document?.sections,
+    definitions: p.document?.definitions,
+    coveredReasons: p.document?.coveredReasons,
     endorsements: p.document?.endorsements,
     exclusions: p.document?.exclusions,
     conditions: p.document?.conditions,

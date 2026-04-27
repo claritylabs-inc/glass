@@ -6,7 +6,7 @@ import { AppShell } from "@/components/app-shell";
 import { FadeIn } from "@/components/ui/fade-in";
 import { PillButton } from "@/components/ui/pill-button";
 import { toast } from "sonner";
-import { ArchiveRestore, Mail, MessageSquare, Loader2 } from "lucide-react";
+import { ArchiveRestore, Mail, MessageSquare, Loader2, Phone } from "lucide-react";
 import Link from "next/link";
 import dayjs from "dayjs";
 import { Id } from "@/convex/_generated/dataModel";
@@ -47,7 +47,9 @@ export default function ArchivePage() {
                 className="flex items-center gap-3 px-4 py-3 rounded-lg border border-foreground/6 bg-card hover:bg-foreground/[0.02] transition-colors group"
               >
                 <div className="shrink-0 text-muted-foreground/30">
-                  {thread.legacyConversationId ? (
+                  {thread.threadPhone ? (
+                    <Phone className="w-4 h-4" />
+                  ) : thread.legacyConversationId ? (
                     <Mail className="w-4 h-4" />
                   ) : (
                     <MessageSquare className="w-4 h-4" />
@@ -62,7 +64,7 @@ export default function ArchivePage() {
                   </p>
                   <p className="text-[11px] text-muted-foreground/40">
                     {dayjs(thread.lastMessageAt ?? thread._creationTime).format("MMM D, YYYY · h:mm A")}
-                    {thread.legacyConversationId ? " · Email" : " · Chat"}
+                    {thread.threadPhone ? " · iMessage" : thread.legacyConversationId ? " · Email" : " · Chat"}
                   </p>
                 </Link>
                 <PillButton

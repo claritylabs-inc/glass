@@ -30,7 +30,7 @@ Core layers:
 - Frontend: Next.js 16 App Router, React 19, Tailwind 4
 - Backend: Convex queries, mutations, actions, scheduler, file storage, vector search
 - AI runtime: Vercel AI SDK (`ai`)
-- Extraction, query agent, and prompts: `@claritylabs/cl-sdk@0.16.x`
+- Extraction, query agent, and prompts: `@claritylabs/cl-sdk@0.17.x`
 - Providers: OpenAI, MoonshotAI, Anthropic, DeepSeek
 - Email: outbound + inbound via Resend (no IMAP, no Gmail OAuth). All outbound Resend calls go through `convex/lib/resend.ts` (`sendResendEmail`). Sending domain comes from `AGENT_DOMAIN` (prod: `glass.claritylabs.inc`, dev: `dev.claritylabs.inc`). Inbound webhook at `POST /resend-inbound`.
 
@@ -38,9 +38,10 @@ Core layers:
 
 Default model routing lives in [convex/lib/models.ts](convex/lib/models.ts), with broker-visible catalogs in [convex/lib/modelCatalog.ts](convex/lib/modelCatalog.ts).
 
-- `chat`, `chat_with_tools`, `extraction`, `application_authoring` → `gpt-5.5` with OpenAI `reasoningEffort: "none"`
+- `chat`, `chat_with_tools`, `application_authoring` → `gpt-5.5` with OpenAI `reasoningEffort: "none"`
 - `email_draft`, `email_reply`, `analysis` → `kimi-k2.5` (256K context)
-- `classification`, `summary`, `triage`, `email_extraction`, `document_extraction`, `security` → `gpt-5.4-mini`
+- `extraction`, `classification`, `email_extraction`, `document_extraction` → `gpt-5.4-nano`
+- `summary`, `triage`, `security` → `gpt-5.4-mini`
 - `embeddings` → `text-embedding-3-small` at 1536 dimensions
 
 Usage notes:
@@ -108,6 +109,16 @@ Glass translates those into AI SDK multipart message content in `sdkCallbacks.ts
 Notes:
 
 - The `providerOptions.images` items from `cl-sdk` do not carry a `type` field; Glass adds `type: "image"` when building AI SDK parts.
+
+### Extraction Shape
+
+`cl-sdk` 0.17 adds first-class `definitions` and `coveredReasons` arrays, plus premium promotion from declaration fields into `premium`, `totalCost`, and `taxesAndFees`.
+
+Glass persists:
+
+- Top-level policy financials: `premium`, `totalCost`, `taxesAndFees`, `premiumBreakdown`, `minPremium`, `depositPremium`
+- Document detail: `document.sections`, `document.definitions`, `document.coveredReasons`, `document.endorsements`, `document.exclusions`, `document.conditions`
+- Declarations, form inventory, and supplementary facts as top-level policy fields
 
 ### Token Limits
 

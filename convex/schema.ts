@@ -454,6 +454,10 @@ export default defineSchema({
       type: v.optional(v.string()), // tax, fee, surcharge, assessment
       description: v.optional(v.string()),
     }))),
+    premiumBreakdown: v.optional(v.array(v.object({
+      line: v.string(),
+      amount: v.string(),
+    }))),
     // Policy metadata
     policyNumber: v.string(),
     policyType: v.optional(v.string()), // legacy single type
@@ -479,6 +483,7 @@ export default defineSchema({
       })
     ),
     premium: v.optional(v.string()),
+    totalCost: v.optional(v.string()),
     insuredName: v.string(),
     summary: v.optional(v.string()),
     // Provenance — page references for key metadata
@@ -525,7 +530,6 @@ export default defineSchema({
     quoteExpirationDate: v.optional(v.string()),
     subjectivities: v.optional(v.any()),
     underwritingConditions: v.optional(v.any()),
-    premiumBreakdown: v.optional(v.any()),
     enrichedSubjectivities: v.optional(v.any()),
     enrichedUnderwritingConditions: v.optional(v.any()),
     warrantyRequirements: v.optional(v.any()),
@@ -850,6 +854,7 @@ export default defineSchema({
     .index("by_orgId_lastMessageAt", ["orgId", "lastMessageAt"])
     .index("by_threadEmail", ["threadEmail"])
     .index("by_threadPhone", ["threadPhone"])
+    .index("by_orgId_threadPhone", ["orgId", "threadPhone"])
     .index("by_legacyConversationId", ["legacyConversationId"]),
 
   threadMessages: defineTable({

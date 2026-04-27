@@ -23,6 +23,7 @@ import {
   buildChannelInstructions,
   buildPolicyToolInstructions,
   policySearchScore,
+  searchPolicyDocument,
   logAiError,
 } from "../lib/aiUtils";
 import { sendResendEmail, getAgentDomain } from "../lib/resend";
@@ -106,214 +107,7 @@ function buildTools(ctx: any, args: { orgId: string; threadId: string }, org?: R
         } catch {
           return "Policy not found.";
         }
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const doc = policy?.document as any;
-        if (!doc) return "No document data available for this policy.";
-
-        const q = params.query.toLowerCase();
-        const queryWords = q.split(/\s+/).filter((w: string) => w.length > 2);
-
-        function scoreText(text: string): number {
-          const lower = text.toLowerCase();
-          let score = 0;
-          for (const w of queryWords) {
-            if (lower.includes(w)) score++;
-          }
-          if (lower.includes(q)) score += 3;
-          return score;
-        }
-
-        type ScoredResult = { source: string; title: string; score: number; data: Record<string, unknown> };
-        const results: ScoredResult[] = [];
-
-        // Search sections (with subsections)
-        if (doc.sections?.length) {
-          for (const s of doc.sections) {
-            const subsectionText = (s.subsections ?? [])
-              .map((sub: Record<string, unknown>) => `${sub.title ?? ""} ${sub.content ?? ""}`)
-              .join(" ");
-            const fullText = `${s.title ?? ""} ${s.content ?? ""} ${subsectionText}`;
-            const score = scoreText(fullText);
-            if (score > 0) {
-              let fullContent = s.content ?? "";
-              if (s.subsections?.length) {
-                for (const sub of s.subsections) {
-                  fullContent += `\n\n### ${sub.title ?? ""}`;
-                  if (sub.content) fullContent += `\n${sub.content}`;
-                }
-              }
-              results.push({
-                source: "section",
-                title: s.title,
-                score,
-                data: {
-                  title: s.title,
-                  type: s.type,
-                  coverageType: s.coverageType,
-                  pages: `${s.pageStart}${s.pageEnd ? `-${s.pageEnd}` : ""}`,
-                  content: fullContent.slice(0, 6000),
-                },
-              });
-            }
-          }
-        }
-
-        // Search endorsements
-        if (doc.endorsements?.length) {
-          for (const e of doc.endorsements) {
-            const text = `${e.title ?? ""} ${e.content ?? ""} ${e.effectType ?? ""}`;
-            const score = scoreText(text);
-            if (score > 0) {
-              results.push({
-                source: "endorsement",
-                title: e.title,
-                score,
-                data: {
-                  title: e.title,
-                  type: "endorsement",
-                  effectType: e.effectType,
-                  pages: e.pageStart ? `${e.pageStart}` : undefined,
-                  content: (e.content ?? "").slice(0, 6000),
-                },
-              });
-            }
-          }
-        }
-
-        // Search conditions
-        if (doc.conditions?.length) {
-          for (const c of doc.conditions) {
-            const text = `${c.title ?? ""} ${c.content ?? ""}`;
-            const score = scoreText(text);
-            if (score > 0) {
-              results.push({
-                source: "condition",
-                title: c.title,
-                score,
-                data: {
-                  title: c.title,
-                  type: "condition",
-                  pages: c.pageNumber ? `${c.pageNumber}` : undefined,
-                  content: (c.content ?? "").slice(0, 4000),
-                },
-              });
-            }
-          }
-        }
-
-        // Search exclusions
-        if (doc.exclusions?.length) {
-          for (const ex of doc.exclusions) {
-            const text = `${ex.title ?? ""} ${ex.content ?? ""} ${ex.description ?? ""}`;
-            const score = scoreText(text);
-            if (score > 0) {
-              results.push({
-                source: "exclusion",
-                title: ex.title,
-                score,
-                data: {
-                  title: ex.title,
-                  type: "exclusion",
-                  content: (ex.content ?? ex.description ?? "").slice(0, 4000),
-                },
-              });
-            }
-          }
-        }
-
-        // Search coverages (structured data from policy record)
-        if (policy.coverages?.length) {
-          for (const cov of policy.coverages) {
-            const text = `${cov.name ?? ""} ${cov.limit ?? ""} ${cov.deductible ?? ""} ${cov.coverageCode ?? ""} ${cov.originalContent ?? ""}`;
-            const score = scoreText(text);
-            if (score > 0) {
-              const parts = [cov.name];
-              if (cov.limit) parts.push(`Limit: ${cov.limit}`);
-              if (cov.deductible) parts.push(`Deductible: ${cov.deductible}`);
-              if (cov.coverageCode) parts.push(`Code: ${cov.coverageCode}`);
-              if (cov.originalContent) parts.push(cov.originalContent);
-              results.push({
-                source: "coverage",
-                title: cov.name,
-                score: score + 1, // slight boost for direct coverage matches
-                data: {
-                  title: cov.name,
-                  type: "coverage",
-                  content: parts.join("\n"),
-                },
-              });
-            }
-          }
-          // If the query is broadly about coverages, return all of them
-          if (q.includes("coverage") || q.includes("limit") || q.includes("deductible")) {
-            const allCovText = policy.coverages.map((c: any) => {
-              const parts = [c.name];
-              if (c.limit) parts.push(`Limit: ${c.limit}`);
-              if (c.deductible) parts.push(`Deductible: ${c.deductible}`);
-              return parts.join(" — ");
-            }).join("\n");
-            results.push({
-              source: "coverage_summary",
-              title: "All Coverages",
-              score: queryWords.some((w: string) => "coverage".includes(w)) ? 5 : 2,
-              data: {
-                title: "All Coverages",
-                type: "coverage_summary",
-                content: allCovText.slice(0, 6000),
-              },
-            });
-          }
-        }
-
-        // Search declarations (structured data — serialize matching entries)
-        if (policy.declarations) {
-          const declStr = JSON.stringify(policy.declarations);
-          const score = scoreText(declStr);
-          if (score > 0) {
-            results.push({
-              source: "declarations",
-              title: "Declarations",
-              score,
-              data: {
-                title: "Declarations",
-                type: "declarations",
-                content: declStr.slice(0, 6000),
-              },
-            });
-          }
-        }
-
-        // Also surface key policy-level fields for coverage analysis
-        if (q.includes("coinsurance") || q.includes("valuation") || q.includes("limit")) {
-          const policyMeta: Record<string, unknown> = {};
-          if (policy.limits) policyMeta.limits = policy.limits;
-          if (policy.deductibles) policyMeta.deductibles = policy.deductibles;
-          if (policy.coverageForm) policyMeta.coverageForm = policy.coverageForm;
-          if (Object.keys(policyMeta).length > 0) {
-            results.push({
-              source: "policy_metadata",
-              title: "Policy Limits & Structure",
-              score: 2,
-              data: {
-                title: "Policy Limits & Structure",
-                type: "metadata",
-                content: JSON.stringify(policyMeta, null, 2).slice(0, 4000),
-              },
-            });
-          }
-        }
-
-        // Sort by score, return top 5
-        results.sort((a, b) => b.score - a.score);
-        const top = results.slice(0, 5);
-
-        if (top.length === 0) {
-          const sectionTitles = ((doc.sections ?? []) as Record<string, unknown>[]).map((s) => s.title).join(", ");
-          const endorsementTitles = ((doc.endorsements ?? []) as Record<string, unknown>[]).map((e) => e.title).join(", ");
-          return `No matches for "${params.query}". Available sections: ${sectionTitles || "none"}. Endorsements: ${endorsementTitles || "none"}.`;
-        }
-
-        return top.map((r) => r.data);
+        return searchPolicyDocument(policy, params.query, 8);
       },
     },
     save_note: {
@@ -352,16 +146,21 @@ function buildTools(ctx: any, args: { orgId: string; threadId: string }, org?: R
           return `COI auto-generation is disabled for this organization.`;
         }
         try {
-          await ctx.scheduler.runAfter(
-            0,
-            internal.actions.generateCoi.run,
-            {
-              policyId: input.policyId,
-              orgId: args.orgId,
-              certificateHolder: input.certificateHolder,
+          const storageId = await ctx.runAction(internal.actions.generateCoi.run, {
+            policyId: input.policyId as Id<"policies">,
+            orgId: args.orgId,
+            certificateHolder: input.certificateHolder,
+          });
+          if (!storageId) return "Failed to generate COI.";
+          return {
+            message: "COI generated and attached to this response.",
+            attachment: {
+              filename: "certificate-of-insurance.pdf",
+              contentType: "application/pdf",
+              size: 0,
+              fileId: storageId as Id<"_storage">,
             },
-          );
-          return "COI generation started. It will be available for download shortly.";
+          };
         } catch (err) {
           return `Failed to generate COI: ${err instanceof Error ? err.message : String(err)}`;
         }
@@ -656,6 +455,12 @@ export const run = internalAction({
       const citedPolicyIds = new Set<string>(); // policy IDs actually looked up via lookup_policy_section
       const usedTools: string[] = [];
       const toolCalls: Array<{ name: string; input?: string }> = [];
+      const responseAttachments: Array<{
+        filename: string;
+        contentType: string;
+        size: number;
+        fileId?: Id<"_storage">;
+      }> = [];
       let lastToolName = "";
       let lastToolPolicyId = "";
 
@@ -700,6 +505,20 @@ export const run = internalAction({
             content: content ? content + `\n\n*${label}*` : `*${label}*`,
           });
         } else if (part.type === "tool-result") {
+          if (lastToolName === "generate_coi" && (part as Record<string, unknown>).output) {
+            const output = (part as Record<string, unknown>).output;
+            if (output && typeof output === "object" && "attachment" in output) {
+              const attachment = (output as Record<string, unknown>).attachment;
+              if (attachment && typeof attachment === "object") {
+                responseAttachments.push(attachment as {
+                  filename: string;
+                  contentType: string;
+                  size: number;
+                  fileId?: Id<"_storage">;
+                });
+              }
+            }
+          }
           // Capture cited section titles and policy IDs from lookup_policy_section results
           if (lastToolName === "lookup_policy_section" && (part as Record<string, unknown>).output) {
             const output = (part as Record<string, unknown>).output;
@@ -736,6 +555,7 @@ export const run = internalAction({
         citedCoverageNames: citedCoverageNames.size > 0 ? [...citedCoverageNames] : undefined,
         usedTools: usedTools.length > 0 ? usedTools : undefined,
         toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+        attachments: responseAttachments.length > 0 ? responseAttachments : undefined,
       });
       // Save final reasoning if any
       if (reasoning) {

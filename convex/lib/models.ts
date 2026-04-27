@@ -28,7 +28,7 @@ import {
  * All models accessed via Vercel AI SDK's provider-agnostic interface.
  *
  * Env vars needed:
- *   OPENAI_API_KEY — GPT-5.5 for core agent/extraction work, GPT-5.4 mini for fast isolated work
+ *   OPENAI_API_KEY — GPT-5.5 for core agent work, GPT-5.4 nano/mini for extraction and fast isolated work
  *   ANTHROPIC_API_KEY — Claude Haiku fallback if the primary provider cannot initialize
  *   MOONSHOTAI_API_KEY — Kimi K2.5 (reasoning: analysis, email writing)
  */
@@ -86,6 +86,7 @@ function cohere() {
 export { FALLBACK_MODEL, MODEL_ROUTING, type ModelProvider, type ModelRoute, type ModelTask };
 
 const GPT_55 = "gpt-5.5";
+const GPT_54_NANO = "gpt-5.4-nano";
 const GPT_54_MINI = "gpt-5.4-mini";
 const CLAUDE_HAIKU = "claude-haiku-4-5-20251001";
 
@@ -95,11 +96,11 @@ const MODEL_CONFIG: Record<Exclude<ModelTask, "embeddings">, () => LanguageModel
   email_reply:      () => moonshot()("kimi-k2.5"),
   analysis:         () => moonshot()("kimi-k2.5"),
   summary:          () => openai()(GPT_54_MINI),
-  classification:   () => openai()(GPT_54_MINI),
-  extraction:       () => openai()(GPT_55),
+  classification:   () => openai()(GPT_54_NANO),
+  extraction:       () => openai()(GPT_54_NANO),
   triage:           () => openai()(GPT_54_MINI),
-  email_extraction: () => openai()(GPT_54_MINI),
-  document_extraction:   () => openai()(GPT_54_MINI),
+  email_extraction: () => openai()(GPT_54_NANO),
+  document_extraction:   () => openai()(GPT_54_NANO),
   security:              () => openai()(GPT_54_MINI),
   application_authoring: () => openai()(GPT_55),
 };

@@ -3,6 +3,7 @@
 import { Mail, MessageSquare, UserPlus } from "lucide-react";
 import { PillButton } from "@/components/ui/pill-button";
 import { LogoIcon } from "@/components/ui/logo-icon";
+import { buildAgentContactVCard, downloadVCard } from "@/components/lib/agent-contact-vcard";
 
 const AGENT_DOMAIN =
   process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "glass.claritylabs.inc";
@@ -13,6 +14,7 @@ interface AgentContactCalloutProps {
   broker?: {
     name: string;
     iconUrl?: string | null;
+    whiteLabelingEnabled?: boolean;
     agentHandle?: string;
     agentDisplayName?: string;
   } | null;
@@ -33,15 +35,8 @@ export function AgentContactCallout({
   fallbackAgentHandle,
   className,
 }: AgentContactCalloutProps) {
-  const name = broker?.name ?? "Glass";
-  const iconUrl = broker?.iconUrl ?? null;
   const handle = broker?.agentHandle ?? fallbackAgentHandle ?? null;
   const agentEmail = handle ? `${handle}@${AGENT_DOMAIN}` : `agent@${AGENT_DOMAIN}`;
-  const agentDisplayName = broker?.agentDisplayName
-    ? broker.agentDisplayName
-    : broker
-      ? `${broker.name} Agent`
-      : "Glass Agent";
 
   const handleEmail = () => {
     window.location.href = `mailto:${agentEmail}`;
@@ -52,48 +47,12 @@ export function AgentContactCallout({
   };
 
   const handleSaveContact = async () => {
-    let photoEntry = "";
-    // Glass fallback uses an inline SVG — skip the PHOTO entry rather than try
-    // to fetch a raster asset.
-    if (iconUrl) {
-      try {
-        const res = await fetch(iconUrl);
-        const blob = await res.blob();
-        const base64 = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => {
-            const s = reader.result as string;
-            resolve(s.split(",")[1] ?? "");
-          };
-          reader.onerror = () => reject(reader.error);
-          reader.readAsDataURL(blob);
-        });
-        const mime = blob.type || "image/png";
-        const type = mime.split("/")[1]?.toUpperCase() ?? "PNG";
-        if (base64) photoEntry = `\nPHOTO;ENCODING=b;TYPE=${type}:${base64}`;
-      } catch {
-        // best-effort — omit photo on fetch failure
-      }
-    }
-    const vcard =
-      "BEGIN:VCARD\n" +
-      "VERSION:3.0\n" +
-      `FN:${agentDisplayName}\n` +
-      `N:Agent;${name};;;\n` +
-      `ORG:${name}\n` +
-      `EMAIL;TYPE=INTERNET:${agentEmail}\n` +
-      `TEL;TYPE=CELL:${AGENT_TEXT_NUMBER}` +
-      photoEntry +
-      "\nEND:VCARD\n";
-    const blob = new Blob([vcard], { type: "text/vcard;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${agentDisplayName}.vcf`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    const { vcard, fileName } = await buildAgentContactVCard({
+      broker,
+      email: agentEmail,
+      phone: AGENT_TEXT_NUMBER,
+    });
+    downloadVCard(vcard, fileName);
   };
 
   return (

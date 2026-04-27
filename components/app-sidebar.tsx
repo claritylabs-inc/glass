@@ -37,6 +37,7 @@ import { LogoIcon } from "@/components/ui/logo-icon";
 import { PillButton } from "@/components/ui/pill-button";
 import { NotificationsPanel } from "@/components/notifications-panel";
 import { MergePolicyDialog } from "@/components/merge-policy-dialog";
+import { buildAgentContactVCard, downloadVCard } from "@/components/lib/agent-contact-vcard";
 
 /** Wrapper so LogoIcon matches the lucide icon interface */
 function GlassStarIcon({ className }: { className?: string }) {
@@ -115,6 +116,7 @@ export function AppSidebar({
         title: string;
         lastMessageAt?: number;
         legacyConversationId?: string;
+        threadPhone?: string;
       }>
     | undefined;
   const webChats = useQuery(api.webChats.list, { archived: false });
@@ -165,7 +167,7 @@ export function AppSidebar({
     // If unified threads have data, use them directly
     if (unifiedThreads && unifiedThreads.length > 0) {
       return unifiedThreads.slice(0, 8).map((t): ConvItem => ({
-        kind: t.legacyConversationId ? "email" : (t as { threadPhone?: string }).threadPhone ? "imessage" : "chat",
+        kind: t.threadPhone ? "imessage" : t.legacyConversationId ? "email" : "chat",
         id: t._id,
         label: t.title,
         time: t.lastMessageAt ?? t._creationTime,
@@ -709,7 +711,9 @@ export function AppSidebar({
                       : "text-muted-foreground hover:bg-foreground/[0.04]"
                   }`}
                 >
-                  {item.legacyConversationId ? (
+                  {item.threadPhone ? (
+                    <Phone className="w-3.5 h-3.5 shrink-0" />
+                  ) : item.legacyConversationId ? (
                     <Mail className="w-3.5 h-3.5 shrink-0" />
                   ) : (
                     <MessageSquare className="w-3.5 h-3.5 shrink-0" />
@@ -791,6 +795,7 @@ function SidebarBrokerContact({
   broker: {
     name: string;
     iconUrl?: string | null;
+    whiteLabelingEnabled?: boolean;
     brandingColor?: string;
     agentHandle?: string;
     primaryContact: {
@@ -812,52 +817,15 @@ function SidebarBrokerContact({
   const handle = broker?.agentHandle ?? fallbackAgentHandle;
   const agentEmail = handle ? `${handle}@${AGENT_DOMAIN}` : `agent@${AGENT_DOMAIN}`;
   const initial = name.charAt(0).toUpperCase();
-  const agentDisplayName = broker ? `${broker.name} Agent` : "Ask Glass";
 
   const handleSaveContact = async () => {
     if (!agentEmail) return;
-    let photoEntry = "";
-    // Glass fallback uses an inline SVG — skip the photo entry rather than
-    // try to fetch a raster asset.
-    if (iconUrl) {
-      try {
-        const res = await fetch(iconUrl);
-        const blob = await res.blob();
-        const base64 = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => {
-            const s = reader.result as string;
-            resolve(s.split(",")[1] ?? "");
-          };
-          reader.onerror = () => reject(reader.error);
-          reader.readAsDataURL(blob);
-        });
-        const mime = blob.type || "image/png";
-        const type = mime.split("/")[1]?.toUpperCase() ?? "PNG";
-        if (base64) photoEntry = `\nPHOTO;ENCODING=b;TYPE=${type}:${base64}`;
-      } catch {
-        // best-effort — omit photo on fetch failure
-      }
-    }
-    const vcard =
-      "BEGIN:VCARD\n" +
-      "VERSION:3.0\n" +
-      `FN:${agentDisplayName}\n` +
-      `N:Agent;${name};;;\n` +
-      `ORG:${name}\n` +
-      `EMAIL;TYPE=INTERNET:${agentEmail}\n` +
-      `TEL;TYPE=CELL:${AGENT_TEXT_NUMBER}` +
-      photoEntry +
-      "\nEND:VCARD\n";
-    const blob = new Blob([vcard], { type: "text/vcard;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${agentDisplayName}.vcf`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    const { vcard, fileName } = await buildAgentContactVCard({
+      broker,
+      email: agentEmail,
+      phone: AGENT_TEXT_NUMBER,
+    });
+    downloadVCard(vcard, fileName);
   };
   return (
     <div className="border-t border-foreground/6 px-3 py-3">

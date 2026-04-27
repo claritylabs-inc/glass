@@ -24,6 +24,7 @@ import {
   buildChannelInstructions,
   buildPolicyToolInstructions,
   policySearchScore,
+  searchPolicyDocument,
 } from "../lib/aiUtils";
 import {
   classifyPromptInjection,
@@ -959,47 +960,7 @@ export const processInbound = internalAction({
               { id: params.policyId as Id<"policies"> },
             );
             if (!policy || policy.orgId !== orgId) return "Policy not found.";
-            const doc = policy.document;
-            if (!doc) return "No document data available for this policy.";
-            const q = params.query.toLowerCase();
-            const results: Array<{ title: string; type: string; content: string }> = [];
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            for (const s of (doc.sections ?? []) as any[]) {
-              const text = `${s.title ?? ""} ${s.content ?? ""}`.toLowerCase();
-              if (text.includes(q)) {
-                results.push({
-                  title: s.title,
-                  type: "section",
-                  content: String(s.content ?? "").slice(0, 4000),
-                });
-              }
-            }
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            for (const e of (doc.endorsements ?? []) as any[]) {
-              const text = `${e.title ?? ""} ${e.content ?? ""}`.toLowerCase();
-              if (text.includes(q)) {
-                results.push({
-                  title: e.title,
-                  type: "endorsement",
-                  content: String(e.content ?? "").slice(0, 4000),
-                });
-              }
-            }
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            for (const cov of (policy.coverages ?? []) as any[]) {
-              const text = `${cov.name ?? ""} ${cov.limit ?? ""}`.toLowerCase();
-              if (text.includes(q)) {
-                const parts = [cov.name];
-                if (cov.limit) parts.push(`Limit: ${cov.limit}`);
-                if (cov.deductible) parts.push(`Deductible: ${cov.deductible}`);
-                results.push({
-                  title: cov.name,
-                  type: "coverage",
-                  content: parts.join("\n"),
-                });
-              }
-            }
-            return results.slice(0, 5);
+            return searchPolicyDocument(policy, params.query, 8);
           },
         },
         compare_coverages: {

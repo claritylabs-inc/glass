@@ -5,7 +5,7 @@ import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { FadeIn } from "@/components/ui/fade-in";
-import { Loader2, Mail, MessageSquare } from "lucide-react";
+import { Loader2, Mail, MessageSquare, Phone } from "lucide-react";
 import dayjs from "dayjs";
 
 export default function ClientThreadsPage() {
@@ -25,6 +25,7 @@ export default function ClientThreadsPage() {
         title: string;
         lastMessageAt?: number;
         legacyConversationId?: string;
+        threadPhone?: string;
       }>
     | undefined;
 
@@ -54,7 +55,9 @@ export default function ClientThreadsPage() {
               className="w-full text-left flex items-center gap-3 px-4 py-3 rounded-lg border border-foreground/6 bg-card hover:bg-foreground/[0.02] transition-colors group cursor-pointer"
             >
               <div className="shrink-0 text-muted-foreground/30">
-                {thread.legacyConversationId ? (
+                {thread.threadPhone ? (
+                  <Phone className="w-4 h-4" />
+                ) : thread.legacyConversationId ? (
                   <Mail className="w-4 h-4" />
                 ) : (
                   <MessageSquare className="w-4 h-4" />
@@ -68,7 +71,7 @@ export default function ClientThreadsPage() {
                   {dayjs(thread.lastMessageAt ?? thread._creationTime).format(
                     "MMM D, YYYY · h:mm A",
                   )}
-                  {thread.legacyConversationId ? " · Email" : " · Chat"}
+                  {thread.threadPhone ? " · iMessage" : thread.legacyConversationId ? " · Email" : " · Chat"}
                 </p>
               </div>
             </button>
