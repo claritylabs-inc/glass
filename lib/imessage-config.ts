@@ -1,0 +1,8 @@
+export const AGENT_TEXT_NUMBER =
+  process.env.NEXT_PUBLIC_GLASS_IMESSAGE_NUMBER?.trim() ?? "";
+
+export const AGENT_TEXT_NUMBER_DISPLAY =
+  process.env.NEXT_PUBLIC_GLASS_IMESSAGE_NUMBER_DISPLAY?.trim() ??
+  AGENT_TEXT_NUMBER;
+
+export const IMESSAGE_CONTACT_ENABLED = AGENT_TEXT_NUMBER.length > 0;

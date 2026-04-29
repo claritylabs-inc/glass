@@ -39,10 +39,29 @@ export function buildExtractor(opts?: {
   onProgress?: (message: string) => void;
   onTokenUsage?: (usage: TokenUsage) => void;
   onCheckpointSave?: (checkpoint: PipelineCheckpoint<ExtractionState>) => Promise<void>;
+  shouldCancel?: () => Promise<boolean>;
 }) {
+  const generateText = makeGenerateText("extraction");
+  const generateObject = makeGenerateObject("extraction");
+  const throwIfCancelled = async () => {
+    if (await opts?.shouldCancel?.()) {
+      throw new Error("Cancelled by user");
+    }
+  };
+
   return createExtractor({
-    generateText: makeGenerateText("extraction"),
-    generateObject: makeGenerateObject("extraction"),
+    generateText: async (params) => {
+      await throwIfCancelled();
+      const result = await generateText(params);
+      await throwIfCancelled();
+      return result;
+    },
+    generateObject: async (params) => {
+      await throwIfCancelled();
+      const result = await generateObject(params);
+      await throwIfCancelled();
+      return result;
+    },
     concurrency: 2,
     maxReviewRounds: 2,
     log: opts?.log,

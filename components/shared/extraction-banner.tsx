@@ -7,7 +7,7 @@
 import { StatusBanner, RetryButtons } from "@claritylabs/cl-pipelines/ui";
 import type { PipelineStatus, LogEntry } from "@claritylabs/cl-pipelines";
 import { PillButton } from "@/components/ui/pill-button";
-import { Loader2, AlertCircle } from "lucide-react";
+import { Loader2, AlertCircle, CircleStop } from "lucide-react";
 import { useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -17,11 +17,15 @@ export function PolicyExtractionBanner({
   status,
   error,
   log,
+  onCancel,
+  cancelling,
 }: {
   policyId: Id<"policies">;
   status: PipelineStatus | undefined;
   error?: string;
   log?: LogEntry[];
+  onCancel?: () => void;
+  cancelling?: boolean;
 }) {
   const retry = useAction(api.actions.retryExtraction.retryExtraction);
 
@@ -31,6 +35,8 @@ export function PolicyExtractionBanner({
       error={error}
       log={log}
       onRetry={(mode) => void retry({ policyId, mode })}
+      onCancel={onCancel}
+      cancelling={cancelling}
     />
   );
 }
@@ -41,12 +47,16 @@ function ExtractionBannerBase({
   log,
   labels,
   onRetry,
+  onCancel,
+  cancelling,
 }: {
   status: PipelineStatus | undefined;
   error?: string;
   log?: LogEntry[];
   labels?: { running?: string; error?: string };
   onRetry: (mode: "resume" | "full") => void;
+  onCancel?: () => void;
+  cancelling?: boolean;
 }) {
   if (!status || status === "idle" || status === "complete") return null;
 
@@ -63,7 +73,7 @@ function ExtractionBannerBase({
       className={[
         "mb-4 flex items-center gap-3 rounded-xl border px-4 py-2.5",
         isError
-          ? "border-destructive bg-destructive text-destructive-foreground"
+          ? "border-destructive bg-destructive text-white"
           : "border-border bg-foreground text-background",
       ].join(" ")}
     >
@@ -88,6 +98,26 @@ function ExtractionBannerBase({
         </span>
       </div>
 
+      {!isError && onCancel && (
+        <StatusBanner.Actions className="shrink-0">
+          <PillButton
+            type="button"
+            onClick={onCancel}
+            disabled={cancelling}
+            variant="secondary"
+            size="compact"
+            className="justify-center !border-background/35 !text-background hover:!border-background/60 hover:!text-background [&_span]:whitespace-nowrap"
+          >
+            {cancelling ? (
+              <Loader2 className="h-3 w-3 shrink-0 animate-spin" />
+            ) : (
+              <CircleStop className="h-3 w-3 shrink-0" />
+            )}
+            {cancelling ? "Cancelling" : "Cancel"}
+          </PillButton>
+        </StatusBanner.Actions>
+      )}
+
       {isError && (
         <StatusBanner.Actions className="shrink-0">
           <RetryButtons
@@ -101,7 +131,8 @@ function ExtractionBannerBase({
                 size="compact"
                 onClick={onClick}
                 disabled={disabled}
-                variant={mode === "full" ? "ghost" : "secondary"}
+                variant="secondary"
+                className="!border-white/30 !bg-transparent !text-white hover:!border-white/50 hover:!bg-white/10 hover:!text-white"
               >
                 {label}
               </PillButton>

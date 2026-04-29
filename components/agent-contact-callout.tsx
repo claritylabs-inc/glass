@@ -4,10 +4,10 @@ import { Mail, MessageSquare, UserPlus } from "lucide-react";
 import { PillButton } from "@/components/ui/pill-button";
 import { LogoIcon } from "@/components/ui/logo-icon";
 import { buildAgentContactVCard, downloadVCard } from "@/components/lib/agent-contact-vcard";
+import { AGENT_TEXT_NUMBER, IMESSAGE_CONTACT_ENABLED } from "@/lib/imessage-config";
 
 const AGENT_DOMAIN =
   process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "glass.claritylabs.inc";
-const AGENT_TEXT_NUMBER = "+14155909221";
 
 interface AgentContactCalloutProps {
   /** Linked broker partner, when present. Falls back to a Glass-branded card otherwise. */
@@ -43,6 +43,7 @@ export function AgentContactCallout({
   };
 
   const handleText = () => {
+    if (!IMESSAGE_CONTACT_ENABLED) return;
     window.location.href = `sms:${AGENT_TEXT_NUMBER}`;
   };
 
@@ -50,7 +51,7 @@ export function AgentContactCallout({
     const { vcard, fileName } = await buildAgentContactVCard({
       broker,
       email: agentEmail,
-      phone: AGENT_TEXT_NUMBER,
+      phone: IMESSAGE_CONTACT_ENABLED ? AGENT_TEXT_NUMBER : undefined,
     });
     downloadVCard(vcard, fileName);
   };
@@ -72,18 +73,22 @@ export function AgentContactCallout({
             <Mail className="h-4 w-4" />
             Email {agentEmail}
           </PillButton>
-          <PillButton
-            variant="secondary"
-            className="hidden sm:inline-flex"
-            onClick={handleText}
-          >
-            <MessageSquare className="h-4 w-4" />
-            Text My Agent
-          </PillButton>
-          <PillButton variant="primary" className="sm:hidden" onClick={handleText}>
-            <MessageSquare className="h-4 w-4" />
-            Text My Agent
-          </PillButton>
+          {IMESSAGE_CONTACT_ENABLED ? (
+            <>
+              <PillButton
+                variant="secondary"
+                className="hidden sm:inline-flex"
+                onClick={handleText}
+              >
+                <MessageSquare className="h-4 w-4" />
+                Text My Agent
+              </PillButton>
+              <PillButton variant="primary" className="sm:hidden" onClick={handleText}>
+                <MessageSquare className="h-4 w-4" />
+                Text My Agent
+              </PillButton>
+            </>
+          ) : null}
           <PillButton variant="secondary" onClick={handleSaveContact}>
             <UserPlus className="h-4 w-4" />
             Save contact

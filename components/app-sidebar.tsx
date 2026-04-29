@@ -8,10 +8,6 @@ import { useAuthActions } from "@convex-dev/auth/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
-
-const AGENT_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "glass.claritylabs.inc";
-const AGENT_TEXT_NUMBER = "+14155909221";
-const AGENT_TEXT_NUMBER_DISPLAY = "+1 (415) 590-9221";
 import {
   FileText,
   Mail,
@@ -38,6 +34,13 @@ import { PillButton } from "@/components/ui/pill-button";
 import { NotificationsPanel } from "@/components/notifications-panel";
 import { MergePolicyDialog } from "@/components/merge-policy-dialog";
 import { buildAgentContactVCard, downloadVCard } from "@/components/lib/agent-contact-vcard";
+import {
+  AGENT_TEXT_NUMBER,
+  AGENT_TEXT_NUMBER_DISPLAY,
+  IMESSAGE_CONTACT_ENABLED,
+} from "@/lib/imessage-config";
+
+const AGENT_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "glass.claritylabs.inc";
 
 /** Wrapper so LogoIcon matches the lucide icon interface */
 function GlassStarIcon({ className }: { className?: string }) {
@@ -823,7 +826,7 @@ function SidebarBrokerContact({
     const { vcard, fileName } = await buildAgentContactVCard({
       broker,
       email: agentEmail,
-      phone: AGENT_TEXT_NUMBER,
+      phone: IMESSAGE_CONTACT_ENABLED ? AGENT_TEXT_NUMBER : undefined,
     });
     downloadVCard(vcard, fileName);
   };
@@ -884,12 +887,14 @@ function SidebarBrokerContact({
                 {agentEmail}
               </a>
             ) : null}
-            <a
-              href={`sms:${AGENT_TEXT_NUMBER}`}
-              className="block text-label-sm text-muted-foreground hover:text-foreground truncate"
-            >
-              {AGENT_TEXT_NUMBER_DISPLAY}
-            </a>
+            {IMESSAGE_CONTACT_ENABLED ? (
+              <a
+                href={`sms:${AGENT_TEXT_NUMBER}`}
+                className="block text-label-sm text-muted-foreground hover:text-foreground truncate"
+              >
+                {AGENT_TEXT_NUMBER_DISPLAY}
+              </a>
+            ) : null}
           </div>
         )}
         {agentEmail ? (
@@ -905,17 +910,19 @@ function SidebarBrokerContact({
               <Mail className="h-3 w-3" />
               <span className="whitespace-nowrap">Email agent</span>
             </PillButton>
-            <PillButton
-              variant="primary"
-              size="compact"
-              className="w-full lg:hidden"
-              onClick={() => {
-                window.location.href = `sms:${AGENT_TEXT_NUMBER}`;
-              }}
-            >
-              <MessageSquare className="h-3 w-3" />
-              <span className="whitespace-nowrap">Text My Agent</span>
-            </PillButton>
+            {IMESSAGE_CONTACT_ENABLED ? (
+              <PillButton
+                variant="primary"
+                size="compact"
+                className="w-full lg:hidden"
+                onClick={() => {
+                  window.location.href = `sms:${AGENT_TEXT_NUMBER}`;
+                }}
+              >
+                <MessageSquare className="h-3 w-3" />
+                <span className="whitespace-nowrap">Text My Agent</span>
+              </PillButton>
+            ) : null}
             <PillButton
               variant="secondary"
               size="compact"

@@ -1,9 +1,10 @@
 "use node";
 
+import { randomUUID } from "crypto";
 import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
-import { advancePhase, runPipeline } from "@claritylabs/cl-pipelines";
+import { runPipeline } from "@claritylabs/cl-pipelines";
 import {
   createConvexStorageAdapter,
   createConvexSchedulerAdapter,
@@ -14,12 +15,27 @@ import {
   insuranceDocToPolicy,
   summarizeExtractionCheckpoint,
 } from "../lib/extraction";
-import type { ExtractionState, PipelineCheckpoint } from "../lib/extraction";
+import type { ExtractionResult, ExtractionState, PipelineCheckpoint } from "../lib/extraction";
 import { makeEmbedText } from "../lib/sdkCallbacks";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 
 const CANCELLED_BY_USER = "Cancelled by user";
+const ADVANCE_LEASE_MS = 2 * 60 * 1000;
+const ADVANCE_LEASE_HEARTBEAT_MS = 30 * 1000;
+const ADVANCE_LEASE_WATCHDOG_GRACE_MS = 15 * 1000;
+
+type LeasedPolicyCheckpoint = {
+  nextPhase: string;
+  state: PolicyExtractionState;
+  createdAt: number;
+  lease?: {
+    id: string;
+    phase: string;
+    expiresAt: number;
+    heartbeatAt?: number;
+  };
+};
 
 // ─── State Type ────────────────────────────────────────────────────────────────
 
@@ -45,6 +61,176 @@ async function isExtractionCancelled(
     id: policyId as Id<"policies">,
   });
   return policy?.pipelineError === CANCELLED_BY_USER;
+}
+
+function isCancelledError(error: unknown): boolean {
+  return error instanceof Error && error.message === CANCELLED_BY_USER;
+}
+
+async function loadPdfBytes(
+  ctx: ActionCtx,
+  fileId: string,
+): Promise<Uint8Array | null> {
+  const blob = await ctx.storage.get(fileId as Id<"_storage">);
+  if (!blob) return null;
+  const arrayBuffer = await blob.arrayBuffer();
+  return new Uint8Array(arrayBuffer);
+}
+
+function stripLease(
+  checkpoint: LeasedPolicyCheckpoint,
+): Omit<LeasedPolicyCheckpoint, "lease"> {
+  const { lease: _lease, ...rest } = checkpoint;
+  return rest;
+}
+
+async function advanceLeasedPhase(
+  ctx: ActionCtx,
+  jobId: string,
+  phases: Phase<PolicyExtractionState>[],
+): Promise<void> {
+  const leaseId = randomUUID();
+  const leaseExpiresAt = Date.now() + ADVANCE_LEASE_MS;
+  const checkpoint = await ctx.runMutation(
+    internal.policies.pipelineAcquireLease,
+    { jobId, leaseId, leaseExpiresAt },
+  ) as LeasedPolicyCheckpoint | null;
+
+  if (!checkpoint) return;
+
+  const scheduleWatchdog = async (expiresAt: number) => {
+    await ctx.scheduler.runAfter(
+      Math.max(0, expiresAt - Date.now() + ADVANCE_LEASE_WATCHDOG_GRACE_MS),
+      internal.actions.policyExtraction.advance,
+      { jobId },
+    );
+  };
+
+  await scheduleWatchdog(leaseExpiresAt);
+
+  const phase = phases.find((p) => p.name === checkpoint.nextPhase);
+  if (!phase) {
+    await ctx.runMutation(internal.policies.pipelineCompleteLease, {
+      jobId,
+      leaseId,
+      status: "error",
+      error: `Unknown phase: ${checkpoint.nextPhase}`,
+      checkpoint: stripLease(checkpoint),
+    });
+    return;
+  }
+
+  const saveState = async (state: PolicyExtractionState) => {
+    const ok = await ctx.runMutation(
+      internal.policies.pipelineSaveStateForLease,
+      {
+        jobId,
+        leaseId,
+        nextPhase: phase.name,
+        state,
+        leaseExpiresAt: Date.now() + ADVANCE_LEASE_MS,
+      },
+    );
+    if (!ok) {
+      throw new Error("Pipeline phase lease lost");
+    }
+  };
+
+  const log = async (message: string, level: string = "info") => {
+    await ctx.runMutation(internal.policies.pipelineAppendLog, {
+      jobId,
+      timestamp: Date.now(),
+      message,
+      phase: phase.name,
+      level,
+    });
+  };
+
+  let heartbeatInFlight = false;
+  const heartbeat = setInterval(() => {
+    if (heartbeatInFlight) return;
+    heartbeatInFlight = true;
+    void (async () => {
+      try {
+        const nextExpiresAt = Date.now() + ADVANCE_LEASE_MS;
+        const ok = await ctx.runMutation(internal.policies.pipelineExtendLease, {
+          jobId,
+          leaseId,
+          leaseExpiresAt: nextExpiresAt,
+        });
+        if (ok) {
+          await scheduleWatchdog(nextExpiresAt);
+        }
+      } catch {
+        // The phase will fail its next checkpoint/complete call if the lease was lost.
+      } finally {
+        heartbeatInFlight = false;
+      }
+    })();
+  }, ADVANCE_LEASE_HEARTBEAT_MS);
+
+  try {
+    const result = await phase.run({
+      jobId,
+      checkpoint: stripLease(checkpoint),
+      log,
+      saveState,
+    });
+
+    if (result.kind === "done") {
+      await ctx.runMutation(internal.policies.pipelineCompleteLease, {
+        jobId,
+        leaseId,
+        status: "complete",
+        error: null,
+        checkpoint: null,
+      });
+      return;
+    }
+
+    if (result.kind === "error") {
+      await ctx.runMutation(internal.policies.pipelineCompleteLease, {
+        jobId,
+        leaseId,
+        status: "error",
+        error: result.error,
+        checkpoint: stripLease(checkpoint),
+      });
+      return;
+    }
+
+    const checkpointUpdated = await ctx.runMutation(
+      internal.policies.pipelineCompleteLease,
+      {
+        jobId,
+        leaseId,
+        checkpoint: {
+          nextPhase: result.nextPhase,
+          state: result.state,
+          createdAt: Date.now(),
+        },
+      },
+    );
+    if (checkpointUpdated) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.actions.policyExtraction.advance,
+        { jobId },
+      );
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    await log(`Phase "${phase.name}" threw: ${msg}`, "error");
+    await ctx.runMutation(internal.policies.pipelineCompleteLease, {
+      jobId,
+      leaseId,
+      status: "error",
+      error: msg,
+      checkpoint: stripLease(checkpoint),
+    });
+  } finally {
+    clearInterval(heartbeat);
+  }
 }
 
 // ─── Convex mutations ref builder ──────────────────────────────────────────────
@@ -75,9 +261,9 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         return { kind: "error", error: "load_pdf: missing fileId" };
       }
       await pCtx.log("Loading PDF from storage…");
-      const url = await convexCtx.storage.getUrl(state.fileId as any);
-      if (!url) return { kind: "error", error: "File not found in storage" };
-      await pCtx.log("PDF ready for extraction");
+      const pdfBytes = await loadPdfBytes(convexCtx, state.fileId);
+      if (!pdfBytes) return { kind: "error", error: "File not found in storage" };
+      await pCtx.log(`PDF ready for extraction (${pdfBytes.byteLength} bytes)`);
       return { kind: "next", nextPhase: "extract", state };
     },
   };
@@ -99,8 +285,8 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
 
       await pCtx.log("Starting policy extraction…");
 
-      const url = await convexCtx.storage.getUrl(state.fileId as any);
-      if (!url) return { kind: "error", error: "File not found in storage" };
+      const pdfBytes = await loadPdfBytes(convexCtx, state.fileId);
+      if (!pdfBytes) return { kind: "error", error: "File not found in storage" };
 
       const policyId = pCtx.jobId;
       const clSdkCheckpoint = state.clSdkCheckpoint;
@@ -112,7 +298,11 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
       const extractor = buildExtractor({
         log: async (msg) => { await pCtx.log(msg); },
         onProgress: async (msg) => { await pCtx.log(msg); },
+        shouldCancel: async () => isExtractionCancelled(convexCtx, policyId),
         onCheckpointSave: async (cp) => {
+          if (await isExtractionCancelled(convexCtx, policyId)) {
+            throw new Error(CANCELLED_BY_USER);
+          }
           // Route cl-sdk's checkpoint through cl-pipelines' saveState
           await pCtx.saveState({ ...state, clSdkCheckpoint: cp });
         },
@@ -120,11 +310,20 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
 
       const extractOptions = clSdkCheckpoint ? { resumeFrom: clSdkCheckpoint } : undefined;
 
-      const result = await extractor.extract(
-        new URL(url),
-        policyId,
-        extractOptions,
-      );
+      let result: ExtractionResult;
+      try {
+        result = await extractor.extract(
+          pdfBytes,
+          policyId,
+          extractOptions,
+        );
+      } catch (error) {
+        if (isCancelledError(error)) {
+          await pCtx.log("Extraction cancelled by user", "warn");
+          return { kind: "error", error: CANCELLED_BY_USER };
+        }
+        throw error;
+      }
 
       if (await isExtractionCancelled(convexCtx, pCtx.jobId)) {
         return { kind: "error", error: CANCELLED_BY_USER };
@@ -327,17 +526,8 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
 export const advance = internalAction({
   args: { jobId: v.string() },
   handler: async (ctx, { jobId }) => {
-    const mutations = makeMutations();
-    const storage = createConvexStorageAdapter<PolicyExtractionState>({
-      ctx: ctx as any,
-      mutations,
-    });
-    const scheduler = createConvexSchedulerAdapter({
-      ctx: ctx as any,
-      advanceAction: internal.actions.policyExtraction.advance,
-    });
     const phases = makePhases(ctx);
-    await advancePhase({ jobId, phases, storage, scheduler });
+    await advanceLeasedPhase(ctx, jobId, phases);
   },
 });
 

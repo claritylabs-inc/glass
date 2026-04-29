@@ -3,6 +3,7 @@
 import { v } from "convex/values";
 import { action } from "../_generated/server";
 import { api } from "../_generated/api";
+import { getImessageWorkerUrl, isImessageEnabled } from "../lib/imessageConfig";
 
 /**
  * Sends an intro iMessage from the Photon agent to the authenticated user's
@@ -20,9 +21,11 @@ export const sendIntroImessage = action({
     const phone = viewer.phone;
     if (!phone) return { ok: false, error: "no_phone" };
 
-    const workerUrl = process.env.IMESSAGE_WORKER_URL;
+    const workerUrl = getImessageWorkerUrl();
     if (!workerUrl) {
-      console.warn("[sendIntroImessage] IMESSAGE_WORKER_URL is not set");
+      if (isImessageEnabled()) {
+        console.warn("[sendIntroImessage] IMESSAGE_WORKER_URL is not set");
+      }
       return { ok: false, error: "not_configured" };
     }
 

@@ -9,6 +9,12 @@ const PROJECT_ID = process.env.PHOTON_PROJECT_ID;
 const PROJECT_SECRET = process.env.PHOTON_PROJECT_SECRET;
 const CONVEX_SITE_URL = process.env.CONVEX_SITE_URL;
 const WORKER_SECRET = process.env.IMESSAGE_WORKER_SECRET ?? "";
+const IMESSAGE_ENABLED = process.env.IMESSAGE_ENABLED === "true";
+
+if (!IMESSAGE_ENABLED) {
+  console.error("IMESSAGE_ENABLED must be true before connecting to Photon");
+  process.exit(1);
+}
 
 if (!PROJECT_ID || !PROJECT_SECRET) {
   console.error("PHOTON_PROJECT_ID and PHOTON_PROJECT_SECRET are required");

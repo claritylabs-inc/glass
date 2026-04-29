@@ -3,6 +3,7 @@ import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { auth } from "./auth";
+import { isImessageEnabled } from "./lib/imessageConfig";
 const http = httpRouter();
 
 auth.addHttpRoutes(http);
@@ -31,6 +32,13 @@ http.route({
   path: "/imessage-inbound",
   method: "POST",
   handler: httpAction(async (ctx, request) => {
+    if (!isImessageEnabled()) {
+      return new Response(JSON.stringify({ error: "iMessage is not configured" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
     // Validate shared secret
     const secret = process.env.IMESSAGE_WORKER_SECRET;
     const authHeader = request.headers.get("Authorization") ?? "";

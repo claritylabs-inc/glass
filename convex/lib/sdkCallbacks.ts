@@ -77,6 +77,7 @@ function buildPdfFilePart(opts: {
 }
 
 const EXTRACTION_MAX_TOKEN_OVERRIDES: Record<string, number> = {
+  coveredReasons: 24576,
   exclusions: 8192,
 };
 
@@ -89,6 +90,9 @@ function getEffectiveMaxTokens(
   maxTokens: number,
 ): number {
   if (task !== "extraction") return maxTokens;
+  if (prompt.includes("Extract ALL covered reasons from this document")) {
+    return Math.max(maxTokens, EXTRACTION_MAX_TOKEN_OVERRIDES.coveredReasons);
+  }
   if (prompt.includes("Extract ALL exclusions from this document")) {
     return Math.max(maxTokens, EXTRACTION_MAX_TOKEN_OVERRIDES.exclusions);
   }

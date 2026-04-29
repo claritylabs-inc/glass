@@ -63,6 +63,7 @@ import type * as lib_convexMemoryStore from "../lib/convexMemoryStore.js";
 import type * as lib_documentMapping from "../lib/documentMapping.js";
 import type * as lib_emailTemplate from "../lib/emailTemplate.js";
 import type * as lib_extraction from "../lib/extraction.js";
+import type * as lib_imessageConfig from "../lib/imessageConfig.js";
 import type * as lib_industries from "../lib/industries.js";
 import type * as lib_mcpAuth from "../lib/mcpAuth.js";
 import type * as lib_mergePdfs from "../lib/mergePdfs.js";
@@ -168,6 +169,7 @@ declare const fullApi: ApiFromModules<{
   "lib/documentMapping": typeof lib_documentMapping;
   "lib/emailTemplate": typeof lib_emailTemplate;
   "lib/extraction": typeof lib_extraction;
+  "lib/imessageConfig": typeof lib_imessageConfig;
   "lib/industries": typeof lib_industries;
   "lib/mcpAuth": typeof lib_mcpAuth;
   "lib/mergePdfs": typeof lib_mergePdfs;

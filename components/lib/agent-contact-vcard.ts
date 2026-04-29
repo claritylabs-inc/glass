@@ -13,7 +13,7 @@ export interface AgentContactBroker {
 interface BuildAgentContactVCardArgs {
   broker?: AgentContactBroker | null;
   email: string;
-  phone: string;
+  phone?: string;
 }
 
 function escapeVCardValue(value: string) {
@@ -174,8 +174,8 @@ export async function buildAgentContactVCard({
     `N:${escapeVCardValue(lastName)};${escapeVCardValue(firstName)};;;\n` +
     `ORG:${escapeVCardValue(organization)}\n` +
     `EMAIL;TYPE=INTERNET:${escapeVCardValue(email)}\n` +
-    `TEL;TYPE=CELL:${escapeVCardValue(phone)}` +
-    photoEntry +
+    (phone ? `TEL;TYPE=CELL:${escapeVCardValue(phone)}` : "") +
+    (phone && photoEntry ? photoEntry : photoEntry.replace(/^\n/, "")) +
     "\nEND:VCARD\n";
 
   return { vcard, fileName: `${displayName}.vcf`, displayName };

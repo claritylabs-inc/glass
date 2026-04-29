@@ -1082,9 +1082,173 @@ export const listForOrg = query({
 });
 
 // ── cl-pipelines contract mutations for policies ───────────────────────────────
+const PIPELINE_LEGACY_LEASE_STALE_MS = 5 * 60 * 1000;
+
 const _policyPipeline = makePipelineMutations("policies");
 export const pipelineGetJob = _policyPipeline.getJob;
 export const pipelineSetStatus = _policyPipeline.setStatus;
 export const pipelineSetCheckpoint = _policyPipeline.setCheckpoint;
 export const pipelineAppendLog = _policyPipeline.appendLog;
 export const pipelineClearLog = _policyPipeline.clearLog;
+
+export const pipelineAcquireLease = internalMutation({
+  args: {
+    jobId: v.string(),
+    leaseId: v.string(),
+    leaseExpiresAt: v.number(),
+  },
+  handler: async (ctx, { jobId, leaseId, leaseExpiresAt }) => {
+    const doc = await ctx.db.get(jobId as DataModelId<"policies">);
+    if (!doc || doc.pipelineStatus !== "running" || !doc.pipelineCheckpoint) {
+      return null;
+    }
+
+    const checkpoint = doc.pipelineCheckpoint as {
+      nextPhase: string;
+      state: unknown;
+      createdAt: number;
+      lease?: { id: string; phase: string; expiresAt: number; heartbeatAt?: number };
+    };
+    const now = Date.now();
+    if (checkpoint.lease && checkpoint.lease.expiresAt > now) {
+      const lastLogAt = doc.pipelineLog?.at(-1)?.timestamp ?? checkpoint.createdAt;
+      const heartbeatAt = checkpoint.lease.heartbeatAt;
+      const staleLegacyLease =
+        heartbeatAt === undefined && now - lastLogAt > PIPELINE_LEGACY_LEASE_STALE_MS;
+      const staleHeartbeatLease =
+        heartbeatAt !== undefined && now - heartbeatAt > PIPELINE_LEGACY_LEASE_STALE_MS;
+      if (!staleLegacyLease && !staleHeartbeatLease) {
+        return null;
+      }
+    }
+
+    const leasedCheckpoint = {
+      ...checkpoint,
+      lease: {
+        id: leaseId,
+        phase: checkpoint.nextPhase,
+        expiresAt: leaseExpiresAt,
+        heartbeatAt: now,
+      },
+    };
+    await ctx.db.patch(jobId as DataModelId<"policies">, {
+      pipelineCheckpoint: leasedCheckpoint,
+    });
+    return leasedCheckpoint;
+  },
+});
+
+export const pipelineSaveStateForLease = internalMutation({
+  args: {
+    jobId: v.string(),
+    leaseId: v.string(),
+    nextPhase: v.string(),
+    state: v.any(),
+    leaseExpiresAt: v.number(),
+  },
+  handler: async (ctx, { jobId, leaseId, nextPhase, state, leaseExpiresAt }) => {
+    const doc = await ctx.db.get(jobId as DataModelId<"policies">);
+    const checkpoint = doc?.pipelineCheckpoint as
+      | {
+          nextPhase: string;
+          state: unknown;
+        createdAt: number;
+          lease?: { id: string; phase: string; expiresAt: number; heartbeatAt?: number };
+        }
+      | undefined;
+    if (!doc || !checkpoint || checkpoint.lease?.id !== leaseId) {
+      return false;
+    }
+
+    await ctx.db.patch(jobId as DataModelId<"policies">, {
+      pipelineCheckpoint: {
+        nextPhase,
+        state,
+        createdAt: Date.now(),
+        lease: {
+          id: leaseId,
+          phase: nextPhase,
+          expiresAt: leaseExpiresAt,
+          heartbeatAt: Date.now(),
+        },
+      },
+    });
+    return true;
+  },
+});
+
+export const pipelineExtendLease = internalMutation({
+  args: {
+    jobId: v.string(),
+    leaseId: v.string(),
+    leaseExpiresAt: v.number(),
+  },
+  handler: async (ctx, { jobId, leaseId, leaseExpiresAt }) => {
+    const doc = await ctx.db.get(jobId as DataModelId<"policies">);
+    const checkpoint = doc?.pipelineCheckpoint as
+      | {
+          nextPhase: string;
+          state: unknown;
+          createdAt: number;
+          lease?: { id: string; phase: string; expiresAt: number; heartbeatAt?: number };
+        }
+      | undefined;
+    if (!doc || !checkpoint || checkpoint.lease?.id !== leaseId) {
+      return false;
+    }
+
+    await ctx.db.patch(jobId as DataModelId<"policies">, {
+      pipelineCheckpoint: {
+        ...checkpoint,
+        lease: {
+          ...checkpoint.lease,
+          expiresAt: leaseExpiresAt,
+          heartbeatAt: Date.now(),
+        },
+      },
+    });
+    return true;
+  },
+});
+
+export const pipelineCompleteLease = internalMutation({
+  args: {
+    jobId: v.string(),
+    leaseId: v.string(),
+    status: v.optional(
+      v.union(
+        v.literal("running"),
+        v.literal("complete"),
+        v.literal("error"),
+      ),
+    ),
+    error: v.optional(v.union(v.string(), v.null())),
+    checkpoint: v.optional(v.any()),
+  },
+  handler: async (ctx, args) => {
+    const doc = await ctx.db.get(args.jobId as DataModelId<"policies">);
+    const checkpoint = doc?.pipelineCheckpoint as
+      | {
+          nextPhase: string;
+          state: unknown;
+          createdAt: number;
+          lease?: { id: string; phase: string; expiresAt: number; heartbeatAt?: number };
+        }
+      | undefined;
+    if (!doc || !checkpoint || checkpoint.lease?.id !== args.leaseId) {
+      return false;
+    }
+
+    const patch: Record<string, unknown> = {};
+    if ("checkpoint" in args) {
+      patch.pipelineCheckpoint = args.checkpoint ?? undefined;
+    }
+    if (args.status) {
+      patch.pipelineStatus = args.status;
+      patch.pipelineError = args.error ?? undefined;
+    }
+
+    await ctx.db.patch(args.jobId as DataModelId<"policies">, patch);
+    return true;
+  },
+});

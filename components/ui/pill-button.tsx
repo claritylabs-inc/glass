@@ -28,8 +28,8 @@ const variantConfig = {
   },
   secondary: {
     classes:
-      "border border-foreground/8 bg-popover font-medium text-muted-foreground cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed",
-    rest: {},
+      "border border-foreground/8 font-medium text-muted-foreground cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed",
+    rest: { backgroundColor: "transparent", borderColor: "var(--border)" },
     hover: { borderColor: "var(--input)" },
   },
   destructive: {

@@ -28,6 +28,7 @@ import {
 } from "../lib/aiUtils";
 import { classifyPromptInjection, enforceInputLimits } from "../lib/security";
 import type { Id } from "../_generated/dataModel";
+import { getImessageWorkerUrl, isImessageEnabled } from "../lib/imessageConfig";
 
 /** Normalize a raw phone string to E.164 (+1XXXXXXXXXX). */
 function normalizePhone(raw: string): string {
@@ -84,7 +85,7 @@ async function sendImmediateImessage(params: {
   toPhone: string;
   message: string;
 }): Promise<boolean> {
-  const workerUrl = process.env.IMESSAGE_WORKER_URL;
+  const workerUrl = getImessageWorkerUrl();
   if (!workerUrl) return false;
 
   try {
@@ -199,6 +200,11 @@ export const processInbound = internalAction({
     ),
   },
   handler: async (ctx, args): Promise<ImessageResponse> => {
+    if (!isImessageEnabled()) {
+      console.warn("[imessage] Inbound message received while IMESSAGE_ENABLED is not true");
+      return { response: "" };
+    }
+
     const fromPhone = normalizePhone(args.fromPhone);
     const siteUrl = process.env.SITE_URL ?? "https://glass.claritylabs.inc";
     const eventKey = buildInboundEventKey({

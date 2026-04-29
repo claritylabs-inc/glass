@@ -1,15 +1,19 @@
 const EXAMPLE_PROMPTS = [
   {
-    label: "Summarize my active policies",
-    prompt: "Summarize my active policies",
+    label: "List my active policies and key limits",
+    prompt: "List my active policies and key limits",
   },
   {
-    label: "What coverage gaps should I fix first?",
-    prompt: "What coverage gaps should I fix first?",
+    label: "Find the cancellation notice requirement",
+    prompt: "Find the cancellation notice requirement in my policies",
   },
   {
-    label: "Draft an email requesting missing documents",
-    prompt: "Draft an email requesting missing documents",
+    label: "Compare deductibles across my policies",
+    prompt: "Compare deductibles across my active policies",
+  },
+  {
+    label: "Draft a COI request email",
+    prompt: "Draft an email requesting the details needed to generate a certificate of insurance",
   },
 ];
 

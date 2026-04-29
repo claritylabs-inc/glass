@@ -33,6 +33,7 @@ Core layers:
 - Extraction, query agent, and prompts: `@claritylabs/cl-sdk@0.17.x`
 - Providers: OpenAI, MoonshotAI, Anthropic, DeepSeek
 - Email: outbound + inbound via Resend (no IMAP, no Gmail OAuth). All outbound Resend calls go through `convex/lib/resend.ts` (`sendResendEmail`). Sending domain comes from `AGENT_DOMAIN` (prod: `glass.claritylabs.inc`, dev: `dev.claritylabs.inc`). Inbound webhook at `POST /resend-inbound`.
+- iMessage: Photon-backed iMessage is production-only until Photon provides a dev sandbox. Set `IMESSAGE_ENABLED=true`, `IMESSAGE_WORKER_URL`, `IMESSAGE_WORKER_SECRET`, and `NEXT_PUBLIC_GLASS_IMESSAGE_NUMBER` only in production with the production Photon account. Dev/preview environments must leave those unset or `IMESSAGE_ENABLED` false so they do not connect to or advertise the production line.
 
 ## Current Model Routing
 
@@ -122,10 +123,11 @@ Glass persists:
 
 ### Token Limits
 
-Glass preserves a higher extraction token allowance for exclusion-heavy documents in `sdkCallbacks.ts`.
+Glass preserves higher extraction token allowances for long-list extractors in `sdkCallbacks.ts`.
 
 - Default token limits come from `cl-sdk`.
 - If the prompt matches the exclusions extractor, Glass raises the effective max token count to `8192`.
+- If the prompt matches the covered reasons extractor, Glass raises the effective max token count to `24576`.
 
 ## Policy Extraction
 
@@ -139,11 +141,17 @@ Two entrypoints, both PDF-only:
 
 1. Fetch or receive a PDF.
 2. Store the raw PDF in Convex file storage.
-3. Run `buildExtractor().extract(pdfBase64, documentId)`.
+3. Load the PDF bytes from Convex file storage and run `buildExtractor().extract(pdfBytes, documentId)`. Do not pass a signed storage URL into `cl-sdk`; review and follow-up extractors can run long enough that repeated URL fetches become unreliable.
 4. Map `InsuranceDocument` into Glass policy fields.
 5. Persist the extracted document and metadata.
 6. Chunk the document and embed each chunk with `text-embedding-3-small`.
 7. Store chunks in `documentChunks` for semantic retrieval.
+
+Cancellation:
+
+- `policies.cancelExtraction` marks `pipelineError` as `Cancelled by user`.
+- `policyExtraction.ts` checks that flag before phases, before/after each `cl-sdk` model call, and before checkpoint saves. Cancellation stops at the next provider-call boundary and is recorded as an expected pipeline error, not as a transient action failure.
+- `policyExtraction:advance` uses a Convex-backed checkpoint lease before running a phase. This prevents overlapping scheduled advances from running the same long extraction phase concurrently and racing to overwrite extracted policy data. The lease is heartbeat-based and watchdog-scheduled, so if an advance action dies during a long provider call, a later advance can reclaim the checkpoint after the heartbeat goes stale instead of leaving the policy stuck in `running`.
 
 ## Retrieval And Agent Context
 

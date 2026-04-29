@@ -5,7 +5,7 @@ import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
 import { FadeIn } from "@/components/ui/fade-in";
-import { CircleStop, Loader2, RotateCw, Trash2, Eye, X } from "lucide-react";
+import { Loader2, RotateCw, Trash2, Eye, X } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import Link from "next/link";
 import { StructuredLog, type StructuredLogEntry } from "@/components/structured-log";
@@ -385,21 +385,6 @@ export function PolicyDetailBody({
             )}
           </PillButton>
         )}
-        {!isDeleted && canCancelExtraction && (
-          <PillButton
-            size="compact"
-            variant="icon"
-            label="Cancel extraction"
-            disabled={cancelingExtraction}
-            onClick={handleCancelExtraction}
-          >
-            {cancelingExtraction ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <CircleStop className="w-4 h-4" />
-            )}
-          </PillButton>
-        )}
         <ViewPdfButton url={fileUrl} />
       </>,
     );
@@ -622,6 +607,8 @@ export function PolicyDetailBody({
             status={p.pipelineStatus as PipelineStatus | undefined}
             error={p.pipelineError as string | undefined}
             log={p.pipelineLog as LogEntry[] | undefined}
+            onCancel={canCancelExtraction ? handleCancelExtraction : undefined}
+            cancelling={cancelingExtraction}
           />
           <PolicySummary
             policyNumber={policy.policyNumber}
