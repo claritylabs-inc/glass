@@ -19,6 +19,9 @@ import type { ExtractionResult, ExtractionState, PipelineCheckpoint } from "../l
 import { makeEmbedText } from "../lib/sdkCallbacks";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
+import { getModelForOrg } from "../lib/models";
+import { generateObject } from "ai";
+import { z } from "zod";
 
 const CANCELLED_BY_USER = "Cancelled by user";
 const ADVANCE_LEASE_MS = 2 * 60 * 1000;
@@ -82,6 +85,63 @@ function stripLease(
 ): Omit<LeasedPolicyCheckpoint, "lease"> {
   const { lease: _lease, ...rest } = checkpoint;
   return rest;
+}
+
+const orgNameNormalizationSchema = z.object({
+  carrier: z.string().optional(),
+  security: z.string().optional(),
+  mga: z.string().optional(),
+  broker: z.string().optional(),
+  brokerAgency: z.string().optional(),
+});
+
+async function normalizeOrgNamesWithLlm(
+  ctx: ActionCtx,
+  orgId: Id<"organizations">,
+  fields: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const candidates = {
+    carrier: typeof fields.carrier === "string" ? fields.carrier : undefined,
+    security: typeof fields.security === "string" ? fields.security : undefined,
+    mga: typeof fields.mga === "string" ? fields.mga : undefined,
+    broker: typeof fields.broker === "string" ? fields.broker : undefined,
+    brokerAgency: typeof fields.brokerAgency === "string" ? fields.brokerAgency : undefined,
+  };
+  if (!Object.values(candidates).some(Boolean)) return fields;
+
+  try {
+    const model = await getModelForOrg(ctx, orgId, "extraction");
+    const result = await generateObject({
+      model,
+      schema: orgNameNormalizationSchema,
+      prompt: `Normalize insurance organization display names.
+
+Rules:
+- Return concise user-facing names only.
+- Remove legal/disclaimer suffixes, "administered by" clauses, and parenthetical metadata.
+- Keep the canonical brand/entity name.
+- If input is already concise, keep it unchanged.
+- Return only keys present in the input object.
+
+Input JSON:
+${JSON.stringify(candidates)}`,
+    });
+
+    const normalized = result.object;
+    return {
+      ...fields,
+      carrier: normalized.carrier ?? fields.carrier,
+      security: normalized.security ?? fields.security,
+      mga: normalized.mga ?? fields.mga,
+      broker: normalized.broker ?? fields.broker,
+      brokerAgency: normalized.brokerAgency ?? fields.brokerAgency,
+    };
+  } catch (err) {
+    console.warn(
+      `LLM org-name normalization failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return fields;
+  }
 }
 
 async function advanceLeasedPhase(
@@ -341,7 +401,12 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
       }
 
       // Save extracted fields to the policy row
-      const fields = insuranceDocToPolicy(result.document);
+      const mappedFields = insuranceDocToPolicy(result.document);
+      const fields = await normalizeOrgNamesWithLlm(
+        convexCtx,
+        state.orgId as Id<"organizations">,
+        mappedFields,
+      );
       const docName = doc.type === "quote"
         ? (doc.quoteNumber || "quote")
         : (doc.policyNumber || "policy");
