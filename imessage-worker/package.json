@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "description": "Glass iMessage worker — bridges Photon Spectrum to Convex",
+  "packageManager": "npm@11.12.1",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
