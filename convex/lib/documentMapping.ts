@@ -10,6 +10,19 @@
 import type { InsuranceDocument, PolicyDocument, QuoteDocument } from "@claritylabs/cl-sdk";
 import { sanitizeNulls } from "@claritylabs/cl-sdk";
 
+function normalizeOrgName(raw: unknown): string | undefined {
+  if (typeof raw !== "string") return undefined;
+  const value = raw.trim().replace(/\s+/g, " ");
+  if (!value) return undefined;
+
+  // Extraction occasionally includes explanatory/legal parentheticals in org names.
+  // Keep the primary display name and drop trailing metadata.
+  const withoutParenthetical = value.replace(/\s*\((?:administered by|dba|doing business as|a registered business name of)[\s\S]*$/i, "").trim();
+  const withoutAdminClause = withoutParenthetical.replace(/\s*,\s*(?:administered by|dba|doing business as)\b[\s\S]*$/i, "").trim();
+
+  return withoutAdminClause || value;
+}
+
 /**
  * Map an InsuranceDocument (extraction output) to Glass's policies table fields.
  * This is the forward mapping: SDK extraction → Convex mutation args.
@@ -22,11 +35,11 @@ export function insuranceDocToPolicy(doc: InsuranceDocument): Record<string, unk
     : ["other"];
 
   const fields: Record<string, unknown> = {
-    carrier: d.carrier || d.security || "Unknown",
-    security: d.security ?? undefined,
+    carrier: normalizeOrgName(d.carrier) || normalizeOrgName(d.security) || "Unknown",
+    security: normalizeOrgName(d.security) ?? undefined,
     underwriter: d.underwriter ?? undefined,
-    mga: d.mga ?? undefined,
-    broker: d.brokerAgency ?? undefined,
+    mga: normalizeOrgName(d.mga) ?? undefined,
+    broker: normalizeOrgName(d.brokerAgency) ?? undefined,
     policyNumber: isQuote ? (d.quoteNumber || "Unknown") : (d.policyNumber || "Unknown"),
     policyTypes,
     documentType: d.type,
@@ -48,7 +61,7 @@ export function insuranceDocToPolicy(doc: InsuranceDocument): Record<string, unk
   if (d.carrierNaicNumber) fields.carrierNaicNumber = d.carrierNaicNumber;
   if (d.carrierAmBestRating) fields.carrierAmBestRating = d.carrierAmBestRating;
   if (d.carrierAdmittedStatus) fields.carrierAdmittedStatus = d.carrierAdmittedStatus;
-  if (d.brokerAgency) fields.brokerAgency = d.brokerAgency;
+  if (d.brokerAgency) fields.brokerAgency = normalizeOrgName(d.brokerAgency);
   if (d.brokerContactName) fields.brokerContactName = d.brokerContactName;
   if (d.brokerLicenseNumber) fields.brokerLicenseNumber = d.brokerLicenseNumber;
   // Structured entity objects (cl-sdk 0.11+)
