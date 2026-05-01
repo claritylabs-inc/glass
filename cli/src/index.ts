@@ -29,7 +29,7 @@ program
   .description("Clear local auth state")
   .action(async () => {
     const config = await loadConfig();
-    await saveConfig({ ...config, accessToken: undefined, refreshToken: undefined, orgId: undefined });
+    await saveConfig({ ...config, accessToken: undefined, refreshToken: undefined, expiresAt: undefined, orgId: undefined });
     console.log("Logged out");
   });
 
@@ -64,13 +64,7 @@ program.command("activity:list").option("--limit <n>", "page size", "25").action
   print(res.data, getFormat(program.opts()));
 });
 program.command("clients:list").option("--limit <n>", "page size", "25").action(async (opts) => {
-  const config = await loadConfig();
-  const me = await new GlassApi(config).me();
-  const current = me.orgs?.find((org) => org.id === config.orgId);
-  if (current?.type !== "broker") {
-    throw new Error("clients:list is broker-only");
-  }
-  const res = await new GlassApi(config).clients(Number(opts.limit));
+  const res = await new GlassApi(await loadConfig()).clients(Number(opts.limit));
   print(res.data, getFormat(program.opts()));
 });
 

@@ -15,6 +15,8 @@ type TokenResponse = {
   scope?: string;
 };
 
+const CLI_CLIENT_ID = "glass-cli";
+
 async function exchangeCodeForToken(params: {
   baseUrl: string;
   code: string;
@@ -49,18 +51,51 @@ async function exchangeCodeForToken(params: {
   return json;
 }
 
+export async function refreshAccessToken(config: GlassConfig): Promise<Partial<GlassConfig>> {
+  if (!config.refreshToken) {
+    throw new Error("Session expired. Run: glass auth:login");
+  }
+
+  const body = new URLSearchParams({
+    grant_type: "refresh_token",
+    refresh_token: config.refreshToken,
+    client_id: CLI_CLIENT_ID,
+  });
+
+  const response = await fetch(`${config.baseUrl}/oauth/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: body.toString(),
+  });
+
+  const json = (await response.json().catch(() => ({}))) as TokenResponse & {
+    error?: string;
+    error_description?: string;
+  };
+
+  if (!response.ok || !json.access_token) {
+    const message = json.error_description ?? json.error ?? `OAuth refresh failed (${response.status})`;
+    throw new Error(`${message}. Run: glass auth:login`);
+  }
+
+  return {
+    accessToken: json.access_token,
+    refreshToken: json.refresh_token ?? config.refreshToken,
+    expiresAt: Date.now() + (json.expires_in ?? 3600) * 1000,
+  };
+}
+
 export async function loginWithBrowser(config: GlassConfig): Promise<Partial<GlassConfig>> {
   const state = b64url(randomBytes(16));
   const codeVerifier = b64url(randomBytes(32));
   const codeChallenge = createHash("sha256").update(codeVerifier).digest("base64url");
 
   const port = 8917;
-  const clientId = "glass-cli";
   const redirectUri = `http://127.0.0.1:${port}/callback`;
 
   const authUrl = new URL(`${config.baseUrl}/oauth/authorize`);
   authUrl.searchParams.set("response_type", "code");
-  authUrl.searchParams.set("client_id", clientId);
+  authUrl.searchParams.set("client_id", CLI_CLIENT_ID);
   authUrl.searchParams.set("redirect_uri", redirectUri);
   authUrl.searchParams.set("state", state);
   authUrl.searchParams.set("code_challenge", codeChallenge);
@@ -113,7 +148,7 @@ export async function loginWithBrowser(config: GlassConfig): Promise<Partial<Gla
   const token = await exchangeCodeForToken({
     baseUrl: config.baseUrl,
     code: authCode,
-    clientId,
+    clientId: CLI_CLIENT_ID,
     redirectUri,
     codeVerifier,
   });
@@ -121,5 +156,6 @@ export async function loginWithBrowser(config: GlassConfig): Promise<Partial<Gla
   return {
     accessToken: token.access_token,
     refreshToken: token.refresh_token,
+    expiresAt: Date.now() + (token.expires_in ?? 3600) * 1000,
   };
 }

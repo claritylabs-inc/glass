@@ -1,4 +1,6 @@
 import { ApiError, GlassConfig, MeResponse } from "./types.js";
+import { refreshAccessToken } from "./auth.js";
+import { saveConfig } from "./config.js";
 
 type ListResponse<T> = { data: T[]; next_cursor: string | null };
 
@@ -52,9 +54,9 @@ export class GlassApi {
   }
 
   private async post<T>(path: string, body: Record<string, unknown>): Promise<T> {
-    if (!this.config.accessToken) throw new Error("Not authenticated. Run: glass auth login");
+    await this.ensureAccessToken();
 
-    const response = await fetch(`${this.config.baseUrl}${path}`, {
+    let response = await fetch(`${this.config.baseUrl}${path}`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${this.config.accessToken}`,
@@ -62,6 +64,18 @@ export class GlassApi {
       },
       body: JSON.stringify(body),
     });
+
+    if (response.status === 401) {
+      await this.ensureAccessToken(true);
+      response = await fetch(`${this.config.baseUrl}${path}`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${this.config.accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+    }
 
     if (!response.ok) {
       const err = (await response.json().catch(() => ({}))) as { error?: { code?: string; message?: string; request_id?: string } };
@@ -72,15 +86,25 @@ export class GlassApi {
   }
 
   private async request<T>(path: string): Promise<T> {
-    if (!this.config.accessToken) throw new Error("Not authenticated. Run: glass auth login");
-    if (!this.config.orgId && !path.endsWith("/me")) throw new Error("No org selected. Run: glass auth whoami --set-org <orgId>");
+    await this.ensureAccessToken();
+    if (!this.config.orgId && !path.endsWith("/me")) throw new Error("No org selected. Run: glass auth:whoami --set-org <orgId>");
 
-    const response = await fetch(`${this.config.baseUrl}${path}`, {
+    let response = await fetch(`${this.config.baseUrl}${path}`, {
       headers: {
         Authorization: `Bearer ${this.config.accessToken}`,
         ...(this.config.orgId ? { "X-Org-Id": this.config.orgId } : {}),
       },
     });
+
+    if (response.status === 401) {
+      await this.ensureAccessToken(true);
+      response = await fetch(`${this.config.baseUrl}${path}`, {
+        headers: {
+          Authorization: `Bearer ${this.config.accessToken}`,
+          ...(this.config.orgId ? { "X-Org-Id": this.config.orgId } : {}),
+        },
+      });
+    }
 
     if (!response.ok) {
       const body = (await response.json().catch(() => ({}))) as { error?: { code?: string; message?: string; request_id?: string } };
@@ -88,5 +112,15 @@ export class GlassApi {
     }
 
     return (await response.json()) as T;
+  }
+
+  private async ensureAccessToken(force = false): Promise<void> {
+    if (!this.config.accessToken) throw new Error("Not authenticated. Run: glass auth:login");
+    const expiresAt = this.config.expiresAt;
+    if (!force && (!expiresAt || expiresAt - Date.now() > 60_000)) return;
+
+    const next = await refreshAccessToken(this.config);
+    Object.assign(this.config, next);
+    await saveConfig(this.config);
   }
 }

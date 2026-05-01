@@ -11,7 +11,7 @@ export async function loadConfig(): Promise<GlassConfig> {
     const raw = await readFile(configPath, "utf-8");
     return JSON.parse(raw) as GlassConfig;
   } catch {
-    return { baseUrl: process.env.GLASS_BASE_URL ?? "http://localhost:8080" };
+    return { baseUrl: process.env.GLASS_BASE_URL ?? "https://glass.claritylabs.inc" };
   }
 }
 

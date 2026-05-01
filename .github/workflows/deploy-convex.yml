@@ -5,9 +5,14 @@ on:
     branches: [main]
     paths:
       - "convex/**"
+      - "cli/**"
       - "package.json"
-      - "pnpm-lock.yaml"
+      - "package-lock.json"
       - ".github/workflows/deploy-convex.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   deploy:
@@ -15,17 +20,55 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
         with:
-          version: 10
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - run: npx convex deploy --yes
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+
+  publish-cli:
+    runs-on: ubuntu-latest
+    needs: deploy
+    defaults:
+      run:
+        working-directory: cli
+    steps:
+      - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: pnpm
+          cache: npm
+          cache-dependency-path: cli/package-lock.json
+          registry-url: https://registry.npmjs.org
 
-      - run: pnpm install --frozen-lockfile
+      - run: npm ci
 
-      - run: pnpm exec convex deploy --yes
+      - run: npm run typecheck
+
+      - run: npm pack --dry-run
+
+      - name: Check npm version
+        id: npm-version
+        shell: bash
+        run: |
+          PACKAGE_NAME="$(node -p "require('./package.json').name")"
+          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+          if npm view "$PACKAGE_NAME@$PACKAGE_VERSION" version >/dev/null 2>&1; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "$PACKAGE_NAME@$PACKAGE_VERSION is already published"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+            echo "$PACKAGE_NAME@$PACKAGE_VERSION is not published yet"
+          fi
+
+      - name: Publish CLI
+        if: steps.npm-version.outputs.published == 'false'
+        run: npm publish
         env:
-          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

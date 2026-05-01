@@ -40,6 +40,7 @@ export function ConnectionsSection() {
   const [revoking, setRevoking] = useState(false);
   const [copiedLocal, setCopiedLocal] = useState(false);
   const [copiedRemote, setCopiedRemote] = useState(false);
+  const [copiedCli, setCopiedCli] = useState(false);
 
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showGenerateKeyDialog, setShowGenerateKeyDialog] = useState(false);
@@ -214,15 +215,25 @@ export function ConnectionsSection() {
     null,
     2,
   );
+  const cliSnippet = [
+    "npm install -g @claritylabs/glass-cli",
+    "glass auth:login",
+    "glass auth:whoami",
+    "glass auth:whoami --set-org <orgId>",
+    "glass policies:list",
+  ].join("\n");
 
-  function copyTo(text: string, which: "local" | "remote") {
+  function copyTo(text: string, which: "local" | "remote" | "cli") {
     navigator.clipboard.writeText(text);
     if (which === "local") {
       setCopiedLocal(true);
       setTimeout(() => setCopiedLocal(false), 2000);
-    } else {
+    } else if (which === "remote") {
       setCopiedRemote(true);
       setTimeout(() => setCopiedRemote(false), 2000);
+    } else {
+      setCopiedCli(true);
+      setTimeout(() => setCopiedCli(false), 2000);
     }
   }
 
@@ -294,6 +305,36 @@ export function ConnectionsSection() {
               className="shrink-0 p-1.5 rounded hover:bg-foreground/5 transition-colors cursor-pointer"
             >
               {copiedRemote ? (
+                <Check className="w-4 h-4 text-green-500" />
+              ) : (
+                <Copy className="w-4 h-4 text-muted-foreground" />
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Glass CLI */}
+      <div className="rounded-lg border border-foreground/6 bg-card">
+        <div className="px-5 py-3.5 border-b border-foreground/6">
+          <h3 className="!mb-0 text-sm font-medium text-foreground">Glass CLI</h3>
+        </div>
+        <div className="px-5 py-5 space-y-4">
+          <p className="text-body-sm text-muted-foreground">
+            Install the command line interface for terminal workflows, scripts, and local
+            automation. It uses the same OAuth sign-in as connected apps.
+          </p>
+          <div className="relative">
+            <pre className="text-[12px] bg-foreground/[0.03] border border-foreground/6 rounded-lg p-4 pr-11 overflow-x-auto text-muted-foreground">
+              {cliSnippet}
+            </pre>
+            <button
+              type="button"
+              onClick={() => copyTo(cliSnippet, "cli")}
+              className="absolute top-2 right-2 p-1.5 rounded hover:bg-foreground/5 transition-colors cursor-pointer"
+              aria-label="Copy CLI install commands"
+            >
+              {copiedCli ? (
                 <Check className="w-4 h-4 text-green-500" />
               ) : (
                 <Copy className="w-4 h-4 text-muted-foreground" />

@@ -4,6 +4,7 @@ export type GlassConfig = {
   baseUrl: string;
   accessToken?: string;
   refreshToken?: string;
+  expiresAt?: number;
   orgId?: string;
 };
 
@@ -14,7 +15,12 @@ export type MeResponse = {
     name?: string;
   };
   roles?: string[];
-  orgs?: Array<{ id: string; name: string; type?: "broker" | "client" | string }>;
+  accessible_orgs?: Array<{
+    id: string;
+    name: string;
+    created_at?: number;
+    industry?: string;
+  }>;
 };
 
 type ApiErrorBody = {
