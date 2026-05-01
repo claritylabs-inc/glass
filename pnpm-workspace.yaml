@@ -1,0 +1,5 @@
+packages:
+  - .
+
+# Enforce a 7-day dependency cooldown to reduce supply-chain risk.
+minimumReleaseAge: 10080
