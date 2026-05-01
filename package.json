@@ -2,6 +2,7 @@
   "name": "glass",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "npm@11.12.1",
   "scripts": {
     "dev": "next dev -p 8080",
     "build": "next build",
