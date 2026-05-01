@@ -6,7 +6,7 @@ on:
     paths:
       - "convex/**"
       - "package.json"
-      - "pnpm-lock.yaml"
+      - "package-lock.json"
       - ".github/workflows/deploy-convex.yml"
 
 jobs:
@@ -15,17 +15,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10
-
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: pnpm
+          cache: npm
+          cache-dependency-path: package-lock.json
 
-      - run: pnpm install --frozen-lockfile
+      - run: npm ci
 
-      - run: pnpm exec convex deploy --yes
+      - run: npx convex deploy --yes
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
