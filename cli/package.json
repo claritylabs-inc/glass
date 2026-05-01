@@ -5,8 +5,13 @@
   "description": "Command line interface for Glass",
   "license": "UNLICENSED",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/claritylabs-inc/glass.git",
+    "directory": "cli"
+  },
   "bin": {
-    "glass": "./dist/index.js"
+    "glass": "dist/index.js"
   },
   "publishConfig": {
     "access": "public"

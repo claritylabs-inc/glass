@@ -13,6 +13,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   deploy:
@@ -22,7 +23,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
           cache-dependency-path: package-lock.json
 
@@ -43,7 +44,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
           cache-dependency-path: cli/package-lock.json
           registry-url: https://registry.npmjs.org
@@ -71,5 +72,3 @@ jobs:
       - name: Publish CLI
         if: steps.npm-version.outputs.published == 'false'
         run: npm publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
