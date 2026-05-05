@@ -3,7 +3,7 @@ import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { auth } from "./auth";
-import { isImessageEnabled } from "./lib/imessageConfig";
+import { isImessageInboundEnabled } from "./lib/imessageConfig";
 const http = httpRouter();
 
 auth.addHttpRoutes(http);
@@ -32,8 +32,8 @@ http.route({
   path: "/imessage-inbound",
   method: "POST",
   handler: httpAction(async (ctx, request) => {
-    if (!isImessageEnabled()) {
-      return new Response(JSON.stringify({ error: "iMessage is not configured" }), {
+    if (!isImessageInboundEnabled()) {
+      return new Response(JSON.stringify({ error: "iMessage inbound is not configured" }), {
         status: 404,
         headers: { "Content-Type": "application/json" },
       });

@@ -33,7 +33,7 @@ Core layers:
 - Extraction, query agent, and prompts: `@claritylabs/cl-sdk@0.17.x`
 - Providers: OpenAI, MoonshotAI, Anthropic, DeepSeek
 - Email: outbound + inbound via Resend (no IMAP, no Gmail OAuth). All outbound Resend calls go through `convex/lib/resend.ts` (`sendResendEmail`). Sending domain comes from `AGENT_DOMAIN` (prod: `glass.claritylabs.inc`, dev: `dev.claritylabs.inc`). Inbound webhook at `POST /resend-inbound`.
-- iMessage: Photon-backed iMessage is production-only until Photon provides a dev sandbox. Set `IMESSAGE_ENABLED=true`, `IMESSAGE_WORKER_URL`, `IMESSAGE_WORKER_SECRET`, and `NEXT_PUBLIC_GLASS_IMESSAGE_NUMBER` only in production with the production Photon account. Dev/preview environments must leave those unset or `IMESSAGE_ENABLED` false so they do not connect to or advertise the production line.
+- iMessage / Spectrum: Photon-backed iMessage is production-only. Set `IMESSAGE_ENABLED=true`, `IMESSAGE_WORKER_URL`, `IMESSAGE_WORKER_SECRET`, and `NEXT_PUBLIC_GLASS_IMESSAGE_NUMBER` only in production with the production Photon account. For dev/preview testing, keep `IMESSAGE_ENABLED` false and use the Spectrum Terminal provider in `imessage-worker` (`SPECTRUM_PROVIDER=terminal`, `IMESSAGE_TERMINAL_FROM_PHONE=<test user phone>`). Convex accepts terminal-driven inbound messages only when `IMESSAGE_TERMINAL_ENABLED=true`; do not set `NEXT_PUBLIC_GLASS_IMESSAGE_NUMBER` in dev/preview unless intentionally advertising a test line.
 
 ## Current Model Routing
 

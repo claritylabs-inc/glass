@@ -1,6 +1,7 @@
 import http from "node:http";
-import { Spectrum, attachment } from "spectrum-ts";
+import { Spectrum, attachment, type SpectrumInstance } from "spectrum-ts";
 import { imessage } from "spectrum-ts/providers/imessage";
+import { terminal } from "spectrum-ts/providers/terminal";
 import { sendToConvex, type ImessageAttachment } from "./convex.js";
 
 // ── Config ──────────────────────────────────────────────────────────────────
@@ -10,18 +11,33 @@ const PROJECT_SECRET = process.env.PHOTON_PROJECT_SECRET;
 const CONVEX_SITE_URL = process.env.CONVEX_SITE_URL;
 const WORKER_SECRET = process.env.IMESSAGE_WORKER_SECRET ?? "";
 const IMESSAGE_ENABLED = process.env.IMESSAGE_ENABLED === "true";
+const SPECTRUM_PROVIDER = process.env.SPECTRUM_PROVIDER;
+const USE_TERMINAL =
+  SPECTRUM_PROVIDER === "terminal" ||
+  (!IMESSAGE_ENABLED && SPECTRUM_PROVIDER !== "imessage");
+const TRANSPORT = USE_TERMINAL ? "terminal" : "imessage";
+const TERMINAL_FROM_PHONE =
+  process.env.IMESSAGE_TERMINAL_FROM_PHONE ??
+  process.env.DEV_IMESSAGE_FROM_PHONE ??
+  "";
+const TERMINAL_SPACE_ID = process.env.IMESSAGE_TERMINAL_SPACE_ID ?? "chat-1";
 
-if (!IMESSAGE_ENABLED) {
-  console.error("IMESSAGE_ENABLED must be true before connecting to Photon");
+if (TRANSPORT === "imessage" && !IMESSAGE_ENABLED) {
+  console.error("IMESSAGE_ENABLED must be true before connecting to Photon iMessage");
   process.exit(1);
 }
-
-if (!PROJECT_ID || !PROJECT_SECRET) {
+if (TRANSPORT === "imessage" && (!PROJECT_ID || !PROJECT_SECRET)) {
   console.error("PHOTON_PROJECT_ID and PHOTON_PROJECT_SECRET are required");
   process.exit(1);
 }
 if (!CONVEX_SITE_URL) {
   console.error("CONVEX_SITE_URL is required");
+  process.exit(1);
+}
+if (TRANSPORT === "terminal" && !TERMINAL_FROM_PHONE) {
+  console.error(
+    "IMESSAGE_TERMINAL_FROM_PHONE is required for terminal mode so Convex can route to a Glass user",
+  );
   process.exit(1);
 }
 
@@ -59,21 +75,45 @@ function readTimestamp(value: unknown, fieldNames: string[]): number | undefined
   return undefined;
 }
 
-// ── Start ────────────────────────────────────────────────────────────────────
+function normalizePhone(raw: string): string {
+  const cleaned = raw.replace(/[^+\d]/g, "");
+  return cleaned.startsWith("+") ? cleaned : `+${cleaned}`;
+}
 
-async function main() {
-  console.log("[glass-imessage] Connecting to Photon Spectrum...");
+async function startSpectrum(): Promise<SpectrumInstance> {
+  if (TRANSPORT === "terminal") {
+    return await Spectrum({
+      providers: [
+        terminal.config({
+          commands: [
+            { name: "/whoami", description: "Show the configured test phone" },
+          ],
+        }),
+      ],
+    });
+  }
 
-  const app = await Spectrum({
+  return await Spectrum({
     projectId: PROJECT_ID!,
     projectSecret: PROJECT_SECRET!,
     providers: [imessage.config()],
   });
+}
+
+// ── Start ────────────────────────────────────────────────────────────────────
+
+async function main() {
+  console.log(`[glass-imessage] Connecting to Spectrum ${TRANSPORT} provider...`);
+
+  const app = await startSpectrum();
+  const terminalSpacesByPhone = new Map<string, string>();
 
   console.log("[glass-imessage] Connected. Waiting for messages...");
 
   // ── Outbound HTTP server ──────────────────────────────────────────────────
-  // POST /send { toPhone, message } — sends a proactive iMessage to a phone number.
+  // POST /send { toPhone, message } — sends proactive text via the active
+  // Spectrum provider. In terminal mode, this targets the chat that last sent
+  // from `toPhone`, falling back to IMESSAGE_TERMINAL_SPACE_ID / chat-1.
   // Protected by the same IMESSAGE_WORKER_SECRET used for inbound verification.
   const httpPort = Number(process.env.WORKER_HTTP_PORT ?? "3001");
   const httpServer = http.createServer(async (req, res) => {
@@ -113,9 +153,20 @@ async function main() {
     }
 
     try {
-      const im = imessage(app);
-      const user = await im.user(payload.toPhone);
-      const space = await im.space(user);
+      if (TRANSPORT === "terminal") {
+        const terminalClient = terminal(app);
+        const toPhone = normalizePhone(payload.toPhone);
+        const spaceId = terminalSpacesByPhone.get(toPhone) ?? TERMINAL_SPACE_ID;
+        const space = await terminalClient.space({ id: spaceId });
+        await space.send(payload.message);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true }));
+        return;
+      }
+
+      const imessageClient = imessage(app);
+      const user = await imessageClient.user(payload.toPhone);
+      const space = await imessageClient.space(user);
       await space.send(payload.message);
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true }));
@@ -141,10 +192,17 @@ async function main() {
   process.on("SIGINT", shutdown);
 
   for await (const [space, message] of app.messages) {
-    // Only handle iMessage
-    if (message.platform !== "iMessage") continue;
+    if (TRANSPORT === "imessage" && message.platform !== "iMessage") continue;
+    if (TRANSPORT === "terminal" && message.platform !== "terminal") continue;
 
-    const senderId = message.sender.id;
+    const senderId =
+      TRANSPORT === "terminal"
+        ? (TERMINAL_FROM_PHONE || message.sender.id)
+        : message.sender.id;
+    const fromPhone = normalizePhone(senderId);
+    if (TRANSPORT === "terminal") {
+      terminalSpacesByPhone.set(fromPhone, space.id);
+    }
     const sourceMessageId = readStringField(message, [
       "id",
       "messageId",
@@ -177,6 +235,11 @@ async function main() {
     // Process asynchronously so the typing indicator runs while we wait
     void (async () => {
       try {
+        if (TRANSPORT === "terminal" && messageText.trim() === "/whoami") {
+          await space.send(`Terminal messages are routed as ${fromPhone}`);
+          return;
+        }
+
         await space.responding(async () => {
           // Collect attachment if present
           const attachments: ImessageAttachment[] = [];
@@ -191,7 +254,7 @@ async function main() {
           }
 
           const result = await sendToConvex(CONVEX_SITE_URL!, WORKER_SECRET, {
-            fromPhone: senderId,
+            fromPhone,
             messageText: messageText || "(attachment)",
             sourceMessageId,
             receivedAt,

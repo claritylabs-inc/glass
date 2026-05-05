@@ -28,7 +28,7 @@ import {
 } from "../lib/aiUtils";
 import { classifyPromptInjection, enforceInputLimits } from "../lib/security";
 import type { Id } from "../_generated/dataModel";
-import { getImessageWorkerUrl, isImessageEnabled } from "../lib/imessageConfig";
+import { getImessageWorkerUrl, isImessageInboundEnabled } from "../lib/imessageConfig";
 
 /** Normalize a raw phone string to E.164 (+1XXXXXXXXXX). */
 function normalizePhone(raw: string): string {
@@ -200,8 +200,8 @@ export const processInbound = internalAction({
     ),
   },
   handler: async (ctx, args): Promise<ImessageResponse> => {
-    if (!isImessageEnabled()) {
-      console.warn("[imessage] Inbound message received while IMESSAGE_ENABLED is not true");
+    if (!isImessageInboundEnabled()) {
+      console.warn("[imessage] Inbound message received while iMessage inbound is not enabled");
       return { response: "" };
     }
 

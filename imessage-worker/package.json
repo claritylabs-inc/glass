@@ -9,7 +9,9 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "start:terminal": "SPECTRUM_PROVIDER=terminal IMESSAGE_ENABLED=false node dist/index.js",
+    "dev:terminal": "npm run build && npm run start:terminal"
   },
   "dependencies": {
     "spectrum-ts": "latest"
