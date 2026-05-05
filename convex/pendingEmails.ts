@@ -56,6 +56,16 @@ export const create = internalMutation({
     ccAddresses: v.optional(v.array(v.string())),
     subject: v.string(),
     emailBody: v.string(),
+    attachments: v.optional(
+      v.array(
+        v.object({
+          filename: v.string(),
+          contentType: v.string(),
+          size: v.number(),
+          fileId: v.id("_storage"),
+        })
+      )
+    ),
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
     referencedQuoteIds: v.optional(v.array(v.id("policies"))),
   },

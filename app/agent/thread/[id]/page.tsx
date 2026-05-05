@@ -69,6 +69,7 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
   save_note: "Saved note",
   generate_coi: "Generated COI",
   send_email: "Drafted email",
+  email_expert: "Prepared email",
 };
 
 /* ── Unified thread actions ── */

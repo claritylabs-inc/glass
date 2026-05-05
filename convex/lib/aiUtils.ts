@@ -422,6 +422,7 @@ export function buildChannelInstructions(params: {
 - Incorporate the team member's direction naturally.
 - Reference relevant policy/coverage data when applicable.
 - Write from Glass's perspective on behalf of the company.
+- Use the email expert tool when it is available; it owns formatting, attachments, confirmation, and sending.
 - Do not add a personal sign-off as the team member; the platform adds the signature.`;
 
   if (params.platform === "imessage") {
@@ -439,6 +440,7 @@ iMESSAGE MODE:
 - If you checked policy data or used tools, briefly say what you found, not how you worked.
 - If a complete answer requires more detail, give the essential fact and end with "Want more detail?" or "Ask me to expand."
 - For multi-part questions, answer the most important part first and ask if they want the rest.
+- If the user asks you to draft, send, forward, or attach documents to an email, use the email expert tool when available. If email sending is unavailable, say what is missing.
 - Never include email-style greetings or sign-offs.`;
   }
 

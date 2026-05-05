@@ -4,6 +4,7 @@ import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { sendResendEmail } from "../lib/resend";
+import { toResendAttachments } from "../lib/emailSubagent";
 
 export const sendPending = internalAction({
   args: { id: v.id("pendingEmails") },
@@ -17,6 +18,9 @@ export const sendPending = internalAction({
 
     try {
       const payload = JSON.parse(pending.emailPayload);
+      if (pending.attachments && pending.attachments.length > 0) {
+        payload.attachments = await toResendAttachments(ctx, pending.attachments);
+      }
       const result = await sendResendEmail(payload);
       if (!result.ok) throw new Error(`Failed to send email: ${result.error}`);
       const sentMessageId = result.id;
@@ -50,6 +54,7 @@ export const sendPending = internalAction({
           ccAddresses: pending.ccAddresses,
           subject: pending.subject,
           responseMessageId: sentMessageId,
+          attachments: pending.attachments,
           referencedPolicyIds: pending.referencedPolicyIds,
           referencedQuoteIds: pending.referencedQuoteIds,
           legacyConversationId: pending.legacyConversationId,
