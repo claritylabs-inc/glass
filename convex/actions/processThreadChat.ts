@@ -26,7 +26,13 @@ import {
   searchPolicyDocument,
   logAiError,
 } from "../lib/aiUtils";
-import { sendResendEmail, getAgentDomain } from "../lib/resend";
+import { sendResendEmail } from "../lib/resend";
+import {
+  buildEmailExpertTool,
+  getEmailAgentFromName,
+  resolveEmailAgentIdentity,
+  type EmailSubagentResult,
+} from "../lib/emailSubagent";
 import { buildIntelligenceContext } from "../lib/agentPrompts";
 import {
   classifyPromptInjection,
@@ -370,8 +376,8 @@ export const run = internalAction({
       const thread = await ctx.runQuery(internal.threads.getInternal, { id: args.threadId });
       const hasEmailMessages = allMessages.some((m: Record<string, unknown>) => m.channel === "email");
       const isMixedThread = hasEmailMessages || !!thread?.legacyConversationId;
-      // Can send emails from any thread with a threadEmail address
-      const canSendEmail = !!thread?.threadEmail;
+      const emailIdentity = await resolveEmailAgentIdentity(ctx, org);
+      const canSendEmail = emailIdentity.canSend;
 
       // Web chat addendum — adjust email flow based on autoSendEmails setting
       const autoSend = org.autoSendEmails === true; // default false (require confirmation)
@@ -415,8 +421,64 @@ export const run = internalAction({
         orgMemoryBlock +
         attachmentNote;
 
+      const orgMembers = await ctx.runQuery(internal.users.listByOrgInternal, { orgId: args.orgId });
+      const orgMemberEmails = orgMembers.map((m: any) => m?.email).filter(Boolean) as string[];
+      const allowedRecipients = collectAllowedRecipients(
+        allMessages as Parameters<typeof collectAllowedRecipients>[0],
+        orgMemberEmails,
+      );
+      const availableAttachments = allMessages.flatMap((m: Record<string, unknown>) =>
+        ((m.attachments as Array<{
+          filename: string;
+          contentType: string;
+          size: number;
+          fileId?: Id<"_storage">;
+        }> | undefined) ?? [])
+          .filter((att) => att.fileId)
+          .map((att) => ({
+            filename: att.filename,
+            contentType: att.contentType,
+            size: att.size,
+            fileId: att.fileId!,
+          })),
+      );
+      const emailToolResult: { current: EmailSubagentResult | null } = { current: null };
+
       // streamText with tools — supports both streaming Q&A and tool calls
-      const tools = buildTools(ctx, { orgId: args.orgId, threadId: args.threadId }, org);
+      const tools = {
+        ...buildTools(ctx, { orgId: args.orgId, threadId: args.threadId }, org),
+        ...(emailIdentity.canSend && emailIdentity.agentAddress && emailIdentity.fromHeader
+          ? {
+              email_expert: buildEmailExpertTool(ctx, {
+                orgId: args.orgId,
+                threadId: args.threadId,
+                chatMessageId: agentMsgId,
+                channel: "web",
+                fromHeader: `${getEmailAgentFromName(emailIdentity.brokerBranding)} <${thread?.threadEmail ?? emailIdentity.agentAddress}>`,
+                agentAddress: thread?.threadEmail ?? emailIdentity.agentAddress,
+                brokerBranding: emailIdentity.brokerBranding,
+                senderEmail: user?.email,
+                defaultCc: user?.email ? [user.email] : undefined,
+                subjectHint: thread?.title && thread.title !== "New chat" ? thread.title : undefined,
+                allowedRecipients,
+                availableAttachments,
+                referencedPolicyIds: relevantPolicyIds as Id<"policies">[],
+                referencedQuoteIds: relevantQuoteIds as Id<"policies">[],
+                autoSendEmails: org.autoSendEmails === true,
+                emailSendDelay: org.emailSendDelay,
+                autoGenerateCoi: org.autoGenerateCoi,
+                coiHandling: org.coiHandling,
+                conversationContext: allMessages
+                  .slice(-12)
+                  .map((m: Record<string, unknown>) => `${m.role}: ${m.content}`)
+                  .join("\n"),
+                onResult: (result) => {
+                  emailToolResult.current = result;
+                },
+              }),
+            }
+          : {}),
+      };
       let content = "";
       let lastFlush = Date.now();
       const FLUSH_INTERVAL = 150;
@@ -433,6 +495,7 @@ export const run = internalAction({
         lookup_policy_section: "Reading policy sections...",
         compare_coverages: "Comparing coverages...",
         send_email: "Drafting email...",
+        email_expert: "Preparing email...",
         save_note: "Saving note...",
         generate_coi: "Generating COI...",
       };
@@ -557,6 +620,16 @@ export const run = internalAction({
         toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
         attachments: responseAttachments.length > 0 ? responseAttachments : undefined,
       });
+      const emailResult = emailToolResult.current;
+      if (emailResult?.status === "pending" && emailResult.pendingEmailId) {
+        await ctx.runMutation(internal.threads.updateAgentMessage, {
+          id: agentMsgId,
+          content: emailResult.responseBody,
+          pendingEmailId: emailResult.pendingEmailId,
+          status: "pending_send",
+        });
+        content = emailResult.responseBody;
+      }
       // Save final reasoning if any
       if (reasoning) {
         await ctx.runMutation(internal.threads.streamReasoning, {
@@ -575,11 +648,8 @@ export const run = internalAction({
         if (sendMatch) {
           try {
             const emailBody = sendMatch[2].trim();
-            const agentHandle = org.agentHandle;
-            if (!agentHandle) throw new Error("No agent handle configured");
-
-            const agentDomain = getAgentDomain();
-            const agentAddress = thread?.threadEmail ?? `${agentHandle}@${agentDomain}`;
+            if (!emailIdentity.agentAddress) throw new Error("No agent handle configured");
+            const agentAddress = thread?.threadEmail ?? emailIdentity.agentAddress;
 
             // Find recipient — prefer the explicit address in the agent's output,
             // fall back to the last inbound email sender
@@ -640,7 +710,7 @@ export const run = internalAction({
             const refMessageId = lastEmailMsg?.responseMessageId ?? lastEmailMsg?.messageId;
 
             const emailPayload: Record<string, unknown> = {
-              from: `Glass <${agentAddress}>`,
+              from: `${getEmailAgentFromName(emailIdentity.brokerBranding)} <${agentAddress}>`,
               to: replyTo,
               subject: replySubject,
               text: plainText,

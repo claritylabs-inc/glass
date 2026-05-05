@@ -10,7 +10,6 @@ import {
   lookupPolicy,
   lookupPolicySection,
   compareCoverages,
-  sendEmail,
   saveNote,
   generateCoi as generateCoiTool,
   extractPolicyAttachment,
@@ -33,6 +32,10 @@ import {
   validateEmailRecipient,
 } from "../lib/security";
 import { isWhiteLabelingEnabled } from "../lib/branding";
+import {
+  buildEmailExpertTool,
+  type EmailSubagentResult,
+} from "../lib/emailSubagent";
 
 const CONSUMER_DOMAINS = new Set([
   "gmail.com", "googlemail.com", "yahoo.com", "yahoo.co.uk",
@@ -983,90 +986,70 @@ export const processInbound = internalAction({
             return { policy1: mapP(p1), policy2: mapP(p2) };
           },
         },
-        send_email: {
-          ...sendEmail,
-          execute: async (params: { to: string; subject: string; body: string; cc?: string[] }) => {
-            if (!isInternal || effectiveMode !== "direct") {
-              return "Email sending is only available for authenticated team members in direct mode.";
-            }
-            validateThirdPartyRecipient(params.to);
-            const requestedCc = (params.cc ?? []).filter(Boolean);
-            for (const cc of requestedCc) validateThirdPartyRecipient(cc);
-
-            if (org.autoSendEmails !== true) {
-              return [
-                `Draft email to ${params.to}:`,
-                "",
-                `Subject: ${params.subject}`,
-                "",
-                params.body,
-                "",
-                "Ready to send?",
-              ].join("\n");
-            }
-
-            const sig = buildSignature(agentAddress, brokerBranding);
-            const plainText = params.body + sig.text;
-            const htmlBody = params.body
-              .split("\n\n")
-              .map((p) => `<p style="margin:0 0 12px;line-height:1.5">${p.replace(/\n/g, "<br>")}</p>`)
-              .join("\n") + sig.html;
-            const sendCc = [...new Set([fromEmail, ...requestedCc].filter((e) => e !== params.to))];
-            const sendPayload: Record<string, unknown> = {
-              from: fromHeader,
-              to: params.to,
-              cc: sendCc,
-              subject: params.subject,
-              text: plainText,
-              html: htmlBody,
-            };
-            if (messageId) {
-              sendPayload.headers = {
-                "In-Reply-To": messageId,
-                "References": messageId,
-              };
-            }
-
-            const sendDelay = org?.emailSendDelay ?? 5;
-            if (sendDelay > 0 && unifiedThreadId) {
-              const scheduledSendTime = Date.now() + sendDelay * 1000;
-              const pendingEmailId = await ctx.runMutation(internal.pendingEmails.create, {
+        ...(isInternal && effectiveMode === "direct"
+          ? {
+              email_expert: buildEmailExpertTool(ctx, {
                 orgId,
                 threadId: unifiedThreadId,
-                emailPayload: JSON.stringify(sendPayload),
-                scheduledSendTime,
                 legacyConversationId: conversationId,
-                recipientEmail: params.to,
-                ccAddresses: sendCc,
-                subject: params.subject,
-                emailBody: params.body,
+                channel: "email",
+                fromHeader,
+                agentAddress,
+                brokerBranding,
+                senderEmail: fromEmail,
+                defaultCc: [fromEmail],
+                subjectHint: subject,
+                inReplyTo: messageId,
+                references: messageId,
+                allowedRecipients: [
+                  ...new Set([
+                    ...collectAllowedRecipients(
+                      [
+                        ...threadMessagesForGuards.map((m) => ({ ...m, channel: "email" })),
+                        {
+                          channel: "email",
+                          fromEmail,
+                          toAddresses,
+                          ccAddresses,
+                        },
+                      ],
+                      memberEmails,
+                    ),
+                    ...memberEmails,
+                  ].map((email) => email.toLowerCase())),
+                ],
+                availableAttachments: attachmentRecords
+                  .filter((rec): rec is typeof rec & { fileId: Id<"_storage"> } => !!rec.fileId)
+                  .map((rec) => ({
+                    filename: rec.filename,
+                    contentType: rec.contentType,
+                    size: rec.size,
+                    fileId: rec.fileId,
+                  })),
                 referencedPolicyIds: relevantPolicyIds.length > 0 ? (relevantPolicyIds as Id<"policies">[]) : undefined,
                 referencedQuoteIds: relevantQuoteIds.length > 0 ? (relevantQuoteIds as Id<"policies">[]) : undefined,
-              });
-              await ctx.scheduler.runAfter(
-                sendDelay * 1000,
-                internal.actions.sendPendingEmail.sendPending,
-                { id: pendingEmailId },
-              );
-              toolSentEmail = {
-                responseBody: `Sending email to ${params.to} (CC: ${sendCc.join(", ")})...`,
-                responseTo: params.to,
-                responseCc: sendCc,
-              };
-              return toolSentEmail.responseBody;
+                autoSendEmails: org.autoSendEmails === true,
+                emailSendDelay: org.emailSendDelay,
+                autoGenerateCoi: org.autoGenerateCoi,
+                coiHandling: org.coiHandling,
+                conversationContext: [
+                  `Inbound email from ${fromName ? `${fromName} <${fromEmail}>` : fromEmail}`,
+                  `Subject: ${subject}`,
+                  body,
+                ].join("\n\n"),
+                onResult: (result: EmailSubagentResult) => {
+                  if (result.status === "sent" || result.status === "pending") {
+                    toolSentEmail = {
+                      responseBody: result.responseBody,
+                      responseTo: result.responseTo ?? "",
+                      responseCc: result.responseCc,
+                      responseMessageId: result.responseMessageId,
+                    };
+                  }
+                },
+              }),
             }
-
-            const sendOutcome = await sendResendEmail(sendPayload as Parameters<typeof sendResendEmail>[0]);
-            if (!sendOutcome.ok) throw new Error(`Failed to send email: ${sendOutcome.error}`);
-            toolSentEmail = {
-              responseBody: `Email sent to ${params.to} (CC: ${sendCc.join(", ")}).`,
-              responseTo: params.to,
-              responseCc: sendCc,
-              responseMessageId: sendOutcome.id,
-            };
-            return toolSentEmail.responseBody;
-          },
-        },
+          : {}),
         save_note: {
           ...saveNote,
           execute: async (params: { content: string; type: string; policyId?: string }) => {

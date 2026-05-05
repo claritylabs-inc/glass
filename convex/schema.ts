@@ -951,6 +951,12 @@ export default defineSchema({
     ccAddresses: v.optional(v.array(v.string())),
     subject: v.string(),
     emailBody: v.string(), // plain content (for thread record)
+    attachments: v.optional(v.array(v.object({
+      filename: v.string(),
+      contentType: v.string(),
+      size: v.number(),
+      fileId: v.id("_storage"),
+    }))),
     // For unified thread dual-write
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
     referencedQuoteIds: v.optional(v.any()), // legacy: may contain old quotes table IDs

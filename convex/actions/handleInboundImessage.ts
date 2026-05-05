@@ -29,6 +29,11 @@ import {
 import { classifyPromptInjection, enforceInputLimits } from "../lib/security";
 import type { Id } from "../_generated/dataModel";
 import { getImessageWorkerUrl, isImessageInboundEnabled } from "../lib/imessageConfig";
+import {
+  buildEmailExpertTool,
+  resolveEmailAgentIdentity,
+  type EmailSubagentResult,
+} from "../lib/emailSubagent";
 
 /** Normalize a raw phone string to E.164 (+1XXXXXXXXXX). */
 function normalizePhone(raw: string): string {
@@ -275,6 +280,7 @@ export const processInbound = internalAction({
     if (!org) return await finish("Unable to find your account.");
 
     const userName = user.name?.split(/\s+/)[0];
+    const emailIdentity = await resolveEmailAgentIdentity(ctx, org);
 
     // ── 6. Store attachments in Convex file storage ───────────────────────
     type AttachmentRecord = {
@@ -452,7 +458,11 @@ export const processInbound = internalAction({
         userName,
         siteUrl,
       }) +
-      buildChannelInstructions({ platform: "imessage" }) +
+      buildChannelInstructions({
+        platform: "imessage",
+        canSendEmail: emailIdentity.canSend,
+        autoSendEmails: org.autoSendEmails === true,
+      }) +
       "\n\n" +
       policyContext +
       buildPolicyToolInstructions(8) +
@@ -461,6 +471,24 @@ export const processInbound = internalAction({
 
     // ── 13. Wire up tools ─────────────────────────────────────────────────
     const coiAttachments: Array<{ storageId: Id<"_storage">; filename: string }> = [];
+    const orgMembers = await ctx.runQuery(internal.users.listByOrgInternal, { orgId });
+    const allowedRecipients = [
+      ...new Set(
+        [
+          user.email,
+          ...orgMembers.map((member: any) => member?.email),
+        ].filter(Boolean).map((email) => String(email).toLowerCase()),
+      ),
+    ];
+    const availableEmailAttachments = attachmentRecords
+      .filter((att): att is typeof att & { fileId: Id<"_storage"> } => !!att.fileId)
+      .map((att) => ({
+        filename: att.filename,
+        contentType: att.contentType,
+        size: att.size,
+        fileId: att.fileId,
+      }));
+    const emailToolResult: { current: EmailSubagentResult | null } = { current: null };
 
     const imessageTools = {
       lookup_policy: {
@@ -559,6 +587,31 @@ export const processInbound = internalAction({
           }
         },
       },
+      ...(emailIdentity.canSend && emailIdentity.agentAddress && emailIdentity.fromHeader
+        ? {
+            email_expert: buildEmailExpertTool(ctx, {
+              orgId,
+              threadId,
+              channel: "imessage",
+              fromHeader: emailIdentity.fromHeader,
+              agentAddress: emailIdentity.agentAddress,
+              brokerBranding: emailIdentity.brokerBranding,
+              senderEmail: user.email,
+              defaultCc: user.email ? [user.email] : undefined,
+              allowedRecipients,
+              availableAttachments: availableEmailAttachments,
+              referencedPolicyIds: relevantPolicyIds as Id<"policies">[],
+              autoSendEmails: org.autoSendEmails === true,
+              emailSendDelay: org.emailSendDelay,
+              autoGenerateCoi: org.autoGenerateCoi,
+              coiHandling: org.coiHandling,
+              conversationContext: recentConversationContext,
+              onResult: (result) => {
+                emailToolResult.current = result;
+              },
+            }),
+          }
+        : {}),
     };
 
     // ── 14. Run model ─────────────────────────────────────────────────────
@@ -573,7 +626,15 @@ export const processInbound = internalAction({
       stopWhen: stepCountIs(8),
     });
 
-    const responseText = result.text;
+    let responseText = result.text;
+    const emailResult = emailToolResult.current;
+    if (
+      emailResult?.status === "sent" ||
+      emailResult?.status === "pending" ||
+      (emailResult?.status === "needs_confirmation" && !responseText.trim())
+    ) {
+      responseText = emailResult.responseBody;
+    }
 
     // ── 15. Resolve COI attachment URLs ───────────────────────────────────
     const responseAttachments: Array<{ url: string; filename: string; mimeType: string }> = [];

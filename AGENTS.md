@@ -214,17 +214,28 @@ Inbound email arrives at `POST /resend-inbound` and is handled by `convex/action
   - `lookup_policy`
   - `lookup_policy_section`
   - `compare_coverages`
+  - `email_expert` — delegates outbound drafting/sending to the shared email subagent when the sender is an authenticated internal team member in direct mode
   - `save_note` — writes to `orgMemory`
   - `generate_coi`
   - `extract_policy_attachment` — extracts PDF attachments via `extractFromUploadInternal`
 - After a reply is produced, a Haiku summarization pass writes a `source: "email"` observation to `orgMemory`.
+
+### Glass Agent Email Sending
+
+Outbound emails sent by Glass Agent are centralized in `convex/lib/emailSubagent.ts`.
+
+- Channel agents should delegate draft/send/forward requests to the `email_expert` tool instead of hand-rolling email payloads.
+- The email subagent owns recipient caution, formatting, signatures, attachment preparation, Resend payload construction, pending-send scheduling, and sent-email thread records.
+- It can attach original policy PDFs from `policies.fileId`, user-uploaded files already present in the conversation, and generated COI PDFs from `generateCoi.run`.
+- It requires confirmation instead of sending when the recipient email is inferred or unknown, the recipient name is missing, the body/subject is incomplete, attachments are ambiguous, or `autoSendEmails` is false and the user has not explicitly approved the exact draft.
+- Pending emails persist attachment metadata in `pendingEmails.attachments`; the scheduled sender writes those attachments back into the unified thread email message after Resend accepts the send.
 
 ### Agent Q&A (Chat)
 
 1. Load org context, policies, and `orgMemory`.
 2. Build retrieval-backed document context + orgMemory context + conversation memory.
 3. If the user message has attachments (images, PDFs, text), read them from Convex storage and include as AI SDK multipart content parts.
-4. Run chat model via `streamText` with tools: `lookup_policy`, `lookup_policy_section`, `compare_coverages`, `save_note`, `generate_coi`.
+4. Run chat model via `streamText` with tools: `lookup_policy`, `lookup_policy_section`, `compare_coverages`, `email_expert`, `save_note`, `generate_coi`.
 5. Persist conversation state.
 
 ## UI
