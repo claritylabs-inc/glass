@@ -9,6 +9,7 @@ import {
   Puzzle,
   Network,
   Brain,
+  Link2,
 } from "lucide-react";
 import { LogoIcon } from "@/components/ui/logo-icon";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -26,6 +27,7 @@ import { MemorySection } from "@/components/settings/memory-section";
 import { BrokerTeamTab } from "@/components/settings/broker-team-tab";
 import { BrokerAgentTab } from "@/components/settings/broker-agent-tab";
 import { ModelsSection } from "@/components/settings/models-section";
+import { ConnectedOrgsSection } from "@/components/settings/connected-orgs-section";
 import NotificationPreferencesPage from "./notifications/page";
 import { Bell } from "lucide-react";
 
@@ -34,6 +36,7 @@ const CLIENT_SETTINGS_SECTIONS = [
   { id: "team", label: "Team", icon: Users },
   { id: "memory", label: "Memory", icon: Brain },
   { id: "connections", label: "Connections", icon: Network },
+  { id: "connected-orgs", label: "Connected orgs", icon: Link2 },
   { id: "integrations", label: "Integrations", icon: Puzzle },
   { id: "notifications", label: "Notifications", icon: Bell },
 ] as const;
@@ -44,6 +47,7 @@ const BROKER_SETTINGS_SECTIONS = [
   { id: "agent", label: "Agent", icon: GlassStarIcon },
   { id: "models", label: "Models", icon: Brain },
   { id: "connections", label: "Connections", icon: Network },
+  { id: "connected-orgs", label: "Connected orgs", icon: Link2 },
   { id: "notifications", label: "Notifications", icon: Bell },
 ] as const;
 
@@ -132,6 +136,7 @@ function SectionContent({ section, isBroker }: { section: SettingsSection; isBro
          section === "agent" ? <BrokerAgentTab /> :
          section === "models" ? <ModelsSection /> :
          section === "connections" ? <ConnectionsSection /> :
+         section === "connected-orgs" ? <ConnectedOrgsSection /> :
          section === "notifications" && currentOrg?.orgId ? (
            <NotificationPreferencesPage orgId={currentOrg.orgId} />
          ) : null}
@@ -148,6 +153,8 @@ function SectionContent({ section, isBroker }: { section: SettingsSection; isBro
         <MemorySection />
       ) : section === "connections" ? (
         <ConnectionsSection />
+      ) : section === "connected-orgs" ? (
+        <ConnectedOrgsSection />
       ) : section === "integrations" ? (
         <IntegrationsSection />
       ) : section === "notifications" && currentOrg?.orgId ? (
