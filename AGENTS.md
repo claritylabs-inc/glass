@@ -59,6 +59,25 @@ Fallback behavior:
 - `getModel()` falls back to Claude Haiku if a provider is unavailable.
 - `generateTextWithFallback()` and `generateStructuredWithFallback()` retry failed calls on `gpt-5.5` with reasoning disabled unless the original model already was GPT-5.5 or Claude Haiku.
 
+## Connected Vendor/Client Accounts
+
+Glass supports one-way connected organization relationships for vendor/client insurance access, modeled after the platform/connected-account idea of a parent org receiving scoped access to a connected org's records. The implementation intentionally keeps this separate from the broker/client hierarchy so broker portal features remain broker-only.
+
+Schema: `connectedOrgRelationships` stores `clientOrgId`, `vendorOrgId`, `status` (`pending` | `active` | `revoked`), audit user IDs, label/note, and timestamps. Active relationships grant the client/customer org read-only access to selected vendor insurance system-of-record data. Relationships are one-hop only; a client that can read a vendor does not inherit that vendor's broker, clients, vendors, email, threads, or write capabilities. White labeling continues to be resolved from the viewer's own org/broker context, not from a connected vendor.
+
+Shared access rules live in `convex/lib/access.ts`:
+
+- `member` — direct org member, full org-member capabilities by role.
+- `broker_of_client` — broker member viewing a managed client, matching existing broker portal behavior.
+- `connected_client` — member of a client/customer org viewing an approved vendor org, read-only for policies/org profile.
+
+Surfaces:
+
+- Web: Settings → Connected orgs uses `convex/connectedOrgs.ts` to request, approve, and revoke relationships.
+- REST: `GET /api/v1/vendors`, `GET /api/v1/vendors/:id`, and `GET /api/v1/vendors/:id/policies`.
+- MCP/CLI: `list_connected_vendors`, `get_connected_vendor`, `list_connected_vendor_policies`.
+- Agent: MCP chat receives connected-vendor roster context; exact vendor policy lists should come from the MCP vendor tools.
+
 ## Org Memory
 
 `orgMemory` is the single per-org knowledge store. It replaces the old `orgIntelligence`, `businessContext`, dream consolidation, and proactive analysis pipelines.

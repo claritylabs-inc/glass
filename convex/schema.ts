@@ -212,6 +212,32 @@ export default defineSchema({
     .index("by_orgId_producerId", ["orgId", "producerId"])
     .index("by_clientOrgId", ["clientOrgId"]),
 
+  connectedOrgRelationships: defineTable({
+    // A client/customer org can view selected insurance system-of-record data
+    // from a vendor org after the vendor approves the relationship. This is
+    // intentionally one directional and read-only; no org inherits onward
+    // access from either side.
+    clientOrgId: v.id("organizations"),
+    vendorOrgId: v.id("organizations"),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("active"),
+      v.literal("revoked"),
+    ),
+    requestedByUserId: v.id("users"),
+    approvedByUserId: v.optional(v.id("users")),
+    revokedByUserId: v.optional(v.id("users")),
+    relationshipLabel: v.optional(v.string()),
+    note: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_clientOrgId", ["clientOrgId"])
+    .index("by_vendorOrgId", ["vendorOrgId"])
+    .index("by_clientOrgId_vendorOrgId", ["clientOrgId", "vendorOrgId"])
+    .index("by_vendorOrgId_status", ["vendorOrgId", "status"])
+    .index("by_clientOrgId_status", ["clientOrgId", "status"]),
+
   clientInvitations: defineTable({
     brokerOrgId: v.id("organizations"),
     clientOrgName: v.optional(v.string()),

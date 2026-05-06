@@ -19,6 +19,7 @@ const TABLES: TableNames[] = [
   "orgMemory",
   "orgInvitations",
   "brokerClientAssignments",
+  "connectedOrgRelationships",
   "clientInvitations",
   "policies",
   "policyFiles",

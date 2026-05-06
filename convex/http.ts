@@ -900,6 +900,29 @@ const MCP_TOOLS = [
     inputSchema: { type: "object" as const, properties: {} },
   },
   {
+    name: "list_connected_vendors",
+    description: "List vendor organizations that have approved read-only insurance access for the caller's org.",
+    inputSchema: { type: "object" as const, properties: {} },
+  },
+  {
+    name: "get_connected_vendor",
+    description: "Get a connected vendor org profile and policy count.",
+    inputSchema: {
+      type: "object" as const,
+      properties: { vendor_org_id: { type: "string", description: "Connected vendor org ID" } },
+      required: ["vendor_org_id"],
+    },
+  },
+  {
+    name: "list_connected_vendor_policies",
+    description: "List policies for a connected vendor org that approved access.",
+    inputSchema: {
+      type: "object" as const,
+      properties: { vendor_org_id: { type: "string", description: "Connected vendor org ID" } },
+      required: ["vendor_org_id"],
+    },
+  },
+  {
     name: "list_my_policies",
     description: "List policies for the caller's client org. Client only.",
     inputSchema: { type: "object" as const, properties: {} },
@@ -1057,20 +1080,58 @@ async function handleToolCall(
     }
     // ── Broker tools ──
     case "list_clients": {
-      const clients = await ctx.runQuery((internal as any).clients.listForBroker, { brokerOrgId: orgId });
+      const clients = await ctx.runQuery((internal as any).clients.listForBrokerInternal, {
+        brokerOrgId: orgId,
+        userId,
+      });
       return { content: [{ type: "text", text: JSON.stringify(clients, null, 2) }] };
     }
     case "get_client": {
       const clientOrgId = args.client_org_id as Id<"organizations">;
-      const clientOrg = await ctx.runQuery(internal.orgs.getInternal, { id: clientOrgId });
+      const detail = await ctx.runQuery((internal as any).clients.getDetailInternal, {
+        brokerOrgId: orgId,
+        clientOrgId,
+        userId,
+      });
+      if (!detail) throw new Error("Not found");
       const policies = await ctx.runQuery(internal.policies.listAllInternal, { orgId: clientOrgId });
-      return { content: [{ type: "text", text: JSON.stringify({ org: clientOrg, policy_count: policies.length }, null, 2) }] };
+      return { content: [{ type: "text", text: JSON.stringify({ org: detail, policy_count: policies.length }, null, 2) }] };
     }
     case "list_broker_activity": {
       const activity = await ctx.runQuery((internal as any).brokerActivity.listPortfolio, {
         orgId, limit: 50,
       }).catch(() => []);
       return { content: [{ type: "text", text: JSON.stringify(activity, null, 2) }] };
+    }
+    case "list_connected_vendors": {
+      const vendors = await ctx.runQuery((internal as any).connectedOrgs.listActiveVendorsInternal, { clientOrgId: orgId });
+      return { content: [{ type: "text", text: JSON.stringify(vendors, null, 2) }] };
+    }
+    case "get_connected_vendor": {
+      const vendorOrgId = args.vendor_org_id as Id<"organizations">;
+      if (!vendorOrgId) throw new Error("Missing vendor_org_id");
+      const allowed = await ctx.runQuery((internal as any).connectedOrgs.hasActiveConnectionInternal, {
+        clientOrgId: orgId,
+        vendorOrgId,
+      });
+      if (!allowed) throw new Error("Connected vendor not found");
+      const org = await ctx.runQuery(internal.orgs.getInternal, { id: vendorOrgId });
+      const policies = await ctx.runQuery(internal.policies.listAllInternal, { orgId: vendorOrgId });
+      return { content: [{ type: "text", text: JSON.stringify({ org, policy_count: policies.length }, null, 2) }] };
+    }
+    case "list_connected_vendor_policies": {
+      const vendorOrgId = args.vendor_org_id as Id<"organizations">;
+      if (!vendorOrgId) throw new Error("Missing vendor_org_id");
+      const allowed = await ctx.runQuery((internal as any).connectedOrgs.hasActiveConnectionInternal, {
+        clientOrgId: orgId,
+        vendorOrgId,
+      });
+      if (!allowed) throw new Error("Connected vendor not found");
+      const policies = await ctx.runQuery(internal.policies.listAllInternal, { orgId: vendorOrgId });
+      return { content: [{ type: "text", text: JSON.stringify(policies.map((p: any) => ({
+        _id: p._id, carrier: p.carrier, policyNumber: p.policyNumber, policyTypes: p.policyTypes,
+        effectiveDate: p.effectiveDate, expirationDate: p.expirationDate, premium: p.premium, insuredName: p.insuredName,
+      })), null, 2) }] };
     }
     case "list_my_policies": {
       const policies = await ctx.runQuery(internal.policies.listAllInternal, { orgId });
@@ -1206,8 +1267,9 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     try {
       const identity = await requireMcpAuth(ctx, request);
-      const result = await ctx.runQuery((internal as any).clients.listForBroker, {
+      const result = await ctx.runQuery((internal as any).clients.listForBrokerInternal, {
         brokerOrgId: identity.orgId as Id<"organizations">,
+        userId: identity.userId as Id<"users">,
       });
       return jsonResponse(result);
     } catch (e) {
@@ -1226,10 +1288,14 @@ http.route({
       const identity = await requireMcpAuth(ctx, request);
       const clientOrgId = getQueryParam(request, "clientOrgId");
       if (!clientOrgId) return jsonResponse({ error: "Missing clientOrgId" }, 400);
-      const org = await ctx.runQuery(internal.orgs.getInternal, { id: clientOrgId as Id<"organizations"> });
-      if (!org) return jsonResponse({ error: "Not found" }, 404);
+      const detail = await ctx.runQuery((internal as any).clients.getDetailInternal, {
+        brokerOrgId: identity.orgId as Id<"organizations">,
+        clientOrgId: clientOrgId as Id<"organizations">,
+        userId: identity.userId as Id<"users">,
+      });
+      if (!detail) return jsonResponse({ error: "Not found" }, 404);
       const policies = await ctx.runQuery(internal.policies.listAllInternal, { orgId: clientOrgId as Id<"organizations"> });
-      return jsonResponse({ org, policy_count: policies.length });
+      return jsonResponse({ org: detail, policy_count: policies.length });
     } catch (e) {
       if (e instanceof Response) return e;
       return jsonResponse({ error: String(e) }, 500);
@@ -1515,6 +1581,79 @@ http.route({
   }),
 });
 
+// ── GET /api/v1/vendors ──
+http.route({
+  path: "/api/v1/vendors",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const identity = await requireApiAuth(ctx, request);
+      const vendors = await ctx.runQuery((internal as any).connectedOrgs.listActiveVendorsInternal, {
+        clientOrgId: identity.orgId,
+      });
+      return jsonResponse({ data: vendors, next_cursor: null });
+    } catch (e) {
+      if (e instanceof Response) return e;
+      return jsonResponse({ error: { code: "internal_error", message: String(e) } }, 500);
+    }
+  }),
+});
+
+// ── GET /api/v1/vendors/:id ──
+http.route({
+  path: "/api/v1/vendors/:id",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const identity = await requireApiAuth(ctx, request);
+      const vendorOrgId = new URL(request.url).pathname.split("/").pop() as Id<"organizations">;
+      const allowed = await ctx.runQuery((internal as any).connectedOrgs.hasActiveConnectionInternal, {
+        clientOrgId: identity.orgId,
+        vendorOrgId,
+      });
+      if (!allowed) return jsonResponse({ error: { code: "not_found", message: "Vendor not found" } }, 404);
+      const [org, policies] = await Promise.all([
+        ctx.runQuery(internal.orgs.getInternal, { id: vendorOrgId }),
+        ctx.runQuery(internal.policies.listAllInternal, { orgId: vendorOrgId }),
+      ]);
+      return jsonResponse({ org, policy_count: policies.length });
+    } catch (e) {
+      if (e instanceof Response) return e;
+      return jsonResponse({ error: { code: "internal_error", message: String(e) } }, 500);
+    }
+  }),
+});
+
+// ── GET /api/v1/vendors/:id/policies ──
+http.route({
+  path: "/api/v1/vendors/:id/policies",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const identity = await requireApiAuth(ctx, request);
+      const parts = new URL(request.url).pathname.split("/");
+      const vendorOrgId = parts[parts.length - 2] as Id<"organizations">;
+      const allowed = await ctx.runQuery((internal as any).connectedOrgs.hasActiveConnectionInternal, {
+        clientOrgId: identity.orgId,
+        vendorOrgId,
+      });
+      if (!allowed) return jsonResponse({ error: { code: "not_found", message: "Vendor not found" } }, 404);
+      const policies = await ctx.runQuery(internal.policies.listAllInternal, { orgId: vendorOrgId });
+      return jsonResponse({
+        data: policies.map((p: any) => ({
+          id: p._id, carrier: p.carrier, policy_number: p.policyNumber,
+          policy_types: p.policyTypes, effective_date: p.effectiveDate,
+          expiration_date: p.expirationDate, premium: p.premium, created_at: p._creationTime,
+        })),
+        next_cursor: null,
+      });
+    } catch (e) {
+      if (e instanceof Response) return e;
+      return jsonResponse({ error: { code: "internal_error", message: String(e) } }, 500);
+    }
+  }),
+});
+
 // ── GET /api/v1/notifications ──
 http.route({
   path: "/api/v1/notifications",
@@ -1582,6 +1721,9 @@ http.route({
         "/api/v1/clients/invitations": { post: { tags: ["Clients"], summary: "Create client invitation (write)", responses: { "201": { description: "Invitation created" } } } },
         "/api/v1/policies": { get: { tags: ["Policies"], summary: "List policies", responses: { "200": { description: "Policies" } } } },
         "/api/v1/policies/{id}": { get: { tags: ["Policies"], summary: "Get policy", responses: { "200": { description: "Policy" } } } },
+        "/api/v1/vendors": { get: { tags: ["Vendors"], summary: "List connected vendors", responses: { "200": { description: "Connected vendors" } } } },
+        "/api/v1/vendors/{id}": { get: { tags: ["Vendors"], summary: "Get connected vendor detail", responses: { "200": { description: "Connected vendor" } } } },
+        "/api/v1/vendors/{id}/policies": { get: { tags: ["Vendors"], summary: "List connected vendor policies", responses: { "200": { description: "Vendor policies" } } } },
         "/api/v1/notifications": { get: { tags: ["Notifications"], summary: "List notifications", responses: { "200": { description: "Notifications" } } } },
         "/api/v1/activity": { get: { tags: ["Activity"], summary: "Activity feed", responses: { "200": { description: "Activity" } } } },
       },
