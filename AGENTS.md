@@ -63,7 +63,7 @@ Fallback behavior:
 
 Glass supports one-way connected organization relationships for vendor/client insurance access, modeled after the platform/connected-account idea of a parent org receiving scoped access to a connected org's records. The implementation intentionally keeps this separate from the broker/client hierarchy so broker portal features remain broker-only.
 
-Schema: `connectedOrgRelationships` stores `clientOrgId`, `vendorOrgId`, `status` (`pending` | `active` | `revoked`), audit user IDs, label/note, and timestamps. Active relationships grant the client/customer org read-only access to selected vendor insurance system-of-record data. Relationships are one-hop only; a client that can read a vendor does not inherit that vendor's broker, clients, vendors, email, threads, or write capabilities. White labeling continues to be resolved from the viewer's own org/broker context, not from a connected vendor.
+Schema: `connectedOrgRelationships` stores approved/resolvable org-to-org requests with `clientOrgId`, `vendorOrgId`, `status` (`pending` | `active` | `revoked`), audit user IDs, label/note, and timestamps. `connectedOrgInvitations` stores email-backed pending requests and token hashes for vendors who need an approval/signup link. Active relationships grant the client/customer org read-only access to selected vendor insurance system-of-record data. Relationships are one-hop only; a client that can read a vendor does not inherit that vendor's broker, clients, vendors, email, threads, or write capabilities. White labeling continues to be resolved from the viewer's own org/broker context, not from a connected vendor.
 
 Shared access rules live in `convex/lib/access.ts`:
 
@@ -73,7 +73,7 @@ Shared access rules live in `convex/lib/access.ts`:
 
 Surfaces:
 
-- Web: Settings → Connected orgs uses `convex/connectedOrgs.ts` to request, approve, and revoke relationships.
+- Web: Connected orgs in the main app menu uses `convex/connectedOrgs.ts` to request vendor access by email, approve email request links, and revoke relationships.
 - REST: `GET /api/v1/vendors`, `GET /api/v1/vendors/:id`, and `GET /api/v1/vendors/:id/policies`.
 - MCP/CLI: `list_connected_vendors`, `get_connected_vendor`, `list_connected_vendor_policies`.
 - Agent: MCP chat receives connected-vendor roster context; exact vendor policy lists should come from the MCP vendor tools.

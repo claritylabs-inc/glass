@@ -1,8 +1,53 @@
 import { v } from "convex/values";
-import { internalQuery, mutation, query } from "./_generated/server";
+import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import { getAuthUserId } from "@convex-dev/auth/server";
+import { internal as internalApi } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { getOrgAccess, requireAuth } from "./lib/access";
+import { sendResendEmail, getNotificationFromAddress } from "./lib/resend";
+import { buildEmailShell } from "./lib/emailTemplate";
+import { getBrandingContext } from "./lib/branding";
+
+const internal = internalApi as any;
+
+function normalizeEmail(email: string): string {
+  const normalized = email.trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
+    throw new Error("Enter a valid vendor email address");
+  }
+  return normalized;
+}
+
+function companyNameFromEmail(email: string): string {
+  const domain = email.split("@")[1] ?? "vendor";
+  const root = domain.split(".")[0] ?? "vendor";
+  const words = root
+    .replace(/[^a-z0-9-_ ]/gi, " ")
+    .split(/[-_\s]+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  return (words.length > 0 ? words : ["Vendor"])
+    .map((part) => part[0]!.toUpperCase() + part.slice(1))
+    .join(" ")
+    .slice(0, 80);
+}
+
+async function sha256Hex(token: string): Promise<string> {
+  const encoded = new TextEncoder().encode(token);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", encoded);
+  return Array.from(new Uint8Array(hashBuffer))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function randomToken(): string {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
 
 function publicOrg(org: Doc<"organizations">) {
   return {
@@ -24,6 +69,18 @@ async function requireOrgAdmin(ctx: QueryCtx | MutationCtx, orgId: Id<"organizat
   return access;
 }
 
+async function pickUserOrg(ctx: QueryCtx | MutationCtx, userId: Id<"users">) {
+  const memberships = await ctx.db
+    .query("orgMemberships")
+    .withIndex("by_userId", (q) => q.eq("userId", userId))
+    .collect();
+  const membership = memberships.find((m) => m.role === "admin") ?? memberships[0];
+  if (!membership) return null;
+  const org = await ctx.db.get(membership.orgId);
+  if (!org) return null;
+  return { membership, org };
+}
+
 async function enrichRelationship(ctx: QueryCtx, rel: Doc<"connectedOrgRelationships">) {
   const [clientOrg, vendorOrg] = await Promise.all([
     ctx.db.get(rel.clientOrgId),
@@ -31,6 +88,20 @@ async function enrichRelationship(ctx: QueryCtx, rel: Doc<"connectedOrgRelations
   ]);
   return {
     ...rel,
+    kind: "relationship" as const,
+    clientOrg: clientOrg ? publicOrg(clientOrg) : null,
+    vendorOrg: vendorOrg ? publicOrg(vendorOrg) : null,
+  };
+}
+
+async function enrichInvitation(ctx: QueryCtx, inv: Doc<"connectedOrgInvitations">) {
+  const [clientOrg, vendorOrg] = await Promise.all([
+    ctx.db.get(inv.clientOrgId),
+    inv.vendorOrgId ? ctx.db.get(inv.vendorOrgId) : Promise.resolve(null),
+  ]);
+  return {
+    ...inv,
+    kind: "invitation" as const,
     clientOrg: clientOrg ? publicOrg(clientOrg) : null,
     vendorOrg: vendorOrg ? publicOrg(vendorOrg) : null,
   };
@@ -52,11 +123,20 @@ export const listVendors = query({
     for (const membership of memberships) {
       const access = await getOrgAccess(ctx, membership.orgId);
       if (access.accessType !== "member") continue;
-      const relationships = await ctx.db
-        .query("connectedOrgRelationships")
-        .withIndex("by_clientOrgId", (q) => q.eq("clientOrgId", membership.orgId))
-        .collect();
+      const [relationships, invitations] = await Promise.all([
+        ctx.db
+          .query("connectedOrgRelationships")
+          .withIndex("by_clientOrgId", (q) => q.eq("clientOrgId", membership.orgId))
+          .collect(),
+        ctx.db
+          .query("connectedOrgInvitations")
+          .withIndex("by_clientOrgId", (q) => q.eq("clientOrgId", membership.orgId))
+          .collect(),
+      ]);
       for (const rel of relationships) rows.push(await enrichRelationship(ctx, rel));
+      for (const inv of invitations) {
+        if (!inv.relationshipId) rows.push(await enrichInvitation(ctx, inv));
+      }
     }
     return rows.sort((a, b) => b.updatedAt - a.updatedAt);
   },
@@ -78,13 +158,97 @@ export const listClients = query({
     for (const membership of memberships) {
       const access = await getOrgAccess(ctx, membership.orgId);
       if (access.accessType !== "member") continue;
-      const relationships = await ctx.db
-        .query("connectedOrgRelationships")
-        .withIndex("by_vendorOrgId", (q) => q.eq("vendorOrgId", membership.orgId))
-        .collect();
+      const [relationships, invitations] = await Promise.all([
+        ctx.db
+          .query("connectedOrgRelationships")
+          .withIndex("by_vendorOrgId", (q) => q.eq("vendorOrgId", membership.orgId))
+          .collect(),
+        ctx.db
+          .query("connectedOrgInvitations")
+          .withIndex("by_vendorOrgId", (q) => q.eq("vendorOrgId", membership.orgId))
+          .collect(),
+      ]);
       for (const rel of relationships) rows.push(await enrichRelationship(ctx, rel));
+      for (const inv of invitations) {
+        if (!inv.relationshipId) rows.push(await enrichInvitation(ctx, inv));
+      }
     }
     return rows.sort((a, b) => b.updatedAt - a.updatedAt);
+  },
+});
+
+/**
+ * Preferred request flow: requester enters a vendor email. Existing users are
+ * resolved to their first/admin org; unknown emails receive a signup-backed
+ * invitation and choose/create their vendor org when accepting.
+ */
+export const requestVendorAccessByEmail = action({
+  args: {
+    clientOrgId: v.id("organizations"),
+    vendorEmail: v.string(),
+    relationshipLabel: v.optional(v.string()),
+    note: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<{ status: "pending"; email: string }> => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
+
+    const vendorEmail = normalizeEmail(args.vendorEmail);
+    const rawToken = randomToken();
+    const tokenHash = await sha256Hex(rawToken);
+    const expiresAt = Date.now() + 14 * 24 * 60 * 60 * 1000;
+
+    const result = await ctx.runMutation(internal.connectedOrgs.createEmailRequestInternal, {
+      clientOrgId: args.clientOrgId,
+      requestedByUserId: userId,
+      vendorEmail,
+      inviteTokenHash: tokenHash,
+      expiresAt,
+      relationshipLabel: args.relationshipLabel,
+      note: args.note,
+    });
+
+    const siteUrl = process.env.SITE_URL ?? "https://glass.claritylabs.inc";
+    const requestUrl = `${siteUrl}/connected-orgs/request/${rawToken}`;
+    const clientName = result.clientOrgName ?? "A client";
+    const subject = `${clientName} requested access to your insurance records`;
+    const noteBlock = args.note
+      ? `\n\nRequest note:\n${args.note}`
+      : "";
+    const text = `${clientName} requested read-only access to your insurance profile and policies.${noteBlock}\n\nReview request:\n${requestUrl}\n\nThis link expires in 14 days. If you don't recognize this request, you can ignore this email.`;
+    const safeClientName = String(clientName).replace(/</g, "&lt;");
+    const safeNote = args.note?.replace(/</g, "&lt;");
+    const bodyHtml = `
+<tr><td style="padding:28px 40px 0 40px;">
+  <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:15px;color:#374151;line-height:1.6;">
+    <strong>${safeClientName}</strong> requested read-only access to your insurance profile and policies.
+  </p>
+</td></tr>
+${safeNote ? `<tr><td style="padding:12px 40px 0 40px;"><p style="margin:0;font-family:-apple-system,sans-serif;font-size:14px;color:#4b5563;line-height:1.6;font-style:italic;">${safeNote}</p></td></tr>` : ""}
+<tr><td align="center" style="padding:24px 40px 0 40px;">
+  <a href="${requestUrl}" style="display:inline-block;padding:8px 22px;background-color:#111827;color:#ffffff;font-family:-apple-system,sans-serif;font-size:14px;font-weight:500;text-decoration:none;border-radius:999px;line-height:1.4;">Review request</a>
+</td></tr>
+<tr><td style="padding:20px 40px 0 40px;">
+  <p style="margin:0;font-family:-apple-system,sans-serif;font-size:12px;color:#6b7280;line-height:1.6;">
+    Or copy this link:<br><a href="${requestUrl}" style="color:#6b7280;word-break:break-all;">${requestUrl}</a>
+  </p>
+</td></tr>
+<tr><td style="padding:16px 40px 32px 40px;">
+  <p style="margin:0;font-family:-apple-system,sans-serif;font-size:11px;color:#9ca3af;">This request expires in 14 days.</p>
+</td></tr>`;
+
+    const send = await sendResendEmail(
+      {
+        from: getNotificationFromAddress("Glass"),
+        to: vendorEmail,
+        subject,
+        html: buildEmailShell({ title: subject, bodyHtml, branding: getBrandingContext(), siteUrl }),
+        text,
+      },
+      { retries: 2 },
+    );
+    if (!send.ok) throw new Error(`Failed to send vendor request email: ${send.error}`);
+    return { status: "pending", email: vendorEmail };
   },
 });
 
@@ -104,35 +268,54 @@ export const requestVendorAccess = mutation({
     const vendor = await ctx.db.get(args.vendorOrgId);
     if (!vendor) throw new Error("Vendor organization not found");
 
-    const existing = await ctx.db
-      .query("connectedOrgRelationships")
-      .withIndex("by_clientOrgId_vendorOrgId", (q) =>
-        q.eq("clientOrgId", args.clientOrgId).eq("vendorOrgId", args.vendorOrgId),
-      )
-      .first();
-    const now = Date.now();
-    if (existing) {
-      await ctx.db.patch(existing._id, {
-        status: existing.status === "active" ? "active" : "pending",
-        relationshipLabel: args.relationshipLabel,
-        note: args.note,
-        requestedByUserId: access.userId,
-        updatedAt: now,
-      });
-      return existing._id;
-    }
-    return await ctx.db.insert("connectedOrgRelationships", {
+    return await upsertRelationship(ctx, {
       clientOrgId: args.clientOrgId,
       vendorOrgId: args.vendorOrgId,
-      status: "pending",
       requestedByUserId: access.userId,
       relationshipLabel: args.relationshipLabel,
       note: args.note,
-      createdAt: now,
-      updatedAt: now,
     });
   },
 });
+
+async function upsertRelationship(
+  ctx: MutationCtx,
+  args: {
+    clientOrgId: Id<"organizations">;
+    vendorOrgId: Id<"organizations">;
+    requestedByUserId: Id<"users">;
+    relationshipLabel?: string;
+    note?: string;
+  },
+) {
+  const existing = await ctx.db
+    .query("connectedOrgRelationships")
+    .withIndex("by_clientOrgId_vendorOrgId", (q) =>
+      q.eq("clientOrgId", args.clientOrgId).eq("vendorOrgId", args.vendorOrgId),
+    )
+    .first();
+  const now = Date.now();
+  if (existing) {
+    await ctx.db.patch(existing._id, {
+      status: existing.status === "active" ? "active" : "pending",
+      relationshipLabel: args.relationshipLabel,
+      note: args.note,
+      requestedByUserId: args.requestedByUserId,
+      updatedAt: now,
+    });
+    return existing._id;
+  }
+  return await ctx.db.insert("connectedOrgRelationships", {
+    clientOrgId: args.clientOrgId,
+    vendorOrgId: args.vendorOrgId,
+    status: "pending",
+    requestedByUserId: args.requestedByUserId,
+    relationshipLabel: args.relationshipLabel,
+    note: args.note,
+    createdAt: now,
+    updatedAt: now,
+  });
+}
 
 export const approve = mutation({
   args: { relationshipId: v.id("connectedOrgRelationships") },
@@ -145,6 +328,71 @@ export const approve = mutation({
       approvedByUserId: access.userId,
       updatedAt: Date.now(),
     });
+  },
+});
+
+export const acceptInvitation = mutation({
+  args: { token: v.string() },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
+    const tokenHash = await sha256Hex(args.token);
+    const inv = await ctx.db
+      .query("connectedOrgInvitations")
+      .withIndex("by_tokenHash", (q) => q.eq("inviteTokenHash", tokenHash))
+      .first();
+    if (!inv) throw new Error("Request not found");
+    if (inv.status !== "pending") throw new Error("This request is no longer pending");
+    if (inv.expiresAt < Date.now()) {
+      await ctx.db.patch(inv._id, { status: "expired", updatedAt: Date.now() });
+      throw new Error("This request has expired");
+    }
+
+    let vendorOrgId = inv.vendorOrgId;
+    if (!vendorOrgId) {
+      const picked = await pickUserOrg(ctx, userId);
+      if (picked) {
+        if (picked.membership.role !== "admin") throw new Error("Admin role required to approve vendor access");
+        vendorOrgId = picked.org._id;
+      } else {
+        vendorOrgId = await ctx.db.insert("organizations", {
+          name: companyNameFromEmail(inv.vendorEmail),
+          type: "client",
+        });
+        await ctx.db.insert("orgMemberships", { orgId: vendorOrgId, userId, role: "admin" });
+      }
+    } else {
+      await requireOrgAdmin(ctx, vendorOrgId);
+    }
+
+    const relationshipId = inv.relationshipId ?? await upsertRelationship(ctx, {
+      clientOrgId: inv.clientOrgId,
+      vendorOrgId,
+      requestedByUserId: inv.requestedByUserId,
+      relationshipLabel: inv.relationshipLabel,
+      note: inv.note,
+    });
+
+    await ctx.db.patch(relationshipId, {
+      status: "active",
+      approvedByUserId: userId,
+      updatedAt: Date.now(),
+    });
+    await ctx.db.patch(inv._id, {
+      status: "accepted",
+      vendorOrgId,
+      relationshipId,
+      updatedAt: Date.now(),
+    });
+    return { relationshipId, vendorOrgId };
+  },
+});
+
+export const getInvitationByToken = action({
+  args: { token: v.string() },
+  handler: async (ctx, args) => {
+    const tokenHash = await sha256Hex(args.token);
+    return await ctx.runQuery(internal.connectedOrgs.getInvitationByHashInternal, { tokenHash });
   },
 });
 
@@ -170,6 +418,84 @@ export const revoke = mutation({
       revokedByUserId: userId,
       updatedAt: Date.now(),
     });
+  },
+});
+
+export const createEmailRequestInternal = internalMutation({
+  args: {
+    clientOrgId: v.id("organizations"),
+    requestedByUserId: v.id("users"),
+    vendorEmail: v.string(),
+    inviteTokenHash: v.string(),
+    expiresAt: v.number(),
+    relationshipLabel: v.optional(v.string()),
+    note: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const membership = await ctx.db
+      .query("orgMemberships")
+      .withIndex("by_orgId_userId", (q) =>
+        q.eq("orgId", args.clientOrgId).eq("userId", args.requestedByUserId),
+      )
+      .first();
+    if (membership?.role !== "admin") {
+      throw new Error("Admin role required to request vendor access");
+    }
+
+    const clientOrg = await ctx.db.get(args.clientOrgId);
+    if (!clientOrg) throw new Error("Client organization not found");
+    const existingUser = await ctx.db
+      .query("users")
+      .withIndex("email", (q) => q.eq("email", args.vendorEmail))
+      .first();
+    const picked = existingUser ? await pickUserOrg(ctx, existingUser._id) : null;
+    const vendorOrgId = picked?.org._id;
+    if (vendorOrgId === args.clientOrgId) throw new Error("Cannot request access from your own organization");
+
+    const now = Date.now();
+    const relationshipId = vendorOrgId
+      ? await upsertRelationship(ctx, {
+          clientOrgId: args.clientOrgId,
+          vendorOrgId,
+          requestedByUserId: args.requestedByUserId,
+          relationshipLabel: args.relationshipLabel,
+          note: args.note,
+        })
+      : undefined;
+
+    const invitationId = await ctx.db.insert("connectedOrgInvitations", {
+      clientOrgId: args.clientOrgId,
+      vendorOrgId,
+      relationshipId,
+      vendorEmail: args.vendorEmail,
+      requestedByUserId: args.requestedByUserId,
+      inviteTokenHash: args.inviteTokenHash,
+      status: "pending",
+      relationshipLabel: args.relationshipLabel,
+      note: args.note,
+      expiresAt: args.expiresAt,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    return {
+      invitationId,
+      relationshipId,
+      clientOrgName: clientOrg.name,
+      vendorOrgName: picked?.org.name,
+    };
+  },
+});
+
+export const getInvitationByHashInternal = internalQuery({
+  args: { tokenHash: v.string() },
+  handler: async (ctx, args) => {
+    const inv = await ctx.db
+      .query("connectedOrgInvitations")
+      .withIndex("by_tokenHash", (q) => q.eq("inviteTokenHash", args.tokenHash))
+      .first();
+    if (!inv) return null;
+    return await enrichInvitation(ctx, inv);
   },
 });
 

@@ -238,6 +238,30 @@ export default defineSchema({
     .index("by_vendorOrgId_status", ["vendorOrgId", "status"])
     .index("by_clientOrgId_status", ["clientOrgId", "status"]),
 
+  connectedOrgInvitations: defineTable({
+    clientOrgId: v.id("organizations"),
+    vendorOrgId: v.optional(v.id("organizations")),
+    relationshipId: v.optional(v.id("connectedOrgRelationships")),
+    vendorEmail: v.string(),
+    requestedByUserId: v.id("users"),
+    inviteTokenHash: v.string(),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("accepted"),
+      v.literal("expired"),
+      v.literal("revoked"),
+    ),
+    relationshipLabel: v.optional(v.string()),
+    note: v.optional(v.string()),
+    expiresAt: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_tokenHash", ["inviteTokenHash"])
+    .index("by_clientOrgId", ["clientOrgId"])
+    .index("by_vendorEmail", ["vendorEmail"])
+    .index("by_vendorOrgId", ["vendorOrgId"]),
+
   clientInvitations: defineTable({
     brokerOrgId: v.id("organizations"),
     clientOrgName: v.optional(v.string()),
