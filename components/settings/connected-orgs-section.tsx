@@ -6,10 +6,10 @@ import type { FunctionReference } from "convex/server";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
-import { Check, Link2, ShieldCheck, Store, Trash2 } from "lucide-react";
+import { Check, Link2, Trash2 } from "lucide-react";
 import { PillButton } from "@/components/ui/pill-button";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
-import { useSettingsActions } from "@/app/settings/page";
+import { useSettingsActions } from "@/components/settings/settings-actions-context";
 import { useCurrentOrg } from "@/lib/hooks/use-current-org";
 
 type ConnectedOrgsApi = {
@@ -217,8 +217,7 @@ export function ConnectedOrgsSection() {
   return (
     <div className="space-y-6">
       <section className="rounded-xl border border-foreground/6 bg-card">
-        <div className="flex items-start gap-3 border-b border-foreground/6 px-5 py-4">
-          <Store className="mt-0.5 h-5 w-5 text-muted-foreground" />
+        <div className="border-b border-foreground/6 px-5 py-4">
           <div>
             <h2 className="text-base font-semibold text-foreground">Vendors you can monitor</h2>
             <p className="mt-1 text-sm text-muted-foreground">
@@ -238,8 +237,7 @@ export function ConnectedOrgsSection() {
       </section>
 
       <section className="rounded-xl border border-foreground/6 bg-card">
-        <div className="flex items-start gap-3 border-b border-foreground/6 px-5 py-4">
-          <ShieldCheck className="mt-0.5 h-5 w-5 text-muted-foreground" />
+        <div className="border-b border-foreground/6 px-5 py-4">
           <div>
             <h2 className="text-base font-semibold text-foreground">Clients monitoring this org</h2>
             <p className="mt-1 text-sm text-muted-foreground">
