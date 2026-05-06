@@ -73,7 +73,7 @@ Shared access rules live in `convex/lib/access.ts`:
 
 Surfaces:
 
-- Web: Settings → Connected orgs uses `convex/connectedOrgs.ts` to request vendor access by email, approve email request links, and revoke relationships. Keep `NEXT_PUBLIC_CONNECTED_ORGS_ENABLED` false/omitted until the target Convex deployment has these functions; otherwise the frontend can call undeployed public functions.
+- Web: Connected orgs in the main app menu uses `convex/connectedOrgs.ts` to request vendor access by email, approve email request links, and revoke relationships. Keep `NEXT_PUBLIC_CONNECTED_ORGS_ENABLED` false/omitted until the target Convex deployment has these functions; otherwise the frontend can call undeployed public functions.
 - REST: `GET /api/v1/vendors`, `GET /api/v1/vendors/:id`, and `GET /api/v1/vendors/:id/policies`.
 - MCP/CLI: `list_connected_vendors`, `get_connected_vendor`, `list_connected_vendor_policies`.
 - Agent: MCP chat receives connected-vendor roster context; exact vendor policy lists should come from the MCP vendor tools.

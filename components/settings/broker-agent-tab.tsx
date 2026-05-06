@@ -6,7 +6,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
-import { useSettingsActions } from "@/app/settings/page";
+import { useSettingsActions } from "@/components/settings/settings-actions-context";
 import { HandleAvailability } from "@/components/settings/handle-availability";
 
 export function BrokerAgentTab() {

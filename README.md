@@ -78,11 +78,11 @@ Agent responses are grounded in:
 
 ### 3) Connected vendor/client accounts
 
-After the Convex backend is deployed and `NEXT_PUBLIC_CONNECTED_ORGS_ENABLED=true` is set, client/customer orgs can request a one-way vendor relationship from Settings → Connected orgs by entering a vendor contact email. If the email belongs to an existing Glass user, Glass resolves that user's org and emails an approval link; otherwise Glass sends an invite link so the vendor can sign in, create/select their org, and approve access. Active relationships grant the client org read-only access to the vendor's public org profile and policy/quote records; they do not grant uploads, deletes, email/thread access, broker-portal capabilities, or onward access to third-party orgs.
+After the Convex backend is deployed and `NEXT_PUBLIC_CONNECTED_ORGS_ENABLED=true` is set, client/customer orgs can request a one-way vendor relationship from Connected orgs in the main app menu by entering a vendor contact email. If the email belongs to an existing Glass user, Glass resolves that user's org and emails an approval link; otherwise Glass sends an invite link so the vendor can sign in, create/select their org, and approve access. Active relationships grant the client org read-only access to the vendor's public org profile and policy/quote records; they do not grant uploads, deletes, email/thread access, broker-portal capabilities, or onward access to third-party orgs.
 
 Connected vendor data is exposed in the same channels as first-party insurance data:
 
-- Web app: Settings → Connected orgs for request/approval/revocation, and policy screens can read approved vendor org policies via the shared Convex access helper.
+- Web app: Connected orgs in the main app menu for request/approval/revocation, and policy screens can read approved vendor org policies via the shared Convex access helper.
 - REST API: `GET /api/v1/vendors`, `GET /api/v1/vendors/:id`, and `GET /api/v1/vendors/:id/policies`.
 - MCP/CLI: `list_connected_vendors`, `get_connected_vendor`, and `list_connected_vendor_policies`.
 - Agent: MCP chat receives connected-vendor roster context and directs callers to vendor tools for exact policy lists.

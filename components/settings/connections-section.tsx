@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { PillButton } from "@/components/ui/pill-button";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
-import { useSettingsActions } from "@/app/settings/page";
+import { useSettingsActions } from "@/components/settings/settings-actions-context";
 import { Id } from "@/convex/_generated/dataModel";
 
 export function ConnectionsSection() {

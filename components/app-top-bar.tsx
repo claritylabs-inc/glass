@@ -8,6 +8,7 @@ import { BrokerShareLinkButton } from "@/components/broker-share-link-button";
 const BREADCRUMB_MAP: Record<string, { label: string; href?: string }> = {
   "/": { label: "Dashboard" },
   "/policies": { label: "Policies" },
+  "/connected-orgs": { label: "Connected orgs" },
   "/clients": { label: "Clients" },
   "/activity": { label: "Activity" },
   "/connections": { label: "Context" },

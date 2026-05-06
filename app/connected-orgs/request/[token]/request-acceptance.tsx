@@ -82,7 +82,7 @@ export default function VendorRequestAcceptance({ token }: { token: string }) {
     if (!isAuthenticated || acceptingRef.current) return;
     acceptingRef.current = true;
     acceptInvitation({ token })
-      .then(() => router.replace("/settings?section=connected-orgs"))
+      .then(() => router.replace("/connected-orgs"))
       .catch((err: unknown) => {
         setError(friendlyError(err instanceof Error ? err.message : "Could not approve request"));
         acceptingRef.current = false;
