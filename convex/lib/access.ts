@@ -14,9 +14,10 @@ export type OrgAccess = {
   userId: Id<"users">;
   org: Doc<"organizations">;
   orgType: "broker" | "client";
-  accessType: "member" | "broker_of_client";
+  accessType: "member" | "broker_of_client" | "connected_client";
   role: "admin" | "member" | undefined;
   brokerOrgId: Id<"organizations"> | undefined;
+  connectedClientOrgId?: Id<"organizations">;
 };
 
 // ── Auth primitive ──────────────────────────────────────────────────────────
@@ -85,6 +86,37 @@ export async function getOrgAccess(ctx: Ctx, orgId: Id<"organizations">): Promis
     }
   }
 
+  // 3. Connected client/vendor access: org members of a client/customer org
+  // can read an approved vendor's selected insurance data. This is intentionally
+  // one-hop and read-only; vendor access does not imply access to any vendors of
+  // that vendor or to its broker portal capabilities.
+  const activeRelationships = await ctx.db
+    .query("connectedOrgRelationships")
+    .withIndex("by_vendorOrgId_status", (q) =>
+      q.eq("vendorOrgId", orgId).eq("status", "active"),
+    )
+    .collect();
+
+  for (const relationship of activeRelationships) {
+    const clientMembership = await ctx.db
+      .query("orgMemberships")
+      .withIndex("by_orgId_userId", (q) =>
+        q.eq("orgId", relationship.clientOrgId).eq("userId", userId),
+      )
+      .first();
+    if (clientMembership) {
+      return {
+        userId,
+        org,
+        orgType,
+        accessType: "connected_client",
+        role: undefined,
+        brokerOrgId: undefined,
+        connectedClientOrgId: relationship.clientOrgId,
+      };
+    }
+  }
+
   throw new Error("Unauthorized");
 }
 
@@ -98,8 +130,8 @@ export function assertClientOrg(access: OrgAccess): void {
   if (access.orgType !== "client") throw new Error("Expected a client organization");
 }
 
-export function assertCanReadPassport(access: OrgAccess): void {
-  // member OR broker_of_client
+export function assertCanReadPassport(_access: OrgAccess): void {
+  // member OR broker_of_client OR connected_client
 }
 
 export function assertCanEditPassport(access: OrgAccess): void {
@@ -114,15 +146,18 @@ export function assertCanReadInternalThreads(access: OrgAccess): void {
   if (access.accessType !== "member") throw new Error("Internal thread access is restricted to org members");
 }
 
-export function assertCanReadBrokerVisibleThreads(access: OrgAccess): void {
-  // member OR broker_of_client — no restriction beyond having access
+export function assertCanReadBrokerVisibleThreads(_access: OrgAccess): void {
+  // member OR broker_of_client OR connected_client — no restriction beyond having access
 }
 
-export function assertCanReadPolicies(access: OrgAccess): void {
-  // member OR broker_of_client
+export function assertCanReadPolicies(_access: OrgAccess): void {
+  // member OR broker_of_client OR connected_client
 }
 
 export function assertCanUploadPolicy(access: OrgAccess): void {
+  if (access.accessType === "connected_client") {
+    throw new Error("Connected clients have read-only vendor access");
+  }
   // member OR broker_of_client
 }
 
@@ -130,6 +165,9 @@ export function assertCanDeletePolicy(
   access: OrgAccess,
   policy: { uploadedBySide?: string; uploadedByBrokerOrgId?: Id<"organizations"> },
 ): void {
+  if (access.accessType === "connected_client") {
+    throw new Error("Connected clients have read-only vendor access");
+  }
   if (access.accessType === "broker_of_client") {
     // Broker can only delete policies they uploaded
     if (
@@ -142,8 +180,8 @@ export function assertCanDeletePolicy(
   // members can delete any policy in their org
 }
 
-export function assertCanReadPolicy(access: OrgAccess): void {
-  // member OR broker_of_client
+export function assertCanReadPolicy(_access: OrgAccess): void {
+  // member OR broker_of_client OR connected_client
 }
 
 /**

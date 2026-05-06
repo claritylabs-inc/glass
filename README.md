@@ -1,6 +1,6 @@
 # Glass
 
-Glass is Clarity Labs' insurance intelligence platform. It has evolved well beyond the original Glass clone into a broker/client workspace that combines document extraction, conversational AI, org memory, integrations, and API/MCP surfaces in one system.
+Glass is Clarity Labs' insurance intelligence platform. It combines document extraction, conversational AI, org memory, broker/client workspaces, connected vendor/client access, and API/MCP surfaces in one system.
 
 For contributor-facing implementation detail, see [AGENTS.md](AGENTS.md).
 
@@ -8,10 +8,10 @@ For contributor-facing implementation detail, see [AGENTS.md](AGENTS.md).
 
 - Ingests insurance-related documents from email and uploads
 - Extracts structured policy, quote, and supporting business data
-- Builds a continuously-updated `orgIntelligence` memory layer
+- Builds a continuously-updated `orgMemory` layer
 - Supports agent workflows for Q&A, application help, COI generation, and follow-up analysis
 - Exposes capabilities through UI, REST API (`/api/v1/*`), and MCP (`/mcp` + local server)
-- Syncs external financial/HR context via Merge.dev
+- Lets client/customer orgs request read-only access to vendor org policies after vendor approval
 
 ## Stack
 
@@ -19,7 +19,7 @@ For contributor-facing implementation detail, see [AGENTS.md](AGENTS.md).
 - Convex (DB, actions, scheduler, storage, vector search, HTTP)
 - Vercel AI SDK (`ai`) for model execution + tool-enabled chat
 - `@claritylabs/cl-sdk@0.17.x` for extraction and insurance-focused primitives
-- Resend + IMAP (`imapflow`) for email ingest and messaging workflows
+- Resend for email ingest and messaging workflows
 
 ## Getting Started
 
@@ -54,9 +54,6 @@ Common variables used across major workflows:
 - `AGENT_DOMAIN` — verified Resend sending domain (prod: `glass.claritylabs.inc`, dev: `dev.claritylabs.inc`). Used for agent addresses and the `notifications@{domain}` sender.
 - `AUTH_EMAIL_FROM` — optional `From:` override for OTP sign-in emails. Defaults to `Clarity Labs <noreply@{AGENT_DOMAIN}>`.
 - `SITE_URL`
-- `MERGE_API_KEY`
-- `MERGE_WEBHOOK_SECRET`
-- `INTEGRATION_TOKEN_ENC_KEY`
 
 Not every flow requires every variable; requirements depend on which features you are running.
 
@@ -68,33 +65,37 @@ Not every flow requires every variable; requirements depend on which features yo
 2. Store raw files in Convex storage.
 3. Extract structured insurance/business data via `cl-sdk`.
 4. Persist policy data and chunk + embed content for retrieval.
-5. Write key facts into `orgIntelligence` with temporal metadata.
+5. Write key facts into `orgMemory`.
 
 ### 2) Retrieval + Agent Chat
 
 Agent responses are grounded in:
 
 - `documentChunks` (policy/quote/supporting docs)
-- `orgIntelligence` (organization facts)
+- `orgMemory` (organization facts)
 - `conversationTurns` (cross-thread memory)
 
-### 3) Application Assistance
+### 3) Connected vendor/client accounts
 
-Application sessions auto-fill from known context, ask for missing answers in batches, and store new non-transient facts back into intelligence.
+Client/customer orgs can request a one-way vendor relationship from Settings → Connected orgs. Vendor admins approve or revoke requests from the same page. Active relationships grant the client org read-only access to the vendor's public org profile and policy/quote records; they do not grant uploads, deletes, email/thread access, broker-portal capabilities, or onward access to third-party orgs.
 
-### 4) Integrations + APIs
+Connected vendor data is exposed in the same channels as first-party insurance data:
 
-- Merge.dev sync enriches underwriting context (accounting/HR/payroll metrics)
-- REST API exposes broker/client resources under `/api/v1/*`
+- Web app: Settings → Connected orgs for request/approval/revocation, and policy screens can read approved vendor org policies via the shared Convex access helper.
+- REST API: `GET /api/v1/vendors`, `GET /api/v1/vendors/:id`, and `GET /api/v1/vendors/:id/policies`.
+- MCP/CLI: `list_connected_vendors`, `get_connected_vendor`, and `list_connected_vendor_policies`.
+- Agent: MCP chat receives connected-vendor roster context and directs callers to vendor tools for exact policy lists.
+
+### 4) APIs
+
+- REST API exposes broker/client/vendor resources under `/api/v1/*`
 - MCP enables remote and local AI tool access
 
 ## Model Routing
 
 Model routing is defined in `convex/lib/models.ts`:
 
-- `chat`, `chat_with_tools`, `extraction`, `application_authoring` -> `gpt-5.5` with OpenAI `reasoningEffort: "none"`
-- `email_draft`, `email_reply`, `analysis` -> `kimi-k2.5`
-- `classification`, `summary`, `triage`, `email_extraction`, `document_extraction`, `security` -> `gpt-5.4-mini`
+- Defaults are broker-configurable in `/settings?section=models`; see `AGENTS.md` for the current opaque Glass defaults and fallback behavior.
 
 Fallback logic retries supported calls on `gpt-5.5` with reasoning disabled if the primary provider fails.
 
@@ -108,7 +109,5 @@ Internal Convex functions do not have user auth context. Do not call public auth
 - `convex/lib/sdkCallbacks.ts` - `cl-sdk` callback adapter
 - `convex/lib/agentPrompts.ts` - retrieval context builders
 - `convex/actions/extractPolicy.ts` - policy extraction entrypoint
-- `convex/actions/processApplication.ts` - application workflow
-- `convex/actions/dreamConsolidation.ts` - intelligence cleanup and consolidation
-- `convex/actions/mergeSync.ts` - Merge sync pipeline
+- `convex/connectedOrgs.ts` - connected vendor/client relationship mutations and queries
 - `convex/http.ts` - HTTP, REST, and MCP routes

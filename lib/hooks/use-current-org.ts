@@ -13,7 +13,7 @@ import { Id } from "@/convex/_generated/dataModel";
 export type CurrentOrgContext = {
   orgId: Id<"organizations">;
   orgType: "broker" | "client";
-  accessType: "member" | "broker_of_client";
+  accessType: "member" | "broker_of_client" | "connected_client";
   role: "admin" | "member" | undefined;
   orgName: string;
   brokerOrgId: Id<"organizations"> | undefined;
@@ -65,7 +65,7 @@ export function useCurrentOrg(): CurrentOrgContext | null | undefined {
   // accessType: if orgIdFromUrl is provided and the user is NOT a direct member,
   // this would have returned null from viewerOrg — so if we have data, accessType = "member"
   // for this hook. Cross-org broker-of-client access requires a separate utility if needed.
-  const accessType: "member" | "broker_of_client" = "member";
+  const accessType: "member" | "broker_of_client" | "connected_client" = "member";
 
   return {
     orgId: org._id,

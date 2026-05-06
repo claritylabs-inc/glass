@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams, useRouter } from "next/navigation";
-import { useState, createContext, useContext } from "react";
+import { useState } from "react";
 import { AppShell } from "@/components/app-shell";
 import {
   Building2,
@@ -13,6 +13,7 @@ import {
 import { LogoIcon } from "@/components/ui/logo-icon";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useCurrentOrg } from "@/hooks/use-current-org";
+import { SettingsActionsContext } from "@/components/settings/settings-actions-context";
 
 /** Wrapper so LogoIcon matches the lucide icon interface used in nav items */
 function GlassStarIcon({ className }: { className?: string }) {
@@ -53,16 +54,6 @@ type SettingsSection = ClientSection | BrokerSection;
 
 // Keep for backwards-compatible export
 export const SETTINGS_SECTIONS = CLIENT_SETTINGS_SECTIONS;
-
-// ── Context for sections to inject header actions and a right-side drawer panel ──
-export const SettingsActionsContext = createContext<{
-  setActions: (node: React.ReactNode) => void;
-  setRightPanel: (node: React.ReactNode) => void;
-}>({ setActions: () => {}, setRightPanel: () => {} });
-
-export function useSettingsActions() {
-  return useContext(SettingsActionsContext);
-}
 
 export default function SettingsPage() {
   const searchParams = useSearchParams();

@@ -94,6 +94,14 @@ export const run = internalAction({
       relevantPolicyIds.map((id: unknown) => id as string),
     );
 
+    const connectedVendors = await ctx.runQuery(
+      (internal as any).connectedOrgs.listActiveVendorsInternal,
+      { clientOrgId: args.orgId },
+    ).catch(() => []);
+    const connectedVendorBlock = Array.isArray(connectedVendors) && connectedVendors.length > 0
+      ? `\n\nCONNECTED VENDOR ACCESS:\nThe caller's org has read-only access to these vendor organizations. When the user asks about vendor/client risk, vendor COIs, or vendor policies, tell them to use MCP vendor tools for exact policy lists and use this roster for disambiguation. Do not imply write access.\n${connectedVendors.map((row: any) => `- ${row.vendorOrg?.name ?? row.vendorOrgId} (vendorOrgId: ${row.vendorOrgId}, status: ${row.status})`).join("\n")}`
+      : "";
+
     const mcpAddendum = `
 
 MCP MODE:
@@ -108,7 +116,8 @@ MCP MODE:
       "\n\n" +
       docContext +
       memoryContext +
-      orgMemoryBlock;
+      orgMemoryBlock +
+      connectedVendorBlock;
 
     // Build message history (skip processing placeholders)
     const messageHistory = buildMessageHistory(allMessages);

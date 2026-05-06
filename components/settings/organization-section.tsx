@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useSettingsActions } from "@/app/settings/page";
+import { useSettingsActions } from "@/components/settings/settings-actions-context";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { useRouter } from "next/navigation";
 import { api } from "@/convex/_generated/api";

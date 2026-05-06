@@ -22,6 +22,7 @@ import {
   ArrowLeft,
   Bell,
   Phone,
+  Link2,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { usePageContext } from "@/hooks/use-page-context";
@@ -56,12 +57,14 @@ const PARTNER_SETTINGS_WITH_AGENT = [
 
 const INSURANCE_ITEMS = [
   { href: "/policies", label: "Policies", icon: FileText, shortcut: "O" },
+  { href: "/connected-orgs", label: "Connected orgs", icon: Link2 },
 ];
 
 const ALL_NAV_ITEMS = [...INSURANCE_ITEMS];
 
 const BROKER_NAV_ITEMS = [
   { href: "/clients", label: "Clients", icon: Users, shortcut: "K" },
+  { href: "/connected-orgs", label: "Connected orgs", icon: Link2 },
   { href: "/activity", label: "Activity", icon: Activity, shortcut: "U" },
 ];
 
