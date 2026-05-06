@@ -54,7 +54,6 @@ Common variables used across major workflows:
 - `AGENT_DOMAIN` — verified Resend sending domain (prod: `glass.claritylabs.inc`, dev: `dev.claritylabs.inc`). Used for agent addresses and the `notifications@{domain}` sender.
 - `AUTH_EMAIL_FROM` — optional `From:` override for OTP sign-in emails. Defaults to `Clarity Labs <noreply@{AGENT_DOMAIN}>`.
 - `SITE_URL`
-- `NEXT_PUBLIC_CONNECTED_ORGS_ENABLED` — set to `true` only after the target Convex deployment has the `connectedOrgs` functions deployed. Keeps the Settings UI from calling undeployed functions during staged rollouts.
 
 Not every flow requires every variable; requirements depend on which features you are running.
 
@@ -78,7 +77,7 @@ Agent responses are grounded in:
 
 ### 3) Connected vendor/client accounts
 
-After the Convex backend is deployed and `NEXT_PUBLIC_CONNECTED_ORGS_ENABLED=true` is set, client/customer orgs can request a one-way vendor relationship from Settings → Connected orgs by entering a vendor contact email. If the email belongs to an existing Glass user, Glass resolves that user's org and emails an approval link; otherwise Glass sends an invite link so the vendor can sign in, create/select their org, and approve access. Active relationships grant the client org read-only access to the vendor's public org profile and policy/quote records; they do not grant uploads, deletes, email/thread access, broker-portal capabilities, or onward access to third-party orgs.
+Client/customer orgs can request a one-way vendor relationship from Settings → Connected orgs by entering a vendor contact email. If the email belongs to an existing Glass user, Glass resolves that user's org and emails an approval link; otherwise Glass sends an invite link so the vendor can sign in, create/select their org, and approve access. Active relationships grant the client org read-only access to the vendor's public org profile and policy/quote records; they do not grant uploads, deletes, email/thread access, broker-portal capabilities, or onward access to third-party orgs.
 
 Connected vendor data is exposed in the same channels as first-party insurance data:
 

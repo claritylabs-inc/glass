@@ -24,7 +24,6 @@ type ConnectedOrgsApi = {
 };
 
 const connectedOrgsApi = api as unknown as ConnectedOrgsApi;
-const connectedOrgsEnabled = process.env.NEXT_PUBLIC_CONNECTED_ORGS_ENABLED === "true";
 
 type ConnectedOrgRow = {
   _id: string;
@@ -98,11 +97,11 @@ export function ConnectedOrgsSection() {
   const currentOrg = useCurrentOrg();
   const vendorRows = useQuery(
     connectedOrgsApi.connectedOrgs.listVendors,
-    connectedOrgsEnabled && currentOrg?.orgId ? { orgId: currentOrg.orgId } : "skip",
+    currentOrg?.orgId ? { orgId: currentOrg.orgId } : "skip",
   ) as ConnectedOrgRow[] | undefined;
   const clientRows = useQuery(
     connectedOrgsApi.connectedOrgs.listClients,
-    connectedOrgsEnabled && currentOrg?.orgId ? { orgId: currentOrg.orgId } : "skip",
+    currentOrg?.orgId ? { orgId: currentOrg.orgId } : "skip",
   ) as ConnectedOrgRow[] | undefined;
   const requestVendorAccessByEmail = useAction(connectedOrgsApi.connectedOrgs.requestVendorAccessByEmail);
   const approve = useMutation(connectedOrgsApi.connectedOrgs.approve);
@@ -117,7 +116,7 @@ export function ConnectedOrgsSection() {
 
   useEffect(() => {
     setActions(
-      <PillButton size="compact" disabled={!connectedOrgsEnabled} onClick={() => setRequestOpen(true)}>
+      <PillButton size="compact" onClick={() => setRequestOpen(true)}>
         <Link2 className="h-3.5 w-3.5" />
         Request vendor
       </PillButton>,
@@ -128,7 +127,7 @@ export function ConnectedOrgsSection() {
   useEffect(() => {
     async function handleSubmit(event?: FormEvent) {
       event?.preventDefault();
-      if (!connectedOrgsEnabled || !currentOrg?.orgId) return;
+      if (!currentOrg?.orgId) return;
       setSubmitting(true);
       try {
         await requestVendorAccessByEmail({
@@ -223,23 +222,6 @@ export function ConnectedOrgsSection() {
 
   return (
     <div className="space-y-6">
-      {!connectedOrgsEnabled ? (
-        <section className="rounded-xl border border-amber-500/15 bg-amber-500/8 p-5">
-          <div className="flex items-start gap-3">
-            <Link2 className="mt-0.5 h-5 w-5 text-amber-700 dark:text-amber-300" />
-            <div>
-              <h2 className="text-sm font-semibold text-foreground">Connected orgs are waiting on backend rollout</h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                This screen is disabled until the Convex deployment has the connected-org functions. Set
-                <code className="mx-1 rounded bg-foreground/5 px-1 py-0.5 text-[12px]">NEXT_PUBLIC_CONNECTED_ORGS_ENABLED=true</code>
-                after running <code className="rounded bg-foreground/5 px-1 py-0.5 text-[12px]">npx convex deploy --yes</code> or
-                <code className="mx-1 rounded bg-foreground/5 px-1 py-0.5 text-[12px]">npx convex dev</code>.
-              </p>
-            </div>
-          </div>
-        </section>
-      ) : null}
-
       <section className="rounded-xl border border-foreground/6 bg-card">
         <div className="flex items-start gap-3 border-b border-foreground/6 px-5 py-4">
           <Store className="mt-0.5 h-5 w-5 text-muted-foreground" />
@@ -250,9 +232,7 @@ export function ConnectedOrgsSection() {
             </p>
           </div>
         </div>
-        {!connectedOrgsEnabled ? (
-          <p className="px-5 py-8 text-center text-sm text-muted-foreground/70">Enable the backend rollout flag to load vendor connections.</p>
-        ) : vendorRows === undefined ? (
+        {vendorRows === undefined ? (
           <p className="px-5 py-8 text-center text-sm text-muted-foreground/70">Loading…</p>
         ) : vendorRows.length === 0 ? (
           <p className="px-5 py-8 text-center text-sm text-muted-foreground/70">No vendor connections yet.</p>
@@ -273,9 +253,7 @@ export function ConnectedOrgsSection() {
             </p>
           </div>
         </div>
-        {!connectedOrgsEnabled ? (
-          <p className="px-5 py-8 text-center text-sm text-muted-foreground/70">Enable the backend rollout flag to load client access requests.</p>
-        ) : clientRows === undefined ? (
+        {clientRows === undefined ? (
           <p className="px-5 py-8 text-center text-sm text-muted-foreground/70">Loading…</p>
         ) : clientRows.length === 0 ? (
           <p className="px-5 py-8 text-center text-sm text-muted-foreground/70">No client access requests.</p>
