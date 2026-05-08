@@ -407,6 +407,7 @@ export const updateAgentMessage = internalMutation({
     referencedQuoteIds: v.optional(v.array(v.id("policies"))),
     citedSections: v.optional(v.array(v.string())),
     citedCoverageNames: v.optional(v.array(v.string())),
+    citedSourceSpanIds: v.optional(v.array(v.string())),
     usedTools: v.optional(v.array(v.string())),
     toolCalls: v.optional(v.array(v.object({
       name: v.string(),
@@ -429,6 +430,7 @@ export const updateAgentMessage = internalMutation({
       referencedQuoteIds: args.referencedQuoteIds,
       citedSections: args.citedSections,
       citedCoverageNames: args.citedCoverageNames,
+      citedSourceSpanIds: args.citedSourceSpanIds,
       usedTools: args.usedTools,
       toolCalls: args.toolCalls,
       attachments: args.attachments,

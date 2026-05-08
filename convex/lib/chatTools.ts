@@ -65,6 +65,16 @@ export const generateCoi = tool({
   }),
 });
 
+export const createPolicyChangeRequest = tool({
+  description:
+    "Create a policy change or endorsement request case from the user's instructions. Use this for named insured changes, additional insured requests, limit or deductible changes, location/vehicle changes, certificate-driven endorsement requirements, cancellations, nonrenewals, and renewal update packets.",
+  inputSchema: z.object({
+    requestText: z.string().describe("The user's policy change or endorsement request, including requested values and effective date if provided"),
+    policyId: z.string().optional().describe("Related policy ID, if known"),
+    evidenceSourceIds: z.array(z.string()).optional().describe("Stable source span IDs that support quoted existing policy values"),
+  }),
+});
+
 export const extractPolicyAttachment = tool({
   description:
     "Extract a policy from one OR MORE PDF attachments that were included with the email. " +

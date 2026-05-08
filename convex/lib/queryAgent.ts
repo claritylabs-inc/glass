@@ -14,6 +14,8 @@ import type { Id } from "../_generated/dataModel";
 import { makeGenerateText, makeGenerateObject, makeEmbedText } from "./sdkCallbacks";
 import { createConvexDocumentStore } from "./convexDocumentStore";
 import { createConvexMemoryStore } from "./convexMemoryStore";
+import { createConvexSourceRetriever } from "./convexSourceRetriever";
+import { modelCapabilitiesForTask } from "./modelCatalog";
 
 /**
  * Build a query agent pre-configured with Glass's model routing and Convex storage.
@@ -30,8 +32,15 @@ export function buildQueryAgent(
     generateObject: makeGenerateObject("chat"),
     documentStore: createConvexDocumentStore(ctx, orgId),
     memoryStore: createConvexMemoryStore(ctx, orgId, embed),
+    sourceRetriever: createConvexSourceRetriever(ctx, orgId, embed),
     retrievalLimit: 10,
     maxVerifyRounds: 1,
+    retrievalMode: "hybrid",
+    modelCapabilities: modelCapabilitiesForTask("chat"),
+  } as Parameters<typeof createQueryAgent>[0] & {
+    sourceRetriever?: unknown;
+    retrievalMode?: string;
+    modelCapabilities?: unknown;
   });
 }
 

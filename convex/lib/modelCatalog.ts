@@ -28,6 +28,15 @@ export type ModelRoute = {
   model: string;
 };
 
+export type ModelCapabilityConfig = {
+  modelName: string;
+  maxInputTokens?: number;
+  maxOutputTokens?: number;
+  defaultOutputTokens?: number;
+  longListOutputTokens?: number;
+  taskOutputTokens?: Record<string, number>;
+};
+
 export const PROVIDER_LABELS: Record<ModelProvider, string> = {
   openai: "OpenAI",
   anthropic: "Anthropic",
@@ -131,3 +140,77 @@ export const FALLBACK_MODEL: ModelRoute = { model: "gpt-5.5", provider: "openai"
 
 export const MODEL_TASKS = Object.keys(MODEL_ROUTING) as ModelTask[];
 export const MODEL_PROVIDERS = Object.keys(PROVIDER_LABELS) as ModelProvider[];
+
+export const MODEL_CAPABILITIES: Record<string, ModelCapabilityConfig> = {
+  "gpt-5.5": {
+    modelName: "gpt-5.5",
+    maxInputTokens: 400_000,
+    maxOutputTokens: 32_768,
+    defaultOutputTokens: 8_192,
+    longListOutputTokens: 24_576,
+    taskOutputTokens: {
+      extraction_classify: 2_048,
+      extraction_form_inventory: 8_192,
+      extraction_page_map: 8_192,
+      extraction_focused: 16_384,
+      extraction_long_list: 24_576,
+      extraction_review: 12_288,
+      query_reason: 8_192,
+      query_verify: 4_096,
+      pce_impact_analysis: 8_192,
+      pce_packet_generation: 8_192,
+    },
+  },
+  "gpt-5.4": {
+    modelName: "gpt-5.4",
+    maxInputTokens: 400_000,
+    maxOutputTokens: 32_768,
+    defaultOutputTokens: 8_192,
+    longListOutputTokens: 24_576,
+  },
+  "gpt-5.4-mini": {
+    modelName: "gpt-5.4-mini",
+    maxInputTokens: 400_000,
+    maxOutputTokens: 32_768,
+    defaultOutputTokens: 8_192,
+    longListOutputTokens: 24_576,
+  },
+  "gpt-5.4-nano": {
+    modelName: "gpt-5.4-nano",
+    maxInputTokens: 400_000,
+    maxOutputTokens: 32_768,
+    defaultOutputTokens: 8_192,
+    longListOutputTokens: 24_576,
+  },
+  "kimi-k2.5": {
+    modelName: "kimi-k2.5",
+    maxInputTokens: 256_000,
+    maxOutputTokens: 16_384,
+    defaultOutputTokens: 8_192,
+    longListOutputTokens: 16_384,
+    taskOutputTokens: {
+      pce_impact_analysis: 8_192,
+      pce_packet_generation: 8_192,
+      query_reason: 8_192,
+      query_verify: 4_096,
+    },
+  },
+  "claude-haiku-4-5-20251001": {
+    modelName: "claude-haiku-4-5-20251001",
+    maxInputTokens: 200_000,
+    maxOutputTokens: 8_192,
+    defaultOutputTokens: 4_096,
+    longListOutputTokens: 8_192,
+  },
+};
+
+export function modelCapabilitiesForRoute(route: ModelRoute): ModelCapabilityConfig | undefined {
+  return MODEL_CAPABILITIES[route.model] ?? {
+    modelName: route.model,
+    defaultOutputTokens: 4_096,
+  };
+}
+
+export function modelCapabilitiesForTask(task: ModelTask): ModelCapabilityConfig | undefined {
+  return modelCapabilitiesForRoute(MODEL_ROUTING[task]);
+}

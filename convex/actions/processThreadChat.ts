@@ -12,6 +12,7 @@ import {
   compareCoverages,
   saveNote,
   generateCoi,
+  createPolicyChangeRequest,
 } from "../lib/chatTools";
 import { buildDocumentContext, buildConversationMemoryContext } from "../lib/agentPrompts";
 import {
@@ -23,9 +24,9 @@ import {
   buildChannelInstructions,
   buildPolicyToolInstructions,
   policySearchScore,
-  searchPolicyDocument,
   logAiError,
 } from "../lib/aiUtils";
+import { searchPolicyDocumentWithSourceSpans } from "../lib/policyLookup";
 import { sendResendEmail } from "../lib/resend";
 import {
   buildEmailExpertTool,
@@ -44,7 +45,7 @@ import {
 
 /** Build executable tools with Convex context wired in. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function buildTools(ctx: any, args: { orgId: string; threadId: string }, org?: Record<string, unknown>) {
+function buildTools(ctx: any, args: { orgId: string; threadId: string; userId: string }, org?: Record<string, unknown>) {
   return {
     lookup_policy: {
       ...lookupPolicy,
@@ -113,7 +114,7 @@ function buildTools(ctx: any, args: { orgId: string; threadId: string }, org?: R
         } catch {
           return "Policy not found.";
         }
-        return searchPolicyDocument(policy, params.query, 8);
+        return searchPolicyDocumentWithSourceSpans(ctx, policy, params.query, 8);
       },
     },
     save_note: {
@@ -169,6 +170,27 @@ function buildTools(ctx: any, args: { orgId: string; threadId: string }, org?: R
           };
         } catch (err) {
           return `Failed to generate COI: ${err instanceof Error ? err.message : String(err)}`;
+        }
+      },
+    },
+    create_policy_change_request: {
+      ...createPolicyChangeRequest,
+      execute: async (input: { requestText: string; policyId?: string; evidenceSourceIds?: string[] }) => {
+        try {
+          const result = await ctx.runAction(internal.actions.policyChangeRequests.createFromChatForThread, {
+            orgId: args.orgId as Id<"organizations">,
+            userId: args.userId as Id<"users">,
+            policyId: input.policyId as Id<"policies"> | undefined,
+            requestText: input.requestText,
+            evidenceSourceIds: input.evidenceSourceIds,
+          });
+          return {
+            message: "Policy change request created.",
+            caseId: result.caseId,
+            usedSdkPce: result.usedSdkPce,
+          };
+        } catch (err) {
+          return `Failed to create policy change request: ${err instanceof Error ? err.message : String(err)}`;
         }
       },
     },
@@ -446,7 +468,7 @@ export const run = internalAction({
 
       // streamText with tools — supports both streaming Q&A and tool calls
       const tools = {
-        ...buildTools(ctx, { orgId: args.orgId, threadId: args.threadId }, org),
+        ...buildTools(ctx, { orgId: args.orgId, threadId: args.threadId, userId: args.userId }, org),
         ...(emailIdentity.canSend && emailIdentity.agentAddress && emailIdentity.fromHeader
           ? {
               email_expert: buildEmailExpertTool(ctx, {
@@ -498,6 +520,7 @@ export const run = internalAction({
         email_expert: "Preparing email...",
         save_note: "Saving note...",
         generate_coi: "Generating COI...",
+        create_policy_change_request: "Creating policy change request...",
       };
 
       const result = streamText({
@@ -515,6 +538,7 @@ export const run = internalAction({
       let lastReasoningFlush = Date.now();
       const citedSections = new Set<string>(); // titles from lookup_policy_section results
       const citedCoverageNames = new Set<string>(); // structured coverage names surfaced by tool results
+      const citedSourceSpanIds = new Set<string>(); // stable raw evidence IDs surfaced by tool results
       const citedPolicyIds = new Set<string>(); // policy IDs actually looked up via lookup_policy_section
       const usedTools: string[] = [];
       const toolCalls: Array<{ name: string; input?: string }> = [];
@@ -596,6 +620,12 @@ export const run = internalAction({
                   citedSections.add(String((r as Record<string, unknown>).title));
                   if (lastToolPolicyId) citedPolicyIds.add(lastToolPolicyId);
                 }
+                const sourceSpanIds = (r as Record<string, unknown>).sourceSpanIds;
+                if (Array.isArray(sourceSpanIds)) {
+                  for (const id of sourceSpanIds) {
+                    if (typeof id === "string" && id) citedSourceSpanIds.add(id);
+                  }
+                }
               }
             }
           }
@@ -616,6 +646,7 @@ export const run = internalAction({
           ? relevantQuoteIds.filter((qid: string) => citedPolicyIds.has(qid)) as Id<"policies">[] : undefined,
         citedSections: citedSections.size > 0 ? [...citedSections] : undefined,
         citedCoverageNames: citedCoverageNames.size > 0 ? [...citedCoverageNames] : undefined,
+        citedSourceSpanIds: citedSourceSpanIds.size > 0 ? [...citedSourceSpanIds] : undefined,
         usedTools: usedTools.length > 0 ? usedTools : undefined,
         toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
         attachments: responseAttachments.length > 0 ? responseAttachments : undefined,

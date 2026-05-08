@@ -52,6 +52,7 @@ Usage notes:
 - The UI never exposes Glass's exact default model configuration; model selectors unlock only for providers where the broker has supplied an API key.
 - `embeddings` is routed separately from language-model use cases and is restricted to embedding models. Embeddings remain 1536-dimensional to match Convex vector indexes.
 - Main org-aware actions use `getModelForOrg(ctx, orgId, task)`, which applies broker overrides only when a matching broker-owned provider key exists.
+- SDK-facing workflows pass model capability metadata from `MODEL_CAPABILITIES` in [convex/lib/modelCatalog.ts](convex/lib/modelCatalog.ts), so `cl-sdk` can resolve task-aware token budgets for extraction, query, and PCE instead of relying on low static caps.
 
 Fallback behavior:
 
@@ -139,6 +140,7 @@ Glass persists:
 - Top-level policy financials: `premium`, `totalCost`, `taxesAndFees`, `premiumBreakdown`, `minPremium`, `depositPremium`
 - Document detail: `document.sections`, `document.definitions`, `document.coveredReasons`, `document.endorsements`, `document.exclusions`, `document.conditions`
 - Declarations, form inventory, and supplementary facts as top-level policy fields
+- Raw source evidence in `sourceSpans` and embedded `sourceChunks` when cl-sdk returns source spans/chunks. These source units preserve stable `sourceSpanIds` for exact policy citations.
 
 ### Token Limits
 
@@ -166,6 +168,8 @@ Two entrypoints, both PDF-only:
 6. Chunk the document and embed each chunk with `text-embedding-3-small`.
 7. Store chunks in `documentChunks` for semantic retrieval.
 
+The extract phase stores `documentChunksForEmbedding`, `sourceSpansForStorage`, and `sourceChunksForEmbedding` in the Convex pipeline checkpoint before advancing to `embed_and_store`, so a resumed embedding phase does not lose transient extraction artifacts.
+
 Cancellation:
 
 - `policies.cancelExtraction` marks `pipelineError` as `Cancelled by user`.
@@ -176,6 +180,7 @@ Cancellation:
 
 Glass uses two vector-backed stores plus one list-based store:
 
+- `sourceChunks` — raw source-span evidence chunks (vector), preferred for exact policy terms when present
 - `documentChunks` — extracted policy/quote content chunks (vector)
 - `conversationTurns` — cross-thread conversation memory (vector)
 - `orgMemory` — business facts/preferences/risk notes/observations (list, filtered by kind/source)
@@ -183,8 +188,21 @@ Glass uses two vector-backed stores plus one list-based store:
 [agentPrompts.ts](convex/lib/agentPrompts.ts) builds agent context:
 
 - `buildDocumentContext()` — if chunks exist, embed query and search `documentChunks`; otherwise fall back to keyword-scored document summary.
+- When `sourceChunks` exist, `buildDocumentContext()` searches them before `documentChunks` and labels the results as source-span evidence with stable `sourceSpanIds`.
+- `lookup_policy_section` uses [policyLookup.ts](convex/lib/policyLookup.ts) in web chat, inbound email, and iMessage to return structured policy matches enriched with stable `sourceSpanIds` and short raw evidence excerpts.
+- SDK query-agent wrappers use [convexSourceRetriever.ts](convex/lib/convexSourceRetriever.ts) to search `sourceChunks` and return source spans for SDK hybrid retrieval.
 - `buildOrgMemoryContext()` — lists recent `orgMemory` entries, grouped by kind.
 - `buildConversationMemoryContext()` — vector search over `conversationTurns` for cross-thread memory.
+
+## Policy Change / Endorsement Cases
+
+Glass persists first-class policy-change case state for endorsement workflows:
+
+- `policyChangeCases` stores request text, status, affected policy, evidence source IDs, validation issues, and packet references.
+- `pcePackets` stores generated carrier packet artifacts and validation snapshots.
+- `caseMessages`, `caseEvidenceLinks`, and `caseValidationReports` preserve missing-info replies, source evidence links, and audit-friendly validation history.
+- `convex/policyChanges.ts` exposes safe entrypoints to create requests from chat, email, or uploaded documents, process replies, generate a carrier packet preview, and mark lifecycle status.
+- The `create_policy_change_request` tool is available in web chat, inbound email, and iMessage. It creates a persistent case and uses SDK PCE analysis when the installed `@claritylabs/cl-sdk` exposes `createPceAgent`; otherwise it falls back to deterministic case creation with source evidence IDs.
 
 [aiUtils.ts](convex/lib/aiUtils.ts) owns shared agent instructions for web chat and email:
 
