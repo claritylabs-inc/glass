@@ -98,7 +98,7 @@ export async function buildIntelligenceContext(
 
 /**
  * Vector-search-based document context.
- * Embeds the query, searches documentChunks, and formats results.
+ * Embeds the query, searches sourceChunks plus documentChunks, and formats results.
  */
 async function buildVectorContext(
   ctx: ActionCtx,
@@ -115,12 +115,22 @@ async function buildVectorContext(
     limit: 15,
     filter: (q) => q.eq("orgId", orgId),
   });
+  const sourceResults = await ctx.vectorSearch("sourceChunks", "by_embedding", {
+    vector: queryEmbedding,
+    limit: 10,
+    filter: (q) => q.eq("orgId", orgId),
+  });
 
   // Hydrate chunks
   const chunkDocs = [];
   for (const result of results) {
     const doc = await ctx.runQuery(internal.documentChunks.get, { id: result._id });
     if (doc) chunkDocs.push({ ...doc, _score: result._score });
+  }
+  const sourceChunkDocs = [];
+  for (const result of sourceResults) {
+    const doc = await ctx.runQuery(internal.sourceSpans.getChunk, { id: result._id });
+    if (doc) sourceChunkDocs.push({ ...doc, _score: result._score });
   }
 
   // Group by policy
@@ -154,7 +164,47 @@ async function buildVectorContext(
     parts.push(`QUOTE INDEX (${quotes.length} quotes):\n${indexLines.join("\n")}`);
   }
 
-  // Add retrieved chunks grouped by policy
+  // Add retrieved raw source chunks first. These are preferred for exact
+  // policy facts because they preserve stable sourceSpanIds.
+  const sourceChunksByPolicy = new Map<string, typeof sourceChunkDocs>();
+  for (const chunk of sourceChunkDocs) {
+    if (!chunk.policyId) continue;
+    const key = chunk.policyId as string;
+    if (!sourceChunksByPolicy.has(key)) sourceChunksByPolicy.set(key, []);
+    sourceChunksByPolicy.get(key)!.push(chunk);
+  }
+
+  const sourceSections: string[] = [];
+  for (const [policyId, policyChunks] of sourceChunksByPolicy) {
+    const policy = policyMap.get(policyId as Id<"policies">);
+    if (!policy) continue;
+
+    const isQuote = policy.documentType === "quote";
+    if (isQuote) {
+      relevantQuoteIdSet.add(policyId as Id<"policies">);
+    } else {
+      relevantPolicyIdSet.add(policyId as Id<"policies">);
+    }
+
+    const carrier = policy.mga || policy.carrier || policy.security;
+    const docLabel = isQuote ? "QUOTE" : "POLICY";
+    const number = isQuote ? (policy.quoteNumber ?? policy.policyNumber) : policy.policyNumber;
+
+    let section = `\n--- ${docLabel} SOURCE EVIDENCE: ${carrier} #${number} (ID:${policyId}) ---`;
+    for (const chunk of policyChunks) {
+      const truncated = chunk.text.length > 2500
+        ? chunk.text.slice(0, 2500) + "\n... [truncated]"
+        : chunk.text;
+      section += `\n\n[sourceChunk:${chunk.chunkId} sourceSpanIds:${chunk.sourceSpanIds.join(",")} score:${chunk._score.toFixed(3)}]\n${truncated}`;
+    }
+    sourceSections.push(section);
+  }
+
+  if (sourceSections.length > 0) {
+    parts.push(`SOURCE-SPAN EVIDENCE (prefer for exact numeric/date/contractual values):\n${sourceSections.join("\n")}`);
+  }
+
+  // Add retrieved extracted chunks grouped by policy
   const chunksByPolicy = new Map<string, typeof chunkDocs>();
   for (const chunk of chunkDocs) {
     const key = chunk.policyId as string;

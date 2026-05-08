@@ -5,7 +5,7 @@ import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
 import { FadeIn } from "@/components/ui/fade-in";
-import { Loader2, RotateCw, Trash2, Eye, X } from "lucide-react";
+import { CheckCircle2, FileText, Loader2, RotateCw, Send, Trash2, Eye, X } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import Link from "next/link";
 import { StructuredLog, type StructuredLogEntry } from "@/components/structured-log";
@@ -148,6 +148,301 @@ function PolicyActivityTab({
   );
 }
 
+function PolicyChangesTab({ policyId }: { policyId: string }) {
+  const [selectedCaseId, setSelectedCaseId] = useState<Id<"policyChangeCases"> | null>(null);
+  const [packetLoading, setPacketLoading] = useState(false);
+  const [statusLoading, setStatusLoading] = useState<string | null>(null);
+  const cases = useQuery(api.policyChanges.listByPolicy, {
+    policyId: policyId as Id<"policies">,
+  });
+  const activeCaseId = selectedCaseId ?? cases?.[0]?._id ?? null;
+  const detail = useQuery(
+    api.policyChanges.getCaseDetail,
+    activeCaseId ? { caseId: activeCaseId } : "skip",
+  );
+  const generatePacket = useMutation(api.policyChanges.generateCarrierPacket);
+  const markStatus = useMutation(api.policyChanges.markStatus);
+
+  if (cases === undefined) {
+    return (
+      <div className="space-y-2">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <Skeleton key={i} className="h-16 w-full rounded-lg" />
+        ))}
+      </div>
+    );
+  }
+
+  if (cases.length === 0) {
+    return (
+      <div className="rounded-lg border border-foreground/6 bg-card px-4 py-6 text-center">
+        <p className="text-body-sm text-muted-foreground">
+          No policy change requests recorded yet.
+        </p>
+      </div>
+    );
+  }
+
+  const handleGeneratePacket = async () => {
+    if (!activeCaseId) return;
+    setPacketLoading(true);
+    try {
+      await generatePacket({ caseId: activeCaseId });
+      toast.success("Carrier packet generated");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not generate packet");
+    } finally {
+      setPacketLoading(false);
+    }
+  };
+
+  const handleStatus = async (status: "submitted" | "accepted" | "declined") => {
+    if (!activeCaseId) return;
+    setStatusLoading(status);
+    try {
+      await markStatus({ caseId: activeCaseId, status });
+      toast.success(`Marked ${status}`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not update status");
+    } finally {
+      setStatusLoading(null);
+    }
+  };
+
+  const activeCase = detail?.case;
+  const packet = detail?.latestPacket;
+  const items = Array.isArray(activeCase?.items) ? activeCase.items as Record<string, unknown>[] : [];
+  const missingInfo = Array.isArray(activeCase?.missingInfoQuestions)
+    ? activeCase.missingInfoQuestions as Record<string, unknown>[]
+    : [];
+  const validationIssues = Array.isArray(activeCase?.validationIssues)
+    ? activeCase.validationIssues as Record<string, unknown>[]
+    : [];
+  const artifacts = Array.isArray(packet?.artifacts) ? packet.artifacts as Record<string, unknown>[] : [];
+
+  return (
+    <div className="grid gap-4 lg:grid-cols-[minmax(260px,0.9fr)_minmax(0,1.4fr)]">
+      <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
+        {cases.map((change) => {
+          const missingInfoCount = Array.isArray(change.missingInfoQuestions)
+            ? change.missingInfoQuestions.length
+            : 0;
+          const validationIssueCount = Array.isArray(change.validationIssues)
+            ? change.validationIssues.length
+            : 0;
+          const isActive = activeCaseId === change._id;
+          return (
+            <button
+              key={change._id}
+              type="button"
+              onClick={() => setSelectedCaseId(change._id)}
+              className={`block w-full text-left px-4 py-3 border-b border-foreground/[0.04] last:border-b-0 transition-colors ${
+                isActive ? "bg-foreground/[0.035]" : "hover:bg-foreground/[0.02]"
+              }`}
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-body-sm font-medium text-foreground truncate">
+                    {change.summary ?? "Policy change request"}
+                  </p>
+                  <p className="mt-1 text-label-sm text-muted-foreground line-clamp-2">
+                    {change.requestText}
+                  </p>
+                </div>
+                <span className="shrink-0 rounded-full border border-foreground/8 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                  {change.status.replace("_", " ")}
+                </span>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
+                <span>{change.sourceKind.replace("_", " ")}</span>
+                <span>{new Date(change.updatedAt).toLocaleDateString()}</span>
+                <span>{missingInfoCount} questions</span>
+                <span>{validationIssueCount} validation issues</span>
+                {(change.evidenceSourceIds?.length ?? 0) > 0 && (
+                  <span>{change.evidenceSourceIds!.length} evidence spans</span>
+                )}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
+        {detail === undefined ? (
+          <div className="p-4 space-y-3">
+            <Skeleton className="h-5 w-48 rounded" />
+            <Skeleton className="h-24 w-full rounded-lg" />
+            <Skeleton className="h-24 w-full rounded-lg" />
+          </div>
+        ) : activeCase ? (
+          <div className="divide-y divide-foreground/[0.06]">
+            <div className="p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-body-sm font-medium text-foreground">
+                    {activeCase.summary ?? "Policy change request"}
+                  </p>
+                  <p className="mt-1 text-label-sm text-muted-foreground">
+                    {activeCase.requestText}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <PillButton
+                    variant="secondary"
+                    size="compact"
+                    onClick={handleGeneratePacket}
+                    disabled={packetLoading}
+                  >
+                    {packetLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
+                    Packet
+                  </PillButton>
+                  <PillButton
+                    variant="secondary"
+                    size="compact"
+                    onClick={() => handleStatus("submitted")}
+                    disabled={statusLoading !== null}
+                  >
+                    {statusLoading === "submitted" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                    Submitted
+                  </PillButton>
+                  <PillButton
+                    variant="secondary"
+                    size="compact"
+                    onClick={() => handleStatus("accepted")}
+                    disabled={statusLoading !== null}
+                  >
+                    {statusLoading === "accepted" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                    Accepted
+                  </PillButton>
+                  <PillButton
+                    variant="secondary"
+                    size="compact"
+                    onClick={() => handleStatus("declined")}
+                    disabled={statusLoading !== null}
+                  >
+                    {statusLoading === "declined" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />}
+                    Declined
+                  </PillButton>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-4 grid gap-4 xl:grid-cols-2">
+              <section>
+                <h3 className="text-label-sm font-medium text-foreground">Affected Values</h3>
+                <div className="mt-2 space-y-2">
+                  {items.length > 0 ? items.map((item, i) => (
+                    <div key={String(item.id ?? i)} className="rounded-md border border-foreground/6 p-3">
+                      <p className="text-label-sm font-medium text-foreground">
+                        {String(item.label ?? item.fieldPath ?? "Change item")}
+                      </p>
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        {String(item.action ?? "update")} · {String(item.kind ?? "general")}
+                      </p>
+                      <p className="mt-2 text-label-sm text-muted-foreground">
+                        {String(item.beforeValue ?? "(not cited)")} → {String(item.requestedValue ?? item.afterValue ?? "(pending)")}
+                      </p>
+                      {Array.isArray(item.sourceSpanIds) && item.sourceSpanIds.length > 0 && (
+                        <p className="mt-2 text-[11px] text-muted-foreground break-all">
+                          evidence: {item.sourceSpanIds.join(", ")}
+                        </p>
+                      )}
+                    </div>
+                  )) : (
+                    <p className="text-label-sm text-muted-foreground">No structured change items yet.</p>
+                  )}
+                </div>
+              </section>
+
+              <section>
+                <h3 className="text-label-sm font-medium text-foreground">Validation</h3>
+                <div className="mt-2 space-y-2">
+                  {validationIssues.length > 0 ? validationIssues.map((issue, i) => (
+                    <div key={`${String(issue.code ?? "issue")}-${i}`} className="rounded-md border border-foreground/6 p-3">
+                      <p className="text-label-sm font-medium text-foreground">
+                        {String(issue.code ?? "validation issue")}
+                      </p>
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        {String(issue.severity ?? "warning")}
+                      </p>
+                      <p className="mt-2 text-label-sm text-muted-foreground">
+                        {String(issue.message ?? "")}
+                      </p>
+                    </div>
+                  )) : (
+                    <p className="text-label-sm text-muted-foreground">No validation issues recorded.</p>
+                  )}
+                </div>
+              </section>
+            </div>
+
+            <div className="p-4 grid gap-4 xl:grid-cols-2">
+              <section>
+                <h3 className="text-label-sm font-medium text-foreground">Packet Preview</h3>
+                <div className="mt-2 space-y-2">
+                  {artifacts.length > 0 ? artifacts.map((artifact, i) => (
+                    <details key={`${String(artifact.kind ?? "artifact")}-${i}`} className="rounded-md border border-foreground/6 p-3">
+                      <summary className="cursor-pointer text-label-sm font-medium text-foreground">
+                        {String(artifact.title ?? artifact.kind ?? "Packet artifact")}
+                      </summary>
+                      <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-5 text-muted-foreground">
+                        {String(artifact.content ?? "")}
+                      </pre>
+                    </details>
+                  )) : (
+                    <p className="text-label-sm text-muted-foreground">No generated packet yet.</p>
+                  )}
+                </div>
+              </section>
+
+              <section>
+                <h3 className="text-label-sm font-medium text-foreground">Missing Info And Audit</h3>
+                <div className="mt-2 space-y-3">
+                  {missingInfo.length > 0 ? (
+                    <div className="space-y-2">
+                      {missingInfo.map((question, i) => (
+                        <div key={String(question.id ?? i)} className="rounded-md border border-foreground/6 p-3">
+                          <p className="text-label-sm text-foreground">
+                            {String(question.question ?? "Missing information")}
+                          </p>
+                          {question.answer ? (
+                            <p className="mt-2 text-label-sm text-muted-foreground">
+                              {String(question.answer)}
+                            </p>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-label-sm text-muted-foreground">No open missing-info questions.</p>
+                  )}
+                  <div className="space-y-2">
+                    {(detail.messages ?? []).map((message) => (
+                      <div key={message._id} className="text-[11px] text-muted-foreground">
+                        {new Date(message.createdAt).toLocaleString()} · {message.direction} · {message.channel ?? "case"} · {message.content.slice(0, 140)}
+                      </div>
+                    ))}
+                    {(detail.validationReports ?? []).map((report) => (
+                      <div key={report._id} className="text-[11px] text-muted-foreground">
+                        {new Date(report.createdAt).toLocaleString()} · validation {report.status}
+                      </div>
+                    ))}
+                    {(detail.evidenceLinks ?? []).map((link) => (
+                      <div key={link._id} className="text-[11px] text-muted-foreground break-all">
+                        evidence · {link.itemId ?? "case"} · {link.sourceSpanId}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </section>
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function ViewPdfButton({ url }: { url?: string | null }) {
   const { isPdfOpen, togglePdf, openWithUrl } = usePdf();
   if (!url) return null;
@@ -203,7 +498,7 @@ export function PolicyDetailBody({
   const [deleting, setDeleting] = useState(false);
   const [demoBannerDismissed, setDemoBannerDismissed] = useState(false);
   const [activeTab, setActiveTab] = useState<
-    "details" | "activity" | "extraction"
+    "details" | "activity" | "extraction" | "changes"
   >("details");
 
   const { openWithUrl, setFileUrl: preloadPdfUrl } = usePdf();
@@ -581,7 +876,7 @@ export function PolicyDetailBody({
       <Tabs
         value={activeTab}
         onValueChange={(value) =>
-          setActiveTab(value as "details" | "activity" | "extraction")
+          setActiveTab(value as "details" | "activity" | "extraction" | "changes")
         }
         className="mb-6"
       >
@@ -590,6 +885,7 @@ export function PolicyDetailBody({
             [
               { id: "details" as const, label: "Summary" },
               { id: "extraction" as const, label: "Breakdown" },
+              { id: "changes" as const, label: "Changes" },
               { id: "activity" as const, label: "Activity" },
             ] as const
           ).map((tab) => (
@@ -637,6 +933,10 @@ export function PolicyDetailBody({
 
       {activeTab === "activity" && (
         <PolicyActivityTab policyId={id} policy={policy} />
+      )}
+
+      {activeTab === "changes" && (
+        <PolicyChangesTab policyId={id} />
       )}
 
       {activeTab === "extraction" && (

@@ -26,6 +26,7 @@ export { insuranceDocToPolicy, policyToInsuranceDoc } from "./documentMapping";
 import { createExtractor } from "@claritylabs/cl-sdk";
 import type { ExtractionResult, ExtractionState, LogFn, PipelineCheckpoint, TokenUsage } from "@claritylabs/cl-sdk";
 import { makeGenerateText, makeGenerateObject } from "./sdkCallbacks";
+import { modelCapabilitiesForTask } from "./modelCatalog";
 
 /**
  * Build an extractor pre-configured with Glass's model routing.
@@ -68,7 +69,8 @@ export function buildExtractor(opts?: {
     onProgress: opts?.onProgress,
     onTokenUsage: opts?.onTokenUsage,
     onCheckpointSave: opts?.onCheckpointSave,
-  });
+    modelCapabilities: modelCapabilitiesForTask("extraction"),
+  } as Parameters<typeof createExtractor>[0] & { modelCapabilities?: unknown });
 }
 
 export function summarizeExtractionCheckpoint(

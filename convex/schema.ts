@@ -781,6 +781,143 @@ export default defineSchema({
       filterFields: ["orgId"],
     }),
 
+  // Raw source spans from PDFs, emails, attachments, and manual notes.
+  // These are stable evidence units used to ground exact policy values.
+  sourceSpans: defineTable({
+    orgId: v.id("organizations"),
+    policyId: v.optional(v.id("policies")),
+    spanId: v.string(),
+    documentId: v.string(),
+    sourceKind: v.union(
+      v.literal("policy_pdf"),
+      v.literal("application_pdf"),
+      v.literal("email"),
+      v.literal("attachment"),
+      v.literal("manual_note"),
+    ),
+    pageStart: v.optional(v.number()),
+    pageEnd: v.optional(v.number()),
+    sectionId: v.optional(v.string()),
+    formNumber: v.optional(v.string()),
+    text: v.string(),
+    textHash: v.string(),
+    bbox: v.optional(v.any()),
+    metadata: v.optional(v.any()),
+    createdAt: v.number(),
+  })
+    .index("by_policyId", ["policyId"])
+    .index("by_orgId", ["orgId"])
+    .index("by_spanId", ["spanId"])
+    .index("by_policyId_spanId", ["policyId", "spanId"]),
+
+  // Embedded chunks over source spans. Unlike documentChunks, these preserve
+  // sourceSpanIds so exact policy facts can cite the raw evidence unit.
+  sourceChunks: defineTable({
+    orgId: v.id("organizations"),
+    policyId: v.optional(v.id("policies")),
+    chunkId: v.string(),
+    documentId: v.string(),
+    sourceSpanIds: v.array(v.string()),
+    text: v.string(),
+    metadata: v.optional(v.any()),
+    embedding: v.array(v.float64()),
+    createdAt: v.number(),
+  })
+    .index("by_policyId", ["policyId"])
+    .index("by_orgId", ["orgId"])
+    .index("by_chunkId", ["chunkId"])
+    .vectorIndex("by_embedding", {
+      vectorField: "embedding",
+      dimensions: 1536,
+      filterFields: ["orgId"],
+    }),
+
+  policyChangeCases: defineTable({
+    orgId: v.id("organizations"),
+    policyId: v.optional(v.id("policies")),
+    requestText: v.string(),
+    sourceKind: v.union(
+      v.literal("chat"),
+      v.literal("email"),
+      v.literal("uploaded_document"),
+      v.literal("manual"),
+    ),
+    status: v.union(
+      v.literal("draft"),
+      v.literal("needs_info"),
+      v.literal("ready"),
+      v.literal("submitted"),
+      v.literal("accepted"),
+      v.literal("declined"),
+    ),
+    summary: v.optional(v.string()),
+    items: v.optional(v.any()),
+    impacts: v.optional(v.any()),
+    missingInfoQuestions: v.optional(v.any()),
+    validationIssues: v.optional(v.any()),
+    evidenceSourceIds: v.optional(v.array(v.string())),
+    packetId: v.optional(v.id("pcePackets")),
+    createdByUserId: v.optional(v.id("users")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_orgId", ["orgId"])
+    .index("by_policyId", ["policyId"])
+    .index("by_orgId_status", ["orgId", "status"]),
+
+  pcePackets: defineTable({
+    orgId: v.id("organizations"),
+    caseId: v.id("policyChangeCases"),
+    policyId: v.optional(v.id("policies")),
+    artifacts: v.any(),
+    validationIssues: v.optional(v.any()),
+    createdAt: v.number(),
+    submittedAt: v.optional(v.number()),
+  })
+    .index("by_orgId", ["orgId"])
+    .index("by_caseId", ["caseId"])
+    .index("by_policyId", ["policyId"]),
+
+  caseMessages: defineTable({
+    orgId: v.id("organizations"),
+    caseId: v.id("policyChangeCases"),
+    direction: v.union(v.literal("inbound"), v.literal("outbound"), v.literal("system")),
+    channel: v.optional(v.union(
+      v.literal("chat"),
+      v.literal("email"),
+      v.literal("uploaded_document"),
+      v.literal("manual"),
+    )),
+    content: v.string(),
+    sourceSpanIds: v.optional(v.array(v.string())),
+    createdByUserId: v.optional(v.id("users")),
+    createdAt: v.number(),
+  })
+    .index("by_caseId", ["caseId"])
+    .index("by_orgId", ["orgId"]),
+
+  caseEvidenceLinks: defineTable({
+    orgId: v.id("organizations"),
+    caseId: v.id("policyChangeCases"),
+    itemId: v.optional(v.string()),
+    sourceSpanId: v.string(),
+    quote: v.optional(v.string()),
+    createdAt: v.number(),
+  })
+    .index("by_caseId", ["caseId"])
+    .index("by_sourceSpanId", ["sourceSpanId"])
+    .index("by_orgId", ["orgId"]),
+
+  caseValidationReports: defineTable({
+    orgId: v.id("organizations"),
+    caseId: v.id("policyChangeCases"),
+    status: v.union(v.literal("passed"), v.literal("warning"), v.literal("failed")),
+    issues: v.any(),
+    createdAt: v.number(),
+  })
+    .index("by_caseId", ["caseId"])
+    .index("by_orgId", ["orgId"]),
+
   // Conversation turns for cross-thread memory search
   conversationTurns: defineTable({
     orgId: v.id("organizations"),
@@ -942,6 +1079,8 @@ export default defineSchema({
     citedSections: v.optional(v.array(v.string())),
     // Structured coverage names cited by the agent when tool results match policy coverages
     citedCoverageNames: v.optional(v.array(v.string())),
+    // Stable raw source spans cited by lookup_policy_section tool results
+    citedSourceSpanIds: v.optional(v.array(v.string())),
     // Tool names used while producing the response, in call order
     usedTools: v.optional(v.array(v.string())),
     // Exact tool calls made while producing the response

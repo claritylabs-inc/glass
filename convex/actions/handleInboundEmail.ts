@@ -13,6 +13,7 @@ import {
   saveNote,
   generateCoi as generateCoiTool,
   extractPolicyAttachment,
+  createPolicyChangeRequest,
 } from "../lib/chatTools";
 import { Webhook } from "svix";
 import { buildDocumentContext, buildConversationMemoryContext, buildIntelligenceContext } from "../lib/agentPrompts";
@@ -23,8 +24,8 @@ import {
   buildChannelInstructions,
   buildPolicyToolInstructions,
   policySearchScore,
-  searchPolicyDocument,
 } from "../lib/aiUtils";
+import { searchPolicyDocumentWithSourceSpans } from "../lib/policyLookup";
 import {
   classifyPromptInjection,
   collectAllowedRecipients,
@@ -963,7 +964,25 @@ export const processInbound = internalAction({
               { id: params.policyId as Id<"policies"> },
             );
             if (!policy || policy.orgId !== orgId) return "Policy not found.";
-            return searchPolicyDocument(policy, params.query, 8);
+            return searchPolicyDocumentWithSourceSpans(ctx, policy, params.query, 8);
+          },
+        },
+        create_policy_change_request: {
+          ...createPolicyChangeRequest,
+          execute: async (params: { requestText: string; policyId?: string; evidenceSourceIds?: string[] }) => {
+            const result = await ctx.runAction(internal.actions.policyChangeRequests.createFromEmailForThread, {
+              orgId,
+              userId: primaryUserId,
+              policyId: params.policyId as Id<"policies"> | undefined,
+              requestText: params.requestText,
+              evidenceSourceIds: params.evidenceSourceIds,
+            });
+            if (result?.error) return `Could not create policy change request: ${result.error}`;
+            return {
+              status: "created",
+              caseId: result?.caseId,
+              usedSdkPce: Boolean(result?.usedSdkPce),
+            };
           },
         },
         compare_coverages: {

@@ -15,6 +15,7 @@ import {
   insuranceDocToPolicy,
   summarizeExtractionCheckpoint,
 } from "../lib/extraction";
+import { buildPdfSourceSpans } from "../lib/pdfSourceSpans";
 import type { ExtractionResult, ExtractionState, PipelineCheckpoint } from "../lib/extraction";
 import { makeEmbedText } from "../lib/sdkCallbacks";
 import type { Id } from "../_generated/dataModel";
@@ -54,7 +55,50 @@ export type PolicyExtractionState = {
   clSdkCheckpoint?: PipelineCheckpoint<ExtractionState>;
   extractedDocumentJson?: string;
   chunkIds?: string[];
+  sourceSpanIds?: string[];
+  sourceChunkIds?: string[];
+  documentChunksForEmbedding?: Array<{
+    id: string;
+    type: string;
+    text: string;
+    metadata: Record<string, unknown>;
+  }>;
+  sourceSpansForStorage?: Array<{
+    id: string;
+    documentId?: string;
+    sourceKind?: string;
+    pageStart?: number;
+    pageEnd?: number;
+    sectionId?: string;
+    formNumber?: string;
+    text: string;
+    textHash?: string;
+    bbox?: unknown;
+    metadata?: Record<string, unknown>;
+  }>;
+  sourceChunksForEmbedding?: Array<{
+    id: string;
+    documentId?: string;
+    sourceSpanIds?: string[];
+    text: string;
+    metadata?: Record<string, unknown>;
+  }>;
 };
+
+async function runBounded<T>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<void>,
+): Promise<void> {
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (cursor < items.length) {
+      const index = cursor++;
+      await worker(items[index], index);
+    }
+  });
+  await Promise.all(workers);
+}
 
 async function isExtractionCancelled(
   ctx: ActionCtx,
@@ -350,6 +394,14 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
 
       const policyId = pCtx.jobId;
       const clSdkCheckpoint = state.clSdkCheckpoint;
+      const pdfSource = await buildPdfSourceSpans({
+        pdfBytes,
+        documentId: policyId,
+        sourceKind: "policy_pdf",
+      });
+      if (pdfSource.sourceSpans.length > 0) {
+        await pCtx.log(`Prepared ${pdfSource.sourceSpans.length} raw source spans for source-grounded extraction`);
+      }
 
       if (clSdkCheckpoint) {
         await pCtx.log(`Resuming extraction from cl-sdk phase "${clSdkCheckpoint.phase}"…`);
@@ -368,14 +420,17 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         },
       });
 
-      const extractOptions = clSdkCheckpoint ? { resumeFrom: clSdkCheckpoint } : undefined;
+      const extractOptions = {
+        ...(clSdkCheckpoint ? { resumeFrom: clSdkCheckpoint } : {}),
+        ...(pdfSource.sourceSpans.length > 0 ? { sourceSpans: pdfSource.sourceSpans } : {}),
+      };
 
       let result: ExtractionResult;
       try {
         result = await extractor.extract(
           pdfBytes,
           policyId,
-          extractOptions,
+          extractOptions as any,
         );
       } catch (error) {
         if (isCancelledError(error)) {
@@ -391,10 +446,12 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
 
       const doc = result.document as Record<string, unknown>;
       const chunks = result.chunks;
+      const sourceSpans = (((result as any).sourceSpans ?? pdfSource.sourceSpans) ?? []) as Array<Record<string, any>>;
+      const sourceChunks = (((result as any).sourceChunks ?? pdfSource.sourceChunks) ?? []) as Array<Record<string, any>>;
       const tokenUsage = result.tokenUsage;
 
       await pCtx.log(
-        `Extraction complete. Type: ${doc.type}. ${chunks.length} chunks. Tokens: ${tokenUsage.inputTokens}in/${tokenUsage.outputTokens}out`,
+        `Extraction complete. Type: ${doc.type}. ${chunks.length} chunks, ${sourceSpans.length} source spans. Tokens: ${tokenUsage.inputTokens}in/${tokenUsage.outputTokens}out`,
       );
       for (const line of summarizeExtractionCheckpoint(result)) {
         await pCtx.log(line);
@@ -442,12 +499,14 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         clSdkCheckpoint: undefined, // clear — extraction done
         extractedDocumentJson: JSON.stringify(result.document),
         chunkIds,
+        sourceSpanIds: sourceSpans.map((span) => String(span.id)),
+        sourceChunkIds: sourceChunks.map((chunk) => String(chunk.id)),
         fileName: resolvedFileName,
       };
 
-      // Store chunks in-state temporarily (size may be large — keep only IDs + text inline)
-      // Pass full chunks as pCtx state just for the embed phase
-      (nextState as any)._chunks = chunks;
+      nextState.documentChunksForEmbedding = chunks;
+      nextState.sourceSpansForStorage = sourceSpans as PolicyExtractionState["sourceSpansForStorage"];
+      nextState.sourceChunksForEmbedding = sourceChunks as PolicyExtractionState["sourceChunksForEmbedding"];
 
       return { kind: "next", nextPhase: "embed_and_store", state: nextState };
     },
@@ -463,15 +522,9 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         return { kind: "error", error: CANCELLED_BY_USER };
       }
 
-      // chunks may have been passed in-state from extract phase (same execution)
-      // or we skip re-embedding since chunks are not re-fetchable without re-extracting.
-      // On resume from a serialized checkpoint, _chunks won't be present — skip embedding gracefully.
-      const chunks = (state as any)._chunks as Array<{
-        id: string;
-        type: string;
-        text: string;
-        metadata: Record<string, unknown>;
-      }> | undefined;
+      const chunks = state.documentChunksForEmbedding;
+      const sourceSpans = state.sourceSpansForStorage;
+      const sourceChunks = state.sourceChunksForEmbedding;
 
       if (!chunks || chunks.length === 0) {
         await pCtx.log("No chunks to embed (phase resumed or no chunks extracted)");
@@ -483,9 +536,9 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         );
         const embed = makeEmbedText(convexCtx, state.orgId as Id<"organizations">);
         let embedded = 0;
-        for (const chunk of chunks) {
+        await runBounded(chunks, 4, async (chunk) => {
           if (await isExtractionCancelled(convexCtx, policyId)) {
-            return { kind: "error", error: CANCELLED_BY_USER };
+            throw new Error(CANCELLED_BY_USER);
           }
           try {
             const embedding = await embed(chunk.text);
@@ -504,17 +557,88 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
             );
             embedded++;
           } catch (err) {
+            if (isCancelledError(err)) throw err;
             await pCtx.log(
               `Warning: failed to embed chunk ${chunk.id}: ${err instanceof Error ? err.message : String(err)}`,
               "warn",
             );
           }
-        }
+        });
         await pCtx.log(`Stored ${embedded}/${chunks.length} chunks`);
       }
 
-      // Drop the raw chunks from state (not needed downstream)
-      const { _chunks: _dropped, ...cleanState } = state as any;
+      if (sourceSpans?.length || sourceChunks?.length) {
+        await pCtx.log(`Storing ${sourceSpans?.length ?? 0} source spans and ${sourceChunks?.length ?? 0} source chunks…`);
+        await convexCtx.runMutation(
+          (internal as any).sourceSpans.deleteByPolicy,
+          { policyId },
+        );
+
+        for (const span of sourceSpans ?? []) {
+          await convexCtx.runMutation(
+            (internal as any).sourceSpans.insertSpan,
+            {
+              orgId: state.orgId,
+              policyId,
+              spanId: span.id,
+              documentId: span.documentId ?? policyId,
+              sourceKind: span.sourceKind ?? "policy_pdf",
+              pageStart: span.pageStart,
+              pageEnd: span.pageEnd,
+              sectionId: span.sectionId,
+              formNumber: span.formNumber,
+              text: span.text,
+              textHash: span.textHash ?? span.id,
+              bbox: span.bbox,
+              metadata: span.metadata,
+              createdAt: Date.now(),
+            },
+          );
+        }
+
+        if (sourceChunks?.length) {
+          const embed = makeEmbedText(convexCtx, state.orgId as Id<"organizations">);
+          let embeddedSourceChunks = 0;
+          await runBounded(sourceChunks, 4, async (chunk) => {
+            if (await isExtractionCancelled(convexCtx, policyId)) {
+              throw new Error(CANCELLED_BY_USER);
+            }
+            try {
+              const embedding = await embed(chunk.text);
+              await convexCtx.runMutation(
+                (internal as any).sourceSpans.insertChunk,
+                {
+                  orgId: state.orgId,
+                  policyId,
+                  chunkId: chunk.id,
+                  documentId: chunk.documentId ?? policyId,
+                  sourceSpanIds: chunk.sourceSpanIds ?? [],
+                  text: chunk.text,
+                  metadata: chunk.metadata,
+                  embedding,
+                  createdAt: Date.now(),
+                },
+              );
+              embeddedSourceChunks++;
+            } catch (err) {
+              if (isCancelledError(err)) throw err;
+              await pCtx.log(
+                `Warning: failed to embed source chunk ${chunk.id}: ${err instanceof Error ? err.message : String(err)}`,
+                "warn",
+              );
+            }
+          });
+          await pCtx.log(`Stored ${embeddedSourceChunks}/${sourceChunks.length} source chunks`);
+        }
+      }
+
+      // Drop the raw chunks from state after durable storage.
+      const {
+        documentChunksForEmbedding: _dropped,
+        sourceSpansForStorage: _droppedSpans,
+        sourceChunksForEmbedding: _droppedSourceChunks,
+        ...cleanState
+      } = state;
       return { kind: "next", nextPhase: "post_process", state: cleanState };
     },
   };

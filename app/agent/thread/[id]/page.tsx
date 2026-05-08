@@ -53,6 +53,7 @@ export type ThreadMessage = {
   referencedPolicyIds?: Id<"policies">[];
   citedSections?: string[];
   citedCoverageNames?: string[];
+  citedSourceSpanIds?: string[];
   usedTools?: string[];
   toolCalls?: { name: string; input?: string }[];
   status?: "processing" | "error" | "pending_send";
