@@ -516,8 +516,13 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
 
       const extractOptions: ExtractOptions = {
         ...(clSdkCheckpoint ? { resumeFrom: clSdkCheckpoint } : {}),
-        ...(pdfSource.sourceSpans.length > 0 ? { sourceSpans: pdfSource.sourceSpans } : {}),
       };
+      if (pdfSource.sourceSpans.length > 0) {
+        await pCtx.log(
+          "Source spans will be stored after extraction; SDK source-grounding is disabled pending cl-sdk source chunk schema fix",
+          "warn",
+        );
+      }
 
       let result: ExtractionResult;
       try {
