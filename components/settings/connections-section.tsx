@@ -201,7 +201,7 @@ export function ConnectionsSection() {
   ]);
 
   const siteUrl = typeof window !== "undefined" ? window.location.origin : "";
-  const mcpUrl = `${siteUrl}/.well-known/mcp.json`;
+  const mcpUrl = `${siteUrl}/mcp`;
 
   const localSnippet = JSON.stringify(
     {
