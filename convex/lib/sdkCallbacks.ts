@@ -7,13 +7,16 @@
  * simple callback interfaces the new SDK expects: GenerateText, GenerateObject, EmbedText.
  */
 
-import { generateText, Output, embed } from "ai";
+import { Output, embed } from "ai";
 import type { LanguageModelUsage } from "ai";
 import type { ProviderOptions } from "@ai-sdk/provider-utils";
 import { createOpenAI } from "@ai-sdk/openai";
 import {
   getModel,
+  getModelForOrg,
   getProviderOptionsForTask,
+  generateStructuredWithFallback,
+  generateTextWithFallback,
   mergeProviderOptions,
   type ModelTask,
 } from "./models";
@@ -41,6 +44,11 @@ type ExtractionProviderOptions = ProviderOptions & {
   fileId?: string;
   mimeType?: string;
   images?: ExtractionImage[];
+};
+
+type ModelRoutingContext = {
+  ctx?: ActionCtx;
+  orgId?: Id<"organizations">;
 };
 
 type PdfFilePart = {
@@ -190,11 +198,17 @@ function extractEmbeddedPdf(
  * Create a GenerateText callback backed by Glass's model router.
  * The task parameter selects which model to use (extraction, classification, etc.).
  */
-export function makeGenerateText(task: ModelTask = "extraction"): GenerateText {
+export function makeGenerateText(
+  task: ModelTask = "extraction",
+  routing?: ModelRoutingContext,
+): GenerateText {
   return async ({ prompt, system, maxTokens, providerOptions }) => {
     const effectiveMaxTokens = getEffectiveMaxTokens(task, prompt, maxTokens);
-    const result = await generateText({
-      model: getModel(task),
+    const model = routing?.ctx && routing.orgId
+      ? await getModelForOrg(routing.ctx, routing.orgId, task)
+      : getModel(task);
+    const result = await generateTextWithFallback({
+      model,
       system,
       ...buildPromptInput(prompt, providerOptions),
       maxOutputTokens: effectiveMaxTokens,
@@ -214,12 +228,18 @@ export function makeGenerateText(task: ModelTask = "extraction"): GenerateText {
  * Create a GenerateObject callback backed by Glass's model router.
  * Uses AI SDK v6's generateText + Output.object() for structured output.
  */
-export function makeGenerateObject(task: ModelTask = "extraction"): GenerateObject {
+export function makeGenerateObject(
+  task: ModelTask = "extraction",
+  routing?: ModelRoutingContext,
+): GenerateObject {
   return async ({ prompt, system, schema, maxTokens, providerOptions }) => {
     const effectiveMaxTokens = getEffectiveMaxTokens(task, prompt, maxTokens);
+    const model = routing?.ctx && routing.orgId
+      ? await getModelForOrg(routing.ctx, routing.orgId, task)
+      : getModel(task);
     try {
-      const result = await generateText({
-        model: getModel(task),
+      const result = await generateStructuredWithFallback({
+        model,
         system,
         ...buildPromptInput(prompt, providerOptions),
         output: Output.object({ schema }),

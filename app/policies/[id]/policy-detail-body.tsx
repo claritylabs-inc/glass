@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback, type ReactNode } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo, type ReactNode } from "react";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
@@ -8,7 +8,6 @@ import { FadeIn } from "@/components/ui/fade-in";
 import { CheckCircle2, FileText, Loader2, RotateCw, Send, Trash2, Eye, X } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import Link from "next/link";
-import { StructuredLog, type StructuredLogEntry } from "@/components/structured-log";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Id } from "@/convex/_generated/dataModel";
 import { PillButton } from "@/components/ui/pill-button";
@@ -29,123 +28,36 @@ import { ExtractionCards } from "./extraction-panel";
 import { PolicyExtractionBanner } from "@/components/shared/extraction-banner";
 import type { PipelineStatus, LogEntry } from "@claritylabs/cl-pipelines";
 
-function classifyExtractionMessage(msg: string): StructuredLogEntry["status"] {
-  if (/^(failed|error)/i.test(msg)) return "error";
-  if (/^warning/i.test(msg)) return "warning";
-  if (/(complete|success|stored|finished|done)/i.test(msg)) return "success";
-  if (/(started|starting|beginning|extracting|processing|parsing|analyzing)/i.test(msg)) return "info";
-  return "info";
-}
-
-const AUDIT_ACTION_CONFIG: Record<
-  string,
-  { status: StructuredLogEntry["status"]; title: string }
-> = {
-  created: { status: "info", title: "Policy created" },
-  extraction_started: { status: "info", title: "Extraction started" },
-  extraction_complete: { status: "success", title: "Extraction complete" },
-  extraction_error: { status: "error", title: "Extraction failed" },
-  re_extraction: { status: "warning", title: "Re-extraction triggered" },
-  pdf_uploaded: { status: "info", title: "PDF uploaded" },
-  deleted: { status: "error", title: "Policy deleted" },
-  restored: { status: "success", title: "Policy restored" },
-  dismissed: { status: "warning", title: "Policy dismissed" },
-  agent_referenced: { status: "info", title: "Referenced by Glass" },
+type PolicyAuditLogEntry = {
+  _id: string;
+  _creationTime: number;
+  policyId?: string;
+  quoteId?: string;
+  userId?: string;
+  orgId?: string;
+  action: string;
+  detail?: string;
+  metadata?: unknown;
 };
 
-const EXTRACTION_ACTIONS = new Set([
-  "extraction_started",
-  "re_extraction",
-  "extraction_complete",
-  "extraction_error",
-]);
+type PolicyPipelineLogEntry = LogEntry & {
+  timestamp: number;
+  message: string;
+  phase?: string;
+  level?: string;
+};
 
-function PolicyActivityTab({
-  policyId,
-  policy,
-}: {
-  policyId: string;
-  policy: Record<string, unknown>;
-}) {
-  const entries = useQuery(api.policyAuditLog.listByPolicy, {
-    policyId: policyId as Id<"policies">,
-  });
+const LOG_POLICY_ACTIVITY_IN_BROWSER =
+  process.env.NODE_ENV !== "production" ||
+  process.env.NEXT_PUBLIC_VERCEL_ENV === "preview" ||
+  process.env.NEXT_PUBLIC_VERCEL_ENV === "development";
 
-  const isLive = policy.pipelineStatus === "running";
-
-  if (entries === undefined) {
-    return (
-      <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
-        <div className="px-4 py-2 border-b border-foreground/6 bg-foreground/[0.015]">
-          <div className="h-4 w-28 bg-foreground/5 rounded animate-pulse" />
-        </div>
-        {Array.from({ length: 4 }).map((_, i) => (
-          <div
-            key={i}
-            className="px-4 py-2.5 border-b border-foreground/[0.04] grid grid-cols-[100px_1fr_1fr] gap-3"
-          >
-            <div className="h-3.5 w-16 bg-foreground/5 rounded animate-pulse" />
-            <div className="h-3.5 w-32 bg-foreground/5 rounded animate-pulse" />
-            <div className="h-3.5 w-24 bg-foreground/5 rounded animate-pulse" />
-          </div>
-        ))}
-      </div>
-    );
-  }
-
-  const auditEntries = [...entries]
-    .sort((a, b) => a._creationTime - b._creationTime)
-    .map((entry) => {
-      const cfg = AUDIT_ACTION_CONFIG[entry.action] ?? {
-        status: "info" as const,
-        title: entry.action,
-      };
-      return { ...entry, _cfg: cfg };
-    });
-
-  const rawLog: { timestamp: number; message: string }[] = Array.isArray(
-    policy.pipelineLog,
-  )
-    ? (policy.pipelineLog as { timestamp: number; message: string }[])
-    : [];
-  const extractionSubEntries: StructuredLogEntry["subEntries"] = rawLog.map(
-    (entry) => ({
-      timestamp: entry.timestamp,
-      message: entry.message,
-      status: classifyExtractionMessage(entry.message),
-    }),
-  );
-
-  const lastExtractionIdx = auditEntries.findLastIndex((e) =>
-    EXTRACTION_ACTIONS.has(e.action),
-  );
-
-  const logEntries: StructuredLogEntry[] = auditEntries.map((entry, i) => {
-    const isExtractionParent =
-      i === lastExtractionIdx && extractionSubEntries.length > 0;
-
-    return {
-      id: entry._id,
-      timestamp: entry._creationTime,
-      status: entry._cfg.status,
-      event: entry._cfg.title,
-      detail: entry.detail,
-      meta: entry.metadata
-        ? typeof entry.metadata === "object"
-          ? (entry.metadata as Record<string, string | number | boolean>)
-          : { info: String(entry.metadata) }
-        : undefined,
-      subEntries: isExtractionParent ? extractionSubEntries : undefined,
-    };
-  });
-
-  return (
-    <StructuredLog
-      entries={logEntries}
-      live={isLive}
-      emptyMessage="No activity recorded yet"
-    />
-  );
+function logPolicyActivityToBrowser(
+  event: "status" | "audit" | "pipeline_log",
+  payload: Record<string, unknown>,
+) {
+  if (!LOG_POLICY_ACTIVITY_IN_BROWSER) return;
+  console.info(`[policy-activity] ${event}`, payload);
 }
 
 function PolicyChangesTab({ policyId }: { policyId: string }) {
@@ -476,6 +388,12 @@ export function PolicyDetailBody({
   afterDeleteHref = "/policies",
 }: PolicyDetailBodyProps) {
   const policy = useQuery(api.policies.get, { id: id as Id<"policies"> });
+  const auditEntries = useQuery(
+    api.policyAuditLog.listByPolicy,
+    LOG_POLICY_ACTIVITY_IN_BROWSER
+      ? { policyId: id as Id<"policies"> }
+      : "skip",
+  );
   const fileUrl = useQuery(
     api.policies.getFileUrl,
     policy?.fileId ? { fileId: policy.fileId as Id<"_storage"> } : "skip",
@@ -485,10 +403,8 @@ export function PolicyDetailBody({
   const restorePolicy = useMutation(api.policies.restore);
   const cancelExtraction = useMutation(api.policies.cancelExtraction);
   const retryExtraction = useAction(api.actions.retryExtraction.retryExtraction);
-  const rechunk = useAction(api.actions.rechunkPolicy.rechunk);
 
   const [reExtracting, setReExtracting] = useState(false);
-  const [rechunking, setRechunking] = useState(false);
   const [cancelingExtraction, setCancelingExtraction] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -498,8 +414,11 @@ export function PolicyDetailBody({
   const [deleting, setDeleting] = useState(false);
   const [demoBannerDismissed, setDemoBannerDismissed] = useState(false);
   const [activeTab, setActiveTab] = useState<
-    "details" | "activity" | "extraction" | "changes"
+    "details" | "extraction" | "changes"
   >("details");
+  const loggedAuditIds = useRef<Set<string>>(new Set());
+  const loggedPipelineEntries = useRef<Set<string>>(new Set());
+  const loggedStatus = useRef<string | null>(null);
 
   const { openWithUrl, setFileUrl: preloadPdfUrl } = usePdf();
   const { setPageContext } = usePageContext();
@@ -541,6 +460,13 @@ export function PolicyDetailBody({
   const pipelineStatus = p.pipelineStatus as PipelineStatus | undefined;
   const canCancelExtraction =
     pipelineStatus === "running" || pipelineStatus === "paused";
+  const rawPipelineLog = p.pipelineLog;
+  const pipelineLog: PolicyPipelineLogEntry[] = useMemo(
+    () => Array.isArray(rawPipelineLog)
+      ? (rawPipelineLog as PolicyPipelineLogEntry[])
+      : [],
+    [rawPipelineLog],
+  );
   const policyDocument: Record<string, unknown> | undefined = p.document as
     | Record<string, unknown>
     | undefined;
@@ -565,6 +491,73 @@ export function PolicyDetailBody({
     formInventory: p.formInventory,
     supplementaryFacts: p.supplementaryFacts,
   };
+
+  useEffect(() => {
+    loggedAuditIds.current.clear();
+    loggedPipelineEntries.current.clear();
+    loggedStatus.current = null;
+  }, [id]);
+
+  useEffect(() => {
+    if (!LOG_POLICY_ACTIVITY_IN_BROWSER || !policy) return;
+    const statusKey = [
+      policy._id,
+      pipelineStatus ?? "unknown",
+      (p.pipelineError as string | undefined) ?? "",
+    ].join(":");
+    if (loggedStatus.current === statusKey) return;
+    loggedStatus.current = statusKey;
+    logPolicyActivityToBrowser("status", {
+      policyId: policy._id,
+      policyNumber,
+      status: pipelineStatus ?? "unknown",
+      error: p.pipelineError,
+    });
+  }, [policy, pipelineStatus, p.pipelineError, policyNumber]);
+
+  useEffect(() => {
+    if (!LOG_POLICY_ACTIVITY_IN_BROWSER || !auditEntries) return;
+    const orderedEntries = [...(auditEntries as PolicyAuditLogEntry[])]
+      .sort((a, b) => a._creationTime - b._creationTime);
+    for (const entry of orderedEntries) {
+      if (loggedAuditIds.current.has(entry._id)) continue;
+      loggedAuditIds.current.add(entry._id);
+      logPolicyActivityToBrowser("audit", {
+        id: entry._id,
+        policyId: entry.policyId,
+        quoteId: entry.quoteId,
+        policyNumber,
+        action: entry.action,
+        detail: entry.detail,
+        metadata: entry.metadata,
+        userId: entry.userId,
+        orgId: entry.orgId,
+        timestamp: new Date(entry._creationTime).toISOString(),
+      });
+    }
+  }, [auditEntries, policyNumber]);
+
+  useEffect(() => {
+    if (!LOG_POLICY_ACTIVITY_IN_BROWSER || pipelineLog.length === 0) return;
+    for (const entry of pipelineLog) {
+      const key = [
+        entry.timestamp,
+        entry.phase ?? "",
+        entry.level ?? "",
+        entry.message,
+      ].join(":");
+      if (loggedPipelineEntries.current.has(key)) continue;
+      loggedPipelineEntries.current.add(key);
+      logPolicyActivityToBrowser("pipeline_log", {
+        policyId: id,
+        policyNumber,
+        timestamp: new Date(entry.timestamp).toISOString(),
+        phase: entry.phase,
+        level: entry.level ?? "info",
+        message: entry.message,
+      });
+    }
+  }, [id, pipelineLog, policyNumber]);
 
   useEffect(() => {
     if (!onBreadcrumb) return;
@@ -613,27 +606,6 @@ export function PolicyDetailBody({
     }
   };
 
-  const handleReindex = async () => {
-    if (!policy) return;
-    setRechunking(true);
-    try {
-      const result = (await rechunk({ policyId: policy._id })) as Record<
-        string,
-        unknown
-      >;
-      if (result?.error) {
-        toast.error(result.error as string);
-        return;
-      }
-      toast.success(`Reindexed: ${result.newChunks} search chunks updated`);
-      setShowRefreshDialog(false);
-    } catch {
-      toast.error("Reindexing failed");
-    } finally {
-      setRechunking(false);
-    }
-  };
-
   const handleCancelExtraction = useCallback(async () => {
     if (!policy) return;
     setCancelingExtraction(true);
@@ -670,10 +642,10 @@ export function PolicyDetailBody({
             size="compact"
             variant="icon"
             label="Re-extract"
-            disabled={reExtracting || rechunking || cancelingExtraction}
+            disabled={reExtracting || cancelingExtraction}
             onClick={() => setShowRefreshDialog(true)}
           >
-            {reExtracting || rechunking ? (
+            {reExtracting ? (
               <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
               <RotateCw className="w-4 h-4" />
@@ -689,7 +661,6 @@ export function PolicyDetailBody({
     policy,
     isDeleted,
     reExtracting,
-    rechunking,
     cancelingExtraction,
     canCancelExtraction,
     handleCancelExtraction,
@@ -790,59 +761,29 @@ export function PolicyDetailBody({
 
       <Dialog
         open={showRefreshDialog}
-        onOpenChange={(v) => !v && setShowRefreshDialog(false)}
+        onOpenChange={(v) => !v && !reExtracting && setShowRefreshDialog(false)}
       >
-        <DialogContent showCloseButton={false} className="sm:max-w-lg">
+        <DialogContent showCloseButton={false}>
           <DialogHeader>
-            <DialogTitle>Refresh full data</DialogTitle>
+            <DialogTitle>Re-extract policy data</DialogTitle>
             <DialogDescription>
-              Choose whether to rerun extraction from the original files or just
-              rebuild the searchable chunks from the existing extracted data.
+              Rerun extraction from the original file for{" "}
+              <strong>{policyNumber}</strong>. This will regenerate the
+              structured policy data and searchable chunks.
             </DialogDescription>
           </DialogHeader>
-
-          <div className="space-y-3 text-body-sm text-muted-foreground">
-            <div className="rounded-lg border border-foreground/6 bg-foreground/[0.02] px-3 py-2.5">
-              <p className="font-medium text-foreground">
-                Re-extract from original files
-              </p>
-              <p className="mt-1">
-                Rerun the extraction pipeline and regenerate the structured
-                policy data.
-              </p>
-            </div>
-
-            <div className="rounded-lg border border-foreground/6 bg-foreground/[0.02] px-3 py-2.5">
-              <p className="font-medium text-foreground">Reindex existing data</p>
-              <p className="mt-1">
-                Rebuild search chunks without rerunning extraction.
-              </p>
-            </div>
-          </div>
 
           <DialogFooter>
             <PillButton
               variant="secondary"
               onClick={() => setShowRefreshDialog(false)}
-              disabled={reExtracting || rechunking}
+              disabled={reExtracting}
             >
               Cancel
             </PillButton>
             <PillButton
-              variant="secondary"
-              onClick={handleReindex}
-              disabled={
-                policy.pipelineStatus !== "complete" ||
-                reExtracting ||
-                rechunking
-              }
-            >
-              {rechunking && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-              Reindex
-            </PillButton>
-            <PillButton
               onClick={handleReextractFromSource}
-              disabled={reExtracting || rechunking}
+              disabled={reExtracting}
             >
               {reExtracting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
               Re-extract
@@ -876,7 +817,7 @@ export function PolicyDetailBody({
       <Tabs
         value={activeTab}
         onValueChange={(value) =>
-          setActiveTab(value as "details" | "activity" | "extraction" | "changes")
+          setActiveTab(value as "details" | "extraction" | "changes")
         }
         className="mb-6"
       >
@@ -886,7 +827,6 @@ export function PolicyDetailBody({
               { id: "details" as const, label: "Summary" },
               { id: "extraction" as const, label: "Breakdown" },
               { id: "changes" as const, label: "Changes" },
-              { id: "activity" as const, label: "Activity" },
             ] as const
           ).map((tab) => (
             <TabsTrigger key={tab.id} value={tab.id}>
@@ -902,7 +842,7 @@ export function PolicyDetailBody({
             policyId={policy._id}
             status={p.pipelineStatus as PipelineStatus | undefined}
             error={p.pipelineError as string | undefined}
-            log={p.pipelineLog as LogEntry[] | undefined}
+            log={pipelineLog}
             onCancel={canCancelExtraction ? handleCancelExtraction : undefined}
             cancelling={cancelingExtraction}
           />
@@ -929,10 +869,6 @@ export function PolicyDetailBody({
             pdfUrl={fileUrl}
           />
         </FadeIn>
-      )}
-
-      {activeTab === "activity" && (
-        <PolicyActivityTab policyId={id} policy={policy} />
       )}
 
       {activeTab === "changes" && (

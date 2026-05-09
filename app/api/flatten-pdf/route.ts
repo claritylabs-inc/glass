@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import * as mupdf from "mupdf";
 import { PDFDocument } from "pdf-lib";
 
 export const maxDuration = 60;
@@ -28,47 +27,18 @@ export async function POST(req: NextRequest) {
 
   try {
     const pdfBuffer = Buffer.from(body.pdfBase64, "base64");
+    const pdfDoc = await PDFDocument.load(pdfBuffer, { ignoreEncryption: true });
 
-    // Load PDF with mupdf and rasterize each page to PNG at 144 DPI (2x)
-    const doc = mupdf.Document.openDocument(pdfBuffer, "application/pdf");
-    const pageCount = doc.countPages();
-    const pngPages: Uint8Array[] = [];
-    const DPI = 144;
-    const scale = DPI / 72; // mupdf default is 72 DPI
-
-    for (let i = 0; i < pageCount; i++) {
-      const page = doc.loadPage(i);
-      const pixmap = page.toPixmap(
-        mupdf.Matrix.scale(scale, scale),
-        mupdf.ColorSpace.DeviceRGB,
-        false, // no alpha
-        true,  // annots
-      );
-      const png = pixmap.asPNG();
-      pngPages.push(png);
+    try {
+      const form = pdfDoc.getForm();
+      if (form.getFields().length > 0) {
+        form.flatten({ updateFieldAppearances: true });
+      }
+    } catch {
+      // No AcroForm to flatten.
     }
 
-    // Build a clean PDF from the rasterized PNGs using pdf-lib
-    const outPdf = await PDFDocument.create();
-
-    for (let i = 0; i < pageCount; i++) {
-      // Get original page dimensions for correct sizing
-      const page = doc.loadPage(i);
-      const bounds = page.getBounds();
-      const width = bounds[2] - bounds[0];
-      const height = bounds[3] - bounds[1];
-
-      const pngImage = await outPdf.embedPng(pngPages[i]);
-      const pdfPage = outPdf.addPage([width, height]);
-      pdfPage.drawImage(pngImage, {
-        x: 0,
-        y: 0,
-        width,
-        height,
-      });
-    }
-
-    const flattenedBytes = await outPdf.save();
+    const flattenedBytes = await pdfDoc.save();
     const flattenedBase64 = Buffer.from(flattenedBytes).toString("base64");
 
     return NextResponse.json({ pdfBase64: flattenedBase64 });

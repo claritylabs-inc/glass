@@ -27,6 +27,16 @@ import { createExtractor } from "@claritylabs/cl-sdk";
 import type { ExtractionResult, ExtractionState, LogFn, PipelineCheckpoint, TokenUsage } from "@claritylabs/cl-sdk";
 import { makeGenerateText, makeGenerateObject } from "./sdkCallbacks";
 import { modelCapabilitiesForTask } from "./modelCatalog";
+import type { Id } from "../_generated/dataModel";
+import type { ActionCtx } from "../_generated/server";
+
+function readBoundedIntEnv(name: string, fallback: number, min: number, max: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const value = Number.parseInt(raw, 10);
+  if (!Number.isFinite(value)) return fallback;
+  return Math.max(min, Math.min(max, value));
+}
 
 /**
  * Build an extractor pre-configured with Glass's model routing.
@@ -36,14 +46,19 @@ import { modelCapabilitiesForTask } from "./modelCatalog";
  * through its multi-model config.
  */
 export function buildExtractor(opts?: {
+  ctx?: ActionCtx;
+  orgId?: Id<"organizations">;
   log?: LogFn;
   onProgress?: (message: string) => void;
   onTokenUsage?: (usage: TokenUsage) => void;
   onCheckpointSave?: (checkpoint: PipelineCheckpoint<ExtractionState>) => Promise<void>;
   shouldCancel?: () => Promise<boolean>;
 }) {
-  const generateText = makeGenerateText("extraction");
-  const generateObject = makeGenerateObject("extraction");
+  const routing = opts?.ctx && opts.orgId
+    ? { ctx: opts.ctx, orgId: opts.orgId }
+    : undefined;
+  const generateText = makeGenerateText("extraction", routing);
+  const generateObject = makeGenerateObject("extraction", routing);
   const throwIfCancelled = async () => {
     if (await opts?.shouldCancel?.()) {
       throw new Error("Cancelled by user");
@@ -63,8 +78,8 @@ export function buildExtractor(opts?: {
       await throwIfCancelled();
       return result;
     },
-    concurrency: 2,
-    maxReviewRounds: 2,
+    concurrency: readBoundedIntEnv("EXTRACTION_CONCURRENCY", 4, 1, 8),
+    maxReviewRounds: readBoundedIntEnv("EXTRACTION_MAX_REVIEW_ROUNDS", 1, 0, 2),
     log: opts?.log,
     onProgress: opts?.onProgress,
     onTokenUsage: opts?.onTokenUsage,

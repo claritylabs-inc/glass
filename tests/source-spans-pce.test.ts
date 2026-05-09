@@ -78,12 +78,14 @@ describe("source spans and PCE backend surfaces", () => {
     const policyExtraction = read("convex/actions/policyExtraction.ts");
     const pdfSourceSpans = read("convex/lib/pdfSourceSpans.ts");
 
-    expect(pdfSourceSpans).toContain("Document.openDocument");
-    expect(pdfSourceSpans).toContain("toStructuredText().asText()");
+    expect(pdfSourceSpans).toContain("pdfjs-dist/legacy/build/pdf.mjs");
+    expect(pdfSourceSpans).toContain("getTextContent");
     expect(pdfSourceSpans).toContain("splitPageIntoSectionCandidates");
     expect(pdfSourceSpans).toContain("sourceUnit: \"section_candidate\"");
     expect(policyExtraction).toContain("buildPdfSourceSpans");
-    expect(policyExtraction).toContain("sourceSpans: pdfSource.sourceSpans");
+    expect(policyExtraction).toContain("cl-sdk@1.0.1 currently crashes in schema normalization");
+    expect(policyExtraction).toContain(": pdfSource.sourceSpans as Array<Record<string, any>>");
+    expect(policyExtraction).not.toContain("sourceSpans: pdfSource.sourceSpans");
     expect(policyExtraction).toContain("documentChunksForEmbedding");
     expect(policyExtraction).toContain("sourceChunksForEmbedding");
   });

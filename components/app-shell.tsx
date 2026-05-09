@@ -15,9 +15,7 @@ import { PdfProvider, usePdf } from "@/components/pdf-context";
 import { PageContextProvider } from "@/hooks/use-page-context";
 import { usePageContext } from "@/hooks/use-page-context";
 import { EntityPreviewProvider, useEntityPreview } from "@/hooks/use-entity-preview";
-import { LogDetailProvider, useLogDetail } from "@/hooks/use-log-detail";
 import { EntityPreviewPanel } from "@/components/entity-preview-panel";
-import { LogDetailPanel } from "@/components/log-detail-panel";
 import { CommandPalette } from "@/components/command-palette";
 import dynamic from "next/dynamic";
 
@@ -45,10 +43,8 @@ function ShellContent({
   const [mobileOpen, setMobileOpen] = useState(false);
   const { isPdfOpen, fileUrl } = usePdf();
   const { preview: entityPreview } = useEntityPreview();
-  const { entry: logDetailEntry } = useLogDetail();
   const hasPdfPanel = isPdfOpen && !!fileUrl;
   const hasEntityPanel = !!entityPreview;
-  const hasLogPanel = !!logDetailEntry;
 
   return (
     <div className="h-dvh flex overflow-hidden">
@@ -78,18 +74,13 @@ function ShellContent({
           <CommandPalette />
         </div>
       </div>
-      {/* Right-side panels — PDF, entity preview, or log detail */}
+      {/* Right-side panels — PDF or entity preview */}
       {hasPdfPanel && (
         <div className="hidden lg:flex shrink-0 h-full">
           <PdfPanel />
         </div>
       )}
-      {!hasPdfPanel && hasLogPanel && (
-        <div className="hidden lg:flex shrink-0 h-full">
-          <LogDetailPanel />
-        </div>
-      )}
-      {!hasPdfPanel && !hasLogPanel && hasEntityPanel && (
+      {!hasPdfPanel && hasEntityPanel && (
         <div className="hidden lg:flex shrink-0 h-full">
           <EntityPreviewPanel />
         </div>
@@ -99,10 +90,6 @@ function ShellContent({
       )}
     </div>
   );
-}
-
-function SidebarFallback() {
-  return <div className="hidden lg:block w-14 border-r border-foreground/6" aria-hidden="true" />;
 }
 
 function PersistentChatBar() {
@@ -237,16 +224,14 @@ export function AppShell({
     <PageContextProvider>
       <PdfProvider>
         <EntityPreviewProvider>
-          <LogDetailProvider>
-            <ShellContent
-              actions={actions}
-              breadcrumbDetail={breadcrumbDetail}
-              presenceUsers={presenceUsers}
-              rightPanel={rightPanel}
-            >
-              {children}
-            </ShellContent>
-          </LogDetailProvider>
+          <ShellContent
+            actions={actions}
+            breadcrumbDetail={breadcrumbDetail}
+            presenceUsers={presenceUsers}
+            rightPanel={rightPanel}
+          >
+            {children}
+          </ShellContent>
         </EntityPreviewProvider>
       </PdfProvider>
     </PageContextProvider>

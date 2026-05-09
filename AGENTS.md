@@ -52,13 +52,13 @@ Usage notes:
 - The UI never exposes Glass's exact default model configuration; model selectors unlock only for providers where the broker has supplied an API key.
 - `embeddings` is routed separately from language-model use cases and is restricted to embedding models. Embeddings remain 1536-dimensional to match Convex vector indexes.
 - Main org-aware actions use `getModelForOrg(ctx, orgId, task)`, which applies broker overrides only when a matching broker-owned provider key exists.
-- SDK-facing workflows pass model capability metadata from `MODEL_CAPABILITIES` in [convex/lib/modelCatalog.ts](convex/lib/modelCatalog.ts), so `cl-sdk` can resolve task-aware token budgets for extraction, query, and PCE instead of relying on low static caps.
+- SDK-facing extraction passes the org context into the SDK callbacks, so broker-owned provider keys and routes apply to `cl-sdk` model calls. SDK-facing workflows also pass model capability metadata from `MODEL_CAPABILITIES` in [convex/lib/modelCatalog.ts](convex/lib/modelCatalog.ts), so `cl-sdk` can resolve task-aware token budgets for extraction, query, and PCE instead of relying on low static caps.
 
 Fallback behavior:
 
 - If no broker key exists for a route, Glass uses its opaque default configuration.
 - `getModel()` falls back to Claude Haiku if a provider is unavailable.
-- `generateTextWithFallback()` and `generateStructuredWithFallback()` retry failed calls on `gpt-5.5` with reasoning disabled unless the original model already was GPT-5.5 or Claude Haiku.
+- `generateTextWithFallback()` and `generateStructuredWithFallback()` retry failed calls on the cheaper fallback route in [convex/lib/modelCatalog.ts](convex/lib/modelCatalog.ts). Missing API key errors are not retried, because retrying another OpenAI model does not fix a missing key and only adds latency.
 
 ## Connected Vendor/Client Accounts
 
@@ -168,7 +168,13 @@ Two entrypoints, both PDF-only:
 6. Chunk the document and embed each chunk with `text-embedding-3-small`.
 7. Store chunks in `documentChunks` for semantic retrieval.
 
-The extract phase stores `documentChunksForEmbedding`, `sourceSpansForStorage`, and `sourceChunksForEmbedding` in the Convex pipeline checkpoint before advancing to `embed_and_store`, so a resumed embedding phase does not lose transient extraction artifacts.
+Pipeline runtime state:
+
+- Policy extraction status remains denormalized on `policies.pipelineStatus` / `pipelineError` for fast list filtering.
+- High-churn extraction runtime state lives in `policyExtractionRuns`: `pipelineCheckpoint`, `pipelineLog`, leases, heartbeat timestamps, and detailed progress. This avoids rewriting large policy documents for every log, checkpoint, and heartbeat. Large `cl-sdk` checkpoint payloads and extraction-to-embedding payloads are stored in Convex file storage and referenced from runtime state by storage ID.
+- Query surfaces such as `policies.get` and `policies.getInternal` merge runtime state from `policyExtractionRuns`, falling back to legacy fields on `policies` for old in-flight jobs.
+- The extract phase stores `documentChunksForEmbedding`, `sourceSpansForStorage`, and `sourceChunksForEmbedding` in the Convex pipeline checkpoint before advancing to `embed_and_store`, so a resumed embedding phase does not lose transient extraction artifacts.
+- Extraction concurrency defaults to 4 SDK worker calls (`EXTRACTION_CONCURRENCY`, bounded 1-8), review defaults to 1 round (`EXTRACTION_MAX_REVIEW_ROUNDS`, bounded 0-2), and embedding defaults to 8 concurrent embedding calls (`EXTRACTION_EMBEDDING_CONCURRENCY`, bounded 1-16).
 
 Cancellation:
 

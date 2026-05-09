@@ -28,6 +28,7 @@ const CANCELLED_BY_USER = "Cancelled by user";
 const ADVANCE_LEASE_MS = 2 * 60 * 1000;
 const ADVANCE_LEASE_HEARTBEAT_MS = 30 * 1000;
 const ADVANCE_LEASE_WATCHDOG_GRACE_MS = 15 * 1000;
+const EMBEDDING_CONCURRENCY = readBoundedIntEnv("EXTRACTION_EMBEDDING_CONCURRENCY", 8, 1, 16);
 
 type LeasedPolicyCheckpoint = {
   nextPhase: string;
@@ -52,11 +53,15 @@ export type PolicyExtractionState = {
   orgId: string;
   userId: string;
   policyFileId?: string;
+  /** Deprecated inline SDK checkpoint. Kept for legacy in-flight resumes. */
   clSdkCheckpoint?: PipelineCheckpoint<ExtractionState>;
-  extractedDocumentJson?: string;
+  /** Storage-backed SDK checkpoint. Prevents near-1MB pipeline state documents. */
+  clSdkCheckpointFileId?: string;
   chunkIds?: string[];
   sourceSpanIds?: string[];
   sourceChunkIds?: string[];
+  /** Storage-backed embedding payload produced by extraction and consumed by embed_and_store. */
+  embeddingPayloadFileId?: string;
   documentChunksForEmbedding?: Array<{
     id: string;
     type: string;
@@ -84,6 +89,19 @@ export type PolicyExtractionState = {
     metadata?: Record<string, unknown>;
   }>;
 };
+
+type EmbeddingPayload = Pick<
+  PolicyExtractionState,
+  "documentChunksForEmbedding" | "sourceSpansForStorage" | "sourceChunksForEmbedding"
+>;
+
+function readBoundedIntEnv(name: string, fallback: number, min: number, max: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const value = Number.parseInt(raw, 10);
+  if (!Number.isFinite(value)) return fallback;
+  return Math.max(min, Math.min(max, value));
+}
 
 async function runBounded<T>(
   items: T[],
@@ -124,6 +142,58 @@ async function loadPdfBytes(
   return new Uint8Array(arrayBuffer);
 }
 
+async function storeClSdkCheckpoint(
+  ctx: ActionCtx,
+  checkpoint: PipelineCheckpoint<ExtractionState>,
+): Promise<string> {
+  const blob = new Blob([JSON.stringify(checkpoint)], {
+    type: "application/json",
+  });
+  return String(await ctx.storage.store(blob));
+}
+
+async function loadClSdkCheckpoint(
+  ctx: ActionCtx,
+  state: PolicyExtractionState,
+): Promise<PipelineCheckpoint<ExtractionState> | undefined> {
+  if (state.clSdkCheckpoint) return state.clSdkCheckpoint;
+  if (!state.clSdkCheckpointFileId) return undefined;
+  const blob = await ctx.storage.get(state.clSdkCheckpointFileId as Id<"_storage">);
+  if (!blob) return undefined;
+  return JSON.parse(await blob.text()) as PipelineCheckpoint<ExtractionState>;
+}
+
+async function storeEmbeddingPayload(
+  ctx: ActionCtx,
+  payload: EmbeddingPayload,
+): Promise<string> {
+  const blob = new Blob([JSON.stringify(payload)], {
+    type: "application/json",
+  });
+  return String(await ctx.storage.store(blob));
+}
+
+async function loadEmbeddingPayload(
+  ctx: ActionCtx,
+  state: PolicyExtractionState,
+): Promise<EmbeddingPayload> {
+  if (
+    state.documentChunksForEmbedding ||
+    state.sourceSpansForStorage ||
+    state.sourceChunksForEmbedding
+  ) {
+    return {
+      documentChunksForEmbedding: state.documentChunksForEmbedding,
+      sourceSpansForStorage: state.sourceSpansForStorage,
+      sourceChunksForEmbedding: state.sourceChunksForEmbedding,
+    };
+  }
+  if (!state.embeddingPayloadFileId) return {};
+  const blob = await ctx.storage.get(state.embeddingPayloadFileId as Id<"_storage">);
+  if (!blob) return {};
+  return JSON.parse(await blob.text()) as EmbeddingPayload;
+}
+
 function stripLease(
   checkpoint: LeasedPolicyCheckpoint,
 ): Omit<LeasedPolicyCheckpoint, "lease"> {
@@ -132,11 +202,11 @@ function stripLease(
 }
 
 const orgNameNormalizationSchema = z.object({
-  carrier: z.string().optional(),
-  security: z.string().optional(),
-  mga: z.string().optional(),
-  broker: z.string().optional(),
-  brokerAgency: z.string().optional(),
+  carrier: z.string().nullable(),
+  security: z.string().nullable(),
+  mga: z.string().nullable(),
+  broker: z.string().nullable(),
+  brokerAgency: z.string().nullable(),
 });
 
 async function normalizeOrgNamesWithLlm(
@@ -165,7 +235,7 @@ Rules:
 - Remove legal/disclaimer suffixes, "administered by" clauses, and parenthetical metadata.
 - Keep the canonical brand/entity name.
 - If input is already concise, keep it unchanged.
-- Return only keys present in the input object.
+- Return every schema key. Use null for missing input keys.
 
 Input JSON:
 ${JSON.stringify(candidates)}`,
@@ -224,7 +294,9 @@ async function advanceLeasedPhase(
     return;
   }
 
+  let latestCheckpoint = stripLease(checkpoint);
   const saveState = async (state: PolicyExtractionState) => {
+    const createdAt = Date.now();
     const ok = await ctx.runMutation(
       internal.policies.pipelineSaveStateForLease,
       {
@@ -232,12 +304,18 @@ async function advanceLeasedPhase(
         leaseId,
         nextPhase: phase.name,
         state,
-        leaseExpiresAt: Date.now() + ADVANCE_LEASE_MS,
+        leaseExpiresAt: createdAt + ADVANCE_LEASE_MS,
       },
     );
     if (!ok) {
       throw new Error("Pipeline phase lease lost");
     }
+    await scheduleWatchdog(createdAt + ADVANCE_LEASE_MS);
+    latestCheckpoint = {
+      nextPhase: phase.name,
+      state,
+      createdAt,
+    };
   };
 
   const log = async (message: string, level: string = "info") => {
@@ -251,10 +329,11 @@ async function advanceLeasedPhase(
   };
 
   let heartbeatInFlight = false;
+  let heartbeatPromise: Promise<void> | null = null;
   const heartbeat = setInterval(() => {
     if (heartbeatInFlight) return;
     heartbeatInFlight = true;
-    void (async () => {
+    heartbeatPromise = (async () => {
       try {
         const nextExpiresAt = Date.now() + ADVANCE_LEASE_MS;
         const ok = await ctx.runMutation(internal.policies.pipelineExtendLease, {
@@ -298,7 +377,7 @@ async function advanceLeasedPhase(
         leaseId,
         status: "error",
         error: result.error,
-        checkpoint: stripLease(checkpoint),
+        checkpoint: latestCheckpoint,
       });
       return;
     }
@@ -330,10 +409,13 @@ async function advanceLeasedPhase(
       leaseId,
       status: "error",
       error: msg,
-      checkpoint: stripLease(checkpoint),
+      checkpoint: latestCheckpoint,
     });
   } finally {
     clearInterval(heartbeat);
+    if (heartbeatPromise) {
+      await heartbeatPromise;
+    }
   }
 }
 
@@ -393,7 +475,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
       if (!pdfBytes) return { kind: "error", error: "File not found in storage" };
 
       const policyId = pCtx.jobId;
-      const clSdkCheckpoint = state.clSdkCheckpoint;
+      const clSdkCheckpoint = await loadClSdkCheckpoint(convexCtx, state);
       const pdfSource = await buildPdfSourceSpans({
         pdfBytes,
         documentId: policyId,
@@ -408,6 +490,8 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
       }
 
       const extractor = buildExtractor({
+        ctx: convexCtx,
+        orgId: state.orgId as Id<"organizations">,
         log: async (msg) => { await pCtx.log(msg); },
         onProgress: async (msg) => { await pCtx.log(msg); },
         shouldCancel: async () => isExtractionCancelled(convexCtx, policyId),
@@ -415,14 +499,22 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
           if (await isExtractionCancelled(convexCtx, policyId)) {
             throw new Error(CANCELLED_BY_USER);
           }
-          // Route cl-sdk's checkpoint through cl-pipelines' saveState
-          await pCtx.saveState({ ...state, clSdkCheckpoint: cp });
+          // Route cl-sdk's checkpoint through cl-pipelines' saveState, storing
+          // the large checkpoint payload outside the hot runtime document.
+          const checkpointFileId = await storeClSdkCheckpoint(convexCtx, cp);
+          await pCtx.saveState({
+            ...state,
+            clSdkCheckpoint: undefined,
+            clSdkCheckpointFileId: checkpointFileId,
+          });
+          if (cp.phase === "assemble") {
+            await pCtx.log("Assemble checkpoint saved; continuing with summary and formatting...");
+          }
         },
       });
 
       const extractOptions = {
         ...(clSdkCheckpoint ? { resumeFrom: clSdkCheckpoint } : {}),
-        ...(pdfSource.sourceSpans.length > 0 ? { sourceSpans: pdfSource.sourceSpans } : {}),
       };
 
       let result: ExtractionResult;
@@ -444,10 +536,32 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         return { kind: "error", error: CANCELLED_BY_USER };
       }
 
+      if (result.checkpoint) {
+        const checkpointFileId = await storeClSdkCheckpoint(convexCtx, result.checkpoint);
+        await pCtx.saveState({
+          ...state,
+          clSdkCheckpoint: undefined,
+          clSdkCheckpointFileId: checkpointFileId,
+        });
+      }
+
       const doc = result.document as Record<string, unknown>;
       const chunks = result.chunks;
-      const sourceSpans = (((result as any).sourceSpans ?? pdfSource.sourceSpans) ?? []) as Array<Record<string, any>>;
-      const sourceChunks = (((result as any).sourceChunks ?? pdfSource.sourceChunks) ?? []) as Array<Record<string, any>>;
+      // cl-sdk@1.0.1 currently crashes in schema normalization when sourceSpans
+      // are passed into extraction. Keep using Glass's PDF.js spans for storage
+      // and retrieval until the SDK source-grounded extraction path is fixed.
+      const resultSourceSpans = Array.isArray((result as any).sourceSpans)
+        ? (result as any).sourceSpans as Array<Record<string, any>>
+        : [];
+      const resultSourceChunks = Array.isArray((result as any).sourceChunks)
+        ? (result as any).sourceChunks as Array<Record<string, any>>
+        : [];
+      const sourceSpans = resultSourceSpans.length > 0
+        ? resultSourceSpans
+        : pdfSource.sourceSpans as Array<Record<string, any>>;
+      const sourceChunks = resultSourceChunks.length > 0
+        ? resultSourceChunks
+        : pdfSource.sourceChunks as Array<Record<string, any>>;
       const tokenUsage = result.tokenUsage;
 
       await pCtx.log(
@@ -475,7 +589,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
           id: policyId,
           fields: {
             fileName: resolvedFileName,
-            rawExtractionResponse: JSON.stringify(result.document),
+            rawExtractionResponse: undefined,
             ...fields,
           },
         },
@@ -492,21 +606,22 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         );
       }
 
-      // Carry extracted document JSON for embed phase
+      const embeddingPayloadFileId = await storeEmbeddingPayload(convexCtx, {
+        documentChunksForEmbedding: chunks,
+        sourceSpansForStorage: sourceSpans as PolicyExtractionState["sourceSpansForStorage"],
+        sourceChunksForEmbedding: sourceChunks as PolicyExtractionState["sourceChunksForEmbedding"],
+      });
       const chunkIds = chunks.map((c: { id: string }) => c.id);
       const nextState: PolicyExtractionState = {
         ...state,
         clSdkCheckpoint: undefined, // clear — extraction done
-        extractedDocumentJson: JSON.stringify(result.document),
+        clSdkCheckpointFileId: undefined,
+        embeddingPayloadFileId,
         chunkIds,
         sourceSpanIds: sourceSpans.map((span) => String(span.id)),
         sourceChunkIds: sourceChunks.map((chunk) => String(chunk.id)),
         fileName: resolvedFileName,
       };
-
-      nextState.documentChunksForEmbedding = chunks;
-      nextState.sourceSpansForStorage = sourceSpans as PolicyExtractionState["sourceSpansForStorage"];
-      nextState.sourceChunksForEmbedding = sourceChunks as PolicyExtractionState["sourceChunksForEmbedding"];
 
       return { kind: "next", nextPhase: "embed_and_store", state: nextState };
     },
@@ -522,9 +637,10 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         return { kind: "error", error: CANCELLED_BY_USER };
       }
 
-      const chunks = state.documentChunksForEmbedding;
-      const sourceSpans = state.sourceSpansForStorage;
-      const sourceChunks = state.sourceChunksForEmbedding;
+      const embeddingPayload = await loadEmbeddingPayload(convexCtx, state);
+      const chunks = embeddingPayload.documentChunksForEmbedding;
+      const sourceSpans = embeddingPayload.sourceSpansForStorage;
+      const sourceChunks = embeddingPayload.sourceChunksForEmbedding;
 
       if (!chunks || chunks.length === 0) {
         await pCtx.log("No chunks to embed (phase resumed or no chunks extracted)");
@@ -536,7 +652,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         );
         const embed = makeEmbedText(convexCtx, state.orgId as Id<"organizations">);
         let embedded = 0;
-        await runBounded(chunks, 4, async (chunk) => {
+        await runBounded(chunks, EMBEDDING_CONCURRENCY, async (chunk) => {
           if (await isExtractionCancelled(convexCtx, policyId)) {
             throw new Error(CANCELLED_BY_USER);
           }
@@ -599,7 +715,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         if (sourceChunks?.length) {
           const embed = makeEmbedText(convexCtx, state.orgId as Id<"organizations">);
           let embeddedSourceChunks = 0;
-          await runBounded(sourceChunks, 4, async (chunk) => {
+          await runBounded(sourceChunks, EMBEDDING_CONCURRENCY, async (chunk) => {
             if (await isExtractionCancelled(convexCtx, policyId)) {
               throw new Error(CANCELLED_BY_USER);
             }
@@ -637,6 +753,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         documentChunksForEmbedding: _dropped,
         sourceSpansForStorage: _droppedSpans,
         sourceChunksForEmbedding: _droppedSourceChunks,
+        embeddingPayloadFileId: _droppedEmbeddingPayload,
         ...cleanState
       } = state;
       return { kind: "next", nextPhase: "post_process", state: cleanState };

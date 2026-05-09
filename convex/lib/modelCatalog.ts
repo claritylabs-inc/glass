@@ -136,7 +136,7 @@ export const MODEL_ROUTING: Record<ModelTask, ModelRoute> = {
   embeddings: { model: "text-embedding-3-small", provider: "openai" },
 };
 
-export const FALLBACK_MODEL: ModelRoute = { model: "gpt-5.5", provider: "openai" };
+export const FALLBACK_MODEL: ModelRoute = { model: "gpt-5.4-mini", provider: "openai" };
 
 export const MODEL_TASKS = Object.keys(MODEL_ROUTING) as ModelTask[];
 export const MODEL_PROVIDERS = Object.keys(PROVIDER_LABELS) as ModelProvider[];

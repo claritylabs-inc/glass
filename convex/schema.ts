@@ -19,6 +19,14 @@ const modelRouteValidator = v.object({
   model: v.string(),
 });
 
+const pipelineStatusValidator = v.union(
+  v.literal("idle"),
+  v.literal("running"),
+  v.literal("paused"),
+  v.literal("complete"),
+  v.literal("error"),
+);
+
 export default defineSchema({
   ...authTables,
 
@@ -521,15 +529,32 @@ export default defineSchema({
       v.object({
         name: v.string(),
         coverageCode: v.optional(v.string()),
+        formEditionDate: v.optional(v.string()),
         limit: v.optional(v.string()),
         limitType: v.optional(v.string()),
         limitValueType: v.optional(v.string()),
         deductible: v.optional(v.string()),
+        deductibleType: v.optional(v.string()),
         deductibleValueType: v.optional(v.string()),
         formNumber: v.optional(v.string()),
+        sir: v.optional(v.string()),
+        sublimit: v.optional(v.string()),
+        coinsurance: v.optional(v.string()),
+        valuation: v.optional(v.string()),
+        territory: v.optional(v.string()),
+        trigger: v.optional(v.string()),
+        retroactiveDate: v.optional(v.string()),
+        included: v.optional(v.boolean()),
+        coveragePremium: v.optional(v.string()),
+        premium: v.optional(v.string()),
         pageNumber: v.optional(v.number()),
+        resolvedFromPage: v.optional(v.number()),
         sectionRef: v.optional(v.string()),
         originalContent: v.optional(v.string()),
+        resolvedOriginalContent: v.optional(v.string()),
+        recordId: v.optional(v.string()),
+        sourceSpanIds: v.optional(v.array(v.string())),
+        sourceTextHash: v.optional(v.string()),
       })
     ),
     premium: v.optional(v.string()),
@@ -616,6 +641,23 @@ export default defineSchema({
     .index("by_policyYear", ["policyYear"])
     .index("by_userId", ["userId"])
     .index("by_orgId", ["orgId"]),
+
+  // Runtime state for policy extraction. Keep high-churn logs, leases, and
+  // large resumable checkpoints off the policy document itself.
+  policyExtractionRuns: defineTable({
+    policyId: v.id("policies"),
+    pipelineStatus: pipelineStatusValidator,
+    pipelineError: v.optional(v.string()),
+    pipelineCheckpoint: v.optional(v.any()),
+    pipelineLog: v.optional(v.array(v.object({
+      timestamp: v.number(),
+      message: v.string(),
+      phase: v.optional(v.string()),
+      level: v.optional(v.string()),
+    }))),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_policyId", ["policyId"]),
 
   // ── Policy Files (multi-file support) ──
 

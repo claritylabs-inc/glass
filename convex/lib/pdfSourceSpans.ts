@@ -155,36 +155,54 @@ export async function buildPdfSourceSpans(params: {
   sourceKind?: GlassSourceKind;
 }): Promise<{ sourceSpans: GlassSourceSpan[]; sourceChunks: GlassSourceChunk[] }> {
   try {
-    const mupdf = await import("mupdf");
-    const doc = mupdf.Document.openDocument(params.pdfBytes, "application/pdf");
+    const { getDocument, VerbosityLevel } = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    const loadingTask = getDocument({
+      data: new Uint8Array(params.pdfBytes),
+      isEvalSupported: false,
+      useWasm: false,
+      useSystemFonts: true,
+      verbosity: VerbosityLevel.ERRORS,
+    });
+    const doc = await loadingTask.promise;
     const sourceSpans: GlassSourceSpan[] = [];
 
-    for (let index = 0; index < doc.countPages(); index += 1) {
-      const page = doc.loadPage(index);
-      const text = page.toStructuredText().asText();
-      const pageNumber = index + 1;
-      const span = buildSpan({
-        documentId: params.documentId,
-        sourceKind: params.sourceKind ?? "policy_pdf",
-        pageNumber,
-        text,
-        index,
-      });
-      if (span) sourceSpans.push(span);
-
-      for (const section of splitPageIntoSectionCandidates(text)) {
-        const sectionSpan = buildSpan({
+    try {
+      for (let index = 0; index < doc.numPages; index += 1) {
+        const pageNumber = index + 1;
+        const page = await doc.getPage(pageNumber);
+        const textContent = await page.getTextContent();
+        const text = textContent.items
+          .map((item) => {
+            if (!("str" in item)) return "";
+            return `${item.str}${item.hasEOL ? "\n" : " "}`;
+          })
+          .join("");
+        const span = buildSpan({
           documentId: params.documentId,
           sourceKind: params.sourceKind ?? "policy_pdf",
           pageNumber,
-          text: section.text,
-          sectionId: section.title,
-          formNumber: section.formNumber,
-          metadata: { sourceUnit: "section_candidate" },
-          index: sourceSpans.length,
+          text,
+          index,
         });
-        if (sectionSpan) sourceSpans.push(sectionSpan);
+        if (span) sourceSpans.push(span);
+
+        for (const section of splitPageIntoSectionCandidates(text)) {
+          const sectionSpan = buildSpan({
+            documentId: params.documentId,
+            sourceKind: params.sourceKind ?? "policy_pdf",
+            pageNumber,
+            text: section.text,
+            sectionId: section.title,
+            formNumber: section.formNumber,
+            metadata: { sourceUnit: "section_candidate" },
+            index: sourceSpans.length,
+          });
+          if (sectionSpan) sourceSpans.push(sectionSpan);
+        }
+        page.cleanup();
       }
+    } finally {
+      await doc.destroy();
     }
 
     return {

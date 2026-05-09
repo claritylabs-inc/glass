@@ -112,6 +112,15 @@ export function getProviderOptionsForRoute(route: ModelRoute): ProviderOptions |
   return undefined;
 }
 
+function isMissingApiKeyError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return /api key is missing/i.test(message);
+}
+
+function isFallbackModel(modelId: string): boolean {
+  return modelId.includes(FALLBACK_MODEL.model) || modelId.includes("claude-haiku");
+}
+
 export function getProviderOptionsForTask(task: ModelTask): ProviderOptions | undefined {
   return getProviderOptionsForRoute(MODEL_ROUTING[task]);
 }
@@ -219,14 +228,15 @@ export async function generateTextWithFallback(
     return await generateText(options);
   } catch (err: unknown) {
     const modelId = (options.model as Record<string, unknown>)?.modelId as string || "unknown";
+    if (isMissingApiKeyError(err)) throw err;
     // If already on a fallback model, don't retry
-    if (modelId.includes(GPT_55) || modelId.includes("claude-haiku")) throw err;
+    if (isFallbackModel(modelId)) throw err;
     console.warn(
-      `Primary model (${modelId}) failed: ${err instanceof Error ? err.message : String(err)}. Retrying with GPT-5.5.`,
+      `Primary model (${modelId}) failed: ${err instanceof Error ? err.message : String(err)}. Retrying with ${FALLBACK_MODEL.model}.`,
     );
     return await generateText({
       ...options,
-      model: openai()(GPT_55),
+      model: modelFromRoute(FALLBACK_MODEL),
       providerOptions: mergeProviderOptions(
         getProviderOptionsForRoute(FALLBACK_MODEL),
         options.providerOptions,
@@ -243,13 +253,14 @@ export async function generateStructuredWithFallback(
     return await generateText(options);
   } catch (err: unknown) {
     const modelId = (options.model as Record<string, unknown>)?.modelId as string || "unknown";
-    if (modelId.includes(GPT_55) || modelId.includes("claude-haiku")) throw err;
+    if (isMissingApiKeyError(err)) throw err;
+    if (isFallbackModel(modelId)) throw err;
     console.warn(
-      `Primary model (${modelId}) failed for structured output: ${err instanceof Error ? err.message : String(err)}. Retrying with GPT-5.5.`,
+      `Primary model (${modelId}) failed for structured output: ${err instanceof Error ? err.message : String(err)}. Retrying with ${FALLBACK_MODEL.model}.`,
     );
     return await generateText({
       ...options,
-      model: openai()(GPT_55),
+      model: modelFromRoute(FALLBACK_MODEL),
       providerOptions: mergeProviderOptions(
         getProviderOptionsForRoute(FALLBACK_MODEL),
         options.providerOptions,
@@ -260,6 +271,7 @@ export async function generateStructuredWithFallback(
 
 export function availableProviders(): string[] {
   const providers: string[] = [];
+  if (process.env.OPENAI_API_KEY) providers.push("openai");
   if (process.env.ANTHROPIC_API_KEY) providers.push("anthropic");
   if (process.env.DEEPSEEK_API_KEY) providers.push("deepseek");
   if (process.env.MOONSHOT_API_KEY) providers.push("moonshot");
