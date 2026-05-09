@@ -147,6 +147,7 @@ ${coiHandling ? `The organization's COI handling preference is "${coiHandling}".
 RESPONSE STYLE:
 - Be concise and direct. Lead with the answer or action.
 - Use plain business language. Avoid filler and generic disclaimers.
+- In email, answer the latest request without turning a simple question into a long memo.
 - If you cannot complete an action, explain the specific missing requirement or validation issue.`;
 }
 
@@ -421,9 +422,17 @@ export function buildChannelInstructions(params: {
 - Address the recipient by name when known.
 - Incorporate the team member's direction naturally.
 - Reference relevant policy/coverage data when applicable.
+- Keep the email body compact: usually 1-3 short paragraphs or a short bullet list.
 - Write from Glass's perspective on behalf of the company.
 - Use the email expert tool when it is available; it owns formatting, attachments, confirmation, and sending.
 - Do not add a personal sign-off as the team member; the platform adds the signature.`;
+
+  const emailBrevity = `Email reply length:
+- Default to a concise practical answer, not a full coverage memo.
+- For policy questions, lead with the direct answer, then include only the 2-4 policy facts, limits, exclusions, or caveats that matter most.
+- Avoid exhaustive lists of definitions, triggers, exclusions, or scenarios unless the sender explicitly asks for a comprehensive breakdown.
+- Do not end with open-ended offers like "If you want, I can..." unless a necessary next step or clarification is required.
+- For follow-up questions asking for "more details", still summarize the practical scope first and keep supporting detail selective.`;
 
   if (params.platform === "imessage") {
     return `
@@ -451,6 +460,7 @@ EMAIL MODE:
 - You are responding in an email workflow.
 - Handle mixed intents: if the sender asks a policy question and asks you to forward/send the answer, answer the policy question and prepare the email action when permitted.
 ${sendRules}
+${emailBrevity}
 ${emailComposition}`;
   }
 

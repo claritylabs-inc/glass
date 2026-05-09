@@ -1218,9 +1218,9 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
 
       // Agentic loop — the model decides tools (COI, policy extraction, Q&A)
       const result = await generateText({
-        model: await getModelForOrg(ctx, orgId, "chat"),
-        providerOptions: getProviderOptionsForTask("chat"),
-        maxOutputTokens: 4096,
+        model: await getModelForOrg(ctx, orgId, "email_reply"),
+        providerOptions: getProviderOptionsForTask("email_reply"),
+        maxOutputTokens: 2048,
         system: systemContext,
         messages,
         tools: emailTools,

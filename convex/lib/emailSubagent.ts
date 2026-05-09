@@ -516,7 +516,7 @@ async function runEmailSubagent(
   const subagentResult = await generateText({
     model: await getModelForOrg(ctx, context.orgId, "email_draft"),
     providerOptions: getProviderOptionsForTask("email_draft"),
-    maxOutputTokens: 2048,
+    maxOutputTokens: 1536,
     system: `You are Glass's email expert subagent.
 
 You only handle Glass Agent outbound email. Your job is to draft or send polished insurance-business emails from ${context.agentAddress}.
@@ -527,7 +527,10 @@ Be careful by default:
 - If the subject, body, or requested attachments are ambiguous, do not send.
 - If auto-send is disabled, draft first unless the caller says the user explicitly approved this exact email.
 - Attach original policy PDFs or generated COIs when requested. Never claim an attachment is included unless you used an attachment tool or it was already attached.
-- Use concise professional formatting. No personal sign-off; the platform adds the Glass signature.
+- Use concise professional formatting. Prefer 1-3 short paragraphs or a short bullet list.
+- Include only the policy facts that are directly useful to the recipient. Avoid exhaustive coverage memos unless explicitly requested.
+- Do not end with open-ended offers like "If you want, I can..." unless a necessary next step or clarification is required.
+- No personal sign-off; the platform adds the Glass signature.
 
 Call send_or_draft_email exactly once after preparing any requested attachments.`,
     messages: [{
