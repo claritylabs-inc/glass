@@ -18,6 +18,7 @@ interface PillButtonProps
 
 const EASE_OUT = [0.33, 1, 0.68, 1] as const;
 const DURATION = 0.32;
+const TRANSPARENT_ACCENT = "rgba(240, 238, 234, 0)";
 
 const variantConfig = {
   primary: {
@@ -29,7 +30,7 @@ const variantConfig = {
   secondary: {
     classes:
       "border border-foreground/8 font-medium text-muted-foreground cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed",
-    rest: { backgroundColor: "transparent", borderColor: "var(--border)" },
+    rest: { backgroundColor: TRANSPARENT_ACCENT, borderColor: "var(--border)" },
     hover: { borderColor: "var(--input)" },
   },
   destructive: {
@@ -41,13 +42,13 @@ const variantConfig = {
   ghost: {
     classes:
       "font-medium text-muted-foreground cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed",
-    rest: { backgroundColor: "transparent" },
+    rest: { backgroundColor: TRANSPARENT_ACCENT },
     hover: { backgroundColor: "var(--accent)" },
   },
   icon: {
     classes:
       "text-muted-foreground cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed",
-    rest: { backgroundColor: "transparent" },
+    rest: { backgroundColor: TRANSPARENT_ACCENT },
     hover: { backgroundColor: "var(--accent)" },
   },
 };
