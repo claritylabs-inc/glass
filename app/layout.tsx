@@ -49,13 +49,11 @@ export async function generateMetadata(): Promise<Metadata> {
       description: DEFAULT_DESCRIPTION,
       siteName: title,
       type: "website",
-      ...(icon ? { images: [{ url: icon }] } : {}),
     },
     twitter: {
       card: "summary_large_image",
       title,
       description: DEFAULT_DESCRIPTION,
-      ...(icon ? { images: [icon] } : {}),
     },
   };
 }

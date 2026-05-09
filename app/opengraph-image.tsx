@@ -115,7 +115,7 @@ export default async function Image() {
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            backgroundColor: "#faf8f4",
+            backgroundColor: "#ffffff",
             fontFamily: "Geist",
           }}
         >
