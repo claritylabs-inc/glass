@@ -154,7 +154,7 @@ export default async function Image() {
           <span
             style={{
               fontSize: 72,
-              fontWeight: 600,
+              fontWeight: 500,
               color: "#111827",
               letterSpacing: "-0.03em",
               lineHeight: 1,
@@ -163,25 +163,23 @@ export default async function Image() {
             {branding.name}
           </span>
         </div>
-        {branding.isClientUnderBroker ? (
-          <div
-            style={{
-              position: "absolute",
-              bottom: 48,
-              left: 0,
-              right: 0,
-              display: "flex",
-              justifyContent: "center",
-              alignItems: "center",
-              gap: 6,
-              fontSize: 18,
-              color: "#9ca3af",
-            }}
-          >
-            <span>Powered by</span>
-            <BrandLockup textSize={18} gap={5} />
-          </div>
-        ) : null}
+        <div
+          style={{
+            position: "absolute",
+            bottom: 48,
+            left: 0,
+            right: 0,
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            gap: 6,
+            fontSize: 18,
+            color: "#9ca3af",
+          }}
+        >
+          <span>Powered by</span>
+          <BrandLockup textSize={18} gap={5} />
+        </div>
       </div>
     ),
     { ...size, ...(fonts ? { fonts } : {}) },
