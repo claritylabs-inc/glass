@@ -21,6 +21,11 @@ import { Id } from "../_generated/dataModel";
 import { sendResendEmail, getAgentDomain, getAuthFromAddress } from "../lib/resend";
 import { buildUnrecognizedInboundEmail } from "../lib/emailTemplate";
 import {
+  buildEmailPolicySources,
+  buildPolicySourcesHtml,
+  buildPolicySourcesText,
+} from "../lib/emailPolicySources";
+import {
   buildSystemPromptForContext,
   buildChannelInstructions,
   buildPolicyToolInstructions,
@@ -174,8 +179,7 @@ function buildSignature(agentEmail: string, broker?: BrokerBranding): { text: st
     "—",
     agentName,
     agentEmail,
-    "",
-    `powered by Glass from Clarity Labs — ${poweredByUrl}`,
+    ...(hasBroker ? ["", `powered by Glass from Clarity Labs — ${poweredByUrl}`] : []),
   ].join("\n");
 
   const logoHtml = hasBroker && broker?.logoUrl
@@ -186,7 +190,9 @@ function buildSignature(agentEmail: string, broker?: BrokerBranding): { text: st
     `<br><p style="color:#999;font-size:13px;margin:0">—</p>`,
     `<p style="font-size:13px;margin:4px 0 2px">${logoHtml}<strong>${agentName}</strong></p>`,
     `<p style="font-size:12px;color:#999;margin:0">${agentEmail}</p>`,
-    `<p style="font-size:12px;margin:12px 0 0"><a href="${poweredByUrl}" style="color:#A0D2FA;text-decoration:none">powered by Glass from Clarity Labs</a></p>`,
+    ...(hasBroker
+      ? [`<p style="font-size:12px;margin:12px 0 0"><a href="${poweredByUrl}" style="color:#A0D2FA;text-decoration:none">powered by Glass from Clarity Labs</a></p>`]
+      : []),
   ].join("\n");
 
   return { text, html };
@@ -815,6 +821,10 @@ export const processInbound = internalAction({
         [],
         subject + " " + body,
       );
+      const referencedPolicySourceIds = new Set<string>([
+        ...relevantPolicyIds.map(String),
+        ...relevantQuoteIds.map(String),
+      ]);
 
       // Cross-thread conversation memory (vector search)
       const memoryContext = await buildConversationMemoryContext(ctx, orgId, subject + " " + body);
@@ -965,6 +975,9 @@ export const processInbound = internalAction({
               ? scored.map((s) => s.policy)
               : (policies as any[]).slice(0, 5);
             if (matches.length === 0) return "No policies found for this organization.";
+            for (const policy of matches.slice(0, 5)) {
+              if (policy?._id) referencedPolicySourceIds.add(String(policy._id));
+            }
             return matches.slice(0, 5).map((p: any) => ({
               id: p._id,
               insured: p.insuredName,
@@ -988,12 +1001,14 @@ export const processInbound = internalAction({
               { id: params.policyId as Id<"policies"> },
             );
             if (!policy || policy.orgId !== orgId) return "Policy not found.";
+            referencedPolicySourceIds.add(String(policy._id));
             return searchPolicyDocumentWithSourceSpans(ctx, policy, params.query, 8);
           },
         },
         create_policy_change_request: {
           ...createPolicyChangeRequest,
           execute: async (params: { requestText: string; policyId?: string; evidenceSourceIds?: string[] }) => {
+            if (params.policyId) referencedPolicySourceIds.add(String(params.policyId));
             const result = await ctx.runAction(internal.actions.policyChangeRequests.createFromEmailForThread, {
               orgId,
               userId: primaryUserId,
@@ -1015,6 +1030,8 @@ export const processInbound = internalAction({
             const p1 = (policies as any[]).find((p) => p._id === params.policyId1);
             const p2 = (policies as any[]).find((p) => p._id === params.policyId2);
             if (!p1 || !p2) return "One or both policies not found.";
+            referencedPolicySourceIds.add(String(p1._id));
+            referencedPolicySourceIds.add(String(p2._id));
             const mapP = (p: any) => ({
               id: p._id, carrier: p.security, type: p.policyTypes, limits: p.limits,
               deductibles: p.deductibles, premium: p.premium,
@@ -1065,7 +1082,7 @@ export const processInbound = internalAction({
                     size: rec.size,
                     fileId: rec.fileId,
                   })),
-                referencedPolicyIds: relevantPolicyIds.length > 0 ? (relevantPolicyIds as Id<"policies">[]) : undefined,
+                referencedPolicyIds: referencedPolicySourceIds.size > 0 ? ([...referencedPolicySourceIds] as Id<"policies">[]) : undefined,
                 referencedQuoteIds: relevantQuoteIds.length > 0 ? (relevantQuoteIds as Id<"policies">[]) : undefined,
                 autoSendEmails: org.autoSendEmails === true,
                 emailSendDelay: org.emailSendDelay,
@@ -1108,6 +1125,7 @@ export const processInbound = internalAction({
         generate_coi: {
           ...generateCoiTool,
           execute: async (params: { policyId: string; certificateHolder?: string }) => {
+            referencedPolicySourceIds.add(String(params.policyId));
             const autoGenerate = org.autoGenerateCoi !== false;
             if (!autoGenerate) {
               const handling = org.coiHandling ?? "ignore";
@@ -1219,7 +1237,7 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
           responseTo: sentByTool.responseTo,
           responseCc: sentByTool.responseCc,
           responseMessageId: sentByTool.responseMessageId,
-          referencedPolicyIds: relevantPolicyIds.length > 0 ? (relevantPolicyIds as Id<"policies">[]) : undefined,
+          referencedPolicyIds: referencedPolicySourceIds.size > 0 ? ([...referencedPolicySourceIds] as Id<"policies">[]) : undefined,
           referencedQuoteIds: relevantQuoteIds.length > 0 ? (relevantQuoteIds as Id<"policies">[]) : undefined,
         });
         return;
@@ -1255,12 +1273,15 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
             return r;
           };
 
+          const policySources = await buildEmailPolicySources(ctx, [...referencedPolicySourceIds], siteUrl);
+          const sourceText = buildPolicySourcesText(policySources);
+          const sourceHtml = buildPolicySourcesHtml(policySources);
           const sig = buildSignature(agentAddress, brokerBranding);
-          const plainText = stripMd(emailBody) + sig.text;
+          const plainText = stripMd(emailBody) + sourceText + sig.text;
           const htmlBody = emailBody
             .split("\n\n")
             .map((p) => `<p style="margin:0 0 12px;line-height:1.5">${mdToHtml(p.replace(/\n/g, "<br>"))}</p>`)
-            .join("\n") + sig.html;
+            .join("\n") + sourceHtml + sig.html;
 
           const sendSubject = subject.replace(/^\[Glass\]\s*Help needed:\s*/i, "");
           const replySub = sendSubject.startsWith("Re:") ? sendSubject : `Re: ${sendSubject}`;
@@ -1298,7 +1319,7 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
               ccAddresses: sendCc,
               subject: replySub,
               emailBody,
-              referencedPolicyIds: relevantPolicyIds.length > 0 ? (relevantPolicyIds as Id<"policies">[]) : undefined,
+              referencedPolicyIds: referencedPolicySourceIds.size > 0 ? ([...referencedPolicySourceIds] as Id<"policies">[]) : undefined,
               referencedQuoteIds: relevantQuoteIds.length > 0 ? (relevantQuoteIds as Id<"policies">[]) : undefined,
             });
 
@@ -1308,7 +1329,7 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
               responseBody: `Sending email to ${thirdPartyEmail} (CC: ${fromEmail})...`,
               responseTo: thirdPartyEmail,
               responseCc: sendCc,
-              referencedPolicyIds: relevantPolicyIds.length > 0 ? (relevantPolicyIds as Id<"policies">[]) : undefined,
+              referencedPolicyIds: referencedPolicySourceIds.size > 0 ? ([...referencedPolicySourceIds] as Id<"policies">[]) : undefined,
               referencedQuoteIds: relevantQuoteIds.length > 0 ? (relevantQuoteIds as Id<"policies">[]) : undefined,
             });
 
@@ -1332,7 +1353,7 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
               responseCc: sendCc,
               responseMessageId: sentMsgId,
               referencedPolicyIds:
-                relevantPolicyIds.length > 0 ? (relevantPolicyIds as Id<"policies">[]) : undefined,
+                referencedPolicySourceIds.size > 0 ? ([...referencedPolicySourceIds] as Id<"policies">[]) : undefined,
               referencedQuoteIds:
                 relevantQuoteIds.length > 0 ? (relevantQuoteIds as Id<"policies">[]) : undefined,
             });
@@ -1349,7 +1370,7 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
                   ccAddresses: sendCc,
                   subject: replySub,
                   responseMessageId: sentMsgId,
-                  referencedPolicyIds: relevantPolicyIds.length > 0 ? (relevantPolicyIds as Id<"policies">[]) : undefined,
+                  referencedPolicyIds: referencedPolicySourceIds.size > 0 ? ([...referencedPolicySourceIds] as Id<"policies">[]) : undefined,
                   referencedQuoteIds: relevantQuoteIds.length > 0 ? (relevantQuoteIds as Id<"policies">[]) : undefined,
                   legacyConversationId: conversationId,
                 });
@@ -1387,9 +1408,12 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
         result = result.replace(/\*(.+?)\*/g, "$1");
         return result;
       };
+      const policySources = await buildEmailPolicySources(ctx, [...referencedPolicySourceIds], siteUrl);
+      const sourceText = buildPolicySourcesText(policySources);
+      const sourceHtml = buildPolicySourcesHtml(policySources);
       const plainTextBody = stripMarkdown(responseBody);
       const signature = buildSignature(agentAddress, brokerBranding);
-      const fullReplyText = plainTextBody + signature.text;
+      const fullReplyText = plainTextBody + sourceText + signature.text;
 
       const linkStyle = 'style="color:#2563eb;text-decoration:underline"';
       const markdownToHtml = (text: string) => {
@@ -1407,7 +1431,7 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
         .split("\n\n")
         .map((p) => `<p style="margin:0 0 12px;line-height:1.5">${markdownToHtml(p.replace(/\n/g, "<br>"))}</p>`)
         .join("\n");
-      const fullReplyHtml = bodyHtmlContent + signature.html;
+      const fullReplyHtml = bodyHtmlContent + sourceHtml + signature.html;
 
       // Determine reply recipients
       const primaryUserEmail = primaryUser?.email;
@@ -1493,8 +1517,8 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
         responseCc: replyCc.length > 0 ? replyCc : undefined,
         responseMessageId: sentMessageId,
         referencedPolicyIds:
-          relevantPolicyIds.length > 0
-            ? (relevantPolicyIds as Id<"policies">[])
+          referencedPolicySourceIds.size > 0
+            ? ([...referencedPolicySourceIds] as Id<"policies">[])
             : undefined,
         referencedQuoteIds:
           relevantQuoteIds.length > 0
@@ -1513,7 +1537,7 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
             toAddresses: [replyTo],
             ccAddresses: replyCc.length > 0 ? replyCc : undefined,
             responseMessageId: sentMessageId,
-            referencedPolicyIds: relevantPolicyIds.length > 0 ? (relevantPolicyIds as Id<"policies">[]) : undefined,
+            referencedPolicyIds: referencedPolicySourceIds.size > 0 ? ([...referencedPolicySourceIds] as Id<"policies">[]) : undefined,
             referencedQuoteIds: relevantQuoteIds.length > 0 ? (relevantQuoteIds as Id<"policies">[]) : undefined,
             legacyConversationId: conversationId,
           });

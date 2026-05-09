@@ -9,6 +9,11 @@ import { getModelForOrg, getProviderOptionsForTask } from "./models";
 import { sendResendEmail, getAgentDomain } from "./resend";
 import { markdownToHtml, stripMarkdown } from "./aiUtils";
 import { isWhiteLabelingEnabled } from "./branding";
+import {
+  buildEmailPolicySources,
+  buildPolicySourcesHtml,
+  buildPolicySourcesText,
+} from "./emailPolicySources";
 
 const MAX_EMAIL_SIZE = 38 * 1024 * 1024; // Resend limit is 40MB after Base64 encoding.
 
@@ -82,8 +87,7 @@ export function buildEmailSignature(agentEmail: string, broker?: BrokerBranding)
     "-",
     agentName,
     agentEmail,
-    "",
-    `powered by Glass from Clarity Labs - ${poweredByUrl}`,
+    ...(hasBroker ? ["", `powered by Glass from Clarity Labs - ${poweredByUrl}`] : []),
   ].join("\n");
 
   const logoHtml = hasBroker && broker?.logoUrl
@@ -94,7 +98,9 @@ export function buildEmailSignature(agentEmail: string, broker?: BrokerBranding)
     `<br><p style="color:#999;font-size:13px;margin:0">-</p>`,
     `<p style="font-size:13px;margin:4px 0 2px">${logoHtml}<strong>${agentName}</strong></p>`,
     `<p style="font-size:12px;color:#999;margin:0">${agentEmail}</p>`,
-    `<p style="font-size:12px;margin:12px 0 0"><a href="${poweredByUrl}" style="color:#A0D2FA;text-decoration:none">powered by Glass from Clarity Labs</a></p>`,
+    ...(hasBroker
+      ? [`<p style="font-size:12px;margin:12px 0 0"><a href="${poweredByUrl}" style="color:#A0D2FA;text-decoration:none">powered by Glass from Clarity Labs</a></p>`]
+      : []),
   ].join("\n");
 
   return { text, html };
@@ -277,6 +283,7 @@ async function runEmailSubagent(
   },
 ): Promise<EmailSubagentResult> {
   const preparedAttachments: EmailAttachmentMeta[] = [];
+  const sourcePolicyIds = new Set((context.referencedPolicyIds ?? []).map(String));
   const allowedAttachmentIds = new Set(
     (context.availableAttachments ?? []).map((att) => String(att.fileId)),
   );
@@ -286,6 +293,7 @@ async function runEmailSubagent(
   };
 
   const attachOriginalPolicy = async (policyId: string): Promise<string> => {
+    sourcePolicyIds.add(policyId);
     const policy = await ctx.runQuery(internal.policies.getInternal, {
       id: policyId as Id<"policies">,
     });
@@ -311,6 +319,7 @@ async function runEmailSubagent(
   };
 
   const generateCoiAttachment = async (policyId: string, certificateHolder?: string): Promise<string> => {
+    sourcePolicyIds.add(policyId);
     if (context.autoGenerateCoi === false) {
       if (context.coiHandling === "broker") return "COI auto-generation is off. Contact the broker before attaching a COI.";
       if (context.coiHandling === "member") return "COI auto-generation is off. Confirm the org's insurance contact should handle this COI.";
@@ -410,9 +419,12 @@ async function runEmailSubagent(
 
     if (!to) throw new Error("Recipient email is required before sending.");
     const sendTo = to;
+    const policySources = await buildEmailPolicySources(ctx, [...sourcePolicyIds]);
+    const sourceText = buildPolicySourcesText(policySources);
+    const sourceHtml = buildPolicySourcesHtml(policySources);
     const signature = buildEmailSignature(context.agentAddress, context.brokerBranding);
-    const plainText = stripMarkdown(body) + signature.text;
-    const html = buildHtmlBody(body, signature);
+    const plainText = stripMarkdown(body) + sourceText + signature.text;
+    const html = buildHtmlBody(body, { html: sourceHtml + signature.html });
     const emailPayload: Record<string, unknown> = {
       from: context.fromHeader,
       to: sendTo,
@@ -441,7 +453,7 @@ async function runEmailSubagent(
         subject,
         emailBody: body,
         attachments: attachments.length > 0 ? attachments : undefined,
-        referencedPolicyIds: context.referencedPolicyIds,
+        referencedPolicyIds: sourcePolicyIds.size > 0 ? ([...sourcePolicyIds] as Id<"policies">[]) : undefined,
         referencedQuoteIds: context.referencedQuoteIds,
       });
       await ctx.scheduler.runAfter(
@@ -481,7 +493,7 @@ async function runEmailSubagent(
         subject,
         responseMessageId: sentMessageId,
         attachments: attachments.length > 0 ? attachments : undefined,
-        referencedPolicyIds: context.referencedPolicyIds,
+        referencedPolicyIds: sourcePolicyIds.size > 0 ? ([...sourcePolicyIds] as Id<"policies">[]) : undefined,
         referencedQuoteIds: context.referencedQuoteIds,
         legacyConversationId: context.legacyConversationId,
       });

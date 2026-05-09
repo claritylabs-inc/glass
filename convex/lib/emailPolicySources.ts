@@ -1,0 +1,99 @@
+"use node";
+
+import { internal } from "../_generated/api";
+import type { Id } from "../_generated/dataModel";
+import type { ActionCtx } from "../_generated/server";
+
+type PolicyLike = {
+  _id: Id<"policies">;
+  documentType?: "policy" | "quote";
+  carrier?: string;
+  security?: string;
+  mga?: string;
+  policyNumber?: string;
+  policyType?: string;
+  policyTypes?: string[];
+};
+
+export type EmailPolicySource = {
+  id: Id<"policies">;
+  href: string;
+  title: string;
+  label: string;
+  detail: string;
+};
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function sourceFromPolicy(policy: PolicyLike, siteUrl: string): EmailPolicySource {
+  const href = `${siteUrl.replace(/\/$/, "")}/policies/${policy._id}`;
+  const label = policy.documentType === "quote" ? "Quote" : "Policy";
+  const administrator = policy.mga || policy.security || policy.carrier || "Unknown";
+  const type = policy.policyTypes?.[0] ?? policy.policyType;
+  const detail = [administrator, policy.policyNumber, type].filter(Boolean).join(" - ");
+
+  return {
+    id: policy._id,
+    href,
+    label,
+    title: detail || label,
+    detail: policy.policyNumber ? `Policy ${policy.policyNumber}` : label,
+  };
+}
+
+export async function buildEmailPolicySources(
+  ctx: ActionCtx,
+  policyIds: Array<Id<"policies"> | string> | undefined,
+  siteUrl: string = process.env.SITE_URL ?? "https://glass.claritylabs.inc",
+): Promise<EmailPolicySource[]> {
+  const uniqueIds = [...new Set((policyIds ?? []).filter(Boolean).map(String))];
+  const sources: EmailPolicySource[] = [];
+
+  for (const id of uniqueIds) {
+    const policy = await ctx.runQuery(internal.policies.getInternal, {
+      id: id as Id<"policies">,
+    });
+    if (!policy) continue;
+    sources.push(sourceFromPolicy(policy as PolicyLike, siteUrl));
+  }
+
+  return sources;
+}
+
+export function buildPolicySourcesText(sources: EmailPolicySource[]): string {
+  if (sources.length === 0) return "";
+  return [
+    "",
+    "",
+    "Sources",
+    ...sources.map((source) => `- ${source.title}: ${source.href}`),
+  ].join("\n");
+}
+
+export function buildPolicySourcesHtml(sources: EmailPolicySource[]): string {
+  if (sources.length === 0) return "";
+  const cards = sources
+    .map((source) => {
+      const title = escapeHtml(source.title);
+      const label = escapeHtml(source.label);
+      const href = escapeHtml(source.href);
+      return `
+<a href="${href}" style="display:block;margin:8px 0 0;padding:10px 12px;border:1px solid rgba(17,24,39,0.08);border-radius:8px;background:#ffffff;text-decoration:none;color:#111827;">
+  <span style="display:block;font-size:11px;line-height:1.2;color:#9ca3af;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">${label}</span>
+  <span style="display:block;margin-top:3px;font-size:13px;line-height:1.35;color:#111827;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">${title}</span>
+</a>`;
+    })
+    .join("\n");
+
+  return `
+<div style="margin:20px 0 0;padding:14px 0 0;border-top:1px solid rgba(17,24,39,0.08);">
+  <p style="margin:0 0 4px;font-size:12px;line-height:1.4;color:#6b7280;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-weight:600;">Sources</p>
+  ${cards}
+</div>`;
+}
