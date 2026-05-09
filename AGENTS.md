@@ -270,7 +270,7 @@ Outbound emails sent by Glass Agent are centralized in `convex/lib/emailSubagent
 - Channel agents should delegate draft/send/forward requests to the `email_expert` tool instead of hand-rolling email payloads.
 - The email subagent owns recipient caution, formatting, signatures, attachment preparation, Resend payload construction, pending-send scheduling, and sent-email thread records.
 - It can attach original policy PDFs from `policies.fileId`, user-uploaded files already present in the conversation, and generated COI PDFs from `generateCoi.run`.
-- `generateCoi.run` stores every newly generated COI PDF in Convex file storage and records it in `certificates` with `policyId`, `orgId`, certificate-holder text, source, creator, and storage file ID. The policy detail page's Certificates tab reads this table; direct page generation uses `certificates.generateForPolicy`.
+- `generateCoi.run` stores every newly generated COI PDF in Convex file storage and records it in `certificates` with `policyId`, `orgId`, certificate-holder text, source, creator, and storage file ID. The policy detail page's Certificates tab reads this table; direct page generation uses `certificates.generateForPolicy`. Programmatic generation is exposed through REST (`GET/POST /api/v1/policies/:id/certificates`) and MCP/CLI tools (`list_policy_certificates`, `generate_policy_certificate`).
 - It requires confirmation instead of sending when the recipient email is inferred or unknown, the recipient name is missing, the body/subject is incomplete, attachments are ambiguous, or `autoSendEmails` is false and the user has not explicitly approved the exact draft.
 - Pending emails persist attachment metadata in `pendingEmails.attachments`; the scheduled sender writes those attachments back into the unified thread email message after Resend accepts the send.
 
@@ -298,7 +298,7 @@ Glass exposes MCP functionality for remote and local AI tools.
 
 ### Tools (trimmed in v0.2.0)
 
-- `list_policies`, `get_policy`
+- `list_policies`, `get_policy`, `list_policy_certificates`, `generate_policy_certificate`
 - `list_quotes`, `get_quote`
 - `list_threads`, `get_thread_messages`
 - `get_org_info`
@@ -334,6 +334,7 @@ OpenAPI spec: `GET /api/v1/openapi.json`
 - `GET /api/v1/clients` / `GET /api/v1/clients/:id` (broker)
 - `POST /api/v1/clients/invitations` (write)
 - `GET /api/v1/policies` / `GET /api/v1/policies/:id`
+- `GET /api/v1/policies/:id/certificates` / `POST /api/v1/policies/:id/certificates` (write)
 - `GET /api/v1/notifications`
 - `GET /api/v1/activity`
 

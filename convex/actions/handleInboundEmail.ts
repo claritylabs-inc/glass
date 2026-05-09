@@ -41,6 +41,8 @@ import {
 import { isWhiteLabelingEnabled } from "../lib/branding";
 import {
   buildEmailExpertTool,
+  toResendAttachments,
+  type EmailAttachmentMeta,
   type EmailSubagentResult,
 } from "../lib/emailSubagent";
 import {
@@ -963,6 +965,7 @@ export const processInbound = internalAction({
         }
       };
       let toolSentEmail: ToolSentEmail | null = null;
+      const generatedCoiAttachments: EmailAttachmentMeta[] = [];
 
       const emailTools = {
         lookup_policy: {
@@ -1148,10 +1151,19 @@ export const processInbound = internalAction({
                   policyId: params.policyId as Id<"policies">,
                   orgId,
                   certificateHolder: params.certificateHolder,
+                  certificateHolderName: params.certificateHolder?.split(/\r?\n/)[0]?.trim() || undefined,
+                  source: "email",
+                  createdByUserId: primaryUserId,
                 },
               );
               if (!storageId) return COI_GENERATION_FAILED_MESSAGE;
-              return "COI generated successfully. If it needs to be emailed to someone, use the email_expert tool to attach it.";
+              generatedCoiAttachments.push({
+                filename: "certificate-of-insurance.pdf",
+                contentType: "application/pdf",
+                size: 0,
+                fileId: storageId as Id<"_storage">,
+              });
+              return "COI generated successfully and will be attached to this email reply.";
             } catch (err) {
               console.error("[email] COI generation failed:", err);
               return COI_GENERATION_FAILED_MESSAGE;
@@ -1324,6 +1336,7 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
               ccAddresses: sendCc,
               subject: replySub,
               emailBody,
+              attachments: generatedCoiAttachments.length > 0 ? generatedCoiAttachments : undefined,
               referencedPolicyIds: referencedPolicySourceIds.size > 0 ? ([...referencedPolicySourceIds] as Id<"policies">[]) : undefined,
               referencedQuoteIds: relevantQuoteIds.length > 0 ? (relevantQuoteIds as Id<"policies">[]) : undefined,
             });
@@ -1346,6 +1359,9 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
             );
           } else {
             // Send immediately (delay = 0 or no unified thread)
+            if (generatedCoiAttachments.length > 0) {
+              sendPayload.attachments = await toResendAttachments(ctx, generatedCoiAttachments);
+            }
             const sendOutcome = await sendResendEmail(sendPayload as Parameters<typeof sendResendEmail>[0]);
             if (!sendOutcome.ok) throw new Error(`Failed to send email: ${sendOutcome.error}`);
             const sentMsgId = sendOutcome.id;
@@ -1481,6 +1497,9 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
         text: fullReplyText,
         html: fullReplyHtml,
       };
+      if (generatedCoiAttachments.length > 0) {
+        emailPayload.attachments = await toResendAttachments(ctx, generatedCoiAttachments);
+      }
 
       if (replyCc.length > 0) {
         emailPayload.cc = replyCc;
@@ -1529,6 +1548,7 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
           relevantQuoteIds.length > 0
             ? (relevantQuoteIds as Id<"policies">[])
             : undefined,
+        attachments: generatedCoiAttachments.length > 0 ? generatedCoiAttachments : undefined,
       });
 
       // Dual-write: insert agent response into unified thread
@@ -1544,6 +1564,7 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
             responseMessageId: sentMessageId,
             referencedPolicyIds: referencedPolicySourceIds.size > 0 ? ([...referencedPolicySourceIds] as Id<"policies">[]) : undefined,
             referencedQuoteIds: relevantQuoteIds.length > 0 ? (relevantQuoteIds as Id<"policies">[]) : undefined,
+            attachments: generatedCoiAttachments.length > 0 ? generatedCoiAttachments : undefined,
             legacyConversationId: conversationId,
           });
         } catch (err) {

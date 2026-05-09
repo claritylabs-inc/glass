@@ -442,6 +442,61 @@ function getQueryParam(request: Request, name: string): string | null {
   return url.searchParams.get(name);
 }
 
+function requireMcpWriteScope(identity: McpIdentity): void {
+  if (identity.source === "api_key") return;
+  if (!(identity.scopes ?? ["read"]).includes("write")) {
+    throw new Error("insufficient_scope: this tool requires write scope");
+  }
+}
+
+function normalizeCertificateRequest(body: Record<string, unknown>) {
+  const certificateHolder =
+    typeof body.certificate_holder === "string" ? body.certificate_holder.trim() : "";
+  const holderName =
+    (typeof body.holderName === "string" && body.holderName.trim()) ||
+    (typeof body.certificate_holder_name === "string" && body.certificate_holder_name.trim()) ||
+    certificateHolder.split(/\r?\n/)[0]?.trim() ||
+    "";
+
+  return {
+    holderName,
+    addressLine1:
+      (typeof body.addressLine1 === "string" && body.addressLine1.trim()) ||
+      (typeof body.address_line_1 === "string" && body.address_line_1.trim()) ||
+      certificateHolder.split(/\r?\n/)[1]?.trim() ||
+      undefined,
+    addressLine2:
+      (typeof body.addressLine2 === "string" && body.addressLine2.trim()) ||
+      (typeof body.address_line_2 === "string" && body.address_line_2.trim()) ||
+      certificateHolder.split(/\r?\n/)[2]?.trim() ||
+      undefined,
+    city:
+      (typeof body.city === "string" && body.city.trim()) ||
+      undefined,
+    state:
+      (typeof body.state === "string" && body.state.trim()) ||
+      undefined,
+    postalCode:
+      (typeof body.postalCode === "string" && body.postalCode.trim()) ||
+      (typeof body.postal_code === "string" && body.postal_code.trim()) ||
+      undefined,
+  };
+}
+
+function serializeCertificate(certificate: any) {
+  return {
+    id: certificate._id,
+    policy_id: certificate.policyId,
+    file_id: certificate.fileId,
+    file_name: certificate.fileName,
+    certificate_holder: certificate.certificateHolder ?? null,
+    certificate_holder_name: certificate.certificateHolderName ?? null,
+    source: certificate.source ?? null,
+    created_at: certificate.createdAt,
+    url: certificate.url ?? null,
+  };
+}
+
 // GET /mcp/policies/list
 http.route({
   path: "/mcp/policies/list",
@@ -607,6 +662,62 @@ http.route({
         byCarrier,
         byYear,
       });
+    } catch (e) {
+      if (e instanceof Response) return e;
+      return jsonResponse({ error: String(e) }, 500);
+    }
+  }),
+});
+
+// GET /mcp/policies/certificates/list
+http.route({
+  path: "/mcp/policies/certificates/list",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const identity = await requireMcpAuth(ctx, request);
+      const policyId = getQueryParam(request, "policyId") ?? getQueryParam(request, "policy_id");
+      if (!policyId) return jsonResponse({ error: "Missing policyId parameter" }, 400);
+
+      const certificates = await ctx.runQuery(internal.certificates.listByPolicyInternal, {
+        orgId: identity.orgId as Id<"organizations">,
+        policyId: policyId as Id<"policies">,
+      });
+      return jsonResponse(certificates.map(serializeCertificate));
+    } catch (e) {
+      if (e instanceof Response) return e;
+      return jsonResponse({ error: String(e) }, 500);
+    }
+  }),
+});
+
+// POST /mcp/policies/certificates/generate
+http.route({
+  path: "/mcp/policies/certificates/generate",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const identity = await requireMcpAuth(ctx, request);
+      requireMcpWriteScope(identity);
+      const body = await request.json() as Record<string, unknown>;
+      const policyId = body.policyId ?? body.policy_id;
+      if (typeof policyId !== "string" || !policyId) {
+        return jsonResponse({ error: "Missing policyId" }, 400);
+      }
+
+      const certificate = normalizeCertificateRequest(body);
+      if (!certificate.holderName) {
+        return jsonResponse({ error: "Missing certificate holder" }, 400);
+      }
+
+      const result = await ctx.runAction(internal.certificates.generateForOrg, {
+        orgId: identity.orgId as Id<"organizations">,
+        policyId: policyId as Id<"policies">,
+        ...certificate,
+        source: "mcp",
+        createdByUserId: identity.userId as Id<"users">,
+      });
+      return jsonResponse(result, 201);
     } catch (e) {
       if (e instanceof Response) return e;
       return jsonResponse({ error: String(e) }, 500);
@@ -822,6 +933,32 @@ const MCP_TOOLS = [
     inputSchema: { type: "object" as const, properties: {} },
   },
   {
+    name: "list_policy_certificates",
+    description: "List generated Certificates of Insurance for a policy, including download URLs.",
+    inputSchema: {
+      type: "object" as const,
+      properties: { policyId: { type: "string", description: "The policy ID" } },
+      required: ["policyId"],
+    },
+  },
+  {
+    name: "generate_policy_certificate",
+    description: "Generate a Certificate of Insurance PDF for a policy. Requires write scope.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        policyId: { type: "string", description: "The policy ID" },
+        holderName: { type: "string", description: "Certificate holder name" },
+        addressLine1: { type: "string", description: "Certificate holder street address" },
+        addressLine2: { type: "string", description: "Suite, floor, or attention line" },
+        city: { type: "string", description: "Certificate holder city" },
+        state: { type: "string", description: "Certificate holder state" },
+        postalCode: { type: "string", description: "Certificate holder ZIP or postal code" },
+      },
+      required: ["policyId", "holderName"],
+    },
+  },
+  {
     name: "list_quotes",
     description: "List insurance quotes. Optionally filter by carrier or year.",
     inputSchema: {
@@ -1022,6 +1159,30 @@ async function handleToolCall(
         byYear[pa.policyYear] = (byYear[pa.policyYear] || 0) + 1;
       }
       return { content: [{ type: "text", text: JSON.stringify({ totalPolicies: policies.length, byType, byCarrier, byYear }, null, 2) }] };
+    }
+    case "list_policy_certificates": {
+      const policyId = args.policyId ?? args.policy_id;
+      if (typeof policyId !== "string" || !policyId) throw new Error("Missing policyId parameter");
+      const certificates = await ctx.runQuery(internal.certificates.listByPolicyInternal, {
+        orgId,
+        policyId: policyId as Id<"policies">,
+      });
+      return { content: [{ type: "text", text: JSON.stringify(certificates.map(serializeCertificate), null, 2) }] };
+    }
+    case "generate_policy_certificate": {
+      requireMcpWriteScope(identity);
+      const policyId = args.policyId ?? args.policy_id;
+      if (typeof policyId !== "string" || !policyId) throw new Error("Missing policyId parameter");
+      const certificate = normalizeCertificateRequest(args);
+      if (!certificate.holderName) throw new Error("Missing certificate holder");
+      const result = await ctx.runAction(internal.certificates.generateForOrg, {
+        orgId,
+        policyId: policyId as Id<"policies">,
+        ...certificate,
+        source: "mcp",
+        createdByUserId: userId,
+      });
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
     case "list_quotes": {
       const quotes = await ctx.runQuery(internal.policies.listAllQuotesInternal, { orgId });
@@ -1595,6 +1756,64 @@ http.route({
   }),
 });
 
+// ── GET /api/v1/policies/:id/certificates ──
+http.route({
+  path: "/api/v1/policies/:id/certificates",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const identity = await requireApiAuth(ctx, request);
+      const parts = new URL(request.url).pathname.split("/");
+      const policyId = parts[parts.length - 2] as Id<"policies">;
+      const certificates = await ctx.runQuery(internal.certificates.listByPolicyInternal, {
+        orgId: identity.orgId,
+        policyId,
+      });
+      return jsonResponse({
+        data: certificates.map(serializeCertificate),
+        next_cursor: null,
+      });
+    } catch (e) {
+      if (e instanceof Response) return e;
+      return jsonResponse({ error: { code: "internal_error", message: String(e) } }, 500);
+    }
+  }),
+});
+
+// ── POST /api/v1/policies/:id/certificates ──
+http.route({
+  path: "/api/v1/policies/:id/certificates",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const identity = await requireApiAuth(ctx, request);
+      if (!identity.scopes.includes("write")) {
+        return jsonResponse({ error: { code: "insufficient_scope", message: "Write scope required", request_id: identity.requestId } }, 403);
+      }
+
+      const parts = new URL(request.url).pathname.split("/");
+      const policyId = parts[parts.length - 2] as Id<"policies">;
+      const body = await request.json() as Record<string, unknown>;
+      const certificate = normalizeCertificateRequest(body);
+      if (!certificate.holderName) {
+        return jsonResponse({ error: { code: "bad_request", message: "Missing certificate_holder_name" } }, 400);
+      }
+
+      const result = await ctx.runAction(internal.certificates.generateForOrg, {
+        orgId: identity.orgId,
+        policyId,
+        ...certificate,
+        source: "api",
+        createdByUserId: identity.userId,
+      });
+      return jsonResponse({ data: result }, 201);
+    } catch (e) {
+      if (e instanceof Response) return e;
+      return jsonResponse({ error: { code: "internal_error", message: String(e) } }, 500);
+    }
+  }),
+});
+
 // ── GET /api/v1/vendors ──
 http.route({
   path: "/api/v1/vendors",
@@ -1735,6 +1954,10 @@ http.route({
         "/api/v1/clients/invitations": { post: { tags: ["Clients"], summary: "Create client invitation (write)", responses: { "201": { description: "Invitation created" } } } },
         "/api/v1/policies": { get: { tags: ["Policies"], summary: "List policies", responses: { "200": { description: "Policies" } } } },
         "/api/v1/policies/{id}": { get: { tags: ["Policies"], summary: "Get policy", responses: { "200": { description: "Policy" } } } },
+        "/api/v1/policies/{id}/certificates": {
+          get: { tags: ["Certificates"], summary: "List generated Certificates of Insurance for a policy", responses: { "200": { description: "Certificates" } } },
+          post: { tags: ["Certificates"], summary: "Generate a Certificate of Insurance for a policy (write)", responses: { "201": { description: "Certificate generated" } } },
+        },
         "/api/v1/vendors": { get: { tags: ["Vendors"], summary: "List connected vendors", responses: { "200": { description: "Connected vendors" } } } },
         "/api/v1/vendors/{id}": { get: { tags: ["Vendors"], summary: "Get connected vendor detail", responses: { "200": { description: "Connected vendor" } } } },
         "/api/v1/vendors/{id}/policies": { get: { tags: ["Vendors"], summary: "List connected vendor policies", responses: { "200": { description: "Vendor policies" } } } },

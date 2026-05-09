@@ -50,4 +50,34 @@ export function registerPolicyTools(server: McpServer, client: GlassClient) {
       return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
     },
   );
+
+  server.tool(
+    "list_policy_certificates",
+    "List generated Certificates of Insurance for a policy, including download URLs.",
+    {
+      policyId: z.string().describe("The policy ID"),
+    },
+    async ({ policyId }) => {
+      const result = await client.listPolicyCertificates(policyId);
+      return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+    },
+  );
+
+  server.tool(
+    "generate_policy_certificate",
+    "Generate a Certificate of Insurance PDF for a policy. Requires write scope.",
+    {
+      policyId: z.string().describe("The policy ID"),
+      holderName: z.string().describe("Certificate holder name"),
+      addressLine1: z.string().optional().describe("Certificate holder street address"),
+      addressLine2: z.string().optional().describe("Suite, floor, or attention line"),
+      city: z.string().optional().describe("Certificate holder city"),
+      state: z.string().optional().describe("Certificate holder state"),
+      postalCode: z.string().optional().describe("Certificate holder ZIP or postal code"),
+    },
+    async (input) => {
+      const result = await client.generatePolicyCertificate(input);
+      return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+    },
+  );
 }

@@ -67,6 +67,22 @@ export class GlassClient {
     return this.get("/mcp/policies/stats");
   }
 
+  async listPolicyCertificates(policyId: string) {
+    return this.get("/mcp/policies/certificates/list", { policyId });
+  }
+
+  async generatePolicyCertificate(input: {
+    policyId: string;
+    holderName: string;
+    addressLine1?: string;
+    addressLine2?: string;
+    city?: string;
+    state?: string;
+    postalCode?: string;
+  }) {
+    return this.post("/mcp/policies/certificates/generate", input);
+  }
+
   // ── Quotes ──
 
   async listQuotes(filters?: { carrier?: string; year?: string }) {

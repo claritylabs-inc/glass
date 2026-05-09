@@ -61,6 +61,12 @@ export const updateResponse = internalMutation({
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
     referencedQuoteIds: v.optional(v.array(v.id("policies"))),
     responseMessageId: v.optional(v.string()),
+    attachments: v.optional(v.array(v.object({
+      filename: v.string(),
+      contentType: v.string(),
+      size: v.number(),
+      fileId: v.optional(v.id("_storage")),
+    }))),
   },
   handler: async (ctx, args) => {
     const { id, ...fields } = args;

@@ -332,6 +332,8 @@ async function runEmailSubagent(
         policyId: policyId as Id<"policies">,
         orgId: context.orgId,
         certificateHolder,
+        certificateHolderName: certificateHolder?.split(/\r?\n/)[0]?.trim() || undefined,
+        source: context.channel === "web" ? "chat" : context.channel,
       });
     } catch (err) {
       console.error("[emailSubagent] COI generation failed:", err);

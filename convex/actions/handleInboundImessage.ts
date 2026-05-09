@@ -599,6 +599,9 @@ export const processInbound = internalAction({
               policyId: params.policyId as Id<"policies">,
               orgId,
               certificateHolder: params.certificateHolder,
+              certificateHolderName: params.certificateHolder?.split(/\r?\n/)[0]?.trim() || undefined,
+              source: "imessage",
+              createdByUserId: user._id,
             });
             if (!storageId) return COI_GENERATION_FAILED_MESSAGE;
             coiAttachments.push({

@@ -161,6 +161,9 @@ function buildTools(ctx: any, args: { orgId: string; threadId: string; userId: s
             policyId: input.policyId as Id<"policies">,
             orgId: args.orgId,
             certificateHolder: input.certificateHolder,
+            certificateHolderName: input.certificateHolder?.split(/\r?\n/)[0]?.trim() || undefined,
+            source: "chat",
+            createdByUserId: args.userId as Id<"users">,
           });
           if (!storageId) return COI_GENERATION_FAILED_MESSAGE;
           return {
