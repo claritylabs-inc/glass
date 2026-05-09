@@ -13,6 +13,14 @@ function absoluteLogoUrl(logoUrl: string, siteUrl: string = SITE_URL): string {
   return `${base}${path}`;
 }
 
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 /** Brand name + mark lockup for the email header. Big squircle logo mirrors the in-app sidebar brand. */
 export function buildEmailLogoHtml(branding: BrandingContext = getDefaultBranding(), siteUrl: string = SITE_URL): string {
   const name = branding.brandName;
@@ -136,5 +144,56 @@ export function buildOtpEmail(token: string, siteUrl: string = SITE_URL, brandin
 
   const html = buildEmailShell({ title: "Your sign-in code", bodyHtml, branding, siteUrl });
   const text = `Your ${branding.brandName} sign-in code is: ${token}\n\nEnter this code in the browser window where you started signing in. It expires in 15 minutes.\n\nIf you didn't request this code, you can safely ignore this email.`;
+  return { html, text };
+}
+
+export function buildUnrecognizedInboundEmail(
+  agentEmail: string,
+  siteUrl: string = SITE_URL,
+  branding: BrandingContext = getDefaultBranding(),
+): { html: string; text: string } {
+  const signupUrl = `${siteUrl.replace(/\/$/, "")}/signup/client`;
+  const escapedAgentEmail = escapeHtml(agentEmail);
+  const escapedSignupUrl = escapeHtml(signupUrl);
+  const bodyHtml = `
+<tr><td align="center" style="padding:28px 40px 0 40px;">
+  <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:15px;font-weight:500;color:#111827;line-height:1.5;">
+    We couldn't recognize this email address
+  </p>
+</td></tr>
+<tr><td align="center" style="padding:16px 40px 0 40px;">
+  <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13px;color:#4b5563;line-height:1.6;">
+    Glass received your message to ${escapedAgentEmail}, but this sender address is not attached to an organization yet.
+  </p>
+</td></tr>
+<tr><td align="center" style="padding:24px 40px 0 40px;">
+  <a href="${escapedSignupUrl}" style="display:inline-block;background:#111827;color:#ffffff;text-decoration:none;border-radius:8px;padding:11px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13px;font-weight:600;">
+    Create a Glass account
+  </a>
+</td></tr>
+<tr><td align="center" style="padding:20px 40px 0 40px;">
+  <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13px;color:#4b5563;line-height:1.6;">
+    You can also resend your message from the email address associated with your Glass account.
+  </p>
+</td></tr>
+<tr><td style="padding:32px 40px 0 40px;">
+  <div style="height:1px;background-color:rgba(17,24,39,0.06);"></div>
+</td></tr>
+<tr><td align="center" style="padding:20px 40px 32px 40px;">
+  <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:12px;color:#9ca3af;line-height:1.5;">
+    If you believe this is a mistake, sign in with the email address you used here and finish setup.
+  </p>
+</td></tr>`;
+
+  const html = buildEmailShell({ title: "Email address not recognized", bodyHtml, branding, siteUrl });
+  const text = [
+    "We couldn't recognize this email address.",
+    "",
+    `Glass received your message to ${agentEmail}, but this sender address is not attached to an organization yet.`,
+    "",
+    `Create a Glass account: ${signupUrl}`,
+    "",
+    "You can also resend your message from the email address associated with your Glass account.",
+  ].join("\n");
   return { html, text };
 }

@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { query, mutation, internalQuery, internalMutation } from "./_generated/server";
+import type { QueryCtx } from "./_generated/server";
 import { requireOrgAccess, requireOrgAdmin, getOrgAccess } from "./lib/orgAuth";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { getOrgAccess as getOrgAccessNew, assertBrokerOrg } from "./lib/access";
@@ -688,22 +689,79 @@ export const getByHandle = internalQuery({
   },
 });
 
+type SenderMatch = "email" | "domain" | "member";
+
+async function senderMatchesOrg(
+  ctx: QueryCtx,
+  org: {
+    _id: Id<"organizations">;
+    allowedEmails?: string[];
+    allowedDomains?: string[];
+    emailVerification?: "strict" | "domain" | "open";
+  },
+  email: string,
+  domain: string,
+): Promise<SenderMatch | null> {
+  const allowed = (org.allowedEmails ?? []).map((e) => e.toLowerCase());
+  if (allowed.includes(email)) return "email";
+
+  if (org.emailVerification !== "strict") {
+    const domains = (org.allowedDomains ?? []).map((d) => d.toLowerCase());
+    if (domain && domains.includes(domain)) return "domain";
+
+    const memberships = await ctx.db
+      .query("orgMemberships")
+      .withIndex("by_orgId", (q) => q.eq("orgId", org._id))
+      .collect();
+    for (const membership of memberships) {
+      const user = await ctx.db.get(membership.userId);
+      if (user?.email?.toLowerCase() === email) return "member";
+    }
+  }
+
+  return null;
+}
+
 /**
  * Resolve which client org a sender is authorized to act on behalf of, for
- * email addressed to the given broker-owned handle. Returns null when the
- * sender doesn't match any client attached to the broker.
+ * email addressed to the given agent handle. Broker-owned handles route to a
+ * matching managed client when possible; the shared default "agent" handle
+ * routes standalone client orgs by sender identity.
  */
 export const resolveClientBySender = internalQuery({
   args: { handle: v.string(), senderEmail: v.string() },
   handler: async (ctx, args) => {
-    const brokerOrg = await ctx.db
+    const email = args.senderEmail.toLowerCase();
+    const domain = email.split("@")[1] ?? "";
+
+    const handleOwner = await ctx.db
       .query("organizations")
       .withIndex("by_agentHandle", (q) => q.eq("agentHandle", args.handle))
       .first();
-    if (!brokerOrg || brokerOrg.type !== "broker") return null;
 
-    const email = args.senderEmail.toLowerCase();
-    const domain = email.split("@")[1] ?? "";
+    if (handleOwner && handleOwner.type !== "broker") {
+      if (handleOwner.brokerOrgId) return null;
+      const matchedBy = await senderMatchesOrg(ctx, handleOwner, email, domain);
+      return matchedBy ? { brokerOrg: handleOwner, clientOrg: null, matchedBy } : null;
+    }
+
+    if (!handleOwner && args.handle !== "agent") return null;
+
+    if (!handleOwner) {
+      const standaloneOrgs = await ctx.db
+        .query("organizations")
+        .withIndex("by_brokerOrgId", (q) => q.eq("brokerOrgId", undefined))
+        .collect();
+
+      for (const org of standaloneOrgs) {
+        if ((org.type ?? "client") !== "client") continue;
+        const matchedBy = await senderMatchesOrg(ctx, org, email, domain);
+        if (matchedBy) return { brokerOrg: org, clientOrg: null, matchedBy };
+      }
+      return null;
+    }
+
+    const brokerOrg = handleOwner;
 
     const clientOrgs = await ctx.db
       .query("organizations")

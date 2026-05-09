@@ -18,7 +18,8 @@ import {
 import { Webhook } from "svix";
 import { buildDocumentContext, buildConversationMemoryContext, buildIntelligenceContext } from "../lib/agentPrompts";
 import { Id } from "../_generated/dataModel";
-import { sendResendEmail, getAgentDomain } from "../lib/resend";
+import { sendResendEmail, getAgentDomain, getAuthFromAddress } from "../lib/resend";
+import { buildUnrecognizedInboundEmail } from "../lib/emailTemplate";
 import {
   buildSystemPromptForContext,
   buildChannelInstructions,
@@ -189,6 +190,32 @@ function buildSignature(agentEmail: string, broker?: BrokerBranding): { text: st
   ].join("\n");
 
   return { text, html };
+}
+
+async function sendUnrecognizedSenderEmail({
+  to,
+  agentEmail,
+  originalSubject,
+}: {
+  to: string;
+  agentEmail: string;
+  originalSubject?: string;
+}) {
+  const siteUrl = process.env.SITE_URL ?? "https://glass.claritylabs.inc";
+  const { html, text } = buildUnrecognizedInboundEmail(agentEmail, siteUrl);
+  const subject = originalSubject
+    ? `Email address not recognized: ${originalSubject}`
+    : "Email address not recognized";
+  const result = await sendResendEmail({
+    from: getAuthFromAddress(),
+    to,
+    subject,
+    html,
+    text,
+  });
+  if (!result.ok) {
+    console.warn("Failed to send unrecognized inbound sender email:", result.error);
+  }
 }
 
 interface AttachmentMeta {
@@ -371,6 +398,11 @@ export const processInbound = internalAction({
     });
     if (!resolved) {
       console.log("No organization found for handle:", handle);
+      await sendUnrecognizedSenderEmail({
+        to: fromEmail,
+        agentEmail: `${handle}@${getAgentDomain()}`,
+        originalSubject: data.subject,
+      });
       return;
     }
     const { brokerOrg, clientOrg } = resolved;
@@ -387,15 +419,12 @@ export const processInbound = internalAction({
 
     // Get all org members for domain detection and primary contact resolution
     const orgMembers = await ctx.runQuery(internal.orgs.getMembersInternal, { orgId });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const memberEmails = orgMembers
       .map((m: any) => m.user?.email)
       .filter(Boolean) as string[];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const firstAdmin = orgMembers.find((m: any) => m.role === "admin");
 
     // Match sender to an org member by email — so the right user is attributed
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const senderMember = orgMembers.find(
       (m: any) => m.user?.email?.toLowerCase() === fromEmail.toLowerCase(),
     );
@@ -433,15 +462,16 @@ export const processInbound = internalAction({
     const isAgentAddr = (addr: string) => addr === agentAddress || addr === agentAddressWithSuffix;
 
     // Resolve broker branding once — used for outbound from-name and signature.
-    const whiteLabelingEnabled = isWhiteLabelingEnabled(brokerOrg);
-    const brokerLogoUrl = whiteLabelingEnabled && brokerOrg.iconStorageId
-      ? await ctx.storage.getUrl(brokerOrg.iconStorageId)
+    const senderBrokerOrg = brokerOrg.type === "broker" ? brokerOrg : null;
+    const whiteLabelingEnabled = isWhiteLabelingEnabled(senderBrokerOrg);
+    const brokerLogoUrl = whiteLabelingEnabled && senderBrokerOrg?.iconStorageId
+      ? await ctx.storage.getUrl(senderBrokerOrg.iconStorageId)
       : null;
-    const brokerBranding: BrokerBranding | undefined = whiteLabelingEnabled
+    const brokerBranding: BrokerBranding | undefined = whiteLabelingEnabled && senderBrokerOrg
       ? {
-          name: brokerOrg.name,
+          name: senderBrokerOrg.name,
           logoUrl: brokerLogoUrl,
-          agentDisplayName: brokerOrg.agentDisplayName,
+          agentDisplayName: senderBrokerOrg.agentDisplayName,
         }
       : undefined;
     const fromHeader = `${getAgentFromName(brokerBranding)} <${agentAddress}>`;
@@ -600,7 +630,6 @@ export const processInbound = internalAction({
         mode: effectiveMode,
         resendEmailId: resendEmailId || undefined,
         threadId,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         attachments: attachmentRecords.length > 0 ? attachmentRecords as any : undefined,
       },
     );
@@ -639,7 +668,6 @@ export const processInbound = internalAction({
         content: body,
         contentHtml: bodyHtml,
         messageId,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         attachments: attachmentRecords.length > 0 ? attachmentRecords as any : undefined,
         legacyConversationId: conversationId,
       });
@@ -926,7 +954,6 @@ export const processInbound = internalAction({
         lookup_policy: {
           ...lookupPolicy,
           execute: async (params: { query: string; policyType?: string; carrier?: string }) => {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const scored = (policies as any[])
               .map((p) => ({
                 policy: p,
@@ -938,7 +965,6 @@ export const processInbound = internalAction({
               ? scored.map((s) => s.policy)
               : (policies as any[]).slice(0, 5);
             if (matches.length === 0) return "No policies found for this organization.";
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             return matches.slice(0, 5).map((p: any) => ({
               id: p._id,
               insured: p.insuredName,
@@ -948,7 +974,6 @@ export const processInbound = internalAction({
               effective: p.effectiveDate,
               expiration: p.expirationDate,
               premium: p.premium,
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
               coverages: (p.coverages ?? []).map((c: any) => ({
                 name: c.name, limit: c.limit, deductible: c.deductible,
               })),
@@ -958,7 +983,6 @@ export const processInbound = internalAction({
         lookup_policy_section: {
           ...lookupPolicySection,
           execute: async (params: { policyId: string; query: string }) => {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const policy: any = await ctx.runQuery(
               internal.policies.getInternal,
               { id: params.policyId as Id<"policies"> },
@@ -988,16 +1012,12 @@ export const processInbound = internalAction({
         compare_coverages: {
           ...compareCoverages,
           execute: async (params: { policyId1: string; policyId2: string }) => {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const p1 = (policies as any[]).find((p) => p._id === params.policyId1);
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const p2 = (policies as any[]).find((p) => p._id === params.policyId2);
             if (!p1 || !p2) return "One or both policies not found.";
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const mapP = (p: any) => ({
               id: p._id, carrier: p.security, type: p.policyTypes, limits: p.limits,
               deductibles: p.deductibles, premium: p.premium,
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
               coverages: (p.coverages ?? []).map((c: any) => ({
                 name: c.name, limit: c.limit, deductible: c.deductible,
               })),
