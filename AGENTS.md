@@ -39,8 +39,8 @@ Core layers:
 
 Default model routing lives in [convex/lib/models.ts](convex/lib/models.ts), with broker-visible catalogs in [convex/lib/modelCatalog.ts](convex/lib/modelCatalog.ts).
 
-- `chat`, `chat_with_tools`, `application_authoring`, `analysis` → `kimi-k2.6`
-- `email_draft`, `email_reply` → `gpt-5.4-mini`
+- `chat`, `chat_with_tools`, `email_draft`, `email_reply` → `gpt-5.4-mini`
+- `application_authoring`, `analysis` → `kimi-k2.6`
 - `extraction`, `classification`, `email_extraction`, `document_extraction` → `gpt-5.4-nano`
 - `summary`, `triage`, `security` → `gpt-5.4-mini`
 - `embeddings` → `text-embedding-3-small` at 1536 dimensions

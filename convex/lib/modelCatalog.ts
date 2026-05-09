@@ -121,7 +121,7 @@ export const EMBEDDING_MODEL_CATALOG: Partial<Record<ModelProvider, string[]>> =
 };
 
 export const MODEL_ROUTING: Record<ModelTask, ModelRoute> = {
-  chat: { model: "kimi-k2.6", provider: "moonshot" },
+  chat: { model: "gpt-5.4-mini", provider: "openai" },
   email_draft: { model: "gpt-5.4-mini", provider: "openai" },
   email_reply: { model: "gpt-5.4-mini", provider: "openai" },
   analysis: { model: "kimi-k2.6", provider: "moonshot" },

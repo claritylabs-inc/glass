@@ -92,7 +92,7 @@ const KIMI_K26 = "kimi-k2.6";
 const CLAUDE_HAIKU = "claude-haiku-4-5-20251001";
 
 const MODEL_CONFIG: Record<Exclude<ModelTask, "embeddings">, () => LanguageModel> = {
-  chat:             () => moonshot()(KIMI_K26),
+  chat:             () => openai()(GPT_54_MINI),
   email_draft:      () => openai()(GPT_54_MINI),
   email_reply:      () => openai()(GPT_54_MINI),
   analysis:         () => moonshot()(KIMI_K26),

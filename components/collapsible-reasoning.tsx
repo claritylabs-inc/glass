@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { ChevronRight } from "lucide-react";
+import { useState } from "react";
+import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface CollapsibleReasoningProps {
@@ -16,71 +16,69 @@ export function CollapsibleReasoning({
   className
 }: CollapsibleReasoningProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const reasoningLength = reasoning.length;
-
-  // Auto-open when streaming starts with content.
-  // Uses setTimeout to schedule state update outside the synchronous effect body.
-  useEffect(() => {
-    if (!isStreaming || reasoningLength === 0) return;
-    const id = setTimeout(() => setIsOpen(true), 0);
-    return () => clearTimeout(id);
-  }, [isStreaming, reasoningLength]);
 
   if (!reasoning || reasoning.trim().length === 0) {
     return null;
   }
 
-  // Count reasoning steps/sentences for the summary
-  const lines = reasoning.split(/\n/).filter(l => l.trim().length > 0);
+  const lines = reasoning.split(/\n+/).filter((line) => line.trim().length > 0);
   const stepCount = lines.length;
 
   return (
     <div className={cn("mt-1.5", className)}>
       <button
         type="button"
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={() => setIsOpen((value) => !value)}
+        aria-expanded={isOpen}
         className={cn(
-          "inline-flex items-center gap-1 px-2 py-0.5 rounded-md transition-colors",
-          "text-label-sm text-muted-foreground/50 hover:text-muted-foreground/70",
-          "hover:bg-foreground/[0.03]",
-          isOpen && "bg-foreground/[0.02]"
+          "inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 transition-colors",
+          "border-foreground/8 bg-foreground/[0.025] text-label-sm text-muted-foreground/60",
+          "hover:border-foreground/12 hover:bg-foreground/[0.04] hover:text-muted-foreground/80",
+          isOpen && "border-foreground/12 bg-foreground/[0.045] text-muted-foreground/80"
         )}
       >
-        <ChevronRight
+        <ChevronDown
           className={cn(
-            "w-3 h-3 transition-transform duration-150",
-            isOpen && "rotate-90"
+            "h-3.5 w-3.5 transition-transform duration-150",
+            !isOpen && "-rotate-90"
           )}
         />
         {isStreaming ? (
           <span className="flex items-center gap-1.5">
             Thinking
-            <span className="flex gap-[2px]">
-              <span className="w-[3px] h-[3px] rounded-full bg-current animate-pulse" />
-              <span className="w-[3px] h-[3px] rounded-full bg-current animate-pulse [animation-delay:150ms]" />
-              <span className="w-[3px] h-[3px] rounded-full bg-current animate-pulse [animation-delay:300ms]" />
+            <span className="flex items-center gap-[2px]">
+              <span className="h-[3px] w-[3px] rounded-full bg-current animate-pulse" />
+              <span className="h-[3px] w-[3px] rounded-full bg-current animate-pulse [animation-delay:150ms]" />
+              <span className="h-[3px] w-[3px] rounded-full bg-current animate-pulse [animation-delay:300ms]" />
             </span>
           </span>
         ) : (
-          <span>
-            Thought for {stepCount} step{stepCount !== 1 ? "s" : ""}
+          <span>Reasoning</span>
+        )}
+        {!isStreaming && (
+          <span className="text-muted-foreground/35">
+            {stepCount} step{stepCount !== 1 ? "s" : ""}
           </span>
         )}
       </button>
 
       <div
         className={cn(
-          "overflow-hidden transition-all duration-200 ease-out",
-          isOpen ? "max-h-[400px] opacity-100 mt-1.5" : "max-h-0 opacity-0"
+          "overflow-hidden transition-[max-height,opacity,margin] duration-200 ease-out",
+          isOpen ? "mt-2 max-h-64 opacity-100" : "mt-0 max-h-0 opacity-0"
         )}
       >
-        <div className="ml-2 pl-3 border-l-2 border-foreground/[0.06]">
-          <p className="text-label text-muted-foreground/50 leading-relaxed whitespace-pre-wrap">
-            {reasoning}
+        <div className="max-h-64 overflow-y-auto rounded-lg border border-foreground/8 bg-foreground/[0.025] px-3 py-2 shadow-sm shadow-black/[0.02]">
+          <div className="space-y-2 text-[13px] leading-5 text-muted-foreground/70">
+            {lines.map((line, index) => (
+              <p key={`${index}-${line.slice(0, 16)}`} className="whitespace-pre-wrap">
+                {line}
+              </p>
+            ))}
             {isStreaming && (
-              <span className="inline-block w-[3px] h-[14px] bg-muted-foreground/30 rounded-[1px] animate-pulse ml-0.5 align-middle" />
+              <span className="inline-block h-3.5 w-[3px] rounded-[1px] bg-muted-foreground/35 align-middle animate-pulse" />
             )}
-          </p>
+          </div>
         </div>
       </div>
     </div>
