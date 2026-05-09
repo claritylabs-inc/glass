@@ -25,6 +25,8 @@ describe("email policy sources", () => {
     expect(text).toContain("https://glass.claritylabs.inc/policies/policy123");
     expect(html).toContain(">Sources<");
     expect(html).toContain("https://glass.claritylabs.inc/policies/policy123");
+    expect(html).toContain("padding:7px 9px");
+    expect(html).toContain("color:#374151");
   });
 });
 
