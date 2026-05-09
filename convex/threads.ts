@@ -218,16 +218,10 @@ export const sendMessage = mutation({
     // Auto-generate a title from the first user message — runs independently
     // of the agent response so streaming failures don't prevent renaming.
     if (thread.title === "New chat") {
-      const priorUserCount = await ctx.db
-        .query("threadMessages")
-        .withIndex("by_threadId", (q) => q.eq("threadId", args.threadId))
-        .filter((q) => q.eq(q.field("role"), "user"))
-        .collect();
-      if (priorUserCount.length === 1) {
-        await ctx.scheduler.runAfter(0, internal.actions.threadTitle.generate, {
-          threadId: args.threadId,
-        });
-      }
+      await ctx.scheduler.runAfter(0, internal.actions.threadTitle.generate, {
+        threadId: args.threadId,
+        userMessageId: messageId,
+      });
     }
 
     return messageId;

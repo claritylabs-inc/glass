@@ -31,15 +31,15 @@ export function CollapsibleReasoning({
         onClick={() => setIsOpen((value) => !value)}
         aria-expanded={isOpen}
         className={cn(
-          "inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 transition-colors",
-          "border-foreground/8 bg-foreground/[0.025] text-label-sm text-muted-foreground/60",
+          "inline-flex h-5 items-center gap-1 rounded-md border px-1.5 transition-colors",
+          "border-foreground/8 bg-foreground/[0.02] text-[11px] leading-none text-muted-foreground/55",
           "hover:border-foreground/12 hover:bg-foreground/[0.04] hover:text-muted-foreground/80",
           isOpen && "border-foreground/12 bg-foreground/[0.045] text-muted-foreground/80"
         )}
       >
         <ChevronDown
           className={cn(
-            "h-3.5 w-3.5 transition-transform duration-150",
+            "h-3 w-3 transition-transform duration-150",
             !isOpen && "-rotate-90"
           )}
         />
@@ -68,8 +68,8 @@ export function CollapsibleReasoning({
           isOpen ? "mt-2 max-h-64 opacity-100" : "mt-0 max-h-0 opacity-0"
         )}
       >
-        <div className="max-h-64 overflow-y-auto rounded-lg border border-foreground/8 bg-foreground/[0.025] px-3 py-2 shadow-sm shadow-black/[0.02]">
-          <div className="space-y-2 text-[13px] leading-5 text-muted-foreground/70">
+        <div className="max-h-64 overflow-y-auto rounded-lg border border-foreground/8 bg-foreground/[0.025] px-3 pt-2 pb-1.5 shadow-sm shadow-black/[0.02]">
+          <div className="space-y-1.5 text-[13px] leading-5 text-muted-foreground/70">
             {lines.map((line, index) => (
               <p key={`${index}-${line.slice(0, 16)}`} className="whitespace-pre-wrap">
                 {line}
