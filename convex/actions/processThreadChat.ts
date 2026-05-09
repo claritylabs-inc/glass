@@ -4,7 +4,7 @@ import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
-import { generateText, streamText, stepCountIs } from "ai";
+import { streamText, stepCountIs } from "ai";
 import { getModelForOrg, getProviderOptionsForTask } from "../lib/models";
 import {
   lookupPolicy,
@@ -829,37 +829,6 @@ export const run = internalAction({
         }
       }
 
-      // Auto-title: if this is the first user message, generate a title
-      const userMessages = allMessages.filter((m: Record<string, unknown>) => m.role === "user");
-      if (userMessages.length === 1) {
-        try {
-          const { text: titleText } = await generateText({
-            model: await getModelForOrg(ctx, args.orgId, "summary"),
-            providerOptions: getProviderOptionsForTask("summary"),
-            maxOutputTokens: 12,
-            system:
-              "You are a title generator. Given a user question and an assistant reply, output a short 2-4 word title that captures the topic. Rules:\n- Output ONLY the title, no quotes, no punctuation, no explanation\n- Use title case\n- Examples: \"GL Coverage Limits\", \"Cyber Liability Quotes\", \"Workers Comp App\", \"Renewal Timeline\"",
-            messages: [
-              {
-                role: "user",
-                content: `User: ${userMessages[0].content}\n\nAssistant: ${content.slice(0, 200)}`,
-              },
-            ],
-          });
-          const title = titleText
-            .trim()
-            .replace(/^["']|["']$/g, "")
-            .split("\n")[0]; // take only first line
-          if (title && title.length <= 40) {
-            await ctx.runMutation(internal.threads.updateTitleInternal, {
-              threadId: args.threadId,
-              title,
-            });
-          }
-        } catch {
-          // Non-critical — title stays as "New chat"
-        }
-      }
     } catch (error) {
       const message =
         error instanceof Error ? error.message : String(error);

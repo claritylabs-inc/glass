@@ -10,7 +10,8 @@ import { ModeBadge } from "@/components/mode-badge";
 import { MessageBubble, splitQuotedReply, QuotedContent, type Conversation } from "@/components/conversation-message";
 import { ChatMessageBubble, type WebChatMessage } from "@/components/chat-message-bubble";
 import { toast } from "sonner";
-import { Loader2, Archive, ArchiveRestore, FileText, Pencil, Check, ClipboardList, Asterisk, Mail as MailIcon, MessageSquare, Phone as PhoneIcon, Paperclip, Download, Copy, Lock, RotateCcw } from "lucide-react";
+import { Loader2, Archive, ArchiveRestore, FileText, Check, ClipboardList, Asterisk, Mail as MailIcon, MessageSquare, Phone as PhoneIcon, Paperclip, Download, Copy, Lock, RotateCcw } from "lucide-react";
+import { EditableBreadcrumbTitle } from "@/components/editable-breadcrumb-title";
 import { usePdf } from "@/components/pdf-context";
 import { usePresence } from "@/hooks/use-presence";
 import { ContextReferenceCard, PolicyReferenceCard, ReferenceCardStrip } from "@/components/context-reference-card";
@@ -78,12 +79,10 @@ function UnifiedThreadActions({
   threadId,
   thread,
   messages,
-  onEditTitle,
 }: {
   threadId: Id<"threads">;
   thread: { title: string; archivedAt?: number; legacyConversationId?: Id<"agentConversations">; threadEmail?: string };
   messages?: ThreadMessage[];
-  onEditTitle: () => void;
 }) {
   const archiveThread = useMutation(api.threads.archive);
   const unarchiveThread = useMutation(api.threads.unarchive);
@@ -143,9 +142,6 @@ function UnifiedThreadActions({
       <div className="w-px h-4 bg-foreground/10" />
       <PillButton size="compact" variant="icon" onClick={handleCopyThread} label="Copy thread">
         <Copy className="w-3.5 h-3.5" />
-      </PillButton>
-      <PillButton size="compact" variant="icon" onClick={onEditTitle} label="Edit title">
-        <Pencil className="w-3.5 h-3.5" />
       </PillButton>
       <PillButton size="compact" variant="icon" onClick={handleArchiveToggle} label={isArchived ? "Unarchive" : "Archive"}>
         {isArchived ? <ArchiveRestore className="w-4 h-4" /> : <Archive className="w-4 h-4" />}
@@ -700,7 +696,7 @@ function UnifiedThreadContent({
   agentBranding,
 }: {
   threadId: Id<"threads">;
-  onMeta?: (meta: { detail: string; actions: React.ReactNode }) => void;
+  onMeta?: (meta: { detail: React.ReactNode; actions: React.ReactNode }) => void;
   viewerId?: string;
   viewerEmail?: string;
   agentHandle?: string;
@@ -711,8 +707,6 @@ function UnifiedThreadContent({
   const sendMessage = useMutation(api.threads.sendMessage);
   const updateTitle = useMutation(api.threads.updateTitle);
   const generateUploadUrl = useMutation(api.threads.generateUploadUrl);
-  const [editingTitle, setEditingTitle] = useState(false);
-  const [titleDraft, setTitleDraft] = useState("");
   const messagesRef = useRef<HTMLDivElement>(null);
   const chatInputRef = useRef<GlassPromptInputHandle>(null);
   const prevThreadId = useRef<string | null>(null);
@@ -727,20 +721,27 @@ function UnifiedThreadContent({
   useEffect(() => {
     if (!thread || !onMeta) return;
     onMeta({
-      detail: thread.title,
+      detail: (
+        <EditableBreadcrumbTitle
+          title={thread.title}
+          onSave={async (next) => {
+            try {
+              await updateTitle({ id: threadId, title: next });
+            } catch {
+              toast.error("Failed to update title");
+            }
+          }}
+        />
+      ),
       actions: (
         <UnifiedThreadActions
           threadId={threadId}
           thread={thread}
           messages={messages}
-          onEditTitle={() => {
-            setTitleDraft(thread.title);
-            setEditingTitle(true);
-          }}
         />
       ),
     });
-  }, [thread, threadId, onMeta, messages]);
+  }, [thread, threadId, onMeta, messages, updateTitle]);
 
   // Scroll to bottom when messages change or thread switches
   useEffect(() => {
@@ -811,17 +812,6 @@ function UnifiedThreadContent({
     return hasEmail || !!thread?.legacyConversationId;
   }, [messages, thread?.legacyConversationId]);
 
-  async function handleTitleSave() {
-    const t = titleDraft.trim();
-    if (!t) return;
-    try {
-      await updateTitle({ id: threadId, title: t });
-    } catch {
-      toast.error("Failed to update title");
-    }
-    setEditingTitle(false);
-  }
-
   if (!thread) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -832,26 +822,6 @@ function UnifiedThreadContent({
 
   return (
     <div className="relative h-full">
-      {/* Inline title editor */}
-      {editingTitle && (
-        <div className="absolute top-0 left-0 right-0 z-20 flex items-center gap-1.5 px-4 py-2 border-b border-foreground/6 bg-background shrink-0">
-          <input
-            type="text"
-            value={titleDraft}
-            onChange={(e) => setTitleDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") handleTitleSave();
-              if (e.key === "Escape") setEditingTitle(false);
-            }}
-            className="text-body-sm font-semibold bg-transparent border-b border-foreground/20 outline-none py-0 px-0 flex-1"
-            autoFocus
-          />
-          <PillButton size="compact" variant="icon" onClick={handleTitleSave}>
-            <Check className="w-3.5 h-3.5" />
-          </PillButton>
-        </div>
-      )}
-
       {/* Messages — full height, content scrolls under the input overlay */}
       <div ref={messagesRef} className="absolute inset-0 overflow-y-auto p-4 pr-5">
         <div className="max-w-2xl mx-auto space-y-4">
@@ -1100,12 +1070,10 @@ function WebChatActions({
   chat,
   chatId,
   messages,
-  onEditTitle,
 }: {
   chat: { title: string; archivedAt?: number };
   chatId: Id<"webChats">;
   messages?: WebChatMessage[];
-  onEditTitle: () => void;
 }) {
   const archiveChat = useMutation(api.webChats.archive);
   const unarchiveChat = useMutation(api.webChats.unarchive);
@@ -1155,9 +1123,6 @@ function WebChatActions({
       <PillButton size="compact" variant="icon" onClick={handleCopyThread} label="Copy thread">
         <Copy className="w-3.5 h-3.5" />
       </PillButton>
-      <PillButton size="compact" variant="icon" onClick={onEditTitle} label="Edit title">
-        <Pencil className="w-3.5 h-3.5" />
-      </PillButton>
       <PillButton size="compact" variant="icon" onClick={handleArchiveToggle} label={isArchived ? "Unarchive" : "Archive"}>
         {isArchived ? <ArchiveRestore className="w-4 h-4" /> : <Archive className="w-4 h-4" />}
       </PillButton>
@@ -1172,7 +1137,7 @@ function WebChatContent({
   viewerId,
 }: {
   chatId: Id<"webChats">;
-  onMeta?: (meta: { title: string; actions: React.ReactNode }) => void;
+  onMeta?: (meta: { title: React.ReactNode; actions: React.ReactNode }) => void;
   viewerId?: string;
 }) {
   const chat = useQuery(api.webChats.get, { id: chatId });
@@ -1180,8 +1145,6 @@ function WebChatContent({
   const sendMessage = useMutation(api.webChats.sendMessage);
   const updateTitle = useMutation(api.webChats.updateTitle);
 
-  const [editingTitle, setEditingTitle] = useState(false);
-  const [titleDraft, setTitleDraft] = useState("");
   const messagesRef = useRef<HTMLDivElement>(null);
   const chatInputRef = useRef<ChatInputHandle>(null);
   const prevChatId = useRef<string | null>(null);
@@ -1190,20 +1153,27 @@ function WebChatContent({
   useEffect(() => {
     if (!chat || !onMeta) return;
     onMeta({
-      title: chat.title,
+      title: (
+        <EditableBreadcrumbTitle
+          title={chat.title}
+          onSave={async (next) => {
+            try {
+              await updateTitle({ id: chatId, title: next });
+            } catch {
+              toast.error("Failed to update title");
+            }
+          }}
+        />
+      ),
       actions: (
         <WebChatActions
           chat={chat}
           chatId={chatId}
           messages={messages}
-          onEditTitle={() => {
-            setTitleDraft(chat.title);
-            setEditingTitle(true);
-          }}
         />
       ),
     });
-  }, [chat, chatId, onMeta, messages]);
+  }, [chat, chatId, onMeta, messages, updateTitle]);
 
   useEffect(() => {
     const el = messagesRef.current;
@@ -1217,17 +1187,6 @@ function WebChatContent({
     await sendMessage({ chatId, content: text });
   }, [sendMessage, chatId]);
 
-  async function handleTitleSave() {
-    const t = titleDraft.trim();
-    if (!t || !chat) return;
-    try {
-      await updateTitle({ id: chatId, title: t });
-    } catch {
-      toast.error("Failed to update title");
-    }
-    setEditingTitle(false);
-  }
-
   if (!chat) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -1238,26 +1197,6 @@ function WebChatContent({
 
   return (
     <div className="relative h-full">
-      {/* Inline title editor (shown when editing) */}
-      {editingTitle && (
-        <div className="absolute top-0 left-0 right-0 z-20 flex items-center gap-1.5 px-4 py-2 border-b border-foreground/6 bg-background shrink-0">
-          <input
-            type="text"
-            value={titleDraft}
-            onChange={(e) => setTitleDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") handleTitleSave();
-              if (e.key === "Escape") setEditingTitle(false);
-            }}
-            className="text-body-sm font-semibold bg-transparent border-b border-foreground/20 outline-none py-0 px-0 flex-1"
-            autoFocus
-          />
-          <PillButton size="compact" variant="icon" onClick={handleTitleSave}>
-            <Check className="w-3.5 h-3.5" />
-          </PillButton>
-        </div>
-      )}
-
       {/* Messages — full height, content scrolls under the input overlay */}
       <div ref={messagesRef} className="absolute inset-0 overflow-y-auto p-4 pr-5">
         <div className="max-w-2xl mx-auto space-y-4">
@@ -1301,7 +1240,7 @@ export default function ThreadPage({ params }: { params: Promise<{ id: string }>
     : undefined;
 
   // Thread metadata lifted from child components for AppShell header
-  const [threadMeta, setThreadMeta] = useState<{ detail: string; actions: React.ReactNode }>({
+  const [threadMeta, setThreadMeta] = useState<{ detail: React.ReactNode; actions: React.ReactNode }>({
     detail: "Conversation",
     actions: null,
   });
@@ -1314,7 +1253,7 @@ export default function ThreadPage({ params }: { params: Promise<{ id: string }>
     unifiedThread === null ? { id } : "skip",
   );
 
-  const handleUnifiedMeta = useCallback((meta: { detail: string; actions: React.ReactNode }) => {
+  const handleUnifiedMeta = useCallback((meta: { detail: React.ReactNode; actions: React.ReactNode }) => {
     setThreadMeta(meta);
   }, []);
 
@@ -1322,7 +1261,7 @@ export default function ThreadPage({ params }: { params: Promise<{ id: string }>
     setThreadMeta({ detail: meta.subject, actions: meta.actions });
   }, []);
 
-  const handleChatMeta = useCallback((meta: { title: string; actions: React.ReactNode }) => {
+  const handleChatMeta = useCallback((meta: { title: React.ReactNode; actions: React.ReactNode }) => {
     setThreadMeta({ detail: meta.title, actions: meta.actions });
   }, []);
 
