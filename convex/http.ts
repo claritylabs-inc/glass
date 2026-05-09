@@ -356,6 +356,11 @@ async function sha256Hex(input: string): Promise<string> {
     .join("");
 }
 
+function mcpResourceMetadataAuthenticateHeader(request: Request): string {
+  const origin = new URL(request.url).origin;
+  return `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource"`;
+}
+
 /**
  * Authenticate MCP requests. Tries API key first (glass_ prefix), then OAuth token (prsm_at_ prefix).
  * Returns 401 with WWW-Authenticate: Bearer when no auth (triggers OAuth flow in MCP clients).
@@ -373,7 +378,7 @@ async function requireMcpAuth(
         status: 401,
         headers: {
           ...JSON_HEADERS,
-          "WWW-Authenticate": 'Bearer resource_metadata="/.well-known/oauth-authorization-server"',
+          "WWW-Authenticate": mcpResourceMetadataAuthenticateHeader(request),
         },
       },
     );
@@ -407,7 +412,7 @@ async function requireMcpAuth(
         status: 401,
         headers: {
           ...JSON_HEADERS,
-          "WWW-Authenticate": 'Bearer error="invalid_token"',
+          "WWW-Authenticate": `Bearer error="invalid_token", resource_metadata="${new URL(request.url).origin}/.well-known/oauth-protected-resource"`,
         },
       });
     }
@@ -423,7 +428,7 @@ async function requireMcpAuth(
     status: 401,
     headers: {
       ...JSON_HEADERS,
-      "WWW-Authenticate": 'Bearer resource_metadata="/.well-known/oauth-authorization-server"',
+      "WWW-Authenticate": mcpResourceMetadataAuthenticateHeader(request),
     },
   });
 }
@@ -1223,6 +1228,21 @@ http.route({
   }),
 });
 
+// Streamable HTTP clients may probe GET /mcp for an optional server-to-client SSE stream.
+// Glass is stateless and responds to MCP requests directly over POST.
+http.route({
+  path: "/mcp",
+  method: "GET",
+  handler: httpAction(async () => {
+    return new Response(null, {
+      status: 405,
+      headers: {
+        Allow: "POST, DELETE",
+      },
+    });
+  }),
+});
+
 // Allow DELETE /mcp for session termination (return 200 OK)
 http.route({
   path: "/mcp",
@@ -1740,7 +1760,7 @@ http.route({
     return jsonResponse({
       mcpServers: {
         glass: {
-          uri: `sse://${url.host}/mcp`,
+          uri: `${url.origin}/mcp`,
           instructions: "Glass is an insurance intelligence platform. Use Glass tools to look up policies, quotes, threads, and broker-client workflows.",
         },
       },
