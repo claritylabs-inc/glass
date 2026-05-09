@@ -38,6 +38,12 @@ function readBoundedIntEnv(name: string, fallback: number, min: number, max: num
   return Math.max(min, Math.min(max, value));
 }
 
+function readReviewModeEnv(name: string, fallback: "always" | "auto" | "skip"): "always" | "auto" | "skip" {
+  const raw = process.env[name];
+  if (raw === "always" || raw === "auto" || raw === "skip") return raw;
+  return fallback;
+}
+
 /**
  * Build an extractor pre-configured with Glass's model routing.
  *
@@ -59,6 +65,7 @@ export function buildExtractor(opts?: {
     : undefined;
   const generateText = makeGenerateText("extraction", routing);
   const generateObject = makeGenerateObject("extraction", routing);
+  const concurrency = readBoundedIntEnv("EXTRACTION_CONCURRENCY", 4, 1, 8);
   const throwIfCancelled = async () => {
     if (await opts?.shouldCancel?.()) {
       throw new Error("Cancelled by user");
@@ -78,14 +85,33 @@ export function buildExtractor(opts?: {
       await throwIfCancelled();
       return result;
     },
-    concurrency: readBoundedIntEnv("EXTRACTION_CONCURRENCY", 4, 1, 8),
+    concurrency,
+    pageMapConcurrency: readBoundedIntEnv(
+      "EXTRACTION_PAGE_MAP_CONCURRENCY",
+      Math.min(concurrency, 3),
+      1,
+      8,
+    ),
+    extractorConcurrency: readBoundedIntEnv(
+      "EXTRACTION_EXTRACTOR_CONCURRENCY",
+      concurrency,
+      1,
+      8,
+    ),
+    formatConcurrency: readBoundedIntEnv(
+      "EXTRACTION_FORMAT_CONCURRENCY",
+      Math.min(concurrency, 2),
+      1,
+      8,
+    ),
     maxReviewRounds: readBoundedIntEnv("EXTRACTION_MAX_REVIEW_ROUNDS", 1, 0, 2),
+    reviewMode: readReviewModeEnv("EXTRACTION_REVIEW_MODE", "auto"),
     log: opts?.log,
     onProgress: opts?.onProgress,
     onTokenUsage: opts?.onTokenUsage,
     onCheckpointSave: opts?.onCheckpointSave,
     modelCapabilities: modelCapabilitiesForTask("extraction"),
-  } as Parameters<typeof createExtractor>[0] & { modelCapabilities?: unknown });
+  });
 }
 
 export function summarizeExtractionCheckpoint(
