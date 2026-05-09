@@ -1188,12 +1188,6 @@ http.route({
                   mimeType: "image/svg+xml",
                   sizes: ["any"],
                 },
-                {
-                  src: `${siteUrl}/logo-bimi.svg`,
-                  mimeType: "image/svg+xml",
-                  sizes: ["any"],
-                  theme: "light",
-                },
               ],
             },
             instructions: "Glass is an insurance intelligence platform. Use Glass tools to look up policies, quotes, threads, and org info. Use ask_glass for complex insurance questions.",

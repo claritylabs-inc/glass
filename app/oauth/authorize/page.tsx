@@ -7,7 +7,7 @@ import { useSearchParams } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import { AuthCard, AuthShell } from "@/components/auth-shell";
 import { PillButton } from "@/components/ui/pill-button";
-import { Loader2, ArrowLeft, ArrowRight, Shield, X } from "lucide-react";
+import { Loader2, ArrowLeft, ArrowRight, X } from "lucide-react";
 
 function friendlyError(raw: string): string {
   const lower = raw.toLowerCase();
@@ -64,7 +64,7 @@ export default function OAuthAuthorizePage() {
       const url = new URL(redirectUri);
       url.searchParams.set("error", errorCode);
       if (state) url.searchParams.set("state", state);
-      window.location.href = url.toString();
+      window.location.assign(url.toString());
     } catch {
       // Invalid redirect URI — just show error
       setError(`Authorization failed: ${errorCode}`);
@@ -116,7 +116,7 @@ export default function OAuthAuthorizePage() {
       const target = url.toString();
       setRedirectUrl(target);
       setRedirecting(true);
-      window.location.href = target;
+      window.location.assign(target);
     } catch (err: unknown) {
       const message = typeof err === "string" ? err
         : (err as { data?: string; message?: string } | null)?.data
@@ -262,9 +262,16 @@ export default function OAuthAuthorizePage() {
   }
 
   // Authenticated — show consent screen
+  const cardTitle = redirecting ? "Connected" : "Authorize app";
+  const cardSubtitle = redirecting && clientInfo
+    ? `Redirecting you back to ${clientInfo.clientName}...`
+    : clientInfo
+      ? `${clientInfo.clientName} wants to access your Glass account.`
+      : "Review this request before continuing.";
+
   return (
     <AuthShell>
-      <AuthCard title="Authorize app" subtitle={clientInfo ? `${clientInfo.clientName} wants to access your Glass account.` : "Review this request before continuing."}>
+      <AuthCard title={cardTitle} subtitle={cardSubtitle}>
           {clientInfo === undefined ? (
             <div className="flex justify-center py-8">
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -278,15 +285,8 @@ export default function OAuthAuthorizePage() {
               </p>
             </div>
           ) : redirecting ? (
-            <div className="text-center py-6 space-y-3">
-              <Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" />
-              <div>
-                <h2 className="text-lg font-medium text-foreground">Connected</h2>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Redirecting you back to {clientInfo.clientName}...
-                </p>
-              </div>
-              <p className="mt-4 text-sm text-muted-foreground">
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
                 If you&apos;re not redirected automatically,{" "}
                 <a href={redirectUrl} className="font-medium text-foreground hover:underline">
                   click here
@@ -296,16 +296,6 @@ export default function OAuthAuthorizePage() {
             </div>
           ) : (
             <div className="space-y-5">
-              <div className="text-center">
-                <Shield className="mx-auto mb-3 h-8 w-8 text-foreground/30" />
-                <h2 className="text-lg font-medium text-foreground">
-                  Authorize {clientInfo.clientName}
-                </h2>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Review what this application will be able to access.
-                </p>
-              </div>
-
               <div className="text-base text-muted-foreground">
                 <p className="mb-2 text-sm font-medium text-foreground">
                   This will allow the app to:
