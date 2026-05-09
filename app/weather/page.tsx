@@ -3,6 +3,9 @@
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import Link from "next/link";
+import { LogoIcon } from "@/components/ui/logo-icon";
+
+const BRAND_BLUE = "#A0D2FA";
 
 const TASK_LABELS: Record<string, string> = {
   chat: "Chat",
@@ -35,11 +38,17 @@ export default function WeatherPage() {
             href="https://claritylabs.inc"
             target="_blank"
             rel="noopener noreferrer"
-            className="text-xs font-medium  text-foreground/30 hover:text-foreground/50 transition-colors"
+            className="inline-flex items-center gap-2 leading-none text-foreground/60 transition-colors hover:text-foreground"
           >
-            Glass by Clarity Labs
+            <LogoIcon size={16} color={BRAND_BLUE} static />
+            <span className="text-sm font-medium tracking-tight text-foreground">
+              Glass
+            </span>
+            <span className="text-sm tracking-tight text-foreground/50">
+              from Clarity Labs
+            </span>
           </Link>
-          <h1 className="mt-3 text-2xl font-semibold tracking-tight">
+          <h1 className="mt-4 text-2xl font-semibold tracking-tight">
             AI Weather Report
           </h1>
           <p className="mt-1 text-sm text-foreground/50">
