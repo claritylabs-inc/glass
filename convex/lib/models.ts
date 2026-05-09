@@ -30,7 +30,7 @@ import {
  * Env vars needed:
  *   OPENAI_API_KEY — GPT-5.5 for core agent work, GPT-5.4 nano/mini for extraction and fast isolated work
  *   ANTHROPIC_API_KEY — Claude Haiku fallback if the primary provider cannot initialize
- *   MOONSHOTAI_API_KEY — Kimi K2.5 (reasoning: analysis, email writing)
+ *   MOONSHOTAI_API_KEY — Kimi K2.5 (long-context analysis)
  */
 
 // Lazy provider factories
@@ -88,13 +88,14 @@ export { FALLBACK_MODEL, MODEL_ROUTING, type ModelProvider, type ModelRoute, typ
 const GPT_55 = "gpt-5.5";
 const GPT_54_NANO = "gpt-5.4-nano";
 const GPT_54_MINI = "gpt-5.4-mini";
+const KIMI_K26 = "kimi-k2.6";
 const CLAUDE_HAIKU = "claude-haiku-4-5-20251001";
 
 const MODEL_CONFIG: Record<Exclude<ModelTask, "embeddings">, () => LanguageModel> = {
-  chat:             () => openai()(GPT_55),
-  email_draft:      () => moonshot()("kimi-k2.5"),
-  email_reply:      () => moonshot()("kimi-k2.5"),
-  analysis:         () => moonshot()("kimi-k2.5"),
+  chat:             () => moonshot()(KIMI_K26),
+  email_draft:      () => openai()(GPT_54_MINI),
+  email_reply:      () => openai()(GPT_54_MINI),
+  analysis:         () => moonshot()(KIMI_K26),
   summary:          () => openai()(GPT_54_MINI),
   classification:   () => openai()(GPT_54_NANO),
   extraction:       () => openai()(GPT_54_NANO),
@@ -102,7 +103,7 @@ const MODEL_CONFIG: Record<Exclude<ModelTask, "embeddings">, () => LanguageModel
   email_extraction: () => openai()(GPT_54_NANO),
   document_extraction:   () => openai()(GPT_54_NANO),
   security:              () => openai()(GPT_54_MINI),
-  application_authoring: () => openai()(GPT_55),
+  application_authoring: () => moonshot()(KIMI_K26),
 };
 
 export function getProviderOptionsForRoute(route: ModelRoute): ProviderOptions | undefined {

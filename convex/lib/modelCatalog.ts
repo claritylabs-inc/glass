@@ -109,7 +109,7 @@ export const LANGUAGE_MODEL_CATALOG: Record<ModelProvider, string[]> = {
     "mistral-large-latest",
   ],
   cohere: ["command-r", "command-r-plus", "command-a-03-2025"],
-  moonshot: ["kimi-k2.5"],
+  moonshot: ["kimi-k2.6", "kimi-k2.5"],
   deepseek: ["deepseek-chat", "deepseek-reasoner"],
 };
 
@@ -121,10 +121,10 @@ export const EMBEDDING_MODEL_CATALOG: Partial<Record<ModelProvider, string[]>> =
 };
 
 export const MODEL_ROUTING: Record<ModelTask, ModelRoute> = {
-  chat: { model: "gpt-5.5", provider: "openai" },
-  email_draft: { model: "kimi-k2.5", provider: "moonshot" },
-  email_reply: { model: "kimi-k2.5", provider: "moonshot" },
-  analysis: { model: "kimi-k2.5", provider: "moonshot" },
+  chat: { model: "kimi-k2.6", provider: "moonshot" },
+  email_draft: { model: "gpt-5.4-mini", provider: "openai" },
+  email_reply: { model: "gpt-5.4-mini", provider: "openai" },
+  analysis: { model: "kimi-k2.6", provider: "moonshot" },
   summary: { model: "gpt-5.4-mini", provider: "openai" },
   classification: { model: "gpt-5.4-nano", provider: "openai" },
   extraction: { model: "gpt-5.4-nano", provider: "openai" },
@@ -132,7 +132,7 @@ export const MODEL_ROUTING: Record<ModelTask, ModelRoute> = {
   email_extraction: { model: "gpt-5.4-nano", provider: "openai" },
   document_extraction: { model: "gpt-5.4-nano", provider: "openai" },
   security: { model: "gpt-5.4-mini", provider: "openai" },
-  application_authoring: { model: "gpt-5.5", provider: "openai" },
+  application_authoring: { model: "kimi-k2.6", provider: "moonshot" },
   embeddings: { model: "text-embedding-3-small", provider: "openai" },
 };
 
@@ -185,6 +185,19 @@ export const MODEL_CAPABILITIES: Record<string, ModelCapabilityConfig> = {
   "kimi-k2.5": {
     modelName: "kimi-k2.5",
     maxInputTokens: 256_000,
+    maxOutputTokens: 16_384,
+    defaultOutputTokens: 8_192,
+    longListOutputTokens: 16_384,
+    taskOutputTokens: {
+      pce_impact_analysis: 8_192,
+      pce_packet_generation: 8_192,
+      query_reason: 8_192,
+      query_verify: 4_096,
+    },
+  },
+  "kimi-k2.6": {
+    modelName: "kimi-k2.6",
+    maxInputTokens: 262_144,
     maxOutputTokens: 16_384,
     defaultOutputTokens: 8_192,
     longListOutputTokens: 16_384,

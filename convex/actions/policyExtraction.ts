@@ -17,6 +17,7 @@ import {
 } from "../lib/extraction";
 import { buildPdfSourceSpans } from "../lib/pdfSourceSpans";
 import type { ExtractionResult, ExtractionState, PipelineCheckpoint } from "../lib/extraction";
+import type { ExtractOptions } from "../lib/extraction";
 import { makeEmbedText } from "../lib/sdkCallbacks";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
@@ -513,8 +514,9 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         },
       });
 
-      const extractOptions = {
+      const extractOptions: ExtractOptions = {
         ...(clSdkCheckpoint ? { resumeFrom: clSdkCheckpoint } : {}),
+        ...(pdfSource.sourceSpans.length > 0 ? { sourceSpans: pdfSource.sourceSpans } : {}),
       };
 
       let result: ExtractionResult;
@@ -522,7 +524,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         result = await extractor.extract(
           pdfBytes,
           policyId,
-          extractOptions as any,
+          extractOptions,
         );
       } catch (error) {
         if (isCancelledError(error)) {
@@ -547,9 +549,6 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
 
       const doc = result.document as Record<string, unknown>;
       const chunks = result.chunks;
-      // cl-sdk@1.0.1 currently crashes in schema normalization when sourceSpans
-      // are passed into extraction. Keep using Glass's PDF.js spans for storage
-      // and retrieval until the SDK source-grounded extraction path is fixed.
       const resultSourceSpans = Array.isArray((result as any).sourceSpans)
         ? (result as any).sourceSpans as Array<Record<string, any>>
         : [];
@@ -567,6 +566,12 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
       await pCtx.log(
         `Extraction complete. Type: ${doc.type}. ${chunks.length} chunks, ${sourceSpans.length} source spans. Tokens: ${tokenUsage.inputTokens}in/${tokenUsage.outputTokens}out`,
       );
+      if (result.performanceReport) {
+        const totalSeconds = Math.round(result.performanceReport.totalModelCallDurationMs / 1000);
+        await pCtx.log(
+          `Extraction model calls: ${result.performanceReport.modelCalls.length}; total model time: ${totalSeconds}s`,
+        );
+      }
       for (const line of summarizeExtractionCheckpoint(result)) {
         await pCtx.log(line);
       }

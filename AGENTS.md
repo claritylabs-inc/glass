@@ -39,8 +39,8 @@ Core layers:
 
 Default model routing lives in [convex/lib/models.ts](convex/lib/models.ts), with broker-visible catalogs in [convex/lib/modelCatalog.ts](convex/lib/modelCatalog.ts).
 
-- `chat`, `chat_with_tools`, `application_authoring` → `gpt-5.5` with OpenAI `reasoningEffort: "none"`
-- `email_draft`, `email_reply`, `analysis` → `kimi-k2.5` (256K context)
+- `chat`, `chat_with_tools`, `application_authoring`, `analysis` → `kimi-k2.6`
+- `email_draft`, `email_reply` → `gpt-5.4-mini`
 - `extraction`, `classification`, `email_extraction`, `document_extraction` → `gpt-5.4-nano`
 - `summary`, `triage`, `security` → `gpt-5.4-mini`
 - `embeddings` → `text-embedding-3-small` at 1536 dimensions
@@ -162,7 +162,7 @@ Two entrypoints, both PDF-only:
 
 1. Fetch or receive a PDF.
 2. Store the raw PDF in Convex file storage.
-3. Load the PDF bytes from Convex file storage and run `buildExtractor().extract(pdfBytes, documentId)`. Do not pass a signed storage URL into `cl-sdk`; review and follow-up extractors can run long enough that repeated URL fetches become unreliable.
+3. Load the PDF bytes from Convex file storage, build local PDF.js source spans, and run `buildExtractor().extract(pdfBytes, documentId, { sourceSpans })`. Do not pass a signed storage URL into `cl-sdk`; review and follow-up extractors can run long enough that repeated URL fetches become unreliable.
 4. Map `InsuranceDocument` into Glass policy fields.
 5. Persist the extracted document and metadata.
 6. Chunk the document and embed each chunk with `text-embedding-3-small`.
@@ -174,7 +174,7 @@ Pipeline runtime state:
 - High-churn extraction runtime state lives in `policyExtractionRuns`: `pipelineCheckpoint`, `pipelineLog`, leases, heartbeat timestamps, and detailed progress. This avoids rewriting large policy documents for every log, checkpoint, and heartbeat. Large `cl-sdk` checkpoint payloads and extraction-to-embedding payloads are stored in Convex file storage and referenced from runtime state by storage ID.
 - Query surfaces such as `policies.get` and `policies.getInternal` merge runtime state from `policyExtractionRuns`, falling back to legacy fields on `policies` for old in-flight jobs.
 - The extract phase stores `documentChunksForEmbedding`, `sourceSpansForStorage`, and `sourceChunksForEmbedding` in the Convex pipeline checkpoint before advancing to `embed_and_store`, so a resumed embedding phase does not lose transient extraction artifacts.
-- Extraction concurrency defaults to 4 SDK worker calls (`EXTRACTION_CONCURRENCY`, bounded 1-8), review defaults to 1 round (`EXTRACTION_MAX_REVIEW_ROUNDS`, bounded 0-2), and embedding defaults to 8 concurrent embedding calls (`EXTRACTION_EMBEDDING_CONCURRENCY`, bounded 1-16).
+- Extraction concurrency defaults to 4 SDK worker calls (`EXTRACTION_CONCURRENCY`, bounded 1-8). Page mapping, focused extraction, and formatting can be tuned independently with `EXTRACTION_PAGE_MAP_CONCURRENCY`, `EXTRACTION_EXTRACTOR_CONCURRENCY`, and `EXTRACTION_FORMAT_CONCURRENCY` (each bounded 1-8). Review defaults to `EXTRACTION_REVIEW_MODE=auto` with 1 round (`EXTRACTION_MAX_REVIEW_ROUNDS`, bounded 0-2), and embedding defaults to 8 concurrent embedding calls (`EXTRACTION_EMBEDDING_CONCURRENCY`, bounded 1-16). Current dev/prod deployments intentionally run aggressive speed settings: extraction/page-map/extractor/format concurrency 8 and embedding concurrency 16.
 
 Cancellation:
 

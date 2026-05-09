@@ -29,6 +29,7 @@ import type * as actions_retryExtraction from "../actions/retryExtraction.js";
 import type * as actions_sendIntroImessage from "../actions/sendIntroImessage.js";
 import type * as actions_sendNotificationEmail from "../actions/sendNotificationEmail.js";
 import type * as actions_sendPendingEmail from "../actions/sendPendingEmail.js";
+import type * as actions_threadTitle from "../actions/threadTitle.js";
 import type * as actions_updateDocumentChunk from "../actions/updateDocumentChunk.js";
 import type * as agentConversations from "../agentConversations.js";
 import type * as apiAuditLog from "../apiAuditLog.js";
@@ -143,6 +144,7 @@ declare const fullApi: ApiFromModules<{
   "actions/sendIntroImessage": typeof actions_sendIntroImessage;
   "actions/sendNotificationEmail": typeof actions_sendNotificationEmail;
   "actions/sendPendingEmail": typeof actions_sendPendingEmail;
+  "actions/threadTitle": typeof actions_threadTitle;
   "actions/updateDocumentChunk": typeof actions_updateDocumentChunk;
   agentConversations: typeof agentConversations;
   apiAuditLog: typeof apiAuditLog;
