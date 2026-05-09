@@ -1,7 +1,8 @@
 // convex/lib/notificationEmailTemplate.ts
 
 const GLASS_ACCENT = "#2563eb";
-const SITE_URL_DEFAULT = "https://glass.app";
+const SITE_URL_DEFAULT = "https://glass.claritylabs.inc";
+const GLASS_ICON_PATH = "/glass-icon.jpg";
 
 export type NotificationEmailBranding =
   | {
@@ -44,10 +45,15 @@ export function buildNotificationEmail(
 
   const senderLabel = branding.kind === "broker" ? branding.brokerName : "Glass";
 
+  const glassIconSrc = `${siteUrl.replace(/\/$/, "")}${GLASS_ICON_PATH}`;
   const logoHtml =
     branding.kind === "broker" && branding.logoUrl
       ? `<img src="${branding.logoUrl}" alt="${senderLabel}" height="40" style="display:block;border:0;" />`
-      : `<span style="font-family:-apple-system,sans-serif;font-size:18px;font-weight:700;color:#111827;">Glass</span>`;
+      : `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;"><tr><td style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:16px;line-height:1;color:#111827;">
+  <img src="${glassIconSrc}" alt="" width="28" height="28" style="display:inline-block;vertical-align:middle;width:28px;height:28px;border-radius:7px;margin-right:10px;object-fit:cover;border:0;" />
+  <span style="font-weight:600;vertical-align:middle;">Glass</span>
+  <span style="font-weight:400;color:#6b7280;vertical-align:middle;margin-left:6px;">from Clarity Labs</span>
+</td></tr></table>`;
 
   const html = `<!DOCTYPE html>
 <html lang="en">
