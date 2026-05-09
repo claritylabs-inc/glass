@@ -689,6 +689,28 @@ export default defineSchema({
     .index("by_orgId", ["orgId"])
     .index("by_fileId", ["fileId"]),
 
+  certificates: defineTable({
+    orgId: v.id("organizations"),
+    policyId: v.id("policies"),
+    fileId: v.id("_storage"),
+    fileName: v.string(),
+    certificateHolder: v.optional(v.string()),
+    certificateHolderName: v.optional(v.string()),
+    source: v.optional(v.union(
+      v.literal("policy_page"),
+      v.literal("chat"),
+      v.literal("email"),
+      v.literal("imessage"),
+      v.literal("agent"),
+      v.literal("unknown"),
+    )),
+    createdByUserId: v.optional(v.id("users")),
+    createdAt: v.number(),
+  })
+    .index("by_policyId", ["policyId"])
+    .index("by_orgId", ["orgId"])
+    .index("by_fileId", ["fileId"]),
+
   // ── Notifications ──
 
   notifications: defineTable({

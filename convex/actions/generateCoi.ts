@@ -15,6 +15,16 @@ export const run = internalAction({
     policyId: v.id("policies"),
     orgId: v.id("organizations"),
     certificateHolder: v.optional(v.string()),
+    certificateHolderName: v.optional(v.string()),
+    source: v.optional(v.union(
+      v.literal("policy_page"),
+      v.literal("chat"),
+      v.literal("email"),
+      v.literal("imessage"),
+      v.literal("agent"),
+      v.literal("unknown"),
+    )),
+    createdByUserId: v.optional(v.id("users")),
   },
   handler: async (ctx, args): Promise<string | null> => {
     try {
@@ -56,6 +66,17 @@ export const run = internalAction({
       ) as ArrayBuffer;
       const blob = new Blob([arrayBuffer], { type: "application/pdf" });
       const storageId = await ctx.storage.store(blob);
+
+      await ctx.runMutation(internal.certificates.recordGenerated, {
+        orgId: args.orgId,
+        policyId: args.policyId,
+        fileId: storageId,
+        fileName: "certificate-of-insurance.pdf",
+        certificateHolder: args.certificateHolder,
+        certificateHolderName: args.certificateHolderName,
+        source: args.source,
+        createdByUserId: args.createdByUserId,
+      });
 
       return storageId as string;
     } catch (err) {

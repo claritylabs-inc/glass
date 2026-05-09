@@ -1,17 +1,27 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback, useMemo, type ReactNode } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo, type FormEvent, type ReactNode } from "react";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
 import { FadeIn } from "@/components/ui/fade-in";
-import { CheckCircle2, FileText, Loader2, RotateCw, Send, Trash2, Eye, X } from "lucide-react";
+import { BadgeCheck, CheckCircle2, Download, FileText, Loader2, Plus, RotateCw, Send, Trash2, Eye, X } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Id } from "@/convex/_generated/dataModel";
 import { PillButton } from "@/components/ui/pill-button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import {
   Dialog,
   DialogContent,
@@ -371,6 +381,233 @@ function ViewPdfButton({ url }: { url?: string | null }) {
   );
 }
 
+function formatCertificateTimestamp(value: number) {
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
+function CertificateCreateSheet({
+  open,
+  onOpenChange,
+  policyId,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  policyId: Id<"policies">;
+}) {
+  const generateCertificate = useAction(api.certificates.generateForPolicy);
+  const [holderName, setHolderName] = useState("");
+  const [addressLine1, setAddressLine1] = useState("");
+  const [addressLine2, setAddressLine2] = useState("");
+  const [city, setCity] = useState("");
+  const [state, setState] = useState("");
+  const [postalCode, setPostalCode] = useState("");
+  const [generating, setGenerating] = useState(false);
+
+  const reset = () => {
+    setHolderName("");
+    setAddressLine1("");
+    setAddressLine2("");
+    setCity("");
+    setState("");
+    setPostalCode("");
+  };
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!holderName.trim()) {
+      toast.error("Certificate holder is required");
+      return;
+    }
+
+    setGenerating(true);
+    try {
+      const result = await generateCertificate({
+        policyId,
+        holderName: holderName.trim(),
+        addressLine1: addressLine1.trim() || undefined,
+        addressLine2: addressLine2.trim() || undefined,
+        city: city.trim() || undefined,
+        state: state.trim() || undefined,
+        postalCode: postalCode.trim() || undefined,
+      });
+      toast.success("Certificate generated");
+      onOpenChange(false);
+      reset();
+      if (result.url) window.open(result.url, "_blank", "noopener,noreferrer");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not generate certificate");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  return (
+    <Sheet open={open} onOpenChange={(value) => !generating && onOpenChange(value)}>
+      <SheetContent className="w-full sm:max-w-md gap-0 p-0">
+        <SheetHeader className="border-b border-foreground/6">
+          <SheetTitle>Generate COI</SheetTitle>
+          <SheetDescription>
+            Create a certificate from this policy and list the certificate holder on the PDF.
+          </SheetDescription>
+        </SheetHeader>
+
+        <form id="certificate-create-form" onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-4 space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="certificate-holder-name">Certificate holder</Label>
+            <Input
+              id="certificate-holder-name"
+              value={holderName}
+              onChange={(event) => setHolderName(event.target.value)}
+              placeholder="Company or individual name"
+              autoFocus
+              disabled={generating}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="certificate-address-1">Address line 1</Label>
+            <Input
+              id="certificate-address-1"
+              value={addressLine1}
+              onChange={(event) => setAddressLine1(event.target.value)}
+              placeholder="Street address"
+              disabled={generating}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="certificate-address-2">Address line 2</Label>
+            <Input
+              id="certificate-address-2"
+              value={addressLine2}
+              onChange={(event) => setAddressLine2(event.target.value)}
+              placeholder="Suite, floor, attention line"
+              disabled={generating}
+            />
+          </div>
+
+          <div className="grid grid-cols-[minmax(0,1fr)_72px_96px] gap-2">
+            <div className="space-y-2">
+              <Label htmlFor="certificate-city">City</Label>
+              <Input
+                id="certificate-city"
+                value={city}
+                onChange={(event) => setCity(event.target.value)}
+                disabled={generating}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="certificate-state">State</Label>
+              <Input
+                id="certificate-state"
+                value={state}
+                onChange={(event) => setState(event.target.value)}
+                disabled={generating}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="certificate-postal-code">ZIP</Label>
+              <Input
+                id="certificate-postal-code"
+                value={postalCode}
+                onChange={(event) => setPostalCode(event.target.value)}
+                disabled={generating}
+              />
+            </div>
+          </div>
+        </form>
+
+        <SheetFooter className="border-t border-foreground/6 flex-row justify-end">
+          <PillButton
+            variant="secondary"
+            size="compact"
+            onClick={() => onOpenChange(false)}
+            disabled={generating}
+          >
+            Cancel
+          </PillButton>
+          <PillButton
+            type="submit"
+            form="certificate-create-form"
+            size="compact"
+            disabled={generating || !holderName.trim()}
+          >
+            {generating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <BadgeCheck className="w-3.5 h-3.5" />}
+            Generate
+          </PillButton>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+function CertificatesTab({ policyId }: { policyId: Id<"policies"> }) {
+  const certificates = useQuery(api.certificates.listByPolicy, { policyId });
+
+  if (certificates === undefined) {
+    return (
+      <div className="space-y-2">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <Skeleton key={i} className="h-20 w-full rounded-lg" />
+        ))}
+      </div>
+    );
+  }
+
+  if (certificates.length === 0) {
+    return (
+      <div className="rounded-lg border border-foreground/6 bg-card px-4 py-8 text-center">
+        <BadgeCheck className="mx-auto mb-3 h-5 w-5 text-muted-foreground/50" />
+        <p className="text-body-sm font-medium text-foreground">No certificates yet</p>
+        <p className="mt-1 text-label-sm text-muted-foreground">
+          Generate a COI from the page header to store it here.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {certificates.map((certificate) => (
+        <div
+          key={certificate._id}
+          className="rounded-lg border border-foreground/6 bg-card px-4 py-3"
+        >
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-body-sm font-medium text-foreground truncate">
+                {certificate.certificateHolderName ?? "Certificate of Insurance"}
+              </p>
+              <p className="mt-1 whitespace-pre-line text-label-sm text-muted-foreground">
+                {certificate.certificateHolder ?? "No certificate holder recorded"}
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
+                <span>{formatCertificateTimestamp(certificate.createdAt)}</span>
+                {certificate.source && <span>{certificate.source.replace("_", " ")}</span>}
+              </div>
+            </div>
+            <PillButton
+              variant="secondary"
+              size="compact"
+              disabled={!certificate.url}
+              onClick={() => certificate.url && window.open(certificate.url, "_blank", "noopener,noreferrer")}
+            >
+              <Download className="w-3.5 h-3.5" />
+              PDF
+            </PillButton>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export interface PolicyDetailBodyProps {
   id: string;
   /** Called whenever the breadcrumb label changes. Host renders it. */
@@ -411,10 +648,11 @@ export function PolicyDetailBody({
   const initialPage = Number(searchParams.get("page")) || undefined;
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showRefreshDialog, setShowRefreshDialog] = useState(false);
+  const [showCertificateSheet, setShowCertificateSheet] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [demoBannerDismissed, setDemoBannerDismissed] = useState(false);
   const [activeTab, setActiveTab] = useState<
-    "details" | "extraction" | "changes"
+    "details" | "extraction" | "certificates" | "changes"
   >("details");
   const loggedAuditIds = useRef<Set<string>>(new Set());
   const loggedPipelineEntries = useRef<Set<string>>(new Set());
@@ -630,6 +868,15 @@ export function PolicyDetailBody({
         {!isDeleted && (
           <PillButton
             size="compact"
+            onClick={() => setShowCertificateSheet(true)}
+          >
+            <Plus className="w-3.5 h-3.5" />
+            Generate COI
+          </PillButton>
+        )}
+        {!isDeleted && (
+          <PillButton
+            size="compact"
             variant="icon"
             label="Delete"
             onClick={() => setShowDeleteDialog(true)}
@@ -665,6 +912,7 @@ export function PolicyDetailBody({
     canCancelExtraction,
     handleCancelExtraction,
     fileUrl,
+    setShowCertificateSheet,
   ]);
 
   if (policy === undefined) {
@@ -792,6 +1040,12 @@ export function PolicyDetailBody({
         </DialogContent>
       </Dialog>
 
+      <CertificateCreateSheet
+        open={showCertificateSheet}
+        onOpenChange={setShowCertificateSheet}
+        policyId={policy._id}
+      />
+
       {Boolean(p.isDemo) && !demoBannerDismissed && (
         <div className="flex items-center gap-3 px-4 py-2.5 rounded-lg border border-amber-200 dark:border-amber-900/50 bg-amber-50/60 dark:bg-amber-950/30 mb-4">
           <p className="text-label-sm text-amber-700 dark:text-amber-400 flex-1">
@@ -817,7 +1071,7 @@ export function PolicyDetailBody({
       <Tabs
         value={activeTab}
         onValueChange={(value) =>
-          setActiveTab(value as "details" | "extraction" | "changes")
+          setActiveTab(value as "details" | "extraction" | "certificates" | "changes")
         }
         className="mb-6"
       >
@@ -826,6 +1080,7 @@ export function PolicyDetailBody({
             [
               { id: "details" as const, label: "Summary" },
               { id: "extraction" as const, label: "Breakdown" },
+              { id: "certificates" as const, label: "Certificates" },
               { id: "changes" as const, label: "Changes" },
             ] as const
           ).map((tab) => (
@@ -873,6 +1128,10 @@ export function PolicyDetailBody({
 
       {activeTab === "changes" && (
         <PolicyChangesTab policyId={id} />
+      )}
+
+      {activeTab === "certificates" && (
+        <CertificatesTab policyId={policy._id} />
       )}
 
       {activeTab === "extraction" && (

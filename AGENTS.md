@@ -270,6 +270,7 @@ Outbound emails sent by Glass Agent are centralized in `convex/lib/emailSubagent
 - Channel agents should delegate draft/send/forward requests to the `email_expert` tool instead of hand-rolling email payloads.
 - The email subagent owns recipient caution, formatting, signatures, attachment preparation, Resend payload construction, pending-send scheduling, and sent-email thread records.
 - It can attach original policy PDFs from `policies.fileId`, user-uploaded files already present in the conversation, and generated COI PDFs from `generateCoi.run`.
+- `generateCoi.run` stores every newly generated COI PDF in Convex file storage and records it in `certificates` with `policyId`, `orgId`, certificate-holder text, source, creator, and storage file ID. The policy detail page's Certificates tab reads this table; direct page generation uses `certificates.generateForPolicy`.
 - It requires confirmation instead of sending when the recipient email is inferred or unknown, the recipient name is missing, the body/subject is incomplete, attachments are ambiguous, or `autoSendEmails` is false and the user has not explicitly approved the exact draft.
 - Pending emails persist attachment metadata in `pendingEmails.attachments`; the scheduled sender writes those attachments back into the unified thread email message after Resend accepts the send.
 
@@ -283,7 +284,7 @@ Outbound emails sent by Glass Agent are centralized in `convex/lib/emailSubagent
 
 ## UI
 
-- `/policies` — list, detail, upload, re-extract.
+- `/policies` — list, detail, upload, re-extract, and generated certificate history.
 - `/chat` — threaded assistant.
 - `/settings` — org settings, branding, members, and an **Integrations** section rendered as a coming-soon grid. The Merge.dev backend and all integration sync tables/actions have been removed; only the static grid remains.
 
