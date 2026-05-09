@@ -83,9 +83,9 @@ describe("source spans and PCE backend surfaces", () => {
     expect(pdfSourceSpans).toContain("splitPageIntoSectionCandidates");
     expect(pdfSourceSpans).toContain("sourceUnit: \"section_candidate\"");
     expect(policyExtraction).toContain("buildPdfSourceSpans");
-    expect(policyExtraction).toContain("cl-sdk@1.0.1 currently crashes in schema normalization");
+    expect(policyExtraction).toContain("sourceSpans: pdfSource.sourceSpans as Array<Record<string, any>>");
     expect(policyExtraction).toContain(": pdfSource.sourceSpans as Array<Record<string, any>>");
-    expect(policyExtraction).not.toContain("sourceSpans: pdfSource.sourceSpans");
+    expect(policyExtraction).not.toContain("SDK source-grounding is disabled");
     expect(policyExtraction).toContain("documentChunksForEmbedding");
     expect(policyExtraction).toContain("sourceChunksForEmbedding");
   });
