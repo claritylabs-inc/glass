@@ -43,6 +43,10 @@ import {
   buildEmailExpertTool,
   type EmailSubagentResult,
 } from "../lib/emailSubagent";
+import {
+  COI_GENERATION_FAILED_MESSAGE,
+  FATAL_ACTION_FAILED_MESSAGE,
+} from "../lib/actionFailures";
 
 const CONSUMER_DOMAINS = new Set([
   "gmail.com", "googlemail.com", "yahoo.com", "yahoo.co.uk",
@@ -1138,8 +1142,7 @@ export const processInbound = internalAction({
               return `COI auto-generation is disabled for this organization.`;
             }
             try {
-              await ctx.scheduler.runAfter(
-                0,
+              const storageId = await ctx.runAction(
                 internal.actions.generateCoi.run,
                 {
                   policyId: params.policyId as Id<"policies">,
@@ -1147,9 +1150,11 @@ export const processInbound = internalAction({
                   certificateHolder: params.certificateHolder,
                 },
               );
-              return "COI generation started. It will be emailed or available for download shortly.";
+              if (!storageId) return COI_GENERATION_FAILED_MESSAGE;
+              return "COI generated successfully. If it needs to be emailed to someone, use the email_expert tool to attach it.";
             } catch (err) {
-              return `Failed to generate COI: ${err instanceof Error ? err.message : String(err)}`;
+              console.error("[email] COI generation failed:", err);
+              return COI_GENERATION_FAILED_MESSAGE;
             }
           },
         },
@@ -1604,6 +1609,48 @@ Output ONLY the JSON array — no prose, no code fences.`,
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error("Agent processing error:", message);
+      try {
+        const failureSubject = subject.startsWith("Re:") ? subject : `Re: ${subject}`;
+        const failureHtml = `<p style="margin:0 0 12px;line-height:1.5">${FATAL_ACTION_FAILED_MESSAGE}</p>`;
+        const failurePayload: Record<string, unknown> = {
+          from: fromHeader,
+          to: fromEmail,
+          subject: failureSubject,
+          text: FATAL_ACTION_FAILED_MESSAGE,
+          html: failureHtml,
+        };
+        if (messageId) {
+          failurePayload.headers = {
+            "In-Reply-To": messageId,
+            "References": messageId,
+          };
+        }
+        const sendResult = await sendResendEmail(failurePayload as Parameters<typeof sendResendEmail>[0]);
+        const sentMessageId = sendResult.ok ? sendResult.id : undefined;
+        if (!sendResult.ok) {
+          console.warn("Failed to send agent failure email:", sendResult.error);
+        }
+        await ctx.runMutation(internal.agentConversations.updateResponse, {
+          id: conversationId,
+          responseBody: FATAL_ACTION_FAILED_MESSAGE,
+          responseTo: fromEmail,
+          responseMessageId: sentMessageId,
+        });
+        if (unifiedThreadId) {
+          await ctx.runMutation(internal.threads.insertEmailMessage, {
+            threadId: unifiedThreadId,
+            orgId,
+            role: "agent",
+            content: FATAL_ACTION_FAILED_MESSAGE,
+            toAddresses: [fromEmail],
+            subject: failureSubject,
+            responseMessageId: sentMessageId,
+            legacyConversationId: conversationId,
+          });
+        }
+      } catch (notifyError) {
+        console.warn("Failed to record/send agent failure response:", notifyError);
+      }
       await ctx.runMutation(internal.agentConversations.updateError, {
         id: conversationId,
         error: message,

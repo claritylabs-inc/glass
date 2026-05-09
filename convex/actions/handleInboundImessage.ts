@@ -35,6 +35,10 @@ import {
   resolveEmailAgentIdentity,
   type EmailSubagentResult,
 } from "../lib/emailSubagent";
+import {
+  COI_GENERATION_FAILED_MESSAGE,
+  FATAL_ACTION_FAILED_MESSAGE,
+} from "../lib/actionFailures";
 
 /** Normalize a raw phone string to E.164 (+1XXXXXXXXXX). */
 function normalizePhone(raw: string): string {
@@ -245,6 +249,7 @@ export const processInbound = internalAction({
       return { response, attachments };
     };
 
+    try {
     // ── 1. Resolve user by phone ──────────────────────────────────────────
     const user = await ctx.runQuery(internal.users.findByPhone, { phone: fromPhone });
     if (!user) {
@@ -595,14 +600,15 @@ export const processInbound = internalAction({
               orgId,
               certificateHolder: params.certificateHolder,
             });
-            if (!storageId) return "Failed to generate COI.";
+            if (!storageId) return COI_GENERATION_FAILED_MESSAGE;
             coiAttachments.push({
               storageId: storageId as Id<"_storage">,
               filename: "certificate-of-insurance.pdf",
             });
             return "COI generated and will be sent as an attachment.";
           } catch (err) {
-            return `Failed to generate COI: ${err instanceof Error ? err.message : String(err)}`;
+            console.error("[imessage] COI generation failed:", err);
+            return COI_GENERATION_FAILED_MESSAGE;
           }
         },
       },
@@ -731,5 +737,10 @@ Only include items worth remembering long-term. Skip pleasantries and one-off qu
       responseText,
       responseAttachments.length > 0 ? responseAttachments : undefined,
     );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("[imessage] Agent processing error:", message);
+      return await finish(FATAL_ACTION_FAILED_MESSAGE);
+    }
   },
 });

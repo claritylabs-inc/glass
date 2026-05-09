@@ -60,7 +60,7 @@ export const run = internalAction({
       return storageId as string;
     } catch (err) {
       logAiError("generateCoi", err, { policyId: args.policyId });
-      return null;
+      throw err;
     }
   },
 });

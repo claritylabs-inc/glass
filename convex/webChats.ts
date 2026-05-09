@@ -213,9 +213,13 @@ export const streamAgentMessage = internalMutation({
 });
 
 export const updateAgentError = internalMutation({
-  args: { id: v.id("webChatMessages"), error: v.string() },
+  args: { id: v.id("webChatMessages"), error: v.string(), content: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.id, { status: "error", error: args.error });
+    await ctx.db.patch(args.id, {
+      status: "error",
+      error: args.error,
+      ...(args.content !== undefined ? { content: args.content } : {}),
+    });
   },
 });
 

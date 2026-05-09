@@ -11,6 +11,7 @@ import {
 } from "../lib/agentPrompts";
 import { buildSystemPromptForContext } from "../lib/aiUtils";
 import { classifyPromptInjection, enforceInputLimits } from "../lib/security";
+import { FATAL_ACTION_FAILED_MESSAGE } from "../lib/actionFailures";
 
 export const run = internalAction({
   args: {
@@ -218,6 +219,7 @@ WEB CHAT MODE:
       await ctx.runMutation(internal.webChats.updateAgentError, {
         id: agentMsgId,
         error: message,
+        content: FATAL_ACTION_FAILED_MESSAGE,
       });
     }
   },

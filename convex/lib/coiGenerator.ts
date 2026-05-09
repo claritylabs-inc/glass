@@ -1,6 +1,6 @@
 "use node";
 
-import PDFDocument from "pdfkit";
+import PDFDocument from "pdfkit/js/pdfkit.standalone.js";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -297,7 +297,7 @@ export async function generateCoiPdf(data: CoiData): Promise<Buffer> {
     const chunks: Buffer[] = [];
     const doc = new PDFDocument({ size: "LETTER", margin: 0, autoFirstPage: true });
 
-    doc.on("data", (c) => chunks.push(c));
+    doc.on("data", (c: Buffer) => chunks.push(c));
     doc.on("end", () => resolve(Buffer.concat(chunks)));
     doc.on("error", reject);
 

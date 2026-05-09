@@ -42,6 +42,10 @@ import {
   assertOrgOwnership,
   enforceInputLimits,
 } from "../lib/security";
+import {
+  COI_GENERATION_FAILED_MESSAGE,
+  FATAL_ACTION_FAILED_MESSAGE,
+} from "../lib/actionFailures";
 
 /** Build executable tools with Convex context wired in. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -158,7 +162,7 @@ function buildTools(ctx: any, args: { orgId: string; threadId: string; userId: s
             orgId: args.orgId,
             certificateHolder: input.certificateHolder,
           });
-          if (!storageId) return "Failed to generate COI.";
+          if (!storageId) return COI_GENERATION_FAILED_MESSAGE;
           return {
             message: "COI generated and attached to this response.",
             attachment: {
@@ -169,7 +173,12 @@ function buildTools(ctx: any, args: { orgId: string; threadId: string; userId: s
             },
           };
         } catch (err) {
-          return `Failed to generate COI: ${err instanceof Error ? err.message : String(err)}`;
+          logAiError("processThreadChat.generateCoi", err, {
+            threadId: args.threadId,
+            orgId: args.orgId,
+            policyId: input.policyId,
+          });
+          return COI_GENERATION_FAILED_MESSAGE;
         }
       },
     },
@@ -836,6 +845,7 @@ export const run = internalAction({
       await ctx.runMutation(internal.threads.updateAgentError, {
         id: agentMsgId,
         error: message,
+        content: FATAL_ACTION_FAILED_MESSAGE,
       });
     }
   },

@@ -9,6 +9,7 @@ import { getModelForOrg, getProviderOptionsForTask } from "./models";
 import { sendResendEmail, getAgentDomain } from "./resend";
 import { markdownToHtml, stripMarkdown } from "./aiUtils";
 import { isWhiteLabelingEnabled } from "./branding";
+import { COI_GENERATION_FAILED_MESSAGE } from "./actionFailures";
 import {
   buildEmailPolicySources,
   buildPolicySourcesHtml,
@@ -325,12 +326,18 @@ async function runEmailSubagent(
       if (context.coiHandling === "member") return "COI auto-generation is off. Confirm the org's insurance contact should handle this COI.";
       return "COI auto-generation is disabled.";
     }
-    const storageId = await ctx.runAction(internal.actions.generateCoi.run, {
-      policyId: policyId as Id<"policies">,
-      orgId: context.orgId,
-      certificateHolder,
-    });
-    if (!storageId) return "Failed to generate COI.";
+    let storageId: string | null;
+    try {
+      storageId = await ctx.runAction(internal.actions.generateCoi.run, {
+        policyId: policyId as Id<"policies">,
+        orgId: context.orgId,
+        certificateHolder,
+      });
+    } catch (err) {
+      console.error("[emailSubagent] COI generation failed:", err);
+      return COI_GENERATION_FAILED_MESSAGE;
+    }
+    if (!storageId) return COI_GENERATION_FAILED_MESSAGE;
     addAttachment({
       filename: "certificate-of-insurance.pdf",
       contentType: "application/pdf",
