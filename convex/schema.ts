@@ -648,6 +648,8 @@ export default defineSchema({
     policyId: v.id("policies"),
     pipelineStatus: pipelineStatusValidator,
     pipelineError: v.optional(v.string()),
+    // Compact checkpoint only. Large payloads are stored as files referenced by
+    // policyExtractionArtifacts so heartbeats and logs rewrite small documents.
     pipelineCheckpoint: v.optional(v.any()),
     pipelineLog: v.optional(v.array(v.object({
       timestamp: v.number(),
@@ -658,6 +660,22 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index("by_policyId", ["policyId"]),
+
+  // Storage-backed transient extraction artifacts. These records point at JSON
+  // blobs in Convex file storage for cl-sdk checkpoints and pre-embedding
+  // chunk/source-span payloads. They are cleaned up on success/cancel/restart.
+  policyExtractionArtifacts: defineTable({
+    policyId: v.id("policies"),
+    kind: v.union(
+      v.literal("cl_sdk_checkpoint"),
+      v.literal("embedding_payload"),
+    ),
+    storageId: v.id("_storage"),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_policyId", ["policyId"])
+    .index("by_policyId_kind", ["policyId", "kind"]),
 
   // ── Policy Files (multi-file support) ──
 

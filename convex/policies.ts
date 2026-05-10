@@ -14,6 +14,7 @@ import { notify } from "./lib/notify";
 import type { Id as DataModelId } from "./_generated/dataModel";
 
 type PolicyPipelineStatus = "idle" | "running" | "paused" | "complete" | "error";
+type PolicyExtractionArtifactKind = "cl_sdk_checkpoint" | "embedding_payload";
 type PolicyPipelineLogEntry = {
   timestamp: number;
   message: string;
@@ -101,6 +102,25 @@ async function patchPolicyExtractionRun(
   if (!run) return null;
   await ctx.db.patch(run._id, { ...patch, updatedAt: Date.now() });
   return await ctx.db.get(run._id);
+}
+
+async function clearPolicyExtractionArtifacts(
+  ctx: any,
+  policyId: DataModelId<"policies">,
+  kind?: PolicyExtractionArtifactKind,
+) {
+  const query = kind
+    ? ctx.db
+      .query("policyExtractionArtifacts")
+      .withIndex("by_policyId_kind", (q: any) => q.eq("policyId", policyId).eq("kind", kind))
+    : ctx.db
+      .query("policyExtractionArtifacts")
+      .withIndex("by_policyId", (q: any) => q.eq("policyId", policyId));
+  const artifacts = await query.collect();
+  for (const artifact of artifacts) {
+    await ctx.storage.delete(artifact.storageId).catch(() => {});
+    await ctx.db.delete(artifact._id);
+  }
 }
 
 async function setPolicyPipelineStatus(
@@ -949,6 +969,7 @@ export const cancelExtraction = mutation({
       pipelineError: "Cancelled by user",
       pipelineCheckpoint: undefined,
     });
+    await clearPolicyExtractionArtifacts(ctx, args.id);
     await appendPolicyPipelineLog(ctx, args.id, {
       timestamp: Date.now(),
       message: "Extraction cancelled by user",
@@ -984,6 +1005,7 @@ export const restartExtraction = mutation({
       pipelineCheckpoint: undefined,
       pipelineLog: [],
     });
+    await clearPolicyExtractionArtifacts(ctx, args.id);
     await ctx.db.patch(args.id, {
       pipelineStatus: "idle",
       pipelineError: undefined,
@@ -1238,6 +1260,66 @@ export const listForOrg = query({
   },
 });
 
+export const pipelineSaveArtifact = internalMutation({
+  args: {
+    jobId: v.string(),
+    kind: v.union(
+      v.literal("cl_sdk_checkpoint"),
+      v.literal("embedding_payload"),
+    ),
+    storageId: v.id("_storage"),
+  },
+  handler: async (ctx, { jobId, kind, storageId }) => {
+    const policyId = jobId as DataModelId<"policies">;
+    await ensurePolicyExtractionRun(ctx, policyId);
+    await clearPolicyExtractionArtifacts(ctx, policyId, kind);
+    const now = Date.now();
+    await ctx.db.insert("policyExtractionArtifacts", {
+      policyId,
+      kind,
+      storageId,
+      createdAt: now,
+      updatedAt: now,
+    });
+  },
+});
+
+export const pipelineGetArtifact = internalQuery({
+  args: {
+    jobId: v.string(),
+    kind: v.union(
+      v.literal("cl_sdk_checkpoint"),
+      v.literal("embedding_payload"),
+    ),
+  },
+  handler: async (ctx, { jobId, kind }) => {
+    return await ctx.db
+      .query("policyExtractionArtifacts")
+      .withIndex("by_policyId_kind", (q) =>
+        q.eq("policyId", jobId as DataModelId<"policies">).eq("kind", kind),
+      )
+      .order("desc")
+      .first();
+  },
+});
+
+export const pipelineClearArtifacts = internalMutation({
+  args: {
+    jobId: v.string(),
+    kind: v.optional(v.union(
+      v.literal("cl_sdk_checkpoint"),
+      v.literal("embedding_payload"),
+    )),
+  },
+  handler: async (ctx, { jobId, kind }) => {
+    await clearPolicyExtractionArtifacts(
+      ctx,
+      jobId as DataModelId<"policies">,
+      kind,
+    );
+  },
+});
+
 // ── cl-pipelines contract mutations for policies ───────────────────────────────
 const PIPELINE_LEGACY_LEASE_STALE_MS = 5 * 60 * 1000;
 
@@ -1486,6 +1568,12 @@ export const pipelineCompleteLease = internalMutation({
 
     await ctx.db.patch(run._id, patch);
     if (args.status) {
+      if (
+        args.status === "complete" ||
+        (args.status === "error" && args.error === "Cancelled by user")
+      ) {
+        await clearPolicyExtractionArtifacts(ctx, policyId);
+      }
       await ctx.db.patch(policyId, {
         pipelineStatus: args.status,
         pipelineError: args.error ?? undefined,
