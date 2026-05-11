@@ -12,13 +12,15 @@ export default function PolicyDetailPage({
   const { id } = use(params);
   const [breadcrumb, setBreadcrumb] = useState<ReactNode>(null);
   const [actions, setActions] = useState<ReactNode>(null);
+  const [rightPanel, setRightPanel] = useState<ReactNode>(null);
 
   return (
-    <AppShell breadcrumbDetail={breadcrumb} actions={actions}>
+    <AppShell breadcrumbDetail={breadcrumb} actions={actions} rightPanel={rightPanel}>
       <PolicyDetailBody
         id={id}
         onBreadcrumb={setBreadcrumb}
         onActions={setActions}
+        onRightPanel={setRightPanel}
         afterDeleteHref="/policies"
       />
     </AppShell>

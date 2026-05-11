@@ -10,13 +10,14 @@ export default function BrokerClientPolicyDetailPage({
   params: Promise<{ clientOrgId: string; id: string }>;
 }) {
   const { clientOrgId, id } = use(params);
-  const { setBreadcrumbExtra, setActions } = useClientDetailActions();
+  const { setBreadcrumbExtra, setActions, setRightPanel } = useClientDetailActions();
 
   return (
     <PolicyDetailBody
       id={id}
       onBreadcrumb={setBreadcrumbExtra}
       onActions={setActions}
+      onRightPanel={setRightPanel}
       afterDeleteHref={`/clients/${clientOrgId}/policies`}
     />
   );

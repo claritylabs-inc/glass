@@ -14,14 +14,7 @@ import { PillButton } from "@/components/ui/pill-button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import {
   Dialog,
   DialogContent,
@@ -370,13 +363,13 @@ function ViewPdfButton({ url }: { url?: string | null }) {
   if (!url) return null;
   return (
     <PillButton
-      variant="primary"
+      variant="icon"
       size="compact"
+      label={isPdfOpen ? "Hide PDF" : "View PDF"}
       onClick={() => (isPdfOpen ? togglePdf() : openWithUrl(url))}
       className="hidden lg:inline-flex"
     >
-      <Eye className="w-3.5 h-3.5" />
-      {isPdfOpen ? "Hide PDF" : "View PDF"}
+      <Eye className="size-4 shrink-0" />
     </PillButton>
   );
 }
@@ -391,7 +384,7 @@ function formatCertificateTimestamp(value: number) {
   }).format(new Date(value));
 }
 
-function CertificateCreateSheet({
+function CertificateCreatePanel({
   open,
   onOpenChange,
   policyId,
@@ -448,16 +441,38 @@ function CertificateCreateSheet({
   };
 
   return (
-    <Sheet open={open} onOpenChange={(value) => !generating && onOpenChange(value)}>
-      <SheetContent className="w-full sm:max-w-md gap-0 p-0">
-        <SheetHeader className="border-b border-foreground/6">
-          <SheetTitle>Generate COI</SheetTitle>
-          <SheetDescription>
-            Create a certificate from this policy and list the certificate holder on the PDF.
-          </SheetDescription>
-        </SheetHeader>
+    <SettingsDrawer
+      open={open}
+      onOpenChange={(value) => !generating && onOpenChange(value)}
+      title="Generate COI"
+      footer={
+        <>
+          <PillButton
+            variant="secondary"
+            size="compact"
+            onClick={() => onOpenChange(false)}
+            disabled={generating}
+          >
+            Cancel
+          </PillButton>
+          <PillButton
+            type="submit"
+            form="certificate-create-form"
+            size="compact"
+            disabled={generating || !holderName.trim()}
+          >
+            {generating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <BadgeCheck className="w-3.5 h-3.5" />}
+            Generate
+          </PillButton>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <p className="text-body-sm text-muted-foreground">
+          Create a certificate from this policy and list the certificate holder on the PDF.
+        </p>
 
-        <form id="certificate-create-form" onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-4 space-y-4">
+        <form id="certificate-create-form" onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="certificate-holder-name">Certificate holder</Label>
             <Input
@@ -522,28 +537,8 @@ function CertificateCreateSheet({
             </div>
           </div>
         </form>
-
-        <SheetFooter className="border-t border-foreground/6 flex-row justify-end">
-          <PillButton
-            variant="secondary"
-            size="compact"
-            onClick={() => onOpenChange(false)}
-            disabled={generating}
-          >
-            Cancel
-          </PillButton>
-          <PillButton
-            type="submit"
-            form="certificate-create-form"
-            size="compact"
-            disabled={generating || !holderName.trim()}
-          >
-            {generating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <BadgeCheck className="w-3.5 h-3.5" />}
-            Generate
-          </PillButton>
-        </SheetFooter>
-      </SheetContent>
-    </Sheet>
+      </div>
+    </SettingsDrawer>
   );
 }
 
@@ -614,6 +609,8 @@ export interface PolicyDetailBodyProps {
   onBreadcrumb?: (node: ReactNode) => void;
   /** Called whenever the header actions change. Host renders them. */
   onActions?: (node: ReactNode) => void;
+  /** Called whenever the right-side panel changes. Host renders it next to the main pane. */
+  onRightPanel?: (node: ReactNode) => void;
   /** Where to navigate after a policy is deleted. Default: /policies */
   afterDeleteHref?: string;
 }
@@ -622,6 +619,7 @@ export function PolicyDetailBody({
   id,
   onBreadcrumb,
   onActions,
+  onRightPanel,
   afterDeleteHref = "/policies",
 }: PolicyDetailBodyProps) {
   const policy = useQuery(api.policies.get, { id: id as Id<"policies"> });
@@ -868,20 +866,11 @@ export function PolicyDetailBody({
         {!isDeleted && (
           <PillButton
             size="compact"
-            onClick={() => setShowCertificateSheet(true)}
-          >
-            <Plus className="w-3.5 h-3.5" />
-            Generate COI
-          </PillButton>
-        )}
-        {!isDeleted && (
-          <PillButton
-            size="compact"
             variant="icon"
             label="Delete"
             onClick={() => setShowDeleteDialog(true)}
           >
-            <Trash2 className="w-4 h-4" />
+            <Trash2 className="size-4 shrink-0" strokeWidth={2} />
           </PillButton>
         )}
         {!isDeleted && (
@@ -893,13 +882,22 @@ export function PolicyDetailBody({
             onClick={() => setShowRefreshDialog(true)}
           >
             {reExtracting ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
+              <Loader2 className="size-4 shrink-0 animate-spin" />
             ) : (
-              <RotateCw className="w-4 h-4" />
+              <RotateCw className="size-4 shrink-0" />
             )}
           </PillButton>
         )}
         <ViewPdfButton url={fileUrl} />
+        {!isDeleted && (
+          <PillButton
+            size="compact"
+            onClick={() => setShowCertificateSheet(true)}
+          >
+            <Plus className="w-3.5 h-3.5" />
+            Generate COI
+          </PillButton>
+        )}
       </>,
     );
     return () => onActions(null);
@@ -914,6 +912,22 @@ export function PolicyDetailBody({
     fileUrl,
     setShowCertificateSheet,
   ]);
+
+  useEffect(() => {
+    if (!onRightPanel) return;
+    if (!policy || !showCertificateSheet) {
+      onRightPanel(null);
+      return;
+    }
+    onRightPanel(
+      <CertificateCreatePanel
+        open={showCertificateSheet}
+        onOpenChange={setShowCertificateSheet}
+        policyId={policy._id}
+      />,
+    );
+    return () => onRightPanel(null);
+  }, [onRightPanel, policy, showCertificateSheet]);
 
   if (policy === undefined) {
     return (
@@ -1039,12 +1053,6 @@ export function PolicyDetailBody({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      <CertificateCreateSheet
-        open={showCertificateSheet}
-        onOpenChange={setShowCertificateSheet}
-        policyId={policy._id}
-      />
 
       {Boolean(p.isDemo) && !demoBannerDismissed && (
         <div className="flex items-center gap-3 px-4 py-2.5 rounded-lg border border-amber-200 dark:border-amber-900/50 bg-amber-50/60 dark:bg-amber-950/30 mb-4">
