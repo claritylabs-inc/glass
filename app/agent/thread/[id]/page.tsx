@@ -8,15 +8,13 @@ import { AppShell } from "@/components/app-shell";
 import { PillButton } from "@/components/ui/pill-button";
 import { ModeBadge } from "@/components/mode-badge";
 import { MessageBubble, splitQuotedReply, QuotedContent, type Conversation } from "@/components/conversation-message";
-import { ChatMessageBubble, type WebChatMessage } from "@/components/chat-message-bubble";
 import { toast } from "sonner";
 import { Loader2, Archive, ArchiveRestore, FileText, Check, ClipboardList, Asterisk, Mail as MailIcon, MessageSquare, Phone as PhoneIcon, Paperclip, Download, Copy, Lock, RotateCcw } from "lucide-react";
 import { EditableBreadcrumbTitle } from "@/components/editable-breadcrumb-title";
 import { usePdf } from "@/components/pdf-context";
 import { usePresence } from "@/hooks/use-presence";
 import { ContextReferenceCard, PolicyReferenceCard, ReferenceCardStrip } from "@/components/context-reference-card";
-import { ChatInput, ChatInputOverlay, type ChatInputHandle } from "@/components/chat-input";
-import { GlassPromptInput, type GlassPromptInputHandle } from "@/components/glass-prompt-input";
+import { ChatInputOverlay, GlassPromptInput, type GlassPromptInputHandle } from "@/components/glass-prompt-input";
 import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
 import { CollapsibleReasoning } from "@/components/collapsible-reasoning";
 import Link from "next/link";
@@ -1061,170 +1059,6 @@ function EmailThreadContent({
 }
 
 /* ═══════════════════════════════════════════════════
-   Legacy Web Chat View
-   ═══════════════════════════════════════════════════ */
-
-/* ── Web chat actions (lifted to AppShell header) ── */
-function WebChatActions({
-  chat,
-  chatId,
-  messages,
-}: {
-  chat: { title: string; archivedAt?: number };
-  chatId: Id<"webChats">;
-  messages?: WebChatMessage[];
-}) {
-  const archiveChat = useMutation(api.webChats.archive);
-  const unarchiveChat = useMutation(api.webChats.unarchive);
-  const isArchived = !!chat.archivedAt;
-
-  async function handleArchiveToggle() {
-    try {
-      if (isArchived) {
-        await unarchiveChat({ id: chatId });
-        toast.success("Unarchived");
-      } else {
-        await archiveChat({ id: chatId });
-        toast.success("Archived");
-      }
-    } catch {
-      toast.error("Failed to update");
-    }
-  }
-
-  function handleCopyThread() {
-    if (!messages || messages.length === 0) {
-      toast.error("No messages to copy");
-      return;
-    }
-    const lines: string[] = [];
-    lines.push(`Chat: ${chat.title}`);
-    lines.push(`Messages: ${messages.length}`);
-    lines.push("─".repeat(50));
-    for (const msg of messages) {
-      if (msg.status === "processing") continue;
-      const time = dayjs(msg._creationTime).format("MMM D, YYYY h:mm A");
-      const sender = msg.role === "agent" ? "Glass" : (msg.userName ?? "User");
-      lines.push("");
-      lines.push(`${sender} — ${time}`);
-      lines.push("");
-      lines.push(msg.content);
-      lines.push("─".repeat(50));
-    }
-    navigator.clipboard.writeText(lines.join("\n"));
-    toast.success("Chat copied to clipboard");
-  }
-
-  return (
-    <>
-      <ModeBadge mode="chat" />
-      <div className="w-px h-4 bg-foreground/10" />
-      <PillButton size="compact" variant="icon" onClick={handleCopyThread} label="Copy thread">
-        <Copy className="w-3.5 h-3.5" />
-      </PillButton>
-      <PillButton size="compact" variant="icon" onClick={handleArchiveToggle} label={isArchived ? "Unarchive" : "Archive"}>
-        {isArchived ? <ArchiveRestore className="w-4 h-4" /> : <Archive className="w-4 h-4" />}
-      </PillButton>
-    </>
-  );
-}
-
-/* ── Legacy web chat view ── */
-function WebChatContent({
-  chatId,
-  onMeta,
-  viewerId,
-}: {
-  chatId: Id<"webChats">;
-  onMeta?: (meta: { title: React.ReactNode; actions: React.ReactNode }) => void;
-  viewerId?: string;
-}) {
-  const chat = useQuery(api.webChats.get, { id: chatId });
-  const messages = useQuery(api.webChats.messages, { chatId }) as WebChatMessage[] | undefined;
-  const sendMessage = useMutation(api.webChats.sendMessage);
-  const updateTitle = useMutation(api.webChats.updateTitle);
-
-  const messagesRef = useRef<HTMLDivElement>(null);
-  const chatInputRef = useRef<ChatInputHandle>(null);
-  const prevChatId = useRef<string | null>(null);
-
-  // Push title + actions to parent for AppShell header
-  useEffect(() => {
-    if (!chat || !onMeta) return;
-    onMeta({
-      title: (
-        <EditableBreadcrumbTitle
-          title={chat.title}
-          onSave={async (next) => {
-            try {
-              await updateTitle({ id: chatId, title: next });
-            } catch {
-              toast.error("Failed to update title");
-            }
-          }}
-        />
-      ),
-      actions: (
-        <WebChatActions
-          chat={chat}
-          chatId={chatId}
-          messages={messages}
-        />
-      ),
-    });
-  }, [chat, chatId, onMeta, messages, updateTitle]);
-
-  useEffect(() => {
-    const el = messagesRef.current;
-    if (!el) return;
-    const isNew = prevChatId.current !== chatId;
-    prevChatId.current = chatId;
-    el.scrollTo({ top: el.scrollHeight, behavior: isNew ? "instant" : "smooth" });
-  }, [chatId]);
-
-  const handleSend = useCallback(async (text: string) => {
-    await sendMessage({ chatId, content: text });
-  }, [sendMessage, chatId]);
-
-  if (!chat) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <Loader2 className="w-5 h-5 animate-spin text-muted-foreground/30" />
-      </div>
-    );
-  }
-
-  return (
-    <div className="relative h-full">
-      {/* Messages — full height, content scrolls under the input overlay */}
-      <div ref={messagesRef} className="absolute inset-0 overflow-y-auto p-4 pr-5">
-        <div className="max-w-2xl mx-auto space-y-4">
-          {(!messages || messages.length === 0) && (
-            <NewChatEmptyState onSelectPrompt={(prompt) => chatInputRef.current?.setValueAndFocus(prompt)} />
-          )}
-          {messages?.map((msg) => (
-            <ChatMessageBubble key={msg._id} message={msg} viewerId={viewerId} />
-          ))}
-          {/* Padding so last message clears the input overlay */}
-          {messages && messages.length > 0 && <div className="h-40" />}
-        </div>
-      </div>
-
-      {/* Input — overlaid at bottom, content scrolls under it */}
-      <ChatInputOverlay>
-        <ChatInput
-          ref={chatInputRef}
-          onSend={handleSend}
-          placeholder="Ask about your policies..."
-          showAttach={false}
-          autoFocus
-        />
-      </ChatInputOverlay>
-    </div>
-  );
-}
-
-/* ═══════════════════════════════════════════════════
    Main Thread Page
    ═══════════════════════════════════════════════════ */
 
@@ -1246,11 +1080,6 @@ export default function ThreadPage({ params }: { params: Promise<{ id: string }>
 
   // Try unified threads table first
   const unifiedThread = useQuery(api.threads.tryGet, { id });
-  // Fall back to legacy web chat
-  const legacyChat = useQuery(
-    api.webChats.tryGet,
-    unifiedThread === null ? { id } : "skip",
-  );
 
   const handleUnifiedMeta = useCallback((meta: { detail: React.ReactNode; actions: React.ReactNode }) => {
     setThreadMeta(meta);
@@ -1258,10 +1087,6 @@ export default function ThreadPage({ params }: { params: Promise<{ id: string }>
 
   const handleEmailMeta = useCallback((meta: { subject: string; actions: React.ReactNode }) => {
     setThreadMeta({ detail: meta.subject, actions: meta.actions });
-  }, []);
-
-  const handleChatMeta = useCallback((meta: { title: React.ReactNode; actions: React.ReactNode }) => {
-    setThreadMeta({ detail: meta.title, actions: meta.actions });
   }, []);
 
   // Loading: unified query still pending
@@ -1291,32 +1116,6 @@ export default function ThreadPage({ params }: { params: Promise<{ id: string }>
               agentHandle={agentHandle ?? undefined}
               agentBranding={agentBranding}
             />
-          </div>
-        </div>
-      </AppShell>
-    );
-  }
-
-  // Legacy fallback: loading legacy chat query
-  if (legacyChat === undefined) {
-    return (
-      <AppShell breadcrumbDetail="Conversation">
-        <div className="absolute inset-0 overflow-hidden">
-          <div className="h-full flex items-center justify-center">
-            <Loader2 className="w-5 h-5 animate-spin text-muted-foreground/30" />
-          </div>
-        </div>
-      </AppShell>
-    );
-  }
-
-  // Legacy web chat
-  if (legacyChat) {
-    return (
-      <AppShell breadcrumbDetail={threadMeta.detail} actions={threadMeta.actions} presenceUsers={presenceUsers}>
-        <div className="absolute inset-0 overflow-hidden">
-          <div className="h-full flex flex-col">
-            <WebChatContent chatId={id as Id<"webChats">} onMeta={handleChatMeta} viewerId={viewer?._id} />
           </div>
         </div>
       </AppShell>

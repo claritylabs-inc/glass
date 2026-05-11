@@ -8,7 +8,7 @@ import {
   useState,
 } from "react";
 import type { DragEvent as ReactDragEvent } from "react";
-import { ArrowUp, Asterisk, Paperclip, Square, X } from "lucide-react";
+import { ArrowUp, Paperclip, Square, X } from "lucide-react";
 import {
   PromptInput,
   PromptInputTextarea,
@@ -20,6 +20,7 @@ import {
 import { PillButton } from "@/components/ui/pill-button";
 import { cn } from "@/lib/utils";
 import { Spinner } from "@/components/ui/spinner";
+import { LogoIcon } from "@/components/ui/logo-icon";
 import type { ChatStatus } from "ai";
 
 // Inner component — must render inside <PromptInput> to access LocalAttachmentsContext
@@ -199,7 +200,7 @@ export const GlassPromptInput = forwardRef<
         onDragOver={handleDragOver}
         onDrop={handleDrop}
         className={cn(
-          "rounded-xl border border-foreground/6 bg-popover focus-within:border-foreground/15 dark:focus-within:border-[#3a3a3a] transition-all overflow-hidden [&_[data-slot=input-group]]:border-0 [&_[data-slot=input-group]]:rounded-none [&_[data-slot=input-group]]:shadow-none",
+          "rounded-xl border border-foreground/6 bg-[#fff] dark:bg-[#000] focus-within:border-foreground/15 dark:focus-within:border-[#3a3a3a] transition-all overflow-hidden [&_[data-slot=input-group]]:border-0 [&_[data-slot=input-group]]:rounded-none [&_[data-slot=input-group]]:bg-transparent [&_[data-slot=input-group]]:shadow-none",
           isDraggingFiles && "border-primary/40 bg-primary/5"
         )}
       >
@@ -225,7 +226,7 @@ export const GlassPromptInput = forwardRef<
                   className="w-3.5 h-3.5 rounded-sm object-cover"
                 />
               ) : (
-                <Asterisk className="w-3.5 h-3.5 text-primary-light" />
+                <LogoIcon size={14} color="#A0D2FA" static className="shrink-0" />
               )}
               <span className="hidden sm:inline text-[11px] font-medium text-muted-foreground/40">
                 {agentBranding?.name ?? "Glass"}
@@ -279,3 +280,17 @@ export const GlassPromptInput = forwardRef<
     </div>
   );
 });
+
+/**
+ * Overlay footer layout for chat pages where the input sits above scrollable content.
+ */
+export function ChatInputOverlay({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="absolute bottom-0 left-0 right-0 z-10 pointer-events-none">
+      <div className="h-16 bg-gradient-to-b from-white/0 via-white/40 to-white/80 dark:from-black/0 dark:via-black/40 dark:to-black/80" />
+      <div className="pointer-events-auto bg-white/80 dark:bg-black/80 px-4 md:px-6 lg:px-8 pt-2" style={{ paddingBottom: "calc(1.25rem + env(safe-area-inset-bottom, 0px))" }}>
+        <div className="max-w-2xl mx-auto">{children}</div>
+      </div>
+    </div>
+  );
+}

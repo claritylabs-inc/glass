@@ -286,6 +286,7 @@ Outbound emails sent by Glass Agent are centralized in `convex/lib/emailSubagent
 
 - `/policies` — list, detail, upload, re-extract, and generated certificate history.
 - `/chat` — threaded assistant.
+- `/agent/thread/:id` — renders unified `threads` records, with a legacy email-conversation fallback for old inbound-email threads. The old `webChats` view and sidebar listing are no longer exposed; `webChats` backend code may remain for migration/history only.
 - `/settings` — org settings, branding, members, and an **Integrations** section rendered as a coming-soon grid. The Merge.dev backend and all integration sync tables/actions have been removed; only the static grid remains.
 
 ## MCP

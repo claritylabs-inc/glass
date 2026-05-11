@@ -126,7 +126,6 @@ export function AppSidebar({
         threadPhone?: string;
       }>
     | undefined;
-  const webChats = useQuery(api.webChats.list, { archived: false });
   const emailConvs = useQuery(api.agentConversations.list, { archived: false });
   const createThread = useMutation(api.threads.create);
   const archiveThread = useMutation(api.threads.archive);
@@ -170,7 +169,7 @@ export function AppSidebar({
     currentOrg?.orgId ? { orgId: currentOrg.orgId } : "skip",
   ) as number | undefined;
 
-  // Unified thread list — prefers unified threads table, falls back to legacy merge
+  // Unified thread list — prefers unified threads table, falls back to legacy email threads.
   const conversations = useMemo(() => {
     type ConvItem = { kind: "email" | "chat" | "imessage"; id: string; label: string; time: number };
 
@@ -201,13 +200,8 @@ export function AppSidebar({
         items.push({ kind: "email", id, label: subject, time });
       }
     }
-    if (webChats) {
-      for (const chat of webChats) {
-        items.push({ kind: "chat", id: chat._id, label: chat.title, time: chat.lastMessageAt ?? chat._creationTime });
-      }
-    }
     return items.sort((a, b) => b.time - a.time).slice(0, 8);
-  }, [unifiedThreads, emailConvs, webChats]);
+  }, [unifiedThreads, emailConvs]);
 
   function toggleCollapse() {
     const next = !collapsed;
