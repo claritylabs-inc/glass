@@ -30,7 +30,7 @@ Core layers:
 - Frontend: Next.js 16 App Router, React 19, Tailwind 4
 - Backend: Convex queries, mutations, actions, scheduler, file storage, vector search
 - AI runtime: Vercel AI SDK (`ai`)
-- Extraction, query agent, and prompts: `@claritylabs/cl-sdk@0.17.x`
+- Extraction, query agent, and prompts: `@claritylabs/cl-sdk@1.1.x`
 - Providers: OpenAI, MoonshotAI, Anthropic, DeepSeek
 - Email: outbound + inbound via Resend (no IMAP, no Gmail OAuth). All outbound Resend calls go through `convex/lib/resend.ts` (`sendResendEmail`). Sending domain comes from `AGENT_DOMAIN` (prod: `glass.claritylabs.inc`, dev: `dev.claritylabs.inc`). Inbound webhook at `POST /resend-inbound`.
 - iMessage / Spectrum: Photon-backed iMessage is production-only. Set `IMESSAGE_ENABLED=true`, `IMESSAGE_WORKER_URL`, `IMESSAGE_WORKER_SECRET`, and `NEXT_PUBLIC_GLASS_IMESSAGE_NUMBER` only in production with the production Photon account. For dev/preview testing, keep `IMESSAGE_ENABLED` false and use the Spectrum Terminal provider in `imessage-worker` (`SPECTRUM_PROVIDER=terminal`, `IMESSAGE_TERMINAL_FROM_PHONE=<test user phone>`). Convex accepts terminal-driven inbound messages only when `IMESSAGE_TERMINAL_ENABLED=true`; do not set `NEXT_PUBLIC_GLASS_IMESSAGE_NUMBER` in dev/preview unless intentionally advertising a test line.
@@ -58,7 +58,7 @@ Fallback behavior:
 
 - If no broker key exists for a route, Glass uses its opaque default configuration.
 - `getModel()` falls back to Claude Haiku if a provider is unavailable.
-- `generateTextWithFallback()` and `generateStructuredWithFallback()` retry failed calls on the cheaper fallback route in [convex/lib/modelCatalog.ts](convex/lib/modelCatalog.ts). Missing API key errors are not retried, because retrying another OpenAI model does not fix a missing key and only adds latency.
+- `generateTextWithFallback()` and `generateStructuredWithFallback()` use task-aware fallback policy. Missing API key errors are not retried, because retrying another OpenAI model does not fix a missing key and only adds latency. Low-cost extraction/classification calls stay on the nano path by default; only SDK `taskKind`s that represent validation repair, ambiguous synthesis, unsupported source-evidence resolution, or high-risk packet generation may escalate to the fallback route in [convex/lib/modelCatalog.ts](convex/lib/modelCatalog.ts).
 
 ## Connected Vendor/Client Accounts
 
@@ -174,7 +174,7 @@ Pipeline runtime state:
 - High-churn extraction runtime state lives in `policyExtractionRuns`: `pipelineCheckpoint`, `pipelineLog`, leases, heartbeat timestamps, and detailed progress. This avoids rewriting large policy documents for every log, checkpoint, and heartbeat. Large `cl-sdk` checkpoint payloads and extraction-to-embedding payloads are stored in Convex file storage and tracked by `policyExtractionArtifacts` records keyed by policy/job ID and artifact kind. The pipeline checkpoint only keeps compact storage IDs and summaries.
 - Query surfaces such as `policies.get` and `policies.getInternal` merge runtime state from `policyExtractionRuns`, falling back to legacy fields on `policies` for old in-flight jobs.
 - The extract phase stores `documentChunksForEmbedding`, `sourceSpansForStorage`, and `sourceChunksForEmbedding` in a storage-backed `embedding_payload` artifact before advancing to `embed_and_store`, so a resumed embedding phase can reload transient artifacts without inflating checkpoint documents. Artifact blobs are cleaned up after durable embedding/source-span storage succeeds, cancellation, terminal success, and full restart; generic errors keep artifacts for resume/retry.
-- Extraction concurrency defaults to 4 SDK worker calls (`EXTRACTION_CONCURRENCY`, bounded 1-8). Page mapping, focused extraction, and formatting can be tuned independently with `EXTRACTION_PAGE_MAP_CONCURRENCY`, `EXTRACTION_EXTRACTOR_CONCURRENCY`, and `EXTRACTION_FORMAT_CONCURRENCY` (each bounded 1-8). Review defaults to `EXTRACTION_REVIEW_MODE=auto` with 1 round (`EXTRACTION_MAX_REVIEW_ROUNDS`, bounded 0-2), and embedding defaults to 8 concurrent embedding calls (`EXTRACTION_EMBEDDING_CONCURRENCY`, bounded 1-16). Current dev/prod deployments intentionally run aggressive speed settings: extraction/page-map/extractor/format concurrency 8 and embedding concurrency 16.
+- Extraction concurrency defaults to 6 SDK worker calls (`EXTRACTION_CONCURRENCY`, bounded 1-8), and page mapping, focused extraction, and formatting default to that same concurrency unless independently tuned with `EXTRACTION_PAGE_MAP_CONCURRENCY`, `EXTRACTION_EXTRACTOR_CONCURRENCY`, and `EXTRACTION_FORMAT_CONCURRENCY` (each bounded 1-8). Review defaults to `EXTRACTION_REVIEW_MODE=auto` with 1 round (`EXTRACTION_MAX_REVIEW_ROUNDS`, bounded 0-2), so cl-sdk's evidence-gated review semantics decide when a repair pass is useful. Embedding defaults to 8 concurrent embedding calls (`EXTRACTION_EMBEDDING_CONCURRENCY`, bounded 1-16). Current dev/prod deployments intentionally run aggressive speed settings: extraction/page-map/extractor/format concurrency 8 and embedding concurrency 16.
 
 Cancellation:
 

@@ -13,11 +13,14 @@ import type { ProviderOptions } from "@ai-sdk/provider-utils";
 import { createOpenAI } from "@ai-sdk/openai";
 import {
   getModel,
-  getModelForOrg,
+  getModelAndRouteForOrg,
   getProviderOptionsForTask,
   generateStructuredWithFallback,
   generateTextWithFallback,
   mergeProviderOptions,
+  modelTaskForCall,
+  type ModelCallTaskKind,
+  type ModelRoute,
   type ModelTask,
 } from "./models";
 import type { GenerateText, GenerateObject, EmbedText, TokenUsage } from "@claritylabs/cl-sdk";
@@ -57,6 +60,14 @@ type PdfFilePart = {
   mediaType: string;
   filename: string;
 };
+
+type ParamsWithOptionalTaskKind = {
+  taskKind?: unknown;
+};
+
+function readTaskKind(params: ParamsWithOptionalTaskKind): ModelCallTaskKind | undefined {
+  return typeof params.taskKind === "string" ? params.taskKind : undefined;
+}
 
 /**
  * Build a single AI SDK file message part for the PDF, preferring memory-efficient
@@ -202,20 +213,31 @@ export function makeGenerateText(
   task: ModelTask = "extraction",
   routing?: ModelRoutingContext,
 ): GenerateText {
-  return async ({ prompt, system, maxTokens, providerOptions }) => {
-    const effectiveMaxTokens = getEffectiveMaxTokens(task, prompt, maxTokens);
+  return async (params) => {
+    const { prompt, system, maxTokens, providerOptions } = params;
+    const taskKind = readTaskKind(params as ParamsWithOptionalTaskKind);
+    const effectiveTask = modelTaskForCall(task, taskKind);
+    const effectiveMaxTokens = getEffectiveMaxTokens(effectiveTask, prompt, maxTokens);
+    let primaryRoute: ModelRoute | undefined;
     const model = routing?.ctx && routing.orgId
-      ? await getModelForOrg(routing.ctx, routing.orgId, task)
-      : getModel(task);
+      ? await getModelAndRouteForOrg(routing.ctx, routing.orgId, effectiveTask).then((resolved) => {
+        primaryRoute = resolved.route;
+        return resolved.model;
+      })
+      : getModel(effectiveTask);
     const result = await generateTextWithFallback({
       model,
       system,
       ...buildPromptInput(prompt, providerOptions),
       maxOutputTokens: effectiveMaxTokens,
       providerOptions: mergeProviderOptions(
-        getProviderOptionsForTask(task),
+        getProviderOptionsForTask(effectiveTask),
         providerOptions as ProviderOptions,
       ),
+    }, {
+      task: effectiveTask,
+      taskKind,
+      primaryRoute,
     });
     return {
       text: result.text,
@@ -232,11 +254,18 @@ export function makeGenerateObject(
   task: ModelTask = "extraction",
   routing?: ModelRoutingContext,
 ): GenerateObject {
-  return async ({ prompt, system, schema, maxTokens, providerOptions }) => {
-    const effectiveMaxTokens = getEffectiveMaxTokens(task, prompt, maxTokens);
+  return async (params) => {
+    const { prompt, system, schema, maxTokens, providerOptions } = params;
+    const taskKind = readTaskKind(params as ParamsWithOptionalTaskKind);
+    const effectiveTask = modelTaskForCall(task, taskKind);
+    const effectiveMaxTokens = getEffectiveMaxTokens(effectiveTask, prompt, maxTokens);
+    let primaryRoute: ModelRoute | undefined;
     const model = routing?.ctx && routing.orgId
-      ? await getModelForOrg(routing.ctx, routing.orgId, task)
-      : getModel(task);
+      ? await getModelAndRouteForOrg(routing.ctx, routing.orgId, effectiveTask).then((resolved) => {
+        primaryRoute = resolved.route;
+        return resolved.model;
+      })
+      : getModel(effectiveTask);
     try {
       const result = await generateStructuredWithFallback({
         model,
@@ -245,9 +274,13 @@ export function makeGenerateObject(
         output: Output.object({ schema }),
         maxOutputTokens: effectiveMaxTokens,
         providerOptions: mergeProviderOptions(
-          getProviderOptionsForTask(task),
+          getProviderOptionsForTask(effectiveTask),
           providerOptions as ProviderOptions,
         ),
+      }, {
+        task: effectiveTask,
+        taskKind,
+        primaryRoute,
       });
       return {
         object: result.output!,
@@ -256,7 +289,7 @@ export function makeGenerateObject(
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const isSectionsExtractor =
-        task === "extraction" && prompt.includes(SECTIONS_EXTRACTOR_PROMPT_MARKER);
+        effectiveTask === "extraction" && prompt.includes(SECTIONS_EXTRACTOR_PROMPT_MARKER);
 
       if (isSectionsExtractor && message.includes("No output generated")) {
         return {
