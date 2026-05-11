@@ -85,6 +85,40 @@ function cohere() {
 
 export { FALLBACK_MODEL, MODEL_ROUTING, type ModelProvider, type ModelRoute, type ModelTask };
 
+export type ModelCallTaskKind =
+  | "extraction_classify"
+  | "extraction_form_inventory"
+  | "extraction_page_map"
+  | "extraction_focused"
+  | "extraction_long_list"
+  | "extraction_referential_lookup"
+  | "extraction_review"
+  | "extraction_summary"
+  | "extraction_format"
+  | "query_attachment"
+  | "query_classify"
+  | "query_reason"
+  | "query_verify"
+  | "query_respond"
+  | "application_classify"
+  | "application_extract_fields"
+  | "application_auto_fill"
+  | "application_lookup"
+  | "application_parse_answers"
+  | "application_batch"
+  | "application_email"
+  | "application_pdf_mapping"
+  | "pce_impact_analysis"
+  | "pce_reply_parse"
+  | "pce_packet_generation"
+  | (string & {});
+
+type ModelFallbackContext = {
+  task?: ModelTask;
+  taskKind?: ModelCallTaskKind;
+  primaryRoute?: ModelRoute;
+};
+
 const GPT_55 = "gpt-5.5";
 const GPT_54_NANO = "gpt-5.4-nano";
 const GPT_54_MINI = "gpt-5.4-mini";
@@ -118,12 +152,62 @@ function isMissingApiKeyError(err: unknown): boolean {
   return /api key is missing/i.test(message);
 }
 
-function isTerminalModelForFallback(modelId: string): boolean {
-  return (
-    modelId.includes(FALLBACK_MODEL.model) ||
-    modelId.includes("gpt-5.4-nano") ||
-    modelId.includes("claude-haiku")
-  );
+const LOW_COST_NO_ESCALATION_TASKS = new Set<ModelTask>([
+  "classification",
+  "extraction",
+  "email_extraction",
+  "document_extraction",
+]);
+
+const INTENTIONAL_QUALITY_ESCALATION_TASK_KINDS = new Set<string>([
+  // Validation / repair passes over extracted or reasoned output.
+  "extraction_review",
+  "query_verify",
+  // Ambiguous synthesis over retrieved evidence or requested changes.
+  "query_reason",
+  "pce_impact_analysis",
+  // Source-evidence support where the cheap path may fail to resolve references.
+  "extraction_referential_lookup",
+  // High-risk carrier-facing packet generation.
+  "pce_packet_generation",
+]);
+
+function sameRoute(left?: ModelRoute, right?: ModelRoute): boolean {
+  return !!left && !!right && left.provider === right.provider && left.model === right.model;
+}
+
+export function modelTaskForCall(baseTask: ModelTask, taskKind?: ModelCallTaskKind): ModelTask {
+  if (!taskKind) return baseTask;
+  if (taskKind === "extraction_classify") return "classification";
+  if (taskKind.startsWith("extraction_")) return "extraction";
+  if (taskKind === "query_classify") return "classification";
+  if (taskKind.startsWith("query_")) return "chat";
+  if (taskKind === "application_classify") return "classification";
+  if (taskKind.startsWith("application_")) return "application_authoring";
+  if (taskKind.startsWith("pce_")) return "analysis";
+  return baseTask;
+}
+
+export function fallbackRouteForCall({
+  task,
+  taskKind,
+  primaryRoute,
+}: ModelFallbackContext): ModelRoute | null {
+  const effectiveTask = task && modelTaskForCall(task, taskKind);
+  const effectivePrimaryRoute =
+    primaryRoute ?? (effectiveTask ? MODEL_ROUTING[effectiveTask] : undefined);
+
+  if (sameRoute(effectivePrimaryRoute, FALLBACK_MODEL)) return null;
+
+  if (taskKind && INTENTIONAL_QUALITY_ESCALATION_TASK_KINDS.has(taskKind)) {
+    return FALLBACK_MODEL;
+  }
+
+  if (effectiveTask && LOW_COST_NO_ESCALATION_TASKS.has(effectiveTask)) {
+    return null;
+  }
+
+  return FALLBACK_MODEL;
 }
 
 export function getProviderOptionsForTask(task: ModelTask): ProviderOptions | undefined {
@@ -206,6 +290,14 @@ export async function getModelForOrg(
   orgId: Id<"organizations">,
   task: ModelTask,
 ): Promise<LanguageModel> {
+  return (await getModelAndRouteForOrg(ctx, orgId, task)).model;
+}
+
+export async function getModelAndRouteForOrg(
+  ctx: ActionCtx,
+  orgId: Id<"organizations">,
+  task: ModelTask,
+): Promise<{ model: LanguageModel; route: ModelRoute }> {
   try {
     const settings = await ctx.runQuery(internal.modelSettings.resolveForOrg, { orgId });
     const configuredRoute = settings?.routes?.[task];
@@ -214,19 +306,20 @@ export async function getModelForOrg(
       : undefined;
     const route = configuredRoute && configuredApiKey ? configuredRoute : MODEL_ROUTING[task];
     const apiKey = configuredRoute && configuredApiKey ? configuredApiKey : undefined;
-    return modelFromRoute(route, apiKey);
+    return { model: modelFromRoute(route, apiKey), route };
   } catch (err) {
     console.warn(
       `Configured model for task "${task}" unavailable: ${
         err instanceof Error ? err.message : String(err)
       }. Falling back to static routing.`,
     );
-    return getModel(task);
+    return { model: getModel(task), route: MODEL_ROUTING[task] };
   }
 }
 
 export async function generateTextWithFallback(
   options: Parameters<typeof import("ai").generateText>[0],
+  fallbackContext: ModelFallbackContext = {},
 ): Promise<Awaited<ReturnType<typeof import("ai").generateText>>> {
   const { generateText } = await import("ai");
   try {
@@ -234,19 +327,16 @@ export async function generateTextWithFallback(
   } catch (err: unknown) {
     const modelId = (options.model as Record<string, unknown>)?.modelId as string || "unknown";
     if (isMissingApiKeyError(err)) throw err;
-    // Do not retry models that are already on the low-cost/low-capacity path.
-    // In particular, extraction runs on gpt-5.4-nano by design; escalating a
-    // failed extraction call to a larger fallback model adds cost and can reintroduce
-    // the over-optimization/overfitting behavior the extraction route avoids.
-    if (isTerminalModelForFallback(modelId)) throw err;
+    const fallbackRoute = fallbackRouteForCall(fallbackContext);
+    if (!fallbackRoute) throw err;
     console.warn(
-      `Primary model (${modelId}) failed: ${err instanceof Error ? err.message : String(err)}. Retrying with ${FALLBACK_MODEL.model}.`,
+      `Primary model (${modelId}) failed: ${err instanceof Error ? err.message : String(err)}. Retrying with ${fallbackRoute.model}.`,
     );
     return await generateText({
       ...options,
-      model: modelFromRoute(FALLBACK_MODEL),
+      model: modelFromRoute(fallbackRoute),
       providerOptions: mergeProviderOptions(
-        getProviderOptionsForRoute(FALLBACK_MODEL),
+        getProviderOptionsForRoute(fallbackRoute),
         options.providerOptions,
       ),
     });
@@ -255,6 +345,7 @@ export async function generateTextWithFallback(
 
 export async function generateStructuredWithFallback(
   options: Parameters<typeof import("ai").generateText>[0],
+  fallbackContext: ModelFallbackContext = {},
 ): Promise<Awaited<ReturnType<typeof import("ai").generateText>>> {
   const { generateText } = await import("ai");
   try {
@@ -262,15 +353,16 @@ export async function generateStructuredWithFallback(
   } catch (err: unknown) {
     const modelId = (options.model as Record<string, unknown>)?.modelId as string || "unknown";
     if (isMissingApiKeyError(err)) throw err;
-    if (isTerminalModelForFallback(modelId)) throw err;
+    const fallbackRoute = fallbackRouteForCall(fallbackContext);
+    if (!fallbackRoute) throw err;
     console.warn(
-      `Primary model (${modelId}) failed for structured output: ${err instanceof Error ? err.message : String(err)}. Retrying with ${FALLBACK_MODEL.model}.`,
+      `Primary model (${modelId}) failed for structured output: ${err instanceof Error ? err.message : String(err)}. Retrying with ${fallbackRoute.model}.`,
     );
     return await generateText({
       ...options,
-      model: modelFromRoute(FALLBACK_MODEL),
+      model: modelFromRoute(fallbackRoute),
       providerOptions: mergeProviderOptions(
-        getProviderOptionsForRoute(FALLBACK_MODEL),
+        getProviderOptionsForRoute(fallbackRoute),
         options.providerOptions,
       ),
     });

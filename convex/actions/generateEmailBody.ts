@@ -59,6 +59,8 @@ Respond with JSON:
         model: await getModelForOrg(ctx, args.orgId, "email_draft"),
         maxOutputTokens: 1024,
         messages: [{ role: "user", content: prompt }],
+      }, {
+        task: "email_draft",
       });
 
       const cleaned = text.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();

@@ -104,11 +104,10 @@ export function buildExtractor(opts?: {
       1,
       8,
     ),
-    // Review is a second model pass over already-extracted data. Keep it opt-in
-    // so the default pipeline avoids redundant optimization passes that slow
-    // extraction and can collapse nuanced source-backed results.
-    maxReviewRounds: readBoundedIntEnv("EXTRACTION_MAX_REVIEW_ROUNDS", 0, 0, 2),
-    reviewMode: readReviewModeEnv("EXTRACTION_REVIEW_MODE", "skip"),
+    // Let cl-sdk's evidence-gated auto review decide when a repair pass is useful.
+    // Hosts can still disable it explicitly via EXTRACTION_REVIEW_MODE=skip.
+    maxReviewRounds: readBoundedIntEnv("EXTRACTION_MAX_REVIEW_ROUNDS", 1, 0, 2),
+    reviewMode: readReviewModeEnv("EXTRACTION_REVIEW_MODE", "auto"),
     log: opts?.log,
     onProgress: opts?.onProgress,
     onTokenUsage: opts?.onTokenUsage,
