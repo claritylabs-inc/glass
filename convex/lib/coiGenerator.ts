@@ -9,11 +9,13 @@ import PDFDocument from "pdfkit/js/pdfkit.standalone.js";
  * All monetary values should be pre-formatted strings (e.g. "$1,000,000").
  */
 export interface CoiData {
+  title: string;
+
   // Producer (Broker)
   producerAgency?: string;
   producerContact?: string;
   producerLicense?: string;
-  producerAddress?: string;
+  producerAddress?: string | { street1?: string; street2?: string; city?: string; state?: string; zip?: string; country?: string };
   producerPhone?: string;
   producerEmail?: string;
 
@@ -69,21 +71,22 @@ export interface CoverageLine {
  * Map a Glass policy document to CoiData.
  * Produces one CoverageLine per detected coverage type.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function policyToCoiData(policy: any, org?: any): CoiData {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+export function policyToCoiData(policy: any): CoiData {
   const limits: any = policy.limits ?? {};
   const policyTypes: string[] = policy.policyTypes ?? [];
   const policyNumber = policy.policyNumber ?? "";
   const effDate = policy.effectiveDate ?? "";
   const expDate = policy.expirationDate ?? "";
   const coverageForm = policy.coverageForm ?? "occurrence";
+  const producer = policy.producer ?? {};
+  const hasNamedPolicyType = policyTypes.some((t) => !["other", "unknown"].includes(t));
 
   // Build insurer row for Insurer A
   const insurers = [{
     letter: "A",
-    name: policy.carrierLegalName ?? policy.security ?? "N/A",
-    naic: policy.carrierNaicNumber,
+    name: policy.carrierLegalName ?? policy.insurer?.legalName ?? policy.carrier ?? policy.security ?? "N/A",
+    naic: policy.carrierNaicNumber ?? policy.insurer?.naicNumber,
     amBest: policy.carrierAmBestRating,
     admitted: policy.carrierAdmittedStatus,
   }];
@@ -94,7 +97,7 @@ export function policyToCoiData(policy: any, org?: any): CoiData {
   const hasGL = policyTypes.some((t) =>
     ["general_liability", "bop", "product_liability"].includes(t)
   );
-  if (hasGL || limits.perOccurrence || limits.generalAggregate) {
+  if (hasGL || (!hasNamedPolicyType && (limits.perOccurrence || limits.generalAggregate))) {
     const glLimits: Array<{ label: string; value: string }> = [];
     if (limits.perOccurrence) glLimits.push({ label: "EACH OCCURRENCE", value: limits.perOccurrence });
     if (limits.fireDamage) glLimits.push({ label: "DAMAGE TO RENTED\nPREMISES (Ea occurrence)", value: limits.fireDamage });
@@ -119,7 +122,7 @@ export function policyToCoiData(policy: any, org?: any): CoiData {
   const hasAuto = policyTypes.some((t) =>
     ["commercial_auto", "non_owned_auto", "personal_auto"].includes(t)
   );
-  if (hasAuto || limits.combinedSingleLimit || limits.bodilyInjuryPerPerson) {
+  if (hasAuto || (!hasNamedPolicyType && (limits.combinedSingleLimit || limits.bodilyInjuryPerPerson))) {
     const autoLimits: Array<{ label: string; value: string }> = [];
     if (limits.combinedSingleLimit) autoLimits.push({ label: "COMBINED SINGLE LIMIT\n(Ea accident)", value: limits.combinedSingleLimit });
     if (limits.bodilyInjuryPerPerson) autoLimits.push({ label: "BODILY INJURY (Per person)", value: limits.bodilyInjuryPerPerson });
@@ -143,7 +146,7 @@ export function policyToCoiData(policy: any, org?: any): CoiData {
 
   // ── Umbrella / Excess Liability ───────────────────────────────────────────
   const hasUmbrella = policyTypes.some((t) => ["umbrella", "excess_liability"].includes(t));
-  if (hasUmbrella || limits.eachOccurrenceUmbrella || limits.umbrellaAggregate) {
+  if (hasUmbrella || (!hasNamedPolicyType && (limits.eachOccurrenceUmbrella || limits.umbrellaAggregate))) {
     const umbLimits: Array<{ label: string; value: string }> = [];
     if (limits.eachOccurrenceUmbrella) umbLimits.push({ label: "EACH OCCURRENCE", value: limits.eachOccurrenceUmbrella });
     if (limits.umbrellaAggregate) umbLimits.push({ label: "AGGREGATE", value: limits.umbrellaAggregate });
@@ -162,8 +165,7 @@ export function policyToCoiData(policy: any, org?: any): CoiData {
 
   // ── Workers Compensation ──────────────────────────────────────────────────
   const hasWC = policyTypes.includes("workers_comp");
-  if (hasWC || limits.statutory || limits.employersLiability) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  if (hasWC || (!hasNamedPolicyType && (limits.statutory || limits.employersLiability))) {
     const el: any = limits.employersLiability ?? {};
     const wcLimits: Array<{ label: string; value: string }> = [];
     wcLimits.push({ label: "WC STAT", value: limits.statutory ? "✓" : "" });
@@ -215,10 +217,13 @@ export function policyToCoiData(policy: any, org?: any): CoiData {
   }
 
   return {
-    producerAgency: org?.broker?.name ?? policy.brokerAgency ?? policy.broker,
-    producerContact: org?.broker?.contactName ?? policy.brokerContactName,
-    producerLicense: policy.brokerLicenseNumber,
-    producerEmail: org?.broker?.contactEmail ?? policy.brokerContactEmail,
+    title: deriveCertificateTitle(policyTypes),
+    producerAgency: producer.agencyName ?? policy.brokerAgency ?? policy.mga ?? policy.underwriter ?? policy.broker,
+    producerContact: producer.contactName ?? policy.underwriter ?? policy.mga,
+    producerLicense: producer.licenseNumber ?? policy.brokerLicenseNumber,
+    producerAddress: producer.address,
+    producerPhone: producer.phone,
+    producerEmail: producer.email,
     insuredName: policy.insuredName ?? "N/A",
     insuredDba: policy.insuredDba,
     insuredAddress: policy.insuredAddress,
@@ -228,7 +233,21 @@ export function policyToCoiData(policy: any, org?: any): CoiData {
   };
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function deriveCertificateTitle(policyTypes: string[]): string {
+  const normalized = policyTypes.map((t) => t.toLowerCase());
+  if (normalized.some((t) => t.includes("travel"))) return "CERTIFICATE OF TRAVEL INSURANCE";
+  if (normalized.some((t) => t.includes("property"))) return "CERTIFICATE OF PROPERTY INSURANCE";
+  if (normalized.some((t) => t.includes("cyber"))) return "CERTIFICATE OF CYBER INSURANCE";
+  if (normalized.some((t) => t.includes("professional") || t.includes("errors") || t.includes("e_o"))) {
+    return "CERTIFICATE OF PROFESSIONAL LIABILITY INSURANCE";
+  }
+  if (normalized.some((t) => t.includes("auto"))) return "CERTIFICATE OF AUTOMOBILE INSURANCE";
+  if (normalized.some((t) => t.includes("workers") || t.includes("worker"))) {
+    return "CERTIFICATE OF WORKERS COMPENSATION INSURANCE";
+  }
+  return "CERTIFICATE OF LIABILITY INSURANCE";
+}
+
 function buildOtherLimits(limits: any): Array<{ label: string; value: string }> {
   const result: Array<{ label: string; value: string }> = [];
   if (limits.perOccurrence) result.push({ label: "EACH CLAIM / OCCURRENCE", value: limits.perOccurrence });
@@ -237,7 +256,6 @@ function buildOtherLimits(limits: any): Array<{ label: string; value: string }> 
   return result;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function flattenToLimitLines(limits: any): Array<{ label: string; value: string }> {
   const result: Array<{ label: string; value: string }> = [];
   const labelMap: Record<string, string> = {
@@ -262,11 +280,18 @@ function flattenToLimitLines(limits: any): Array<{ label: string; value: string 
   return result;
 }
 
-function formatAddress(addr: string | { street1?: string; city?: string; state?: string; zip?: string } | undefined | null): string {
+function formatAddress(
+  addr: string | { street1?: string; street2?: string; city?: string; state?: string; zip?: string; country?: string } | undefined | null,
+): string {
   if (!addr) return "";
   if (typeof addr === "string") return addr;
-  const parts = [addr.street1, addr.city, addr.state && addr.zip ? `${addr.state} ${addr.zip}` : (addr.state ?? addr.zip)];
-  return parts.filter(Boolean).join(", ");
+  const parts = [
+    addr.street1,
+    addr.street2,
+    [addr.city, addr.state && addr.zip ? `${addr.state} ${addr.zip}` : (addr.state ?? addr.zip)].filter(Boolean).join(", "),
+    addr.country,
+  ];
+  return parts.filter(Boolean).join("\n");
 }
 
 // ─── PDF Generation ───────────────────────────────────────────────────────────
@@ -308,7 +333,7 @@ export async function generateCoiPdf(data: CoiData): Promise<Buffer> {
     // Grey background
     doc.rect(M, y, W, hdrH).fill(C_HEADER_BG).stroke();
     doc.fillColor(C_BLACK).font("Helvetica-Bold").fontSize(FS_TITLE);
-    doc.text("CERTIFICATE OF LIABILITY INSURANCE", M, y + 5, { width: W * 0.75, align: "center" });
+    doc.text(data.title, M, y + 5, { width: W * 0.75, align: "center" });
     doc.font("Helvetica").fontSize(FS_LABEL);
     const dateStr = new Date().toLocaleDateString("en-US");
     doc.text("DATE (MM/DD/YYYY)", M + W * 0.76, y + 3, { width: W * 0.24, align: "left" });
@@ -326,14 +351,16 @@ export async function generateCoiPdf(data: CoiData): Promise<Buffer> {
     y += disclaimerH;
 
     // ── IMPORTANT notice row ─────────────────────────────────────────────────
-    const importantH = 20;
+    const importantH = 28;
     doc.rect(M, y, W, importantH).stroke();
     doc.font("Helvetica-Bold").fontSize(FS_DISCLAIMER).fillColor(C_BLACK);
-    doc.text("IMPORTANT:", M + 4, y + 4, { continued: true });
+    doc.text("IMPORTANT:", M + 4, y + 4, { width: 54 });
     doc.font("Helvetica").fontSize(FS_DISCLAIMER);
     doc.text(
-      " If the certificate holder is an ADDITIONAL INSURED, the policy(ies) must have ADDITIONAL INSURED provisions or be endorsed. If SUBROGATION IS WAIVED, subject to the terms and conditions of the policy, certain policies may require an endorsement. A statement on this certificate does not confer rights to the certificate holder in lieu of such endorsement(s).",
-      { width: W - 8 },
+      "If the certificate holder is an ADDITIONAL INSURED, the policy(ies) must have ADDITIONAL INSURED provisions or be endorsed. If SUBROGATION IS WAIVED, subject to the terms and conditions of the policy, certain policies may require an endorsement. A statement on this certificate does not confer rights to the certificate holder in lieu of such endorsement(s).",
+      M + 58,
+      y + 4,
+      { width: W - 62, height: importantH - 8 },
     );
     y += importantH;
 
@@ -350,21 +377,31 @@ export async function generateCoiPdf(data: CoiData): Promise<Buffer> {
       py += 10;
     }
     doc.font("Helvetica").fontSize(FS_LABEL).fillColor(C_GRAY);
-    if (data.producerContact) { doc.text(`Contact: ${data.producerContact}`, M + 3, py, { width: producerW - 6 }); py += 8; }
     if (data.producerLicense) { doc.text(`License #: ${data.producerLicense}`, M + 3, py, { width: producerW - 6 }); py += 8; }
-    if (data.producerEmail) { doc.text(`Email: ${data.producerEmail}`, M + 3, py, { width: producerW - 6 }); py += 8; }
-    if (data.producerPhone) { doc.text(`Phone: ${data.producerPhone}`, M + 3, py, { width: producerW - 6 }); }
+    if (data.producerAddress) { doc.text(formatAddress(data.producerAddress), M + 3, py, { width: producerW - 6, height: 40 }); }
 
     // Contact info box (right side)
     const contactX = M + producerW;
     const contactW = W - producerW;
     doc.rect(contactX, y, contactW, producerH).stroke();
     sectionLabel(doc, "CONTACT NAME:", contactX + 2, y + 2);
+    if (data.producerContact) {
+      doc.font("Helvetica").fontSize(FS_LABEL).fillColor(C_BLACK);
+      doc.text(data.producerContact, contactX + 56, y + 2, { width: contactW - 60, height: 10 });
+    }
     sectionLabel(doc, "PHONE", contactX + 2, y + 18);
     doc.fontSize(FS_SMALL).text("(A/C, No, Ext):", contactX + 2, y + 26, { width: contactW / 2 - 4 });
+    if (data.producerPhone) {
+      doc.font("Helvetica").fontSize(FS_LABEL).fillColor(C_BLACK);
+      doc.text(data.producerPhone, contactX + 54, y + 20, { width: contactW / 2 - 58, height: 10 });
+    }
     sectionLabel(doc, "FAX", contactX + contactW / 2, y + 18);
     doc.fontSize(FS_SMALL).text("(A/C, No):", contactX + contactW / 2, y + 26, { width: contactW / 2 - 4 });
     sectionLabel(doc, "E-MAIL ADDRESS:", contactX + 2, y + 42);
+    if (data.producerEmail) {
+      doc.font("Helvetica").fontSize(FS_LABEL).fillColor(C_BLACK);
+      doc.text(data.producerEmail, contactX + 66, y + 42, { width: contactW - 70, height: 10 });
+    }
     sectionLabel(doc, "INSURER(S) AFFORDING COVERAGE", contactX + 2, y + 56);
     sectionLabel(doc, "NAIC #", M + W - 36, y + 56);
     y += producerH;
@@ -417,7 +454,7 @@ export async function generateCoiPdf(data: CoiData): Promise<Buffer> {
     y += covHdrH;
 
     // ── Coverage instruction text ─────────────────────────────────────────────
-    const instrH = 18;
+    const instrH = 28;
     doc.rect(M, y, W, instrH).stroke();
     doc.font("Helvetica").fontSize(FS_DISCLAIMER).fillColor(C_BLACK);
     doc.text(
@@ -480,7 +517,7 @@ export async function generateCoiPdf(data: CoiData): Promise<Buffer> {
     // ── Footer ────────────────────────────────────────────────────────────────
     doc.font("Helvetica").fontSize(FS_SMALL).fillColor(C_GRAY);
     doc.text(
-      "ACORD 25 (2016/03)  |  Generated by Glass — claritylabs.dev  |  © 1988-2016 ACORD CORPORATION. All rights reserved.",
+      "Generated using Glass from Clarity Labs",
       M, y + 6, { width: W, align: "center" },
     );
 
@@ -521,8 +558,17 @@ function drawCoverageRow(
   cols: Column[],
   M: number,
 ): number {
-  const baseH = Math.max(38, 12 * Math.ceil((cov.limits.length + 1) / 1));
-  const rowH = Math.min(baseH, 14 + cov.limits.length * 11);
+  const limitRowHeights = (cov.limits.length ? cov.limits : [{ label: "", value: "" }])
+    .map((lim) => lim.label.includes("\n") || lim.value.includes("\n") ? 17 : 12);
+  const limitsH = limitRowHeights.reduce((sum, h) => sum + h, 0) + 6;
+  const typeLineCount = cov.type.split("\n").length;
+  const typeH =
+    7 +
+    typeLineCount * 8 +
+    (cov.coverageForm ? 10 : 0) +
+    (cov.typeNotes ? 10 : 0) +
+    (cov.insurerLetter ? 10 : 0);
+  const rowH = Math.max(44, limitsH, typeH);
 
   // Draw cell borders
   let cx = M;
@@ -535,19 +581,23 @@ function drawCoverageRow(
   // TYPE OF INSURANCE column
   const typeCol = cols[0];
   doc.font("Helvetica-Bold").fontSize(FS_LABEL).fillColor(C_BLACK);
-  doc.text(cov.type, cx + 2, y + 3, { width: typeCol.w - 4 });
+  let ty = y + 3;
+  doc.text(cov.type, cx + 2, ty, { width: typeCol.w - 4, height: rowH - 6 });
+  ty += cov.type.split("\n").length * 8 + 2;
   if (cov.coverageForm) {
     doc.font("Helvetica").fontSize(FS_SMALL).fillColor(C_GRAY);
-    const occLabel = cov.coverageForm === "claims_made" ? "☑ CLAIMS-MADE  □ OCCUR" : "□ CLAIMS-MADE  ☑ OCCUR";
-    doc.text(occLabel, cx + 2, y + 14, { width: typeCol.w - 4 });
+    const occLabel = cov.coverageForm === "claims_made" ? "[X] CLAIMS-MADE  [ ] OCCUR" : "[ ] CLAIMS-MADE  [X] OCCUR";
+    doc.text(occLabel, cx + 2, ty, { width: typeCol.w - 4, height: 9 });
+    ty += 10;
   }
   if (cov.typeNotes) {
     doc.font("Helvetica").fontSize(FS_SMALL).fillColor(C_GRAY);
-    doc.text(cov.typeNotes, cx + 2, y + (cov.coverageForm ? 22 : 14), { width: typeCol.w - 4 });
+    doc.text(cov.typeNotes, cx + 2, ty, { width: typeCol.w - 4, height: 9 });
+    ty += 10;
   }
   if (cov.insurerLetter) {
     doc.font("Helvetica").fontSize(FS_SMALL).fillColor(C_GRAY);
-    doc.text(`Insurer ${cov.insurerLetter}`, cx + 2, y + rowH - 10, { width: typeCol.w - 4 });
+    doc.text(`Insurer ${cov.insurerLetter}`, cx + 2, Math.min(ty, y + rowH - 10), { width: typeCol.w - 4, height: 9 });
   }
   cx += typeCol.w;
 
@@ -578,16 +628,19 @@ function drawCoverageRow(
   const limLabelW = Math.round(limCol.w * 0.62);
   const limValueW = limCol.w - limLabelW;
   let ly = y + 3;
-  for (const lim of cov.limits) {
+  const limitRows = cov.limits.length ? cov.limits : [{ label: "", value: "" }];
+  for (let i = 0; i < limitRows.length; i++) {
+    const lim = limitRows[i];
+    const limitRowH = limitRowHeights[i] ?? 12;
     // label cell
-    doc.rect(cx, ly - 1, limLabelW, 11).stroke();
+    doc.rect(cx, ly - 1, limLabelW, limitRowH).stroke();
     doc.font("Helvetica").fontSize(FS_SMALL).fillColor(C_GRAY);
-    doc.text(lim.label, cx + 2, ly, { width: limLabelW - 4 });
+    doc.text(lim.label, cx + 2, ly, { width: limLabelW - 4, height: limitRowH - 2 });
     // value cell
-    doc.rect(cx + limLabelW, ly - 1, limValueW, 11).stroke();
+    doc.rect(cx + limLabelW, ly - 1, limValueW, limitRowH).stroke();
     doc.font("Helvetica-Bold").fontSize(FS_LABEL).fillColor(C_BLACK);
-    doc.text(lim.value, cx + limLabelW + 2, ly, { width: limValueW - 4 });
-    ly += 11;
+    doc.text(lim.value, cx + limLabelW + 2, ly, { width: limValueW - 4, height: limitRowH - 2 });
+    ly += limitRowH;
     if (ly > y + rowH - 2) break; // don't overflow
   }
 

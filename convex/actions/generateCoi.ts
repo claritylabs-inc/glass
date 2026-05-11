@@ -31,30 +31,12 @@ export const run = internalAction({
   },
   handler: async (ctx, args): Promise<string | null> => {
     try {
-      const [policy, org] = await Promise.all([
-        ctx.runQuery(internal.policies.getInternal, { id: args.policyId }),
-        ctx.runQuery(internal.orgs.getInternal, { id: args.orgId }),
-      ]);
+      const policy = await ctx.runQuery(internal.policies.getInternal, { id: args.policyId });
 
       if (!policy) throw new Error("Policy not found");
+      if (policy.orgId !== args.orgId) throw new Error("Policy not found for organization");
 
-      let broker: { name?: string; contactName?: string; contactEmail?: string } | undefined;
-      if (org?.type === "client" && org.brokerOrgId) {
-        const brokerOrg = await ctx.runQuery(internal.orgs.getInternal, { id: org.brokerOrgId });
-        if (brokerOrg) {
-          broker = { name: brokerOrg.name };
-          if (brokerOrg.primaryInsuranceContactId) {
-            const contact = await ctx.runQuery(internal.users.getInternal, {
-              id: brokerOrg.primaryInsuranceContactId,
-            });
-            if (contact) {
-              broker.contactName = contact.name;
-              broker.contactEmail = contact.email;
-            }
-          }
-        }
-      }
-      const coiData = policyToCoiData(policy, { ...(org ?? {}), broker });
+      const coiData = policyToCoiData(policy);
       if (args.certificateHolder) {
         coiData.certificateHolder = args.certificateHolder;
       }
