@@ -19,7 +19,7 @@ import { Webhook } from "svix";
 import { buildDocumentContext, buildConversationMemoryContext, buildIntelligenceContext } from "../lib/agentPrompts";
 import { Id } from "../_generated/dataModel";
 import { sendResendEmail, getAgentDomain, getAuthFromAddress } from "../lib/resend";
-import { buildUnrecognizedInboundEmail } from "../lib/emailTemplate";
+import { buildGlassEmailIconHtml, buildUnrecognizedInboundEmail } from "../lib/emailTemplate";
 import {
   buildEmailPolicySources,
   buildPolicySourcesHtml,
@@ -190,7 +190,7 @@ function buildSignature(agentEmail: string, broker?: BrokerBranding): { text: st
 
   const logoHtml = hasBroker && broker?.logoUrl
     ? `<img src="${broker.logoUrl}" alt="" width="20" height="20" style="display:inline-block;vertical-align:middle;width:20px;height:20px;border-radius:4px;margin-right:8px;object-fit:cover;border:0;" />`
-    : `<span style="color:#A0D2FA;font-size:15px;font-family:'Segoe UI Symbol','Apple Symbols',sans-serif;margin-right:6px">&#x2733;&#xFE0E;</span>`;
+    : buildGlassEmailIconHtml({ size: 20, borderRadius: 4, margin: "0 8px 0 0" });
 
   const html = [
     `<br><p style="color:#999;font-size:13px;margin:0">—</p>`,

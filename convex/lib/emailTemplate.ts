@@ -20,6 +20,20 @@ export function absoluteEmailAssetUrl(assetPath: string): string {
   return absoluteLogoUrl(assetPath, EMAIL_ASSET_BASE_URL);
 }
 
+/** Hosted Glass mark used where the app LogoIcon would normally appear. */
+export function buildGlassEmailIconHtml({
+  size = 20,
+  borderRadius = 4,
+  margin = "0 8px 0 0",
+}: {
+  size?: number;
+  borderRadius?: number;
+  margin?: string;
+} = {}): string {
+  const iconUrl = absoluteEmailAssetUrl("/glass-icon.jpg");
+  return `<img src="${iconUrl}" alt="" width="${size}" height="${size}" style="display:inline-block;vertical-align:middle;width:${size}px;height:${size}px;border-radius:${borderRadius}px;margin:${margin};object-fit:cover;border:0;" />`;
+}
+
 function escapeHtml(value: string): string {
   return value
     .replace(/&/g, "&amp;")
@@ -35,7 +49,9 @@ export function buildEmailLogoHtml(branding: BrandingContext = getDefaultBrandin
   const src = /^https?:\/\//i.test(branding.logoUrl)
     ? branding.logoUrl
     : absoluteEmailAssetUrl(branding.logoUrl);
-  const mark = `<img src="${src}" alt="" width="28" height="28" style="display:inline-block;vertical-align:middle;width:28px;height:28px;border-radius:7px;margin-right:10px;object-fit:cover;border:0;" />`;
+  const mark = isDefaultBrand
+    ? buildGlassEmailIconHtml({ size: 28, borderRadius: 7, margin: "0 10px 0 0" })
+    : `<img src="${src}" alt="" width="28" height="28" style="display:inline-block;vertical-align:middle;width:28px;height:28px;border-radius:7px;margin-right:10px;object-fit:cover;border:0;" />`;
   const suffix = isDefaultBrand
     ? `<span style="font-weight:400;color:#6b7280;vertical-align:middle;margin-left:6px;">from Clarity Labs</span>`
     : "";
@@ -53,13 +69,12 @@ export function buildEmailLogoHtml(branding: BrandingContext = getDefaultBrandin
 
 /** "Powered by {icon} Glass from Clarity Labs" platform attribution. */
 export function buildPlatformFooterHtml(siteUrl: string = SITE_URL): string {
-  const iconUrl = absoluteEmailAssetUrl("/glass-icon.jpg");
   return `
 <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;">
   <tr>
     <td align="center" style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:12px;color:#9ca3af;line-height:1;">
       <span style="vertical-align:middle;">Powered by</span>
-      <img src="${iconUrl}" alt="" width="14" height="14" style="display:inline-block;vertical-align:middle;width:14px;height:14px;border-radius:3px;margin:0 6px 0 8px;object-fit:cover;border:0;" />
+      ${buildGlassEmailIconHtml({ size: 14, borderRadius: 3, margin: "0 6px 0 8px" })}
       <a href="${siteUrl}" style="color:#000000;font-weight:600;text-decoration:none;vertical-align:middle;">Glass</a>
       <span style="vertical-align:middle;margin-left:4px;">from Clarity Labs</span>
     </td>

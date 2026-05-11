@@ -36,6 +36,8 @@ describe("email signatures", () => {
 
     expect(signature.text).not.toContain("powered by Glass from Clarity Labs");
     expect(signature.html).not.toContain("powered by Glass from Clarity Labs");
+    expect(signature.html).not.toContain("&#x2733;");
+    expect(signature.html).toContain("/glass-icon.jpg");
   });
 
   it("keeps powered-by text for white-labeled broker signatures", () => {
