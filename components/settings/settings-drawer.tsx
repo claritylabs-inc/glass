@@ -62,7 +62,9 @@ export function SettingsDrawer({
           initial={{ width: 0 }}
           animate={{ width }}
           exit={{ width: 0 }}
-          transition={isDraggingState ? { duration: 0 } : { duration: 0.4, ease: EASE }}
+          transition={
+            isDraggingState ? { duration: 0 } : { duration: 0.4, ease: EASE }
+          }
           className="max-lg:!fixed max-lg:!inset-0 max-lg:!z-50 max-lg:!w-full flex shrink-0 overflow-hidden h-full relative"
         >
           <div
@@ -97,7 +99,7 @@ export function SettingsDrawer({
             </div>
 
             {footer && (
-              <div className="border-t border-foreground/6 px-4 py-3 flex items-center justify-end gap-2 shrink-0">
+              <div className="border-t border-foreground/6 px-4 py-3 flex flex-col-reverse items-stretch gap-2 shrink-0 lg:flex-row lg:items-center lg:justify-end [&>button]:w-full [&>button]:min-h-8 [&>button]:py-2 lg:[&>button]:w-auto lg:[&>button]:min-h-7 lg:[&>button]:py-1">
                 {footer}
               </div>
             )}
