@@ -467,6 +467,7 @@ export const processInbound = internalAction({
       buildChannelInstructions({
         platform: "imessage",
         canSendEmail: emailIdentity.canSend,
+        emailUnavailableReason: emailIdentity.reason,
         autoSendEmails: org.autoSendEmails === true,
       }) +
       "\n\n" +

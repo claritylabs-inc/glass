@@ -16,6 +16,26 @@ describe("email concision instructions", () => {
     expect(instructions).toContain("Do not end with open-ended offers");
   });
 
+  it("states iMessage email capability explicitly", () => {
+    const available = buildChannelInstructions({
+      platform: "imessage",
+      canSendEmail: true,
+      autoSendEmails: false,
+    });
+    const unavailable = buildChannelInstructions({
+      platform: "imessage",
+      canSendEmail: false,
+      emailUnavailableReason: "No Glass agent email handle is configured.",
+    });
+
+    expect(available).toContain("Email sending is available in this channel.");
+    expect(available).toContain("Do not infer capability from older conversation history.");
+    expect(available).toContain('draft first and ask "Ready to send?"');
+    expect(unavailable).toContain(
+      "Email sending is unavailable in this channel: No Glass agent email handle is configured.",
+    );
+  });
+
   it("routes inbound email through the email_reply model route", () => {
     const source = readFileSync(
       join(__dirname, "..", "convex/actions/handleInboundEmail.ts"),

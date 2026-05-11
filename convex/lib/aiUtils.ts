@@ -410,10 +410,14 @@ export function buildChannelInstructions(params: {
   platform: "web" | "email" | "imessage";
   isMixedThread?: boolean;
   canSendEmail?: boolean;
+  emailUnavailableReason?: string;
   autoSendEmails?: boolean;
   effectiveMode?: "direct" | "cc" | "forward";
 }): string {
   const autoSend = params.autoSendEmails === true;
+  const emailAvailability = params.canSendEmail
+    ? `Email sending is available in this channel.`
+    : `Email sending is unavailable in this channel${params.emailUnavailableReason ? `: ${params.emailUnavailableReason}` : "."}`;
   const sendRules = autoSend
     ? `- When a team member asks you to send/email/forward an insurance-related message, use the validated email-sending path or output the exact send marker required by the current channel. Do not draft first when auto-send is enabled.`
     : `- When a team member asks you to send/email/forward an insurance-related message, draft first and ask "Ready to send?" Do not send until they explicitly approve.`;
@@ -449,7 +453,11 @@ iMESSAGE MODE:
 - If you checked policy data or used tools, briefly say what you found, not how you worked.
 - If a complete answer requires more detail, give the essential fact and end with "Want more detail?" or "Ask me to expand."
 - For multi-part questions, answer the most important part first and ask if they want the rest.
-- If the user asks you to draft, send, forward, or attach documents to an email, use the email expert tool when available. If email sending is unavailable, say what is missing.
+- ${emailAvailability}
+- If the user asks whether you can send email, answer from the email availability above. Do not infer capability from older conversation history.
+- If the user asks you to draft, send, forward, or attach documents to an email and email sending is available, use the email expert tool.
+- If email sending is unavailable, say what is missing.
+${params.canSendEmail ? sendRules : ""}
 - Never include email-style greetings or sign-offs.`;
   }
 
