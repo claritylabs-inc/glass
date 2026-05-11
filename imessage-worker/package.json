@@ -14,7 +14,7 @@
     "dev:terminal": "npm run build && npm run start:terminal"
   },
   "dependencies": {
-    "spectrum-ts": "latest"
+    "spectrum-ts": "^1.5.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
