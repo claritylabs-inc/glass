@@ -118,8 +118,12 @@ function isMissingApiKeyError(err: unknown): boolean {
   return /api key is missing/i.test(message);
 }
 
-function isFallbackModel(modelId: string): boolean {
-  return modelId.includes(FALLBACK_MODEL.model) || modelId.includes("claude-haiku");
+function isTerminalModelForFallback(modelId: string): boolean {
+  return (
+    modelId.includes(FALLBACK_MODEL.model) ||
+    modelId.includes("gpt-5.4-nano") ||
+    modelId.includes("claude-haiku")
+  );
 }
 
 export function getProviderOptionsForTask(task: ModelTask): ProviderOptions | undefined {
@@ -230,8 +234,11 @@ export async function generateTextWithFallback(
   } catch (err: unknown) {
     const modelId = (options.model as Record<string, unknown>)?.modelId as string || "unknown";
     if (isMissingApiKeyError(err)) throw err;
-    // If already on a fallback model, don't retry
-    if (isFallbackModel(modelId)) throw err;
+    // Do not retry models that are already on the low-cost/low-capacity path.
+    // In particular, extraction runs on gpt-5.4-nano by design; escalating a
+    // failed extraction call to a larger fallback model adds cost and can reintroduce
+    // the over-optimization/overfitting behavior the extraction route avoids.
+    if (isTerminalModelForFallback(modelId)) throw err;
     console.warn(
       `Primary model (${modelId}) failed: ${err instanceof Error ? err.message : String(err)}. Retrying with ${FALLBACK_MODEL.model}.`,
     );
@@ -255,7 +262,7 @@ export async function generateStructuredWithFallback(
   } catch (err: unknown) {
     const modelId = (options.model as Record<string, unknown>)?.modelId as string || "unknown";
     if (isMissingApiKeyError(err)) throw err;
-    if (isFallbackModel(modelId)) throw err;
+    if (isTerminalModelForFallback(modelId)) throw err;
     console.warn(
       `Primary model (${modelId}) failed for structured output: ${err instanceof Error ? err.message : String(err)}. Retrying with ${FALLBACK_MODEL.model}.`,
     );

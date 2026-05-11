@@ -65,7 +65,7 @@ export function buildExtractor(opts?: {
     : undefined;
   const generateText = makeGenerateText("extraction", routing);
   const generateObject = makeGenerateObject("extraction", routing);
-  const concurrency = readBoundedIntEnv("EXTRACTION_CONCURRENCY", 4, 1, 8);
+  const concurrency = readBoundedIntEnv("EXTRACTION_CONCURRENCY", 6, 1, 8);
   const throwIfCancelled = async () => {
     if (await opts?.shouldCancel?.()) {
       throw new Error("Cancelled by user");
@@ -88,7 +88,7 @@ export function buildExtractor(opts?: {
     concurrency,
     pageMapConcurrency: readBoundedIntEnv(
       "EXTRACTION_PAGE_MAP_CONCURRENCY",
-      Math.min(concurrency, 3),
+      concurrency,
       1,
       8,
     ),
@@ -100,12 +100,15 @@ export function buildExtractor(opts?: {
     ),
     formatConcurrency: readBoundedIntEnv(
       "EXTRACTION_FORMAT_CONCURRENCY",
-      Math.min(concurrency, 2),
+      concurrency,
       1,
       8,
     ),
-    maxReviewRounds: readBoundedIntEnv("EXTRACTION_MAX_REVIEW_ROUNDS", 1, 0, 2),
-    reviewMode: readReviewModeEnv("EXTRACTION_REVIEW_MODE", "auto"),
+    // Review is a second model pass over already-extracted data. Keep it opt-in
+    // so the default pipeline avoids redundant optimization passes that slow
+    // extraction and can collapse nuanced source-backed results.
+    maxReviewRounds: readBoundedIntEnv("EXTRACTION_MAX_REVIEW_ROUNDS", 0, 0, 2),
+    reviewMode: readReviewModeEnv("EXTRACTION_REVIEW_MODE", "skip"),
     log: opts?.log,
     onProgress: opts?.onProgress,
     onTokenUsage: opts?.onTokenUsage,
