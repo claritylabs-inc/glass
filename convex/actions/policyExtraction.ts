@@ -143,39 +143,68 @@ async function loadPdfBytes(
   return new Uint8Array(arrayBuffer);
 }
 
-async function storeClSdkCheckpoint(
+async function storeJsonArtifact(
   ctx: ActionCtx,
-  checkpoint: PipelineCheckpoint<ExtractionState>,
+  jobId: string,
+  kind: "cl_sdk_checkpoint" | "embedding_payload",
+  value: unknown,
 ): Promise<string> {
-  const blob = new Blob([JSON.stringify(checkpoint)], {
+  const blob = new Blob([JSON.stringify(value)], {
     type: "application/json",
   });
-  return String(await ctx.storage.store(blob));
+  const storageId = String(await ctx.storage.store(blob));
+  await ctx.runMutation(internal.policies.pipelineSaveArtifact, {
+    jobId,
+    kind,
+    storageId: storageId as Id<"_storage">,
+  });
+  return storageId;
+}
+
+async function loadJsonArtifact<T>(
+  ctx: ActionCtx,
+  storageId: string | undefined,
+): Promise<T | undefined> {
+  if (!storageId) return undefined;
+  const blob = await ctx.storage.get(storageId as Id<"_storage">);
+  if (!blob) return undefined;
+  return JSON.parse(await blob.text()) as T;
+}
+
+async function getLatestArtifactStorageId(
+  ctx: ActionCtx,
+  jobId: string,
+  kind: "cl_sdk_checkpoint" | "embedding_payload",
+): Promise<string | undefined> {
+  const artifact = await ctx.runQuery(internal.policies.pipelineGetArtifact, {
+    jobId,
+    kind,
+  }) as { storageId?: string } | null;
+  return artifact?.storageId ? String(artifact.storageId) : undefined;
 }
 
 async function loadClSdkCheckpoint(
   ctx: ActionCtx,
+  jobId: string,
   state: PolicyExtractionState,
 ): Promise<PipelineCheckpoint<ExtractionState> | undefined> {
   if (state.clSdkCheckpoint) return state.clSdkCheckpoint;
-  if (!state.clSdkCheckpointFileId) return undefined;
-  const blob = await ctx.storage.get(state.clSdkCheckpointFileId as Id<"_storage">);
-  if (!blob) return undefined;
-  return JSON.parse(await blob.text()) as PipelineCheckpoint<ExtractionState>;
+  const storageId = state.clSdkCheckpointFileId
+    ?? await getLatestArtifactStorageId(ctx, jobId, "cl_sdk_checkpoint");
+  return await loadJsonArtifact<PipelineCheckpoint<ExtractionState>>(ctx, storageId);
 }
 
 async function storeEmbeddingPayload(
   ctx: ActionCtx,
+  jobId: string,
   payload: EmbeddingPayload,
 ): Promise<string> {
-  const blob = new Blob([JSON.stringify(payload)], {
-    type: "application/json",
-  });
-  return String(await ctx.storage.store(blob));
+  return await storeJsonArtifact(ctx, jobId, "embedding_payload", payload);
 }
 
 async function loadEmbeddingPayload(
   ctx: ActionCtx,
+  jobId: string,
   state: PolicyExtractionState,
 ): Promise<EmbeddingPayload> {
   if (
@@ -189,10 +218,20 @@ async function loadEmbeddingPayload(
       sourceChunksForEmbedding: state.sourceChunksForEmbedding,
     };
   }
-  if (!state.embeddingPayloadFileId) return {};
-  const blob = await ctx.storage.get(state.embeddingPayloadFileId as Id<"_storage">);
-  if (!blob) return {};
-  return JSON.parse(await blob.text()) as EmbeddingPayload;
+  const storageId = state.embeddingPayloadFileId
+    ?? await getLatestArtifactStorageId(ctx, jobId, "embedding_payload");
+  return await loadJsonArtifact<EmbeddingPayload>(ctx, storageId) ?? {};
+}
+
+async function clearArtifacts(
+  ctx: ActionCtx,
+  jobId: string,
+  kind?: "cl_sdk_checkpoint" | "embedding_payload",
+): Promise<void> {
+  await ctx.runMutation(internal.policies.pipelineClearArtifacts, {
+    jobId,
+    ...(kind ? { kind } : {}),
+  });
 }
 
 function stripLease(
@@ -476,7 +515,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
       if (!pdfBytes) return { kind: "error", error: "File not found in storage" };
 
       const policyId = pCtx.jobId;
-      const clSdkCheckpoint = await loadClSdkCheckpoint(convexCtx, state);
+      const clSdkCheckpoint = await loadClSdkCheckpoint(convexCtx, policyId, state);
       const pdfSource = await buildPdfSourceSpans({
         pdfBytes,
         documentId: policyId,
@@ -502,7 +541,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
           }
           // Route cl-sdk's checkpoint through cl-pipelines' saveState, storing
           // the large checkpoint payload outside the hot runtime document.
-          const checkpointFileId = await storeClSdkCheckpoint(convexCtx, cp);
+          const checkpointFileId = await storeJsonArtifact(convexCtx, policyId, "cl_sdk_checkpoint", cp);
           await pCtx.saveState({
             ...state,
             clSdkCheckpoint: undefined,
@@ -541,7 +580,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
       }
 
       if (result.checkpoint) {
-        const checkpointFileId = await storeClSdkCheckpoint(convexCtx, result.checkpoint);
+        const checkpointFileId = await storeJsonArtifact(convexCtx, policyId, "cl_sdk_checkpoint", result.checkpoint);
         await pCtx.saveState({
           ...state,
           clSdkCheckpoint: undefined,
@@ -613,7 +652,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         );
       }
 
-      const embeddingPayloadFileId = await storeEmbeddingPayload(convexCtx, {
+      const embeddingPayloadFileId = await storeEmbeddingPayload(convexCtx, policyId, {
         documentChunksForEmbedding: chunks,
         sourceSpansForStorage: sourceSpans as PolicyExtractionState["sourceSpansForStorage"],
         sourceChunksForEmbedding: sourceChunks as PolicyExtractionState["sourceChunksForEmbedding"],
@@ -644,7 +683,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         return { kind: "error", error: CANCELLED_BY_USER };
       }
 
-      const embeddingPayload = await loadEmbeddingPayload(convexCtx, state);
+      const embeddingPayload = await loadEmbeddingPayload(convexCtx, policyId, state);
       const chunks = embeddingPayload.documentChunksForEmbedding;
       const sourceSpans = embeddingPayload.sourceSpansForStorage;
       const sourceChunks = embeddingPayload.sourceChunksForEmbedding;
@@ -754,6 +793,9 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
           await pCtx.log(`Stored ${embeddedSourceChunks}/${sourceChunks.length} source chunks`);
         }
       }
+
+      await clearArtifacts(convexCtx, policyId, "embedding_payload");
+      await clearArtifacts(convexCtx, policyId, "cl_sdk_checkpoint");
 
       // Drop the raw chunks from state after durable storage.
       const {
@@ -868,6 +910,7 @@ export const startPolicyExtractionFromUpload = internalAction({
     await ctx.runMutation(internal.policies.pipelineClearLog, {
       jobId: String(policyId),
     });
+    await clearArtifacts(ctx, String(policyId));
     const phases = makePhases(ctx);
     await runPipeline<PolicyExtractionState>({
       jobId: String(policyId),
@@ -908,6 +951,7 @@ export const retryPolicyExtraction = internalAction({
       await ctx.runMutation(internal.policies.pipelineClearLog, {
         jobId: String(policyId),
       });
+      await clearArtifacts(ctx, String(policyId));
     }
 
     // Fetch policy to recover initial state for "full" restart
