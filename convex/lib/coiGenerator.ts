@@ -464,7 +464,8 @@ const FS_DISCLAIMER = 5.5;
 
 // Colors
 const C_BLACK = "#000000";
-const C_GRAY = "#666666";
+const C_LIGHT_GRAY = "#9ca3af";
+const C_GLASS_BLUE = "#A0D2FA";
 const C_HEADER_BG = "#d0d0d0";
 const C_LABEL_BG = "#e8e8e8";
 
@@ -540,8 +541,7 @@ export async function generateCoiPdf(data: CoiData): Promise<Buffer> {
     sectionLabel(doc, "AUTHORIZED REPRESENTATIVE", M + bottomW + 5, y + bottomH - 16);
     y += bottomH + 6;
 
-    doc.font("Helvetica").fontSize(FS_SMALL).fillColor(C_GRAY);
-    doc.text("Generated using Glass from Clarity Labs", M, y, { width: W, align: "center" });
+    drawGeneratedUsingLockup(doc, M, y, W);
 
     doc.end();
   });
@@ -666,6 +666,52 @@ function textBlockHeight(
   if (!value) return 0;
   doc.font(bold ? "Helvetica-Bold" : "Helvetica").fontSize(fontSize);
   return doc.heightOfString(value, { width });
+}
+
+function drawGeneratedUsingLockup(doc: PDFKit.PDFDocument, x: number, y: number, width: number) {
+  const prefix = "Generated using";
+  const glass = "Glass";
+  const suffix = "from Clarity Labs";
+  const iconSize = 10;
+  const gap = 4;
+  const fontSize = FS_SMALL;
+
+  doc.font("Helvetica").fontSize(fontSize);
+  const prefixW = doc.widthOfString(prefix);
+  doc.font("Helvetica-Bold").fontSize(fontSize);
+  const glassW = doc.widthOfString(glass);
+  doc.font("Helvetica").fontSize(fontSize);
+  const suffixW = doc.widthOfString(suffix);
+  const totalW = prefixW + gap + iconSize + gap + glassW + gap + suffixW;
+  let cursor = x + (width - totalW) / 2;
+
+  doc.font("Helvetica").fontSize(fontSize).fillColor(C_LIGHT_GRAY);
+  doc.text(prefix, cursor, y, { width: prefixW, lineBreak: false });
+  cursor += prefixW + gap;
+
+  drawGlassIcon(doc, cursor, y - 1, iconSize);
+  cursor += iconSize + gap;
+
+  doc.font("Helvetica-Bold").fontSize(fontSize).fillColor(C_BLACK);
+  doc.text(glass, cursor, y, { width: glassW, lineBreak: false });
+  cursor += glassW + gap;
+
+  doc.font("Helvetica").fontSize(fontSize).fillColor(C_LIGHT_GRAY);
+  doc.text(suffix, cursor, y, { width: suffixW, lineBreak: false });
+}
+
+function drawGlassIcon(doc: PDFKit.PDFDocument, x: number, y: number, size: number) {
+  const radius = size / 2;
+  const cx = x + radius;
+  const cy = y + radius;
+
+  doc.save();
+  doc.lineWidth(0.8).strokeColor(C_GLASS_BLUE).fillColor(C_GLASS_BLUE);
+  doc.circle(cx, cy, radius - 0.4).strokeOpacity(0.7).stroke();
+  doc.circle(cx, cy, radius * 0.28).fillOpacity(0.9).fill();
+  doc.moveTo(cx - radius * 0.55, cy).lineTo(cx + radius * 0.55, cy).strokeOpacity(0.45).stroke();
+  doc.moveTo(cx, cy - radius * 0.55).lineTo(cx, cy + radius * 0.55).strokeOpacity(0.45).stroke();
+  doc.restore();
 }
 
 function sectionLabel(doc: PDFKit.PDFDocument, text: string, x: number, y: number) {

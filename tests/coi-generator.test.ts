@@ -93,7 +93,9 @@ describe("COI PDF footer copy", () => {
   it("uses Glass attribution without ACORD marks or the old website", () => {
     const source = readFileSync(join(ROOT, "convex/lib/coiGenerator.ts"), "utf-8");
 
-    expect(source).toContain("Generated using Glass from Clarity Labs");
+    expect(source).toContain("Generated using");
+    expect(source).toContain("Glass");
+    expect(source).toContain("from Clarity Labs");
     expect(source).not.toContain("ACORD 25 (2016/03)  |  Generated");
     expect(source).not.toContain("claritylabs.dev");
   });
