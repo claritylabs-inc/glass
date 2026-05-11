@@ -3,7 +3,7 @@
 import Markdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import dayjs from "dayjs";
-import { Asterisk, Loader2, AlertCircle, MessageSquare } from "lucide-react";
+import { Asterisk, Loader2, AlertCircle } from "lucide-react";
 import { Id } from "@/convex/_generated/dataModel";
 import { ContextReferenceCard } from "@/components/context-reference-card";
 

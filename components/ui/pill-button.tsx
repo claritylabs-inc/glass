@@ -18,7 +18,7 @@ interface PillButtonProps
 
 const EASE_OUT = [0.33, 1, 0.68, 1] as const;
 const DURATION = 0.32;
-const TRANSPARENT_ACCENT = "rgba(240, 238, 234, 0)";
+const TRANSPARENT_ACCENT = "transparent";
 
 const variantConfig = {
   primary: {

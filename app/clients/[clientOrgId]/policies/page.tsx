@@ -49,8 +49,7 @@ export default function ClientPoliciesPage() {
   }, [setActions, label]);
 
   const policies = useQuery(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (api as any).policies.listForBroker,
+    api.policies.listForBroker,
     clientOrgId
       ? {
           clientOrgId: clientOrgId as Id<"organizations">,
@@ -60,8 +59,7 @@ export default function ClientPoliciesPage() {
   );
 
   const generateUploadUrl = useMutation(api.policies.generateUploadUrl);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const createBrokerUpload = useMutation((api as any).policies.createBrokerUpload);
+  const createBrokerUpload = useMutation(api.policies.createBrokerUpload);
   const extractFromUpload = useAction(api.actions.extractFromUpload.extractFromUpload);
 
   const uploadStorage = useCallback(
@@ -91,7 +89,7 @@ export default function ClientPoliciesPage() {
         }
         const policyId = (await createBrokerUpload({
           clientOrgId: clientOrgId as Id<"organizations">,
-          fileId: storageIds[0],
+          fileId: storageIds[0] as Id<"_storage">,
           fileName: files[0].name,
           documentType: docType,
         })) as Id<"policies">;
@@ -138,8 +136,7 @@ export default function ClientPoliciesPage() {
   }, [setRightPanel, uploaderOpen, uploading, docType, handleUpload]);
 
   const isLoading = policies === undefined;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const rows = (policies as any[]) ?? [];
+  const rows = policies ?? [];
 
   return (
     <div className="space-y-4">
@@ -165,8 +162,7 @@ export default function ClientPoliciesPage() {
         />
       ) : (
         <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
-          {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-          {rows.map((p: any) => (
+          {rows.map((p) => (
             <PolicyListItem
               key={p._id}
               carrier={p.carrier}
@@ -174,7 +170,7 @@ export default function ClientPoliciesPage() {
               policyNumber={p.policyNumber}
               effectiveDate={p.effectiveDate}
               expirationDate={p.expirationDate}
-              pipelineStatus={(p as any).pipelineStatus}
+              pipelineStatus={p.pipelineStatus}
               uploadedBySide={p.uploadedBySide}
               onClick={() =>
                 router.push(`/clients/${clientOrgId}/policies/${p._id}`)

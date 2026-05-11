@@ -24,29 +24,28 @@ export function AccentColorPicker({
   /** Optional — if provided, samples colors from the site's favicon. */
   website?: string;
 }) {
-  const [sampledColors, setSampledColors] = useState<string[]>([]);
-  const [sampling, setSampling] = useState(false);
+  const domain = extractDomain(website ?? "");
+  const [sampleResult, setSampleResult] = useState<{
+    domain: string;
+    colors: string[];
+  } | null>(null);
 
   useEffect(() => {
-    const domain = extractDomain(website ?? "");
-    if (!domain) {
-      setSampledColors([]);
-      return;
-    }
+    if (!domain) return;
     let cancelled = false;
-    setSampling(true);
     const iconUrl = `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=128`;
     sampleBrandColors(iconUrl).then((colors) => {
       if (cancelled) return;
-      setSampledColors(colors);
-      setSampling(false);
+      setSampleResult({ domain, colors });
     });
     return () => {
       cancelled = true;
     };
-  }, [website]);
+  }, [domain]);
 
   const presets = BRAND_SWATCHES;
+  const sampledColors = sampleResult?.domain === domain ? sampleResult.colors : [];
+  const sampling = Boolean(domain && sampleResult?.domain !== domain);
   const isSelected = (c: string) => value.toLowerCase() === c.toLowerCase();
 
   return (

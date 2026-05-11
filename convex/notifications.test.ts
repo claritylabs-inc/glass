@@ -2,18 +2,8 @@
 import { convexTest } from "convex-test";
 import { expect, test, describe } from "vitest";
 import schema from "./schema";
-import { listInbox, markRead, unreadCount, dismiss } from "./notifications";
 
 const modules = import.meta.glob("./**/*.ts");
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const listInboxFn = listInbox as any;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const markReadFn = markRead as any;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const unreadCountFn = unreadCount as any;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const dismissFn = dismiss as any;
 
 async function seed(t: ReturnType<typeof convexTest>) {
   const orgId = await t.run(async (ctx) =>
@@ -31,7 +21,7 @@ async function seed(t: ReturnType<typeof convexTest>) {
 describe("notifications.listInbox", () => {
   test("returns notifications for the user's org sorted newest first", async () => {
     const t = convexTest(schema, modules);
-    const { orgId, userId } = await seed(t);
+    const { orgId } = await seed(t);
 
     await t.run(async (ctx) => {
       await ctx.db.insert("notifications", {

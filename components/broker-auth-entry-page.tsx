@@ -63,15 +63,10 @@ export function BrokerAuthEntryPage({
   const joiningRef = useRef(false);
 
   const [step, setStep] = useState<"email" | "code">("email");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(() => searchParams.get("email") ?? "");
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-
-  useEffect(() => {
-    const prefill = searchParams.get("email");
-    if (prefill && !email) setEmail(prefill);
-  }, [searchParams, email]);
 
   useEffect(() => {
     if (!isAuthenticated) return;

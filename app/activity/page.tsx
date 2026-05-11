@@ -10,10 +10,8 @@ import { ActivityFeed, type ActivityEvent } from "@/components/activity-feed";
 export default function PortfolioActivityPage() {
   const currentOrg = useCurrentOrg();
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const events = useQuery(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (api as any).brokerActivity.listPortfolio,
+    api.brokerActivity.listPortfolio,
     currentOrg?.isBroker
       ? { brokerOrgId: currentOrg.orgId as Id<"organizations"> }
       : "skip",

@@ -1,6 +1,6 @@
 // convex/notificationPreferences.ts
 import { v } from "convex/values";
-import { mutation, query, internalQuery, MutationCtx, QueryCtx } from "./_generated/server";
+import { mutation, query, internalQuery, MutationCtx } from "./_generated/server";
 import { requireOrgAccess } from "./lib/orgAuth";
 import { Id } from "./_generated/dataModel";
 

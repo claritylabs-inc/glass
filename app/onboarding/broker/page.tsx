@@ -14,28 +14,6 @@ import { ArrowRight, Check, Loader2, X } from "lucide-react";
 
 const WORKSPACE_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "glass.claritylabs.inc";
 
-const DARK_PRESETS = [
-  "#1E293B", // slate
-  "#1E3A5F", // deep navy
-  "#2C5282", // muted blue
-  "#2B6B6B", // teal
-  "#3F6B4B", // forest
-  "#7A5A3A", // warm taupe
-  "#8B3A3A", // rust
-  "#5B4A7B", // muted violet
-] as const;
-
-const PALE_PRESETS = [
-  "#E2E8F0", // slate pale
-  "#DBE5F1", // navy pale
-  "#D6E4F5", // blue pale
-  "#D4EAE7", // teal pale
-  "#DEEBDF", // forest pale
-  "#EFE6D7", // taupe pale
-  "#F1D9D6", // rust pale
-  "#E4DDEB", // violet pale
-] as const;
-
 function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
   const n = hex.replace(/^#/, "");
   if (!/^[0-9a-f]{6}$/i.test(n)) return null;
@@ -243,24 +221,16 @@ export default function BrokerOnboardingPage() {
       ? (parsedStep as Step)
       : 0;
 
-  const [currentStep, setCurrentStepState] = useState<Step>(initialStep);
+  const currentStep = initialStep;
 
   const setCurrentStep = useCallback(
     (next: Step) => {
-      setCurrentStepState(next);
       const params = new URLSearchParams(searchParams?.toString() ?? "");
       params.set("step", String(next));
       router.replace(`/onboarding/broker?${params.toString()}`, { scroll: false });
     },
     [router, searchParams],
   );
-
-  useEffect(() => {
-    if (stepParam == null) return;
-    if (Number.isFinite(parsedStep) && parsedStep !== currentStep) {
-      setCurrentStepState(parsedStep as Step);
-    }
-  }, [stepParam, parsedStep, currentStep]);
 
   // A user already belonging to a non-broker org can't run this wizard — the
   // broker-org creation step would be skipped and they'd finish onboarding
@@ -272,40 +242,36 @@ export default function BrokerOnboardingPage() {
       router.replace("/");
     }
   }, [viewerOrg, router]);
-  const [userName, setUserName] = useState("");
-  const [userTitle, setUserTitle] = useState("");
-  const [orgName, setOrgName] = useState("");
-  const [website, setWebsite] = useState("");
+  const [userNameInput, setUserName] = useState<string | null>(null);
+  const [userTitleInput, setUserTitle] = useState<string | null>(null);
+  const [orgNameInput, setOrgName] = useState<string | null>(null);
+  const [websiteInput, setWebsite] = useState<string | null>(null);
   const [partnerType, setPartnerType] = useState<"broker" | "program_admin" | "carrier" | "other">("broker");
-  const [slugInput, setSlugInput] = useState("");
+  const [slugInputOverride, setSlugInput] = useState<string | null>(null);
   const [debouncedSlug, setDebouncedSlug] = useState("");
-  const [brandingColor, setBrandingColor] = useState("#1E293B");
-  const [brandingTextOnAccent, setBrandingTextOnAccent] = useState<"light" | "dark" | "auto">("auto");
-  const [sampledColors, setSampledColors] = useState<string[]>([]);
-  const [samplingColor, setSamplingColor] = useState(false);
-  const [agentHandle, setAgentHandle] = useState("");
+  const [brandingColorOverride, setBrandingColor] = useState<string | null>(null);
+  const [brandingTextOnAccentOverride, setBrandingTextOnAccent] = useState<"light" | "dark" | "auto" | null>(null);
+  const [sampleResult, setSampleResult] = useState<{
+    domain: string;
+    colors: string[];
+  } | null>(null);
+  const [agentHandleOverride, setAgentHandle] = useState<string | null>(null);
   const [debouncedHandle, setDebouncedHandle] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
-    if (!viewer) return;
-    setUserName((v) => v || viewer.name || "");
-    setUserTitle((v) => v || viewer.title || "");
-    setOrgName((v) => v || "");
-    setWebsite((v) => v || "");
-  }, [viewer]);
-
-  useEffect(() => {
-    const org = viewerOrg?.org;
-    if (!org) return;
-    setOrgName((v) => v || org.name || "");
-    setWebsite((v) => v || org.website || "");
-    setSlugInput((v) => v || org.slug || "");
-    if (org.brandingColor) setBrandingColor(org.brandingColor);
-    if (org.brandingTextOnAccent) setBrandingTextOnAccent(org.brandingTextOnAccent);
-    setAgentHandle((v) => v || org.agentHandle || "");
-  }, [viewerOrg]);
+  const userName = userNameInput ?? viewer?.name ?? "";
+  const userTitle = userTitleInput ?? viewer?.title ?? "";
+  const orgName = orgNameInput ?? viewerOrg?.org?.name ?? "";
+  const website = websiteInput ?? viewerOrg?.org?.website ?? "";
+  const slugInput = slugInputOverride ?? viewerOrg?.org?.slug ?? "";
+  const agentHandle = agentHandleOverride ?? viewerOrg?.org?.agentHandle ?? "";
+  const samplingDomain = extractDomain(website);
+  const sampledColors = sampleResult?.domain === samplingDomain ? sampleResult.colors : [];
+  const brandingColor =
+    brandingColorOverride ?? viewerOrg?.org?.brandingColor ?? sampledColors[0] ?? "#1E293B";
+  const brandingTextOnAccent =
+    brandingTextOnAccentOverride ?? viewerOrg?.org?.brandingTextOnAccent ?? "auto";
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSlug(slugInput), 300);
@@ -318,26 +284,17 @@ export default function BrokerOnboardingPage() {
   }, [agentHandle]);
 
   useEffect(() => {
-    const domain = extractDomain(website);
-    if (!domain) {
-      setSampledColors([]);
-      return;
-    }
+    if (!samplingDomain) return;
     let cancelled = false;
-    setSamplingColor(true);
-    const iconUrl = `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=128`;
+    const iconUrl = `https://www.google.com/s2/favicons?domain=${encodeURIComponent(samplingDomain)}&sz=128`;
     sampleBrandColors(iconUrl).then((colors) => {
       if (cancelled) return;
-      setSampledColors(colors);
-      setSamplingColor(false);
-      if (colors[0] && !viewerOrg?.org?.brandingColor) {
-        setBrandingColor(colors[0]);
-      }
+      setSampleResult({ domain: samplingDomain, colors });
     });
     return () => {
       cancelled = true;
     };
-  }, [website, viewerOrg]);
+  }, [samplingDomain]);
 
   const slugCheck = useQuery(
     api.orgs.checkSlugAvailability,

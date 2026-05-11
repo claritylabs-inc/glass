@@ -366,7 +366,7 @@ function mcpResourceMetadataAuthenticateHeader(request: Request): string {
  * Returns 401 with WWW-Authenticate: Bearer when no auth (triggers OAuth flow in MCP clients).
  */
 async function requireMcpAuth(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   ctx: { runQuery: (...args: any[]) => Promise<any>; runMutation: (...args: any[]) => Promise<any> },
   request: Request,
 ): Promise<McpIdentity> {
@@ -513,7 +513,7 @@ http.route({
       const year = getQueryParam(request, "year");
       const type = getQueryParam(request, "type");
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
       const filtered = policies.filter((p: any) => {
         if (carrier && p.carrier !== carrier) return false;
         if (year && p.policyYear !== parseInt(year)) return false;
@@ -523,7 +523,7 @@ http.route({
 
       // Return lightweight summaries
       return jsonResponse(
-        filtered.map(// eslint-disable-next-line @typescript-eslint/no-explicit-any
+        filtered.map(
 (p: any) => ({
           _id: p._id,
           carrier: p.carrier,
@@ -561,12 +561,12 @@ http.route({
       const policy = await ctx.runQuery(internal.policies.listAllInternal, {
         orgId: identity.orgId as Id<"organizations">,
       });
-      const found = policy.find(// eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const found = policy.find(
 (p: any) => p._id === id);
       if (!found) return jsonResponse({ error: "Not found" }, 404);
 
       // Return full detail (excluding raw extraction responses)
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
       const { rawExtractionResponse: _rawExtractionResponse, rawMetadataResponse: _rawMetadataResponse, ...rest } = found;
       return jsonResponse(rest);
     } catch (e) {
@@ -591,7 +591,7 @@ http.route({
       });
 
       const query = q.toLowerCase();
-      const results = policies.filter(// eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const results = policies.filter(
 (p: any) => {
         const searchable = [
           p.carrier,
@@ -609,7 +609,7 @@ http.route({
       });
 
       return jsonResponse(
-        results.map(// eslint-disable-next-line @typescript-eslint/no-explicit-any
+        results.map(
 (p: any) => ({
           _id: p._id,
           carrier: p.carrier,
@@ -646,7 +646,7 @@ http.route({
       const byYear: Record<string, number> = {};
 
       for (const p of policies) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
         const pa = p as any;
         const types = pa.policyTypes ?? ["other"];
         for (const t of types) {
@@ -739,7 +739,7 @@ http.route({
       const carrier = getQueryParam(request, "carrier");
       const year = getQueryParam(request, "year");
 
-      const filtered = quotes.filter(// eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const filtered = quotes.filter(
 (q: any) => {
         if (carrier && q.carrier !== carrier) return false;
         if (year && q.policyYear !== parseInt(year)) return false;
@@ -747,7 +747,7 @@ http.route({
       });
 
       return jsonResponse(
-        filtered.map(// eslint-disable-next-line @typescript-eslint/no-explicit-any
+        filtered.map(
 (q: any) => ({
           _id: q._id,
           carrier: q.carrier,
@@ -786,11 +786,11 @@ http.route({
       const quotes = await ctx.runQuery(internal.policies.listAllQuotesInternal, {
         orgId: identity.orgId as Id<"organizations">,
       });
-      const found = quotes.find(// eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const found = quotes.find(
 (q: any) => q._id === id);
       if (!found) return jsonResponse({ error: "Not found" }, 404);
 
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
       const { rawExtractionResponse: _rawExtractionResponse, rawMetadataResponse: _rawMetadataResponse, ...rest } = found as any;
       return jsonResponse(rest);
     } catch (e) {
@@ -811,7 +811,7 @@ http.route({
         orgId: identity.orgId as Id<"organizations">,
       });
       return jsonResponse(
-        threads.map(// eslint-disable-next-line @typescript-eslint/no-explicit-any
+        threads.map(
 (t: any) => ({
           _id: t._id,
           title: t.title,
@@ -849,7 +849,7 @@ http.route({
         threadId: threadId as Id<"threads">,
       });
       return jsonResponse(
-        messages.map(// eslint-disable-next-line @typescript-eslint/no-explicit-any
+        messages.map(
 (m: any) => ({
           _id: m._id,
           role: m.role,
@@ -1071,13 +1071,6 @@ const MCP_TOOLS = [
   },
 ];
 
-function requireWriteScope(identity: McpIdentity): void {
-  const scopes = identity.scopes ?? ["read"];
-  if (!scopes.includes("write")) {
-    throw new Error("insufficient_scope: this tool requires write scope");
-  }
-}
-
 function jsonRpcResponse(id: string | number | null, result: unknown): Response {
   return new Response(
     JSON.stringify({ jsonrpc: "2.0", id, result }),
@@ -1093,7 +1086,7 @@ function jsonRpcError(id: string | number | null, code: number, message: string)
 }
 
 async function handleToolCall(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   ctx: { runQuery: (...args: any[]) => Promise<any>; runMutation: (...args: any[]) => Promise<any>; runAction: (...args: any[]) => Promise<any> },
   identity: McpIdentity,
   name: string,
@@ -1105,14 +1098,14 @@ async function handleToolCall(
   switch (name) {
     case "list_policies": {
       const policies = await ctx.runQuery(internal.policies.listAllInternal, { orgId });
-      const filtered = policies.filter(// eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const filtered = policies.filter(
 (p: any) => {
         if (args.carrier && p.carrier !== args.carrier) return false;
         if (args.year && p.policyYear !== parseInt(args.year as string)) return false;
         if (args.type && !(p.policyTypes ?? []).includes(args.type)) return false;
         return true;
       });
-      return { content: [{ type: "text", text: JSON.stringify(filtered.map(// eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return { content: [{ type: "text", text: JSON.stringify(filtered.map(
 (p: any) => ({
         _id: p._id, carrier: p.carrier, security: p.security, broker: p.broker,
         policyNumber: p.policyNumber, policyTypes: p.policyTypes, policyYear: p.policyYear,
@@ -1123,10 +1116,10 @@ async function handleToolCall(
     case "get_policy": {
       if (!args.id) throw new Error("Missing id parameter");
       const policies = await ctx.runQuery(internal.policies.listAllInternal, { orgId });
-      const found = policies.find(// eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const found = policies.find(
 (p: any) => p._id === args.id);
       if (!found) throw new Error("Not found");
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
       const { rawExtractionResponse: _rawExtractionResponse, rawMetadataResponse: _rawMetadataResponse, ...rest } = found as any;
       return { content: [{ type: "text", text: JSON.stringify(rest, null, 2) }] };
     }
@@ -1134,12 +1127,12 @@ async function handleToolCall(
       if (!args.q) throw new Error("Missing q parameter");
       const policies = await ctx.runQuery(internal.policies.listAllInternal, { orgId });
       const query = (args.q as string).toLowerCase();
-      const results = policies.filter(// eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const results = policies.filter(
 (p: any) => {
         const searchable = [p.carrier, p.policyNumber, p.insuredName, p.summary, p.security, p.broker, ...(p.policyTypes ?? [])].filter(Boolean).join(" ").toLowerCase();
         return searchable.includes(query);
       });
-      return { content: [{ type: "text", text: JSON.stringify(results.map(// eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return { content: [{ type: "text", text: JSON.stringify(results.map(
 (p: any) => ({
         _id: p._id, carrier: p.carrier, policyNumber: p.policyNumber, policyTypes: p.policyTypes,
         policyYear: p.policyYear, effectiveDate: p.effectiveDate, expirationDate: p.expirationDate,
@@ -1152,7 +1145,7 @@ async function handleToolCall(
       const byCarrier: Record<string, number> = {};
       const byYear: Record<string, number> = {};
       for (const p of policies) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
         const pa = p as any;
         for (const t of (pa.policyTypes ?? ["other"])) byType[t] = (byType[t] || 0) + 1;
         byCarrier[pa.carrier] = (byCarrier[pa.carrier] || 0) + 1;
@@ -1186,13 +1179,13 @@ async function handleToolCall(
     }
     case "list_quotes": {
       const quotes = await ctx.runQuery(internal.policies.listAllQuotesInternal, { orgId });
-      const filtered = quotes.filter(// eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const filtered = quotes.filter(
 (q: any) => {
         if (args.carrier && q.carrier !== args.carrier) return false;
         if (args.year && q.policyYear !== parseInt(args.year as string)) return false;
         return true;
       });
-      return { content: [{ type: "text", text: JSON.stringify(filtered.map(// eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return { content: [{ type: "text", text: JSON.stringify(filtered.map(
 (q: any) => ({
         _id: q._id, carrier: q.carrier, security: q.security, broker: q.broker,
         quoteNumber: q.quoteNumber, policyTypes: q.policyTypes, quoteYear: q.quoteYear,
@@ -1204,16 +1197,16 @@ async function handleToolCall(
     case "get_quote": {
       if (!args.id) throw new Error("Missing id parameter");
       const quotes = await ctx.runQuery(internal.policies.listAllQuotesInternal, { orgId });
-      const found = quotes.find(// eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const found = quotes.find(
 (q: any) => q._id === args.id);
       if (!found) throw new Error("Not found");
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
       const { rawExtractionResponse: _rawExtractionResponse, rawMetadataResponse: _rawMetadataResponse, ...rest } = found as any;
       return { content: [{ type: "text", text: JSON.stringify(rest, null, 2) }] };
     }
     case "list_threads": {
       const threads = await ctx.runQuery(internal.threads.listByOrg, { orgId });
-      return { content: [{ type: "text", text: JSON.stringify(threads.map(// eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return { content: [{ type: "text", text: JSON.stringify(threads.map(
 (t: any) => ({
         _id: t._id, title: t.title, lastMessageAt: t.lastMessageAt, archivedAt: t.archivedAt, _creationTime: t._creationTime,
       })), null, 2) }] };
@@ -1223,7 +1216,7 @@ async function handleToolCall(
       const thread = await ctx.runQuery(internal.threads.getInternal, { id: args.threadId as Id<"threads"> });
       if (!thread || (thread as Record<string, unknown>).orgId !== identity.orgId) throw new Error("Not found");
       const messages = await ctx.runQuery(internal.threads.messagesInternal, { threadId: args.threadId as Id<"threads"> });
-      return { content: [{ type: "text", text: JSON.stringify(messages.map(// eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return { content: [{ type: "text", text: JSON.stringify(messages.map(
 (m: any) => ({
         _id: m._id, role: m.role, channel: m.channel, content: m.content, userName: m.userName, fromEmail: m.fromEmail, _creationTime: m._creationTime,
       })), null, 2) }] };

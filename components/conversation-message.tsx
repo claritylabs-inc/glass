@@ -5,7 +5,7 @@ import { useQuery } from "convex/react";
 import Markdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import dayjs from "dayjs";
-import { Asterisk, Loader2, Paperclip, FileText, Download, Mail as MailIcon } from "lucide-react";
+import { Asterisk, Loader2, Paperclip, FileText, Download } from "lucide-react";
 import { ContextReferenceCard } from "@/components/context-reference-card";
 import { PROSE_MARKDOWN_STYLES, PROSE_MARKDOWN_COMPACT_STYLES } from "@/components/prose-markdown";
 import { Id } from "@/convex/_generated/dataModel";

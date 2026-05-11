@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState, type DragEvent, type ReactNode } from "react";
+import { useRef, useState, type DragEvent, type ReactNode } from "react";
 import { FileUp } from "lucide-react";
 
 type FileDropHandlers<T extends HTMLElement> = {

@@ -39,6 +39,7 @@ describe("buildNotificationEmail", () => {
     expect(result.fromName).toBe("Glass");
     expect(result.html).toContain("Policy update");
     expect(result.html).toContain("Glass");
+    expect(result.html).toContain('src="https://glass.claritylabs.inc/glass-icon.jpg"');
     expect(result.text).toContain("Review");
   });
 

@@ -174,7 +174,7 @@ export function PdfViewer({
       setVisiblePage(currentPage);
     }, 0);
     return () => clearTimeout(inputTimer);
-  }, [currentPage, numPages, pageDimensions.size]);
+  }, [currentPage, numPages, pageDimensions]);
 
     // Detect visible page on manual scroll
   useEffect(() => {

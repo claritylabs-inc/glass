@@ -11,9 +11,8 @@ export default function ClientActivityPage() {
   const { clientOrgId } = useParams<{ clientOrgId: string }>();
   const currentOrg = useCurrentOrg();
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const events = useQuery(
-    (api as any).brokerActivity.listForClient,
+    api.brokerActivity.listForClient,
     currentOrg && clientOrgId
       ? {
           brokerOrgId: currentOrg.orgId as Id<"organizations">,

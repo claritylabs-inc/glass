@@ -24,7 +24,7 @@ export default async function Image({ params }: { params: { slug: string } }) {
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            backgroundColor: "#faf8f4",
+            backgroundColor: "#ffffff",
             fontFamily: "Geist",
           }}
         >
@@ -44,7 +44,7 @@ export default async function Image({ params }: { params: { slug: string } }) {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          backgroundColor: "#faf8f4",
+          backgroundColor: "#ffffff",
           position: "relative",
           fontFamily: "Geist",
         }}
@@ -63,7 +63,7 @@ export default async function Image({ params }: { params: { slug: string } }) {
             style={{
               fontSize: 72,
               fontWeight: 500,
-              color: "#111827",
+              color: "#000000",
               letterSpacing: "-0.03em",
               lineHeight: 1,
             }}

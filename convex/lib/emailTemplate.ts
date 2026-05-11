@@ -4,6 +4,8 @@ import type { BrandingContext } from "./branding";
 import { getDefaultBranding } from "./branding";
 
 const SITE_URL = process.env.SITE_URL ?? "https://glass.claritylabs.inc";
+const EMAIL_ASSET_BASE_URL =
+  process.env.EMAIL_ASSET_BASE_URL ?? "https://glass.claritylabs.inc";
 
 /** Resolve a logo URL to an absolute URL usable from an email client. */
 function absoluteLogoUrl(logoUrl: string, siteUrl: string = SITE_URL): string {
@@ -11,6 +13,11 @@ function absoluteLogoUrl(logoUrl: string, siteUrl: string = SITE_URL): string {
   const base = siteUrl.replace(/\/$/, "");
   const path = logoUrl.startsWith("/") ? logoUrl : `/${logoUrl}`;
   return `${base}${path}`;
+}
+
+/** Resolve built-in email assets from a public web host, not the sending domain. */
+export function absoluteEmailAssetUrl(assetPath: string): string {
+  return absoluteLogoUrl(assetPath, EMAIL_ASSET_BASE_URL);
 }
 
 function escapeHtml(value: string): string {
@@ -22,10 +29,12 @@ function escapeHtml(value: string): string {
 }
 
 /** Brand name + mark lockup for the email header. Big squircle logo mirrors the in-app sidebar brand. */
-export function buildEmailLogoHtml(branding: BrandingContext = getDefaultBranding(), siteUrl: string = SITE_URL): string {
+export function buildEmailLogoHtml(branding: BrandingContext = getDefaultBranding(), _siteUrl: string = SITE_URL): string {
   const name = branding.brandName;
   const isDefaultBrand = name === "Glass";
-  const src = absoluteLogoUrl(branding.logoUrl, siteUrl);
+  const src = /^https?:\/\//i.test(branding.logoUrl)
+    ? branding.logoUrl
+    : absoluteEmailAssetUrl(branding.logoUrl);
   const mark = `<img src="${src}" alt="" width="28" height="28" style="display:inline-block;vertical-align:middle;width:28px;height:28px;border-radius:7px;margin-right:10px;object-fit:cover;border:0;" />`;
   const suffix = isDefaultBrand
     ? `<span style="font-weight:400;color:#6b7280;vertical-align:middle;margin-left:6px;">from Clarity Labs</span>`
@@ -33,7 +42,7 @@ export function buildEmailLogoHtml(branding: BrandingContext = getDefaultBrandin
   return `
 <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;">
   <tr>
-    <td align="center" style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:16px;line-height:1;color:#111827;">
+    <td align="center" style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:16px;line-height:1;color:#000000;">
       ${mark}
       <span style="font-weight:600;vertical-align:middle;">${name}</span>
       ${suffix}
@@ -44,14 +53,14 @@ export function buildEmailLogoHtml(branding: BrandingContext = getDefaultBrandin
 
 /** "Powered by {icon} Glass from Clarity Labs" platform attribution. */
 export function buildPlatformFooterHtml(siteUrl: string = SITE_URL): string {
-  const iconUrl = absoluteLogoUrl("/glass-icon.jpg", siteUrl);
+  const iconUrl = absoluteEmailAssetUrl("/glass-icon.jpg");
   return `
 <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;">
   <tr>
     <td align="center" style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:12px;color:#9ca3af;line-height:1;">
       <span style="vertical-align:middle;">Powered by</span>
       <img src="${iconUrl}" alt="" width="14" height="14" style="display:inline-block;vertical-align:middle;width:14px;height:14px;border-radius:3px;margin:0 6px 0 8px;object-fit:cover;border:0;" />
-      <a href="${siteUrl}" style="color:#111827;font-weight:600;text-decoration:none;vertical-align:middle;">Glass</a>
+      <a href="${siteUrl}" style="color:#000000;font-weight:600;text-decoration:none;vertical-align:middle;">Glass</a>
       <span style="vertical-align:middle;margin-left:4px;">from Clarity Labs</span>
     </td>
   </tr>
@@ -115,13 +124,13 @@ export function buildOtpEmail(token: string, siteUrl: string = SITE_URL, brandin
   const digitCells = digits
     .map(
       (d) =>
-        `<td style="width:36px;height:44px;text-align:center;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:22px;font-weight:600;color:#111827;background-color:#f3f1ed;border-radius:8px;">${d}</td>`,
+        `<td style="width:36px;height:44px;text-align:center;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:22px;font-weight:600;color:#000000;background-color:#f5f5f5;border-radius:8px;">${d}</td>`,
     )
     .join('<td style="width:6px;"></td>');
 
   const bodyHtml = `
 <tr><td align="center" style="padding:28px 40px 0 40px;">
-  <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:15px;font-weight:500;color:#111827;line-height:1.5;">
+  <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:15px;font-weight:500;color:#000000;line-height:1.5;">
     Your sign-in code
   </p>
 </td></tr>
@@ -157,7 +166,7 @@ export function buildUnrecognizedInboundEmail(
   const escapedSignupUrl = escapeHtml(signupUrl);
   const bodyHtml = `
 <tr><td align="center" style="padding:28px 40px 0 40px;">
-  <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:15px;font-weight:500;color:#111827;line-height:1.5;">
+  <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:15px;font-weight:500;color:#000000;line-height:1.5;">
     We couldn't recognize this email address
   </p>
 </td></tr>
@@ -167,7 +176,7 @@ export function buildUnrecognizedInboundEmail(
   </p>
 </td></tr>
 <tr><td align="center" style="padding:24px 40px 0 40px;">
-  <a href="${escapedSignupUrl}" style="display:inline-block;background:#111827;color:#ffffff;text-decoration:none;border-radius:8px;padding:11px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13px;font-weight:600;">
+  <a href="${escapedSignupUrl}" style="display:inline-block;background:#000000;color:#ffffff;text-decoration:none;border-radius:8px;padding:11px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13px;font-weight:600;">
     Create a Glass account
   </a>
 </td></tr>

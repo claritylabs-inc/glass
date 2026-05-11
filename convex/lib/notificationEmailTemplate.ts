@@ -1,4 +1,5 @@
 // convex/lib/notificationEmailTemplate.ts
+import { absoluteEmailAssetUrl } from "./emailTemplate";
 
 const GLASS_ACCENT = "#2563eb";
 const SITE_URL_DEFAULT = "https://glass.claritylabs.inc";
@@ -45,11 +46,11 @@ export function buildNotificationEmail(
 
   const senderLabel = branding.kind === "broker" ? branding.brokerName : "Glass";
 
-  const glassIconSrc = `${siteUrl.replace(/\/$/, "")}${GLASS_ICON_PATH}`;
+  const glassIconSrc = absoluteEmailAssetUrl(GLASS_ICON_PATH);
   const logoHtml =
     branding.kind === "broker" && branding.logoUrl
       ? `<img src="${branding.logoUrl}" alt="${senderLabel}" height="40" style="display:block;border:0;" />`
-      : `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;"><tr><td style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:16px;line-height:1;color:#111827;">
+      : `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;"><tr><td style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:16px;line-height:1;color:#000000;">
   <img src="${glassIconSrc}" alt="" width="28" height="28" style="display:inline-block;vertical-align:middle;width:28px;height:28px;border-radius:7px;margin-right:10px;object-fit:cover;border:0;" />
   <span style="font-weight:600;vertical-align:middle;">Glass</span>
   <span style="font-weight:400;color:#6b7280;vertical-align:middle;margin-left:6px;">from Clarity Labs</span>
@@ -75,7 +76,7 @@ export function buildNotificationEmail(
 
 <!-- Title -->
 <tr><td style="padding:24px 40px 0 40px;">
-  <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:16px;font-weight:600;color:#111827;line-height:1.4;">${title}</p>
+  <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:16px;font-weight:600;color:#000000;line-height:1.4;">${title}</p>
 </td></tr>
 
 <!-- Body -->

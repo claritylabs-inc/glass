@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useState, useCallback } from "react";
 
 const ONBOARDING_CACHE_KEY = "glass:onboarding-complete";
 
@@ -18,20 +18,17 @@ export type OnboardingCacheState = {
  * This prevents the flash of dashboard skeleton for users who haven't completed onboarding.
  */
 export function useOnboardingCache(): OnboardingCacheState {
-  const [onboardingComplete, setCachedValue] = useState<boolean | null>(null);
-
-  // Load from localStorage on mount (client-side only)
-  useEffect(() => {
+  const [onboardingComplete, setCachedValue] = useState<boolean | null>(() => {
     try {
       const stored = localStorage.getItem(ONBOARDING_CACHE_KEY);
       if (stored !== null) {
-        setCachedValue(stored === "1");
+        return stored === "1";
       }
     } catch {
       // localStorage not available (e.g., private browsing)
-      setCachedValue(null);
     }
-  }, []);
+    return null;
+  });
 
   const setOnboardingComplete = useCallback((value: boolean) => {
     try {

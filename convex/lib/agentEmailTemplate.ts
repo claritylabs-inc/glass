@@ -47,7 +47,7 @@ export function buildAgentReplyEmail(
       // Inline line breaks
       const withBreaks = withBold.replace(/\n/g, "<br>");
 
-      return `<p style="margin:0 0 12px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;color:#111827;line-height:1.6;">${withBreaks}</p>`;
+      return `<p style="margin:0 0 12px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;color:#000000;line-height:1.6;">${withBreaks}</p>`;
     })
     .filter(Boolean)
     .join("");
@@ -60,8 +60,8 @@ export function buildAgentReplyEmail(
 <meta name="color-scheme" content="light">
 <title>${branding.brandName} Response</title>
 </head>
-<body style="margin:0;padding:0;background-color:#faf8f4;-webkit-text-size-adjust:100%;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#faf8f4;">
+<body style="margin:0;padding:0;background-color:#ffffff;-webkit-text-size-adjust:100%;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#ffffff;">
 <tr><td align="center" style="padding:32px 16px;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background-color:#ffffff;border-radius:12px;border:1px solid rgba(17,24,39,0.06);box-shadow:0 1px 3px rgba(0,0,0,0.04);">
 

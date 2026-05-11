@@ -31,7 +31,7 @@ export function BrandLockup({
   const glassToSuffix = Math.round(textSize * 0.28);
   return (
     <div style={{ display: "flex", alignItems: "center", gap: iconToText }}>
-      {/* eslint-disable-next-line @next/next/no-img-element */}
+      { }
       <img src={globeDataUri(icon)} alt="" width={icon} height={icon} />
       <div style={{ display: "flex", alignItems: "baseline", gap: glassToSuffix }}>
         <span
@@ -39,7 +39,7 @@ export function BrandLockup({
             fontFamily: "Geist",
             fontSize: textSize,
             fontWeight: 500,
-            color: "#111827",
+            color: "#000000",
             letterSpacing: "-0.03em",
             lineHeight: 1,
           }}
@@ -135,14 +135,14 @@ export default async function Image() {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          backgroundColor: "#faf8f4",
+          backgroundColor: "#ffffff",
           position: "relative",
           fontFamily: "Geist",
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
           {branding.iconUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
+
             <img
               src={branding.iconUrl}
               alt=""
@@ -155,7 +155,7 @@ export default async function Image() {
             style={{
               fontSize: 72,
               fontWeight: 500,
-              color: "#111827",
+              color: "#000000",
               letterSpacing: "-0.03em",
               lineHeight: 1,
             }}

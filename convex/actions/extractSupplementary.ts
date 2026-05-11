@@ -32,7 +32,7 @@ import { Id } from "../_generated/dataModel";
  * Build a summary of data already captured by structured extractors.
  * Passed to the supplementary prompt so the LLM skips duplicates.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 function buildAlreadyExtractedSummary(policy: any): string {
   const lines: string[] = [];
 
@@ -98,7 +98,7 @@ export const extractOne = internalAction({
     force: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<{ skipped?: boolean; reason?: string; policyId?: string; facts: number; chunks?: number }> => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     const policy = await ctx.runQuery(internal.policies.getInternal, {
       id: args.policyId,
     }) as any;
@@ -165,7 +165,7 @@ export const extractOne = internalAction({
       const doc = policyToInsuranceDoc({
         ...policy,
         supplementaryFacts: facts,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
       } as any);
       const allChunks = chunkDocument(doc);
       const newChunks = allChunks.filter((c) => c.type === "supplementary");

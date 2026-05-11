@@ -1,10 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { evaluateThreadAccess } from "../convex/lib/threadAccess";
+import type { Id } from "../convex/_generated/dataModel";
 
 describe("evaluateThreadAccess", () => {
-  const broker = "org_broker" as any;
-  const client = "org_client" as any;
-  const other = "org_other" as any;
+  const broker = "org_broker" as Id<"organizations">;
+  const client = "org_client" as Id<"organizations">;
+  const other = "org_other" as Id<"organizations">;
 
   it("allows thread owner", () => {
     expect(evaluateThreadAccess({ userOrgId: client, thread: { orgId: client }, clientOrg: { _id: client, brokerOrgId: broker } })).toBe("allow");

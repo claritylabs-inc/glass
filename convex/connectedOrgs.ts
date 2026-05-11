@@ -226,7 +226,7 @@ export const requestVendorAccessByEmail = action({
 </td></tr>
 ${safeNote ? `<tr><td style="padding:12px 40px 0 40px;"><p style="margin:0;font-family:-apple-system,sans-serif;font-size:14px;color:#4b5563;line-height:1.6;font-style:italic;">${safeNote}</p></td></tr>` : ""}
 <tr><td align="center" style="padding:24px 40px 0 40px;">
-  <a href="${requestUrl}" style="display:inline-block;padding:8px 22px;background-color:#111827;color:#ffffff;font-family:-apple-system,sans-serif;font-size:14px;font-weight:500;text-decoration:none;border-radius:999px;line-height:1.4;">Review request</a>
+  <a href="${requestUrl}" style="display:inline-block;padding:8px 22px;background-color:#000000;color:#ffffff;font-family:-apple-system,sans-serif;font-size:14px;font-weight:500;text-decoration:none;border-radius:999px;line-height:1.4;">Review request</a>
 </td></tr>
 <tr><td style="padding:20px 40px 0 40px;">
   <p style="margin:0;font-family:-apple-system,sans-serif;font-size:12px;color:#6b7280;line-height:1.6;">

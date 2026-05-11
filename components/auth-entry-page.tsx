@@ -6,7 +6,7 @@ import { useConvexAuth } from "convex/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AuthCard, AuthMinimalShell, BrandWordmark } from "@/components/auth-shell";
 import { PillButton } from "@/components/ui/pill-button";
-import { ArrowLeft, ArrowRight, Loader2 } from "lucide-react";
+import { ArrowRight, Loader2 } from "lucide-react";
 
 function friendlyError(raw: string): string {
   const lower = raw.toLowerCase();
@@ -42,17 +42,10 @@ export function AuthEntryPage({
     nextPath && nextPath.startsWith("/") && !nextPath.startsWith("//") ? nextPath : defaultPostLogin;
 
   const [step, setStep] = useState<"email" | "code">("email");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(() => searchParams.get("email") ?? "");
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-
-  useEffect(() => {
-    const prefill = searchParams.get("email");
-    if (prefill && !email) {
-      setEmail(prefill);
-    }
-  }, [searchParams, email]);
 
   useEffect(() => {
     if (isAuthenticated) router.replace(postLoginPath);

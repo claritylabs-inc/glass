@@ -184,7 +184,7 @@ export const extractFromUploadInternal = internalAction({
       insuredName: "Extracting...",
     });
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     const policyFileId: Id<"policyFiles"> = await ctx.runMutation(
       (internal as any).policyFiles.insert,
       {
@@ -196,7 +196,7 @@ export const extractFromUploadInternal = internalAction({
       },
     );
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     await ctx.runMutation((internal as any).policies.updateFiles, {
       id: policyId,
       files: [

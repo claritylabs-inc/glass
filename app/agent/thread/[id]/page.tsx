@@ -1,7 +1,7 @@
 "use client";
 
 import { use, useState, useMemo, useRef, useEffect, useCallback } from "react";
-import { useQuery, useMutation, useAction } from "convex/react";
+import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { AppShell } from "@/components/app-shell";
@@ -971,7 +971,6 @@ function EmailThreadContent({
   const { openWithUrl } = usePdf();
   const conversations = useQuery(api.agentConversations.list, { archived: false });
   const archivedConversations = useQuery(api.agentConversations.list, { archived: true });
-  const retryApp = undefined;
   const messagesRef = useRef<HTMLDivElement>(null);
   const prevThreadId = useRef<string | null>(null);
 

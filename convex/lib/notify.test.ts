@@ -3,7 +3,7 @@ import { convexTest } from "convex-test";
 import { expect, test, describe } from "vitest";
 import schema from "../schema";
 import { notifyInternal } from "./notify";
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 const notifyInternalFn = notifyInternal as any;
 
 const modules = import.meta.glob("../**/*.ts");
@@ -47,7 +47,7 @@ describe("notify() — coalesce logic", () => {
     // Should be same notification id
     expect(id1).toBe(id2);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     const notif = await t.run(async (ctx) => ctx.db.get(id1)) as any;
     expect(notif?.coalescedCount).toBe(2);
   });

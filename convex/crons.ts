@@ -7,7 +7,7 @@ const crons = cronJobs();
 crons.cron(
   "sweep stale info notifications",
   "0 3 * * 0",
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   (internal as any).notifications.sweepStale,
   {},
 );

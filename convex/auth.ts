@@ -5,11 +5,11 @@ import { getBrandingContext, isWhiteLabelingEnabled } from "./lib/branding";
 import { sendResendEmail, getAuthFromAddress } from "./lib/resend";
 import { internal } from "./_generated/api";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 const sendVerificationRequest = async function (this: unknown, ...args: any[]) {
   const [{ identifier: email, token }, ctx] = args as [
     { identifier: string; token: string },
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     any,
   ];
   // Try to infer a broker branding context from the signed-in attempt:
@@ -77,7 +77,7 @@ const ResendOTP = Email({
   async generateVerificationToken() {
     return Math.floor(100000 + Math.random() * 900000).toString();
   },
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   sendVerificationRequest: sendVerificationRequest as any,
 });
 

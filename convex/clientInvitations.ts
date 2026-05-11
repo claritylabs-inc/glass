@@ -390,7 +390,7 @@ export const sendDraftInvite = action({
 </td></tr>
 ${messageBlock}
 <tr><td align="center" style="padding:24px 40px 0 40px;">
-  <a href="${inviteUrl}" style="display:inline-block;padding:8px 22px;background-color:#111827;color:#ffffff;font-family:-apple-system,sans-serif;font-size:14px;font-weight:500;text-decoration:none;border-radius:999px;line-height:1.4;">Accept invitation</a>
+  <a href="${inviteUrl}" style="display:inline-block;padding:8px 22px;background-color:#000000;color:#ffffff;font-family:-apple-system,sans-serif;font-size:14px;font-weight:500;text-decoration:none;border-radius:999px;line-height:1.4;">Accept invitation</a>
 </td></tr>
 <tr><td style="padding:20px 40px 0 40px;">
   <p style="margin:0;font-family:-apple-system,sans-serif;font-size:12px;color:#6b7280;line-height:1.6;">

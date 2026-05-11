@@ -2,7 +2,7 @@
 
 import { Badge } from "@/components/ui/badge";
 
-type UploadedBySide = "broker" | "client" | "email_scan" | undefined;
+type UploadedBySide = "broker" | "client" | "email_scan" | "agent_email" | undefined;
 
 interface PolicyListItemProps {
   carrier: string;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { usePdf } from "@/components/pdf-context";
 import { PdfViewer } from "@/components/ui/pdf-viewer";
@@ -19,7 +19,9 @@ export function PdfPanel() {
   const dragFrame = useRef<number | null>(null);
   const pendingWidth = useRef<number | null>(null);
 
-  widthRef.current = width;
+  useEffect(() => {
+    widthRef.current = width;
+  }, [width]);
 
   const onPointerDown = useCallback((e: React.PointerEvent) => {
     e.preventDefault();

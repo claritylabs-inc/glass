@@ -84,7 +84,7 @@ export function buildPolicySourcesHtml(sources: EmailPolicySource[]): string {
       const label = escapeHtml(source.label);
       const href = escapeHtml(source.href);
       return `
-<a href="${href}" style="display:block;margin:5px 0 0;padding:7px 9px;border:1px solid #eef0f3;border-radius:6px;background:#fbfcfd;text-decoration:none;color:#111827;">
+<a href="${href}" style="display:block;margin:5px 0 0;padding:7px 9px;border:1px solid #e5e5e5;border-radius:6px;background:#ffffff;text-decoration:none;color:#000000;">
   <span style="display:block;font-size:10px;line-height:1.2;color:#9aa3af;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">${label}</span>
   <span style="display:block;margin-top:2px;font-size:12px;line-height:1.3;color:#374151;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">${title}</span>
 </a>`;
@@ -92,7 +92,7 @@ export function buildPolicySourcesHtml(sources: EmailPolicySource[]): string {
     .join("\n");
 
   return `
-<div style="margin:14px 0 0;padding:10px 0 0;border-top:1px solid #eef0f3;">
+<div style="margin:14px 0 0;padding:10px 0 0;border-top:1px solid #e5e5e5;">
   <p style="margin:0 0 2px;font-size:11px;line-height:1.3;color:#6b7280;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-weight:600;">Sources</p>
   ${cards}
 </div>`;

@@ -9,9 +9,9 @@ describe("toPolicyDto", () => {
       premium: 5000, documentType: "policy",
       rawExtractionResponse: "blob", rawMetadataResponse: "blob2",
     };
-    const dto = toPolicyDto(raw as any);
-    expect((dto as any).rawExtractionResponse).toBeUndefined();
-    expect((dto as any).raw_extraction_response).toBeUndefined();
+    const dto = toPolicyDto(raw);
+    expect(dto).not.toHaveProperty("rawExtractionResponse");
+    expect(dto).not.toHaveProperty("raw_extraction_response");
     expect(dto.policy_number).toBe("ZR-001");
     expect(dto.policy_types).toEqual(["gl"]);
     expect(dto.created_at).toBe(1000);
@@ -24,11 +24,11 @@ describe("toPassportDto", () => {
       _id: "pp1", _creationTime: 500, orgId: "org1",
       legalName: "Acme LLC", fullTimeEmployees: 42, annualRevenue: 1_000_000,
     };
-    const dto = toPassportDto(raw as any);
+    const dto = toPassportDto(raw);
     expect(dto.legal_name).toBe("Acme LLC");
     expect(dto.full_time_employees).toBe(42);
     expect(dto.annual_revenue).toBe(1_000_000);
-    expect((dto as any)._id).toBeUndefined();
+    expect(dto).not.toHaveProperty("_id");
   });
 });
 
@@ -41,7 +41,7 @@ describe("toApplicationDto", () => {
         questions: [{ id: "q1", intentKey: "employee_count", answerType: "number", required: true, answer: null }],
       }],
     };
-    const dto = toApplicationDto(raw as any);
+    const dto = toApplicationDto(raw);
     expect(dto.groups[0].questions[0].intent_key).toBe("employee_count");
     expect(dto.groups[0].questions[0].answer_type).toBe("number");
   });

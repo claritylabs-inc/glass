@@ -6,7 +6,7 @@ import { send } from "./sendNotificationEmail";
 
 const modules = import.meta.glob("../**/*.ts");
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 const sendFn = send as any;
 
 describe("sendNotificationEmail", () => {

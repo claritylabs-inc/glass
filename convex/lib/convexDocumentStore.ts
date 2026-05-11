@@ -85,7 +85,7 @@ export function createConvexDocumentStore(
         );
       }
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
       return filtered.map((p) => policyToInsuranceDoc(p as any));
     },
 

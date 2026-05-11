@@ -32,46 +32,32 @@ export function InviteClientDrawer({
   resumeClientOrgId?: Id<"organizations"> | null;
 }) {
   const [draftId, setDraftId] = useState<Id<"organizations"> | null>(null);
-
-  const [contactEmail, setContactEmail] = useState("");
+  const [contactEmailInput, setContactEmailInput] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
 
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   const [isDraggingState, setIsDraggingState] = useState(false);
   const isDragging = useRef(false);
-  const hydratedFor = useRef<Id<"organizations"> | null>(null);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const createDraft = useMutation((api as any).clientInvitations.createDraftClient);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const updateDraft = useMutation((api as any).clientInvitations.updateDraftClient);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const sendInvite = useAction((api as any).clientInvitations.sendDraftInvite);
+  const createDraft = useMutation(api.clientInvitations.createDraftClient);
+  const updateDraft = useMutation(api.clientInvitations.updateDraftClient);
+  const sendInvite = useAction(api.clientInvitations.sendDraftInvite);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const hydrateDraft = useQuery(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (api as any).clientInvitations.getDraftClient,
+    api.clientInvitations.getDraftClient,
     resumeClientOrgId ? { clientOrgId: resumeClientOrgId } : "skip",
   );
 
-  // When opening in resume mode, load the existing draft into local state.
-  useEffect(() => {
-    if (!open) return;
-    if (!resumeClientOrgId) return;
-    if (hydratedFor.current === resumeClientOrgId) return;
-    if (!hydrateDraft) return;
-    hydratedFor.current = resumeClientOrgId;
-    setDraftId(resumeClientOrgId);
-    setContactEmail(hydrateDraft.primaryContactEmail ?? "");
-  }, [open, resumeClientOrgId, hydrateDraft]);
+  const resumedDraftId = open && hydrateDraft && resumeClientOrgId ? resumeClientOrgId : null;
+  const activeDraftId = draftId ?? resumedDraftId;
+  const contactEmail = contactEmailInput ?? hydrateDraft?.primaryContactEmail ?? "";
 
   const emailValid = contactEmail.includes("@") && contactEmail.includes(".");
-  const canCreateDraft = emailValid && !draftId;
+  const canCreateDraft = emailValid && !activeDraftId;
 
   async function ensureDraft(): Promise<Id<"organizations"> | null> {
-    if (draftId) return draftId;
+    if (activeDraftId) return activeDraftId;
     if (!canCreateDraft) return null;
     try {
       const { clientOrgId } = await createDraft({
@@ -89,15 +75,27 @@ export function InviteClientDrawer({
   // Create the draft as soon as company name + email are both filled.
   useEffect(() => {
     if (!canCreateDraft) return;
-    void ensureDraft();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canCreateDraft]);
+    let cancelled = false;
+    createDraft({
+      brokerOrgId: partnerOrgId,
+      primaryContactEmail: contactEmail.trim(),
+    })
+      .then(({ clientOrgId }) => {
+        if (!cancelled) setDraftId(clientOrgId);
+      })
+      .catch((err) => {
+        if (!cancelled) toast.error(String(err));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [canCreateDraft, contactEmail, createDraft, partnerOrgId]);
 
   // Patch draft on field blur.
   async function commitField(field: "primaryContactEmail", value: string) {
-    if (!draftId) return;
+    if (!activeDraftId) return;
     try {
-      await updateDraft({ clientOrgId: draftId, [field]: value });
+      await updateDraft({ clientOrgId: activeDraftId, [field]: value });
     } catch (err) {
       toast.error(String(err));
     }
@@ -150,8 +148,7 @@ export function InviteClientDrawer({
 
   function resetAndClose() {
     setDraftId(null);
-    setContactEmail("");
-    hydratedFor.current = null;
+    setContactEmailInput("");
     onOpenChange(false);
   }
 
@@ -236,7 +233,7 @@ export function InviteClientDrawer({
                   id="contactEmail"
                   type="email"
                   value={contactEmail}
-                  onChange={(e) => setContactEmail(e.target.value)}
+                  onChange={(e) => setContactEmailInput(e.target.value)}
                   onBlur={() => commitField("primaryContactEmail", contactEmail.trim())}
                   placeholder="jane@acmecorp.com"
                   className={INPUT_CLASSES}

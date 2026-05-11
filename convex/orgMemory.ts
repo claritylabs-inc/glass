@@ -37,7 +37,7 @@ export const listByType = internalQuery({
     return await ctx.db
       .query("orgMemory")
       .withIndex("by_org_type", (q) =>
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
         q.eq("orgId", args.orgId).eq("type", args.type as any),
       )
       .collect();

@@ -6,9 +6,9 @@ import { buildOtpEmail, buildEmailLogoHtml } from "../convex/lib/emailTemplate";
 const branding = getDefaultBranding();
 
 describe("agentEmailTemplate", () => {
-  it("title does not contain Glass", () => {
+  it("includes Glass in the default title", () => {
     const { html } = buildAgentReplyEmail("Hello world", branding);
-    expect(html).not.toMatch(/Glass/i);
+    expect(html).toContain("<title>Glass Response</title>");
   });
 
   it("footer uses branding.brandName", () => {
@@ -17,21 +17,22 @@ describe("agentEmailTemplate", () => {
   });
 
   it("uses custom brand name when provided", () => {
-    const custom = { ...branding, brandName: "Acme" };
+    const custom = { ...branding, brandName: "Acme", agentDisplayName: "Acme Agent" };
     const { html } = buildAgentReplyEmail("Hello world", custom);
     expect(html).toContain("Acme");
-    expect(html).not.toMatch(/Glass/i);
+    expect(html).toContain("<title>Acme Response</title>");
   });
 });
 
 describe("emailTemplate logo", () => {
-  it("buildEmailLogoHtml does not contain Glass", () => {
-    const logo = buildEmailLogoHtml(branding);
-    expect(logo).not.toMatch(/Glass/i);
+  it("buildEmailLogoHtml uses the public asset host for default Glass icons", () => {
+    const logo = buildEmailLogoHtml(branding, "https://dev.claritylabs.inc");
+    expect(logo).toContain('src="https://glass.claritylabs.inc/glass-icon.jpg"');
+    expect(logo).toContain("Glass");
   });
 
-  it("OTP email does not contain Glass in text", () => {
+  it("OTP email includes the current Glass brand in text", () => {
     const { text } = buildOtpEmail("123456");
-    expect(text).not.toMatch(/Glass/i);
+    expect(text).toMatch(/Glass/i);
   });
 });

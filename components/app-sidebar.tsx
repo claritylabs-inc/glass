@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useQuery, useMutation } from "convex/react";
@@ -136,12 +137,15 @@ export function AppSidebar({
   const isBroker = currentOrg?.isBroker ?? false;
   const navItems = isBroker ? BROKER_NAV_ITEMS : ALL_NAV_ITEMS;
 
-  const pageShortcutMap: Record<string, string> = {
-    ...Object.fromEntries(
-      navItems.filter((item) => item.shortcut).map((item) => [item.shortcut!.toLowerCase(), item.href]),
-    ),
-    j: "/settings",
-  };
+  const pageShortcutMap = useMemo<Record<string, string>>(
+    () => ({
+      ...Object.fromEntries(
+        navItems.filter((item) => item.shortcut).map((item) => [item.shortcut!.toLowerCase(), item.href]),
+      ),
+      j: "/settings",
+    }),
+    [navItems],
+  );
 
   const [collapsed, setCollapsed] = useState(() => {
     try {
@@ -278,7 +282,7 @@ export function AppSidebar({
       document.removeEventListener("keyup", handleKeyUp);
       window.removeEventListener("blur", handleBlur);
     };
-  }, [collapsed, router, conversations]);
+  }, [collapsed, router, conversations, pageShortcutMap]);
 
   const partnerWhiteLabelingEnabled = viewerOrg?.brokerOrg?.whiteLabelingEnabled !== false;
   const headerOrgName =
@@ -357,9 +361,9 @@ export function AppSidebar({
           <>
             <div className={`ml-0.5 w-7 h-7 bg-foreground/8 flex items-center justify-center text-[11px] font-medium text-foreground shrink-0 overflow-hidden ${headerOrgIcon ? "rounded-md" : "rounded-full"}`}>
               {headerOrgIcon ? (
-                <img src={headerOrgIcon} alt="" className="w-7 h-7 object-contain bg-white" />
+                <Image src={headerOrgIcon} alt="" width={28} height={28} unoptimized className="w-7 h-7 object-contain bg-white" />
               ) : viewer?.image ? (
-                <img src={viewer.image} alt="" className="w-7 h-7 rounded-full object-cover" />
+                <Image src={viewer.image} alt="" width={28} height={28} unoptimized className="w-7 h-7 rounded-full object-cover" />
               ) : (
                 initials
               )}
@@ -639,9 +643,9 @@ export function AppSidebar({
           <>
             <div className={`ml-0.5 w-7 h-7 bg-foreground/8 flex items-center justify-center text-[11px] font-medium text-foreground shrink-0 overflow-hidden ${headerOrgIcon ? "rounded-md" : "rounded-full"}`}>
               {headerOrgIcon ? (
-                <img src={headerOrgIcon} alt="" className="w-7 h-7 object-contain bg-white" />
+                <Image src={headerOrgIcon} alt="" width={28} height={28} unoptimized className="w-7 h-7 object-contain bg-white" />
               ) : viewer?.image ? (
-                <img src={viewer.image} alt="" className="w-7 h-7 rounded-full object-cover" />
+                <Image src={viewer.image} alt="" width={28} height={28} unoptimized className="w-7 h-7 rounded-full object-cover" />
               ) : (
                 initials
               )}
@@ -818,7 +822,7 @@ function SidebarBrokerContact({
   const isGlassFallback = !broker;
   const name = broker?.name ?? "Ask Glass";
   const iconUrl = broker?.iconUrl ?? null;
-  const brandColor = broker?.brandingColor ?? "#111827";
+  const brandColor = broker?.brandingColor ?? "#000000";
   const primaryContact = broker?.primaryContact ?? null;
   const handle = broker?.agentHandle ?? fallbackAgentHandle;
   const agentEmail = handle ? `${handle}@${AGENT_DOMAIN}` : `agent@${AGENT_DOMAIN}`;

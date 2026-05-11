@@ -48,7 +48,7 @@ import {
 } from "../lib/actionFailures";
 
 /** Build executable tools with Convex context wired in. */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 function buildTools(ctx: any, args: { orgId: string; threadId: string; userId: string }, org?: Record<string, unknown>) {
   return {
     lookup_policy: {
@@ -69,7 +69,7 @@ function buildTools(ctx: any, args: { orgId: string; threadId: string; userId: s
           ? scored.map((s: { policy: Record<string, unknown> }) => s.policy)
           : policies.slice(0, 5);
         if (matches.length === 0) return "No policies found for this organization.";
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
         return matches.slice(0, 5).map((p: any) => ({
           id: p._id,
           insured: p.insuredName,
@@ -107,7 +107,7 @@ function buildTools(ctx: any, args: { orgId: string; threadId: string; userId: s
     lookup_policy_section: {
       ...lookupPolicySection,
       execute: async (params: { policyId: string; query: string }) => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
         const policy: any = await ctx.runQuery(
           internal.policies.getInternal,
           { id: params.policyId },
@@ -708,7 +708,7 @@ export const run = internalAction({
 
             // Validate recipient against known thread participants and org members
             const orgMembers = await ctx.runQuery(internal.users.listByOrgInternal, { orgId: args.orgId });
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
             const orgMemberEmails = orgMembers.map((m: any) => m?.email).filter(Boolean);
             const allowedRecipients = collectAllowedRecipients(allMessages as Parameters<typeof collectAllowedRecipients>[0], orgMemberEmails as string[]);
             const recipientCheck = validateEmailRecipient(replyTo, allowedRecipients);
