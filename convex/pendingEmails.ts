@@ -54,6 +54,7 @@ export const create = internalMutation({
     legacyConversationId: v.optional(v.id("agentConversations")),
     recipientEmail: v.string(),
     ccAddresses: v.optional(v.array(v.string())),
+    bccAddresses: v.optional(v.array(v.string())),
     subject: v.string(),
     emailBody: v.string(),
     attachments: v.optional(

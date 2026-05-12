@@ -79,6 +79,7 @@ export default defineSchema({
     // Agent settings
     chatEmailNotifications: v.optional(v.boolean()), // send email notifications for chat responses in email threads
     autoSendEmails: v.optional(v.boolean()), // when false, drafted emails from chat require confirmation before sending
+    bccRequesterOnAgentEmails: v.optional(v.boolean()), // default true: BCC requesting team member on outbound agent emails
     emailSendDelay: v.optional(v.number()), // seconds before sending emails (default 5, 0 = instant)
     // Onboarding
     onboardingComplete: v.optional(v.boolean()),
@@ -1069,6 +1070,7 @@ export default defineSchema({
     fromName: v.optional(v.string()),
     toAddresses: v.array(v.string()),
     ccAddresses: v.optional(v.array(v.string())),
+    bccAddresses: v.optional(v.array(v.string())),
     subject: v.string(),
     body: v.string(),
     bodyHtml: v.optional(v.string()),
@@ -1142,6 +1144,7 @@ export default defineSchema({
     fromName: v.optional(v.string()),
     toAddresses: v.optional(v.array(v.string())),
     ccAddresses: v.optional(v.array(v.string())),
+    bccAddresses: v.optional(v.array(v.string())),
     subject: v.optional(v.string()),
     messageId: v.optional(v.string()),
     responseMessageId: v.optional(v.string()),
@@ -1223,6 +1226,7 @@ export default defineSchema({
     // Metadata for the sent email record
     recipientEmail: v.string(),
     ccAddresses: v.optional(v.array(v.string())),
+    bccAddresses: v.optional(v.array(v.string())),
     subject: v.string(),
     emailBody: v.string(), // plain content (for thread record)
     attachments: v.optional(v.array(v.object({

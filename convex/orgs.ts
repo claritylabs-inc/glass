@@ -478,6 +478,7 @@ export const updateOrg = mutation({
     autoGenerateCoi: v.optional(v.boolean()),
     chatEmailNotifications: v.optional(v.boolean()),
     autoSendEmails: v.optional(v.boolean()),
+    bccRequesterOnAgentEmails: v.optional(v.boolean()),
     emailSendDelay: v.optional(v.number()),
     allowedEmails: v.optional(v.array(v.string())),
     allowedDomains: v.optional(v.array(v.string())),

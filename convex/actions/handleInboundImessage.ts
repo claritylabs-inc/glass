@@ -626,7 +626,12 @@ export const processInbound = internalAction({
               agentAddress: emailIdentity.agentAddress,
               brokerBranding: emailIdentity.brokerBranding,
               senderEmail: user.email,
-              defaultCc: user.email ? [user.email] : undefined,
+              defaultTo: user.email,
+              defaultRecipientName: user.name,
+              defaultBcc:
+                org.bccRequesterOnAgentEmails !== false && user.email
+                  ? [user.email]
+                  : undefined,
               allowedRecipients,
               availableAttachments: availableEmailAttachments,
               referencedPolicyIds: relevantPolicyIds as Id<"policies">[],
@@ -657,11 +662,7 @@ export const processInbound = internalAction({
 
     let responseText = result.text;
     const emailResult = emailToolResult.current;
-    if (
-      emailResult?.status === "sent" ||
-      emailResult?.status === "pending" ||
-      (emailResult?.status === "needs_confirmation" && !responseText.trim())
-    ) {
+    if (emailResult) {
       responseText = emailResult.responseBody;
     }
 

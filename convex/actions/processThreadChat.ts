@@ -27,7 +27,7 @@ import {
   logAiError,
 } from "../lib/aiUtils";
 import { searchPolicyDocumentWithSourceSpans } from "../lib/policyLookup";
-import { sendResendEmail } from "../lib/resend";
+import { getNotificationFromAddress, sendResendEmail } from "../lib/resend";
 import {
   buildEmailExpertTool,
   getEmailAgentFromName,
@@ -492,7 +492,12 @@ export const run = internalAction({
                 agentAddress: thread?.threadEmail ?? emailIdentity.agentAddress,
                 brokerBranding: emailIdentity.brokerBranding,
                 senderEmail: user?.email,
-                defaultCc: user?.email ? [user.email] : undefined,
+                defaultTo: user?.email,
+                defaultRecipientName: user?.name,
+                defaultBcc:
+                  org.bccRequesterOnAgentEmails !== false && user?.email
+                    ? [user.email]
+                    : undefined,
                 subjectHint: thread?.title && thread.title !== "New chat" ? thread.title : undefined,
                 allowedRecipients,
                 availableAttachments,
@@ -664,14 +669,42 @@ export const run = internalAction({
         attachments: responseAttachments.length > 0 ? responseAttachments : undefined,
       });
       const emailResult = emailToolResult.current;
-      if (emailResult?.status === "pending" && emailResult.pendingEmailId) {
+      if (emailResult) {
         await ctx.runMutation(internal.threads.updateAgentMessage, {
           id: agentMsgId,
           content: emailResult.responseBody,
           pendingEmailId: emailResult.pendingEmailId,
-          status: "pending_send",
+          status: emailResult.status === "pending" ? "pending_send" : undefined,
         });
         content = emailResult.responseBody;
+      }
+      if (!emailResult && org.chatEmailNotifications === true && user?.email && content.trim()) {
+        try {
+          const siteUrl = process.env.SITE_URL ?? "https://glass.claritylabs.inc";
+          const threadUrl = `${siteUrl}/agent/thread/${args.threadId}`;
+          const subject = thread?.title && thread.title !== "New chat"
+            ? `Glass reply: ${thread.title}`
+            : "Glass reply";
+          const plainText = `${stripMarkdown(content)}\n\nView thread: ${threadUrl}`;
+          const htmlBody = content
+            .split("\n\n")
+            .map((p: string) => `<p style="margin:0 0 12px;line-height:1.5">${markdownToHtml(p.replace(/\n/g, "<br>"))}</p>`)
+            .join("\n");
+          const html = `${htmlBody}<p style="margin:16px 0 0"><a href="${threadUrl}" style="color:#2563eb;text-decoration:underline">View thread</a></p>`;
+
+          const notification = await sendResendEmail({
+            from: getNotificationFromAddress("Glass"),
+            to: user.email,
+            subject,
+            text: plainText,
+            html,
+          });
+          if (!notification.ok) {
+            console.warn("[processThreadChat] Chat email notification failed:", notification.error);
+          }
+        } catch (err) {
+          console.warn("[processThreadChat] Chat email notification failed:", err);
+        }
       }
       // Save final reasoning if any
       if (reasoning) {
@@ -762,6 +795,13 @@ export const run = internalAction({
             if (replyCc.length > 0) {
               emailPayload.cc = replyCc;
             }
+            const replyBcc =
+              org.bccRequesterOnAgentEmails !== false && user?.email && user.email !== replyTo && !replyCc.includes(user.email)
+                ? [user.email]
+                : [];
+            if (replyBcc.length > 0) {
+              emailPayload.bcc = replyBcc;
+            }
             if (refMessageId) {
               emailPayload.headers = {
                 "In-Reply-To": refMessageId,
@@ -783,6 +823,7 @@ export const run = internalAction({
                 chatMessageId: agentMsgId,
                 recipientEmail: replyTo,
                 ccAddresses: replyCc.length > 0 ? replyCc : undefined,
+                bccAddresses: replyBcc.length > 0 ? replyBcc : undefined,
                 subject: replySubject,
                 emailBody,
                 referencedPolicyIds: citedPolicyIds.size > 0 ? [...citedPolicyIds] as Id<"policies">[] : undefined,
@@ -819,6 +860,7 @@ export const run = internalAction({
                 content: emailBody,
                 toAddresses: [replyTo],
                 ccAddresses: replyCc.length > 0 ? replyCc : undefined,
+                bccAddresses: replyBcc.length > 0 ? replyBcc : undefined,
                 subject: replySubject,
                 responseMessageId: sentMessageId,
               });

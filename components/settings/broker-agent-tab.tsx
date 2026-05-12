@@ -17,9 +17,11 @@ export function BrokerAgentTab() {
   const org = viewerOrg?.org as
     | {
         _id?: string;
+        type?: "broker" | "client";
         agentHandle?: string;
         chatEmailNotifications?: boolean;
         autoSendEmails?: boolean;
+        bccRequesterOnAgentEmails?: boolean;
         emailSendDelay?: number;
       }
     | undefined;
@@ -31,6 +33,7 @@ export function BrokerAgentTab() {
   const [savingHandle, setSavingHandle] = useState(false);
   const [chatEmailNotifications, setChatEmailNotifications] = useState(false);
   const [autoSendEmails, setAutoSendEmails] = useState(false);
+  const [bccRequesterOnAgentEmails, setBccRequesterOnAgentEmails] = useState(true);
   const [emailSendDelay, setEmailSendDelay] = useState<number>(5);
 
   const hydratedRef = useRef(false);
@@ -46,6 +49,7 @@ export function BrokerAgentTab() {
       setDebouncedHandle(org.agentHandle ?? "");
       setChatEmailNotifications(org.chatEmailNotifications ?? false);
       setAutoSendEmails(org.autoSendEmails ?? false);
+      setBccRequesterOnAgentEmails(org.bccRequesterOnAgentEmails ?? true);
       setEmailSendDelay(org.emailSendDelay ?? 5);
       hydratedRef.current = true;
     }
@@ -57,6 +61,7 @@ export function BrokerAgentTab() {
       await updateOrg({
         chatEmailNotifications,
         autoSendEmails,
+        bccRequesterOnAgentEmails,
         emailSendDelay,
       });
       setSavedAt(Date.now());
@@ -66,7 +71,7 @@ export function BrokerAgentTab() {
     } finally {
       setSaving(false);
     }
-  }, [updateOrg, chatEmailNotifications, autoSendEmails, emailSendDelay]);
+  }, [updateOrg, chatEmailNotifications, autoSendEmails, bccRequesterOnAgentEmails, emailSendDelay]);
 
   useEffect(() => {
     if (!hydratedRef.current) return;
@@ -155,47 +160,67 @@ export function BrokerAgentTab() {
   }
 
   const delayOptions = [0, 3, 5, 10, 15];
+  const isBroker = org?.type === "broker";
+  const displayedAgentHandle = isBroker ? agentHandle : "agent";
 
   return (
     <div className="space-y-4">
-      {/* Agent handle */}
-      <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
-        <div className="px-5 py-3.5 border-b border-foreground/6">
-          <h3 className="!mb-0 text-sm font-medium text-foreground">Agent email handle</h3>
-        </div>
-        <div className="px-5 py-5 space-y-1">
-          <p className="text-body-sm text-muted-foreground/70 mb-3">
-            Clients and carriers email your agent at this address. Forwarding a
-            policy or asking a question routes to the Glass agent for this org.
-          </p>
-          <div className="flex items-stretch gap-0">
-            <input
-              type="text"
-              value={agentHandle}
-              onChange={(e) =>
-                setAgentHandle(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))
-              }
-              placeholder="your-broker-name"
-              spellCheck={false}
-              autoCapitalize="off"
-              autoCorrect="off"
-              className="flex-1 min-w-0 rounded-l-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
-            />
-            <span className="inline-flex items-center rounded-r-lg border border-l-0 border-foreground/8 bg-foreground/[0.03] px-3 text-body-sm text-muted-foreground select-none whitespace-nowrap">
-              @{agentDomain}
-            </span>
+      {isBroker ? (
+        <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
+          <div className="px-5 py-3.5 border-b border-foreground/6">
+            <h3 className="!mb-0 text-sm font-medium text-foreground">Agent email handle</h3>
           </div>
-          <HandleAvailability
-            saving={savingHandle}
-            checking={handleChecking}
-            input={normalizedInput}
-            current={currentHandle}
-            availability={normalizedInput === debouncedHandle ? availability : undefined}
-            currentLabel="Current agent handle"
-            renderAvailablePreview={(s) => `${s}@${agentDomain} is available`}
-          />
+          <div className="px-5 py-5 space-y-1">
+            <p className="text-body-sm text-muted-foreground/70 mb-3">
+              Clients and carriers email your agent at this address. Forwarding a
+              policy or asking a question routes to the Glass agent for this org.
+            </p>
+            <div className="flex items-stretch gap-0">
+              <input
+                type="text"
+                value={agentHandle}
+                onChange={(e) =>
+                  setAgentHandle(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))
+                }
+                placeholder="your-broker-name"
+                spellCheck={false}
+                autoCapitalize="off"
+                autoCorrect="off"
+                className="flex-1 min-w-0 rounded-l-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+              />
+              <span className="inline-flex items-center rounded-r-lg border border-l-0 border-foreground/8 bg-foreground/[0.03] px-3 text-body-sm text-muted-foreground select-none whitespace-nowrap">
+                @{agentDomain}
+              </span>
+            </div>
+            <HandleAvailability
+              saving={savingHandle}
+              checking={handleChecking}
+              input={normalizedInput}
+              current={currentHandle}
+              availability={normalizedInput === debouncedHandle ? availability : undefined}
+              currentLabel="Current agent handle"
+              renderAvailablePreview={(s) => `${s}@${agentDomain} is available`}
+            />
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
+          <div className="px-5 py-3.5 border-b border-foreground/6">
+            <h3 className="!mb-0 text-sm font-medium text-foreground">Agent email address</h3>
+          </div>
+          <div className="px-5 py-5 space-y-1">
+            <p className="text-body-sm text-muted-foreground/70 mb-3">
+              Email sent to this address routes to your Glass agent for this org.
+            </p>
+            <div
+              aria-disabled="true"
+              className="rounded-lg border border-foreground/8 bg-muted/40 px-3 py-2 text-body-sm text-muted-foreground cursor-not-allowed select-none"
+            >
+              {displayedAgentHandle}@{agentDomain}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Email behavior */}
       <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
@@ -209,7 +234,7 @@ export function BrokerAgentTab() {
                 Email notifications for chat responses
               </p>
               <p className="text-label-sm text-muted-foreground/60 mt-0.5 max-w-md">
-                Send email notifications when the agent replies in email threads.
+                Send the requesting team member an email copy when the agent replies in chat.
               </p>
             </div>
             <button
@@ -218,7 +243,7 @@ export function BrokerAgentTab() {
               role="switch"
               aria-checked={chatEmailNotifications}
               className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors cursor-pointer shrink-0 ml-4 ${
-                chatEmailNotifications ? "bg-foreground" : "bg-foreground/15"
+                chatEmailNotifications ? "bg-primary" : "bg-foreground/15"
               }`}
             >
               <span
@@ -242,12 +267,36 @@ export function BrokerAgentTab() {
               role="switch"
               aria-checked={autoSendEmails}
               className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors cursor-pointer shrink-0 ml-4 ${
-                autoSendEmails ? "bg-foreground" : "bg-foreground/15"
+                autoSendEmails ? "bg-primary" : "bg-foreground/15"
               }`}
             >
               <span
                 className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
                   autoSendEmails ? "translate-x-4.5" : "translate-x-0.5"
+                }`}
+              />
+            </button>
+          </div>
+
+          <div className="flex items-center justify-between gap-4 py-3">
+            <div>
+              <p className="text-body-sm font-medium text-foreground">BCC requester</p>
+              <p className="text-label-sm text-muted-foreground/60 mt-0.5 max-w-md">
+                Blind copy the team member who asked the agent to send an email.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setBccRequesterOnAgentEmails((v) => !v)}
+              role="switch"
+              aria-checked={bccRequesterOnAgentEmails}
+              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors cursor-pointer shrink-0 ml-4 ${
+                bccRequesterOnAgentEmails ? "bg-primary" : "bg-foreground/15"
+              }`}
+            >
+              <span
+                className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                  bccRequesterOnAgentEmails ? "translate-x-4.5" : "translate-x-0.5"
                 }`}
               />
             </button>

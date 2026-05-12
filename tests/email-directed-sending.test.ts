@@ -1,0 +1,127 @@
+import { readFileSync } from "fs";
+import { join } from "path";
+import { describe, expect, it } from "vitest";
+import { resolveEmailAgentIdentity } from "../convex/lib/emailSubagent";
+
+describe("directed email sending", () => {
+  it("falls back to the default agent handle when no custom handle is configured", async () => {
+    const ctx = {
+      runQuery: async () => null,
+      storage: { getUrl: async () => null },
+    };
+
+    const identity = await resolveEmailAgentIdentity(ctx as never, {
+      name: "Standalone Client",
+      type: "client",
+    });
+
+    expect(identity.canSend).toBe(true);
+    expect(identity.agentAddress).toBe("agent@dev.claritylabs.inc");
+    expect(identity.fromHeader).toContain("<agent@dev.claritylabs.inc>");
+  });
+
+  it("passes the current user email as the default recipient for email-me requests", () => {
+    const webSource = readFileSync(
+      join(__dirname, "..", "convex/actions/processThreadChat.ts"),
+      "utf-8",
+    );
+    const smsSource = readFileSync(
+      join(__dirname, "..", "convex/actions/handleInboundImessage.ts"),
+      "utf-8",
+    );
+
+    expect(webSource).toContain("defaultTo: user?.email");
+    expect(webSource).toContain("defaultRecipientName: user?.name");
+    expect(smsSource).toContain("defaultTo: user.email");
+    expect(smsSource).toContain("defaultRecipientName: user.name");
+  });
+
+  it("defaults requester bcc on and passes it to sms and web email sends", () => {
+    const settingsSource = readFileSync(
+      join(__dirname, "..", "components/settings/broker-agent-tab.tsx"),
+      "utf-8",
+    );
+    const webSource = readFileSync(
+      join(__dirname, "..", "convex/actions/processThreadChat.ts"),
+      "utf-8",
+    );
+    const smsSource = readFileSync(
+      join(__dirname, "..", "convex/actions/handleInboundImessage.ts"),
+      "utf-8",
+    );
+
+    expect(settingsSource).toContain("useState(true)");
+    expect(settingsSource).toContain("org.bccRequesterOnAgentEmails ?? true");
+    expect(settingsSource).toContain("bccRequesterOnAgentEmails,");
+    expect(settingsSource).toContain("bg-primary");
+    expect(webSource).toContain("defaultBcc:");
+    expect(webSource).toContain("org.bccRequesterOnAgentEmails !== false");
+    expect(smsSource).toContain("defaultBcc:");
+    expect(smsSource).toContain("org.bccRequesterOnAgentEmails !== false");
+  });
+
+  it("shows the agent settings section for standalone clients only", () => {
+    const settingsPageSource = readFileSync(
+      join(__dirname, "..", "app/settings/page.tsx"),
+      "utf-8",
+    );
+    const sidebarSource = readFileSync(
+      join(__dirname, "..", "components/app-sidebar.tsx"),
+      "utf-8",
+    );
+    const agentTabSource = readFileSync(
+      join(__dirname, "..", "components/settings/broker-agent-tab.tsx"),
+      "utf-8",
+    );
+
+    expect(settingsPageSource).toContain("isStandaloneClient");
+    expect(settingsPageSource).toContain('section.id !== "agent"');
+    expect(settingsPageSource).toContain("section === \"agent\" && isStandaloneClient");
+    expect(sidebarSource).toContain("isStandaloneClient");
+    expect(sidebarSource).toContain("CLIENT_SETTINGS_WITH_AGENT");
+    expect(agentTabSource).toContain('org?.type === "broker"');
+    expect(agentTabSource).toContain("Agent email address");
+    expect(agentTabSource).toContain('aria-disabled="true"');
+    expect(agentTabSource).toContain("cursor-not-allowed");
+  });
+
+  it("surfaces all email expert outcomes in web chat and sms", () => {
+    const webSource = readFileSync(
+      join(__dirname, "..", "convex/actions/processThreadChat.ts"),
+      "utf-8",
+    );
+    const smsSource = readFileSync(
+      join(__dirname, "..", "convex/actions/handleInboundImessage.ts"),
+      "utf-8",
+    );
+
+    expect(webSource).toContain("if (emailResult) {");
+    expect(webSource).toContain("content = emailResult.responseBody;");
+    expect(smsSource).toContain("if (emailResult) {");
+    expect(smsSource).toContain("responseText = emailResult.responseBody;");
+  });
+
+  it("keeps cc and bcc as structured email expert inputs", () => {
+    const source = readFileSync(
+      join(__dirname, "..", "convex/lib/emailSubagent.ts"),
+      "utf-8",
+    );
+
+    expect(source).toContain("cc: z.array(z.string()).optional()");
+    expect(source).toContain("bcc: z.array(z.string()).optional()");
+    expect(source).toContain("emailPayload.bcc = bcc");
+    expect(source).toContain('If the request says "email me"');
+    expect(source).not.toContain("Confirm the recipient name.");
+  });
+
+  it("uses chat email notifications for normal web chat replies", () => {
+    const source = readFileSync(
+      join(__dirname, "..", "convex/actions/processThreadChat.ts"),
+      "utf-8",
+    );
+
+    expect(source).toContain("org.chatEmailNotifications === true");
+    expect(source).toContain("getNotificationFromAddress");
+    expect(source).toContain("View thread");
+  });
+});

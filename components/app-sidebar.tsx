@@ -49,7 +49,11 @@ function GlassStarIcon({ className }: { className?: string }) {
   return <LogoIcon size={16} static className={className} />;
 }
 
-const CLIENT_SETTINGS_WITH_AGENT = [...CLIENT_SETTINGS_SECTIONS];
+const CLIENT_SETTINGS_WITH_AGENT = [
+  ...CLIENT_SETTINGS_SECTIONS.slice(0, 2),
+  { id: "agent", label: "Agent", icon: GlassStarIcon },
+  ...CLIENT_SETTINGS_SECTIONS.slice(2),
+];
 
 const PARTNER_SETTINGS_WITH_AGENT = [
   ...PARTNER_SETTINGS_SECTIONS,
@@ -134,6 +138,7 @@ export function AppSidebar({
   const { context: pageContext } = usePageContext();
   const currentOrg = useCurrentOrg();
   const isBroker = currentOrg?.isBroker ?? false;
+  const isStandaloneClient = currentOrg?.orgType === "client" && !viewerOrg?.brokerOrg;
   const navItems = isBroker ? BROKER_NAV_ITEMS : ALL_NAV_ITEMS;
 
   const pageShortcutMap = useMemo<Record<string, string>>(
@@ -321,7 +326,12 @@ export function AppSidebar({
           </p>
         )}
         {collapsed && <div className="pt-4 pb-1" />}
-        {(isBroker ? PARTNER_SETTINGS_WITH_AGENT : CLIENT_SETTINGS_WITH_AGENT).map((item) => {
+        {(isBroker
+          ? PARTNER_SETTINGS_WITH_AGENT
+          : isStandaloneClient
+            ? CLIENT_SETTINGS_WITH_AGENT
+            : CLIENT_SETTINGS_SECTIONS
+        ).map((item) => {
           const isItemActive = item.id === activeSettingsSection;
           return (
             <NavItem

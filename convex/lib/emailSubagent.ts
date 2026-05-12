@@ -31,6 +31,7 @@ export type EmailSubagentResult = {
   responseBody: string;
   responseTo?: string;
   responseCc?: string[];
+  responseBcc?: string[];
   subject?: string;
   emailBody?: string;
   responseMessageId?: string;
@@ -55,7 +56,9 @@ type EmailExpertContext = {
   brokerBranding?: BrokerBranding;
   senderEmail?: string;
   defaultTo?: string;
+  defaultRecipientName?: string;
   defaultCc?: string[];
+  defaultBcc?: string[];
   subjectHint?: string;
   inReplyTo?: string;
   references?: string;
@@ -126,10 +129,9 @@ export async function resolveEmailAgentIdentity(
     if (brokerOrg) sendingOrg = brokerOrg;
   }
 
-  const handle = typeof sendingOrg.agentHandle === "string" ? sendingOrg.agentHandle : undefined;
-  if (!handle) {
-    return { canSend: false, reason: "No Glass agent email handle is configured." };
-  }
+  const handle = typeof sendingOrg.agentHandle === "string" && sendingOrg.agentHandle.trim()
+    ? sendingOrg.agentHandle
+    : "agent";
 
   const whiteLabelingEnabled = isWhiteLabelingEnabled(
     sendingOrg as { whiteLabelingEnabled?: boolean },
@@ -169,6 +171,7 @@ function extractEmail(value: string | undefined): string | null {
 function formatDraft(params: {
   to?: string;
   cc?: string[];
+  bcc?: string[];
   subject?: string;
   body?: string;
   attachments?: EmailAttachmentMeta[];
@@ -183,6 +186,7 @@ function formatDraft(params: {
     "",
     `To: ${params.to ?? "[confirm recipient]"}`,
     params.cc?.length ? `Cc: ${params.cc.join(", ")}` : null,
+    params.bcc?.length ? `Bcc: ${params.bcc.join(", ")}` : null,
     `Subject: ${params.subject ?? "[confirm subject]"}`,
     attachmentLine.trim() ? attachmentLine.trim() : null,
     "",
@@ -247,6 +251,7 @@ export function buildEmailExpertTool(
       subject: z.string().optional().describe("Subject line if the user supplied or approved one."),
       body: z.string().optional().describe("Email body if already drafted or approved."),
       cc: z.array(z.string()).optional().describe("CC email addresses."),
+      bcc: z.array(z.string()).optional().describe("BCC email addresses."),
       approvedToSend: z.boolean().optional().describe("True only when the user explicitly approved sending this exact email."),
       attachments: z.array(z.object({
         kind: z.enum(["original_policy", "coi", "uploaded_file"]),
@@ -274,6 +279,7 @@ async function runEmailSubagent(
     subject?: string;
     body?: string;
     cc?: string[];
+    bcc?: string[];
     approvedToSend?: boolean;
     attachments?: Array<{
       kind: "original_policy" | "coi" | "uploaded_file";
@@ -378,6 +384,7 @@ async function runEmailSubagent(
     .map(normalizeEmail)
     .filter(Boolean);
   const defaultCc = [...new Set([...(context.defaultCc ?? []), ...(input.cc ?? [])].filter(Boolean))];
+  const defaultBcc = [...new Set([...(context.defaultBcc ?? []), ...(input.bcc ?? [])].filter(Boolean))];
 
   const sendOrDraftEmail = async (params: {
     to?: string;
@@ -385,25 +392,27 @@ async function runEmailSubagent(
     subject?: string;
     body?: string;
     cc?: string[];
+    bcc?: string[];
     approvedToSend?: boolean;
   }): Promise<EmailSubagentResult> => {
     const to = extractEmail(params.to) ?? extractEmail(input.to) ?? extractEmail(context.defaultTo);
-    const recipientName = params.recipientName?.trim() || input.recipientName?.trim();
     const subject = (params.subject ?? input.subject ?? context.subjectHint ?? "").trim();
     const body = (params.body ?? input.body ?? "").trim();
     const cc = [...new Set([...(params.cc ?? []), ...defaultCc].map(normalizeEmail).filter((email) => email && email !== to))];
+    const bcc = [...new Set([...(params.bcc ?? []), ...defaultBcc].map(normalizeEmail).filter((email) => email && email !== to && !cc.includes(email)))];
     const attachments = uniqueAttachments(preparedAttachments);
     const approvedToSend = params.approvedToSend === true || input.approvedToSend === true;
     const autoSend = context.autoSendEmails === true;
 
     const uncertainty: string[] = [];
     if (!to) uncertainty.push("Confirm the recipient email address.");
-    if (!recipientName) uncertainty.push("Confirm the recipient name.");
     if (!subject) uncertainty.push("Confirm the subject line.");
     if (!body) uncertainty.push("Confirm the email body.");
-    const knownRecipient = !!to && (allowedRecipients.length === 0 || allowedRecipients.includes(to));
-    if (to && !knownRecipient && !approvedToSend) {
-      uncertainty.push(`Confirm that ${to} is the intended recipient.`);
+    const unknownRecipients = [to, ...cc, ...bcc]
+      .filter((email): email is string => !!email)
+      .filter((email) => allowedRecipients.length > 0 && !allowedRecipients.includes(email));
+    if (unknownRecipients.length > 0 && !approvedToSend) {
+      uncertainty.push(`Confirm that ${unknownRecipients.join(", ")} ${unknownRecipients.length === 1 ? "is" : "are"} the intended recipient${unknownRecipients.length === 1 ? "" : "s"}.`);
     }
 
     if (uncertainty.length > 0 || (!autoSend && !approvedToSend)) {
@@ -413,6 +422,7 @@ async function runEmailSubagent(
         responseBody: formatDraft({
           to: to ?? undefined,
           cc,
+          bcc,
           subject,
           body,
           attachments,
@@ -420,6 +430,7 @@ async function runEmailSubagent(
         }),
         responseTo: to ?? undefined,
         responseCc: cc.length > 0 ? cc : undefined,
+        responseBcc: bcc.length > 0 ? bcc : undefined,
         subject,
         emailBody: body,
         attachments,
@@ -443,6 +454,7 @@ async function runEmailSubagent(
       html,
     };
     if (cc.length > 0) emailPayload.cc = cc;
+    if (bcc.length > 0) emailPayload.bcc = bcc;
     const headers: Record<string, string> = {};
     if (context.inReplyTo) headers["In-Reply-To"] = context.inReplyTo;
     if (context.references ?? context.inReplyTo) headers.References = context.references ?? context.inReplyTo!;
@@ -460,6 +472,7 @@ async function runEmailSubagent(
         legacyConversationId: context.legacyConversationId,
         recipientEmail: sendTo,
         ccAddresses: cc.length > 0 ? cc : undefined,
+        bccAddresses: bcc.length > 0 ? bcc : undefined,
         subject,
         emailBody: body,
         attachments: attachments.length > 0 ? attachments : undefined,
@@ -476,6 +489,7 @@ async function runEmailSubagent(
         responseBody: `Sending email to ${sendTo}${cc.length > 0 ? ` (CC: ${cc.join(", ")})` : ""}...`,
         responseTo: sendTo,
         responseCc: cc.length > 0 ? cc : undefined,
+        responseBcc: bcc.length > 0 ? bcc : undefined,
         subject,
         emailBody: body,
         pendingEmailId,
@@ -500,6 +514,7 @@ async function runEmailSubagent(
         content: body,
         toAddresses: [sendTo],
         ccAddresses: cc.length > 0 ? cc : undefined,
+        bccAddresses: bcc.length > 0 ? bcc : undefined,
         subject,
         responseMessageId: sentMessageId,
         attachments: attachments.length > 0 ? attachments : undefined,
@@ -514,6 +529,7 @@ async function runEmailSubagent(
       responseBody: `Email sent to ${sendTo}${cc.length > 0 ? ` (CC: ${cc.join(", ")})` : ""}.`,
       responseTo: sendTo,
       responseCc: cc.length > 0 ? cc : undefined,
+      responseBcc: bcc.length > 0 ? bcc : undefined,
       subject,
       emailBody: body,
       responseMessageId: sentMessageId,
@@ -533,7 +549,7 @@ You only handle Glass Agent outbound email. Your job is to draft or send polishe
 
 Be careful by default:
 - If the recipient email is missing, inferred, or not clearly the intended recipient, do not send. Produce a draft and ask for confirmation.
-- If the recipient name is missing, do not send. Ask for confirmation of the name.
+- If the request says "email me", "send me", or "email this to me", use the supplied default recipient as the recipient.
 - If the subject, body, or requested attachments are ambiguous, do not send.
 - If auto-send is disabled, draft first unless the caller says the user explicitly approved this exact email.
 - Attach original policy PDFs or generated COIs when requested. Never claim an attachment is included unless you used an attachment tool or it was already attached.
@@ -551,9 +567,11 @@ Call send_or_draft_email exactly once after preparing any requested attachments.
         supplied: {
           to: input.to ?? context.defaultTo,
           recipientName: input.recipientName,
+          defaultRecipientName: context.defaultRecipientName,
           subject: input.subject ?? context.subjectHint,
           body: input.body,
           cc: defaultCc,
+          bcc: defaultBcc,
           approvedToSend: input.approvedToSend === true,
         },
         conversationContext: context.conversationContext,
@@ -597,6 +615,7 @@ Call send_or_draft_email exactly once after preparing any requested attachments.
           subject: z.string().optional(),
           body: z.string().optional(),
           cc: z.array(z.string()).optional(),
+          bcc: z.array(z.string()).optional(),
           approvedToSend: z.boolean().optional(),
         }),
         execute: sendOrDraftEmail,

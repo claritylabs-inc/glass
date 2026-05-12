@@ -33,6 +33,7 @@ import { Bell } from "lucide-react";
 const CLIENT_SETTINGS_SECTIONS = [
   { id: "organization", label: "Organization", icon: Building2 },
   { id: "team", label: "Team", icon: Users },
+  { id: "agent", label: "Agent", icon: GlassStarIcon },
   { id: "memory", label: "Memory", icon: Brain },
   { id: "connections", label: "Connections", icon: Network },
   { id: "integrations", label: "Integrations", icon: Puzzle },
@@ -62,8 +63,13 @@ export default function SettingsPage() {
   const [rightPanel, setRightPanel] = useState<React.ReactNode>(null);
   const currentOrg = useCurrentOrg();
   const isBroker = currentOrg?.isBroker ?? false;
+  const isStandaloneClient = currentOrg?.orgType === "client" && !currentOrg?.brokerOrg;
 
-  const SETTINGS_SECTIONS_ACTIVE = isBroker ? BROKER_SETTINGS_SECTIONS : CLIENT_SETTINGS_SECTIONS;
+  const SETTINGS_SECTIONS_ACTIVE = isBroker
+    ? BROKER_SETTINGS_SECTIONS
+    : isStandaloneClient
+      ? CLIENT_SETTINGS_SECTIONS
+      : CLIENT_SETTINGS_SECTIONS.filter((section) => section.id !== "agent");
   const requestedSection = searchParams.get("section") as SettingsSection | null;
   const activeSection: SettingsSection = SETTINGS_SECTIONS_ACTIVE.some((section) => section.id === requestedSection)
     ? requestedSection!
@@ -106,13 +112,21 @@ export default function SettingsPage() {
         </div>
 
         {/* Section content — sidebar navigation is handled by the main app sidebar on desktop */}
-        <SectionContent section={activeSection} isBroker={isBroker} />
+        <SectionContent section={activeSection} isBroker={isBroker} isStandaloneClient={isStandaloneClient} />
       </AppShell>
     </SettingsActionsContext.Provider>
   );
 }
 
-function SectionContent({ section, isBroker }: { section: SettingsSection; isBroker: boolean }) {
+function SectionContent({
+  section,
+  isBroker,
+  isStandaloneClient,
+}: {
+  section: SettingsSection;
+  isBroker: boolean;
+  isStandaloneClient: boolean;
+}) {
   const currentOrg = useCurrentOrg();
 
   if (isBroker) {
@@ -135,6 +149,8 @@ function SectionContent({ section, isBroker }: { section: SettingsSection; isBro
         <OrganizationSection />
       ) : section === "team" ? (
         <TeamSection />
+      ) : section === "agent" && isStandaloneClient ? (
+        <BrokerAgentTab />
       ) : section === "memory" ? (
         <MemorySection />
       ) : section === "connections" ? (

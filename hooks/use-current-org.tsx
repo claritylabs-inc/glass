@@ -12,11 +12,12 @@ export function useCurrentOrg() {
 
   if (!result) return null;
 
-  const { org, membership } = result;
+  const { org, membership, brokerOrg } = result;
 
   return {
     orgId: org._id,
     org,
+    brokerOrg,
     orgType: (org as { type?: "broker" | "client" }).type ?? "client",
     role: membership.role,
     isBroker: (org as { type?: "broker" | "client" }).type === "broker",

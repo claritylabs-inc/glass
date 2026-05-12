@@ -52,6 +52,7 @@ export const sendPending = internalAction({
           content: pending.emailBody,
           toAddresses: [pending.recipientEmail],
           ccAddresses: pending.ccAddresses,
+          bccAddresses: pending.bccAddresses,
           subject: pending.subject,
           responseMessageId: sentMessageId,
           attachments: pending.attachments,
