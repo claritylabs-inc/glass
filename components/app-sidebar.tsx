@@ -183,7 +183,7 @@ export function AppSidebar({
     type ConvItem = { kind: "email" | "chat" | "imessage"; id: string; label: string; time: number };
 
     return (unifiedThreads ?? []).slice(0, 8).map((t): ConvItem => ({
-      kind: t.threadPhone ? "imessage" : t.originChannel === "email" ? "email" : "chat",
+      kind: t.originChannel === "imessage" ? "imessage" : t.originChannel === "email" ? "email" : "chat",
       id: t._id,
       label: t.title,
       time: t.lastMessageAt ?? t._creationTime,

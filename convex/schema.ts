@@ -1036,6 +1036,9 @@ export default defineSchema({
       entityId: v.optional(v.string()),
       summary: v.optional(v.string()),
     })),
+    // Backwards compatibility for existing prod threads from the legacy conversation migration.
+    // Do not remove unless those documents have been backfilled/deleted in production.
+    legacyConversationId: v.optional(v.string()),
     visibility: v.optional(v.union(v.literal("broker_visible"), v.literal("client_internal"))),
     threadPhone: v.optional(v.string()),
     imessageChatGuid: v.optional(v.string()),
@@ -1070,6 +1073,9 @@ export default defineSchema({
     messageId: v.optional(v.string()),
     responseMessageId: v.optional(v.string()),
     resendEmailId: v.optional(v.string()),
+    // Backwards compatibility for existing prod threadMessages from the legacy conversation migration.
+    // Do not remove unless those documents have been backfilled/deleted in production.
+    legacyConversationId: v.optional(v.string()),
     // Content
     content: v.string(),
     contentHtml: v.optional(v.string()),

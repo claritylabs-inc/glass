@@ -38,6 +38,8 @@ export type ThreadMessage = {
   role: "user" | "agent" | "system";
   userId?: Id<"users">;
   userName?: string;
+  imessageSenderAddress?: string;
+  imessageParticipantLabel?: string;
   fromEmail?: string;
   fromName?: string;
   toAddresses?: string[];
@@ -234,13 +236,15 @@ const markdownComponents = {
 /* ── Attachment chip for unified thread messages ── */
 function ThreadAttachmentChip({
   attachment,
+  threadId,
 }: {
   attachment: { filename: string; contentType: string; size: number; fileId?: Id<"_storage"> };
+  threadId: Id<"threads">;
 }) {
   const { openWithUrl } = usePdf();
   const url = useQuery(
     api.threads.getAttachmentUrl,
-    attachment.fileId ? { fileId: attachment.fileId } : "skip",
+    attachment.fileId ? { threadId, fileId: attachment.fileId } : "skip",
   );
   const isPdf = attachment.contentType === "application/pdf";
 
@@ -504,7 +508,7 @@ export function UnifiedMessageBubble({
             {msg.attachments && msg.attachments.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-2">
                 {msg.attachments.map((att, i) => (
-                  <ThreadAttachmentChip key={i} attachment={att} />
+                  <ThreadAttachmentChip key={i} attachment={att} threadId={msg.threadId} />
                 ))}
               </div>
             )}
@@ -532,7 +536,10 @@ export function UnifiedMessageBubble({
     (viewerId && msg.userId === viewerId) ||
     (viewerEmail && msg.fromEmail?.toLowerCase() === viewerEmail.toLowerCase());
 
-  const displayName = msg.userName ?? msg.fromName ?? msg.fromEmail ?? "User";
+  const displayName =
+    msg.channel === "imessage"
+      ? msg.imessageParticipantLabel ?? msg.userName ?? msg.imessageSenderAddress ?? "iMessage participant"
+      : msg.userName ?? msg.fromName ?? msg.fromEmail ?? "User";
 
   // For email messages, strip quoted reply text
   const isEmail = msg.channel === "email";
@@ -594,7 +601,7 @@ export function UnifiedMessageBubble({
           {msg.attachments && msg.attachments.length > 0 && (
             <div className="mt-3 pt-3 border-t border-foreground/6 flex flex-wrap gap-2">
               {msg.attachments.map((att, i) => (
-                <ThreadAttachmentChip key={i} attachment={att} />
+                <ThreadAttachmentChip key={i} attachment={att} threadId={msg.threadId} />
               ))}
             </div>
           )}
