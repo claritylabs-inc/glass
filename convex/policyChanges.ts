@@ -22,6 +22,7 @@ const caseStatusValidator = v.union(
   v.literal("submitted"),
   v.literal("accepted"),
   v.literal("declined"),
+  v.literal("cancelled"),
 );
 
 function summarizeRequest(requestText: string): string {
@@ -420,6 +421,33 @@ export const markStatus = mutation({
     const access = await getOrgAccess(ctx, existing.orgId);
     assertCanManagePolicyChange(access);
     await ctx.db.patch(args.caseId, { status: args.status, updatedAt: Date.now() });
+  },
+});
+
+export const cancelRequest = mutation({
+  args: { caseId: v.id("policyChangeCases") },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db.get(args.caseId);
+    if (!existing) throw new Error("Policy change case not found");
+    const access = await getOrgAccess(ctx, existing.orgId);
+    assertCanReadPolicyChange(access);
+
+    if (existing.status === "accepted" || existing.status === "declined") {
+      throw new Error("Completed policy change requests cannot be cancelled");
+    }
+    if (existing.status === "cancelled") return;
+
+    const now = Date.now();
+    await ctx.db.patch(args.caseId, { status: "cancelled", updatedAt: now });
+    await insertCaseMessage(ctx, {
+      orgId: existing.orgId,
+      caseId: args.caseId,
+      direction: "system",
+      channel: "manual",
+      content: "Policy change request cancelled.",
+      createdByUserId: access.userId,
+      createdAt: now,
+    });
   },
 });
 

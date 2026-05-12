@@ -63,20 +63,93 @@ function logPolicyActivityToBrowser(
   console.info(`[policy-activity] ${event}`, payload);
 }
 
-function PolicyChangesTab({ policyId }: { policyId: string }) {
+function formatPolicyChangeStatus(status: string) {
+  return status.replace("_", " ");
+}
+
+function policyChangeProgress(status: string) {
+  switch (status) {
+    case "draft":
+      return 1;
+    case "needs_info":
+      return 2;
+    case "ready":
+      return 3;
+    case "submitted":
+      return 4;
+    case "accepted":
+      return 5;
+    case "declined":
+    case "cancelled":
+      return 0;
+    default:
+      return 1;
+  }
+}
+
+function isPolicyChangeTerminal(status: string) {
+  return status === "accepted" || status === "declined" || status === "cancelled";
+}
+
+function PolicyChangeProgress({ status }: { status: string }) {
+  const steps = ["Requested", "Review", "Ready", "Submitted", "Complete"];
+  const completed = policyChangeProgress(status);
+  const interrupted = status === "declined" || status === "cancelled";
+
+  return (
+    <div className="mt-4">
+      <div className="grid grid-cols-5 gap-2">
+        {steps.map((step, index) => {
+          const active = !interrupted && index + 1 <= completed;
+          return (
+            <div key={step} className="min-w-0">
+              <div
+                className={`h-1.5 rounded-full ${
+                  active ? "bg-foreground" : "bg-foreground/10"
+                }`}
+              />
+              <p
+                className={`mt-1 truncate text-[11px] ${
+                  active ? "text-foreground" : "text-muted-foreground"
+                }`}
+              >
+                {step}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+      {interrupted && (
+        <p className="mt-2 text-label-sm text-muted-foreground">
+          This request is {formatPolicyChangeStatus(status)}.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function PolicyChangesTab({
+  policyId,
+  canManage,
+}: {
+  policyId: string;
+  canManage: boolean;
+}) {
   const [selectedCaseId, setSelectedCaseId] = useState<Id<"policyChangeCases"> | null>(null);
   const [packetLoading, setPacketLoading] = useState(false);
   const [statusLoading, setStatusLoading] = useState<string | null>(null);
+  const [cancelLoading, setCancelLoading] = useState<string | null>(null);
   const cases = useQuery(api.policyChanges.listByPolicy, {
     policyId: policyId as Id<"policies">,
   });
   const activeCaseId = selectedCaseId ?? cases?.[0]?._id ?? null;
   const detail = useQuery(
     api.policyChanges.getCaseDetail,
-    activeCaseId ? { caseId: activeCaseId } : "skip",
+    canManage && activeCaseId ? { caseId: activeCaseId } : "skip",
   );
   const generatePacket = useMutation(api.policyChanges.generateCarrierPacket);
   const markStatus = useMutation(api.policyChanges.markStatus);
+  const cancelRequest = useMutation(api.policyChanges.cancelRequest);
 
   if (cases === undefined) {
     return (
@@ -124,6 +197,80 @@ function PolicyChangesTab({ policyId }: { policyId: string }) {
     }
   };
 
+  const handleCancel = async (caseId: Id<"policyChangeCases">) => {
+    setCancelLoading(caseId);
+    try {
+      await cancelRequest({ caseId });
+      toast.success("Policy change request cancelled");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not cancel request");
+    } finally {
+      setCancelLoading(null);
+    }
+  };
+
+  if (!canManage) {
+    return (
+      <div className="space-y-3">
+        {cases.map((change) => {
+          const missingInfoCount = Array.isArray(change.missingInfoQuestions)
+            ? change.missingInfoQuestions.length
+            : 0;
+          const issueCount = Array.isArray(change.validationIssues)
+            ? change.validationIssues.length
+            : 0;
+          const terminal = isPolicyChangeTerminal(change.status);
+
+          return (
+            <div
+              key={change._id}
+              className="rounded-lg border border-foreground/6 bg-card p-4"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-body-sm font-medium text-foreground">
+                      {change.summary ?? "Policy change request"}
+                    </p>
+                    <span className="rounded-full border border-foreground/8 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                      {formatPolicyChangeStatus(change.status)}
+                    </span>
+                  </div>
+                  <p className="mt-2 max-w-3xl text-label-sm leading-5 text-muted-foreground">
+                    {change.requestText}
+                  </p>
+                </div>
+                {!terminal && (
+                  <PillButton
+                    variant="secondary"
+                    size="compact"
+                    onClick={() => handleCancel(change._id)}
+                    disabled={cancelLoading !== null}
+                  >
+                    {cancelLoading === change._id ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <X className="w-3.5 h-3.5" />
+                    )}
+                    Cancel
+                  </PillButton>
+                )}
+              </div>
+
+              <PolicyChangeProgress status={change.status} />
+
+              <div className="mt-3 flex flex-wrap gap-3 text-[11px] text-muted-foreground">
+                <span>Updated {new Date(change.updatedAt).toLocaleDateString()}</span>
+                {missingInfoCount > 0 && <span>{missingInfoCount} question{missingInfoCount === 1 ? "" : "s"} open</span>}
+                {issueCount > 0 && <span>{issueCount} issue{issueCount === 1 ? "" : "s"} to review</span>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
   const activeCase = detail?.case;
   const packet = detail?.latestPacket;
   const items = Array.isArray(activeCase?.items) ? activeCase.items as Record<string, unknown>[] : [];
@@ -165,7 +312,7 @@ function PolicyChangesTab({ policyId }: { policyId: string }) {
                   </p>
                 </div>
                 <span className="shrink-0 rounded-full border border-foreground/8 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
-                  {change.status.replace("_", " ")}
+                  {formatPolicyChangeStatus(change.status)}
                 </span>
               </div>
               <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
@@ -238,6 +385,17 @@ function PolicyChangesTab({ policyId }: { policyId: string }) {
                     {statusLoading === "declined" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />}
                     Declined
                   </PillButton>
+                  {activeCase.status !== "cancelled" && activeCase.status !== "accepted" && activeCase.status !== "declined" && (
+                    <PillButton
+                      variant="secondary"
+                      size="compact"
+                      onClick={() => handleCancel(activeCase._id)}
+                      disabled={cancelLoading !== null}
+                    >
+                      {cancelLoading === activeCase._id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />}
+                      Cancel
+                    </PillButton>
+                  )}
                 </div>
               </div>
             </div>
@@ -623,6 +781,7 @@ export function PolicyDetailBody({
   afterDeleteHref = "/policies",
 }: PolicyDetailBodyProps) {
   const policy = useQuery(api.policies.get, { id: id as Id<"policies"> });
+  const viewerOrg = useQuery(api.orgs.viewerOrg, {});
   const auditEntries = useQuery(
     api.policyAuditLog.listByPolicy,
     LOG_POLICY_ACTIVITY_IN_BROWSER
@@ -693,6 +852,8 @@ export function PolicyDetailBody({
   const displayName = administratorName || carrierName;
   const policyNumber = (p.policyNumber as string | undefined) ?? "";
   const isDeleted = !!p.deletedAt;
+  const canManagePolicyChanges =
+    (viewerOrg?.org as { type?: "broker" } | undefined)?.type === "broker";
   const pipelineStatus = p.pipelineStatus as PipelineStatus | undefined;
   const canCancelExtraction =
     pipelineStatus === "running" || pipelineStatus === "paused";
@@ -1135,7 +1296,7 @@ export function PolicyDetailBody({
       )}
 
       {activeTab === "changes" && (
-        <PolicyChangesTab policyId={id} />
+        <PolicyChangesTab policyId={id} canManage={canManagePolicyChanges} />
       )}
 
       {activeTab === "certificates" && (

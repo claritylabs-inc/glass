@@ -918,6 +918,7 @@ export default defineSchema({
       v.literal("submitted"),
       v.literal("accepted"),
       v.literal("declined"),
+      v.literal("cancelled"),
     ),
     summary: v.optional(v.string()),
     items: v.optional(v.any()),

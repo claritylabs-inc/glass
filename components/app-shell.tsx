@@ -1,6 +1,15 @@
 "use client";
 
-import { Suspense, useState, useCallback, useRef, useEffect } from "react";
+import {
+  Children,
+  Fragment,
+  Suspense,
+  isValidElement,
+  useState,
+  useCallback,
+  useRef,
+  useEffect,
+} from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
 import { AppSidebar } from "@/components/app-sidebar";
@@ -30,6 +39,33 @@ const PdfPanel = dynamic(
 const MIN_RIGHT_PANEL_WIDTH = 320;
 const MAX_RIGHT_PANEL_WIDTH = 760;
 const DEFAULT_RIGHT_PANEL_WIDTH = 420;
+
+function hasVisibleRightPanel(node: React.ReactNode): boolean {
+  if (node === null || node === undefined || typeof node === "boolean") {
+    return false;
+  }
+
+  if (Array.isArray(node)) {
+    return node.some(hasVisibleRightPanel);
+  }
+
+  if (!isValidElement(node)) {
+    return true;
+  }
+
+  if (node.type === Fragment) {
+    return Children.toArray(
+      (node.props as { children?: React.ReactNode }).children,
+    ).some(hasVisibleRightPanel);
+  }
+
+  const props = node.props as { open?: unknown };
+  if (props.open === false) {
+    return false;
+  }
+
+  return true;
+}
 
 function ResizableRightPanelSlot({
   children,
@@ -114,11 +150,12 @@ function ShellContent({
   const { preview: entityPreview } = useEntityPreview();
   const hasPdfPanel = isPdfOpen && !!fileUrl;
   const hasEntityPanel = !!entityPreview;
-  const visiblePanelCount = (rightPanel ? 1 : 0) + (hasEntityPanel ? 1 : 0) + (hasPdfPanel ? 1 : 0);
+  const hasRightPanel = hasVisibleRightPanel(rightPanel);
+  const visiblePanelCount = (hasRightPanel ? 1 : 0) + (hasEntityPanel ? 1 : 0) + (hasPdfPanel ? 1 : 0);
   const useEqualPanelLayout = visiblePanelCount >= 2;
 
   return (
-    <div className="h-dvh flex overflow-hidden">
+    <div className="flex h-dvh w-full min-w-0 overflow-hidden">
       {/* AppSidebar uses useSearchParams; wrap in Suspense so the root
           layout can prerender pages like /_not-found without bailing. */}
       <Suspense fallback={null}>
@@ -138,9 +175,9 @@ function ShellContent({
             presenceUsers={presenceUsers}
             onMobileMenuToggle={() => setMobileOpen((v) => !v)}
           />
-          <div className="flex-1 relative min-w-0 overflow-hidden">
-            <main className="absolute inset-0 overflow-y-auto">
-              <div className="max-w-7xl mx-auto px-6 lg:px-8 py-6 pb-32">
+          <div className="relative min-w-0 flex-1 overflow-hidden">
+            <main className="absolute inset-0 min-w-0 overflow-y-auto">
+              <div className="w-full min-w-0 px-6 py-6 pb-32 lg:px-8">
                 {children}
               </div>
             </main>
@@ -160,7 +197,7 @@ function ShellContent({
             </div>
           )
         )}
-        {rightPanel && (
+        {hasRightPanel && rightPanel && (
           <ResizableRightPanelSlot equalLayout={useEqualPanelLayout}>
             {rightPanel}
           </ResizableRightPanelSlot>
