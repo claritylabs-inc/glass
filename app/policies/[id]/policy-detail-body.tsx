@@ -92,6 +92,8 @@ function isPolicyChangeTerminal(status: string) {
 }
 
 function PolicyChangeProgress({ status }: { status: string }) {
+  if (status === "cancelled") return null;
+
   const steps = [
     { label: "Requested", detail: "Request received" },
     { label: "Review", detail: "Checking details" },
@@ -100,11 +102,11 @@ function PolicyChangeProgress({ status }: { status: string }) {
     { label: "Complete", detail: "Change resolved" },
   ];
   const completed = policyChangeProgress(status);
-  const interrupted = status === "declined" || status === "cancelled";
+  const interrupted = status === "declined";
 
   return (
     <div className="mt-4">
-      <div className="grid grid-cols-5 gap-2">
+      <div className="grid grid-cols-1 gap-2 lg:grid-cols-5">
         {steps.map((step, index) => {
           const stepNumber = index + 1;
           const active = !interrupted && stepNumber <= completed;
@@ -113,24 +115,24 @@ function PolicyChangeProgress({ status }: { status: string }) {
           return (
             <div
               key={step.label}
-              className={`min-w-0 rounded-lg border px-3 py-2.5 ${
+              className={`flex min-w-0 items-center gap-2 rounded-lg border px-3 py-2.5 ${
                 current
                   ? "border-foreground/14 bg-foreground/[0.025]"
                   : "border-foreground/6 bg-card"
               }`}
             >
-              <div className="flex min-w-0 items-center gap-2">
-                <span
-                  className={`flex size-6 shrink-0 items-center justify-center rounded-full text-[11px] font-medium leading-none tabular-nums ${
-                    done
-                      ? "bg-foreground text-background"
-                      : current
-                        ? "border border-foreground bg-background text-foreground"
-                        : "bg-foreground/8 text-muted-foreground"
-                  }`}
-                >
-                  {done ? <Check className="size-3.5" /> : stepNumber}
-                </span>
+              <span
+                className={`flex size-5 shrink-0 items-center justify-center rounded-full text-[10px] font-medium leading-none tabular-nums ${
+                  done
+                    ? "bg-foreground text-background"
+                    : current
+                      ? "border border-foreground bg-background text-foreground"
+                      : "bg-foreground/8 text-muted-foreground"
+                }`}
+              >
+                {done ? <Check className="size-3" strokeWidth={2.25} /> : stepNumber}
+              </span>
+              <div className="min-w-0 flex-1">
                 <p
                   className={`truncate text-label-sm ${
                     current ? "font-medium text-foreground" : active ? "text-foreground/75" : "text-muted-foreground"
@@ -138,12 +140,12 @@ function PolicyChangeProgress({ status }: { status: string }) {
                 >
                   {step.label}
                 </p>
+                <p className="truncate text-[11px] leading-4 text-muted-foreground">
+                  {step.detail}
+                </p>
               </div>
-              <p className="mt-1 min-h-8 text-[11px] leading-4 text-muted-foreground">
-                {step.detail}
-              </p>
               {current ? (
-                <span className="mt-2 inline-flex rounded-full border border-foreground/8 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                <span className="hidden shrink-0 rounded-full border border-foreground/8 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground xl:inline-flex">
                   Current
                 </span>
               ) : null}
