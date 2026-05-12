@@ -52,6 +52,11 @@ http.route({
     let body: {
       fromPhone: string;
       messageText: string;
+      chatGuid?: string;
+      isGroup?: boolean;
+      chatTitle?: string;
+      participantsUnavailable?: boolean;
+      participants?: Array<{ address: string; displayName?: string }>;
       sourceMessageId?: string;
       receivedAt?: number;
       attachments?: Array<{ data: string; mimeType: string; name: string }>;
@@ -78,6 +83,11 @@ http.route({
         {
           fromPhone: body.fromPhone,
           messageText: body.messageText,
+          chatGuid: body.chatGuid,
+          isGroup: body.isGroup,
+          chatTitle: body.chatTitle,
+          participantsUnavailable: body.participantsUnavailable,
+          participants: body.participants,
           sourceMessageId: body.sourceMessageId,
           receivedAt: body.receivedAt,
           attachments: body.attachments,

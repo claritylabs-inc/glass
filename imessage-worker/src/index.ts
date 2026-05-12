@@ -4,6 +4,19 @@ import { imessage } from "spectrum-ts/providers/imessage";
 import { terminal } from "spectrum-ts/providers/terminal";
 import { sendToConvex, type ImessageAttachment } from "./convex.js";
 
+type AdvancedImessageClient = {
+  chats?: {
+    get(chatGuid: string): Promise<{
+      displayName?: string;
+      isGroup?: boolean;
+      participants?: readonly { address: string }[];
+    }>;
+  };
+  groups?: {
+    leave(chatGuid: string): Promise<void>;
+  };
+};
+
 // ── Config ──────────────────────────────────────────────────────────────────
 
 const PROJECT_ID = process.env.PHOTON_PROJECT_ID;
@@ -76,8 +89,70 @@ function readTimestamp(value: unknown, fieldNames: string[]): number | undefined
 }
 
 function normalizePhone(raw: string): string {
+  if (raw.includes("@")) return raw.trim().toLowerCase();
   const cleaned = raw.replace(/[^+\d]/g, "");
   return cleaned.startsWith("+") ? cleaned : `+${cleaned}`;
+}
+
+function getAdvancedImessageClient(app: SpectrumInstance, space?: Space): AdvancedImessageClient | undefined {
+  const runtime = app.__internal.platforms.get("iMessage");
+  const client = runtime?.client;
+  if (!client) return undefined;
+  if (Array.isArray(client)) {
+    const phone = readStringField(space, ["phone"]);
+    const entry =
+      client.find((candidate: unknown) => {
+        const record = candidate as Record<string, unknown>;
+        return typeof record.phone === "string" && record.phone === phone;
+      }) ?? client[0];
+    const record = entry as Record<string, unknown> | undefined;
+    return record?.client as AdvancedImessageClient | undefined;
+  }
+  return client as AdvancedImessageClient;
+}
+
+async function getChatSnapshot(app: SpectrumInstance, space: Space) {
+  const chatGuid = readStringField(space, ["id"]);
+  if (!chatGuid || TRANSPORT !== "imessage") {
+    return {
+      chatGuid,
+      isGroup: readStringField(space, ["type"]) === "group",
+      participants: [] as Array<{ address: string }>,
+      participantsUnavailable: false,
+    };
+  }
+
+  const fallbackIsGroup = readStringField(space, ["type"]) === "group";
+  try {
+    const client = getAdvancedImessageClient(app, space);
+    const chat = await client?.chats?.get(chatGuid);
+    if (!chat) {
+      return {
+        chatGuid,
+        isGroup: fallbackIsGroup,
+        participants: [] as Array<{ address: string }>,
+        participantsUnavailable: fallbackIsGroup,
+      };
+    }
+    const participants = (chat.participants ?? []).map((participant) => ({
+      address: participant.address,
+    }));
+    return {
+      chatGuid,
+      isGroup: chat.isGroup === true,
+      chatTitle: chat.displayName,
+      participants,
+      participantsUnavailable: chat.isGroup === true && participants.length === 0,
+    };
+  } catch (err) {
+    console.warn(`[glass-imessage] Failed to fetch chat snapshot for ${chatGuid}:`, err);
+    return {
+      chatGuid,
+      isGroup: fallbackIsGroup,
+      participants: [] as Array<{ address: string }>,
+      participantsUnavailable: fallbackIsGroup,
+    };
+  }
 }
 
 async function startSpectrum(): Promise<SpectrumInstance> {
@@ -107,6 +182,7 @@ async function main() {
 
   const app = await startSpectrum();
   const activeSpacesByPhone = new Map<string, Space>();
+  const activeSpacesByChatGuid = new Map<string, Space>();
 
   console.log("[glass-imessage] Connected. Waiting for messages...");
 
@@ -138,7 +214,7 @@ async function main() {
       req.on("error", reject);
     });
 
-    let payload: { toPhone?: string; message?: string };
+    let payload: { toPhone?: string; chatGuid?: string; message?: string };
     try {
       payload = JSON.parse(body);
     } catch {
@@ -147,13 +223,29 @@ async function main() {
       return;
     }
 
-    if (!payload.toPhone || !payload.message) {
+    if ((!payload.toPhone && !payload.chatGuid) || !payload.message) {
       res.writeHead(400, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "toPhone and message are required" }));
+      res.end(JSON.stringify({ error: "toPhone or chatGuid and message are required" }));
       return;
     }
 
     try {
+      const activeChatSpace = payload.chatGuid
+        ? activeSpacesByChatGuid.get(payload.chatGuid)
+        : undefined;
+      if (activeChatSpace) {
+        await activeChatSpace.send(payload.message);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true }));
+        return;
+      }
+
+      if (!payload.toPhone) {
+        res.writeHead(404, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "No active chat space" }));
+        return;
+      }
+
       const toPhone = normalizePhone(payload.toPhone);
       const activeSpace = activeSpacesByPhone.get(toPhone);
       if (activeSpace) {
@@ -209,6 +301,10 @@ async function main() {
         : message.sender.id;
     const fromPhone = normalizePhone(senderId);
     activeSpacesByPhone.set(fromPhone, space);
+    const chatSnapshot = await getChatSnapshot(app, space);
+    if (chatSnapshot.chatGuid) {
+      activeSpacesByChatGuid.set(chatSnapshot.chatGuid, space);
+    }
     const sourceMessageId = readStringField(message, [
       "id",
       "messageId",
@@ -262,6 +358,16 @@ async function main() {
           const result = await sendToConvex(CONVEX_SITE_URL!, WORKER_SECRET, {
             fromPhone,
             messageText: messageText || "(attachment)",
+            chatGuid: chatSnapshot.chatGuid,
+            isGroup: chatSnapshot.isGroup,
+            chatTitle: chatSnapshot.chatTitle,
+            participantsUnavailable: chatSnapshot.participantsUnavailable,
+            participants: [
+              ...chatSnapshot.participants,
+              ...(chatSnapshot.participants.some((p) => normalizePhone(p.address) === fromPhone)
+                ? []
+                : [{ address: fromPhone }]),
+            ],
             sourceMessageId,
             receivedAt,
             attachments: attachments.length > 0 ? attachments : undefined,
@@ -288,6 +394,16 @@ async function main() {
               } catch (err) {
                 console.warn(`[glass-imessage] Failed to send attachment ${att.filename}:`, err);
               }
+            }
+          }
+
+          if (result.leaveGroup && result.chatGuid && TRANSPORT === "imessage") {
+            try {
+              const client = getAdvancedImessageClient(app, space);
+              await client?.groups?.leave(result.chatGuid);
+              activeSpacesByChatGuid.delete(result.chatGuid);
+            } catch (err) {
+              console.warn(`[glass-imessage] Failed to leave group ${result.chatGuid}:`, err);
             }
           }
         });

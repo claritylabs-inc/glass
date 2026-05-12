@@ -33,7 +33,7 @@ Core layers:
 - Extraction, query agent, and prompts: `@claritylabs/cl-sdk@1.1.x`
 - Providers: OpenAI, MoonshotAI, Anthropic, DeepSeek
 - Email: outbound + inbound via Resend (no IMAP, no Gmail OAuth). All outbound Resend calls go through `convex/lib/resend.ts` (`sendResendEmail`). Sending domain comes from `AGENT_DOMAIN` (prod: `glass.claritylabs.inc`, dev: `dev.claritylabs.inc`). Inbound webhook at `POST /resend-inbound`.
-- iMessage / Spectrum: Photon-backed iMessage is production-only. Set `IMESSAGE_ENABLED=true`, `IMESSAGE_WORKER_URL`, `IMESSAGE_WORKER_SECRET`, and `NEXT_PUBLIC_GLASS_IMESSAGE_NUMBER` only in production with the production Photon account. For dev/preview testing, keep `IMESSAGE_ENABLED` false and use the Spectrum Terminal provider in `imessage-worker` (`SPECTRUM_PROVIDER=terminal`, `IMESSAGE_TERMINAL_FROM_PHONE=<test user phone>`). Convex accepts terminal-driven inbound messages only when `IMESSAGE_TERMINAL_ENABLED=true`; do not set `NEXT_PUBLIC_GLASS_IMESSAGE_NUMBER` in dev/preview unless intentionally advertising a test line.
+- iMessage / Spectrum: Photon-backed iMessage is production-only. Set `IMESSAGE_ENABLED=true`, `IMESSAGE_WORKER_URL`, `IMESSAGE_WORKER_SECRET`, and `NEXT_PUBLIC_GLASS_IMESSAGE_NUMBER` only in production with the production Photon account. For dev/preview testing, keep `IMESSAGE_ENABLED` false and use the Spectrum Terminal provider in `imessage-worker` (`SPECTRUM_PROVIDER=terminal`, `IMESSAGE_TERMINAL_FROM_PHONE=<test user phone>`). Convex accepts terminal-driven inbound messages only when `IMESSAGE_TERMINAL_ENABLED=true`; do not set `NEXT_PUBLIC_GLASS_IMESSAGE_NUMBER` in dev/preview unless intentionally advertising a test line. iMessage direct chats and groups both enter through `/imessage-inbound`; group chats are keyed by Photon chat GUID and mirrored into `imessageChats` / `imessageParticipants` so Glass can distinguish linked users from anonymous participants.
 
 ## Current Model Routing
 
@@ -262,6 +262,17 @@ Inbound email arrives at `POST /resend-inbound` and is handled by `convex/action
   - `generate_coi`
   - `extract_policy_attachment` — extracts PDF attachments via `extractFromUploadInternal`
 - After a reply is produced, a Haiku summarization pass writes a `source: "email"` observation to `orgMemory`.
+
+### iMessage Agent (Inbound)
+
+Inbound iMessage arrives through the `imessage-worker` Spectrum bridge and `POST /imessage-inbound`. Direct chats and group chats share the same handler in `convex/actions/handleInboundImessage.ts`.
+
+- The worker forwards the Photon chat GUID, group flag, chat title, sender address, and participant roster when available.
+- Convex stores group-level state in `imessageChats` and one row per participant in `imessageParticipants`; do not create auth `users` rows for unlinked group participants.
+- If no participant in a group has a linked Glass phone number, Glass sends the signup fallback and asks the worker to leave the group.
+- If one or more linked participants resolve to the same org, the group runs in single-org mode while preserving anonymous speaker labels for context.
+- If linked participants resolve to multiple orgs, the agent may read context from the linked orgs represented in the group, but write actions require an unambiguous org/policy and a linked current sender. Mutating tools should fail closed rather than guessing across orgs.
+- Thread routing for iMessage groups uses `threads.imessageChatGuid`; legacy direct-chat routing by `threadPhone` is retained for fallback/proactive sends.
 
 ### Glass Agent Email Sending
 

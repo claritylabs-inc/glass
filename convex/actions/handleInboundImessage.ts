@@ -31,6 +31,13 @@ import { classifyPromptInjection, enforceInputLimits } from "../lib/security";
 import type { Id } from "../_generated/dataModel";
 import { getImessageWorkerUrl, isImessageInboundEnabled } from "../lib/imessageConfig";
 import {
+  anonymousParticipantLabel,
+  buildImessageRosterContext,
+  normalizeImessageAddress,
+  resolveImessageConversationScope,
+  type ResolvedImessageParticipant,
+} from "../lib/imessageGroupResolution";
+import {
   buildEmailExpertTool,
   resolveEmailAgentIdentity,
   type EmailSubagentResult,
@@ -42,23 +49,26 @@ import {
 
 /** Normalize a raw phone string to E.164 (+1XXXXXXXXXX). */
 function normalizePhone(raw: string): string {
+  if (raw.includes("@")) return raw.trim().toLowerCase();
   const cleaned = raw.replace(/[^+\d]/g, "");
   return cleaned.startsWith("+") ? cleaned : `+${cleaned}`;
 }
 
 function buildInboundEventKey(args: {
   fromPhone: string;
+  chatGuid?: string;
   messageText: string;
   sourceMessageId?: string;
   receivedAt?: number;
   attachments?: Array<{ mimeType: string; name: string; data: string }>;
 }): string {
   const hash = createHash("sha256");
+  const scope = args.chatGuid ?? args.fromPhone;
   if (args.sourceMessageId) {
-    hash.update(`source:${args.fromPhone}:${args.sourceMessageId}`);
+    hash.update(`source:${scope}:${args.sourceMessageId}`);
   } else {
     const minuteBucket = Math.floor((args.receivedAt ?? Date.now()) / 60000);
-    hash.update(`fallback:${args.fromPhone}:${minuteBucket}:${args.messageText}`);
+    hash.update(`fallback:${scope}:${args.fromPhone}:${minuteBucket}:${args.messageText}`);
     for (const attachment of args.attachments ?? []) {
       hash.update(`:${attachment.name}:${attachment.mimeType}:${attachment.data.length}`);
     }
@@ -82,6 +92,8 @@ const SUPPORTED_MIME_TYPES = new Set([
 type ImessageResponse = {
   response: string;
   attachments?: Array<{ url: string; filename: string; mimeType: string }>;
+  leaveGroup?: boolean;
+  chatGuid?: string;
 };
 
 function cleanJsonText(text: string): string {
@@ -93,6 +105,7 @@ function cleanJsonText(text: string): string {
 
 async function sendImmediateImessage(params: {
   toPhone: string;
+  chatGuid?: string;
   message: string;
 }): Promise<boolean> {
   const workerUrl = getImessageWorkerUrl();
@@ -107,6 +120,7 @@ async function sendImmediateImessage(params: {
       },
       body: JSON.stringify({
         toPhone: params.toPhone,
+        chatGuid: params.chatGuid,
         message: params.message,
       }),
     });
@@ -197,6 +211,18 @@ export const processInbound = internalAction({
   args: {
     fromPhone: v.string(),
     messageText: v.string(),
+    chatGuid: v.optional(v.string()),
+    isGroup: v.optional(v.boolean()),
+    chatTitle: v.optional(v.string()),
+    participantsUnavailable: v.optional(v.boolean()),
+    participants: v.optional(
+      v.array(
+        v.object({
+          address: v.string(),
+          displayName: v.optional(v.string()),
+        }),
+      ),
+    ),
     sourceMessageId: v.optional(v.string()),
     receivedAt: v.optional(v.number()),
     attachments: v.optional(
@@ -216,9 +242,13 @@ export const processInbound = internalAction({
     }
 
     const fromPhone = normalizePhone(args.fromPhone);
+    const senderAddress = normalizeImessageAddress(args.fromPhone);
+    const chatGuid = args.chatGuid?.trim() || fromPhone;
+    const isGroup = args.isGroup === true;
     const siteUrl = process.env.SITE_URL ?? "https://glass.claritylabs.inc";
     const eventKey = buildInboundEventKey({
       fromPhone,
+      chatGuid,
       messageText: args.messageText,
       sourceMessageId: args.sourceMessageId,
       receivedAt: args.receivedAt,
@@ -228,6 +258,8 @@ export const processInbound = internalAction({
     const claim = await ctx.runMutation(internal.imessageInboundEvents.claim, {
       eventKey,
       fromPhone,
+      chatGuid,
+      isGroup,
       messageText: args.messageText,
       sourceMessageId: args.sourceMessageId,
       receivedAt: args.receivedAt,
@@ -241,29 +273,100 @@ export const processInbound = internalAction({
       return { response: "" };
     }
 
-    const finish = async (response: string, attachments?: ImessageResponse["attachments"]) => {
+    const finish = async (
+      response: string,
+      attachments?: ImessageResponse["attachments"],
+      options?: { leaveGroup?: boolean },
+    ) => {
       await ctx.runMutation(internal.imessageInboundEvents.complete, {
         eventKey,
         response,
       });
-      return { response, attachments };
+      return { response, attachments, leaveGroup: options?.leaveGroup, chatGuid };
     };
 
     try {
-    // ── 1. Resolve user by phone ──────────────────────────────────────────
-    const user = await ctx.runQuery(internal.users.findByPhone, { phone: fromPhone });
-    if (!user) {
-      return await finish(`Sign up to use Glass: ${siteUrl}/signup/client`);
+    // ── 1. Resolve group participants and org scope ───────────────────────
+    if (isGroup && args.participantsUnavailable) {
+      return await finish("I couldn't confirm who is in this group chat yet. Please try again in a moment.");
     }
 
-    // ── 2. Resolve org ────────────────────────────────────────────────────
-    const membership = await ctx.runQuery(internal.orgs.getUserMembership, {
-      userId: user._id,
-    });
-    if (!membership) {
-      return await finish(`Sign up to use Glass: ${siteUrl}/signup/client`);
+    const participantInputs = new Map<string, { address: string; displayName?: string }>();
+    for (const participant of args.participants ?? []) {
+      const address = normalizeImessageAddress(participant.address);
+      if (address) participantInputs.set(address, { address, displayName: participant.displayName });
     }
-    const orgId = membership.orgId;
+    if (!participantInputs.has(senderAddress)) {
+      participantInputs.set(senderAddress, { address: senderAddress });
+    }
+
+    const phones = [...participantInputs.keys()].filter((address) => !address.includes("@"));
+    const linkedUsers = await ctx.runQuery(internal.users.findManyByPhones, { phones });
+    const usersByPhone = new Map(
+      linkedUsers
+        .filter((user) => user?.phone)
+        .map((user) => [normalizeImessageAddress(user!.phone!), user!]),
+    );
+    const memberships = await ctx.runQuery(internal.orgs.getUserMemberships, {
+      userIds: linkedUsers.map((user) => user!._id),
+    });
+    const membershipByUserId = new Map(
+      memberships.map((membership) => [String(membership!.userId), membership!]),
+    );
+
+    const resolvedParticipants: ResolvedImessageParticipant[] = [...participantInputs.values()]
+      .map((participant) => {
+        const linkedUser = usersByPhone.get(participant.address);
+        const membership = linkedUser
+          ? membershipByUserId.get(String(linkedUser._id))
+          : undefined;
+        const role: "linked" | "anonymous" = linkedUser && membership ? "linked" : "anonymous";
+        return {
+          address: participant.address,
+          displayName: participant.displayName,
+          userId: linkedUser?._id,
+          userName: linkedUser?.name,
+          userEmail: linkedUser?.email,
+          orgId: membership?.orgId,
+          role,
+        };
+      });
+
+    const scope = resolveImessageConversationScope({
+      senderAddress,
+      participants: resolvedParticipants,
+    });
+
+    await ctx.runMutation(internal.imessageChats.syncChat, {
+      chatGuid,
+      isGroup,
+      primaryOrgId: scope.primaryOrgId,
+      title: args.chatTitle,
+      participants: resolvedParticipants.map((participant) => ({
+        address: participant.address,
+        displayName: participant.displayName,
+        userId: participant.userId,
+        orgId: participant.orgId,
+        role: participant.role,
+      })),
+    });
+
+    if (scope.kind === "no_linked_users") {
+      await ctx.runMutation(internal.imessageChats.markLeft, { chatGuid });
+      return await finish(
+        `Sign up to use Glass: ${siteUrl}/signup/client`,
+        undefined,
+        { leaveGroup: isGroup },
+      );
+    }
+
+    const orgId = scope.primaryOrgId;
+    const user = linkedUsers.find((candidate) => candidate?._id === scope.primaryUserId);
+    if (!user) return await finish(`Sign up to use Glass: ${siteUrl}/signup/client`);
+    const currentParticipant = resolvedParticipants.find(
+      (participant) => normalizeImessageAddress(participant.address) === senderAddress,
+    );
+    const currentSenderIsLinked = Boolean(currentParticipant?.userId && currentParticipant.orgId);
 
     // ── 3. Prompt injection guard ─────────────────────────────────────────
     const guardedText = enforceInputLimits(args.messageText);
@@ -274,16 +377,30 @@ export const processInbound = internalAction({
     }
 
     // ── 4. Thread routing ─────────────────────────────────────────────────
-    const threadId = await ctx.runMutation(internal.threads.findOrCreateByPhone, {
+    const threadId = await ctx.runMutation(internal.threads.findOrCreateByImessageChat, {
       orgId,
       userId: user._id,
-      fromPhone,
+      chatGuid,
+      isGroup,
+      scope: scope.kind === "multi_org" ? "multi_org" : "single_org",
+      title: args.chatTitle,
+      fallbackPhone: fromPhone.includes("@") ? undefined : fromPhone,
       userName: user.name,
     });
 
     // ── 5. Fetch org context ──────────────────────────────────────────────
     const org = await ctx.runQuery(internal.orgs.getInternal, { id: orgId });
     if (!org) return await finish("Unable to find your account.");
+    const scopedOrgs = await Promise.all(
+      scope.orgIds.map((scopedOrgId) =>
+        ctx.runQuery(internal.orgs.getInternal, { id: scopedOrgId }),
+      ),
+    );
+    const orgNamesById = Object.fromEntries(
+      scopedOrgs
+        .filter(Boolean)
+        .map((scopedOrg) => [String(scopedOrg!._id), scopedOrg!.name]),
+    );
 
     const userName = user.name?.split(/\s+/)[0];
     const emailIdentity = await resolveEmailAgentIdentity(ctx, org);
@@ -320,8 +437,16 @@ export const processInbound = internalAction({
       threadId,
       orgId,
       role: "user",
-      userId: user._id,
-      userName: user.name,
+      userId: currentParticipant?.userId,
+      userName:
+        currentParticipant?.userName ??
+        currentParticipant?.displayName ??
+        anonymousParticipantLabel(senderAddress, 1),
+      imessageSenderAddress: senderAddress,
+      imessageParticipantLabel:
+        currentParticipant?.userName ??
+        currentParticipant?.displayName ??
+        anonymousParticipantLabel(senderAddress, 1),
       content: args.messageText,
       messageId: args.sourceMessageId ?? eventKey,
       attachments:
@@ -361,6 +486,7 @@ export const processInbound = internalAction({
     if (statusCue) {
       const sent = await sendImmediateImessage({
         toPhone: fromPhone,
+        chatGuid,
         message: statusCue,
       });
       if (sent) {
@@ -375,21 +501,44 @@ export const processInbound = internalAction({
     }
 
     // ── 9. Build retrieval context ────────────────────────────────────────
-    const policies = await ctx.runQuery(internal.policies.listAllInternal, { orgId });
-    const { context: policyContext, relevantPolicyIds } = await buildDocumentContext(
-      ctx,
-      orgId,
-      policies,
-      [],
-      retrievalQuery,
+    const scopedPolicySets = await Promise.all(
+      scope.orgIds.map(async (scopedOrgId) => ({
+        orgId: scopedOrgId,
+        policies: await ctx.runQuery(internal.policies.listAllInternal, { orgId: scopedOrgId }),
+      })),
     );
+    const policies = scopedPolicySets.flatMap((entry) => entry.policies);
+    const policyContextParts: string[] = [];
+    const relevantPolicyIds: Id<"policies">[] = [];
+    for (const entry of scopedPolicySets) {
+      const built = await buildDocumentContext(
+        ctx,
+        entry.orgId,
+        entry.policies,
+        [],
+        retrievalQuery,
+      );
+      if (built.context.trim().length > 0) {
+        const orgName = orgNamesById[String(entry.orgId)] ?? "Linked organization";
+        policyContextParts.push(`\n\nPOLICY CONTEXT FOR ${orgName}\n${built.context}`);
+      }
+      relevantPolicyIds.push(...(built.relevantPolicyIds as Id<"policies">[]));
+    }
+    const policyContext = policyContextParts.join("");
     const memoryContext = await buildConversationMemoryContext(ctx, orgId, retrievalQuery);
-    const orgMemoryBlock = await buildIntelligenceContext(
-      ctx,
-      orgId,
-      retrievalQuery,
-      relevantPolicyIds.map(String),
+    const orgMemoryBlocks = await Promise.all(
+      scope.orgIds.map(async (scopedOrgId) => {
+        const orgName = orgNamesById[String(scopedOrgId)] ?? "Linked organization";
+        const block = await buildIntelligenceContext(
+          ctx,
+          scopedOrgId,
+          retrievalQuery,
+          relevantPolicyIds.map(String),
+        );
+        return block.trim().length > 0 ? `\n\nORG MEMORY FOR ${orgName}\n${block}` : "";
+      }),
     );
+    const orgMemoryBlock = orgMemoryBlocks.join("");
 
     // ── 10. Build message history from thread ─────────────────────────────
     const modelMessages: ModelMessage[] = [];
@@ -406,7 +555,11 @@ export const processInbound = internalAction({
       }
     }
     // Append current message
-    modelMessages.push({ role: "user", content: args.messageText });
+    const currentSpeakerLabel =
+      currentParticipant?.userName ??
+      currentParticipant?.displayName ??
+      anonymousParticipantLabel(senderAddress, 1);
+    modelMessages.push({ role: "user", content: `[${currentSpeakerLabel}]: ${args.messageText}` });
 
     // ── 11. Attach PDF/image content for model context ────────────────────
     if (attachmentRecords.length > 0) {
@@ -471,6 +624,13 @@ export const processInbound = internalAction({
         autoSendEmails: org.autoSendEmails === true,
       }) +
       "\n\n" +
+      buildImessageRosterContext({
+        senderAddress,
+        participants: resolvedParticipants,
+        orgNamesById,
+        scopeKind: scope.kind,
+      }) +
+      "\n\n" +
       policyContext +
       buildPolicyToolInstructions(8) +
       memoryContext +
@@ -533,13 +693,27 @@ export const processInbound = internalAction({
           const policy: any = await ctx.runQuery(internal.policies.getInternal, {
             id: params.policyId as Id<"policies">,
           });
-          if (!policy || policy.orgId !== orgId) return "Policy not found.";
+          if (!policy || !scope.orgIds.map(String).includes(String(policy.orgId))) return "Policy not found.";
           return searchPolicyDocumentWithSourceSpans(ctx, policy, params.query, 8);
         },
       },
       create_policy_change_request: {
         ...createPolicyChangeRequest,
         execute: async (params: { requestText: string; policyId?: string; evidenceSourceIds?: string[] }) => {
+          if (!currentSenderIsLinked) {
+            return "Only a linked Glass user in this group can create a policy change request.";
+          }
+          if (scope.kind === "multi_org" && !params.policyId) {
+            return "Please specify which organization's policy this change request is for.";
+          }
+          if (params.policyId) {
+            const policy: any = await ctx.runQuery(internal.policies.getInternal, {
+              id: params.policyId as Id<"policies">,
+            });
+            if (!policy || String(policy.orgId) !== String(orgId)) {
+              return "Please have a linked user from that policy's organization create this change request.";
+            }
+          }
           const result = await ctx.runAction(internal.actions.policyChangeRequests.createFromChatForThread, {
             orgId,
             userId: user._id,
@@ -571,11 +745,14 @@ export const processInbound = internalAction({
       save_note: {
         ...saveNote,
         execute: async (params: { content: string; type: string; policyId?: string }) => {
+          if (!currentSenderIsLinked) {
+            return "Only a linked Glass user in this group can save durable notes.";
+          }
           const typeMap: Record<string, "fact" | "preference" | "risk_note" | "observation"> = {
             fact: "fact", preference: "preference", risk_note: "risk_note", observation: "observation",
           };
           await ctx.runMutation(internal.orgMemory.upsert, {
-            orgId,
+            orgId: currentParticipant?.orgId ?? orgId,
             type: typeMap[params.type] ?? "observation",
             content: params.content,
             source: "imessage" as const,
@@ -587,6 +764,15 @@ export const processInbound = internalAction({
       generate_coi: {
         ...generateCoiTool,
         execute: async (params: { policyId: string; certificateHolder?: string }) => {
+          if (!currentSenderIsLinked) {
+            return "Only a linked Glass user in this group can generate a certificate.";
+          }
+          const requestedPolicy: any = await ctx.runQuery(internal.policies.getInternal, {
+            id: params.policyId as Id<"policies">,
+          });
+          if (!requestedPolicy || String(requestedPolicy.orgId) !== String(orgId)) {
+            return "Please have a linked user from that policy's organization generate this certificate.";
+          }
           const autoGenerate = org.autoGenerateCoi !== false;
           if (!autoGenerate) {
             const handling = org.coiHandling ?? "ignore";
@@ -616,7 +802,7 @@ export const processInbound = internalAction({
           }
         },
       },
-      ...(emailIdentity.canSend && emailIdentity.agentAddress && emailIdentity.fromHeader
+      ...(currentSenderIsLinked && emailIdentity.canSend && emailIdentity.agentAddress && emailIdentity.fromHeader
         ? {
             email_expert: buildEmailExpertTool(ctx, {
               orgId,
@@ -698,7 +884,7 @@ export const processInbound = internalAction({
     });
 
     // ── 17. Post-exchange orgMemory extraction ────────────────────────────
-    try {
+    if (currentSenderIsLinked) try {
       const memoryExtraction = await generateText({
         model: haikuModel,
         maxOutputTokens: 400,
@@ -725,7 +911,7 @@ Only include items worth remembering long-term. Skip pleasantries and one-off qu
         .filter((it) => it && typeof it.content === "string" && allowedTypes.has(it.type))
         .slice(0, 3)
         .map((it) => ({
-          orgId,
+          orgId: currentParticipant?.orgId ?? orgId,
           type: it.type as "fact" | "preference" | "risk_note" | "observation",
           content: it.content.trim(),
           source: "imessage" as const,

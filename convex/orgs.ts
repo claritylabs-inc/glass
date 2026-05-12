@@ -849,6 +849,22 @@ export const getUserMembership = internalQuery({
   },
 });
 
+export const getUserMemberships = internalQuery({
+  args: { userIds: v.array(v.id("users")) },
+  handler: async (ctx, args) => {
+    const uniqueUserIds = [...new Set(args.userIds)];
+    const memberships = await Promise.all(
+      uniqueUserIds.map((userId) =>
+        ctx.db
+          .query("orgMemberships")
+          .withIndex("by_userId", (q) => q.eq("userId", userId))
+          .first(),
+      ),
+    );
+    return memberships.filter(Boolean);
+  },
+});
+
 export const hasMembershipInternal = internalQuery({
   args: {
     orgId: v.id("organizations"),

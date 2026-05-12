@@ -9,6 +9,11 @@ export interface ImessageAttachment {
 export interface ImessageRequest {
   fromPhone: string;
   messageText: string;
+  chatGuid?: string;
+  isGroup?: boolean;
+  chatTitle?: string;
+  participantsUnavailable?: boolean;
+  participants?: Array<{ address: string; displayName?: string }>;
   sourceMessageId?: string;
   receivedAt?: number;
   attachments?: ImessageAttachment[];
@@ -23,6 +28,8 @@ export interface ImessageResponseAttachment {
 export interface ImessageResponse {
   response: string;
   attachments?: ImessageResponseAttachment[];
+  leaveGroup?: boolean;
+  chatGuid?: string;
 }
 
 export async function sendToConvex(
