@@ -5,6 +5,8 @@ export const claim = internalMutation({
   args: {
     eventKey: v.string(),
     fromPhone: v.string(),
+    chatGuid: v.optional(v.string()),
+    isGroup: v.optional(v.boolean()),
     messageText: v.string(),
     sourceMessageId: v.optional(v.string()),
     receivedAt: v.optional(v.number()),
@@ -27,6 +29,8 @@ export const claim = internalMutation({
     await ctx.db.insert("imessageInboundEvents", {
       eventKey: args.eventKey,
       fromPhone: args.fromPhone,
+      chatGuid: args.chatGuid,
+      isGroup: args.isGroup,
       messageText: args.messageText,
       sourceMessageId: args.sourceMessageId,
       receivedAt: args.receivedAt,

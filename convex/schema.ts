@@ -1038,12 +1038,17 @@ export default defineSchema({
     })),
     visibility: v.optional(v.union(v.literal("broker_visible"), v.literal("client_internal"))),
     threadPhone: v.optional(v.string()),
+    imessageChatGuid: v.optional(v.string()),
+    imessageIsGroup: v.optional(v.boolean()),
+    imessageScope: v.optional(v.union(v.literal("single_org"), v.literal("multi_org"))),
   })
     .index("by_orgId", ["orgId"])
     .index("by_orgId_lastMessageAt", ["orgId", "lastMessageAt"])
     .index("by_threadEmail", ["threadEmail"])
     .index("by_threadPhone", ["threadPhone"])
-    .index("by_orgId_threadPhone", ["orgId", "threadPhone"]),
+    .index("by_orgId_threadPhone", ["orgId", "threadPhone"])
+    .index("by_imessageChatGuid", ["imessageChatGuid"])
+    .index("by_orgId_imessageChatGuid", ["orgId", "imessageChatGuid"]),
 
   threadMessages: defineTable({
     threadId: v.id("threads"),
@@ -1053,6 +1058,8 @@ export default defineSchema({
     // User messages
     userId: v.optional(v.id("users")),
     userName: v.optional(v.string()),
+    imessageSenderAddress: v.optional(v.string()),
+    imessageParticipantLabel: v.optional(v.string()),
     // Email messages
     fromEmail: v.optional(v.string()),
     fromName: v.optional(v.string()),
@@ -1110,6 +1117,8 @@ export default defineSchema({
   imessageInboundEvents: defineTable({
     eventKey: v.string(),
     fromPhone: v.string(),
+    chatGuid: v.optional(v.string()),
+    isGroup: v.optional(v.boolean()),
     messageText: v.string(),
     sourceMessageId: v.optional(v.string()),
     receivedAt: v.optional(v.number()),
@@ -1125,6 +1134,36 @@ export default defineSchema({
   })
     .index("by_eventKey", ["eventKey"])
     .index("by_fromPhone", ["fromPhone"]),
+
+  imessageChats: defineTable({
+    chatGuid: v.string(),
+    isGroup: v.boolean(),
+    status: v.union(v.literal("active"), v.literal("left")),
+    primaryOrgId: v.optional(v.id("organizations")),
+    title: v.optional(v.string()),
+    participantCount: v.number(),
+    lastParticipantSyncAt: v.number(),
+    lastMessageAt: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_chatGuid", ["chatGuid"])
+    .index("by_primaryOrgId", ["primaryOrgId"]),
+
+  imessageParticipants: defineTable({
+    chatGuid: v.string(),
+    address: v.string(),
+    displayName: v.optional(v.string()),
+    userId: v.optional(v.id("users")),
+    orgId: v.optional(v.id("organizations")),
+    role: v.union(v.literal("linked"), v.literal("anonymous")),
+    firstSeenAt: v.number(),
+    lastSeenAt: v.number(),
+  })
+    .index("by_chatGuid", ["chatGuid"])
+    .index("by_address", ["address"])
+    .index("by_chatGuid_address", ["chatGuid", "address"])
+    .index("by_userId", ["userId"]),
 
   // ── Pending Emails (send delay queue) ──
 

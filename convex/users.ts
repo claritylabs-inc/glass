@@ -181,6 +181,22 @@ export const findByPhone = internalQuery({
   },
 });
 
+export const findManyByPhones = internalQuery({
+  args: { phones: v.array(v.string()) },
+  handler: async (ctx, args) => {
+    const uniquePhones = [...new Set(args.phones)];
+    const users = await Promise.all(
+      uniquePhones.map((phone) =>
+        ctx.db
+          .query("users")
+          .withIndex("phone", (q) => q.eq("phone", phone))
+          .first(),
+      ),
+    );
+    return users.filter(Boolean);
+  },
+});
+
 export const listByOrgInternal = internalQuery({
   args: { orgId: v.id("organizations") },
   handler: async (ctx, args) => {

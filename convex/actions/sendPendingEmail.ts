@@ -9,6 +9,7 @@ import { getImessageWorkerUrl } from "../lib/imessageConfig";
 
 async function sendTextConfirmation(params: {
   toPhone: string;
+  chatGuid?: string;
   message: string;
 }): Promise<boolean> {
   const workerUrl = getImessageWorkerUrl();
@@ -23,6 +24,7 @@ async function sendTextConfirmation(params: {
       },
       body: JSON.stringify({
         toPhone: params.toPhone,
+        chatGuid: params.chatGuid,
         message: params.message,
       }),
     });
@@ -103,6 +105,7 @@ export const sendPending = internalAction({
           const confirmation = `Email sent to ${pending.recipientEmail}.${ccNote}`;
           const sent = await sendTextConfirmation({
             toPhone: thread.threadPhone,
+            chatGuid: thread.imessageChatGuid,
             message: confirmation,
           });
           if (sent) {

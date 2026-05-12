@@ -630,6 +630,49 @@ export const findOrCreateByPhone = internalMutation({
   },
 });
 
+export const findOrCreateByImessageChat = internalMutation({
+  args: {
+    orgId: v.id("organizations"),
+    userId: v.id("users"),
+    chatGuid: v.string(),
+    isGroup: v.boolean(),
+    scope: v.union(v.literal("single_org"), v.literal("multi_org")),
+    title: v.optional(v.string()),
+    fallbackPhone: v.optional(v.string()),
+    userName: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("threads")
+      .withIndex("by_orgId_imessageChatGuid", (q) =>
+        q.eq("orgId", args.orgId).eq("imessageChatGuid", args.chatGuid),
+      )
+      .first();
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        lastMessageAt: Date.now(),
+        imessageIsGroup: args.isGroup,
+        imessageScope: args.scope,
+        threadPhone: existing.threadPhone ?? args.fallbackPhone,
+      });
+      return existing._id;
+    }
+
+    const displayName = args.title ?? args.userName ?? args.fallbackPhone ?? "Group chat";
+    return await ctx.db.insert("threads", {
+      orgId: args.orgId,
+      title: args.isGroup ? `iMessage group - ${displayName}` : `iMessage - ${displayName}`,
+      createdBy: args.userId,
+      lastMessageAt: Date.now(),
+      threadPhone: args.fallbackPhone,
+      imessageChatGuid: args.chatGuid,
+      imessageIsGroup: args.isGroup,
+      imessageScope: args.scope,
+      originChannel: "imessage",
+    });
+  },
+});
+
 export const insertImessageMessage = internalMutation({
   args: {
     threadId: v.id("threads"),
@@ -637,6 +680,8 @@ export const insertImessageMessage = internalMutation({
     role: v.union(v.literal("user"), v.literal("agent")),
     userId: v.optional(v.id("users")),
     userName: v.optional(v.string()),
+    imessageSenderAddress: v.optional(v.string()),
+    imessageParticipantLabel: v.optional(v.string()),
     content: v.string(),
     messageId: v.optional(v.string()),
     responseMessageId: v.optional(v.string()),
@@ -662,6 +707,8 @@ export const insertImessageMessage = internalMutation({
       role: args.role,
       userId: args.userId,
       userName: args.userName,
+      imessageSenderAddress: args.imessageSenderAddress,
+      imessageParticipantLabel: args.imessageParticipantLabel,
       content: args.content,
       messageId: args.messageId,
       responseMessageId: args.responseMessageId,
