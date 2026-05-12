@@ -585,47 +585,62 @@ function isPolicyChangeTerminal(status?: string) {
 }
 
 function PolicyChangeProgress({ status }: { status?: string }) {
-  const steps = ["Requested", "Review", "Ready", "Submitted", "Complete"];
+  const steps = [
+    { label: "Requested", detail: "Request received" },
+    { label: "Review", detail: "Checking details" },
+    { label: "Ready", detail: "Ready for broker submission" },
+    { label: "Submitted", detail: "Sent to the broker or carrier" },
+    { label: "Complete", detail: "Change resolved" },
+  ];
   const completed = policyChangeProgress(status);
   const interrupted = status === "declined" || status === "cancelled";
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-start">
+    <div className="rounded-lg border border-foreground/6 bg-foreground/[0.015] p-2">
+      <div className="space-y-1">
         {steps.map((step, index) => {
           const stepNumber = index + 1;
           const active = !interrupted && stepNumber <= completed;
           const current = !interrupted && stepNumber === completed;
-          const connectorActive = !interrupted && stepNumber < completed;
+          const done = !interrupted && stepNumber < completed;
           return (
             <div
-              key={step}
-              className={`flex min-w-0 items-start ${index === steps.length - 1 ? "shrink-0" : "flex-1"}`}
+              key={step.label}
+              className={`flex items-center gap-3 rounded-md px-2.5 py-2 ${
+                current ? "bg-background shadow-[inset_0_0_0_1px_rgba(0,0,0,0.06)]" : ""
+              }`}
             >
-              <div className="flex w-16 shrink-0 flex-col items-center gap-1">
-                <span
-                  className={`mt-0.5 rounded-full transition-colors ${
-                    current
-                      ? "size-3 bg-foreground"
-                      : active
-                        ? "size-2.5 bg-foreground/70"
-                        : "size-2.5 bg-foreground/15"
-                  }`}
-                />
-                <span
-                  className={`text-center text-[11px] leading-4 ${
-                    current ? "font-medium text-foreground" : active ? "text-foreground/70" : "text-muted-foreground/60"
+              <span
+                className={`flex size-5 shrink-0 items-center justify-center rounded-full ${
+                  done
+                    ? "bg-foreground text-background"
+                    : current
+                      ? "border border-foreground bg-background"
+                      : "bg-foreground/8 text-muted-foreground"
+                }`}
+              >
+                {done ? (
+                  <Check className="size-3.5" />
+                ) : (
+                  <span className="text-[10px] font-medium">{stepNumber}</span>
+                )}
+              </span>
+              <div className="min-w-0">
+                <p
+                  className={`text-label-sm ${
+                    current ? "font-medium text-foreground" : active ? "text-foreground/75" : "text-muted-foreground/60"
                   }`}
                 >
-                  {step}
-                </span>
+                  {step.label}
+                </p>
+                <p className="text-[11px] leading-4 text-muted-foreground/60">
+                  {step.detail}
+                </p>
               </div>
-              {index < steps.length - 1 ? (
-                <div
-                  className={`mt-[7px] h-px min-w-3 flex-1 transition-colors ${
-                    connectorActive ? "bg-foreground/50" : "bg-foreground/10"
-                  }`}
-                />
+              {current ? (
+                <span className="ml-auto rounded-full border border-foreground/8 px-2 py-0.5 text-[11px] font-medium text-muted-foreground/60">
+                  Current
+                </span>
               ) : null}
             </div>
           );
