@@ -5,7 +5,7 @@ import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
 import { FadeIn } from "@/components/ui/fade-in";
-import { BadgeCheck, CheckCircle2, Download, FileText, Loader2, Plus, RotateCw, Send, Trash2, Eye, X } from "lucide-react";
+import { BadgeCheck, Check, CheckCircle2, Download, FileText, Loader2, Plus, RotateCw, Send, Trash2, Eye, X } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -103,8 +103,8 @@ function PolicyChangeProgress({ status }: { status: string }) {
   const interrupted = status === "declined" || status === "cancelled";
 
   return (
-    <div className="mt-4 max-w-xl rounded-lg border border-foreground/6 bg-foreground/[0.015] p-2">
-      <div className="space-y-1">
+    <div className="mt-4">
+      <div className="grid grid-cols-5 gap-2">
         {steps.map((step, index) => {
           const stepNumber = index + 1;
           const active = !interrupted && stepNumber <= completed;
@@ -113,39 +113,37 @@ function PolicyChangeProgress({ status }: { status: string }) {
           return (
             <div
               key={step.label}
-              className={`flex items-center gap-3 rounded-md px-2.5 py-2 ${
-                current ? "bg-background shadow-[inset_0_0_0_1px_rgba(0,0,0,0.06)]" : ""
+              className={`min-w-0 rounded-lg border px-3 py-2.5 ${
+                current
+                  ? "border-foreground/14 bg-foreground/[0.025]"
+                  : "border-foreground/6 bg-card"
               }`}
             >
-              <span
-                className={`flex size-5 shrink-0 items-center justify-center rounded-full ${
-                  done
-                    ? "bg-foreground text-background"
-                    : current
-                      ? "border border-foreground bg-background"
-                      : "bg-foreground/8 text-muted-foreground"
-                }`}
-              >
-                {done ? (
-                  <CheckCircle2 className="size-3.5" />
-                ) : (
-                  <span className="text-[10px] font-medium">{stepNumber}</span>
-                )}
-              </span>
-              <div className="min-w-0">
+              <div className="flex min-w-0 items-center gap-2">
+                <span
+                  className={`flex size-6 shrink-0 items-center justify-center rounded-full text-[11px] font-medium leading-none tabular-nums ${
+                    done
+                      ? "bg-foreground text-background"
+                      : current
+                        ? "border border-foreground bg-background text-foreground"
+                        : "bg-foreground/8 text-muted-foreground"
+                  }`}
+                >
+                  {done ? <Check className="size-3.5" /> : stepNumber}
+                </span>
                 <p
-                  className={`text-label-sm ${
+                  className={`truncate text-label-sm ${
                     current ? "font-medium text-foreground" : active ? "text-foreground/75" : "text-muted-foreground"
                   }`}
                 >
                   {step.label}
                 </p>
-                <p className="text-[11px] leading-4 text-muted-foreground">
-                  {step.detail}
-                </p>
               </div>
+              <p className="mt-1 min-h-8 text-[11px] leading-4 text-muted-foreground">
+                {step.detail}
+              </p>
               {current ? (
-                <span className="ml-auto rounded-full border border-foreground/8 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                <span className="mt-2 inline-flex rounded-full border border-foreground/8 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
                   Current
                 </span>
               ) : null}
