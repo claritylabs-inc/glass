@@ -266,6 +266,55 @@ export default defineSchema({
     .index("by_vendorEmail", ["vendorEmail"])
     .index("by_vendorOrgId", ["vendorOrgId"]),
 
+
+  insuranceRequirements: defineTable({
+    orgId: v.id("organizations"),
+    title: v.string(),
+    category: v.union(
+      v.literal("general_liability"),
+      v.literal("auto"),
+      v.literal("workers_comp"),
+      v.literal("umbrella"),
+      v.literal("professional"),
+      v.literal("cyber"),
+      v.literal("property"),
+      v.literal("other"),
+    ),
+    requirementText: v.string(),
+    appliesTo: v.union(v.literal("vendors"), v.literal("own_org"), v.literal("both")),
+    minimumRequired: v.boolean(),
+    status: v.union(v.literal("active"), v.literal("archived")),
+    createdByUserId: v.id("users"),
+    updatedByUserId: v.id("users"),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_orgId", ["orgId"])
+    .index("by_orgId_status", ["orgId", "status"]),
+
+  vendorComplianceChecks: defineTable({
+    clientOrgId: v.id("organizations"),
+    vendorOrgId: v.id("organizations"),
+    relationshipId: v.id("connectedOrgRelationships"),
+    requirementId: v.id("insuranceRequirements"),
+    status: v.union(
+      v.literal("met"),
+      v.literal("missing"),
+      v.literal("expiring_soon"),
+      v.literal("expired"),
+      v.literal("needs_review"),
+    ),
+    matchedPolicyIds: v.array(v.id("policies")),
+    expiresAt: v.optional(v.string()),
+    checkedAt: v.number(),
+    checkedBy: v.union(v.literal("system"), v.literal("user"), v.literal("agent")),
+    notes: v.optional(v.string()),
+  })
+    .index("by_clientOrgId", ["clientOrgId"])
+    .index("by_vendorOrgId", ["vendorOrgId"])
+    .index("by_relationshipId", ["relationshipId"])
+    .index("by_requirementId", ["requirementId"])
+    .index("by_clientOrgId_vendorOrgId", ["clientOrgId", "vendorOrgId"]),
   clientInvitations: defineTable({
     brokerOrgId: v.id("organizations"),
     clientOrgName: v.optional(v.string()),
@@ -754,6 +803,10 @@ export default defineSchema({
       v.literal("client_document_uploaded"),
       v.literal("policy_delivered_by_broker"),
       v.literal("quote_delivered_by_broker"),
+      v.literal("vendor_compliance_met"),
+      v.literal("vendor_compliance_gap"),
+      v.literal("vendor_policy_expiring"),
+      v.literal("vendor_policy_expired"),
     ),
     title: v.string(),
     body: v.string(),

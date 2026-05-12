@@ -382,6 +382,17 @@ export const run = internalAction({
         relevantPolicyIds.map((id: string) => id),
       );
 
+      const complianceRows = await ctx.runQuery(
+        (internal as any).compliance.listVendorComplianceInternal,
+        { clientOrgId: args.orgId },
+      ).catch(() => []);
+      const complianceBlock = Array.isArray(complianceRows) && complianceRows.length > 0
+        ? `\n\nVENDOR COMPLIANCE SNAPSHOT:\n${complianceRows.map((row: any) => {
+          const failed = (row.checks ?? []).filter((check: any) => check.status !== "met");
+          return `- ${row.vendorOrg?.name ?? row.vendorOrgId}: ${failed.length === 0 ? "compliant" : `${failed.length} open issue(s)`}`;
+        }).join("\n")}`
+        : "";
+
       // Build message history (skip processing placeholders)
       const messageHistory = buildMessageHistory(allMessages);
 
@@ -499,6 +510,7 @@ export const run = internalAction({
         toolInstructions +
         memoryContext +
         orgMemoryBlock +
+        complianceBlock +
         attachmentNote;
 
       const orgMembers = await ctx.runQuery(internal.users.listByOrgInternal, { orgId: args.orgId });

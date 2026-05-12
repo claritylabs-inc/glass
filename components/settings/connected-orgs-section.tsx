@@ -93,7 +93,7 @@ function RelationshipCard({
   );
 }
 
-export function ConnectedOrgsSection() {
+export function ConnectedOrgsSection({ view = "vendors" }: { view?: "clients" | "vendors" }) {
   const currentOrg = useCurrentOrg();
   const vendorRows = useQuery(
     connectedOrgsApi.connectedOrgs.listVendors,
@@ -116,13 +116,15 @@ export function ConnectedOrgsSection() {
 
   useEffect(() => {
     setActions(
-      <PillButton size="compact" onClick={() => setRequestOpen(true)}>
-        <Link2 className="h-3.5 w-3.5" />
-        Request vendor
-      </PillButton>,
+      view === "clients" ? (
+        <PillButton size="compact" onClick={() => setRequestOpen(true)}>
+          <Link2 className="h-3.5 w-3.5" />
+          Request vendor
+        </PillButton>
+      ) : null,
     );
     return () => setActions(null);
-  }, [setActions]);
+  }, [setActions, view]);
 
   useEffect(() => {
     async function handleSubmit(event?: FormEvent) {
@@ -222,6 +224,7 @@ export function ConnectedOrgsSection() {
 
   return (
     <div className="space-y-6">
+      {view === "clients" ? (
       <section className="rounded-xl border border-foreground/6 bg-card">
         <div className="border-b border-foreground/6 px-5 py-4">
           <div>
@@ -241,7 +244,9 @@ export function ConnectedOrgsSection() {
           ))
         )}
       </section>
+      ) : null}
 
+      {view === "vendors" ? (
       <section className="rounded-xl border border-foreground/6 bg-card">
         <div className="border-b border-foreground/6 px-5 py-4">
           <div>
@@ -267,6 +272,7 @@ export function ConnectedOrgsSection() {
           ))
         )}
       </section>
+      ) : null}
     </div>
   );
 }

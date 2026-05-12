@@ -110,6 +110,17 @@ export const run = internalAction({
       ? `\n\nCONNECTED VENDOR ACCESS:\nThe caller's org has read-only access to these vendor organizations. When the user asks about vendor/client risk, vendor COIs, or vendor policies, tell them to use MCP vendor tools for exact policy lists and use this roster for disambiguation. Do not imply write access.\n${connectedVendors.map((row: any) => `- ${row.vendorOrg?.name ?? row.vendorOrgId} (vendorOrgId: ${row.vendorOrgId}, status: ${row.status})`).join("\n")}`
       : "";
 
+    const complianceRows = await ctx.runQuery(
+      (internal as any).compliance.listVendorComplianceInternal,
+      { clientOrgId: args.orgId },
+    ).catch(() => []);
+    const complianceBlock = Array.isArray(complianceRows) && complianceRows.length > 0
+      ? `\n\nVENDOR COMPLIANCE SNAPSHOT:\n${complianceRows.map((row: any) => {
+        const failed = (row.checks ?? []).filter((check: any) => check.status !== "met");
+        return `- ${row.vendorOrg?.name ?? row.vendorOrgId}: ${failed.length === 0 ? "compliant" : `${failed.length} open issue(s)`}`;
+      }).join("\n")}`
+      : "";
+
     const mcpAddendum = `
 
 MCP MODE:
@@ -125,7 +136,8 @@ MCP MODE:
       docContext +
       memoryContext +
       orgMemoryBlock +
-      connectedVendorBlock;
+      connectedVendorBlock +
+      complianceBlock;
 
     // Build message history (skip processing placeholders)
     const messageHistory = buildMessageHistory(allMessages);

@@ -42,4 +42,38 @@ export function registerClientTools(server: McpServer, client: GlassClient) {
       return { content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }] };
     },
   );
+
+  server.tool(
+    "list_insurance_requirements",
+    "List the caller org's insurance compliance requirements for contractors/vendors.",
+    {},
+    async () => {
+      const data = await client.get("/api/v1/compliance/requirements", {});
+      return { content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }] };
+    },
+  );
+
+  server.tool(
+    "create_insurance_requirement",
+    "Create an insurance compliance requirement for contractors/vendors. Requires write scope and org admin role.",
+    {
+      title: z.string(),
+      category: z.enum(["general_liability", "auto", "workers_comp", "umbrella", "professional", "cyber", "property", "other"]),
+      requirementText: z.string(),
+    },
+    async ({ title, category, requirementText }) => {
+      const data = await client.post("/api/v1/compliance/requirements", { title, category, requirement_text: requirementText });
+      return { content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }] };
+    },
+  );
+
+  server.tool(
+    "list_vendor_compliance",
+    "List connected vendor compliance status against the caller org's insurance requirements.",
+    {},
+    async () => {
+      const data = await client.get("/api/v1/compliance/vendors", {});
+      return { content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }] };
+    },
+  );
 }

@@ -60,6 +60,17 @@ Fallback behavior:
 - `getModel()` falls back to Claude Haiku if a provider is unavailable.
 - `generateTextWithFallback()` and `generateStructuredWithFallback()` use task-aware fallback policy. Missing API key errors are not retried, because retrying another OpenAI model does not fix a missing key and only adds latency. Low-cost extraction/classification calls stay on the nano path by default; only SDK `taskKind`s that represent validation repair, ambiguous synthesis, unsupported source-evidence resolution, or high-risk packet generation may escalate to the fallback route in [convex/lib/modelCatalog.ts](convex/lib/modelCatalog.ts).
 
+## Compliance Requirements
+
+Glass now has a top-level compliance workflow for contractor/vendor insurance monitoring. `insuranceRequirements` stores one active/archived requirement set per organization; requirements are plain-language, category-tagged rules that apply to vendors, the org's own coverage, or both. Client/customer requirements establish the minimum vendor standard. `vendorComplianceChecks` is reserved for persisted check snapshots and notification history, while current web and MCP surfaces compute live checklist status from active connected vendors plus extracted `policies` data. The deterministic checker matches requirement categories/text against policy types, summaries, coverages, and expiration dates, returning `met`, `missing`, `expiring_soon`, or `expired`; future LLM review should augment this table rather than replacing requirement ownership.
+
+Surfaces:
+
+- Web: `/compliance` manages requirements, shows connected vendor monitoring, and shows the vendor-side checklist for clients monitoring the current org.
+- Connect: `/connected-orgs?view=clients` is the client/customer side for requesting and monitoring vendors; `/connected-orgs?view=vendors` is the vendor/contractor side for approving client access.
+- MCP/CLI/REST: compliance requirements and vendor compliance are exposed through `list_insurance_requirements`, `create_insurance_requirement`, `list_vendor_compliance`, `GET/POST /api/v1/compliance/requirements`, and `GET /api/v1/compliance/vendors`.
+- Agent: web chat and MCP chat include a vendor compliance snapshot in context so users can ask questions such as “are all my vendors compliant?”
+
 ## Connected Vendor/Client Accounts
 
 Glass supports one-way connected organization relationships for vendor/client insurance access, modeled after the platform/connected-account idea of a parent org receiving scoped access to a connected org's records. The implementation intentionally keeps this separate from the broker/client hierarchy so broker portal features remain broker-only.
