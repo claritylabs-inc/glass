@@ -102,11 +102,11 @@ function PolicyChangeProgress({ status }: { status: string }) {
     { label: "Complete", detail: "Change resolved" },
   ];
   const completed = policyChangeProgress(status);
-  const interrupted = status === "declined";
+  const interrupted = status === "declined" || status === "cancelled";
 
   return (
     <div className="mt-4">
-      <div className="grid grid-cols-1 gap-2 lg:grid-cols-5">
+      <div className="grid grid-cols-1 gap-2 md:grid-cols-5">
         {steps.map((step, index) => {
           const stepNumber = index + 1;
           const active = !interrupted && stepNumber <= completed;
@@ -122,17 +122,17 @@ function PolicyChangeProgress({ status }: { status: string }) {
               }`}
             >
               <span
-                className={`flex size-5 shrink-0 items-center justify-center rounded-full text-[10px] font-medium leading-none tabular-nums ${
+                className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-medium leading-none tabular-nums ${
                   done
                     ? "bg-foreground text-background"
                     : current
                       ? "border border-foreground bg-background text-foreground"
-                      : "bg-foreground/8 text-muted-foreground"
+                      : "border border-foreground/8 bg-foreground/5 text-muted-foreground"
                 }`}
               >
-                {done ? <Check className="size-3" strokeWidth={2.25} /> : stepNumber}
+                {done ? <Check className="h-2.5 w-2.5" strokeWidth={2.5} /> : stepNumber}
               </span>
-              <div className="min-w-0 flex-1">
+              <div className="min-w-0 flex-1 md:flex md:items-baseline md:gap-1.5">
                 <p
                   className={`truncate text-label-sm ${
                     current ? "font-medium text-foreground" : active ? "text-foreground/75" : "text-muted-foreground"
