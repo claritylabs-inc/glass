@@ -132,15 +132,15 @@ function PolicyChangeProgress({ status }: { status: string }) {
               >
                 {done ? <Check className="h-2.5 w-2.5" strokeWidth={2.5} /> : stepNumber}
               </span>
-              <div className="min-w-0 flex-1 md:flex md:items-baseline md:gap-1.5">
+              <div className="min-w-0 flex-1 md:flex md:items-baseline">
                 <p
-                  className={`truncate text-label-sm ${
+                  className={`shrink-0 truncate text-label-sm ${
                     current ? "font-medium text-foreground" : active ? "text-foreground/75" : "text-muted-foreground"
                   }`}
                 >
                   {step.label}
                 </p>
-                <p className="truncate text-[11px] leading-4 text-muted-foreground">
+                <p className="truncate text-[11px] leading-4 text-muted-foreground md:ml-3 md:text-right">
                   {step.detail}
                 </p>
               </div>
