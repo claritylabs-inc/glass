@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { usePdf } from "@/components/pdf-context";
 import { ProseMarkdown } from "@/components/prose-markdown";
+import { PretextText } from "@/components/pretext-text";
 
 // ─── Internal types for policy document data ──────────────────────────────────
 
@@ -826,17 +827,23 @@ function SupplementaryCard({
               View raw text
             </summary>
             <div className="px-5 pt-1 pb-3">
-              <p className="text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">
-                {content}
-              </p>
+              <PretextText
+                as="p"
+                text={content}
+                className="text-sm text-muted-foreground leading-relaxed"
+                whiteSpace="pre-wrap"
+              />
             </div>
           </details>
         </>
       ) : (
         <div className="px-5 py-3">
-          <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">
-            {content}
-          </p>
+          <PretextText
+            as="p"
+            text={content}
+            className="text-sm text-foreground leading-relaxed"
+            whiteSpace="pre-wrap"
+          />
         </div>
       )}
     </div>

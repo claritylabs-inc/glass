@@ -395,7 +395,11 @@ export const messagesInternal = internalQuery({
 });
 
 export const insertAgentMessage = internalMutation({
-  args: { threadId: v.id("threads"), orgId: v.id("organizations") },
+  args: {
+    threadId: v.id("threads"),
+    orgId: v.id("organizations"),
+    replyToMessageId: v.optional(v.id("threadMessages")),
+  },
   handler: async (ctx, args) => {
     return await ctx.db.insert("threadMessages", {
       threadId: args.threadId,
@@ -404,7 +408,36 @@ export const insertAgentMessage = internalMutation({
       role: "agent",
       content: "",
       status: "processing",
+      replyToMessageId: args.replyToMessageId,
     });
+  },
+});
+
+export const claimAgentResponse = internalMutation({
+  args: {
+    threadId: v.id("threads"),
+    orgId: v.id("organizations"),
+    userMessageId: v.id("threadMessages"),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("threadMessages")
+      .withIndex("by_replyToMessageId", (q) => q.eq("replyToMessageId", args.userMessageId))
+      .first();
+    if (existing) {
+      return { messageId: existing._id, claimed: false };
+    }
+
+    const messageId = await ctx.db.insert("threadMessages", {
+      threadId: args.threadId,
+      orgId: args.orgId,
+      channel: "chat",
+      role: "agent",
+      content: "",
+      status: "processing",
+      replyToMessageId: args.userMessageId,
+    });
+    return { messageId, claimed: true };
   },
 });
 

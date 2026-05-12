@@ -514,7 +514,8 @@ export async function generateCoiPdf(data: CoiData): Promise<Buffer> {
     drawInfoBox(doc, M + topW, y, rightW, partyH, "PRODUCER / CONTACT", producerText);
     y += partyH + 10;
 
-    doc.rect(M, y, W, 16).fill(C_HEADER_BG).stroke();
+    const coveragesTop = y;
+    doc.rect(M, y, W, 16).fillAndStroke(C_HEADER_BG, C_BLACK);
     doc.font("Helvetica-Bold").fontSize(FS_LABEL).fillColor(C_BLACK);
     doc.text("COVERAGES", M + 4, y + 4, { width: W - 8, align: "center" });
     y += 16;
@@ -528,6 +529,7 @@ export async function generateCoiPdf(data: CoiData): Promise<Buffer> {
     y += noticeH;
 
     y = drawCoverageTable(doc, data.coverages, y);
+    doc.rect(M, coveragesTop, W, y - coveragesTop).strokeColor(C_BLACK).stroke();
 
     const descText = data.description ?? "";
     const descH = Math.max(44, textBlockHeight(doc, descText, W - 10, FS_LABEL, false) + 18);
@@ -609,7 +611,7 @@ function drawCoverageTable(doc: PDFKit.PDFDocument, coverages: CoverageLine[], y
   ];
   const headerH = 24;
   let x = M;
-  doc.rect(M, y, W, headerH).fill(C_LABEL_BG).stroke();
+  doc.rect(M, y, W, headerH).fillAndStroke(C_LABEL_BG, C_BLACK);
   doc.font("Helvetica-Bold").fontSize(FS_SMALL).fillColor(C_BLACK);
   for (const col of columns) {
     doc.rect(x, y, col.w, headerH).stroke();

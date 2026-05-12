@@ -81,6 +81,7 @@ export const PromptInput = ({
   // Refs
   const inputRef = useRef<HTMLInputElement | null>(null);
   const formRef = useRef<HTMLFormElement | null>(null);
+  const submittingRef = useRef(false);
 
   // ----- Local attachments (only used when no provider)
   const [items, setItems] = useState<(FileUIPart & { id: string })[]>([]);
@@ -394,6 +395,10 @@ export const PromptInput = ({
   const handleSubmit: FormEventHandler<HTMLFormElement> = useCallback(
     async (event) => {
       event.preventDefault();
+      if (submittingRef.current) {
+        return;
+      }
+      submittingRef.current = true;
 
       const form = event.currentTarget;
       const text = usingProvider
@@ -447,6 +452,8 @@ export const PromptInput = ({
         }
       } catch {
         // Don't clear on error - user may want to retry
+      } finally {
+        submittingRef.current = false;
       }
     },
     [usingProvider, controller, files, onSubmit, clear]
@@ -489,4 +496,3 @@ export const PromptInput = ({
     </LocalAttachmentsContext.Provider>
   );
 };
-

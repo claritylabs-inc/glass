@@ -2,12 +2,11 @@
 
 import { useState } from "react";
 import { useQuery } from "convex/react";
-import Markdown from "react-markdown";
-import remarkBreaks from "remark-breaks";
 import dayjs from "dayjs";
 import { Asterisk, Loader2, Paperclip, FileText, Download } from "lucide-react";
 import { ContextReferenceCard } from "@/components/context-reference-card";
-import { PROSE_MARKDOWN_STYLES, PROSE_MARKDOWN_COMPACT_STYLES } from "@/components/prose-markdown";
+import { ProseMarkdown, PROSE_MARKDOWN_COMPACT_STYLES } from "@/components/prose-markdown";
+import { PretextText } from "@/components/pretext-text";
 import { Id } from "@/convex/_generated/dataModel";
 import { api } from "@/convex/_generated/api";
 
@@ -110,14 +109,14 @@ export function QuotedContent({ text }: { text: string }) {
         if (block.depth === 0) {
           return (
             <div key={i} className={`text-muted-foreground/40 ${QUOTED_MARKDOWN_STYLES}`}>
-              <Markdown>{blockText}</Markdown>
+              <ProseMarkdown compact>{blockText}</ProseMarkdown>
             </div>
           );
         }
 
         let el = (
           <div key={i} className={QUOTED_MARKDOWN_STYLES}>
-            <Markdown>{blockText}</Markdown>
+            <ProseMarkdown compact>{blockText}</ProseMarkdown>
           </div>
         );
         for (let d = 0; d < block.depth; d++) {
@@ -273,7 +272,12 @@ export function MessageBubble({ conv, onOpenPdf, onRetry, viewerEmail }: { conv:
         </div>
         <div className={`rounded-lg border border-foreground/6 p-4 ${isViewerMessage ? "bg-foreground/[0.04]" : "bg-foreground/[0.02]"}`}>
           {content ? (
-            <p className="text-body-sm text-foreground whitespace-pre-wrap">{content}</p>
+            <PretextText
+              as="p"
+              text={content}
+              className="text-body-sm text-foreground"
+              whiteSpace="pre-wrap"
+            />
           ) : (
             <p className="text-muted-foreground/40 italic text-body-sm">Unable to display message</p>
           )}
@@ -340,15 +344,15 @@ export function MessageBubble({ conv, onOpenPdf, onRetry, viewerEmail }: { conv:
               </div>
             )}
           </div>
-          <div className={`rounded-lg bg-popover border border-foreground/6 p-4 text-foreground ${PROSE_MARKDOWN_STYLES} [&_a]:text-blue-600 [&_a]:underline`}>
-              <Markdown remarkPlugins={[remarkBreaks]} components={{
+          <div className="rounded-lg bg-popover border border-foreground/6 p-4 text-foreground">
+              <ProseMarkdown breaks className="[&_a]:text-blue-600 [&_a]:underline" components={{
                 a: ({ href, children }) => {
                   if (href?.startsWith("/policies/") || href?.startsWith("/quotes/")) {
                     return <ContextReferenceCard href={href}>{children}</ContextReferenceCard>;
                   }
                   return <a href={href} className="text-blue-600 underline" target="_blank" rel="noopener noreferrer">{children}</a>;
                 },
-              }}>{conv.responseBody}</Markdown>
+              }}>{conv.responseBody}</ProseMarkdown>
           </div>
         </div>
       )}

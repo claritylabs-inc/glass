@@ -596,7 +596,7 @@ export const processInbound = internalAction({
           }
           try {
             // Run COI generation inline so we can attach the PDF to the iMessage reply
-            const storageId = await ctx.runAction(internal.actions.generateCoi.run, {
+            const generated = await ctx.runAction(internal.actions.generateCoi.run, {
               policyId: params.policyId as Id<"policies">,
               orgId,
               certificateHolder: params.certificateHolder,
@@ -604,9 +604,9 @@ export const processInbound = internalAction({
               source: "imessage",
               createdByUserId: user._id,
             });
-            if (!storageId) return COI_GENERATION_FAILED_MESSAGE;
+            if (!generated) return COI_GENERATION_FAILED_MESSAGE;
             coiAttachments.push({
-              storageId: storageId as Id<"_storage">,
+              storageId: generated.storageId as Id<"_storage">,
               filename: "certificate-of-insurance.pdf",
             });
             return "COI generated and will be sent as an attachment.";

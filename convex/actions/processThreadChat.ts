@@ -157,7 +157,7 @@ function buildTools(ctx: any, args: { orgId: string; threadId: string; userId: s
           return `COI auto-generation is disabled for this organization.`;
         }
         try {
-          const storageId = await ctx.runAction(internal.actions.generateCoi.run, {
+          const generated = await ctx.runAction(internal.actions.generateCoi.run, {
             policyId: input.policyId as Id<"policies">,
             orgId: args.orgId,
             certificateHolder: input.certificateHolder,
@@ -165,14 +165,14 @@ function buildTools(ctx: any, args: { orgId: string; threadId: string; userId: s
             source: "chat",
             createdByUserId: args.userId as Id<"users">,
           });
-          if (!storageId) return COI_GENERATION_FAILED_MESSAGE;
+          if (!generated) return COI_GENERATION_FAILED_MESSAGE;
           return {
             message: "COI generated and attached to this response.",
             attachment: {
               filename: "certificate-of-insurance.pdf",
               contentType: "application/pdf",
-              size: 0,
-              fileId: storageId as Id<"_storage">,
+              size: generated.size,
+              fileId: generated.storageId as Id<"_storage">,
             },
           };
         } catch (err) {
@@ -217,11 +217,15 @@ export const run = internalAction({
     userMessageId: v.id("threadMessages"),
   },
   handler: async (ctx, args) => {
-    // Insert processing placeholder
-    const agentMsgId = await ctx.runMutation(
-      internal.threads.insertAgentMessage,
-      { threadId: args.threadId, orgId: args.orgId },
-    );
+    // Claim one agent response for this user message before any model calls.
+    // This prevents duplicate scheduled actions from producing two assistant replies.
+    const claim = await ctx.runMutation(internal.threads.claimAgentResponse, {
+      threadId: args.threadId,
+      orgId: args.orgId,
+      userMessageId: args.userMessageId,
+    });
+    if (!claim.claimed) return;
+    const agentMsgId = claim.messageId;
 
     try {
       // ── Check for cancel/undo intent targeting a pending email ──

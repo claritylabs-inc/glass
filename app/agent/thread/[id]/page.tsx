@@ -6,6 +6,8 @@ import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { AppShell } from "@/components/app-shell";
 import { PillButton } from "@/components/ui/pill-button";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { ModeBadge } from "@/components/mode-badge";
 import { MessageBubble, splitQuotedReply, QuotedContent, type Conversation } from "@/components/conversation-message";
 import { toast } from "sonner";
@@ -18,10 +20,8 @@ import { ChatInputOverlay, GlassPromptInput, type GlassPromptInputHandle } from 
 import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
 import { CollapsibleReasoning } from "@/components/collapsible-reasoning";
 import Link from "next/link";
-import { PROSE_MARKDOWN_STYLES } from "@/components/prose-markdown";
-import Markdown from "react-markdown";
-import remarkBreaks from "remark-breaks";
-import remarkGfm from "remark-gfm";
+import { ProseMarkdown } from "@/components/prose-markdown";
+import { PretextText } from "@/components/pretext-text";
 import dayjs from "dayjs";
 import { NewChatEmptyState } from "@/components/new-chat-empty-state";
 
@@ -49,6 +49,7 @@ export type ThreadMessage = {
   messageId?: string;
   responseMessageId?: string;
   attachments?: { filename: string; contentType: string; size: number; fileId?: Id<"_storage"> }[];
+  replyToMessageId?: Id<"threadMessages">;
   referencedPolicyIds?: Id<"policies">[];
   citedSections?: string[];
   citedCoverageNames?: string[];
@@ -71,6 +72,77 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
   send_email: "Drafted email",
   email_expert: "Prepared email",
 };
+
+function formatToolInput(input?: string) {
+  if (!input) return "{}";
+  try {
+    return JSON.stringify(JSON.parse(input), null, 2);
+  } catch {
+    return input;
+  }
+}
+
+function ToolCallCard({
+  toolCall,
+  index,
+}: {
+  toolCall: { name: string; input?: string };
+  index: number;
+}) {
+  const [isOpen, setIsOpen] = useState(true);
+  const displayName = TOOL_DISPLAY_NAMES[toolCall.name] ?? toolCall.name;
+
+  return (
+    <div className="overflow-hidden rounded-lg border border-foreground/8 bg-card shadow-sm shadow-black/[0.02]">
+      <Button
+        type="button"
+        variant="ghost"
+        onClick={() => setIsOpen((value) => !value)}
+        aria-expanded={isOpen}
+        className="h-auto w-full justify-between rounded-none px-3 py-2 text-left hover:bg-foreground/[0.03] dark:hover:bg-foreground/[0.06]"
+      >
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="min-w-0">
+            <span className="block truncate text-[13px] font-medium text-foreground/85">{displayName}</span>
+          </span>
+        </span>
+        <span className="ml-3 flex shrink-0 items-center gap-2">
+          <Badge className="h-5 gap-1 border-success/20 bg-success/10 px-1.5 text-[11px] font-medium text-success" variant="outline">
+            Completed
+          </Badge>
+          <span className="text-[11px] font-medium text-muted-foreground/45">
+            {isOpen ? "Hide" : "Show"}
+          </span>
+        </span>
+      </Button>
+      {isOpen && (
+        <div className="border-t border-foreground/6 px-3 pb-3 pt-2">
+          <p className="mb-1.5 text-label-sm font-medium text-muted-foreground/45">
+            Parameters
+          </p>
+          <pre className="max-h-64 overflow-auto rounded-md border border-foreground/8 bg-foreground/[0.025] p-3 font-mono text-[11px] leading-5 text-foreground/75 shadow-inner shadow-black/[0.015]">
+            <code className="whitespace-pre-wrap break-words">{formatToolInput(toolCall.input)}</code>
+          </pre>
+          <span className="sr-only">Tool call {index + 1}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ToolCallPanel({
+  toolCalls,
+}: {
+  toolCalls: { name: string; input?: string }[];
+}) {
+  return (
+    <div className="mb-3 ml-0.5 space-y-2">
+      {toolCalls.map((toolCall, index) => (
+        <ToolCallCard key={`${toolCall.name}-${index}`} toolCall={toolCall} index={index} />
+      ))}
+    </div>
+  );
+}
 
 /* ── Unified thread actions ── */
 function UnifiedThreadActions({
@@ -149,7 +221,7 @@ function UnifiedThreadActions({
 }
 
 /* ── Shared markdown container styles ── */
-const MARKDOWN_STYLES = PROSE_MARKDOWN_STYLES + " [&_a]:text-primary-light [&_a]:underline";
+const MARKDOWN_STYLES = "[&_a]:text-primary-light [&_a]:underline";
 
 const markdownComponents = {
   a: ({ href, children }: { href?: string; children?: React.ReactNode }) => {
@@ -172,12 +244,6 @@ function ThreadAttachmentChip({
     attachment.fileId ? { fileId: attachment.fileId } : "skip",
   );
   const isPdf = attachment.contentType === "application/pdf";
-
-  function formatSize(bytes: number) {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  }
 
   const handleClick = (e: React.MouseEvent) => {
     if (isPdf && url) {
@@ -204,7 +270,6 @@ function ThreadAttachmentChip({
         <Paperclip className="w-3.5 h-3.5 text-muted-foreground/50 shrink-0" />
       )}
       <span className="truncate max-w-[180px] text-foreground/80">{attachment.filename}</span>
-      <span className="text-muted-foreground/40 shrink-0">{formatSize(attachment.size)}</span>
       {url && !isPdf && <Download className="w-3 h-3 text-muted-foreground/30 shrink-0" />}
     </a>
   );
@@ -332,8 +397,8 @@ export function UnifiedMessageBubble({
 
           {/* Content bubble or thinking indicator */}
           {displayContent ? (
-            <div className={`rounded-lg bg-popover border border-foreground/6 px-3.5 py-2.5 mt-1 ${MARKDOWN_STYLES}`}>
-              <Markdown remarkPlugins={[remarkGfm, remarkBreaks]} components={markdownComponents}>{displayContent}</Markdown>
+            <div className="rounded-lg bg-popover border border-foreground/6 px-3.5 py-2.5 mt-1">
+              <ProseMarkdown gfm breaks className={MARKDOWN_STYLES} components={markdownComponents}>{displayContent}</ProseMarkdown>
               <span className="inline-block w-1.5 h-4 bg-primary-light rounded-sm animate-pulse ml-0.5 align-middle" />
             </div>
           ) : (
@@ -401,13 +466,16 @@ export function UnifiedMessageBubble({
                 <span className="text-label-sm text-muted-foreground/25">{time.format("MMM D, h:mm A")}</span>
               </div>
               {toolCalls.length > 0 && (
-                <button
+                <Button
                   type="button"
                   onClick={() => setShowToolCalls((value) => !value)}
-                  className="shrink-0 text-label-sm text-muted-foreground/45 hover:text-muted-foreground/65 transition-colors cursor-pointer"
+                  variant="ghost"
+                  size="xs"
+                  className="h-6 shrink-0 gap-1.5 rounded-md px-1.5 text-[11px] text-muted-foreground/55 hover:text-foreground/75"
+                  aria-expanded={showToolCalls}
                 >
                   {showToolCalls ? "Hide tool calls" : `${toolCalls.length} tool call${toolCalls.length === 1 ? "" : "s"}`}
-                </button>
+                </Button>
               )}
             </div>
             {msg.channel === "email" && msg.toAddresses && (
@@ -429,26 +497,18 @@ export function UnifiedMessageBubble({
               reasoning={msg.reasoning ?? ""}
               isStreaming={false}
             />
-            {toolCalls.length > 0 && showToolCalls && (
-              <div className="mb-3 ml-0.5">
-                  <div className="rounded-lg border border-foreground/6 bg-white overflow-hidden">
-                    <div className="px-3 py-2 space-y-1">
-                      {toolCalls.map((toolCall, index) => (
-                        <div key={`${toolCall.name}-${index}`} className="py-1.5 first:pt-0 last:pb-0">
-                          <p className="text-label-sm text-foreground/75 font-medium">{TOOL_DISPLAY_NAMES[toolCall.name] ?? toolCall.name}</p>
-                          {toolCall.input && (
-                            <pre className="mt-1 whitespace-pre-wrap break-words text-[11px] leading-4 text-muted-foreground/70 font-mono">{toolCall.input}</pre>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-              </div>
-            )}
-            <div className={`group/agent-msg relative rounded-lg bg-popover border border-foreground/6 px-3.5 py-2.5 ${msg.reasoning ? "mt-1" : ""} ${MARKDOWN_STYLES}`}>
-              <Markdown remarkPlugins={[remarkGfm, remarkBreaks]} components={markdownComponents}>{fixedContent}</Markdown>
+            {toolCalls.length > 0 && showToolCalls && <ToolCallPanel toolCalls={toolCalls} />}
+            <div className={`group/agent-msg relative rounded-lg bg-popover border border-foreground/6 px-3.5 py-2.5 ${msg.reasoning ? "mt-1" : ""}`}>
+              <ProseMarkdown gfm breaks className={MARKDOWN_STYLES} components={markdownComponents}>{fixedContent}</ProseMarkdown>
               <CopyMessageButton content={msg.content} />
             </div>
+            {msg.attachments && msg.attachments.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {msg.attachments.map((att, i) => (
+                  <ThreadAttachmentChip key={i} attachment={att} />
+                ))}
+              </div>
+            )}
             {msg.status === "pending_send" && msg.pendingEmailId && (
               <PendingSendCountdown pendingEmailId={msg.pendingEmailId} />
             )}
@@ -519,26 +579,26 @@ export function UnifiedMessageBubble({
             ? `border border-foreground/6 ${isOwnMessage ? "bg-foreground/[0.04]" : "bg-foreground/[0.02]"}`
             : isOwnMessage ? "bg-foreground/[0.06]" : "bg-foreground/[0.03]"
         }`}>
-        <p className="whitespace-pre-wrap">{cleanContent}</p>
-        {quoted && (
-          <>
-            <button
-              type="button"
-              onClick={() => setShowQuoted(!showQuoted)}
-              className="mt-1.5 text-label-sm text-muted-foreground/40 hover:text-muted-foreground/60 transition-colors cursor-pointer"
-            >
-              {showQuoted ? "Hide quoted text ▴" : "Show quoted text ▾"}
-            </button>
-            {showQuoted && <QuotedContent text={quoted} />}
-          </>
-        )}
-        {msg.attachments && msg.attachments.length > 0 && (
-          <div className="mt-3 pt-3 border-t border-foreground/6 flex flex-wrap gap-2">
-            {msg.attachments.map((att, i) => (
-              <ThreadAttachmentChip key={i} attachment={att} />
-            ))}
-          </div>
-        )}
+          <PretextText as="p" text={cleanContent} whiteSpace="pre-wrap" />
+          {quoted && (
+            <>
+              <button
+                type="button"
+                onClick={() => setShowQuoted(!showQuoted)}
+                className="mt-1.5 text-label-sm text-muted-foreground/40 hover:text-muted-foreground/60 transition-colors cursor-pointer"
+              >
+                {showQuoted ? "Hide quoted text ▴" : "Show quoted text ▾"}
+              </button>
+              {showQuoted && <QuotedContent text={quoted} />}
+            </>
+          )}
+          {msg.attachments && msg.attachments.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-foreground/6 flex flex-wrap gap-2">
+              {msg.attachments.map((att, i) => (
+                <ThreadAttachmentChip key={i} attachment={att} />
+              ))}
+            </div>
+          )}
         </div>
         {isFirstUserMessage && threadContext && (
           <div className="mt-2">
@@ -708,6 +768,7 @@ function UnifiedThreadContent({
   const messagesRef = useRef<HTMLDivElement>(null);
   const chatInputRef = useRef<GlassPromptInputHandle>(null);
   const prevThreadId = useRef<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Error state for chat — stored as { threadId, message } so switching threads auto-clears it
   const [chatErrorState, setChatErrorState] = useState<{ threadId: string; message: string } | null>(null);
@@ -762,46 +823,65 @@ function UnifiedThreadContent({
     }
   }, [messages]);
 
+  const isAgentProcessing = useMemo(
+    () => messages?.some((m) => m.role === "agent" && m.status === "processing") ?? false,
+    [messages],
+  );
+  const isAwaitingAgent = useMemo(() => {
+    if (!messages || messages.length === 0) return false;
+    const lastUserIndex = messages.reduce((acc, m, i) => m.role === "user" ? i : acc, -1);
+    const lastAgentIndex = messages.reduce((acc, m, i) => m.role === "agent" ? i : acc, -1);
+    return lastUserIndex > lastAgentIndex;
+  }, [messages]);
+  const isInputBusy = isSubmitting || isAgentProcessing || isAwaitingAgent;
+
   const handleSend = useCallback(async (message: PromptInputMessage) => {
+    if (isInputBusy) return;
     const text = message.text.trim();
     if (!text && message.files.length === 0) return;
 
-    // Upload files first if any
-    const attachments: { filename: string; contentType: string; size: number; fileId: Id<"_storage"> }[] = [];
-    if (message.files.length > 0) {
-      for (const file of message.files) {
-        const url = await generateUploadUrl();
-        const res = await fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": file.mediaType || "application/octet-stream" },
-          body: await fetch(file.url).then((r) => r.blob()),
-        });
-        if (res.ok) {
-          const { storageId } = await res.json();
-          attachments.push({
-            filename: file.filename ?? "file",
-            contentType: file.mediaType || "application/octet-stream",
-            size: 0,
-            fileId: storageId as Id<"_storage">,
+    setIsSubmitting(true);
+    try {
+      // Upload files first if any
+      const attachments: { filename: string; contentType: string; size: number; fileId: Id<"_storage"> }[] = [];
+      if (message.files.length > 0) {
+        for (const file of message.files) {
+          const url = await generateUploadUrl();
+          const blob = await fetch(file.url).then((r) => r.blob());
+          const res = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": file.mediaType || "application/octet-stream" },
+            body: blob,
           });
+          if (res.ok) {
+            const { storageId } = await res.json();
+            attachments.push({
+              filename: file.filename ?? "file",
+              contentType: file.mediaType || "application/octet-stream",
+              size: blob.size,
+              fileId: storageId as Id<"_storage">,
+            });
+          }
         }
       }
-    }
 
-    // If there are attachments, use mutation-based flow (backend handles response)
-    if (attachments.length > 0) {
-      await sendMessage({
-        threadId,
-        content: text || "(attached files)",
-        attachments,
-      });
-      return;
-    }
+      // If there are attachments, use mutation-based flow (backend handles response)
+      if (attachments.length > 0) {
+        await sendMessage({
+          threadId,
+          content: text || "(attached files)",
+          attachments,
+        });
+        return;
+      }
 
-    // For text-only messages, send via Convex (processThreadChat handles the response)
-    setChatError(null);
-    await sendMessage({ threadId, content: text });
-  }, [sendMessage, threadId, generateUploadUrl, setChatError]);
+      // For text-only messages, send via Convex (processThreadChat handles the response)
+      setChatError(null);
+      await sendMessage({ threadId, content: text });
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [sendMessage, threadId, generateUploadUrl, setChatError, isInputBusy]);
 
   // Detect if thread has both chat and email messages (mixed thread)
   const isMixedThread = useMemo(() => {
@@ -877,7 +957,8 @@ function UnifiedThreadContent({
           placeholder="Reply to this thread..."
           showAttach
           agentBranding={agentBranding}
-          status={messages?.some((m) => m.role === "agent" && m.status === "processing") ? "submitted" : undefined}
+          disabled={isInputBusy}
+          status={isInputBusy ? "submitted" : undefined}
         />
       </ChatInputOverlay>
     </div>

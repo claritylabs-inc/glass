@@ -8,7 +8,7 @@ import { logAiError } from "../lib/aiUtils";
 
 /**
  * Generate a COI PDF for a policy and store it in file storage.
- * Returns the storage ID for download.
+ * Returns the storage ID and byte size for download/attachment metadata.
  */
 export const run = internalAction({
   args: {
@@ -29,7 +29,7 @@ export const run = internalAction({
     )),
     createdByUserId: v.optional(v.id("users")),
   },
-  handler: async (ctx, args): Promise<string | null> => {
+  handler: async (ctx, args): Promise<{ storageId: string; size: number }> => {
     try {
       const policy = await ctx.runQuery(internal.policies.getInternal, { id: args.policyId });
 
@@ -51,6 +51,7 @@ export const run = internalAction({
       ) as ArrayBuffer;
       const blob = new Blob([arrayBuffer], { type: "application/pdf" });
       const storageId = await ctx.storage.store(blob);
+      const size = pdfBuffer.byteLength;
 
       await ctx.runMutation(internal.certificates.recordGenerated, {
         orgId: args.orgId,
@@ -63,7 +64,7 @@ export const run = internalAction({
         createdByUserId: args.createdByUserId,
       });
 
-      return storageId as string;
+      return { storageId: storageId as string, size };
     } catch (err) {
       logAiError("generateCoi", err, { policyId: args.policyId });
       throw err;

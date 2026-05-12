@@ -24,6 +24,7 @@
     "@ai-sdk/xai": "^3.0.83",
     "@auth/core": "^0.37.4",
     "@base-ui/react": "^1.2.0",
+    "@chenglou/pretext": "^0.0.6",
     "@claritylabs/cl-pipelines": "0.1.0",
     "@claritylabs/cl-sdk": "^1.1.0",
     "@convex-dev/auth": "^0.0.91",

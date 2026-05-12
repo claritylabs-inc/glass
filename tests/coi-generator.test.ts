@@ -1,7 +1,7 @@
 import { readFileSync } from "fs";
 import { join } from "path";
 import { describe, expect, it } from "vitest";
-import { policyToCoiData } from "../convex/lib/coiGenerator";
+import { generateCoiPdf, policyToCoiData } from "../convex/lib/coiGenerator";
 
 const ROOT = join(__dirname, "..");
 
@@ -100,5 +100,24 @@ describe("COI PDF footer copy", () => {
     expect(source).not.toContain("C_GLASS_BLUE");
     expect(source).not.toContain("ACORD 25 (2016/03)  |  Generated");
     expect(source).not.toContain("claritylabs.dev");
+  });
+});
+
+describe("COI PDF generation", () => {
+  it("renders the generated PDF successfully", async () => {
+    const data = policyToCoiData({
+      policyTypes: ["general_liability"],
+      policyNumber: "TEST-1",
+      effectiveDate: "01/01/2026",
+      expirationDate: "01/01/2027",
+      carrier: "Test Carrier",
+      insuredName: "Test Insured",
+      limits: { combinedSingleLimit: "$1,000,000" },
+    });
+
+    const pdf = await generateCoiPdf(data);
+
+    expect(pdf.toString("utf-8", 0, 4)).toBe("%PDF");
+    expect(pdf.length).toBeGreaterThan(1000);
   });
 });

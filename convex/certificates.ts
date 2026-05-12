@@ -200,7 +200,7 @@ export const generateForOrg = internalAction({
     });
     const certificateHolder = compactCertificateHolder({ ...args, holderName });
 
-    const storageId = await ctx.runAction(internal.actions.generateCoi.run, {
+    const generated = await ctx.runAction(internal.actions.generateCoi.run, {
       policyId: args.policyId,
       orgId: args.orgId,
       certificateHolder,
@@ -208,9 +208,9 @@ export const generateForOrg = internalAction({
       source: args.source,
       createdByUserId: args.createdByUserId,
     });
-    if (!storageId) throw new Error("COI generation failed.");
+    if (!generated) throw new Error("COI generation failed.");
 
-    const fileId = storageId as Id<"_storage">;
+    const fileId = generated.storageId as Id<"_storage">;
     return {
       fileId,
       url: await ctx.storage.getUrl(fileId),

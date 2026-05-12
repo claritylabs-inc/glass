@@ -1161,6 +1161,7 @@ export default defineSchema({
       fileId: v.optional(v.id("_storage")),
     }))),
     // Agent response metadata
+    replyToMessageId: v.optional(v.id("threadMessages")),
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
     referencedQuoteIds: v.optional(v.any()), // legacy: may contain old quotes table IDs
     // Sections cited by the agent (titles captured from lookup_policy_section tool results)
@@ -1189,7 +1190,8 @@ export default defineSchema({
     legacyChatMessageId: v.optional(v.id("webChatMessages")),
   })
     .index("by_threadId", ["threadId"])
-    .index("by_messageId", ["messageId"]),
+    .index("by_messageId", ["messageId"])
+    .index("by_replyToMessageId", ["replyToMessageId"]),
 
   imessageInboundEvents: defineTable({
     eventKey: v.string(),

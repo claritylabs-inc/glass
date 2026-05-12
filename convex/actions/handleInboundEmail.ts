@@ -1142,7 +1142,7 @@ export const processInbound = internalAction({
               return `COI auto-generation is disabled for this organization.`;
             }
             try {
-              const storageId = await ctx.runAction(
+              const generated = await ctx.runAction(
                 internal.actions.generateCoi.run,
                 {
                   policyId: params.policyId as Id<"policies">,
@@ -1153,12 +1153,12 @@ export const processInbound = internalAction({
                   createdByUserId: primaryUserId,
                 },
               );
-              if (!storageId) return COI_GENERATION_FAILED_MESSAGE;
+              if (!generated) return COI_GENERATION_FAILED_MESSAGE;
               generatedCoiAttachments.push({
                 filename: "certificate-of-insurance.pdf",
                 contentType: "application/pdf",
-                size: 0,
-                fileId: storageId as Id<"_storage">,
+                size: generated.size,
+                fileId: generated.storageId as Id<"_storage">,
               });
               return "COI generated successfully and will be attached to this email reply.";
             } catch (err) {

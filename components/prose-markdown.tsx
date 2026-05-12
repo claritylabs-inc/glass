@@ -4,6 +4,7 @@ import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 import { cn } from "@/lib/utils";
+import { getPlainTextChildren, PretextText } from "@/components/pretext-text";
 
 /**
  * Shared base styles for markdown-rendered content.
@@ -75,6 +76,57 @@ const defaultGfmComponents: Components = {
   ),
 };
 
+const pretextComponents: Components = {
+  p: ({ children }) => {
+    const text = getPlainTextChildren(children);
+    if (text !== null) {
+      return <PretextText as="p" text={text} />;
+    }
+    return <p className="pretext-flow">{children}</p>;
+  },
+  li: ({ children }) => {
+    const text = getPlainTextChildren(children);
+    if (text !== null) {
+      return (
+        <li>
+          <PretextText text={text} />
+        </li>
+      );
+    }
+    return <li className="pretext-flow">{children}</li>;
+  },
+  h1: ({ children }) => {
+    const text = getPlainTextChildren(children);
+    if (text !== null) return <PretextText as="h1" text={text} />;
+    return <h1 className="pretext-flow">{children}</h1>;
+  },
+  h2: ({ children }) => {
+    const text = getPlainTextChildren(children);
+    if (text !== null) return <PretextText as="h2" text={text} />;
+    return <h2 className="pretext-flow">{children}</h2>;
+  },
+  h3: ({ children }) => {
+    const text = getPlainTextChildren(children);
+    if (text !== null) return <PretextText as="h3" text={text} />;
+    return <h3 className="pretext-flow">{children}</h3>;
+  },
+  h4: ({ children }) => {
+    const text = getPlainTextChildren(children);
+    if (text !== null) return <PretextText as="h4" text={text} />;
+    return <h4 className="pretext-flow">{children}</h4>;
+  },
+  h5: ({ children }) => {
+    const text = getPlainTextChildren(children);
+    if (text !== null) return <PretextText as="h5" text={text} />;
+    return <h5 className="pretext-flow">{children}</h5>;
+  },
+  h6: ({ children }) => {
+    const text = getPlainTextChildren(children);
+    if (text !== null) return <PretextText as="h6" text={text} />;
+    return <h6 className="pretext-flow">{children}</h6>;
+  },
+};
+
 export function ProseMarkdown({
   children,
   className,
@@ -88,12 +140,14 @@ export function ProseMarkdown({
   if (breaks) plugins.push(remarkBreaks);
 
   // Merge default GFM table component with user overrides
-  const mergedComponents = gfm
-    ? { ...defaultGfmComponents, ...components }
-    : components;
+  const mergedComponents = {
+    ...pretextComponents,
+    ...(gfm ? defaultGfmComponents : null),
+    ...components,
+  };
 
   return (
-    <div className={cn(compact ? COMPACT_STYLES : BASE_STYLES, className)}>
+    <div className={cn(compact ? COMPACT_STYLES : BASE_STYLES, "pretext-flow", className)}>
       <Markdown
         remarkPlugins={plugins}
         components={mergedComponents}

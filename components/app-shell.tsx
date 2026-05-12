@@ -145,7 +145,7 @@ function PersistentChatBar() {
               attachments.push({
                 filename: file.filename ?? "file",
                 contentType: file.mediaType || "application/octet-stream",
-                size: 0,
+                size: blob.size,
                 fileId: storageId as Id<"_storage">,
               });
             }
