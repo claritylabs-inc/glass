@@ -1,5 +1,5 @@
 import http from "node:http";
-import { Spectrum, attachment, type SpectrumInstance } from "spectrum-ts";
+import { Spectrum, attachment, type Space, type SpectrumInstance } from "spectrum-ts";
 import { imessage } from "spectrum-ts/providers/imessage";
 import { terminal } from "spectrum-ts/providers/terminal";
 import { sendToConvex, type ImessageAttachment } from "./convex.js";
@@ -106,14 +106,15 @@ async function main() {
   console.log(`[glass-imessage] Connecting to Spectrum ${TRANSPORT} provider...`);
 
   const app = await startSpectrum();
-  const terminalSpacesByPhone = new Map<string, string>();
+  const activeSpacesByPhone = new Map<string, Space>();
 
   console.log("[glass-imessage] Connected. Waiting for messages...");
 
   // ── Outbound HTTP server ──────────────────────────────────────────────────
   // POST /send { toPhone, message } — sends proactive text via the active
-  // Spectrum provider. In terminal mode, this targets the chat that last sent
-  // from `toPhone`, falling back to IMESSAGE_TERMINAL_SPACE_ID / chat-1.
+  // Spectrum provider. For an active inbound exchange, this reuses the same
+  // space so status cues stay in the same iMessage conversation as final
+  // responses and attachments. Otherwise it falls back to a proactive send.
   // Protected by the same IMESSAGE_WORKER_SECRET used for inbound verification.
   const httpPort = Number(process.env.WORKER_HTTP_PORT ?? "3001");
   const httpServer = http.createServer(async (req, res) => {
@@ -153,11 +154,18 @@ async function main() {
     }
 
     try {
+      const toPhone = normalizePhone(payload.toPhone);
+      const activeSpace = activeSpacesByPhone.get(toPhone);
+      if (activeSpace) {
+        await activeSpace.send(payload.message);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true }));
+        return;
+      }
+
       if (TRANSPORT === "terminal") {
         const terminalClient = terminal(app);
-        const toPhone = normalizePhone(payload.toPhone);
-        const spaceId = terminalSpacesByPhone.get(toPhone) ?? TERMINAL_SPACE_ID;
-        const space = await terminalClient.space({ id: spaceId });
+        const space = await terminalClient.space({ id: TERMINAL_SPACE_ID });
         await space.send(payload.message);
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: true }));
@@ -200,9 +208,7 @@ async function main() {
         ? (TERMINAL_FROM_PHONE || message.sender.id)
         : message.sender.id;
     const fromPhone = normalizePhone(senderId);
-    if (TRANSPORT === "terminal") {
-      terminalSpacesByPhone.set(fromPhone, space.id);
-    }
+    activeSpacesByPhone.set(fromPhone, space);
     const sourceMessageId = readStringField(message, [
       "id",
       "messageId",
