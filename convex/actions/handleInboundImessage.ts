@@ -207,6 +207,29 @@ function buildRecentTextContext(messages: Array<{
     .join("\n");
 }
 
+export function shouldSkipImessageStatusCueForEmailApproval(params: {
+  messageText: string;
+  recentContext?: string;
+}): boolean {
+  const recentContext = params.recentContext ?? "";
+  if (!/Ready to send\?/i.test(recentContext) && !/\bDraft email\b/i.test(recentContext)) {
+    return false;
+  }
+
+  const normalized = params.messageText
+    .toLowerCase()
+    .replace(/[^\w\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!normalized) return false;
+
+  if (/\b(no|not|don t|dont|hold|wait|cancel|stop)\b/.test(normalized)) {
+    return false;
+  }
+
+  return /\b(yes|yep|yeah|ok|okay|good|approved|approve|send|go ahead)\b/.test(normalized);
+}
+
 export const processInbound = internalAction({
   args: {
     fromPhone: v.string(),
@@ -477,12 +500,17 @@ export const processInbound = internalAction({
 
     // Send a model-decided status cue before heavier retrieval/tool work so SMS
     // users get immediate feedback when the agent needs to check policy data.
-    const statusCue = await generateImessageStatusCue({
+    const statusCue = shouldSkipImessageStatusCueForEmailApproval({
       messageText: args.messageText,
-      hasAttachments: attachmentRecords.length > 0,
-      userName,
       recentContext: recentConversationContext || undefined,
-    });
+    })
+      ? null
+      : await generateImessageStatusCue({
+          messageText: args.messageText,
+          hasAttachments: attachmentRecords.length > 0,
+          userName,
+          recentContext: recentConversationContext || undefined,
+        });
     if (statusCue) {
       const sent = await sendImmediateImessage({
         toPhone: fromPhone,
@@ -847,9 +875,29 @@ export const processInbound = internalAction({
     });
 
     let responseText = result.text;
+    let responseAlreadySent = false;
     const emailResult = emailToolResult.current;
     if (emailResult) {
       responseText = emailResult.responseBody;
+      if (emailResult.status === "pending") {
+        const sent = await sendImmediateImessage({
+          toPhone: fromPhone,
+          chatGuid,
+          message: emailResult.responseBody,
+        });
+        if (sent) {
+          responseAlreadySent = true;
+          await ctx.runMutation(internal.threads.insertImessageMessage, {
+            threadId,
+            orgId,
+            role: "agent",
+            content: emailResult.responseBody,
+            responseMessageId: `${eventKey}:pending-email`,
+            referencedPolicyIds:
+              relevantPolicyIds.length > 0 ? (relevantPolicyIds as Id<"policies">[]) : undefined,
+          });
+        }
+      }
     }
 
     // ── 15. Resolve COI attachment URLs ───────────────────────────────────
@@ -872,16 +920,18 @@ export const processInbound = internalAction({
       size: 0,
       fileId: c.storageId,
     }));
-    await ctx.runMutation(internal.threads.insertImessageMessage, {
-      threadId,
-      orgId,
-      role: "agent",
-      content: responseText,
-      responseMessageId: `${eventKey}:response`,
-      referencedPolicyIds:
-        relevantPolicyIds.length > 0 ? (relevantPolicyIds as Id<"policies">[]) : undefined,
-      attachments: agentAttachments.length > 0 ? agentAttachments : undefined,
-    });
+    if (!responseAlreadySent && responseText.trim()) {
+      await ctx.runMutation(internal.threads.insertImessageMessage, {
+        threadId,
+        orgId,
+        role: "agent",
+        content: responseText,
+        responseMessageId: `${eventKey}:response`,
+        referencedPolicyIds:
+          relevantPolicyIds.length > 0 ? (relevantPolicyIds as Id<"policies">[]) : undefined,
+        attachments: agentAttachments.length > 0 ? agentAttachments : undefined,
+      });
+    }
 
     // ── 17. Post-exchange orgMemory extraction ────────────────────────────
     if (currentSenderIsLinked) try {
@@ -894,7 +944,7 @@ Only include items worth remembering long-term. Skip pleasantries and one-off qu
         messages: [
           {
             role: "user",
-            content: `USER: ${args.messageText}\n\nAGENT: ${responseText}`,
+            content: `USER: ${args.messageText}\n\nAGENT: ${emailResult?.responseBody ?? responseText}`,
           },
         ],
       });
@@ -925,7 +975,7 @@ Only include items worth remembering long-term. Skip pleasantries and one-off qu
     }
 
     return await finish(
-      responseText,
+      responseAlreadySent ? "" : responseText,
       responseAttachments.length > 0 ? responseAttachments : undefined,
     );
     } catch (error) {
