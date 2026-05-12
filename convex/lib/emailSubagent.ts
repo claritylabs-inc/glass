@@ -10,11 +10,6 @@ import { sendResendEmail, getAgentDomain } from "./resend";
 import { markdownToHtml, stripMarkdown } from "./aiUtils";
 import { isWhiteLabelingEnabled } from "./branding";
 import { COI_GENERATION_FAILED_MESSAGE } from "./actionFailures";
-import {
-  buildEmailPolicySources,
-  buildPolicySourcesHtml,
-  buildPolicySourcesText,
-} from "./emailPolicySources";
 import { buildGlassEmailIconHtml } from "./emailTemplate";
 
 const MAX_EMAIL_SIZE = 38 * 1024 * 1024; // Resend limit is 40MB after Base64 encoding.
@@ -440,12 +435,9 @@ async function runEmailSubagent(
 
     if (!to) throw new Error("Recipient email is required before sending.");
     const sendTo = to;
-    const policySources = await buildEmailPolicySources(ctx, [...sourcePolicyIds]);
-    const sourceText = buildPolicySourcesText(policySources);
-    const sourceHtml = buildPolicySourcesHtml(policySources);
     const signature = buildEmailSignature(context.agentAddress, context.brokerBranding);
-    const plainText = stripMarkdown(body) + sourceText + signature.text;
-    const html = buildHtmlBody(body, { html: sourceHtml + signature.html });
+    const plainText = stripMarkdown(body) + signature.text;
+    const html = buildHtmlBody(body, { html: signature.html });
     const emailPayload: Record<string, unknown> = {
       from: context.fromHeader,
       to: sendTo,

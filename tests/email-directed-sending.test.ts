@@ -114,6 +114,22 @@ describe("directed email sending", () => {
     expect(source).not.toContain("Confirm the recipient name.");
   });
 
+  it("does not append policy source blocks to outbound emails", () => {
+    const subagentSource = readFileSync(
+      join(__dirname, "..", "convex/lib/emailSubagent.ts"),
+      "utf-8",
+    );
+    const inboundEmailSource = readFileSync(
+      join(__dirname, "..", "convex/actions/handleInboundEmail.ts"),
+      "utf-8",
+    );
+
+    expect(subagentSource).not.toContain("buildPolicySourcesHtml");
+    expect(subagentSource).not.toContain("buildPolicySourcesText");
+    expect(inboundEmailSource).not.toContain("buildPolicySourcesHtml");
+    expect(inboundEmailSource).not.toContain("buildPolicySourcesText");
+  });
+
   it("uses chat email notifications for normal web chat replies", () => {
     const source = readFileSync(
       join(__dirname, "..", "convex/actions/processThreadChat.ts"),
@@ -123,5 +139,18 @@ describe("directed email sending", () => {
     expect(source).toContain("org.chatEmailNotifications === true");
     expect(source).toContain("getNotificationFromAddress");
     expect(source).toContain("View thread");
+  });
+
+  it("sends an actual sms confirmation after delayed iMessage email sends complete", () => {
+    const source = readFileSync(
+      join(__dirname, "..", "convex/actions/sendPendingEmail.ts"),
+      "utf-8",
+    );
+
+    expect(source).toContain("sendTextConfirmation");
+    expect(source).toContain("thread?.threadPhone");
+    expect(source).toContain("/send");
+    expect(source).toContain("Email sent to ${pending.recipientEmail}");
+    expect(source).toContain("insertImessageMessage");
   });
 });

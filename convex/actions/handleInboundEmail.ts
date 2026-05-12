@@ -21,11 +21,6 @@ import { Id } from "../_generated/dataModel";
 import { sendResendEmail, getAgentDomain, getAuthFromAddress } from "../lib/resend";
 import { buildGlassEmailIconHtml, buildUnrecognizedInboundEmail } from "../lib/emailTemplate";
 import {
-  buildEmailPolicySources,
-  buildPolicySourcesHtml,
-  buildPolicySourcesText,
-} from "../lib/emailPolicySources";
-import {
   buildSystemPromptForContext,
   buildChannelInstructions,
   buildPolicyToolInstructions,
@@ -1292,15 +1287,12 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
             return r;
           };
 
-          const policySources = await buildEmailPolicySources(ctx, [...referencedPolicySourceIds], siteUrl);
-          const sourceText = buildPolicySourcesText(policySources);
-          const sourceHtml = buildPolicySourcesHtml(policySources);
           const sig = buildSignature(agentAddress, brokerBranding);
-          const plainText = stripMd(emailBody) + sourceText + sig.text;
+          const plainText = stripMd(emailBody) + sig.text;
           const htmlBody = emailBody
             .split("\n\n")
             .map((p) => `<p style="margin:0 0 12px;line-height:1.5">${mdToHtml(p.replace(/\n/g, "<br>"))}</p>`)
-            .join("\n") + sourceHtml + sig.html;
+            .join("\n") + sig.html;
 
           const sendSubject = subject.replace(/^\[Glass\]\s*Help needed:\s*/i, "");
           const replySub = sendSubject.startsWith("Re:") ? sendSubject : `Re: ${sendSubject}`;
@@ -1431,12 +1423,9 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
         result = result.replace(/\*(.+?)\*/g, "$1");
         return result;
       };
-      const policySources = await buildEmailPolicySources(ctx, [...referencedPolicySourceIds], siteUrl);
-      const sourceText = buildPolicySourcesText(policySources);
-      const sourceHtml = buildPolicySourcesHtml(policySources);
       const plainTextBody = stripMarkdown(responseBody);
       const signature = buildSignature(agentAddress, brokerBranding);
-      const fullReplyText = plainTextBody + sourceText + signature.text;
+      const fullReplyText = plainTextBody + signature.text;
 
       const linkStyle = 'style="color:#2563eb;text-decoration:underline"';
       const markdownToHtml = (text: string) => {
@@ -1454,7 +1443,7 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
         .split("\n\n")
         .map((p) => `<p style="margin:0 0 12px;line-height:1.5">${markdownToHtml(p.replace(/\n/g, "<br>"))}</p>`)
         .join("\n");
-      const fullReplyHtml = bodyHtmlContent + sourceHtml + signature.html;
+      const fullReplyHtml = bodyHtmlContent + signature.html;
 
       // Determine reply recipients
       const primaryUserEmail = primaryUser?.email;
