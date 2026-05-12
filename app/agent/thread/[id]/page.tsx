@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { ModeBadge } from "@/components/mode-badge";
 import { splitQuotedReply, QuotedContent } from "@/components/conversation-message";
 import { toast } from "sonner";
-import { Loader2, Archive, ArchiveRestore, FileText, Check, ClipboardList, Asterisk, Mail as MailIcon, MessageSquare, Phone as PhoneIcon, Paperclip, Download, Copy, Lock, RotateCcw } from "lucide-react";
+import { Loader2, Archive, ArchiveRestore, FileText, Check, ClipboardList, Asterisk, Mail as MailIcon, MessageSquare, Apple, Paperclip, Download, Copy, Lock, RotateCcw, X } from "lucide-react";
 import { EditableBreadcrumbTitle } from "@/components/editable-breadcrumb-title";
 import { usePdf } from "@/components/pdf-context";
 import { usePresence } from "@/hooks/use-presence";
@@ -44,6 +44,7 @@ export type ThreadMessage = {
   fromName?: string;
   toAddresses?: string[];
   ccAddresses?: string[];
+  bccAddresses?: string[];
   subject?: string;
   content: string;
   contentHtml?: string;
@@ -278,6 +279,80 @@ function ThreadAttachmentChip({
   );
 }
 
+function EmailSummaryCard({
+  message,
+  onOpen,
+}: {
+  message: ThreadMessage;
+  onOpen?: (message: ThreadMessage) => void;
+}) {
+  const recipients = message.toAddresses?.length
+    ? message.toAddresses.join(", ")
+    : message.fromEmail ?? "Email";
+  const preview = message.subject || message.content.split(/\n+/).find((line) => line.trim()) || "Email";
+
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen?.(message)}
+      className="inline-flex max-w-[320px] items-center gap-2 rounded-md border border-foreground/8 bg-card px-2.5 py-2 text-left transition-colors hover:border-foreground/15 hover:bg-foreground/[0.03]"
+    >
+      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-foreground/[0.04]">
+        <MailIcon className="h-3.5 w-3.5 text-muted-foreground/50" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[11px] font-medium leading-4 text-muted-foreground/45">
+          Email {message.role === "agent" ? "sent" : "received"}
+        </span>
+        <span className="block truncate text-[12px] leading-4 text-foreground/80">{preview}</span>
+        <span className="block truncate text-[11px] leading-4 text-muted-foreground/40">{recipients}</span>
+      </span>
+    </button>
+  );
+}
+
+function EmailThreadSidebar({
+  message,
+  onClose,
+}: {
+  message: ThreadMessage | null;
+  onClose: () => void;
+}) {
+  if (!message) return null;
+  return (
+    <aside className="absolute bottom-3 right-3 top-3 z-20 flex w-[min(420px,calc(100vw-2rem))] flex-col overflow-hidden rounded-lg border border-foreground/10 bg-background shadow-xl shadow-black/10">
+      <div className="flex items-start justify-between gap-3 border-b border-foreground/8 px-4 py-3">
+        <div className="min-w-0">
+          <p className="text-label-sm font-medium text-muted-foreground/45">Email</p>
+          <h2 className="truncate text-body-sm font-semibold text-foreground">
+            {message.subject || (message.role === "agent" ? "Sent email" : "Received email")}
+          </h2>
+        </div>
+        <PillButton size="compact" variant="icon" onClick={onClose} label="Close email">
+          <X className="h-4 w-4" />
+        </PillButton>
+      </div>
+      <div className="space-y-2 border-b border-foreground/8 px-4 py-3 text-label-sm text-muted-foreground/55">
+        {message.fromEmail && <p><span className="text-muted-foreground/35">From:</span> {message.fromName ? `${message.fromName} <${message.fromEmail}>` : message.fromEmail}</p>}
+        {message.toAddresses?.length ? <p><span className="text-muted-foreground/35">To:</span> {message.toAddresses.join(", ")}</p> : null}
+        {message.ccAddresses?.length ? <p><span className="text-muted-foreground/35">CC:</span> {message.ccAddresses.join(", ")}</p> : null}
+        {message.bccAddresses?.length ? <p><span className="text-muted-foreground/35">BCC:</span> {message.bccAddresses.join(", ")}</p> : null}
+        <p><span className="text-muted-foreground/35">Time:</span> {dayjs(message._creationTime).format("MMM D, YYYY h:mm A")}</p>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+        <PretextText as="div" text={message.content} whiteSpace="pre-wrap" className="text-body-sm leading-6 text-foreground/90" />
+        {message.attachments?.length ? (
+          <div className="mt-4 flex flex-wrap gap-2 border-t border-foreground/8 pt-3">
+            {message.attachments.map((att, index) => (
+              <ThreadAttachmentChip key={index} attachment={att} threadId={message.threadId} />
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </aside>
+  );
+}
+
 /* ── Pending email countdown + cancel ── */
 function PendingSendCountdown({ pendingEmailId }: { pendingEmailId: Id<"pendingEmails"> }) {
   const pendingEmail = useQuery(api.pendingEmails.get, { id: pendingEmailId });
@@ -338,6 +413,8 @@ export function UnifiedMessageBubble({
   threadContext,
   brokerPerspective,
   agentBranding,
+  collapseEmailMessages,
+  onOpenEmail,
 }: {
   msg: ThreadMessage;
   viewerId?: string;
@@ -350,6 +427,8 @@ export function UnifiedMessageBubble({
   brokerPerspective?: boolean;
   /** Optional branding — when set, replaces generic "Glass" + asterisk on agent bubble. */
   agentBranding?: { name: string; iconUrl?: string | null };
+  collapseEmailMessages?: boolean;
+  onOpenEmail?: (message: ThreadMessage) => void;
 }) {
   const [showQuoted, setShowQuoted] = useState(false);
   const [showToolCalls, setShowToolCalls] = useState(false);
@@ -358,7 +437,7 @@ export function UnifiedMessageBubble({
   const channelIcon = msg.channel === "email"
     ? <MailIcon className="w-3 h-3 text-muted-foreground/30" />
     : msg.channel === "imessage"
-      ? <PhoneIcon className="w-3 h-3 text-muted-foreground/30" />
+      ? <Apple className="w-3 h-3 text-muted-foreground/30" />
       : <MessageSquare className="w-3 h-3 text-muted-foreground/30" />;
 
   // Processing state — unified bubble with thinking, tool status, and streaming content
@@ -481,7 +560,7 @@ export function UnifiedMessageBubble({
                 </Button>
               )}
             </div>
-            {msg.channel === "email" && msg.toAddresses && (
+            {msg.channel === "email" && !collapseEmailMessages && msg.toAddresses && (
               <div className="flex flex-wrap gap-x-3 text-label-sm text-muted-foreground/35 mb-1">
                 <span className="truncate">
                   <span className="text-muted-foreground/25">To:</span>{" "}
@@ -495,17 +574,23 @@ export function UnifiedMessageBubble({
                 )}
               </div>
             )}
-            {/* Reasoning — collapsed above the response */}
-            <CollapsibleReasoning
-              reasoning={msg.reasoning ?? ""}
-              isStreaming={false}
-            />
-            {toolCalls.length > 0 && showToolCalls && <ToolCallPanel toolCalls={toolCalls} />}
-            <div className={`group/agent-msg relative rounded-lg bg-popover border border-foreground/6 px-3.5 py-2.5 ${msg.reasoning ? "mt-1" : ""}`}>
-              <ProseMarkdown gfm breaks className={MARKDOWN_STYLES} components={markdownComponents}>{fixedContent}</ProseMarkdown>
-              <CopyMessageButton content={msg.content} />
-            </div>
-            {msg.attachments && msg.attachments.length > 0 && (
+            {collapseEmailMessages && msg.channel === "email" ? (
+              <EmailSummaryCard message={msg} onOpen={onOpenEmail} />
+            ) : (
+              <>
+                {/* Reasoning — collapsed above the response */}
+                <CollapsibleReasoning
+                  reasoning={msg.reasoning ?? ""}
+                  isStreaming={false}
+                />
+                {toolCalls.length > 0 && showToolCalls && <ToolCallPanel toolCalls={toolCalls} />}
+                <div className={`group/agent-msg relative rounded-lg bg-popover border border-foreground/6 px-3.5 py-2.5 ${msg.reasoning ? "mt-1" : ""}`}>
+                  <ProseMarkdown gfm breaks className={MARKDOWN_STYLES} components={markdownComponents}>{fixedContent}</ProseMarkdown>
+                  <CopyMessageButton content={msg.content} />
+                </div>
+              </>
+            )}
+            {!(collapseEmailMessages && msg.channel === "email") && msg.attachments && msg.attachments.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-2">
                 {msg.attachments.map((att, i) => (
                   <ThreadAttachmentChip key={i} attachment={att} threadId={msg.threadId} />
@@ -566,7 +651,7 @@ export function UnifiedMessageBubble({
           <span className="text-muted-foreground/20">·</span>
           <span className="text-label-sm text-muted-foreground/25">{time.format("MMM D, h:mm A")}</span>
         </div>
-        {isEmail && msg.toAddresses && (
+        {isEmail && !collapseEmailMessages && msg.toAddresses && (
           <div className="flex flex-wrap gap-x-3 text-label-sm text-muted-foreground/35 mb-1">
             <span className="truncate">
               <span className="text-muted-foreground/25">To:</span>{" "}
@@ -580,6 +665,9 @@ export function UnifiedMessageBubble({
             )}
           </div>
         )}
+        {collapseEmailMessages && isEmail ? (
+          <EmailSummaryCard message={msg} onOpen={onOpenEmail} />
+        ) : (
         <div className={`rounded-lg px-3.5 py-2.5 text-body-sm text-foreground ${
           isEmail
             ? `border border-foreground/6 ${isOwnMessage ? "bg-foreground/[0.04]" : "bg-foreground/[0.02]"}`
@@ -606,6 +694,7 @@ export function UnifiedMessageBubble({
             </div>
           )}
         </div>
+        )}
         {isFirstUserMessage && threadContext && (
           <div className="mt-2">
             <ThreadContextLink context={threadContext} />
@@ -775,6 +864,7 @@ function UnifiedThreadContent({
   const chatInputRef = useRef<GlassPromptInputHandle>(null);
   const prevThreadId = useRef<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [openEmailMessage, setOpenEmailMessage] = useState<ThreadMessage | null>(null);
 
   // Error state for chat — stored as { threadId, message } so switching threads auto-clears it
   const [chatErrorState, setChatErrorState] = useState<{ threadId: string; message: string } | null>(null);
@@ -814,6 +904,7 @@ function UnifiedThreadContent({
     if (!el) return;
     const isNew = prevThreadId.current !== threadId;
     prevThreadId.current = threadId;
+    if (isNew) setOpenEmailMessage(null);
     el.scrollTo({ top: el.scrollHeight, behavior: isNew ? "instant" : "smooth" });
   }, [threadId, messages?.length]);
 
@@ -895,6 +986,7 @@ function UnifiedThreadContent({
     const hasEmail = messages.some((m) => m.channel === "email");
     return hasEmail || thread?.originChannel === "email";
   }, [messages, thread?.originChannel]);
+  const collapseEmailMessages = thread?.originChannel !== "email";
 
   if (!thread) {
     return (
@@ -932,6 +1024,8 @@ function UnifiedThreadContent({
                     isFirstUserMessage={false}
                     threadContext={undefined}
                     agentBranding={agentBranding}
+                    collapseEmailMessages={collapseEmailMessages}
+                    onOpenEmail={setOpenEmailMessage}
                   />
                   {isFirstUser && thread?.initialContext && (
                     <div className={`mt-2 flex ${firstUserIsOwn ? "justify-end mr-9.5" : "ml-9.5"}`}>
@@ -951,6 +1045,7 @@ function UnifiedThreadContent({
           {messages && messages.length > 0 && <div className="h-40" />}
         </div>
       </div>
+      <EmailThreadSidebar message={openEmailMessage} onClose={() => setOpenEmailMessage(null)} />
 
       {/* Input — overlaid at bottom, content scrolls under it */}
       <ChatInputOverlay>

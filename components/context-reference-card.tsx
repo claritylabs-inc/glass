@@ -54,7 +54,7 @@ export function PolicyReferenceCard({
 
   if (!policy) {
     return (
-      <div className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-foreground/6 bg-card text-label-sm max-w-sm">
+      <div className="inline-flex max-w-[18rem] items-center gap-1.5 rounded-md border border-foreground/6 bg-card px-2 py-1.5 text-label-sm">
         <span className="text-muted-foreground/50">Loading…</span>
       </div>
     );
@@ -73,14 +73,14 @@ export function PolicyReferenceCard({
     <button
       type="button"
       onClick={() => openPreview({ type: "policy", id, page, citedSections, citedCoverageNames })}
-      className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-foreground/6 bg-card hover:bg-foreground/[0.02] hover:border-foreground/10 transition-colors text-left max-w-sm cursor-pointer"
+      className="inline-flex max-w-[18rem] items-center gap-1.5 rounded-md border border-foreground/6 bg-card px-2 py-1.5 text-left transition-colors hover:border-foreground/10 hover:bg-foreground/[0.02] cursor-pointer"
     >
-      <div className="w-6 h-6 rounded-md bg-foreground/[0.04] flex items-center justify-center shrink-0">
-        <FileText className="w-3.5 h-3.5 text-muted-foreground/50" />
+      <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-foreground/[0.04]">
+        <FileText className="h-3 w-3 text-muted-foreground/50" />
       </div>
       <div className="min-w-0 flex-1">
-        <p className="text-label-sm text-muted-foreground/40 font-medium leading-none mb-0.5">Policy</p>
-        <p className="text-label-sm text-foreground truncate">{summary}</p>
+        <p className="mb-0.5 text-[10px] font-medium leading-none text-muted-foreground/40">Policy</p>
+        <p className="truncate text-[11px] leading-4 text-foreground">{summary}</p>
       </div>
     </button>
   );
@@ -123,7 +123,7 @@ export function ReferenceCardStrip({
 
   return (
     <div
-      className={`flex gap-2 flex-wrap mt-2 ${
+      className={`flex gap-1.5 flex-wrap mt-1.5 ${
         rightAligned ? "mr-[38px] justify-end" : "ml-[38px]"
       }`}
     >

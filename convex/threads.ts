@@ -660,12 +660,15 @@ export const findOrCreateByImessageChat = internalMutation({
     userName: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const existing = await ctx.db
+    const existingThreads = await ctx.db
       .query("threads")
       .withIndex("by_orgId_imessageChatGuid", (q) =>
         q.eq("orgId", args.orgId).eq("imessageChatGuid", args.chatGuid),
       )
-      .first();
+      .collect();
+    const existing = existingThreads.find(
+      (thread) => (thread.imessageIsGroup ?? false) === args.isGroup,
+    );
     if (existing) {
       await ctx.db.patch(existing._id, {
         lastMessageAt: Date.now(),

@@ -22,7 +22,7 @@ import {
   Archive,
   ArrowLeft,
   Bell,
-  Phone,
+  Apple,
   Link2,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -468,7 +468,7 @@ export function AppSidebar({
                 }`}
               >
                 {item.kind === "imessage" ? (
-                  <Phone className="w-3.5 h-3.5 shrink-0" />
+                  <Apple className="w-3.5 h-3.5 shrink-0" />
                 ) : item.kind === "chat" ? (
                   <MessageSquare className="w-3.5 h-3.5 shrink-0" />
                 ) : (
@@ -534,7 +534,7 @@ export function AppSidebar({
                   }`}
                 >
                 {item.kind === "imessage" ? (
-                  <Phone className="w-3.5 h-3.5" />
+                  <Apple className="w-3.5 h-3.5" />
                 ) : item.kind === "chat" ? (
                   <MessageSquare className="w-3.5 h-3.5" />
                 ) : (
@@ -707,8 +707,8 @@ export function AppSidebar({
                       : "text-muted-foreground hover:bg-foreground/[0.04]"
                   }`}
                 >
-                  {item.threadPhone ? (
-                    <Phone className="w-3.5 h-3.5 shrink-0" />
+                  {item.originChannel === "imessage" ? (
+                    <Apple className="w-3.5 h-3.5 shrink-0" />
                   ) : item.originChannel === "email" ? (
                     <Mail className="w-3.5 h-3.5 shrink-0" />
                   ) : (

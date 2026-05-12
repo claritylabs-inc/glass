@@ -1,6 +1,7 @@
 import { readFileSync } from "fs";
 import { join } from "path";
 import { describe, expect, it } from "vitest";
+import { buildFallbackImessageChatGuid } from "../convex/actions/handleInboundImessage";
 
 const ROOT = join(__dirname, "..");
 const read = (path: string) => readFileSync(join(ROOT, path), "utf-8");
@@ -32,6 +33,41 @@ describe("iMessage group chat surfaces", () => {
     expect(inbound).toContain("scope.kind === \"no_linked_users\"");
     expect(inbound).toContain("leaveGroup: isGroup");
     expect(inbound).toContain("findOrCreateByImessageChat");
+  });
+
+  it("keeps group fallback threads separate from direct iMessage DMs", () => {
+    const direct = buildFallbackImessageChatGuid({
+      fromPhone: "+15551234567",
+      isGroup: false,
+    });
+    const group = buildFallbackImessageChatGuid({
+      fromPhone: "+15551234567",
+      isGroup: true,
+      participants: [
+        { address: "+15557654321" },
+        { address: "+15551234567" },
+      ],
+    });
+    const sameGroupDifferentOrder = buildFallbackImessageChatGuid({
+      fromPhone: "+15551234567",
+      isGroup: true,
+      participants: [
+        { address: "+15551234567" },
+        { address: "+15557654321" },
+      ],
+    });
+
+    expect(direct).toBe("+15551234567");
+    expect(group).toMatch(/^group:/);
+    expect(group).not.toBe(direct);
+    expect(sameGroupDifferentOrder).toBe(group);
+  });
+
+  it("does not reuse direct threads for group chat routing", () => {
+    const threads = read("convex/threads.ts");
+
+    expect(threads).toContain("existingThreads.find");
+    expect(threads).toContain("(thread.imessageIsGroup ?? false) === args.isGroup");
   });
 
   it("fails closed for mixed-org write actions", () => {

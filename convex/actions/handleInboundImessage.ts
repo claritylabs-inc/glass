@@ -54,6 +54,23 @@ function normalizePhone(raw: string): string {
   return cleaned.startsWith("+") ? cleaned : `+${cleaned}`;
 }
 
+export function buildFallbackImessageChatGuid(args: {
+  fromPhone: string;
+  isGroup: boolean;
+  participants?: Array<{ address: string }>;
+}): string {
+  if (!args.isGroup) return args.fromPhone;
+  const participantAddresses = new Set<string>();
+  participantAddresses.add(normalizeImessageAddress(args.fromPhone));
+  for (const participant of args.participants ?? []) {
+    const address = normalizeImessageAddress(participant.address);
+    if (address) participantAddresses.add(address);
+  }
+  const rosterKey = [...participantAddresses].sort().join("|") || args.fromPhone;
+  const rosterHash = createHash("sha256").update(rosterKey).digest("hex").slice(0, 24);
+  return `group:${rosterHash}`;
+}
+
 function buildInboundEventKey(args: {
   fromPhone: string;
   chatGuid?: string;
@@ -266,8 +283,12 @@ export const processInbound = internalAction({
 
     const fromPhone = normalizePhone(args.fromPhone);
     const senderAddress = normalizeImessageAddress(args.fromPhone);
-    const chatGuid = args.chatGuid?.trim() || fromPhone;
     const isGroup = args.isGroup === true;
+    const chatGuid = args.chatGuid?.trim() || buildFallbackImessageChatGuid({
+      fromPhone,
+      isGroup,
+      participants: args.participants,
+    });
     const siteUrl = process.env.SITE_URL ?? "https://glass.claritylabs.inc";
     const eventKey = buildInboundEventKey({
       fromPhone,
