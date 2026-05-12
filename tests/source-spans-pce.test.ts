@@ -24,6 +24,7 @@ describe("source spans and PCE backend surfaces", () => {
 
     expect(schema).toContain("policyChangeCases: defineTable");
     expect(schema).toContain("pcePackets: defineTable");
+    expect(schema).toContain('policyChangeCaseId: v.optional(v.id("policyChangeCases"))');
     expect(schema).toContain("caseMessages: defineTable");
     expect(schema).toContain("caseEvidenceLinks: defineTable");
     expect(schema).toContain("caseValidationReports: defineTable");
@@ -39,11 +40,29 @@ describe("source spans and PCE backend surfaces", () => {
     const threadChat = read("convex/actions/processThreadChat.ts");
 
     expect(chatTools).toContain("createPolicyChangeRequest");
+    expect(chatTools).toContain("certificate_holder_only");
+    expect(chatTools).toContain("requestKind");
     expect(threadChat).toContain("create_policy_change_request");
+    expect(threadChat).toContain("evaluatePceIntake");
     expect(threadChat).toContain("internal.actions.policyChangeRequests.createFromChatForThread");
+    expect(threadChat).toContain("policyChangeCaseId");
     expect(read("convex/actions/handleInboundEmail.ts")).toContain("create_policy_change_request");
     expect(read("convex/actions/handleInboundEmail.ts")).toContain("createFromEmailForThread");
     expect(read("convex/actions/handleInboundImessage.ts")).toContain("create_policy_change_request");
+  });
+
+  it("renders policy change request artifacts in chat", () => {
+    const threadPage = read("app/agent/thread/[id]/page.tsx");
+    const policyChanges = read("convex/policyChanges.ts");
+
+    expect(threadPage).toContain("function PolicyChangeSummaryCard");
+    expect(threadPage).toContain("function PolicyChangeThreadSidebar");
+    expect(threadPage).toContain("Policy change request");
+    expect(threadPage).toContain("Clients can review the request");
+    expect(threadPage).toContain("Policy change requests need to go through a broker");
+    expect(policyChanges).toContain("assertCanManagePolicyChange");
+    expect(policyChanges).toContain("assertCanCreatePolicyChange");
+    expect(read("convex/actions/policyChangeRequests.ts")).toContain("STANDALONE_CLIENT_PCE_MESSAGE");
   });
 
   it("prefers source chunks in agent retrieval context", () => {
@@ -72,6 +91,22 @@ describe("source spans and PCE backend surfaces", () => {
     expect(threadChat).toContain("searchPolicyDocumentWithSourceSpans");
     expect(inboundEmail).toContain("searchPolicyDocumentWithSourceSpans");
     expect(inboundImessage).toContain("searchPolicyDocumentWithSourceSpans");
+  });
+
+  it("renders chat sources and tool calls as compact footer controls", () => {
+    const threadPage = read("app/agent/thread/[id]/page.tsx");
+    const referenceCards = read("components/context-reference-card.tsx");
+
+    expect(threadPage).toContain("function MessageFooterActions");
+    expect(threadPage).toContain("toolCalls.length} tool");
+    expect(threadPage).toContain("msg.usedTools ?? []");
+    expect(threadPage).toContain("relatedEmailMessage?.referencedPolicyIds");
+    expect(referenceCards).toContain("function PolicyCitation");
+    expect(referenceCards).toContain("function PolicySourcePill");
+    expect(referenceCards).toContain("{refs.length} sources");
+    expect(referenceCards).toContain("refs.length === 1");
+    expect(referenceCards).not.toContain(">Sources<");
+    expect(threadPage).not.toContain("Hide tool calls");
   });
 
   it("builds PDF source spans before policy extraction", () => {

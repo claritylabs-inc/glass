@@ -44,6 +44,9 @@ import {
   COI_GENERATION_FAILED_MESSAGE,
   FATAL_ACTION_FAILED_MESSAGE,
 } from "../lib/actionFailures";
+import { evaluatePceIntake, type PceRequestKind } from "../lib/pceIntake";
+
+const GLASS_PUBLIC_URL = "https://glass.claritylabs.inc";
 
 const CONSUMER_DOMAINS = new Set([
   "gmail.com", "googlemail.com", "yahoo.com", "yahoo.co.uk",
@@ -171,7 +174,7 @@ function getAgentFromName(broker?: BrokerBranding): string {
 }
 
 function buildSignature(agentEmail: string, broker?: BrokerBranding): { text: string; html: string } {
-  const poweredByUrl = process.env.SITE_URL ?? "https://glass.claritylabs.inc";
+  const poweredByUrl = GLASS_PUBLIC_URL;
   const hasBroker = !!(broker?.name || broker?.agentDisplayName);
   const agentName = getAgentFromName(broker);
 
@@ -192,7 +195,7 @@ function buildSignature(agentEmail: string, broker?: BrokerBranding): { text: st
     `<p style="font-size:13px;margin:4px 0 2px">${logoHtml}<strong>${agentName}</strong></p>`,
     `<p style="font-size:12px;color:#999;margin:0">${agentEmail}</p>`,
     ...(hasBroker
-      ? [`<p style="font-size:12px;margin:12px 0 0"><a href="${poweredByUrl}" style="color:#A0D2FA;text-decoration:none">powered by Glass from Clarity Labs</a></p>`]
+      ? [`<p style="font-size:12px;margin:6px 0 0"><a href="${poweredByUrl}" style="color:#A0D2FA;text-decoration:none">powered by Glass from Clarity Labs</a></p>`]
       : []),
   ].join("\n");
 
@@ -952,8 +955,13 @@ export const processInbound = internalAction({
         },
         create_policy_change_request: {
           ...createPolicyChangeRequest,
-          execute: async (params: { requestText: string; policyId?: string; evidenceSourceIds?: string[] }) => {
+          execute: async (params: { requestKind?: PceRequestKind; requestText: string; policyId?: string; evidenceSourceIds?: string[] }) => {
             if (params.policyId) referencedPolicySourceIds.add(String(params.policyId));
+            const intake = evaluatePceIntake({
+              requestKind: params.requestKind,
+              requestText: params.requestText,
+            });
+            if (!intake.allowed) return intake.message;
             const result = await ctx.runAction(internal.actions.policyChangeRequests.createFromEmailForThread, {
               orgId,
               userId: primaryUserId,
@@ -961,10 +969,11 @@ export const processInbound = internalAction({
               requestText: params.requestText,
               evidenceSourceIds: params.evidenceSourceIds,
             });
-            if (result?.error) return `Could not create policy change request: ${result.error}`;
+            if (result?.error) return result.error;
             return {
               status: "created",
               caseId: result?.caseId,
+              requestKind: intake.kind,
               usedSdkPce: Boolean(result?.usedSdkPce),
             };
           },

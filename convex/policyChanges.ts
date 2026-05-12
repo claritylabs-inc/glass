@@ -1,6 +1,12 @@
 import { v } from "convex/values";
 import { internalMutation, mutation, query } from "./_generated/server";
 import { requireOrgAccess } from "./lib/orgAuth";
+import {
+  assertCanCreatePolicyChange,
+  assertCanManagePolicyChange,
+  assertCanReadPolicyChange,
+  getOrgAccess,
+} from "./lib/access";
 
 const caseSourceKindValidator = v.union(
   v.literal("chat"),
@@ -72,6 +78,12 @@ export const createFromChat = mutation({
   },
   handler: async (ctx, args) => {
     const { orgId, userId } = await requireOrgAccess(ctx);
+    const access = await getOrgAccess(ctx, orgId);
+    assertCanCreatePolicyChange(access);
+    if (args.policyId) {
+      const policy = await ctx.db.get(args.policyId);
+      if (!policy || policy.orgId !== orgId) throw new Error("Policy not found");
+    }
     const now = Date.now();
     const validationIssues = buildInitialValidation(args);
     const status = validationIssues.length > 0 ? "needs_info" : "draft";
@@ -251,6 +263,12 @@ export const createFromEmail = mutation({
   },
   handler: async (ctx, args) => {
     const { orgId, userId } = await requireOrgAccess(ctx);
+    const access = await getOrgAccess(ctx, orgId);
+    assertCanCreatePolicyChange(access);
+    if (args.policyId) {
+      const policy = await ctx.db.get(args.policyId);
+      if (!policy || policy.orgId !== orgId) throw new Error("Policy not found");
+    }
     const now = Date.now();
     const validationIssues = buildInitialValidation(args);
     const caseId = await ctx.db.insert("policyChangeCases", {
@@ -288,6 +306,12 @@ export const createFromUploadedDocument = mutation({
   },
   handler: async (ctx, args) => {
     const { orgId, userId } = await requireOrgAccess(ctx);
+    const access = await getOrgAccess(ctx, orgId);
+    assertCanCreatePolicyChange(access);
+    if (args.policyId) {
+      const policy = await ctx.db.get(args.policyId);
+      if (!policy || policy.orgId !== orgId) throw new Error("Policy not found");
+    }
     const now = Date.now();
     const validationIssues = buildInitialValidation(args);
     const caseId = await ctx.db.insert("policyChangeCases", {
@@ -324,18 +348,19 @@ export const processReply = mutation({
     sourceSpanIds: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
-    const { orgId, userId } = await requireOrgAccess(ctx);
     const existing = await ctx.db.get(args.caseId);
-    if (!existing || existing.orgId !== orgId) throw new Error("Policy change case not found");
+    if (!existing) throw new Error("Policy change case not found");
+    const access = await getOrgAccess(ctx, existing.orgId);
+    assertCanReadPolicyChange(access);
     const now = Date.now();
     await insertCaseMessage(ctx, {
-      orgId,
+      orgId: existing.orgId,
       caseId: args.caseId,
       direction: "inbound",
       channel: "manual",
       content: args.replyText,
       sourceSpanIds: args.sourceSpanIds,
-      createdByUserId: userId,
+      createdByUserId: access.userId,
       createdAt: now,
     });
     await ctx.db.patch(args.caseId, {
@@ -348,9 +373,10 @@ export const processReply = mutation({
 export const generateCarrierPacket = mutation({
   args: { caseId: v.id("policyChangeCases") },
   handler: async (ctx, args) => {
-    const { orgId } = await requireOrgAccess(ctx);
     const existing = await ctx.db.get(args.caseId);
-    if (!existing || existing.orgId !== orgId) throw new Error("Policy change case not found");
+    if (!existing) throw new Error("Policy change case not found");
+    const access = await getOrgAccess(ctx, existing.orgId);
+    assertCanManagePolicyChange(access);
     const now = Date.now();
     const artifacts = [
       {
@@ -365,7 +391,7 @@ export const generateCarrierPacket = mutation({
       },
     ];
     const packetId = await ctx.db.insert("pcePackets", {
-      orgId,
+      orgId: existing.orgId,
       caseId: args.caseId,
       policyId: existing.policyId,
       artifacts,
@@ -389,9 +415,10 @@ export const markStatus = mutation({
     status: caseStatusValidator,
   },
   handler: async (ctx, args) => {
-    const { orgId } = await requireOrgAccess(ctx);
     const existing = await ctx.db.get(args.caseId);
-    if (!existing || existing.orgId !== orgId) throw new Error("Policy change case not found");
+    if (!existing) throw new Error("Policy change case not found");
+    const access = await getOrgAccess(ctx, existing.orgId);
+    assertCanManagePolicyChange(access);
     await ctx.db.patch(args.caseId, { status: args.status, updatedAt: Date.now() });
   },
 });
@@ -399,7 +426,11 @@ export const markStatus = mutation({
 export const listByPolicy = query({
   args: { policyId: v.id("policies") },
   handler: async (ctx, args) => {
-    await requireOrgAccess(ctx);
+    const policy = await ctx.db.get(args.policyId);
+    if (!policy) return [];
+    if (!policy.orgId) return [];
+    const access = await getOrgAccess(ctx, policy.orgId);
+    assertCanReadPolicyChange(access);
     return ctx.db
       .query("policyChangeCases")
       .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
@@ -411,9 +442,10 @@ export const listByPolicy = query({
 export const getCaseDetail = query({
   args: { caseId: v.id("policyChangeCases") },
   handler: async (ctx, args) => {
-    const { orgId } = await requireOrgAccess(ctx);
     const changeCase = await ctx.db.get(args.caseId);
-    if (!changeCase || changeCase.orgId !== orgId) throw new Error("Policy change case not found");
+    if (!changeCase) throw new Error("Policy change case not found");
+    const access = await getOrgAccess(ctx, changeCase.orgId);
+    assertCanReadPolicyChange(access);
 
     const [packets, messages, evidenceLinks, validationReports] = await Promise.all([
       ctx.db

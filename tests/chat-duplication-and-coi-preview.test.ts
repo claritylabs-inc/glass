@@ -34,6 +34,6 @@ describe("chat duplicate prevention and COI preview UI", () => {
     const threadPage = read("app/agent/thread/[id]/page.tsx");
 
     expect(threadPage).toContain("msg.attachments && msg.attachments.length > 0");
-    expect(threadPage).toContain("<ThreadAttachmentChip key={i} attachment={att} />");
+    expect(threadPage).toContain("<ThreadAttachmentChip key={i} attachment={att} threadId={msg.threadId} />");
   });
 });

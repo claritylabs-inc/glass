@@ -1110,9 +1110,12 @@ export default defineSchema({
       v.literal("processing"),
       v.literal("error"),
       v.literal("pending_send"),
+      v.literal("draft_email"),
+      v.literal("cancelled"),
     )),
     error: v.optional(v.string()),
     pendingEmailId: v.optional(v.id("pendingEmails")),
+    policyChangeCaseId: v.optional(v.id("policyChangeCases")),
   })
     .index("by_threadId", ["threadId"])
     .index("by_messageId", ["messageId"])
@@ -1176,12 +1179,18 @@ export default defineSchema({
   pendingEmails: defineTable({
     orgId: v.id("organizations"),
     threadId: v.optional(v.id("threads")),
-    status: v.union(v.literal("pending"), v.literal("sent"), v.literal("cancelled")),
+    status: v.union(
+      v.literal("draft"),
+      v.literal("pending"),
+      v.literal("sent"),
+      v.literal("cancelled"),
+    ),
     emailPayload: v.string(), // JSON-serialized Resend payload
     scheduledSendTime: v.number(), // timestamp when it should actually send
     sentMessageId: v.optional(v.string()), // Resend message ID after send
     // For updating the chat message after send
     chatMessageId: v.optional(v.id("threadMessages")),
+    threadMessageId: v.optional(v.id("threadMessages")),
     // Metadata for the sent email record
     recipientEmail: v.string(),
     ccAddresses: v.optional(v.array(v.string())),

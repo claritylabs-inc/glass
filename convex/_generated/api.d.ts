@@ -10,6 +10,7 @@
 
 import type * as actions_backfillChunks from "../actions/backfillChunks.js";
 import type * as actions_detectDuplicatePolicies from "../actions/detectDuplicatePolicies.js";
+import type * as actions_emailDrafts from "../actions/emailDrafts.js";
 import type * as actions_extractCompanyInfo from "../actions/extractCompanyInfo.js";
 import type * as actions_extractFromUpload from "../actions/extractFromUpload.js";
 import type * as actions_extractSupplementary from "../actions/extractSupplementary.js";
@@ -83,6 +84,7 @@ import type * as lib_notify from "../lib/notify.js";
 import type * as lib_orgAuth from "../lib/orgAuth.js";
 import type * as lib_orgMemoryContext from "../lib/orgMemoryContext.js";
 import type * as lib_orgRelationships from "../lib/orgRelationships.js";
+import type * as lib_pceIntake from "../lib/pceIntake.js";
 import type * as lib_pdfFiller from "../lib/pdfFiller.js";
 import type * as lib_pdfSourceSpans from "../lib/pdfSourceSpans.js";
 import type * as lib_pipelineMutations from "../lib/pipelineMutations.js";
@@ -127,6 +129,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   "actions/backfillChunks": typeof actions_backfillChunks;
   "actions/detectDuplicatePolicies": typeof actions_detectDuplicatePolicies;
+  "actions/emailDrafts": typeof actions_emailDrafts;
   "actions/extractCompanyInfo": typeof actions_extractCompanyInfo;
   "actions/extractFromUpload": typeof actions_extractFromUpload;
   "actions/extractSupplementary": typeof actions_extractSupplementary;
@@ -200,6 +203,7 @@ declare const fullApi: ApiFromModules<{
   "lib/orgAuth": typeof lib_orgAuth;
   "lib/orgMemoryContext": typeof lib_orgMemoryContext;
   "lib/orgRelationships": typeof lib_orgRelationships;
+  "lib/pceIntake": typeof lib_pceIntake;
   "lib/pdfFiller": typeof lib_pdfFiller;
   "lib/pdfSourceSpans": typeof lib_pdfSourceSpans;
   "lib/pipelineMutations": typeof lib_pipelineMutations;

@@ -1,23 +1,31 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { Loader2 } from "lucide-react";
 import {
+  PolicyChangeThreadSidebar,
   UnifiedMessageBubble,
   ThreadContextLink,
+  type PolicyChangeAccess,
   type ThreadMessage,
 } from "@/app/agent/thread/[id]/page";
 import { useClientDetailActions } from "../../layout";
 
 export default function ClientThreadReadOnlyPage() {
   const { clientOrgId, id } = useParams<{ clientOrgId: string; id: string }>();
-  const { setBreadcrumbExtra } = useClientDetailActions();
+  const { setBreadcrumbExtra, setRightPanel } = useClientDetailActions();
+  const [openPolicyChangeCaseId, setOpenPolicyChangeCaseId] = useState<Id<"policyChangeCases"> | null>(null);
 
   const viewer = useQuery(api.users.viewer);
+  const policyChangeAccess = useMemo<PolicyChangeAccess>(() => ({
+    canManage: true,
+    actorLabel: "broker",
+    brokerConnected: true,
+  }), []);
 
   const thread = useQuery(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -58,6 +66,21 @@ export default function ClientThreadReadOnlyPage() {
     return () => setBreadcrumbExtra(null);
   }, [thread?.title, setBreadcrumbExtra]);
 
+  useEffect(() => {
+    setRightPanel(
+      openPolicyChangeCaseId
+        ? (
+            <PolicyChangeThreadSidebar
+              caseId={openPolicyChangeCaseId}
+              access={policyChangeAccess}
+              onClose={() => setOpenPolicyChangeCaseId(null)}
+            />
+          )
+        : null,
+    );
+    return () => setRightPanel(null);
+  }, [openPolicyChangeCaseId, policyChangeAccess, setRightPanel]);
+
   if (thread === undefined || messages === undefined) {
     return (
       <div className="flex items-center justify-center py-16">
@@ -73,10 +96,6 @@ export default function ClientThreadReadOnlyPage() {
       </div>
     );
   }
-
-  const isMixedThread =
-    messages.some((m) => m.channel === "email") ||
-    thread.originChannel === "email";
 
   const lastAgentIdx = messages.reduce(
     (acc, m, i) => (m.role === "agent" ? i : acc),
@@ -105,11 +124,12 @@ export default function ClientThreadReadOnlyPage() {
               msg={msg}
               viewerId={viewer?._id}
               viewerEmail={viewer?.email ?? undefined}
-              isMixedThread={isMixedThread}
               isLastAgentMessage={idx === lastAgentIdx}
               isFirstUserMessage={false}
               threadContext={undefined}
               brokerPerspective
+              onOpenPolicyChange={(caseId) => setOpenPolicyChangeCaseId(caseId)}
+              openPolicyChangeCaseId={openPolicyChangeCaseId}
             />
             {isFirstUser && thread.initialContext && (
               <div

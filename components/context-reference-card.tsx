@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
@@ -86,6 +87,70 @@ export function PolicyReferenceCard({
   );
 }
 
+export function PolicyCitation({
+  id,
+  page,
+  citedSections,
+  citedCoverageNames,
+}: {
+  id: string;
+  page?: number;
+  citedSections?: string[];
+  citedCoverageNames?: string[];
+}) {
+  const policy = useQuery(api.policies.get, { id: id as Id<"policies"> });
+  const { openPreview } = useEntityPreview();
+
+  const label = policy
+    ? [policy.carrier || policy.security || "Policy", policy.policyNumber].filter(Boolean).join(" ")
+    : "Policy";
+
+  return (
+    <button
+      type="button"
+      onClick={() => openPreview({ type: "policy", id, page, citedSections, citedCoverageNames })}
+      className="mx-0.5 inline-flex h-5 max-w-[10rem] translate-y-[-1px] items-center gap-1 rounded-full border border-foreground/8 bg-foreground/[0.03] px-1.5 align-middle text-[10px] font-medium leading-none text-muted-foreground/65 no-underline transition-colors hover:border-foreground/12 hover:bg-foreground/[0.05] hover:text-foreground/80"
+      title={label}
+    >
+      <FileText className="h-2.5 w-2.5 shrink-0" />
+      <span className="truncate">{label}</span>
+    </button>
+  );
+}
+
+export function PolicySourcePill({
+  id,
+  page,
+  citedSections,
+  citedCoverageNames,
+  index,
+}: {
+  id: string;
+  page?: number;
+  citedSections?: string[];
+  citedCoverageNames?: string[];
+  index: number;
+}) {
+  const policy = useQuery(api.policies.get, { id: id as Id<"policies"> });
+  const { openPreview } = useEntityPreview();
+
+  const label = policy
+    ? [policy.carrier || policy.security || "Policy", policy.policyNumber].filter(Boolean).join(" ")
+    : "Policy";
+
+  return (
+    <button
+      type="button"
+      onClick={() => openPreview({ type: "policy", id, page, citedSections, citedCoverageNames })}
+      className="inline-flex h-6 max-w-[12rem] items-center gap-1.5 rounded-full border border-foreground/8 bg-transparent px-2 text-[11px] font-medium text-muted-foreground/60 transition-colors hover:border-foreground/12 hover:bg-foreground/[0.03] hover:text-foreground/75"
+      title={label}
+    >
+      <span className="text-muted-foreground/35">{index}</span>
+      <span className="truncate">{label}</span>
+    </button>
+  );
+}
+
 /** Renders a rich reference card — opens entity preview sidebar on click */
 export function ContextReferenceCard({
   href,
@@ -104,7 +169,7 @@ export function ContextReferenceCard({
     );
   }
 
-  return <PolicyReferenceCard id={match.id} page={match.page} />;
+  return <PolicyCitation id={match.id} page={match.page} />;
 }
 
 /** Standalone reference card strip — renders below agent messages */
@@ -119,17 +184,75 @@ export function ReferenceCardStrip({
   citedCoverageNames?: string[];
   rightAligned?: boolean;
 }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+
   if (refs.length === 0) return null;
+
+  if (refs.length === 1) {
+    const ref = refs[0];
+    return (
+      <div
+        className={`flex flex-wrap items-start gap-1.5 ${
+          rightAligned ? "justify-end" : ""
+        }`}
+      >
+        <PolicySourcePill
+          key={`${ref.type}:${ref.id}`}
+          id={ref.id}
+          page={ref.page}
+          citedSections={citedSections}
+          citedCoverageNames={citedCoverageNames}
+          index={1}
+        />
+      </div>
+    );
+  }
 
   return (
     <div
-      className={`flex gap-1.5 flex-wrap mt-1.5 ${
-        rightAligned ? "mr-[38px] justify-end" : "ml-[38px]"
+      className={`flex flex-wrap items-start gap-1.5 ${
+        rightAligned ? "justify-end" : ""
       }`}
     >
-      {refs.map((ref) => (
-        <PolicyReferenceCard key={`${ref.type}:${ref.id}`} id={ref.id} page={ref.page} citedSections={citedSections} citedCoverageNames={citedCoverageNames} />
-      ))}
+      <button
+        type="button"
+        onClick={() => setIsExpanded((value) => !value)}
+        aria-expanded={isExpanded}
+        className="inline-flex h-6 items-center rounded-full border border-foreground/8 bg-transparent px-2 text-[11px] font-medium text-muted-foreground/55 transition-colors hover:border-foreground/12 hover:bg-foreground/[0.03] hover:text-foreground/75"
+      >
+        {refs.length} sources
+      </button>
+      <div
+        aria-hidden={!isExpanded}
+        className="overflow-hidden transition-[max-width,opacity,transform] duration-200 ease-out"
+        style={{
+          maxWidth: isExpanded ? "48rem" : "0rem",
+          opacity: isExpanded ? 1 : 0,
+          transform: isExpanded ? "translateY(0)" : "translateY(-2px)",
+        }}
+      >
+        <div className="flex flex-wrap items-start gap-1.5">
+          {refs.map((ref, index) => (
+            <span
+              key={`${ref.type}:${ref.id}`}
+              className="transition-[opacity,transform] duration-200 ease-out"
+              style={{
+                opacity: isExpanded ? 1 : 0,
+                transform: isExpanded ? "translateY(0)" : "translateY(-3px)",
+                transitionDelay: isExpanded ? `${Math.min(index * 25, 100)}ms` : "0ms",
+              }}
+            >
+              <PolicySourcePill
+                id={ref.id}
+                page={ref.page}
+                citedSections={citedSections}
+                citedCoverageNames={citedCoverageNames}
+                index={index + 1}
+              />
+            </span>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState, useCallback } from "react";
+import { Suspense, useState, useCallback, useRef, useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
 import { AppSidebar } from "@/components/app-sidebar";
@@ -27,6 +27,75 @@ const PdfPanel = dynamic(
   { ssr: false },
 );
 
+const MIN_RIGHT_PANEL_WIDTH = 320;
+const MAX_RIGHT_PANEL_WIDTH = 760;
+const DEFAULT_RIGHT_PANEL_WIDTH = 420;
+
+function ResizableRightPanelSlot({
+  children,
+  equalLayout,
+}: {
+  children: React.ReactNode;
+  equalLayout: boolean;
+}) {
+  const [width, setWidth] = useState(DEFAULT_RIGHT_PANEL_WIDTH);
+  const [hasCustomWidth, setHasCustomWidth] = useState(false);
+  const slotRef = useRef<HTMLDivElement>(null);
+  const widthRef = useRef(DEFAULT_RIGHT_PANEL_WIDTH);
+
+  useEffect(() => {
+    widthRef.current = width;
+  }, [width]);
+
+  const onPointerDown = useCallback((event: React.PointerEvent) => {
+    event.preventDefault();
+    const measuredWidth = slotRef.current?.getBoundingClientRect().width ?? widthRef.current;
+    const startWidth = Math.min(MAX_RIGHT_PANEL_WIDTH, Math.max(MIN_RIGHT_PANEL_WIDTH, measuredWidth));
+    const startX = event.clientX;
+    widthRef.current = startWidth;
+    setWidth(startWidth);
+    setHasCustomWidth(true);
+
+    const onMove = (moveEvent: PointerEvent) => {
+      const delta = startX - moveEvent.clientX;
+      const nextWidth = Math.min(MAX_RIGHT_PANEL_WIDTH, Math.max(MIN_RIGHT_PANEL_WIDTH, startWidth + delta));
+      if (nextWidth === widthRef.current) return;
+      widthRef.current = nextWidth;
+      setWidth(nextWidth);
+    };
+
+    const onUp = () => {
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp);
+  }, []);
+
+  const isFixedWidth = hasCustomWidth || !equalLayout;
+
+  return (
+    <div
+      ref={slotRef}
+      className={`relative hidden h-full min-w-0 overflow-hidden lg:flex ${
+        isFixedWidth ? "shrink-0" : "flex-1 basis-0"
+      }`}
+      style={isFixedWidth ? { width } : undefined}
+    >
+      <div
+        onPointerDown={onPointerDown}
+        className="absolute left-0 top-0 bottom-0 z-10 w-1 cursor-col-resize hover:bg-foreground/8 active:bg-foreground/12"
+      />
+      <div className="flex h-full min-w-0 w-full max-w-full flex-1 overflow-hidden">{children}</div>
+    </div>
+  );
+}
+
 function ShellContent({
   children,
   actions,
@@ -45,6 +114,8 @@ function ShellContent({
   const { preview: entityPreview } = useEntityPreview();
   const hasPdfPanel = isPdfOpen && !!fileUrl;
   const hasEntityPanel = !!entityPreview;
+  const visiblePanelCount = (rightPanel ? 1 : 0) + (hasEntityPanel ? 1 : 0) + (hasPdfPanel ? 1 : 0);
+  const useEqualPanelLayout = visiblePanelCount >= 2;
 
   return (
     <div className="h-dvh flex overflow-hidden">
@@ -56,38 +127,56 @@ function ShellContent({
           onMobileClose={() => setMobileOpen(false)}
         />
       </Suspense>
-      {/* Main content column */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <AppTopBar
-          actions={actions}
-          breadcrumbDetail={breadcrumbDetail}
-          presenceUsers={presenceUsers}
-          onMobileMenuToggle={() => setMobileOpen((v) => !v)}
-        />
-        <div className="flex-1 relative min-w-0 overflow-hidden">
-          <main className="absolute inset-0 overflow-y-auto">
-            <div className="max-w-7xl mx-auto px-6 lg:px-8 py-6 pb-32">
-              {children}
+      <div className="flex min-w-0 flex-1 overflow-hidden">
+        {/* Main content column */}
+        <div className={`flex flex-col min-w-0 overflow-hidden ${
+          useEqualPanelLayout ? "flex-1 basis-0" : "flex-1"
+        }`}>
+          <AppTopBar
+            actions={actions}
+            breadcrumbDetail={breadcrumbDetail}
+            presenceUsers={presenceUsers}
+            onMobileMenuToggle={() => setMobileOpen((v) => !v)}
+          />
+          <div className="flex-1 relative min-w-0 overflow-hidden">
+            <main className="absolute inset-0 overflow-y-auto">
+              <div className="max-w-7xl mx-auto px-6 lg:px-8 py-6 pb-32">
+                {children}
+              </div>
+            </main>
+            <PersistentChatBar />
+            <CommandPalette />
+          </div>
+        </div>
+        {/* Right-side panels can stack: policy, email/drawer, then PDF. */}
+        {hasEntityPanel && (
+          useEqualPanelLayout ? (
+            <ResizableRightPanelSlot equalLayout>
+              <EntityPreviewPanel fitContainer />
+            </ResizableRightPanelSlot>
+          ) : (
+            <div className="hidden h-full min-w-0 shrink-0 lg:flex">
+              <EntityPreviewPanel />
             </div>
-          </main>
-          <PersistentChatBar />
-          <CommandPalette />
-        </div>
+          )
+        )}
+        {rightPanel && (
+          <ResizableRightPanelSlot equalLayout={useEqualPanelLayout}>
+            {rightPanel}
+          </ResizableRightPanelSlot>
+        )}
+        {hasPdfPanel && (
+          useEqualPanelLayout ? (
+            <ResizableRightPanelSlot equalLayout>
+              <PdfPanel fitContainer />
+            </ResizableRightPanelSlot>
+          ) : (
+            <div className="hidden h-full min-w-0 shrink-0 lg:flex">
+              <PdfPanel />
+            </div>
+          )
+        )}
       </div>
-      {/* Right-side panels — PDF or entity preview */}
-      {hasPdfPanel && (
-        <div className="hidden lg:flex shrink-0 h-full">
-          <PdfPanel />
-        </div>
-      )}
-      {!hasPdfPanel && hasEntityPanel && (
-        <div className="hidden lg:flex shrink-0 h-full">
-          <EntityPreviewPanel />
-        </div>
-      )}
-      {rightPanel && (
-        <div className="contents lg:flex lg:shrink-0 lg:h-full">{rightPanel}</div>
-      )}
     </div>
   );
 }

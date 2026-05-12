@@ -47,5 +47,7 @@ describe("email signatures", () => {
 
     expect(signature.text).toContain("powered by Glass from Clarity Labs");
     expect(signature.html).toContain("powered by Glass from Clarity Labs");
+    expect(signature.text).toContain("https://glass.claritylabs.inc");
+    expect(signature.html).toContain("https://glass.claritylabs.inc");
   });
 });

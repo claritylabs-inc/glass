@@ -3,7 +3,7 @@ import { describe, expect, test } from "vitest";
 import { buildNotificationEmail } from "./notificationEmailTemplate";
 
 describe("buildNotificationEmail", () => {
-  test("client-targeted email includes broker name in from-name", () => {
+  test("client-targeted email uses notification sender and broker branding", () => {
     const result = buildNotificationEmail({
       title: "Your policy was delivered",
       body: "Smith Insurance delivered a policy.",
@@ -19,7 +19,7 @@ describe("buildNotificationEmail", () => {
       siteUrl: "https://glass.app",
     });
 
-    expect(result.fromName).toBe("Sarah Smith via Glass");
+    expect(result.fromName).toBe("Glass Notifications");
     expect(result.html).toContain("Smith Insurance");
     expect(result.html).toContain("Your policy was delivered");
     expect(result.html).toContain("https://glass.app/policies/abc");
@@ -36,26 +36,26 @@ describe("buildNotificationEmail", () => {
       siteUrl: "https://glass.app",
     });
 
-    expect(result.fromName).toBe("Glass");
+    expect(result.fromName).toBe("Glass Notifications");
     expect(result.html).toContain("Policy update");
     expect(result.html).toContain("Glass");
     expect(result.html).toContain('src="https://glass.claritylabs.inc/glass-icon.jpg"');
     expect(result.text).toContain("Review");
   });
 
-  test("broker name falls back to brokerName when agentDisplayName is null", () => {
+  test("thread label is prefaced in html and text", () => {
     const result = buildNotificationEmail({
-      title: "T", body: "B", ctaUrl: "https://glass.app", ctaLabel: "CTA",
-      branding: {
-        kind: "broker",
-        brokerName: "Smith Insurance",
-        agentDisplayName: null,
-        accentColor: "#000",
-        logoUrl: null,
-      },
+      title: "T",
+      body: "B",
+      ctaUrl: "https://glass.app",
+      ctaLabel: "CTA",
+      branding: { kind: "glass" },
       siteUrl: "https://glass.app",
+      threadLabel: "Renewal Review",
     });
 
-    expect(result.fromName).toBe("Smith Insurance via Glass");
+    expect(result.html).toContain("Notification for thread");
+    expect(result.html).toContain("Renewal Review");
+    expect(result.text).toContain("Thread: Renewal Review");
   });
 });

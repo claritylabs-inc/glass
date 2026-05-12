@@ -209,6 +209,8 @@ Glass persists first-class policy-change case state for endorsement workflows:
 - `caseMessages`, `caseEvidenceLinks`, and `caseValidationReports` preserve missing-info replies, source evidence links, and audit-friendly validation history.
 - `convex/policyChanges.ts` exposes safe entrypoints to create requests from chat, email, or uploaded documents, process replies, generate a carrier packet preview, and mark lifecycle status.
 - The `create_policy_change_request` tool is available in web chat, inbound email, and iMessage. It creates a persistent case and uses SDK PCE analysis when the installed `@claritylabs/cl-sdk` exposes `createPceAgent`; otherwise it falls back to deterministic case creation with source evidence IDs.
+- Web chat stores the created `policyChangeCases` ID on the producing `threadMessages` record as a visible policy-change artifact. The thread renders a compact request card under the assistant response and can open the case in the right-side preview panel.
+- Clients can review policy-change requests and provide missing information, but carrier packet generation and lifecycle status updates are broker-side actions. Client orgs without a connected broker cannot open full policy-change/PCE requests because there is no broker workflow to submit the change. Broker users can manage a client request through broker-of-client access; connected-client/vendor access remains read-only and cannot manage PCE workflows.
 
 [aiUtils.ts](convex/lib/aiUtils.ts) owns shared agent instructions for web chat and email:
 
@@ -283,7 +285,9 @@ Outbound emails sent by Glass Agent are centralized in `convex/lib/emailSubagent
 - It can attach original policy PDFs from `policies.fileId`, user-uploaded files already present in the conversation, and generated COI PDFs from `generateCoi.run`.
 - `generateCoi.run` stores every newly generated COI PDF in Convex file storage and records it in `certificates` with `policyId`, `orgId`, certificate-holder text, source, creator, and storage file ID. The policy detail page's Certificates tab reads this table; direct page generation uses `certificates.generateForPolicy`. Programmatic generation is exposed through REST (`GET/POST /api/v1/policies/:id/certificates`) and MCP/CLI tools (`list_policy_certificates`, `generate_policy_certificate`).
 - It requires confirmation instead of sending when the recipient email is inferred or unknown, the body/subject is incomplete, attachments are ambiguous, or `autoSendEmails` is false and the user has not explicitly approved the exact draft.
-- Web chat, inbound email, and iMessage all delegate directed outbound email requests through the shared `email_expert` tool. The shared email identity falls back to `agent@${AGENT_DOMAIN}` when no custom agent handle is configured. Web chat and iMessage pass the current user's email/name as the default recipient so "email me" requests resolve without asking for already-known contact details. The `bccRequesterOnAgentEmails` org setting defaults on and blind-copies the requesting team member on directed outbound emails. The email expert supports structured `cc` and `bcc` recipients.
+- Web chat, inbound email, iMessage, and MCP/CLI surfaces all route directed outbound email through shared email-draft primitives rather than hand-rolled send paths. The shared email identity falls back to `agent@${AGENT_DOMAIN}` when no custom agent handle is configured. Web chat and iMessage pass the current user's email/name as the default recipient so "email me" requests resolve without asking for already-known contact details. The `bccRequesterOnAgentEmails` org setting defaults on and blind-copies the requesting team member on directed outbound emails. The email expert supports structured `cc` and `bcc` recipients.
+- In web chat, draft emails are persisted as native email-channel thread messages backed by a `pendingEmails` draft. The chat still shows a concise assistant note that an email was drafted, while the full copy lives in the email card/right-side preview. The user can review or quickly send from the draft card, send/cancel from the resizable right-side email preview panel, or use typed chat approval as a fallback that sends the current draft artifact instead of requiring a regenerated draft message. Right-side previews can stack, so an email draft and PDF/policy preview may be open at the same time; when stacked, panels begin at equal widths with the main content and the PDF panel stays furthest right.
+- MCP and local CLI expose the same durable draft lifecycle through `list_email_drafts`, `draft_email`, `update_email_draft`, `send_email_draft`, and `cancel_email_draft`. Programmatic tools should update the existing draft artifact in place and send/cancel by draft ID; `ask_glass` remains for Q&A and contextual reasoning.
 - Pending emails persist attachment metadata in `pendingEmails.attachments`; the scheduled sender writes those attachments back into the unified thread email message after Resend accepts the send.
 
 ### Agent Q&A (Chat)
@@ -299,6 +303,9 @@ Outbound emails sent by Glass Agent are centralized in `convex/lib/emailSubagent
 - `/policies` — list, detail, upload, re-extract, and generated certificate history.
 - `/chat` — threaded assistant.
 - `/agent/thread/:id` — renders unified `threads` records. Legacy `webChats`, `webChatMessages`, and `agentConversations` backend tables/functions have been removed after migration to `threads` + `threadMessages`.
+- Chat artifact cards such as email drafts should keep meaningful visual presence. Sources and tool calls should stay compact and consistent in the message footer row: inline policy citations are small chips, footer source chips open the right-side preview, and tool call parameters expand only on demand.
+- Web chat email artifacts are visually attached to the assistant message that created them, not rendered as a separate standalone chat turn. Sent email artifacts use `View sent email` instead of draft language.
+- Automatic chat title generation lives in `convex/actions/threadTitle.ts`. It should use the initial user message plus `threads.initialContext` and attachments, prefer the user's work intent/deliverable, and avoid recipient names, email domains, usernames, or file IDs.
 - `/settings` — org settings, branding, members, and an **Integrations** section rendered as a coming-soon grid. The Merge.dev backend and all integration sync tables/actions have been removed; only the static grid remains.
 
 ## MCP
@@ -314,6 +321,7 @@ Glass exposes MCP functionality for remote and local AI tools.
 - `list_policies`, `get_policy`, `list_policy_certificates`, `generate_policy_certificate`
 - `list_quotes`, `get_quote`
 - `list_threads`, `get_thread_messages`
+- `list_email_drafts`, `draft_email`, `update_email_draft`, `send_email_draft`, `cancel_email_draft`
 - `get_org_info`
 - `ask_glass`
 - `list_clients`, `get_client` (broker)

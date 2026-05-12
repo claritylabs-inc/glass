@@ -1,11 +1,15 @@
 "use node";
 
 import { v } from "convex/values";
-import { internalAction } from "../_generated/server";
-import { internal } from "../_generated/api";
+import { action, internalAction } from "../_generated/server";
+import { api, internal } from "../_generated/api";
 import { sendResendEmail } from "../lib/resend";
 import { toResendAttachments } from "../lib/emailSubagent";
 import { getImessageWorkerUrl } from "../lib/imessageConfig";
+import type { Doc, Id } from "../_generated/dataModel";
+import type { ActionCtx } from "../_generated/server";
+
+type SendEmailResult = { recipientEmail: string } | null;
 
 async function sendTextConfirmation(params: {
   toPhone: string;
@@ -40,14 +44,23 @@ async function sendTextConfirmation(params: {
   }
 }
 
-export const sendPending = internalAction({
-  args: { id: v.id("pendingEmails") },
-  handler: async (ctx, args) => {
-    const pending = await ctx.runQuery(internal.pendingEmails.getInternal, {
-      id: args.id,
-    });
-    if (!pending || pending.status !== "pending") {
-      return; // cancelled or already sent
+async function sendPendingEmailById(
+  ctx: ActionCtx,
+  id: Id<"pendingEmails">,
+  options: {
+    allowedStatuses: Array<Doc<"pendingEmails">["status"]>;
+    updateChatMessage: boolean;
+    notifyImessage: boolean;
+  },
+): Promise<SendEmailResult> {
+  const pending = await ctx.runQuery(internal.pendingEmails.getInternal, {
+    id,
+  }) as Doc<"pendingEmails"> | null;
+    if (!pending || !options.allowedStatuses.includes(pending.status)) {
+      return null; // cancelled or already sent
+    }
+    if (!pending.recipientEmail || !pending.subject || !pending.emailBody) {
+      throw new Error("Draft is missing required email fields.");
     }
 
     try {
@@ -61,12 +74,11 @@ export const sendPending = internalAction({
 
       // Mark as sent
       await ctx.runMutation(internal.pendingEmails.markSent, {
-        id: args.id,
+        id,
         sentMessageId,
       });
 
-      // Update chat message to show confirmation
-      if (pending.chatMessageId) {
+      if (options.updateChatMessage && pending.chatMessageId) {
         const ccNote =
           pending.ccAddresses && pending.ccAddresses.length > 0
             ? ` (CC: ${pending.ccAddresses.join(", ")})`
@@ -77,27 +89,42 @@ export const sendPending = internalAction({
         });
       }
 
-      // Insert the sent email as an email-channel message in the thread
       if (pending.threadId) {
         const thread = await ctx.runQuery(internal.threads.getInternal, {
           id: pending.threadId,
         });
-        await ctx.runMutation(internal.threads.insertEmailMessage, {
-          threadId: pending.threadId,
-          orgId: pending.orgId,
-          role: "agent",
-          content: pending.emailBody,
-          toAddresses: [pending.recipientEmail],
-          ccAddresses: pending.ccAddresses,
-          bccAddresses: pending.bccAddresses,
-          subject: pending.subject,
-          responseMessageId: sentMessageId,
-          attachments: pending.attachments,
-          referencedPolicyIds: pending.referencedPolicyIds,
-          referencedQuoteIds: pending.referencedQuoteIds,
-        });
+        if (pending.threadMessageId) {
+          await ctx.runMutation(internal.threads.updateEmailMessage, {
+            id: pending.threadMessageId,
+            content: pending.emailBody,
+            toAddresses: [pending.recipientEmail],
+            ccAddresses: pending.ccAddresses,
+            bccAddresses: pending.bccAddresses,
+            subject: pending.subject,
+            responseMessageId: sentMessageId,
+            attachments: pending.attachments,
+            referencedPolicyIds: pending.referencedPolicyIds,
+            referencedQuoteIds: pending.referencedQuoteIds,
+            clearStatus: true,
+          });
+        } else {
+          await ctx.runMutation(internal.threads.insertEmailMessage, {
+            threadId: pending.threadId,
+            orgId: pending.orgId,
+            role: "agent",
+            content: pending.emailBody,
+            toAddresses: [pending.recipientEmail],
+            ccAddresses: pending.ccAddresses,
+            bccAddresses: pending.bccAddresses,
+            subject: pending.subject,
+            responseMessageId: sentMessageId,
+            attachments: pending.attachments,
+            referencedPolicyIds: pending.referencedPolicyIds,
+            referencedQuoteIds: pending.referencedQuoteIds,
+          });
+        }
 
-        if (thread?.threadPhone) {
+        if (options.notifyImessage && thread?.threadPhone) {
           const ccNote =
             pending.ccAddresses && pending.ccAddresses.length > 0
               ? ` CC ${pending.ccAddresses.join(", ")}`
@@ -114,23 +141,75 @@ export const sendPending = internalAction({
               orgId: pending.orgId,
               role: "agent",
               content: confirmation,
-              responseMessageId: `${args.id}:sent-confirmation`,
+              responseMessageId: `${id}:sent-confirmation`,
             });
           }
         }
       }
 
+      return { recipientEmail: pending.recipientEmail };
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error("Failed to send pending email:", errMsg);
 
-      // Update chat message with error
-      if (pending.chatMessageId) {
+      if (options.updateChatMessage && pending.chatMessageId) {
         await ctx.runMutation(internal.threads.updateAgentMessage, {
           id: pending.chatMessageId,
           content: `_Failed to send email: ${errMsg}_`,
         });
       }
+      if (pending.threadMessageId) {
+        await ctx.runMutation(internal.threads.updateEmailMessage, {
+          id: pending.threadMessageId,
+          error: errMsg,
+        });
+      }
+      throw err;
     }
+}
+
+export const sendPending = internalAction({
+  args: { id: v.id("pendingEmails") },
+  handler: async (ctx, args) => {
+    await sendPendingEmailById(ctx, args.id, {
+      allowedStatuses: ["pending"],
+      updateChatMessage: true,
+      notifyImessage: true,
+    });
+  },
+});
+
+export const sendDraftInternal = internalAction({
+  args: { id: v.id("pendingEmails") },
+  handler: async (ctx, args) => {
+    await sendPendingEmailById(ctx, args.id, {
+      allowedStatuses: ["draft"],
+      updateChatMessage: false,
+      notifyImessage: false,
+    });
+  },
+});
+
+export const sendDraftNow = action({
+  args: { id: v.id("pendingEmails") },
+  handler: async (ctx, args): Promise<{ recipientEmail: string }> => {
+    const orgData = await ctx.runQuery(api.orgs.viewerOrg, {}) as {
+      membership?: { orgId: string };
+    } | null;
+    if (!orgData?.membership?.orgId) {
+      throw new Error("Not authenticated");
+    }
+    const pending = await ctx.runQuery(internal.pendingEmails.getInternal, {
+      id: args.id,
+    }) as Doc<"pendingEmails"> | null;
+    if (!pending || pending.orgId !== orgData.membership.orgId) {
+      throw new Error("Not found");
+    }
+    const sent = await sendPendingEmailById(ctx, args.id, {
+      allowedStatuses: ["draft"],
+      updateChatMessage: false,
+      notifyImessage: false,
+    });
+    return sent ?? { recipientEmail: pending.recipientEmail };
   },
 });

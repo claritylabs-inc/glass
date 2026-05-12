@@ -17,6 +17,9 @@ type SourceSpanDoc = {
   metadata?: Record<string, string>;
 };
 
+const STANDALONE_CLIENT_PCE_MESSAGE =
+  "Policy change requests need to go through a broker. Connect a broker before opening this request.";
+
 function toEvidenceSource(span: SourceSpanDoc) {
   return {
     id: span.spanId,
@@ -116,6 +119,18 @@ async function createPolicyChangeCase(
     sourceKind?: "chat" | "email";
   },
 ): Promise<{ caseId?: string; usedSdkPce: boolean; error?: string }> {
+    const org = await ctx.runQuery(internal.orgs.getInternal, { id: args.orgId });
+    if (!org) return { usedSdkPce: false, error: "Organization not found" };
+    if ((org.type ?? "client") === "client" && !org.brokerOrgId) {
+      return { usedSdkPce: false, error: STANDALONE_CLIENT_PCE_MESSAGE };
+    }
+    if (args.policyId) {
+      const policy = await ctx.runQuery(internal.policies.getInternal, { id: args.policyId });
+      if (!policy || policy.orgId !== args.orgId) {
+        return { usedSdkPce: false, error: "Policy not found" };
+      }
+    }
+
     const spans = args.policyId
       ? await ctx.runQuery(internal.sourceSpans.listSpansByPolicyInternal, { policyId: args.policyId })
       : [];

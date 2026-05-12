@@ -34,7 +34,7 @@ export function buildGlassEmailIconHtml({
   return `<img src="${iconUrl}" alt="" width="${size}" height="${size}" style="display:inline-block;vertical-align:middle;width:${size}px;height:${size}px;border-radius:${borderRadius}px;margin:${margin};object-fit:cover;border:0;" />`;
 }
 
-function escapeHtml(value: string): string {
+export function escapeHtml(value: string): string {
   return value
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")

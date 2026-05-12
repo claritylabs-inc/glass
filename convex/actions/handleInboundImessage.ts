@@ -46,6 +46,7 @@ import {
   COI_GENERATION_FAILED_MESSAGE,
   FATAL_ACTION_FAILED_MESSAGE,
 } from "../lib/actionFailures";
+import { evaluatePceIntake, type PceRequestKind } from "../lib/pceIntake";
 
 /** Normalize a raw phone string to E.164 (+1XXXXXXXXXX). */
 function normalizePhone(raw: string): string {
@@ -748,10 +749,15 @@ export const processInbound = internalAction({
       },
       create_policy_change_request: {
         ...createPolicyChangeRequest,
-        execute: async (params: { requestText: string; policyId?: string; evidenceSourceIds?: string[] }) => {
+        execute: async (params: { requestKind?: PceRequestKind; requestText: string; policyId?: string; evidenceSourceIds?: string[] }) => {
           if (!currentSenderIsLinked) {
             return "Only a linked Glass user in this group can create a policy change request.";
           }
+          const intake = evaluatePceIntake({
+            requestKind: params.requestKind,
+            requestText: params.requestText,
+          });
+          if (!intake.allowed) return intake.message;
           if (scope.kind === "multi_org" && !params.policyId) {
             return "Please specify which organization's policy this change request is for.";
           }
@@ -770,10 +776,11 @@ export const processInbound = internalAction({
             requestText: params.requestText,
             evidenceSourceIds: params.evidenceSourceIds,
           });
-          if (result?.error) return `Could not create policy change request: ${result.error}`;
+          if (result?.error) return result.error;
           return {
             status: "created",
             caseId: result?.caseId,
+            requestKind: intake.kind,
             usedSdkPce: Boolean(result?.usedSdkPce),
           };
         },

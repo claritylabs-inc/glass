@@ -184,6 +184,29 @@ export function assertCanReadPolicy(_access: OrgAccess): void {
   // member OR broker_of_client OR connected_client
 }
 
+export function assertCanReadPolicyChange(access: OrgAccess): void {
+  if (access.accessType === "connected_client") {
+    throw new Error("Connected clients have read-only vendor access");
+  }
+  // member OR broker_of_client
+}
+
+export function assertCanCreatePolicyChange(access: OrgAccess): void {
+  if (access.accessType === "connected_client") {
+    throw new Error("Connected clients have read-only vendor access");
+  }
+  if (access.accessType === "broker_of_client") return;
+  if (access.orgType === "broker") return;
+  if (access.orgType === "client" && access.org.brokerOrgId) return;
+  throw new Error("Policy change requests require a connected broker");
+}
+
+export function assertCanManagePolicyChange(access: OrgAccess): void {
+  if (access.accessType === "broker_of_client") return;
+  if (access.accessType === "member" && access.orgType === "broker") return;
+  throw new Error("Policy change submission is handled by the broker");
+}
+
 /**
  * Require broker-of-client access to a specific clientOrgId.
  * Returns an OrgAccess with accessType="broker_of_client".

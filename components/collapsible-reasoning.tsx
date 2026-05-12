@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { PretextText } from "@/components/pretext-text";
 
 interface CollapsibleReasoningProps {
   reasoning: string;
@@ -72,12 +71,12 @@ export function CollapsibleReasoning({
         <div className="max-h-64 overflow-y-auto rounded-lg border border-foreground/8 bg-foreground/[0.025] px-3 pt-2 pb-1.5 shadow-sm shadow-black/[0.02]">
           <div className="space-y-1.5 text-[13px] leading-5 text-muted-foreground/70">
             {lines.map((line, index) => (
-              <PretextText
+              <p
                 key={`${index}-${line.slice(0, 16)}`}
-                as="p"
-                text={line}
-                whiteSpace="pre-wrap"
-              />
+                className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]"
+              >
+                {line}
+              </p>
             ))}
             {isStreaming && (
               <span className="inline-block h-3.5 w-[3px] rounded-[1px] bg-muted-foreground/35 align-middle animate-pulse" />

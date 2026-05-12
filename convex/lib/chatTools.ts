@@ -1,5 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { PCE_REQUEST_KINDS } from "./pceIntake";
 
 /**
  * Tool definitions for agentic chat.
@@ -67,8 +68,9 @@ export const generateCoi = tool({
 
 export const createPolicyChangeRequest = tool({
   description:
-    "Create a policy change or endorsement request case from the user's instructions. Use this for named insured changes, additional insured requests, limit or deductible changes, location/vehicle changes, certificate-driven endorsement requirements, cancellations, nonrenewals, and renewal update packets.",
+    "Create a policy change endorsement (PCE) request packet from the user's instructions. Use this only for actual policy-record changes: named insured changes, additional insured/endorsement requests, limit or deductible changes, location/vehicle changes, cancellations, nonrenewals, renewal update packets, or certificate-driven endorsement requirements. Do not use this for ordinary COI generation or certificate-holder-only instructions.",
   inputSchema: z.object({
+    requestKind: z.enum(PCE_REQUEST_KINDS).describe("Classify the request. Use certificate_holder_only for ordinary COI holder changes with no requested endorsement. Use unclear when the user has not actually asked to change the policy record."),
     requestText: z.string().describe("The user's policy change or endorsement request, including requested values and effective date if provided"),
     policyId: z.string().optional().describe("Related policy ID, if known"),
     evidenceSourceIds: z.array(z.string()).optional().describe("Stable source span IDs that support quoted existing policy values"),

@@ -1,9 +1,10 @@
 // convex/lib/notificationEmailTemplate.ts
-import { absoluteEmailAssetUrl } from "./emailTemplate";
+import { getBrandingContext, getDefaultBranding } from "./branding";
+import { buildEmailShell, escapeHtml } from "./emailTemplate";
 
 const GLASS_ACCENT = "#2563eb";
 const SITE_URL_DEFAULT = "https://glass.claritylabs.inc";
-const GLASS_ICON_PATH = "/glass-icon.jpg";
+const NOTIFICATION_FROM_NAME = "Glass Notifications";
 
 export type NotificationEmailBranding =
   | {
@@ -22,6 +23,7 @@ export interface BuildNotificationEmailArgs {
   ctaLabel: string;
   branding: NotificationEmailBranding;
   siteUrl?: string;
+  threadLabel?: string;
 }
 
 export interface NotificationEmailResult {
@@ -34,80 +36,75 @@ export interface NotificationEmailResult {
 export function buildNotificationEmail(
   args: BuildNotificationEmailArgs,
 ): NotificationEmailResult {
-  const { title, body, ctaUrl, ctaLabel, branding, siteUrl = SITE_URL_DEFAULT } = args;
-
-  const fromName =
-    branding.kind === "broker"
-      ? `${branding.agentDisplayName ?? branding.brokerName} via Glass`
-      : "Glass";
+  const { title, body, ctaUrl, ctaLabel, branding, siteUrl = SITE_URL_DEFAULT, threadLabel } = args;
 
   const accentColor =
     branding.kind === "broker" && branding.accentColor ? branding.accentColor : GLASS_ACCENT;
 
   const senderLabel = branding.kind === "broker" ? branding.brokerName : "Glass";
+  const escapedTitle = escapeHtml(title);
+  const escapedBody = escapeHtml(body);
+  const escapedCtaUrl = escapeHtml(ctaUrl);
+  const escapedCtaLabel = escapeHtml(ctaLabel);
+  const escapedThreadLabel = threadLabel ? escapeHtml(threadLabel) : null;
+  const emailBranding =
+    branding.kind === "broker"
+      ? getBrandingContext({
+          agentDisplayName: branding.brokerName,
+          brandingColor: accentColor,
+          logoUrl: branding.logoUrl ?? undefined,
+        })
+      : getDefaultBranding();
 
-  const glassIconSrc = absoluteEmailAssetUrl(GLASS_ICON_PATH);
-  const logoHtml =
-    branding.kind === "broker" && branding.logoUrl
-      ? `<img src="${branding.logoUrl}" alt="${senderLabel}" height="40" style="display:block;border:0;" />`
-      : `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;"><tr><td style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:16px;line-height:1;color:#000000;">
-  <img src="${glassIconSrc}" alt="" width="28" height="28" style="display:inline-block;vertical-align:middle;width:28px;height:28px;border-radius:7px;margin-right:10px;object-fit:cover;border:0;" />
-  <span style="font-weight:600;vertical-align:middle;">Glass</span>
-  <span style="font-weight:400;color:#6b7280;vertical-align:middle;margin-left:6px;">from Clarity Labs</span>
-</td></tr></table>`;
+  const threadHtml = escapedThreadLabel
+    ? `<tr><td align="center" style="padding:28px 40px 0 40px;">
+  <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:11px;font-weight:600;color:#6b7280;line-height:1.4;text-transform:uppercase;letter-spacing:0.04em;">Notification for thread</p>
+  <p style="margin:6px 0 0 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:15px;font-weight:600;color:#000000;line-height:1.4;">${escapedThreadLabel}</p>
+</td></tr>`
+    : "";
 
-  const html = `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="color-scheme" content="light dark">
-<title>${title}</title>
-</head>
-<body style="margin:0;padding:0;background-color:#ffffff;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#ffffff;">
-<tr><td align="center" style="padding:40px 16px;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;">
-
-<!-- Logo -->
-<tr><td align="center" style="padding:32px 40px 0 40px;">
-  ${logoHtml}
+  const bodyHtml = `
+${threadHtml}
+<tr><td align="center" style="padding:${escapedThreadLabel ? "20px" : "28px"} 40px 0 40px;">
+  <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:15px;font-weight:600;color:#000000;line-height:1.5;">${escapedTitle}</p>
 </td></tr>
-
-<!-- Title -->
-<tr><td style="padding:24px 40px 0 40px;">
-  <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:16px;font-weight:600;color:#000000;line-height:1.4;">${title}</p>
+<tr><td align="center" style="padding:14px 40px 0 40px;">
+  <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13px;color:#4b5563;line-height:1.6;">${escapedBody}</p>
 </td></tr>
-
-<!-- Body -->
-<tr><td style="padding:12px 40px 0 40px;">
-  <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;color:#374151;line-height:1.6;">${body}</p>
+<tr><td align="center" style="padding:26px 40px 0 40px;">
+  <a href="${escapedCtaUrl}" style="display:inline-block;background:${accentColor};color:#ffffff;text-decoration:none;border-radius:8px;padding:11px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13px;font-weight:600;">${escapedCtaLabel}</a>
 </td></tr>
-
-<!-- CTA -->
-<tr><td align="center" style="padding:28px 40px 0 40px;">
-  <a href="${ctaUrl}" style="display:inline-block;padding:10px 24px;background-color:${accentColor};color:#ffffff;font-family:-apple-system,sans-serif;font-size:14px;font-weight:500;text-decoration:none;border-radius:6px;">${ctaLabel}</a>
+<tr><td style="padding:32px 40px 0 40px;">
+  <div style="height:1px;background-color:rgba(17,24,39,0.06);"></div>
 </td></tr>
-
-<!-- Divider -->
-<tr><td style="padding:28px 40px 0 40px;">
-  <div style="height:1px;background-color:rgba(0,0,0,0.06);"></div>
-</td></tr>
-
-<!-- Footer -->
-<tr><td align="center" style="padding:16px 40px 28px 40px;">
-  <p style="margin:0;font-family:-apple-system,sans-serif;font-size:11px;color:#9ca3af;line-height:1.5;">
-    ${branding.kind === "broker" ? `Sent via <a href="${siteUrl}" style="color:#9ca3af;text-decoration:none;">Glass</a> from Clarity Labs on behalf of ${senderLabel}` : `<a href="${siteUrl}" style="color:#9ca3af;text-decoration:none;">Glass</a> from Clarity Labs`}
+<tr><td align="center" style="padding:20px 40px 32px 40px;">
+  <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:12px;color:#9ca3af;line-height:1.5;">
+    ${branding.kind === "broker" ? `Sent on behalf of ${escapeHtml(senderLabel)}.` : "Sent by Glass Notifications."}
   </p>
-</td></tr>
+</td></tr>`;
 
-</table>
-</td></tr>
-</table>
-</body>
-</html>`;
+  const html = buildEmailShell({
+    title: escapedTitle,
+    bodyHtml,
+    branding: emailBranding,
+    siteUrl,
+  });
 
-  const text = `${title}\n\n${body}\n\n${ctaLabel}: ${ctaUrl}\n\n—\n${branding.kind === "broker" ? `Sent via Glass by Clarity Labs on behalf of ${senderLabel}` : "Glass by Clarity Labs"}`;
+  const text = [
+    threadLabel ? `Thread: ${threadLabel}` : null,
+    title,
+    "",
+    body,
+    "",
+    `${ctaLabel}: ${ctaUrl}`,
+    "",
+    "—",
+    branding.kind === "broker"
+      ? `Sent via Glass by Clarity Labs on behalf of ${senderLabel}`
+      : "Glass Notifications",
+  ]
+    .filter((part): part is string => part !== null)
+    .join("\n");
 
-  return { fromName, subject: title, html, text };
+  return { fromName: NOTIFICATION_FROM_NAME, subject: title, html, text };
 }

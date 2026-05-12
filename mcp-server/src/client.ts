@@ -117,4 +117,30 @@ export class GlassClient {
       threadId,
     });
   }
+
+  // ── Email Drafts ──
+
+  async listEmailDrafts(threadId?: string) {
+    return this.get("/mcp/email/drafts/list", { threadId });
+  }
+
+  async upsertEmailDraft(input: {
+    draftId?: string;
+    threadId?: string;
+    to: string;
+    subject: string;
+    body: string;
+    cc?: string[];
+    bcc?: string[];
+  }) {
+    return this.post("/mcp/email/drafts/upsert", input);
+  }
+
+  async sendEmailDraft(draftId: string) {
+    return this.post("/mcp/email/drafts/send", { draftId });
+  }
+
+  async cancelEmailDraft(draftId: string) {
+    return this.post("/mcp/email/drafts/cancel", { draftId });
+  }
 }

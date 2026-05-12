@@ -97,9 +97,42 @@ describe("directed email sending", () => {
     );
 
     expect(webSource).toContain("if (emailResult) {");
-    expect(webSource).toContain("content = emailResult.responseBody;");
+    expect(webSource).toContain("Review it in the email draft card");
     expect(smsSource).toContain("if (emailResult) {");
     expect(smsSource).toContain("responseText = emailResult.responseBody;");
+  });
+
+  it("uses a durable web email draft artifact with UI send fallback", () => {
+    const threadSource = readFileSync(
+      join(__dirname, "..", "app/agent/thread/[id]/page.tsx"),
+      "utf-8",
+    );
+    const processSource = readFileSync(
+      join(__dirname, "..", "convex/actions/processThreadChat.ts"),
+      "utf-8",
+    );
+    const subagentSource = readFileSync(
+      join(__dirname, "..", "convex/lib/emailSubagent.ts"),
+      "utf-8",
+    );
+    const senderSource = readFileSync(
+      join(__dirname, "..", "convex/actions/sendPendingEmail.ts"),
+      "utf-8",
+    );
+
+    expect(subagentSource).toContain("upsertEmailDraftArtifact");
+    expect(subagentSource).toContain("findDraftByThread");
+    expect(subagentSource).toContain("attachPendingEmailToAgentMessage");
+    expect(processSource).toContain("sendDraftInternal");
+    expect(processSource).toContain("`${content.trim()}\\n\\n${draftNotice}`");
+    expect(threadSource).toContain("sendDraftNow");
+    expect(threadSource).toContain("Send Email");
+    expect(threadSource).toContain("Review draft");
+    expect(threadSource).toContain("View sent email");
+    expect(threadSource).toContain("relatedEmailMessage");
+    expect(threadSource).toContain("attachedEmailMessageIds");
+    expect(threadSource).toContain("lastAutoOpenedEmailId");
+    expect(senderSource).toContain("updateChatMessage: false");
   });
 
   it("keeps cc and bcc as structured email expert inputs", () => {
@@ -110,9 +143,21 @@ describe("directed email sending", () => {
 
     expect(source).toContain("cc: z.array(z.string()).optional()");
     expect(source).toContain("bcc: z.array(z.string()).optional()");
-    expect(source).toContain("emailPayload.bcc = bcc");
+    expect(source).toContain("payload.bcc = params.bcc");
     expect(source).toContain('If the request says "email me"');
     expect(source).not.toContain("Confirm the recipient name.");
+  });
+
+  it("keeps certificate-only email drafts to a single generated COI attachment", () => {
+    const source = readFileSync(
+      join(__dirname, "..", "convex/lib/emailSubagent.ts"),
+      "utf-8",
+    );
+
+    expect(source).toContain("suppressOriginalPolicyForCoiRequest");
+    expect(source).toContain("Generated COI is already attached.");
+    expect(source).toContain("For certificate/COI delivery requests, attach only the generated COI");
+    expect(source).toContain("do not include original_policy unless the user separately asked");
   });
 
   it("does not append policy source blocks to outbound emails", () => {

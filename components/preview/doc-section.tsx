@@ -37,11 +37,11 @@ export function DocSection({
   const typeLabel = type === "endorsement" ? "Endorsement" : type === "exclusion" ? "Exclusion" : type === "condition" ? "Condition" : type === "definition" ? "Definition" : null;
 
   return (
-    <div className="border border-foreground/8 rounded-lg overflow-hidden bg-white">
+    <div className="min-w-0 overflow-hidden rounded-lg border border-foreground/8 bg-white">
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-3 w-full px-3 py-2.5 text-left hover:bg-secondary/50 transition-colors cursor-pointer"
+        className="flex w-full min-w-0 items-center gap-3 px-3 py-2.5 text-left hover:bg-secondary/50 transition-colors cursor-pointer"
       >
         <span className="text-body-sm font-medium text-foreground flex-1 truncate">
           {title || typeLabel || "Section"}
@@ -59,7 +59,7 @@ export function DocSection({
         />
       </button>
       {open && (
-        <div className="px-3 pb-3 pt-3 border-t border-foreground/4">
+        <div className="min-w-0 overflow-x-hidden border-t border-foreground/4 px-3 pb-3 pt-3">
           <FormattedSectionContent content={content} />
         </div>
       )}

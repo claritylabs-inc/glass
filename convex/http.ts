@@ -1031,6 +1031,70 @@ const MCP_TOOLS = [
       required: ["message"],
     },
   },
+  {
+    name: "list_email_drafts",
+    description: "List durable outbound email drafts for the organization. Optionally filter by threadId.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        threadId: { type: "string", description: "Optional thread ID" },
+      },
+    },
+  },
+  {
+    name: "draft_email",
+    description: "Create a durable outbound email draft using the same Glass email artifact used by web chat. Requires write scope. Returns a draft ID that can be updated, sent, or cancelled.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        threadId: { type: "string", description: "Optional thread ID to attach the draft to" },
+        to: { type: "string", description: "Recipient email address" },
+        subject: { type: "string", description: "Email subject" },
+        body: { type: "string", description: "Plain text email body" },
+        cc: { type: "array", items: { type: "string" }, description: "CC email addresses" },
+        bcc: { type: "array", items: { type: "string" }, description: "BCC email addresses" },
+      },
+      required: ["to", "subject", "body"],
+    },
+  },
+  {
+    name: "update_email_draft",
+    description: "Update an existing durable outbound email draft in place. Requires write scope.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        draftId: { type: "string", description: "Draft ID returned by draft_email or list_email_drafts" },
+        to: { type: "string", description: "Recipient email address" },
+        subject: { type: "string", description: "Email subject" },
+        body: { type: "string", description: "Plain text email body" },
+        cc: { type: "array", items: { type: "string" }, description: "CC email addresses" },
+        bcc: { type: "array", items: { type: "string" }, description: "BCC email addresses" },
+      },
+      required: ["draftId", "to", "subject", "body"],
+    },
+  },
+  {
+    name: "send_email_draft",
+    description: "Send a durable outbound email draft. Requires write scope.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        draftId: { type: "string", description: "Draft ID returned by draft_email or list_email_drafts" },
+      },
+      required: ["draftId"],
+    },
+  },
+  {
+    name: "cancel_email_draft",
+    description: "Cancel a durable outbound email draft. Requires write scope.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        draftId: { type: "string", description: "Draft ID returned by draft_email or list_email_drafts" },
+      },
+      required: ["draftId"],
+    },
+  },
   // ── Broker tools ──
   {
     name: "list_clients",
@@ -1247,6 +1311,51 @@ async function handleToolCall(
       });
       return { content: [{ type: "text", text: `**Thread:** ${result.threadId}\n\n${result.response}` }] };
     }
+    case "list_email_drafts": {
+      const drafts = await ctx.runQuery(internal.pendingEmails.listDraftsInternal, {
+        orgId,
+        threadId: typeof args.threadId === "string" && args.threadId
+          ? args.threadId as Id<"threads">
+          : undefined,
+      });
+      return { content: [{ type: "text", text: JSON.stringify(drafts, null, 2) }] };
+    }
+    case "draft_email":
+    case "update_email_draft": {
+      requireMcpWriteScope(identity);
+      if (name === "update_email_draft" && !args.draftId) throw new Error("Missing draftId parameter");
+      if (!args.to || !args.subject || !args.body) throw new Error("Missing to, subject, or body parameter");
+      const draft = await ctx.runAction(internal.actions.emailDrafts.upsertForMcp, {
+        orgId,
+        userId,
+        draftId: typeof args.draftId === "string" ? args.draftId as Id<"pendingEmails"> : undefined,
+        threadId: typeof args.threadId === "string" ? args.threadId as Id<"threads"> : undefined,
+        to: args.to as string,
+        subject: args.subject as string,
+        body: args.body as string,
+        cc: Array.isArray(args.cc) ? args.cc.filter((value): value is string => typeof value === "string") : undefined,
+        bcc: Array.isArray(args.bcc) ? args.bcc.filter((value): value is string => typeof value === "string") : undefined,
+      });
+      return { content: [{ type: "text", text: JSON.stringify(draft, null, 2) }] };
+    }
+    case "send_email_draft": {
+      requireMcpWriteScope(identity);
+      if (typeof args.draftId !== "string" || !args.draftId) throw new Error("Missing draftId parameter");
+      const draft = await ctx.runAction(internal.actions.emailDrafts.sendForMcp, {
+        orgId,
+        draftId: args.draftId as Id<"pendingEmails">,
+      });
+      return { content: [{ type: "text", text: JSON.stringify(draft, null, 2) }] };
+    }
+    case "cancel_email_draft": {
+      requireMcpWriteScope(identity);
+      if (typeof args.draftId !== "string" || !args.draftId) throw new Error("Missing draftId parameter");
+      const draft = await ctx.runAction(internal.actions.emailDrafts.cancelForMcp, {
+        orgId,
+        draftId: args.draftId as Id<"pendingEmails">,
+      });
+      return { content: [{ type: "text", text: JSON.stringify(draft, null, 2) }] };
+    }
     // ── Broker tools ──
     case "list_clients": {
       const clients = await ctx.runQuery((internal as any).clients.listForBrokerInternal, {
@@ -1429,6 +1538,102 @@ http.route({
       });
 
       return jsonResponse(result);
+    } catch (e) {
+      if (e instanceof Response) return e;
+      return jsonResponse({ error: String(e) }, 500);
+    }
+  }),
+});
+
+// GET /mcp/email/drafts/list
+http.route({
+  path: "/mcp/email/drafts/list",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const identity = await requireMcpAuth(ctx, request);
+      const url = new URL(request.url);
+      const threadId = url.searchParams.get("threadId");
+      const drafts = await ctx.runQuery(internal.pendingEmails.listDraftsInternal, {
+        orgId: identity.orgId as Id<"organizations">,
+        threadId: threadId ? threadId as Id<"threads"> : undefined,
+      });
+      return jsonResponse(drafts);
+    } catch (e) {
+      if (e instanceof Response) return e;
+      return jsonResponse({ error: String(e) }, 500);
+    }
+  }),
+});
+
+// POST /mcp/email/drafts/upsert
+http.route({
+  path: "/mcp/email/drafts/upsert",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const identity = await requireMcpAuth(ctx, request);
+      requireMcpWriteScope(identity);
+      const body = await request.json();
+      if (!body.to || !body.subject || !body.body) {
+        return jsonResponse({ error: "Missing to, subject, or body" }, 400);
+      }
+      const draft = await ctx.runAction(internal.actions.emailDrafts.upsertForMcp, {
+        orgId: identity.orgId as Id<"organizations">,
+        userId: identity.userId as Id<"users">,
+        draftId: body.draftId ? body.draftId as Id<"pendingEmails"> : undefined,
+        threadId: body.threadId ? body.threadId as Id<"threads"> : undefined,
+        to: body.to,
+        subject: body.subject,
+        body: body.body,
+        cc: Array.isArray(body.cc) ? body.cc : undefined,
+        bcc: Array.isArray(body.bcc) ? body.bcc : undefined,
+      });
+      return jsonResponse(draft);
+    } catch (e) {
+      if (e instanceof Response) return e;
+      return jsonResponse({ error: String(e) }, 500);
+    }
+  }),
+});
+
+// POST /mcp/email/drafts/send
+http.route({
+  path: "/mcp/email/drafts/send",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const identity = await requireMcpAuth(ctx, request);
+      requireMcpWriteScope(identity);
+      const body = await request.json();
+      if (!body.draftId) return jsonResponse({ error: "Missing draftId" }, 400);
+      const draft = await ctx.runAction(internal.actions.emailDrafts.sendForMcp, {
+        orgId: identity.orgId as Id<"organizations">,
+        draftId: body.draftId as Id<"pendingEmails">,
+      });
+      return jsonResponse(draft);
+    } catch (e) {
+      if (e instanceof Response) return e;
+      return jsonResponse({ error: String(e) }, 500);
+    }
+  }),
+});
+
+// POST /mcp/email/drafts/cancel
+http.route({
+  path: "/mcp/email/drafts/cancel",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const identity = await requireMcpAuth(ctx, request);
+      requireMcpWriteScope(identity);
+      const body = await request.json();
+      if (!body.draftId) return jsonResponse({ error: "Missing draftId" }, 400);
+      const draft = await ctx.runAction(internal.actions.emailDrafts.cancelForMcp, {
+        orgId: identity.orgId as Id<"organizations">,
+        draftId: body.draftId as Id<"pendingEmails">,
+      });
+      return jsonResponse(draft);
     } catch (e) {
       if (e instanceof Response) return e;
       return jsonResponse({ error: String(e) }, 500);

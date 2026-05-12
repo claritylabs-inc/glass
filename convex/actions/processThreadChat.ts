@@ -18,7 +18,6 @@ import { buildDocumentContext, buildConversationMemoryContext } from "../lib/age
 import {
   buildSystemPromptForContext,
   buildMessageHistory,
-  buildSignature,
   stripMarkdown,
   markdownToHtml,
   buildChannelInstructions,
@@ -28,6 +27,7 @@ import {
 } from "../lib/aiUtils";
 import { searchPolicyDocumentWithSourceSpans } from "../lib/policyLookup";
 import { getNotificationFromAddress, sendResendEmail } from "../lib/resend";
+import { buildEmailShell, escapeHtml } from "../lib/emailTemplate";
 import {
   buildEmailExpertTool,
   getEmailAgentFromName,
@@ -37,7 +37,6 @@ import {
 import { buildIntelligenceContext } from "../lib/agentPrompts";
 import {
   classifyPromptInjection,
-  validateEmailRecipient,
   collectAllowedRecipients,
   assertOrgOwnership,
   enforceInputLimits,
@@ -46,6 +45,7 @@ import {
   COI_GENERATION_FAILED_MESSAGE,
   FATAL_ACTION_FAILED_MESSAGE,
 } from "../lib/actionFailures";
+import { evaluatePceIntake, type PceRequestKind } from "../lib/pceIntake";
 
 /** Build executable tools with Convex context wired in. */
 
@@ -187,8 +187,14 @@ function buildTools(ctx: any, args: { orgId: string; threadId: string; userId: s
     },
     create_policy_change_request: {
       ...createPolicyChangeRequest,
-      execute: async (input: { requestText: string; policyId?: string; evidenceSourceIds?: string[] }) => {
+      execute: async (input: { requestKind?: PceRequestKind; requestText: string; policyId?: string; evidenceSourceIds?: string[] }) => {
         try {
+          const intake = evaluatePceIntake({
+            requestKind: input.requestKind,
+            requestText: input.requestText,
+          });
+          if (!intake.allowed) return intake.message;
+
           const result = await ctx.runAction(internal.actions.policyChangeRequests.createFromChatForThread, {
             orgId: args.orgId as Id<"organizations">,
             userId: args.userId as Id<"users">,
@@ -196,9 +202,11 @@ function buildTools(ctx: any, args: { orgId: string; threadId: string; userId: s
             requestText: input.requestText,
             evidenceSourceIds: input.evidenceSourceIds,
           });
+          if (result?.error) return result.error;
           return {
             message: "Policy change request created.",
             caseId: result.caseId,
+            requestKind: intake.kind,
             usedSdkPce: result.usedSdkPce,
           };
         } catch (err) {
@@ -234,13 +242,47 @@ export const run = internalAction({
         internal.pendingEmails.findPendingByThread,
         { threadId: args.threadId },
       );
-      if (pendingEmails.length > 0) {
-        const userMsg = await ctx.runQuery(internal.threads.getMessageInternal, {
-          id: args.userMessageId,
+      const draftEmail = await ctx.runQuery(
+        internal.pendingEmails.findDraftByThread,
+        { threadId: args.threadId },
+      );
+      const userMsg = await ctx.runQuery(internal.threads.getMessageInternal, {
+        id: args.userMessageId,
+      });
+      const text = userMsg?.content.trim() ?? "";
+      const cancelWords = /\b(cancel|undo|stop|don'?t send|abort|nevermind|never\s*mind|hold on|wait|no\b)/i;
+      const approvalWords = /^(yes|yep|yeah|ok|okay|approved|approve|confirmed|confirm|send|send it|looks good|this is good|go ahead|do it|please send)\.?!?$/i;
+
+      if (draftEmail && text.length < 100 && cancelWords.test(text)) {
+        await ctx.runMutation(internal.pendingEmails.cancelInternal, {
+          id: draftEmail._id,
         });
-        // Match cancel words anywhere in short messages (< 100 chars)
-        const text = userMsg?.content.trim() ?? "";
-        const cancelWords = /\b(cancel|undo|stop|don'?t send|abort|nevermind|never\s*mind|hold on|wait|no\b)/i;
+        await ctx.runMutation(internal.threads.deleteMessageInternal, {
+          id: agentMsgId,
+        });
+        return;
+      }
+
+      if (draftEmail && text.length < 100 && approvalWords.test(text)) {
+        try {
+          await ctx.runAction(internal.actions.sendPendingEmail.sendDraftInternal, {
+            id: draftEmail._id,
+          });
+          await ctx.runMutation(internal.threads.deleteMessageInternal, {
+            id: agentMsgId,
+          });
+          return;
+        } catch (err) {
+          await ctx.runMutation(internal.threads.updateAgentError, {
+            id: agentMsgId,
+            error: err instanceof Error ? err.message : String(err),
+            content: "Failed to send the draft email.",
+          });
+          return;
+        }
+      }
+
+      if (pendingEmails.length > 0) {
         if (text.length < 100 && cancelWords.test(text)) {
           let cancelledCount = 0;
           for (const pe of pendingEmails) {
@@ -480,6 +522,24 @@ export const run = internalAction({
             fileId: att.fileId!,
           })),
       );
+      const currentDraftEmail = await ctx.runQuery(
+        internal.pendingEmails.findDraftByThread,
+        { threadId: args.threadId },
+      );
+      const currentDraftContext = currentDraftEmail
+        ? [
+            "CURRENT EMAIL DRAFT ARTIFACT:",
+            `To: ${currentDraftEmail.recipientEmail}`,
+            currentDraftEmail.ccAddresses?.length ? `Cc: ${currentDraftEmail.ccAddresses.join(", ")}` : null,
+            currentDraftEmail.bccAddresses?.length ? `Bcc: ${currentDraftEmail.bccAddresses.join(", ")}` : null,
+            `Subject: ${currentDraftEmail.subject}`,
+            currentDraftEmail.attachments?.length
+              ? `Attachments: ${currentDraftEmail.attachments.map((a: { filename: string }) => a.filename).join(", ")}`
+              : null,
+            "",
+            currentDraftEmail.emailBody,
+          ].filter((line) => line !== null).join("\n")
+        : "";
       const emailToolResult: { current: EmailSubagentResult | null } = { current: null };
 
       // streamText with tools — supports both streaming Q&A and tool calls
@@ -514,7 +574,7 @@ export const run = internalAction({
                 conversationContext: allMessages
                   .slice(-12)
                   .map((m: Record<string, unknown>) => `${m.role}: ${m.content}`)
-                  .join("\n"),
+                  .join("\n") + (currentDraftContext ? `\n\n${currentDraftContext}` : ""),
                 onResult: (result) => {
                   emailToolResult.current = result;
                 },
@@ -569,6 +629,7 @@ export const run = internalAction({
         size: number;
         fileId?: Id<"_storage">;
       }> = [];
+      let policyChangeCaseId: Id<"policyChangeCases"> | undefined;
       let lastToolName = "";
       let lastToolPolicyId = "";
 
@@ -627,6 +688,15 @@ export const run = internalAction({
               }
             }
           }
+          if (lastToolName === "create_policy_change_request" && (part as Record<string, unknown>).output) {
+            const output = (part as Record<string, unknown>).output;
+            if (output && typeof output === "object" && "caseId" in output) {
+              const caseId = (output as Record<string, unknown>).caseId;
+              if (typeof caseId === "string" && caseId) {
+                policyChangeCaseId = caseId as Id<"policyChangeCases">;
+              }
+            }
+          }
           // Capture cited section titles and policy IDs from lookup_policy_section results
           if (lastToolName === "lookup_policy_section" && (part as Record<string, unknown>).output) {
             const output = (part as Record<string, unknown>).output;
@@ -671,33 +741,79 @@ export const run = internalAction({
         usedTools: usedTools.length > 0 ? usedTools : undefined,
         toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
         attachments: responseAttachments.length > 0 ? responseAttachments : undefined,
+        policyChangeCaseId,
       });
       const emailResult = emailToolResult.current;
       if (emailResult) {
-        await ctx.runMutation(internal.threads.updateAgentMessage, {
-          id: agentMsgId,
-          content: emailResult.responseBody,
-          pendingEmailId: emailResult.pendingEmailId,
-          status: emailResult.status === "pending" ? "pending_send" : undefined,
-        });
-        content = emailResult.responseBody;
+        if (
+          emailResult.pendingEmailId &&
+          (emailResult.status === "draft" || emailResult.status === "needs_confirmation")
+        ) {
+          const recipientText = emailResult.responseTo ? ` to ${emailResult.responseTo}` : "";
+          const draftedCoi = emailResult.attachments?.some((attachment) =>
+            /certificate[-_\s]?of[-_\s]?insurance|coi/i.test(attachment.filename),
+          );
+          const draftNotice = draftedCoi
+            ? `I drafted the certificate of insurance email${recipientText}. Review it in the email draft card.`
+            : `I drafted the email${recipientText}. Review it in the email draft card.`;
+          const nextContent = content.trim()
+            ? `${content.trim()}\n\n${draftNotice}`
+            : draftNotice;
+          await ctx.runMutation(internal.threads.updateAgentMessage, {
+            id: agentMsgId,
+            content: nextContent,
+            pendingEmailId: emailResult.pendingEmailId,
+          });
+          content = nextContent;
+        } else {
+          await ctx.runMutation(internal.threads.updateAgentMessage, {
+            id: agentMsgId,
+            content: emailResult.responseBody,
+            pendingEmailId: emailResult.pendingEmailId,
+            status: emailResult.status === "pending" ? "pending_send" : undefined,
+          });
+          content = emailResult.responseBody;
+        }
       }
       if (!emailResult && org.chatEmailNotifications === true && user?.email && content.trim()) {
         try {
           const siteUrl = process.env.SITE_URL ?? "https://glass.claritylabs.inc";
           const threadUrl = `${siteUrl}/agent/thread/${args.threadId}`;
-          const subject = thread?.title && thread.title !== "New chat"
-            ? `Glass reply: ${thread.title}`
+          const threadLabel = thread?.title && thread.title !== "New chat"
+            ? thread.title
+            : "New chat";
+          const subject = threadLabel !== "New chat"
+            ? `Glass reply: ${threadLabel}`
             : "Glass reply";
-          const plainText = `${stripMarkdown(content)}\n\nView thread: ${threadUrl}`;
+          const plainText = `Thread: ${threadLabel}\n\n${stripMarkdown(content)}\n\nView thread: ${threadUrl}`;
           const htmlBody = content
             .split("\n\n")
             .map((p: string) => `<p style="margin:0 0 12px;line-height:1.5">${markdownToHtml(p.replace(/\n/g, "<br>"))}</p>`)
             .join("\n");
-          const html = `${htmlBody}<p style="margin:16px 0 0"><a href="${threadUrl}" style="color:#2563eb;text-decoration:underline">View thread</a></p>`;
+          const html = buildEmailShell({
+            title: escapeHtml(subject),
+            siteUrl,
+            bodyHtml: `
+<tr><td align="center" style="padding:28px 40px 0 40px;">
+  <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:11px;font-weight:600;color:#6b7280;line-height:1.4;text-transform:uppercase;letter-spacing:0.04em;">Notification for thread</p>
+  <p style="margin:6px 0 0 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:15px;font-weight:600;color:#000000;line-height:1.4;">${escapeHtml(threadLabel)}</p>
+</td></tr>
+<tr><td style="padding:22px 40px 0 40px;">
+  <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13px;color:#374151;line-height:1.6;">${htmlBody}</div>
+</td></tr>
+<tr><td align="center" style="padding:24px 40px 0 40px;">
+  <a href="${escapeHtml(threadUrl)}" style="display:inline-block;background:#000000;color:#ffffff;text-decoration:none;border-radius:8px;padding:11px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13px;font-weight:600;">View thread</a>
+</td></tr>
+<tr><td style="padding:32px 40px 0 40px;">
+  <div style="height:1px;background-color:rgba(17,24,39,0.06);"></div>
+</td></tr>
+<tr><td align="center" style="padding:20px 40px 32px 40px;">
+  <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:12px;color:#9ca3af;line-height:1.5;">Sent by Glass Notifications.</p>
+</td></tr>`,
+          });
 
           const notification = await sendResendEmail({
-            from: getNotificationFromAddress("Glass"),
+            from: getNotificationFromAddress("Glass Notifications"),
             to: user.email,
             subject,
             text: plainText,
@@ -721,171 +837,6 @@ export const run = internalAction({
       await ctx.runMutation(internal.threads.touchThread, {
         threadId: args.threadId,
       });
-
-      // ── Send email if agent confirmed a send ──
-      if (canSendEmail) {
-        const sendMatch = content.match(/\*?\*?Sending email to (.+?)\.\.\.\*?\*?\s*\n([\s\S]+)$/i);
-        if (sendMatch) {
-          try {
-            const emailBody = sendMatch[2].trim();
-            if (!emailIdentity.agentAddress) throw new Error("No agent handle configured");
-            const agentAddress = thread?.threadEmail ?? emailIdentity.agentAddress;
-
-            // Find recipient — prefer the explicit address in the agent's output,
-            // fall back to the last inbound email sender
-            const recipientHint = sendMatch[1].trim();
-            const hintEmailMatch = recipientHint.match(/[\w.+-]+@[\w.-]+\.\w+/);
-
-            const lastInboundEmail = [...allMessages]
-              .reverse()
-              .find((m) => m.channel === "email" && m.role === "user" && m.fromEmail);
-
-            const replyTo = hintEmailMatch?.[0] ?? lastInboundEmail?.fromEmail;
-            if (!replyTo) throw new Error("No email recipient found — include the recipient's email address");
-
-            // Validate recipient against known thread participants and org members
-            const orgMembers = await ctx.runQuery(internal.users.listByOrgInternal, { orgId: args.orgId });
-
-            const orgMemberEmails = orgMembers.map((m: any) => m?.email).filter(Boolean);
-            const allowedRecipients = collectAllowedRecipients(allMessages as Parameters<typeof collectAllowedRecipients>[0], orgMemberEmails as string[]);
-            const recipientCheck = validateEmailRecipient(replyTo, allowedRecipients);
-            if (!recipientCheck.allowed) {
-              console.warn("[security] Email recipient blocked", {
-                threadId: args.threadId,
-                recipient: replyTo,
-                reason: recipientCheck.reason,
-              });
-              throw new Error(recipientCheck.reason!);
-            }
-
-            // CC the user who instructed us + any original CCs, excluding the agent
-            const replyCc: string[] = [];
-            if (user?.email && user.email !== replyTo) {
-              replyCc.push(user.email);
-            }
-            if (lastInboundEmail?.ccAddresses) {
-              for (const cc of lastInboundEmail.ccAddresses) {
-                if (cc !== agentAddress && cc !== replyTo && !replyCc.includes(cc)) {
-                  replyCc.push(cc);
-                }
-              }
-            }
-
-            // Build email subject from thread title
-            const threadTitle = thread?.title ?? "New chat";
-            const replySubject = threadTitle.startsWith("Re:") ? threadTitle : `Re: ${threadTitle}`;
-
-            // Build email body with signature
-            const signature = buildSignature();
-            const plainText = stripMarkdown(emailBody) + signature.text;
-            const htmlBody = emailBody
-              .split("\n\n")
-              .map((p: string) => `<p style="margin:0 0 12px;line-height:1.5">${markdownToHtml(p.replace(/\n/g, "<br>"))}</p>`)
-              .join("\n") + signature.html;
-
-            // Threading: reference the last email messageId in the thread
-            const lastEmailMsg = [...allMessages]
-              .reverse()
-              .find((m) => m.channel === "email" && (m.messageId || m.responseMessageId));
-            const refMessageId = lastEmailMsg?.responseMessageId ?? lastEmailMsg?.messageId;
-
-            const emailPayload: Record<string, unknown> = {
-              from: `${getEmailAgentFromName(emailIdentity.brokerBranding)} <${agentAddress}>`,
-              to: replyTo,
-              subject: replySubject,
-              text: plainText,
-              html: htmlBody,
-            };
-            if (replyCc.length > 0) {
-              emailPayload.cc = replyCc;
-            }
-            const replyBcc =
-              org.bccRequesterOnAgentEmails !== false && user?.email && user.email !== replyTo && !replyCc.includes(user.email)
-                ? [user.email]
-                : [];
-            if (replyBcc.length > 0) {
-              emailPayload.bcc = replyBcc;
-            }
-            if (refMessageId) {
-              emailPayload.headers = {
-                "In-Reply-To": refMessageId,
-                "References": refMessageId,
-              };
-            }
-
-            // Check send delay setting
-            const sendDelay = org.emailSendDelay ?? 5; // default 5 seconds
-
-            if (sendDelay > 0) {
-              // Queue email with delay
-              const scheduledSendTime = Date.now() + sendDelay * 1000;
-              const pendingEmailId = await ctx.runMutation(internal.pendingEmails.create, {
-                orgId: args.orgId,
-                threadId: args.threadId,
-                emailPayload: JSON.stringify(emailPayload),
-                scheduledSendTime,
-                chatMessageId: agentMsgId,
-                recipientEmail: replyTo,
-                ccAddresses: replyCc.length > 0 ? replyCc : undefined,
-                bccAddresses: replyBcc.length > 0 ? replyBcc : undefined,
-                subject: replySubject,
-                emailBody,
-                referencedPolicyIds: citedPolicyIds.size > 0 ? [...citedPolicyIds] as Id<"policies">[] : undefined,
-                referencedQuoteIds: relevantQuoteIds.filter((qid: string) => citedPolicyIds.has(qid)).length > 0
-                  ? relevantQuoteIds.filter((qid: string) => citedPolicyIds.has(qid)) as Id<"policies">[] : undefined,
-              });
-
-              // Update chat message to show pending state with recipient info
-              const ccNote = replyCc.length > 0 ? ` (CC: ${replyCc.join(", ")})` : "";
-              await ctx.runMutation(internal.threads.updateAgentMessage, {
-                id: agentMsgId,
-                content: `Sending email to ${replyTo}${ccNote}...`,
-                pendingEmailId,
-                status: "pending_send",
-              });
-
-              // Schedule the actual send
-              await ctx.scheduler.runAfter(
-                sendDelay * 1000,
-                internal.actions.sendPendingEmail.sendPending,
-                { id: pendingEmailId },
-              );
-            } else {
-              // Send immediately (delay = 0)
-              const sendOutcome = await sendResendEmail(emailPayload as Parameters<typeof sendResendEmail>[0]);
-              if (!sendOutcome.ok) throw new Error(`Failed to send email: ${sendOutcome.error}`);
-              const sentMessageId = sendOutcome.id;
-
-              // Insert the sent email as an email-channel message in the thread
-              await ctx.runMutation(internal.threads.insertEmailMessage, {
-                threadId: args.threadId,
-                orgId: args.orgId,
-                role: "agent",
-                content: emailBody,
-                toAddresses: [replyTo],
-                ccAddresses: replyCc.length > 0 ? replyCc : undefined,
-                bccAddresses: replyBcc.length > 0 ? replyBcc : undefined,
-                subject: replySubject,
-                responseMessageId: sentMessageId,
-              });
-
-              // Update the chat message to show it was sent
-              await ctx.runMutation(internal.threads.updateAgentMessage, {
-                id: agentMsgId,
-                content: `Email sent to ${replyTo}${replyCc.length > 0 ? ` (CC: ${replyCc.join(", ")})` : ""}.`,
-              });
-            }
-          } catch (err) {
-            logAiError("processThreadChat.sendEmail", err, { threadId: args.threadId });
-            // Update chat message with error but don't fail the whole action
-            const errMsg = err instanceof Error ? err.message : String(err);
-            await ctx.runMutation(internal.threads.updateAgentMessage, {
-              id: agentMsgId,
-              content: content + `\n\n_Failed to send email: ${errMsg}_`,
-            });
-          }
-        }
-      }
 
     } catch (error) {
       const message =

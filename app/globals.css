@@ -270,21 +270,6 @@
   transition: width 200ms ease;
 }
 
-.pretext-text,
-.pretext-flow {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  word-break: normal;
-}
-
-.pretext-text {
-  display: block;
-}
-
-.pretext-text[data-pretext-white-space="pre-wrap"] {
-  white-space: pre-wrap;
-}
-
 /* =============================================================================
    Phone Input — react-phone-number-input overrides for shadcn/Tailwind
    ============================================================================= */

@@ -75,11 +75,9 @@ describe("sendNotificationEmail", () => {
     expect(notif?.emailStatus).toBe("sent");
     expect((notif as any)?.emailSentAt).toBeDefined();
 
-    // Verify branding: from name should include agent name + "via Glass"
-    // The brokerName (Smith Insurance) appears in html body; fromName uses agentDisplayName
+    // Verify sender and branding: notifications always use a stable Glass sender name.
     const callBody = JSON.parse(mockFetch.mock.calls[0][1].body);
-    expect(callBody.from).toContain("Sarah Smith");
-    expect(callBody.from).toContain("via Glass");
+    expect(callBody.from).toContain("Glass Notifications");
     expect(callBody.html).toContain("Smith Insurance");
 
     vi.unstubAllGlobals();
@@ -168,6 +166,60 @@ describe("sendNotificationEmail", () => {
     expect(mockFetch).toHaveBeenCalledTimes(3); // 3 retries
     const notif = await t.run(async (ctx) => ctx.db.get(notifId));
     expect(notif?.emailStatus).toBe("failed");
+
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  test("includes thread context when the notification references a thread", async () => {
+    const t = convexTest(schema, modules);
+
+    const orgId = await t.run(async (ctx) =>
+      ctx.db.insert("organizations", { name: "Broker Co", type: "broker" })
+    );
+    const userId = await t.run(async (ctx) =>
+      ctx.db.insert("users", { name: "Bob", email: "bob@broker.co" })
+    );
+    await t.run(async (ctx) =>
+      ctx.db.insert("orgMemberships", { orgId, userId, role: "member" })
+    );
+    const threadId = await t.run(async (ctx) =>
+      ctx.db.insert("threads", {
+        orgId,
+        title: "Renewal Review",
+        createdBy: userId,
+        lastMessageAt: Date.now(),
+        originChannel: "chat",
+      })
+    );
+    const notifId = await t.run(async (ctx) =>
+      ctx.db.insert("notifications", {
+        orgId,
+        type: "extraction_error",
+        title: "Review needed",
+        body: "The extraction needs attention.",
+        severity: "warning",
+        status: "unread",
+        emailStatus: "scheduled",
+        sourceRef: { threadId },
+        createdAt: Date.now(),
+      })
+    );
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      text: async () => JSON.stringify({ id: "resend-msg-thread" }),
+    });
+    vi.stubGlobal("fetch", mockFetch);
+    vi.stubEnv("AUTH_RESEND_KEY", "test-resend-key");
+
+    await t.action(sendFn, { notificationId: notifId });
+
+    const callBody = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(callBody.from).toContain("Glass Notifications");
+    expect(callBody.html).toContain("Notification for thread");
+    expect(callBody.html).toContain("Renewal Review");
+    expect(callBody.text).toContain("Thread: Renewal Review");
 
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();

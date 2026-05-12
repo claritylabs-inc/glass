@@ -495,7 +495,14 @@ export const updateAgentMessage = internalMutation({
       fileId: v.optional(v.id("_storage")),
     }))),
     pendingEmailId: v.optional(v.id("pendingEmails")),
-    status: v.optional(v.union(v.literal("pending_send"), v.literal("processing"), v.literal("error"))),
+    policyChangeCaseId: v.optional(v.id("policyChangeCases")),
+    status: v.optional(v.union(
+      v.literal("pending_send"),
+      v.literal("processing"),
+      v.literal("error"),
+      v.literal("draft_email"),
+      v.literal("cancelled"),
+    )),
   },
   handler: async (ctx, args) => {
     await ctx.db.patch(args.id, {
@@ -510,7 +517,27 @@ export const updateAgentMessage = internalMutation({
       toolCalls: args.toolCalls,
       attachments: args.attachments,
       pendingEmailId: args.pendingEmailId,
+      policyChangeCaseId: args.policyChangeCaseId,
     });
+  },
+});
+
+export const attachPendingEmailToAgentMessage = internalMutation({
+  args: {
+    id: v.id("threadMessages"),
+    pendingEmailId: v.id("pendingEmails"),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.id, {
+      pendingEmailId: args.pendingEmailId,
+    });
+  },
+});
+
+export const deleteMessageInternal = internalMutation({
+  args: { id: v.id("threadMessages") },
+  handler: async (ctx, args) => {
+    await ctx.db.delete(args.id);
   },
 });
 
@@ -950,8 +977,15 @@ export const insertEmailMessage = internalMutation({
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
     referencedQuoteIds: v.optional(v.array(v.id("policies"))),
     resendEmailId: v.optional(v.string()),
-    status: v.optional(v.union(v.literal("processing"), v.literal("error"), v.literal("pending_send"))),
+    status: v.optional(v.union(
+      v.literal("processing"),
+      v.literal("error"),
+      v.literal("pending_send"),
+      v.literal("draft_email"),
+      v.literal("cancelled"),
+    )),
     error: v.optional(v.string()),
+    pendingEmailId: v.optional(v.id("pendingEmails")),
   },
   handler: async (ctx, args) => {
     const messageDocId = await ctx.db.insert("threadMessages", {
@@ -975,11 +1009,43 @@ export const insertEmailMessage = internalMutation({
       referencedQuoteIds: args.referencedQuoteIds,
       status: args.status,
       error: args.error,
+      pendingEmailId: args.pendingEmailId,
     });
 
     // Update the thread's lastMessageAt
     await ctx.db.patch(args.threadId, { lastMessageAt: Date.now() });
 
     return messageDocId;
+  },
+});
+
+export const updateEmailMessage = internalMutation({
+  args: {
+    id: v.id("threadMessages"),
+    content: v.optional(v.string()),
+    toAddresses: v.optional(v.array(v.string())),
+    ccAddresses: v.optional(v.array(v.string())),
+    bccAddresses: v.optional(v.array(v.string())),
+    subject: v.optional(v.string()),
+    responseMessageId: v.optional(v.string()),
+    attachments: v.optional(v.array(v.object({
+      filename: v.string(),
+      contentType: v.string(),
+      size: v.number(),
+      fileId: v.optional(v.id("_storage")),
+    }))),
+    referencedPolicyIds: v.optional(v.array(v.id("policies"))),
+    referencedQuoteIds: v.optional(v.array(v.id("policies"))),
+    pendingEmailId: v.optional(v.id("pendingEmails")),
+    status: v.optional(v.union(v.literal("draft_email"), v.literal("cancelled"))),
+    clearStatus: v.optional(v.boolean()),
+    error: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { id, clearStatus, ...patch } = args;
+    await ctx.db.patch(id, patch);
+    if (clearStatus) {
+      await ctx.db.patch(id, { status: undefined });
+    }
   },
 });

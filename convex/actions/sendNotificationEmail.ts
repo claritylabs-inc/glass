@@ -103,6 +103,7 @@ export const send = internalAction({
       ctaLabel: "View in Glass",
       branding,
       siteUrl,
+      threadLabel: await resolveThreadLabel(ctx, notification),
     });
 
     // Send to all recipients
@@ -133,6 +134,32 @@ export const send = internalAction({
     }
   },
 });
+
+async function resolveThreadLabel(ctx: any, notification: any): Promise<string | undefined> {
+  for (const candidate of [notification.actionPayload, notification.sourceRef]) {
+    if (!candidate || typeof candidate !== "object") continue;
+    const value = candidate as Record<string, unknown>;
+    if (typeof value.threadTitle === "string" && value.threadTitle.trim()) {
+      return value.threadTitle.trim();
+    }
+    if (typeof value.threadId !== "string" || !value.threadId.trim()) continue;
+    try {
+      const thread = await ctx.runQuery((internal as any).threads.getInternal, {
+        id: value.threadId,
+      });
+      if (
+        thread?.orgId === notification.orgId &&
+        typeof thread.title === "string" &&
+        thread.title.trim()
+      ) {
+        return thread.title;
+      }
+    } catch {
+      // Notification payloads are loose, so stale or invalid thread refs are ignored.
+    }
+  }
+  return undefined;
+}
 
 function buildCtaUrl(
   actionType: string | undefined,

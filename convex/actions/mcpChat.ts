@@ -12,9 +12,17 @@ import {
 } from "../lib/aiUtils";
 import { buildIntelligenceContext } from "../lib/agentPrompts";
 import { classifyPromptInjection, enforceInputLimits } from "../lib/security";
+import {
+  buildTitlePromptContent,
+  fallbackTitle,
+  normalizeGeneratedTitle,
+  TITLE_SYSTEM_PROMPT,
+} from "./threadTitle";
 
 /**
- * Simplified chat action for MCP — no streaming, no email sending.
+ * Simplified chat action for MCP — no streaming. Programmatic email draft/send
+ * operations are exposed as explicit MCP tools so clients can update the same
+ * durable draft artifact instead of relying on free-form chat approval.
  * Creates/reuses a thread, generates a response, persists it, and returns.
  */
 export const run = internalAction({
@@ -151,21 +159,20 @@ MCP MODE:
         const { text: titleText } = await generateText({
           model: await getModelForOrg(ctx, args.orgId, "summary"),
           providerOptions: getProviderOptionsForTask("summary"),
-          maxOutputTokens: 12,
-          system:
-            "You are a title generator. Given a user question and an assistant reply, output a short 2-4 word title that captures the topic. Rules:\n- Output ONLY the title, no quotes, no punctuation, no explanation\n- Use title case\n- Examples: \"GL Coverage Limits\", \"Cyber Liability Quotes\", \"Workers Comp App\", \"Renewal Timeline\"",
+          maxOutputTokens: 16,
+          system: TITLE_SYSTEM_PROMPT,
           messages: [
             {
               role: "user",
-              content: `User: ${args.message}\n\nAssistant: ${content.slice(0, 200)}`,
+              content: buildTitlePromptContent({
+                userMessage: args.message,
+                assistantReply: content,
+              }),
             },
           ],
         });
-        const title = titleText
-          .trim()
-          .replace(/^["']|["']$/g, "")
-          .split("\n")[0];
-        if (title && title.length <= 40) {
+        const title = normalizeGeneratedTitle(titleText) ?? fallbackTitle(args.message);
+        if (title) {
           await ctx.runMutation(internal.threads.updateTitleInternal, {
             threadId,
             title,

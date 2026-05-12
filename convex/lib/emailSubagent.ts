@@ -3,7 +3,7 @@
 import { generateText, stepCountIs, tool } from "ai";
 import { z } from "zod";
 import { internal } from "../_generated/api";
-import type { Id } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { getModelForOrg, getProviderOptionsForTask } from "./models";
 import { sendResendEmail, getAgentDomain } from "./resend";
@@ -13,6 +13,7 @@ import { COI_GENERATION_FAILED_MESSAGE } from "./actionFailures";
 import { buildGlassEmailIconHtml } from "./emailTemplate";
 
 const MAX_EMAIL_SIZE = 38 * 1024 * 1024; // Resend limit is 40MB after Base64 encoding.
+const GLASS_PUBLIC_URL = "https://glass.claritylabs.inc";
 
 export type EmailAttachmentMeta = {
   filename: string;
@@ -24,6 +25,7 @@ export type EmailAttachmentMeta = {
 export type EmailSubagentResult = {
   status: "draft" | "needs_confirmation" | "pending" | "sent" | "error";
   responseBody: string;
+  confirmationReason?: string;
   responseTo?: string;
   responseCc?: string[];
   responseBcc?: string[];
@@ -44,7 +46,7 @@ type EmailExpertContext = {
   orgId: Id<"organizations">;
   threadId?: Id<"threads">;
   chatMessageId?: Id<"threadMessages">;
-  channel: "web" | "email" | "imessage";
+  channel: "web" | "email" | "imessage" | "mcp";
   fromHeader: string;
   agentAddress: string;
   brokerBranding?: BrokerBranding;
@@ -77,7 +79,7 @@ export function getEmailAgentFromName(broker?: BrokerBranding): string {
 }
 
 export function buildEmailSignature(agentEmail: string, broker?: BrokerBranding): { text: string; html: string } {
-  const poweredByUrl = process.env.SITE_URL ?? "https://glass.claritylabs.inc";
+  const poweredByUrl = GLASS_PUBLIC_URL;
   const hasBroker = !!(broker?.name || broker?.agentDisplayName);
   const agentName = getEmailAgentFromName(broker);
 
@@ -98,7 +100,7 @@ export function buildEmailSignature(agentEmail: string, broker?: BrokerBranding)
     `<p style="font-size:13px;margin:4px 0 2px">${logoHtml}<strong>${agentName}</strong></p>`,
     `<p style="font-size:12px;color:#999;margin:0">${agentEmail}</p>`,
     ...(hasBroker
-      ? [`<p style="font-size:12px;margin:12px 0 0"><a href="${poweredByUrl}" style="color:#A0D2FA;text-decoration:none">powered by Glass from Clarity Labs</a></p>`]
+      ? [`<p style="font-size:12px;margin:6px 0 0"><a href="${poweredByUrl}" style="color:#A0D2FA;text-decoration:none">powered by Glass from Clarity Labs</a></p>`]
       : []),
   ].join("\n");
 
@@ -197,6 +199,153 @@ function buildHtmlBody(body: string, signature: { html: string }): string {
     .join("\n") + signature.html;
 }
 
+function buildEmailPayload(params: {
+  fromHeader: string;
+  to: string;
+  cc: string[];
+  bcc: string[];
+  subject: string;
+  body: string;
+  signature: { text: string; html: string };
+  inReplyTo?: string;
+  references?: string;
+}) {
+  const plainText = stripMarkdown(params.body) + params.signature.text;
+  const html = buildHtmlBody(params.body, { html: params.signature.html });
+  const payload: Record<string, unknown> = {
+    from: params.fromHeader,
+    to: params.to,
+    subject: params.subject,
+    text: plainText,
+    html,
+  };
+  if (params.cc.length > 0) payload.cc = params.cc;
+  if (params.bcc.length > 0) payload.bcc = params.bcc;
+  const headers: Record<string, string> = {};
+  if (params.inReplyTo) headers["In-Reply-To"] = params.inReplyTo;
+  if (params.references ?? params.inReplyTo) {
+    headers.References = params.references ?? params.inReplyTo!;
+  }
+  if (Object.keys(headers).length > 0) payload.headers = headers;
+  return payload;
+}
+
+export async function upsertEmailDraftArtifact(
+  ctx: ActionCtx,
+  context: EmailExpertContext,
+  params: {
+    to: string;
+    cc: string[];
+    bcc: string[];
+    subject: string;
+    body: string;
+    attachments: EmailAttachmentMeta[];
+    referencedPolicyIds?: Id<"policies">[];
+    referencedQuoteIds?: Id<"policies">[];
+  },
+): Promise<Id<"pendingEmails"> | undefined> {
+  if (!["web", "mcp"].includes(context.channel) || !context.threadId) return undefined;
+
+  const signature = buildEmailSignature(context.agentAddress, context.brokerBranding);
+  const emailPayload = buildEmailPayload({
+    fromHeader: context.fromHeader,
+    to: params.to,
+    cc: params.cc,
+    bcc: params.bcc,
+    subject: params.subject,
+    body: params.body,
+    signature,
+    inReplyTo: context.inReplyTo,
+    references: context.references,
+  });
+
+  const existing = await ctx.runQuery(internal.pendingEmails.findDraftByThread, {
+    threadId: context.threadId,
+  });
+
+  if (existing) {
+    await ctx.runMutation(internal.pendingEmails.updateDraftInternal, {
+      id: existing._id,
+      emailPayload: JSON.stringify(emailPayload),
+      recipientEmail: params.to,
+      ccAddresses: params.cc.length > 0 ? params.cc : undefined,
+      bccAddresses: params.bcc.length > 0 ? params.bcc : undefined,
+      subject: params.subject,
+      emailBody: params.body,
+      attachments: params.attachments.length > 0 ? params.attachments : undefined,
+      referencedPolicyIds: params.referencedPolicyIds,
+      referencedQuoteIds: params.referencedQuoteIds,
+    });
+    if (existing.threadMessageId) {
+      await ctx.runMutation(internal.threads.updateEmailMessage, {
+        id: existing.threadMessageId,
+        content: params.body,
+        toAddresses: [params.to],
+        ccAddresses: params.cc.length > 0 ? params.cc : undefined,
+        bccAddresses: params.bcc.length > 0 ? params.bcc : undefined,
+        subject: params.subject,
+        attachments: params.attachments.length > 0 ? params.attachments : undefined,
+        referencedPolicyIds: params.referencedPolicyIds,
+        referencedQuoteIds: params.referencedQuoteIds,
+        pendingEmailId: existing._id,
+        status: "draft_email",
+      });
+    }
+    if (context.chatMessageId) {
+      await ctx.runMutation(internal.threads.attachPendingEmailToAgentMessage, {
+        id: context.chatMessageId,
+        pendingEmailId: existing._id,
+      });
+    }
+    return existing._id;
+  }
+
+  const pendingEmailId = await ctx.runMutation(internal.pendingEmails.create, {
+    orgId: context.orgId,
+    threadId: context.threadId,
+    emailPayload: JSON.stringify(emailPayload),
+    scheduledSendTime: 0,
+    recipientEmail: params.to,
+    ccAddresses: params.cc.length > 0 ? params.cc : undefined,
+    bccAddresses: params.bcc.length > 0 ? params.bcc : undefined,
+    subject: params.subject,
+    emailBody: params.body,
+    attachments: params.attachments.length > 0 ? params.attachments : undefined,
+    referencedPolicyIds: params.referencedPolicyIds,
+    referencedQuoteIds: params.referencedQuoteIds,
+    status: "draft",
+  });
+  const draftMessageId = await ctx.runMutation(internal.threads.insertEmailMessage, {
+    threadId: context.threadId,
+    orgId: context.orgId,
+    role: "agent",
+    fromEmail: context.agentAddress,
+    fromName: getEmailAgentFromName(context.brokerBranding),
+    content: params.body,
+    toAddresses: [params.to],
+    ccAddresses: params.cc.length > 0 ? params.cc : undefined,
+    bccAddresses: params.bcc.length > 0 ? params.bcc : undefined,
+    subject: params.subject,
+    attachments: params.attachments.length > 0 ? params.attachments : undefined,
+    referencedPolicyIds: params.referencedPolicyIds,
+    referencedQuoteIds: params.referencedQuoteIds,
+    status: "draft_email",
+    pendingEmailId,
+  });
+  await ctx.runMutation(internal.pendingEmails.setThreadMessage, {
+    id: pendingEmailId,
+    threadMessageId: draftMessageId,
+  });
+  if (context.chatMessageId) {
+    await ctx.runMutation(internal.threads.attachPendingEmailToAgentMessage, {
+      id: context.chatMessageId,
+      pendingEmailId,
+    });
+  }
+
+  return pendingEmailId;
+}
+
 export async function toResendAttachments(
   ctx: ActionCtx,
   attachments: EmailAttachmentMeta[],
@@ -231,6 +380,18 @@ function uniqueAttachments(attachments: EmailAttachmentMeta[]): EmailAttachmentM
   return result;
 }
 
+function normalizeAttachmentText(value: string | undefined): string {
+  return (value ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function isCoiDeliveryRequest(request: string): boolean {
+  return /\b(coi|certificate of insurance|insurance certificate)\b/i.test(request);
+}
+
+function explicitlyRequestsOriginalPolicy(request: string): boolean {
+  return /\b(original|full|complete|entire|copy of (?:the )?policy|policy pdf|policy document|declarations?|wording|specimen)\b/i.test(request);
+}
+
 export function buildEmailExpertTool(
   ctx: ActionCtx,
   params: EmailExpertContext,
@@ -253,7 +414,9 @@ export function buildEmailExpertTool(
         fileId: z.string().optional(),
         filename: z.string().optional(),
         certificateHolder: z.string().optional(),
-      })).optional().describe("Documents the user asked to attach."),
+      })).optional().describe(
+        "Documents the user explicitly asked to attach. For certificate/COI requests, use kind 'coi' only; do not include original_policy unless the user separately asked for the original/full policy PDF.",
+      ),
     }),
     execute: async (input): Promise<EmailSubagentResult> => {
       const result = await runEmailSubagent(ctx, params, input);
@@ -289,6 +452,11 @@ async function runEmailSubagent(
   const allowedAttachmentIds = new Set(
     (context.availableAttachments ?? []).map((att) => String(att.fileId)),
   );
+  const attachedOriginalPolicyIds = new Set<string>();
+  const attachedUploadedFileIds = new Set<string>();
+  const attachedCoiKeys = new Set<string>();
+  const suppressOriginalPolicyForCoiRequest =
+    isCoiDeliveryRequest(input.request) && !explicitlyRequestsOriginalPolicy(input.request);
 
   const addAttachment = (attachment: EmailAttachmentMeta) => {
     preparedAttachments.push(attachment);
@@ -296,11 +464,18 @@ async function runEmailSubagent(
 
   const attachOriginalPolicy = async (policyId: string): Promise<string> => {
     sourcePolicyIds.add(policyId);
+    if (suppressOriginalPolicyForCoiRequest) {
+      return "Skipped original policy attachment because this request only asks for the generated COI.";
+    }
+    if (attachedOriginalPolicyIds.has(policyId)) {
+      return "Original policy is already attached.";
+    }
     const policy = await ctx.runQuery(internal.policies.getInternal, {
       id: policyId as Id<"policies">,
     });
     if (!policy || policy.orgId !== context.orgId) return "Policy not found.";
     if (!policy.fileId) return "That policy does not have an original file available.";
+    attachedOriginalPolicyIds.add(policyId);
     addAttachment({
       filename: policy.fileName ?? `${policy.policyNumber ?? "policy"}.pdf`,
       contentType: "application/pdf",
@@ -314,14 +489,22 @@ async function runEmailSubagent(
     if (!allowedAttachmentIds.has(fileId)) {
       return "That uploaded file is not available in this conversation.";
     }
+    if (attachedUploadedFileIds.has(fileId)) {
+      return "Uploaded file is already attached.";
+    }
     const found = (context.availableAttachments ?? []).find((att) => String(att.fileId) === fileId);
     if (!found) return "Uploaded file not found.";
+    attachedUploadedFileIds.add(fileId);
     addAttachment({ ...found, filename: filename ?? found.filename });
     return `Attached uploaded file: ${filename ?? found.filename}`;
   };
 
   const generateCoiAttachment = async (policyId: string, certificateHolder?: string): Promise<string> => {
     sourcePolicyIds.add(policyId);
+    const coiKey = `${policyId}:${normalizeAttachmentText(certificateHolder)}`;
+    if (attachedCoiKeys.has(coiKey)) {
+      return "Generated COI is already attached.";
+    }
     if (context.autoGenerateCoi === false) {
       if (context.coiHandling === "broker") return "COI auto-generation is off. Contact the broker before attaching a COI.";
       if (context.coiHandling === "member") return "COI auto-generation is off. Confirm the org's insurance contact should handle this COI.";
@@ -341,6 +524,7 @@ async function runEmailSubagent(
       return COI_GENERATION_FAILED_MESSAGE;
     }
     if (!generated) return COI_GENERATION_FAILED_MESSAGE;
+    attachedCoiKeys.add(coiKey);
     addAttachment({
       filename: "certificate-of-insurance.pdf",
       contentType: "application/pdf",
@@ -364,7 +548,7 @@ async function runEmailSubagent(
   const policies = await ctx.runQuery(internal.policies.listAllInternal, {
     orgId: context.orgId,
   });
-  const availablePolicies = policies.slice(0, 25).map((policy) => ({
+  const availablePolicies = (policies as Doc<"policies">[]).slice(0, 25).map((policy) => ({
     id: policy._id,
     insured: policy.insuredName,
     carrier: policy.security ?? policy.carrier,
@@ -411,6 +595,21 @@ async function runEmailSubagent(
 
     if (uncertainty.length > 0 || (!autoSend && !approvedToSend)) {
       const status = uncertainty.length > 0 ? "needs_confirmation" : "draft";
+      const referencedPolicyIds = sourcePolicyIds.size > 0
+        ? ([...sourcePolicyIds] as Id<"policies">[])
+        : undefined;
+      const draftPendingEmailId = to && subject && body
+        ? await upsertEmailDraftArtifact(ctx, context, {
+            to,
+            cc,
+            bcc,
+            subject,
+            body,
+            attachments,
+            referencedPolicyIds,
+            referencedQuoteIds: context.referencedQuoteIds,
+          })
+        : undefined;
       finalResult = {
         status,
         responseBody: formatDraft({
@@ -422,11 +621,15 @@ async function runEmailSubagent(
           attachments,
           reason: uncertainty.length > 0 ? uncertainty.join(" ") : undefined,
         }),
+        confirmationReason: uncertainty.length > 0
+          ? uncertainty.join(" ")
+          : "Ready to send?",
         responseTo: to ?? undefined,
         responseCc: cc.length > 0 ? cc : undefined,
         responseBcc: bcc.length > 0 ? bcc : undefined,
         subject,
         emailBody: body,
+        pendingEmailId: draftPendingEmailId,
         attachments,
       };
       return finalResult;
@@ -435,21 +638,17 @@ async function runEmailSubagent(
     if (!to) throw new Error("Recipient email is required before sending.");
     const sendTo = to;
     const signature = buildEmailSignature(context.agentAddress, context.brokerBranding);
-    const plainText = stripMarkdown(body) + signature.text;
-    const html = buildHtmlBody(body, { html: signature.html });
-    const emailPayload: Record<string, unknown> = {
-      from: context.fromHeader,
+    const emailPayload = buildEmailPayload({
+      fromHeader: context.fromHeader,
       to: sendTo,
+      cc,
+      bcc,
       subject,
-      text: plainText,
-      html,
-    };
-    if (cc.length > 0) emailPayload.cc = cc;
-    if (bcc.length > 0) emailPayload.bcc = bcc;
-    const headers: Record<string, string> = {};
-    if (context.inReplyTo) headers["In-Reply-To"] = context.inReplyTo;
-    if (context.references ?? context.inReplyTo) headers.References = context.references ?? context.inReplyTo!;
-    if (Object.keys(headers).length > 0) emailPayload.headers = headers;
+      body,
+      signature,
+      inReplyTo: context.inReplyTo,
+      references: context.references,
+    });
 
     const sendDelay = context.emailSendDelay ?? 5;
     if (sendDelay > 0 && context.threadId) {
@@ -542,6 +741,8 @@ Be careful by default:
 - If the subject, body, or requested attachments are ambiguous, do not send.
 - If auto-send is disabled, draft first unless the caller says the user explicitly approved this exact email.
 - Attach original policy PDFs or generated COIs when requested. Never claim an attachment is included unless you used an attachment tool or it was already attached.
+- For certificate/COI delivery requests, attach only the generated COI unless the request separately asks for the original/full policy PDF too.
+- Do not call an attachment tool for a document that is already listed in preparedAttachments.
 - Use concise professional formatting. Prefer 1-3 short paragraphs or a short bullet list.
 - Include only the policy facts that are directly useful to the recipient. Avoid exhaustive coverage memos unless explicitly requested.
 - Do not end with open-ended offers like "If you want, I can..." unless a necessary next step or clarification is required.
@@ -563,6 +764,12 @@ Call send_or_draft_email exactly once after preparing any requested attachments.
           bcc: defaultBcc,
           approvedToSend: input.approvedToSend === true,
         },
+        requestedAttachments: input.attachments ?? [],
+        preparedAttachments: preparedAttachments.map((att) => ({
+          filename: att.filename,
+          contentType: att.contentType,
+          fileId: att.fileId,
+        })),
         conversationContext: context.conversationContext,
         availablePolicies,
         availableUploadedAttachments: context.availableAttachments?.map((att) => ({

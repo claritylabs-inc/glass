@@ -116,11 +116,11 @@ export function PolicyPreview({ id, page, citedSections, citedCoverageNames, onH
   const hasMoreTypes = types.length > 2;
 
   return (
-    <div className="space-y-5">
+    <div className="min-w-0 space-y-5 overflow-x-hidden">
       {/* Summary - at top, always expanded */}
       {policy.summary && (
-        <div>
-          <p className="text-body-sm text-foreground/90 leading-relaxed">{policy.summary}</p>
+        <div className="min-w-0">
+          <p className="break-words text-body-sm leading-relaxed text-foreground/90">{policy.summary}</p>
         </div>
       )}
 
@@ -130,10 +130,10 @@ export function PolicyPreview({ id, page, citedSections, citedCoverageNames, onH
       )}
 
       {/* Policy Details with Labels */}
-      <div className="space-y-3">
+      <div className="min-w-0 space-y-3">
         {/* Coverage Types */}
         {types.length > 0 && (
-          <div>
+          <div className="min-w-0">
             <p className="text-xs text-muted-foreground/50 mb-1.5">Coverage types</p>
             <div className="flex flex-wrap items-center gap-2">
               {visibleTypes.map((t) => (
@@ -152,7 +152,7 @@ export function PolicyPreview({ id, page, citedSections, citedCoverageNames, onH
 
         {/* Policy Period */}
         {(policy.effectiveDate || policy.expirationDate) && (
-          <div>
+          <div className="min-w-0">
             <p className="text-xs text-muted-foreground/50 mb-1">Policy period</p>
             <p className="text-body-sm text-muted-foreground">
               {policy.effectiveDate ? dayjs(policy.effectiveDate).format("MMM D, YYYY") : "—"}
@@ -164,9 +164,9 @@ export function PolicyPreview({ id, page, citedSections, citedCoverageNames, onH
 
         {/* Insured */}
         {policy.insuredName && (
-          <div>
+          <div className="min-w-0">
             <p className="text-xs text-muted-foreground/50 mb-1">Insured</p>
-            <p className="text-body-sm text-muted-foreground">
+            <p className="break-words text-body-sm text-muted-foreground">
               {policy.insuredName}
             </p>
           </div>
@@ -257,19 +257,32 @@ function CoverageGroup({ coverages, citedCoverageNames }: {
     : coverages;
   const hasMore = hasCoverageCitations && cited.length < coverages.length;
   const visible = showAll ? coverages : cited;
+  const visibleWithNames = visible.map((cov, index) => {
+    const trimmedName = cov.name?.trim();
+    if (trimmedName) return cov;
+
+    const previousNamed = visible
+      .slice(0, index)
+      .findLast((candidate) => candidate.name?.trim());
+
+    return {
+      ...cov,
+      name: previousNamed?.name?.trim() || "Coverage",
+    };
+  });
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-2">
-        <p className="text-body-sm font-medium text-muted-foreground/60">
+    <div className="min-w-0">
+      <div className="mb-2 flex min-w-0 items-center justify-between gap-3">
+        <p className="min-w-0 text-body-sm font-medium text-muted-foreground/60">
           Coverages
           {hasMore && (
             <span className="text-muted-foreground/40 font-normal ml-1">{cited.length} of {coverages.length}</span>
           )}
         </p>
       </div>
-      <div className="border border-foreground/8 rounded-lg overflow-hidden divide-y divide-foreground/6 bg-white">
-        {visible.map((cov, i) => (
+      <div className="min-w-0 divide-y divide-foreground/6 overflow-hidden rounded-lg border border-foreground/8 bg-white">
+        {visibleWithNames.map((cov, i) => (
           <CoverageRow key={i} name={cov.name} limit={cov.limit} deductible={cov.deductible} />
         ))}
       </div>
@@ -301,9 +314,9 @@ function SectionGroup({ label, count, totalCount, children, allChildren }: {
     : visibleChildren;
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-2">
-        <p className="text-body-sm font-medium text-muted-foreground/60">
+    <div className="min-w-0">
+      <div className="mb-2 flex min-w-0 items-center justify-between gap-3">
+        <p className="min-w-0 text-body-sm font-medium text-muted-foreground/60">
           {label}
           {hasMore && (
             <span className="text-muted-foreground/40 font-normal ml-1">{count} of {totalCount}</span>
@@ -312,7 +325,7 @@ function SectionGroup({ label, count, totalCount, children, allChildren }: {
         <button
           type="button"
           onClick={() => setForceOpen(forceOpen === true ? false : true)}
-          className="text-body-sm text-muted-foreground/40 hover:text-muted-foreground/60 transition-colors cursor-pointer"
+          className="shrink-0 text-body-sm text-muted-foreground/40 hover:text-muted-foreground/60 transition-colors cursor-pointer"
         >
           {forceOpen === true ? "Collapse all" : "Expand all"}
         </button>

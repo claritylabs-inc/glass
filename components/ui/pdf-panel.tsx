@@ -10,7 +10,7 @@ const MIN_WIDTH = 360;
 const MAX_WIDTH = 900;
 const DEFAULT_WIDTH = 540;
 
-export function PdfPanel() {
+export function PdfPanel({ fitContainer = false }: { fitContainer?: boolean }) {
   const { isPdfOpen, closePdf, fileUrl, currentPage, navigateToPage, setNumPages, highlightedPage } = usePdf();
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   const [isDraggingState, setIsDraggingState] = useState(false);
@@ -72,27 +72,29 @@ export function PdfPanel() {
       {isPdfOpen && (
         <motion.div
           layout
-          initial={{ width: 0 }}
-          animate={{ width }}
-          exit={{ width: 0 }}
+          initial={fitContainer ? false : { width: 0 }}
+          animate={fitContainer ? { width: "100%" } : { width }}
+          exit={fitContainer ? undefined : { width: 0 }}
           transition={isDraggingState ? { duration: 0 } : { duration: 0.5, ease: EASE }}
-          className="flex shrink-0 overflow-hidden h-full relative"
+          className={`flex h-full overflow-hidden relative ${fitContainer ? "min-w-0 w-full max-w-full flex-1" : "shrink-0"}`}
         >
           {/* Resize handle */}
-          <div
-            onPointerDown={onPointerDown}
-            className="absolute left-0 top-0 bottom-0 z-10 w-1 cursor-col-resize group hover:bg-foreground/8 active:bg-foreground/12 transition-colors"
-          >
-            <div className="absolute left-0 top-0 bottom-0 w-[3px] -translate-x-[1px] " />
-          </div>
+          {!fitContainer && (
+            <div
+              onPointerDown={onPointerDown}
+              className="absolute left-0 top-0 bottom-0 z-10 w-1 cursor-col-resize group hover:bg-foreground/8 active:bg-foreground/12 transition-colors"
+            >
+              <div className="absolute left-0 top-0 bottom-0 w-[3px] -translate-x-[1px]" />
+            </div>
+          )}
 
           <motion.div
             initial={{ opacity: 0, x: 40 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 40 }}
             transition={{ duration: 0.4, ease: EASE, delay: 0.05 }}
-            className="flex flex-col flex-1 min-h-0 border-l border-foreground/6 bg-background"
-            style={{ width }}
+            className="flex min-w-0 max-w-full flex-1 flex-col min-h-0 border-l border-foreground/6 bg-background"
+            style={fitContainer ? undefined : { width }}
           >
             <PdfViewer
               fileUrl={fileUrl}

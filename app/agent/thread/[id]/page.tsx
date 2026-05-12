@@ -1,17 +1,16 @@
 "use client";
 
 import { use, useState, useMemo, useRef, useEffect, useCallback } from "react";
-import { useQuery, useMutation } from "convex/react";
+import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { AppShell } from "@/components/app-shell";
 import { PillButton } from "@/components/ui/pill-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ModeBadge } from "@/components/mode-badge";
 import { splitQuotedReply, QuotedContent } from "@/components/conversation-message";
 import { toast } from "sonner";
-import { Loader2, Archive, ArchiveRestore, FileText, Check, ClipboardList, Asterisk, Mail as MailIcon, MessageCircle, Paperclip, Download, Copy, Lock, RotateCcw, X } from "lucide-react";
+import { Loader2, Archive, ArchiveRestore, FileText, Check, ClipboardList, Asterisk, Mail as MailIcon, MessageCircle, Paperclip, Download, Copy, RotateCcw, X } from "lucide-react";
 import { EditableBreadcrumbTitle } from "@/components/editable-breadcrumb-title";
 import { usePdf } from "@/components/pdf-context";
 import { usePresence } from "@/hooks/use-presence";
@@ -21,7 +20,6 @@ import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
 import { CollapsibleReasoning } from "@/components/collapsible-reasoning";
 import Link from "next/link";
 import { ProseMarkdown } from "@/components/prose-markdown";
-import { PretextText } from "@/components/pretext-text";
 import dayjs from "dayjs";
 import { NewChatEmptyState } from "@/components/new-chat-empty-state";
 
@@ -59,9 +57,16 @@ export type ThreadMessage = {
   citedSourceSpanIds?: string[];
   usedTools?: string[];
   toolCalls?: { name: string; input?: string }[];
-  status?: "processing" | "error" | "pending_send";
+  status?: "processing" | "error" | "pending_send" | "draft_email" | "cancelled";
   error?: string;
   pendingEmailId?: Id<"pendingEmails">;
+  policyChangeCaseId?: Id<"policyChangeCases">;
+};
+
+export type PolicyChangeAccess = {
+  canManage: boolean;
+  actorLabel: "broker" | "client";
+  brokerConnected: boolean;
 };
 
 const TOOL_DISPLAY_NAMES: Record<string, string> = {
@@ -73,6 +78,7 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
   generate_coi: "Generated COI",
   send_email: "Drafted email",
   email_expert: "Prepared email",
+  create_policy_change_request: "Created policy change request",
 };
 
 function formatToolInput(input?: string) {
@@ -91,38 +97,38 @@ function ToolCallCard({
   toolCall: { name: string; input?: string };
   index: number;
 }) {
-  const [isOpen, setIsOpen] = useState(true);
+  const [isOpen, setIsOpen] = useState(false);
   const displayName = TOOL_DISPLAY_NAMES[toolCall.name] ?? toolCall.name;
 
   return (
-    <div className="overflow-hidden rounded-lg border border-foreground/8 bg-card shadow-sm shadow-black/[0.02]">
+    <div className="overflow-hidden rounded-md border border-foreground/6 bg-foreground/[0.015]">
       <Button
         type="button"
         variant="ghost"
         onClick={() => setIsOpen((value) => !value)}
         aria-expanded={isOpen}
-        className="h-auto w-full justify-between rounded-none px-3 py-2 text-left hover:bg-foreground/[0.03] dark:hover:bg-foreground/[0.06]"
+        className="h-7 w-full justify-between rounded-none px-2.5 py-1 text-left hover:bg-foreground/[0.03] dark:hover:bg-foreground/[0.06]"
       >
         <span className="flex min-w-0 items-center gap-2">
           <span className="min-w-0">
-            <span className="block truncate text-[13px] font-medium text-foreground/85">{displayName}</span>
+            <span className="block truncate text-[11px] font-medium text-muted-foreground/65">{displayName}</span>
           </span>
         </span>
         <span className="ml-3 flex shrink-0 items-center gap-2">
-          <Badge className="h-5 gap-1 border-success/20 bg-success/10 px-1.5 text-[11px] font-medium text-success" variant="outline">
+          <Badge className="h-4 gap-1 border-success/20 bg-success/10 px-1.5 text-[10px] font-medium text-success/75" variant="outline">
             Completed
           </Badge>
-          <span className="text-[11px] font-medium text-muted-foreground/45">
+          <span className="text-[10px] font-medium text-muted-foreground/35">
             {isOpen ? "Hide" : "Show"}
           </span>
         </span>
       </Button>
       {isOpen && (
-        <div className="border-t border-foreground/6 px-3 pb-3 pt-2">
-          <p className="mb-1.5 text-label-sm font-medium text-muted-foreground/45">
+        <div className="border-t border-foreground/6 px-2.5 pb-2.5 pt-2">
+          <p className="mb-1 text-[10px] font-medium text-muted-foreground/40">
             Parameters
           </p>
-          <pre className="max-h-64 overflow-auto rounded-md border border-foreground/8 bg-foreground/[0.025] p-3 font-mono text-[11px] leading-5 text-foreground/75 shadow-inner shadow-black/[0.015]">
+          <pre className="max-h-48 overflow-auto rounded border border-foreground/6 bg-background p-2 font-mono text-[10px] leading-4 text-foreground/70">
             <code className="whitespace-pre-wrap break-words">{formatToolInput(toolCall.input)}</code>
           </pre>
           <span className="sr-only">Tool call {index + 1}</span>
@@ -138,10 +144,59 @@ function ToolCallPanel({
   toolCalls: { name: string; input?: string }[];
 }) {
   return (
-    <div className="mb-3 ml-0.5 space-y-2">
+    <div className="mt-1.5 space-y-1.5">
       {toolCalls.map((toolCall, index) => (
         <ToolCallCard key={`${toolCall.name}-${index}`} toolCall={toolCall} index={index} />
       ))}
+    </div>
+  );
+}
+
+function MessageFooterActions({
+  refs,
+  citedSections,
+  citedCoverageNames,
+  toolCalls,
+  copyContent,
+  showToolCalls,
+  onToggleToolCalls,
+  rightAligned,
+}: {
+  refs: { type: "policy"; id: string; page?: number }[];
+  citedSections?: string[];
+  citedCoverageNames?: string[];
+  toolCalls: { name: string; input?: string }[];
+  copyContent?: string;
+  showToolCalls: boolean;
+  onToggleToolCalls: () => void;
+  rightAligned?: boolean;
+}) {
+  if (refs.length === 0 && toolCalls.length === 0 && !copyContent?.trim()) return null;
+
+  return (
+    <div className="mt-1.5 flex items-start gap-2">
+      <div className={`flex min-w-0 flex-1 flex-wrap items-start gap-1.5 ${rightAligned ? "justify-end" : ""}`}>
+        {refs.length > 0 && (
+          <ReferenceCardStrip
+            refs={refs}
+            citedSections={citedSections}
+            citedCoverageNames={citedCoverageNames}
+            rightAligned={rightAligned}
+          />
+        )}
+        {toolCalls.length > 0 && (
+          <button
+            type="button"
+            onClick={onToggleToolCalls}
+            aria-expanded={showToolCalls}
+            className="inline-flex h-6 items-center gap-1.5 rounded-full border border-foreground/8 bg-transparent px-2 text-[11px] font-medium text-muted-foreground/55 transition-colors hover:border-foreground/12 hover:bg-foreground/[0.03] hover:text-foreground/75"
+          >
+            <ClipboardList className="h-3 w-3" />
+            {toolCalls.length} tool{toolCalls.length === 1 ? "" : "s"}
+          </button>
+        )}
+      </div>
+      {copyContent?.trim() ? <CopyMessageButton content={copyContent} /> : null}
     </div>
   );
 }
@@ -159,8 +214,6 @@ function UnifiedThreadActions({
   const archiveThread = useMutation(api.threads.archive);
   const unarchiveThread = useMutation(api.threads.unarchive);
   const isArchived = !!thread.archivedAt;
-  const isEmail = thread.originChannel === "email";
-
   async function handleArchiveToggle() {
     try {
       if (isArchived) {
@@ -210,8 +263,6 @@ function UnifiedThreadActions({
 
   return (
     <>
-      <ModeBadge mode={isEmail ? "direct" : "chat"} />
-      <div className="w-px h-4 bg-foreground/10" />
       <PillButton size="compact" variant="icon" onClick={handleCopyThread} label="Copy thread">
         <Copy className="w-3.5 h-3.5" />
       </PillButton>
@@ -233,6 +284,137 @@ const markdownComponents = {
     return <a href={href} className="text-primary-light underline" target="_blank" rel="noopener noreferrer">{children}</a>;
   },
 };
+
+type EmailPayloadPreview = {
+  from?: string;
+  to?: string[];
+  cc?: string[];
+  bcc?: string[];
+  text?: string;
+  html?: string;
+};
+
+function normalizeEmailPayloadAddresses(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+  }
+  if (typeof value === "string" && value.trim().length > 0) {
+    return [value];
+  }
+  return [];
+}
+
+function parseEmailPayloadPreview(payload: string | undefined): EmailPayloadPreview | null {
+  if (!payload) return null;
+  try {
+    const parsed = JSON.parse(payload) as Record<string, unknown>;
+    return {
+      from: typeof parsed.from === "string" ? parsed.from : undefined,
+      to: normalizeEmailPayloadAddresses(parsed.to),
+      cc: normalizeEmailPayloadAddresses(parsed.cc),
+      bcc: normalizeEmailPayloadAddresses(parsed.bcc),
+      text: typeof parsed.text === "string" ? parsed.text : undefined,
+      html: typeof parsed.html === "string" ? parsed.html : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function formatEmailAddressList(addresses: string[] | undefined): string | null {
+  return addresses?.filter(Boolean).join(", ") || null;
+}
+
+function isSafeEmailPreviewUrl(value: string) {
+  try {
+    const url = new URL(value, window.location.origin);
+    return ["http:", "https:", "mailto:"].includes(url.protocol)
+      || value.startsWith("data:image/");
+  } catch {
+    return false;
+  }
+}
+
+function sanitizeEmailPreviewHtml(html: string | undefined): string | null {
+  if (!html || typeof window === "undefined") return null;
+  const document = new DOMParser().parseFromString(html, "text/html");
+  document.querySelectorAll("script, style, iframe, object, embed, link, meta").forEach((node) => node.remove());
+  document.body.querySelectorAll("*").forEach((element) => {
+    for (const attr of Array.from(element.attributes)) {
+      const name = attr.name.toLowerCase();
+      const value = attr.value;
+      if (name.startsWith("on") || name === "srcset") {
+        element.removeAttribute(attr.name);
+        continue;
+      }
+      if ((name === "href" || name === "src") && !isSafeEmailPreviewUrl(value)) {
+        element.removeAttribute(attr.name);
+        continue;
+      }
+      if (name === "style" && /\bexpression\s*\(|url\s*\(/i.test(value)) {
+        element.removeAttribute(attr.name);
+      }
+    }
+    if (element instanceof HTMLAnchorElement) {
+      element.target = "_blank";
+      element.rel = "noopener noreferrer";
+    }
+  });
+  return document.body.innerHTML;
+}
+
+function EmailBodyPreview({ html, text }: { html?: string; text: string }) {
+  const safeHtml = useMemo(() => sanitizeEmailPreviewHtml(html), [html]);
+
+  if (safeHtml) {
+    return (
+      <div
+        className="break-words text-body-sm leading-6 text-foreground/90 [overflow-wrap:anywhere] [&_a]:text-primary-light [&_a]:underline [&_img]:inline-block [&_img]:align-middle"
+        dangerouslySetInnerHTML={{ __html: safeHtml }}
+      />
+    );
+  }
+
+  return (
+    <div className="whitespace-pre-wrap break-words text-body-sm leading-6 text-foreground/90 [overflow-wrap:anywhere]">
+      {text}
+    </div>
+  );
+}
+
+function EmailHeaderRow({ label, value }: { label: string; value: string | null }) {
+  if (!value) return null;
+
+  return (
+    <>
+      <dt className="pt-0.5 text-[13px] font-medium leading-5 text-muted-foreground/55">{label}</dt>
+      <dd className="min-w-0 break-words text-[13px] leading-6 text-foreground/80">{value}</dd>
+    </>
+  );
+}
+
+function EmailHeaderAttachments({
+  attachments,
+  threadId,
+}: {
+  attachments: ThreadMessage["attachments"];
+  threadId: Id<"threads">;
+}) {
+  if (!attachments?.length) return null;
+
+  return (
+    <>
+      <dt className="pt-1.5 text-[13px] font-medium leading-5 text-muted-foreground/55">Attachments</dt>
+      <dd className="min-w-0">
+        <div className="flex flex-wrap gap-2">
+          {attachments.map((att, index) => (
+            <ThreadAttachmentChip key={index} attachment={att} threadId={threadId} />
+          ))}
+        </div>
+      </dd>
+    </>
+  );
+}
 
 /* ── Attachment chip for unified thread messages ── */
 function ThreadAttachmentChip({
@@ -282,32 +464,352 @@ function ThreadAttachmentChip({
 function EmailSummaryCard({
   message,
   onOpen,
+  compact = false,
+  isOpen = false,
 }: {
   message: ThreadMessage;
   onOpen?: (message: ThreadMessage) => void;
+  compact?: boolean;
+  isOpen?: boolean;
 }) {
+  const sendDraft = useAction(api.actions.sendPendingEmail.sendDraftNow);
+  const pendingEmail = useQuery(
+    api.pendingEmails.get,
+    message.pendingEmailId ? { id: message.pendingEmailId } : "skip",
+  );
+  const [isSending, setIsSending] = useState(false);
   const recipients = message.toAddresses?.length
     ? message.toAddresses.join(", ")
     : message.fromEmail ?? "Email";
   const preview = message.subject || message.content.split(/\n+/).find((line) => line.trim()) || "Email";
+  const label = message.status === "draft_email"
+    ? "Email draft"
+      : message.status === "cancelled"
+        ? "Email cancelled"
+        : message.role === "agent" ? "Email sent" : "Email received";
+  const canQuickSend = message.status === "draft_email" && pendingEmail?.status === "draft";
+  const reviewLabel = canQuickSend
+    ? "Review draft"
+    : message.status === "cancelled" || pendingEmail?.status === "cancelled"
+      ? "View cancelled email"
+      : "View sent email";
+
+  async function handleQuickSend(event: React.MouseEvent) {
+    event.stopPropagation();
+    if (!message.pendingEmailId) return;
+    setIsSending(true);
+    try {
+      const result = await sendDraft({ id: message.pendingEmailId });
+      toast.success(`Email sent to ${result.recipientEmail}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to send email");
+    } finally {
+      setIsSending(false);
+    }
+  }
 
   return (
-    <button
-      type="button"
-      onClick={() => onOpen?.(message)}
-      className="inline-flex max-w-[320px] items-center gap-2 rounded-md border border-foreground/8 bg-card px-2.5 py-2 text-left transition-colors hover:border-foreground/15 hover:bg-foreground/[0.03]"
-    >
-      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-foreground/[0.04]">
-        <MailIcon className="h-3.5 w-3.5 text-muted-foreground/50" />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-[11px] font-medium leading-4 text-muted-foreground/45">
-          Email {message.role === "agent" ? "sent" : "received"}
+    <div className={`${compact ? "mt-2" : ""} w-fit min-w-md max-w-xl overflow-hidden rounded-md border border-foreground/8 bg-card transition-colors hover:border-foreground/15 hover:bg-foreground/[0.025]`}>
+      <button
+        type="button"
+        onClick={() => onOpen?.(message)}
+        className="block w-full min-w-0 px-3 py-2.5 text-left"
+      >
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[11px] font-medium leading-4 text-muted-foreground/45">
+            {label}
+          </span>
+          <span className="block truncate text-[13px] font-medium leading-5 text-foreground/85">{preview}</span>
+          <span className="block truncate text-[11px] leading-4 text-muted-foreground/40">{recipients}</span>
         </span>
-        <span className="block truncate text-[12px] leading-4 text-foreground/80">{preview}</span>
-        <span className="block truncate text-[11px] leading-4 text-muted-foreground/40">{recipients}</span>
-      </span>
-    </button>
+      </button>
+      {isOpen ? null : (
+        <div className="flex items-center justify-end gap-1 border-t border-foreground/6 px-2 py-2">
+          <PillButton
+            type="button"
+            size="compact"
+            variant="ghost"
+            onClick={(event) => {
+              event.stopPropagation();
+              onOpen?.(message);
+            }}
+            className="text-muted-foreground/60"
+          >
+            {reviewLabel}
+          </PillButton>
+          {canQuickSend ? (
+            <PillButton
+              type="button"
+              size="compact"
+              variant="primary"
+              onClick={handleQuickSend}
+              disabled={isSending}
+            >
+              {isSending ? <Loader2 className="h-3 w-3 animate-spin" /> : <MailIcon className="h-3 w-3" />}
+              Send
+            </PillButton>
+          ) : null}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function formatPolicyChangeStatus(status?: string) {
+  if (!status) return "Request";
+  return status.replace(/_/g, " ");
+}
+
+function asRecordArray(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is Record<string, unknown> => !!item && typeof item === "object" && !Array.isArray(item))
+    : [];
+}
+
+function PolicyChangeSummaryCard({
+  caseId,
+  onOpen,
+  isOpen = false,
+}: {
+  caseId: Id<"policyChangeCases">;
+  onOpen?: (caseId: Id<"policyChangeCases">) => void;
+  isOpen?: boolean;
+}) {
+  const detail = useQuery(api.policyChanges.getCaseDetail, { caseId });
+  const changeCase = detail?.case;
+  const title = changeCase?.summary ?? "Policy change request";
+  const status = formatPolicyChangeStatus(changeCase?.status);
+  const missingInfo = asRecordArray(changeCase?.missingInfoQuestions).length;
+  const validationIssues = asRecordArray(changeCase?.validationIssues).length;
+
+  return (
+    <div className={`w-fit min-w-md max-w-xl overflow-hidden rounded-md border bg-card transition-colors ${
+      isOpen ? "border-foreground/18" : "border-foreground/8 hover:border-foreground/15 hover:bg-foreground/[0.025]"
+    }`}>
+      <button
+        type="button"
+        onClick={() => onOpen?.(caseId)}
+        className="block w-full min-w-0 px-3 py-2.5 text-left"
+      >
+        <span className="block truncate text-[11px] font-medium leading-4 text-muted-foreground/45">
+          Policy change request
+        </span>
+        <span className="block truncate text-[13px] font-medium leading-5 text-foreground/85">
+          {title}
+        </span>
+        <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] leading-4 text-muted-foreground/40">
+          <span className="capitalize">{status}</span>
+          {missingInfo > 0 ? <span>{missingInfo} question{missingInfo === 1 ? "" : "s"}</span> : null}
+          {validationIssues > 0 ? <span>{validationIssues} validation issue{validationIssues === 1 ? "" : "s"}</span> : null}
+        </span>
+      </button>
+      {!isOpen ? (
+        <div className="flex items-center justify-end border-t border-foreground/6 px-2 py-2">
+          <PillButton
+            type="button"
+            size="compact"
+            variant="ghost"
+            onClick={(event) => {
+              event.stopPropagation();
+              onOpen?.(caseId);
+            }}
+            className="text-muted-foreground/60"
+          >
+            Review request
+          </PillButton>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+export function PolicyChangeThreadSidebar({
+  caseId,
+  access,
+  onClose,
+}: {
+  caseId: Id<"policyChangeCases">;
+  access: PolicyChangeAccess;
+  onClose: () => void;
+}) {
+  const detail = useQuery(api.policyChanges.getCaseDetail, { caseId });
+  const generatePacket = useMutation(api.policyChanges.generateCarrierPacket);
+  const markStatus = useMutation(api.policyChanges.markStatus);
+  const [loadingAction, setLoadingAction] = useState<string | null>(null);
+
+  const changeCase = detail?.case;
+  const packet = detail?.latestPacket;
+  const items = asRecordArray(changeCase?.items);
+  const missingInfo = asRecordArray(changeCase?.missingInfoQuestions);
+  const validationIssues = asRecordArray(changeCase?.validationIssues);
+  const artifacts = asRecordArray(packet?.artifacts);
+
+  async function runAction(name: string, action: () => Promise<unknown>, success: string) {
+    setLoadingAction(name);
+    try {
+      await action();
+      toast.success(success);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not update policy change request");
+    } finally {
+      setLoadingAction(null);
+    }
+  }
+
+  return (
+    <aside className="flex h-full w-full flex-col overflow-hidden border-l border-foreground/8 bg-background">
+      <div className="flex h-12 items-center justify-between gap-3 border-b border-foreground/8 px-4">
+        <div className="flex min-w-0 items-center gap-2">
+          <h2 className="truncate text-body-sm font-semibold text-foreground">
+            {changeCase?.summary ?? "Policy change request"}
+          </h2>
+          <Badge variant="outline" className="h-5 shrink-0 border-foreground/10 px-1.5 text-[10px] font-medium capitalize text-muted-foreground/55">
+            {formatPolicyChangeStatus(changeCase?.status)}
+          </Badge>
+        </div>
+        <PillButton size="compact" variant="icon" onClick={onClose} label="Close policy change request">
+          <X className="h-4 w-4" />
+        </PillButton>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+        {detail === undefined ? (
+          <div className="space-y-3">
+            <div className="h-5 w-48 rounded bg-foreground/[0.04]" />
+            <div className="h-24 rounded-md bg-foreground/[0.035]" />
+            <div className="h-24 rounded-md bg-foreground/[0.035]" />
+          </div>
+        ) : changeCase ? (
+          <div className="space-y-5">
+            <section>
+              <h3 className="text-label-sm font-medium text-muted-foreground/50">Request</h3>
+              <p className="mt-2 whitespace-pre-wrap text-body-sm leading-6 text-foreground/85">
+                {changeCase.requestText}
+              </p>
+            </section>
+
+            <section className="rounded-md border border-foreground/6 bg-card p-3">
+              <h3 className="text-label-sm font-medium text-foreground">Available actions</h3>
+              {access.canManage ? (
+                <p className="mt-1 text-label-sm leading-5 text-muted-foreground/60">
+                  Brokers can generate the carrier packet and update the request status after it is submitted or resolved.
+                </p>
+              ) : access.brokerConnected ? (
+                <p className="mt-1 text-label-sm leading-5 text-muted-foreground/60">
+                  Clients can review the request and reply with missing details. The broker prepares carrier packets and handles submission.
+                </p>
+              ) : (
+                <p className="mt-1 text-label-sm leading-5 text-muted-foreground/60">
+                  Policy change requests need to go through a broker. Connect a broker before opening or submitting this request.
+                </p>
+              )}
+            </section>
+
+            <section>
+              <h3 className="text-label-sm font-medium text-muted-foreground/50">Affected values</h3>
+              <div className="mt-2 space-y-2">
+                {items.length > 0 ? items.map((item, index) => (
+                  <div key={String(item.id ?? index)} className="rounded-md border border-foreground/6 p-3">
+                    <p className="text-label-sm font-medium text-foreground">
+                      {String(item.label ?? item.fieldPath ?? "Change item")}
+                    </p>
+                    <p className="mt-1 text-[11px] text-muted-foreground/45">
+                      {String(item.action ?? "update")} · {String(item.kind ?? "general")}
+                    </p>
+                    <p className="mt-2 text-label-sm text-muted-foreground/70">
+                      {String(item.beforeValue ?? "(not cited)")} → {String(item.requestedValue ?? item.afterValue ?? "(pending)")}
+                    </p>
+                  </div>
+                )) : (
+                  <p className="text-label-sm text-muted-foreground/45">No structured change items yet.</p>
+                )}
+              </div>
+            </section>
+
+            <section>
+              <h3 className="text-label-sm font-medium text-muted-foreground/50">Validation</h3>
+              <div className="mt-2 space-y-2">
+                {validationIssues.length > 0 ? validationIssues.map((issue, index) => (
+                  <div key={`${String(issue.code ?? "issue")}-${index}`} className="rounded-md border border-foreground/6 p-3">
+                    <p className="text-label-sm font-medium text-foreground">
+                      {String(issue.message ?? issue.code ?? "Validation issue")}
+                    </p>
+                    <p className="mt-1 text-[11px] capitalize text-muted-foreground/45">
+                      {String(issue.severity ?? "warning")}
+                    </p>
+                  </div>
+                )) : (
+                  <p className="text-label-sm text-muted-foreground/45">No validation issues recorded.</p>
+                )}
+              </div>
+            </section>
+
+            <section>
+              <h3 className="text-label-sm font-medium text-muted-foreground/50">Missing info</h3>
+              <div className="mt-2 space-y-2">
+                {missingInfo.length > 0 ? missingInfo.map((question, index) => (
+                  <div key={String(question.id ?? index)} className="rounded-md border border-foreground/6 p-3">
+                    <p className="text-label-sm text-foreground">
+                      {String(question.question ?? "Missing information")}
+                    </p>
+                  </div>
+                )) : (
+                  <p className="text-label-sm text-muted-foreground/45">No open questions.</p>
+                )}
+              </div>
+            </section>
+
+            <section>
+              <h3 className="text-label-sm font-medium text-muted-foreground/50">Packet preview</h3>
+              <div className="mt-2 space-y-2">
+                {artifacts.length > 0 ? artifacts.map((artifact, index) => (
+                  <details key={`${String(artifact.kind ?? "artifact")}-${index}`} className="rounded-md border border-foreground/6 p-3">
+                    <summary className="cursor-pointer text-label-sm font-medium text-foreground">
+                      {String(artifact.title ?? artifact.kind ?? "Packet artifact")}
+                    </summary>
+                    <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-5 text-muted-foreground">
+                      {String(artifact.content ?? "")}
+                    </pre>
+                  </details>
+                )) : (
+                  <p className="text-label-sm text-muted-foreground/45">No generated packet yet.</p>
+                )}
+              </div>
+            </section>
+          </div>
+        ) : (
+          <p className="text-body-sm text-muted-foreground/45">Policy change request not found.</p>
+        )}
+      </div>
+
+      {changeCase && access.canManage ? (
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-foreground/8 px-4 py-3">
+          <PillButton
+            type="button"
+            variant="secondary"
+            size="compact"
+            onClick={() => runAction("packet", () => generatePacket({ caseId }), "Carrier packet generated")}
+            disabled={loadingAction !== null}
+          >
+            {loadingAction === "packet" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
+            Packet
+          </PillButton>
+          {(["submitted", "accepted", "declined"] as const).map((status) => (
+            <PillButton
+              key={status}
+              type="button"
+              variant="secondary"
+              size="compact"
+              onClick={() => runAction(status, () => markStatus({ caseId, status }), `Marked ${status}`)}
+              disabled={loadingAction !== null}
+            >
+              {loadingAction === status ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+              <span className="capitalize">{status}</span>
+            </PillButton>
+          ))}
+        </div>
+      ) : null}
+    </aside>
   );
 }
 
@@ -318,37 +820,108 @@ function EmailThreadSidebar({
   message: ThreadMessage | null;
   onClose: () => void;
 }) {
+  const sendDraft = useAction(api.actions.sendPendingEmail.sendDraftNow);
+  const cancelDraft = useMutation(api.pendingEmails.cancel);
+  const pendingEmail = useQuery(
+    api.pendingEmails.get,
+    message?.pendingEmailId ? { id: message.pendingEmailId } : "skip",
+  );
+  const [isSending, setIsSending] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
+
   if (!message) return null;
+  const isDraft = message.status === "draft_email" && pendingEmail?.status === "draft";
+  const isSent = pendingEmail?.status === "sent" || !!message.responseMessageId;
+  const isCancelled = pendingEmail?.status === "cancelled" || message.status === "cancelled";
+  const payloadPreview = parseEmailPayloadPreview(pendingEmail?.emailPayload);
+  const fromLine = payloadPreview?.from
+    ?? (message.fromEmail ? (message.fromName ? `${message.fromName} <${message.fromEmail}>` : message.fromEmail) : null);
+  const toLine = formatEmailAddressList(payloadPreview?.to) ?? formatEmailAddressList(message.toAddresses);
+  const ccLine = formatEmailAddressList(payloadPreview?.cc) ?? formatEmailAddressList(message.ccAddresses);
+  const bccLine = formatEmailAddressList(payloadPreview?.bcc) ?? formatEmailAddressList(message.bccAddresses);
+  const previewBody = payloadPreview?.text ?? message.content;
+  const previewHtml = payloadPreview?.html;
+  const sentAt = dayjs(message._creationTime).format("MMM D, YYYY [at] h:mm A");
+
+  async function handleSend() {
+    if (!message?.pendingEmailId) return;
+    setIsSending(true);
+    try {
+      const result = await sendDraft({ id: message.pendingEmailId });
+      toast.success(`Email sent to ${result.recipientEmail}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to send email");
+    } finally {
+      setIsSending(false);
+    }
+  }
+
+  async function handleCancel() {
+    if (!message?.pendingEmailId) return;
+    setIsCancelling(true);
+    try {
+      await cancelDraft({ id: message.pendingEmailId });
+      toast.success("Email draft cancelled");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to cancel email");
+    } finally {
+      setIsCancelling(false);
+    }
+  }
+
   return (
-    <aside className="absolute bottom-3 right-3 top-3 z-20 flex w-[min(420px,calc(100vw-2rem))] flex-col overflow-hidden rounded-lg border border-foreground/10 bg-background shadow-xl shadow-black/10">
-      <div className="flex items-start justify-between gap-3 border-b border-foreground/8 px-4 py-3">
-        <div className="min-w-0">
-          <p className="text-label-sm font-medium text-muted-foreground/45">Email</p>
+    <aside className="flex h-full w-full flex-col overflow-hidden border-l border-foreground/8 bg-background">
+      <div className="flex h-12 items-center justify-between gap-3 border-b border-foreground/8 px-4">
+        <div className="flex min-w-0 items-center gap-2">
           <h2 className="truncate text-body-sm font-semibold text-foreground">
             {message.subject || (message.role === "agent" ? "Sent email" : "Received email")}
           </h2>
+          <Badge variant="outline" className="h-5 shrink-0 border-foreground/10 px-1.5 text-[10px] font-medium text-muted-foreground/55">
+            {isDraft ? "Draft" : isCancelled ? "Cancelled" : isSent ? "Sent" : "Email"}
+          </Badge>
         </div>
         <PillButton size="compact" variant="icon" onClick={onClose} label="Close email">
           <X className="h-4 w-4" />
         </PillButton>
       </div>
-      <div className="space-y-2 border-b border-foreground/8 px-4 py-3 text-label-sm text-muted-foreground/55">
-        {message.fromEmail && <p><span className="text-muted-foreground/35">From:</span> {message.fromName ? `${message.fromName} <${message.fromEmail}>` : message.fromEmail}</p>}
-        {message.toAddresses?.length ? <p><span className="text-muted-foreground/35">To:</span> {message.toAddresses.join(", ")}</p> : null}
-        {message.ccAddresses?.length ? <p><span className="text-muted-foreground/35">CC:</span> {message.ccAddresses.join(", ")}</p> : null}
-        {message.bccAddresses?.length ? <p><span className="text-muted-foreground/35">BCC:</span> {message.bccAddresses.join(", ")}</p> : null}
-        <p><span className="text-muted-foreground/35">Time:</span> {dayjs(message._creationTime).format("MMM D, YYYY h:mm A")}</p>
-      </div>
+      <dl
+        className="grid items-start gap-x-4 border-b border-foreground/8 px-5 py-5"
+        style={{ gridTemplateColumns: "6rem minmax(0, 1fr)", rowGap: "0.25rem" }}
+      >
+        <EmailHeaderRow label="From" value={fromLine} />
+        <EmailHeaderRow label="To" value={toLine} />
+        <EmailHeaderRow label="Cc" value={ccLine} />
+        <EmailHeaderRow label="Bcc" value={bccLine} />
+        <EmailHeaderRow label="Time" value={sentAt} />
+        <EmailHeaderAttachments attachments={message.attachments} threadId={message.threadId} />
+      </dl>
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-        <PretextText as="div" text={message.content} whiteSpace="pre-wrap" className="text-body-sm leading-6 text-foreground/90" />
-        {message.attachments?.length ? (
-          <div className="mt-4 flex flex-wrap gap-2 border-t border-foreground/8 pt-3">
-            {message.attachments.map((att, index) => (
-              <ThreadAttachmentChip key={index} attachment={att} threadId={message.threadId} />
-            ))}
-          </div>
-        ) : null}
+        <EmailBodyPreview html={previewHtml} text={previewBody} />
       </div>
+      {isDraft ? (
+        <div className="flex shrink-0 items-center justify-end gap-2 border-t border-foreground/8 px-4 py-3">
+          <PillButton
+            type="button"
+            variant="ghost"
+            size="compact"
+            onClick={handleCancel}
+            disabled={isSending || isCancelling}
+          >
+            {isCancelling ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
+            Cancel
+          </PillButton>
+          <PillButton
+            type="button"
+            size="compact"
+            variant="primary"
+            onClick={handleSend}
+            disabled={isSending || isCancelling}
+          >
+            {isSending ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <MailIcon className="mr-1.5 h-3.5 w-3.5" />}
+            Send Email
+          </PillButton>
+        </div>
+      ) : null}
     </aside>
   );
 }
@@ -405,9 +978,9 @@ function PendingSendCountdown({ pendingEmailId }: { pendingEmailId: Id<"pendingE
 /* ── Unified message bubble ── */
 export function UnifiedMessageBubble({
   msg,
+  relatedEmailMessage,
   viewerId,
   viewerEmail,
-  isMixedThread,
   isLastAgentMessage,
   isFirstUserMessage,
   threadContext,
@@ -415,11 +988,14 @@ export function UnifiedMessageBubble({
   agentBranding,
   collapseEmailMessages,
   onOpenEmail,
+  openEmailMessageId,
+  onOpenPolicyChange,
+  openPolicyChangeCaseId,
 }: {
   msg: ThreadMessage;
+  relatedEmailMessage?: ThreadMessage;
   viewerId?: string;
   viewerEmail?: string;
-  isMixedThread?: boolean;
   isLastAgentMessage?: boolean;
   isFirstUserMessage?: boolean;
   threadContext?: { pageType: string; entityId?: string; summary?: string };
@@ -429,6 +1005,9 @@ export function UnifiedMessageBubble({
   agentBranding?: { name: string; iconUrl?: string | null };
   collapseEmailMessages?: boolean;
   onOpenEmail?: (message: ThreadMessage) => void;
+  openEmailMessageId?: Id<"threadMessages"> | null;
+  onOpenPolicyChange?: (caseId: Id<"policyChangeCases">) => void;
+  openPolicyChangeCaseId?: Id<"policyChangeCases"> | null;
 }) {
   const [showQuoted, setShowQuoted] = useState(false);
   const [showToolCalls, setShowToolCalls] = useState(false);
@@ -495,6 +1074,15 @@ export function UnifiedMessageBubble({
               </span>
             </div>
           )}
+          {relatedEmailMessage ? (
+            <div className="mt-3">
+              <EmailSummaryCard
+                message={relatedEmailMessage}
+                onOpen={onOpenEmail}
+                compact
+              />
+            </div>
+          ) : null}
         </div>
       </div>
     );
@@ -519,12 +1107,21 @@ export function UnifiedMessageBubble({
     // Cited sections from tool results (stored on message by processThreadChat)
     const citedSections = msg.citedSections;
     const citedCoverageNames = msg.citedCoverageNames;
-    const toolCalls = msg.toolCalls ?? [];
+    const toolCalls = msg.toolCalls?.length
+      ? msg.toolCalls
+      : (msg.usedTools ?? []).map((name) => ({ name }));
 
     // Build reference cards — referencedPolicyIds now only contains policies actually cited via lookup_policy_section
     const allRefs: { type: "policy"; id: string; page?: number }[] = [];
-    if (msg.referencedPolicyIds) {
-      for (const pid of msg.referencedPolicyIds) {
+    const referencedPolicyIds = [
+      ...(msg.referencedPolicyIds ?? []),
+      ...(relatedEmailMessage?.referencedPolicyIds ?? []),
+    ];
+    const seenRefKeys = new Set<string>();
+    for (const pid of referencedPolicyIds) {
+      const key = `policy:${pid}`;
+      if (!seenRefKeys.has(key)) {
+        seenRefKeys.add(key);
         allRefs.push({ type: "policy", id: pid as string });
       }
     }
@@ -540,25 +1137,13 @@ export function UnifiedMessageBubble({
             )}
           </div>
           <div className="flex-1 min-w-0">
-            <div className={`flex items-center justify-between gap-3 mb-1 ${brokerPerspective ? "flex-row-reverse" : ""}`}>
+            <div className={`flex items-center gap-2 mb-1 ${brokerPerspective ? "justify-end" : ""}`}>
               <div className="flex items-center gap-2 min-w-0">
                 <p className="text-label-sm font-medium text-muted-foreground/50">{agentBranding?.name ?? "Glass"}</p>
                 {channelIcon}
                 <span className="text-muted-foreground/20">·</span>
                 <span className="text-label-sm text-muted-foreground/25">{time.format("MMM D, h:mm A")}</span>
               </div>
-              {toolCalls.length > 0 && (
-                <Button
-                  type="button"
-                  onClick={() => setShowToolCalls((value) => !value)}
-                  variant="ghost"
-                  size="xs"
-                  className="h-6 shrink-0 gap-1.5 rounded-md px-1.5 text-[11px] text-muted-foreground/55 hover:text-foreground/75"
-                  aria-expanded={showToolCalls}
-                >
-                  {showToolCalls ? "Hide tool calls" : `${toolCalls.length} tool call${toolCalls.length === 1 ? "" : "s"}`}
-                </Button>
-              )}
             </div>
             {msg.channel === "email" && !collapseEmailMessages && msg.toAddresses && (
               <div className="flex flex-wrap gap-x-3 text-label-sm text-muted-foreground/35 mb-1">
@@ -575,7 +1160,7 @@ export function UnifiedMessageBubble({
               </div>
             )}
             {collapseEmailMessages && msg.channel === "email" ? (
-              <EmailSummaryCard message={msg} onOpen={onOpenEmail} />
+              <EmailSummaryCard message={msg} onOpen={onOpenEmail} isOpen={openEmailMessageId === msg._id} />
             ) : (
               <>
                 {/* Reasoning — collapsed above the response */}
@@ -583,11 +1168,39 @@ export function UnifiedMessageBubble({
                   reasoning={msg.reasoning ?? ""}
                   isStreaming={false}
                 />
-                {toolCalls.length > 0 && showToolCalls && <ToolCallPanel toolCalls={toolCalls} />}
-                <div className={`group/agent-msg relative rounded-lg bg-popover border border-foreground/6 px-3.5 py-2.5 ${msg.reasoning ? "mt-1" : ""}`}>
+                <div className={`rounded-lg bg-popover border border-foreground/6 px-3.5 py-2.5 ${msg.reasoning ? "mt-1" : ""}`}>
                   <ProseMarkdown gfm breaks className={MARKDOWN_STYLES} components={markdownComponents}>{fixedContent}</ProseMarkdown>
-                  <CopyMessageButton content={msg.content} />
                 </div>
+                <MessageFooterActions
+                  refs={allRefs}
+                  citedSections={citedSections}
+                  citedCoverageNames={citedCoverageNames}
+                  toolCalls={toolCalls}
+                  copyContent={msg.content}
+                  showToolCalls={showToolCalls}
+                  onToggleToolCalls={() => setShowToolCalls((value) => !value)}
+                  rightAligned={brokerPerspective}
+                />
+                {relatedEmailMessage ? (
+                  <div className="mt-4">
+                    <EmailSummaryCard
+                      message={relatedEmailMessage}
+                      onOpen={onOpenEmail}
+                      compact
+                      isOpen={openEmailMessageId === relatedEmailMessage._id}
+                    />
+                  </div>
+                ) : null}
+                {msg.policyChangeCaseId ? (
+                  <div className="mt-4">
+                    <PolicyChangeSummaryCard
+                      caseId={msg.policyChangeCaseId}
+                      onOpen={onOpenPolicyChange}
+                      isOpen={openPolicyChangeCaseId === msg.policyChangeCaseId}
+                    />
+                  </div>
+                ) : null}
+                {toolCalls.length > 0 && showToolCalls && <ToolCallPanel toolCalls={toolCalls} />}
               </>
             )}
             {!(collapseEmailMessages && msg.channel === "email") && msg.attachments && msg.attachments.length > 0 && (
@@ -600,15 +1213,8 @@ export function UnifiedMessageBubble({
             {msg.status === "pending_send" && msg.pendingEmailId && (
               <PendingSendCountdown pendingEmailId={msg.pendingEmailId} />
             )}
-            {isMixedThread && msg.channel === "chat" && (
-              <div className="flex items-center gap-1 mt-1 ml-0.5">
-                <Lock className="w-2.5 h-2.5 text-muted-foreground/25" />
-                <span className="text-label-sm text-muted-foreground/30">Only visible to your team</span>
-              </div>
-            )}
           </div>
         </div>
-        <ReferenceCardStrip refs={allRefs} citedSections={citedSections} citedCoverageNames={citedCoverageNames} rightAligned={brokerPerspective} />
         {isLastAgentMessage && (!msg.content || msg.content.trim().length === 0) && (
           <RetryButton messageId={msg._id} />
         )}
@@ -666,14 +1272,16 @@ export function UnifiedMessageBubble({
           </div>
         )}
         {collapseEmailMessages && isEmail ? (
-          <EmailSummaryCard message={msg} onOpen={onOpenEmail} />
+          <EmailSummaryCard message={msg} onOpen={onOpenEmail} isOpen={openEmailMessageId === msg._id} />
         ) : (
         <div className={`rounded-lg px-3.5 py-2.5 text-body-sm text-foreground ${
           isEmail
             ? `border border-foreground/6 ${isOwnMessage ? "bg-foreground/[0.04]" : "bg-foreground/[0.02]"}`
             : isOwnMessage ? "bg-foreground/[0.06]" : "bg-foreground/[0.03]"
         }`}>
-          <PretextText as="p" text={cleanContent} whiteSpace="pre-wrap" />
+          <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+            {cleanContent}
+          </p>
           {quoted && (
             <>
               <button
@@ -698,12 +1306,6 @@ export function UnifiedMessageBubble({
         {isFirstUserMessage && threadContext && (
           <div className="mt-2">
             <ThreadContextLink context={threadContext} />
-          </div>
-        )}
-        {isMixedThread && msg.channel === "chat" && (
-          <div className={`flex items-center gap-1 mt-1 ${isOwnMessage ? "justify-end mr-0.5" : "ml-0.5"}`}>
-            <Lock className="w-2.5 h-2.5 text-muted-foreground/25" />
-            <span className="text-label-sm text-muted-foreground/30">Only visible to your team</span>
           </div>
         )}
       </div>
@@ -731,7 +1333,7 @@ function CancelButton({ messageId, show }: { messageId: string; show: boolean })
           setCancelling(false);
         }
       }}
-      className="inline-flex items-center gap-1.5 mt-1.5 text-label-sm text-muted-foreground/35 hover:text-muted-foreground/60 transition-colors cursor-pointer disabled:opacity-50"
+      className="inline-flex h-5 items-center gap-1.5 text-label-sm leading-5 text-muted-foreground/35 transition-colors hover:text-muted-foreground/60 disabled:opacity-50"
     >
       {cancelling ? "Cancelling..." : "Cancel"}
     </button>
@@ -752,7 +1354,7 @@ function CopyMessageButton({ content }: { content: string }) {
         setCopied(true);
         setTimeout(() => setCopied(false), 1500);
       }}
-      className="absolute top-1.5 right-1.5 w-6 h-6 flex items-center justify-center rounded-md text-muted-foreground/30 hover:text-muted-foreground/60 hover:bg-foreground/[0.04] opacity-0 group-hover/agent-msg:opacity-100 transition-all cursor-pointer"
+      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-transparent text-muted-foreground/40 transition-colors hover:border-foreground/8 hover:bg-foreground/[0.03] hover:text-foreground/70"
       title="Copy response"
     >
       {copied ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
@@ -844,16 +1446,20 @@ function ThreadEmailLink({ threadEmail, subject }: { threadEmail?: string; subje
 function UnifiedThreadContent({
   threadId,
   onMeta,
+  onRightPanel,
   viewerId,
   viewerEmail,
   agentBranding,
+  policyChangeAccess,
 }: {
   threadId: Id<"threads">;
   onMeta?: (meta: { detail: React.ReactNode; actions: React.ReactNode }) => void;
+  onRightPanel?: (panel: React.ReactNode | null) => void;
   viewerId?: string;
   viewerEmail?: string;
   agentHandle?: string;
   agentBranding?: { name: string; iconUrl?: string | null };
+  policyChangeAccess: PolicyChangeAccess;
 }) {
   const thread = useQuery(api.threads.get, { id: threadId });
   const messages = useQuery(api.threads.messages, { threadId }) as ThreadMessage[] | undefined;
@@ -863,8 +1469,15 @@ function UnifiedThreadContent({
   const messagesRef = useRef<HTMLDivElement>(null);
   const chatInputRef = useRef<GlassPromptInputHandle>(null);
   const prevThreadId = useRef<string | null>(null);
+  const lastAutoOpenedEmailId = useRef<string | null>(null);
+  const lastAutoOpenedPolicyChangeCaseId = useRef<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [openEmailMessage, setOpenEmailMessage] = useState<ThreadMessage | null>(null);
+  const [openEmailMessageId, setOpenEmailMessageId] = useState<Id<"threadMessages"> | null>(null);
+  const [openPolicyChangeCaseId, setOpenPolicyChangeCaseId] = useState<Id<"policyChangeCases"> | null>(null);
+  const openEmailMessage = useMemo(
+    () => messages?.find((message) => message._id === openEmailMessageId) ?? null,
+    [messages, openEmailMessageId],
+  );
 
   // Error state for chat — stored as { threadId, message } so switching threads auto-clears it
   const [chatErrorState, setChatErrorState] = useState<{ threadId: string; message: string } | null>(null);
@@ -898,15 +1511,60 @@ function UnifiedThreadContent({
     });
   }, [thread, threadId, onMeta, messages, updateTitle]);
 
+  useEffect(() => {
+    if (!onRightPanel) return;
+    onRightPanel(
+      openEmailMessage
+        ? <EmailThreadSidebar message={openEmailMessage} onClose={() => setOpenEmailMessageId(null)} />
+        : openPolicyChangeCaseId
+          ? (
+              <PolicyChangeThreadSidebar
+                caseId={openPolicyChangeCaseId}
+                access={policyChangeAccess}
+                onClose={() => setOpenPolicyChangeCaseId(null)}
+              />
+            )
+          : null,
+    );
+    return () => onRightPanel(null);
+  }, [onRightPanel, openEmailMessage, openPolicyChangeCaseId, policyChangeAccess]);
+
   // Scroll to bottom when messages change or thread switches
   useEffect(() => {
     const el = messagesRef.current;
     if (!el) return;
     const isNew = prevThreadId.current !== threadId;
     prevThreadId.current = threadId;
-    if (isNew) setOpenEmailMessage(null);
+    if (isNew) {
+      setOpenEmailMessageId(null);
+      setOpenPolicyChangeCaseId(null);
+      lastAutoOpenedEmailId.current = null;
+      lastAutoOpenedPolicyChangeCaseId.current = null;
+    }
     el.scrollTo({ top: el.scrollHeight, behavior: isNew ? "instant" : "smooth" });
   }, [threadId, messages?.length]);
+
+  useEffect(() => {
+    const latestDraftEmail = messages
+      ?.filter((message) => message.channel === "email" && message.role === "agent" && message.status === "draft_email")
+      .at(-1);
+    if (!latestDraftEmail) return;
+    if (lastAutoOpenedEmailId.current === latestDraftEmail._id) return;
+    lastAutoOpenedEmailId.current = latestDraftEmail._id;
+    setOpenPolicyChangeCaseId(null);
+    setOpenEmailMessageId(latestDraftEmail._id);
+  }, [messages]);
+
+  useEffect(() => {
+    const latestPolicyChange = messages
+      ?.filter((message) => message.role === "agent" && message.policyChangeCaseId)
+      .at(-1);
+    if (!latestPolicyChange?.policyChangeCaseId) return;
+    if (lastAutoOpenedPolicyChangeCaseId.current === latestPolicyChange.policyChangeCaseId) return;
+    lastAutoOpenedPolicyChangeCaseId.current = latestPolicyChange.policyChangeCaseId;
+    setOpenEmailMessageId(null);
+    setOpenPolicyChangeCaseId(latestPolicyChange.policyChangeCaseId);
+  }, [messages]);
 
   // Auto-scroll when new messages arrive (agent streaming via Convex subscription)
   useEffect(() => {
@@ -980,12 +1638,6 @@ function UnifiedThreadContent({
     }
   }, [sendMessage, threadId, generateUploadUrl, setChatError, isInputBusy]);
 
-  // Detect if thread has both chat and email messages (mixed thread)
-  const isMixedThread = useMemo(() => {
-    if (!messages) return false;
-    const hasEmail = messages.some((m) => m.channel === "email");
-    return hasEmail || thread?.originChannel === "email";
-  }, [messages, thread?.originChannel]);
   const collapseEmailMessages = thread?.originChannel !== "email";
 
   if (!thread) {
@@ -1007,25 +1659,44 @@ function UnifiedThreadContent({
           {(() => {
             const lastAgentIdx = messages?.reduce((acc, m, i) => m.role === "agent" ? i : acc, -1) ?? -1;
             const firstUserIdx = messages?.findIndex((m) => m.role === "user") ?? -1;
+            const attachedEmailMessageIds = new Set<string>();
             return messages?.map((msg, idx) => {
+              if (attachedEmailMessageIds.has(msg._id)) return null;
               const isFirstUser = idx === firstUserIdx;
               const firstUserIsOwn =
                 isFirstUser &&
                 ((viewerId && msg.userId === viewerId) ||
                   (viewerEmail && msg.fromEmail?.toLowerCase() === viewerEmail.toLowerCase()));
+              const relatedEmailMessage = msg.role === "agent" && msg.channel === "chat" && msg.pendingEmailId
+                ? messages.find((candidate) =>
+                    candidate.channel === "email" &&
+                    candidate.role === "agent" &&
+                    candidate.pendingEmailId === msg.pendingEmailId)
+                : undefined;
+              if (relatedEmailMessage) attachedEmailMessageIds.add(relatedEmailMessage._id);
+
               return (
                 <div key={msg._id}>
                   <UnifiedMessageBubble
                     msg={msg}
+                    relatedEmailMessage={relatedEmailMessage}
                     viewerId={viewerId}
                     viewerEmail={viewerEmail}
-                    isMixedThread={isMixedThread}
                     isLastAgentMessage={idx === lastAgentIdx}
                     isFirstUserMessage={false}
                     threadContext={undefined}
                     agentBranding={agentBranding}
                     collapseEmailMessages={collapseEmailMessages}
-                    onOpenEmail={setOpenEmailMessage}
+                    onOpenEmail={(message) => {
+                      setOpenPolicyChangeCaseId(null);
+                      setOpenEmailMessageId(message._id);
+                    }}
+                    openEmailMessageId={openEmailMessageId}
+                    onOpenPolicyChange={(caseId) => {
+                      setOpenEmailMessageId(null);
+                      setOpenPolicyChangeCaseId(caseId);
+                    }}
+                    openPolicyChangeCaseId={openPolicyChangeCaseId}
                   />
                   {isFirstUser && thread?.initialContext && (
                     <div className={`mt-2 flex ${firstUserIsOwn ? "justify-end mr-9.5" : "ml-9.5"}`}>
@@ -1045,8 +1716,6 @@ function UnifiedThreadContent({
           {messages && messages.length > 0 && <div className="h-40" />}
         </div>
       </div>
-      <EmailThreadSidebar message={openEmailMessage} onClose={() => setOpenEmailMessage(null)} />
-
       {/* Input — overlaid at bottom, content scrolls under it */}
       <ChatInputOverlay>
         {messages && messages.length > 0 && thread.threadEmail && (
@@ -1079,12 +1748,22 @@ export default function ThreadPage({ params }: { params: Promise<{ id: string }>
   const agentBranding = viewerOrg?.brokerOrg?.whiteLabelingEnabled !== false && viewerOrg?.brokerOrg
     ? { name: `${viewerOrg.brokerOrg.name} Agent`, iconUrl: viewerOrg.brokerOrg.iconUrl }
     : undefined;
+  const policyChangeAccess = useMemo<PolicyChangeAccess>(() => {
+    const isBroker = viewerOrg?.org?.type === "broker";
+    const brokerConnected = isBroker || !!viewerOrg?.org?.brokerOrgId || !!viewerOrg?.brokerOrg?._id;
+    return {
+      canManage: isBroker,
+      actorLabel: isBroker ? "broker" : "client",
+      brokerConnected,
+    };
+  }, [viewerOrg?.brokerOrg?._id, viewerOrg?.org?.brokerOrgId, viewerOrg?.org?.type]);
 
   // Thread metadata lifted from child components for AppShell header
   const [threadMeta, setThreadMeta] = useState<{ detail: React.ReactNode; actions: React.ReactNode }>({
     detail: "Conversation",
     actions: null,
   });
+  const [rightPanel, setRightPanel] = useState<React.ReactNode | null>(null);
 
   // Try unified threads table first
   const unifiedThread = useQuery(api.threads.tryGet, { id });
@@ -1109,16 +1788,23 @@ export default function ThreadPage({ params }: { params: Promise<{ id: string }>
   // Found in unified threads table
   if (unifiedThread) {
     return (
-      <AppShell breadcrumbDetail={threadMeta.detail} actions={threadMeta.actions} presenceUsers={presenceUsers}>
+      <AppShell
+        breadcrumbDetail={threadMeta.detail}
+        actions={threadMeta.actions}
+        presenceUsers={presenceUsers}
+        rightPanel={rightPanel}
+      >
         <div className="absolute inset-0 overflow-hidden">
           <div className="h-full flex flex-col">
             <UnifiedThreadContent
               threadId={unifiedThread._id}
               onMeta={handleUnifiedMeta}
+              onRightPanel={setRightPanel}
               viewerId={viewer?._id}
               viewerEmail={viewer?.email ?? undefined}
               agentHandle={agentHandle ?? undefined}
               agentBranding={agentBranding}
+              policyChangeAccess={policyChangeAccess}
             />
           </div>
         </div>

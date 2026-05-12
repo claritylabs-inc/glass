@@ -18,7 +18,7 @@ const MIN_WIDTH = 320;
 const MAX_WIDTH = 700;
 const DEFAULT_WIDTH = 400;
 
-export function EntityPreviewPanel() {
+export function EntityPreviewPanel({ fitContainer = false }: { fitContainer?: boolean }) {
   const { preview, closePreview } = useEntityPreview();
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   const [isDraggingState, setIsDraggingState] = useState(false);
@@ -57,27 +57,29 @@ export function EntityPreviewPanel() {
       {preview && (
         <motion.div
           layout
-          initial={{ width: 0 }}
-          animate={{ width }}
-          exit={{ width: 0 }}
+          initial={fitContainer ? false : { width: 0 }}
+          animate={fitContainer ? { width: "100%" } : { width }}
+          exit={fitContainer ? undefined : { width: 0 }}
           transition={isDraggingState ? { duration: 0 } : { duration: 0.4, ease: EASE }}
-          className="flex shrink-0 overflow-hidden h-full relative"
+          className={`flex h-full overflow-hidden relative ${fitContainer ? "min-w-0 w-full max-w-full flex-1" : "shrink-0"}`}
         >
           {/* Resize handle */}
-          <div
-            onPointerDown={onPointerDown}
-            className="absolute left-0 top-0 bottom-0 z-10 w-1 cursor-col-resize group hover:bg-foreground/8 active:bg-foreground/12 transition-colors"
-          >
-            <div className="absolute left-0 top-0 bottom-0 w-[3px] -translate-x-[1px]" />
-          </div>
+          {!fitContainer && (
+            <div
+              onPointerDown={onPointerDown}
+              className="absolute left-0 top-0 bottom-0 z-10 w-1 cursor-col-resize group hover:bg-foreground/8 active:bg-foreground/12 transition-colors"
+            >
+              <div className="absolute left-0 top-0 bottom-0 w-[3px] -translate-x-[1px]" />
+            </div>
+          )}
 
           <motion.div
             initial={{ opacity: 0, x: 30 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 30 }}
             transition={{ duration: 0.35, ease: EASE, delay: 0.05 }}
-            className="flex flex-col flex-1 min-h-0 border-l border-foreground/6 bg-background"
-            style={{ width }}
+            className="flex min-w-0 max-w-full flex-1 flex-col min-h-0 border-l border-foreground/6 bg-background"
+            style={fitContainer ? undefined : { width }}
           >
             {/* Toolbar */}
             <div className="h-12 flex items-center justify-between px-4 border-b border-foreground/6 shrink-0 gap-3">
@@ -88,7 +90,7 @@ export function EntityPreviewPanel() {
                       {headerInfo.carrier}
                     </span>
                     {headerInfo.policyNum && (
-                      <span className="text-sm text-muted-foreground/60 shrink-0">
+                      <span className="min-w-0 max-w-[45%] truncate text-sm text-muted-foreground/60">
                         {headerInfo.policyNum}
                       </span>
                     )}
@@ -107,7 +109,6 @@ export function EntityPreviewPanel() {
                       fileUrl={headerActions.fileUrl} 
                       policyId={headerActions.policyId}
                       page={headerActions.page}
-                      onClose={closePreview}
                     />
                   )}
                 </div>
@@ -123,7 +124,7 @@ export function EntityPreviewPanel() {
             </div>
 
             {/* Content */}
-            <div className="flex-1 overflow-y-auto p-4">
+            <div className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-4">
               <PolicyPreview 
                 id={preview.id} 
                 page={preview.page} 
@@ -141,7 +142,7 @@ export function EntityPreviewPanel() {
 }
 
 // Separate component to handle the PDF context that requires being inside the provider
-function PolicyPreviewButtons({ fileUrl, policyId, page, onClose }: { fileUrl: string; policyId: string; page?: number; onClose: () => void }) {
+function PolicyPreviewButtons({ fileUrl, policyId, page }: { fileUrl: string; policyId: string; page?: number }) {
   const { openWithUrl } = usePdf();
   
   return (
@@ -149,7 +150,7 @@ function PolicyPreviewButtons({ fileUrl, policyId, page, onClose }: { fileUrl: s
       <PillButton
         size="compact"
         variant="secondary"
-        onClick={() => { openWithUrl(fileUrl, page); onClose(); }}
+        onClick={() => openWithUrl(fileUrl, page)}
       >
         View PDF
       </PillButton>

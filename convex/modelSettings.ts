@@ -3,9 +3,9 @@ import { v } from "convex/values";
 import { internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import {
+  CONFIGURABLE_MODEL_PROVIDERS,
   EMBEDDING_MODEL_CATALOG,
   LANGUAGE_MODEL_CATALOG,
-  MODEL_PROVIDERS,
   MODEL_ROUTING,
   MODEL_TASKS,
   MODEL_TASK_DESCRIPTIONS,
@@ -18,20 +18,20 @@ import {
 
 type ProviderKeys = NonNullable<Doc<"brokerModelSettings">["providerKeys"]>;
 type Routes = NonNullable<Doc<"brokerModelSettings">["routes"]>;
+const CONFIGURABLE_PROVIDER_SET = new Set<ModelProvider>(CONFIGURABLE_MODEL_PROVIDERS);
 
-const providerValidator = v.union(
+const configurableProviderValidator = v.union(
   v.literal("openai"),
   v.literal("anthropic"),
   v.literal("google"),
   v.literal("xai"),
-  v.literal("mistral"),
   v.literal("cohere"),
   v.literal("moonshot"),
   v.literal("deepseek"),
 );
 
 const routeValidator = v.object({
-  provider: providerValidator,
+  provider: configurableProviderValidator,
   model: v.string(),
 });
 
@@ -66,6 +66,10 @@ function assertSupportedRoute(task: ModelTask, route: ModelRoute) {
   }
 }
 
+function isConfigurableProvider(provider: ModelProvider) {
+  return CONFIGURABLE_PROVIDER_SET.has(provider);
+}
+
 async function requireCurrentBrokerAdmin(ctx: QueryCtx | MutationCtx) {
   const userId = await getAuthUserId(ctx);
   if (!userId) throw new Error("Not authenticated");
@@ -88,7 +92,7 @@ async function requireCurrentBrokerAdmin(ctx: QueryCtx | MutationCtx) {
 
 function maskProviderKeys(keys: ProviderKeys | undefined) {
   return Object.fromEntries(
-    MODEL_PROVIDERS.map((provider) => {
+    CONFIGURABLE_MODEL_PROVIDERS.map((provider) => {
       const value = keys?.[provider];
       return [
         provider,
@@ -103,7 +107,10 @@ function maskProviderKeys(keys: ProviderKeys | undefined) {
 
 function mergedRoutes(routes: Routes | undefined) {
   return Object.fromEntries(
-    MODEL_TASKS.map((task) => [task, routes?.[task] ?? MODEL_ROUTING[task]]),
+    MODEL_TASKS.map((task) => {
+      const route = routes?.[task];
+      return [task, route && isConfigurableProvider(route.provider) ? route : MODEL_ROUTING[task]];
+    }),
   ) as Record<ModelTask, ModelRoute>;
 }
 
@@ -111,9 +118,21 @@ function visibleRoutes(routes: Routes | undefined, keys: ProviderKeys | undefine
   return Object.fromEntries(
     MODEL_TASKS.map((task) => {
       const route = routes?.[task];
-      return [task, route && keys?.[route.provider] ? route : null];
+      return [
+        task,
+        route && isConfigurableProvider(route.provider) && keys?.[route.provider] ? route : null,
+      ];
     }),
   ) as Record<ModelTask, ModelRoute | null>;
+}
+
+function configurableProviderKeys(keys: ProviderKeys | undefined) {
+  return Object.fromEntries(
+    CONFIGURABLE_MODEL_PROVIDERS.flatMap((provider) => {
+      const value = keys?.[provider];
+      return value ? [[provider, value]] : [];
+    }),
+  ) as ProviderKeys;
 }
 
 export const get = query({
@@ -126,7 +145,7 @@ export const get = query({
       .first();
 
     return {
-      providers: MODEL_PROVIDERS.map((id) => ({
+      providers: CONFIGURABLE_MODEL_PROVIDERS.map((id) => ({
         id,
         label: PROVIDER_LABELS[id],
         languageModels: LANGUAGE_MODEL_CATALOG[id],
@@ -191,7 +210,7 @@ export const updateRoutes = mutation({
 
 export const updateProviderKey = mutation({
   args: {
-    provider: providerValidator,
+    provider: configurableProviderValidator,
     apiKey: v.union(v.string(), v.null()),
   },
   handler: async (ctx, args) => {
@@ -238,7 +257,7 @@ export const resolveForOrg = internalQuery({
 
     return {
       routes: mergedRoutes(settings.routes),
-      providerKeys: settings.providerKeys ?? {},
+      providerKeys: configurableProviderKeys(settings.providerKeys),
     };
   },
 });
