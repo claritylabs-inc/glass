@@ -30,7 +30,12 @@ import { usePageContext } from "@/hooks/use-page-context";
 import { useOnboardingCache } from "@/hooks/use-onboarding-cache";
 import { useCurrentOrg } from "@/hooks/use-current-org";
 import { Users, Activity, UserPlus } from "lucide-react";
-import { CLIENT_SETTINGS_SECTIONS, PARTNER_SETTINGS_SECTIONS } from "@/lib/settings-sections";
+import {
+  BROKER_SETTINGS_SECTIONS,
+  CLIENT_SETTINGS_SECTIONS,
+  insertSettingsSectionAfterTeam,
+  type SettingsSection,
+} from "@/lib/settings-sections";
 import { LogoIcon } from "@/components/ui/logo-icon";
 import { PillButton } from "@/components/ui/pill-button";
 import { NotificationsPanel } from "@/components/notifications-panel";
@@ -49,16 +54,16 @@ function GlassStarIcon({ className }: { className?: string }) {
   return <LogoIcon size={16} static className={className} />;
 }
 
-const CLIENT_SETTINGS_WITH_AGENT = [
-  ...CLIENT_SETTINGS_SECTIONS.slice(0, 2),
-  { id: "agent", label: "Agent", icon: GlassStarIcon },
-  ...CLIENT_SETTINGS_SECTIONS.slice(2),
-];
+const AGENT_SETTINGS_SECTION: SettingsSection = { id: "agent", label: "Agent", icon: GlassStarIcon };
 
-const PARTNER_SETTINGS_WITH_AGENT = [
-  ...PARTNER_SETTINGS_SECTIONS,
-  { id: "agent", label: "Agent", icon: GlassStarIcon },
-];
+const CLIENT_SETTINGS_WITH_AGENT = insertSettingsSectionAfterTeam(
+  CLIENT_SETTINGS_SECTIONS,
+  AGENT_SETTINGS_SECTION,
+);
+const BROKER_SETTINGS_WITH_AGENT = insertSettingsSectionAfterTeam(
+  BROKER_SETTINGS_SECTIONS,
+  AGENT_SETTINGS_SECTION,
+);
 
 const INSURANCE_ITEMS = [
   { href: "/policies", label: "Policies", icon: FileText, shortcut: "O" },
@@ -126,11 +131,10 @@ export function AppSidebar({
         _creationTime: number;
         title: string;
         lastMessageAt?: number;
-        legacyConversationId?: string;
+        originChannel?: "chat" | "email" | "imessage";
         threadPhone?: string;
       }>
     | undefined;
-  const emailConvs = useQuery(api.agentConversations.list, { archived: false });
   const createThread = useMutation(api.threads.create);
   const archiveThread = useMutation(api.threads.archive);
   const { signOut } = useAuthActions();
@@ -174,39 +178,17 @@ export function AppSidebar({
     currentOrg?.orgId ? { orgId: currentOrg.orgId } : "skip",
   ) as number | undefined;
 
-  // Unified thread list — prefers unified threads table, falls back to legacy email threads.
+  // Unified thread list.
   const conversations = useMemo(() => {
     type ConvItem = { kind: "email" | "chat" | "imessage"; id: string; label: string; time: number };
 
-    // If unified threads have data, use them directly
-    if (unifiedThreads && unifiedThreads.length > 0) {
-      return unifiedThreads.slice(0, 8).map((t): ConvItem => ({
-        kind: t.threadPhone ? "imessage" : t.legacyConversationId ? "email" : "chat",
-        id: t._id,
-        label: t.title,
-        time: t.lastMessageAt ?? t._creationTime,
-      }));
-    }
-
-    // Fallback: merge legacy tables
-    const items: ConvItem[] = [];
-    if (emailConvs) {
-      const threadMap = new Map<string, { subject: string; time: number }>();
-      for (const conv of emailConvs) {
-        const rootId = (conv.threadId ?? conv._id) as string;
-        const existing = threadMap.get(rootId);
-        if (existing) {
-          if (conv._creationTime > existing.time) existing.time = conv._creationTime;
-        } else {
-          threadMap.set(rootId, { subject: conv.subject, time: conv._creationTime });
-        }
-      }
-      for (const [id, { subject, time }] of threadMap) {
-        items.push({ kind: "email", id, label: subject, time });
-      }
-    }
-    return items.sort((a, b) => b.time - a.time).slice(0, 8);
-  }, [unifiedThreads, emailConvs]);
+    return (unifiedThreads ?? []).slice(0, 8).map((t): ConvItem => ({
+      kind: t.threadPhone ? "imessage" : t.originChannel === "email" ? "email" : "chat",
+      id: t._id,
+      label: t.title,
+      time: t.lastMessageAt ?? t._creationTime,
+    }));
+  }, [unifiedThreads]);
 
   function toggleCollapse() {
     const next = !collapsed;
@@ -327,7 +309,7 @@ export function AppSidebar({
         )}
         {collapsed && <div className="pt-4 pb-1" />}
         {(isBroker
-          ? PARTNER_SETTINGS_WITH_AGENT
+          ? BROKER_SETTINGS_WITH_AGENT
           : isStandaloneClient
             ? CLIENT_SETTINGS_WITH_AGENT
             : CLIENT_SETTINGS_SECTIONS
@@ -727,7 +709,7 @@ export function AppSidebar({
                 >
                   {item.threadPhone ? (
                     <Phone className="w-3.5 h-3.5 shrink-0" />
-                  ) : item.legacyConversationId ? (
+                  ) : item.originChannel === "email" ? (
                     <Mail className="w-3.5 h-3.5 shrink-0" />
                   ) : (
                     <MessageSquare className="w-3.5 h-3.5 shrink-0" />

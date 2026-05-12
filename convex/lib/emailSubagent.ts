@@ -43,7 +43,6 @@ export type BrokerBranding = {
 type EmailExpertContext = {
   orgId: Id<"organizations">;
   threadId?: Id<"threads">;
-  legacyConversationId?: Id<"agentConversations">;
   chatMessageId?: Id<"threadMessages">;
   channel: "web" | "email" | "imessage";
   fromHeader: string;
@@ -461,7 +460,6 @@ async function runEmailSubagent(
         emailPayload: JSON.stringify(emailPayload),
         scheduledSendTime,
         chatMessageId: context.chatMessageId,
-        legacyConversationId: context.legacyConversationId,
         recipientEmail: sendTo,
         ccAddresses: cc.length > 0 ? cc : undefined,
         bccAddresses: bcc.length > 0 ? bcc : undefined,
@@ -512,7 +510,6 @@ async function runEmailSubagent(
         attachments: attachments.length > 0 ? attachments : undefined,
         referencedPolicyIds: sourcePolicyIds.size > 0 ? ([...sourcePolicyIds] as Id<"policies">[]) : undefined,
         referencedQuoteIds: context.referencedQuoteIds,
-        legacyConversationId: context.legacyConversationId,
       });
     }
 

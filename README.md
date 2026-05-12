@@ -9,7 +9,7 @@ For contributor-facing implementation detail, see [AGENTS.md](AGENTS.md).
 - Ingests insurance-related documents from email and uploads
 - Extracts structured policy, quote, and supporting business data
 - Builds a continuously-updated `orgMemory` layer
-- Supports agent workflows for Q&A, application help, COI generation, and follow-up analysis
+- Supports agent workflows for Q&A, policy-change requests, COI generation, and follow-up analysis
 - Exposes capabilities through UI, REST API (`/api/v1/*`), and MCP (`/mcp` + local server)
 - Lets client/customer orgs request read-only access to vendor org policies after vendor approval
 

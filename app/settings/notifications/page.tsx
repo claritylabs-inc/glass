@@ -11,21 +11,11 @@ interface PrefRow {
 }
 
 const BROKER_PREF_ROWS: PrefRow[] = [
-  { type: "application_submitted_by_client", label: "Client submits application", group: "Applications" },
-  { type: "application_completed_by_client", label: "Client completes application", group: "Applications" },
-  { type: "client_document_uploaded", label: "Client uploads document", group: "Applications" },
-  { type: "application_sent_by_broker", label: "Application sent to client", group: "Applications" },
-  { type: "application_section_returned_by_broker", label: "Section returned to client", group: "Applications" },
-  { type: "application_accepted_by_broker", label: "Application accepted", group: "Applications" },
+  { type: "client_document_uploaded", label: "Client uploads document", group: "Documents" },
   { type: "policy_delivered_by_broker", label: "Policy delivered", group: "Policies & Quotes" },
   { type: "quote_delivered_by_broker", label: "Quote delivered", group: "Policies & Quotes" },
   { type: "renewal_reminder", label: "Renewal reminder", group: "Policies & Quotes" },
   { type: "policy_lapsed", label: "Policy lapsed", group: "Policies & Quotes" },
-  { type: "passport_flag_raised_by_broker", label: "Passport flag raised", group: "Passport" },
-  { type: "passport_flag_resolved_by_client", label: "Passport flag resolved by client", group: "Passport" },
-  { type: "integration_requested_by_broker", label: "Integration requested", group: "Integrations" },
-  { type: "integration_request_fulfilled", label: "Integration request fulfilled", group: "Integrations" },
-  { type: "integration_disconnected_for_client", label: "Integration disconnected", group: "Integrations" },
   { type: "client_invitation_accepted", label: "Client accepted invitation", group: "Account" },
   { type: "client_onboarding_completed", label: "Client completed onboarding", group: "Account" },
 ];
@@ -33,9 +23,6 @@ const BROKER_PREF_ROWS: PrefRow[] = [
 const GROUPS = Array.from(new Set(BROKER_PREF_ROWS.map((r) => r.group)));
 
 const WARN_TYPES = new Set([
-  "application_section_returned_by_broker",
-  "passport_flag_raised_by_broker",
-  "integration_disconnected_for_client",
   "renewal_reminder",
   "policy_lapsed",
   "coverage_gap",

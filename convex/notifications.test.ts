@@ -29,7 +29,7 @@ describe("notifications.listInbox", () => {
         severity: "warning", status: "unread", createdAt: 1000,
       });
       await ctx.db.insert("notifications", {
-        orgId, type: "application_sent_by_broker", title: "B", body: "c",
+        orgId, type: "policy_delivered_by_broker", title: "B", body: "c",
         severity: "info", status: "unread", createdAt: 2000,
       });
     });

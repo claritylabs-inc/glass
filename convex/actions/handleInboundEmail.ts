@@ -361,13 +361,13 @@ export const processInbound = internalAction({
 
     // Dedup
     const resendEmailId = data.email_id;
-    if (resendEmailId) {
+    if (resendEmailId || data.message_id) {
       const isDuplicate = await ctx.runQuery(
-        internal.agentConversations.checkDuplicate,
-        { resendEmailId },
+        internal.threads.checkDuplicateEmail,
+        { resendEmailId: resendEmailId || undefined, messageId: data.message_id || undefined },
       );
       if (isDuplicate) {
-        console.log("Duplicate webhook — already processed email_id:", resendEmailId);
+        console.log("Duplicate webhook - already processed email:", resendEmailId ?? data.message_id);
         return;
       }
     }
@@ -525,58 +525,42 @@ export const processInbound = internalAction({
     const subject = data.subject ?? "(no subject)";
 
     // Resolve thread
-    let threadId: Id<"agentConversations"> | undefined;
+    let existingThreadId: Id<"threads"> | undefined;
     let threadRootMode: "direct" | "cc" | "forward" | "unknown" | undefined;
-    // Track unified thread found via +suffix routing (may exist without legacy link)
-    let preResolvedUnifiedThreadId: Id<"threads"> | undefined;
 
-    // First: try resolving via +threadSuffix in the recipient address
-    // This is the most reliable method — the threadEmail is unique per thread
+    // First: try resolving via +threadSuffix in the recipient address.
+    // This is the most reliable method because threadEmail is unique per thread.
     if (threadSuffix && agentAddressWithSuffix) {
       const unifiedThread = await ctx.runQuery(
         internal.threads.findByEmail,
         { threadEmail: agentAddressWithSuffix },
       );
       if (unifiedThread) {
-        preResolvedUnifiedThreadId = unifiedThread._id;
-        if (unifiedThread.legacyConversationId) {
-          threadId = unifiedThread.legacyConversationId;
-          const legacyRoot = await ctx.runQuery(
-            internal.agentConversations.getById,
-            { id: unifiedThread.legacyConversationId },
-          );
-          threadRootMode = legacyRoot?.mode;
-        }
-        // If no legacyConversationId, this is a chat-originated thread.
-        // threadId stays undefined — we'll create a legacy conversation below
-        // but the unified thread is already resolved.
+        existingThreadId = unifiedThread._id;
+        threadRootMode = unifiedThread.emailMode;
       }
     }
 
     // Fallback: In-Reply-To header matching
-    if (!threadId && inReplyTo) {
+    if (!existingThreadId && inReplyTo) {
       const parent = await ctx.runQuery(
-        internal.agentConversations.findByMessageId,
-        { messageId: inReplyTo },
+        internal.threads.findThreadByEmailMessageId,
+        { orgId, messageId: inReplyTo },
       );
       if (parent) {
-        threadId = parent.threadId ?? parent._id;
-        threadRootMode = parent.threadId
-          ? (await ctx.runQuery(internal.agentConversations.getById, { id: parent.threadId }))?.mode
-          : parent.mode;
+        existingThreadId = parent._id;
+        threadRootMode = parent.emailMode;
       }
     }
 
-    if (!threadId) {
+    if (!existingThreadId) {
       const subjectMatch = await ctx.runQuery(
-        internal.agentConversations.findThreadBySubject,
+        internal.threads.findEmailThreadBySubject,
         { orgId, subject, fromEmail },
       );
       if (subjectMatch) {
-        threadId = subjectMatch.threadId ?? subjectMatch._id;
-        threadRootMode = subjectMatch.threadId
-          ? (await ctx.runQuery(internal.agentConversations.getById, { id: subjectMatch.threadId }))?.mode
-          : subjectMatch.mode;
+        existingThreadId = subjectMatch._id;
+        threadRootMode = subjectMatch.emailMode;
       }
     }
 
@@ -586,7 +570,7 @@ export const processInbound = internalAction({
     }
     // When an internal user replies to an unknown-mode thread, treat as direct.
     // This lets the agent process their instruction instead of re-sending a notification.
-    if (effectiveMode === "unknown" && isInternal && threadId) {
+    if (effectiveMode === "unknown" && isInternal && existingThreadId) {
       effectiveMode = "direct";
     }
 
@@ -619,51 +603,21 @@ export const processInbound = internalAction({
       }
     }
 
-    // Create conversation record
-    const conversationId = await ctx.runMutation(
-      internal.agentConversations.insertInbound,
+    const unifiedThreadId: Id<"threads"> = await ctx.runMutation(
+      internal.threads.findOrCreateForEmail,
       {
-        userId: primaryUserId,
         orgId,
-        fromEmail,
-        fromName,
-        toAddresses,
-        ccAddresses: ccAddresses.length > 0 ? ccAddresses : undefined,
+        userId: primaryUserId,
         subject,
-        body,
-        bodyHtml,
-        inReplyTo,
-        messageId,
+        existingThreadId,
         mode: effectiveMode,
-        resendEmailId: resendEmailId || undefined,
-        threadId,
-        attachments: attachmentRecords.length > 0 ? attachmentRecords as any : undefined,
+        agentDomain: getAgentDomain(),
       },
     );
 
-    // Mark processing
-    await ctx.runMutation(internal.agentConversations.markProcessing, {
-      id: conversationId,
-    });
-
-    // ── Dual-write: unified threads table ──
-    let unifiedThreadId: Id<"threads"> | undefined = preResolvedUnifiedThreadId;
-    try {
-      if (!unifiedThreadId) {
-        unifiedThreadId = await ctx.runMutation(
-          internal.threads.findOrCreateForEmail,
-          {
-            orgId,
-            userId: primaryUserId,
-            subject,
-            legacyConversationId: threadId ?? conversationId,
-            mode: effectiveMode,
-            agentDomain: getAgentDomain(),
-          },
-        );
-      }
-
-      await ctx.runMutation(internal.threads.insertEmailMessage, {
+    const inboundMessageId: Id<"threadMessages"> = await ctx.runMutation(
+      internal.threads.insertEmailMessage,
+      {
         threadId: unifiedThreadId,
         orgId,
         role: "user",
@@ -675,12 +629,10 @@ export const processInbound = internalAction({
         content: body,
         contentHtml: bodyHtml,
         messageId,
+        resendEmailId: resendEmailId || undefined,
         attachments: attachmentRecords.length > 0 ? attachmentRecords as any : undefined,
-        legacyConversationId: conversationId,
-      });
-    } catch (err) {
-      console.warn("Unified thread dual-write (inbound) failed:", err);
-    }
+      },
+    );
 
     // Unknown mode: notify the primary insurance contact (or first admin)
     if (effectiveMode === "unknown") {
@@ -737,33 +689,24 @@ export const processInbound = internalAction({
         }
         const sentMessageId = sendResult.id;
 
-        await ctx.runMutation(internal.agentConversations.updateResponse, {
-          id: conversationId,
-          responseBody: notificationBody,
-          responseTo: notifyEmail,
+        await ctx.runMutation(internal.threads.insertEmailMessage, {
+          threadId: unifiedThreadId,
+          orgId,
+          role: "agent",
+          content: notificationBody,
+          toAddresses: [notifyEmail],
+          subject: notifSubject,
           responseMessageId: sentMessageId,
         });
-
-        // Dual-write: insert agent notification into unified thread
-        if (unifiedThreadId) {
-          try {
-            await ctx.runMutation(internal.threads.insertEmailMessage, {
-              threadId: unifiedThreadId,
-              orgId,
-              role: "agent",
-              content: notificationBody,
-              responseMessageId: sentMessageId,
-              legacyConversationId: conversationId,
-            });
-          } catch (err) {
-            console.warn("Unified thread dual-write (unknown-mode response) failed:", err);
-          }
-        }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         console.error("Agent unknown-mode notification error:", message);
-        await ctx.runMutation(internal.agentConversations.updateError, {
-          id: conversationId,
+        await ctx.runMutation(internal.threads.insertEmailMessage, {
+          threadId: unifiedThreadId,
+          orgId,
+          role: "agent",
+          content: message,
+          status: "error",
           error: message,
         });
       }
@@ -844,20 +787,20 @@ export const processInbound = internalAction({
         ccAddresses?: string[];
       }> = [];
 
-      if (threadId) {
+      if (unifiedThreadId) {
         const threadMessages = await ctx.runQuery(
-          internal.agentConversations.getThreadMessages,
-          { threadId },
+          internal.threads.getEmailHistory,
+          { threadId: unifiedThreadId, excludeMessageId: inboundMessageId },
         );
         threadMessagesForGuards = threadMessages;
         for (const msg of threadMessages) {
-          if (msg._id === conversationId) continue;
-          messages.push({
-            role: "user",
-            content: `Subject: ${msg.subject}\n\nFrom: ${msg.fromName ? `${msg.fromName} <${msg.fromEmail}>` : msg.fromEmail}\n\n${msg.body}`,
-          });
-          if (msg.responseBody) {
-            messages.push({ role: "assistant", content: msg.responseBody });
+          if (msg.role === "user") {
+            messages.push({
+              role: "user",
+              content: `Subject: ${msg.subject ?? subject}\n\nFrom: ${msg.fromName ? `${msg.fromName} <${msg.fromEmail}>` : msg.fromEmail}\n\n${msg.content}`,
+            });
+          } else if (msg.role === "agent") {
+            messages.push({ role: "assistant", content: msg.content });
           }
         }
       }
@@ -952,7 +895,7 @@ export const processInbound = internalAction({
         const recipientCheck = validateEmailRecipient(recipient, allowedRecipients);
         if (!recipientCheck.allowed) {
           console.warn("[security] Inbound email recipient blocked", {
-            conversationId,
+            inboundMessageId,
             recipient,
             reason: recipientCheck.reason,
           });
@@ -1049,7 +992,6 @@ export const processInbound = internalAction({
               email_expert: buildEmailExpertTool(ctx, {
                 orgId,
                 threadId: unifiedThreadId,
-                legacyConversationId: conversationId,
                 channel: "email",
                 fromHeader,
                 agentAddress,
@@ -1245,15 +1187,6 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
 
       const sentByTool = toolSentEmail as ToolSentEmail | null;
       if (sentByTool) {
-        await ctx.runMutation(internal.agentConversations.updateResponse, {
-          id: conversationId,
-          responseBody: sentByTool.responseBody,
-          responseTo: sentByTool.responseTo,
-          responseCc: sentByTool.responseCc,
-          responseMessageId: sentByTool.responseMessageId,
-          referencedPolicyIds: referencedPolicySourceIds.size > 0 ? ([...referencedPolicySourceIds] as Id<"policies">[]) : undefined,
-          referencedQuoteIds: relevantQuoteIds.length > 0 ? (relevantQuoteIds as Id<"policies">[]) : undefined,
-        });
         return;
       }
 
@@ -1325,22 +1258,11 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
               threadId: unifiedThreadId,
               emailPayload: JSON.stringify(sendPayload),
               scheduledSendTime,
-              legacyConversationId: conversationId,
               recipientEmail: thirdPartyEmail,
               ccAddresses: sendCc,
               subject: replySub,
               emailBody,
               attachments: generatedCoiAttachments.length > 0 ? generatedCoiAttachments : undefined,
-              referencedPolicyIds: referencedPolicySourceIds.size > 0 ? ([...referencedPolicySourceIds] as Id<"policies">[]) : undefined,
-              referencedQuoteIds: relevantQuoteIds.length > 0 ? (relevantQuoteIds as Id<"policies">[]) : undefined,
-            });
-
-            // Update legacy conversation to pending state
-            await ctx.runMutation(internal.agentConversations.updateResponse, {
-              id: conversationId,
-              responseBody: `Sending email to ${thirdPartyEmail} (CC: ${fromEmail})...`,
-              responseTo: thirdPartyEmail,
-              responseCc: sendCc,
               referencedPolicyIds: referencedPolicySourceIds.size > 0 ? ([...referencedPolicySourceIds] as Id<"policies">[]) : undefined,
               referencedQuoteIds: relevantQuoteIds.length > 0 ? (relevantQuoteIds as Id<"policies">[]) : undefined,
             });
@@ -1360,39 +1282,18 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
             if (!sendOutcome.ok) throw new Error(`Failed to send email: ${sendOutcome.error}`);
             const sentMsgId = sendOutcome.id;
 
-            const confirmText = `Email sent to ${thirdPartyEmail} (CC: ${fromEmail}).`;
-            await ctx.runMutation(internal.agentConversations.updateResponse, {
-              id: conversationId,
-              responseBody: confirmText,
-              responseTo: thirdPartyEmail,
-              responseCc: sendCc,
+            await ctx.runMutation(internal.threads.insertEmailMessage, {
+              threadId: unifiedThreadId,
+              orgId,
+              role: "agent",
+              content: emailBody,
+              toAddresses: [thirdPartyEmail],
+              ccAddresses: sendCc,
+              subject: replySub,
               responseMessageId: sentMsgId,
-              referencedPolicyIds:
-                referencedPolicySourceIds.size > 0 ? ([...referencedPolicySourceIds] as Id<"policies">[]) : undefined,
-              referencedQuoteIds:
-                relevantQuoteIds.length > 0 ? (relevantQuoteIds as Id<"policies">[]) : undefined,
+              referencedPolicyIds: referencedPolicySourceIds.size > 0 ? ([...referencedPolicySourceIds] as Id<"policies">[]) : undefined,
+              referencedQuoteIds: relevantQuoteIds.length > 0 ? (relevantQuoteIds as Id<"policies">[]) : undefined,
             });
-
-            // Dual-write to unified thread
-            if (unifiedThreadId) {
-              try {
-                await ctx.runMutation(internal.threads.insertEmailMessage, {
-                  threadId: unifiedThreadId,
-                  orgId,
-                  role: "agent",
-                  content: emailBody,
-                  toAddresses: [thirdPartyEmail],
-                  ccAddresses: sendCc,
-                  subject: replySub,
-                  responseMessageId: sentMsgId,
-                  referencedPolicyIds: referencedPolicySourceIds.size > 0 ? ([...referencedPolicySourceIds] as Id<"policies">[]) : undefined,
-                  referencedQuoteIds: relevantQuoteIds.length > 0 ? (relevantQuoteIds as Id<"policies">[]) : undefined,
-                  legacyConversationId: conversationId,
-                });
-              } catch (err) {
-                console.warn("Unified thread dual-write (third-party send) failed:", err);
-              }
-            }
           }
           return; // done — third-party send handled
         } catch (err) {
@@ -1525,43 +1426,18 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
       }
       const sentMessageId = sendResult.id;
 
-      await ctx.runMutation(internal.agentConversations.updateResponse, {
-        id: conversationId,
-        responseBody,
-        responseTo: replyTo,
-        responseCc: replyCc.length > 0 ? replyCc : undefined,
+      await ctx.runMutation(internal.threads.insertEmailMessage, {
+        threadId: unifiedThreadId,
+        orgId,
+        role: "agent",
+        content: responseBody,
+        toAddresses: [replyTo],
+        ccAddresses: replyCc.length > 0 ? replyCc : undefined,
         responseMessageId: sentMessageId,
-        referencedPolicyIds:
-          referencedPolicySourceIds.size > 0
-            ? ([...referencedPolicySourceIds] as Id<"policies">[])
-            : undefined,
-        referencedQuoteIds:
-          relevantQuoteIds.length > 0
-            ? (relevantQuoteIds as Id<"policies">[])
-            : undefined,
+        referencedPolicyIds: referencedPolicySourceIds.size > 0 ? ([...referencedPolicySourceIds] as Id<"policies">[]) : undefined,
+        referencedQuoteIds: relevantQuoteIds.length > 0 ? (relevantQuoteIds as Id<"policies">[]) : undefined,
         attachments: generatedCoiAttachments.length > 0 ? generatedCoiAttachments : undefined,
       });
-
-      // Dual-write: insert agent response into unified thread
-      if (unifiedThreadId) {
-        try {
-          await ctx.runMutation(internal.threads.insertEmailMessage, {
-            threadId: unifiedThreadId,
-            orgId,
-            role: "agent",
-            content: responseBody,
-            toAddresses: [replyTo],
-            ccAddresses: replyCc.length > 0 ? replyCc : undefined,
-            responseMessageId: sentMessageId,
-            referencedPolicyIds: referencedPolicySourceIds.size > 0 ? ([...referencedPolicySourceIds] as Id<"policies">[]) : undefined,
-            referencedQuoteIds: relevantQuoteIds.length > 0 ? (relevantQuoteIds as Id<"policies">[]) : undefined,
-            attachments: generatedCoiAttachments.length > 0 ? generatedCoiAttachments : undefined,
-            legacyConversationId: conversationId,
-          });
-        } catch (err) {
-          console.warn("Unified thread dual-write (agent response) failed:", err);
-        }
-      }
 
       // ── Phase E: extract durable facts from this email exchange into orgMemory ──
       try {
@@ -1642,31 +1518,18 @@ Output ONLY the JSON array — no prose, no code fences.`,
         if (!sendResult.ok) {
           console.warn("Failed to send agent failure email:", sendResult.error);
         }
-        await ctx.runMutation(internal.agentConversations.updateResponse, {
-          id: conversationId,
-          responseBody: FATAL_ACTION_FAILED_MESSAGE,
-          responseTo: fromEmail,
+        await ctx.runMutation(internal.threads.insertEmailMessage, {
+          threadId: unifiedThreadId,
+          orgId,
+          role: "agent",
+          content: FATAL_ACTION_FAILED_MESSAGE,
+          toAddresses: [fromEmail],
+          subject: failureSubject,
           responseMessageId: sentMessageId,
         });
-        if (unifiedThreadId) {
-          await ctx.runMutation(internal.threads.insertEmailMessage, {
-            threadId: unifiedThreadId,
-            orgId,
-            role: "agent",
-            content: FATAL_ACTION_FAILED_MESSAGE,
-            toAddresses: [fromEmail],
-            subject: failureSubject,
-            responseMessageId: sentMessageId,
-            legacyConversationId: conversationId,
-          });
-        }
       } catch (notifyError) {
         console.warn("Failed to record/send agent failure response:", notifyError);
       }
-      await ctx.runMutation(internal.agentConversations.updateError, {
-        id: conversationId,
-        error: message,
-      });
     }
   },
 });

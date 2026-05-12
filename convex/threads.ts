@@ -7,6 +7,12 @@ import { requireBrokerAccessToClient } from "./lib/access";
 // Note: mutations/queries don't have process.env
 // The domain is stored on the org via setAgentDomain action, or passed by the client
 const FALLBACK_AGENT_DOMAIN = "glass.claritylabs.inc";
+const EMAIL_MODE_VALIDATOR = v.union(
+  v.literal("direct"),
+  v.literal("cc"),
+  v.literal("forward"),
+  v.literal("unknown"),
+);
 
 /** Generate a short alphanumeric ID for thread email addresses */
 function shortId(): string {
@@ -156,6 +162,7 @@ export const create = mutation({
       lastMessageAt: now,
       initialContext: args.initialContext,
       threadEmail,
+      originChannel: "chat",
     });
   },
 });
@@ -165,6 +172,14 @@ export const generateUploadUrl = mutation({
   handler: async (ctx) => {
     await requireOrgAccess(ctx);
     return await ctx.storage.generateUploadUrl();
+  },
+});
+
+export const getAttachmentUrl = query({
+  args: { fileId: v.id("_storage") },
+  handler: async (ctx, args) => {
+    await requireOrgAccess(ctx);
+    return await ctx.storage.getUrl(args.fileId);
   },
 });
 
@@ -545,6 +560,7 @@ export const createInternal = internalMutation({
       title: args.title ?? "New chat",
       createdBy: args.userId,
       lastMessageAt: Date.now(),
+      originChannel: "chat",
     });
   },
 });
@@ -582,19 +598,7 @@ export const findByEmail = internalQuery({
   },
 });
 
-// ── D3: Inbound email routing helpers ──
-
-export const findByLegacyId = internalQuery({
-  args: { legacyConversationId: v.id("agentConversations") },
-  handler: async (ctx, args) => {
-    return await ctx.db
-      .query("threads")
-      .withIndex("by_legacyConversationId", (q) =>
-        q.eq("legacyConversationId", args.legacyConversationId)
-      )
-      .first();
-  },
-});
+// ── Inbound email / iMessage routing helpers ──
 
 export const findOrCreateByPhone = internalMutation({
   args: {
@@ -617,10 +621,11 @@ export const findOrCreateByPhone = internalMutation({
     const displayName = args.userName ?? args.fromPhone;
     return await ctx.db.insert("threads", {
       orgId: args.orgId,
-      title: `iMessage — ${displayName}`,
+      title: `iMessage - ${displayName}`,
       createdBy: args.userId,
       lastMessageAt: Date.now(),
       threadPhone: args.fromPhone,
+      originChannel: "imessage",
     });
   },
 });
@@ -687,20 +692,19 @@ export const findOrCreateForEmail = internalMutation({
     orgId: v.id("organizations"),
     userId: v.id("users"),
     subject: v.string(),
-    legacyConversationId: v.optional(v.id("agentConversations")),
-    mode: v.optional(v.string()),
+    existingThreadId: v.optional(v.id("threads")),
+    mode: v.optional(EMAIL_MODE_VALIDATOR),
     agentDomain: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    // If we have a legacy conversation ID, try to find an existing thread
-    if (args.legacyConversationId) {
-      const existing = await ctx.db
-        .query("threads")
-        .withIndex("by_legacyConversationId", (q) =>
-          q.eq("legacyConversationId", args.legacyConversationId)
-        )
-        .first();
-      if (existing) {
+    if (args.existingThreadId) {
+      const existing = await ctx.db.get(args.existingThreadId);
+      if (existing && existing.orgId === args.orgId) {
+        await ctx.db.patch(existing._id, {
+          lastMessageAt: Date.now(),
+          emailMode: existing.emailMode ?? args.mode,
+          originChannel: existing.originChannel ?? "email",
+        });
         return existing._id;
       }
     }
@@ -720,11 +724,133 @@ export const findOrCreateForEmail = internalMutation({
       title: args.subject,
       createdBy: args.userId,
       lastMessageAt: Date.now(),
-      legacyConversationId: args.legacyConversationId,
       threadEmail,
+      originChannel: "email",
+      emailMode: args.mode,
     });
 
     return threadId;
+  },
+});
+
+function normalizeMessageId(id: string): string {
+  return id.replace(/^<|>$/g, "").trim();
+}
+
+export const checkDuplicateEmail = internalQuery({
+  args: {
+    resendEmailId: v.optional(v.string()),
+    messageId: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    if (args.resendEmailId) {
+      const byResend = await ctx.db
+        .query("threadMessages")
+        .withIndex("by_resendEmailId", (q) => q.eq("resendEmailId", args.resendEmailId))
+        .first();
+      if (byResend) return true;
+    }
+    if (args.messageId) {
+      const byMessage = await ctx.db
+        .query("threadMessages")
+        .withIndex("by_messageId", (q) => q.eq("messageId", args.messageId))
+        .first();
+      if (byMessage) return true;
+      const normalized = normalizeMessageId(args.messageId);
+      if (normalized !== args.messageId) {
+        const byNormalized = await ctx.db
+          .query("threadMessages")
+          .withIndex("by_messageId", (q) => q.eq("messageId", normalized))
+          .first();
+        if (byNormalized) return true;
+      }
+    }
+    return false;
+  },
+});
+
+export const findThreadByEmailMessageId = internalQuery({
+  args: {
+    orgId: v.id("organizations"),
+    messageId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const candidates = [args.messageId, normalizeMessageId(args.messageId)];
+    for (const candidate of [...new Set(candidates)]) {
+      const inbound = await ctx.db
+        .query("threadMessages")
+        .withIndex("by_messageId", (q) => q.eq("messageId", candidate))
+        .first();
+      if (inbound && inbound.orgId === args.orgId) {
+        return await ctx.db.get(inbound.threadId);
+      }
+
+      const outbound = await ctx.db
+        .query("threadMessages")
+        .withIndex("by_responseMessageId", (q) => q.eq("responseMessageId", candidate))
+        .first();
+      if (outbound && outbound.orgId === args.orgId) {
+        return await ctx.db.get(outbound.threadId);
+      }
+    }
+    return null;
+  },
+});
+
+export const findEmailThreadBySubject = internalQuery({
+  args: {
+    orgId: v.id("organizations"),
+    subject: v.string(),
+    fromEmail: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const baseSubject = args.subject
+      .replace(/^(\s*(re|fwd?)\s*:\s*)+/i, "")
+      .trim()
+      .toLowerCase();
+    if (!baseSubject) return null;
+
+    const threads = await ctx.db
+      .query("threads")
+      .withIndex("by_orgId_lastMessageAt", (q) => q.eq("orgId", args.orgId))
+      .order("desc")
+      .take(100);
+
+    for (const thread of threads) {
+      const threadBaseSubject = thread.title
+        .replace(/^(\s*(re|fwd?)\s*:\s*)+/i, "")
+        .trim()
+        .toLowerCase();
+      if (threadBaseSubject !== baseSubject) continue;
+
+      const messages = await ctx.db
+        .query("threadMessages")
+        .withIndex("by_threadId", (q) => q.eq("threadId", thread._id))
+        .take(20);
+      if (messages.some((message) => message.fromEmail === args.fromEmail)) {
+        return thread;
+      }
+    }
+
+    return threads.find((thread) =>
+      thread.title.replace(/^(\s*(re|fwd?)\s*:\s*)+/i, "").trim().toLowerCase() === baseSubject
+    ) ?? null;
+  },
+});
+
+export const getEmailHistory = internalQuery({
+  args: {
+    threadId: v.id("threads"),
+    excludeMessageId: v.optional(v.id("threadMessages")),
+  },
+  handler: async (ctx, args) => {
+    const messages = await ctx.db
+      .query("threadMessages")
+      .withIndex("by_threadId", (q) => q.eq("threadId", args.threadId))
+      .collect();
+    return messages
+      .filter((message) => message.channel === "email" && message._id !== args.excludeMessageId)
+      .sort((a, b) => a._creationTime - b._creationTime);
   },
 });
 
@@ -755,7 +881,9 @@ export const insertEmailMessage = internalMutation({
     ),
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
     referencedQuoteIds: v.optional(v.array(v.id("policies"))),
-    legacyConversationId: v.optional(v.id("agentConversations")),
+    resendEmailId: v.optional(v.string()),
+    status: v.optional(v.union(v.literal("processing"), v.literal("error"), v.literal("pending_send"))),
+    error: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const messageDocId = await ctx.db.insert("threadMessages", {
@@ -773,10 +901,12 @@ export const insertEmailMessage = internalMutation({
       contentHtml: args.contentHtml,
       messageId: args.messageId,
       responseMessageId: args.responseMessageId,
+      resendEmailId: args.resendEmailId,
       attachments: args.attachments,
       referencedPolicyIds: args.referencedPolicyIds,
       referencedQuoteIds: args.referencedQuoteIds,
-      legacyConversationId: args.legacyConversationId,
+      status: args.status,
+      error: args.error,
     });
 
     // Update the thread's lastMessageAt

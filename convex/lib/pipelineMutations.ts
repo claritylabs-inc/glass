@@ -6,9 +6,9 @@
  *   export const { getJob, setStatus, setCheckpoint, appendLog, clearLog } =
  *     makePipelineMutations("policies");
  *
- *   // Custom prefix — e.g. "prefill*" fields:
+ *   // Custom prefix — e.g. "review*" fields:
  *   export const { getJob, setStatus, setCheckpoint, appendLog, clearLog } =
- *     makePipelineMutations("applications", "prefill");
+ *     makePipelineMutations("policies", "review");
  *
  * The returned functions are Convex internalQuery / internalMutation functions
  * ready to be exported from any Convex module.

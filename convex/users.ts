@@ -222,12 +222,19 @@ export const resetAccount = mutation({
       await ctx.db.delete(policy._id);
     }
 
-    // Delete all agent conversations
-    const conversations = orgId
-      ? await ctx.db.query("agentConversations").withIndex("by_orgId", (q) => q.eq("orgId", orgId)).collect()
-      : await ctx.db.query("agentConversations").withIndex("by_userId", (q) => q.eq("userId", userId)).collect();
-    for (const conv of conversations) {
-      await ctx.db.delete(conv._id);
+    // Delete all threads and messages
+    const threads = orgId
+      ? await ctx.db.query("threads").withIndex("by_orgId", (q) => q.eq("orgId", orgId)).collect()
+      : [];
+    for (const thread of threads) {
+      const messages = await ctx.db
+        .query("threadMessages")
+        .withIndex("by_threadId", (q) => q.eq("threadId", thread._id))
+        .collect();
+      for (const message of messages) {
+        await ctx.db.delete(message._id);
+      }
+      await ctx.db.delete(thread._id);
     }
 
     // Reset user profile fields

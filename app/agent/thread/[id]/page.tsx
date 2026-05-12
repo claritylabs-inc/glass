@@ -9,7 +9,7 @@ import { PillButton } from "@/components/ui/pill-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ModeBadge } from "@/components/mode-badge";
-import { MessageBubble, splitQuotedReply, QuotedContent, type Conversation } from "@/components/conversation-message";
+import { splitQuotedReply, QuotedContent } from "@/components/conversation-message";
 import { toast } from "sonner";
 import { Loader2, Archive, ArchiveRestore, FileText, Check, ClipboardList, Asterisk, Mail as MailIcon, MessageSquare, Phone as PhoneIcon, Paperclip, Download, Copy, Lock, RotateCcw } from "lucide-react";
 import { EditableBreadcrumbTitle } from "@/components/editable-breadcrumb-title";
@@ -59,7 +59,6 @@ export type ThreadMessage = {
   status?: "processing" | "error" | "pending_send";
   error?: string;
   pendingEmailId?: Id<"pendingEmails">;
-  legacyConversationId?: Id<"agentConversations">;
 };
 
 const TOOL_DISPLAY_NAMES: Record<string, string> = {
@@ -151,13 +150,13 @@ function UnifiedThreadActions({
   messages,
 }: {
   threadId: Id<"threads">;
-  thread: { title: string; archivedAt?: number; legacyConversationId?: Id<"agentConversations">; threadEmail?: string };
+  thread: { title: string; archivedAt?: number; originChannel?: "chat" | "email" | "imessage"; threadEmail?: string };
   messages?: ThreadMessage[];
 }) {
   const archiveThread = useMutation(api.threads.archive);
   const unarchiveThread = useMutation(api.threads.unarchive);
   const isArchived = !!thread.archivedAt;
-  const isEmail = !!thread.legacyConversationId;
+  const isEmail = thread.originChannel === "email";
 
   async function handleArchiveToggle() {
     try {
@@ -240,7 +239,7 @@ function ThreadAttachmentChip({
 }) {
   const { openWithUrl } = usePdf();
   const url = useQuery(
-    api.agentConversations.getAttachmentUrl,
+    api.threads.getAttachmentUrl,
     attachment.fileId ? { fileId: attachment.fileId } : "skip",
   );
   const isPdf = attachment.contentType === "application/pdf";
@@ -887,8 +886,8 @@ function UnifiedThreadContent({
   const isMixedThread = useMemo(() => {
     if (!messages) return false;
     const hasEmail = messages.some((m) => m.channel === "email");
-    return hasEmail || !!thread?.legacyConversationId;
-  }, [messages, thread?.legacyConversationId]);
+    return hasEmail || thread?.originChannel === "email";
+  }, [messages, thread?.originChannel]);
 
   if (!thread) {
     return (
@@ -966,180 +965,6 @@ function UnifiedThreadContent({
 }
 
 /* ═══════════════════════════════════════════════════
-   Legacy Email Thread View
-   ═══════════════════════════════════════════════════ */
-
-type Thread = {
-  root: Conversation;
-  messages: Conversation[];
-  latestTime: number;
-};
-
-/* ── Email thread actions (lifted to AppShell header) ── */
-function EmailThreadActions({
-  thread,
-}: {
-  thread: Thread;
-}) {
-  const archiveConv = useMutation(api.agentConversations.archive);
-  const unarchiveConv = useMutation(api.agentConversations.unarchive);
-  const root = thread.root;
-  const isArchived = !!root.archivedAt;
-
-  async function handleArchiveToggle() {
-    for (const msg of thread.messages) {
-      if (isArchived) {
-        await unarchiveConv({ id: msg._id });
-      } else {
-        await archiveConv({ id: msg._id });
-      }
-    }
-    toast.success(isArchived ? "Unarchived" : "Archived");
-  }
-
-  function handleCopyThread() {
-    const lines: string[] = [];
-    lines.push(`Thread: ${root.subject}`);
-    lines.push(`Messages: ${thread.messages.length}`);
-    lines.push("─".repeat(50));
-    for (const msg of thread.messages) {
-      const time = dayjs(msg._creationTime).format("MMM D, YYYY h:mm A");
-      const sender = msg.responseBody
-        ? "Glass"
-        : msg.fromName ?? msg.fromEmail ?? "Unknown";
-      lines.push("");
-      lines.push(`${sender} — ${time}`);
-      lines.push(`From: ${msg.fromEmail}`);
-      if (msg.toAddresses?.length) lines.push(`To: ${msg.toAddresses.join(", ")}`);
-      if (msg.ccAddresses?.length) lines.push(`CC: ${msg.ccAddresses.join(", ")}`);
-      lines.push("");
-      lines.push(msg.responseBody ? msg.responseBody : msg.body);
-      if (msg.attachments?.length) {
-        lines.push(`Attachments: ${msg.attachments.map((a: { filename: string }) => a.filename).join(", ")}`);
-      }
-      lines.push("─".repeat(50));
-    }
-    navigator.clipboard.writeText(lines.join("\n"));
-    toast.success("Thread copied to clipboard");
-  }
-
-  return (
-    <>
-      <ModeBadge mode={root.mode} />
-      <div className="w-px h-4 bg-foreground/10" />
-      <PillButton size="compact" variant="icon" onClick={handleCopyThread} label="Copy thread">
-        <Copy className="w-3.5 h-3.5" />
-      </PillButton>
-      <PillButton size="compact" variant="icon" onClick={handleArchiveToggle} label={isArchived ? "Unarchive" : "Archive"}>
-        {isArchived ? <ArchiveRestore className="w-4 h-4" /> : <Archive className="w-4 h-4" />}
-      </PillButton>
-    </>
-  );
-}
-
-/* ── Legacy email thread view ── */
-function EmailThreadContent({
-  threadId,
-  onMeta,
-  viewerEmail,
-}: {
-  threadId: string;
-  onMeta?: (meta: { subject: string; actions: React.ReactNode }) => void;
-  viewerEmail?: string;
-}) {
-  const { openWithUrl } = usePdf();
-  const conversations = useQuery(api.agentConversations.list, { archived: false });
-  const archivedConversations = useQuery(api.agentConversations.list, { archived: true });
-  const messagesRef = useRef<HTMLDivElement>(null);
-  const prevThreadId = useRef<string | null>(null);
-
-  const thread = useMemo<Thread | undefined>(() => {
-    const allConvs = [
-      ...(conversations ?? []),
-      ...(archivedConversations ?? []),
-    ] as unknown as Conversation[];
-    if (allConvs.length === 0) return undefined;
-
-    const threadMap = new Map<string, Thread>();
-    for (const conv of allConvs) {
-      const rootId = conv.threadId ?? conv._id;
-      const rootIdStr = rootId as string;
-      const existing = threadMap.get(rootIdStr);
-      if (existing) {
-        existing.messages.push(conv);
-        if (conv._creationTime > existing.latestTime) {
-          existing.latestTime = conv._creationTime;
-        }
-      } else {
-        threadMap.set(rootIdStr, {
-          root: conv.threadId ? allConvs.find((c) => c._id === conv.threadId) ?? conv : conv,
-          messages: [conv],
-          latestTime: conv._creationTime,
-        });
-      }
-    }
-
-    for (const t of threadMap.values()) {
-      t.messages.sort((a, b) => a._creationTime - b._creationTime);
-      if (!t.messages.find((m) => m._id === t.root._id)) {
-        t.messages.unshift(t.root);
-      }
-    }
-
-    return threadMap.get(threadId) ??
-      Array.from(threadMap.values()).find((t) =>
-        t.messages.some((m) => (m._id as string) === threadId)
-      );
-  }, [conversations, archivedConversations, threadId]);
-
-  // Push subject + actions to parent for AppShell header
-  useEffect(() => {
-    if (!thread || !onMeta) return;
-    onMeta({
-      subject: thread.root.subject,
-      actions: <EmailThreadActions thread={thread} />,
-    });
-  }, [thread, onMeta]);
-
-  useEffect(() => {
-    const el = messagesRef.current;
-    if (!el || !thread) return;
-    const isNew = prevThreadId.current !== thread.root._id;
-    prevThreadId.current = thread.root._id;
-    el.scrollTo({ top: el.scrollHeight, behavior: isNew ? "instant" : "smooth" });
-  }, [thread, thread?.root._id, thread?.messages.length]);
-
-  if (conversations === undefined && archivedConversations === undefined) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <Loader2 className="w-5 h-5 animate-spin text-muted-foreground/30" />
-      </div>
-    );
-  }
-
-  if (!thread) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <p className="text-body-sm text-muted-foreground/40">Thread not found</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex flex-col h-full">
-      <div ref={messagesRef} className="flex-1 overflow-y-auto p-4 pr-5">
-        <div className="max-w-2xl mx-auto space-y-4">
-          {thread.messages.map((msg) => (
-            <MessageBubble key={msg._id} conv={msg} onOpenPdf={openWithUrl} viewerEmail={viewerEmail} />
-          ))}
-          {thread.messages.length > 0 && <div className="h-[50vh]" />}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ═══════════════════════════════════════════════════
    Main Thread Page
    ═══════════════════════════════════════════════════ */
 
@@ -1164,10 +989,6 @@ export default function ThreadPage({ params }: { params: Promise<{ id: string }>
 
   const handleUnifiedMeta = useCallback((meta: { detail: React.ReactNode; actions: React.ReactNode }) => {
     setThreadMeta(meta);
-  }, []);
-
-  const handleEmailMeta = useCallback((meta: { subject: string; actions: React.ReactNode }) => {
-    setThreadMeta({ detail: meta.subject, actions: meta.actions });
   }, []);
 
   // Loading: unified query still pending
@@ -1203,12 +1024,11 @@ export default function ThreadPage({ params }: { params: Promise<{ id: string }>
     );
   }
 
-  // Legacy email thread fallback
   return (
-    <AppShell breadcrumbDetail={threadMeta.detail} actions={threadMeta.actions} presenceUsers={presenceUsers}>
+    <AppShell breadcrumbDetail="Conversation" presenceUsers={presenceUsers}>
       <div className="absolute inset-0 overflow-hidden">
-        <div className="h-full flex flex-col">
-          <EmailThreadContent threadId={id} onMeta={handleEmailMeta} viewerEmail={viewer?.email ?? undefined} />
+        <div className="h-full flex items-center justify-center">
+          <p className="text-body-sm text-muted-foreground/40">Thread not found</p>
         </div>
       </div>
     </AppShell>

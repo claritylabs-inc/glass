@@ -51,7 +51,6 @@ export const create = internalMutation({
     emailPayload: v.string(),
     scheduledSendTime: v.number(),
     chatMessageId: v.optional(v.id("threadMessages")),
-    legacyConversationId: v.optional(v.id("agentConversations")),
     recipientEmail: v.string(),
     ccAddresses: v.optional(v.array(v.string())),
     bccAddresses: v.optional(v.array(v.string())),

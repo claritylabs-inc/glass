@@ -21,7 +21,6 @@ import type * as actions_mcpChat from "../actions/mcpChat.js";
 import type * as actions_policyChangeRequests from "../actions/policyChangeRequests.js";
 import type * as actions_policyExtraction from "../actions/policyExtraction.js";
 import type * as actions_processThreadChat from "../actions/processThreadChat.js";
-import type * as actions_processWebChat from "../actions/processWebChat.js";
 import type * as actions_reExtractFromFile from "../actions/reExtractFromFile.js";
 import type * as actions_rechunkPolicy from "../actions/rechunkPolicy.js";
 import type * as actions_reconcilePolicy from "../actions/reconcilePolicy.js";
@@ -31,7 +30,6 @@ import type * as actions_sendNotificationEmail from "../actions/sendNotification
 import type * as actions_sendPendingEmail from "../actions/sendPendingEmail.js";
 import type * as actions_threadTitle from "../actions/threadTitle.js";
 import type * as actions_updateDocumentChunk from "../actions/updateDocumentChunk.js";
-import type * as agentConversations from "../agentConversations.js";
 import type * as apiAuditLog from "../apiAuditLog.js";
 import type * as apiKeys from "../apiKeys.js";
 import type * as auth from "../auth.js";
@@ -96,7 +94,7 @@ import type * as lib_threadAccess from "../lib/threadAccess.js";
 import type * as migrations from "../migrations.js";
 import type * as migrations_cleanOrphanAuth from "../migrations/cleanOrphanAuth.js";
 import type * as migrations_migrateOnboarding from "../migrations/migrateOnboarding.js";
-import type * as migrations_migrateToThreads from "../migrations/migrateToThreads.js";
+import type * as migrations_purgeLegacyThreadTables from "../migrations/purgeLegacyThreadTables.js";
 import type * as migrations_stripInvitationLegacyFields from "../migrations/stripInvitationLegacyFields.js";
 import type * as modelConfig from "../modelConfig.js";
 import type * as modelSettings from "../modelSettings.js";
@@ -117,7 +115,6 @@ import type * as seed from "../seed.js";
 import type * as sourceSpans from "../sourceSpans.js";
 import type * as threads from "../threads.js";
 import type * as users from "../users.js";
-import type * as webChats from "../webChats.js";
 
 import type {
   ApiFromModules,
@@ -139,7 +136,6 @@ declare const fullApi: ApiFromModules<{
   "actions/policyChangeRequests": typeof actions_policyChangeRequests;
   "actions/policyExtraction": typeof actions_policyExtraction;
   "actions/processThreadChat": typeof actions_processThreadChat;
-  "actions/processWebChat": typeof actions_processWebChat;
   "actions/reExtractFromFile": typeof actions_reExtractFromFile;
   "actions/rechunkPolicy": typeof actions_rechunkPolicy;
   "actions/reconcilePolicy": typeof actions_reconcilePolicy;
@@ -149,7 +145,6 @@ declare const fullApi: ApiFromModules<{
   "actions/sendPendingEmail": typeof actions_sendPendingEmail;
   "actions/threadTitle": typeof actions_threadTitle;
   "actions/updateDocumentChunk": typeof actions_updateDocumentChunk;
-  agentConversations: typeof agentConversations;
   apiAuditLog: typeof apiAuditLog;
   apiKeys: typeof apiKeys;
   auth: typeof auth;
@@ -214,7 +209,7 @@ declare const fullApi: ApiFromModules<{
   migrations: typeof migrations;
   "migrations/cleanOrphanAuth": typeof migrations_cleanOrphanAuth;
   "migrations/migrateOnboarding": typeof migrations_migrateOnboarding;
-  "migrations/migrateToThreads": typeof migrations_migrateToThreads;
+  "migrations/purgeLegacyThreadTables": typeof migrations_purgeLegacyThreadTables;
   "migrations/stripInvitationLegacyFields": typeof migrations_stripInvitationLegacyFields;
   modelConfig: typeof modelConfig;
   modelSettings: typeof modelSettings;
@@ -235,7 +230,6 @@ declare const fullApi: ApiFromModules<{
   sourceSpans: typeof sourceSpans;
   threads: typeof threads;
   users: typeof users;
-  webChats: typeof webChats;
 }>;
 
 /**

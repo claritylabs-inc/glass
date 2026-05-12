@@ -24,7 +24,7 @@ export default function ClientThreadsPage() {
         _creationTime: number;
         title: string;
         lastMessageAt?: number;
-        legacyConversationId?: string;
+        originChannel?: "chat" | "email" | "imessage";
         threadPhone?: string;
       }>
     | undefined;
@@ -57,7 +57,7 @@ export default function ClientThreadsPage() {
               <div className="shrink-0 text-muted-foreground/30">
                 {thread.threadPhone ? (
                   <Phone className="w-4 h-4" />
-                ) : thread.legacyConversationId ? (
+                ) : thread.originChannel === "email" ? (
                   <Mail className="w-4 h-4" />
                 ) : (
                   <MessageSquare className="w-4 h-4" />
@@ -71,7 +71,7 @@ export default function ClientThreadsPage() {
                   {dayjs(thread.lastMessageAt ?? thread._creationTime).format(
                     "MMM D, YYYY · h:mm A",
                   )}
-                  {thread.threadPhone ? " · iMessage" : thread.legacyConversationId ? " · Email" : " · Chat"}
+                  {thread.threadPhone ? " · iMessage" : thread.originChannel === "email" ? " · Email" : " · Chat"}
                 </p>
               </div>
             </button>

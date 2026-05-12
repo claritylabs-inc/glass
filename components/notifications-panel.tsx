@@ -16,14 +16,8 @@ import {
   XCircle,
   TrendingDown,
   TrendingUp,
-  Lightbulb,
   Bell,
   X,
-  Send,
-  RotateCcw,
-  CheckCheck,
-  Flag,
-  Plug,
   FileText,
   FileCheck,
   UserCheck,
@@ -46,22 +40,9 @@ type NotificationType =
   | "incomplete_extraction"
   | "stale_data"
   | "premium_anomaly"
-  | "dream_insight"
-  // New broker-targeted
   | "client_invitation_accepted"
   | "client_onboarding_completed"
-  | "application_submitted_by_client"
-  | "application_completed_by_client"
   | "client_document_uploaded"
-  | "integration_disconnected_for_client"
-  | "integration_request_fulfilled"
-  | "passport_flag_resolved_by_client"
-  // New client-targeted
-  | "application_sent_by_broker"
-  | "application_section_returned_by_broker"
-  | "application_accepted_by_broker"
-  | "passport_flag_raised_by_broker"
-  | "integration_requested_by_broker"
   | "policy_delivered_by_broker"
   | "quote_delivered_by_broker";
 
@@ -94,22 +75,9 @@ const TYPE_ICONS: Record<NotificationType, React.ComponentType<{ className?: str
   incomplete_extraction: XCircle,
   stale_data: Clock,
   premium_anomaly: TrendingUp,
-  dream_insight: Lightbulb,
-  // New broker-targeted
   client_invitation_accepted: UserPlus,
   client_onboarding_completed: UserCheck,
-  application_submitted_by_client: Send,
-  application_completed_by_client: CheckCheck,
   client_document_uploaded: FileText,
-  integration_disconnected_for_client: Plug,
-  integration_request_fulfilled: CheckCircle,
-  passport_flag_resolved_by_client: CheckCheck,
-  // New client-targeted
-  application_sent_by_broker: Send,
-  application_section_returned_by_broker: RotateCcw,
-  application_accepted_by_broker: CheckCheck,
-  passport_flag_raised_by_broker: Flag,
-  integration_requested_by_broker: Plug,
   policy_delivered_by_broker: FileCheck,
   quote_delivered_by_broker: FileCheck,
 };

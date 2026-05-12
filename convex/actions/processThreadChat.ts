@@ -413,7 +413,7 @@ export const run = internalAction({
       // Detect thread type
       const thread = await ctx.runQuery(internal.threads.getInternal, { id: args.threadId });
       const hasEmailMessages = allMessages.some((m: Record<string, unknown>) => m.channel === "email");
-      const isMixedThread = hasEmailMessages || !!thread?.legacyConversationId;
+      const isMixedThread = hasEmailMessages || thread?.originChannel === "email";
       const emailIdentity = await resolveEmailAgentIdentity(ctx, org);
       const canSendEmail = emailIdentity.canSend;
 

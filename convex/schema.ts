@@ -83,11 +83,6 @@ export default defineSchema({
     emailSendDelay: v.optional(v.number()), // seconds before sending emails (default 5, 0 = instant)
     // Onboarding
     onboardingComplete: v.optional(v.boolean()),
-    // Portfolio-level AI analysis
-    portfolioAnalysis: v.optional(v.any()),
-    // Intelligence pipeline
-    intelligenceSummary: v.optional(v.string()),
-    lastDreamAt: v.optional(v.number()),
     // Branding
     iconStorageId: v.optional(v.id("_storage")),
     // Dual-org: org type discriminator
@@ -753,22 +748,10 @@ export default defineSchema({
       v.literal("incomplete_extraction"),
       v.literal("stale_data"),
       v.literal("premium_anomaly"),
-      v.literal("dream_insight"),
-      // Broker-targeted (new)
+      // Broker/client lifecycle
       v.literal("client_invitation_accepted"),
       v.literal("client_onboarding_completed"),
-      v.literal("application_submitted_by_client"),
-      v.literal("application_completed_by_client"),
       v.literal("client_document_uploaded"),
-      v.literal("integration_disconnected_for_client"),
-      v.literal("integration_request_fulfilled"),
-      v.literal("passport_flag_resolved_by_client"),
-      // Client-targeted (new)
-      v.literal("application_sent_by_broker"),
-      v.literal("application_section_returned_by_broker"),
-      v.literal("application_accepted_by_broker"),
-      v.literal("passport_flag_raised_by_broker"),
-      v.literal("integration_requested_by_broker"),
       v.literal("policy_delivered_by_broker"),
       v.literal("quote_delivered_by_broker"),
     ),
@@ -1032,80 +1015,6 @@ export default defineSchema({
   }).index("by_policyId", ["policyId"])
     .index("by_orgId", ["orgId"]),
 
-  // Web chat sessions with Glass
-  webChats: defineTable({
-    orgId: v.id("organizations"),
-    title: v.string(),
-    createdBy: v.id("users"),
-    lastMessageAt: v.optional(v.number()),
-    archivedAt: v.optional(v.number()),
-    initialContext: v.optional(v.object({
-      pageType: v.string(),
-      entityId: v.optional(v.string()),
-      summary: v.optional(v.string()),
-    })),
-  })
-    .index("by_orgId", ["orgId"])
-    .index("by_orgId_lastMessageAt", ["orgId", "lastMessageAt"]),
-
-  // Messages within web chat sessions
-  webChatMessages: defineTable({
-    chatId: v.id("webChats"),
-    orgId: v.id("organizations"),
-    userId: v.optional(v.id("users")),
-    userName: v.optional(v.string()),
-    role: v.union(v.literal("user"), v.literal("agent")),
-    content: v.string(),
-    // Agent response metadata
-    referencedPolicyIds: v.optional(v.array(v.id("policies"))),
-    referencedQuoteIds: v.optional(v.any()), // legacy: may contain old quotes table IDs
-    status: v.optional(v.union(v.literal("processing"), v.literal("error"))),
-    error: v.optional(v.string()),
-  }).index("by_chatId", ["chatId"]),
-
-  agentConversations: defineTable({
-    userId: v.id("users"),
-    orgId: v.optional(v.id("organizations")),
-    fromEmail: v.string(),
-    fromName: v.optional(v.string()),
-    toAddresses: v.array(v.string()),
-    ccAddresses: v.optional(v.array(v.string())),
-    bccAddresses: v.optional(v.array(v.string())),
-    subject: v.string(),
-    body: v.string(),
-    bodyHtml: v.optional(v.string()),
-    inReplyTo: v.optional(v.string()),
-    messageId: v.optional(v.string()),
-    mode: v.union(v.literal("direct"), v.literal("cc"), v.literal("forward"), v.literal("unknown")),
-    responseBody: v.optional(v.string()),
-    responseHtml: v.optional(v.string()),
-    responseTo: v.optional(v.string()),
-    responseCc: v.optional(v.array(v.string())),
-    responseSentAt: v.optional(v.number()),
-    referencedPolicyIds: v.optional(v.array(v.id("policies"))),
-    referencedQuoteIds: v.optional(v.any()), // legacy: may contain old quotes table IDs
-    status: v.union(
-      v.literal("received"),
-      v.literal("processing"),
-      v.literal("replied"),
-      v.literal("error")
-    ),
-    error: v.optional(v.string()),
-    archivedAt: v.optional(v.number()),
-    threadId: v.optional(v.id("agentConversations")),
-    responseMessageId: v.optional(v.string()),
-    resendEmailId: v.optional(v.string()),
-    attachments: v.optional(v.array(v.object({
-      filename: v.string(),
-      contentType: v.string(),
-      size: v.number(),
-      fileId: v.optional(v.id("_storage")),
-    }))),
-  }).index("by_userId", ["userId"])
-    .index("by_orgId", ["orgId"])
-    .index("by_messageId", ["messageId"])
-    .index("by_resendEmailId", ["resendEmailId"]),
-
   // ── Unified Threads ──
 
   threads: defineTable({
@@ -1115,12 +1024,18 @@ export default defineSchema({
     createdBy: v.id("users"),
     lastMessageAt: v.number(),
     archivedAt: v.optional(v.number()),
+    originChannel: v.optional(v.union(v.literal("chat"), v.literal("email"), v.literal("imessage"))),
+    emailMode: v.optional(v.union(
+      v.literal("direct"),
+      v.literal("cc"),
+      v.literal("forward"),
+      v.literal("unknown"),
+    )),
     initialContext: v.optional(v.object({
       pageType: v.string(),
       entityId: v.optional(v.string()),
       summary: v.optional(v.string()),
     })),
-    legacyConversationId: v.optional(v.id("agentConversations")),
     visibility: v.optional(v.union(v.literal("broker_visible"), v.literal("client_internal"))),
     threadPhone: v.optional(v.string()),
   })
@@ -1128,8 +1043,7 @@ export default defineSchema({
     .index("by_orgId_lastMessageAt", ["orgId", "lastMessageAt"])
     .index("by_threadEmail", ["threadEmail"])
     .index("by_threadPhone", ["threadPhone"])
-    .index("by_orgId_threadPhone", ["orgId", "threadPhone"])
-    .index("by_legacyConversationId", ["legacyConversationId"]),
+    .index("by_orgId_threadPhone", ["orgId", "threadPhone"]),
 
   threadMessages: defineTable({
     threadId: v.id("threads"),
@@ -1148,6 +1062,7 @@ export default defineSchema({
     subject: v.optional(v.string()),
     messageId: v.optional(v.string()),
     responseMessageId: v.optional(v.string()),
+    resendEmailId: v.optional(v.string()),
     // Content
     content: v.string(),
     contentHtml: v.optional(v.string()),
@@ -1185,12 +1100,11 @@ export default defineSchema({
     )),
     error: v.optional(v.string()),
     pendingEmailId: v.optional(v.id("pendingEmails")),
-    // Legacy link
-    legacyConversationId: v.optional(v.id("agentConversations")),
-    legacyChatMessageId: v.optional(v.id("webChatMessages")),
   })
     .index("by_threadId", ["threadId"])
     .index("by_messageId", ["messageId"])
+    .index("by_responseMessageId", ["responseMessageId"])
+    .index("by_resendEmailId", ["resendEmailId"])
     .index("by_replyToMessageId", ["replyToMessageId"]),
 
   imessageInboundEvents: defineTable({
@@ -1223,8 +1137,6 @@ export default defineSchema({
     sentMessageId: v.optional(v.string()), // Resend message ID after send
     // For updating the chat message after send
     chatMessageId: v.optional(v.id("threadMessages")),
-    // For updating legacy conversation after send
-    legacyConversationId: v.optional(v.id("agentConversations")),
     // Metadata for the sent email record
     recipientEmail: v.string(),
     ccAddresses: v.optional(v.array(v.string())),

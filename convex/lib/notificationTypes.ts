@@ -15,22 +15,10 @@ export const ALL_NOTIFICATION_TYPES = [
   "incomplete_extraction",
   "stale_data",
   "premium_anomaly",
-  "dream_insight",
-  // Broker-targeted (new)
+  // Broker/client lifecycle
   "client_invitation_accepted",
   "client_onboarding_completed",
-  "application_submitted_by_client",
-  "application_completed_by_client",
   "client_document_uploaded",
-  "integration_disconnected_for_client",
-  "integration_request_fulfilled",
-  "passport_flag_resolved_by_client",
-  // Client-targeted (new)
-  "application_sent_by_broker",
-  "application_section_returned_by_broker",
-  "application_accepted_by_broker",
-  "passport_flag_raised_by_broker",
-  "integration_requested_by_broker",
   "policy_delivered_by_broker",
   "quote_delivered_by_broker",
 ] as const;
@@ -54,36 +42,22 @@ export const NOTIFICATION_SEVERITY: Record<NotificationType, NotificationSeverit
   incomplete_extraction: "warning",
   stale_data: "info",
   premium_anomaly: "warning",
-  dream_insight: "info",
-  // Broker-targeted
+  // Broker/client lifecycle
   client_invitation_accepted: "info",
   client_onboarding_completed: "info",
-  application_submitted_by_client: "info",
-  application_completed_by_client: "info",
   client_document_uploaded: "info",
-  integration_disconnected_for_client: "warning",
-  integration_request_fulfilled: "info",
-  passport_flag_resolved_by_client: "info",
-  // Client-targeted
-  application_sent_by_broker: "info",
-  application_section_returned_by_broker: "warning",
-  application_accepted_by_broker: "info",
-  passport_flag_raised_by_broker: "warning",
-  integration_requested_by_broker: "info",
   policy_delivered_by_broker: "info",
   quote_delivered_by_broker: "info",
 };
 
 /** Types that coalesce within a 10-minute window. Value is window in ms. */
 export const COALESCE_WINDOW_MS: Partial<Record<NotificationType, number>> = {
-  application_submitted_by_client: 10 * 60 * 1000,
   client_document_uploaded: 10 * 60 * 1000,
-  passport_flag_raised_by_broker: 10 * 60 * 1000,
 };
 
 /**
  * Build a stable coalesce key from an array of parts and the current 10-min bucket.
- * @param parts   e.g. ["application_submitted_by_client", brokerOrgId, clientOrgId]
+ * @param parts   e.g. ["client_document_uploaded", brokerOrgId, clientOrgId]
  * @param windowMs  the coalesce window in ms (from COALESCE_WINDOW_MS)
  * @param nowMs   current timestamp in ms (injectable for tests)
  */

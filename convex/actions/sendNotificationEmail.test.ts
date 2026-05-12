@@ -36,7 +36,7 @@ describe("sendNotificationEmail", () => {
     const notifId = await t.run(async (ctx) =>
       ctx.db.insert("notifications", {
         orgId: clientOrgId,
-        type: "application_sent_by_broker",
+        type: "policy_delivered_by_broker",
         title: "Application sent",
         body: "Smith Insurance sent you an application.",
         severity: "info",
@@ -53,7 +53,7 @@ describe("sendNotificationEmail", () => {
       ctx.db.insert("notificationPreferences", {
         userId,
         orgId: clientOrgId,
-        type: "application_sent_by_broker",
+        type: "policy_delivered_by_broker",
         channel: "email",
         enabled: true,
         updatedAt: Date.now(),
@@ -65,6 +65,7 @@ describe("sendNotificationEmail", () => {
       text: async () => JSON.stringify({ id: "resend-msg-1" }),
     });
     vi.stubGlobal("fetch", mockFetch);
+    vi.stubEnv("AUTH_RESEND_KEY", "test-resend-key");
 
     await t.action(sendFn, {
       notificationId: notifId,
@@ -82,6 +83,7 @@ describe("sendNotificationEmail", () => {
     expect(callBody.html).toContain("Smith Insurance");
 
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
   });
 
   test("sets emailStatus=suppressed_by_preference when all recipients have email disabled", async () => {
@@ -125,6 +127,7 @@ describe("sendNotificationEmail", () => {
     expect(mockFetch).not.toHaveBeenCalled();
 
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
   });
 
   test("sets emailStatus=failed after Resend error, retries exhausted", async () => {
@@ -143,7 +146,7 @@ describe("sendNotificationEmail", () => {
     const notifId = await t.run(async (ctx) =>
       ctx.db.insert("notifications", {
         orgId,
-        type: "integration_disconnected_for_client",
+        type: "extraction_error",
         title: "Integration disconnected",
         body: "The integration was disconnected.",
         severity: "warning",
@@ -158,6 +161,7 @@ describe("sendNotificationEmail", () => {
       text: async () => "Rate limit exceeded",
     });
     vi.stubGlobal("fetch", mockFetch);
+    vi.stubEnv("AUTH_RESEND_KEY", "test-resend-key");
 
     await t.action(sendFn, { notificationId: notifId });
 
@@ -166,5 +170,6 @@ describe("sendNotificationEmail", () => {
     expect(notif?.emailStatus).toBe("failed");
 
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
   });
 });

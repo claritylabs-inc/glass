@@ -303,7 +303,7 @@ export default function OAuthAuthorizePage() {
                 <ul className="space-y-1.5 text-sm text-muted-foreground">
                   <li className="flex items-start gap-2">
                     <span className="text-foreground/30 mt-0.5">&#x2022;</span>
-                    Read your policies, quotes, and applications
+                    Read your policies and quotes
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="text-foreground/30 mt-0.5">&#x2022;</span>
@@ -315,7 +315,7 @@ export default function OAuthAuthorizePage() {
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="text-foreground/30 mt-0.5">&#x2022;</span>
-                    Read and update business context
+                    Read and update org memory
                   </li>
                   {(scope ?? "").split(" ").includes("write") && (
                     <li className="flex items-start gap-2">

@@ -10,20 +10,18 @@ import {
 describe("NOTIFICATION_SEVERITY", () => {
   test("broker event types have severity", () => {
     expect(NOTIFICATION_SEVERITY["client_invitation_accepted"]).toBe("info");
-    expect(NOTIFICATION_SEVERITY["integration_disconnected_for_client"]).toBe("warning");
+    expect(NOTIFICATION_SEVERITY["extraction_error"]).toBe("warning");
   });
 
   test("client event types have severity", () => {
-    expect(NOTIFICATION_SEVERITY["application_section_returned_by_broker"]).toBe("warning");
-    expect(NOTIFICATION_SEVERITY["passport_flag_raised_by_broker"]).toBe("warning");
+    expect(NOTIFICATION_SEVERITY["renewal_reminder"]).toBe("warning");
+    expect(NOTIFICATION_SEVERITY["extraction_error"]).toBe("warning");
   });
 });
 
 describe("COALESCE_WINDOW_MS", () => {
   test("types with windows return 10 minutes in ms", () => {
-    expect(COALESCE_WINDOW_MS["application_submitted_by_client"]).toBe(10 * 60 * 1000);
     expect(COALESCE_WINDOW_MS["client_document_uploaded"]).toBe(10 * 60 * 1000);
-    expect(COALESCE_WINDOW_MS["passport_flag_raised_by_broker"]).toBe(10 * 60 * 1000);
   });
 
   test("types without windows return undefined", () => {
@@ -35,13 +33,13 @@ describe("buildCoalesceKey", () => {
   test("returns stable key with 10-min bucket", () => {
     const now = 1_000_000_000_000; // ms
     const key = buildCoalesceKey(
-      ["application_submitted_by_client", "brokerOrg1", "clientOrg1"],
+      ["client_document_uploaded", "brokerOrg1", "clientOrg1"],
       10 * 60 * 1000,
       now,
     );
     // bucket = Math.floor(now / windowMs)
     const bucket = Math.floor(now / (10 * 60 * 1000));
-    expect(key).toBe(`application_submitted_by_client:brokerOrg1:clientOrg1:${bucket}`);
+    expect(key).toBe(`client_document_uploaded:brokerOrg1:clientOrg1:${bucket}`);
   });
 });
 

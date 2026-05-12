@@ -3,17 +3,17 @@
 import { useSearchParams, useRouter } from "next/navigation";
 import { useState } from "react";
 import { AppShell } from "@/components/app-shell";
-import {
-  Building2,
-  Users,
-  Puzzle,
-  Network,
-  Brain,
-} from "lucide-react";
 import { LogoIcon } from "@/components/ui/logo-icon";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useCurrentOrg } from "@/hooks/use-current-org";
 import { SettingsActionsContext } from "@/components/settings/settings-actions-context";
+import {
+  BROKER_SETTINGS_SECTIONS,
+  CLIENT_SETTINGS_SECTIONS,
+  insertSettingsSectionAfterTeam,
+  type SettingsSection,
+  type SettingsSectionId,
+} from "@/lib/settings-sections";
 
 /** Wrapper so LogoIcon matches the lucide icon interface used in nav items */
 function GlassStarIcon({ className }: { className?: string }) {
@@ -22,36 +22,22 @@ function GlassStarIcon({ className }: { className?: string }) {
 import { OrganizationSection } from "@/components/settings/organization-section";
 import { TeamSection } from "@/components/settings/team-section";
 import { ConnectionsSection } from "@/components/settings/connections-section";
-import { IntegrationsSection } from "@/components/settings/integrations-section";
 import { MemorySection } from "@/components/settings/memory-section";
 import { BrokerTeamTab } from "@/components/settings/broker-team-tab";
 import { BrokerAgentTab } from "@/components/settings/broker-agent-tab";
 import { ModelsSection } from "@/components/settings/models-section";
 import NotificationPreferencesPage from "./notifications/page";
-import { Bell } from "lucide-react";
 
-const CLIENT_SETTINGS_SECTIONS = [
-  { id: "organization", label: "Organization", icon: Building2 },
-  { id: "team", label: "Team", icon: Users },
-  { id: "agent", label: "Agent", icon: GlassStarIcon },
-  { id: "memory", label: "Memory", icon: Brain },
-  { id: "connections", label: "Connections", icon: Network },
-  { id: "integrations", label: "Integrations", icon: Puzzle },
-  { id: "notifications", label: "Notifications", icon: Bell },
-] as const;
+const AGENT_SETTINGS_SECTION: SettingsSection = { id: "agent", label: "Agent", icon: GlassStarIcon };
 
-const BROKER_SETTINGS_SECTIONS = [
-  { id: "organization", label: "Organization", icon: Building2 },
-  { id: "team", label: "Team", icon: Users },
-  { id: "agent", label: "Agent", icon: GlassStarIcon },
-  { id: "models", label: "Models", icon: Brain },
-  { id: "connections", label: "Connections", icon: Network },
-  { id: "notifications", label: "Notifications", icon: Bell },
-] as const;
-
-type ClientSection = (typeof CLIENT_SETTINGS_SECTIONS)[number]["id"];
-type BrokerSection = (typeof BROKER_SETTINGS_SECTIONS)[number]["id"];
-type SettingsSection = ClientSection | BrokerSection;
+const CLIENT_SETTINGS_WITH_AGENT = insertSettingsSectionAfterTeam(
+  CLIENT_SETTINGS_SECTIONS,
+  AGENT_SETTINGS_SECTION,
+);
+const BROKER_SETTINGS_WITH_AGENT = insertSettingsSectionAfterTeam(
+  BROKER_SETTINGS_SECTIONS,
+  AGENT_SETTINGS_SECTION,
+);
 
 // Keep for backwards-compatible export
 export const SETTINGS_SECTIONS = CLIENT_SETTINGS_SECTIONS;
@@ -66,16 +52,16 @@ export default function SettingsPage() {
   const isStandaloneClient = currentOrg?.orgType === "client" && !currentOrg?.brokerOrg;
 
   const SETTINGS_SECTIONS_ACTIVE = isBroker
-    ? BROKER_SETTINGS_SECTIONS
+    ? BROKER_SETTINGS_WITH_AGENT
     : isStandaloneClient
-      ? CLIENT_SETTINGS_SECTIONS
+      ? CLIENT_SETTINGS_WITH_AGENT
       : CLIENT_SETTINGS_SECTIONS.filter((section) => section.id !== "agent");
-  const requestedSection = searchParams.get("section") as SettingsSection | null;
-  const activeSection: SettingsSection = SETTINGS_SECTIONS_ACTIVE.some((section) => section.id === requestedSection)
+  const requestedSection = searchParams.get("section") as SettingsSectionId | null;
+  const activeSection: SettingsSectionId = SETTINGS_SECTIONS_ACTIVE.some((section) => section.id === requestedSection)
     ? requestedSection!
     : "organization";
 
-  function handleSectionChange(id: SettingsSection) {
+  function handleSectionChange(id: SettingsSectionId) {
     const params = new URLSearchParams(searchParams.toString());
     params.set("section", id);
     router.push(`/settings?${params.toString()}`);
@@ -95,7 +81,7 @@ export default function SettingsPage() {
         <div className="lg:hidden mb-6 -mx-6 px-6 overflow-x-auto scrollbar-hide">
           <Tabs
             value={activeSection}
-            onValueChange={(value) => handleSectionChange(value as SettingsSection)}
+            onValueChange={(value) => handleSectionChange(value as SettingsSectionId)}
           >
             <TabsList variant="pill" className="min-w-max">
               {SETTINGS_SECTIONS_ACTIVE.map((section) => {
@@ -123,7 +109,7 @@ function SectionContent({
   isBroker,
   isStandaloneClient,
 }: {
-  section: SettingsSection;
+  section: SettingsSectionId;
   isBroker: boolean;
   isStandaloneClient: boolean;
 }) {
@@ -155,8 +141,6 @@ function SectionContent({
         <MemorySection />
       ) : section === "connections" ? (
         <ConnectionsSection />
-      ) : section === "integrations" ? (
-        <IntegrationsSection />
       ) : section === "notifications" && currentOrg?.orgId ? (
         <NotificationPreferencesPage orgId={currentOrg.orgId} />
       ) : null}

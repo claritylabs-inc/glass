@@ -93,20 +93,6 @@ export class GlassClient {
     return this.get("/mcp/quotes/get", { id });
   }
 
-  // ── Applications ──
-
-  async listApplications() {
-    return this.get("/mcp/applications/list");
-  }
-
-  async getApplication(id: string) {
-    return this.get("/mcp/applications/get", { id });
-  }
-
-  async cancelApplication(id: string) {
-    return this.post("/mcp/applications/cancel", { id });
-  }
-
   // ── Threads ──
 
   async listThreads() {
@@ -115,16 +101,6 @@ export class GlassClient {
 
   async getThreadMessages(threadId: string) {
     return this.get("/mcp/threads/messages", { threadId });
-  }
-
-  // ── Business Context ──
-
-  async listBusinessContext() {
-    return this.get("/mcp/context/list");
-  }
-
-  async upsertBusinessContext(category: string, key: string, value: string) {
-    return this.post("/mcp/context/upsert", { category, key, value });
   }
 
   // ── Org ──

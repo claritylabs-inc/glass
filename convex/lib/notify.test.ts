@@ -25,22 +25,22 @@ describe("notify() — coalesce logic", () => {
     // First event
     const id1 = await t.mutation(notifyInternalFn, {
       orgId: brokerOrgId,
-      type: "application_submitted_by_client",
+      type: "client_document_uploaded",
       title: "Application submitted",
       body: "Acme submitted an application",
       severity: "info",
-      coalesceKeyParts: ["application_submitted_by_client", brokerOrgId, "clientOrg1"],
+      coalesceKeyParts: ["client_document_uploaded", brokerOrgId, "clientOrg1"],
       nowMs: now,
     });
 
     // Second event within same 10-min bucket
     const id2 = await t.mutation(notifyInternalFn, {
       orgId: brokerOrgId,
-      type: "application_submitted_by_client",
+      type: "client_document_uploaded",
       title: "Application submitted",
       body: "Acme submitted another application",
       severity: "info",
-      coalesceKeyParts: ["application_submitted_by_client", brokerOrgId, "clientOrg1"],
+      coalesceKeyParts: ["client_document_uploaded", brokerOrgId, "clientOrg1"],
       nowMs: now + 60_000, // 1 minute later, same bucket
     });
 
@@ -64,21 +64,21 @@ describe("notify() — coalesce logic", () => {
 
     const id1 = await t.mutation(notifyInternalFn, {
       orgId: brokerOrgId,
-      type: "application_submitted_by_client",
+      type: "client_document_uploaded",
       title: "App submitted",
       body: "First",
       severity: "info",
-      coalesceKeyParts: ["application_submitted_by_client", brokerOrgId, "clientOrg1"],
+      coalesceKeyParts: ["client_document_uploaded", brokerOrgId, "clientOrg1"],
       nowMs: now,
     });
 
     const id2 = await t.mutation(notifyInternalFn, {
       orgId: brokerOrgId,
-      type: "application_submitted_by_client",
+      type: "client_document_uploaded",
       title: "App submitted",
       body: "Second",
       severity: "info",
-      coalesceKeyParts: ["application_submitted_by_client", brokerOrgId, "clientOrg1"],
+      coalesceKeyParts: ["client_document_uploaded", brokerOrgId, "clientOrg1"],
       nowMs: now + windowMs + 1, // different bucket
     });
 
@@ -96,11 +96,11 @@ describe("notify() — coalesce logic", () => {
 
     const id1 = await t.mutation(notifyInternalFn, {
       orgId: brokerOrgId,
-      type: "application_submitted_by_client",
+      type: "client_document_uploaded",
       title: "App submitted",
       body: "First",
       severity: "info",
-      coalesceKeyParts: ["application_submitted_by_client", brokerOrgId, "clientOrg1"],
+      coalesceKeyParts: ["client_document_uploaded", brokerOrgId, "clientOrg1"],
       nowMs: now,
     });
 
@@ -109,11 +109,11 @@ describe("notify() — coalesce logic", () => {
 
     const id2 = await t.mutation(notifyInternalFn, {
       orgId: brokerOrgId,
-      type: "application_submitted_by_client",
+      type: "client_document_uploaded",
       title: "App submitted",
       body: "Second",
       severity: "info",
-      coalesceKeyParts: ["application_submitted_by_client", brokerOrgId, "clientOrg1"],
+      coalesceKeyParts: ["client_document_uploaded", brokerOrgId, "clientOrg1"],
       nowMs: now + 60_000, // same bucket, but first is read
     });
 
@@ -149,7 +149,7 @@ describe("notify() — preference resolution", () => {
       ctx.db.insert("notificationPreferences", {
         userId,
         orgId,
-        type: "passport_flag_raised_by_broker",
+        type: "extraction_error",
         channel: "email",
         enabled: true,
         updatedAt: Date.now(),
@@ -158,7 +158,7 @@ describe("notify() — preference resolution", () => {
 
     const { shouldEmail } = await t.run(async (ctx) => {
       const { resolveEmailPreference } = await import("./notify");
-      return resolveEmailPreference(ctx, userId, orgId, "passport_flag_raised_by_broker", "warning");
+      return resolveEmailPreference(ctx, userId, orgId, "extraction_error", "warning");
     });
 
     expect(shouldEmail).toBe(true);
@@ -177,7 +177,7 @@ describe("notify() — preference resolution", () => {
     // No preference rows at all
     const { shouldEmail } = await t.run(async (ctx) => {
       const { resolveEmailPreference } = await import("./notify");
-      return resolveEmailPreference(ctx, userId, orgId, "application_sent_by_broker", "info");
+      return resolveEmailPreference(ctx, userId, orgId, "policy_delivered_by_broker", "info");
     });
 
     // info severity defaults to false

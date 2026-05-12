@@ -38,68 +38,6 @@ export function toPolicyDto(policy: any): PolicyDto {
   };
 }
 
-export interface PassportDto {
-  id: string;
-  legal_name?: string;
-  full_time_employees?: number;
-  annual_revenue?: number;
-  created_at: number;
-  updated_at?: number;
-}
-
-export function toPassportDto(passport: any): PassportDto {
-  return {
-    id: passport._id,
-    legal_name: passport.legalName,
-    full_time_employees: passport.fullTimeEmployees,
-    annual_revenue: passport.annualRevenue,
-    created_at: passport._creationTime,
-    updated_at: passport.lastUpdated,
-  };
-}
-
-export interface ApplicationDto {
-  id: string;
-  title: string;
-  status: string;
-  created_at: number;
-  groups: {
-    id: string;
-    title: string;
-    status: string;
-    questions: {
-      id: string;
-      intent_key?: string;
-      custom_prompt?: string;
-      answer_type: string;
-      required: boolean;
-      answer?: any;
-    }[];
-  }[];
-}
-
-export function toApplicationDto(app: any): ApplicationDto {
-  return {
-    id: app._id,
-    title: app.title,
-    status: app.status,
-    created_at: app._creationTime,
-    groups: (app.groups || []).map((g: any) => ({
-      id: g.id,
-      title: g.title,
-      status: g.status,
-      questions: (g.questions || []).map((q: any) => ({
-        id: q.id,
-        intent_key: q.intentKey,
-        custom_prompt: q.customPrompt,
-        answer_type: q.answerType,
-        required: q.required,
-        answer: q.answer,
-      })),
-    })),
-  };
-}
-
 export interface NotificationDto {
   id: string;
   type: string;

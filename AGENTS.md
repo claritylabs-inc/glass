@@ -287,7 +287,7 @@ Outbound emails sent by Glass Agent are centralized in `convex/lib/emailSubagent
 
 - `/policies` — list, detail, upload, re-extract, and generated certificate history.
 - `/chat` — threaded assistant.
-- `/agent/thread/:id` — renders unified `threads` records, with a legacy email-conversation fallback for old inbound-email threads. The old `webChats` view and sidebar listing are no longer exposed; `webChats` backend code may remain for migration/history only.
+- `/agent/thread/:id` — renders unified `threads` records. Legacy `webChats`, `webChatMessages`, and `agentConversations` backend tables/functions have been removed after migration to `threads` + `threadMessages`.
 - `/settings` — org settings, branding, members, and an **Integrations** section rendered as a coming-soon grid. The Merge.dev backend and all integration sync tables/actions have been removed; only the static grid remains.
 
 ## MCP
@@ -309,7 +309,7 @@ Glass exposes MCP functionality for remote and local AI tools.
 - `list_broker_activity` (broker)
 - `list_my_policies` (client)
 
-Application, passport, business-context, and integration tools are gone.
+Application, passport, business-context, and integration tools are gone. The local MCP server should only register current policy, quote, thread, org, agent, broker/client, certificate, and connected-vendor tools.
 
 All MCP tool invocations require a Bearer token (OAuth or API key) and resolve org from session metadata. Write tools require a token with `write` scope.
 

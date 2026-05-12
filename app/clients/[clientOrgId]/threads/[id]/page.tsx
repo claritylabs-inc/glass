@@ -33,7 +33,7 @@ export default function ClientThreadReadOnlyPage() {
         _id: Id<"threads">;
         title: string;
         initialContext?: { pageType: string; entityId?: string; summary?: string };
-        legacyConversationId?: Id<"agentConversations">;
+        originChannel?: "chat" | "email" | "imessage";
       }
     | null
     | undefined;
@@ -76,7 +76,7 @@ export default function ClientThreadReadOnlyPage() {
 
   const isMixedThread =
     messages.some((m) => m.channel === "email") ||
-    !!thread.legacyConversationId;
+    thread.originChannel === "email";
 
   const lastAgentIdx = messages.reduce(
     (acc, m, i) => (m.role === "agent" ? i : acc),

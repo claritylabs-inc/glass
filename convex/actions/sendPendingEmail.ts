@@ -93,7 +93,6 @@ export const sendPending = internalAction({
           attachments: pending.attachments,
           referencedPolicyIds: pending.referencedPolicyIds,
           referencedQuoteIds: pending.referencedQuoteIds,
-          legacyConversationId: pending.legacyConversationId,
         });
 
         if (thread?.threadPhone) {
@@ -118,22 +117,6 @@ export const sendPending = internalAction({
         }
       }
 
-      // Update legacy conversation if applicable
-      if (pending.legacyConversationId) {
-        const ccNote =
-          pending.ccAddresses && pending.ccAddresses.length > 0
-            ? ` (CC: ${pending.ccAddresses.join(", ")})`
-            : "";
-        await ctx.runMutation(internal.agentConversations.updateResponse, {
-          id: pending.legacyConversationId,
-          responseBody: `Email sent to ${pending.recipientEmail}${ccNote}.`,
-          responseTo: pending.recipientEmail,
-          responseCc: pending.ccAddresses,
-          responseMessageId: sentMessageId,
-          referencedPolicyIds: pending.referencedPolicyIds,
-          referencedQuoteIds: pending.referencedQuoteIds,
-        });
-      }
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error("Failed to send pending email:", errMsg);

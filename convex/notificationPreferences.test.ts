@@ -30,7 +30,7 @@ describe("notificationPreferences — upsert logic", () => {
       await ctx.db.insert("notificationPreferences", {
         userId,
         orgId,
-        type: "passport_flag_raised_by_broker",
+        type: "extraction_error",
         channel: "email",
         enabled: false,
         updatedAt: Date.now(),
@@ -42,7 +42,7 @@ describe("notificationPreferences — upsert logic", () => {
     );
     expect(rows).toHaveLength(1);
     expect(rows[0].enabled).toBe(false);
-    expect(rows[0].type).toBe("passport_flag_raised_by_broker");
+    expect(rows[0].type).toBe("extraction_error");
   });
 
   test("upserts — inserting same key twice updates the row", async () => {
@@ -51,7 +51,7 @@ describe("notificationPreferences — upsert logic", () => {
 
     await t.run(async (ctx) => {
       await ctx.db.insert("notificationPreferences", {
-        userId, orgId, type: "passport_flag_raised_by_broker",
+        userId, orgId, type: "extraction_error",
         channel: "email", enabled: false, updatedAt: Date.now(),
       });
     });
@@ -62,7 +62,7 @@ describe("notificationPreferences — upsert logic", () => {
         .query("notificationPreferences")
         .withIndex("by_userId_orgId_type_channel", (q) =>
           q.eq("userId", userId).eq("orgId", orgId)
-           .eq("type", "passport_flag_raised_by_broker").eq("channel", "email")
+           .eq("type", "extraction_error").eq("channel", "email")
         )
         .first();
       if (existing) {
@@ -135,14 +135,14 @@ describe("resolveForUser", () => {
       });
       // per-type enables email for this type
       await ctx.db.insert("notificationPreferences", {
-        userId, orgId, type: "passport_flag_raised_by_broker", channel: "email",
+        userId, orgId, type: "extraction_error", channel: "email",
         enabled: true, updatedAt: Date.now(),
       });
     });
 
     const result = await t.run(async (ctx) => {
       const { resolveEmailPreference } = await import("./lib/notify");
-      return resolveEmailPreference(ctx, userId, orgId, "passport_flag_raised_by_broker", "warning");
+      return resolveEmailPreference(ctx, userId, orgId, "extraction_error", "warning");
     });
 
     expect(result.shouldEmail).toBe(true);
@@ -154,7 +154,7 @@ describe("resolveForUser", () => {
 
     const result = await t.run(async (ctx) => {
       const { resolveEmailPreference } = await import("./lib/notify");
-      return resolveEmailPreference(ctx, userId, orgId, "application_sent_by_broker", "info");
+      return resolveEmailPreference(ctx, userId, orgId, "policy_delivered_by_broker", "info");
     });
 
     // info severity defaults to false
