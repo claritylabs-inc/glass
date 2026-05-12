@@ -5,7 +5,7 @@ import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
 import { FadeIn } from "@/components/ui/fade-in";
-import { BadgeCheck, Check, CheckCircle2, Download, FileText, Loader2, Plus, RotateCw, Send, Trash2, Eye, X } from "lucide-react";
+import { BadgeCheck, CheckCircle2, Download, FileText, Loader2, Plus, RotateCw, Send, Trash2, Eye, X } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -30,6 +30,11 @@ import { PolicySummary } from "./policy-summary";
 import { ExtractionCards } from "./extraction-panel";
 import { PolicyExtractionBanner } from "@/components/shared/extraction-banner";
 import type { PipelineStatus, LogEntry } from "@claritylabs/cl-pipelines";
+import {
+  PolicyChangeProgress,
+  formatPolicyChangeStatus,
+  isPolicyChangeTerminal,
+} from "@/components/policy-change-progress";
 
 type PolicyAuditLogEntry = {
   _id: string;
@@ -61,105 +66,6 @@ function logPolicyActivityToBrowser(
 ) {
   if (!LOG_POLICY_ACTIVITY_IN_BROWSER) return;
   console.info(`[policy-activity] ${event}`, payload);
-}
-
-function formatPolicyChangeStatus(status: string) {
-  return status.replace("_", " ");
-}
-
-function policyChangeProgress(status: string) {
-  switch (status) {
-    case "draft":
-      return 1;
-    case "needs_info":
-      return 2;
-    case "ready":
-      return 3;
-    case "submitted":
-      return 4;
-    case "accepted":
-      return 5;
-    case "declined":
-    case "cancelled":
-      return 0;
-    default:
-      return 1;
-  }
-}
-
-function isPolicyChangeTerminal(status: string) {
-  return status === "accepted" || status === "declined" || status === "cancelled";
-}
-
-function PolicyChangeProgress({ status }: { status: string }) {
-  if (status === "cancelled") return null;
-
-  const steps = [
-    { label: "Requested", detail: "Request received" },
-    { label: "Review", detail: "Checking details" },
-    { label: "Ready", detail: "Ready for broker submission" },
-    { label: "Submitted", detail: "Sent to the broker or carrier" },
-    { label: "Complete", detail: "Change resolved" },
-  ];
-  const completed = policyChangeProgress(status);
-  const interrupted = status === "declined" || status === "cancelled";
-
-  return (
-    <div className="mt-4">
-      <div className="grid grid-cols-1 gap-2 md:grid-cols-5">
-        {steps.map((step, index) => {
-          const stepNumber = index + 1;
-          const active = !interrupted && stepNumber <= completed;
-          const current = !interrupted && stepNumber === completed;
-          const done = !interrupted && stepNumber < completed;
-          return (
-            <div
-              key={step.label}
-              className={`flex min-w-0 items-center gap-2 rounded-lg border px-3 py-2.5 ${
-                current
-                  ? "border-foreground/14 bg-foreground/[0.025]"
-                  : "border-foreground/6 bg-card"
-              }`}
-            >
-              <span
-                className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-medium leading-none tabular-nums ${
-                  done
-                    ? "bg-foreground text-background"
-                    : current
-                      ? "border border-foreground bg-background text-foreground"
-                      : "border border-foreground/8 bg-foreground/5 text-muted-foreground"
-                }`}
-              >
-                {done ? <Check className="h-2.5 w-2.5" strokeWidth={2.5} /> : stepNumber}
-              </span>
-              <div className="min-w-0 flex-1 md:flex md:items-baseline">
-                <p
-                  className={`shrink-0 truncate text-label-sm ${
-                    current ? "font-medium text-foreground" : active ? "text-foreground/75" : "text-muted-foreground"
-                  }`}
-                >
-                  {step.label}
-                </p>
-                <p className="truncate text-[11px] leading-4 text-muted-foreground md:ml-3 md:text-right">
-                  {step.detail}
-                </p>
-              </div>
-              {current ? (
-                <span className="hidden shrink-0 rounded-full border border-foreground/8 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground xl:inline-flex">
-                  Current
-                </span>
-              ) : null}
-            </div>
-          );
-        })}
-      </div>
-      {interrupted && (
-        <p className="mt-2 text-label-sm text-muted-foreground">
-          This request is {formatPolicyChangeStatus(status)}.
-        </p>
-      )}
-    </div>
-  );
 }
 
 function PolicyChangesTab({
@@ -291,7 +197,7 @@ function PolicyChangesTab({
                 )}
               </div>
 
-              <PolicyChangeProgress status={change.status} />
+              <PolicyChangeProgress status={change.status} className="mt-4" />
 
               <div className="mt-3 flex flex-wrap gap-3 text-[11px] text-muted-foreground">
                 <span>Updated {new Date(change.updatedAt).toLocaleDateString()}</span>
