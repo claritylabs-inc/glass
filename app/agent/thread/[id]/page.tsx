@@ -591,15 +591,42 @@ function PolicyChangeProgress({ status }: { status?: string }) {
 
   return (
     <div className="space-y-2">
-      <div className="grid grid-cols-5 gap-2">
+      <div className="flex items-start">
         {steps.map((step, index) => {
-          const active = !interrupted && index + 1 <= completed;
+          const stepNumber = index + 1;
+          const active = !interrupted && stepNumber <= completed;
+          const current = !interrupted && stepNumber === completed;
+          const connectorActive = !interrupted && stepNumber < completed;
           return (
-            <div key={step} className="min-w-0">
-              <div className={`h-1.5 rounded-full ${active ? "bg-foreground" : "bg-foreground/10"}`} />
-              <p className={`mt-1 truncate text-[11px] ${active ? "text-foreground" : "text-muted-foreground/60"}`}>
-                {step}
-              </p>
+            <div
+              key={step}
+              className={`flex min-w-0 items-start ${index === steps.length - 1 ? "shrink-0" : "flex-1"}`}
+            >
+              <div className="flex w-16 shrink-0 flex-col items-center gap-1">
+                <span
+                  className={`mt-0.5 rounded-full transition-colors ${
+                    current
+                      ? "size-3 bg-foreground"
+                      : active
+                        ? "size-2.5 bg-foreground/70"
+                        : "size-2.5 bg-foreground/15"
+                  }`}
+                />
+                <span
+                  className={`text-center text-[11px] leading-4 ${
+                    current ? "font-medium text-foreground" : active ? "text-foreground/70" : "text-muted-foreground/60"
+                  }`}
+                >
+                  {step}
+                </span>
+              </div>
+              {index < steps.length - 1 ? (
+                <div
+                  className={`mt-[7px] h-px min-w-3 flex-1 transition-colors ${
+                    connectorActive ? "bg-foreground/50" : "bg-foreground/10"
+                  }`}
+                />
+              ) : null}
             </div>
           );
         })}
