@@ -96,6 +96,8 @@ describe("COI PDF footer copy", () => {
     expect(source).toContain("Generated using");
     expect(source).toContain("Glass");
     expect(source).toContain("from Clarity Labs");
+    expect(source).toContain("GLASS_GLOBE_PATH");
+    expect(source).not.toContain("C_GLASS_BLUE");
     expect(source).not.toContain("ACORD 25 (2016/03)  |  Generated");
     expect(source).not.toContain("claritylabs.dev");
   });
