@@ -19,10 +19,10 @@ import {
   LogOut,
   User,
   MessageSquare,
+  MessageCircle,
   Archive,
   ArrowLeft,
   Bell,
-  Apple,
   Link2,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -468,12 +468,10 @@ export function AppSidebar({
                 }`}
               >
                 {item.kind === "imessage" ? (
-                  <Apple className="w-3.5 h-3.5 shrink-0" />
-                ) : item.kind === "chat" ? (
-                  <MessageSquare className="w-3.5 h-3.5 shrink-0" />
-                ) : (
+                  <MessageCircle className="w-3.5 h-3.5 shrink-0" />
+                ) : item.kind === "email" ? (
                   <Mail className="w-3.5 h-3.5 shrink-0" />
-                )}
+                ) : null}
                 <span className="truncate flex-1">{item.label}</span>
                 {/* Shortcut hint — hidden when archive button shows */}
                 {showShortcuts && idx < 9 && (
@@ -534,12 +532,10 @@ export function AppSidebar({
                   }`}
                 >
                 {item.kind === "imessage" ? (
-                  <Apple className="w-3.5 h-3.5" />
-                ) : item.kind === "chat" ? (
-                  <MessageSquare className="w-3.5 h-3.5" />
-                ) : (
+                  <MessageCircle className="w-3.5 h-3.5" />
+                ) : item.kind === "email" ? (
                   <Mail className="w-3.5 h-3.5" />
-                )}
+                ) : null}
                 </Link>
               );
             })}
@@ -708,12 +704,10 @@ export function AppSidebar({
                   }`}
                 >
                   {item.originChannel === "imessage" ? (
-                    <Apple className="w-3.5 h-3.5 shrink-0" />
+                    <MessageCircle className="w-3.5 h-3.5 shrink-0" />
                   ) : item.originChannel === "email" ? (
                     <Mail className="w-3.5 h-3.5 shrink-0" />
-                  ) : (
-                    <MessageSquare className="w-3.5 h-3.5 shrink-0" />
-                  )}
+                  ) : null}
                   <span className="truncate flex-1">{item.title}</span>
                 </Link>
               );

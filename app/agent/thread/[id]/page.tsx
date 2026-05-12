@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { ModeBadge } from "@/components/mode-badge";
 import { splitQuotedReply, QuotedContent } from "@/components/conversation-message";
 import { toast } from "sonner";
-import { Loader2, Archive, ArchiveRestore, FileText, Check, ClipboardList, Asterisk, Mail as MailIcon, MessageSquare, Apple, Paperclip, Download, Copy, Lock, RotateCcw, X } from "lucide-react";
+import { Loader2, Archive, ArchiveRestore, FileText, Check, ClipboardList, Asterisk, Mail as MailIcon, MessageCircle, Paperclip, Download, Copy, Lock, RotateCcw, X } from "lucide-react";
 import { EditableBreadcrumbTitle } from "@/components/editable-breadcrumb-title";
 import { usePdf } from "@/components/pdf-context";
 import { usePresence } from "@/hooks/use-presence";
@@ -437,8 +437,8 @@ export function UnifiedMessageBubble({
   const channelIcon = msg.channel === "email"
     ? <MailIcon className="w-3 h-3 text-muted-foreground/30" />
     : msg.channel === "imessage"
-      ? <Apple className="w-3 h-3 text-muted-foreground/30" />
-      : <MessageSquare className="w-3 h-3 text-muted-foreground/30" />;
+      ? <MessageCircle className="w-3 h-3 text-muted-foreground/30" />
+      : null;
 
   // Processing state — unified bubble with thinking, tool status, and streaming content
   if (msg.role === "agent" && msg.status === "processing") {

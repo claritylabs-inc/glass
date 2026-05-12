@@ -5,7 +5,7 @@ import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { FadeIn } from "@/components/ui/fade-in";
-import { Loader2, Mail, MessageSquare, Apple } from "lucide-react";
+import { Loader2, Mail, MessageCircle } from "lucide-react";
 import dayjs from "dayjs";
 
 export default function ClientThreadsPage() {
@@ -56,12 +56,10 @@ export default function ClientThreadsPage() {
             >
               <div className="shrink-0 text-muted-foreground/30">
                 {thread.originChannel === "imessage" ? (
-                  <Apple className="w-4 h-4" />
+                  <MessageCircle className="w-4 h-4" />
                 ) : thread.originChannel === "email" ? (
                   <Mail className="w-4 h-4" />
-                ) : (
-                  <MessageSquare className="w-4 h-4" />
-                )}
+                ) : null}
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-body-sm font-medium text-foreground truncate">

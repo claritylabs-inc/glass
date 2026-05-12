@@ -6,7 +6,7 @@ import { AppShell } from "@/components/app-shell";
 import { FadeIn } from "@/components/ui/fade-in";
 import { PillButton } from "@/components/ui/pill-button";
 import { toast } from "sonner";
-import { ArchiveRestore, Mail, MessageSquare, Loader2, Apple } from "lucide-react";
+import { ArchiveRestore, Mail, MessageCircle, Loader2 } from "lucide-react";
 import Link from "next/link";
 import dayjs from "dayjs";
 import { Id } from "@/convex/_generated/dataModel";
@@ -48,12 +48,10 @@ export default function ArchivePage() {
               >
                 <div className="shrink-0 text-muted-foreground/30">
                   {thread.originChannel === "imessage" ? (
-                    <Apple className="w-4 h-4" />
+                    <MessageCircle className="w-4 h-4" />
                   ) : thread.originChannel === "email" ? (
                     <Mail className="w-4 h-4" />
-                  ) : (
-                    <MessageSquare className="w-4 h-4" />
-                  )}
+                  ) : null}
                 </div>
                 <Link
                   href={`/agent/thread/${thread._id}`}
