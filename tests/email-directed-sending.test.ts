@@ -2,6 +2,7 @@ import { readFileSync } from "fs";
 import { join } from "path";
 import { describe, expect, it } from "vitest";
 import { resolveEmailAgentIdentity } from "../convex/lib/emailSubagent";
+import { shouldSkipImessageStatusCueForEmailApproval } from "../convex/actions/handleInboundImessage";
 
 describe("directed email sending", () => {
   it("falls back to the default agent handle when no custom handle is configured", async () => {
@@ -152,5 +153,40 @@ describe("directed email sending", () => {
     expect(source).toContain("/send");
     expect(source).toContain("Email sent to ${pending.recipientEmail}");
     expect(source).toContain("insertImessageMessage");
+  });
+
+  it("does not send a separate iMessage status cue for email-send approvals", () => {
+    const recentContext = [
+      "Glass: Draft email to terry@example.com:",
+      "",
+      "To: terry@example.com",
+      "Subject: Renewal request",
+      "",
+      "Ready to send?",
+    ].join("\n");
+
+    expect(shouldSkipImessageStatusCueForEmailApproval({
+      messageText: "Yes this is good",
+      recentContext,
+    })).toBe(true);
+    expect(shouldSkipImessageStatusCueForEmailApproval({
+      messageText: "Hold up, don't send",
+      recentContext,
+    })).toBe(false);
+    expect(shouldSkipImessageStatusCueForEmailApproval({
+      messageText: "Yes, what is the E&O limit?",
+      recentContext: "Glass: The policy is active.",
+    })).toBe(false);
+  });
+
+  it("sends delayed iMessage email status before returning the inbound response", () => {
+    const source = readFileSync(
+      join(__dirname, "..", "convex/actions/handleInboundImessage.ts"),
+      "utf-8",
+    );
+
+    expect(source).toContain('emailResult.status === "pending"');
+    expect(source).toContain("sendImmediateImessage({");
+    expect(source).toContain("responseAlreadySent ? \"\" : responseText");
   });
 });

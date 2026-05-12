@@ -80,6 +80,29 @@ interface OrgContext {
   };
 }
 
+export function buildRuntimeFacts(params?: {
+  now?: Date;
+  timeZone?: string;
+}): string {
+  const now = params?.now ?? new Date();
+  const timeZone = params?.timeZone ?? process.env.AGENT_TIME_ZONE ?? "America/Los_Angeles";
+  const date = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  }).format(now);
+  const weekday = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    weekday: "long",
+  }).format(now);
+
+  return `RUNTIME FACTS:
+Current date: ${weekday}, ${date}
+Time zone: ${timeZone}
+Use the current date when deciding whether a policy is active, expired, upcoming, or needs renewal. Do not infer today's date from policy effective or expiration dates.`;
+}
+
 export function buildAgentCapabilityPrompt(params: {
   companyName: string;
   companyContext?: string;
@@ -89,6 +112,8 @@ export function buildAgentCapabilityPrompt(params: {
   siteUrl?: string;
   coiHandling?: string;
   broker?: OrgContext["broker"];
+  now?: Date;
+  timeZone?: string;
 }): string {
   const {
     companyName,
@@ -98,6 +123,8 @@ export function buildAgentCapabilityPrompt(params: {
     siteUrl = process.env.SITE_URL ?? "https://glass.claritylabs.inc",
     coiHandling,
     broker,
+    now,
+    timeZone,
   } = params;
   const companyRef = companyName || "the user's company";
   const intent =
@@ -119,7 +146,9 @@ export function buildAgentCapabilityPrompt(params: {
 You are Glass, an insurance intelligence assistant for ${companyRef}.
 ${userName ? `The current team member is ${userName}.` : ""}
 ${intent}
-Site URL for internal references: ${siteUrl}.${safeContext}${brokerContext}
+Site URL for internal references: ${siteUrl}.
+
+${buildRuntimeFacts({ now, timeZone })}${safeContext}${brokerContext}
 
 AUTHORIZED CAPABILITIES:
 You may help with insurance operations for ${companyRef}. This includes:
@@ -180,6 +209,7 @@ You have tools to search policies, retrieve detailed policy sections, compare co
 - Use tools before answering when the request depends on policy numbers, coverage details, exclusions, endorsements, limits, deductibles, premiums, or COI generation.
 - For simple policy-number requests, look up the relevant policy and answer with the carrier/type/context needed to disambiguate.
 - Before answering coverage questions, look up actual policy or endorsement wording. Do not say you need the wording when the tools/context can retrieve it.
+- For COI/certificate requests, describe the action as generating a new COI or certificate from policy data and holder details. Do not offer to "pull COI wording" or "pull the right COI wording"; COIs are generated artifacts, not wording excerpts.
 - For covered-reason questions, use this chain before answering: identify the relevant policy, search covered reasons and matching policy wording, then check exclusions, endorsements, conditions, and relevant definitions for limits or changes.
 - If a user's wording is plain language, search related insurance terms too, for example job/start work/employment, cancellation/cancel, illness/sickness, travelling companion/companion, or work requirement/presence at work.
 - When asked about a specific endorsement, search by form number, title, and related keywords. Try more than one query when the first result is weak.
