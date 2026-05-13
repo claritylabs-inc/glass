@@ -9,6 +9,7 @@
  */
 
 import type * as actions_backfillChunks from "../actions/backfillChunks.js";
+import type * as actions_complianceRequirements from "../actions/complianceRequirements.js";
 import type * as actions_detectDuplicatePolicies from "../actions/detectDuplicatePolicies.js";
 import type * as actions_emailDrafts from "../actions/emailDrafts.js";
 import type * as actions_extractCompanyInfo from "../actions/extractCompanyInfo.js";
@@ -31,6 +32,7 @@ import type * as actions_sendNotificationEmail from "../actions/sendNotification
 import type * as actions_sendPendingEmail from "../actions/sendPendingEmail.js";
 import type * as actions_threadTitle from "../actions/threadTitle.js";
 import type * as actions_updateDocumentChunk from "../actions/updateDocumentChunk.js";
+import type * as actions_vendorComplianceMonitor from "../actions/vendorComplianceMonitor.js";
 import type * as apiAuditLog from "../apiAuditLog.js";
 import type * as apiKeys from "../apiKeys.js";
 import type * as auth from "../auth.js";
@@ -39,6 +41,7 @@ import type * as certificates from "../certificates.js";
 import type * as clientInvitations from "../clientInvitations.js";
 import type * as clientInvitationsTest from "../clientInvitationsTest.js";
 import type * as clients from "../clients.js";
+import type * as compliance from "../compliance.js";
 import type * as connectedOrgs from "../connectedOrgs.js";
 import type * as conversationTurns from "../conversationTurns.js";
 import type * as crons from "../crons.js";
@@ -63,6 +66,7 @@ import type * as lib_branding from "../lib/branding.js";
 import type * as lib_brokerActivity from "../lib/brokerActivity.js";
 import type * as lib_chatTools from "../lib/chatTools.js";
 import type * as lib_coiGenerator from "../lib/coiGenerator.js";
+import type * as lib_complianceAgent from "../lib/complianceAgent.js";
 import type * as lib_convexDocumentStore from "../lib/convexDocumentStore.js";
 import type * as lib_convexMemoryStore from "../lib/convexMemoryStore.js";
 import type * as lib_convexSourceRetriever from "../lib/convexSourceRetriever.js";
@@ -95,6 +99,7 @@ import type * as lib_resend from "../lib/resend.js";
 import type * as lib_sdkCallbacks from "../lib/sdkCallbacks.js";
 import type * as lib_security from "../lib/security.js";
 import type * as lib_threadAccess from "../lib/threadAccess.js";
+import type * as lib_vendorComplianceTools from "../lib/vendorComplianceTools.js";
 import type * as migrations from "../migrations.js";
 import type * as migrations_cleanOrphanAuth from "../migrations/cleanOrphanAuth.js";
 import type * as migrations_migrateOnboarding from "../migrations/migrateOnboarding.js";
@@ -128,6 +133,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   "actions/backfillChunks": typeof actions_backfillChunks;
+  "actions/complianceRequirements": typeof actions_complianceRequirements;
   "actions/detectDuplicatePolicies": typeof actions_detectDuplicatePolicies;
   "actions/emailDrafts": typeof actions_emailDrafts;
   "actions/extractCompanyInfo": typeof actions_extractCompanyInfo;
@@ -150,6 +156,7 @@ declare const fullApi: ApiFromModules<{
   "actions/sendPendingEmail": typeof actions_sendPendingEmail;
   "actions/threadTitle": typeof actions_threadTitle;
   "actions/updateDocumentChunk": typeof actions_updateDocumentChunk;
+  "actions/vendorComplianceMonitor": typeof actions_vendorComplianceMonitor;
   apiAuditLog: typeof apiAuditLog;
   apiKeys: typeof apiKeys;
   auth: typeof auth;
@@ -158,6 +165,7 @@ declare const fullApi: ApiFromModules<{
   clientInvitations: typeof clientInvitations;
   clientInvitationsTest: typeof clientInvitationsTest;
   clients: typeof clients;
+  compliance: typeof compliance;
   connectedOrgs: typeof connectedOrgs;
   conversationTurns: typeof conversationTurns;
   crons: typeof crons;
@@ -182,6 +190,7 @@ declare const fullApi: ApiFromModules<{
   "lib/brokerActivity": typeof lib_brokerActivity;
   "lib/chatTools": typeof lib_chatTools;
   "lib/coiGenerator": typeof lib_coiGenerator;
+  "lib/complianceAgent": typeof lib_complianceAgent;
   "lib/convexDocumentStore": typeof lib_convexDocumentStore;
   "lib/convexMemoryStore": typeof lib_convexMemoryStore;
   "lib/convexSourceRetriever": typeof lib_convexSourceRetriever;
@@ -214,6 +223,7 @@ declare const fullApi: ApiFromModules<{
   "lib/sdkCallbacks": typeof lib_sdkCallbacks;
   "lib/security": typeof lib_security;
   "lib/threadAccess": typeof lib_threadAccess;
+  "lib/vendorComplianceTools": typeof lib_vendorComplianceTools;
   migrations: typeof migrations;
   "migrations/cleanOrphanAuth": typeof migrations_cleanOrphanAuth;
   "migrations/migrateOnboarding": typeof migrations_migrateOnboarding;

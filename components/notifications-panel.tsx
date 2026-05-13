@@ -44,7 +44,11 @@ type NotificationType =
   | "client_onboarding_completed"
   | "client_document_uploaded"
   | "policy_delivered_by_broker"
-  | "quote_delivered_by_broker";
+  | "quote_delivered_by_broker"
+  | "vendor_compliance_met"
+  | "vendor_compliance_gap"
+  | "vendor_policy_expiring"
+  | "vendor_policy_expired";
 
 interface Notification {
   _id: Id<"notifications">;
@@ -80,6 +84,10 @@ const TYPE_ICONS: Record<NotificationType, React.ComponentType<{ className?: str
   client_document_uploaded: FileText,
   policy_delivered_by_broker: FileCheck,
   quote_delivered_by_broker: FileCheck,
+  vendor_compliance_met: CheckCircle,
+  vendor_compliance_gap: ShieldAlert,
+  vendor_policy_expiring: Clock,
+  vendor_policy_expired: AlertTriangle,
 };
 
 interface NotificationsPanelProps {
@@ -130,6 +138,12 @@ export function NotificationsPanel({ orgId, onClose, onMergeSuggestion }: Notifi
       switch (notification.actionType) {
         case "view_policy":
           router.push(`/policies/${p.policyId}`);
+          break;
+        case "view_thread":
+          router.push(`/agent/thread/${p.threadId}`);
+          break;
+        case "view_vendor_compliance":
+          router.push("/connect/vendors");
           break;
         default:
           break;

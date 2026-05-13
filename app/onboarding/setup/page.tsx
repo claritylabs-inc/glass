@@ -3,7 +3,7 @@
 import { useAuthActions } from "@convex-dev/auth/react";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import { BrandWordmark, PartnerWordmark } from "@/components/auth-shell";
 import { PolicyEmptyState } from "@/components/policy-empty-state";
@@ -146,6 +146,7 @@ type PolicyRow = {
 
 export default function ClientOnboardingSetupPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { signOut } = useAuthActions();
 
   const viewer = useQuery(api.users.viewer);
@@ -172,6 +173,8 @@ export default function ClientOnboardingSetupPage() {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
   const [stagedPolicies, setStagedPolicies] = useState<File[]>([]);
+  const isVendorInvite = searchParams?.get("source") === "vendor-invite";
+  const invitingClientName = searchParams?.get("client")?.trim() || "your client";
 
   // If already complete, bounce home.
   useEffect(() => {
@@ -319,17 +322,37 @@ export default function ClientOnboardingSetupPage() {
     setError("");
     try {
       await completeOnboarding();
-      router.replace("/");
+      router.replace(isVendorInvite ? "/connect/clients" : "/");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to finish");
       setSubmitting(false);
     }
-  }, [completeOnboarding, router]);
+  }, [completeOnboarding, isVendorInvite, router]);
 
   const canContinueStep0 = userName.trim().length > 0 && userRole.trim().length > 0;
   const canContinueStep1 = orgName.trim().length > 0;
 
   const policyCount = policies?.length ?? 0;
+  const stepContent = isVendorInvite
+    ? ([
+        {
+          label: "Set up your vendor account",
+          subtitle: `${invitingClientName} invited you to share insurance records and verify your coverage.`,
+        },
+        {
+          label: "Your organization",
+          subtitle: "Confirm the company that will share insurance records with this client.",
+        },
+        {
+          label: "Add insurance documents",
+          subtitle: "Upload policies or certificates your client can use to review their vendor requirements.",
+        },
+        {
+          label: "You're connected",
+          subtitle: "Your client can now review the insurance records you choose to keep in Glass.",
+        },
+      ] satisfies ReadonlyArray<{ label: string; subtitle?: string }>)
+    : STEPS;
 
   return (
     <Shell currentStep={currentStep} email={viewer?.email} onLogout={handleLogout} broker={viewerOrg?.brokerOrg ?? null}>
@@ -338,12 +361,13 @@ export default function ClientOnboardingSetupPage() {
           <h1 className="text-base font-medium tracking-tight">
             {currentStep === 0 &&
             viewerOrg?.brokerOrg?.whiteLabelingEnabled !== false &&
-            viewerOrg?.brokerOrg?.name
+            viewerOrg?.brokerOrg?.name &&
+            !isVendorInvite
               ? `Welcome to ${viewerOrg.brokerOrg.name}`
-              : STEPS[currentStep].label}
+              : stepContent[currentStep].label}
           </h1>
-          {STEPS[currentStep].subtitle ? (
-            <p className="text-base text-muted-foreground">{STEPS[currentStep].subtitle}</p>
+          {stepContent[currentStep].subtitle ? (
+            <p className="text-base text-muted-foreground">{stepContent[currentStep].subtitle}</p>
           ) : null}
         </div>
 
@@ -520,18 +544,25 @@ export default function ClientOnboardingSetupPage() {
         {currentStep === 3 && (
           <div className="space-y-10">
             <ol className="list-none space-y-4 text-base text-muted-foreground [&>li]:flex [&>li]:gap-4">
-              <li>
-                <span className="shrink-0 tabular-nums text-foreground/30">1.</span>
-                <span>See all of your policies, organized, in one place.</span>
-              </li>
-              <li>
-                <span className="shrink-0 tabular-nums text-foreground/30">2.</span>
-                <span>Get proactive alerts about expiring policies and renewals.</span>
-              </li>
-              <li>
-                <span className="shrink-0 tabular-nums text-foreground/30">3.</span>
-                <span>Generate certificates of insurance for customers, vendors and investors.</span>
-              </li>
+              {(isVendorInvite
+                ? [
+                    `Share policies and certificates with ${invitingClientName}.`,
+                    "Keep your insurance records current for vendor compliance reviews.",
+                    "Generate certificates of insurance when clients need proof of coverage.",
+                  ]
+                : [
+                    "See all of your policies, organized, in one place.",
+                    "Get proactive alerts about expiring policies and renewals.",
+                    "Generate certificates of insurance for customers, vendors and investors.",
+                  ]
+              ).map((item, index) => (
+                <li key={item}>
+                  <span className="shrink-0 tabular-nums text-foreground/30">
+                    {index + 1}.
+                  </span>
+                  <span>{item}</span>
+                </li>
+              ))}
               <li>
                 <span className="shrink-0 tabular-nums text-foreground/30">4.</span>
                 <span>

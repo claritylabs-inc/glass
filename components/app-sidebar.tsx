@@ -23,7 +23,8 @@ import {
   Archive,
   ArrowLeft,
   Bell,
-  Link2,
+  ClipboardCheck,
+  Building2,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { usePageContext } from "@/hooks/use-page-context";
@@ -67,14 +68,19 @@ const BROKER_SETTINGS_WITH_AGENT = insertSettingsSectionAfterTeam(
 
 const INSURANCE_ITEMS = [
   { href: "/policies", label: "Policies", icon: FileText, shortcut: "O" },
-  { href: "/connected-orgs", label: "Connect", icon: Link2 },
+  { href: "/compliance", label: "Compliance", icon: ClipboardCheck },
+];
+
+const CONNECT_ITEMS = [
+  { href: "/connect/clients", label: "Clients", icon: Users },
+  { href: "/connect/vendors", label: "Vendors", icon: Building2 },
 ];
 
 const ALL_NAV_ITEMS = [...INSURANCE_ITEMS];
 
 const BROKER_NAV_ITEMS = [
   { href: "/clients", label: "Clients", icon: Users, shortcut: "K" },
-  { href: "/connected-orgs", label: "Connect", icon: Link2 },
+  { href: "/compliance", label: "Compliance", icon: ClipboardCheck },
   { href: "/activity", label: "Activity", icon: Activity, shortcut: "U" },
 ];
 
@@ -144,6 +150,7 @@ export function AppSidebar({
   const isBroker = currentOrg?.isBroker ?? false;
   const isStandaloneClient = currentOrg?.orgType === "client" && !viewerOrg?.brokerOrg;
   const navItems = isBroker ? BROKER_NAV_ITEMS : ALL_NAV_ITEMS;
+  const connectItems = CONNECT_ITEMS;
 
   const pageShortcutMap = useMemo<Record<string, string>>(
     () => ({
@@ -421,6 +428,19 @@ export function AppSidebar({
             active={isActive(item.href)}
             collapsed={collapsed}
             shortcut={item.shortcut ?? undefined}
+            cmdHeld={showShortcuts}
+          />
+        ))}
+
+        <SectionHeader label="Connect" collapsed={collapsed} />
+        {connectItems.map((item) => (
+          <NavItem
+            key={item.href}
+            href={item.href}
+            label={item.label}
+            icon={item.icon}
+            active={isActive(item.href)}
+            collapsed={collapsed}
             cmdHeld={showShortcuts}
           />
         ))}

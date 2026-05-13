@@ -6,6 +6,7 @@ import {
   requireBrokerAccessToClient,
   assertCanUploadPolicy,
   assertCanDeletePolicy,
+  assertCanReadPolicies,
   assertCanReadPolicy,
   getOrgAccess as getOrgAccessFor,
 } from "./lib/access";
@@ -1247,16 +1248,26 @@ export const remove = mutation({
 });
 
 export const listForOrg = query({
-  args: { orgId: v.id("organizations") },
+  args: {
+    orgId: v.id("organizations"),
+    documentType: v.optional(v.union(v.literal("policy"), v.literal("quote"))),
+  },
   handler: async (ctx, args) => {
-    const access = await getOrgAccess(ctx);
-    if (!access) return [];
-    return ctx.db
+    const access = await getOrgAccessFor(ctx, args.orgId);
+    assertCanReadPolicies(access);
+    const all = await ctx.db
       .query("policies")
       .withIndex("by_orgId", (idx) => idx.eq("orgId", args.orgId))
-      .filter((q) => q.eq(q.field("deletedAt"), undefined))
-      .order("desc")
-      .take(100);
+      .collect();
+    const filtered = all.filter(
+      (policy) =>
+        !policy.deletedAt &&
+        !policy.dismissed &&
+        (!args.documentType || policy.documentType === args.documentType),
+    );
+    return await Promise.all(
+      filtered.map((policy) => mergePolicyPipelineState(ctx, policy)),
+    );
   },
 });
 

@@ -711,6 +711,8 @@ export interface PolicyDetailBodyProps {
   onRightPanel?: (node: ReactNode) => void;
   /** Where to navigate after a policy is deleted. Default: /policies */
   afterDeleteHref?: string;
+  /** Hide management actions for read-only connected-vendor policy access. */
+  readOnly?: boolean;
 }
 
 export function PolicyDetailBody({
@@ -719,6 +721,7 @@ export function PolicyDetailBody({
   onActions,
   onRightPanel,
   afterDeleteHref = "/policies",
+  readOnly = false,
 }: PolicyDetailBodyProps) {
   const policy = useQuery(api.policies.get, { id: id as Id<"policies"> });
   const viewerOrg = useQuery(api.orgs.viewerOrg, {});
@@ -964,7 +967,7 @@ export function PolicyDetailBody({
     }
     onActions(
       <>
-        {!isDeleted && (
+        {!readOnly && !isDeleted && (
           <PillButton
             size="compact"
             variant="icon"
@@ -974,7 +977,7 @@ export function PolicyDetailBody({
             <Trash2 className="size-4 shrink-0" strokeWidth={2} />
           </PillButton>
         )}
-        {!isDeleted && (
+        {!readOnly && !isDeleted && (
           <PillButton
             size="compact"
             variant="icon"
@@ -990,7 +993,7 @@ export function PolicyDetailBody({
           </PillButton>
         )}
         <ViewPdfButton url={fileUrl} />
-        {!isDeleted && (
+        {!readOnly && !isDeleted && (
           <PillButton
             size="compact"
             onClick={() => setShowCertificateSheet(true)}
@@ -1005,6 +1008,7 @@ export function PolicyDetailBody({
   }, [
     onActions,
     policy,
+    readOnly,
     isDeleted,
     reExtracting,
     cancelingExtraction,
@@ -1016,7 +1020,7 @@ export function PolicyDetailBody({
 
   useEffect(() => {
     if (!onRightPanel) return;
-    if (!policy || !showCertificateSheet) {
+    if (!policy || readOnly || !showCertificateSheet) {
       onRightPanel(null);
       return;
     }
@@ -1028,7 +1032,7 @@ export function PolicyDetailBody({
       />,
     );
     return () => onRightPanel(null);
-  }, [onRightPanel, policy, showCertificateSheet]);
+  }, [onRightPanel, policy, readOnly, showCertificateSheet]);
 
   if (policy === undefined) {
     return (
@@ -1080,13 +1084,15 @@ export function PolicyDetailBody({
             <p className="text-body-sm text-red-700 dark:text-red-400 flex-1">
               This policy has been deleted.
             </p>
-            <PillButton
-              variant="secondary"
-              size="compact"
-              onClick={() => restorePolicy({ id: policy._id })}
-            >
-              Restore
-            </PillButton>
+            {!readOnly ? (
+              <PillButton
+                variant="secondary"
+                size="compact"
+                onClick={() => restorePolicy({ id: policy._id })}
+              >
+                Restore
+              </PillButton>
+            ) : null}
           </div>
         )}
       </FadeIn>

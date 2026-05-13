@@ -1143,6 +1143,29 @@ const MCP_TOOLS = [
     description: "List policies for the caller's client org. Client only.",
     inputSchema: { type: "object" as const, properties: {} },
   },
+  {
+    name: "list_insurance_requirements",
+    description: "List the caller org's insurance compliance requirements for contractors/vendors.",
+    inputSchema: { type: "object" as const, properties: {} },
+  },
+  {
+    name: "create_insurance_requirement",
+    description: "Create an insurance compliance requirement for contractors/vendors. Requires write scope and org admin role.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        title: { type: "string", description: "Short requirement title" },
+        category: { type: "string", description: "general_liability, auto, workers_comp, umbrella, professional, cyber, property, or other" },
+        requirement_text: { type: "string", description: "Plain-language requirement to check against policy data" },
+      },
+      required: ["title", "category", "requirement_text"],
+    },
+  },
+  {
+    name: "list_vendor_compliance",
+    description: "List connected vendor compliance status against the caller org's insurance requirements.",
+    inputSchema: { type: "object" as const, properties: {} },
+  },
 ];
 
 function jsonRpcResponse(id: string | number | null, result: unknown): Response {
@@ -1417,6 +1440,27 @@ async function handleToolCall(
         _id: p._id, carrier: p.carrier, policyNumber: p.policyNumber,
         policyTypes: p.policyTypes, effectiveDate: p.effectiveDate, expirationDate: p.expirationDate, premium: p.premium,
       })), null, 2) }] };
+    }
+    case "list_insurance_requirements": {
+      const requirements = await ctx.runQuery((internal as any).compliance.listRequirementsInternal, { orgId });
+      return { content: [{ type: "text", text: JSON.stringify(requirements, null, 2) }] };
+    }
+    case "create_insurance_requirement": {
+      requireMcpWriteScope(identity);
+      if (!args.title || !args.category || !args.requirement_text) throw new Error("Missing title, category, or requirement_text");
+      const requirementId = await ctx.runMutation((internal as any).compliance.upsertRequirementInternal, {
+        orgId,
+        userId,
+        title: String(args.title),
+        category: String(args.category),
+        requirementText: String(args.requirement_text),
+        appliesTo: "vendors",
+      });
+      return { content: [{ type: "text", text: JSON.stringify({ requirementId }, null, 2) }] };
+    }
+    case "list_vendor_compliance": {
+      const compliance = await ctx.runQuery((internal as any).compliance.listVendorComplianceInternal, { clientOrgId: orgId });
+      return { content: [{ type: "text", text: JSON.stringify(compliance, null, 2) }] };
     }
     default:
       throw new Error(`Unknown tool: ${name}`);
@@ -2088,6 +2132,66 @@ http.route({
         })),
         next_cursor: null,
       });
+    } catch (e) {
+      if (e instanceof Response) return e;
+      return jsonResponse({ error: { code: "internal_error", message: String(e) } }, 500);
+    }
+  }),
+});
+
+
+// ── GET /api/v1/compliance/requirements ──
+http.route({
+  path: "/api/v1/compliance/requirements",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const identity = await requireApiAuth(ctx, request);
+      const requirements = await ctx.runQuery((internal as any).compliance.listRequirementsInternal, { orgId: identity.orgId });
+      return jsonResponse({ data: requirements, next_cursor: null });
+    } catch (e) {
+      if (e instanceof Response) return e;
+      return jsonResponse({ error: { code: "internal_error", message: String(e) } }, 500);
+    }
+  }),
+});
+
+// ── POST /api/v1/compliance/requirements ──
+http.route({
+  path: "/api/v1/compliance/requirements",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const identity = await requireApiAuth(ctx, request);
+      if (!identity.scopes.includes("write")) {
+        return jsonResponse({ error: { code: "insufficient_scope", message: "Write scope required", request_id: identity.requestId } }, 403);
+      }
+      const body = await request.json();
+      const requirementId = await ctx.runMutation((internal as any).compliance.upsertRequirementInternal, {
+        orgId: identity.orgId,
+        userId: identity.userId,
+        title: String(body.title ?? ""),
+        category: String(body.category ?? "other"),
+        requirementText: String(body.requirement_text ?? body.requirementText ?? ""),
+        appliesTo: "vendors",
+      });
+      return jsonResponse({ id: requirementId }, 201);
+    } catch (e) {
+      if (e instanceof Response) return e;
+      return jsonResponse({ error: { code: "internal_error", message: String(e) } }, 500);
+    }
+  }),
+});
+
+// ── GET /api/v1/compliance/vendors ──
+http.route({
+  path: "/api/v1/compliance/vendors",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const identity = await requireApiAuth(ctx, request);
+      const rows = await ctx.runQuery((internal as any).compliance.listVendorComplianceInternal, { clientOrgId: identity.orgId });
+      return jsonResponse({ data: rows, next_cursor: null });
     } catch (e) {
       if (e instanceof Response) return e;
       return jsonResponse({ error: { code: "internal_error", message: String(e) } }, 500);

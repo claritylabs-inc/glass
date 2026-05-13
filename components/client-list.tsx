@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { useQuery } from "convex/react";
+import type { FunctionReference } from "convex/server";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -10,6 +11,27 @@ import { EmptyStateCard } from "@/components/ui/empty-state-card";
 import { ClientListRow, type ClientRow } from "@/components/client-list-row";
 
 type StatusFilter = "all" | "draft" | "invited" | "onboarding" | "active";
+type ClientListStatus = Exclude<StatusFilter, "all">;
+
+type ClientsApi = {
+  clients: {
+    listForBroker: FunctionReference<"query">;
+  };
+};
+
+const clientsApi = api as unknown as ClientsApi;
+
+type ClientListRecord = {
+  invitationId?: Id<"clientInvitations">;
+  clientOrgId?: Id<"organizations">;
+  name: string;
+  primaryContactName?: string;
+  primaryContactEmail?: string;
+  onboardingStatus: ClientListStatus;
+  createdAt: number;
+  lastActivityAt?: number;
+  activePoliciesCount?: number;
+};
 
 export function ClientList({
   partnerOrgId,
@@ -20,8 +42,9 @@ export function ClientList({
   onInvite: () => void;
   onResumeDraft: (clientOrgId: Id<"organizations">) => void;
 }) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const rows = useQuery((api as any).clients.listForBroker, { brokerOrgId: partnerOrgId }) as any[] | undefined;
+  const rows = useQuery(clientsApi.clients.listForBroker, {
+    brokerOrgId: partnerOrgId,
+  }) as ClientListRecord[] | undefined;
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
 
   const STATUS_FILTERS: { id: StatusFilter; label: string }[] = [
@@ -41,8 +64,7 @@ export function ClientList({
     return result;
   }, [rows, statusFilter]);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function toClientRow(r: any): ClientRow {
+  function toClientRow(r: ClientListRecord): ClientRow {
     // Legacy pending invite (no clientOrgId yet)
     if (r.onboardingStatus === "invited" && r.invitationId && !r.clientOrgId) {
       return {
@@ -79,14 +101,17 @@ export function ClientList({
       onboardingStatus: r.onboardingStatus as "onboarding" | "active",
       createdAt: r.createdAt,
       lastActivityAt: r.lastActivityAt,
-      activePoliciesCount: r.activePoliciesCount,
+      activePoliciesCount: r.activePoliciesCount ?? 0,
     };
   }
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <Tabs value={statusFilter} onValueChange={(v) => setStatusFilter(v as StatusFilter)}>
+        <Tabs
+          value={statusFilter}
+          onValueChange={(v) => setStatusFilter(v as StatusFilter)}
+        >
           <TabsList variant="pill">
             {STATUS_FILTERS.map((f) => (
               <TabsTrigger key={f.id} value={f.id}>

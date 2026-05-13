@@ -1,4 +1,5 @@
 // convex/lib/notify.ts
+import dayjs from "dayjs";
 import { v } from "convex/values";
 import { internalMutation, MutationCtx } from "../_generated/server";
 import { Id } from "../_generated/dataModel";
@@ -24,7 +25,7 @@ export interface NotifyArgs {
   actionPayload?: unknown;
   sourceRef?: unknown;
   coalesceKeyParts?: string[];
-  /** Injectable for testing; defaults to Date.now() */
+  /** Injectable for testing; defaults to dayjs().valueOf() */
   nowMs?: number;
 }
 
@@ -88,7 +89,7 @@ export const notifyInternal = internalMutation({
   },
   handler: async (ctx, args): Promise<Id<"notifications">> => {
     const type = args.type as NotificationType;
-    const nowMs = args.nowMs ?? Date.now();
+    const nowMs = args.nowMs ?? dayjs().valueOf();
     const severity = args.severity ?? NOTIFICATION_SEVERITY[type] ?? "info";
 
     // 1. Coalesce

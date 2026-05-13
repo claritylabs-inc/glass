@@ -29,9 +29,9 @@ const sendVerificationRequest = async function (this: unknown, ...args: any[]) {
       brokerBranding = null;
     }
 
-    // Stash the OTP on any pending client invitations for this email so that
-    // the invite-acceptance UI can auto-verify — the invite link itself proves
-    // email ownership, so the user shouldn't have to enter the code.
+    // Stash the OTP on any pending invite for this email so that invite
+    // acceptance UIs can auto-verify. The invite link itself proves email
+    // ownership, so the user shouldn't have to enter the code.
     let hasPendingInvite = false;
     try {
       const stashed = await ctx.runMutation(internal.auth.stashInviteOtp, {
@@ -98,10 +98,23 @@ export const stashInviteOtp = internalMutation({
       .query("clientInvitations")
       .withIndex("by_status", (q) => q.eq("status", "pending"))
       .collect();
+    const pendingVendorInvites = await ctx.db
+      .query("connectedOrgInvitations")
+      .withIndex("by_vendorEmail", (q) => q.eq("vendorEmail", normalized))
+      .collect();
     const expiresAt = Date.now() + 15 * 60 * 1000; // mirror OTP maxAge
     let matched = false;
     for (const inv of pendingInvites) {
       if (inv.primaryContactEmail?.trim().toLowerCase() === normalized) {
+        await ctx.db.patch(inv._id, {
+          otpCode: code,
+          otpCodeExpiresAt: expiresAt,
+        });
+        matched = true;
+      }
+    }
+    for (const inv of pendingVendorInvites) {
+      if (inv.status === "pending" && inv.expiresAt > Date.now()) {
         await ctx.db.patch(inv._id, {
           otpCode: code,
           otpCodeExpiresAt: expiresAt,

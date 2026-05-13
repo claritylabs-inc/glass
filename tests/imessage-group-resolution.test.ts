@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   anonymousParticipantLabel,
+  buildImessageGroupMemberTitle,
   normalizeImessageAddress,
   resolveImessageConversationScope,
 } from "../convex/lib/imessageGroupResolution";
@@ -75,5 +76,13 @@ describe("iMessage group resolution", () => {
 
   it("creates stable anonymous labels without pretending guests are users", () => {
     expect(anonymousParticipantLabel("+15550123456", 2)).toBe("Guest 2 (3456)");
+  });
+
+  it("builds concise group titles from participant first names", () => {
+    expect(buildImessageGroupMemberTitle([
+      { address: "+15550100", userName: "Terry Wang" },
+      { address: "+15550101", displayName: "Alice Smith" },
+      { address: "+15550102" },
+    ])).toBe("Terry, Alice, Guest 3 (0102)");
   });
 });

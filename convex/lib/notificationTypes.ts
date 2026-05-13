@@ -1,5 +1,7 @@
 // convex/lib/notificationTypes.ts
 
+import dayjs from "dayjs";
+
 export const ALL_NOTIFICATION_TYPES = [
   // Existing glass types (unchanged)
   "merge_suggestion",
@@ -21,6 +23,11 @@ export const ALL_NOTIFICATION_TYPES = [
   "client_document_uploaded",
   "policy_delivered_by_broker",
   "quote_delivered_by_broker",
+  // Vendor compliance
+  "vendor_compliance_met",
+  "vendor_compliance_gap",
+  "vendor_policy_expiring",
+  "vendor_policy_expired",
 ] as const;
 
 export type NotificationType = (typeof ALL_NOTIFICATION_TYPES)[number];
@@ -48,11 +55,20 @@ export const NOTIFICATION_SEVERITY: Record<NotificationType, NotificationSeverit
   client_document_uploaded: "info",
   policy_delivered_by_broker: "info",
   quote_delivered_by_broker: "info",
+  // Vendor compliance
+  vendor_compliance_met: "info",
+  vendor_compliance_gap: "warning",
+  vendor_policy_expiring: "warning",
+  vendor_policy_expired: "critical",
 };
 
 /** Types that coalesce within a 10-minute window. Value is window in ms. */
 export const COALESCE_WINDOW_MS: Partial<Record<NotificationType, number>> = {
   client_document_uploaded: 10 * 60 * 1000,
+  vendor_compliance_met: 24 * 60 * 60 * 1000,
+  vendor_compliance_gap: 24 * 60 * 60 * 1000,
+  vendor_policy_expiring: 24 * 60 * 60 * 1000,
+  vendor_policy_expired: 24 * 60 * 60 * 1000,
 };
 
 /**
@@ -64,7 +80,7 @@ export const COALESCE_WINDOW_MS: Partial<Record<NotificationType, number>> = {
 export function buildCoalesceKey(
   parts: string[],
   windowMs: number,
-  nowMs: number = Date.now(),
+  nowMs: number = dayjs().valueOf(),
 ): string {
   const bucket = Math.floor(nowMs / windowMs);
   return [...parts, String(bucket)].join(":");

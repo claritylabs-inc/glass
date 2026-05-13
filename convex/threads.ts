@@ -1,8 +1,11 @@
+import dayjs from "dayjs";
 import { v } from "convex/values";
-import { query, mutation, internalQuery, internalMutation } from "./_generated/server";
+import { query, mutation, internalQuery, internalMutation, type QueryCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
+import type { Doc } from "./_generated/dataModel";
 import { requireOrgAccess, getOrgAccess } from "./lib/orgAuth";
 import { requireBrokerAccessToClient } from "./lib/access";
+import { buildImessageGroupMemberTitle } from "./lib/imessageGroupResolution";
 
 // Note: mutations/queries don't have process.env
 // The domain is stored on the org via setAgentDomain action, or passed by the client
@@ -13,6 +16,8 @@ const EMAIL_MODE_VALIDATOR = v.union(
   v.literal("forward"),
   v.literal("unknown"),
 );
+const IMESSAGE_GROUP_TITLE_PREFIX = "iMessage group - ";
+const IMESSAGE_DIRECT_TITLE_PREFIX = "iMessage - ";
 
 /** Generate a short alphanumeric ID for thread email addresses */
 function shortId(): string {
@@ -22,6 +27,56 @@ function shortId(): string {
     result += chars[Math.floor(Math.random() * chars.length)];
   }
   return result;
+}
+
+function formatImessageThreadTitle(args: { isGroup: boolean; displayName: string }): string {
+  return args.isGroup
+    ? `${IMESSAGE_GROUP_TITLE_PREFIX}${args.displayName}`
+    : `${IMESSAGE_DIRECT_TITLE_PREFIX}${args.displayName}`;
+}
+
+async function deriveImessageGroupDisplayTitle(
+  ctx: QueryCtx,
+  thread: Doc<"threads">,
+): Promise<string | undefined> {
+  if (!thread.imessageIsGroup || !thread.imessageChatGuid) return undefined;
+  if (!thread.title.startsWith(IMESSAGE_GROUP_TITLE_PREFIX)) return undefined;
+
+  const participants = await ctx.db
+    .query("imessageParticipants")
+    .withIndex("by_chatGuid", (q) => q.eq("chatGuid", thread.imessageChatGuid!))
+    .collect();
+  if (participants.length === 0) return undefined;
+
+  const users = await Promise.all(
+    participants.map((participant) =>
+      participant.userId ? ctx.db.get(participant.userId) : Promise.resolve(null),
+    ),
+  );
+  const memberTitle = buildImessageGroupMemberTitle(
+    participants.map((participant, index) => ({
+      address: participant.address,
+      displayName: participant.displayName,
+      userName: users[index]?.name,
+    })),
+  );
+
+  return memberTitle ? `${IMESSAGE_GROUP_TITLE_PREFIX}${memberTitle}` : undefined;
+}
+
+async function withImessageGroupDisplayTitle(
+  ctx: QueryCtx,
+  thread: Doc<"threads">,
+): Promise<Doc<"threads">> {
+  const title = await deriveImessageGroupDisplayTitle(ctx, thread);
+  return title ? { ...thread, title } : thread;
+}
+
+async function withImessageGroupDisplayTitles(
+  ctx: QueryCtx,
+  threads: Array<Doc<"threads">>,
+): Promise<Array<Doc<"threads">>> {
+  return await Promise.all(threads.map((thread) => withImessageGroupDisplayTitle(ctx, thread)));
 }
 
 // ── Public queries/mutations ──
@@ -38,9 +93,9 @@ export const list = query({
       .order("desc")
       .collect();
     if (args.archived) {
-      return all.filter((t) => !!t.archivedAt);
+      return await withImessageGroupDisplayTitles(ctx, all.filter((t) => !!t.archivedAt));
     }
-    return all.filter((t) => !t.archivedAt);
+    return await withImessageGroupDisplayTitles(ctx, all.filter((t) => !t.archivedAt));
   },
 });
 
@@ -50,7 +105,7 @@ export const get = query({
     const { orgId } = await requireOrgAccess(ctx);
     const thread = await ctx.db.get(args.id);
     if (!thread || thread.orgId !== orgId) return null;
-    return thread;
+    return await withImessageGroupDisplayTitle(ctx, thread);
   },
 });
 
@@ -63,7 +118,7 @@ export const tryGet = query({
       if (!normalized) return null;
       const thread = await ctx.db.get(normalized);
       if (!thread || thread.orgId !== orgId) return null;
-      return thread;
+      return await withImessageGroupDisplayTitle(ctx, thread);
     } catch {
       return null;
     }
@@ -98,9 +153,9 @@ export const listForClient = query({
       .order("desc")
       .collect();
     if (args.archived) {
-      return all.filter((t) => !!t.archivedAt);
+      return await withImessageGroupDisplayTitles(ctx, all.filter((t) => !!t.archivedAt));
     }
-    return all.filter((t) => !t.archivedAt);
+    return await withImessageGroupDisplayTitles(ctx, all.filter((t) => !t.archivedAt));
   },
 });
 
@@ -113,7 +168,7 @@ export const getForClient = query({
     await requireBrokerAccessToClient(ctx, args.clientOrgId);
     const thread = await ctx.db.get(args.id);
     if (!thread || thread.orgId !== args.clientOrgId) return null;
-    return thread;
+    return await withImessageGroupDisplayTitle(ctx, thread);
   },
 });
 
@@ -145,7 +200,7 @@ export const create = mutation({
   },
   handler: async (ctx, args) => {
     const { userId, orgId } = await requireOrgAccess(ctx);
-    const now = Date.now();
+    const now = dayjs().valueOf();
     const domain = args.agentDomain || FALLBACK_AGENT_DOMAIN;
 
     // Look up the org's agent handle to build the thread-specific email
@@ -236,7 +291,7 @@ export const sendMessage = mutation({
       attachments: args.attachments,
     });
 
-    await ctx.db.patch(args.threadId, { lastMessageAt: Date.now() });
+    await ctx.db.patch(args.threadId, { lastMessageAt: dayjs().valueOf() });
 
     // Schedule agent response (skip when streaming API route handles it)
     if (!args.skipAgentResponse) {
@@ -267,7 +322,7 @@ export const archive = mutation({
     const { orgId } = await requireOrgAccess(ctx);
     const thread = await ctx.db.get(args.id);
     if (!thread || thread.orgId !== orgId) throw new Error("Not found");
-    await ctx.db.patch(args.id, { archivedAt: Date.now() });
+    await ctx.db.patch(args.id, { archivedAt: dayjs().valueOf() });
   },
 });
 
@@ -329,7 +384,7 @@ export const updateAgentResponse = mutation({
       referencedPolicyIds: args.referencedPolicyIds,
       referencedQuoteIds: args.referencedQuoteIds,
     });
-    await ctx.db.patch(msg.threadId, { lastMessageAt: Date.now() });
+    await ctx.db.patch(msg.threadId, { lastMessageAt: dayjs().valueOf() });
   },
 });
 
@@ -488,6 +543,10 @@ export const updateAgentMessage = internalMutation({
       name: v.string(),
       input: v.optional(v.string()),
     }))),
+    toolArtifacts: v.optional(v.array(v.object({
+      type: v.string(),
+      data: v.any(),
+    }))),
     attachments: v.optional(v.array(v.object({
       filename: v.string(),
       contentType: v.string(),
@@ -515,6 +574,7 @@ export const updateAgentMessage = internalMutation({
       citedSourceSpanIds: args.citedSourceSpanIds,
       usedTools: args.usedTools,
       toolCalls: args.toolCalls,
+      toolArtifacts: args.toolArtifacts,
       attachments: args.attachments,
       pendingEmailId: args.pendingEmailId,
       policyChangeCaseId: args.policyChangeCaseId,
@@ -571,7 +631,7 @@ export const updateAgentError = internalMutation({
 export const touchThread = internalMutation({
   args: { threadId: v.id("threads") },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.threadId, { lastMessageAt: Date.now() });
+    await ctx.db.patch(args.threadId, { lastMessageAt: dayjs().valueOf() });
   },
 });
 
@@ -585,11 +645,12 @@ export const updateTitleInternal = internalMutation({
 export const listByOrg = internalQuery({
   args: { orgId: v.id("organizations") },
   handler: async (ctx, args) => {
-    return await ctx.db
+    const threads = await ctx.db
       .query("threads")
       .withIndex("by_orgId_lastMessageAt", (q) => q.eq("orgId", args.orgId))
       .order("desc")
       .take(50);
+    return await withImessageGroupDisplayTitles(ctx, threads);
   },
 });
 
@@ -604,7 +665,7 @@ export const createInternal = internalMutation({
       orgId: args.orgId,
       title: args.title ?? "New chat",
       createdBy: args.userId,
-      lastMessageAt: Date.now(),
+      lastMessageAt: dayjs().valueOf(),
       originChannel: "chat",
     });
   },
@@ -628,7 +689,7 @@ export const insertUserMessageInternal = internalMutation({
       userName: args.userName,
       content: args.content,
     });
-    await ctx.db.patch(args.threadId, { lastMessageAt: Date.now() });
+    await ctx.db.patch(args.threadId, { lastMessageAt: dayjs().valueOf() });
     return messageId;
   },
 });
@@ -660,7 +721,7 @@ export const findOrCreateByPhone = internalMutation({
       )
       .first();
     if (existing) {
-      await ctx.db.patch(existing._id, { lastMessageAt: Date.now() });
+      await ctx.db.patch(existing._id, { lastMessageAt: dayjs().valueOf() });
       return existing._id;
     }
     const displayName = args.userName ?? args.fromPhone;
@@ -668,7 +729,7 @@ export const findOrCreateByPhone = internalMutation({
       orgId: args.orgId,
       title: `iMessage - ${displayName}`,
       createdBy: args.userId,
-      lastMessageAt: Date.now(),
+      lastMessageAt: dayjs().valueOf(),
       threadPhone: args.fromPhone,
       originChannel: "imessage",
     });
@@ -697,11 +758,16 @@ export const findOrCreateByImessageChat = internalMutation({
       (thread) => (thread.imessageIsGroup ?? false) === args.isGroup,
     );
     if (existing) {
+      const displayName = args.title ?? args.userName ?? args.fallbackPhone ?? "Group chat";
+      const nextTitle = formatImessageThreadTitle({ isGroup: args.isGroup, displayName });
       await ctx.db.patch(existing._id, {
-        lastMessageAt: Date.now(),
+        lastMessageAt: dayjs().valueOf(),
         imessageIsGroup: args.isGroup,
         imessageScope: args.scope,
         threadPhone: existing.threadPhone ?? args.fallbackPhone,
+        ...(args.isGroup && existing.title.startsWith(IMESSAGE_GROUP_TITLE_PREFIX)
+          ? { title: nextTitle }
+          : {}),
       });
       return existing._id;
     }
@@ -709,9 +775,9 @@ export const findOrCreateByImessageChat = internalMutation({
     const displayName = args.title ?? args.userName ?? args.fallbackPhone ?? "Group chat";
     return await ctx.db.insert("threads", {
       orgId: args.orgId,
-      title: args.isGroup ? `iMessage group - ${displayName}` : `iMessage - ${displayName}`,
+      title: formatImessageThreadTitle({ isGroup: args.isGroup, displayName }),
       createdBy: args.userId,
-      lastMessageAt: Date.now(),
+      lastMessageAt: dayjs().valueOf(),
       threadPhone: args.fallbackPhone,
       imessageChatGuid: args.chatGuid,
       imessageIsGroup: args.isGroup,
@@ -765,7 +831,7 @@ export const insertImessageMessage = internalMutation({
       status: args.status,
       error: args.error,
     });
-    await ctx.db.patch(args.threadId, { lastMessageAt: Date.now() });
+    await ctx.db.patch(args.threadId, { lastMessageAt: dayjs().valueOf() });
     return messageId;
   },
 });
@@ -796,7 +862,7 @@ export const findOrCreateForEmail = internalMutation({
       const existing = await ctx.db.get(args.existingThreadId);
       if (existing && existing.orgId === args.orgId) {
         await ctx.db.patch(existing._id, {
-          lastMessageAt: Date.now(),
+          lastMessageAt: dayjs().valueOf(),
           emailMode: existing.emailMode ?? args.mode,
           originChannel: existing.originChannel ?? "email",
         });
@@ -818,7 +884,7 @@ export const findOrCreateForEmail = internalMutation({
       orgId: args.orgId,
       title: args.subject,
       createdBy: args.userId,
-      lastMessageAt: Date.now(),
+      lastMessageAt: dayjs().valueOf(),
       threadEmail,
       originChannel: "email",
       emailMode: args.mode,
@@ -1013,7 +1079,7 @@ export const insertEmailMessage = internalMutation({
     });
 
     // Update the thread's lastMessageAt
-    await ctx.db.patch(args.threadId, { lastMessageAt: Date.now() });
+    await ctx.db.patch(args.threadId, { lastMessageAt: dayjs().valueOf() });
 
     return messageDocId;
   },

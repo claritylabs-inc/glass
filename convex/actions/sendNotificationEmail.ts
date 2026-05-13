@@ -1,5 +1,6 @@
 "use node";
 // convex/actions/sendNotificationEmail.ts
+import dayjs from "dayjs";
 import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
@@ -123,7 +124,7 @@ export const send = internalAction({
     if (result.ok) {
       await ctx.runMutation(
         (internal as any).notifications.patchEmailStatus,
-        { id: args.notificationId, emailStatus: "sent", emailSentAt: Date.now() },
+        { id: args.notificationId, emailStatus: "sent", emailSentAt: dayjs().valueOf() },
       );
     } else {
       await ctx.runMutation(
@@ -171,6 +172,10 @@ function buildCtaUrl(
   switch (actionType) {
     case "view_policy":
       return `${siteUrl}/policies/${p.policyId}`;
+    case "view_thread":
+      return `${siteUrl}/agent/thread/${p.threadId}`;
+    case "view_vendor_compliance":
+      return `${siteUrl}/connect/vendors`;
     default:
       return `${siteUrl}/notifications`;
   }

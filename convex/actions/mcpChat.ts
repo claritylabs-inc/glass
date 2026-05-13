@@ -3,14 +3,19 @@
 import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
-import { generateText } from "ai";
+import { generateText, stepCountIs } from "ai";
 import { getModelForOrg, getProviderOptionsForTask } from "../lib/models";
-import { buildDocumentContext, buildConversationMemoryContext } from "../lib/agentPrompts";
+import {
+  buildComplianceRequirementsContext,
+  buildDocumentContext,
+  buildConversationMemoryContext,
+  buildIntelligenceContext,
+} from "../lib/agentPrompts";
 import {
   buildSystemPromptForContext,
   buildMessageHistory,
 } from "../lib/aiUtils";
-import { buildIntelligenceContext } from "../lib/agentPrompts";
+import { buildVendorComplianceTools } from "../lib/vendorComplianceTools";
 import { classifyPromptInjection, enforceInputLimits } from "../lib/security";
 import {
   buildTitlePromptContent,
@@ -32,9 +37,14 @@ export const run = internalAction({
     message: v.string(),
     threadId: v.optional(v.id("threads")),
   },
-  handler: async (ctx, args): Promise<{ threadId: string; response: string }> => {
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{ threadId: string; response: string }> => {
     // Load org
-    const org = await ctx.runQuery(internal.orgs.getInternal, { id: args.orgId });
+    const org = await ctx.runQuery(internal.orgs.getInternal, {
+      id: args.orgId,
+    });
     if (!org) throw new Error("Organization not found");
 
     // ── Prompt injection guard ──
@@ -46,8 +56,9 @@ export const run = internalAction({
         reason: injectionCheck.reason,
       });
       return {
-        threadId: args.threadId as string ?? "",
-        response: "I can't process this request. Please rephrase your question about insurance policies or coverage.",
+        threadId: (args.threadId as string) ?? "",
+        response:
+          "I can't process this request. Please rephrase your question about insurance policies or coverage.",
       };
     }
 
@@ -62,7 +73,9 @@ export const run = internalAction({
     }
 
     // Get user info
-    const user = await ctx.runQuery(internal.users.getInternal, { id: args.userId });
+    const user = await ctx.runQuery(internal.users.getInternal, {
+      id: args.userId,
+    });
     const userName = user?.name?.split(/\s+/)[0];
 
     // Insert user message
@@ -90,25 +103,57 @@ export const run = internalAction({
     });
 
     // Document context (vector search with fallback)
-    const { context: docContext, relevantPolicyIds, relevantQuoteIds } =
-      await buildDocumentContext(ctx, args.orgId, policies, [], args.message);
+    const {
+      context: docContext,
+      relevantPolicyIds,
+      relevantQuoteIds,
+    } = await buildDocumentContext(ctx, args.orgId, policies, [], args.message);
 
     // Cross-thread conversation memory (vector search)
-    const memoryContext = await buildConversationMemoryContext(ctx, args.orgId, args.message);
+    const memoryContext = await buildConversationMemoryContext(
+      ctx,
+      args.orgId,
+      args.message,
+    );
 
     // Load business intelligence (vector search, deduped against policy context)
     const orgMemoryBlock = await buildIntelligenceContext(
-      ctx, args.orgId, args.message,
+      ctx,
+      args.orgId,
+      args.message,
       relevantPolicyIds.map((id: unknown) => id as string),
     );
+    const requirementsBlock = await buildComplianceRequirementsContext(
+      ctx,
+      args.orgId,
+    );
 
-    const connectedVendors = await ctx.runQuery(
-      (internal as any).connectedOrgs.listActiveVendorsInternal,
-      { clientOrgId: args.orgId },
-    ).catch(() => []);
-    const connectedVendorBlock = Array.isArray(connectedVendors) && connectedVendors.length > 0
-      ? `\n\nCONNECTED VENDOR ACCESS:\nThe caller's org has read-only access to these vendor organizations. When the user asks about vendor/client risk, vendor COIs, or vendor policies, tell them to use MCP vendor tools for exact policy lists and use this roster for disambiguation. Do not imply write access.\n${connectedVendors.map((row: any) => `- ${row.vendorOrg?.name ?? row.vendorOrgId} (vendorOrgId: ${row.vendorOrgId}, status: ${row.status})`).join("\n")}`
-      : "";
+    const connectedVendors = await ctx
+      .runQuery((internal as any).connectedOrgs.listActiveVendorsInternal, {
+        clientOrgId: args.orgId,
+      })
+      .catch(() => []);
+    const connectedVendorBlock =
+      Array.isArray(connectedVendors) && connectedVendors.length > 0
+        ? `\n\nCONNECTED VENDOR ACCESS:\nThe caller's org has read-only access to these vendor organizations. When the user asks about vendor/client risk, vendor COIs, or vendor policies, tell them to use MCP vendor tools for exact policy lists and use this roster for disambiguation. Do not imply write access.\n${connectedVendors.map((row: any) => `- ${row.vendorOrg?.name ?? row.vendorOrgId} (vendorOrgId: ${row.vendorOrgId}, status: ${row.status})`).join("\n")}`
+        : "";
+
+    const complianceRows = await ctx
+      .runQuery((internal as any).compliance.listVendorComplianceInternal, {
+        clientOrgId: args.orgId,
+      })
+      .catch(() => []);
+    const complianceBlock =
+      Array.isArray(complianceRows) && complianceRows.length > 0
+        ? `\n\nVENDOR COMPLIANCE SNAPSHOT:\n${complianceRows
+            .map((row: any) => {
+              const failed = (row.checks ?? []).filter(
+                (check: any) => check.status !== "met",
+              );
+              return `- ${row.vendorOrg?.name ?? row.vendorOrgId}: ${failed.length === 0 ? "compliant" : `${failed.length} open issue(s)`}`;
+            })
+            .join("\n")}`
+        : "";
 
     const mcpAddendum = `
 
@@ -116,6 +161,7 @@ MCP MODE:
 - This is a programmatic query from an MCP-connected AI agent, not a human chat.
 - Be concise and structured in your responses.
 - Use markdown for formatting.
+- Use the connected-vendor tools for vendor lists, vendor policies, and requirement-by-requirement vendor compliance before answering vendor compliance questions.
 - Do NOT include email-style sign-offs or greetings.`;
 
     const fullSystemPrompt =
@@ -125,7 +171,9 @@ MCP MODE:
       docContext +
       memoryContext +
       orgMemoryBlock +
-      connectedVendorBlock;
+      requirementsBlock +
+      connectedVendorBlock +
+      complianceBlock;
 
     // Build message history (skip processing placeholders)
     const messageHistory = buildMessageHistory(allMessages);
@@ -137,23 +185,32 @@ MCP MODE:
       maxOutputTokens: 2048,
       system: fullSystemPrompt,
       messages: messageHistory,
+      tools: buildVendorComplianceTools(ctx, [args.orgId]),
+      stopWhen: stepCountIs(10),
     });
 
     // Insert agent message
-    const agentMsgId = await ctx.runMutation(internal.threads.insertAgentMessage, {
-      threadId,
-      orgId: args.orgId,
-    });
+    const agentMsgId = await ctx.runMutation(
+      internal.threads.insertAgentMessage,
+      {
+        threadId,
+        orgId: args.orgId,
+      },
+    );
     await ctx.runMutation(internal.threads.updateAgentMessage, {
       id: agentMsgId,
       content,
-      referencedPolicyIds: relevantPolicyIds.length > 0 ? relevantPolicyIds : undefined,
-      referencedQuoteIds: relevantQuoteIds.length > 0 ? relevantQuoteIds : undefined,
+      referencedPolicyIds:
+        relevantPolicyIds.length > 0 ? relevantPolicyIds : undefined,
+      referencedQuoteIds:
+        relevantQuoteIds.length > 0 ? relevantQuoteIds : undefined,
     });
     await ctx.runMutation(internal.threads.touchThread, { threadId });
 
     // Auto-title if this is a new thread (only 1 user message)
-    const userMessages = allMessages.filter((m: { role?: string }) => m.role === "user");
+    const userMessages = allMessages.filter(
+      (m: { role?: string }) => m.role === "user",
+    );
     if (userMessages.length <= 1) {
       try {
         const { text: titleText } = await generateText({
@@ -171,7 +228,8 @@ MCP MODE:
             },
           ],
         });
-        const title = normalizeGeneratedTitle(titleText) ?? fallbackTitle(args.message);
+        const title =
+          normalizeGeneratedTitle(titleText) ?? fallbackTitle(args.message);
         if (title) {
           await ctx.runMutation(internal.threads.updateTitleInternal, {
             threadId,

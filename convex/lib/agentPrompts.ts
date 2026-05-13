@@ -11,8 +11,17 @@
  */
 
 // SDK exports (still work)
-export { buildAgentSystemPrompt, buildConversationMemoryGuidance } from "@claritylabs/cl-sdk";
-export type { PolicyDocument, QuoteDocument, AgentContext, Platform, CommunicationIntent } from "@claritylabs/cl-sdk";
+export {
+  buildAgentSystemPrompt,
+  buildConversationMemoryGuidance,
+} from "@claritylabs/cl-sdk";
+export type {
+  PolicyDocument,
+  QuoteDocument,
+  AgentContext,
+  Platform,
+  CommunicationIntent,
+} from "@claritylabs/cl-sdk";
 
 // Local mapping
 export { policyToInsuranceDoc } from "./documentMapping";
@@ -21,6 +30,7 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { makeEmbedText } from "./sdkCallbacks";
+import { formatComplianceRequirementsContext } from "./complianceAgent";
 
 /**
  * Build document context using vector search over pre-embedded chunks.
@@ -34,17 +44,25 @@ export async function buildDocumentContext(
   policies: Doc<"policies">[],
   quotes: Doc<"policies">[],
   queryText: string,
-): Promise<{ context: string; relevantPolicyIds: Id<"policies">[]; relevantQuoteIds: Id<"policies">[] }> {
+): Promise<{
+  context: string;
+  relevantPolicyIds: Id<"policies">[];
+  relevantQuoteIds: Id<"policies">[];
+}> {
   if (policies.length === 0 && quotes.length === 0) {
     return {
-      context: "NO POLICIES OR QUOTES FOUND. The user has not imported any insurance documents yet.",
+      context:
+        "NO POLICIES OR QUOTES FOUND. The user has not imported any insurance documents yet.",
       relevantPolicyIds: [],
       relevantQuoteIds: [],
     };
   }
 
   // Check if we have embedded chunks for this org
-  const hasChunks = await ctx.runQuery(internal.documentChunks.hasChunksForOrg, { orgId });
+  const hasChunks = await ctx.runQuery(
+    internal.documentChunks.hasChunksForOrg,
+    { orgId },
+  );
 
   if (hasChunks) {
     return buildVectorContext(ctx, orgId, policies, quotes, queryText);
@@ -96,6 +114,21 @@ export async function buildIntelligenceContext(
   }
 }
 
+export async function buildComplianceRequirementsContext(
+  ctx: ActionCtx,
+  orgId: Id<"organizations">,
+): Promise<string> {
+  try {
+    const requirements = await ctx.runQuery(
+      internal.compliance.listRequirementsInternal,
+      { orgId },
+    );
+    return formatComplianceRequirementsContext(requirements);
+  } catch {
+    return "";
+  }
+}
+
 /**
  * Vector-search-based document context.
  * Embeds the query, searches sourceChunks plus documentChunks, and formats results.
@@ -106,7 +139,11 @@ async function buildVectorContext(
   policies: Doc<"policies">[],
   quotes: Doc<"policies">[],
   queryText: string,
-): Promise<{ context: string; relevantPolicyIds: Id<"policies">[]; relevantQuoteIds: Id<"policies">[] }> {
+): Promise<{
+  context: string;
+  relevantPolicyIds: Id<"policies">[];
+  relevantQuoteIds: Id<"policies">[];
+}> {
   const embed = makeEmbedText(ctx, orgId);
   const queryEmbedding = await embed(queryText);
 
@@ -124,12 +161,16 @@ async function buildVectorContext(
   // Hydrate chunks
   const chunkDocs = [];
   for (const result of results) {
-    const doc = await ctx.runQuery(internal.documentChunks.get, { id: result._id });
+    const doc = await ctx.runQuery(internal.documentChunks.get, {
+      id: result._id,
+    });
     if (doc) chunkDocs.push({ ...doc, _score: result._score });
   }
   const sourceChunkDocs = [];
   for (const result of sourceResults) {
-    const doc = await ctx.runQuery(internal.sourceSpans.getChunk, { id: result._id });
+    const doc = await ctx.runQuery(internal.sourceSpans.getChunk, {
+      id: result._id,
+    });
     if (doc) sourceChunkDocs.push({ ...doc, _score: result._score });
   }
 
@@ -146,22 +187,29 @@ async function buildVectorContext(
     const indexLines = policies.map((p, i) => {
       const types = p.policyTypes?.join(", ") ?? "unknown";
       const carrier = p.mga || p.carrier || p.security;
-      const covSummary = (p.coverages ?? []).slice(0, 8).map((c: any) => {
-        const parts = [c.name];
-        if (c.limit) parts.push(c.limit);
-        return parts.join(": ");
-      }).join("; ");
+      const covSummary = (p.coverages ?? [])
+        .slice(0, 8)
+        .map((c: any) => {
+          const parts = [c.name];
+          if (c.limit) parts.push(c.limit);
+          return parts.join(": ");
+        })
+        .join("; ");
       const covLine = covSummary ? ` | Coverages: ${covSummary}` : "";
       return `[${i + 1}] ${carrier} | #${p.policyNumber} | Types: ${types} | ${p.effectiveDate} to ${p.expirationDate ?? "continuous"} | Insured: ${p.insuredName}${covLine}`;
     });
-    parts.push(`POLICY INDEX (${policies.length} bound policies):\n${indexLines.join("\n")}`);
+    parts.push(
+      `POLICY INDEX (${policies.length} bound policies):\n${indexLines.join("\n")}`,
+    );
   }
   if (quotes.length > 0) {
     const indexLines = quotes.map((q, i) => {
       const carrier = q.mga || q.carrier || q.security;
       return `[Q${i + 1}] ${carrier} | #${q.quoteNumber ?? q.policyNumber} | Insured: ${q.insuredName} | Premium: ${q.premium ?? "N/A"}`;
     });
-    parts.push(`QUOTE INDEX (${quotes.length} quotes):\n${indexLines.join("\n")}`);
+    parts.push(
+      `QUOTE INDEX (${quotes.length} quotes):\n${indexLines.join("\n")}`,
+    );
   }
 
   // Add retrieved raw source chunks first. These are preferred for exact
@@ -188,20 +236,25 @@ async function buildVectorContext(
 
     const carrier = policy.mga || policy.carrier || policy.security;
     const docLabel = isQuote ? "QUOTE" : "POLICY";
-    const number = isQuote ? (policy.quoteNumber ?? policy.policyNumber) : policy.policyNumber;
+    const number = isQuote
+      ? (policy.quoteNumber ?? policy.policyNumber)
+      : policy.policyNumber;
 
     let section = `\n--- ${docLabel} SOURCE EVIDENCE: ${carrier} #${number} (ID:${policyId}) ---`;
     for (const chunk of policyChunks) {
-      const truncated = chunk.text.length > 2500
-        ? chunk.text.slice(0, 2500) + "\n... [truncated]"
-        : chunk.text;
+      const truncated =
+        chunk.text.length > 2500
+          ? chunk.text.slice(0, 2500) + "\n... [truncated]"
+          : chunk.text;
       section += `\n\n[sourceChunk:${chunk.chunkId} sourceSpanIds:${chunk.sourceSpanIds.join(",")} score:${chunk._score.toFixed(3)}]\n${truncated}`;
     }
     sourceSections.push(section);
   }
 
   if (sourceSections.length > 0) {
-    parts.push(`SOURCE-SPAN EVIDENCE (prefer for exact numeric/date/contractual values):\n${sourceSections.join("\n")}`);
+    parts.push(
+      `SOURCE-SPAN EVIDENCE (prefer for exact numeric/date/contractual values):\n${sourceSections.join("\n")}`,
+    );
   }
 
   // Add retrieved extracted chunks grouped by policy
@@ -226,15 +279,18 @@ async function buildVectorContext(
 
     const carrier = policy.mga || policy.carrier || policy.security;
     const docLabel = isQuote ? "QUOTE" : "POLICY";
-    const number = isQuote ? (policy.quoteNumber ?? policy.policyNumber) : policy.policyNumber;
+    const number = isQuote
+      ? (policy.quoteNumber ?? policy.policyNumber)
+      : policy.policyNumber;
 
     let section = `\n--- ${docLabel}: ${carrier} #${number} (ID:${policyId}) ---`;
     if (policy.summary) section += `\nSummary: ${policy.summary}`;
 
     for (const chunk of policyChunks) {
-      const truncated = chunk.text.length > 2000
-        ? chunk.text.slice(0, 2000) + "\n... [truncated]"
-        : chunk.text;
+      const truncated =
+        chunk.text.length > 2000
+          ? chunk.text.slice(0, 2000) + "\n... [truncated]"
+          : chunk.text;
       section += `\n\n[${chunk.chunkType}]:\n${truncated}`;
     }
 
@@ -242,7 +298,9 @@ async function buildVectorContext(
   }
 
   if (expandedSections.length > 0) {
-    parts.push(`RELEVANT DOCUMENT DATA (via semantic search):\n${expandedSections.join("\n")}`);
+    parts.push(
+      `RELEVANT DOCUMENT DATA (via semantic search):\n${expandedSections.join("\n")}`,
+    );
   }
 
   return {
@@ -260,7 +318,11 @@ function buildFallbackContext(
   policies: Doc<"policies">[],
   quotes: Doc<"policies">[],
   queryText: string,
-): { context: string; relevantPolicyIds: Id<"policies">[]; relevantQuoteIds: Id<"policies">[] } {
+): {
+  context: string;
+  relevantPolicyIds: Id<"policies">[];
+  relevantQuoteIds: Id<"policies">[];
+} {
   const queryLower = queryText.toLowerCase();
   const queryWords = queryLower.split(/\s+/).filter((w) => w.length > 2);
 
@@ -268,11 +330,17 @@ function buildFallbackContext(
   const scoredPolicies = policies.map((p) => {
     let score = 0;
     const searchText = [
-      p.carrier, p.security, p.policyNumber, p.insuredName,
+      p.carrier,
+      p.security,
+      p.policyNumber,
+      p.insuredName,
       ...(p.policyTypes ?? []),
       ...(p.coverages?.map((c: { name?: string }) => c.name) ?? []),
       p.summary,
-    ].filter(Boolean).join(" ").toLowerCase();
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
     for (const word of queryWords) {
       if (searchText.includes(word)) score++;
     }
@@ -282,23 +350,40 @@ function buildFallbackContext(
   const scoredQuotes = quotes.map((q) => {
     let score = 0;
     const searchText = [
-      q.carrier, q.security, q.quoteNumber, q.insuredName,
+      q.carrier,
+      q.security,
+      q.quoteNumber,
+      q.insuredName,
       ...(q.policyTypes ?? []),
       ...(q.coverages?.map((c: { name?: string }) => c.name) ?? []),
-    ].filter(Boolean).join(" ").toLowerCase();
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
     for (const word of queryWords) {
       if (searchText.includes(word)) score++;
     }
-    if (queryLower.includes("quote") || queryLower.includes("proposal")) score += 3;
+    if (queryLower.includes("quote") || queryLower.includes("proposal"))
+      score += 3;
     return { quote: q, score };
   });
 
-  const topPolicies = scoredPolicies.filter((s) => s.score > 0).sort((a, b) => b.score - a.score).slice(0, 5);
-  const policiesToExpand = topPolicies.length > 0 ? topPolicies.map((r) => r.policy) : policies.slice(0, 5);
+  const topPolicies = scoredPolicies
+    .filter((s) => s.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5);
+  const policiesToExpand =
+    topPolicies.length > 0
+      ? topPolicies.map((r) => r.policy)
+      : policies.slice(0, 5);
   const relevantPolicyIds = policiesToExpand.map((p) => p._id);
 
-  const topQuotes = scoredQuotes.filter((s) => s.score > 0).sort((a, b) => b.score - a.score).slice(0, 3);
-  const quotesToExpand = topQuotes.length > 0 ? topQuotes.map((r) => r.quote) : quotes.slice(0, 3);
+  const topQuotes = scoredQuotes
+    .filter((s) => s.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3);
+  const quotesToExpand =
+    topQuotes.length > 0 ? topQuotes.map((r) => r.quote) : quotes.slice(0, 3);
   const relevantQuoteIds = quotesToExpand.map((q) => q._id);
 
   const parts: string[] = [];
@@ -307,10 +392,18 @@ function buildFallbackContext(
     const indexLines = policies.map((p, i) => {
       const types = p.policyTypes?.join(", ") ?? "unknown";
       const carrier = p.mga || p.carrier || p.security;
-      const coverages = p.coverages?.slice(0, 5).map((c: { name?: string; limit?: string }) => `${c.name}: ${c.limit}`).join("; ") ?? "";
+      const coverages =
+        p.coverages
+          ?.slice(0, 5)
+          .map(
+            (c: { name?: string; limit?: string }) => `${c.name}: ${c.limit}`,
+          )
+          .join("; ") ?? "";
       return `[${i + 1}] ${carrier} | #${p.policyNumber} | Types: ${types} | ${p.effectiveDate} to ${p.expirationDate ?? "continuous"} | Insured: ${p.insuredName} | Coverages: ${coverages}`;
     });
-    parts.push(`POLICY INDEX (${policies.length} bound policies):\n${indexLines.join("\n")}`);
+    parts.push(
+      `POLICY INDEX (${policies.length} bound policies):\n${indexLines.join("\n")}`,
+    );
   }
 
   // Expand relevant policies
@@ -320,7 +413,11 @@ function buildFallbackContext(
     if (p.summary) section += `\nSummary: ${p.summary}`;
     if (p.coverages?.length) {
       section += "\nCoverages:";
-      for (const c of p.coverages as Array<{ name?: string; limit?: string; deductible?: string }>) {
+      for (const c of p.coverages as Array<{
+        name?: string;
+        limit?: string;
+        deductible?: string;
+      }>) {
         section += `\n  - ${c.name}: Limit ${c.limit}${c.deductible ? `, Deductible ${c.deductible}` : ""}`;
       }
     }
@@ -348,17 +445,23 @@ export async function buildConversationMemoryContext(
     const embed = makeEmbedText(ctx, orgId);
     const queryEmbedding = await embed(queryText);
 
-    const results = await ctx.vectorSearch("conversationTurns", "by_embedding", {
-      vector: queryEmbedding,
-      limit: 10,
-      filter: (q) => q.eq("orgId", orgId),
-    });
+    const results = await ctx.vectorSearch(
+      "conversationTurns",
+      "by_embedding",
+      {
+        vector: queryEmbedding,
+        limit: 10,
+        filter: (q) => q.eq("orgId", orgId),
+      },
+    );
 
     if (results.length === 0) return "";
 
     const turns = [];
     for (const result of results) {
-      const doc = await ctx.runQuery(internal.conversationTurns.get, { id: result._id });
+      const doc = await ctx.runQuery(internal.conversationTurns.get, {
+        id: result._id,
+      });
       if (doc) turns.push(doc);
     }
 
@@ -370,7 +473,9 @@ export async function buildConversationMemoryContext(
 
     for (const turn of turns) {
       const date = new Date(turn.createdAt).toLocaleDateString("en-US", {
-        month: "short", day: "numeric", year: "numeric",
+        month: "short",
+        day: "numeric",
+        year: "numeric",
       });
       const snippet = turn.content.slice(0, 200).replace(/\n+/g, " ");
       const entry = `[${turn.role}] (${date}): ${snippet}`;
@@ -410,7 +515,9 @@ export function buildConversationMemoryFromList(
   for (let i = 0; i < conversations.length; i++) {
     const c = conversations[i];
     const date = new Date(c._creationTime).toLocaleDateString("en-US", {
-      month: "short", day: "numeric", year: "numeric",
+      month: "short",
+      day: "numeric",
+      year: "numeric",
     });
     const who = c.fromName ? `${c.fromName} (${c.fromEmail})` : c.fromEmail;
     const q = c.body.slice(0, 200).replace(/\n+/g, " ");

@@ -1,26 +1,32 @@
 "use client";
 
+import { useState } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { Mail } from "lucide-react";
+import { SettingsSwitch } from "@/components/settings/settings-switch";
 
 interface PrefRow {
   type: string;
   label: string;
   group: string;
+  audience?: "broker";
 }
 
 const BROKER_PREF_ROWS: PrefRow[] = [
-  { type: "client_document_uploaded", label: "Client uploads document", group: "Documents" },
+  { type: "client_document_uploaded", label: "Client uploads document", group: "Documents", audience: "broker" },
   { type: "policy_delivered_by_broker", label: "Policy delivered", group: "Policies & Quotes" },
   { type: "quote_delivered_by_broker", label: "Quote delivered", group: "Policies & Quotes" },
   { type: "renewal_reminder", label: "Renewal reminder", group: "Policies & Quotes" },
   { type: "policy_lapsed", label: "Policy lapsed", group: "Policies & Quotes" },
-  { type: "client_invitation_accepted", label: "Client accepted invitation", group: "Account" },
-  { type: "client_onboarding_completed", label: "Client completed onboarding", group: "Account" },
+  { type: "vendor_compliance_gap", label: "Vendor compliance gaps", group: "Vendor Compliance" },
+  { type: "vendor_policy_expiring", label: "Vendor policy expiring", group: "Vendor Compliance" },
+  { type: "vendor_policy_expired", label: "Vendor policy expired", group: "Vendor Compliance" },
+  { type: "vendor_compliance_met", label: "Vendor becomes compliant", group: "Vendor Compliance" },
+  { type: "client_invitation_accepted", label: "Client accepted invitation", group: "Account", audience: "broker" },
+  { type: "client_onboarding_completed", label: "Client completed onboarding", group: "Account", audience: "broker" },
 ];
-
-const GROUPS = Array.from(new Set(BROKER_PREF_ROWS.map((r) => r.group)));
 
 const WARN_TYPES = new Set([
   "renewal_reminder",
@@ -32,20 +38,36 @@ const WARN_TYPES = new Set([
   "extraction_error",
   "incomplete_extraction",
   "premium_anomaly",
+  "vendor_compliance_gap",
+  "vendor_policy_expiring",
+  "vendor_policy_expired",
 ]);
 
 interface NotificationPreferencesPageProps {
   orgId: Id<"organizations">;
+  isBroker: boolean;
 }
 
-export default function NotificationPreferencesPage({ orgId }: NotificationPreferencesPageProps) {
+type NotificationChannel = "in_app" | "email";
+
+export default function NotificationPreferencesPage({ orgId, isBroker }: NotificationPreferencesPageProps) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const _api = api as any;
   const prefs = useQuery(_api.notificationPreferences.getForUser, { orgId }) ?? [];
   const setAll = useMutation(_api.notificationPreferences.setAllEmail);
   const set = useMutation(_api.notificationPreferences.set);
+  const [optimisticPrefs, setOptimisticPrefs] = useState<Record<string, boolean>>({});
+  const visibleRows = BROKER_PREF_ROWS.filter((row) => isBroker || row.audience !== "broker");
+  const groups = Array.from(new Set(visibleRows.map((row) => row.group)));
 
-  function getEnabled(type: string, channel: "in_app" | "email"): boolean {
+  function prefKey(type: string, channel: NotificationChannel): string {
+    return `${type}:${channel}`;
+  }
+
+  function getEnabled(type: string, channel: NotificationChannel): boolean {
+    const optimisticValue = optimisticPrefs[prefKey(type, channel)];
+    if (optimisticValue !== undefined) return optimisticValue;
+
     const row = (prefs as Array<{ type: string; channel: string; enabled: boolean }>).find(
       (p) => p.type === type && p.channel === channel
     );
@@ -60,83 +82,109 @@ export default function NotificationPreferencesPage({ orgId }: NotificationPrefe
   const allEmailRow = (prefs as Array<{ type: string; channel: string; enabled: boolean }>).find(
     (p) => p.type === "__all__" && p.channel === "email"
   );
-  const allEmailEnabled = allEmailRow ? allEmailRow.enabled : true;
+  const allEmailEnabled = optimisticPrefs[prefKey("__all__", "email")] ?? (allEmailRow ? allEmailRow.enabled : true);
+
+  async function toggleAllEmail() {
+    const next = !allEmailEnabled;
+    const key = prefKey("__all__", "email");
+    setOptimisticPrefs((current) => ({ ...current, [key]: next }));
+    try {
+      await setAll({ orgId, enabled: next });
+    } catch (err) {
+      setOptimisticPrefs((current) => ({ ...current, [key]: !next }));
+      console.warn("[NotificationPreferencesPage] Failed to update email notification preference", err);
+    }
+  }
+
+  async function togglePreference(type: string, channel: NotificationChannel) {
+    const next = !getEnabled(type, channel);
+    const key = prefKey(type, channel);
+    setOptimisticPrefs((current) => ({ ...current, [key]: next }));
+    try {
+      await set({ orgId, type, channel, enabled: next });
+    } catch (err) {
+      setOptimisticPrefs((current) => ({ ...current, [key]: !next }));
+      console.warn("[NotificationPreferencesPage] Failed to update notification preference", err);
+    }
+  }
 
   return (
-    <div className="max-w-2xl mx-auto py-8 px-4">
-      <h1 className="text-xl font-semibold text-foreground mb-6">Notification Preferences</h1>
-
-      {/* Master email toggle */}
-      <div className="flex items-center justify-between p-4 rounded-lg border border-foreground/10 mb-8">
-        <div>
-          <p className="text-sm font-medium text-foreground">Email — all notifications</p>
-          <p className="text-xs text-muted-foreground mt-0.5">Master toggle for all email delivery</p>
-        </div>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={allEmailEnabled}
-          onClick={() => setAll({ orgId, enabled: !allEmailEnabled })}
-          className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-            allEmailEnabled ? "bg-blue-600" : "bg-foreground/20"
-          }`}
-        >
-          <span
-            className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
-              allEmailEnabled ? "translate-x-5" : "translate-x-1"
-            }`}
-          />
-        </button>
+    <div className="flex w-full flex-col gap-5">
+      <div>
+        <h1 className="text-lg font-medium text-foreground">Notifications</h1>
+        <p className="mt-1 text-body-sm text-muted-foreground/70">
+          Choose how Glass should notify your team about account, policy, and vendor events.
+        </p>
       </div>
 
-      {/* Per-type grid */}
-      {GROUPS.map((group) => (
-        <div key={group} className="mb-8">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
-            {group}
-          </h2>
-          <div className="rounded-lg border border-foreground/10 overflow-hidden">
-            {/* Header */}
-            <div className="grid grid-cols-[1fr_80px_80px] px-4 py-2 border-b border-foreground/6 bg-foreground/[0.02]">
-              <span className="text-xs font-medium text-muted-foreground">Event</span>
-              <span className="text-xs font-medium text-muted-foreground text-center">In-app</span>
-              <span className="text-xs font-medium text-muted-foreground text-center">Email</span>
+      <div className="rounded-lg border border-foreground/6 bg-card">
+        <div className="flex items-center justify-between gap-4 px-5 py-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-foreground/5 text-foreground">
+              <Mail className="size-4" />
             </div>
-            {BROKER_PREF_ROWS.filter((r) => r.group === group).map((row, i, arr) => (
-              <div
-                key={row.type}
-                className={`grid grid-cols-[1fr_80px_80px] px-4 py-3 items-center ${
-                  i < arr.length - 1 ? "border-b border-foreground/[0.04]" : ""
-                }`}
-              >
-                <span className="text-sm text-foreground">{row.label}</span>
-                {(["in_app", "email"] as const).map((channel) => {
-                  const enabled = getEnabled(row.type, channel);
-                  return (
-                    <div key={channel} className="flex justify-center">
-                      <button
-                        type="button"
-                        role="switch"
-                        aria-checked={enabled}
-                        onClick={() => set({ orgId, type: row.type, channel, enabled: !enabled })}
-                        className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${
-                          enabled ? "bg-blue-600" : "bg-foreground/20"
-                        }`}
-                      >
-                        <span
-                          className={`inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform ${
-                            enabled ? "translate-x-3.5" : "translate-x-0.5"
-                          }`}
-                        />
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            ))}
+            <div className="min-w-0">
+              <p className="text-body-sm font-medium text-foreground">Email notifications</p>
+              <p className="mt-0.5 text-label-sm text-muted-foreground/60">
+                Master control for every email notification.
+              </p>
+            </div>
           </div>
+          <SettingsSwitch
+            checked={allEmailEnabled}
+            onCheckedChange={() => void toggleAllEmail()}
+            label="Toggle all email notifications"
+          />
         </div>
-      ))}
+      </div>
+
+      <div className="flex flex-col gap-4">
+        {groups.map((group) => (
+          <section key={group} className="overflow-hidden rounded-lg border border-foreground/6 bg-card">
+            <table className="w-full table-fixed">
+              <colgroup>
+                <col />
+                <col className="w-28" />
+                <col className="w-28" />
+              </colgroup>
+              <thead>
+                <tr className="border-b border-foreground/6">
+                  <th className="px-5 py-3.5 text-left text-sm font-medium text-foreground">
+                    {group}
+                  </th>
+                  <th className="px-3 py-3.5 text-center text-label-sm font-medium text-muted-foreground/70">
+                    In-app
+                  </th>
+                  <th className="px-3 py-3.5 text-center text-label-sm font-medium text-muted-foreground/70">
+                    Email
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibleRows.filter((r) => r.group === group).map((row) => (
+                  <tr key={row.type} className="border-b border-foreground/6 last:border-b-0">
+                    <td className="px-5 py-3.5 text-body-sm text-foreground">{row.label}</td>
+                    {(["in_app", "email"] as const).map((channel) => {
+                      const enabled = getEnabled(row.type, channel);
+                      return (
+                        <td key={channel} className="px-3 py-3.5">
+                          <div className="flex justify-center">
+                            <SettingsSwitch
+                              checked={enabled}
+                              onCheckedChange={() => void togglePreference(row.type, channel)}
+                              label={`${row.label} ${channel === "in_app" ? "in-app" : "email"}`}
+                            />
+                          </div>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
+        ))}
+      </div>
     </div>
   );
 }

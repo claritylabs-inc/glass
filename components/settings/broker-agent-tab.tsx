@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { useSettingsActions } from "@/components/settings/settings-actions-context";
 import { HandleAvailability } from "@/components/settings/handle-availability";
+import { SettingsSwitch } from "@/components/settings/settings-switch";
 
 export function BrokerAgentTab() {
   const viewerOrg = useQuery(api.orgs.viewerOrg, {});
@@ -237,21 +238,12 @@ export function BrokerAgentTab() {
                 Send the requesting team member an email copy when the agent replies in chat.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => setChatEmailNotifications((v) => !v)}
-              role="switch"
-              aria-checked={chatEmailNotifications}
-              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors cursor-pointer shrink-0 ml-4 ${
-                chatEmailNotifications ? "bg-primary" : "bg-foreground/15"
-              }`}
-            >
-              <span
-                className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
-                  chatEmailNotifications ? "translate-x-4.5" : "translate-x-0.5"
-                }`}
-              />
-            </button>
+            <SettingsSwitch
+              checked={chatEmailNotifications}
+              onCheckedChange={() => setChatEmailNotifications((v) => !v)}
+              label="Toggle email notifications for chat responses"
+              className="ml-4"
+            />
           </div>
 
           <div className="flex items-center justify-between gap-4 py-3">
@@ -261,21 +253,12 @@ export function BrokerAgentTab() {
                 When off, drafted emails require confirmation before sending.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => setAutoSendEmails((v) => !v)}
-              role="switch"
-              aria-checked={autoSendEmails}
-              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors cursor-pointer shrink-0 ml-4 ${
-                autoSendEmails ? "bg-primary" : "bg-foreground/15"
-              }`}
-            >
-              <span
-                className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
-                  autoSendEmails ? "translate-x-4.5" : "translate-x-0.5"
-                }`}
-              />
-            </button>
+            <SettingsSwitch
+              checked={autoSendEmails}
+              onCheckedChange={() => setAutoSendEmails((v) => !v)}
+              label="Toggle auto-send emails"
+              className="ml-4"
+            />
           </div>
 
           <div className="flex items-center justify-between gap-4 py-3">
@@ -285,21 +268,12 @@ export function BrokerAgentTab() {
                 Blind copy the team member who asked the agent to send an email.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => setBccRequesterOnAgentEmails((v) => !v)}
-              role="switch"
-              aria-checked={bccRequesterOnAgentEmails}
-              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors cursor-pointer shrink-0 ml-4 ${
-                bccRequesterOnAgentEmails ? "bg-primary" : "bg-foreground/15"
-              }`}
-            >
-              <span
-                className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
-                  bccRequesterOnAgentEmails ? "translate-x-4.5" : "translate-x-0.5"
-                }`}
-              />
-            </button>
+            <SettingsSwitch
+              checked={bccRequesterOnAgentEmails}
+              onCheckedChange={() => setBccRequesterOnAgentEmails((v) => !v)}
+              label="Toggle BCC requester"
+              className="ml-4"
+            />
           </div>
         </div>
       </div>
