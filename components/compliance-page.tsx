@@ -6,7 +6,14 @@ import type { FunctionReference } from "convex/server";
 import { AppShell } from "@/components/app-shell";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { ClipboardCheck, FileUp, PencilLine, Trash2 } from "lucide-react";
+import {
+  AlertCircle,
+  CheckCircle2,
+  ClipboardCheck,
+  FileUp,
+  PencilLine,
+  Trash2,
+} from "lucide-react";
 import { toast } from "sonner";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { Badge } from "@/components/ui/badge";
@@ -71,6 +78,10 @@ type Requirement = {
   deductibleAmount?: number;
   appliesTo: "vendors" | "own_org" | "both";
   updatedAt: number;
+  complianceCheck?: {
+    status: "met" | "missing" | "expiring_soon" | "expired";
+    notes?: string;
+  };
   canArchive?: boolean;
   clientRequirementSource?: {
     clientOrg: {
@@ -107,6 +118,44 @@ function RequirementBadge({ label, value }: { label: string; value: string }) {
     >
       <span>{label}</span>
       <span className="min-w-0 truncate text-foreground">{value}</span>
+    </Badge>
+  );
+}
+
+function ComplianceStatusBadge({
+  status,
+}: {
+  status: NonNullable<Requirement["complianceCheck"]>["status"];
+}) {
+  if (status === "met") {
+    return (
+      <Badge
+        variant="outline"
+        className="gap-1 border-emerald-500/25 bg-emerald-500/10 text-emerald-500"
+      >
+        <CheckCircle2 className="h-3 w-3" />
+        Met
+      </Badge>
+    );
+  }
+  if (status === "expiring_soon") {
+    return (
+      <Badge
+        variant="outline"
+        className="gap-1 border-amber-500/25 bg-amber-500/10 text-amber-500"
+      >
+        <AlertCircle className="h-3 w-3" />
+        Needs attention
+      </Badge>
+    );
+  }
+  return (
+    <Badge
+      variant="outline"
+      className="gap-1 border-red-500/25 bg-red-500/10 text-red-500"
+    >
+      <AlertCircle className="h-3 w-3" />
+      Not met
     </Badge>
   );
 }
@@ -548,6 +597,12 @@ export function CompliancePage() {
                     <p className="min-w-0 truncate text-sm font-medium text-foreground">
                       {requirement.title}
                     </p>
+                    {activeRequirementScope === "own_org" &&
+                    requirement.complianceCheck ? (
+                      <ComplianceStatusBadge
+                        status={requirement.complianceCheck.status}
+                      />
+                    ) : null}
                     <CategoryBadge category={requirement.category} />
                     {requirement.limit ? (
                       <RequirementBadge
@@ -577,6 +632,12 @@ export function CompliancePage() {
                   <p className="line-clamp-2 max-w-5xl text-sm leading-5 text-muted-foreground">
                     {requirement.requirementText}
                   </p>
+                  {activeRequirementScope === "own_org" &&
+                  requirement.complianceCheck?.notes ? (
+                    <p className="line-clamp-1 max-w-5xl text-xs text-muted-foreground/70">
+                      {requirement.complianceCheck.notes}
+                    </p>
+                  ) : null}
                 </div>
                 {requirement.canArchive !== false ? (
                   <PillButton

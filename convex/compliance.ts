@@ -337,6 +337,7 @@ function vendorScopedRequirements(
 async function listClientRequirementsForVendor(
   ctx: QueryCtx,
   vendorOrgId: Id<"organizations">,
+  vendorPolicies: Doc<"policies">[],
 ) {
   const relationships = await ctx.db
     .query("connectedOrgRelationships")
@@ -354,6 +355,7 @@ async function listClientRequirementsForVendor(
       rows.push({
         ...requirement,
         appliesTo: "own_org" as const,
+        complianceCheck: assessRequirement(requirement, vendorPolicies),
         canArchive: false,
         clientRequirementSource: {
           relationshipId: rel._id,
@@ -375,17 +377,31 @@ async function listRequirementsVisibleToOrg(
   ctx: QueryCtx,
   orgId: Id<"organizations">,
 ) {
-  const ownRequirements = await ctx.db
-    .query("insuranceRequirements")
-    .withIndex("by_orgId_status", (q) =>
-      q.eq("orgId", orgId).eq("status", "active"),
-    )
-    .order("desc")
-    .collect();
-  const clientRequirements = await listClientRequirementsForVendor(ctx, orgId);
+  const [ownRequirements, orgPolicies] = await Promise.all([
+    ctx.db
+      .query("insuranceRequirements")
+      .withIndex("by_orgId_status", (q) =>
+        q.eq("orgId", orgId).eq("status", "active"),
+      )
+      .order("desc")
+      .collect(),
+    ctx.db
+      .query("policies")
+      .withIndex("by_orgId", (q) => q.eq("orgId", orgId))
+      .collect(),
+  ]);
+  const clientRequirements = await listClientRequirementsForVendor(
+    ctx,
+    orgId,
+    orgPolicies,
+  );
   return [
     ...ownRequirements.map((requirement) => ({
       ...requirement,
+      complianceCheck:
+        requirement.appliesTo === "own_org" || requirement.appliesTo === "both"
+          ? assessRequirement(requirement, orgPolicies)
+          : undefined,
       canArchive: true,
     })),
     ...clientRequirements,
