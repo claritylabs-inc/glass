@@ -57,6 +57,7 @@ import {
   filterComplianceRequirements,
   formatComplianceRequirement,
 } from "../lib/complianceAgent";
+import { buildVendorComplianceTools } from "../lib/vendorComplianceTools";
 
 /** Normalize a raw phone string to E.164 (+1XXXXXXXXXX). */
 function normalizePhone(raw: string): string {
@@ -1010,6 +1011,10 @@ export const processInbound = internalAction({
             return matches.map(formatComplianceRequirement).join("\n");
           },
         },
+        ...buildVendorComplianceTools(
+          ctx,
+          scope.orgIds.map((scopedOrgId) => String(scopedOrgId)),
+        ),
         save_note: {
           ...saveNote,
           execute: async (params: {

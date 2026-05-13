@@ -55,6 +55,7 @@ import {
   filterComplianceRequirements,
   formatComplianceRequirement,
 } from "../lib/complianceAgent";
+import { buildVendorComplianceTools } from "../lib/vendorComplianceTools";
 
 /** Build executable tools with Convex context wired in. */
 
@@ -158,6 +159,7 @@ function buildTools(
         return matches.map(formatComplianceRequirement).join("\n");
       },
     },
+    ...buildVendorComplianceTools(ctx, [args.orgId]),
     lookup_policy_section: {
       ...lookupPolicySection,
       execute: async (params: { policyId: string; query: string }) => {
@@ -761,6 +763,9 @@ export const run = internalAction({
         lookup_policy_section: "Reading policy sections...",
         compare_coverages: "Comparing coverages...",
         lookup_compliance_requirements: "Checking requirements...",
+        lookup_connected_vendors: "Checking vendors...",
+        lookup_vendor_policies: "Reading vendor policies...",
+        lookup_vendor_compliance: "Checking vendor compliance...",
         send_email: "Drafting email...",
         email_expert: "Preparing email...",
         save_note: "Saving note...",

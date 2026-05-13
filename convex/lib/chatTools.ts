@@ -53,6 +53,47 @@ export const lookupComplianceRequirements = tool({
   }),
 });
 
+export const lookupConnectedVendors = tool({
+  description:
+    "Look up connected vendor organizations and their compliance status. Use this when the user asks which vendors are non-compliant, compliant, waiting on policies, invited, or asks for vendor status.",
+  inputSchema: z.object({
+    query: z
+      .string()
+      .optional()
+      .describe("Vendor name, website, email, or relationship label to filter by."),
+    status: z
+      .enum(["all", "compliant", "non_compliant", "attention", "waiting_on_policies"])
+      .optional()
+      .describe("Optional compliance/status filter."),
+  }),
+});
+
+export const lookupVendorPolicies = tool({
+  description:
+    "List policies for a specific connected vendor. Use this before answering questions about a vendor's current insurance, carriers, policy numbers, limits, named insured, or expiration dates.",
+  inputSchema: z.object({
+    vendorOrgId: z.string().optional().describe("Connected vendor organization ID."),
+    vendorName: z.string().optional().describe("Vendor name if the ID is not known."),
+    query: z
+      .string()
+      .optional()
+      .describe("Optional carrier, policy number, coverage, or policy type filter."),
+  }),
+});
+
+export const lookupVendorCompliance = tool({
+  description:
+    "Return the requirement-by-requirement compliance checklist for connected vendors, including matched policy details, expiration dates, limits, named insured, and the reason each requirement is met or not met. Use this for non-compliant vendor questions and vendor compliance diffs.",
+  inputSchema: z.object({
+    vendorOrgId: z.string().optional().describe("Connected vendor organization ID."),
+    vendorName: z.string().optional().describe("Vendor name if the ID is not known."),
+    includeCompliant: z
+      .boolean()
+      .optional()
+      .describe("Include met requirements as well as open issues. Defaults to true for specific vendors and false for all vendors."),
+  }),
+});
+
 export const sendEmail = tool({
   description:
     "Draft and send an email on behalf of the team. Respects the organization's email settings.",

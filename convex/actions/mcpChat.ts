@@ -3,7 +3,7 @@
 import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
-import { generateText } from "ai";
+import { generateText, stepCountIs } from "ai";
 import { getModelForOrg, getProviderOptionsForTask } from "../lib/models";
 import {
   buildComplianceRequirementsContext,
@@ -15,6 +15,7 @@ import {
   buildSystemPromptForContext,
   buildMessageHistory,
 } from "../lib/aiUtils";
+import { buildVendorComplianceTools } from "../lib/vendorComplianceTools";
 import { classifyPromptInjection, enforceInputLimits } from "../lib/security";
 import {
   buildTitlePromptContent,
@@ -160,6 +161,7 @@ MCP MODE:
 - This is a programmatic query from an MCP-connected AI agent, not a human chat.
 - Be concise and structured in your responses.
 - Use markdown for formatting.
+- Use the connected-vendor tools for vendor lists, vendor policies, and requirement-by-requirement vendor compliance before answering vendor compliance questions.
 - Do NOT include email-style sign-offs or greetings.`;
 
     const fullSystemPrompt =
@@ -183,6 +185,8 @@ MCP MODE:
       maxOutputTokens: 2048,
       system: fullSystemPrompt,
       messages: messageHistory,
+      tools: buildVendorComplianceTools(ctx, [args.orgId]),
+      stopWhen: stepCountIs(10),
     });
 
     // Insert agent message

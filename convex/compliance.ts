@@ -1036,11 +1036,51 @@ export const listVendorComplianceInternal = internalQuery({
         .query("policies")
         .withIndex("by_orgId", (q) => q.eq("orgId", rel.vendorOrgId))
         .collect();
+      const policyCount = policies.filter(
+        (policy) =>
+          !policy.deletedAt &&
+          !policy.dismissed &&
+          policy.documentType !== "quote",
+      ).length;
       const checks = requirements.map((requirement) => ({
-        requirementTitle: requirement.title,
-        ...assessRequirement(requirement, policies),
+        requirement,
+        ...assessRequirement(
+          requirement,
+          policies,
+          dayjs().valueOf(),
+          vendorOrg?.name,
+        ),
       }));
-      rows.push({ vendorOrg, checks });
+      const missing = checks.filter(
+        (check) => check.status === "missing" || check.status === "expired",
+      ).length;
+      const expiringSoon = checks.filter(
+        (check) => check.status === "expiring_soon",
+      ).length;
+      rows.push({
+        relationshipId: rel._id,
+        vendorOrg: vendorOrg
+          ? {
+              _id: vendorOrg._id,
+              name: vendorOrg.name,
+              website: vendorOrg.website,
+            }
+          : null,
+        status:
+          missing > 0
+            ? "non_compliant"
+            : expiringSoon > 0
+              ? "attention"
+              : requirements.length === 0
+                ? "no_requirements"
+                : "compliant",
+        requirementCount: requirements.length,
+        policyCount,
+        metCount: checks.filter((check) => check.status === "met").length,
+        missingCount: missing,
+        expiringSoonCount: expiringSoon,
+        checks,
+      });
     }
     return rows;
   },

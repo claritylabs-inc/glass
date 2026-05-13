@@ -62,6 +62,7 @@ import {
   filterComplianceRequirements,
   formatComplianceRequirement,
 } from "../lib/complianceAgent";
+import { buildVendorComplianceTools } from "../lib/vendorComplianceTools";
 
 const GLASS_PUBLIC_URL = "https://glass.claritylabs.inc";
 
@@ -1194,6 +1195,7 @@ export const processInbound = internalAction({
             return matches.map(formatComplianceRequirement).join("\n");
           },
         },
+        ...buildVendorComplianceTools(ctx, [orgId]),
         ...(isInternal && effectiveMode === "direct"
           ? {
               email_expert: buildEmailExpertTool(ctx, {
@@ -1414,7 +1416,7 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
       }
 
       systemContext += attachmentToolHint;
-      systemContext += `\n\nYou have tools to look up policies, look up policy sections, compare coverages, save notes, generate COIs, and extract uploaded policy attachments. Use them as needed before answering. Decide yourself whether the email requires answering a question, generating a COI, and/or extracting an attached policy — you may do more than one.`;
+      systemContext += `\n\nYou have tools to look up policies, look up policy sections, compare coverages, check compliance requirements, look up connected vendors, inspect vendor policies, inspect requirement-by-requirement vendor compliance, save notes, generate COIs, and extract uploaded policy attachments. Use them as needed before answering. Decide yourself whether the email requires answering a question, generating a COI, and/or extracting an attached policy — you may do more than one.`;
 
       // Agentic loop — the model decides tools (COI, policy extraction, Q&A)
       const result = await generateText({

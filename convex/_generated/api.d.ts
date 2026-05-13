@@ -98,6 +98,7 @@ import type * as lib_resend from "../lib/resend.js";
 import type * as lib_sdkCallbacks from "../lib/sdkCallbacks.js";
 import type * as lib_security from "../lib/security.js";
 import type * as lib_threadAccess from "../lib/threadAccess.js";
+import type * as lib_vendorComplianceTools from "../lib/vendorComplianceTools.js";
 import type * as migrations from "../migrations.js";
 import type * as migrations_cleanOrphanAuth from "../migrations/cleanOrphanAuth.js";
 import type * as migrations_migrateOnboarding from "../migrations/migrateOnboarding.js";
@@ -220,6 +221,7 @@ declare const fullApi: ApiFromModules<{
   "lib/sdkCallbacks": typeof lib_sdkCallbacks;
   "lib/security": typeof lib_security;
   "lib/threadAccess": typeof lib_threadAccess;
+  "lib/vendorComplianceTools": typeof lib_vendorComplianceTools;
   migrations: typeof migrations;
   "migrations/cleanOrphanAuth": typeof migrations_cleanOrphanAuth;
   "migrations/migrateOnboarding": typeof migrations_migrateOnboarding;
