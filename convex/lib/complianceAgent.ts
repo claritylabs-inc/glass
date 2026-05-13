@@ -11,7 +11,13 @@ type Requirement = Pick<
   | "limitAmount"
   | "deductible"
   | "deductibleAmount"
->;
+> & {
+  clientRequirementSource?: {
+    clientOrg: {
+      name: string;
+    } | null;
+  };
+};
 
 const CATEGORY_LABELS: Record<Requirement["category"], string> = {
   general_liability: "General liability",
@@ -26,8 +32,8 @@ const CATEGORY_LABELS: Record<Requirement["category"], string> = {
 
 const SCOPE_LABELS: Record<Requirement["appliesTo"], string> = {
   vendors: "Vendor",
-  own_org: "Internal",
-  both: "Vendor + internal",
+  own_org: "My",
+  both: "Vendor + my",
 };
 
 function normalizeText(value: string | undefined | null) {
@@ -80,6 +86,9 @@ export function filterComplianceRequirements(
 
 export function formatComplianceRequirement(requirement: Requirement) {
   const details = [
+    requirement.clientRequirementSource
+      ? `source: client requirements from ${requirement.clientRequirementSource.clientOrg?.name ?? "client"}`
+      : undefined,
     `scope: ${SCOPE_LABELS[requirement.appliesTo]}`,
     `category: ${CATEGORY_LABELS[requirement.category]}`,
     requirement.limit ? `limit: ${requirement.limit}` : undefined,
@@ -107,7 +116,7 @@ export function formatComplianceRequirementsContext(
     (requirement) =>
       requirement.appliesTo === "vendors" || requirement.appliesTo === "both",
   );
-  const internalRequirements = requirements.filter(
+  const myRequirements = requirements.filter(
     (requirement) =>
       requirement.appliesTo === "own_org" || requirement.appliesTo === "both",
   );
@@ -120,13 +129,13 @@ export function formatComplianceRequirementsContext(
         .join("\n")}`,
     );
   }
-  if (internalRequirements.length > 0) {
+  if (myRequirements.length > 0) {
     sections.push(
-      `Internal requirements:\n${internalRequirements
+      `My requirements:\n${myRequirements
         .map(formatComplianceRequirement)
         .join("\n")}`,
     );
   }
 
-  return `\n\nCOMPLIANCE REQUIREMENTS:\nThese are the organization's saved insurance requirements. Use them for questions about contractor/vendor requirements, internal insurance standards, minimum limits, deductibles, endorsements, and certificate instructions. Prefer these records over policy documents when the user asks what the org requires.\n${sections.join("\n\n")}`;
+  return `\n\nCOMPLIANCE REQUIREMENTS:\nThese are the organization's saved insurance requirements. Use them for questions about contractor/vendor requirements, the organization's own insurance standards, minimum limits, deductibles, endorsements, and certificate instructions. Prefer these records over policy documents when the user asks what the org requires.\n${sections.join("\n\n")}`;
 }

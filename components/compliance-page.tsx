@@ -41,6 +41,10 @@ type ComplianceApi = {
       importRequirements: FunctionReference<"action">;
     };
   };
+  connectedOrgs: {
+    listVendors: FunctionReference<"query">;
+    listClients: FunctionReference<"query">;
+  };
 };
 
 const complianceApi = api as unknown as ComplianceApi;
@@ -67,6 +71,18 @@ type Requirement = {
   deductibleAmount?: number;
   appliesTo: "vendors" | "own_org" | "both";
   updatedAt: number;
+  canArchive?: boolean;
+  clientRequirementSource?: {
+    clientOrg: {
+      _id: Id<"organizations">;
+      name: string;
+      website?: string;
+    } | null;
+  };
+};
+
+type ConnectedOrgRow = {
+  status: "pending" | "active" | "expired" | "revoked";
 };
 
 function categoryLabel(category: Category) {
@@ -130,7 +146,7 @@ function ComplianceEmptyState({
       <p className="text-body-sm text-muted-foreground mt-1">
         {isVendorScope
           ? "Add the insurance standards vendors need to satisfy before they work with your organization."
-          : "Add the insurance standards your own organization needs to maintain."}
+          : "Add the insurance standards your organization needs to satisfy."}
       </p>
 
       <button
@@ -144,12 +160,12 @@ function ComplianceEmptyState({
         <p className="text-body-sm font-medium text-foreground">
           {isVendorScope
             ? "Add a vendor requirement"
-            : "Add an internal requirement"}
+            : "Add one of my requirements"}
         </p>
         <p className="mt-1 text-body-sm text-muted-foreground">
           {isVendorScope
             ? "Paste contract language or upload an existing vendor requirements document."
-            : "Paste internal compliance notes or upload an existing requirements document."}
+            : "Paste compliance notes or upload an existing requirements document."}
         </p>
         <span className="mt-4 inline-flex h-8 items-center justify-center gap-1.5 rounded-full bg-foreground px-3.5 text-xs font-medium text-background">
           <FileUp className="h-3.5 w-3.5" />
@@ -167,6 +183,14 @@ export function CompliancePage() {
     complianceApi.compliance.listRequirements,
     orgId ? { orgId } : "skip",
   ) as Requirement[] | undefined;
+  const vendorRows = useQuery(
+    complianceApi.connectedOrgs.listVendors,
+    orgId ? { orgId } : "skip",
+  ) as ConnectedOrgRow[] | undefined;
+  const clientRows = useQuery(
+    complianceApi.connectedOrgs.listClients,
+    orgId ? { orgId } : "skip",
+  ) as ConnectedOrgRow[] | undefined;
   const upsertRequirement = useMutation(
     complianceApi.compliance.upsertRequirement,
   );
@@ -193,6 +217,22 @@ export function CompliancePage() {
   const [submitting, setSubmitting] = useState(false);
   const [importing, setImporting] = useState(false);
 
+  const hasActiveClients = (clientRows ?? []).some(
+    (row) => row.status === "active",
+  );
+  const hasActiveVendors = (vendorRows ?? []).some(
+    (row) => row.status === "active",
+  );
+  const isPureVendorAccount =
+    clientRows !== undefined &&
+    vendorRows !== undefined &&
+    hasActiveClients &&
+    !hasActiveVendors;
+
+  const activeRequirementScope: RequirementScope = isPureVendorAccount
+    ? "own_org"
+    : requirementScope;
+
   async function submitRequirement(event: FormEvent) {
     event.preventDefault();
     if (!orgId) return;
@@ -204,7 +244,7 @@ export function CompliancePage() {
         category,
         limit: limit.trim() || undefined,
         requirementText,
-        appliesTo: requirementScope,
+        appliesTo: activeRequirementScope,
         minimumRequired: true,
       });
       toast.success("Compliance requirement saved");
@@ -265,7 +305,7 @@ export function CompliancePage() {
         fileId,
         fileName: sourceFile?.name,
         contentType: sourceFile?.type,
-        appliesTo: requirementScope,
+        appliesTo: activeRequirementScope,
       })) as { createdCount: number };
 
       if (result.createdCount === 0) {
@@ -302,9 +342,9 @@ export function CompliancePage() {
   const visibleRequirements = (requirements ?? []).filter((requirement) =>
     requirement.appliesTo === "both"
       ? true
-      : requirement.appliesTo === requirementScope,
+      : requirement.appliesTo === activeRequirementScope,
   );
-  const scopeLabel = requirementScope === "vendors" ? "Vendor" : "Internal";
+  const scopeLabel = activeRequirementScope === "vendors" ? "Vendor" : "My";
 
   const rightPanel = (
     <SettingsDrawer
@@ -348,9 +388,9 @@ export function CompliancePage() {
       {drawerMode === "bulk" ? (
         <div className="flex min-h-0 flex-1 flex-col gap-4">
           <p className="text-body-sm text-muted-foreground">
-            {requirementScope === "vendors"
+            {activeRequirementScope === "vendors"
               ? "Paste contract insurance language or upload an existing vendor requirements document. Glass will turn it into structured checklist items."
-              : "Paste internal insurance standards or upload an existing requirements document. Glass will turn it into structured checklist items."}
+              : "Paste insurance standards you need to satisfy or upload an existing requirements document. Glass will turn it into structured checklist items."}
           </p>
           <label className="flex min-h-0 flex-1 flex-col gap-1.5 text-label-sm font-medium text-muted-foreground">
             Requirement text
@@ -473,23 +513,27 @@ export function CompliancePage() {
       rightPanel={rightPanel}
     >
       <div className="flex w-full flex-col gap-4">
-        <Tabs
-          value={requirementScope}
-          onValueChange={(value) =>
-            setRequirementScope(value as RequirementScope)
-          }
-        >
-          <TabsList variant="pill">
-            <TabsTrigger value="vendors">Vendor requirements</TabsTrigger>
-            <TabsTrigger value="own_org">Internal requirements</TabsTrigger>
-          </TabsList>
-        </Tabs>
+        {!isPureVendorAccount ? (
+          <Tabs
+            value={requirementScope}
+            onValueChange={(value) =>
+              setRequirementScope(value as RequirementScope)
+            }
+          >
+            <TabsList variant="pill">
+              <TabsTrigger value="vendors">Vendor requirements</TabsTrigger>
+              <TabsTrigger value="own_org">My requirements</TabsTrigger>
+            </TabsList>
+          </Tabs>
+        ) : null}
 
-        {requirements === undefined ? (
+        {requirements === undefined ||
+        clientRows === undefined ||
+        vendorRows === undefined ? (
           <RequirementsLoadingSkeleton />
         ) : visibleRequirements.length === 0 ? (
           <ComplianceEmptyState
-            scope={requirementScope}
+            scope={activeRequirementScope}
             onBulkAdd={openBulkImport}
           />
         ) : (
@@ -517,18 +561,32 @@ export function CompliancePage() {
                         value={requirement.deductible}
                       />
                     ) : null}
+                    {requirement.clientRequirementSource ? (
+                      <Badge
+                        variant="secondary"
+                        className="max-w-full text-xs font-normal text-muted-foreground"
+                      >
+                        <span className="min-w-0 truncate">
+                          Client requirements from{" "}
+                          {requirement.clientRequirementSource.clientOrg
+                            ?.name ?? "client"}
+                        </span>
+                      </Badge>
+                    ) : null}
                   </div>
                   <p className="line-clamp-2 max-w-5xl text-sm leading-5 text-muted-foreground">
                     {requirement.requirementText}
                   </p>
                 </div>
-                <PillButton
-                  size="compact"
-                  variant="secondary"
-                  onClick={() => removeRequirement(requirement._id)}
-                >
-                  <Trash2 className="h-3.5 w-3.5" /> Archive
-                </PillButton>
+                {requirement.canArchive !== false ? (
+                  <PillButton
+                    size="compact"
+                    variant="secondary"
+                    onClick={() => removeRequirement(requirement._id)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" /> Archive
+                  </PillButton>
+                ) : null}
               </div>
             ))}
           </section>

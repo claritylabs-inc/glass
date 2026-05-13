@@ -48,7 +48,7 @@ export const lookupComplianceRequirements = tool({
       .enum(["vendors", "own_org", "both", "all"])
       .optional()
       .describe(
-        "Filter by requirement scope. Use vendors for contractor/vendor requirements, own_org for internal requirements, both for shared requirements, or all to search every requirement.",
+        "Filter by requirement scope. Use vendors for contractor/vendor requirements, own_org for my requirements, both for shared requirements, or all to search every requirement.",
       ),
   }),
 });

@@ -334,6 +334,64 @@ function vendorScopedRequirements(
   );
 }
 
+async function listClientRequirementsForVendor(
+  ctx: QueryCtx,
+  vendorOrgId: Id<"organizations">,
+) {
+  const relationships = await ctx.db
+    .query("connectedOrgRelationships")
+    .withIndex("by_vendorOrgId_status", (q) =>
+      q.eq("vendorOrgId", vendorOrgId).eq("status", "active"),
+    )
+    .collect();
+  const rows = [];
+  for (const rel of relationships) {
+    const clientOrg = await ctx.db.get(rel.clientOrgId);
+    const requirements = vendorScopedRequirements(
+      await listRequirementsForOrg(ctx, rel.clientOrgId),
+    );
+    for (const requirement of requirements) {
+      rows.push({
+        ...requirement,
+        appliesTo: "own_org" as const,
+        canArchive: false,
+        clientRequirementSource: {
+          relationshipId: rel._id,
+          clientOrg: clientOrg
+            ? {
+                _id: clientOrg._id,
+                name: clientOrg.name,
+                website: clientOrg.website,
+              }
+            : null,
+        },
+      });
+    }
+  }
+  return rows;
+}
+
+async function listRequirementsVisibleToOrg(
+  ctx: QueryCtx,
+  orgId: Id<"organizations">,
+) {
+  const ownRequirements = await ctx.db
+    .query("insuranceRequirements")
+    .withIndex("by_orgId_status", (q) =>
+      q.eq("orgId", orgId).eq("status", "active"),
+    )
+    .order("desc")
+    .collect();
+  const clientRequirements = await listClientRequirementsForVendor(ctx, orgId);
+  return [
+    ...ownRequirements.map((requirement) => ({
+      ...requirement,
+      canArchive: true,
+    })),
+    ...clientRequirements,
+  ].sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
 export const listRequirements = query({
   args: { orgId: v.optional(v.id("organizations")) },
   handler: async (ctx, args) => {
@@ -348,13 +406,7 @@ export const listRequirements = query({
       orgId = membership.orgId;
     }
     await requireOrgMember(ctx, orgId);
-    return await ctx.db
-      .query("insuranceRequirements")
-      .withIndex("by_orgId_status", (q) =>
-        q.eq("orgId", orgId).eq("status", "active"),
-      )
-      .order("desc")
-      .collect();
+    return await listRequirementsVisibleToOrg(ctx, orgId);
   },
 });
 
@@ -601,7 +653,8 @@ export const getVendorChecklist = query({
 
 export const listRequirementsInternal = internalQuery({
   args: { orgId: v.id("organizations") },
-  handler: async (ctx, args) => listRequirementsForOrg(ctx, args.orgId),
+  handler: async (ctx, args) =>
+    await listRequirementsVisibleToOrg(ctx, args.orgId),
 });
 
 export const upsertRequirementInternal = internalMutation({
