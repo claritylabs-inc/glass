@@ -124,7 +124,7 @@ function SectionContent({
          section === "models" ? <ModelsSection /> :
          section === "connections" ? <ConnectionsSection /> :
          section === "notifications" && currentOrg?.orgId ? (
-           <NotificationPreferencesPage orgId={currentOrg.orgId} />
+           <NotificationPreferencesPage orgId={currentOrg.orgId} isBroker={isBroker} />
          ) : null}
       </div>
     );
@@ -142,7 +142,7 @@ function SectionContent({
       ) : section === "connections" ? (
         <ConnectionsSection />
       ) : section === "notifications" && currentOrg?.orgId ? (
-        <NotificationPreferencesPage orgId={currentOrg.orgId} />
+        <NotificationPreferencesPage orgId={currentOrg.orgId} isBroker={isBroker} />
       ) : null}
     </div>
   );
