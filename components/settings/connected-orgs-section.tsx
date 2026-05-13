@@ -1,12 +1,13 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useAction, useMutation, useQuery } from "convex/react";
 import type { FunctionReference } from "convex/server";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
-import { Check, Link2, RefreshCw, Trash2 } from "lucide-react";
+import { Check, FileText, Link2, RefreshCw, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { EmptyStateCard } from "@/components/ui/empty-state-card";
 import { Input } from "@/components/ui/input";
@@ -25,6 +26,9 @@ type ConnectedOrgsApi = {
     resendVendorInvitation: FunctionReference<"action">;
     approve: FunctionReference<"mutation">;
     revoke: FunctionReference<"mutation">;
+  };
+  compliance: {
+    listVendorCompliance: FunctionReference<"query">;
   };
 };
 
@@ -55,6 +59,19 @@ type ConnectedOrgRow = {
   vendorEmail?: string;
 };
 
+type VendorComplianceSummary = {
+  relationshipId: Id<"connectedOrgRelationships">;
+  status:
+    | "non_compliant"
+    | "attention"
+    | "no_requirements"
+    | "compliant";
+  requirementCount: number;
+  metCount: number;
+  missingCount: number;
+  expiringSoonCount: number;
+};
+
 function StatusBadge({ status }: { status: ConnectedOrgRow["status"] }) {
   const variant =
     status === "active"
@@ -72,6 +89,8 @@ function RelationshipCard({
   onResend,
   resending,
   onRevoke,
+  complianceSummary,
+  onViewPolicies,
 }: {
   row: ConnectedOrgRow;
   side: "vendor" | "client";
@@ -79,6 +98,8 @@ function RelationshipCard({
   onResend?: (row: ConnectedOrgRow) => void;
   resending?: boolean;
   onRevoke: (id: Id<"connectedOrgRelationships">) => void;
+  complianceSummary?: VendorComplianceSummary;
+  onViewPolicies?: (vendorOrgId: Id<"organizations">) => void;
 }) {
   const org = side === "vendor" ? row.vendorOrg : row.clientOrg;
   const displayName =
@@ -109,8 +130,34 @@ function RelationshipCard({
             {row.note}
           </p>
         ) : null}
+        {side === "vendor" && row.status === "active" && complianceSummary ? (
+          <p className="mt-2 text-xs text-muted-foreground">
+            {complianceSummary.requirementCount === 0
+              ? "No vendor requirements configured"
+              : `${complianceSummary.metCount}/${complianceSummary.requirementCount} requirements met`}
+            {complianceSummary.missingCount > 0
+              ? ` · ${complianceSummary.missingCount} missing`
+              : ""}
+            {complianceSummary.expiringSoonCount > 0
+              ? ` · ${complianceSummary.expiringSoonCount} expiring soon`
+              : ""}
+          </p>
+        ) : null}
       </div>
       <div className="flex shrink-0 items-center gap-2">
+        {side === "vendor" &&
+        row.status === "active" &&
+        row.vendorOrg?._id &&
+        onViewPolicies ? (
+          <PillButton
+            size="compact"
+            variant="secondary"
+            onClick={() => onViewPolicies(row.vendorOrg!._id)}
+          >
+            <FileText className="h-3.5 w-3.5" />
+            Policies
+          </PillButton>
+        ) : null}
         {onResend &&
         (row.invitationId || row.kind === "invitation") &&
         (row.status === "pending" ||
@@ -155,6 +202,7 @@ export function ConnectedOrgsSection({
 }: {
   page?: ConnectedOrgsPageKind;
 }) {
+  const router = useRouter();
   const currentOrg = useCurrentOrg();
   const vendorRows = useQuery(
     connectedOrgsApi.connectedOrgs.listVendors,
@@ -164,6 +212,10 @@ export function ConnectedOrgsSection({
     connectedOrgsApi.connectedOrgs.listClients,
     currentOrg?.orgId ? { orgId: currentOrg.orgId } : "skip",
   ) as ConnectedOrgRow[] | undefined;
+  const vendorCompliance = useQuery(
+    connectedOrgsApi.compliance.listVendorCompliance,
+    currentOrg?.orgId ? { clientOrgId: currentOrg.orgId } : "skip",
+  ) as VendorComplianceSummary[] | undefined;
   const requestVendorAccessByEmail = useAction(
     connectedOrgsApi.connectedOrgs.requestVendorAccessByEmail,
   );
@@ -341,8 +393,21 @@ export function ConnectedOrgsSection({
   }
 
   const rows = page === "vendors" ? vendorRows : clientRows;
+  const complianceByRelationshipId = new Map(
+    (vendorCompliance ?? []).map((summary) => [
+      summary.relationshipId,
+      summary,
+    ]),
+  );
+  function relationshipIdForSummary(row: ConnectedOrgRow) {
+    if (row.relationshipId) return row.relationshipId;
+    if (row.kind === "relationship") {
+      return row._id as Id<"connectedOrgRelationships">;
+    }
+    return null;
+  }
 
-  if (rows === undefined) {
+  if (rows === undefined || (page === "vendors" && vendorCompliance === undefined)) {
     return (
       <p className="py-16 text-center text-sm text-muted-foreground/60">
         Loading…
@@ -377,6 +442,22 @@ export function ConnectedOrgsSection({
           onResend={page === "vendors" ? resendInvitation : undefined}
           resending={resendingInvitationId === row._id}
           onRevoke={revokeRelationship}
+          complianceSummary={
+            page === "vendors"
+              ? ((): VendorComplianceSummary | undefined => {
+                  const relationshipId = relationshipIdForSummary(row);
+                  return relationshipId
+                    ? complianceByRelationshipId.get(relationshipId)
+                    : undefined;
+                })()
+              : undefined
+          }
+          onViewPolicies={
+            page === "vendors"
+              ? (vendorOrgId) =>
+                  router.push(`/connect/vendors/${vendorOrgId}/policies`)
+              : undefined
+          }
         />
       ))}
     </div>
