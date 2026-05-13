@@ -57,11 +57,11 @@ export default defineSchema({
     industry: v.optional(v.string()),
     industryVertical: v.optional(v.string()),
     // Relationship context — helps categorize intelligence entries
-    clientsContext: v.optional(v.string()),    // who the org's clients/customers are
-    vendorsContext: v.optional(v.string()),    // key vendors and service providers
-    insuranceContext: v.optional(v.string()),  // brokers, carriers, insurance relationships
-    investorsContext: v.optional(v.string()),  // investors, shareholders, funding
-    partnersContext: v.optional(v.string()),   // joint ventures, affiliates, partners
+    clientsContext: v.optional(v.string()), // who the org's clients/customers are
+    vendorsContext: v.optional(v.string()), // key vendors and service providers
+    insuranceContext: v.optional(v.string()), // brokers, carriers, insurance relationships
+    investorsContext: v.optional(v.string()), // investors, shareholders, funding
+    partnersContext: v.optional(v.string()), // joint ventures, affiliates, partners
     // Client-org verification: which sender emails/domains count as "this client"
     // when routing inbound email sent to the broker's agent handle.
     allowedEmails: v.optional(v.array(v.string())),
@@ -70,7 +70,9 @@ export default defineSchema({
       v.union(v.literal("strict"), v.literal("domain"), v.literal("open")),
     ),
     // COI handling preference
-    coiHandling: v.optional(v.union(v.literal("broker"), v.literal("member"), v.literal("ignore"))),
+    coiHandling: v.optional(
+      v.union(v.literal("broker"), v.literal("member"), v.literal("ignore")),
+    ),
     autoGenerateCoi: v.optional(v.boolean()), // when true, generate COI PDFs automatically on request
     // Agent
     agentHandle: v.optional(v.string()),
@@ -88,20 +90,19 @@ export default defineSchema({
     // Dual-org: org type discriminator
     type: v.optional(v.union(v.literal("broker"), v.literal("client"))),
     // Partner type — only meaningful when type === "broker"
-    partnerType: v.optional(v.union(
-      v.literal("broker"),
-      v.literal("program_admin"),
-      v.literal("carrier"),
-      v.literal("other"),
-    )),
+    partnerType: v.optional(
+      v.union(
+        v.literal("broker"),
+        v.literal("program_admin"),
+        v.literal("carrier"),
+        v.literal("other"),
+      ),
+    ),
     // Set on client orgs only — ID of the managing broker org
     brokerOrgId: v.optional(v.id("organizations")),
     // Client-org lifecycle: "draft" = broker is preparing, "invited" = invite sent and pending,
     // undefined = legacy/active (accepted or pre-dates this field).
-    inviteStatus: v.optional(v.union(
-      v.literal("draft"),
-      v.literal("invited"),
-    )),
+    inviteStatus: v.optional(v.union(v.literal("draft"), v.literal("invited"))),
     // Draft/invite contact details captured by broker before the client accepts.
     // Mirrored into clientPassport on accept.
     primaryContactName: v.optional(v.string()),
@@ -113,9 +114,11 @@ export default defineSchema({
     slug: v.optional(v.string()),
     // Broker branding
     whiteLabelingEnabled: v.optional(v.boolean()),
-    brandingColor: v.optional(v.string()),  // hex e.g. "#4F46E5"
+    brandingColor: v.optional(v.string()), // hex e.g. "#4F46E5"
     brandingMode: v.optional(v.union(v.literal("light"), v.literal("dark"))),
-    brandingTextOnAccent: v.optional(v.union(v.literal("light"), v.literal("dark"), v.literal("auto"))),
+    brandingTextOnAccent: v.optional(
+      v.union(v.literal("light"), v.literal("dark"), v.literal("auto")),
+    ),
     agentDisplayName: v.optional(v.string()),
   })
     .index("by_agentHandle", ["agentHandle"])
@@ -135,31 +138,35 @@ export default defineSchema({
 
   brokerModelSettings: defineTable({
     brokerOrgId: v.id("organizations"),
-    providerKeys: v.optional(v.object({
-      openai: v.optional(v.string()),
-      anthropic: v.optional(v.string()),
-      google: v.optional(v.string()),
-      xai: v.optional(v.string()),
-      mistral: v.optional(v.string()),
-      cohere: v.optional(v.string()),
-      moonshot: v.optional(v.string()),
-      deepseek: v.optional(v.string()),
-    })),
-    routes: v.optional(v.object({
-      chat: v.optional(modelRouteValidator),
-      email_draft: v.optional(modelRouteValidator),
-      email_reply: v.optional(modelRouteValidator),
-      extraction: v.optional(modelRouteValidator),
-      classification: v.optional(modelRouteValidator),
-      analysis: v.optional(modelRouteValidator),
-      summary: v.optional(modelRouteValidator),
-      triage: v.optional(modelRouteValidator),
-      email_extraction: v.optional(modelRouteValidator),
-      document_extraction: v.optional(modelRouteValidator),
-      security: v.optional(modelRouteValidator),
-      application_authoring: v.optional(modelRouteValidator),
-      embeddings: v.optional(modelRouteValidator),
-    })),
+    providerKeys: v.optional(
+      v.object({
+        openai: v.optional(v.string()),
+        anthropic: v.optional(v.string()),
+        google: v.optional(v.string()),
+        xai: v.optional(v.string()),
+        mistral: v.optional(v.string()),
+        cohere: v.optional(v.string()),
+        moonshot: v.optional(v.string()),
+        deepseek: v.optional(v.string()),
+      }),
+    ),
+    routes: v.optional(
+      v.object({
+        chat: v.optional(modelRouteValidator),
+        email_draft: v.optional(modelRouteValidator),
+        email_reply: v.optional(modelRouteValidator),
+        extraction: v.optional(modelRouteValidator),
+        classification: v.optional(modelRouteValidator),
+        analysis: v.optional(modelRouteValidator),
+        summary: v.optional(modelRouteValidator),
+        triage: v.optional(modelRouteValidator),
+        email_extraction: v.optional(modelRouteValidator),
+        document_extraction: v.optional(modelRouteValidator),
+        security: v.optional(modelRouteValidator),
+        application_authoring: v.optional(modelRouteValidator),
+        embeddings: v.optional(modelRouteValidator),
+      }),
+    ),
     updatedBy: v.id("users"),
     updatedAt: v.number(),
   }).index("by_brokerOrgId", ["brokerOrgId"]),
@@ -199,16 +206,20 @@ export default defineSchema({
     email: v.string(),
     role: v.union(v.literal("admin"), v.literal("member")),
     invitedBy: v.id("users"),
-    status: v.union(v.literal("pending"), v.literal("accepted"), v.literal("expired")),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("accepted"),
+      v.literal("expired"),
+    ),
     expiresAt: v.number(),
   })
     .index("by_email", ["email"])
     .index("by_orgId", ["orgId"]),
 
   brokerClientAssignments: defineTable({
-    orgId: v.id("organizations"),           // broker org
-    clientOrgId: v.id("organizations"),     // client org
-    producerId: v.id("users"),              // broker user
+    orgId: v.id("organizations"), // broker org
+    clientOrgId: v.id("organizations"), // client org
+    producerId: v.id("users"), // broker user
     role: v.union(v.literal("primary"), v.literal("secondary")),
     createdAt: v.number(),
   })
@@ -260,12 +271,13 @@ export default defineSchema({
     expiresAt: v.number(),
     createdAt: v.number(),
     updatedAt: v.number(),
+    otpCode: v.optional(v.string()),
+    otpCodeExpiresAt: v.optional(v.number()),
   })
     .index("by_tokenHash", ["inviteTokenHash"])
     .index("by_clientOrgId", ["clientOrgId"])
     .index("by_vendorEmail", ["vendorEmail"])
     .index("by_vendorOrgId", ["vendorOrgId"]),
-
 
   insuranceRequirements: defineTable({
     orgId: v.id("organizations"),
@@ -281,7 +293,24 @@ export default defineSchema({
       v.literal("other"),
     ),
     requirementText: v.string(),
-    appliesTo: v.union(v.literal("vendors"), v.literal("own_org"), v.literal("both")),
+    // Coverage-like fields mirror policies.coverages so requirement checks can
+    // compare structured values instead of parsing unrelated schemas.
+    name: v.optional(v.string()),
+    coverageCode: v.optional(v.string()),
+    limit: v.optional(v.string()),
+    limitAmount: v.optional(v.number()),
+    limitType: v.optional(v.string()),
+    limitValueType: v.optional(v.string()),
+    deductible: v.optional(v.string()),
+    deductibleAmount: v.optional(v.number()),
+    deductibleType: v.optional(v.string()),
+    deductibleValueType: v.optional(v.string()),
+    originalContent: v.optional(v.string()),
+    appliesTo: v.union(
+      v.literal("vendors"),
+      v.literal("own_org"),
+      v.literal("both"),
+    ),
     minimumRequired: v.boolean(),
     status: v.union(v.literal("active"), v.literal("archived")),
     createdByUserId: v.id("users"),
@@ -307,7 +336,11 @@ export default defineSchema({
     matchedPolicyIds: v.array(v.id("policies")),
     expiresAt: v.optional(v.string()),
     checkedAt: v.number(),
-    checkedBy: v.union(v.literal("system"), v.literal("user"), v.literal("agent")),
+    checkedBy: v.union(
+      v.literal("system"),
+      v.literal("user"),
+      v.literal("agent"),
+    ),
     notes: v.optional(v.string()),
   })
     .index("by_clientOrgId", ["clientOrgId"])
@@ -346,11 +379,13 @@ export default defineSchema({
     fileId: v.optional(v.id("_storage")),
     fileName: v.optional(v.string()),
     // Provenance — who uploaded and from which side
-    uploadedBySide: v.optional(v.union(
-      v.literal("broker"),
-      v.literal("client"),
-      v.literal("agent_email"),
-    )),
+    uploadedBySide: v.optional(
+      v.union(
+        v.literal("broker"),
+        v.literal("client"),
+        v.literal("agent_email"),
+      ),
+    ),
     uploadedByUserId: v.optional(v.id("users")),
     uploadedByBrokerOrgId: v.optional(v.id("organizations")),
     // Entity fields
@@ -368,135 +403,82 @@ export default defineSchema({
     brokerContactName: v.optional(v.string()),
     brokerLicenseNumber: v.optional(v.string()),
     // Structured entity objects (cl-sdk 0.11+)
-    insurer: v.optional(v.object({
-      legalName: v.string(),
-      naicNumber: v.optional(v.string()),
-      amBestRating: v.optional(v.string()),
-      amBestNumber: v.optional(v.string()),
-      admittedStatus: v.optional(v.string()),
-      stateOfDomicile: v.optional(v.string()),
-    })),
-    producer: v.optional(v.object({
-      agencyName: v.string(),
-      contactName: v.optional(v.string()),
-      licenseNumber: v.optional(v.string()),
-      phone: v.optional(v.string()),
-      email: v.optional(v.string()),
-      address: v.optional(v.object({
-        street1: v.string(),
-        street2: v.optional(v.string()),
-        city: v.optional(v.string()),
-        state: v.optional(v.string()),
-        zip: v.optional(v.string()),
-        country: v.optional(v.string()),
-      })),
-    })),
-    lossPayees: v.optional(v.array(v.object({
-      name: v.string(),
-      role: v.string(),
-      address: v.optional(v.object({
-        street1: v.string(),
-        street2: v.optional(v.string()),
-        city: v.optional(v.string()),
-        state: v.optional(v.string()),
-        zip: v.optional(v.string()),
-        country: v.optional(v.string()),
-      })),
-      relationship: v.optional(v.string()),
-      scope: v.optional(v.string()),
-    }))),
-    mortgageHolders: v.optional(v.array(v.object({
-      name: v.string(),
-      role: v.string(),
-      address: v.optional(v.object({
-        street1: v.string(),
-        street2: v.optional(v.string()),
-        city: v.optional(v.string()),
-        state: v.optional(v.string()),
-        zip: v.optional(v.string()),
-        country: v.optional(v.string()),
-      })),
-      relationship: v.optional(v.string()),
-      scope: v.optional(v.string()),
-    }))),
+    insurer: v.optional(
+      v.object({
+        legalName: v.string(),
+        naicNumber: v.optional(v.string()),
+        amBestRating: v.optional(v.string()),
+        amBestNumber: v.optional(v.string()),
+        admittedStatus: v.optional(v.string()),
+        stateOfDomicile: v.optional(v.string()),
+      }),
+    ),
+    producer: v.optional(
+      v.object({
+        agencyName: v.string(),
+        contactName: v.optional(v.string()),
+        licenseNumber: v.optional(v.string()),
+        phone: v.optional(v.string()),
+        email: v.optional(v.string()),
+        address: v.optional(
+          v.object({
+            street1: v.string(),
+            street2: v.optional(v.string()),
+            city: v.optional(v.string()),
+            state: v.optional(v.string()),
+            zip: v.optional(v.string()),
+            country: v.optional(v.string()),
+          }),
+        ),
+      }),
+    ),
+    lossPayees: v.optional(
+      v.array(
+        v.object({
+          name: v.string(),
+          role: v.string(),
+          address: v.optional(
+            v.object({
+              street1: v.string(),
+              street2: v.optional(v.string()),
+              city: v.optional(v.string()),
+              state: v.optional(v.string()),
+              zip: v.optional(v.string()),
+              country: v.optional(v.string()),
+            }),
+          ),
+          relationship: v.optional(v.string()),
+          scope: v.optional(v.string()),
+        }),
+      ),
+    ),
+    mortgageHolders: v.optional(
+      v.array(
+        v.object({
+          name: v.string(),
+          role: v.string(),
+          address: v.optional(
+            v.object({
+              street1: v.string(),
+              street2: v.optional(v.string()),
+              city: v.optional(v.string()),
+              state: v.optional(v.string()),
+              zip: v.optional(v.string()),
+              country: v.optional(v.string()),
+            }),
+          ),
+          relationship: v.optional(v.string()),
+          scope: v.optional(v.string()),
+        }),
+      ),
+    ),
     priorPolicyNumber: v.optional(v.string()),
     programName: v.optional(v.string()),
     isPackage: v.optional(v.boolean()),
     // Insured details (cl-sdk 1.2+)
     insuredDba: v.optional(v.string()),
-    insuredAddress: v.optional(v.object({
-      street1: v.string(),
-      street2: v.optional(v.string()),
-      city: v.optional(v.string()),
-      state: v.optional(v.string()),
-      zip: v.optional(v.string()),
-      country: v.optional(v.string()),
-    })),
-    insuredEntityType: v.optional(v.string()), // corporation, llc, partnership, etc.
-    insuredFein: v.optional(v.string()),
-    additionalNamedInsureds: v.optional(v.array(v.object({
-      name: v.string(),
-      relationship: v.optional(v.string()),
-      address: v.optional(v.object({
-        street1: v.string(),
-        street2: v.optional(v.string()),
-        city: v.optional(v.string()),
-        state: v.optional(v.string()),
-        zip: v.optional(v.string()),
-        country: v.optional(v.string()),
-      })),
-    }))),
-    // Coverage structure (cl-sdk 1.2+)
-    coverageForm: v.optional(v.string()), // occurrence, claims_made, accident
-    retroactiveDate: v.optional(v.string()),
-    effectiveTime: v.optional(v.string()),
-    limits: v.optional(v.object({
-      perOccurrence: v.optional(v.string()),
-      generalAggregate: v.optional(v.string()),
-      productsCompletedOpsAggregate: v.optional(v.string()),
-      personalAdvertisingInjury: v.optional(v.string()),
-      eachEmployee: v.optional(v.string()),
-      fireDamage: v.optional(v.string()),
-      medicalExpense: v.optional(v.string()),
-      combinedSingleLimit: v.optional(v.string()),
-      bodilyInjuryPerPerson: v.optional(v.string()),
-      bodilyInjuryPerAccident: v.optional(v.string()),
-      propertyDamage: v.optional(v.string()),
-      eachOccurrenceUmbrella: v.optional(v.string()),
-      umbrellaAggregate: v.optional(v.string()),
-      umbrellaRetention: v.optional(v.string()),
-      statutory: v.optional(v.boolean()),
-      employersLiability: v.optional(v.object({
-        eachAccident: v.string(),
-        diseasePolicyLimit: v.string(),
-        diseaseEachEmployee: v.string(),
-      })),
-      sublimits: v.optional(v.array(v.object({
-        name: v.string(),
-        limit: v.string(),
-        appliesTo: v.optional(v.string()),
-        deductible: v.optional(v.string()),
-      }))),
-      sharedLimits: v.optional(v.array(v.object({
-        description: v.string(),
-        limit: v.string(),
-        coverageParts: v.array(v.string()),
-      }))),
-      defenseCostTreatment: v.optional(v.string()), // inside_limits, outside_limits, supplementary
-    })),
-    deductibles: v.optional(v.object({
-      perClaim: v.optional(v.string()),
-      perOccurrence: v.optional(v.string()),
-      aggregateDeductible: v.optional(v.string()),
-      selfInsuredRetention: v.optional(v.string()),
-      corridorDeductible: v.optional(v.string()),
-      waitingPeriod: v.optional(v.string()),
-      appliesTo: v.optional(v.string()),
-    })),
-    // Locations, vehicles, classifications (cl-sdk 1.2+)
-    locations: v.optional(v.array(v.object({
-      number: v.number(),
-      address: v.object({
+    insuredAddress: v.optional(
+      v.object({
         street1: v.string(),
         street2: v.optional(v.string()),
         city: v.optional(v.string()),
@@ -504,63 +486,184 @@ export default defineSchema({
         zip: v.optional(v.string()),
         country: v.optional(v.string()),
       }),
-      description: v.optional(v.string()),
-      buildingValue: v.optional(v.string()),
-      contentsValue: v.optional(v.string()),
-      businessIncomeValue: v.optional(v.string()),
-      constructionType: v.optional(v.string()),
-      yearBuilt: v.optional(v.number()),
-      squareFootage: v.optional(v.number()),
-      protectionClass: v.optional(v.string()),
-      sprinklered: v.optional(v.boolean()),
-      alarmType: v.optional(v.string()),
-      occupancy: v.optional(v.string()),
-    }))),
-    vehicles: v.optional(v.array(v.object({
-      number: v.number(),
-      year: v.number(),
-      make: v.string(),
-      model: v.string(),
-      vin: v.string(),
-      costNew: v.optional(v.string()),
-      statedValue: v.optional(v.string()),
-      garageLocation: v.optional(v.number()),
-      coverages: v.optional(v.array(v.object({
-        type: v.string(),
-        limit: v.optional(v.string()),
-        deductible: v.optional(v.string()),
-        included: v.boolean(),
-      }))),
-      radius: v.optional(v.string()),
-      vehicleType: v.optional(v.string()),
-    }))),
-    classifications: v.optional(v.array(v.object({
-      code: v.string(),
-      description: v.string(),
-      premiumBasis: v.string(),
-      basisAmount: v.optional(v.string()),
-      rate: v.optional(v.string()),
-      premium: v.optional(v.string()),
-      locationNumber: v.optional(v.number()),
-    }))),
-    formInventory: v.optional(v.array(v.object({
-      formNumber: v.string(),
-      editionDate: v.optional(v.string()),
-      title: v.optional(v.string()),
-      formType: v.string(), // coverage, endorsement, declarations, application, notice, other
-      pageStart: v.optional(v.number()),
-      pageEnd: v.optional(v.number()),
-    }))),
-    taxesAndFees: v.optional(v.array(v.object({
-      name: v.string(),
-      amount: v.string(),
-      type: v.optional(v.string()), // tax, fee, surcharge, assessment
-      description: v.optional(v.string()),
-    }))),
-    premiumBreakdown: v.optional(v.array(v.object({
-      line: v.string(),
-      amount: v.string(),
-    }))),
+    ),
+    insuredEntityType: v.optional(v.string()), // corporation, llc, partnership, etc.
+    insuredFein: v.optional(v.string()),
+    additionalNamedInsureds: v.optional(
+      v.array(
+        v.object({
+          name: v.string(),
+          relationship: v.optional(v.string()),
+          address: v.optional(
+            v.object({
+              street1: v.string(),
+              street2: v.optional(v.string()),
+              city: v.optional(v.string()),
+              state: v.optional(v.string()),
+              zip: v.optional(v.string()),
+              country: v.optional(v.string()),
+            }),
+          ),
+        }),
+      ),
+    ),
+    // Coverage structure (cl-sdk 1.2+)
+    coverageForm: v.optional(v.string()), // occurrence, claims_made, accident
+    retroactiveDate: v.optional(v.string()),
+    effectiveTime: v.optional(v.string()),
+    limits: v.optional(
+      v.object({
+        perOccurrence: v.optional(v.string()),
+        generalAggregate: v.optional(v.string()),
+        productsCompletedOpsAggregate: v.optional(v.string()),
+        personalAdvertisingInjury: v.optional(v.string()),
+        eachEmployee: v.optional(v.string()),
+        fireDamage: v.optional(v.string()),
+        medicalExpense: v.optional(v.string()),
+        combinedSingleLimit: v.optional(v.string()),
+        bodilyInjuryPerPerson: v.optional(v.string()),
+        bodilyInjuryPerAccident: v.optional(v.string()),
+        propertyDamage: v.optional(v.string()),
+        eachOccurrenceUmbrella: v.optional(v.string()),
+        umbrellaAggregate: v.optional(v.string()),
+        umbrellaRetention: v.optional(v.string()),
+        statutory: v.optional(v.boolean()),
+        employersLiability: v.optional(
+          v.object({
+            eachAccident: v.string(),
+            diseasePolicyLimit: v.string(),
+            diseaseEachEmployee: v.string(),
+          }),
+        ),
+        sublimits: v.optional(
+          v.array(
+            v.object({
+              name: v.string(),
+              limit: v.string(),
+              appliesTo: v.optional(v.string()),
+              deductible: v.optional(v.string()),
+            }),
+          ),
+        ),
+        sharedLimits: v.optional(
+          v.array(
+            v.object({
+              description: v.string(),
+              limit: v.string(),
+              coverageParts: v.array(v.string()),
+            }),
+          ),
+        ),
+        defenseCostTreatment: v.optional(v.string()), // inside_limits, outside_limits, supplementary
+      }),
+    ),
+    deductibles: v.optional(
+      v.object({
+        perClaim: v.optional(v.string()),
+        perOccurrence: v.optional(v.string()),
+        aggregateDeductible: v.optional(v.string()),
+        selfInsuredRetention: v.optional(v.string()),
+        corridorDeductible: v.optional(v.string()),
+        waitingPeriod: v.optional(v.string()),
+        appliesTo: v.optional(v.string()),
+      }),
+    ),
+    // Locations, vehicles, classifications (cl-sdk 1.2+)
+    locations: v.optional(
+      v.array(
+        v.object({
+          number: v.number(),
+          address: v.object({
+            street1: v.string(),
+            street2: v.optional(v.string()),
+            city: v.optional(v.string()),
+            state: v.optional(v.string()),
+            zip: v.optional(v.string()),
+            country: v.optional(v.string()),
+          }),
+          description: v.optional(v.string()),
+          buildingValue: v.optional(v.string()),
+          contentsValue: v.optional(v.string()),
+          businessIncomeValue: v.optional(v.string()),
+          constructionType: v.optional(v.string()),
+          yearBuilt: v.optional(v.number()),
+          squareFootage: v.optional(v.number()),
+          protectionClass: v.optional(v.string()),
+          sprinklered: v.optional(v.boolean()),
+          alarmType: v.optional(v.string()),
+          occupancy: v.optional(v.string()),
+        }),
+      ),
+    ),
+    vehicles: v.optional(
+      v.array(
+        v.object({
+          number: v.number(),
+          year: v.number(),
+          make: v.string(),
+          model: v.string(),
+          vin: v.string(),
+          costNew: v.optional(v.string()),
+          statedValue: v.optional(v.string()),
+          garageLocation: v.optional(v.number()),
+          coverages: v.optional(
+            v.array(
+              v.object({
+                type: v.string(),
+                limit: v.optional(v.string()),
+                deductible: v.optional(v.string()),
+                included: v.boolean(),
+              }),
+            ),
+          ),
+          radius: v.optional(v.string()),
+          vehicleType: v.optional(v.string()),
+        }),
+      ),
+    ),
+    classifications: v.optional(
+      v.array(
+        v.object({
+          code: v.string(),
+          description: v.string(),
+          premiumBasis: v.string(),
+          basisAmount: v.optional(v.string()),
+          rate: v.optional(v.string()),
+          premium: v.optional(v.string()),
+          locationNumber: v.optional(v.number()),
+        }),
+      ),
+    ),
+    formInventory: v.optional(
+      v.array(
+        v.object({
+          formNumber: v.string(),
+          editionDate: v.optional(v.string()),
+          title: v.optional(v.string()),
+          formType: v.string(), // coverage, endorsement, declarations, application, notice, other
+          pageStart: v.optional(v.number()),
+          pageEnd: v.optional(v.number()),
+        }),
+      ),
+    ),
+    taxesAndFees: v.optional(
+      v.array(
+        v.object({
+          name: v.string(),
+          amount: v.string(),
+          type: v.optional(v.string()), // tax, fee, surcharge, assessment
+          description: v.optional(v.string()),
+        }),
+      ),
+    ),
+    premiumBreakdown: v.optional(
+      v.array(
+        v.object({
+          line: v.string(),
+          amount: v.string(),
+        }),
+      ),
+    ),
     // Policy metadata
     policyNumber: v.string(),
     policyType: v.optional(v.string()), // legacy single type
@@ -576,9 +679,11 @@ export default defineSchema({
         coverageCode: v.optional(v.string()),
         formEditionDate: v.optional(v.string()),
         limit: v.optional(v.string()),
+        limitAmount: v.optional(v.number()),
         limitType: v.optional(v.string()),
         limitValueType: v.optional(v.string()),
         deductible: v.optional(v.string()),
+        deductibleAmount: v.optional(v.number()),
         deductibleType: v.optional(v.string()),
         deductibleValueType: v.optional(v.string()),
         formNumber: v.optional(v.string()),
@@ -600,19 +705,21 @@ export default defineSchema({
         recordId: v.optional(v.string()),
         sourceSpanIds: v.optional(v.array(v.string())),
         sourceTextHash: v.optional(v.string()),
-      })
+      }),
     ),
     premium: v.optional(v.string()),
     totalCost: v.optional(v.string()),
     insuredName: v.string(),
     summary: v.optional(v.string()),
     // Provenance — page references for key metadata
-    metadataSource: v.optional(v.object({
-      carrierPage: v.optional(v.number()),
-      policyNumberPage: v.optional(v.number()),
-      premiumPage: v.optional(v.number()),
-      effectiveDatePage: v.optional(v.number()),
-    })),
+    metadataSource: v.optional(
+      v.object({
+        carrierPage: v.optional(v.number()),
+        policyNumberPage: v.optional(v.number()),
+        premiumPage: v.optional(v.number()),
+        effectiveDatePage: v.optional(v.number()),
+      }),
+    ),
     // Full document structure with provenance
     // Extracted document structure (sections, endorsements, conditions, etc.)
     // Uses v.any() because the cl-sdk document schema evolves frequently
@@ -654,35 +761,50 @@ export default defineSchema({
     enrichedUnderwritingConditions: v.optional(v.any()),
     warrantyRequirements: v.optional(v.any()),
     // Supplementary extraction (cl-sdk 0.13+) — extra facts not captured by structured extractors
-    supplementaryFacts: v.optional(v.array(v.object({
-      key: v.string(),
-      value: v.string(),
-      subject: v.optional(v.string()),
-      context: v.optional(v.string()),
-    }))),
+    supplementaryFacts: v.optional(
+      v.array(
+        v.object({
+          key: v.string(),
+          value: v.string(),
+          subject: v.optional(v.string()),
+          context: v.optional(v.string()),
+        }),
+      ),
+    ),
     deletedAt: v.optional(v.number()),
     isDemo: v.optional(v.boolean()),
     // When true, this policy's chunks are excluded from vector search results
     excludeFromSearch: v.optional(v.boolean()),
     // ── Multi-file support ──
     // Denormalized lightweight file list for fast UI rendering (source of truth is policyFiles table)
-    files: v.optional(v.array(v.object({
-      fileId: v.id("_storage"),
-      fileName: v.string(),
-      fileType: v.string(), // declaration, wording, endorsement, schedule, renewal, certificate, unknown
-      status: v.string(), // pending, extracting, complete, error, not_insurance
-    }))),
+    files: v.optional(
+      v.array(
+        v.object({
+          fileId: v.id("_storage"),
+          fileName: v.string(),
+          fileType: v.string(), // declaration, wording, endorsement, schedule, renewal, certificate, unknown
+          status: v.string(), // pending, extracting, complete, error, not_insurance
+        }),
+      ),
+    ),
     // Whether the reconciled view is up to date across all files
-    reconciliationStatus: v.optional(v.union(
-      v.literal("pending"),
-      v.literal("reconciled"),
-      v.literal("error"),
-    )),
-    reconciliationLog: v.optional(v.array(v.object({
-      timestamp: v.number(),
-      message: v.string(),
-    }))),
-  }).index("by_carrier", ["carrier"])
+    reconciliationStatus: v.optional(
+      v.union(
+        v.literal("pending"),
+        v.literal("reconciled"),
+        v.literal("error"),
+      ),
+    ),
+    reconciliationLog: v.optional(
+      v.array(
+        v.object({
+          timestamp: v.number(),
+          message: v.string(),
+        }),
+      ),
+    ),
+  })
+    .index("by_carrier", ["carrier"])
     .index("by_policyYear", ["policyYear"])
     .index("by_userId", ["userId"])
     .index("by_orgId", ["orgId"]),
@@ -696,12 +818,16 @@ export default defineSchema({
     // Compact checkpoint only. Large payloads are stored as files referenced by
     // policyExtractionArtifacts so heartbeats and logs rewrite small documents.
     pipelineCheckpoint: v.optional(v.any()),
-    pipelineLog: v.optional(v.array(v.object({
-      timestamp: v.number(),
-      message: v.string(),
-      phase: v.optional(v.string()),
-      level: v.optional(v.string()),
-    }))),
+    pipelineLog: v.optional(
+      v.array(
+        v.object({
+          timestamp: v.number(),
+          message: v.string(),
+          phase: v.optional(v.string()),
+          level: v.optional(v.string()),
+        }),
+      ),
+    ),
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index("by_policyId", ["policyId"]),
@@ -759,17 +885,19 @@ export default defineSchema({
     fileName: v.string(),
     certificateHolder: v.optional(v.string()),
     certificateHolderName: v.optional(v.string()),
-    source: v.optional(v.union(
-      v.literal("policy_page"),
-      v.literal("chat"),
-      v.literal("email"),
-      v.literal("imessage"),
-      v.literal("sms"),
-      v.literal("api"),
-      v.literal("mcp"),
-      v.literal("agent"),
-      v.literal("unknown"),
-    )),
+    source: v.optional(
+      v.union(
+        v.literal("policy_page"),
+        v.literal("chat"),
+        v.literal("email"),
+        v.literal("imessage"),
+        v.literal("sms"),
+        v.literal("api"),
+        v.literal("mcp"),
+        v.literal("agent"),
+        v.literal("unknown"),
+      ),
+    ),
     createdByUserId: v.optional(v.id("users")),
     createdAt: v.number(),
   })
@@ -810,7 +938,11 @@ export default defineSchema({
     ),
     title: v.string(),
     body: v.string(),
-    severity: v.union(v.literal("info"), v.literal("warning"), v.literal("critical")),
+    severity: v.union(
+      v.literal("info"),
+      v.literal("warning"),
+      v.literal("critical"),
+    ),
     status: v.union(
       v.literal("unread"),
       v.literal("read"),
@@ -829,13 +961,15 @@ export default defineSchema({
     coalescedCount: v.optional(v.number()),
     lastEventAt: v.optional(v.number()),
     // Email delivery
-    emailStatus: v.optional(v.union(
-      v.literal("not_scheduled"),
-      v.literal("scheduled"),
-      v.literal("sent"),
-      v.literal("suppressed_by_preference"),
-      v.literal("failed"),
-    )),
+    emailStatus: v.optional(
+      v.union(
+        v.literal("not_scheduled"),
+        v.literal("scheduled"),
+        v.literal("sent"),
+        v.literal("suppressed_by_preference"),
+        v.literal("failed"),
+      ),
+    ),
     emailSentAt: v.optional(v.number()),
   })
     .index("by_orgId", ["orgId"])
@@ -847,13 +981,18 @@ export default defineSchema({
   notificationPreferences: defineTable({
     userId: v.id("users"),
     orgId: v.id("organizations"),
-    type: v.string(),    // matches notifications.type or "__all__"
+    type: v.string(), // matches notifications.type or "__all__"
     channel: v.union(v.literal("in_app"), v.literal("email")),
     enabled: v.boolean(),
     updatedAt: v.number(),
   })
     .index("by_userId_orgId", ["userId", "orgId"])
-    .index("by_userId_orgId_type_channel", ["userId", "orgId", "type", "channel"]),
+    .index("by_userId_orgId_type_channel", [
+      "userId",
+      "orgId",
+      "type",
+      "channel",
+    ]),
 
   // ── Broker Activity ──
 
@@ -872,13 +1011,21 @@ export default defineSchema({
       v.literal("notification_fired"),
     ),
     actorUserId: v.optional(v.id("users")),
-    actorSide: v.union(v.literal("broker"), v.literal("client"), v.literal("system")),
+    actorSide: v.union(
+      v.literal("broker"),
+      v.literal("client"),
+      v.literal("system"),
+    ),
     payload: v.optional(v.any()),
     summary: v.string(),
     createdAt: v.number(),
   })
     .index("by_brokerOrgId_createdAt", ["brokerOrgId", "createdAt"])
-    .index("by_brokerOrgId_clientOrgId_createdAt", ["brokerOrgId", "clientOrgId", "createdAt"])
+    .index("by_brokerOrgId_clientOrgId_createdAt", [
+      "brokerOrgId",
+      "clientOrgId",
+      "createdAt",
+    ])
     .index("by_clientOrgId_createdAt", ["clientOrgId", "createdAt"]),
 
   // ── Vector Search (cl-sdk 0.5.0+) ──
@@ -1004,13 +1151,19 @@ export default defineSchema({
   caseMessages: defineTable({
     orgId: v.id("organizations"),
     caseId: v.id("policyChangeCases"),
-    direction: v.union(v.literal("inbound"), v.literal("outbound"), v.literal("system")),
-    channel: v.optional(v.union(
-      v.literal("chat"),
-      v.literal("email"),
-      v.literal("uploaded_document"),
-      v.literal("manual"),
-    )),
+    direction: v.union(
+      v.literal("inbound"),
+      v.literal("outbound"),
+      v.literal("system"),
+    ),
+    channel: v.optional(
+      v.union(
+        v.literal("chat"),
+        v.literal("email"),
+        v.literal("uploaded_document"),
+        v.literal("manual"),
+      ),
+    ),
     content: v.string(),
     sourceSpanIds: v.optional(v.array(v.string())),
     createdByUserId: v.optional(v.id("users")),
@@ -1034,7 +1187,11 @@ export default defineSchema({
   caseValidationReports: defineTable({
     orgId: v.id("organizations"),
     caseId: v.id("policyChangeCases"),
-    status: v.union(v.literal("passed"), v.literal("warning"), v.literal("failed")),
+    status: v.union(
+      v.literal("passed"),
+      v.literal("warning"),
+      v.literal("failed"),
+    ),
     issues: v.any(),
     createdAt: v.number(),
   })
@@ -1066,7 +1223,8 @@ export default defineSchema({
     action: v.string(),
     detail: v.optional(v.string()),
     metadata: v.optional(v.any()),
-  }).index("by_policyId", ["policyId"])
+  })
+    .index("by_policyId", ["policyId"])
     .index("by_orgId", ["orgId"]),
 
   // ── Unified Threads ──
@@ -1078,26 +1236,36 @@ export default defineSchema({
     createdBy: v.id("users"),
     lastMessageAt: v.number(),
     archivedAt: v.optional(v.number()),
-    originChannel: v.optional(v.union(v.literal("chat"), v.literal("email"), v.literal("imessage"))),
-    emailMode: v.optional(v.union(
-      v.literal("direct"),
-      v.literal("cc"),
-      v.literal("forward"),
-      v.literal("unknown"),
-    )),
-    initialContext: v.optional(v.object({
-      pageType: v.string(),
-      entityId: v.optional(v.string()),
-      summary: v.optional(v.string()),
-    })),
+    originChannel: v.optional(
+      v.union(v.literal("chat"), v.literal("email"), v.literal("imessage")),
+    ),
+    emailMode: v.optional(
+      v.union(
+        v.literal("direct"),
+        v.literal("cc"),
+        v.literal("forward"),
+        v.literal("unknown"),
+      ),
+    ),
+    initialContext: v.optional(
+      v.object({
+        pageType: v.string(),
+        entityId: v.optional(v.string()),
+        summary: v.optional(v.string()),
+      }),
+    ),
     // Backwards compatibility for existing prod threads from the legacy conversation migration.
     // Do not remove unless those documents have been backfilled/deleted in production.
     legacyConversationId: v.optional(v.string()),
-    visibility: v.optional(v.union(v.literal("broker_visible"), v.literal("client_internal"))),
+    visibility: v.optional(
+      v.union(v.literal("broker_visible"), v.literal("client_internal")),
+    ),
     threadPhone: v.optional(v.string()),
     imessageChatGuid: v.optional(v.string()),
     imessageIsGroup: v.optional(v.boolean()),
-    imessageScope: v.optional(v.union(v.literal("single_org"), v.literal("multi_org"))),
+    imessageScope: v.optional(
+      v.union(v.literal("single_org"), v.literal("multi_org")),
+    ),
   })
     .index("by_orgId", ["orgId"])
     .index("by_orgId_lastMessageAt", ["orgId", "lastMessageAt"])
@@ -1110,7 +1278,11 @@ export default defineSchema({
   threadMessages: defineTable({
     threadId: v.id("threads"),
     orgId: v.id("organizations"),
-    channel: v.union(v.literal("chat"), v.literal("email"), v.literal("imessage")),
+    channel: v.union(
+      v.literal("chat"),
+      v.literal("email"),
+      v.literal("imessage"),
+    ),
     role: v.union(v.literal("user"), v.literal("agent"), v.literal("system")),
     // User messages
     userId: v.optional(v.id("users")),
@@ -1136,12 +1308,16 @@ export default defineSchema({
     // Reasoning / thinking content (for models that support it)
     reasoning: v.optional(v.string()),
     // Attachments
-    attachments: v.optional(v.array(v.object({
-      filename: v.string(),
-      contentType: v.string(),
-      size: v.number(),
-      fileId: v.optional(v.id("_storage")),
-    }))),
+    attachments: v.optional(
+      v.array(
+        v.object({
+          filename: v.string(),
+          contentType: v.string(),
+          size: v.number(),
+          fileId: v.optional(v.id("_storage")),
+        }),
+      ),
+    ),
     // Agent response metadata
     replyToMessageId: v.optional(v.id("threadMessages")),
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
@@ -1155,18 +1331,24 @@ export default defineSchema({
     // Tool names used while producing the response, in call order
     usedTools: v.optional(v.array(v.string())),
     // Exact tool calls made while producing the response
-    toolCalls: v.optional(v.array(v.object({
-      name: v.string(),
-      input: v.optional(v.string()),
-    }))),
+    toolCalls: v.optional(
+      v.array(
+        v.object({
+          name: v.string(),
+          input: v.optional(v.string()),
+        }),
+      ),
+    ),
     // Status
-    status: v.optional(v.union(
-      v.literal("processing"),
-      v.literal("error"),
-      v.literal("pending_send"),
-      v.literal("draft_email"),
-      v.literal("cancelled"),
-    )),
+    status: v.optional(
+      v.union(
+        v.literal("processing"),
+        v.literal("error"),
+        v.literal("pending_send"),
+        v.literal("draft_email"),
+        v.literal("cancelled"),
+      ),
+    ),
     error: v.optional(v.string()),
     pendingEmailId: v.optional(v.id("pendingEmails")),
     policyChangeCaseId: v.optional(v.id("policyChangeCases")),
@@ -1251,12 +1433,16 @@ export default defineSchema({
     bccAddresses: v.optional(v.array(v.string())),
     subject: v.string(),
     emailBody: v.string(), // plain content (for thread record)
-    attachments: v.optional(v.array(v.object({
-      filename: v.string(),
-      contentType: v.string(),
-      size: v.number(),
-      fileId: v.id("_storage"),
-    }))),
+    attachments: v.optional(
+      v.array(
+        v.object({
+          filename: v.string(),
+          contentType: v.string(),
+          size: v.number(),
+          fileId: v.id("_storage"),
+        }),
+      ),
+    ),
     // For unified thread dual-write
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
     referencedQuoteIds: v.optional(v.any()), // legacy: may contain old quotes table IDs
@@ -1288,7 +1474,9 @@ export default defineSchema({
     redirectUris: v.array(v.string()),
     tokenEndpointAuthMethod: v.string(), // "none" for public clients
     createdAt: v.number(),
-    allowedScopes: v.optional(v.array(v.union(v.literal("read"), v.literal("write")))),
+    allowedScopes: v.optional(
+      v.array(v.union(v.literal("read"), v.literal("write"))),
+    ),
     description: v.optional(v.string()),
   }).index("by_clientId", ["clientId"]),
 

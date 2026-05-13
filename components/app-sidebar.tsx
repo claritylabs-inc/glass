@@ -72,8 +72,8 @@ const INSURANCE_ITEMS = [
 ];
 
 const CONNECT_ITEMS = [
-  { href: "/connected-orgs?view=clients", label: "Clients", icon: Users },
-  { href: "/connected-orgs?view=vendors", label: "Vendors", icon: Building2 },
+  { href: "/connect/clients", label: "Clients", icon: Users },
+  { href: "/connect/vendors", label: "Vendors", icon: Building2 },
 ];
 
 const ALL_NAV_ITEMS = [...INSURANCE_ITEMS];
@@ -439,7 +439,7 @@ export function AppSidebar({
             href={item.href}
             label={item.label}
             icon={item.icon}
-            active={pathname === "/connected-orgs" && searchParams.get("view") === new URLSearchParams(item.href.split("?")[1] ?? "").get("view")}
+            active={isActive(item.href)}
             collapsed={collapsed}
             cmdHeld={showShortcuts}
           />

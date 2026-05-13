@@ -18,6 +18,7 @@ import { ArrowRight, Loader2 } from "lucide-react";
 type ConnectedOrgsApi = {
   connectedOrgs: {
     getInvitationByToken: FunctionReference<"action">;
+    getInvitationOtpCode: FunctionReference<"action">;
     acceptInvitation: FunctionReference<"mutation">;
   };
 };
@@ -43,8 +44,8 @@ function isEmailLike(value: string): boolean {
 
 function friendlyError(raw: string): string {
   const lower = raw.toLowerCase();
-  if (lower.includes("expired")) return "This request has expired. Ask the client to send a new request.";
-  if (lower.includes("admin")) return "You need to be an admin of the vendor org to approve this request.";
+  if (lower.includes("expired")) return "This vendor invite has expired. Ask the client to resend it.";
+  if (lower.includes("admin")) return "You need to be an admin of the vendor org to accept this invite.";
   if (lower.includes("invalid code")) return "That code didn't work. Please double-check and try again.";
   return raw || "Something went wrong. Please try again.";
 }
@@ -52,6 +53,7 @@ function friendlyError(raw: string): string {
 export default function VendorRequestAcceptance({ token }: { token: string }) {
   const router = useRouter();
   const getInvitationByToken = useAction(connectedOrgsApi.connectedOrgs.getInvitationByToken);
+  const getInvitationOtpCode = useAction(connectedOrgsApi.connectedOrgs.getInvitationOtpCode);
   const acceptInvitation = useMutation(connectedOrgsApi.connectedOrgs.acceptInvitation);
   const { signIn } = useAuthActions();
   const { isAuthenticated } = useConvexAuth();
@@ -64,13 +66,15 @@ export default function VendorRequestAcceptance({ token }: { token: string }) {
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [autoVerifying, setAutoVerifying] = useState(false);
   const acceptingRef = useRef(false);
+  const autoStartedRef = useRef(false);
 
   useEffect(() => {
     getInvitationByToken({ token })
       .then((data) => {
         const typed = data as RequestData | null;
-        if (!typed) throw new Error("Request not found");
+        if (!typed) throw new Error("Invite not found");
         setRequestData(typed);
         setEmail(typed.vendorEmail ?? "");
       })
@@ -79,15 +83,57 @@ export default function VendorRequestAcceptance({ token }: { token: string }) {
   }, [getInvitationByToken, token]);
 
   useEffect(() => {
+    if (!requestData?.vendorEmail) return;
+    if (requestData.status !== "pending") return;
+    if (isAuthenticated) return;
+    if (autoStartedRef.current) return;
+    autoStartedRef.current = true;
+    const targetEmail = requestData.vendorEmail;
+    void (async () => {
+      setAutoVerifying(true);
+      try {
+        await signIn("resend-otp", { email: targetEmail });
+        let stashed: { email: string; code: string } | null = null;
+        for (let i = 0; i < 10; i++) {
+          stashed = (await getInvitationOtpCode({ token })) as {
+            email: string;
+            code: string;
+          } | null;
+          if (stashed) break;
+          await new Promise((resolve) => setTimeout(resolve, 400));
+        }
+        if (!stashed) throw new Error("Could not auto-verify. Please try again.");
+        await signIn("resend-otp", { email: stashed.email, code: stashed.code });
+      } catch (err) {
+        setError(
+          err instanceof Error && err.message
+            ? err.message
+            : "Could not auto-verify. Please try again.",
+        );
+        autoStartedRef.current = false;
+      } finally {
+        setAutoVerifying(false);
+      }
+    })();
+  }, [requestData, isAuthenticated, signIn, getInvitationOtpCode, token]);
+
+  useEffect(() => {
+    if (!requestData) return;
     if (!isAuthenticated || acceptingRef.current) return;
     acceptingRef.current = true;
     acceptInvitation({ token })
-      .then(() => router.replace("/connected-orgs"))
+      .then(() => {
+        const params = new URLSearchParams({ source: "vendor-invite" });
+        if (requestData.clientOrg?.name) {
+          params.set("client", requestData.clientOrg.name);
+        }
+        router.replace(`/onboarding?${params.toString()}`);
+      })
       .catch((err: unknown) => {
-        setError(friendlyError(err instanceof Error ? err.message : "Could not approve request"));
+        setError(friendlyError(err instanceof Error ? err.message : "Could not accept invite"));
         acceptingRef.current = false;
       });
-  }, [isAuthenticated, acceptInvitation, token, router]);
+  }, [requestData, isAuthenticated, acceptInvitation, token, router]);
 
   async function handleDetailsSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -131,25 +177,33 @@ export default function VendorRequestAcceptance({ token }: { token: string }) {
   if (fetchError || !requestData) {
     return (
       <AuthMinimalShell footer={<PoweredByGlassWordmark />}>
-        <AuthCard title="Request unavailable" subtitle={fetchError ?? "Request not found"} logo={<BrandWordmark />}>
-          <p className="text-sm text-muted-foreground">Ask the client to resend the vendor access request.</p>
+        <AuthCard title="Invite unavailable" subtitle={fetchError ?? "Invite not found"} logo={<BrandWordmark />}>
+          <p className="text-sm text-muted-foreground">Ask the client to resend the vendor invite.</p>
         </AuthCard>
       </AuthMinimalShell>
     );
   }
 
   const clientName = requestData.clientOrg?.name ?? "A client";
-  const title = step === "details" ? `${clientName} requested vendor access` : "Verify your email";
+  const title =
+    requestData.vendorEmail || step === "details"
+      ? `${clientName} invited you as a vendor`
+      : "Verify your email";
   const subtitle =
-    step === "details"
-      ? "Sign in with your vendor email to review and approve read-only access to your insurance profile and policies."
+    requestData.vendorEmail || step === "details"
+      ? "Connect with this client to share insurance records and verify your coverage against their vendor requirements."
       : undefined;
 
   return (
     <AuthMinimalShell footer={<PoweredByGlassWordmark />}>
       <AuthCard title={title} subtitle={subtitle} logo={<BrandWordmark />}>
-        {requestData.status !== "pending" ? (
-          <p className="text-sm text-muted-foreground">This request is {requestData.status}.</p>
+        {autoVerifying ? (
+          <div className="flex items-center gap-3 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span>Opening your vendor invite...</span>
+          </div>
+        ) : requestData.status !== "pending" ? (
+          <p className="text-sm text-muted-foreground">This vendor invite is {requestData.status}.</p>
         ) : step === "details" ? (
           <form onSubmit={handleDetailsSubmit} className="space-y-4">
             {requestData.note ? (
@@ -192,7 +246,7 @@ export default function VendorRequestAcceptance({ token }: { token: string }) {
             {error ? <p className="px-1 py-1 text-sm text-muted-foreground">{error}</p> : null}
             <PillButton type="submit" disabled={loading || !code.trim()} className="w-full justify-center text-sm shadow-none sm:w-auto">
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              {loading ? "Approving..." : "Approve access"}
+              {loading ? "Accepting..." : "Accept invite"}
             </PillButton>
           </form>
         )}

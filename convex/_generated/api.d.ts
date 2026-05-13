@@ -9,6 +9,7 @@
  */
 
 import type * as actions_backfillChunks from "../actions/backfillChunks.js";
+import type * as actions_complianceRequirements from "../actions/complianceRequirements.js";
 import type * as actions_detectDuplicatePolicies from "../actions/detectDuplicatePolicies.js";
 import type * as actions_emailDrafts from "../actions/emailDrafts.js";
 import type * as actions_extractCompanyInfo from "../actions/extractCompanyInfo.js";
@@ -39,6 +40,7 @@ import type * as certificates from "../certificates.js";
 import type * as clientInvitations from "../clientInvitations.js";
 import type * as clientInvitationsTest from "../clientInvitationsTest.js";
 import type * as clients from "../clients.js";
+import type * as compliance from "../compliance.js";
 import type * as connectedOrgs from "../connectedOrgs.js";
 import type * as conversationTurns from "../conversationTurns.js";
 import type * as crons from "../crons.js";
@@ -63,6 +65,7 @@ import type * as lib_branding from "../lib/branding.js";
 import type * as lib_brokerActivity from "../lib/brokerActivity.js";
 import type * as lib_chatTools from "../lib/chatTools.js";
 import type * as lib_coiGenerator from "../lib/coiGenerator.js";
+import type * as lib_complianceAgent from "../lib/complianceAgent.js";
 import type * as lib_convexDocumentStore from "../lib/convexDocumentStore.js";
 import type * as lib_convexMemoryStore from "../lib/convexMemoryStore.js";
 import type * as lib_convexSourceRetriever from "../lib/convexSourceRetriever.js";
@@ -128,6 +131,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   "actions/backfillChunks": typeof actions_backfillChunks;
+  "actions/complianceRequirements": typeof actions_complianceRequirements;
   "actions/detectDuplicatePolicies": typeof actions_detectDuplicatePolicies;
   "actions/emailDrafts": typeof actions_emailDrafts;
   "actions/extractCompanyInfo": typeof actions_extractCompanyInfo;
@@ -158,6 +162,7 @@ declare const fullApi: ApiFromModules<{
   clientInvitations: typeof clientInvitations;
   clientInvitationsTest: typeof clientInvitationsTest;
   clients: typeof clients;
+  compliance: typeof compliance;
   connectedOrgs: typeof connectedOrgs;
   conversationTurns: typeof conversationTurns;
   crons: typeof crons;
@@ -182,6 +187,7 @@ declare const fullApi: ApiFromModules<{
   "lib/brokerActivity": typeof lib_brokerActivity;
   "lib/chatTools": typeof lib_chatTools;
   "lib/coiGenerator": typeof lib_coiGenerator;
+  "lib/complianceAgent": typeof lib_complianceAgent;
   "lib/convexDocumentStore": typeof lib_convexDocumentStore;
   "lib/convexMemoryStore": typeof lib_convexMemoryStore;
   "lib/convexSourceRetriever": typeof lib_convexSourceRetriever;

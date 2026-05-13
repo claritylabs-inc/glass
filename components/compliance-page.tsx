@@ -1,24 +1,45 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { FormEvent, useState } from "react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import type { FunctionReference } from "convex/server";
+import { AppShell } from "@/components/app-shell";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { CheckCircle2, ClipboardCheck, Plus, ShieldAlert, Trash2 } from "lucide-react";
+import { ClipboardCheck, FileUp, PencilLine, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { SettingsDrawer } from "@/components/settings/settings-drawer";
+import { Badge } from "@/components/ui/badge";
+import { FileDropZone } from "@/components/ui/file-drop";
+import { Input } from "@/components/ui/input";
 import { PillButton } from "@/components/ui/pill-button";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 import { useCurrentOrg } from "@/lib/hooks/use-current-org";
 
-type Category = "general_liability" | "auto" | "workers_comp" | "umbrella" | "professional" | "cyber" | "property" | "other";
+type Category =
+  | "general_liability"
+  | "auto"
+  | "workers_comp"
+  | "umbrella"
+  | "professional"
+  | "cyber"
+  | "property"
+  | "other";
+
+type RequirementScope = "vendors" | "own_org";
 
 type ComplianceApi = {
   compliance: {
     listRequirements: FunctionReference<"query">;
     upsertRequirement: FunctionReference<"mutation">;
     archiveRequirement: FunctionReference<"mutation">;
-    listVendorCompliance: FunctionReference<"query">;
-    getVendorChecklist: FunctionReference<"query">;
+    generateRequirementImportUploadUrl: FunctionReference<"mutation">;
+  };
+  actions: {
+    complianceRequirements: {
+      importRequirements: FunctionReference<"action">;
+    };
   };
 };
 
@@ -40,87 +61,162 @@ type Requirement = {
   title: string;
   category: Category;
   requirementText: string;
+  limit?: string;
+  limitAmount?: number;
+  deductible?: string;
+  deductibleAmount?: number;
   appliesTo: "vendors" | "own_org" | "both";
   updatedAt: number;
 };
 
-type VendorComplianceRow = {
-  relationshipId: Id<"connectedOrgRelationships">;
-  vendorOrg: { _id: Id<"organizations">; name: string; website?: string } | null;
-  status: "compliant" | "non_compliant" | "attention" | "no_requirements";
-  requirementCount: number;
-  metCount: number;
-  missingCount: number;
-  expiringSoonCount: number;
-  checks: Array<{
-    requirementId: Id<"insuranceRequirements">;
-    status: "met" | "missing" | "expiring_soon" | "expired";
-    notes: string;
-    expiresAt?: string;
-    daysUntilExpiration?: number;
-  }>;
-};
-
-type VendorChecklist = Array<{
-  clientOrg: { _id: Id<"organizations">; name: string; website?: string } | null;
-  checks: Array<{
-    requirement: Requirement;
-    status: "met" | "missing" | "expiring_soon" | "expired";
-    notes: string;
-    expiresAt?: string;
-  }>;
-}>;
-
-function statusClasses(status: string) {
-  if (status === "compliant" || status === "met") return "border-emerald-500/15 bg-emerald-500/8 text-emerald-700 dark:text-emerald-300";
-  if (status === "attention" || status === "expiring_soon") return "border-amber-500/15 bg-amber-500/8 text-amber-700 dark:text-amber-300";
-  if (status === "non_compliant" || status === "missing" || status === "expired") return "border-red-500/15 bg-red-500/8 text-red-700 dark:text-red-300";
-  return "border-foreground/10 bg-foreground/[0.03] text-muted-foreground";
+function categoryLabel(category: Category) {
+  return (
+    CATEGORIES.find((option) => option.value === category)?.label ?? category
+  );
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const label = status.replace(/_/g, " ");
-  return <span className={`rounded-full border px-2 py-0.5 text-[11px] font-medium capitalize ${statusClasses(status)}`}>{label}</span>;
+function CategoryBadge({ category }: { category: Category }) {
+  return (
+    <Badge variant="outline" className="text-xs text-muted-foreground">
+      {categoryLabel(category)}
+    </Badge>
+  );
+}
+
+function RequirementBadge({ label, value }: { label: string; value: string }) {
+  return (
+    <Badge
+      variant="outline"
+      className="max-w-full gap-1.5 text-xs font-normal text-muted-foreground"
+    >
+      <span>{label}</span>
+      <span className="min-w-0 truncate text-foreground">{value}</span>
+    </Badge>
+  );
+}
+
+function RequirementsLoadingSkeleton() {
+  return (
+    <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
+      {Array.from({ length: 3 }).map((_, index) => (
+        <div
+          key={index}
+          className="flex items-start justify-between gap-4 border-b border-foreground/4 px-5 py-4 last:border-b-0"
+        >
+          <div className="min-w-0 flex-1 space-y-2">
+            <div className="h-4 w-48 rounded-full bg-foreground/[0.06]" />
+            <div className="h-3 w-full max-w-xl rounded-full bg-foreground/[0.04]" />
+          </div>
+          <div className="h-7 w-20 rounded-full bg-foreground/[0.04]" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ComplianceEmptyState({
+  scope,
+  onBulkAdd,
+}: {
+  scope: RequirementScope;
+  onBulkAdd: () => void;
+}) {
+  const isVendorScope = scope === "vendors";
+  return (
+    <div className="rounded-lg border border-foreground/6 bg-card p-5 sm:p-6">
+      <h3 className="text-body-sm font-medium text-foreground">
+        No requirements yet
+      </h3>
+      <p className="text-body-sm text-muted-foreground mt-1">
+        {isVendorScope
+          ? "Add the insurance standards vendors need to satisfy before they work with your organization."
+          : "Add the insurance standards your own organization needs to maintain."}
+      </p>
+
+      <button
+        type="button"
+        onClick={onBulkAdd}
+        className="mt-5 w-full cursor-pointer rounded-lg border-2 border-dashed border-foreground/10 px-6 py-12 text-center transition-colors hover:border-foreground/20 hover:bg-foreground/[0.02]"
+      >
+        <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-foreground/[0.04] text-muted-foreground">
+          <ClipboardCheck className="h-4.5 w-4.5" />
+        </div>
+        <p className="text-body-sm font-medium text-foreground">
+          {isVendorScope
+            ? "Add a vendor requirement"
+            : "Add an internal requirement"}
+        </p>
+        <p className="mt-1 text-body-sm text-muted-foreground">
+          {isVendorScope
+            ? "Paste contract language or upload an existing vendor requirements document."
+            : "Paste internal compliance notes or upload an existing requirements document."}
+        </p>
+        <span className="mt-4 inline-flex h-8 items-center justify-center gap-1.5 rounded-full bg-foreground px-3.5 text-xs font-medium text-background">
+          <FileUp className="h-3.5 w-3.5" />
+          Bulk import
+        </span>
+      </button>
+    </div>
+  );
 }
 
 export function CompliancePage() {
   const currentOrg = useCurrentOrg();
   const orgId = currentOrg?.orgId as Id<"organizations"> | undefined;
-  const requirements = useQuery(complianceApi.compliance.listRequirements, orgId ? { orgId } : "skip") as Requirement[] | undefined;
-  const vendorCompliance = useQuery(complianceApi.compliance.listVendorCompliance, orgId ? { clientOrgId: orgId } : "skip") as VendorComplianceRow[] | undefined;
-  const vendorChecklist = useQuery(complianceApi.compliance.getVendorChecklist, orgId ? { vendorOrgId: orgId } : "skip") as VendorChecklist | undefined;
-  const upsertRequirement = useMutation(complianceApi.compliance.upsertRequirement);
-  const archiveRequirement = useMutation(complianceApi.compliance.archiveRequirement);
+  const requirements = useQuery(
+    complianceApi.compliance.listRequirements,
+    orgId ? { orgId } : "skip",
+  ) as Requirement[] | undefined;
+  const upsertRequirement = useMutation(
+    complianceApi.compliance.upsertRequirement,
+  );
+  const archiveRequirement = useMutation(
+    complianceApi.compliance.archiveRequirement,
+  );
+  const generateRequirementImportUploadUrl = useMutation(
+    complianceApi.compliance.generateRequirementImportUploadUrl,
+  );
+  const importRequirements = useAction(
+    complianceApi.actions.complianceRequirements.importRequirements,
+  );
 
-  const [showForm, setShowForm] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerMode, setDrawerMode] = useState<"bulk" | "manual">("bulk");
+  const [requirementScope, setRequirementScope] =
+    useState<RequirementScope>("vendors");
+  const [sourceText, setSourceText] = useState("");
+  const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
   const [category, setCategory] = useState<Category>("general_liability");
+  const [limit, setLimit] = useState("");
   const [requirementText, setRequirementText] = useState("");
   const [submitting, setSubmitting] = useState(false);
-
-  const summary = useMemo(() => {
-    const rows = vendorCompliance ?? [];
-    return {
-      vendors: rows.length,
-      compliant: rows.filter((row) => row.status === "compliant").length,
-      attention: rows.filter((row) => row.status === "attention").length,
-      nonCompliant: rows.filter((row) => row.status === "non_compliant").length,
-    };
-  }, [vendorCompliance]);
+  const [importing, setImporting] = useState(false);
 
   async function submitRequirement(event: FormEvent) {
     event.preventDefault();
     if (!orgId) return;
     setSubmitting(true);
     try {
-      await upsertRequirement({ orgId, title, category, requirementText, appliesTo: "vendors", minimumRequired: true });
+      await upsertRequirement({
+        orgId,
+        title,
+        category,
+        limit: limit.trim() || undefined,
+        requirementText,
+        appliesTo: requirementScope,
+        minimumRequired: true,
+      });
       toast.success("Compliance requirement saved");
       setTitle("");
+      setLimit("");
       setRequirementText("");
       setCategory("general_liability");
-      setShowForm(false);
+      setDrawerOpen(false);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to save requirement");
+      toast.error(
+        error instanceof Error ? error.message : "Unable to save requirement",
+      );
     } finally {
       setSubmitting(false);
     }
@@ -132,142 +228,312 @@ export function CompliancePage() {
       await archiveRequirement({ orgId, requirementId });
       toast.success("Requirement archived");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to archive requirement");
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Unable to archive requirement",
+      );
     }
   }
 
-  return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-4 sm:p-6 lg:p-8">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-foreground/8 bg-foreground/[0.03] px-3 py-1 text-xs text-muted-foreground">
-            <ClipboardCheck className="h-3.5 w-3.5" /> Compliance
-          </div>
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Insurance compliance</h1>
-          <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-            Set plain-language insurance requirements once, then monitor connected contractors against uploaded policies and expiration dates.
-          </p>
-        </div>
-        <PillButton onClick={() => setShowForm((open) => !open)}>
-          <Plus className="h-4 w-4" /> Add requirement
-        </PillButton>
-      </div>
+  async function generateRequirements() {
+    if (!orgId) return;
+    if (!sourceText.trim() && !sourceFile) {
+      toast.error("Paste text or upload a document first");
+      return;
+    }
+    setImporting(true);
+    try {
+      let fileId: Id<"_storage"> | undefined;
+      if (sourceFile) {
+        const uploadUrl = await generateRequirementImportUploadUrl({ orgId });
+        const response = await fetch(uploadUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": sourceFile.type || "application/octet-stream",
+          },
+          body: sourceFile,
+        });
+        if (!response.ok) throw new Error("Document upload failed");
+        const payload = (await response.json()) as { storageId: string };
+        fileId = payload.storageId as Id<"_storage">;
+      }
 
-      <div className="grid gap-3 sm:grid-cols-4">
-        {[
-          ["Connected vendors", summary.vendors],
-          ["Compliant", summary.compliant],
-          ["Needs attention", summary.attention],
-          ["Non-compliant", summary.nonCompliant],
-        ].map(([label, value]) => (
-          <div key={label} className="rounded-2xl border border-foreground/8 bg-card p-4 shadow-sm">
-            <p className="text-xs text-muted-foreground">{label}</p>
-            <p className="mt-1 text-2xl font-semibold text-foreground">{value}</p>
-          </div>
-        ))}
-      </div>
+      const result = (await importRequirements({
+        orgId,
+        pastedText: sourceText.trim() || undefined,
+        fileId,
+        fileName: sourceFile?.name,
+        contentType: sourceFile?.type,
+        appliesTo: requirementScope,
+      })) as { createdCount: number };
 
-      {showForm ? (
-        <form onSubmit={submitRequirement} className="rounded-2xl border border-foreground/8 bg-card p-5 shadow-sm">
-          <div className="grid gap-4 md:grid-cols-[1fr_220px]">
-            <label className="space-y-1.5 text-sm font-medium text-foreground">
-              Requirement title
-              <input className="w-full rounded-xl border border-foreground/10 bg-background px-3 py-2 text-sm outline-none focus:border-foreground/30" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="General liability minimum" required />
-            </label>
-            <label className="space-y-1.5 text-sm font-medium text-foreground">
-              Category
-              <select className="w-full rounded-xl border border-foreground/10 bg-background px-3 py-2 text-sm outline-none focus:border-foreground/30" value={category} onChange={(event) => setCategory(event.target.value as Category)}>
-                {CATEGORIES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-              </select>
-            </label>
-          </div>
-          <label className="mt-4 block space-y-1.5 text-sm font-medium text-foreground">
-            Plain-language requirement
-            <textarea className="min-h-24 w-full rounded-xl border border-foreground/10 bg-background px-3 py-2 text-sm outline-none focus:border-foreground/30" value={requirementText} onChange={(event) => setRequirementText(event.target.value)} placeholder="Contractors must carry active CGL with at least $1M per occurrence and $2M aggregate." required />
-          </label>
-          <div className="mt-4 flex justify-end gap-2">
-            <PillButton type="button" variant="secondary" onClick={() => setShowForm(false)}>Cancel</PillButton>
-            <PillButton type="submit" disabled={submitting}>{submitting ? "Saving…" : "Save requirement"}</PillButton>
-          </div>
-        </form>
-      ) : null}
+      if (result.createdCount === 0) {
+        toast.info("No new requirements found");
+      } else {
+        toast.success(
+          `Created ${result.createdCount} requirement${result.createdCount === 1 ? "" : "s"}`,
+        );
+      }
+      setSourceText("");
+      setSourceFile(null);
+      setDrawerOpen(false);
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Unable to generate requirements",
+      );
+    } finally {
+      setImporting(false);
+    }
+  }
 
-      <section className="rounded-2xl border border-foreground/8 bg-card shadow-sm">
-        <div className="border-b border-foreground/8 px-5 py-4">
-          <h2 className="text-sm font-semibold text-foreground">Requirements</h2>
-          <p className="mt-1 text-xs text-muted-foreground">Client requirements establish the minimum standard vendors must satisfy.</p>
-        </div>
-        {(requirements ?? []).length === 0 ? (
-          <div className="px-5 py-8 text-sm text-muted-foreground">No requirements yet. Add the first checklist item for your contractors.</div>
-        ) : requirements?.map((requirement) => (
-          <div key={requirement._id} className="flex items-start justify-between gap-4 border-b border-foreground/6 px-5 py-4 last:border-b-0">
-            <div>
-              <div className="flex items-center gap-2">
-                <p className="text-sm font-medium text-foreground">{requirement.title}</p>
-                <StatusBadge status={requirement.category} />
-              </div>
-              <p className="mt-1 text-sm text-muted-foreground">{requirement.requirementText}</p>
-            </div>
-            <PillButton size="compact" variant="secondary" onClick={() => removeRequirement(requirement._id)}>
-              <Trash2 className="h-3.5 w-3.5" /> Archive
+  function openBulkImport() {
+    setDrawerMode("bulk");
+    setDrawerOpen(true);
+  }
+
+  function openManualAdd() {
+    setDrawerMode("manual");
+    setDrawerOpen(true);
+  }
+
+  const visibleRequirements = (requirements ?? []).filter((requirement) =>
+    requirement.appliesTo === "both"
+      ? true
+      : requirement.appliesTo === requirementScope,
+  );
+  const scopeLabel = requirementScope === "vendors" ? "Vendor" : "Internal";
+
+  const rightPanel = (
+    <SettingsDrawer
+      open={drawerOpen}
+      onOpenChange={setDrawerOpen}
+      title={
+        drawerMode === "bulk"
+          ? `Bulk import ${scopeLabel.toLowerCase()} requirements`
+          : `Add ${scopeLabel.toLowerCase()} requirement`
+      }
+      footer={
+        <>
+          <PillButton
+            type="button"
+            variant="secondary"
+            disabled={submitting || importing}
+            onClick={() => setDrawerOpen(false)}
+          >
+            Cancel
+          </PillButton>
+          {drawerMode === "manual" ? (
+            <PillButton
+              type="submit"
+              form="manual-compliance-requirement"
+              disabled={submitting}
+            >
+              {submitting ? "Saving…" : "Save requirement"}
             </PillButton>
-          </div>
-        ))}
-      </section>
-
-      <section className="rounded-2xl border border-foreground/8 bg-card shadow-sm">
-        <div className="border-b border-foreground/8 px-5 py-4">
-          <h2 className="text-sm font-semibold text-foreground">Connected vendor monitoring</h2>
-          <p className="mt-1 text-xs text-muted-foreground">Each active Connect vendor is checked against your requirements using extracted policy data.</p>
-        </div>
-        {(vendorCompliance ?? []).length === 0 ? (
-          <div className="px-5 py-8 text-sm text-muted-foreground">No active vendors yet. Invite contractors from Connect → Clients.</div>
-        ) : vendorCompliance?.map((row) => (
-          <div key={row.relationshipId} className="border-b border-foreground/6 px-5 py-4 last:border-b-0">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="text-sm font-medium text-foreground">{row.vendorOrg?.name ?? "Unknown vendor"}</p>
-                <p className="mt-1 text-xs text-muted-foreground">{row.metCount}/{row.requirementCount} requirements met · {row.missingCount} missing/expired · {row.expiringSoonCount} expiring soon</p>
+          ) : (
+            <PillButton
+              type="button"
+              disabled={importing || (!sourceText.trim() && !sourceFile)}
+              onClick={() => void generateRequirements()}
+            >
+              {importing ? "Generating…" : "Generate requirements"}
+            </PillButton>
+          )}
+        </>
+      }
+    >
+      {drawerMode === "bulk" ? (
+        <div className="flex min-h-0 flex-1 flex-col gap-4">
+          <p className="text-body-sm text-muted-foreground">
+            {requirementScope === "vendors"
+              ? "Paste contract insurance language or upload an existing vendor requirements document. Glass will turn it into structured checklist items."
+              : "Paste internal insurance standards or upload an existing requirements document. Glass will turn it into structured checklist items."}
+          </p>
+          <label className="flex min-h-0 flex-1 flex-col gap-1.5 text-label-sm font-medium text-muted-foreground">
+            Requirement text
+            <Textarea
+              className="min-h-0 flex-1 resize-none [field-sizing:fixed]"
+              rows={12}
+              value={sourceText}
+              onChange={(event) => setSourceText(event.target.value)}
+              placeholder="Paste insurance requirements, contract language, certificate instructions, or vendor compliance notes."
+              disabled={importing}
+            />
+          </label>
+          <FileDropZone
+            accept=".txt,.md,.markdown,.pdf,.docx,.csv,.json,text/plain,text/markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/csv,application/json"
+            disabled={importing}
+            idleLabel="Upload requirement document"
+            busyLabel="Generating requirements…"
+            hint="TXT, Markdown, PDF, DOCX, CSV, or JSON"
+            onFile={setSourceFile}
+          />
+          {sourceFile ? (
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-foreground/6 bg-card px-3 py-2">
+              <div className="min-w-0">
+                <p className="truncate text-body-sm font-medium text-foreground">
+                  {sourceFile.name}
+                </p>
+                <p className="text-label-sm text-muted-foreground">
+                  {(sourceFile.size / 1024).toFixed(1)} KB
+                </p>
               </div>
-              <StatusBadge status={row.status} />
+              <PillButton
+                type="button"
+                size="compact"
+                variant="secondary"
+                disabled={importing}
+                onClick={() => setSourceFile(null)}
+              >
+                Remove
+              </PillButton>
             </div>
-            <div className="mt-3 grid gap-2 md:grid-cols-2">
-              {row.checks.map((check) => (
-                <div key={check.requirementId} className="rounded-xl border border-foreground/8 bg-background/50 p-3">
-                  <div className="flex items-center gap-2"><StatusBadge status={check.status} /></div>
-                  <p className="mt-2 text-xs text-muted-foreground">{check.notes}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
-      </section>
-
-      <section className="rounded-2xl border border-foreground/8 bg-card shadow-sm">
-        <div className="border-b border-foreground/8 px-5 py-4">
-          <h2 className="text-sm font-semibold text-foreground">My contractor checklist</h2>
-          <p className="mt-1 text-xs text-muted-foreground">If clients monitor your organization, this shows what they need from your uploaded policies.</p>
+          ) : null}
         </div>
-        {(vendorChecklist ?? []).length === 0 ? (
-          <div className="flex items-center gap-2 px-5 py-8 text-sm text-muted-foreground"><ShieldAlert className="h-4 w-4" /> No active client checklists for this org.</div>
-        ) : vendorChecklist?.map((row, index) => (
-          <div key={row.clientOrg?._id ?? index} className="border-b border-foreground/6 px-5 py-4 last:border-b-0">
-            <p className="text-sm font-medium text-foreground">{row.clientOrg?.name ?? "Client"}</p>
-            <div className="mt-3 grid gap-2 md:grid-cols-2">
-              {row.checks.map((check) => (
-                <div key={check.requirement._id} className="rounded-xl border border-foreground/8 bg-background/50 p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-sm font-medium text-foreground">{check.requirement.title}</p>
-                    <StatusBadge status={check.status} />
-                  </div>
-                  <p className="mt-2 text-xs text-muted-foreground">{check.requirement.requirementText}</p>
-                  <p className="mt-2 flex items-center gap-1 text-xs text-muted-foreground"><CheckCircle2 className="h-3.5 w-3.5" /> {check.notes}</p>
-                </div>
+      ) : (
+        <form
+          id="manual-compliance-requirement"
+          onSubmit={submitRequirement}
+          className="flex min-h-0 flex-1 flex-col gap-4"
+        >
+          <label className="flex flex-col gap-1.5 text-label-sm font-medium text-muted-foreground">
+            Requirement title
+            <Input
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+              placeholder="General liability minimum"
+              required
+            />
+          </label>
+          <label className="flex flex-col gap-1.5 text-label-sm font-medium text-muted-foreground">
+            Category
+            <select
+              className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+              value={category}
+              onChange={(event) => setCategory(event.target.value as Category)}
+            >
+              {CATEGORIES.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
               ))}
-            </div>
-          </div>
-        ))}
-      </section>
-    </div>
+            </select>
+          </label>
+          <label className="flex flex-col gap-1.5 text-label-sm font-medium text-muted-foreground">
+            Minimum limit
+            <Input
+              value={limit}
+              onChange={(event) => setLimit(event.target.value)}
+              placeholder="$1M per occurrence"
+            />
+          </label>
+          <label className="flex min-h-0 flex-1 flex-col gap-1.5 text-label-sm font-medium text-muted-foreground">
+            Requirement
+            <Textarea
+              className="min-h-0 flex-1 resize-none [field-sizing:fixed]"
+              rows={12}
+              value={requirementText}
+              onChange={(event) => setRequirementText(event.target.value)}
+              placeholder={
+                "Contractors must carry active CGL with at least $1M per occurrence and $2M aggregate.\n\nCoverage must include additional insured status where required by contract."
+              }
+              required
+            />
+          </label>
+        </form>
+      )}
+    </SettingsDrawer>
+  );
+
+  return (
+    <AppShell
+      actions={
+        <>
+          <PillButton
+            size="compact"
+            variant="secondary"
+            onClick={openManualAdd}
+          >
+            <PencilLine className="h-3.5 w-3.5" />
+            Manual
+          </PillButton>
+          <PillButton
+            size="compact"
+            variant="secondary"
+            onClick={openBulkImport}
+          >
+            <FileUp className="h-3.5 w-3.5" />
+            Bulk import
+          </PillButton>
+        </>
+      }
+      rightPanel={rightPanel}
+    >
+      <div className="flex w-full flex-col gap-4">
+        <Tabs
+          value={requirementScope}
+          onValueChange={(value) =>
+            setRequirementScope(value as RequirementScope)
+          }
+        >
+          <TabsList variant="pill">
+            <TabsTrigger value="vendors">Vendor requirements</TabsTrigger>
+            <TabsTrigger value="own_org">Internal requirements</TabsTrigger>
+          </TabsList>
+        </Tabs>
+
+        {requirements === undefined ? (
+          <RequirementsLoadingSkeleton />
+        ) : visibleRequirements.length === 0 ? (
+          <ComplianceEmptyState
+            scope={requirementScope}
+            onBulkAdd={openBulkImport}
+          />
+        ) : (
+          <section className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
+            {visibleRequirements.map((requirement) => (
+              <div
+                key={requirement._id}
+                className="flex items-center justify-between gap-4 border-b border-foreground/4 px-4 py-3 transition-colors last:border-b-0 hover:bg-muted/40"
+              >
+                <div className="min-w-0 flex-1 space-y-1">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    <p className="min-w-0 truncate text-sm font-medium text-foreground">
+                      {requirement.title}
+                    </p>
+                    <CategoryBadge category={requirement.category} />
+                    {requirement.limit ? (
+                      <RequirementBadge
+                        label="Limit"
+                        value={requirement.limit}
+                      />
+                    ) : null}
+                    {requirement.deductible ? (
+                      <RequirementBadge
+                        label="Deductible"
+                        value={requirement.deductible}
+                      />
+                    ) : null}
+                  </div>
+                  <p className="line-clamp-2 max-w-5xl text-sm leading-5 text-muted-foreground">
+                    {requirement.requirementText}
+                  </p>
+                </div>
+                <PillButton
+                  size="compact"
+                  variant="secondary"
+                  onClick={() => removeRequirement(requirement._id)}
+                >
+                  <Trash2 className="h-3.5 w-3.5" /> Archive
+                </PillButton>
+              </div>
+            ))}
+          </section>
+        )}
+      </div>
+    </AppShell>
   );
 }

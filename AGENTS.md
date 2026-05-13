@@ -62,12 +62,12 @@ Fallback behavior:
 
 ## Compliance Requirements
 
-Glass now has a top-level compliance workflow for contractor/vendor insurance monitoring. `insuranceRequirements` stores one active/archived requirement set per organization; requirements are plain-language, category-tagged rules that apply to vendors, the org's own coverage, or both. Client/customer requirements establish the minimum vendor standard. `vendorComplianceChecks` is reserved for persisted check snapshots and notification history, while current web and MCP surfaces compute live checklist status from active connected vendors plus extracted `policies` data. The deterministic checker matches requirement categories/text against policy types, summaries, coverages, and expiration dates, returning `met`, `missing`, `expiring_soon`, or `expired`; future LLM review should augment this table rather than replacing requirement ownership.
+Glass now has a top-level compliance workflow for contractor/vendor insurance monitoring. `insuranceRequirements` stores one active/archived requirement set per organization; requirements are category-tagged rules that apply to vendors, the org's own coverage, or both. Requirement records deliberately mirror the policy `coverages` shape (`name`, `coverageCode`, `limit`, numeric `limitAmount`, limit typing, deductible fields, and `originalContent`) so compliance comparison can operate on the same schema as extracted policy coverage data. Client/customer requirements establish the minimum vendor standard. Requirements can be created one at a time or bulk-generated from pasted text / uploaded requirement documents through `convex/actions/complianceRequirements.ts`, which extracts text from TXT/Markdown/PDF/DOCX/CSV/JSON inputs and uses Glass's static `gpt-5.4-mini` chat route to produce coverage-shaped structured requirements. `vendorComplianceChecks` is reserved for persisted check snapshots and notification history, while current web and MCP surfaces compute live checklist status from active connected vendors plus extracted `policies` data. The deterministic checker matches requirement categories/text against policy types, summaries, coverages, expiration dates, and structured coverage limits, returning `met`, `missing`, `expiring_soon`, or `expired`; future LLM review should augment this table rather than replacing requirement ownership.
 
 Surfaces:
 
-- Web: `/compliance` manages requirements, shows connected vendor monitoring, and shows the vendor-side checklist for clients monitoring the current org.
-- Connect: `/connected-orgs?view=clients` is the client/customer side for requesting and monitoring vendors; `/connected-orgs?view=vendors` is the vendor/contractor side for approving client access.
+- Web: `/compliance` is focused on requirement creation/management. Its top-bar actions open separate right-side asides for bulk import and manual entry; it should not render vendor/client monitoring cards.
+- Connect: `/connect/vendors` is for vendors the org contracts with and monitors against its own standards; `/connect/clients` is for clients the org reports insurance requirements to and approves access for. Vendor/client monitoring belongs on these Connect surfaces, not on `/compliance`. Legacy `/connected-orgs/*` paths redirect to the shorter `/connect/*` routes.
 - MCP/CLI/REST: compliance requirements and vendor compliance are exposed through `list_insurance_requirements`, `create_insurance_requirement`, `list_vendor_compliance`, `GET/POST /api/v1/compliance/requirements`, and `GET /api/v1/compliance/vendors`.
 - Agent: web chat and MCP chat include a vendor compliance snapshot in context so users can ask questions such as “are all my vendors compliant?”
 
@@ -85,7 +85,7 @@ Shared access rules live in `convex/lib/access.ts`:
 
 Surfaces:
 
-- Web: Connected orgs in the main app menu uses `convex/connectedOrgs.ts` to request vendor access by email, approve email request links, and revoke relationships.
+- Web: Connect in the main app menu uses `convex/connectedOrgs.ts` to request vendor access by email, approve email request links, and revoke relationships.
 - REST: `GET /api/v1/vendors`, `GET /api/v1/vendors/:id`, and `GET /api/v1/vendors/:id/policies`.
 - MCP/CLI: `list_connected_vendors`, `get_connected_vendor`, `list_connected_vendor_policies`.
 - Agent: MCP chat receives connected-vendor roster context; exact vendor policy lists should come from the MCP vendor tools.
@@ -97,6 +97,7 @@ Surfaces:
 ### Schema: `orgMemory`
 
 Each entry has:
+
 - `orgId`
 - `kind` — `fact` | `preference` | `risk_note` | `observation`
 - `content` — free-text string
@@ -108,11 +109,11 @@ No embeddings, no supersession graph, no category taxonomy. Retrieval is list-ba
 
 ### Writers
 
-| Source | Where | Trigger |
-|--------|-------|---------|
-| `save_note` chat tool | `convex/actions/processThreadChat.ts` (buildTools) | Agent tool call during chat |
-| Website enrichment | `convex/actions/extractCompanyInfo.ts` | Client onboarding step 2 + manual refresh |
-| Email agent post-reply summary | `convex/actions/handleInboundEmail.ts` | After a tool-using email reply resolves |
+| Source                         | Where                                              | Trigger                                   |
+| ------------------------------ | -------------------------------------------------- | ----------------------------------------- |
+| `save_note` chat tool          | `convex/actions/processThreadChat.ts` (buildTools) | Agent tool call during chat               |
+| Website enrichment             | `convex/actions/extractCompanyInfo.ts`             | Client onboarding step 2 + manual refresh |
+| Email agent post-reply summary | `convex/actions/handleInboundEmail.ts`             | After a tool-using email reply resolves   |
 
 ## cl-sdk Integration
 
@@ -347,6 +348,7 @@ All MCP tool invocations require a Bearer token (OAuth or API key) and resolve o
 ## REST API
 
 Versioned REST API under `/api/v1/*`. All routes require:
+
 - `Authorization: Bearer <token>` (OAuth token from `/oauth/token`)
 - `X-Org-Id: <orgId>` header
 
@@ -381,9 +383,11 @@ When behavior changes, prefer updating:
 - inline comments only when they clarify non-obvious code paths
 
 <!-- convex-ai-start -->
+
 This project uses [Convex](https://convex.dev) as its backend.
 
 When working on Convex code, **always read `convex/_generated/ai/guidelines.md` first** for important guidelines on how to correctly use Convex APIs and patterns. The file contains rules that override what you may have learned about Convex from training data.
 
 Convex agent skills for common tasks can be installed by running `npx convex ai-files install`.
+
 <!-- convex-ai-end -->

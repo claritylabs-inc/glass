@@ -1,8 +1,10 @@
 import { v } from "convex/values";
-import { query, mutation, internalQuery, internalMutation } from "./_generated/server";
+import { query, mutation, internalQuery, internalMutation, type QueryCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
+import type { Doc } from "./_generated/dataModel";
 import { requireOrgAccess, getOrgAccess } from "./lib/orgAuth";
 import { requireBrokerAccessToClient } from "./lib/access";
+import { buildImessageGroupMemberTitle } from "./lib/imessageGroupResolution";
 
 // Note: mutations/queries don't have process.env
 // The domain is stored on the org via setAgentDomain action, or passed by the client
@@ -13,6 +15,8 @@ const EMAIL_MODE_VALIDATOR = v.union(
   v.literal("forward"),
   v.literal("unknown"),
 );
+const IMESSAGE_GROUP_TITLE_PREFIX = "iMessage group - ";
+const IMESSAGE_DIRECT_TITLE_PREFIX = "iMessage - ";
 
 /** Generate a short alphanumeric ID for thread email addresses */
 function shortId(): string {
@@ -22,6 +26,56 @@ function shortId(): string {
     result += chars[Math.floor(Math.random() * chars.length)];
   }
   return result;
+}
+
+function formatImessageThreadTitle(args: { isGroup: boolean; displayName: string }): string {
+  return args.isGroup
+    ? `${IMESSAGE_GROUP_TITLE_PREFIX}${args.displayName}`
+    : `${IMESSAGE_DIRECT_TITLE_PREFIX}${args.displayName}`;
+}
+
+async function deriveImessageGroupDisplayTitle(
+  ctx: QueryCtx,
+  thread: Doc<"threads">,
+): Promise<string | undefined> {
+  if (!thread.imessageIsGroup || !thread.imessageChatGuid) return undefined;
+  if (!thread.title.startsWith(IMESSAGE_GROUP_TITLE_PREFIX)) return undefined;
+
+  const participants = await ctx.db
+    .query("imessageParticipants")
+    .withIndex("by_chatGuid", (q) => q.eq("chatGuid", thread.imessageChatGuid!))
+    .collect();
+  if (participants.length === 0) return undefined;
+
+  const users = await Promise.all(
+    participants.map((participant) =>
+      participant.userId ? ctx.db.get(participant.userId) : Promise.resolve(null),
+    ),
+  );
+  const memberTitle = buildImessageGroupMemberTitle(
+    participants.map((participant, index) => ({
+      address: participant.address,
+      displayName: participant.displayName,
+      userName: users[index]?.name,
+    })),
+  );
+
+  return memberTitle ? `${IMESSAGE_GROUP_TITLE_PREFIX}${memberTitle}` : undefined;
+}
+
+async function withImessageGroupDisplayTitle(
+  ctx: QueryCtx,
+  thread: Doc<"threads">,
+): Promise<Doc<"threads">> {
+  const title = await deriveImessageGroupDisplayTitle(ctx, thread);
+  return title ? { ...thread, title } : thread;
+}
+
+async function withImessageGroupDisplayTitles(
+  ctx: QueryCtx,
+  threads: Array<Doc<"threads">>,
+): Promise<Array<Doc<"threads">>> {
+  return await Promise.all(threads.map((thread) => withImessageGroupDisplayTitle(ctx, thread)));
 }
 
 // ── Public queries/mutations ──
@@ -38,9 +92,9 @@ export const list = query({
       .order("desc")
       .collect();
     if (args.archived) {
-      return all.filter((t) => !!t.archivedAt);
+      return await withImessageGroupDisplayTitles(ctx, all.filter((t) => !!t.archivedAt));
     }
-    return all.filter((t) => !t.archivedAt);
+    return await withImessageGroupDisplayTitles(ctx, all.filter((t) => !t.archivedAt));
   },
 });
 
@@ -50,7 +104,7 @@ export const get = query({
     const { orgId } = await requireOrgAccess(ctx);
     const thread = await ctx.db.get(args.id);
     if (!thread || thread.orgId !== orgId) return null;
-    return thread;
+    return await withImessageGroupDisplayTitle(ctx, thread);
   },
 });
 
@@ -63,7 +117,7 @@ export const tryGet = query({
       if (!normalized) return null;
       const thread = await ctx.db.get(normalized);
       if (!thread || thread.orgId !== orgId) return null;
-      return thread;
+      return await withImessageGroupDisplayTitle(ctx, thread);
     } catch {
       return null;
     }
@@ -98,9 +152,9 @@ export const listForClient = query({
       .order("desc")
       .collect();
     if (args.archived) {
-      return all.filter((t) => !!t.archivedAt);
+      return await withImessageGroupDisplayTitles(ctx, all.filter((t) => !!t.archivedAt));
     }
-    return all.filter((t) => !t.archivedAt);
+    return await withImessageGroupDisplayTitles(ctx, all.filter((t) => !t.archivedAt));
   },
 });
 
@@ -113,7 +167,7 @@ export const getForClient = query({
     await requireBrokerAccessToClient(ctx, args.clientOrgId);
     const thread = await ctx.db.get(args.id);
     if (!thread || thread.orgId !== args.clientOrgId) return null;
-    return thread;
+    return await withImessageGroupDisplayTitle(ctx, thread);
   },
 });
 
@@ -585,11 +639,12 @@ export const updateTitleInternal = internalMutation({
 export const listByOrg = internalQuery({
   args: { orgId: v.id("organizations") },
   handler: async (ctx, args) => {
-    return await ctx.db
+    const threads = await ctx.db
       .query("threads")
       .withIndex("by_orgId_lastMessageAt", (q) => q.eq("orgId", args.orgId))
       .order("desc")
       .take(50);
+    return await withImessageGroupDisplayTitles(ctx, threads);
   },
 });
 
@@ -697,11 +752,16 @@ export const findOrCreateByImessageChat = internalMutation({
       (thread) => (thread.imessageIsGroup ?? false) === args.isGroup,
     );
     if (existing) {
+      const displayName = args.title ?? args.userName ?? args.fallbackPhone ?? "Group chat";
+      const nextTitle = formatImessageThreadTitle({ isGroup: args.isGroup, displayName });
       await ctx.db.patch(existing._id, {
         lastMessageAt: Date.now(),
         imessageIsGroup: args.isGroup,
         imessageScope: args.scope,
         threadPhone: existing.threadPhone ?? args.fallbackPhone,
+        ...(args.isGroup && existing.title.startsWith(IMESSAGE_GROUP_TITLE_PREFIX)
+          ? { title: nextTitle }
+          : {}),
       });
       return existing._id;
     }
@@ -709,7 +769,7 @@ export const findOrCreateByImessageChat = internalMutation({
     const displayName = args.title ?? args.userName ?? args.fallbackPhone ?? "Group chat";
     return await ctx.db.insert("threads", {
       orgId: args.orgId,
-      title: args.isGroup ? `iMessage group - ${displayName}` : `iMessage - ${displayName}`,
+      title: formatImessageThreadTitle({ isGroup: args.isGroup, displayName }),
       createdBy: args.userId,
       lastMessageAt: Date.now(),
       threadPhone: args.fallbackPhone,

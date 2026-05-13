@@ -10,16 +10,29 @@ import {
   lookupPolicy,
   lookupPolicySection,
   compareCoverages,
+  lookupComplianceRequirements,
   saveNote,
   generateCoi as generateCoiTool,
   extractPolicyAttachment,
   createPolicyChangeRequest,
 } from "../lib/chatTools";
 import { Webhook } from "svix";
-import { buildDocumentContext, buildConversationMemoryContext, buildIntelligenceContext } from "../lib/agentPrompts";
+import {
+  buildComplianceRequirementsContext,
+  buildDocumentContext,
+  buildConversationMemoryContext,
+  buildIntelligenceContext,
+} from "../lib/agentPrompts";
 import { Id } from "../_generated/dataModel";
-import { sendResendEmail, getAgentDomain, getAuthFromAddress } from "../lib/resend";
-import { buildGlassEmailIconHtml, buildUnrecognizedInboundEmail } from "../lib/emailTemplate";
+import {
+  sendResendEmail,
+  getAgentDomain,
+  getAuthFromAddress,
+} from "../lib/resend";
+import {
+  buildGlassEmailIconHtml,
+  buildUnrecognizedInboundEmail,
+} from "../lib/emailTemplate";
 import {
   buildSystemPromptForContext,
   buildChannelInstructions,
@@ -45,24 +58,47 @@ import {
   FATAL_ACTION_FAILED_MESSAGE,
 } from "../lib/actionFailures";
 import { evaluatePceIntake, type PceRequestKind } from "../lib/pceIntake";
+import {
+  filterComplianceRequirements,
+  formatComplianceRequirement,
+} from "../lib/complianceAgent";
 
 const GLASS_PUBLIC_URL = "https://glass.claritylabs.inc";
 
 const CONSUMER_DOMAINS = new Set([
-  "gmail.com", "googlemail.com", "yahoo.com", "yahoo.co.uk",
-  "outlook.com", "hotmail.com", "live.com", "msn.com",
-  "aol.com", "icloud.com", "me.com", "mac.com",
-  "protonmail.com", "proton.me", "zoho.com", "mail.com",
-  "ymail.com", "gmx.com", "gmx.net",
+  "gmail.com",
+  "googlemail.com",
+  "yahoo.com",
+  "yahoo.co.uk",
+  "outlook.com",
+  "hotmail.com",
+  "live.com",
+  "msn.com",
+  "aol.com",
+  "icloud.com",
+  "me.com",
+  "mac.com",
+  "protonmail.com",
+  "proton.me",
+  "zoho.com",
+  "mail.com",
+  "ymail.com",
+  "gmx.com",
+  "gmx.net",
 ]);
 
-function getCompanyDomains(org: { website?: string }, memberEmails: string[]): string[] {
+function getCompanyDomains(
+  org: { website?: string },
+  memberEmails: string[],
+): string[] {
   const domains: string[] = [];
   if (org.website) {
     try {
       const hostname = new URL(org.website).hostname.replace(/^www\./, "");
       if (!CONSUMER_DOMAINS.has(hostname)) domains.push(hostname);
-    } catch { /* ignore invalid URLs */ }
+    } catch {
+      /* ignore invalid URLs */
+    }
   }
   for (const email of memberEmails) {
     const domain = email.split("@")[1]?.toLowerCase();
@@ -111,10 +147,15 @@ function parseAddressList(raw: string | string[] | undefined): string[] {
   if (Array.isArray(raw)) {
     return raw.map((a) => extractEmailAddress(a)).filter(Boolean);
   }
-  return raw.split(",").map((a) => extractEmailAddress(a.trim())).filter(Boolean);
+  return raw
+    .split(",")
+    .map((a) => extractEmailAddress(a.trim()))
+    .filter(Boolean);
 }
 
-function findAgentHandle(addresses: string[]): { handle: string; threadSuffix?: string } | null {
+function findAgentHandle(
+  addresses: string[],
+): { handle: string; threadSuffix?: string } | null {
   for (const addr of addresses) {
     if (addr.endsWith(`@${getAgentDomain()}`)) {
       const localPart = addr.split("@")[0];
@@ -135,7 +176,10 @@ function findAgentHandle(addresses: string[]): { handle: string; threadSuffix?: 
 function stripQuotedText(body: string): string {
   const onWrotePattern = /\r?\n\s*On .+wrote:\s*\r?\n[\s\S]*$/;
   let cleaned = body.replace(onWrotePattern, "");
-  cleaned = cleaned.replace(/\r?\n\s*-{5,}\s*Forwarded message\s*-{5,}[\s\S]*$/, "");
+  cleaned = cleaned.replace(
+    /\r?\n\s*-{5,}\s*Forwarded message\s*-{5,}[\s\S]*$/,
+    "",
+  );
   const lines = cleaned.split("\n");
   while (lines.length > 0 && /^\s*>/.test(lines[lines.length - 1])) {
     lines.pop();
@@ -173,7 +217,10 @@ function getAgentFromName(broker?: BrokerBranding): string {
   return "Glass from Clarity Labs";
 }
 
-function buildSignature(agentEmail: string, broker?: BrokerBranding): { text: string; html: string } {
+function buildSignature(
+  agentEmail: string,
+  broker?: BrokerBranding,
+): { text: string; html: string } {
   const poweredByUrl = GLASS_PUBLIC_URL;
   const hasBroker = !!(broker?.name || broker?.agentDisplayName);
   const agentName = getAgentFromName(broker);
@@ -183,19 +230,28 @@ function buildSignature(agentEmail: string, broker?: BrokerBranding): { text: st
     "—",
     agentName,
     agentEmail,
-    ...(hasBroker ? ["", `powered by Glass from Clarity Labs — ${poweredByUrl}`] : []),
+    ...(hasBroker
+      ? ["", `powered by Glass from Clarity Labs — ${poweredByUrl}`]
+      : []),
   ].join("\n");
 
-  const logoHtml = hasBroker && broker?.logoUrl
-    ? `<img src="${broker.logoUrl}" alt="" width="20" height="20" style="display:inline-block;vertical-align:middle;width:20px;height:20px;border-radius:4px;margin-right:8px;object-fit:cover;border:0;" />`
-    : buildGlassEmailIconHtml({ size: 20, borderRadius: 4, margin: "0 8px 0 0" });
+  const logoHtml =
+    hasBroker && broker?.logoUrl
+      ? `<img src="${broker.logoUrl}" alt="" width="20" height="20" style="display:inline-block;vertical-align:middle;width:20px;height:20px;border-radius:4px;margin-right:8px;object-fit:cover;border:0;" />`
+      : buildGlassEmailIconHtml({
+          size: 20,
+          borderRadius: 4,
+          margin: "0 8px 0 0",
+        });
 
   const html = [
     `<br><p style="color:#999;font-size:13px;margin:0">—</p>`,
     `<p style="font-size:13px;margin:4px 0 2px">${logoHtml}<strong>${agentName}</strong></p>`,
     `<p style="font-size:12px;color:#999;margin:0">${agentEmail}</p>`,
     ...(hasBroker
-      ? [`<p style="font-size:12px;margin:6px 0 0"><a href="${poweredByUrl}" style="color:#A0D2FA;text-decoration:none">powered by Glass from Clarity Labs</a></p>`]
+      ? [
+          `<p style="font-size:12px;margin:6px 0 0"><a href="${poweredByUrl}" style="color:#A0D2FA;text-decoration:none">powered by Glass from Clarity Labs</a></p>`,
+        ]
       : []),
   ].join("\n");
 
@@ -224,7 +280,10 @@ async function sendUnrecognizedSenderEmail({
     text,
   });
   if (!result.ok) {
-    console.warn("Failed to send unrecognized inbound sender email:", result.error);
+    console.warn(
+      "Failed to send unrecognized inbound sender email:",
+      result.error,
+    );
   }
 }
 
@@ -265,7 +324,9 @@ const SUPPORTED_ATTACHMENT_TYPES = new Set([
 
 const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024; // 10MB
 
-async function fetchAttachments(emailId: string): Promise<DownloadedAttachment[]> {
+async function fetchAttachments(
+  emailId: string,
+): Promise<DownloadedAttachment[]> {
   const downloaded: DownloadedAttachment[] = [];
 
   try {
@@ -310,14 +371,21 @@ async function fetchAttachments(emailId: string): Promise<DownloadedAttachment[]
   return downloaded;
 }
 
-async function fetchEmailContent(emailId: string): Promise<ReceivedEmailContent> {
-  const res = await fetch(`https://api.resend.com/emails/receiving/${emailId}`, {
-    headers: {
-      Authorization: `Bearer ${process.env.AUTH_RESEND_KEY}`,
+async function fetchEmailContent(
+  emailId: string,
+): Promise<ReceivedEmailContent> {
+  const res = await fetch(
+    `https://api.resend.com/emails/receiving/${emailId}`,
+    {
+      headers: {
+        Authorization: `Bearer ${process.env.AUTH_RESEND_KEY}`,
+      },
     },
-  });
+  );
   if (!res.ok) {
-    console.warn(`Failed to fetch from receiving API (${res.status}), trying sent emails API...`);
+    console.warn(
+      `Failed to fetch from receiving API (${res.status}), trying sent emails API...`,
+    );
     const fallback = await fetch(`https://api.resend.com/emails/${emailId}`, {
       headers: {
         Authorization: `Bearer ${process.env.AUTH_RESEND_KEY}`,
@@ -356,7 +424,9 @@ export const processInbound = internalAction({
         throw new Error("Invalid webhook signature");
       }
     } else {
-      console.warn("RESEND_WEBHOOK_SECRET not set — skipping signature verification");
+      console.warn(
+        "RESEND_WEBHOOK_SECRET not set — skipping signature verification",
+      );
     }
 
     const webhook: WebhookPayload = JSON.parse(args.payload);
@@ -367,10 +437,16 @@ export const processInbound = internalAction({
     if (resendEmailId || data.message_id) {
       const isDuplicate = await ctx.runQuery(
         internal.threads.checkDuplicateEmail,
-        { resendEmailId: resendEmailId || undefined, messageId: data.message_id || undefined },
+        {
+          resendEmailId: resendEmailId || undefined,
+          messageId: data.message_id || undefined,
+        },
       );
       if (isDuplicate) {
-        console.log("Duplicate webhook - already processed email:", resendEmailId ?? data.message_id);
+        console.log(
+          "Duplicate webhook - already processed email:",
+          resendEmailId ?? data.message_id,
+        );
         return;
       }
     }
@@ -388,7 +464,10 @@ export const processInbound = internalAction({
 
     // Loop prevention
     if (fromEmail.endsWith(`@${getAgentDomain()}`)) {
-      console.log("Loop prevention: ignoring email from agent domain", fromEmail);
+      console.log(
+        "Loop prevention: ignoring email from agent domain",
+        fromEmail,
+      );
       return;
     }
 
@@ -426,9 +505,10 @@ export const processInbound = internalAction({
       );
     }
 
-
     // Get all org members for domain detection and primary contact resolution
-    const orgMembers = await ctx.runQuery(internal.orgs.getMembersInternal, { orgId });
+    const orgMembers = await ctx.runQuery(internal.orgs.getMembersInternal, {
+      orgId,
+    });
     const memberEmails = orgMembers
       .map((m: any) => m.user?.email)
       .filter(Boolean) as string[];
@@ -438,9 +518,10 @@ export const processInbound = internalAction({
     const senderMember = orgMembers.find(
       (m: any) => m.user?.email?.toLowerCase() === fromEmail.toLowerCase(),
     );
-    const primaryUserId = senderMember?.userId
-      ?? org.primaryInsuranceContactId
-      ?? firstAdmin?.userId;
+    const primaryUserId =
+      senderMember?.userId ??
+      org.primaryInsuranceContactId ??
+      firstAdmin?.userId;
 
     if (!primaryUserId) {
       console.log("No primary user found for org:", orgId);
@@ -454,7 +535,9 @@ export const processInbound = internalAction({
     const bodyHtml = emailContent.html ?? undefined;
     const attachments = await fetchAttachments(data.email_id);
 
-    const guardedInput = enforceInputLimits([data.subject ?? "", body].join("\n\n"));
+    const guardedInput = enforceInputLimits(
+      [data.subject ?? "", body].join("\n\n"),
+    );
     const injectionCheck = await classifyPromptInjection(guardedInput);
     if (!injectionCheck.safe) {
       console.warn("[security] Prompt injection blocked in inbound email", {
@@ -468,22 +551,27 @@ export const processInbound = internalAction({
     // agentAddress is the canonical address (without +suffix) — used for outbound from and reply-to
     const agentAddress = `${handle}@${getAgentDomain()}`;
     // The actual recipient may include +threadSuffix, so also match that
-    const agentAddressWithSuffix = threadSuffix ? `${handle}+${threadSuffix}@${getAgentDomain()}` : null;
-    const isAgentAddr = (addr: string) => addr === agentAddress || addr === agentAddressWithSuffix;
+    const agentAddressWithSuffix = threadSuffix
+      ? `${handle}+${threadSuffix}@${getAgentDomain()}`
+      : null;
+    const isAgentAddr = (addr: string) =>
+      addr === agentAddress || addr === agentAddressWithSuffix;
 
     // Resolve broker branding once — used for outbound from-name and signature.
     const senderBrokerOrg = brokerOrg.type === "broker" ? brokerOrg : null;
     const whiteLabelingEnabled = isWhiteLabelingEnabled(senderBrokerOrg);
-    const brokerLogoUrl = whiteLabelingEnabled && senderBrokerOrg?.iconStorageId
-      ? await ctx.storage.getUrl(senderBrokerOrg.iconStorageId)
-      : null;
-    const brokerBranding: BrokerBranding | undefined = whiteLabelingEnabled && senderBrokerOrg
-      ? {
-          name: senderBrokerOrg.name,
-          logoUrl: brokerLogoUrl,
-          agentDisplayName: senderBrokerOrg.agentDisplayName,
-        }
-      : undefined;
+    const brokerLogoUrl =
+      whiteLabelingEnabled && senderBrokerOrg?.iconStorageId
+        ? await ctx.storage.getUrl(senderBrokerOrg.iconStorageId)
+        : null;
+    const brokerBranding: BrokerBranding | undefined =
+      whiteLabelingEnabled && senderBrokerOrg
+        ? {
+            name: senderBrokerOrg.name,
+            logoUrl: brokerLogoUrl,
+            agentDisplayName: senderBrokerOrg.agentDisplayName,
+          }
+        : undefined;
     const fromHeader = `${getAgentFromName(brokerBranding)} <${agentAddress}>`;
     const agentInTo = toAddresses.some(isAgentAddr);
     const agentInCc = ccAddresses.some(isAgentAddr);
@@ -491,10 +579,15 @@ export const processInbound = internalAction({
 
     const senderDomain = fromEmail.split("@")[1]?.toLowerCase();
     const companyDomains = getCompanyDomains(org, memberEmails);
-    const isInternal = !!(senderDomain && companyDomains.includes(senderDomain));
+    const isInternal = !!(
+      senderDomain && companyDomains.includes(senderDomain)
+    );
 
     const subjectIsForward = /^Fwd?:/i.test(data.subject ?? "");
-    const bodyIsForward = /(?:-{5,}\s*Forwarded message\s*-{5,}|Begin forwarded message:)/i.test(rawBody);
+    const bodyIsForward =
+      /(?:-{5,}\s*Forwarded message\s*-{5,}|Begin forwarded message:)/i.test(
+        rawBody,
+      );
     const isForwarded = subjectIsForward || bodyIsForward;
 
     const mode: "direct" | "cc" | "forward" | "unknown" =
@@ -519,7 +612,10 @@ export const processInbound = internalAction({
           (h) => h.name?.toLowerCase() === lower,
         )?.value;
       } else if (rawHeaders && typeof rawHeaders === "object") {
-        return (rawHeaders as Record<string, string>)[lower] ?? (rawHeaders as Record<string, string>)[name];
+        return (
+          (rawHeaders as Record<string, string>)[lower] ??
+          (rawHeaders as Record<string, string>)[name]
+        );
       }
       return undefined;
     }
@@ -534,10 +630,9 @@ export const processInbound = internalAction({
     // First: try resolving via +threadSuffix in the recipient address.
     // This is the most reliable method because threadEmail is unique per thread.
     if (threadSuffix && agentAddressWithSuffix) {
-      const unifiedThread = await ctx.runQuery(
-        internal.threads.findByEmail,
-        { threadEmail: agentAddressWithSuffix },
-      );
+      const unifiedThread = await ctx.runQuery(internal.threads.findByEmail, {
+        threadEmail: agentAddressWithSuffix,
+      });
       if (unifiedThread) {
         existingThreadId = unifiedThread._id;
         threadRootMode = unifiedThread.emailMode;
@@ -587,7 +682,9 @@ export const processInbound = internalAction({
 
     for (const att of attachments) {
       try {
-        const blob = new Blob([new Uint8Array(att.buffer)], { type: att.content_type });
+        const blob = new Blob([new Uint8Array(att.buffer)], {
+          type: att.content_type,
+        });
         const fileId = await ctx.storage.store(blob);
         attachmentRecords.push({
           filename: att.filename,
@@ -633,17 +730,21 @@ export const processInbound = internalAction({
         contentHtml: bodyHtml,
         messageId,
         resendEmailId: resendEmailId || undefined,
-        attachments: attachmentRecords.length > 0 ? attachmentRecords as any : undefined,
+        attachments:
+          attachmentRecords.length > 0 ? (attachmentRecords as any) : undefined,
       },
     );
 
     // Unknown mode: notify the primary insurance contact (or first admin)
     if (effectiveMode === "unknown") {
       try {
-        const notifyUserId = org.primaryInsuranceContactId ?? firstAdmin?.userId;
+        const notifyUserId =
+          org.primaryInsuranceContactId ?? firstAdmin?.userId;
         let notifyEmail: string | undefined;
         if (notifyUserId) {
-          const notifyUser = await ctx.runQuery(internal.users.getInternal, { id: notifyUserId });
+          const notifyUser = await ctx.runQuery(internal.users.getInternal, {
+            id: notifyUserId,
+          });
           notifyEmail = notifyUser?.email;
         }
         if (!notifyEmail) {
@@ -669,10 +770,16 @@ export const processInbound = internalAction({
         const fullText = notificationBody + signature.text;
 
         const autoLink = (text: string) =>
-          text.replace(/(https?:\/\/[^\s<)]+)/g, '<a href="$1" style="color:#2563eb;text-decoration:underline">$1</a>');
+          text.replace(
+            /(https?:\/\/[^\s<)]+)/g,
+            '<a href="$1" style="color:#2563eb;text-decoration:underline">$1</a>',
+          );
         const htmlBody = notificationBody
           .split("\n\n")
-          .map((p) => `<p style="margin:0 0 12px;line-height:1.5">${autoLink(p.replace(/\n/g, "<br>"))}</p>`)
+          .map(
+            (p) =>
+              `<p style="margin:0 0 12px;line-height:1.5">${autoLink(p.replace(/\n/g, "<br>"))}</p>`,
+          )
           .join("\n");
         const fullHtml = htmlBody + signature.html;
 
@@ -686,7 +793,9 @@ export const processInbound = internalAction({
           html: fullHtml,
         };
 
-        const sendResult = await sendResendEmail(emailPayload as Parameters<typeof sendResendEmail>[0]);
+        const sendResult = await sendResendEmail(
+          emailPayload as Parameters<typeof sendResendEmail>[0],
+        );
         if (!sendResult.ok) {
           throw new Error(`Failed to send notification: ${sendResult.error}`);
         }
@@ -724,7 +833,9 @@ export const processInbound = internalAction({
       const siteUrl = process.env.SITE_URL ?? "https://glass.claritylabs.inc";
 
       // Get primary user profile for name reference
-      const primaryUser = await ctx.runQuery(internal.users.getInternal, { id: primaryUserId });
+      const primaryUser = await ctx.runQuery(internal.users.getInternal, {
+        id: primaryUserId,
+      });
       const userName = primaryUser?.name?.split(/\s+/)[0];
 
       // Resolve the connected broker (if this is a client org) for COI/broker prompts.
@@ -732,13 +843,18 @@ export const processInbound = internalAction({
       let brokerContactName: string | undefined;
       let brokerContactEmail: string | undefined;
       if (org.type === "client" && org.brokerOrgId) {
-        const brokerRecord = await ctx.runQuery(internal.orgs.getInternal, { id: org.brokerOrgId });
+        const brokerRecord = await ctx.runQuery(internal.orgs.getInternal, {
+          id: org.brokerOrgId,
+        });
         if (brokerRecord) {
           brokerName = brokerRecord.name;
           if (brokerRecord.primaryInsuranceContactId) {
-            const brokerContact = await ctx.runQuery(internal.users.getInternal, {
-              id: brokerRecord.primaryInsuranceContactId,
-            });
+            const brokerContact = await ctx.runQuery(
+              internal.users.getInternal,
+              {
+                id: brokerRecord.primaryInsuranceContactId,
+              },
+            );
             brokerContactName = brokerContact?.name;
             brokerContactEmail = brokerContact?.email;
           }
@@ -751,17 +867,26 @@ export const processInbound = internalAction({
           coiHandling: org.coiHandling,
           broker: brokerName
             ? {
-              name: brokerName,
-              contactName: brokerContactName,
-              contactEmail: brokerContactEmail,
-            }
+                name: brokerName,
+                contactName: brokerContactName,
+                contactEmail: brokerContactEmail,
+              }
             : undefined,
         },
-        mode: effectiveMode === "direct" ? "direct" : effectiveMode === "cc" ? "cc" : "forward",
+        mode:
+          effectiveMode === "direct"
+            ? "direct"
+            : effectiveMode === "cc"
+              ? "cc"
+              : "forward",
         userName,
         siteUrl,
       });
-      const { context: policyContext, relevantPolicyIds, relevantQuoteIds } = await buildDocumentContext(
+      const {
+        context: policyContext,
+        relevantPolicyIds,
+        relevantQuoteIds,
+      } = await buildDocumentContext(
         ctx,
         orgId,
         policies,
@@ -774,12 +899,20 @@ export const processInbound = internalAction({
       ]);
 
       // Cross-thread conversation memory (vector search)
-      const memoryContext = await buildConversationMemoryContext(ctx, orgId, subject + " " + body);
+      const memoryContext = await buildConversationMemoryContext(
+        ctx,
+        orgId,
+        subject + " " + body,
+      );
       const orgMemoryBlock = await buildIntelligenceContext(
         ctx,
         orgId,
         subject + " " + body,
         relevantPolicyIds.map((id: string) => id),
+      );
+      const requirementsBlock = await buildComplianceRequirementsContext(
+        ctx,
+        orgId,
       );
 
       // Build messages — include thread history for context
@@ -812,8 +945,8 @@ export const processInbound = internalAction({
       const emailText = `Subject: ${subject}\n\nFrom: ${fromName ? `${fromName} <${fromEmail}>` : fromEmail}\n\n${body}`;
 
       // Only include supported text/PDF attachments in Claude context
-      const claudeAttachments = attachments.filter(
-        (a) => SUPPORTED_ATTACHMENT_TYPES.has(a.content_type),
+      const claudeAttachments = attachments.filter((a) =>
+        SUPPORTED_ATTACHMENT_TYPES.has(a.content_type),
       );
 
       if (claudeAttachments.length > 0) {
@@ -862,7 +995,8 @@ export const processInbound = internalAction({
         policyContext +
         buildPolicyToolInstructions(10) +
         memoryContext +
-        orgMemoryBlock;
+        orgMemoryBlock +
+        requirementsBlock;
       if (claudeAttachments.length > 0) {
         const filenames = claudeAttachments.map((a) => a.filename).join(", ");
         systemContext += `\n\nATTACHMENTS: The user's email includes ${claudeAttachments.length} attachment(s): ${filenames}. The content has been provided to you. Reference relevant information from attachments in your response when applicable.`;
@@ -871,10 +1005,16 @@ export const processInbound = internalAction({
       // ── Build agentic tool set — the model decides whether to answer,
       // generate a COI, or extract an uploaded policy from attachments. ──
       // Map attachment filenames -> storageIds so the agent can reference them.
-      const attachmentIndex: Record<string, { fileId: string; contentType: string }> = {};
+      const attachmentIndex: Record<
+        string,
+        { fileId: string; contentType: string }
+      > = {};
       for (const rec of attachmentRecords) {
         if (rec.fileId) {
-          attachmentIndex[rec.filename] = { fileId: rec.fileId, contentType: rec.contentType };
+          attachmentIndex[rec.filename] = {
+            fileId: rec.fileId,
+            contentType: rec.contentType,
+          };
         }
       }
 
@@ -895,7 +1035,10 @@ export const processInbound = internalAction({
           ],
           memberEmails,
         );
-        const recipientCheck = validateEmailRecipient(recipient, allowedRecipients);
+        const recipientCheck = validateEmailRecipient(
+          recipient,
+          allowedRecipients,
+        );
         if (!recipientCheck.allowed) {
           console.warn("[security] Inbound email recipient blocked", {
             inboundMessageId,
@@ -911,20 +1054,32 @@ export const processInbound = internalAction({
       const emailTools = {
         lookup_policy: {
           ...lookupPolicy,
-          execute: async (params: { query: string; policyType?: string; carrier?: string }) => {
+          execute: async (params: {
+            query: string;
+            policyType?: string;
+            carrier?: string;
+          }) => {
             const scored = (policies as any[])
               .map((p) => ({
                 policy: p,
-                score: policySearchScore(p, params.query, params.policyType, params.carrier),
+                score: policySearchScore(
+                  p,
+                  params.query,
+                  params.policyType,
+                  params.carrier,
+                ),
               }))
               .filter((p) => p.score > 0)
               .sort((a, b) => b.score - a.score);
-            const matches = scored.length > 0
-              ? scored.map((s) => s.policy)
-              : (policies as any[]).slice(0, 5);
-            if (matches.length === 0) return "No policies found for this organization.";
+            const matches =
+              scored.length > 0
+                ? scored.map((s) => s.policy)
+                : (policies as any[]).slice(0, 5);
+            if (matches.length === 0)
+              return "No policies found for this organization.";
             for (const policy of matches.slice(0, 5)) {
-              if (policy?._id) referencedPolicySourceIds.add(String(policy._id));
+              if (policy?._id)
+                referencedPolicySourceIds.add(String(policy._id));
             }
             return matches.slice(0, 5).map((p: any) => ({
               id: p._id,
@@ -936,7 +1091,9 @@ export const processInbound = internalAction({
               expiration: p.expirationDate,
               premium: p.premium,
               coverages: (p.coverages ?? []).map((c: any) => ({
-                name: c.name, limit: c.limit, deductible: c.deductible,
+                name: c.name,
+                limit: c.limit,
+                deductible: c.deductible,
               })),
             }));
           },
@@ -950,25 +1107,39 @@ export const processInbound = internalAction({
             );
             if (!policy || policy.orgId !== orgId) return "Policy not found.";
             referencedPolicySourceIds.add(String(policy._id));
-            return searchPolicyDocumentWithSourceSpans(ctx, policy, params.query, 8);
+            return searchPolicyDocumentWithSourceSpans(
+              ctx,
+              policy,
+              params.query,
+              8,
+            );
           },
         },
         create_policy_change_request: {
           ...createPolicyChangeRequest,
-          execute: async (params: { requestKind?: PceRequestKind; requestText: string; policyId?: string; evidenceSourceIds?: string[] }) => {
-            if (params.policyId) referencedPolicySourceIds.add(String(params.policyId));
+          execute: async (params: {
+            requestKind?: PceRequestKind;
+            requestText: string;
+            policyId?: string;
+            evidenceSourceIds?: string[];
+          }) => {
+            if (params.policyId)
+              referencedPolicySourceIds.add(String(params.policyId));
             const intake = evaluatePceIntake({
               requestKind: params.requestKind,
               requestText: params.requestText,
             });
             if (!intake.allowed) return intake.message;
-            const result = await ctx.runAction(internal.actions.policyChangeRequests.createFromEmailForThread, {
-              orgId,
-              userId: primaryUserId,
-              policyId: params.policyId as Id<"policies"> | undefined,
-              requestText: params.requestText,
-              evidenceSourceIds: params.evidenceSourceIds,
-            });
+            const result = await ctx.runAction(
+              internal.actions.policyChangeRequests.createFromEmailForThread,
+              {
+                orgId,
+                userId: primaryUserId,
+                policyId: params.policyId as Id<"policies"> | undefined,
+                requestText: params.requestText,
+                evidenceSourceIds: params.evidenceSourceIds,
+              },
+            );
             if (result?.error) return result.error;
             return {
               status: "created",
@@ -981,19 +1152,46 @@ export const processInbound = internalAction({
         compare_coverages: {
           ...compareCoverages,
           execute: async (params: { policyId1: string; policyId2: string }) => {
-            const p1 = (policies as any[]).find((p) => p._id === params.policyId1);
-            const p2 = (policies as any[]).find((p) => p._id === params.policyId2);
+            const p1 = (policies as any[]).find(
+              (p) => p._id === params.policyId1,
+            );
+            const p2 = (policies as any[]).find(
+              (p) => p._id === params.policyId2,
+            );
             if (!p1 || !p2) return "One or both policies not found.";
             referencedPolicySourceIds.add(String(p1._id));
             referencedPolicySourceIds.add(String(p2._id));
             const mapP = (p: any) => ({
-              id: p._id, carrier: p.security, type: p.policyTypes, limits: p.limits,
-              deductibles: p.deductibles, premium: p.premium,
+              id: p._id,
+              carrier: p.security,
+              type: p.policyTypes,
+              limits: p.limits,
+              deductibles: p.deductibles,
+              premium: p.premium,
               coverages: (p.coverages ?? []).map((c: any) => ({
-                name: c.name, limit: c.limit, deductible: c.deductible,
+                name: c.name,
+                limit: c.limit,
+                deductible: c.deductible,
               })),
             });
             return { policy1: mapP(p1), policy2: mapP(p2) };
+          },
+        },
+        lookup_compliance_requirements: {
+          ...lookupComplianceRequirements,
+          execute: async (params: {
+            query?: string;
+            appliesTo?: "vendors" | "own_org" | "both" | "all";
+          }) => {
+            const requirements = await ctx.runQuery(
+              internal.compliance.listRequirementsInternal,
+              { orgId },
+            );
+            const matches = filterComplianceRequirements(requirements, params);
+            if (matches.length === 0) {
+              return "No matching compliance requirements found. Vendor/contractor requirements and internal requirements are stored separately.";
+            }
+            return matches.map(formatComplianceRequirement).join("\n");
           },
         },
         ...(isInternal && effectiveMode === "direct"
@@ -1008,37 +1206,54 @@ export const processInbound = internalAction({
                 senderEmail: fromEmail,
                 defaultTo: fromEmail,
                 defaultRecipientName: fromName,
-                defaultBcc: org.bccRequesterOnAgentEmails !== false ? [fromEmail] : undefined,
+                defaultBcc:
+                  org.bccRequesterOnAgentEmails !== false
+                    ? [fromEmail]
+                    : undefined,
                 subjectHint: subject,
                 inReplyTo: messageId,
                 references: messageId,
                 allowedRecipients: [
-                  ...new Set([
-                    ...collectAllowedRecipients(
-                      [
-                        ...threadMessagesForGuards.map((m) => ({ ...m, channel: "email" })),
-                        {
-                          channel: "email",
-                          fromEmail,
-                          toAddresses,
-                          ccAddresses,
-                        },
-                      ],
-                      memberEmails,
-                    ),
-                    ...memberEmails,
-                  ].map((email) => email.toLowerCase())),
+                  ...new Set(
+                    [
+                      ...collectAllowedRecipients(
+                        [
+                          ...threadMessagesForGuards.map((m) => ({
+                            ...m,
+                            channel: "email",
+                          })),
+                          {
+                            channel: "email",
+                            fromEmail,
+                            toAddresses,
+                            ccAddresses,
+                          },
+                        ],
+                        memberEmails,
+                      ),
+                      ...memberEmails,
+                    ].map((email) => email.toLowerCase()),
+                  ),
                 ],
                 availableAttachments: attachmentRecords
-                  .filter((rec): rec is typeof rec & { fileId: Id<"_storage"> } => !!rec.fileId)
+                  .filter(
+                    (rec): rec is typeof rec & { fileId: Id<"_storage"> } =>
+                      !!rec.fileId,
+                  )
                   .map((rec) => ({
                     filename: rec.filename,
                     contentType: rec.contentType,
                     size: rec.size,
                     fileId: rec.fileId,
                   })),
-                referencedPolicyIds: referencedPolicySourceIds.size > 0 ? ([...referencedPolicySourceIds] as Id<"policies">[]) : undefined,
-                referencedQuoteIds: relevantQuoteIds.length > 0 ? (relevantQuoteIds as Id<"policies">[]) : undefined,
+                referencedPolicyIds:
+                  referencedPolicySourceIds.size > 0
+                    ? ([...referencedPolicySourceIds] as Id<"policies">[])
+                    : undefined,
+                referencedQuoteIds:
+                  relevantQuoteIds.length > 0
+                    ? (relevantQuoteIds as Id<"policies">[])
+                    : undefined,
                 autoSendEmails: org.autoSendEmails === true,
                 emailSendDelay: org.emailSendDelay,
                 autoGenerateCoi: org.autoGenerateCoi,
@@ -1063,9 +1278,19 @@ export const processInbound = internalAction({
           : {}),
         save_note: {
           ...saveNote,
-          execute: async (params: { content: string; type: string; policyId?: string }) => {
-            const typeMap: Record<string, "fact" | "preference" | "risk_note" | "observation"> = {
-              fact: "fact", preference: "preference", risk_note: "risk_note", observation: "observation",
+          execute: async (params: {
+            content: string;
+            type: string;
+            policyId?: string;
+          }) => {
+            const typeMap: Record<
+              string,
+              "fact" | "preference" | "risk_note" | "observation"
+            > = {
+              fact: "fact",
+              preference: "preference",
+              risk_note: "risk_note",
+              observation: "observation",
             };
             await ctx.runMutation(internal.orgMemory.upsert, {
               orgId,
@@ -1079,7 +1304,10 @@ export const processInbound = internalAction({
         },
         generate_coi: {
           ...generateCoiTool,
-          execute: async (params: { policyId: string; certificateHolder?: string }) => {
+          execute: async (params: {
+            policyId: string;
+            certificateHolder?: string;
+          }) => {
             referencedPolicySourceIds.add(String(params.policyId));
             const autoGenerate = org.autoGenerateCoi !== false;
             if (!autoGenerate) {
@@ -1099,7 +1327,9 @@ export const processInbound = internalAction({
                   policyId: params.policyId as Id<"policies">,
                   orgId,
                   certificateHolder: params.certificateHolder,
-                  certificateHolderName: params.certificateHolder?.split(/\r?\n/)[0]?.trim() || undefined,
+                  certificateHolderName:
+                    params.certificateHolder?.split(/\r?\n/)[0]?.trim() ||
+                    undefined,
                   source: "email",
                   createdByUserId: primaryUserId,
                 },
@@ -1147,7 +1377,8 @@ export const processInbound = internalAction({
                   userId: primaryUserId,
                 },
               );
-              if ("error" in result) return `Extraction failed: ${result.error}`;
+              if ("error" in result)
+                return `Extraction failed: ${result.error}`;
               const names = params.files.map((f) => f.fileName).join(", ");
               return `Extraction started for ${params.files.length} file(s) [${names}] as a single policy. Policy ID: ${result.policyId}. It will appear in the policy library once processing completes.`;
             } catch (err) {
@@ -1163,8 +1394,12 @@ export const processInbound = internalAction({
         const pdfAttachments = claudeAttachments
           .filter((a) => a.content_type === "application/pdf")
           .map((a) => {
-            const rec = attachmentRecords.find((r) => r.filename === a.filename);
-            return rec?.fileId ? `- "${a.filename}" (storageId: ${rec.fileId})` : null;
+            const rec = attachmentRecords.find(
+              (r) => r.filename === a.filename,
+            );
+            return rec?.fileId
+              ? `- "${a.filename}" (storageId: ${rec.fileId})`
+              : null;
           })
           .filter(Boolean);
         if (pdfAttachments.length > 0) {
@@ -1200,14 +1435,17 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
       }
 
       // ── Detect "Sending email to..." pattern for third-party sends ──
-      const sendMatch = responseBody.match(/\*?\*?Sending email to (.+?)\.\.\.\*?\*?\s*\n([\s\S]+)$/i);
+      const sendMatch = responseBody.match(
+        /\*?\*?Sending email to (.+?)\.\.\.\*?\*?\s*\n([\s\S]+)$/i,
+      );
       if (isInternal && sendMatch) {
         try {
           const emailBody = sendMatch[2].trim();
           const recipientHint = sendMatch[1].trim();
           const hintEmailMatch = recipientHint.match(/[\w.+-]+@[\w.-]+\.\w+/);
           const thirdPartyEmail = hintEmailMatch?.[0];
-          if (!thirdPartyEmail) throw new Error("No recipient email found in agent output");
+          if (!thirdPartyEmail)
+            throw new Error("No recipient email found in agent output");
           validateThirdPartyRecipient(thirdPartyEmail);
 
           const stripMd = (text: string) => {
@@ -1222,8 +1460,14 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
             const ls = 'style="color:#2563eb;text-decoration:underline"';
             let r = text;
             r = r.replace(/^#{1,6}\s+(.+)$/gm, "<strong>$1</strong>");
-            r = r.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, `<a href="$2" ${ls}>$1</a>`);
-            r = r.replace(/(?<!href=")(https?:\/\/[^\s<)]+)/g, `<a href="$1" ${ls}>$1</a>`);
+            r = r.replace(
+              /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,
+              `<a href="$2" ${ls}>$1</a>`,
+            );
+            r = r.replace(
+              /(?<!href=")(https?:\/\/[^\s<)]+)/g,
+              `<a href="$1" ${ls}>$1</a>`,
+            );
             r = r.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
             r = r.replace(/\*(.+?)\*/g, "<em>$1</em>");
             return r;
@@ -1231,13 +1475,22 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
 
           const sig = buildSignature(agentAddress, brokerBranding);
           const plainText = stripMd(emailBody) + sig.text;
-          const htmlBody = emailBody
-            .split("\n\n")
-            .map((p) => `<p style="margin:0 0 12px;line-height:1.5">${mdToHtml(p.replace(/\n/g, "<br>"))}</p>`)
-            .join("\n") + sig.html;
+          const htmlBody =
+            emailBody
+              .split("\n\n")
+              .map(
+                (p) =>
+                  `<p style="margin:0 0 12px;line-height:1.5">${mdToHtml(p.replace(/\n/g, "<br>"))}</p>`,
+              )
+              .join("\n") + sig.html;
 
-          const sendSubject = subject.replace(/^\[Glass\]\s*Help needed:\s*/i, "");
-          const replySub = sendSubject.startsWith("Re:") ? sendSubject : `Re: ${sendSubject}`;
+          const sendSubject = subject.replace(
+            /^\[Glass\]\s*Help needed:\s*/i,
+            "",
+          );
+          const replySub = sendSubject.startsWith("Re:")
+            ? sendSubject
+            : `Re: ${sendSubject}`;
 
           const sendCc = [fromEmail]; // CC the internal user who gave the instruction
 
@@ -1252,7 +1505,7 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
           if (messageId) {
             sendPayload.headers = {
               "In-Reply-To": messageId,
-              "References": messageId,
+              References: messageId,
             };
           }
 
@@ -1262,19 +1515,31 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
           if (sendDelay > 0 && unifiedThreadId) {
             // Queue email with delay
             const scheduledSendTime = Date.now() + sendDelay * 1000;
-            const pendingEmailId = await ctx.runMutation(internal.pendingEmails.create, {
-              orgId,
-              threadId: unifiedThreadId,
-              emailPayload: JSON.stringify(sendPayload),
-              scheduledSendTime,
-              recipientEmail: thirdPartyEmail,
-              ccAddresses: sendCc,
-              subject: replySub,
-              emailBody,
-              attachments: generatedCoiAttachments.length > 0 ? generatedCoiAttachments : undefined,
-              referencedPolicyIds: referencedPolicySourceIds.size > 0 ? ([...referencedPolicySourceIds] as Id<"policies">[]) : undefined,
-              referencedQuoteIds: relevantQuoteIds.length > 0 ? (relevantQuoteIds as Id<"policies">[]) : undefined,
-            });
+            const pendingEmailId = await ctx.runMutation(
+              internal.pendingEmails.create,
+              {
+                orgId,
+                threadId: unifiedThreadId,
+                emailPayload: JSON.stringify(sendPayload),
+                scheduledSendTime,
+                recipientEmail: thirdPartyEmail,
+                ccAddresses: sendCc,
+                subject: replySub,
+                emailBody,
+                attachments:
+                  generatedCoiAttachments.length > 0
+                    ? generatedCoiAttachments
+                    : undefined,
+                referencedPolicyIds:
+                  referencedPolicySourceIds.size > 0
+                    ? ([...referencedPolicySourceIds] as Id<"policies">[])
+                    : undefined,
+                referencedQuoteIds:
+                  relevantQuoteIds.length > 0
+                    ? (relevantQuoteIds as Id<"policies">[])
+                    : undefined,
+              },
+            );
 
             // Schedule the actual send
             await ctx.scheduler.runAfter(
@@ -1285,10 +1550,16 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
           } else {
             // Send immediately (delay = 0 or no unified thread)
             if (generatedCoiAttachments.length > 0) {
-              sendPayload.attachments = await toResendAttachments(ctx, generatedCoiAttachments);
+              sendPayload.attachments = await toResendAttachments(
+                ctx,
+                generatedCoiAttachments,
+              );
             }
-            const sendOutcome = await sendResendEmail(sendPayload as Parameters<typeof sendResendEmail>[0]);
-            if (!sendOutcome.ok) throw new Error(`Failed to send email: ${sendOutcome.error}`);
+            const sendOutcome = await sendResendEmail(
+              sendPayload as Parameters<typeof sendResendEmail>[0],
+            );
+            if (!sendOutcome.ok)
+              throw new Error(`Failed to send email: ${sendOutcome.error}`);
             const sentMsgId = sendOutcome.id;
 
             await ctx.runMutation(internal.threads.insertEmailMessage, {
@@ -1300,8 +1571,14 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
               ccAddresses: sendCc,
               subject: replySub,
               responseMessageId: sentMsgId,
-              referencedPolicyIds: referencedPolicySourceIds.size > 0 ? ([...referencedPolicySourceIds] as Id<"policies">[]) : undefined,
-              referencedQuoteIds: relevantQuoteIds.length > 0 ? (relevantQuoteIds as Id<"policies">[]) : undefined,
+              referencedPolicyIds:
+                referencedPolicySourceIds.size > 0
+                  ? ([...referencedPolicySourceIds] as Id<"policies">[])
+                  : undefined,
+              referencedQuoteIds:
+                relevantQuoteIds.length > 0
+                  ? (relevantQuoteIds as Id<"policies">[])
+                  : undefined,
             });
           }
           return; // done — third-party send handled
@@ -1328,7 +1605,10 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
       const stripMarkdown = (text: string) => {
         let result = text;
         result = result.replace(/^#{1,6}\s+(.+)$/gm, "$1");
-        result = result.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, "$1 ($2)");
+        result = result.replace(
+          /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,
+          "$1 ($2)",
+        );
         result = result.replace(/\*\*(.+?)\*\*/g, "$1");
         result = result.replace(/\*(.+?)\*/g, "$1");
         return result;
@@ -1341,17 +1621,24 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
       const markdownToHtml = (text: string) => {
         let result = text;
         result = result.replace(/^#{1,6}\s+(.+)$/gm, "<strong>$1</strong>");
-        result = result.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,
-          `<a href="$2" ${linkStyle}>$1</a>`);
-        result = result.replace(/(?<!href=")(https?:\/\/[^\s<)]+)/g,
-          `<a href="$1" ${linkStyle}>$1</a>`);
+        result = result.replace(
+          /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,
+          `<a href="$2" ${linkStyle}>$1</a>`,
+        );
+        result = result.replace(
+          /(?<!href=")(https?:\/\/[^\s<)]+)/g,
+          `<a href="$1" ${linkStyle}>$1</a>`,
+        );
         result = result.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
         result = result.replace(/\*(.+?)\*/g, "<em>$1</em>");
         return result;
       };
       const bodyHtmlContent = responseBody
         .split("\n\n")
-        .map((p) => `<p style="margin:0 0 12px;line-height:1.5">${markdownToHtml(p.replace(/\n/g, "<br>"))}</p>`)
+        .map(
+          (p) =>
+            `<p style="margin:0 0 12px;line-height:1.5">${markdownToHtml(p.replace(/\n/g, "<br>"))}</p>`,
+        )
         .join("\n");
       const fullReplyHtml = bodyHtmlContent + signature.html;
 
@@ -1377,16 +1664,23 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
       }
 
       // Ensure user is CC'd on cc/forward replies
-      if ((effectiveMode === "cc" || effectiveMode === "forward") && primaryUserEmail) {
-        if (replyTo !== primaryUserEmail && !replyCc.includes(primaryUserEmail)) {
+      if (
+        (effectiveMode === "cc" || effectiveMode === "forward") &&
+        primaryUserEmail
+      ) {
+        if (
+          replyTo !== primaryUserEmail &&
+          !replyCc.includes(primaryUserEmail)
+        ) {
           replyCc.push(primaryUserEmail);
         }
       }
 
       // Send reply via Resend
-      const cleanSubject = effectiveMode === "forward"
-        ? subject.replace(/^Fwd?:\s*/i, "")
-        : subject;
+      const cleanSubject =
+        effectiveMode === "forward"
+          ? subject.replace(/^Fwd?:\s*/i, "")
+          : subject;
       const replySubject = cleanSubject.startsWith("Re:")
         ? cleanSubject
         : `Re: ${cleanSubject}`;
@@ -1399,7 +1693,10 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
         html: fullReplyHtml,
       };
       if (generatedCoiAttachments.length > 0) {
-        emailPayload.attachments = await toResendAttachments(ctx, generatedCoiAttachments);
+        emailPayload.attachments = await toResendAttachments(
+          ctx,
+          generatedCoiAttachments,
+        );
       }
 
       if (replyCc.length > 0) {
@@ -1429,7 +1726,9 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
         emailPayload.headers = replyHeaders;
       }
 
-      const sendResult = await sendResendEmail(emailPayload as Parameters<typeof sendResendEmail>[0]);
+      const sendResult = await sendResendEmail(
+        emailPayload as Parameters<typeof sendResendEmail>[0],
+      );
       if (!sendResult.ok) {
         throw new Error(`Failed to send reply: ${sendResult.error}`);
       }
@@ -1443,9 +1742,18 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
         toAddresses: [replyTo],
         ccAddresses: replyCc.length > 0 ? replyCc : undefined,
         responseMessageId: sentMessageId,
-        referencedPolicyIds: referencedPolicySourceIds.size > 0 ? ([...referencedPolicySourceIds] as Id<"policies">[]) : undefined,
-        referencedQuoteIds: relevantQuoteIds.length > 0 ? (relevantQuoteIds as Id<"policies">[]) : undefined,
-        attachments: generatedCoiAttachments.length > 0 ? generatedCoiAttachments : undefined,
+        referencedPolicyIds:
+          referencedPolicySourceIds.size > 0
+            ? ([...referencedPolicySourceIds] as Id<"policies">[])
+            : undefined,
+        referencedQuoteIds:
+          relevantQuoteIds.length > 0
+            ? (relevantQuoteIds as Id<"policies">[])
+            : undefined,
+        attachments:
+          generatedCoiAttachments.length > 0
+            ? generatedCoiAttachments
+            : undefined,
       });
 
       // ── Phase E: extract durable facts from this email exchange into orgMemory ──
@@ -1475,13 +1783,25 @@ Output ONLY the JSON array — no prose, no code fences.`,
         } catch {
           // ignore parse failures
         }
-        const allowedTypes = new Set(["fact", "preference", "risk_note", "observation"]);
+        const allowedTypes = new Set([
+          "fact",
+          "preference",
+          "risk_note",
+          "observation",
+        ]);
         const items = parsed
-          .filter((it) => it && typeof it.content === "string" && allowedTypes.has(it.type))
+          .filter(
+            (it) =>
+              it && typeof it.content === "string" && allowedTypes.has(it.type),
+          )
           .slice(0, 5)
           .map((it) => ({
             orgId,
-            type: it.type as "fact" | "preference" | "risk_note" | "observation",
+            type: it.type as
+              | "fact"
+              | "preference"
+              | "risk_note"
+              | "observation",
             content: it.content.trim(),
             source: "email" as const,
           }))
@@ -1507,7 +1827,9 @@ Output ONLY the JSON array — no prose, no code fences.`,
       const message = error instanceof Error ? error.message : String(error);
       console.error("Agent processing error:", message);
       try {
-        const failureSubject = subject.startsWith("Re:") ? subject : `Re: ${subject}`;
+        const failureSubject = subject.startsWith("Re:")
+          ? subject
+          : `Re: ${subject}`;
         const failureHtml = `<p style="margin:0 0 12px;line-height:1.5">${FATAL_ACTION_FAILED_MESSAGE}</p>`;
         const failurePayload: Record<string, unknown> = {
           from: fromHeader,
@@ -1519,10 +1841,12 @@ Output ONLY the JSON array — no prose, no code fences.`,
         if (messageId) {
           failurePayload.headers = {
             "In-Reply-To": messageId,
-            "References": messageId,
+            References: messageId,
           };
         }
-        const sendResult = await sendResendEmail(failurePayload as Parameters<typeof sendResendEmail>[0]);
+        const sendResult = await sendResendEmail(
+          failurePayload as Parameters<typeof sendResendEmail>[0],
+        );
         const sentMessageId = sendResult.ok ? sendResult.id : undefined;
         if (!sendResult.ok) {
           console.warn("Failed to send agent failure email:", sendResult.error);
@@ -1537,7 +1861,10 @@ Output ONLY the JSON array — no prose, no code fences.`,
           responseMessageId: sentMessageId,
         });
       } catch (notifyError) {
-        console.warn("Failed to record/send agent failure response:", notifyError);
+        console.warn(
+          "Failed to record/send agent failure response:",
+          notifyError,
+        );
       }
     }
   },

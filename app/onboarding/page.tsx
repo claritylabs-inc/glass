@@ -22,13 +22,21 @@ export default function OnboardingRoutePage() {
 
     const requestedBrokerFlow = searchParams?.get("type") === "broker";
     const orgType = (viewerOrg?.org as { type?: "broker" | "client" } | undefined)?.type;
+    const source = searchParams?.get("source");
+    const client = searchParams?.get("client");
+    const setupParams = new URLSearchParams();
+    if (source === "vendor-invite") setupParams.set("source", source);
+    if (client) setupParams.set("client", client);
+    const setupHref = setupParams.size > 0
+      ? `/onboarding/setup?${setupParams.toString()}`
+      : "/onboarding/setup";
 
     if (requestedBrokerFlow || orgType === "broker") {
       router.replace("/onboarding/broker");
       return;
     }
 
-    router.replace("/onboarding/setup");
+    router.replace(setupHref);
   }, [viewer, viewerOrg, router, searchParams]);
 
   return (

@@ -51,6 +51,29 @@ export function anonymousParticipantLabel(address: string, ordinal: number): str
   return `Guest ${ordinal}`;
 }
 
+function firstName(value: string | undefined): string | undefined {
+  const normalized = value?.trim().replace(/\s+/g, " ");
+  if (!normalized) return undefined;
+  return normalized.split(" ")[0];
+}
+
+export function buildImessageGroupMemberTitle(
+  participants: Array<{ address: string; displayName?: string; userName?: string }>,
+): string | undefined {
+  const names = participants.map((participant, index) =>
+    firstName(participant.userName) ??
+    firstName(participant.displayName) ??
+    anonymousParticipantLabel(participant.address, index + 1),
+  );
+  if (names.length === 0) return undefined;
+
+  const visibleNames = names.slice(0, 5);
+  const remainingCount = names.length - visibleNames.length;
+  return remainingCount > 0
+    ? `${visibleNames.join(", ")} +${remainingCount}`
+    : visibleNames.join(", ");
+}
+
 export function resolveImessageConversationScope(params: {
   senderAddress: string;
   participants: ResolvedImessageParticipant[];

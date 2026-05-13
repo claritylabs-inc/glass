@@ -12,7 +12,8 @@ import type { Id } from "@/convex/_generated/dataModel";
 export default function ClientsPage() {
   const currentOrg = useCurrentOrg();
   const [inviteOpen, setInviteOpen] = useState(false);
-  const [resumeClientOrgId, setResumeClientOrgId] = useState<Id<"organizations"> | null>(null);
+  const [resumeClientOrgId, setResumeClientOrgId] =
+    useState<Id<"organizations"> | null>(null);
 
   if (!currentOrg) {
     return (
@@ -47,7 +48,7 @@ export default function ClientsPage() {
   };
 
   const headerActions = (
-    <PillButton size="compact" onClick={openNew}>
+    <PillButton size="compact" variant="secondary" onClick={openNew}>
       <UserPlus className="h-3.5 w-3.5" />
       Invite client
     </PillButton>
