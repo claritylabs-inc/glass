@@ -1,4 +1,5 @@
 /// <reference types="vite/client" />
+import dayjs from "dayjs";
 import { convexTest } from "convex-test";
 import { expect, test, describe, vi } from "vitest";
 import schema from "../schema";
@@ -43,7 +44,7 @@ describe("sendNotificationEmail", () => {
         status: "unread",
         emailStatus: "scheduled",
         relatedOrgId: brokerOrgId,
-        createdAt: Date.now(),
+        createdAt: dayjs().valueOf(),
       })
     );
 
@@ -56,7 +57,7 @@ describe("sendNotificationEmail", () => {
         type: "policy_delivered_by_broker",
         channel: "email",
         enabled: true,
-        updatedAt: Date.now(),
+        updatedAt: dayjs().valueOf(),
       })
     );
 
@@ -98,7 +99,7 @@ describe("sendNotificationEmail", () => {
     );
     await t.run(async (ctx) =>
       ctx.db.insert("notificationPreferences", {
-        userId, orgId, type: "__all__", channel: "email", enabled: false, updatedAt: Date.now(),
+        userId, orgId, type: "__all__", channel: "email", enabled: false, updatedAt: dayjs().valueOf(),
       })
     );
 
@@ -111,7 +112,7 @@ describe("sendNotificationEmail", () => {
         severity: "info",
         status: "unread",
         emailStatus: "scheduled",
-        createdAt: Date.now(),
+        createdAt: dayjs().valueOf(),
       })
     );
 
@@ -150,7 +151,7 @@ describe("sendNotificationEmail", () => {
         severity: "warning",
         status: "unread",
         emailStatus: "scheduled",
-        createdAt: Date.now(),
+        createdAt: dayjs().valueOf(),
       })
     );
 
@@ -188,7 +189,7 @@ describe("sendNotificationEmail", () => {
         orgId,
         title: "Renewal Review",
         createdBy: userId,
-        lastMessageAt: Date.now(),
+        lastMessageAt: dayjs().valueOf(),
         originChannel: "chat",
       })
     );
@@ -202,7 +203,7 @@ describe("sendNotificationEmail", () => {
         status: "unread",
         emailStatus: "scheduled",
         sourceRef: { threadId },
-        createdAt: Date.now(),
+        createdAt: dayjs().valueOf(),
       })
     );
 
@@ -221,6 +222,86 @@ describe("sendNotificationEmail", () => {
     expect(callBody.html).toContain("Renewal Review");
     expect(callBody.html).toContain('td align="left"');
     expect(callBody.text).toContain("Thread: Renewal Review");
+
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  test("uses deep links for vendor compliance and thread notifications", async () => {
+    const t = convexTest(schema, modules);
+
+    const orgId = await t.run(async (ctx) =>
+      ctx.db.insert("organizations", { name: "Acme Co", type: "client" })
+    );
+    const userId = await t.run(async (ctx) =>
+      ctx.db.insert("users", { name: "Ava", email: "ava@acme.co" })
+    );
+    await t.run(async (ctx) =>
+      ctx.db.insert("orgMemberships", { orgId, userId, role: "admin" })
+    );
+    await t.run(async (ctx) =>
+      ctx.db.insert("notificationPreferences", {
+        userId,
+        orgId,
+        type: "vendor_compliance_gap",
+        channel: "email",
+        enabled: true,
+        updatedAt: dayjs().valueOf(),
+      })
+    );
+    const threadId = await t.run(async (ctx) =>
+      ctx.db.insert("threads", {
+        orgId,
+        title: "Vendor compliance follow-up - Cios",
+        createdBy: userId,
+        lastMessageAt: dayjs().valueOf(),
+        originChannel: "chat",
+      })
+    );
+    const vendorNotificationId = await t.run(async (ctx) =>
+      ctx.db.insert("notifications", {
+        orgId,
+        type: "vendor_compliance_gap",
+        title: "Cios is missing vendor requirements",
+        body: "1 vendor requirement needs attention.",
+        severity: "warning",
+        status: "unread",
+        emailStatus: "scheduled",
+        actionType: "view_vendor_compliance",
+        actionPayload: { vendorOrgId: "vendor123" },
+        createdAt: dayjs().valueOf(),
+      })
+    );
+    const threadNotificationId = await t.run(async (ctx) =>
+      ctx.db.insert("notifications", {
+        orgId,
+        type: "vendor_compliance_gap",
+        title: "Cios follow-up draft ready",
+        body: "A follow-up email draft is ready.",
+        severity: "warning",
+        status: "unread",
+        emailStatus: "scheduled",
+        actionType: "view_thread",
+        actionPayload: { threadId },
+        createdAt: dayjs().valueOf(),
+      })
+    );
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      text: async () => JSON.stringify({ id: "resend-msg-vendor" }),
+    });
+    vi.stubGlobal("fetch", mockFetch);
+    vi.stubEnv("AUTH_RESEND_KEY", "test-resend-key");
+    vi.stubEnv("SITE_URL", "https://glass.example");
+
+    await t.action(sendFn, { notificationId: vendorNotificationId });
+    await t.action(sendFn, { notificationId: threadNotificationId });
+
+    const firstBody = JSON.parse(mockFetch.mock.calls[0][1].body);
+    const secondBody = JSON.parse(mockFetch.mock.calls[1][1].body);
+    expect(firstBody.text).toContain("https://glass.example/connect/vendors");
+    expect(secondBody.text).toContain(`https://glass.example/agent/thread/${threadId}`);
 
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();

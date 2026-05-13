@@ -1,5 +1,6 @@
 "use node";
 
+import dayjs from "dayjs";
 import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
@@ -748,7 +749,7 @@ export const run = internalAction({
           : {}),
       };
       let content = "";
-      let lastFlush = Date.now();
+      let lastFlush = dayjs().valueOf();
       const FLUSH_INTERVAL = 150;
 
       // Immediately show "Thinking..." by ensuring processing message is visible
@@ -785,7 +786,7 @@ export const run = internalAction({
 
       let reasoning = "";
       let hasStartedReasoning = false;
-      let lastReasoningFlush = Date.now();
+      let lastReasoningFlush = dayjs().valueOf();
       const citedSections = new Set<string>(); // titles from lookup_policy_section results
       const citedCoverageNames = new Set<string>(); // structured coverage names surfaced by tool results
       const citedSourceSpanIds = new Set<string>(); // stable raw evidence IDs surfaced by tool results
@@ -813,7 +814,7 @@ export const run = internalAction({
             hasStartedReasoning = true;
           }
           // Flush reasoning periodically
-          const now = Date.now();
+          const now = dayjs().valueOf();
           if (now - lastReasoningFlush >= FLUSH_INTERVAL) {
             lastReasoningFlush = now;
             await ctx.runMutation(internal.threads.streamReasoning, {
@@ -823,7 +824,7 @@ export const run = internalAction({
           }
         } else if (part.type === "text-delta") {
           content += part.text;
-          const now = Date.now();
+          const now = dayjs().valueOf();
           if (now - lastFlush >= FLUSH_INTERVAL) {
             lastFlush = now;
             await ctx.runMutation(internal.threads.streamAgentMessage, {

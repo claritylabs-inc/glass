@@ -159,7 +159,19 @@ async function createFollowUpDraft(
   });
 
   if (!draftId) return null;
-  return { threadId, draftId };
+  if (org.autoSendEmails === true) {
+    try {
+      await ctx.runAction((internal as any).actions.sendPendingEmail.sendDraftInternal, {
+        id: draftId,
+      });
+      return { threadId, draftId, status: "sent" as const };
+    } catch (error) {
+      console.warn("[vendorComplianceMonitor] Vendor follow-up send failed:", error);
+      return { threadId, draftId, status: "send_failed" as const };
+    }
+  }
+
+  return { threadId, draftId, status: "draft" as const };
 }
 
 async function sendTextAlerts(ctx: ActionCtx, event: ComplianceEvent) {
@@ -214,6 +226,7 @@ export const run = internalAction({
     let checkedVendors = 0;
     let notificationCount = 0;
     let draftCount = 0;
+    let sentEmailCount = 0;
     let textEventCount = 0;
 
     for (const clientOrgId of clientOrgIds) {
@@ -232,7 +245,11 @@ export const run = internalAction({
 
       for (const event of events) {
         let draft:
-          | { threadId: Id<"threads">; draftId: Id<"pendingEmails"> }
+          | {
+              threadId: Id<"threads">;
+              draftId: Id<"pendingEmails">;
+              status: "draft" | "sent" | "send_failed";
+            }
           | null = null;
         if (event.type !== "vendor_compliance_met") {
           const contact = await ctx.runQuery(
@@ -245,7 +262,10 @@ export const run = internalAction({
           ) as { vendorEmail?: string } | null;
           if (contact?.vendorEmail) {
             draft = await createFollowUpDraft(ctx, event, contact.vendorEmail);
-            if (draft) draftCount += 1;
+            if (draft) {
+              draftCount += 1;
+              if (draft.status === "sent") sentEmailCount += 1;
+            }
           }
           await sendTextAlerts(ctx, event);
           textEventCount += 1;
@@ -259,9 +279,12 @@ export const run = internalAction({
             relationshipId: event.relationshipId,
             type: event.type,
             title: event.title,
-            body: draft
-              ? `${event.body} A follow-up email draft is ready for review.`
-              : event.body,
+            body:
+              draft?.status === "sent"
+                ? `${event.body} A follow-up email was sent to the vendor.`
+                : draft
+                  ? `${event.body} A follow-up email draft is ready for review.`
+                  : event.body,
             severity: event.severity,
             actionType: draft ? "view_thread" : "view_vendor_compliance",
             actionPayload: draft
@@ -290,6 +313,7 @@ export const run = internalAction({
       checkedVendors,
       notifications: notificationCount,
       drafts: draftCount,
+      sentEmails: sentEmailCount,
       textEvents: textEventCount,
     };
   },
