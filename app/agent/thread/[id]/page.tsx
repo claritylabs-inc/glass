@@ -675,46 +675,46 @@ function formatLimitAmount(value?: number) {
   }).format(value);
 }
 
-function summarizeVendorComplianceRows(rows: VendorComplianceRow[]) {
-  return rows.reduce(
-    (summary, row) => {
-      const checks = row.checks ?? [];
-      const requirementCount = row.requirementCount ?? checks.length;
-      const openCount = checks.filter((check) => check.status !== "met").length;
-      const metCount = checks.filter((check) => check.status === "met").length;
-      return {
-        requirements: summary.requirements + requirementCount,
-        met: summary.met + metCount,
-        open: summary.open + openCount,
-        policies: summary.policies + (row.policyCount ?? 0),
-      };
-    },
-    { requirements: 0, met: 0, open: 0, policies: 0 },
-  );
-}
-
 function VendorComplianceChecklist({ rows }: { rows: VendorComplianceRow[] }) {
   return (
     <div className="space-y-3">
       {rows.map((row, rowIndex) => {
         const checks = row.checks ?? [];
         const openChecks = checks.filter((check) => check.status !== "met").length;
+        const metChecks = checks.filter((check) => check.status === "met").length;
+        const requirementCount = row.requirementCount ?? checks.length;
+        const policyText = typeof row.policyCount === "number"
+          ? row.policyCount === 0
+            ? "no policies"
+            : `${row.policyCount} polic${row.policyCount === 1 ? "y" : "ies"}`
+          : null;
         return (
           <section key={`${row.vendorOrgId ?? row.name ?? "vendor"}-${rowIndex}`} className="rounded-md border border-foreground/8 bg-card">
             <div className="border-b border-foreground/6 px-3 py-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <h3 className="min-w-0 truncate text-[13px] font-medium text-foreground">
-                  {row.name ?? "Vendor"}
-                </h3>
-                <Badge variant="outline" className="h-5 border-foreground/10 px-1.5 text-[10px] font-medium text-muted-foreground/60">
-                  {vendorStatusLabel(row.status)}
-                </Badge>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="min-w-0 truncate text-[13px] font-medium text-foreground">
+                      {row.name ?? "Vendor"}
+                    </h3>
+                    <Badge variant="outline" className="h-5 border-foreground/10 px-1.5 text-[10px] font-medium text-muted-foreground/60">
+                      {vendorStatusLabel(row.status)}
+                    </Badge>
+                  </div>
+                  <p className="mt-1 text-[11px] text-muted-foreground/45">
+                    {metChecks}/{requirementCount} met{openChecks > 0 ? ` · ${openChecks} open` : ""}
+                    {policyText ? ` · ${policyText}` : ""}
+                  </p>
+                </div>
+                {row.vendorOrgId ? (
+                  <Link
+                    href={`/connect/vendors/${row.vendorOrgId}/policies`}
+                    className="shrink-0 rounded-full border border-foreground/8 px-2.5 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:border-foreground/14 hover:text-foreground"
+                  >
+                    View vendor
+                  </Link>
+                ) : null}
               </div>
-              <p className="mt-1 text-[11px] text-muted-foreground/45">
-                {checks.length || row.requirementCount || 0} requirements
-                {typeof row.policyCount === "number" ? ` · ${row.policyCount} policies` : ""}
-                {openChecks > 0 ? ` · ${openChecks} open` : ""}
-              </p>
             </div>
             {checks.length > 0 ? (
               <div className="divide-y divide-foreground/[0.05]">
@@ -831,7 +831,6 @@ function VendorComplianceSidebar({
   onClose: () => void;
 }) {
   const rows = normalizeVendorComplianceRows(artifact.data);
-  const summary = summarizeVendorComplianceRows(rows);
   return (
     <aside className="flex h-full w-full flex-col overflow-hidden border-l border-foreground/8 bg-background">
       <div className="flex h-12 items-center justify-between gap-3 border-b border-foreground/8 px-4">
@@ -844,13 +843,6 @@ function VendorComplianceSidebar({
         <PillButton size="compact" variant="icon" onClick={onClose} label="Close vendor compliance checks">
           <X className="h-4 w-4" />
         </PillButton>
-      </div>
-      <div className="border-b border-foreground/8 px-4 py-3">
-        <p className="text-[12px] text-muted-foreground/60">
-          {summary.met}/{summary.requirements} requirements met
-          {summary.open > 0 ? ` · ${summary.open} open` : ""}
-          {summary.policies > 0 ? ` · ${summary.policies} policies` : " · no policies"}
-        </p>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
         <VendorComplianceChecklist rows={rows} />
