@@ -9,6 +9,7 @@ import {
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { getOrgAccess, requireAuth } from "./lib/access";
+import { notify } from "./lib/notify";
 
 const requirementCategoryValidator = v.union(
   v.literal("general_liability"),
@@ -20,6 +21,36 @@ const requirementCategoryValidator = v.union(
   v.literal("property"),
   v.literal("other"),
 );
+
+const complianceStatusValidator = v.union(
+  v.literal("met"),
+  v.literal("missing"),
+  v.literal("expiring_soon"),
+  v.literal("expired"),
+  v.literal("needs_review"),
+);
+
+const vendorComplianceMonitorCheckValidator = v.object({
+  requirementId: v.id("insuranceRequirements"),
+  requirementTitle: v.string(),
+  status: complianceStatusValidator,
+  matchedPolicyIds: v.array(v.id("policies")),
+  expiresAt: v.optional(v.string()),
+  daysUntilExpiration: v.optional(v.number()),
+  notes: v.optional(v.string()),
+});
+
+const vendorComplianceMonitorRowValidator = v.object({
+  relationshipId: v.id("connectedOrgRelationships"),
+  vendorOrgId: v.id("organizations"),
+  vendorName: v.string(),
+  status: v.string(),
+  requirementCount: v.number(),
+  policyCount: v.number(),
+  missingCount: v.number(),
+  expiringSoonCount: v.number(),
+  checks: v.array(vendorComplianceMonitorCheckValidator),
+});
 
 function normalizeText(value: string | undefined | null) {
   return (value ?? "")
@@ -1083,5 +1114,251 @@ export const listVendorComplianceInternal = internalQuery({
       });
     }
     return rows;
+  },
+});
+
+export const listClientOrgIdsWithActiveVendorsInternal = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const relationships = await ctx.db
+      .query("connectedOrgRelationships")
+      .collect();
+    return [
+      ...new Set(
+        relationships
+          .filter((relationship) => relationship.status === "active")
+          .map((relationship) => relationship.clientOrgId),
+      ),
+    ];
+  },
+});
+
+export const getConnectedVendorContactInternal = internalQuery({
+  args: {
+    clientOrgId: v.id("organizations"),
+    vendorOrgId: v.id("organizations"),
+    relationshipId: v.id("connectedOrgRelationships"),
+  },
+  handler: async (ctx, args) => {
+    const invitations = await ctx.db
+      .query("connectedOrgInvitations")
+      .withIndex("by_clientOrgId", (q) => q.eq("clientOrgId", args.clientOrgId))
+      .collect();
+    const invitation = invitations
+      .filter(
+        (invitation) =>
+          invitation.relationshipId === args.relationshipId ||
+          invitation.vendorOrgId === args.vendorOrgId,
+      )
+      .sort((a, b) => b.updatedAt - a.updatedAt)[0];
+
+    const memberships = await ctx.db
+      .query("orgMemberships")
+      .withIndex("by_orgId", (q) => q.eq("orgId", args.vendorOrgId))
+      .collect();
+    const vendorUsers = (
+      await Promise.all(
+        memberships.map((membership) => ctx.db.get(membership.userId)),
+      )
+    ).filter(Boolean);
+
+    return {
+      vendorEmail: invitation?.vendorEmail ?? vendorUsers.find((user) => user?.email)?.email,
+      vendorUserEmails: vendorUsers
+        .map((user) => user?.email)
+        .filter((email): email is string => Boolean(email)),
+    };
+  },
+});
+
+export const recordVendorComplianceRunInternal = internalMutation({
+  args: {
+    clientOrgId: v.id("organizations"),
+    rows: v.array(vendorComplianceMonitorRowValidator),
+    nowMs: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const now = args.nowMs ?? dayjs().valueOf();
+    const reminderWindowMs = 7 * 24 * 60 * 60 * 1000;
+    const clientOrg = await ctx.db.get(args.clientOrgId);
+    const events: Array<{
+      type:
+        | "vendor_compliance_met"
+        | "vendor_compliance_gap"
+        | "vendor_policy_expiring"
+        | "vendor_policy_expired";
+      title: string;
+      body: string;
+      severity: "info" | "warning" | "critical";
+      clientOrgId: Id<"organizations">;
+      clientName: string;
+      vendorOrgId: Id<"organizations">;
+      vendorName: string;
+      relationshipId: Id<"connectedOrgRelationships">;
+      issueLines: string[];
+    }> = [];
+
+    for (const row of args.rows) {
+      const previousSnapshots = await ctx.db
+        .query("vendorComplianceChecks")
+        .withIndex("by_relationshipId", (q) =>
+          q.eq("relationshipId", row.relationshipId),
+        )
+        .collect();
+      const latestByRequirement = new Map<
+        Id<"insuranceRequirements">,
+        Doc<"vendorComplianceChecks">
+      >();
+      for (const snapshot of previousSnapshots) {
+        const current = latestByRequirement.get(snapshot.requirementId);
+        if (!current || snapshot.checkedAt > current.checkedAt) {
+          latestByRequirement.set(snapshot.requirementId, snapshot);
+        }
+      }
+
+      const issueChecks = row.checks.filter(
+        (check) => check.status !== "met",
+      );
+      const alertableIssueChecks = issueChecks.filter((check) => {
+        const latest = latestByRequirement.get(check.requirementId);
+        return (
+          !latest ||
+          latest.status !== check.status ||
+          now - latest.checkedAt >= reminderWindowMs
+        );
+      });
+      const previousHadIssue = [...latestByRequirement.values()].some(
+        (snapshot) => snapshot.status !== "met",
+      );
+      const currentIsCompliant =
+        row.requirementCount > 0 &&
+        row.checks.length > 0 &&
+        row.checks.every((check) => check.status === "met");
+
+      for (const check of row.checks) {
+        await ctx.db.insert("vendorComplianceChecks", {
+          clientOrgId: args.clientOrgId,
+          vendorOrgId: row.vendorOrgId,
+          relationshipId: row.relationshipId,
+          requirementId: check.requirementId,
+          status: check.status,
+          matchedPolicyIds: check.matchedPolicyIds,
+          expiresAt: check.expiresAt,
+          checkedAt: now,
+          checkedBy: "system",
+          notes: check.notes,
+        });
+      }
+
+      if (currentIsCompliant && previousHadIssue) {
+        events.push({
+          type: "vendor_compliance_met",
+          title: `${row.vendorName} is now vendor compliant`,
+          body: `${row.vendorName} now meets all ${row.requirementCount} vendor requirements for ${clientOrg?.name ?? "your organization"}.`,
+          severity: "info",
+          clientOrgId: args.clientOrgId,
+          clientName: clientOrg?.name ?? "your organization",
+          vendorOrgId: row.vendorOrgId,
+          vendorName: row.vendorName,
+          relationshipId: row.relationshipId,
+          issueLines: [],
+        });
+        continue;
+      }
+
+      if (alertableIssueChecks.length === 0) continue;
+
+      const hasExpired = alertableIssueChecks.some(
+        (check) => check.status === "expired",
+      );
+      const hasGap = alertableIssueChecks.some(
+        (check) => check.status === "missing" || check.status === "needs_review",
+      );
+      const type = hasExpired
+        ? "vendor_policy_expired"
+        : hasGap
+          ? "vendor_compliance_gap"
+          : "vendor_policy_expiring";
+      const severity = hasExpired ? "critical" : "warning";
+      const issueLines = alertableIssueChecks.map((check) => {
+        const status =
+          check.status === "expiring_soon" && check.daysUntilExpiration !== undefined
+            ? `expires in ${check.daysUntilExpiration} days`
+            : check.status.replace(/_/g, " ");
+        return `${check.requirementTitle}: ${status}${check.notes ? ` - ${check.notes}` : ""}`;
+      });
+      const issueCount = alertableIssueChecks.length;
+      const noun = issueCount === 1 ? "requirement needs" : "requirements need";
+      const title =
+        row.policyCount === 0
+          ? `${row.vendorName} is waiting on policies`
+          : type === "vendor_policy_expired"
+            ? `${row.vendorName} has expired vendor coverage`
+            : type === "vendor_policy_expiring"
+              ? `${row.vendorName} has vendor coverage expiring soon`
+              : `${row.vendorName} is missing vendor requirements`;
+      const body = `${issueCount} vendor ${noun} attention for ${row.vendorName}: ${issueLines
+        .slice(0, 3)
+        .join("; ")}${issueLines.length > 3 ? `; +${issueLines.length - 3} more` : ""}`;
+
+      events.push({
+        type,
+        title,
+        body,
+        severity,
+        clientOrgId: args.clientOrgId,
+        clientName: clientOrg?.name ?? "your organization",
+        vendorOrgId: row.vendorOrgId,
+        vendorName: row.vendorName,
+        relationshipId: row.relationshipId,
+        issueLines,
+      });
+    }
+
+    return events;
+  },
+});
+
+export const notifyVendorComplianceEventInternal = internalMutation({
+  args: {
+    orgId: v.id("organizations"),
+    vendorOrgId: v.id("organizations"),
+    relationshipId: v.id("connectedOrgRelationships"),
+    type: v.union(
+      v.literal("vendor_compliance_met"),
+      v.literal("vendor_compliance_gap"),
+      v.literal("vendor_policy_expiring"),
+      v.literal("vendor_policy_expired"),
+    ),
+    title: v.string(),
+    body: v.string(),
+    severity: v.union(
+      v.literal("info"),
+      v.literal("warning"),
+      v.literal("critical"),
+    ),
+    actionType: v.string(),
+    actionPayload: v.any(),
+    sourceRef: v.optional(v.any()),
+    nowMs: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    return await notify(ctx, {
+      orgId: args.orgId,
+      type: args.type,
+      title: args.title,
+      body: args.body,
+      severity: args.severity,
+      relatedOrgId: args.vendorOrgId,
+      actionType: args.actionType,
+      actionPayload: args.actionPayload,
+      sourceRef: args.sourceRef,
+      coalesceKeyParts: [
+        args.type,
+        String(args.orgId),
+        String(args.relationshipId),
+      ],
+      nowMs: args.nowMs,
+    });
   },
 });

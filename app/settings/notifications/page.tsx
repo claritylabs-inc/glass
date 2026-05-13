@@ -3,6 +3,8 @@
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { Mail } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface PrefRow {
   type: string;
@@ -16,6 +18,10 @@ const BROKER_PREF_ROWS: PrefRow[] = [
   { type: "quote_delivered_by_broker", label: "Quote delivered", group: "Policies & Quotes" },
   { type: "renewal_reminder", label: "Renewal reminder", group: "Policies & Quotes" },
   { type: "policy_lapsed", label: "Policy lapsed", group: "Policies & Quotes" },
+  { type: "vendor_compliance_gap", label: "Vendor compliance gaps", group: "Vendor Compliance" },
+  { type: "vendor_policy_expiring", label: "Vendor policy expiring", group: "Vendor Compliance" },
+  { type: "vendor_policy_expired", label: "Vendor policy expired", group: "Vendor Compliance" },
+  { type: "vendor_compliance_met", label: "Vendor becomes compliant", group: "Vendor Compliance" },
   { type: "client_invitation_accepted", label: "Client accepted invitation", group: "Account" },
   { type: "client_onboarding_completed", label: "Client completed onboarding", group: "Account" },
 ];
@@ -32,6 +38,9 @@ const WARN_TYPES = new Set([
   "extraction_error",
   "incomplete_extraction",
   "premium_anomaly",
+  "vendor_compliance_gap",
+  "vendor_policy_expiring",
+  "vendor_policy_expired",
 ]);
 
 interface NotificationPreferencesPageProps {
@@ -63,80 +72,118 @@ export default function NotificationPreferencesPage({ orgId }: NotificationPrefe
   const allEmailEnabled = allEmailRow ? allEmailRow.enabled : true;
 
   return (
-    <div className="max-w-2xl mx-auto py-8 px-4">
-      <h1 className="text-xl font-semibold text-foreground mb-6">Notification Preferences</h1>
-
-      {/* Master email toggle */}
-      <div className="flex items-center justify-between p-4 rounded-lg border border-foreground/10 mb-8">
-        <div>
-          <p className="text-sm font-medium text-foreground">Email — all notifications</p>
-          <p className="text-xs text-muted-foreground mt-0.5">Master toggle for all email delivery</p>
-        </div>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={allEmailEnabled}
-          onClick={() => setAll({ orgId, enabled: !allEmailEnabled })}
-          className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-            allEmailEnabled ? "bg-blue-600" : "bg-foreground/20"
-          }`}
-        >
-          <span
-            className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
-              allEmailEnabled ? "translate-x-5" : "translate-x-1"
-            }`}
-          />
-        </button>
+    <div className="flex max-w-3xl flex-col gap-5">
+      <div>
+        <h1 className="text-lg font-medium text-foreground">Notifications</h1>
+        <p className="mt-1 text-body-sm text-muted-foreground/70">
+          Choose how Glass should notify your team about account, policy, and vendor events.
+        </p>
       </div>
 
-      {/* Per-type grid */}
-      {GROUPS.map((group) => (
-        <div key={group} className="mb-8">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
-            {group}
-          </h2>
-          <div className="rounded-lg border border-foreground/10 overflow-hidden">
-            {/* Header */}
-            <div className="grid grid-cols-[1fr_80px_80px] px-4 py-2 border-b border-foreground/6 bg-foreground/[0.02]">
-              <span className="text-xs font-medium text-muted-foreground">Event</span>
-              <span className="text-xs font-medium text-muted-foreground text-center">In-app</span>
-              <span className="text-xs font-medium text-muted-foreground text-center">Email</span>
+      <div className="rounded-lg border border-foreground/6 bg-card">
+        <div className="flex items-center justify-between gap-4 px-5 py-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-foreground/5 text-foreground">
+              <Mail className="size-4" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-body-sm font-medium text-foreground">Email notifications</p>
+              <p className="mt-0.5 text-label-sm text-muted-foreground/60">
+                Master control for every email notification.
+              </p>
+            </div>
+          </div>
+          <NotificationSwitch
+            checked={allEmailEnabled}
+            onCheckedChange={() => setAll({ orgId, enabled: !allEmailEnabled })}
+            label="Toggle all email notifications"
+          />
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-4">
+        {GROUPS.map((group) => (
+          <section key={group} className="rounded-lg border border-foreground/6 bg-card">
+            <div className="grid grid-cols-[minmax(0,1fr)_64px_64px] items-center border-b border-foreground/6 px-5 py-3.5">
+              <h2 className="text-sm font-medium text-foreground">{group}</h2>
+              <span className="text-center text-label-sm font-medium text-muted-foreground/70">
+                In-app
+              </span>
+              <span className="text-center text-label-sm font-medium text-muted-foreground/70">
+                Email
+              </span>
             </div>
             {BROKER_PREF_ROWS.filter((r) => r.group === group).map((row, i, arr) => (
               <div
                 key={row.type}
-                className={`grid grid-cols-[1fr_80px_80px] px-4 py-3 items-center ${
-                  i < arr.length - 1 ? "border-b border-foreground/[0.04]" : ""
-                }`}
+                className={cn(
+                  "grid grid-cols-[minmax(0,1fr)_64px_64px] items-center px-5 py-3.5",
+                  i < arr.length - 1 && "border-b border-foreground/6",
+                )}
               >
-                <span className="text-sm text-foreground">{row.label}</span>
+                <span className="min-w-0 truncate text-body-sm text-foreground">{row.label}</span>
                 {(["in_app", "email"] as const).map((channel) => {
                   const enabled = getEnabled(row.type, channel);
                   return (
                     <div key={channel} className="flex justify-center">
-                      <button
-                        type="button"
-                        role="switch"
-                        aria-checked={enabled}
-                        onClick={() => set({ orgId, type: row.type, channel, enabled: !enabled })}
-                        className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${
-                          enabled ? "bg-blue-600" : "bg-foreground/20"
-                        }`}
-                      >
-                        <span
-                          className={`inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform ${
-                            enabled ? "translate-x-3.5" : "translate-x-0.5"
-                          }`}
-                        />
-                      </button>
+                      <NotificationSwitch
+                        checked={enabled}
+                        compact
+                        onCheckedChange={() =>
+                          set({ orgId, type: row.type, channel, enabled: !enabled })
+                        }
+                        label={`${row.label} ${channel === "in_app" ? "in-app" : "email"}`}
+                      />
                     </div>
                   );
                 })}
               </div>
             ))}
-          </div>
-        </div>
-      ))}
+          </section>
+        ))}
+      </div>
     </div>
+  );
+}
+
+function NotificationSwitch({
+  checked,
+  onCheckedChange,
+  label,
+  compact = false,
+}: {
+  checked: boolean;
+  onCheckedChange: () => void;
+  label: string;
+  compact?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      onClick={onCheckedChange}
+      className={cn(
+        "relative inline-flex shrink-0 items-center rounded-full transition-colors cursor-pointer",
+        compact ? "h-4 w-7" : "h-5 w-9",
+        checked ? "bg-brand" : "bg-foreground/15",
+      )}
+    >
+      <span
+        className={cn(
+          "inline-block transform rounded-full transition-transform",
+          compact ? "size-3" : "size-3.5",
+          checked ? "bg-brand-foreground" : "bg-background",
+          checked
+            ? compact
+              ? "translate-x-3.5"
+              : "translate-x-5"
+            : compact
+              ? "translate-x-0.5"
+              : "translate-x-1",
+        )}
+      />
+    </button>
   );
 }

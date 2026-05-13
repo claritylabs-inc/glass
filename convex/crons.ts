@@ -12,4 +12,11 @@ crons.cron(
   {},
 );
 
+crons.cron(
+  "monitor vendor compliance",
+  "0 14 * * *",
+  (internal as any).actions.vendorComplianceMonitor.run,
+  {},
+);
+
 export default crons;

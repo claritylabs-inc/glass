@@ -32,6 +32,7 @@ import type * as actions_sendNotificationEmail from "../actions/sendNotification
 import type * as actions_sendPendingEmail from "../actions/sendPendingEmail.js";
 import type * as actions_threadTitle from "../actions/threadTitle.js";
 import type * as actions_updateDocumentChunk from "../actions/updateDocumentChunk.js";
+import type * as actions_vendorComplianceMonitor from "../actions/vendorComplianceMonitor.js";
 import type * as apiAuditLog from "../apiAuditLog.js";
 import type * as apiKeys from "../apiKeys.js";
 import type * as auth from "../auth.js";
@@ -155,6 +156,7 @@ declare const fullApi: ApiFromModules<{
   "actions/sendPendingEmail": typeof actions_sendPendingEmail;
   "actions/threadTitle": typeof actions_threadTitle;
   "actions/updateDocumentChunk": typeof actions_updateDocumentChunk;
+  "actions/vendorComplianceMonitor": typeof actions_vendorComplianceMonitor;
   apiAuditLog: typeof apiAuditLog;
   apiKeys: typeof apiKeys;
   auth: typeof auth;

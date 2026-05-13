@@ -43,7 +43,7 @@ describe("buildNotificationEmail", () => {
     expect(result.text).toContain("Review");
   });
 
-  test("thread label is prefaced in html and text", () => {
+  test("thread label is rendered as the left-aligned title", () => {
     const result = buildNotificationEmail({
       title: "T",
       body: "B",
@@ -54,8 +54,25 @@ describe("buildNotificationEmail", () => {
       threadLabel: "Renewal Review",
     });
 
-    expect(result.html).toContain("Notification for thread");
+    expect(result.html).not.toContain("NOTIFICATION FOR THREAD");
+    expect(result.html).not.toContain("Notification for thread");
     expect(result.html).toContain("Renewal Review");
+    expect(result.html).toContain('<td align="left" style="padding:28px 40px 0 40px;">');
     expect(result.text).toContain("Thread: Renewal Review");
+  });
+
+  test("uses a pill button and omits the Glass Notifications footer", () => {
+    const result = buildNotificationEmail({
+      title: "Policy update",
+      body: "Acme Co policy updated.",
+      ctaUrl: "https://glass.app/policies/xyz",
+      ctaLabel: "Review",
+      branding: { kind: "glass" },
+      siteUrl: "https://glass.app",
+    });
+
+    expect(result.html).toContain("border-radius:999px");
+    expect(result.html).not.toContain("Sent by Glass Notifications.");
+    expect(result.text).not.toContain("Glass Notifications");
   });
 });

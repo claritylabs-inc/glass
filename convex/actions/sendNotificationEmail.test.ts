@@ -217,8 +217,9 @@ describe("sendNotificationEmail", () => {
 
     const callBody = JSON.parse(mockFetch.mock.calls[0][1].body);
     expect(callBody.from).toContain("Glass Notifications");
-    expect(callBody.html).toContain("Notification for thread");
+    expect(callBody.html).not.toContain("Notification for thread");
     expect(callBody.html).toContain("Renewal Review");
+    expect(callBody.html).toContain('td align="left"');
     expect(callBody.text).toContain("Thread: Renewal Review");
 
     vi.unstubAllGlobals();
