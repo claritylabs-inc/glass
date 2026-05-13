@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { splitQuotedReply, QuotedContent } from "@/components/conversation-message";
 import { toast } from "sonner";
-import { Loader2, Archive, ArchiveRestore, FileText, Check, ClipboardList, Asterisk, Mail as MailIcon, MessageCircle, Paperclip, Download, Copy, RotateCcw, X } from "lucide-react";
+import { Loader2, Archive, ArchiveRestore, FileText, Check, ClipboardList, Asterisk, Mail as MailIcon, MessageCircle, Paperclip, Download, Copy, RotateCcw, X, AlertTriangle, Clock } from "lucide-react";
 import { EditableBreadcrumbTitle } from "@/components/editable-breadcrumb-title";
 import { usePdf } from "@/components/pdf-context";
 import { usePresence } from "@/hooks/use-presence";
@@ -57,6 +57,7 @@ export type ThreadMessage = {
   citedSourceSpanIds?: string[];
   usedTools?: string[];
   toolCalls?: { name: string; input?: string }[];
+  toolArtifacts?: { type: string; data: unknown }[];
   status?: "processing" | "error" | "pending_send" | "draft_email" | "cancelled";
   error?: string;
   pendingEmailId?: Id<"pendingEmails">;
@@ -79,6 +80,9 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
   send_email: "Drafted email",
   email_expert: "Prepared email",
   create_policy_change_request: "Created policy change request",
+  lookup_connected_vendors: "Checked vendors",
+  lookup_vendor_policies: "Read vendor policies",
+  lookup_vendor_compliance: "Checked vendor compliance",
 };
 
 function formatToolInput(input?: string) {
@@ -551,6 +555,216 @@ function EmailSummaryCard({
           ) : null}
         </div>
       )}
+    </div>
+  );
+}
+
+type VendorComplianceCheck = {
+  requirementId?: string;
+  title?: string;
+  status?: string;
+  requiredLimit?: string;
+  expiresAt?: string;
+  daysUntilExpiration?: number;
+  notes?: string;
+  matchedPolicy?: {
+    carrier?: string;
+    policyNumber?: string;
+    insuredName?: string;
+    expectedInsuredName?: string;
+    expirationDate?: string;
+    coverageName?: string;
+    coverageLimit?: string;
+    detectedLimitAmount?: number;
+  };
+};
+
+type VendorComplianceRow = {
+  vendorOrgId?: string;
+  name?: string;
+  status?: string;
+  requirementCount?: number;
+  policyCount?: number;
+  checks?: VendorComplianceCheck[];
+};
+
+function normalizeVendorComplianceRows(data: unknown): VendorComplianceRow[] {
+  if (!Array.isArray(data)) return [];
+  return data
+    .filter((row): row is Record<string, unknown> => !!row && typeof row === "object")
+    .map((row) => ({
+      vendorOrgId: typeof row.vendorOrgId === "string" ? row.vendorOrgId : undefined,
+      name: typeof row.name === "string" ? row.name : "Vendor",
+      status: typeof row.status === "string" ? row.status : undefined,
+      requirementCount: typeof row.requirementCount === "number" ? row.requirementCount : undefined,
+      policyCount: typeof row.policyCount === "number" ? row.policyCount : undefined,
+      checks: Array.isArray(row.checks)
+        ? row.checks
+            .filter((check): check is Record<string, unknown> => !!check && typeof check === "object")
+            .map((check) => ({
+              requirementId: typeof check.requirementId === "string" ? check.requirementId : undefined,
+              title: typeof check.title === "string" ? check.title : "Requirement",
+              status: typeof check.status === "string" ? check.status : undefined,
+              requiredLimit: typeof check.requiredLimit === "string" ? check.requiredLimit : undefined,
+              expiresAt: typeof check.expiresAt === "string" ? check.expiresAt : undefined,
+              daysUntilExpiration:
+                typeof check.daysUntilExpiration === "number" ? check.daysUntilExpiration : undefined,
+              notes: typeof check.notes === "string" ? check.notes : undefined,
+              matchedPolicy:
+                check.matchedPolicy && typeof check.matchedPolicy === "object"
+                  ? (check.matchedPolicy as VendorComplianceCheck["matchedPolicy"])
+                  : undefined,
+            }))
+        : [],
+    }));
+}
+
+function vendorStatusLabel(status?: string) {
+  switch (status) {
+    case "compliant":
+      return "Compliant";
+    case "waiting_on_policies":
+      return "Waiting on policies";
+    case "non_compliant":
+      return "Non-compliant";
+    default:
+      return status?.replace(/_/g, " ") ?? "Vendor compliance";
+  }
+}
+
+function checkStatusMeta(status?: string) {
+  switch (status) {
+    case "met":
+      return {
+        label: "Meets requirement",
+        icon: Check,
+        className: "border-success/20 bg-success/10 text-success/75",
+      };
+    case "expiring_soon":
+      return {
+        label: "Expiring soon",
+        icon: Clock,
+        className: "border-amber-500/20 bg-amber-500/10 text-amber-400",
+      };
+    case "expired":
+      return {
+        label: "Expired",
+        icon: AlertTriangle,
+        className: "border-red-500/20 bg-red-500/10 text-red-400",
+      };
+    case "missing":
+    case "needs_review":
+    default:
+      return {
+        label: status === "needs_review" ? "Needs review" : "Not met",
+        icon: X,
+        className: "border-red-500/20 bg-red-500/10 text-red-400",
+      };
+  }
+}
+
+function formatLimitAmount(value?: number) {
+  if (typeof value !== "number") return undefined;
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  }).format(value);
+}
+
+function VendorComplianceArtifact({ artifact }: { artifact: { type: string; data: unknown } }) {
+  if (artifact.type !== "vendor_compliance") return null;
+  const rows = normalizeVendorComplianceRows(artifact.data);
+  if (rows.length === 0) return null;
+
+  return (
+    <div className="mt-4 w-full max-w-3xl overflow-hidden rounded-md border border-foreground/8 bg-card">
+      <div className="flex items-center justify-between gap-3 border-b border-foreground/6 px-3 py-2.5">
+        <div className="flex min-w-0 items-center gap-2">
+          <ClipboardList className="h-4 w-4 shrink-0 text-muted-foreground/60" />
+          <span className="truncate text-[13px] font-medium text-foreground/85">
+            Vendor compliance checks
+          </span>
+        </div>
+        <Badge variant="outline" className="h-5 shrink-0 border-foreground/10 px-1.5 text-[10px] font-medium text-muted-foreground/55">
+          {rows.length} vendor{rows.length === 1 ? "" : "s"}
+        </Badge>
+      </div>
+      <div className="divide-y divide-foreground/6">
+        {rows.map((row, rowIndex) => {
+          const checks = row.checks ?? [];
+          const openChecks = checks.filter((check) => check.status !== "met").length;
+          return (
+            <div key={`${row.vendorOrgId ?? row.name ?? "vendor"}-${rowIndex}`} className="px-3 py-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="min-w-0 truncate text-[13px] font-medium text-foreground">
+                  {row.name ?? "Vendor"}
+                </h3>
+                <Badge variant="outline" className="h-5 border-foreground/10 px-1.5 text-[10px] font-medium text-muted-foreground/60">
+                  {vendorStatusLabel(row.status)}
+                </Badge>
+                <span className="text-[11px] text-muted-foreground/45">
+                  {checks.length || row.requirementCount || 0} requirements
+                  {typeof row.policyCount === "number" ? ` · ${row.policyCount} policies` : ""}
+                  {openChecks > 0 ? ` · ${openChecks} open` : ""}
+                </span>
+              </div>
+              {checks.length > 0 ? (
+                <div className="mt-2 divide-y divide-foreground/[0.05] rounded-md border border-foreground/6">
+                  {checks.map((check, checkIndex) => {
+                    const meta = checkStatusMeta(check.status);
+                    const StatusIcon = meta.icon;
+                    const policy = check.matchedPolicy;
+                    const detectedLimit = formatLimitAmount(policy?.detectedLimitAmount);
+                    return (
+                      <div key={`${check.requirementId ?? check.title ?? "check"}-${checkIndex}`} className="px-2.5 py-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-foreground/85">
+                            {check.title ?? "Requirement"}
+                          </span>
+                          <Badge variant="outline" className={`h-5 gap-1 px-1.5 text-[10px] font-medium ${meta.className}`}>
+                            <StatusIcon className="h-3 w-3" />
+                            {meta.label}
+                          </Badge>
+                        </div>
+                        <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground/55">
+                          {check.requiredLimit ? <span>Required: {check.requiredLimit}</span> : null}
+                          {policy?.coverageLimit ? <span>Coverage: {policy.coverageLimit}</span> : null}
+                          {detectedLimit ? <span>Detected: {detectedLimit}</span> : null}
+                          {policy?.expirationDate ? <span>Expires: {policy.expirationDate}</span> : null}
+                          {policy?.insuredName ? <span>Insured: {policy.insuredName}</span> : null}
+                        </div>
+                        {policy?.carrier || policy?.policyNumber || policy?.coverageName ? (
+                          <p className="mt-1 truncate text-[11px] text-muted-foreground/40">
+                            {[policy.carrier, policy.policyNumber, policy.coverageName].filter(Boolean).join(" · ")}
+                          </p>
+                        ) : null}
+                        {check.notes ? (
+                          <p className="mt-1 text-[11px] leading-4 text-muted-foreground/65">
+                            {check.notes}
+                          </p>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function VendorComplianceArtifacts({ artifacts }: { artifacts?: { type: string; data: unknown }[] }) {
+  const vendorArtifacts = artifacts?.filter((artifact) => artifact.type === "vendor_compliance") ?? [];
+  if (vendorArtifacts.length === 0) return null;
+  return (
+    <div className="space-y-3">
+      {vendorArtifacts.map((artifact, index) => (
+        <VendorComplianceArtifact key={`vendor-compliance-${index}`} artifact={artifact} />
+      ))}
     </div>
   );
 }
@@ -1034,7 +1248,7 @@ function PendingSendCountdown({ pendingEmailId }: { pendingEmailId: Id<"pendingE
       return;
     }
     function tick() {
-      const left = Math.max(0, Math.ceil((pendingEmail!.scheduledSendTime - Date.now()) / 1000));
+      const left = Math.max(0, Math.ceil((pendingEmail!.scheduledSendTime - dayjs().valueOf()) / 1000));
       setRemaining(left);
     }
     tick();
@@ -1108,7 +1322,7 @@ export function UnifiedMessageBubble({
 }) {
   const [showQuoted, setShowQuoted] = useState(false);
   const [showToolCalls, setShowToolCalls] = useState(false);
-  const [now] = useState(() => Date.now());
+  const [now] = useState(() => dayjs().valueOf());
   const time = dayjs(msg._creationTime);
   const channelIcon = msg.channel === "email"
     ? <MailIcon className="w-3 h-3 text-muted-foreground/30" />
@@ -1278,6 +1492,7 @@ export function UnifiedMessageBubble({
                   onToggleToolCalls={() => setShowToolCalls((value) => !value)}
                   rightAligned={brokerPerspective}
                 />
+                <VendorComplianceArtifacts artifacts={msg.toolArtifacts} />
                 {relatedEmailMessage ? (
                   <div className="mt-4">
                     <EmailSummaryCard

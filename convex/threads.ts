@@ -1,3 +1,4 @@
+import dayjs from "dayjs";
 import { v } from "convex/values";
 import { query, mutation, internalQuery, internalMutation, type QueryCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
@@ -199,7 +200,7 @@ export const create = mutation({
   },
   handler: async (ctx, args) => {
     const { userId, orgId } = await requireOrgAccess(ctx);
-    const now = Date.now();
+    const now = dayjs().valueOf();
     const domain = args.agentDomain || FALLBACK_AGENT_DOMAIN;
 
     // Look up the org's agent handle to build the thread-specific email
@@ -290,7 +291,7 @@ export const sendMessage = mutation({
       attachments: args.attachments,
     });
 
-    await ctx.db.patch(args.threadId, { lastMessageAt: Date.now() });
+    await ctx.db.patch(args.threadId, { lastMessageAt: dayjs().valueOf() });
 
     // Schedule agent response (skip when streaming API route handles it)
     if (!args.skipAgentResponse) {
@@ -321,7 +322,7 @@ export const archive = mutation({
     const { orgId } = await requireOrgAccess(ctx);
     const thread = await ctx.db.get(args.id);
     if (!thread || thread.orgId !== orgId) throw new Error("Not found");
-    await ctx.db.patch(args.id, { archivedAt: Date.now() });
+    await ctx.db.patch(args.id, { archivedAt: dayjs().valueOf() });
   },
 });
 
@@ -383,7 +384,7 @@ export const updateAgentResponse = mutation({
       referencedPolicyIds: args.referencedPolicyIds,
       referencedQuoteIds: args.referencedQuoteIds,
     });
-    await ctx.db.patch(msg.threadId, { lastMessageAt: Date.now() });
+    await ctx.db.patch(msg.threadId, { lastMessageAt: dayjs().valueOf() });
   },
 });
 
@@ -542,6 +543,10 @@ export const updateAgentMessage = internalMutation({
       name: v.string(),
       input: v.optional(v.string()),
     }))),
+    toolArtifacts: v.optional(v.array(v.object({
+      type: v.string(),
+      data: v.any(),
+    }))),
     attachments: v.optional(v.array(v.object({
       filename: v.string(),
       contentType: v.string(),
@@ -569,6 +574,7 @@ export const updateAgentMessage = internalMutation({
       citedSourceSpanIds: args.citedSourceSpanIds,
       usedTools: args.usedTools,
       toolCalls: args.toolCalls,
+      toolArtifacts: args.toolArtifacts,
       attachments: args.attachments,
       pendingEmailId: args.pendingEmailId,
       policyChangeCaseId: args.policyChangeCaseId,
@@ -625,7 +631,7 @@ export const updateAgentError = internalMutation({
 export const touchThread = internalMutation({
   args: { threadId: v.id("threads") },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.threadId, { lastMessageAt: Date.now() });
+    await ctx.db.patch(args.threadId, { lastMessageAt: dayjs().valueOf() });
   },
 });
 
@@ -659,7 +665,7 @@ export const createInternal = internalMutation({
       orgId: args.orgId,
       title: args.title ?? "New chat",
       createdBy: args.userId,
-      lastMessageAt: Date.now(),
+      lastMessageAt: dayjs().valueOf(),
       originChannel: "chat",
     });
   },
@@ -683,7 +689,7 @@ export const insertUserMessageInternal = internalMutation({
       userName: args.userName,
       content: args.content,
     });
-    await ctx.db.patch(args.threadId, { lastMessageAt: Date.now() });
+    await ctx.db.patch(args.threadId, { lastMessageAt: dayjs().valueOf() });
     return messageId;
   },
 });
@@ -715,7 +721,7 @@ export const findOrCreateByPhone = internalMutation({
       )
       .first();
     if (existing) {
-      await ctx.db.patch(existing._id, { lastMessageAt: Date.now() });
+      await ctx.db.patch(existing._id, { lastMessageAt: dayjs().valueOf() });
       return existing._id;
     }
     const displayName = args.userName ?? args.fromPhone;
@@ -723,7 +729,7 @@ export const findOrCreateByPhone = internalMutation({
       orgId: args.orgId,
       title: `iMessage - ${displayName}`,
       createdBy: args.userId,
-      lastMessageAt: Date.now(),
+      lastMessageAt: dayjs().valueOf(),
       threadPhone: args.fromPhone,
       originChannel: "imessage",
     });
@@ -755,7 +761,7 @@ export const findOrCreateByImessageChat = internalMutation({
       const displayName = args.title ?? args.userName ?? args.fallbackPhone ?? "Group chat";
       const nextTitle = formatImessageThreadTitle({ isGroup: args.isGroup, displayName });
       await ctx.db.patch(existing._id, {
-        lastMessageAt: Date.now(),
+        lastMessageAt: dayjs().valueOf(),
         imessageIsGroup: args.isGroup,
         imessageScope: args.scope,
         threadPhone: existing.threadPhone ?? args.fallbackPhone,
@@ -771,7 +777,7 @@ export const findOrCreateByImessageChat = internalMutation({
       orgId: args.orgId,
       title: formatImessageThreadTitle({ isGroup: args.isGroup, displayName }),
       createdBy: args.userId,
-      lastMessageAt: Date.now(),
+      lastMessageAt: dayjs().valueOf(),
       threadPhone: args.fallbackPhone,
       imessageChatGuid: args.chatGuid,
       imessageIsGroup: args.isGroup,
@@ -825,7 +831,7 @@ export const insertImessageMessage = internalMutation({
       status: args.status,
       error: args.error,
     });
-    await ctx.db.patch(args.threadId, { lastMessageAt: Date.now() });
+    await ctx.db.patch(args.threadId, { lastMessageAt: dayjs().valueOf() });
     return messageId;
   },
 });
@@ -856,7 +862,7 @@ export const findOrCreateForEmail = internalMutation({
       const existing = await ctx.db.get(args.existingThreadId);
       if (existing && existing.orgId === args.orgId) {
         await ctx.db.patch(existing._id, {
-          lastMessageAt: Date.now(),
+          lastMessageAt: dayjs().valueOf(),
           emailMode: existing.emailMode ?? args.mode,
           originChannel: existing.originChannel ?? "email",
         });
@@ -878,7 +884,7 @@ export const findOrCreateForEmail = internalMutation({
       orgId: args.orgId,
       title: args.subject,
       createdBy: args.userId,
-      lastMessageAt: Date.now(),
+      lastMessageAt: dayjs().valueOf(),
       threadEmail,
       originChannel: "email",
       emailMode: args.mode,
@@ -1073,7 +1079,7 @@ export const insertEmailMessage = internalMutation({
     });
 
     // Update the thread's lastMessageAt
-    await ctx.db.patch(args.threadId, { lastMessageAt: Date.now() });
+    await ctx.db.patch(args.threadId, { lastMessageAt: dayjs().valueOf() });
 
     return messageDocId;
   },

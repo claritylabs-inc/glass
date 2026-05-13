@@ -1339,6 +1339,14 @@ export default defineSchema({
         }),
       ),
     ),
+    toolArtifacts: v.optional(
+      v.array(
+        v.object({
+          type: v.string(),
+          data: v.any(),
+        }),
+      ),
+    ),
     // Status
     status: v.optional(
       v.union(

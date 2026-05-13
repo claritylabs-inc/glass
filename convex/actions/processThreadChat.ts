@@ -793,6 +793,7 @@ export const run = internalAction({
       const citedPolicyIds = new Set<string>(); // policy IDs actually looked up via lookup_policy_section
       const usedTools: string[] = [];
       const toolCalls: Array<{ name: string; input?: string }> = [];
+      const toolArtifacts: Array<{ type: string; data: unknown }> = [];
       const responseAttachments: Array<{
         filename: string;
         contentType: string;
@@ -889,6 +890,15 @@ export const run = internalAction({
               }
             }
           }
+          if (
+            lastToolName === "lookup_vendor_compliance" &&
+            (part as Record<string, unknown>).output
+          ) {
+            toolArtifacts.push({
+              type: "vendor_compliance",
+              data: (part as Record<string, unknown>).output,
+            });
+          }
           // Capture cited section titles and policy IDs from lookup_policy_section results
           if (
             lastToolName === "lookup_policy_section" &&
@@ -951,6 +961,7 @@ export const run = internalAction({
           citedSourceSpanIds.size > 0 ? [...citedSourceSpanIds] : undefined,
         usedTools: usedTools.length > 0 ? usedTools : undefined,
         toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+        toolArtifacts: toolArtifacts.length > 0 ? toolArtifacts : undefined,
         attachments:
           responseAttachments.length > 0 ? responseAttachments : undefined,
         policyChangeCaseId,
