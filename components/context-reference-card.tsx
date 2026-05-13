@@ -222,24 +222,14 @@ export function ReferenceCardStrip({
       >
         {refs.length} sources
       </button>
-      <div
-        aria-hidden={!isExpanded}
-        className="overflow-hidden transition-[max-width,opacity,transform] duration-200 ease-out"
-        style={{
-          maxWidth: isExpanded ? "48rem" : "0rem",
-          opacity: isExpanded ? 1 : 0,
-          transform: isExpanded ? "translateY(0)" : "translateY(-2px)",
-        }}
-      >
+      {isExpanded ? (
         <div className="flex flex-wrap items-start gap-1.5">
           {refs.map((ref, index) => (
             <span
               key={`${ref.type}:${ref.id}`}
               className="transition-[opacity,transform] duration-200 ease-out"
               style={{
-                opacity: isExpanded ? 1 : 0,
-                transform: isExpanded ? "translateY(0)" : "translateY(-3px)",
-                transitionDelay: isExpanded ? `${Math.min(index * 25, 100)}ms` : "0ms",
+                transitionDelay: `${Math.min(index * 25, 100)}ms`,
               }}
             >
               <PolicySourcePill
@@ -252,7 +242,7 @@ export function ReferenceCardStrip({
             </span>
           ))}
         </div>
-      </div>
+      ) : null}
     </div>
   );
 }
