@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import dayjs from "dayjs";
 import {
   internalMutation,
   internalQuery,
@@ -176,16 +177,127 @@ function maxMatchingCoverageAmount(
   return maxAmount;
 }
 
+function bestMatchingCoverage(
+  policy: Doc<"policies">,
+  terms: string[],
+) {
+  let best:
+    | {
+        name?: string;
+        limit?: string;
+        limitAmount?: number;
+      }
+    | undefined;
+  for (const coverage of policy.coverages ?? []) {
+    const coverageText = normalizeText(
+      [
+        coverage.name,
+        coverage.coverageCode,
+        coverage.limit,
+        coverage.limitType,
+        coverage.originalContent,
+      ]
+        .filter(Boolean)
+        .join(" "),
+    );
+    const matches = terms.some((term) =>
+      coverageText.includes(normalizeText(term)),
+    );
+    if (!matches && terms.length > 0) continue;
+    const amount =
+      coverage.limitAmount ??
+      parseMoneyAmount(coverage.limit) ??
+      parseMoneyAmount(coverage.originalContent);
+    if (!best || (amount ?? 0) > (best.limitAmount ?? 0)) {
+      best = {
+        name: coverage.name,
+        limit: coverage.limit,
+        limitAmount: amount,
+      };
+    }
+  }
+  return best;
+}
+
 function parseDate(value: string | undefined) {
   if (!value) return Number.NaN;
-  const time = Date.parse(value);
+  const time = dayjs(value).valueOf();
   return Number.isFinite(time) ? time : Number.NaN;
+}
+
+const INSURED_NAME_STOPWORDS = new Set([
+  "inc",
+  "incorporated",
+  "llc",
+  "ltd",
+  "limited",
+  "corp",
+  "corporation",
+  "company",
+  "co",
+  "the",
+]);
+
+function significantNameTokens(value: string | undefined | null) {
+  return normalizeText(value)
+    .split(/\s+/)
+    .filter(
+      (token) => token.length >= 3 && !INSURED_NAME_STOPWORDS.has(token),
+    );
+}
+
+function insuredNameMatches(
+  actual: string | undefined | null,
+  expected: string | undefined | null,
+) {
+  const actualText = normalizeText(actual);
+  const expectedText = normalizeText(expected);
+  if (!expectedText) return true;
+  if (!actualText) return false;
+  if (actualText.includes(expectedText) || expectedText.includes(actualText)) {
+    return true;
+  }
+  const expectedTokens = significantNameTokens(expected);
+  if (expectedTokens.length === 0) return true;
+  const actualTokens = new Set(significantNameTokens(actual));
+  const matched = expectedTokens.filter((token) => actualTokens.has(token));
+  return matched.length / expectedTokens.length >= 0.7;
+}
+
+function matchedPolicySummary(
+  candidate:
+    | {
+        policy: Doc<"policies">;
+        expiration: number;
+        limitAmount?: number;
+        coverage?: {
+          name?: string;
+          limit?: string;
+          limitAmount?: number;
+        };
+      }
+    | undefined,
+  expectedInsuredName?: string,
+) {
+  if (!candidate) return undefined;
+  return {
+    _id: candidate.policy._id,
+    carrier: candidate.policy.carrier,
+    policyNumber: candidate.policy.policyNumber,
+    insuredName: candidate.policy.insuredName,
+    expectedInsuredName,
+    expirationDate: candidate.policy.expirationDate,
+    coverageName: candidate.coverage?.name,
+    coverageLimit: candidate.coverage?.limit,
+    detectedLimitAmount: candidate.limitAmount,
+  };
 }
 
 function assessRequirement(
   requirement: Doc<"insuranceRequirements">,
   policies: Doc<"policies">[],
-  now = Date.now(),
+  now = dayjs().valueOf(),
+  expectedInsuredName?: string,
 ) {
   const terms = categoryTerms(
     requirement.category,
@@ -203,6 +315,7 @@ function assessRequirement(
       policy,
       text: policySearchText(policy),
       expiration: parseDate(policy.expirationDate),
+      coverage: bestMatchingCoverage(policy, terms),
       limitAmount: maxMatchingCoverageAmount(policy, terms),
     }))
     .filter(({ policy, text }) => {
@@ -228,6 +341,7 @@ function assessRequirement(
       status: "missing" as const,
       matchedPolicyIds: [] as Id<"policies">[],
       expiresAt: undefined,
+      matchedPolicy: undefined,
       notes:
         "No active policy appears to match this requirement. Glass will re-check as vendors upload coverage.",
     };
@@ -247,6 +361,7 @@ function assessRequirement(
       requirementId: requirement._id,
       status: "missing" as const,
       matchedPolicyIds: [best.policy._id],
+      matchedPolicy: matchedPolicySummary(best, expectedInsuredName),
       expiresAt: Number.isFinite(best.expiration)
         ? best.policy.expirationDate
         : undefined,
@@ -266,6 +381,7 @@ function assessRequirement(
       requirementId: requirement._id,
       status: "missing" as const,
       matchedPolicyIds: [best.policy._id],
+      matchedPolicy: matchedPolicySummary(best, expectedInsuredName),
       expiresAt: Number.isFinite(best.expiration)
         ? best.policy.expirationDate
         : undefined,
@@ -273,6 +389,26 @@ function assessRequirement(
         ? Math.ceil((best.expiration - now) / (24 * 60 * 60 * 1000))
         : undefined,
       notes: `Matched ${best.policy.carrier} ${best.policy.policyNumber}, but the detected limit $${best.limitAmount.toLocaleString()} is below the required $${requiredLimitAmount.toLocaleString()}.`,
+    };
+  }
+  if (
+    active &&
+    !insuredNameMatches(best.policy.insuredName, expectedInsuredName)
+  ) {
+    return {
+      requirementId: requirement._id,
+      status: "missing" as const,
+      matchedPolicyIds: [best.policy._id],
+      matchedPolicy: matchedPolicySummary(best, expectedInsuredName),
+      expiresAt: Number.isFinite(best.expiration)
+        ? best.policy.expirationDate
+        : undefined,
+      daysUntilExpiration: Number.isFinite(best.expiration)
+        ? Math.ceil((best.expiration - now) / (24 * 60 * 60 * 1000))
+        : undefined,
+      notes: best.policy.insuredName
+        ? `Matched ${best.policy.carrier} ${best.policy.policyNumber}, but the insured name is ${best.policy.insuredName}; expected ${expectedInsuredName}.`
+        : `Matched ${best.policy.carrier} ${best.policy.policyNumber}, but Glass could not verify the named insured as ${expectedInsuredName}.`,
     };
   }
   const daysUntilExpiration = Number.isFinite(best.expiration)
@@ -288,6 +424,7 @@ function assessRequirement(
     requirementId: requirement._id,
     status,
     matchedPolicyIds: [best.policy._id],
+    matchedPolicy: matchedPolicySummary(best, expectedInsuredName),
     expiresAt: Number.isFinite(best.expiration)
       ? best.policy.expirationDate
       : undefined,
@@ -338,6 +475,7 @@ async function listClientRequirementsForVendor(
   ctx: QueryCtx,
   vendorOrgId: Id<"organizations">,
   vendorPolicies: Doc<"policies">[],
+  vendorName?: string,
 ) {
   const relationships = await ctx.db
     .query("connectedOrgRelationships")
@@ -355,7 +493,12 @@ async function listClientRequirementsForVendor(
       rows.push({
         ...requirement,
         appliesTo: "own_org" as const,
-        complianceCheck: assessRequirement(requirement, vendorPolicies),
+        complianceCheck: assessRequirement(
+          requirement,
+          vendorPolicies,
+          dayjs().valueOf(),
+          vendorName,
+        ),
         canArchive: false,
         clientRequirementSource: {
           relationshipId: rel._id,
@@ -390,17 +533,24 @@ async function listRequirementsVisibleToOrg(
       .withIndex("by_orgId", (q) => q.eq("orgId", orgId))
       .collect(),
   ]);
+  const org = await ctx.db.get(orgId);
   const clientRequirements = await listClientRequirementsForVendor(
     ctx,
     orgId,
     orgPolicies,
+    org?.name,
   );
   return [
     ...ownRequirements.map((requirement) => ({
       ...requirement,
       complianceCheck:
         requirement.appliesTo === "own_org" || requirement.appliesTo === "both"
-          ? assessRequirement(requirement, orgPolicies)
+          ? assessRequirement(
+              requirement,
+              orgPolicies,
+              dayjs().valueOf(),
+              org?.name,
+            )
           : undefined,
       canArchive: true,
     })),
@@ -453,7 +603,7 @@ export const upsertRequirement = mutation({
     const access = await requireOrgMember(ctx, args.orgId);
     if (access.role !== "admin")
       throw new Error("Admin role required to update compliance requirements");
-    const now = Date.now();
+    const now = dayjs().valueOf();
     const trimmedTitle = args.title.trim();
     const trimmedText = args.requirementText.trim();
     if (!trimmedTitle || !trimmedText)
@@ -522,7 +672,7 @@ export const archiveRequirement = mutation({
     await ctx.db.patch(args.requirementId, {
       status: "archived",
       updatedByUserId: access.userId,
-      updatedAt: Date.now(),
+      updatedAt: dayjs().valueOf(),
     });
   },
 });
@@ -567,9 +717,21 @@ export const listVendorCompliance = query({
         .query("policies")
         .withIndex("by_orgId", (q) => q.eq("orgId", rel.vendorOrgId))
         .collect();
-      const checks = requirements.map((requirement) =>
-        assessRequirement(requirement, policies),
-      );
+      const policyCount = policies.filter(
+        (policy) =>
+          !policy.deletedAt &&
+          !policy.dismissed &&
+          policy.documentType !== "quote",
+      ).length;
+      const checks = requirements.map((requirement) => ({
+        requirement,
+        ...assessRequirement(
+          requirement,
+          policies,
+          dayjs().valueOf(),
+          vendorOrg?.name,
+        ),
+      }));
       const missing = checks.filter(
         (check) => check.status === "missing" || check.status === "expired",
       ).length;
@@ -594,6 +756,7 @@ export const listVendorCompliance = query({
                 ? "no_requirements"
                 : "compliant",
         requirementCount: requirements.length,
+        policyCount,
         metCount: checks.filter((check) => check.status === "met").length,
         missingCount: missing,
         expiringSoonCount: expiringSoon,
@@ -640,6 +803,7 @@ export const getVendorChecklist = query({
       .query("policies")
       .withIndex("by_orgId", (q) => q.eq("orgId", vendorOrgId))
       .collect();
+    const vendorOrg = await ctx.db.get(vendorOrgId);
     const rows = [];
     for (const rel of relationships.filter(
       (relationship) => relationship.status === "active",
@@ -650,7 +814,12 @@ export const getVendorChecklist = query({
       );
       const checks = requirements.map((requirement) => ({
         requirement,
-        ...assessRequirement(requirement, policies),
+        ...assessRequirement(
+          requirement,
+          policies,
+          dayjs().valueOf(),
+          vendorOrg?.name,
+        ),
       }));
       rows.push({
         clientOrg: clientOrg
@@ -703,7 +872,7 @@ export const upsertRequirementInternal = internalMutation({
       )
       .first();
     if (membership?.role !== "admin") throw new Error("Admin role required");
-    const now = Date.now();
+    const now = dayjs().valueOf();
     return await ctx.db.insert("insuranceRequirements", {
       orgId: args.orgId,
       title: args.title.trim(),
@@ -804,7 +973,7 @@ export const createRequirementsInternal = internalMutation({
         normalizeText(`${requirement.title} ${requirement.requirementText}`),
       ),
     );
-    const now = Date.now();
+    const now = dayjs().valueOf();
     const ids: Id<"insuranceRequirements">[] = [];
     for (const requirement of args.requirements) {
       const title = requirement.title.trim();
