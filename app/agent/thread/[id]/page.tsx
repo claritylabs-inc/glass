@@ -22,6 +22,11 @@ import Link from "next/link";
 import { ProseMarkdown } from "@/components/prose-markdown";
 import dayjs from "dayjs";
 import { NewChatEmptyState } from "@/components/new-chat-empty-state";
+import {
+  PolicyChangeProgress,
+  formatPolicyChangeStatus,
+  isPolicyChangeTerminal,
+} from "@/components/policy-change-progress";
 
 /* ═══════════════════════════════════════════════════
    Unified Thread View (new threads table)
@@ -877,92 +882,6 @@ function VendorComplianceArtifacts({
     </div>
   );
 }
-
-function formatPolicyChangeStatus(status?: string) {
-  if (!status) return "Request";
-  return status.replace(/_/g, " ");
-}
-
-function policyChangeProgress(status?: string) {
-  switch (status) {
-    case "draft":
-      return 1;
-    case "needs_info":
-      return 2;
-    case "ready":
-      return 3;
-    case "submitted":
-      return 4;
-    case "accepted":
-      return 5;
-    case "declined":
-    case "cancelled":
-      return 0;
-    default:
-      return 1;
-  }
-}
-
-function isPolicyChangeTerminal(status?: string) {
-  return status === "accepted" || status === "declined" || status === "cancelled";
-}
-
-function PolicyChangeProgress({ status }: { status?: string }) {
-  const steps = ["Requested", "Review", "Ready", "Submitted", "Complete"];
-  const completed = policyChangeProgress(status);
-  const interrupted = status === "declined" || status === "cancelled";
-
-  return (
-    <div className="space-y-2">
-      <div className="flex items-start">
-        {steps.map((step, index) => {
-          const stepNumber = index + 1;
-          const active = !interrupted && stepNumber <= completed;
-          const current = !interrupted && stepNumber === completed;
-          const connectorActive = !interrupted && stepNumber < completed;
-          return (
-            <div
-              key={step}
-              className={`flex min-w-0 items-start ${index === steps.length - 1 ? "shrink-0" : "flex-1"}`}
-            >
-              <div className="flex w-16 shrink-0 flex-col items-center gap-1">
-                <span
-                  className={`mt-0.5 rounded-full transition-colors ${
-                    current
-                      ? "size-3 bg-foreground"
-                      : active
-                        ? "size-2.5 bg-foreground/70"
-                        : "size-2.5 bg-foreground/15"
-                  }`}
-                />
-                <span
-                  className={`text-center text-[11px] leading-4 ${
-                    current ? "font-medium text-foreground" : active ? "text-foreground/70" : "text-muted-foreground/60"
-                  }`}
-                >
-                  {step}
-                </span>
-              </div>
-              {index < steps.length - 1 ? (
-                <div
-                  className={`mt-[7px] h-px min-w-3 flex-1 transition-colors ${
-                    connectorActive ? "bg-foreground/50" : "bg-foreground/10"
-                  }`}
-                />
-              ) : null}
-            </div>
-          );
-        })}
-      </div>
-      {interrupted ? (
-        <p className="text-label-sm text-muted-foreground/60">
-          This request is {formatPolicyChangeStatus(status)}.
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
 function asRecordArray(value: unknown): Record<string, unknown>[] {
   return Array.isArray(value)
     ? value.filter((item): item is Record<string, unknown> => !!item && typeof item === "object" && !Array.isArray(item))

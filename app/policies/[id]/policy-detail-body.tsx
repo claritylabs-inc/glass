@@ -30,6 +30,11 @@ import { PolicySummary } from "./policy-summary";
 import { ExtractionCards } from "./extraction-panel";
 import { PolicyExtractionBanner } from "@/components/shared/extraction-banner";
 import type { PipelineStatus, LogEntry } from "@claritylabs/cl-pipelines";
+import {
+  PolicyChangeProgress,
+  formatPolicyChangeStatus,
+  isPolicyChangeTerminal,
+} from "@/components/policy-change-progress";
 
 type PolicyAuditLogEntry = {
   _id: string;
@@ -61,90 +66,6 @@ function logPolicyActivityToBrowser(
 ) {
   if (!LOG_POLICY_ACTIVITY_IN_BROWSER) return;
   console.info(`[policy-activity] ${event}`, payload);
-}
-
-function formatPolicyChangeStatus(status: string) {
-  return status.replace("_", " ");
-}
-
-function policyChangeProgress(status: string) {
-  switch (status) {
-    case "draft":
-      return 1;
-    case "needs_info":
-      return 2;
-    case "ready":
-      return 3;
-    case "submitted":
-      return 4;
-    case "accepted":
-      return 5;
-    case "declined":
-    case "cancelled":
-      return 0;
-    default:
-      return 1;
-  }
-}
-
-function isPolicyChangeTerminal(status: string) {
-  return status === "accepted" || status === "declined" || status === "cancelled";
-}
-
-function PolicyChangeProgress({ status }: { status: string }) {
-  const steps = ["Requested", "Review", "Ready", "Submitted", "Complete"];
-  const completed = policyChangeProgress(status);
-  const interrupted = status === "declined" || status === "cancelled";
-
-  return (
-    <div className="mt-4 max-w-3xl">
-      <div className="flex items-start">
-        {steps.map((step, index) => {
-          const stepNumber = index + 1;
-          const active = !interrupted && stepNumber <= completed;
-          const current = !interrupted && stepNumber === completed;
-          const connectorActive = !interrupted && stepNumber < completed;
-          return (
-            <div
-              key={step}
-              className={`flex min-w-0 items-start ${index === steps.length - 1 ? "shrink-0" : "flex-1"}`}
-            >
-              <div className="flex w-[72px] shrink-0 flex-col items-center gap-1">
-                <span
-                  className={`mt-0.5 rounded-full transition-colors ${
-                    current
-                      ? "size-3 bg-foreground"
-                      : active
-                        ? "size-2.5 bg-foreground/70"
-                        : "size-2.5 bg-foreground/15"
-                  }`}
-                />
-                <span
-                  className={`text-center text-[11px] leading-4 ${
-                    current ? "font-medium text-foreground" : active ? "text-foreground/70" : "text-muted-foreground"
-                  }`}
-                >
-                  {step}
-                </span>
-              </div>
-              {index < steps.length - 1 ? (
-                <div
-                  className={`mt-[7px] h-px min-w-4 flex-1 transition-colors ${
-                    connectorActive ? "bg-foreground/50" : "bg-foreground/10"
-                  }`}
-                />
-              ) : null}
-            </div>
-          );
-        })}
-      </div>
-      {interrupted && (
-        <p className="mt-2 text-label-sm text-muted-foreground">
-          This request is {formatPolicyChangeStatus(status)}.
-        </p>
-      )}
-    </div>
-  );
 }
 
 function PolicyChangesTab({
@@ -276,7 +197,7 @@ function PolicyChangesTab({
                 )}
               </div>
 
-              <PolicyChangeProgress status={change.status} />
+              <PolicyChangeProgress status={change.status} className="mt-4" />
 
               <div className="mt-3 flex flex-wrap gap-3 text-[11px] text-muted-foreground">
                 <span>Updated {new Date(change.updatedAt).toLocaleDateString()}</span>
