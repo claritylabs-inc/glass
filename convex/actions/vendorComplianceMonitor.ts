@@ -11,7 +11,7 @@ import {
 } from "../lib/emailSubagent";
 import { getImessageWorkerUrl } from "../lib/imessageConfig";
 
-type ComplianceEvent = {
+export type ComplianceEvent = {
   type:
     | "vendor_compliance_met"
     | "vendor_compliance_gap"
@@ -104,6 +104,38 @@ function buildFollowUpBody(event: ComplianceEvent) {
   ].join("\n");
 }
 
+export function buildFollowUpThreadContext(
+  event: ComplianceEvent,
+  vendorEmail: string,
+  status: "draft" | "sent" | "send_failed",
+) {
+  const issueCount = event.issueLines.length;
+  const issueLabel = issueCount === 1 ? "compliance item" : "compliance items";
+  const issuePreview = event.issueLines.slice(0, 6).map((line) => `- ${line}`);
+  const remainingCount = event.issueLines.length - issuePreview.length;
+  if (remainingCount > 0) {
+    issuePreview.push(`- ${remainingCount} more ${remainingCount === 1 ? "item" : "items"} in the email below.`);
+  }
+
+  const action =
+    status === "sent"
+      ? `I sent the follow-up email to ${vendorEmail}. You can review the sent email below and use this thread if the vendor replies with policies or endorsements.`
+      : status === "send_failed"
+        ? `I drafted the follow-up email to ${vendorEmail}, but the automatic send failed. Review the draft below, edit if needed, then retry sending it.`
+        : `Review the draft below, edit anything that should change, then send it to ${vendorEmail}. If ${event.vendorName} already sent documents, upload them or ask the vendor to reply with the policies, certificates, or endorsements that satisfy these requirements.`;
+
+  return [
+    `Glass created this thread because the daily vendor compliance monitor found ${issueCount} ${issueLabel} needing attention for ${event.vendorName}.`,
+    "",
+    `Reason: ${event.clientName}'s active vendor requirements do not currently have matching policy evidence in Glass for ${event.vendorName}.`,
+    "",
+    "Current gaps:",
+    ...issuePreview,
+    "",
+    action,
+  ].join("\n");
+}
+
 function buildTextBody(event: ComplianceEvent) {
   const reviewUrl = `${process.env.SITE_URL ?? "https://glass.claritylabs.inc"}/connect/vendors`;
   return `Glass: ${event.vendorName} has ${event.issueLines.length} vendor compliance item${event.issueLines.length === 1 ? "" : "s"} needing attention for ${event.clientName}. Review: ${reviewUrl}`;
@@ -131,15 +163,20 @@ async function createFollowUpDraft(
   }
 
   const subject = `${event.clientName} vendor insurance requirements`;
-  const threadId = await ctx.runMutation((internal as any).threads.createInternal, {
+  const initialContext = buildFollowUpThreadContext(event, vendorEmail, "draft");
+  const proactiveThread = await ctx.runMutation((internal as any).threads.createProactiveInternal, {
     orgId: event.clientOrgId,
     userId: owner.user._id,
     title: `Vendor compliance follow-up - ${event.vendorName}`,
+    content: initialContext,
   });
+  const threadId = proactiveThread.threadId as Id<"threads">;
+  const contextMessageId = proactiveThread.messageId as Id<"threadMessages">;
   const ownerEmail = owner.user.email;
   const draftId = await upsertEmailDraftArtifact(ctx, {
     orgId: event.clientOrgId,
     threadId,
+    chatMessageId: contextMessageId,
     channel: "mcp",
     fromHeader: identity.fromHeader,
     agentAddress: identity.agentAddress,
@@ -158,19 +195,39 @@ async function createFollowUpDraft(
     attachments: [],
   });
 
-  if (!draftId) return null;
+  if (!draftId) {
+    await ctx.runMutation((internal as any).threads.deleteMessageInternal, {
+      id: contextMessageId,
+    });
+    return null;
+  }
   if (org.autoSendEmails === true) {
     try {
       await ctx.runAction((internal as any).actions.sendPendingEmail.sendDraftInternal, {
         id: draftId,
       });
+      await ctx.runMutation((internal as any).threads.updateAgentMessage, {
+        id: contextMessageId,
+        content: buildFollowUpThreadContext(event, vendorEmail, "sent"),
+        pendingEmailId: draftId,
+      });
       return { threadId, draftId, status: "sent" as const };
     } catch (error) {
       console.warn("[vendorComplianceMonitor] Vendor follow-up send failed:", error);
+      await ctx.runMutation((internal as any).threads.updateAgentMessage, {
+        id: contextMessageId,
+        content: buildFollowUpThreadContext(event, vendorEmail, "send_failed"),
+        pendingEmailId: draftId,
+      });
       return { threadId, draftId, status: "send_failed" as const };
     }
   }
 
+  await ctx.runMutation((internal as any).threads.updateAgentMessage, {
+    id: contextMessageId,
+    content: buildFollowUpThreadContext(event, vendorEmail, "draft"),
+    pendingEmailId: draftId,
+  });
   return { threadId, draftId, status: "draft" as const };
 }
 

@@ -671,6 +671,33 @@ export const createInternal = internalMutation({
   },
 });
 
+export const createProactiveInternal = internalMutation({
+  args: {
+    orgId: v.id("organizations"),
+    userId: v.id("users"),
+    title: v.string(),
+    content: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const now = dayjs().valueOf();
+    const threadId = await ctx.db.insert("threads", {
+      orgId: args.orgId,
+      title: args.title,
+      createdBy: args.userId,
+      lastMessageAt: now,
+      originChannel: "chat",
+    });
+    const messageId = await ctx.db.insert("threadMessages", {
+      threadId,
+      orgId: args.orgId,
+      channel: "chat",
+      role: "agent",
+      content: args.content,
+    });
+    return { threadId, messageId };
+  },
+});
+
 export const insertUserMessageInternal = internalMutation({
   args: {
     threadId: v.id("threads"),

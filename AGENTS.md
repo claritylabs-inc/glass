@@ -318,6 +318,7 @@ Outbound emails sent by Glass Agent are centralized in `convex/lib/emailSubagent
 - `/policies` — list, detail, upload, re-extract, and generated certificate history.
 - `/chat` — threaded assistant.
 - `/agent/thread/:id` — renders unified `threads` records. Legacy `webChats`, `webChatMessages`, and `agentConversations` backend tables/functions have been removed after migration to `threads` + `threadMessages`.
+- Proactive features that create a chat thread use `threads.createProactiveInternal` so the thread starts with an agent message explaining why Glass created it, what evidence or trigger was found, and what the user should do next. Proactive email drafts attach to that agent message via `pendingEmailId`, so the chat context and email card render together.
 - Chat artifact cards such as email drafts should keep meaningful visual presence. Sources and tool calls should stay compact and consistent in the message footer row: inline policy citations are small chips, footer source chips open the right-side preview, and tool call parameters expand only on demand.
 - Web chat email artifacts are visually attached to the assistant message that created them, not rendered as a separate standalone chat turn. Sent email artifacts use `View sent email` instead of draft language.
 - Automatic chat title generation lives in `convex/actions/threadTitle.ts`. It should use the initial user message plus `threads.initialContext` and attachments, prefer the user's work intent/deliverable, and avoid recipient names, email domains, usernames, or file IDs.
