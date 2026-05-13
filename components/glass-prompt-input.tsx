@@ -94,6 +94,7 @@ export interface GlassPromptInputProps {
   roomyOnMobile?: boolean;
   disabled?: boolean;
   status?: ChatStatus;
+  submittedLabel?: string;
   onStop?: () => void;
   /** Override the default "Glass" branding shown in the footer. */
   agentBranding?: { name: string; iconUrl?: string | null };
@@ -111,6 +112,7 @@ export const GlassPromptInput = forwardRef<
     roomyOnMobile = false,
     disabled = false,
     status,
+    submittedLabel = "Sending",
     onStop,
     agentBranding,
   },
@@ -263,7 +265,7 @@ export const GlassPromptInput = forwardRef<
                   {status === "submitted" ? (
                     <>
                       <Spinner className={roomyOnMobile ? "h-4 w-4 sm:h-3.5 sm:w-3.5" : "h-3.5 w-3.5"} />
-                      Sending
+                      {submittedLabel}
                     </>
                   ) : (
                     <>

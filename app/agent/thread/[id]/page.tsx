@@ -588,6 +588,9 @@ type VendorComplianceRow = {
   checks?: VendorComplianceCheck[];
 };
 
+type VendorComplianceArtifactData = { type: string; data: unknown };
+type VendorComplianceArtifactRef = { messageId: Id<"threadMessages">; index: number };
+
 function normalizeVendorComplianceRows(data: unknown): VendorComplianceRow[] {
   if (!Array.isArray(data)) return [];
   return data
@@ -672,13 +675,116 @@ function formatLimitAmount(value?: number) {
   }).format(value);
 }
 
-function VendorComplianceArtifact({ artifact }: { artifact: { type: string; data: unknown } }) {
+function summarizeVendorComplianceRows(rows: VendorComplianceRow[]) {
+  return rows.reduce(
+    (summary, row) => {
+      const checks = row.checks ?? [];
+      const requirementCount = row.requirementCount ?? checks.length;
+      const openCount = checks.filter((check) => check.status !== "met").length;
+      const metCount = checks.filter((check) => check.status === "met").length;
+      return {
+        requirements: summary.requirements + requirementCount,
+        met: summary.met + metCount,
+        open: summary.open + openCount,
+        policies: summary.policies + (row.policyCount ?? 0),
+      };
+    },
+    { requirements: 0, met: 0, open: 0, policies: 0 },
+  );
+}
+
+function VendorComplianceChecklist({ rows }: { rows: VendorComplianceRow[] }) {
+  return (
+    <div className="space-y-3">
+      {rows.map((row, rowIndex) => {
+        const checks = row.checks ?? [];
+        const openChecks = checks.filter((check) => check.status !== "met").length;
+        return (
+          <section key={`${row.vendorOrgId ?? row.name ?? "vendor"}-${rowIndex}`} className="rounded-md border border-foreground/8 bg-card">
+            <div className="border-b border-foreground/6 px-3 py-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="min-w-0 truncate text-[13px] font-medium text-foreground">
+                  {row.name ?? "Vendor"}
+                </h3>
+                <Badge variant="outline" className="h-5 border-foreground/10 px-1.5 text-[10px] font-medium text-muted-foreground/60">
+                  {vendorStatusLabel(row.status)}
+                </Badge>
+              </div>
+              <p className="mt-1 text-[11px] text-muted-foreground/45">
+                {checks.length || row.requirementCount || 0} requirements
+                {typeof row.policyCount === "number" ? ` · ${row.policyCount} policies` : ""}
+                {openChecks > 0 ? ` · ${openChecks} open` : ""}
+              </p>
+            </div>
+            {checks.length > 0 ? (
+              <div className="divide-y divide-foreground/[0.05]">
+                {checks.map((check, checkIndex) => {
+                  const meta = checkStatusMeta(check.status);
+                  const StatusIcon = meta.icon;
+                  const policy = check.matchedPolicy;
+                  const detectedLimit = formatLimitAmount(policy?.detectedLimitAmount);
+                  return (
+                    <div key={`${check.requirementId ?? check.title ?? "check"}-${checkIndex}`} className="px-3 py-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-foreground/85">
+                          {check.title ?? "Requirement"}
+                        </span>
+                        <Badge variant="outline" className={`h-5 gap-1 px-1.5 text-[10px] font-medium ${meta.className}`}>
+                          <StatusIcon className="h-3 w-3" />
+                          {meta.label}
+                        </Badge>
+                      </div>
+                      <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground/55">
+                        {check.requiredLimit ? <span>Required: {check.requiredLimit}</span> : null}
+                        {policy?.coverageLimit ? <span>Coverage: {policy.coverageLimit}</span> : null}
+                        {detectedLimit ? <span>Detected: {detectedLimit}</span> : null}
+                        {policy?.expirationDate ? <span>Expires: {policy.expirationDate}</span> : null}
+                        {policy?.insuredName ? <span>Insured: {policy.insuredName}</span> : null}
+                      </div>
+                      {policy?.carrier || policy?.policyNumber || policy?.coverageName ? (
+                        <p className="mt-1 truncate text-[11px] text-muted-foreground/40">
+                          {[policy.carrier, policy.policyNumber, policy.coverageName].filter(Boolean).join(" · ")}
+                        </p>
+                      ) : null}
+                      {check.notes ? (
+                        <p className="mt-1 text-[11px] leading-4 text-muted-foreground/65">
+                          {check.notes}
+                        </p>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
+function VendorComplianceSummaryCard({
+  artifact,
+  onOpen,
+  isOpen,
+}: {
+  artifact: VendorComplianceArtifactData;
+  onOpen?: () => void;
+  isOpen?: boolean;
+}) {
   if (artifact.type !== "vendor_compliance") return null;
   const rows = normalizeVendorComplianceRows(artifact.data);
   if (rows.length === 0) return null;
+  const summary = summarizeVendorComplianceRows(rows);
 
   return (
-    <div className="mt-4 w-full max-w-3xl overflow-hidden rounded-md border border-foreground/8 bg-card">
+    <button
+      type="button"
+      onClick={onOpen}
+      className={`mt-4 w-full max-w-3xl overflow-hidden rounded-md border bg-card text-left transition-colors ${
+        isOpen ? "border-primary/35" : "border-foreground/8 hover:border-foreground/14"
+      }`}
+    >
       <div className="flex items-center justify-between gap-3 border-b border-foreground/6 px-3 py-2.5">
         <div className="flex min-w-0 items-center gap-2">
           <ClipboardList className="h-4 w-4 shrink-0 text-muted-foreground/60" />
@@ -690,80 +796,97 @@ function VendorComplianceArtifact({ artifact }: { artifact: { type: string; data
           {rows.length} vendor{rows.length === 1 ? "" : "s"}
         </Badge>
       </div>
-      <div className="divide-y divide-foreground/6">
-        {rows.map((row, rowIndex) => {
-          const checks = row.checks ?? [];
-          const openChecks = checks.filter((check) => check.status !== "met").length;
-          return (
-            <div key={`${row.vendorOrgId ?? row.name ?? "vendor"}-${rowIndex}`} className="px-3 py-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <h3 className="min-w-0 truncate text-[13px] font-medium text-foreground">
-                  {row.name ?? "Vendor"}
-                </h3>
-                <Badge variant="outline" className="h-5 border-foreground/10 px-1.5 text-[10px] font-medium text-muted-foreground/60">
-                  {vendorStatusLabel(row.status)}
-                </Badge>
-                <span className="text-[11px] text-muted-foreground/45">
-                  {checks.length || row.requirementCount || 0} requirements
-                  {typeof row.policyCount === "number" ? ` · ${row.policyCount} policies` : ""}
-                  {openChecks > 0 ? ` · ${openChecks} open` : ""}
+      <div className="space-y-2 px-3 py-3">
+        <p className="text-[12px] text-muted-foreground/60">
+          {summary.met}/{summary.requirements} requirements met
+          {summary.open > 0 ? ` · ${summary.open} open` : ""}
+          {summary.policies > 0 ? ` · ${summary.policies} policies` : " · no policies"}
+        </p>
+        <div className="space-y-1.5">
+          {rows.slice(0, 3).map((row, index) => {
+            const checks = row.checks ?? [];
+            const openChecks = checks.filter((check) => check.status !== "met").length;
+            const metChecks = checks.filter((check) => check.status === "met").length;
+            const requirementCount = row.requirementCount ?? checks.length;
+            return (
+              <div key={`${row.vendorOrgId ?? row.name ?? "vendor"}-${index}`} className="flex items-center gap-2 text-[11px]">
+                <span className="min-w-0 flex-1 truncate font-medium text-foreground/75">{row.name ?? "Vendor"}</span>
+                <span className="shrink-0 text-muted-foreground/45">
+                  {metChecks}/{requirementCount} met{openChecks > 0 ? ` · ${openChecks} open` : ""}
                 </span>
               </div>
-              {checks.length > 0 ? (
-                <div className="mt-2 divide-y divide-foreground/[0.05] rounded-md border border-foreground/6">
-                  {checks.map((check, checkIndex) => {
-                    const meta = checkStatusMeta(check.status);
-                    const StatusIcon = meta.icon;
-                    const policy = check.matchedPolicy;
-                    const detectedLimit = formatLimitAmount(policy?.detectedLimitAmount);
-                    return (
-                      <div key={`${check.requirementId ?? check.title ?? "check"}-${checkIndex}`} className="px-2.5 py-2">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-foreground/85">
-                            {check.title ?? "Requirement"}
-                          </span>
-                          <Badge variant="outline" className={`h-5 gap-1 px-1.5 text-[10px] font-medium ${meta.className}`}>
-                            <StatusIcon className="h-3 w-3" />
-                            {meta.label}
-                          </Badge>
-                        </div>
-                        <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground/55">
-                          {check.requiredLimit ? <span>Required: {check.requiredLimit}</span> : null}
-                          {policy?.coverageLimit ? <span>Coverage: {policy.coverageLimit}</span> : null}
-                          {detectedLimit ? <span>Detected: {detectedLimit}</span> : null}
-                          {policy?.expirationDate ? <span>Expires: {policy.expirationDate}</span> : null}
-                          {policy?.insuredName ? <span>Insured: {policy.insuredName}</span> : null}
-                        </div>
-                        {policy?.carrier || policy?.policyNumber || policy?.coverageName ? (
-                          <p className="mt-1 truncate text-[11px] text-muted-foreground/40">
-                            {[policy.carrier, policy.policyNumber, policy.coverageName].filter(Boolean).join(" · ")}
-                          </p>
-                        ) : null}
-                        {check.notes ? (
-                          <p className="mt-1 text-[11px] leading-4 text-muted-foreground/65">
-                            {check.notes}
-                          </p>
-                        ) : null}
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : null}
-            </div>
-          );
-        })}
+            );
+          })}
+          {rows.length > 3 ? (
+            <p className="text-[11px] text-muted-foreground/40">
+              +{rows.length - 3} more vendor{rows.length - 3 === 1 ? "" : "s"}
+            </p>
+          ) : null}
+        </div>
       </div>
-    </div>
+    </button>
   );
 }
 
-function VendorComplianceArtifacts({ artifacts }: { artifacts?: { type: string; data: unknown }[] }) {
+function VendorComplianceSidebar({
+  artifact,
+  onClose,
+}: {
+  artifact: VendorComplianceArtifactData;
+  onClose: () => void;
+}) {
+  const rows = normalizeVendorComplianceRows(artifact.data);
+  const summary = summarizeVendorComplianceRows(rows);
+  return (
+    <aside className="flex h-full w-full flex-col overflow-hidden border-l border-foreground/8 bg-background">
+      <div className="flex h-12 items-center justify-between gap-3 border-b border-foreground/8 px-4">
+        <div className="flex min-w-0 items-center gap-2">
+          <ClipboardList className="h-4 w-4 shrink-0 text-muted-foreground/60" />
+          <h2 className="truncate text-body-sm font-semibold text-foreground">Vendor compliance checks</h2>
+          <Badge variant="outline" className="h-5 shrink-0 border-foreground/10 px-1.5 text-[10px] font-medium text-muted-foreground/55">
+            {rows.length} vendor{rows.length === 1 ? "" : "s"}
+          </Badge>
+        </div>
+        <PillButton size="compact" variant="icon" onClick={onClose} label="Close vendor compliance checks">
+          <X className="h-4 w-4" />
+        </PillButton>
+      </div>
+      <div className="border-b border-foreground/8 px-4 py-3">
+        <p className="text-[12px] text-muted-foreground/60">
+          {summary.met}/{summary.requirements} requirements met
+          {summary.open > 0 ? ` · ${summary.open} open` : ""}
+          {summary.policies > 0 ? ` · ${summary.policies} policies` : " · no policies"}
+        </p>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+        <VendorComplianceChecklist rows={rows} />
+      </div>
+    </aside>
+  );
+}
+
+function VendorComplianceArtifacts({
+  messageId,
+  artifacts,
+  openArtifactRef,
+  onOpenArtifact,
+}: {
+  messageId: Id<"threadMessages">;
+  artifacts?: VendorComplianceArtifactData[];
+  openArtifactRef?: VendorComplianceArtifactRef | null;
+  onOpenArtifact?: (ref: VendorComplianceArtifactRef) => void;
+}) {
   const vendorArtifacts = artifacts?.filter((artifact) => artifact.type === "vendor_compliance") ?? [];
   if (vendorArtifacts.length === 0) return null;
   return (
     <div className="space-y-3">
       {vendorArtifacts.map((artifact, index) => (
-        <VendorComplianceArtifact key={`vendor-compliance-${index}`} artifact={artifact} />
+        <VendorComplianceSummaryCard
+          key={`vendor-compliance-${index}`}
+          artifact={artifact}
+          isOpen={openArtifactRef?.messageId === messageId && openArtifactRef.index === index}
+          onOpen={() => onOpenArtifact?.({ messageId, index })}
+        />
       ))}
     </div>
   );
@@ -1302,6 +1425,8 @@ export function UnifiedMessageBubble({
   openEmailMessageId,
   onOpenPolicyChange,
   openPolicyChangeCaseId,
+  onOpenVendorCompliance,
+  openVendorComplianceArtifactRef,
 }: {
   msg: ThreadMessage;
   relatedEmailMessage?: ThreadMessage;
@@ -1319,6 +1444,8 @@ export function UnifiedMessageBubble({
   openEmailMessageId?: Id<"threadMessages"> | null;
   onOpenPolicyChange?: (caseId: Id<"policyChangeCases">) => void;
   openPolicyChangeCaseId?: Id<"policyChangeCases"> | null;
+  onOpenVendorCompliance?: (ref: VendorComplianceArtifactRef) => void;
+  openVendorComplianceArtifactRef?: VendorComplianceArtifactRef | null;
 }) {
   const [showQuoted, setShowQuoted] = useState(false);
   const [showToolCalls, setShowToolCalls] = useState(false);
@@ -1492,7 +1619,12 @@ export function UnifiedMessageBubble({
                   onToggleToolCalls={() => setShowToolCalls((value) => !value)}
                   rightAligned={brokerPerspective}
                 />
-                <VendorComplianceArtifacts artifacts={msg.toolArtifacts} />
+                <VendorComplianceArtifacts
+                  messageId={msg._id}
+                  artifacts={msg.toolArtifacts}
+                  openArtifactRef={openVendorComplianceArtifactRef}
+                  onOpenArtifact={onOpenVendorCompliance}
+                />
                 {relatedEmailMessage ? (
                   <div className="mt-4">
                     <EmailSummaryCard
@@ -1786,10 +1918,17 @@ function UnifiedThreadContent({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [openEmailMessageId, setOpenEmailMessageId] = useState<Id<"threadMessages"> | null>(null);
   const [openPolicyChangeCaseId, setOpenPolicyChangeCaseId] = useState<Id<"policyChangeCases"> | null>(null);
+  const [openVendorComplianceArtifactRef, setOpenVendorComplianceArtifactRef] = useState<VendorComplianceArtifactRef | null>(null);
   const openEmailMessage = useMemo(
     () => messages?.find((message) => message._id === openEmailMessageId) ?? null,
     [messages, openEmailMessageId],
   );
+  const openVendorComplianceArtifact = useMemo(() => {
+    if (!openVendorComplianceArtifactRef) return null;
+    const message = messages?.find((candidate) => candidate._id === openVendorComplianceArtifactRef.messageId);
+    const artifacts = message?.toolArtifacts?.filter((artifact) => artifact.type === "vendor_compliance") ?? [];
+    return artifacts[openVendorComplianceArtifactRef.index] ?? null;
+  }, [messages, openVendorComplianceArtifactRef]);
 
   // Error state for chat — stored as { threadId, message } so switching threads auto-clears it
   const [chatErrorState, setChatErrorState] = useState<{ threadId: string; message: string } | null>(null);
@@ -1836,10 +1975,17 @@ function UnifiedThreadContent({
                 onClose={() => setOpenPolicyChangeCaseId(null)}
               />
             )
+          : openVendorComplianceArtifact
+            ? (
+                <VendorComplianceSidebar
+                  artifact={openVendorComplianceArtifact}
+                  onClose={() => setOpenVendorComplianceArtifactRef(null)}
+                />
+              )
           : null,
     );
     return () => onRightPanel(null);
-  }, [onRightPanel, openEmailMessage, openPolicyChangeCaseId, policyChangeAccess]);
+  }, [onRightPanel, openEmailMessage, openPolicyChangeCaseId, openVendorComplianceArtifact, policyChangeAccess]);
 
   // Scroll to bottom when messages change or thread switches
   useEffect(() => {
@@ -1901,6 +2047,7 @@ function UnifiedThreadContent({
     return lastUserIndex > lastAgentIndex;
   }, [messages]);
   const isInputBusy = isSubmitting || isAgentProcessing || isAwaitingAgent;
+  const inputBusyLabel = isSubmitting ? "Sending" : "Responding";
 
   const handleSend = useCallback(async (message: PromptInputMessage) => {
     if (isInputBusy) return;
@@ -2001,14 +2148,22 @@ function UnifiedThreadContent({
                     collapseEmailMessages={collapseEmailMessages}
                     onOpenEmail={(message) => {
                       setOpenPolicyChangeCaseId(null);
+                      setOpenVendorComplianceArtifactRef(null);
                       setOpenEmailMessageId(message._id);
                     }}
                     openEmailMessageId={openEmailMessageId}
                     onOpenPolicyChange={(caseId) => {
                       setOpenEmailMessageId(null);
+                      setOpenVendorComplianceArtifactRef(null);
                       setOpenPolicyChangeCaseId(caseId);
                     }}
                     openPolicyChangeCaseId={openPolicyChangeCaseId}
+                    onOpenVendorCompliance={(ref) => {
+                      setOpenEmailMessageId(null);
+                      setOpenPolicyChangeCaseId(null);
+                      setOpenVendorComplianceArtifactRef(ref);
+                    }}
+                    openVendorComplianceArtifactRef={openVendorComplianceArtifactRef}
                   />
                   {isFirstUser && thread?.initialContext && (
                     <div className={`mt-2 flex ${firstUserIsOwn ? "justify-end mr-9.5" : "ml-9.5"}`}>
@@ -2041,6 +2196,7 @@ function UnifiedThreadContent({
           agentBranding={agentBranding}
           disabled={isInputBusy}
           status={isInputBusy ? "submitted" : undefined}
+          submittedLabel={inputBusyLabel}
         />
       </ChatInputOverlay>
     </div>
