@@ -775,7 +775,6 @@ function VendorComplianceSummaryCard({
   if (artifact.type !== "vendor_compliance") return null;
   const rows = normalizeVendorComplianceRows(artifact.data);
   if (rows.length === 0) return null;
-  const summary = summarizeVendorComplianceRows(rows);
 
   return (
     <button
@@ -786,43 +785,39 @@ function VendorComplianceSummaryCard({
       }`}
     >
       <div className="flex items-center justify-between gap-3 border-b border-foreground/6 px-3 py-2.5">
-        <div className="flex min-w-0 items-center gap-2">
-          <ClipboardList className="h-4 w-4 shrink-0 text-muted-foreground/60" />
-          <span className="truncate text-[13px] font-medium text-foreground/85">
-            Vendor compliance checks
-          </span>
-        </div>
+        <span className="truncate text-[13px] font-medium text-foreground/85">
+          Vendor compliance checks
+        </span>
         <Badge variant="outline" className="h-5 shrink-0 border-foreground/10 px-1.5 text-[10px] font-medium text-muted-foreground/55">
           {rows.length} vendor{rows.length === 1 ? "" : "s"}
         </Badge>
       </div>
-      <div className="space-y-2 px-3 py-3">
-        <p className="text-[12px] text-muted-foreground/60">
-          {summary.met}/{summary.requirements} requirements met
-          {summary.open > 0 ? ` · ${summary.open} open` : ""}
-          {summary.policies > 0 ? ` · ${summary.policies} policies` : " · no policies"}
-        </p>
-        <div className="space-y-1.5">
-          {rows.slice(0, 3).map((row, index) => {
-            const checks = row.checks ?? [];
-            const openChecks = checks.filter((check) => check.status !== "met").length;
-            const metChecks = checks.filter((check) => check.status === "met").length;
-            const requirementCount = row.requirementCount ?? checks.length;
-            return (
-              <div key={`${row.vendorOrgId ?? row.name ?? "vendor"}-${index}`} className="flex items-center gap-2 text-[11px]">
-                <span className="min-w-0 flex-1 truncate font-medium text-foreground/75">{row.name ?? "Vendor"}</span>
-                <span className="shrink-0 text-muted-foreground/45">
-                  {metChecks}/{requirementCount} met{openChecks > 0 ? ` · ${openChecks} open` : ""}
-                </span>
-              </div>
-            );
-          })}
-          {rows.length > 3 ? (
-            <p className="text-[11px] text-muted-foreground/40">
-              +{rows.length - 3} more vendor{rows.length - 3 === 1 ? "" : "s"}
-            </p>
-          ) : null}
-        </div>
+      <div className="space-y-1.5 px-3 py-3">
+        {rows.slice(0, 3).map((row, index) => {
+          const checks = row.checks ?? [];
+          const openChecks = checks.filter((check) => check.status !== "met").length;
+          const metChecks = checks.filter((check) => check.status === "met").length;
+          const requirementCount = row.requirementCount ?? checks.length;
+          const policyText = typeof row.policyCount === "number"
+            ? row.policyCount === 0
+              ? "no policies"
+              : `${row.policyCount} polic${row.policyCount === 1 ? "y" : "ies"}`
+            : null;
+          return (
+            <div key={`${row.vendorOrgId ?? row.name ?? "vendor"}-${index}`} className="flex items-center gap-2 text-[11px]">
+              <span className="min-w-0 flex-1 truncate font-medium text-foreground/75">{row.name ?? "Vendor"}</span>
+              <span className="shrink-0 text-muted-foreground/45">
+                {metChecks}/{requirementCount} met{openChecks > 0 ? ` · ${openChecks} open` : ""}
+                {policyText ? ` · ${policyText}` : ""}
+              </span>
+            </div>
+          );
+        })}
+        {rows.length > 3 ? (
+          <p className="text-[11px] text-muted-foreground/40">
+            +{rows.length - 3} more vendor{rows.length - 3 === 1 ? "" : "s"}
+          </p>
+        ) : null}
       </div>
     </button>
   );
@@ -841,7 +836,6 @@ function VendorComplianceSidebar({
     <aside className="flex h-full w-full flex-col overflow-hidden border-l border-foreground/8 bg-background">
       <div className="flex h-12 items-center justify-between gap-3 border-b border-foreground/8 px-4">
         <div className="flex min-w-0 items-center gap-2">
-          <ClipboardList className="h-4 w-4 shrink-0 text-muted-foreground/60" />
           <h2 className="truncate text-body-sm font-semibold text-foreground">Vendor compliance checks</h2>
           <Badge variant="outline" className="h-5 shrink-0 border-foreground/10 px-1.5 text-[10px] font-medium text-muted-foreground/55">
             {rows.length} vendor{rows.length === 1 ? "" : "s"}
