@@ -1531,11 +1531,10 @@ export function UnifiedMessageBubble({
                   onOpenArtifact={onOpenVendorCompliance}
                 />
                 {relatedEmailMessage ? (
-                  <div className="mt-4">
+                  <div className="mt-2.5">
                     <EmailSummaryCard
                       message={relatedEmailMessage}
                       onOpen={onOpenEmail}
-                      compact
                       isOpen={openEmailMessageId === relatedEmailMessage._id}
                     />
                   </div>
