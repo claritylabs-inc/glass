@@ -13,6 +13,11 @@ import type {
   QuoteDocument,
 } from "@claritylabs/cl-sdk";
 import { sanitizeNulls } from "@claritylabs/cl-sdk";
+import dayjs from "dayjs";
+import customParseFormat from "dayjs/plugin/customParseFormat";
+import { isMissingCriticalValue } from "./policyPeriodExtraction";
+
+dayjs.extend(customParseFormat);
 
 function parseCoverageMoney(value: unknown): number | undefined {
   if (typeof value !== "string") return undefined;
@@ -74,6 +79,34 @@ function normalizeOrgName(raw: unknown): string | undefined {
   return withoutAdminClause || value;
 }
 
+function normalizeDate(value: unknown): string | undefined {
+  if (typeof value !== "string" || isMissingCriticalValue(value)) return undefined;
+  const parsed = dayjs(
+    value.trim(),
+    [
+      "MM/DD/YYYY",
+      "M/D/YYYY",
+      "YYYY-MM-DD",
+      "YYYY/M/D",
+      "MMM D, YYYY",
+      "MMMM D, YYYY",
+    ],
+    true,
+  );
+  return parsed.isValid() ? parsed.format("MM/DD/YYYY") : value.trim();
+}
+
+function policyYearFromDate(value: unknown): number {
+  const normalized = normalizeDate(value);
+  if (!normalized) return dayjs().year();
+  const parsed = dayjs(
+    normalized,
+    ["MM/DD/YYYY", "M/D/YYYY", "YYYY-MM-DD", "YYYY/M/D"],
+    true,
+  );
+  return parsed.isValid() ? parsed.year() : dayjs().year();
+}
+
 /**
  * Map an InsuranceDocument (extraction output) to Glass's policies table fields.
  * This is the forward mapping: SDK extraction → Convex mutation args.
@@ -100,11 +133,9 @@ export function insuranceDocToPolicy(
       : d.policyNumber || "Unknown",
     policyTypes,
     documentType: d.type,
-    policyYear: d.effectiveDate
-      ? new Date(d.effectiveDate).getFullYear()
-      : new Date().getFullYear(),
-    effectiveDate: d.effectiveDate || "Unknown",
-    expirationDate: d.expirationDate ?? "Unknown",
+    policyYear: policyYearFromDate(d.effectiveDate),
+    effectiveDate: normalizeDate(d.effectiveDate) || "Unknown",
+    expirationDate: normalizeDate(d.expirationDate) ?? "Unknown",
     isRenewal: d.isRenewal ?? false,
     coverages: normalizeCoverageValues(d.coverages),
     premium: d.premium ?? undefined,

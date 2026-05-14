@@ -13,6 +13,10 @@ import {
 import { recordBrokerActivity } from "./lib/brokerActivity";
 import { notify } from "./lib/notify";
 import type { Id as DataModelId } from "./_generated/dataModel";
+import dayjs from "dayjs";
+import customParseFormat from "dayjs/plugin/customParseFormat";
+
+dayjs.extend(customParseFormat);
 
 type PolicyPipelineStatus = "idle" | "running" | "paused" | "complete" | "error";
 type PolicyExtractionArtifactKind = "cl_sdk_checkpoint" | "embedding_payload";
@@ -24,6 +28,16 @@ type PolicyPipelineLogEntry = {
 };
 
 const PIPELINE_LOG_LIMIT = 500;
+
+function policyYearFromInput(value: string | undefined): number | undefined {
+  if (!value?.trim()) return undefined;
+  const parsed = dayjs(
+    value.trim(),
+    ["MM/DD/YYYY", "M/D/YYYY", "YYYY-MM-DD", "YYYY/M/D"],
+    true,
+  );
+  return parsed.isValid() ? parsed.year() : undefined;
+}
 
 async function getPolicyExtractionRun(ctx: any, policyId: DataModelId<"policies">) {
   return await ctx.db
@@ -757,6 +771,60 @@ export const updateExtraction = mutation({
         }
       }
     }
+  },
+});
+
+export const updateExtractedFields = mutation({
+  args: {
+    id: v.id("policies"),
+    fields: v.object({
+      carrier: v.optional(v.string()),
+      security: v.optional(v.string()),
+      mga: v.optional(v.string()),
+      broker: v.optional(v.string()),
+      policyNumber: v.optional(v.string()),
+      policyTypes: v.optional(v.array(v.string())),
+      policyYear: v.optional(v.number()),
+      effectiveDate: v.optional(v.string()),
+      expirationDate: v.optional(v.string()),
+      insuredName: v.optional(v.string()),
+      premium: v.optional(v.string()),
+      totalCost: v.optional(v.string()),
+      minPremium: v.optional(v.string()),
+      depositPremium: v.optional(v.string()),
+      summary: v.optional(v.string()),
+      coverages: v.optional(v.array(coverageValidator)),
+      taxesAndFees: v.optional(v.array(taxFeeValidator)),
+      premiumBreakdown: v.optional(v.array(premiumLineValidator)),
+      limits: v.optional(v.any()),
+      deductibles: v.optional(v.any()),
+    }),
+  },
+  handler: async (ctx, args) => {
+    const policy = await ctx.db.get(args.id);
+    if (!policy?.orgId) throw new Error("Not found");
+    const access = await getOrgAccessFor(ctx, policy.orgId);
+    assertCanUploadPolicy(access);
+
+    const patch: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(args.fields)) {
+      if (value !== undefined) patch[key] = value;
+    }
+
+    const derivedYear =
+      args.fields.policyYear ?? policyYearFromInput(args.fields.effectiveDate);
+    if (derivedYear !== undefined) patch.policyYear = derivedYear;
+
+    if (Object.keys(patch).length === 0) return;
+    await ctx.db.patch(args.id, patch);
+    await ctx.db.insert("policyAuditLog", {
+      policyId: args.id,
+      userId: access.userId,
+      orgId: policy.orgId,
+      action: "manual_policy_update",
+      detail: `Updated ${Object.keys(patch).join(", ")}`,
+      metadata: { fields: Object.keys(patch) },
+    });
   },
 });
 
