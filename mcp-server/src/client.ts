@@ -59,6 +59,10 @@ export class GlassClient {
     return this.get("/mcp/policies/get", { id });
   }
 
+  async getPolicyPdf(id: string) {
+    return this.get("/mcp/policies/file", { id });
+  }
+
   async searchPolicies(q: string) {
     return this.get("/mcp/policies/search", { q });
   }
@@ -132,6 +136,7 @@ export class GlassClient {
     body: string;
     cc?: string[];
     bcc?: string[];
+    originalPolicyIds?: string[];
   }) {
     return this.post("/mcp/email/drafts/upsert", input);
   }

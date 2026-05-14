@@ -13,6 +13,7 @@ import {
   compareCoverages,
   lookupComplianceRequirements,
   saveNote,
+  attachPolicyDocument,
   generateCoi,
   createPolicyChangeRequest,
 } from "../lib/chatTools";
@@ -206,6 +207,33 @@ function buildTools(
           policyId: params.policyId as Id<"policies"> | undefined,
         });
         return "Note saved to organization memory.";
+      },
+    },
+
+    attach_policy_document: {
+      ...attachPolicyDocument,
+      execute: async (input: { policyId: string }) => {
+        const policy: any = await ctx.runQuery(internal.policies.getInternal, {
+          id: input.policyId as Id<"policies">,
+        });
+        try {
+          assertOrgOwnership(policy, args.orgId, "Policy");
+        } catch {
+          return "Policy not found.";
+        }
+        if (!policy.fileId) {
+          return "That policy does not have an original PDF file available.";
+        }
+        return {
+          message: "Original policy PDF attached to this response.",
+          policyId: policy._id,
+          attachment: {
+            filename: policy.fileName ?? `${policy.policyNumber ?? "policy"}.pdf`,
+            contentType: "application/pdf",
+            size: 0,
+            fileId: policy.fileId as Id<"_storage">,
+          },
+        };
       },
     },
     generate_coi: {
@@ -762,6 +790,7 @@ export const run = internalAction({
       const TOOL_LABELS: Record<string, string> = {
         lookup_policy: "Searching policies...",
         lookup_policy_section: "Reading policy sections...",
+        attach_policy_document: "Attaching policy PDF...",
         compare_coverages: "Comparing coverages...",
         lookup_compliance_requirements: "Checking requirements...",
         lookup_connected_vendors: "Checking vendors...",
@@ -856,7 +885,8 @@ export const run = internalAction({
           });
         } else if (part.type === "tool-result") {
           if (
-            lastToolName === "generate_coi" &&
+            (lastToolName === "generate_coi" ||
+              lastToolName === "attach_policy_document") &&
             (part as Record<string, unknown>).output
           ) {
             const output = (part as Record<string, unknown>).output;

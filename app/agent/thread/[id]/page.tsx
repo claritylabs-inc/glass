@@ -82,6 +82,7 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
   check_application_status: "Checked application",
   save_note: "Saved note",
   generate_coi: "Generated COI",
+  attach_policy_document: "Attached policy PDF",
   send_email: "Drafted email",
   email_expert: "Prepared email",
   create_policy_change_request: "Created policy change request",

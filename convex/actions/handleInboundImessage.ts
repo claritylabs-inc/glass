@@ -13,6 +13,7 @@ import {
   compareCoverages,
   lookupComplianceRequirements,
   saveNote,
+  attachPolicyDocument,
   generateCoi as generateCoiTool,
   createPolicyChangeRequest,
 } from "../lib/chatTools";
@@ -820,7 +821,7 @@ export const processInbound = internalAction({
         requirementsBlock;
 
       // ── 13. Wire up tools ─────────────────────────────────────────────────
-      const coiAttachments: Array<{
+      const responseFileAttachments: Array<{
         storageId: Id<"_storage">;
         filename: string;
       }> = [];
@@ -1044,6 +1045,37 @@ export const processInbound = internalAction({
             return "Note saved.";
           },
         },
+
+        attach_policy_document: {
+          ...attachPolicyDocument,
+          execute: async (params: { policyId: string }) => {
+            if (!currentSenderIsLinked) {
+              return "Only a linked Glass user in this chat can request the original policy PDF.";
+            }
+            const requestedPolicy: any = await ctx.runQuery(
+              internal.policies.getInternal,
+              {
+                id: params.policyId as Id<"policies">,
+              },
+            );
+            if (
+              !requestedPolicy ||
+              String(requestedPolicy.orgId) !== String(orgId)
+            ) {
+              return "Please have a linked user from that policy's organization request this policy document.";
+            }
+            if (!requestedPolicy.fileId) {
+              return "That policy does not have an original PDF file available.";
+            }
+            responseFileAttachments.push({
+              storageId: requestedPolicy.fileId as Id<"_storage">,
+              filename:
+                requestedPolicy.fileName ??
+                `${requestedPolicy.policyNumber ?? "policy"}.pdf`,
+            });
+            return "Original policy PDF will be sent as an attachment.";
+          },
+        },
         generate_coi: {
           ...generateCoiTool,
           execute: async (params: {
@@ -1090,7 +1122,7 @@ export const processInbound = internalAction({
                 },
               );
               if (!generated) return COI_GENERATION_FAILED_MESSAGE;
-              coiAttachments.push({
+              responseFileAttachments.push({
                 storageId: generated.storageId as Id<"_storage">,
                 filename: "certificate-of-insurance.pdf",
               });
@@ -1176,29 +1208,29 @@ export const processInbound = internalAction({
         }
       }
 
-      // ── 15. Resolve COI attachment URLs ───────────────────────────────────
+      // ── 15. Resolve response attachment URLs ─────────────────────────────
       const responseAttachments: Array<{
         url: string;
         filename: string;
         mimeType: string;
       }> = [];
-      for (const coi of coiAttachments) {
+      for (const fileAttachment of responseFileAttachments) {
         try {
-          const url = await ctx.storage.getUrl(coi.storageId);
+          const url = await ctx.storage.getUrl(fileAttachment.storageId);
           if (url) {
             responseAttachments.push({
               url,
-              filename: coi.filename,
+              filename: fileAttachment.filename,
               mimeType: "application/pdf",
             });
           }
         } catch (err) {
-          console.warn("[imessage] Failed to get COI URL:", err);
+          console.warn("[imessage] Failed to get attachment URL:", err);
         }
       }
 
       // ── 16. Persist agent response ────────────────────────────────────────
-      const agentAttachments = coiAttachments.map((c) => ({
+      const agentAttachments = responseFileAttachments.map((c) => ({
         filename: c.filename,
         contentType: "application/pdf",
         size: 0,

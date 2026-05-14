@@ -586,6 +586,41 @@ http.route({
   }),
 });
 
+
+// GET /mcp/policies/file
+http.route({
+  path: "/mcp/policies/file",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const identity = await requireMcpAuth(ctx, request);
+      const id = getQueryParam(request, "id");
+      if (!id) return jsonResponse({ error: "Missing id parameter" }, 400);
+
+      const policies = await ctx.runQuery(internal.policies.listAllInternal, {
+        orgId: identity.orgId as Id<"organizations">,
+      });
+      const found = policies.find((p: any) => p._id === id);
+      if (!found) return jsonResponse({ error: "Not found" }, 404);
+      if (!found.fileId) {
+        return jsonResponse({ error: "Original policy PDF is not available" }, 404);
+      }
+      const url = await ctx.storage.getUrl(found.fileId as Id<"_storage">);
+      if (!url) return jsonResponse({ error: "Original policy PDF is not available" }, 404);
+      return jsonResponse({
+        id: found._id,
+        file_id: found.fileId,
+        file_name: found.fileName ?? `${found.policyNumber ?? "policy"}.pdf`,
+        content_type: "application/pdf",
+        url,
+      });
+    } catch (e) {
+      if (e instanceof Response) return e;
+      return jsonResponse({ error: String(e) }, 500);
+    }
+  }),
+});
+
 // GET /mcp/policies/search
 http.route({
   path: "/mcp/policies/search",
@@ -929,6 +964,15 @@ const MCP_TOOLS = [
     },
   },
   {
+    name: "get_policy_pdf",
+    description: "Get a temporary download URL for the original full policy PDF document by policy ID.",
+    inputSchema: {
+      type: "object" as const,
+      properties: { id: { type: "string", description: "The policy ID" } },
+      required: ["id"],
+    },
+  },
+  {
     name: "search_policies",
     description: "Search across policies by text query. Searches carrier, policy number, insured name, summary, and policy types.",
     inputSchema: {
@@ -1053,6 +1097,7 @@ const MCP_TOOLS = [
         body: { type: "string", description: "Plain text email body" },
         cc: { type: "array", items: { type: "string" }, description: "CC email addresses" },
         bcc: { type: "array", items: { type: "string" }, description: "BCC email addresses" },
+        originalPolicyIds: { type: "array", items: { type: "string" }, description: "Policy IDs whose original full policy PDFs should be attached" },
       },
       required: ["to", "subject", "body"],
     },
@@ -1069,6 +1114,7 @@ const MCP_TOOLS = [
         body: { type: "string", description: "Plain text email body" },
         cc: { type: "array", items: { type: "string" }, description: "CC email addresses" },
         bcc: { type: "array", items: { type: "string" }, description: "BCC email addresses" },
+        originalPolicyIds: { type: "array", items: { type: "string" }, description: "Policy IDs whose original full policy PDFs should be attached" },
       },
       required: ["draftId", "to", "subject", "body"],
     },
@@ -1184,7 +1230,7 @@ function jsonRpcError(id: string | number | null, code: number, message: string)
 
 async function handleToolCall(
 
-  ctx: { runQuery: (...args: any[]) => Promise<any>; runMutation: (...args: any[]) => Promise<any>; runAction: (...args: any[]) => Promise<any> },
+  ctx: { runQuery: (...args: any[]) => Promise<any>; runMutation: (...args: any[]) => Promise<any>; runAction: (...args: any[]) => Promise<any>; storage: { getUrl: (storageId: Id<"_storage">) => Promise<string | null> } },
   identity: McpIdentity,
   name: string,
   args: Record<string, unknown>,
@@ -1219,6 +1265,27 @@ async function handleToolCall(
 
       const { rawExtractionResponse: _rawExtractionResponse, rawMetadataResponse: _rawMetadataResponse, ...rest } = found as any;
       return { content: [{ type: "text", text: JSON.stringify(rest, null, 2) }] };
+    }
+    case "get_policy_pdf": {
+      if (!args.id) throw new Error("Missing id parameter");
+      const policies = await ctx.runQuery(internal.policies.listAllInternal, { orgId });
+      const found = policies.find((p: any) => p._id === args.id);
+      if (!found) throw new Error("Not found");
+      if (!found.fileId) throw new Error("Original policy PDF is not available");
+      const url = await ctx.storage.getUrl(found.fileId as Id<"_storage">);
+      if (!url) throw new Error("Original policy PDF is not available");
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            id: found._id,
+            file_id: found.fileId,
+            file_name: found.fileName ?? `${found.policyNumber ?? "policy"}.pdf`,
+            content_type: "application/pdf",
+            url,
+          }, null, 2),
+        }],
+      };
     }
     case "search_policies": {
       if (!args.q) throw new Error("Missing q parameter");
@@ -1358,6 +1425,9 @@ async function handleToolCall(
         body: args.body as string,
         cc: Array.isArray(args.cc) ? args.cc.filter((value): value is string => typeof value === "string") : undefined,
         bcc: Array.isArray(args.bcc) ? args.bcc.filter((value): value is string => typeof value === "string") : undefined,
+        originalPolicyIds: Array.isArray(args.originalPolicyIds)
+          ? args.originalPolicyIds.filter((value): value is Id<"policies"> => typeof value === "string") as Id<"policies">[]
+          : undefined,
       });
       return { content: [{ type: "text", text: JSON.stringify(draft, null, 2) }] };
     }
@@ -1632,6 +1702,7 @@ http.route({
         body: body.body,
         cc: Array.isArray(body.cc) ? body.cc : undefined,
         bcc: Array.isArray(body.bcc) ? body.bcc : undefined,
+        originalPolicyIds: Array.isArray(body.originalPolicyIds) ? body.originalPolicyIds : undefined,
       });
       return jsonResponse(draft);
     } catch (e) {
@@ -2000,6 +2071,38 @@ http.route({
         id: policy._id, carrier: policy.carrier, policy_number: policy.policyNumber,
         policy_types: policy.policyTypes, effective_date: policy.effectiveDate,
         expiration_date: policy.expirationDate, premium: policy.premium, created_at: policy._creationTime,
+      });
+    } catch (e) {
+      if (e instanceof Response) return e;
+      return jsonResponse({ error: { code: "internal_error", message: String(e) } }, 500);
+    }
+  }),
+});
+
+
+// ── GET /api/v1/policies/:id/file ──
+http.route({
+  path: "/api/v1/policies/:id/file",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const identity = await requireApiAuth(ctx, request);
+      const parts = new URL(request.url).pathname.split("/");
+      const policyId = parts[parts.length - 2] as Id<"policies">;
+      const policies = await ctx.runQuery(internal.policies.listAllInternal, { orgId: identity.orgId });
+      const policy = policies.find((p: any) => p._id === policyId);
+      if (!policy) return jsonResponse({ error: { code: "not_found", message: "Policy not found" } }, 404);
+      if (!policy.fileId) return jsonResponse({ error: { code: "not_found", message: "Original policy PDF is not available" } }, 404);
+      const url = await ctx.storage.getUrl(policy.fileId as Id<"_storage">);
+      if (!url) return jsonResponse({ error: { code: "not_found", message: "Original policy PDF is not available" } }, 404);
+      return jsonResponse({
+        data: {
+          id: policy._id,
+          file_id: policy.fileId,
+          file_name: policy.fileName ?? `${policy.policyNumber ?? "policy"}.pdf`,
+          content_type: "application/pdf",
+          url,
+        },
       });
     } catch (e) {
       if (e instanceof Response) return e;

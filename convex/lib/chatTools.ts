@@ -130,6 +130,14 @@ export const lookupPolicySection = tool({
   }),
 });
 
+export const attachPolicyDocument = tool({
+  description:
+    "Attach or send the original full policy PDF document for a specific policy. Use this when the user asks for a copy of the policy, policy PDF, full policy, declarations PDF, wording, or original policy document in chat/iMessage/SMS. For email delivery, prefer the email_expert tool so it can attach the original policy PDF to the email.",
+  inputSchema: z.object({
+    policyId: z.string().describe("The policy ID whose original PDF should be attached"),
+  }),
+});
+
 export const generateCoi = tool({
   description:
     "Generate a Certificate of Insurance (COI) PDF for a specific policy.",
