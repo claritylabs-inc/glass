@@ -18,7 +18,7 @@ import {
 import { buildPdfSourceSpans } from "../lib/pdfSourceSpans";
 import type { ExtractionResult, ExtractionState, PipelineCheckpoint } from "../lib/extraction";
 import type { ExtractOptions } from "../lib/extraction";
-import { makeEmbedText } from "../lib/sdkCallbacks";
+import { makeEmbedText, makeGenerateObject } from "../lib/sdkCallbacks";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { getModelForOrg } from "../lib/models";
@@ -26,6 +26,7 @@ import { generateObject } from "ai";
 import { z } from "zod";
 
 const CANCELLED_BY_USER = "Cancelled by user";
+const NON_INSURANCE_DOCUMENT_ERROR = "This document is not an insurance policy or quote, so extraction was stopped.";
 const ADVANCE_LEASE_MS = 2 * 60 * 1000;
 const ADVANCE_LEASE_HEARTBEAT_MS = 30 * 1000;
 const ADVANCE_LEASE_WATCHDOG_GRACE_MS = 15 * 1000;
@@ -239,6 +240,88 @@ function stripLease(
 ): Omit<LeasedPolicyCheckpoint, "lease"> {
   const { lease: _lease, ...rest } = checkpoint;
   return rest;
+}
+
+
+const extractionGateSchema = z.object({
+  shouldExtract: z.boolean(),
+  classification: z.enum([
+    "insurance_policy_or_quote",
+    "insurance_related_but_not_policy_or_quote",
+    "non_insurance",
+    "unknown",
+  ]),
+  confidence: z.number().min(0).max(1),
+  reason: z.string(),
+  detectedTitle: z.string().nullable(),
+});
+
+type ExtractionGateDecision = z.infer<typeof extractionGateSchema>;
+
+function buildDocumentGateExcerpt(
+  sourceSpans: Array<{ pageStart?: number; text: string; metadata?: Record<string, unknown> }>,
+): string {
+  const pageSpans = sourceSpans.filter((span) => span.metadata?.sourceUnit !== "section_candidate");
+  const uniquePages = new Set<number>();
+  const excerpts: string[] = [];
+
+  for (const span of pageSpans) {
+    const page = typeof span.pageStart === "number" ? span.pageStart : excerpts.length + 1;
+    if (uniquePages.has(page)) continue;
+    uniquePages.add(page);
+    const text = span.text.replace(/\s+/g, " ").trim();
+    if (!text) continue;
+    excerpts.push(`Page ${page}: ${text.slice(0, 1200)}`);
+    if (excerpts.join("\n\n").length >= 7000 || uniquePages.size >= 8) break;
+  }
+
+  return excerpts.join("\n\n") || "No machine-readable text was extracted from the PDF.";
+}
+
+async function classifyInsuranceExtractability(params: {
+  ctx: ActionCtx;
+  orgId: Id<"organizations">;
+  pdfBytes: Uint8Array;
+  sourceSpans: Array<{ pageStart?: number; text: string; metadata?: Record<string, unknown> }>;
+}): Promise<ExtractionGateDecision> {
+  const generateGateObject = makeGenerateObject("classification", {
+    ctx: params.ctx,
+    orgId: params.orgId,
+  });
+  const excerpt = buildDocumentGateExcerpt(params.sourceSpans);
+  const result = await generateGateObject({
+    schema: extractionGateSchema,
+    maxTokens: 600,
+    system: `You are a strict intake gate for Glass insurance extraction.
+
+Decide whether an uploaded PDF should be processed by a policy/quote extractor. Only allow extraction when the document is clearly an insurance policy, quote, binder, declarations page, renewal proposal, insurance schedule, policy wording, or endorsement/supplement that contains policy or quote terms.
+
+Reject novels, books, textbooks, resumes, invoices, generic contracts, marketing material, unrelated legal documents, and any document that is merely about insurance but is not itself a policy or quote artifact. If uncertain, return classification "unknown" and shouldExtract false only when the document is more likely not extractable than extractable.`,
+    prompt: `Classify this PDF before extraction.
+
+Return shouldExtract=true only for insurance policy/quote artifacts.
+
+Machine-readable excerpts:
+${excerpt}`,
+    providerOptions: {
+      pdfBytes: params.pdfBytes,
+      mimeType: "application/pdf",
+    },
+  });
+  return result.object as ExtractionGateDecision;
+}
+
+function shouldRejectDocument(decision: ExtractionGateDecision): boolean {
+  if (decision.classification === "insurance_policy_or_quote" && decision.shouldExtract) {
+    return false;
+  }
+  if (decision.classification === "non_insurance" && decision.confidence >= 0.5) {
+    return true;
+  }
+  if (decision.classification === "insurance_related_but_not_policy_or_quote" && decision.confidence >= 0.65) {
+    return true;
+  }
+  return !decision.shouldExtract && decision.confidence >= 0.7;
 }
 
 const orgNameNormalizationSchema = z.object({
@@ -527,6 +610,61 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
 
       if (clSdkCheckpoint) {
         await pCtx.log(`Resuming extraction from cl-sdk phase "${clSdkCheckpoint.phase}"…`);
+      } else {
+        await pCtx.log("Checking whether the PDF is an insurance policy or quote…");
+        try {
+          const gateDecision = await classifyInsuranceExtractability({
+            ctx: convexCtx,
+            orgId: state.orgId as Id<"organizations">,
+            pdfBytes,
+            sourceSpans: pdfSource.sourceSpans,
+          });
+          await pCtx.log(
+            `Document gate: ${gateDecision.classification} (${Math.round(gateDecision.confidence * 100)}% confidence) — ${gateDecision.reason}`,
+          );
+
+          if (shouldRejectDocument(gateDecision)) {
+            const rejectionSummary = `${NON_INSURANCE_DOCUMENT_ERROR} ${gateDecision.reason}`.slice(0, 1000);
+            await convexCtx.runMutation(
+              (internal as any).policies.updateExtractionInternal,
+              {
+                id: policyId,
+                fields: {
+                  carrier: "Non-insurance document",
+                  policyNumber: "Not applicable",
+                  policyTypes: ["other"],
+                  insuredName: "Not applicable",
+                  effectiveDate: "Not applicable",
+                  expirationDate: "Not applicable",
+                  summary: rejectionSummary,
+                  excludeFromSearch: true,
+                },
+              },
+            );
+
+            if (state.fileId) {
+              await convexCtx.runMutation((internal as any).policies.updateFiles, {
+                id: policyId,
+                files: [
+                  {
+                    fileId: state.fileId as Id<"_storage">,
+                    fileName: state.fileName || "upload.pdf",
+                    fileType: "unknown",
+                    status: "not_insurance",
+                  },
+                ],
+                reconciliationStatus: "error" as const,
+              });
+            }
+
+            return { kind: "error", error: rejectionSummary };
+          }
+        } catch (error) {
+          await pCtx.log(
+            `Warning: document gate failed; continuing extraction (${error instanceof Error ? error.message : String(error)})`,
+            "warn",
+          );
+        }
       }
 
       const extractor = buildExtractor({
