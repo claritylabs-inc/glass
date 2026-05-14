@@ -117,9 +117,44 @@ export const saveNote = tool({
   }),
 });
 
+export const confirmPolicyFact = tool({
+  description:
+    "Persist a policy fact that was confirmed from original PDF source evidence. Use only after lookup_policy_section returns original-PDF sourceSpanIds that directly support the fact. This can also update a small set of top-level extracted policy fields when the PDF evidence is clear.",
+  inputSchema: z.object({
+    policyId: z.string().describe("Policy ID for the fact being confirmed"),
+    fact: z
+      .string()
+      .describe("Concise policy fact confirmed from the original PDF"),
+    sourceSpanIds: z
+      .array(z.string())
+      .min(1)
+      .describe("Stable source span IDs returned by lookup_policy_section"),
+    fieldUpdates: z
+      .object({
+        carrier: z.string().optional(),
+        security: z.string().optional(),
+        mga: z.string().optional(),
+        broker: z.string().optional(),
+        policyNumber: z.string().optional(),
+        effectiveDate: z.string().optional(),
+        expirationDate: z.string().optional(),
+        insuredName: z.string().optional(),
+        premium: z.string().optional(),
+        totalCost: z.string().optional(),
+        minPremium: z.string().optional(),
+        depositPremium: z.string().optional(),
+        summary: z.string().optional(),
+      })
+      .optional()
+      .describe(
+        "Optional top-level extracted fields to update when directly supported by the cited PDF evidence",
+      ),
+  }),
+});
+
 export const lookupPolicySection = tool({
   description:
-    "Search within a specific policy's extracted document for detailed content about a topic. Use this for coverage details, covered reasons, exclusions, conditions, endorsements, definitions, or exact policy language that is not in summary data. Returns matching policy wording and structured entries.",
+    "Search within a specific policy's extracted document and original PDF source evidence for detailed content about a topic. Use this for coverage details, covered reasons, exclusions, conditions, endorsements, definitions, or exact policy language that is not in summary data. Returns matching policy wording, structured entries, and sourceSpanIds for original-PDF evidence when available.",
   inputSchema: z.object({
     policyId: z.string().describe("The policy ID to search within"),
     query: z

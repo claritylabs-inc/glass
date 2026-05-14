@@ -14,6 +14,7 @@ import {
   lookupComplianceRequirements,
   saveNote,
   attachPolicyDocument,
+  confirmPolicyFact,
   generateCoi as generateCoiTool,
   createPolicyChangeRequest,
 } from "../lib/chatTools";
@@ -1045,7 +1046,6 @@ export const processInbound = internalAction({
             return "Note saved.";
           },
         },
-
         attach_policy_document: {
           ...attachPolicyDocument,
           execute: async (params: { policyId: string }) => {
@@ -1074,6 +1074,53 @@ export const processInbound = internalAction({
                 `${requestedPolicy.policyNumber ?? "policy"}.pdf`,
             });
             return "Original policy PDF will be sent as an attachment.";
+          },
+        },
+        confirm_policy_fact: {
+          ...confirmPolicyFact,
+          execute: async (params: {
+            policyId: string;
+            fact: string;
+            sourceSpanIds: string[];
+            fieldUpdates?: Record<string, string | undefined>;
+          }) => {
+            if (!currentSenderIsLinked || !currentParticipant?.orgId) {
+              return "Only a linked Glass user in this group can confirm policy facts.";
+            }
+            const policy: any = await ctx.runQuery(
+              internal.policies.getInternal,
+              { id: params.policyId as Id<"policies"> },
+            );
+            if (
+              !policy ||
+              String(policy.orgId) !== String(currentParticipant.orgId)
+            ) {
+              return "Please have a linked user from that policy's organization confirm this fact.";
+            }
+            try {
+              const result = await ctx.runMutation(
+                internal.policies.confirmPolicyFactFromSource,
+                {
+                  id: params.policyId as Id<"policies">,
+                  orgId: currentParticipant.orgId,
+                  userId: user._id,
+                  fact: params.fact,
+                  sourceSpanIds: params.sourceSpanIds,
+                  source: "imessage",
+                  fieldUpdates: params.fieldUpdates,
+                },
+              );
+              return {
+                status: "confirmed",
+                fact: params.fact,
+                updatedFields: result.updatedFields,
+                sourceSpanIds: result.sourceSpanIds,
+              };
+            } catch (err) {
+              return err instanceof Error
+                ? err.message
+                : "Unable to confirm that fact from source evidence.";
+            }
           },
         },
         generate_coi: {

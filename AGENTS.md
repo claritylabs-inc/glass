@@ -210,7 +210,8 @@ Glass uses two vector-backed stores plus one list-based store:
 
 - `buildDocumentContext()` — if chunks exist, embed query and search `documentChunks`; otherwise fall back to keyword-scored document summary.
 - When `sourceChunks` exist, `buildDocumentContext()` searches them before `documentChunks` and labels the results as source-span evidence with stable `sourceSpanIds`.
-- `lookup_policy_section` uses [policyLookup.ts](convex/lib/policyLookup.ts) in web chat, inbound email, and iMessage to return structured policy matches enriched with stable `sourceSpanIds` and short raw evidence excerpts.
+- `lookup_policy_section` uses [policyLookup.ts](convex/lib/policyLookup.ts) in web chat, inbound email, iMessage, and MCP chat to return structured policy matches enriched with stable `sourceSpanIds` and short raw evidence excerpts. If extracted structured data is missing or weak, it also searches original-PDF source evidence from `sourceChunks` / `sourceSpans`; for older policies without stored spans it can parse the stored policy PDF on demand for read-only evidence.
+- `confirm_policy_fact` lets agents persist a concise policy fact after `lookup_policy_section` returns supporting original-PDF `sourceSpanIds`. The tool records an `orgMemory` fact and may patch only a constrained set of top-level policy fields when the cited PDF text directly supports the update.
 - SDK query-agent wrappers use [convexSourceRetriever.ts](convex/lib/convexSourceRetriever.ts) to search `sourceChunks` and return source spans for SDK hybrid retrieval.
 - `buildOrgMemoryContext()` — lists recent `orgMemory` entries, grouped by kind.
 - `buildConversationMemoryContext()` — vector search over `conversationTurns` for cross-thread memory.
@@ -274,6 +275,7 @@ Inbound email arrives at `POST /resend-inbound` and is handled by `convex/action
 - No hardcoded intent routing. The agent runs `streamText` with `getModel("chat")` and a tool set:
   - `lookup_policy`
   - `lookup_policy_section`
+  - `confirm_policy_fact`
   - `compare_coverages`
   - `email_expert` — delegates outbound drafting/sending to the shared email subagent when the sender is an authenticated internal team member in direct mode
   - `save_note` — writes to `orgMemory`
@@ -311,7 +313,7 @@ Outbound emails sent by Glass Agent are centralized in `convex/lib/emailSubagent
 1. Load org context, policies, and `orgMemory`.
 2. Build retrieval-backed document context + orgMemory context + conversation memory.
 3. If the user message has attachments (images, PDFs, text), read them from Convex storage and include as AI SDK multipart content parts.
-4. Run chat model via `streamText` with tools: `lookup_policy`, `lookup_policy_section`, `compare_coverages`, `email_expert`, `save_note`, `generate_coi`.
+4. Run chat model via `streamText` with tools: `lookup_policy`, `lookup_policy_section`, `confirm_policy_fact`, `compare_coverages`, `email_expert`, `save_note`, `generate_coi`.
 5. Persist conversation state.
 
 ## UI

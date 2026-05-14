@@ -14,9 +14,18 @@ import {
 import {
   buildSystemPromptForContext,
   buildMessageHistory,
+  buildPolicyToolInstructions,
+  policySearchScore,
 } from "../lib/aiUtils";
+import {
+  lookupPolicy,
+  lookupPolicySection,
+  confirmPolicyFact,
+} from "../lib/chatTools";
+import { searchPolicyDocumentWithSourceSpans } from "../lib/policyLookup";
 import { buildVendorComplianceTools } from "../lib/vendorComplianceTools";
 import { classifyPromptInjection, enforceInputLimits } from "../lib/security";
+import type { Id } from "../_generated/dataModel";
 import {
   buildTitlePromptContent,
   fallbackTitle,
@@ -164,11 +173,120 @@ MCP MODE:
 - Use the connected-vendor tools for vendor lists, vendor policies, and requirement-by-requirement vendor compliance before answering vendor compliance questions.
 - Do NOT include email-style sign-offs or greetings.`;
 
+    const policyTools = {
+      lookup_policy: {
+        ...lookupPolicy,
+        execute: async (params: {
+          query: string;
+          policyType?: string;
+          carrier?: string;
+        }) => {
+          const scored = policies
+            .map((p: Record<string, unknown>) => ({
+              policy: p,
+              score: policySearchScore(
+                p,
+                params.query,
+                params.policyType,
+                params.carrier,
+              ),
+            }))
+            .filter((p: { score: number }) => p.score > 0)
+            .sort(
+              (a: { score: number }, b: { score: number }) =>
+                b.score - a.score,
+            );
+          const matches =
+            scored.length > 0
+              ? scored.map((s: { policy: Record<string, unknown> }) => s.policy)
+              : policies.slice(0, 5);
+          if (matches.length === 0)
+            return "No policies found for this organization.";
+          return matches.slice(0, 5).map((p: any) => ({
+            id: p._id,
+            insured: p.insuredName,
+            carrier: p.security,
+            type: p.policyTypes?.join(", "),
+            number: p.policyNumber,
+            effective: p.effectiveDate,
+            expiration: p.expirationDate,
+            premium: p.premium,
+            coverages: (p.coverages ?? []).map((c: any) => ({
+              name: c.name,
+              limit: c.limit,
+              deductible: c.deductible,
+            })),
+          }));
+        },
+      },
+      lookup_policy_section: {
+        ...lookupPolicySection,
+        execute: async (params: { policyId: string; query: string }) => {
+          const policy: any = await ctx.runQuery(
+            internal.policies.getInternal,
+            { id: params.policyId as Id<"policies"> },
+          );
+          if (!policy || policy.orgId !== args.orgId) return "Policy not found.";
+          return searchPolicyDocumentWithSourceSpans(
+            ctx,
+            policy,
+            params.query,
+            8,
+          );
+        },
+      },
+      confirm_policy_fact: {
+        ...confirmPolicyFact,
+        execute: async (params: {
+          policyId: string;
+          fact: string;
+          sourceSpanIds: string[];
+          fieldUpdates?: Record<string, string | undefined>;
+        }) => {
+          const policy: any = await ctx.runQuery(
+            internal.policies.getInternal,
+            { id: params.policyId as Id<"policies"> },
+          );
+          if (!policy || policy.orgId !== args.orgId) return "Policy not found.";
+          try {
+            const result = await ctx.runMutation(
+              internal.policies.confirmPolicyFactFromSource,
+              {
+                id: params.policyId as Id<"policies">,
+                orgId: args.orgId,
+                userId: args.userId,
+                fact: params.fact,
+                sourceSpanIds: params.sourceSpanIds,
+                source: "chat",
+                fieldUpdates: params.fieldUpdates,
+              },
+            );
+            return {
+              status: "confirmed",
+              fact: params.fact,
+              updatedFields: result.updatedFields,
+              sourceSpanIds: result.sourceSpanIds,
+            };
+          } catch (err) {
+            return err instanceof Error
+              ? err.message
+              : "Unable to confirm that fact from source evidence.";
+          }
+        },
+      },
+    };
+
+    const tools = {
+      ...policyTools,
+      ...buildVendorComplianceTools(ctx, [args.orgId]),
+    };
+
     const fullSystemPrompt =
       systemPrompt +
       mcpAddendum +
       "\n\n" +
       docContext +
+      buildPolicyToolInstructions(10) +
       memoryContext +
       orgMemoryBlock +
       requirementsBlock +
@@ -185,7 +303,7 @@ MCP MODE:
       maxOutputTokens: 2048,
       system: fullSystemPrompt,
       messages: messageHistory,
-      tools: buildVendorComplianceTools(ctx, [args.orgId]),
+      tools,
       stopWhen: stepCountIs(10),
     });
 

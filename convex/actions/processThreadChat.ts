@@ -14,6 +14,7 @@ import {
   lookupComplianceRequirements,
   saveNote,
   attachPolicyDocument,
+  confirmPolicyFact,
   generateCoi,
   createPolicyChangeRequest,
 } from "../lib/chatTools";
@@ -209,7 +210,6 @@ function buildTools(
         return "Note saved to organization memory.";
       },
     },
-
     attach_policy_document: {
       ...attachPolicyDocument,
       execute: async (input: { policyId: string }) => {
@@ -234,6 +234,48 @@ function buildTools(
             fileId: policy.fileId as Id<"_storage">,
           },
         };
+      },
+    },
+    confirm_policy_fact: {
+      ...confirmPolicyFact,
+      execute: async (params: {
+        policyId: string;
+        fact: string;
+        sourceSpanIds: string[];
+        fieldUpdates?: Record<string, string | undefined>;
+      }) => {
+        const policy: any = await ctx.runQuery(internal.policies.getInternal, {
+          id: params.policyId as Id<"policies">,
+        });
+        try {
+          assertOrgOwnership(policy, args.orgId, "Policy");
+        } catch {
+          return "Policy not found.";
+        }
+        try {
+          const result = await ctx.runMutation(
+            internal.policies.confirmPolicyFactFromSource,
+            {
+              id: params.policyId as Id<"policies">,
+              orgId: args.orgId as Id<"organizations">,
+              userId: args.userId as Id<"users">,
+              fact: params.fact,
+              sourceSpanIds: params.sourceSpanIds,
+              source: "chat",
+              fieldUpdates: params.fieldUpdates,
+            },
+          );
+          return {
+            status: "confirmed",
+            fact: params.fact,
+            updatedFields: result.updatedFields,
+            sourceSpanIds: result.sourceSpanIds,
+          };
+        } catch (err) {
+          return err instanceof Error
+            ? err.message
+            : "Unable to confirm that fact from source evidence.";
+        }
       },
     },
     generate_coi: {
@@ -799,6 +841,7 @@ export const run = internalAction({
         send_email: "Drafting email...",
         email_expert: "Preparing email...",
         save_note: "Saving note...",
+        confirm_policy_fact: "Confirming policy facts...",
         generate_coi: "Generating COI...",
         create_policy_change_request: "Creating policy change request...",
       };

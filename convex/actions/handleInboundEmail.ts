@@ -12,6 +12,7 @@ import {
   compareCoverages,
   lookupComplianceRequirements,
   saveNote,
+  confirmPolicyFact,
   generateCoi as generateCoiTool,
   extractPolicyAttachment,
   createPolicyChangeRequest,
@@ -1302,6 +1303,46 @@ export const processInbound = internalAction({
               policyId: params.policyId as Id<"policies"> | undefined,
             });
             return "Note saved.";
+          },
+        },
+        confirm_policy_fact: {
+          ...confirmPolicyFact,
+          execute: async (params: {
+            policyId: string;
+            fact: string;
+            sourceSpanIds: string[];
+            fieldUpdates?: Record<string, string | undefined>;
+          }) => {
+            const policy: any = await ctx.runQuery(
+              internal.policies.getInternal,
+              { id: params.policyId as Id<"policies"> },
+            );
+            if (!policy || policy.orgId !== orgId) return "Policy not found.";
+            referencedPolicySourceIds.add(String(policy._id));
+            try {
+              const result = await ctx.runMutation(
+                internal.policies.confirmPolicyFactFromSource,
+                {
+                  id: params.policyId as Id<"policies">,
+                  orgId,
+                  userId: primaryUserId,
+                  fact: params.fact,
+                  sourceSpanIds: params.sourceSpanIds,
+                  source: "email",
+                  fieldUpdates: params.fieldUpdates,
+                },
+              );
+              return {
+                status: "confirmed",
+                fact: params.fact,
+                updatedFields: result.updatedFields,
+                sourceSpanIds: result.sourceSpanIds,
+              };
+            } catch (err) {
+              return err instanceof Error
+                ? err.message
+                : "Unable to confirm that fact from source evidence.";
+            }
           },
         },
         generate_coi: {

@@ -828,6 +828,101 @@ export const updateExtractedFields = mutation({
   },
 });
 
+export const confirmPolicyFactFromSource = internalMutation({
+  args: {
+    id: v.id("policies"),
+    orgId: v.id("organizations"),
+    userId: v.id("users"),
+    fact: v.string(),
+    sourceSpanIds: v.array(v.string()),
+    source: v.optional(v.union(
+      v.literal("chat"),
+      v.literal("email"),
+      v.literal("imessage"),
+    )),
+    fieldUpdates: v.optional(v.object({
+      carrier: v.optional(v.string()),
+      security: v.optional(v.string()),
+      mga: v.optional(v.string()),
+      broker: v.optional(v.string()),
+      policyNumber: v.optional(v.string()),
+      effectiveDate: v.optional(v.string()),
+      expirationDate: v.optional(v.string()),
+      insuredName: v.optional(v.string()),
+      premium: v.optional(v.string()),
+      totalCost: v.optional(v.string()),
+      minPremium: v.optional(v.string()),
+      depositPremium: v.optional(v.string()),
+      summary: v.optional(v.string()),
+    })),
+  },
+  handler: async (ctx, args) => {
+    const policy = await ctx.db.get(args.id);
+    if (!policy || policy.orgId !== args.orgId) throw new Error("Policy not found");
+    if (args.sourceSpanIds.length === 0) throw new Error("Source evidence is required");
+
+    const policySpans = await ctx.db
+      .query("sourceSpans")
+      .withIndex("by_policyId", (q) => q.eq("policyId", args.id))
+      .collect();
+    const validSpanIds = new Set(policySpans.map((span) => span.spanId));
+    const invalidSpanIds = args.sourceSpanIds.filter((id) => !validSpanIds.has(id));
+    if (invalidSpanIds.length > 0) {
+      throw new Error("Source evidence was not found on this policy");
+    }
+
+    const patch: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(args.fieldUpdates ?? {})) {
+      if (value !== undefined) patch[key] = value;
+    }
+    const derivedYear = policyYearFromInput(args.fieldUpdates?.effectiveDate);
+    if (derivedYear !== undefined) patch.policyYear = derivedYear;
+
+    if (Object.keys(patch).length > 0) {
+      await ctx.db.patch(args.id, patch);
+    }
+
+    const now = dayjs().valueOf();
+    const memoryContent = `Policy ${policy.policyNumber ?? args.id}: ${args.fact}`;
+    const existingFacts = await ctx.db
+      .query("orgMemory")
+      .withIndex("by_org_type", (q) =>
+        q.eq("orgId", args.orgId).eq("type", "fact"),
+      )
+      .collect();
+    const duplicateFact = existingFacts.find((memory) => memory.content === memoryContent);
+    if (duplicateFact) {
+      await ctx.db.patch(duplicateFact._id, { updatedAt: now });
+    } else {
+      await ctx.db.insert("orgMemory", {
+        orgId: args.orgId,
+        type: "fact",
+        content: memoryContent,
+        source: args.source ?? "chat",
+        policyId: args.id,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+    await ctx.db.insert("policyAuditLog", {
+      policyId: args.id,
+      userId: args.userId,
+      orgId: args.orgId,
+      action: "agent_confirmed_policy_fact",
+      detail: args.fact,
+      metadata: {
+        sourceSpanIds: args.sourceSpanIds,
+        fields: Object.keys(patch),
+      },
+    });
+
+    return {
+      updatedFields: Object.keys(patch),
+      sourceSpanIds: args.sourceSpanIds,
+    };
+  },
+});
+
 export const generateUploadUrl = mutation({
   args: {},
   handler: async (ctx) => {
