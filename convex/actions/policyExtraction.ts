@@ -1,8 +1,9 @@
 "use node";
 
 import { randomUUID } from "crypto";
+import dayjs from "dayjs";
 import { v } from "convex/values";
-import { internalAction } from "../_generated/server";
+import { action, internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { runPipeline } from "@claritylabs/cl-pipelines";
 import {
@@ -32,6 +33,21 @@ const ADVANCE_LEASE_MS = 2 * 60 * 1000;
 const ADVANCE_LEASE_HEARTBEAT_MS = 30 * 1000;
 const ADVANCE_LEASE_WATCHDOG_GRACE_MS = 15 * 1000;
 const EMBEDDING_CONCURRENCY = readBoundedIntEnv("EXTRACTION_EMBEDDING_CONCURRENCY", 8, 1, 16);
+const CHECKPOINT_LOG_THRESHOLD_BYTES = 256 * 1024;
+const EXTERNAL_WORKER_MODE = process.env.EXTRACTION_WORKER_MODE === "external";
+const EXTERNAL_WORKER_LEASE_MS = readBoundedIntEnv(
+  "EXTRACTION_WORKER_LEASE_MS",
+  5 * 60 * 1000,
+  60 * 1000,
+  30 * 60 * 1000,
+);
+
+type StoredArtifact = {
+  storageId: string;
+  byteLength: number;
+  durationMs: number;
+};
+type PipelineLogLevel = "info" | "warn" | "error";
 
 type LeasedPolicyCheckpoint = {
   nextPhase: string;
@@ -56,6 +72,7 @@ export type PolicyExtractionState = {
   orgId: string;
   userId: string;
   policyFileId?: string;
+  externalWorker?: boolean;
   /** Deprecated inline SDK checkpoint. Kept for legacy in-flight resumes. */
   clSdkCheckpoint?: PipelineCheckpoint<ExtractionState>;
   /** Storage-backed SDK checkpoint. Prevents near-1MB pipeline state documents. */
@@ -98,12 +115,75 @@ type EmbeddingPayload = Pick<
   "documentChunksForEmbedding" | "sourceSpansForStorage" | "sourceChunksForEmbedding"
 >;
 
+type ExternalClaimResult = {
+  policyId: string;
+  leaseId: string;
+  leaseExpiresAt: number;
+  state: PolicyExtractionState;
+  fileUrl: string;
+  clSdkCheckpoint?: PipelineCheckpoint<ExtractionState>;
+  modelSettings?: {
+    routes?: Record<string, { provider: string; model: string }>;
+    providerKeys?: Record<string, string>;
+  };
+} | null;
+
+type ExternalAckResult = {
+  ok: boolean;
+  leaseExpiresAt?: number;
+  checkpointFileId?: string | undefined;
+};
+
 function readBoundedIntEnv(name: string, fallback: number, min: number, max: number): number {
   const raw = process.env[name];
   if (!raw) return fallback;
   const value = Number.parseInt(raw, 10);
   if (!Number.isFinite(value)) return fallback;
   return Math.max(min, Math.min(max, value));
+}
+
+function nowMs(): number {
+  return dayjs().valueOf();
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes}B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)}KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+}
+
+function requireExtractionWorkerSecret(secret: string): void {
+  const expected = process.env.EXTRACTION_WORKER_SECRET;
+  if (!expected || secret !== expected) {
+    throw new Error("Unauthorized extraction worker");
+  }
+}
+
+function compactClSdkCheckpoint(
+  checkpoint: PipelineCheckpoint<ExtractionState>,
+): {
+  checkpoint: PipelineCheckpoint<ExtractionState>;
+  omittedDocument: boolean;
+} {
+  const raw = checkpoint as PipelineCheckpoint<ExtractionState> & {
+    state?: Record<string, unknown>;
+  };
+
+  // The SDK can checkpoint the assembled document alongside extraction memory.
+  // Memory is sufficient to resume and reassemble, while storing both can push
+  // the JSON artifact close to Convex's practical size/timeout limits.
+  if (checkpoint.phase !== "assemble" || !raw.state || raw.state.document === undefined) {
+    return { checkpoint, omittedDocument: false };
+  }
+
+  const { document: _document, ...stateWithoutDocument } = raw.state;
+  return {
+    checkpoint: {
+      ...checkpoint,
+      state: stateWithoutDocument as ExtractionState,
+    },
+    omittedDocument: true,
+  };
 }
 
 async function runBounded<T>(
@@ -150,8 +230,11 @@ async function storeJsonArtifact(
   jobId: string,
   kind: "cl_sdk_checkpoint" | "embedding_payload",
   value: unknown,
-): Promise<string> {
-  const blob = new Blob([JSON.stringify(value)], {
+): Promise<StoredArtifact> {
+  const json = JSON.stringify(value);
+  const byteLength = new TextEncoder().encode(json).byteLength;
+  const startedAt = nowMs();
+  const blob = new Blob([json], {
     type: "application/json",
   });
   const storageId = String(await ctx.storage.store(blob));
@@ -160,7 +243,11 @@ async function storeJsonArtifact(
     kind,
     storageId: storageId as Id<"_storage">,
   });
-  return storageId;
+  return {
+    storageId,
+    byteLength,
+    durationMs: nowMs() - startedAt,
+  };
 }
 
 async function loadJsonArtifact<T>(
@@ -201,7 +288,36 @@ async function storeEmbeddingPayload(
   jobId: string,
   payload: EmbeddingPayload,
 ): Promise<string> {
-  return await storeJsonArtifact(ctx, jobId, "embedding_payload", payload);
+  return (await storeJsonArtifact(ctx, jobId, "embedding_payload", payload)).storageId;
+}
+
+async function storeClSdkCheckpoint(
+  ctx: ActionCtx,
+  jobId: string,
+  checkpoint: PipelineCheckpoint<ExtractionState>,
+  log?: (message: string, level?: PipelineLogLevel) => Promise<void>,
+): Promise<string> {
+  const compacted = compactClSdkCheckpoint(checkpoint);
+  const stored = await storeJsonArtifact(
+    ctx,
+    jobId,
+    "cl_sdk_checkpoint",
+    compacted.checkpoint,
+  );
+
+  const shouldLog =
+    compacted.omittedDocument ||
+    stored.byteLength >= CHECKPOINT_LOG_THRESHOLD_BYTES ||
+    stored.durationMs >= 1000;
+  if (shouldLog && log) {
+    const compactNote = compacted.omittedDocument ? "; omitted assembled document" : "";
+    await log(
+      `Saved cl-sdk ${checkpoint.phase} checkpoint (${formatBytes(stored.byteLength)} in ${stored.durationMs}ms${compactNote})`,
+      stored.byteLength >= 900 * 1024 ? "warn" : "info",
+    );
+  }
+
+  return stored.storageId;
 }
 
 async function loadEmbeddingPayload(
@@ -680,7 +796,10 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
           }
           // Route cl-sdk's checkpoint through cl-pipelines' saveState, storing
           // the large checkpoint payload outside the hot runtime document.
-          const checkpointFileId = await storeJsonArtifact(convexCtx, policyId, "cl_sdk_checkpoint", cp);
+          if (cp.phase === "assemble") {
+            await pCtx.log("Saving compact assemble checkpoint...");
+          }
+          const checkpointFileId = await storeClSdkCheckpoint(convexCtx, policyId, cp, pCtx.log);
           await pCtx.saveState({
             ...state,
             clSdkCheckpoint: undefined,
@@ -719,7 +838,12 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
       }
 
       if (result.checkpoint) {
-        const checkpointFileId = await storeJsonArtifact(convexCtx, policyId, "cl_sdk_checkpoint", result.checkpoint);
+        const checkpointFileId = await storeClSdkCheckpoint(
+          convexCtx,
+          policyId,
+          result.checkpoint,
+          pCtx.log,
+        );
         await pCtx.saveState({
           ...state,
           clSdkCheckpoint: undefined,
@@ -1038,6 +1162,325 @@ export const advance = internalAction({
   },
 });
 
+export const sweepStale = internalAction({
+  args: {
+    olderThanMs: v.optional(v.number()),
+    batchSize: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const result = await ctx.runMutation((internal as any).policies.pipelineRequeueStale, {
+      olderThanMs: args.olderThanMs,
+      batchSize: args.batchSize,
+    }) as {
+      requeued: string[];
+      markedError: string[];
+      scanned: number;
+    };
+    if (result.requeued.length || result.markedError.length) {
+      console.log(
+        `Stale extraction sweep scanned ${result.scanned}; requeued ${result.requeued.length}; marked error ${result.markedError.length}`,
+      );
+    }
+    return result;
+  },
+});
+
+export const claimExternalJob = action({
+  args: {
+    secret: v.string(),
+    workerId: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<ExternalClaimResult> => {
+    requireExtractionWorkerSecret(args.secret);
+    const leaseId = `${args.workerId ?? "worker"}:${randomUUID()}`;
+    const leaseExpiresAt = nowMs() + EXTERNAL_WORKER_LEASE_MS;
+    const claimed = await ctx.runMutation(
+      (internal as any).policies.pipelineClaimExternalWorkerJob,
+      { leaseId, leaseExpiresAt },
+    ) as
+      | {
+          policyId: string;
+          checkpoint: {
+            state: PolicyExtractionState;
+          };
+        }
+      | null;
+
+    if (!claimed) return null;
+    const fileId = claimed.checkpoint.state.fileId;
+    if (!fileId) {
+      await ctx.runMutation((internal as any).policies.pipelineCompleteLease, {
+        jobId: claimed.policyId,
+        leaseId,
+        status: "error",
+        error: "External worker claimed job without fileId",
+        checkpoint: null,
+      });
+      return null;
+    }
+
+    const fileUrl = await ctx.storage.getUrl(fileId as Id<"_storage">);
+    if (!fileUrl) {
+      await ctx.runMutation((internal as any).policies.pipelineCompleteLease, {
+        jobId: claimed.policyId,
+        leaseId,
+        status: "error",
+        error: "External worker could not resolve source file URL",
+        checkpoint: null,
+      });
+      return null;
+    }
+
+    let modelSettings:
+      | {
+          routes?: Record<string, { provider: string; model: string }>;
+          providerKeys?: Record<string, string>;
+        }
+      | undefined;
+    try {
+      modelSettings = await ctx.runQuery((internal as any).modelSettings.resolveForOrg, {
+        orgId: claimed.checkpoint.state.orgId as Id<"organizations">,
+      }) as typeof modelSettings;
+    } catch (error) {
+      console.warn(
+        `External worker model settings unavailable for ${claimed.policyId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+
+    return {
+      policyId: claimed.policyId,
+      leaseId,
+      leaseExpiresAt,
+      state: claimed.checkpoint.state,
+      fileUrl,
+      clSdkCheckpoint: await loadClSdkCheckpoint(ctx, claimed.policyId, claimed.checkpoint.state),
+      modelSettings,
+    };
+  },
+});
+
+export const heartbeatExternalJob = action({
+  args: {
+    secret: v.string(),
+    policyId: v.string(),
+    leaseId: v.string(),
+  },
+  handler: async (ctx, args): Promise<ExternalAckResult> => {
+    requireExtractionWorkerSecret(args.secret);
+    const leaseExpiresAt = nowMs() + EXTERNAL_WORKER_LEASE_MS;
+    const ok = await ctx.runMutation((internal as any).policies.pipelineExtendLease, {
+      jobId: args.policyId,
+      leaseId: args.leaseId,
+      leaseExpiresAt,
+    }) as boolean;
+    return { ok, leaseExpiresAt };
+  },
+});
+
+export const logExternalJob = action({
+  args: {
+    secret: v.string(),
+    policyId: v.string(),
+    message: v.string(),
+    phase: v.optional(v.string()),
+    level: v.optional(v.union(v.literal("info"), v.literal("warn"), v.literal("error"))),
+  },
+  handler: async (ctx, args): Promise<ExternalAckResult> => {
+    requireExtractionWorkerSecret(args.secret);
+    await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
+      jobId: args.policyId,
+      timestamp: nowMs(),
+      message: args.message,
+      phase: args.phase ?? "worker",
+      level: args.level ?? "info",
+    });
+    return { ok: true };
+  },
+});
+
+export const saveExternalCheckpoint = action({
+  args: {
+    secret: v.string(),
+    policyId: v.string(),
+    leaseId: v.string(),
+    state: v.any(),
+    checkpoint: v.any(),
+  },
+  handler: async (ctx, args): Promise<ExternalAckResult> => {
+    requireExtractionWorkerSecret(args.secret);
+    const checkpointFileId = await storeClSdkCheckpoint(
+      ctx,
+      args.policyId,
+      args.checkpoint as PipelineCheckpoint<ExtractionState>,
+      async (message, level = "info") => {
+        await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
+          jobId: args.policyId,
+          timestamp: nowMs(),
+          message,
+          phase: "worker",
+          level,
+        });
+      },
+    );
+    const leaseExpiresAt = nowMs() + EXTERNAL_WORKER_LEASE_MS;
+    const ok = await ctx.runMutation((internal as any).policies.pipelineSaveStateForLease, {
+      jobId: args.policyId,
+      leaseId: args.leaseId,
+      nextPhase: "extract",
+      state: {
+        ...(args.state as PolicyExtractionState),
+        externalWorker: true,
+        clSdkCheckpoint: undefined,
+        clSdkCheckpointFileId: checkpointFileId,
+      },
+      leaseExpiresAt,
+    }) as boolean;
+    return { ok, checkpointFileId, leaseExpiresAt };
+  },
+});
+
+export const completeExternalExtract = action({
+  args: {
+    secret: v.string(),
+    policyId: v.string(),
+    leaseId: v.string(),
+    state: v.any(),
+    document: v.any(),
+    chunks: v.array(v.any()),
+    sourceSpans: v.array(v.any()),
+    sourceChunks: v.array(v.any()),
+    tokenUsage: v.optional(v.any()),
+    performanceReport: v.optional(v.any()),
+    checkpoint: v.optional(v.any()),
+  },
+  handler: async (ctx, args): Promise<ExternalAckResult> => {
+    requireExtractionWorkerSecret(args.secret);
+    const state = args.state as PolicyExtractionState;
+    const policyId = args.policyId;
+    const doc = args.document as Record<string, unknown>;
+    if (!state.orgId || !state.userId) {
+      throw new Error("External extraction completion missing orgId or userId");
+    }
+
+    await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
+      jobId: policyId,
+      timestamp: nowMs(),
+      message: `External extraction complete. Type: ${String(doc.type ?? "policy")}. ${args.chunks.length} chunks, ${args.sourceSpans.length} source spans.`,
+      phase: "extract",
+      level: "info",
+    });
+    if (args.performanceReport?.modelCalls?.length) {
+      const totalSeconds = Math.round((args.performanceReport.totalModelCallDurationMs ?? 0) / 1000);
+      await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
+        jobId: policyId,
+        timestamp: nowMs(),
+        message: `External extraction model calls: ${args.performanceReport.modelCalls.length}; total model time: ${totalSeconds}s`,
+        phase: "extract",
+        level: "info",
+      });
+    }
+    if (args.checkpoint) {
+      for (const line of summarizeExtractionCheckpoint({ checkpoint: args.checkpoint })) {
+        await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
+          jobId: policyId,
+          timestamp: nowMs(),
+          message: line,
+          phase: "extract",
+          level: "info",
+        });
+      }
+    }
+
+    const mappedFields = insuranceDocToPolicy(args.document);
+    const fields = await normalizeOrgNamesWithLlm(
+      ctx,
+      state.orgId as Id<"organizations">,
+      mappedFields,
+    );
+    const docName = doc.type === "quote"
+      ? (doc.quoteNumber || "quote")
+      : (doc.policyNumber || "policy");
+    const resolvedFileName = state.fileName || `${String(docName)}.pdf`;
+
+    await ctx.runMutation((internal as any).policies.updateExtractionInternal, {
+      id: policyId,
+      fields: {
+        fileName: resolvedFileName,
+        rawExtractionResponse: undefined,
+        ...fields,
+      },
+    });
+
+    if (state.policyFileId) {
+      await ctx.runMutation((internal as any).policyFiles.updateExtraction, {
+        id: state.policyFileId,
+        extractedData: args.document,
+      });
+    }
+
+    const embeddingPayloadFileId = await storeEmbeddingPayload(ctx, policyId, {
+      documentChunksForEmbedding: args.chunks as PolicyExtractionState["documentChunksForEmbedding"],
+      sourceSpansForStorage: args.sourceSpans as PolicyExtractionState["sourceSpansForStorage"],
+      sourceChunksForEmbedding: args.sourceChunks as PolicyExtractionState["sourceChunksForEmbedding"],
+    });
+    const nextState: PolicyExtractionState = {
+      ...state,
+      clSdkCheckpoint: undefined,
+      clSdkCheckpointFileId: undefined,
+      embeddingPayloadFileId,
+      chunkIds: args.chunks.map((chunk: { id: string }) => chunk.id),
+      sourceSpanIds: args.sourceSpans.map((span: { id: unknown }) => String(span.id)),
+      sourceChunkIds: args.sourceChunks.map((chunk: { id: unknown }) => String(chunk.id)),
+      fileName: resolvedFileName,
+      externalWorker: undefined,
+    };
+
+    const checkpointUpdated = await ctx.runMutation((internal as any).policies.pipelineCompleteLease, {
+      jobId: policyId,
+      leaseId: args.leaseId,
+      checkpoint: {
+        nextPhase: "embed_and_store",
+        state: nextState,
+        createdAt: nowMs(),
+      },
+    }) as boolean;
+    if (checkpointUpdated) {
+      await ctx.scheduler.runAfter(0, (internal as any).actions.policyExtraction.advance, { jobId: policyId });
+    }
+    return { ok: checkpointUpdated };
+  },
+});
+
+export const failExternalJob = action({
+  args: {
+    secret: v.string(),
+    policyId: v.string(),
+    leaseId: v.string(),
+    state: v.optional(v.any()),
+    error: v.string(),
+  },
+  handler: async (ctx, args) => {
+    requireExtractionWorkerSecret(args.secret);
+    const checkpoint = args.state
+      ? {
+          nextPhase: "extract",
+          state: args.state,
+          createdAt: nowMs(),
+        }
+      : null;
+    await ctx.runMutation((internal as any).policies.pipelineCompleteLease, {
+      jobId: args.policyId,
+      leaseId: args.leaseId,
+      status: "error",
+      error: args.error,
+      checkpoint,
+    });
+    return { ok: true };
+  },
+});
+
 // ─── Entry point: start from upload ───────────────────────────────────────────
 
 export const startPolicyExtractionFromUpload = internalAction({
@@ -1050,6 +1493,25 @@ export const startPolicyExtractionFromUpload = internalAction({
     policyFileId: v.optional(v.id("policyFiles")),
   },
   handler: async (ctx, { policyId, fileId, fileName, orgId, userId, policyFileId }) => {
+    if (EXTERNAL_WORKER_MODE) {
+      await ctx.runMutation(internal.policies.pipelineClearLog, {
+        jobId: String(policyId),
+      });
+      await clearArtifacts(ctx, String(policyId));
+      await ctx.runMutation((internal as any).policies.pipelineStartExternalWorkerJob, {
+        jobId: String(policyId),
+        state: {
+          sourceKind: "upload",
+          fileId: String(fileId),
+          fileName,
+          orgId: String(orgId),
+          userId: String(userId),
+          policyFileId: policyFileId ? String(policyFileId) : undefined,
+        },
+      });
+      return;
+    }
+
     const mutations = makeMutations();
     const storage = createConvexStorageAdapter<PolicyExtractionState>({
       ctx: ctx as any,
@@ -1119,6 +1581,30 @@ export const retryPolicyExtraction = internalAction({
     if (!policy) throw new Error("Policy not found");
 
     const existingState = policy.pipelineCheckpoint?.state;
+    if (EXTERNAL_WORKER_MODE) {
+      const nextState = {
+        sourceKind: existingState?.sourceKind ?? "upload",
+        fileId: existingState?.fileId ?? (policy.fileId ? String(policy.fileId) : undefined),
+        fileName: existingState?.fileName,
+        orgId: existingState?.orgId ?? String(policy.orgId ?? ""),
+        userId: existingState?.userId ?? String(policy.userId ?? ""),
+        policyFileId: existingState?.policyFileId,
+        clSdkCheckpointFileId: mode === "resume" ? existingState?.clSdkCheckpointFileId : undefined,
+        clSdkCheckpoint: mode === "resume" ? existingState?.clSdkCheckpoint : undefined,
+      };
+      if (!nextState.fileId) throw new Error("Policy source file is missing");
+      if (mode === "full") {
+        await ctx.runMutation(internal.policies.pipelineClearLog, {
+          jobId: String(policyId),
+        });
+        await clearArtifacts(ctx, String(policyId));
+      }
+      await ctx.runMutation((internal as any).policies.pipelineStartExternalWorkerJob, {
+        jobId: String(policyId),
+        state: nextState,
+      });
+      return;
+    }
 
     const phases = makePhases(ctx);
     await runPipeline<PolicyExtractionState>({

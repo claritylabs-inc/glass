@@ -830,7 +830,9 @@ export default defineSchema({
     ),
     createdAt: v.number(),
     updatedAt: v.number(),
-  }).index("by_policyId", ["policyId"]),
+  })
+    .index("by_policyId", ["policyId"])
+    .index("by_pipelineStatus_updatedAt", ["pipelineStatus", "updatedAt"]),
 
   // Storage-backed transient extraction artifacts. These records point at JSON
   // blobs in Convex file storage for cl-sdk checkpoints and pre-embedding

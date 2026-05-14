@@ -1,0 +1,39 @@
+{
+  "name": "@glass/extraction-worker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Glass policy extraction worker for long-running cl-sdk jobs",
+  "packageManager": "npm@11.12.1",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "main": "dist/extraction-worker/src/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/extraction-worker/src/index.js",
+    "dev": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.58",
+    "@ai-sdk/cohere": "^3.0.30",
+    "@ai-sdk/deepseek": "^2.0.28",
+    "@ai-sdk/google": "^3.0.64",
+    "@ai-sdk/mistral": "^3.0.30",
+    "@ai-sdk/moonshotai": "^2.0.15",
+    "@ai-sdk/openai": "^3.0.52",
+    "@ai-sdk/provider-utils": "^4.0.23",
+    "@ai-sdk/xai": "^3.0.83",
+    "@claritylabs/cl-sdk": "^1.1.0",
+    "ai": "^6.0.134",
+    "convex": "^1.32.0",
+    "dayjs": "^1.11.19",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^5.4.296"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.7.0"
+  }
+}
