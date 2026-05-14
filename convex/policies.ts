@@ -1,6 +1,7 @@
+import dayjs from "dayjs";
 import { v } from "convex/values";
 import { mutation, query, internalQuery, internalMutation } from "./_generated/server";
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import { requireOrgAccess, getOrgAccess } from "./lib/orgAuth";
 import {
   requireBrokerAccessToClient,
@@ -24,6 +25,13 @@ type PolicyPipelineLogEntry = {
 };
 
 const PIPELINE_LOG_LIMIT = 500;
+const PIPELINE_STALE_REQUEUE_MS = 5 * 60 * 1000;
+const PIPELINE_STALE_REQUEUE_BATCH_LIMIT = 25;
+const EXTERNAL_WORKER_CLAIM_BATCH_LIMIT = 50;
+
+function nowMs(): number {
+  return dayjs().valueOf();
+}
 
 async function getPolicyExtractionRun(ctx: any, policyId: DataModelId<"policies">) {
   return await ctx.db
@@ -1410,6 +1418,227 @@ export const pipelineClearLog = internalMutation({
     await ctx.db.patch(jobId as DataModelId<"policies">, {
       pipelineLog: undefined,
     });
+  },
+});
+
+export const pipelineStartExternalWorkerJob = internalMutation({
+  args: {
+    jobId: v.string(),
+    state: v.any(),
+  },
+  handler: async (ctx, { jobId, state }) => {
+    const policyId = jobId as DataModelId<"policies">;
+    const now = nowMs();
+    await patchPolicyExtractionRun(ctx, policyId, {
+      pipelineStatus: "running",
+      pipelineError: undefined,
+      pipelineCheckpoint: {
+        nextPhase: "extract",
+        state: {
+          ...state,
+          externalWorker: true,
+        },
+        createdAt: now,
+      },
+    });
+    await ctx.db.patch(policyId, {
+      pipelineStatus: "running",
+      pipelineError: undefined,
+      pipelineCheckpoint: undefined,
+      pipelineLog: undefined,
+    });
+    await appendPolicyPipelineLog(ctx, policyId, {
+      timestamp: now,
+      message: "Queued for external extraction worker",
+      phase: "queue",
+      level: "info",
+    });
+  },
+});
+
+export const pipelineClaimExternalWorkerJob = internalMutation({
+  args: {
+    leaseId: v.string(),
+    leaseExpiresAt: v.number(),
+    batchSize: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const now = nowMs();
+    const batchSize = Math.max(
+      1,
+      Math.min(
+        EXTERNAL_WORKER_CLAIM_BATCH_LIMIT,
+        Math.floor(args.batchSize ?? EXTERNAL_WORKER_CLAIM_BATCH_LIMIT),
+      ),
+    );
+    const runs = await ctx.db
+      .query("policyExtractionRuns")
+      .withIndex("by_pipelineStatus_updatedAt", (q) => q.eq("pipelineStatus", "running"))
+      .order("asc")
+      .take(batchSize);
+
+    for (const run of runs) {
+      const checkpoint = run.pipelineCheckpoint as
+        | {
+            nextPhase?: string;
+            state?: { externalWorker?: boolean; fileId?: string };
+            createdAt?: number;
+            lease?: { id?: string; phase?: string; expiresAt?: number; heartbeatAt?: number };
+          }
+        | undefined;
+      if (
+        checkpoint?.nextPhase !== "extract" ||
+        !checkpoint.state?.externalWorker ||
+        !checkpoint.state.fileId
+      ) {
+        continue;
+      }
+
+      const heartbeatAt = checkpoint.lease?.heartbeatAt;
+      const lastLogAt = run.pipelineLog?.at(-1)?.timestamp ?? checkpoint.createdAt ?? run.updatedAt;
+      const activeLease =
+        checkpoint.lease?.expiresAt !== undefined &&
+        checkpoint.lease.expiresAt > now &&
+        (
+          heartbeatAt === undefined
+            ? now - lastLogAt <= PIPELINE_STALE_REQUEUE_MS
+            : now - heartbeatAt <= PIPELINE_STALE_REQUEUE_MS
+        );
+      if (activeLease) continue;
+
+      const leasedCheckpoint = {
+        ...checkpoint,
+        lease: {
+          id: args.leaseId,
+          phase: "external_extract",
+          expiresAt: args.leaseExpiresAt,
+          heartbeatAt: now,
+        },
+      };
+      await ctx.db.patch(run._id, {
+        pipelineCheckpoint: leasedCheckpoint,
+        updatedAt: now,
+      });
+      await appendPolicyPipelineLog(ctx, run.policyId, {
+        timestamp: now,
+        message: "External extraction worker claimed job",
+        phase: "worker",
+        level: "info",
+      });
+      return {
+        policyId: String(run.policyId),
+        checkpoint: leasedCheckpoint,
+      };
+    }
+
+    return null;
+  },
+});
+
+export const pipelineRequeueStale = internalMutation({
+  args: {
+    olderThanMs: v.optional(v.number()),
+    batchSize: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const now = nowMs();
+    const olderThanMs = Math.max(
+      PIPELINE_STALE_REQUEUE_MS,
+      Math.floor(args.olderThanMs ?? PIPELINE_STALE_REQUEUE_MS),
+    );
+    const batchSize = Math.max(
+      1,
+      Math.min(
+        PIPELINE_STALE_REQUEUE_BATCH_LIMIT,
+        Math.floor(args.batchSize ?? PIPELINE_STALE_REQUEUE_BATCH_LIMIT),
+      ),
+    );
+    const cutoff = now - olderThanMs;
+    const runs = await ctx.db
+      .query("policyExtractionRuns")
+      .withIndex("by_pipelineStatus_updatedAt", (q) =>
+        q.eq("pipelineStatus", "running").lt("updatedAt", cutoff),
+      )
+      .order("asc")
+      .take(batchSize);
+
+    const requeued: string[] = [];
+    const markedError: string[] = [];
+    const skipped: string[] = [];
+
+    for (const run of runs) {
+      const checkpoint = run.pipelineCheckpoint as
+        | {
+            nextPhase?: string;
+            state?: { externalWorker?: boolean };
+            createdAt?: number;
+            lease?: { id?: string; phase?: string; expiresAt?: number; heartbeatAt?: number };
+          }
+        | undefined;
+
+      if (!checkpoint) {
+        await setPolicyPipelineStatus(
+          ctx,
+          run.policyId,
+          "error",
+          "Extraction stalled without a resumable checkpoint",
+        );
+        await appendPolicyPipelineLog(ctx, run.policyId, {
+          timestamp: now,
+          message: "Marked extraction failed because no resumable checkpoint was available",
+          phase: "watchdog",
+          level: "error",
+        });
+        markedError.push(String(run.policyId));
+        continue;
+      }
+
+      const lastLogAt = run.pipelineLog?.at(-1)?.timestamp ?? checkpoint.createdAt ?? run.updatedAt;
+      const heartbeatAt = checkpoint.lease?.heartbeatAt;
+      const heartbeatStale =
+        heartbeatAt === undefined
+          ? now - lastLogAt > olderThanMs
+          : now - heartbeatAt > olderThanMs;
+      if (!heartbeatStale) {
+        skipped.push(String(run.policyId));
+        continue;
+      }
+
+      if (checkpoint.state?.externalWorker && checkpoint.nextPhase === "extract") {
+        await appendPolicyPipelineLog(ctx, run.policyId, {
+          timestamp: now,
+          message: "Stale external extraction lease detected; clearing lease for worker reclaim",
+          phase: "watchdog",
+          level: "warn",
+        });
+        await ctx.db.patch(run._id, {
+          pipelineCheckpoint: {
+            ...checkpoint,
+            lease: undefined,
+          },
+          updatedAt: now,
+        });
+      } else {
+        await appendPolicyPipelineLog(ctx, run.policyId, {
+          timestamp: now,
+          message: `Stale extraction lease detected; requeueing ${checkpoint.nextPhase ?? "pipeline"} phase`,
+          phase: "watchdog",
+          level: "warn",
+        });
+        await ctx.scheduler.runAfter(0, (internal as any).actions.policyExtraction.advance, {
+          jobId: String(run.policyId),
+        });
+      }
+      requeued.push(String(run.policyId));
+    }
+
+    return {
+      scanned: runs.length,
+      requeued,
+      markedError,
+      skipped,
+      cutoff,
+    };
   },
 });
 

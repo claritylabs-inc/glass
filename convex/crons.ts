@@ -19,4 +19,11 @@ crons.cron(
   {},
 );
 
+crons.interval(
+  "sweep stale policy extractions",
+  { minutes: 5 },
+  (internal as any).actions.policyExtraction.sweepStale,
+  {},
+);
+
 export default crons;
