@@ -1,0 +1,39 @@
+{
+  "name": "@claritylabs-inc/glass-operator",
+  "version": "0.1.1",
+  "private": false,
+  "description": "Private operator CLI for Glass broker provisioning",
+  "license": "UNLICENSED",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/claritylabs-inc/glass.git",
+    "directory": "operator-cli"
+  },
+  "bin": {
+    "glass-operator": "dist/index.js"
+  },
+  "publishConfig": {
+    "access": "restricted",
+    "registry": "https://npm.pkg.github.com"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm run build",
+    "provision-broker": "node dist/index.js provision-broker",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "commander": "^14.0.1",
+    "convex": "^1.32.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.39",
+    "typescript": "^5.9.3"
+  }
+}

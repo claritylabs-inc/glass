@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "operator:provision-broker": "npm --prefix operator-cli run build --silent && node operator-cli/dist/index.js provision-broker",
     "test": "vitest run",
     "test:watch": "vitest"
   },

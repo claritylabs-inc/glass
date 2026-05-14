@@ -6,6 +6,7 @@ on:
     paths:
       - "convex/**"
       - "cli/**"
+      - "operator-cli/**"
       - "package.json"
       - "package-lock.json"
       - ".github/workflows/deploy-convex.yml"
@@ -14,6 +15,7 @@ on:
 permissions:
   contents: read
   id-token: write
+  packages: write
 
 jobs:
   deploy:
@@ -77,3 +79,48 @@ jobs:
       - name: Publish CLI
         if: steps.npm-version.outputs.published == 'false'
         run: npm publish
+
+  publish-operator-cli:
+    runs-on: ubuntu-latest
+    needs: deploy
+    defaults:
+      run:
+        working-directory: operator-cli
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: operator-cli/package-lock.json
+          registry-url: https://npm.pkg.github.com
+          scope: "@claritylabs-inc"
+
+      - run: npm ci
+
+      - run: npm run typecheck
+
+      - run: npm pack --dry-run
+
+      - name: Check GitHub Packages version
+        id: github-package-version
+        shell: bash
+        run: |
+          PACKAGE_NAME="$(node -p "require('./package.json').name")"
+          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+          if npm view "$PACKAGE_NAME@$PACKAGE_VERSION" version --registry=https://npm.pkg.github.com >/dev/null 2>&1; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "$PACKAGE_NAME@$PACKAGE_VERSION is already published"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+            echo "$PACKAGE_NAME@$PACKAGE_VERSION is not published yet"
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish operator CLI
+        if: steps.github-package-version.outputs.published == 'false'
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -19,6 +19,7 @@ Guidance for any coding agent working in this repository: Codex, Claude Code, Cu
 - `npm run lint` — repo-wide ESLint
 - `npx tsc --noEmit` — TypeScript validation (Next.js)
 - `npx convex typecheck` — TypeScript validation (Convex functions)
+- `npm run operator:provision-broker -- --name "Broker Name" --admin-email "admin@example.com"` — repo wrapper around the private installable operator CLI for provisioning broker orgs/accounts without using the web app
 - `npx convex run seed:seed` — seed demo data
 - `npx convex run actions/backfillChunks:backfill --args '{"orgId":"..."}'` — embed existing documents for vector search
 
@@ -76,6 +77,10 @@ Surfaces:
 ## Connected Vendor/Client Accounts
 
 Glass supports one-way connected organization relationships for vendor/client insurance access, modeled after the platform/connected-account idea of a parent org receiving scoped access to a connected org's records. The implementation intentionally keeps this separate from the broker/client hierarchy so broker portal features remain broker-only.
+
+## Operator Provisioning
+
+Broker orgs and broker admin accounts can be created from the private installable operator CLI without adding an admin web portal or requiring a customer OTP during setup. The CLI package lives in `operator-cli/` as `@claritylabs/glass-operator` and exposes the `glass-operator` binary; the repo wrapper `npm run operator:provision-broker` builds and runs the same package locally. It calls `convex/operatorProvisioning.ts` directly through Convex. The Convex deployment requires `OPERATOR_PROVISIONING_SECRET`; the CLI stores that token locally with `glass-operator auth:login` or reads `GLASS_OPERATOR_TOKEN` in agent environments. Requests are HMAC-signed with timestamp, nonce, and body hash, and Convex stores used nonces in `operatorAuthNonces` to reject replay. This flow may create or update the broker org, create/link the admin user account for the provided email, add the admin org membership, mark onboarding complete, and optionally seed draft client orgs. It deliberately does not create a browser session or bypass normal login; the broker contact still signs in with the usual OTP when they first access Glass.
 
 Schema: `connectedOrgRelationships` stores approved/resolvable org-to-org requests with `clientOrgId`, `vendorOrgId`, `status` (`pending` | `active` | `revoked`), audit user IDs, label/note, and timestamps. `connectedOrgInvitations` stores email-backed pending requests and token hashes for vendors who need an approval/signup link. Active relationships grant the client/customer org read-only access to selected vendor insurance system-of-record data. Relationships are one-hop only; a client that can read a vendor does not inherit that vendor's broker, clients, vendors, email, threads, or write capabilities. White labeling continues to be resolved from the viewer's own org/broker context, not from a connected vendor.
 

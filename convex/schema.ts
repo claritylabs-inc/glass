@@ -136,6 +136,14 @@ export default defineSchema({
     .index("by_orgId", ["orgId"])
     .index("by_orgId_userId", ["orgId", "userId"]),
 
+  operatorAuthNonces: defineTable({
+    nonce: v.string(),
+    timestamp: v.number(),
+    expiresAt: v.number(),
+  })
+    .index("by_nonce", ["nonce"])
+    .index("by_expiresAt", ["expiresAt"]),
+
   brokerModelSettings: defineTable({
     brokerOrgId: v.id("organizations"),
     providerKeys: v.optional(

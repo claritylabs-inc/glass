@@ -111,6 +111,7 @@ import type * as modelSettings from "../modelSettings.js";
 import type * as notificationPreferences from "../notificationPreferences.js";
 import type * as notifications from "../notifications.js";
 import type * as oauth from "../oauth.js";
+import type * as operatorProvisioning from "../operatorProvisioning.js";
 import type * as orgMemory from "../orgMemory.js";
 import type * as organizations from "../organizations.js";
 import type * as orgs from "../orgs.js";
@@ -236,6 +237,7 @@ declare const fullApi: ApiFromModules<{
   notificationPreferences: typeof notificationPreferences;
   notifications: typeof notifications;
   oauth: typeof oauth;
+  operatorProvisioning: typeof operatorProvisioning;
   orgMemory: typeof orgMemory;
   organizations: typeof organizations;
   orgs: typeof orgs;
