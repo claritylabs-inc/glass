@@ -30,6 +30,18 @@ export function registerPolicyTools(server: McpServer, client: GlassClient) {
   );
 
   server.tool(
+    "get_policy_pdf",
+    "Get a temporary download URL for the original full policy PDF document by policy ID.",
+    {
+      id: z.string().describe("The policy ID"),
+    },
+    async ({ id }) => {
+      const result = await client.getPolicyPdf(id);
+      return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+    },
+  );
+
+  server.tool(
     "search_policies",
     "Search across policies by text query. Searches carrier, policy number, insured name, summary, and policy types.",
     {

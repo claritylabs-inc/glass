@@ -3,10 +3,11 @@
 import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
-import type { Doc } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 import {
   resolveEmailAgentIdentity,
   upsertEmailDraftArtifact,
+  type EmailAttachmentMeta,
 } from "../lib/emailSubagent";
 
 function serializeDraft(draft: Doc<"pendingEmails"> | null) {
@@ -39,6 +40,7 @@ export const upsertForMcp = internalAction({
     body: v.string(),
     cc: v.optional(v.array(v.string())),
     bcc: v.optional(v.array(v.string())),
+    originalPolicyIds: v.optional(v.array(v.id("policies"))),
   },
   handler: async (ctx, args) => {
     const org = await ctx.runQuery(internal.orgs.getInternal, { id: args.orgId });
@@ -67,6 +69,25 @@ export const upsertForMcp = internalAction({
       });
     }
 
+    const attachments: EmailAttachmentMeta[] = [];
+    const referencedPolicyIds: Id<"policies">[] = [];
+    for (const policyId of args.originalPolicyIds ?? []) {
+      const policy = await ctx.runQuery(internal.policies.getInternal, { id: policyId }) as Doc<"policies"> | null;
+      if (!policy || policy.orgId !== args.orgId) {
+        throw new Error(`Policy ${policyId} not found`);
+      }
+      if (!policy.fileId) {
+        throw new Error(`Policy ${policy.policyNumber ?? policyId} does not have an original PDF file available.`);
+      }
+      referencedPolicyIds.push(policyId);
+      attachments.push({
+        filename: policy.fileName ?? `${policy.policyNumber ?? "policy"}.pdf`,
+        contentType: "application/pdf",
+        size: 0,
+        fileId: policy.fileId,
+      });
+    }
+
     const pendingEmailId = await upsertEmailDraftArtifact(ctx, {
       orgId: args.orgId,
       threadId,
@@ -88,7 +109,8 @@ export const upsertForMcp = internalAction({
       ],
       subject: args.subject,
       body: args.body,
-      attachments: [],
+      attachments,
+      referencedPolicyIds: referencedPolicyIds.length > 0 ? referencedPolicyIds : undefined,
     });
     if (!pendingEmailId) throw new Error("Failed to create email draft.");
 

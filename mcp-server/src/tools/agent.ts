@@ -44,6 +44,7 @@ export function registerAgentTools(server: McpServer, client: GlassClient) {
       body: z.string().describe("Plain text email body"),
       cc: z.array(z.string()).optional().describe("CC email addresses"),
       bcc: z.array(z.string()).optional().describe("BCC email addresses"),
+      originalPolicyIds: z.array(z.string()).optional().describe("Policy IDs whose original full policy PDFs should be attached"),
     },
     async (input: {
       threadId?: string;
@@ -52,6 +53,7 @@ export function registerAgentTools(server: McpServer, client: GlassClient) {
       body: string;
       cc?: string[];
       bcc?: string[];
+      originalPolicyIds?: string[];
     }) => {
       const result = await client.upsertEmailDraft(input);
       return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
@@ -68,6 +70,7 @@ export function registerAgentTools(server: McpServer, client: GlassClient) {
       body: z.string().describe("Plain text email body"),
       cc: z.array(z.string()).optional().describe("CC email addresses"),
       bcc: z.array(z.string()).optional().describe("BCC email addresses"),
+      originalPolicyIds: z.array(z.string()).optional().describe("Policy IDs whose original full policy PDFs should be attached"),
     },
     async (input: {
       draftId: string;
@@ -76,6 +79,7 @@ export function registerAgentTools(server: McpServer, client: GlassClient) {
       body: string;
       cc?: string[];
       bcc?: string[];
+      originalPolicyIds?: string[];
     }) => {
       const result = await client.upsertEmailDraft(input);
       return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
