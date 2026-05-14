@@ -61,9 +61,12 @@ function ExtractionBannerBase({
   if (!status || status === "idle" || status === "complete") return null;
 
   const isError = status === "error";
+  const isNonInsuranceDocument = isError && error?.startsWith("This document is not an insurance policy or quote");
   const latestLog = log && log.length > 0 ? log[log.length - 1] : undefined;
   const runningLabel = labels?.running ?? "Extracting";
-  const errorLabel = labels?.error ?? "Extraction failed";
+  const errorLabel = isNonInsuranceDocument
+    ? "Not an insurance document"
+    : labels?.error ?? "Extraction failed";
 
   return (
     <StatusBanner
@@ -118,7 +121,7 @@ function ExtractionBannerBase({
         </StatusBanner.Actions>
       )}
 
-      {isError && (
+      {isError && !isNonInsuranceDocument && (
         <StatusBanner.Actions className="shrink-0">
           <RetryButtons
             onRetry={onRetry}
