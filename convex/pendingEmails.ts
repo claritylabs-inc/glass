@@ -114,6 +114,7 @@ export const updateDraftInternal = internalMutation({
     }))),
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
     referencedQuoteIds: v.optional(v.array(v.id("policies"))),
+    chatMessageId: v.optional(v.id("threadMessages")),
   },
   handler: async (ctx, args) => {
     const { id, ...patch } = args;

@@ -22,6 +22,7 @@ import { makeEmbedText, makeGenerateObject } from "../lib/sdkCallbacks";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { getModelForOrg } from "../lib/models";
+import { applyPolicyPeriodFallback } from "../lib/policyPeriodExtraction";
 import { generateObject } from "ai";
 import { z } from "zod";
 
@@ -726,8 +727,6 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         });
       }
 
-      const doc = result.document as Record<string, unknown>;
-      const chunks = result.chunks;
       const resultSourceSpans = Array.isArray((result as any).sourceSpans)
         ? (result as any).sourceSpans as Array<Record<string, any>>
         : [];
@@ -740,6 +739,21 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
       const sourceChunks = resultSourceChunks.length > 0
         ? resultSourceChunks
         : pdfSource.sourceChunks as Array<Record<string, any>>;
+      const periodFallback = applyPolicyPeriodFallback(
+        result.document as Record<string, unknown>,
+        [...sourceSpans, ...(pdfSource.sourceSpans as Array<Record<string, any>>)].map((span) => ({
+          text: typeof span.text === "string" ? span.text : undefined,
+          pageStart: typeof span.pageStart === "number" ? span.pageStart : undefined,
+        })),
+      );
+      if (periodFallback.changed) {
+        result.document = periodFallback.document as typeof result.document;
+        await pCtx.log(
+          `Policy period verified from source text: ${periodFallback.period?.effectiveDate} to ${periodFallback.period?.expirationDate}`,
+        );
+      }
+      const doc = result.document as Record<string, unknown>;
+      const chunks = result.chunks;
       const tokenUsage = result.tokenUsage;
 
       await pCtx.log(

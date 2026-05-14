@@ -107,6 +107,21 @@ function getInitials(name?: string | null, email?: string | null) {
   return "?";
 }
 
+function useMediaQuery(query: string) {
+  const [matches, setMatches] = useState(false);
+
+  useEffect(() => {
+    const media = window.matchMedia(query);
+    const handleChange = () => setMatches(media.matches);
+
+    handleChange();
+    media.addEventListener("change", handleChange);
+    return () => media.removeEventListener("change", handleChange);
+  }, [query]);
+
+  return matches;
+}
+
 export function AppSidebar({
   mobileOpen,
   onMobileClose,
@@ -151,6 +166,7 @@ export function AppSidebar({
   const isStandaloneClient = currentOrg?.orgType === "client" && !viewerOrg?.brokerOrg;
   const navItems = isBroker ? BROKER_NAV_ITEMS : ALL_NAV_ITEMS;
   const connectItems = CONNECT_ITEMS;
+  const isDesktop = useMediaQuery("(min-width: 1024px)");
 
   const pageShortcutMap = useMemo<Record<string, string>>(
     () => ({
@@ -400,7 +416,7 @@ export function AppSidebar({
             </span>
           )}
         </button>
-        {notificationsPanelOpen && currentOrg?.orgId && (
+        {notificationsPanelOpen && !isDesktop && currentOrg?.orgId && (
           <NotificationsPanel
             orgId={currentOrg.orgId}
             onClose={() => setNotificationsPanelOpen(false)}
@@ -761,6 +777,23 @@ export function AppSidebar({
       >
         {activeContent}
       </aside>
+
+      {notificationsPanelOpen && isDesktop && currentOrg?.orgId && (
+        <aside className="hidden h-full w-80 min-w-80 max-w-80 shrink-0 overflow-hidden lg:flex">
+          <NotificationsPanel
+            orgId={currentOrg.orgId}
+            variant="pane"
+            onClose={() => setNotificationsPanelOpen(false)}
+            onMergeSuggestion={(payload) =>
+              setMergeDialog({
+                open: true,
+                primaryPolicyId: payload.primaryPolicyId,
+                secondaryPolicyId: payload.secondaryPolicyId,
+              })
+            }
+          />
+        </aside>
+      )}
 
       {/* Mobile overlay drawer */}
       <AnimatePresence>

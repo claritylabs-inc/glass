@@ -275,6 +275,7 @@ export async function upsertEmailDraftArtifact(
       attachments: params.attachments.length > 0 ? params.attachments : undefined,
       referencedPolicyIds: params.referencedPolicyIds,
       referencedQuoteIds: params.referencedQuoteIds,
+      chatMessageId: context.chatMessageId,
     });
     if (existing.threadMessageId) {
       await ctx.runMutation(internal.threads.updateEmailMessage, {
@@ -305,6 +306,7 @@ export async function upsertEmailDraftArtifact(
     threadId: context.threadId,
     emailPayload: JSON.stringify(emailPayload),
     scheduledSendTime: 0,
+    chatMessageId: context.chatMessageId,
     recipientEmail: params.to,
     ccAddresses: params.cc.length > 0 ? params.cc : undefined,
     bccAddresses: params.bcc.length > 0 ? params.bcc : undefined,

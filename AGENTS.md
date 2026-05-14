@@ -155,6 +155,7 @@ Glass persists:
 - Document detail: `document.sections`, `document.definitions`, `document.coveredReasons`, `document.endorsements`, `document.exclusions`, `document.conditions`
 - Declarations, form inventory, and supplementary facts as top-level policy fields
 - Raw source evidence in `sourceSpans` and embedded `sourceChunks` when cl-sdk returns source spans/chunks. These source units preserve stable `sourceSpanIds` for exact policy citations.
+- Glass performs a deterministic post-extraction policy-period check over raw PDF source spans before persisting policy fields. Clear `PERIOD OF INSURANCE` / `POLICY PERIOD` / `POLICY TERM` source text, including day-month-year table layouts, is allowed to override missing, malformed, or conflicting SDK `effectiveDate` / `expirationDate` values.
 
 ### Token Limits
 
@@ -177,7 +178,7 @@ Two entrypoints, both PDF-only:
 1. Fetch or receive a PDF.
 2. Store the raw PDF in Convex file storage.
 3. Load the PDF bytes from Convex file storage, build local PDF.js source spans, and run `buildExtractor().extract(pdfBytes, documentId, { sourceSpans })`. Do not pass a signed storage URL into `cl-sdk`; review and follow-up extractors can run long enough that repeated URL fetches become unreliable.
-4. Map `InsuranceDocument` into Glass policy fields.
+4. Verify critical policy-period dates from source text when a clear declaration-page period is present, then map `InsuranceDocument` into Glass policy fields.
 5. Persist the extracted document and metadata.
 6. Chunk the document and embed each chunk with `text-embedding-3-small`.
 7. Store chunks in `documentChunks` for semantic retrieval.
@@ -316,8 +317,10 @@ Outbound emails sent by Glass Agent are centralized in `convex/lib/emailSubagent
 ## UI
 
 - `/policies` — list, detail, upload, re-extract, and generated certificate history.
+- Policy detail **Breakdown** includes save-on-change editing for key extracted fields, premium breakdown rows, taxes/fees, and coverage limit/deductible rows. Direct org members and broker-of-client users can edit; connected-client/vendor access remains read-only. Edits write through `policies.updateExtractedFields` and record `manual_policy_update` audit entries.
 - `/chat` — threaded assistant.
 - `/agent/thread/:id` — renders unified `threads` records. Legacy `webChats`, `webChatMessages`, and `agentConversations` backend tables/functions have been removed after migration to `threads` + `threadMessages`.
+- Proactive features that create a chat thread use `threads.createProactiveInternal` so the thread starts with an agent message explaining why Glass created it, what evidence or trigger was found, and what the user should do next. Proactive email drafts attach to that agent message via `pendingEmailId`, so the chat context and email card render together.
 - Chat artifact cards such as email drafts should keep meaningful visual presence. Sources and tool calls should stay compact and consistent in the message footer row: inline policy citations are small chips, footer source chips open the right-side preview, and tool call parameters expand only on demand.
 - Web chat email artifacts are visually attached to the assistant message that created them, not rendered as a separate standalone chat turn. Sent email artifacts use `View sent email` instead of draft language.
 - Automatic chat title generation lives in `convex/actions/threadTitle.ts`. It should use the initial user message plus `threads.initialContext` and attachments, prefer the user's work intent/deliverable, and avoid recipient names, email domains, usernames, or file IDs.
