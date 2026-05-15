@@ -5,6 +5,7 @@ import mammoth from "mammoth";
 import { z } from "zod";
 import { v } from "convex/values";
 import { action } from "../_generated/server";
+import dayjs from "dayjs";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import { getModel } from "../lib/models";
@@ -35,6 +36,9 @@ const RequirementSchema = z.object({
   deductibleType: z.string().min(1).max(80).nullable(),
   deductibleValueType: z.string().min(1).max(80).nullable(),
   originalContent: z.string().min(1).max(4000).nullable(),
+  sourceExcerpt: z.string().min(1).max(4000).nullable(),
+  sourcePageStart: z.number().int().positive().nullable(),
+  sourcePageEnd: z.number().int().positive().nullable(),
 });
 
 const RequirementImportSchema = z.object({
@@ -86,6 +90,11 @@ function normalizeImportedRequirement(requirement: ImportedRequirement) {
     deductibleType: optionalString(requirement.deductibleType),
     deductibleValueType: optionalString(requirement.deductibleValueType),
     originalContent: optionalString(requirement.originalContent),
+    sourceExcerpt:
+      optionalString(requirement.sourceExcerpt) ??
+      optionalString(requirement.originalContent),
+    sourcePageStart: optionalNumber(requirement.sourcePageStart),
+    sourcePageEnd: optionalNumber(requirement.sourcePageEnd),
   };
 }
 
@@ -180,6 +189,7 @@ Rules:
 - Extract only actionable insurance compliance requirements.
 - Preserve exact limits, deductibles, endorsements, waiver, additional insured, primary/noncontributory, rating, cancellation notice, and expiration requirements when present.
 - Store each requirement in the same shape as a policy coverage: name, coverageCode, limit, limitType, limitValueType, deductible, deductibleType, deductibleValueType, and originalContent when available.
+- Set sourceExcerpt to the shortest exact source language that supports the requirement. For PDFs, set sourcePageStart/sourcePageEnd when the page is obvious from page markers; otherwise leave pages null.
 - When a minimum coverage amount is stated, set limit to the original limit text and limitAmount to the numeric dollar amount. Example: "$1M per occurrence" becomes limitAmount 1000000.
 - When a deductible or retention amount is stated, set deductible to the original deductible text and deductibleAmount to the numeric dollar amount.
 - Merge duplicates and split unrelated insurance lines into separate requirements.
@@ -202,6 +212,14 @@ export const importRequirements = action({
     fileId: v.optional(v.id("_storage")),
     fileName: v.optional(v.string()),
     contentType: v.optional(v.string()),
+    sourceType: v.optional(
+      v.union(
+        v.literal("lease_agreement"),
+        v.literal("client_contract"),
+        v.literal("vendor_requirements"),
+        v.literal("other"),
+      ),
+    ),
     appliesTo: v.optional(
       v.union(v.literal("vendors"), v.literal("own_org"), v.literal("both")),
     ),
@@ -239,6 +257,30 @@ export const importRequirements = action({
     if (!sourceText)
       throw new Error("Paste text or upload a requirement document first");
 
+    const sourceType =
+      args.sourceType ??
+      (args.fileName?.toLowerCase().includes("lease")
+        ? "lease_agreement"
+        : args.fileName?.toLowerCase().includes("contract")
+          ? "client_contract"
+          : "vendor_requirements");
+    const sourceDocumentId: Id<"requirementSourceDocuments"> =
+      await ctx.runMutation(
+        internal.compliance.createRequirementSourceDocumentInternal,
+        {
+          orgId: args.orgId,
+          userId: context.userId,
+          fileId: args.fileId,
+          fileName: args.fileName,
+          contentType: args.contentType,
+          sourceType,
+          title:
+            args.fileName ||
+            `Pasted requirements ${dayjs().format("YYYY-MM-DD HH:mm")}`,
+          sourceTextExcerpt: sourceText.slice(0, 4000),
+        },
+      );
+
     const model = getModel("chat");
     const result = await generateObject({
       model,
@@ -258,6 +300,9 @@ export const importRequirements = action({
         orgId: args.orgId,
         userId: context.userId,
         appliesTo: args.appliesTo,
+        sourceDocumentId,
+        sourceDocumentName: args.fileName || "Pasted source text",
+        sourceType,
         requirements: result.object.requirements.map(
           normalizeImportedRequirement,
         ),

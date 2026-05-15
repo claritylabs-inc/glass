@@ -35,6 +35,13 @@ type Category =
   | "other";
 
 type RequirementScope = "vendors" | "own_org";
+type RequirementSourceType =
+  | "manual"
+  | "bulk_import"
+  | "lease_agreement"
+  | "client_contract"
+  | "vendor_requirements"
+  | "other";
 
 type ComplianceApi = {
   compliance: {
@@ -77,6 +84,11 @@ type Requirement = {
   deductible?: string;
   deductibleAmount?: number;
   appliesTo: "vendors" | "own_org" | "both";
+  sourceType?: RequirementSourceType;
+  sourceDocumentName?: string;
+  sourceExcerpt?: string;
+  sourcePageStart?: number;
+  sourcePageEnd?: number;
   updatedAt: number;
   complianceCheck?: {
     status: "met" | "missing" | "expiring_soon" | "expired";
@@ -95,6 +107,36 @@ type Requirement = {
 type ConnectedOrgRow = {
   status: "pending" | "active" | "expired" | "revoked";
 };
+
+function sourceTypeLabel(sourceType?: RequirementSourceType) {
+  switch (sourceType) {
+    case "lease_agreement":
+      return "Lease agreement";
+    case "client_contract":
+      return "Client contract";
+    case "vendor_requirements":
+      return "Requirements document";
+    case "bulk_import":
+      return "Bulk import";
+    case "manual":
+      return "Manual";
+    case "other":
+      return "Source document";
+    default:
+      return undefined;
+  }
+}
+
+function formatSourcePage(requirement: Requirement) {
+  if (!requirement.sourcePageStart) return undefined;
+  if (
+    requirement.sourcePageEnd &&
+    requirement.sourcePageEnd !== requirement.sourcePageStart
+  ) {
+    return `pp. ${requirement.sourcePageStart}-${requirement.sourcePageEnd}`;
+  }
+  return `p. ${requirement.sourcePageStart}`;
+}
 
 function categoryLabel(category: Category) {
   return (
@@ -259,6 +301,10 @@ export function CompliancePage() {
     useState<RequirementScope>("vendors");
   const [sourceText, setSourceText] = useState("");
   const [sourceFile, setSourceFile] = useState<File | null>(null);
+  const [sourceType, setSourceType] =
+    useState<Exclude<RequirementSourceType, "manual" | "bulk_import">>(
+      "vendor_requirements",
+    );
   const [title, setTitle] = useState("");
   const [category, setCategory] = useState<Category>("general_liability");
   const [limit, setLimit] = useState("");
@@ -354,6 +400,7 @@ export function CompliancePage() {
         fileId,
         fileName: sourceFile?.name,
         contentType: sourceFile?.type,
+        sourceType,
         appliesTo: activeRequirementScope,
       })) as { createdCount: number };
 
@@ -366,6 +413,7 @@ export function CompliancePage() {
       }
       setSourceText("");
       setSourceFile(null);
+      setSourceType("vendor_requirements");
       setDrawerOpen(false);
     } catch (error) {
       toast.error(
@@ -438,9 +486,30 @@ export function CompliancePage() {
         <div className="flex min-h-0 flex-1 flex-col gap-4">
           <p className="text-body-sm text-muted-foreground">
             {activeRequirementScope === "vendors"
-              ? "Paste contract insurance language or upload an existing vendor requirements document. Glass will turn it into structured checklist items."
-              : "Paste insurance standards you need to satisfy or upload an existing requirements document. Glass will turn it into structured checklist items."}
+              ? "Paste contract insurance language or upload a vendor requirements document. Glass will turn it into structured checklist items with source provenance."
+              : "Upload a lease agreement, client contract, or other source document. Glass will extract the insurance requirements you need to satisfy and keep the original source language attached."}
           </p>
+          <label className="flex flex-col gap-1.5 text-label-sm font-medium text-muted-foreground">
+            Source type
+            <select
+              className="h-9 rounded-md border border-input bg-background px-2.5 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+              value={sourceType}
+              onChange={(event) =>
+                setSourceType(
+                  event.target.value as Exclude<
+                    RequirementSourceType,
+                    "manual" | "bulk_import"
+                  >,
+                )
+              }
+              disabled={importing}
+            >
+              <option value="vendor_requirements">Requirements document</option>
+              <option value="lease_agreement">Lease agreement</option>
+              <option value="client_contract">Client contract</option>
+              <option value="other">Other source document</option>
+            </select>
+          </label>
           <label className="flex min-h-0 flex-1 flex-col gap-1.5 text-label-sm font-medium text-muted-foreground">
             Requirement text
             <Textarea
@@ -555,7 +624,7 @@ export function CompliancePage() {
             onClick={openBulkImport}
           >
             <FileUp className="h-3.5 w-3.5" />
-            Bulk import
+            Extract from document
           </PillButton>
         </>
       }
@@ -628,10 +697,31 @@ export function CompliancePage() {
                         </span>
                       </Badge>
                     ) : null}
+                    {sourceTypeLabel(requirement.sourceType) ? (
+                      <Badge
+                        variant="secondary"
+                        className="max-w-full text-xs font-normal text-muted-foreground"
+                      >
+                        <span className="min-w-0 truncate">
+                          {sourceTypeLabel(requirement.sourceType)}
+                          {requirement.sourceDocumentName
+                            ? ` · ${requirement.sourceDocumentName}`
+                            : ""}
+                          {formatSourcePage(requirement)
+                            ? ` · ${formatSourcePage(requirement)}`
+                            : ""}
+                        </span>
+                      </Badge>
+                    ) : null}
                   </div>
                   <p className="line-clamp-2 max-w-5xl text-sm leading-5 text-muted-foreground">
                     {requirement.requirementText}
                   </p>
+                  {requirement.sourceExcerpt ? (
+                    <p className="line-clamp-1 max-w-5xl text-xs text-muted-foreground/70">
+                      Source language: {requirement.sourceExcerpt}
+                    </p>
+                  ) : null}
                   {activeRequirementScope === "own_org" &&
                   requirement.complianceCheck?.notes ? (
                     <p className="line-clamp-1 max-w-5xl text-xs text-muted-foreground/70">

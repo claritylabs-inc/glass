@@ -287,6 +287,28 @@ export default defineSchema({
     .index("by_vendorEmail", ["vendorEmail"])
     .index("by_vendorOrgId", ["vendorOrgId"]),
 
+  requirementSourceDocuments: defineTable({
+    orgId: v.id("organizations"),
+    fileId: v.optional(v.id("_storage")),
+    fileName: v.optional(v.string()),
+    contentType: v.optional(v.string()),
+    sourceType: v.union(
+      v.literal("lease_agreement"),
+      v.literal("client_contract"),
+      v.literal("vendor_requirements"),
+      v.literal("other"),
+    ),
+    title: v.string(),
+    sourceTextExcerpt: v.optional(v.string()),
+    status: pipelineStatusValidator,
+    pipelineError: v.optional(v.string()),
+    createdByUserId: v.id("users"),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_orgId", ["orgId"])
+    .index("by_orgId_status", ["orgId", "status"]),
+
   insuranceRequirements: defineTable({
     orgId: v.id("organizations"),
     title: v.string(),
@@ -314,6 +336,21 @@ export default defineSchema({
     deductibleType: v.optional(v.string()),
     deductibleValueType: v.optional(v.string()),
     originalContent: v.optional(v.string()),
+    sourceDocumentId: v.optional(v.id("requirementSourceDocuments")),
+    sourceDocumentName: v.optional(v.string()),
+    sourceType: v.optional(
+      v.union(
+        v.literal("manual"),
+        v.literal("bulk_import"),
+        v.literal("lease_agreement"),
+        v.literal("client_contract"),
+        v.literal("vendor_requirements"),
+        v.literal("other"),
+      ),
+    ),
+    sourceExcerpt: v.optional(v.string()),
+    sourcePageStart: v.optional(v.number()),
+    sourcePageEnd: v.optional(v.number()),
     appliesTo: v.union(
       v.literal("vendors"),
       v.literal("own_org"),

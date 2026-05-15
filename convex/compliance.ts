@@ -30,6 +30,22 @@ const complianceStatusValidator = v.union(
   v.literal("needs_review"),
 );
 
+const requirementSourceTypeValidator = v.union(
+  v.literal("manual"),
+  v.literal("bulk_import"),
+  v.literal("lease_agreement"),
+  v.literal("client_contract"),
+  v.literal("vendor_requirements"),
+  v.literal("other"),
+);
+
+const sourceDocumentTypeValidator = v.union(
+  v.literal("lease_agreement"),
+  v.literal("client_contract"),
+  v.literal("vendor_requirements"),
+  v.literal("other"),
+);
+
 const vendorComplianceMonitorCheckValidator = v.object({
   requirementId: v.id("insuranceRequirements"),
   requirementTitle: v.string(),
@@ -625,6 +641,12 @@ export const upsertRequirement = mutation({
     deductibleType: v.optional(v.string()),
     deductibleValueType: v.optional(v.string()),
     originalContent: v.optional(v.string()),
+    sourceDocumentId: v.optional(v.id("requirementSourceDocuments")),
+    sourceDocumentName: v.optional(v.string()),
+    sourceType: v.optional(requirementSourceTypeValidator),
+    sourceExcerpt: v.optional(v.string()),
+    sourcePageStart: v.optional(v.number()),
+    sourcePageEnd: v.optional(v.number()),
     appliesTo: v.optional(
       v.union(v.literal("vendors"), v.literal("own_org"), v.literal("both")),
     ),
@@ -663,6 +685,13 @@ export const upsertRequirement = mutation({
         category: args.category,
         requirementText: trimmedText,
         ...coverage,
+        sourceDocumentId: args.sourceDocumentId ?? existing.sourceDocumentId,
+        sourceDocumentName:
+          args.sourceDocumentName?.trim() || existing.sourceDocumentName,
+        sourceType: args.sourceType ?? existing.sourceType ?? "manual",
+        sourceExcerpt: args.sourceExcerpt?.trim() || existing.sourceExcerpt,
+        sourcePageStart: args.sourcePageStart ?? existing.sourcePageStart,
+        sourcePageEnd: args.sourcePageEnd ?? existing.sourcePageEnd,
         appliesTo: args.appliesTo ?? existing.appliesTo ?? "vendors",
         minimumRequired:
           args.minimumRequired ?? existing.minimumRequired ?? true,
@@ -677,6 +706,12 @@ export const upsertRequirement = mutation({
       category: args.category,
       requirementText: trimmedText,
       ...coverage,
+      sourceDocumentId: args.sourceDocumentId,
+      sourceDocumentName: args.sourceDocumentName?.trim() || undefined,
+      sourceType: args.sourceType ?? "manual",
+      sourceExcerpt: args.sourceExcerpt?.trim() || undefined,
+      sourcePageStart: args.sourcePageStart,
+      sourcePageEnd: args.sourcePageEnd,
       appliesTo: args.appliesTo ?? "vendors",
       minimumRequired: args.minimumRequired ?? true,
       status: "active",
@@ -891,6 +926,12 @@ export const upsertRequirementInternal = internalMutation({
     deductibleType: v.optional(v.string()),
     deductibleValueType: v.optional(v.string()),
     originalContent: v.optional(v.string()),
+    sourceDocumentId: v.optional(v.id("requirementSourceDocuments")),
+    sourceDocumentName: v.optional(v.string()),
+    sourceType: v.optional(requirementSourceTypeValidator),
+    sourceExcerpt: v.optional(v.string()),
+    sourcePageStart: v.optional(v.number()),
+    sourcePageEnd: v.optional(v.number()),
     appliesTo: v.optional(
       v.union(v.literal("vendors"), v.literal("own_org"), v.literal("both")),
     ),
@@ -924,6 +965,12 @@ export const upsertRequirementInternal = internalMutation({
         deductibleValueType: args.deductibleValueType,
         originalContent: args.originalContent,
       }),
+      sourceDocumentId: args.sourceDocumentId,
+      sourceDocumentName: args.sourceDocumentName?.trim() || undefined,
+      sourceType: args.sourceType ?? "manual",
+      sourceExcerpt: args.sourceExcerpt?.trim() || undefined,
+      sourcePageStart: args.sourcePageStart,
+      sourcePageEnd: args.sourcePageEnd,
       appliesTo: args.appliesTo ?? "vendors",
       minimumRequired: true,
       status: "active",
@@ -964,6 +1011,42 @@ export const getRequirementImportContextInternal = internalQuery({
   },
 });
 
+export const createRequirementSourceDocumentInternal = internalMutation({
+  args: {
+    orgId: v.id("organizations"),
+    userId: v.id("users"),
+    fileId: v.optional(v.id("_storage")),
+    fileName: v.optional(v.string()),
+    contentType: v.optional(v.string()),
+    sourceType: sourceDocumentTypeValidator,
+    title: v.string(),
+    sourceTextExcerpt: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const membership = await ctx.db
+      .query("orgMemberships")
+      .withIndex("by_orgId_userId", (q) =>
+        q.eq("orgId", args.orgId).eq("userId", args.userId),
+      )
+      .first();
+    if (membership?.role !== "admin") throw new Error("Admin role required");
+    const now = dayjs().valueOf();
+    return await ctx.db.insert("requirementSourceDocuments", {
+      orgId: args.orgId,
+      fileId: args.fileId,
+      fileName: args.fileName,
+      contentType: args.contentType,
+      sourceType: args.sourceType,
+      title: args.title.trim() || args.fileName || "Requirement source",
+      sourceTextExcerpt: args.sourceTextExcerpt?.trim() || undefined,
+      status: "complete",
+      createdByUserId: args.userId,
+      createdAt: now,
+      updatedAt: now,
+    });
+  },
+});
+
 export const createRequirementsInternal = internalMutation({
   args: {
     orgId: v.id("organizations"),
@@ -971,6 +1054,9 @@ export const createRequirementsInternal = internalMutation({
     appliesTo: v.optional(
       v.union(v.literal("vendors"), v.literal("own_org"), v.literal("both")),
     ),
+    sourceDocumentId: v.optional(v.id("requirementSourceDocuments")),
+    sourceDocumentName: v.optional(v.string()),
+    sourceType: v.optional(requirementSourceTypeValidator),
     requirements: v.array(
       v.object({
         title: v.string(),
@@ -987,6 +1073,9 @@ export const createRequirementsInternal = internalMutation({
         deductibleType: v.optional(v.string()),
         deductibleValueType: v.optional(v.string()),
         originalContent: v.optional(v.string()),
+        sourceExcerpt: v.optional(v.string()),
+        sourcePageStart: v.optional(v.number()),
+        sourcePageEnd: v.optional(v.number()),
       }),
     ),
   },
@@ -1034,6 +1123,15 @@ export const createRequirementsInternal = internalMutation({
             deductibleValueType: requirement.deductibleValueType,
             originalContent: requirement.originalContent,
           }),
+          sourceDocumentId: args.sourceDocumentId,
+          sourceDocumentName: args.sourceDocumentName?.trim() || undefined,
+          sourceType: args.sourceType ?? "bulk_import",
+          sourceExcerpt:
+            requirement.sourceExcerpt?.trim() ||
+            requirement.originalContent?.trim() ||
+            requirementText,
+          sourcePageStart: requirement.sourcePageStart,
+          sourcePageEnd: requirement.sourcePageEnd,
           appliesTo: args.appliesTo ?? "vendors",
           minimumRequired: true,
           status: "active",
