@@ -9,7 +9,6 @@ const authHost = "auth.glass.insure";
 const authRedirectSourceHosts = [
   "app.glass.insure",
   "broker.glass.insure",
-  "glass.claritylabs.inc",
 ];
 const authPathSources = [
   "/login",
