@@ -1192,18 +1192,20 @@ const MCP_TOOLS = [
   },
   {
     name: "list_insurance_requirements",
-    description: "List the caller org's insurance compliance requirements for contractors/vendors.",
+    description: "List the caller org's insurance compliance requirements, including source document provenance when available.",
     inputSchema: { type: "object" as const, properties: {} },
   },
   {
     name: "create_insurance_requirement",
-    description: "Create an insurance compliance requirement for contractors/vendors. Requires write scope and org admin role.",
+    description: "Create an insurance compliance requirement for contractors/vendors. Requires write scope and org admin role. For extracted lease/contract requirements, include source_document_name/source_excerpt when available.",
     inputSchema: {
       type: "object" as const,
       properties: {
         title: { type: "string", description: "Short requirement title" },
         category: { type: "string", description: "general_liability, auto, workers_comp, umbrella, professional, cyber, property, or other" },
         requirement_text: { type: "string", description: "Plain-language requirement to check against policy data" },
+        source_document_name: { type: "string", description: "Optional lease, contract, or requirement packet name" },
+        source_excerpt: { type: "string", description: "Optional exact original source language supporting the requirement" },
       },
       required: ["title", "category", "requirement_text"],
     },
@@ -1525,6 +1527,9 @@ async function handleToolCall(
         title: String(args.title),
         category: String(args.category),
         requirementText: String(args.requirement_text),
+        sourceDocumentName: args.source_document_name ? String(args.source_document_name) : undefined,
+        sourceType: args.source_document_name || args.source_excerpt ? "other" : "manual",
+        sourceExcerpt: args.source_excerpt ? String(args.source_excerpt) : undefined,
         appliesTo: "vendors",
       });
       return { content: [{ type: "text", text: JSON.stringify({ requirementId }, null, 2) }] };
@@ -2277,6 +2282,23 @@ http.route({
         title: String(body.title ?? ""),
         category: String(body.category ?? "other"),
         requirementText: String(body.requirement_text ?? body.requirementText ?? ""),
+        sourceDocumentName: body.source_document_name
+          ? String(body.source_document_name)
+          : body.sourceDocumentName
+            ? String(body.sourceDocumentName)
+            : undefined,
+        sourceType:
+          body.source_document_name ||
+          body.sourceDocumentName ||
+          body.source_excerpt ||
+          body.sourceExcerpt
+            ? "other"
+            : "manual",
+        sourceExcerpt: body.source_excerpt
+          ? String(body.source_excerpt)
+          : body.sourceExcerpt
+            ? String(body.sourceExcerpt)
+            : undefined,
         appliesTo: "vendors",
       });
       return jsonResponse({ id: requirementId }, 201);

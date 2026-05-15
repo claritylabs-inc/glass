@@ -11,6 +11,11 @@ type Requirement = Pick<
   | "limitAmount"
   | "deductible"
   | "deductibleAmount"
+  | "sourceType"
+  | "sourceDocumentName"
+  | "sourceExcerpt"
+  | "sourcePageStart"
+  | "sourcePageEnd"
 > & {
   clientRequirementSource?: {
     clientOrg: {
@@ -76,6 +81,9 @@ export function filterComplianceRequirements(
         requirement.requirementText,
         requirement.limit,
         requirement.deductible,
+        requirement.sourceType,
+        requirement.sourceDocumentName,
+        requirement.sourceExcerpt,
         requirement.appliesTo,
         SCOPE_LABELS[requirement.appliesTo],
       ].join(" "),
@@ -88,6 +96,15 @@ export function formatComplianceRequirement(requirement: Requirement) {
   const details = [
     requirement.clientRequirementSource
       ? `source: client requirements from ${requirement.clientRequirementSource.clientOrg?.name ?? "client"}`
+      : undefined,
+    requirement.sourceType
+      ? `sourceType: ${requirement.sourceType}`
+      : undefined,
+    requirement.sourceDocumentName
+      ? `sourceDocument: ${requirement.sourceDocumentName}`
+      : undefined,
+    requirement.sourcePageStart
+      ? `sourcePage: ${requirement.sourcePageEnd && requirement.sourcePageEnd !== requirement.sourcePageStart ? `${requirement.sourcePageStart}-${requirement.sourcePageEnd}` : requirement.sourcePageStart}`
       : undefined,
     `scope: ${SCOPE_LABELS[requirement.appliesTo]}`,
     `category: ${CATEGORY_LABELS[requirement.category]}`,
@@ -104,7 +121,10 @@ export function formatComplianceRequirement(requirement: Requirement) {
   ]
     .filter(Boolean)
     .join("; ");
-  return `- ${requirement.title} (${details})\n  ${requirement.requirementText}`;
+  const source = requirement.sourceExcerpt
+    ? `\n  Source language: ${requirement.sourceExcerpt}`
+    : "";
+  return `- ${requirement.title} (${details})\n  ${requirement.requirementText}${source}`;
 }
 
 export function formatComplianceRequirementsContext(
@@ -137,5 +157,5 @@ export function formatComplianceRequirementsContext(
     );
   }
 
-  return `\n\nCOMPLIANCE REQUIREMENTS:\nThese are the organization's saved insurance requirements. Use them for questions about contractor/vendor requirements, the organization's own insurance standards, minimum limits, deductibles, endorsements, and certificate instructions. Prefer these records over policy documents when the user asks what the org requires.\n${sections.join("\n\n")}`;
+  return `\n\nCOMPLIANCE REQUIREMENTS:\nThese are the organization's saved insurance requirements. Use them for questions about contractor/vendor requirements, the organization's own insurance standards, minimum limits, deductibles, endorsements, certificate instructions, and source/provenance back to leases, client contracts, or requirement documents. Prefer these records over policy documents when the user asks what the org requires.\n${sections.join("\n\n")}`;
 }
