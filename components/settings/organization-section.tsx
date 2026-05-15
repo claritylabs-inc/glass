@@ -685,7 +685,7 @@ function BrandingCard({
             onClick={() => setWhiteLabelingEnabled((v) => !v)}
             role="switch"
             aria-checked={whiteLabelingEnabled}
-            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors cursor-pointer shrink-0 ml-4 ${
+            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/10 shrink-0 ml-4 ${
               whiteLabelingEnabled ? "bg-foreground" : "bg-foreground/15"
             }`}
           >
@@ -717,7 +717,7 @@ function BrandingCard({
               if (file) handleLogoUpload(file);
             }}
             className={`flex w-full items-center gap-4 rounded-lg border border-dashed px-4 py-3 text-left transition-colors ${
-              whiteLabelingEnabled ? "cursor-pointer" : "cursor-not-allowed"
+              whiteLabelingEnabled ? "" : "cursor-not-allowed"
             } ${
               dragActive && whiteLabelingEnabled
                 ? "border-foreground/30 bg-foreground/[0.03]"

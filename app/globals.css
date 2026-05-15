@@ -284,7 +284,6 @@
   background: transparent;
   border: none;
   color: inherit;
-  cursor: pointer;
   font-size: inherit;
   padding: var(--PhoneInputCountrySelect-padding);
 }

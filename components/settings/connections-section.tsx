@@ -92,7 +92,7 @@ export function ConnectionsSection() {
                 <button
                   type="button"
                   onClick={handleCopyKey}
-                  className="shrink-0 p-1.5 rounded hover:bg-foreground/5 transition-colors cursor-pointer"
+                  className="shrink-0 p-1.5 rounded hover:bg-foreground/5 transition-colors"
                 >
                   {copiedKey ? (
                     <Check className="w-4 h-4 text-green-500" />
@@ -302,7 +302,7 @@ export function ConnectionsSection() {
             <button
               type="button"
               onClick={() => copyTo(mcpUrl, "remote")}
-              className="shrink-0 p-1.5 rounded hover:bg-foreground/5 transition-colors cursor-pointer"
+              className="shrink-0 p-1.5 rounded hover:bg-foreground/5 transition-colors"
             >
               {copiedRemote ? (
                 <Check className="w-4 h-4 text-green-500" />
@@ -331,7 +331,7 @@ export function ConnectionsSection() {
             <button
               type="button"
               onClick={() => copyTo(cliSnippet, "cli")}
-              className="absolute top-2 right-2 p-1.5 rounded hover:bg-foreground/5 transition-colors cursor-pointer"
+              className="absolute top-2 right-2 p-1.5 rounded hover:bg-foreground/5 transition-colors"
               aria-label="Copy CLI install commands"
             >
               {copiedCli ? (
@@ -396,7 +396,7 @@ export function ConnectionsSection() {
         <button
           type="button"
           onClick={() => setShowAdvanced((v) => !v)}
-          className="w-full px-5 py-3.5 border-b border-foreground/6 flex items-center justify-between hover:bg-foreground/[0.02] transition-colors cursor-pointer"
+          className="w-full px-5 py-3.5 border-b border-foreground/6 flex items-center justify-between hover:bg-foreground/[0.02] transition-colors"
           style={{ borderBottomWidth: showAdvanced ? 1 : 0 }}
         >
           <span className="text-sm font-medium text-foreground flex items-center gap-2">
@@ -430,7 +430,7 @@ export function ConnectionsSection() {
                 <button
                   type="button"
                   onClick={() => copyTo(localSnippet, "local")}
-                  className="absolute top-2 right-2 p-1.5 rounded hover:bg-foreground/5 transition-colors cursor-pointer"
+                  className="absolute top-2 right-2 p-1.5 rounded hover:bg-foreground/5 transition-colors"
                 >
                   {copiedLocal ? (
                     <Check className="w-4 h-4 text-green-500" />

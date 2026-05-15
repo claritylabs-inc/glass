@@ -88,7 +88,7 @@ export function FileDropZone({
           dragging
             ? "border-primary/40 bg-primary/[0.03]"
             : "border-foreground/10 hover:border-foreground/20 hover:bg-foreground/[0.01]"
-        } ${disabled ? "opacity-70 cursor-not-allowed" : "cursor-pointer"} ${className}`}
+        } ${disabled ? "opacity-70 cursor-not-allowed" : ""} ${className}`}
       >
         <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-foreground/[0.04]">
           <FileUp className="h-5 w-5 text-foreground/70" />

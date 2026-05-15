@@ -201,7 +201,7 @@ function ComplianceEmptyState({
       <button
         type="button"
         onClick={onBulkAdd}
-        className="mt-5 w-full cursor-pointer rounded-lg border-2 border-dashed border-foreground/10 px-6 py-12 text-center transition-colors hover:border-foreground/20 hover:bg-foreground/[0.02]"
+        className="mt-5 w-full rounded-lg border-2 border-dashed border-foreground/10 px-6 py-12 text-center transition-colors hover:border-foreground/20 hover:bg-foreground/[0.02]"
       >
         <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-foreground/[0.04] text-muted-foreground">
           <ClipboardCheck className="h-4.5 w-4.5" />

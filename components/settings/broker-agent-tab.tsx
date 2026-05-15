@@ -297,7 +297,7 @@ export function BrokerAgentTab() {
                     key={value}
                     type="button"
                     onClick={() => setEmailSendDelay(value)}
-                    className={`rounded-lg border px-3 py-1.5 text-body-sm transition-colors cursor-pointer ${
+                    className={`rounded-lg border px-3 py-1.5 text-body-sm transition-colors ${
                       selected
                         ? "border-foreground/20 bg-foreground/[0.03] text-foreground"
                         : "border-foreground/8 bg-popover text-muted-foreground hover:border-foreground/15"

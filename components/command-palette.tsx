@@ -128,7 +128,7 @@ export function CommandPalette() {
                     <button
                       type="submit"
                       disabled={!value.trim() || sending}
-                      className="w-6 h-6 flex items-center justify-center rounded-md bg-foreground text-background disabled:opacity-20 transition-opacity cursor-pointer"
+                      className="w-6 h-6 flex items-center justify-center rounded-md bg-foreground text-background transition-opacity hover:opacity-90 disabled:opacity-20 disabled:hover:opacity-20"
                     >
                       {sending ? (
                         <Loader2 className="w-3.5 h-3.5 animate-spin" />

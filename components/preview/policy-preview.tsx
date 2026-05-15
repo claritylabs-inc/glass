@@ -287,7 +287,7 @@ function CoverageGroup({ coverages, citedCoverageNames }: {
         ))}
       </div>
       {hasMore && (
-        <button type="button" onClick={() => setShowAll(!showAll)} className="text-body-sm text-muted-foreground/50 hover:text-muted-foreground/70 transition-colors cursor-pointer pl-1 mt-1.5">
+        <button type="button" onClick={() => setShowAll(!showAll)} className="text-body-sm text-muted-foreground/50 hover:text-muted-foreground/70 transition-colors pl-1 mt-1.5">
           {showAll ? "Only show cited" : `Show all ${coverages.length} coverages`}
         </button>
       )}
@@ -325,7 +325,7 @@ function SectionGroup({ label, count, totalCount, children, allChildren }: {
         <button
           type="button"
           onClick={() => setForceOpen(forceOpen === true ? false : true)}
-          className="shrink-0 text-body-sm text-muted-foreground/40 hover:text-muted-foreground/60 transition-colors cursor-pointer"
+          className="shrink-0 text-body-sm text-muted-foreground/40 hover:text-muted-foreground/60 transition-colors"
         >
           {forceOpen === true ? "Collapse all" : "Expand all"}
         </button>
@@ -333,7 +333,7 @@ function SectionGroup({ label, count, totalCount, children, allChildren }: {
       <div className="space-y-1.5">
         {withForceOpen}
         {hasMore && (
-          <button type="button" onClick={() => setShowAll(!showAll)} className="text-body-sm text-muted-foreground/50 hover:text-muted-foreground/70 transition-colors cursor-pointer pl-1">
+          <button type="button" onClick={() => setShowAll(!showAll)} className="text-body-sm text-muted-foreground/50 hover:text-muted-foreground/70 transition-colors pl-1">
             {showAll ? "Only show cited" : `Show all ${totalCount} ${label.toLowerCase()}`}
           </button>
         )}

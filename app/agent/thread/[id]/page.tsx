@@ -273,10 +273,10 @@ function UnifiedThreadActions({
 
   return (
     <>
-      <PillButton size="compact" variant="icon" onClick={handleCopyThread} label="Copy thread">
+      <PillButton size="compact" variant="iconLabel" onClick={handleCopyThread} label="Copy thread">
         <Copy className="w-3.5 h-3.5" />
       </PillButton>
-      <PillButton size="compact" variant="icon" onClick={handleArchiveToggle} label={isArchived ? "Unarchive" : "Archive"}>
+      <PillButton size="compact" variant="iconLabel" onClick={handleArchiveToggle} label={isArchived ? "Unarchive" : "Archive"}>
         {isArchived ? <ArchiveRestore className="w-4 h-4" /> : <Archive className="w-4 h-4" />}
       </PillButton>
     </>
@@ -456,7 +456,7 @@ function ThreadAttachmentChip({
       onClick={handleClick}
       className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-label-sm transition-colors ${
         url
-          ? "border-foreground/10 bg-card hover:bg-foreground/[0.03] hover:border-foreground/15 cursor-pointer"
+          ? "border-foreground/10 bg-card hover:bg-foreground/[0.03] hover:border-foreground/15"
           : "border-foreground/6 bg-foreground/[0.02] text-muted-foreground/40 pointer-events-none"
       }`}
     >
@@ -1078,7 +1078,7 @@ export function PolicyChangeThreadSidebar({
                 <div className="mt-2 space-y-2">
                   {artifacts.length > 0 ? artifacts.map((artifact, index) => (
                     <details key={`${String(artifact.kind ?? "artifact")}-${index}`} className="rounded-md border border-foreground/6 p-3">
-                      <summary className="cursor-pointer text-label-sm font-medium text-foreground">
+                      <summary className="text-label-sm font-medium text-foreground transition-colors hover:text-muted-foreground">
                         {String(artifact.title ?? artifact.kind ?? "Packet artifact")}
                       </summary>
                       <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-5 text-muted-foreground">
@@ -1307,7 +1307,7 @@ function PendingSendCountdown({ pendingEmailId }: { pendingEmailId: Id<"pendingE
             toast.error("Failed to cancel");
           }
         }}
-        className="text-label-sm font-medium text-red-500 hover:text-red-600 transition-colors cursor-pointer"
+        className="text-label-sm font-medium text-red-500 hover:text-red-600 transition-colors"
       >
         Cancel
       </button>
@@ -1637,7 +1637,7 @@ export function UnifiedMessageBubble({
               <button
                 type="button"
                 onClick={() => setShowQuoted(!showQuoted)}
-                className="mt-1.5 text-label-sm text-muted-foreground/40 hover:text-muted-foreground/60 transition-colors cursor-pointer"
+                className="mt-1.5 text-label-sm text-muted-foreground/40 hover:text-muted-foreground/60 transition-colors"
               >
                 {showQuoted ? "Hide quoted text ▴" : "Show quoted text ▾"}
               </button>
@@ -1731,7 +1731,7 @@ function RetryButton({ messageId }: { messageId: string }) {
           setRetrying(false);
         }
       }}
-      className="inline-flex items-center gap-1.5 mt-2 ml-9.5 text-label-sm text-muted-foreground/40 hover:text-muted-foreground/70 transition-colors cursor-pointer disabled:opacity-50"
+      className="inline-flex items-center gap-1.5 mt-2 ml-9.5 text-label-sm text-muted-foreground/40 hover:text-muted-foreground/70 transition-colors disabled:opacity-50"
     >
       <RotateCcw className={`w-3 h-3 ${retrying ? "animate-spin" : ""}`} />
       {retrying ? "Retrying..." : "Retry response"}

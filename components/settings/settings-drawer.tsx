@@ -44,7 +44,7 @@ export function SettingsDrawer({
               <button
                 type="button"
                 onClick={() => onOpenChange(false)}
-                className="w-7 h-7 flex items-center justify-center rounded-md text-muted-foreground/40 hover:text-foreground hover:bg-foreground/[0.04] transition-colors cursor-pointer shrink-0"
+                className="w-7 h-7 flex items-center justify-center rounded-md text-muted-foreground/40 hover:text-foreground hover:bg-foreground/[0.04] transition-colors shrink-0"
                 aria-label="Close"
               >
                 <X className="w-4 h-4" />

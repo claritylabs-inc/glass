@@ -115,7 +115,7 @@ export function PolicyUploadDrawer({
             const dropped = Array.from(e.dataTransfer.files);
             if (dropped.length > 0) addFiles(dropped);
           }}
-          className={`w-full rounded-lg border-2 border-dashed transition-colors px-6 py-10 text-center cursor-pointer ${
+          className={`w-full rounded-lg border-2 border-dashed transition-colors px-6 py-10 text-center ${
             dragOver
               ? "border-foreground/25 bg-foreground/[0.03]"
               : "border-foreground/10 hover:border-foreground/20"
@@ -166,7 +166,7 @@ export function PolicyUploadDrawer({
                     type="button"
                     onClick={() => removeFile(i)}
                     disabled={uploading}
-                    className="w-6 h-6 flex items-center justify-center rounded-md text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.04] transition-colors cursor-pointer shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="w-6 h-6 flex items-center justify-center rounded-md text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.04] transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
                     aria-label={`Remove ${file.name}`}
                   >
                     <X className="w-3.5 h-3.5" />
