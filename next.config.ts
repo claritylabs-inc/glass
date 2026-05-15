@@ -5,23 +5,9 @@ const convexSiteUrl =
   process.env.CONVEX_SITE_URL ??
   process.env.NEXT_PUBLIC_CONVEX_URL?.replace(".convex.cloud", ".convex.site");
 
-const authHost = "auth.glass.insure";
-const authRedirectSourceHosts = [
-  "app.glass.insure",
-  "broker.glass.insure",
-];
-const authPathSources = [
-  "/login",
-  "/login/:path*",
-  "/signup",
-  "/signup/:path*",
-  "/invite",
-  "/invite/:path*",
-  "/connect/request",
-  "/connect/request/:path*",
-  "/connected-orgs/request",
-  "/connected-orgs/request/:path*",
-  "/oauth/authorize",
+const appHost = "app.glass.insure";
+const appAliasHosts = [
+  "glass.claritylabs.inc",
 ];
 
 const nextConfig: NextConfig = {
@@ -30,14 +16,12 @@ const nextConfig: NextConfig = {
       process.env.VERCEL_ENV ?? process.env.NEXT_PUBLIC_VERCEL_ENV ?? "",
   },
   async redirects() {
-    return authRedirectSourceHosts.flatMap((host) =>
-      authPathSources.map((source) => ({
-        source,
-        has: [{ type: "host" as const, value: host }],
-        destination: `https://${authHost}${source}`,
-        permanent: false,
-      })),
-    );
+    return appAliasHosts.map((host) => ({
+      source: "/:path*",
+      has: [{ type: "host" as const, value: host }],
+      destination: `https://${appHost}/:path*`,
+      permanent: false,
+    }));
   },
   async rewrites() {
     if (!convexSiteUrl) return [];

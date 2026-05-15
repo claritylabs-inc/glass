@@ -1,10 +1,8 @@
 export const CLIENT_PORTAL_HOST = "app.glass.insure";
-export const BROKER_PORTAL_HOST = "broker.glass.insure";
-export const AUTH_HOST = "auth.glass.insure";
+export const AUTH_EMAIL_HOST = "auth.glass.insure";
+export const LEGACY_APP_HOST = "glass.claritylabs.inc";
 
 export const CLIENT_PORTAL_ORIGIN = `https://${CLIENT_PORTAL_HOST}`;
-export const BROKER_PORTAL_ORIGIN = `https://${BROKER_PORTAL_HOST}`;
-export const AUTH_ORIGIN = `https://${AUTH_HOST}`;
 export const DEFAULT_AGENT_DOMAIN = "glass.insure";
 const LEGACY_AGENT_DOMAINS = ["glass.claritylabs.inc", "dev.claritylabs.inc"];
 
@@ -17,11 +15,11 @@ export function getPublicAgentDomain(): string {
 }
 
 export function isManagedGlassHost(host: string): boolean {
-  return [CLIENT_PORTAL_HOST, BROKER_PORTAL_HOST, AUTH_HOST].includes(
+  return [CLIENT_PORTAL_HOST, AUTH_EMAIL_HOST, LEGACY_APP_HOST].includes(
     host.toLowerCase(),
   );
 }
 
-export function getPortalOriginForOrgType(type?: "broker" | "client" | null): string {
-  return type === "broker" ? BROKER_PORTAL_ORIGIN : CLIENT_PORTAL_ORIGIN;
+export function getAppOrigin(): string {
+  return CLIENT_PORTAL_ORIGIN;
 }

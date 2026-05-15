@@ -8,14 +8,6 @@ import { AppShell } from "@/components/app-shell";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useOnboardingCache } from "@/hooks/use-onboarding-cache";
 import { Loader2 } from "lucide-react";
-import {
-  AUTH_HOST,
-  AUTH_ORIGIN,
-  BROKER_PORTAL_HOST,
-  CLIENT_PORTAL_HOST,
-  getPortalOriginForOrgType,
-  isManagedGlassHost,
-} from "@/lib/domains";
 
 const PUBLIC_PATHS = [
   "/login",
@@ -105,42 +97,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (isLoading) return;
 
-    if (
-      isAuthenticated &&
-      viewerOrg !== undefined &&
-      typeof window !== "undefined" &&
-      !isPublic
-    ) {
-      const host = window.location.hostname.toLowerCase();
-      if (isManagedGlassHost(host)) {
-        const requestedBrokerFlow =
-          isOnboarding &&
-          new URLSearchParams(window.location.search).get("type") === "broker";
-        const orgType = requestedBrokerFlow
-          ? "broker"
-          : (viewerOrg?.org as { type?: "broker" | "client" } | undefined)?.type;
-        const targetOrigin = getPortalOriginForOrgType(orgType);
-        const onWrongPortal =
-          host === AUTH_HOST ||
-          (host === CLIENT_PORTAL_HOST && orgType === "broker") ||
-          (host === BROKER_PORTAL_HOST && orgType !== "broker");
-        if (onWrongPortal) {
-          window.location.replace(
-            `${targetOrigin}${pathname}${window.location.search}${window.location.hash}`,
-          );
-          return;
-        }
-      }
-    }
-
     if (!isAuthenticated && !isPublic) {
-      if (typeof window !== "undefined" && isManagedGlassHost(window.location.hostname)) {
-        const next = `${pathname}${window.location.search}`;
-        const loginUrl = new URL("/login", AUTH_ORIGIN);
-        if (next !== "/") loginUrl.searchParams.set("next", next);
-        window.location.replace(loginUrl.toString());
-        return;
-      }
       router.replace("/login");
       return;
     }

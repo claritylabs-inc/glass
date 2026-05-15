@@ -8,6 +8,7 @@ import {
   getNotificationFromAddress,
   isGlassOutboundAddress,
 } from "../convex/lib/resend";
+import { getAuthSiteUrl, getPortalUrlForOrg } from "../convex/lib/domains";
 import { shouldSkipImessageStatusCueForEmailApproval } from "../convex/actions/handleInboundImessage";
 
 describe("directed email sending", () => {
@@ -39,6 +40,16 @@ describe("directed email sending", () => {
     ]);
     expect(isGlassOutboundAddress("agent@glass.claritylabs.inc")).toBe(true);
     expect(isGlassOutboundAddress("noreply@auth.glass.insure")).toBe(true);
+  });
+
+  it("uses one browser app host for auth links and broker/client app links", () => {
+    expect(getAuthSiteUrl()).toBe("https://app.glass.insure");
+    expect(getPortalUrlForOrg({ type: "broker" } as never)).toBe(
+      "https://app.glass.insure",
+    );
+    expect(getPortalUrlForOrg({ type: "client" } as never)).toBe(
+      "https://app.glass.insure",
+    );
   });
 
   it("passes the current user email as the default recipient for email-me requests", () => {

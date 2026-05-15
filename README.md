@@ -55,8 +55,8 @@ Common variables used across major workflows:
 - `NOTIFICATION_EMAIL_DOMAIN` — verified Resend sending domain for system notifications. Defaults to `notifications.glass.insure`.
 - `AUTH_EMAIL_DOMAIN` — verified Resend sending domain for OTP, auth, and invite mail. Defaults to `auth.glass.insure`.
 - `CLIENT_PORTAL_URL` / `APP_SITE_URL` — client portal URL. Defaults to `https://app.glass.insure`.
-- `BROKER_PORTAL_URL` / `BROKER_SITE_URL` — broker portal URL. Defaults to `https://broker.glass.insure`.
-- `AUTH_SITE_URL` — auth, login, signup, and invite URL. Defaults to `https://auth.glass.insure`.
+- `glass.claritylabs.inc` is the legacy browser host and redirects to `app.glass.insure`.
+- `AUTH_LINK_SITE_URL` — optional override for auth, login, signup, and invite links. Defaults to `https://app.glass.insure`; `auth.glass.insure` is only the default email sender domain.
 - `AUTH_EMAIL_FROM` — optional `From:` override for OTP sign-in emails. Defaults to `Glass from Clarity Labs <noreply@auth.glass.insure>`.
 - `SITE_URL` — legacy fallback for client-facing links when the newer portal URL variables are not set.
 
