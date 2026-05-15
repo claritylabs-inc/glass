@@ -1,6 +1,6 @@
 {
   "name": "@claritylabs-inc/glass-operator",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": false,
   "description": "Private operator CLI for Glass broker provisioning",
   "license": "UNLICENSED",
