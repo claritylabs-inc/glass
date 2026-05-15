@@ -26,6 +26,27 @@ describe("policy period extraction fallback", () => {
     });
   });
 
+  it("continues past generic policy-period mentions to the declaration label", () => {
+    const period = extractPolicyPeriodFromSourceSpans([
+      {
+        pageStart: 5,
+        text: `
+          THIS POLICY ONLY AFFORDS COVERAGE FOR CLAIMS FIRST MADE AGAINST THE
+          INSURED AND REPORTED IN WRITING TO THE INSURER DURING THE POLICY PERIOD.
+          Item 3. Policy Period
+          From 05/01/2026 To 05/01/2027
+          Both dates at 12:01 A.M. Local Standard Time
+        `,
+      },
+    ]);
+
+    expect(period).toMatchObject({
+      effectiveDate: "05/01/2026",
+      expirationDate: "05/01/2027",
+      source: "policy_period_label",
+    });
+  });
+
   it("overrides missing or malformed SDK dates with source text dates", () => {
     const result = applyPolicyPeriodFallback(
       {
@@ -44,5 +65,26 @@ describe("policy period extraction fallback", () => {
     expect(result.changed).toBe(true);
     expect(result.document.effectiveDate).toBe("01/15/2026");
     expect(result.document.expirationDate).toBe("01/15/2027");
+  });
+
+  it("falls back to extracted declaration period fields when source text has no label match", () => {
+    const result = applyPolicyPeriodFallback(
+      {
+        type: "policy",
+        effectiveDate: "Unknown",
+        expirationDate: "Unknown",
+        declarations: {
+          fields: [
+            { field: "policyPeriodFrom", value: "05/01/2026" },
+            { field: "policyPeriodTo", value: "05/01/2027" },
+          ],
+        },
+      },
+      [{ pageStart: 1, text: "No declaration label in this span." }],
+    );
+
+    expect(result.period?.source).toBe("declarations_field");
+    expect(result.document.effectiveDate).toBe("05/01/2026");
+    expect(result.document.expirationDate).toBe("05/01/2027");
   });
 });

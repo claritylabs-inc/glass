@@ -121,7 +121,7 @@ export function NotificationsPanel({
       const p = notification.actionPayload as Record<string, string>;
       switch (notification.actionType) {
         case "view_policy":
-          router.push(`/policies/${p.policyId}`);
+          router.push(`/policies/${p.policyId}${p.tab ? `?tab=${encodeURIComponent(p.tab)}` : ""}`);
           break;
         case "view_thread":
           router.push(`/agent/thread/${p.threadId}`);

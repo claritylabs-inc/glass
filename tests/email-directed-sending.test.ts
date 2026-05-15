@@ -11,6 +11,30 @@ import {
 import { getAuthSiteUrl, getPortalUrlForOrg } from "../convex/lib/domains";
 import { shouldSkipImessageStatusCueForEmailApproval } from "../convex/actions/handleInboundImessage";
 
+function withEnv<T>(values: Record<string, string | undefined>, run: () => T): T {
+  const previous = Object.fromEntries(
+    Object.keys(values).map((key) => [key, process.env[key]]),
+  );
+  for (const [key, value] of Object.entries(values)) {
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
+  try {
+    return run();
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  }
+}
+
 describe("directed email sending", () => {
   it("falls back to the default agent handle when no custom handle is configured", async () => {
     const ctx = {
@@ -40,6 +64,31 @@ describe("directed email sending", () => {
     ]);
     expect(isGlassOutboundAddress("agent@glass.claritylabs.inc")).toBe(true);
     expect(isGlassOutboundAddress("noreply@auth.glass.insure")).toBe(true);
+  });
+
+  it("honors explicit legacy dev sending domains", () => {
+    withEnv(
+      {
+        AGENT_DOMAIN: "dev.claritylabs.inc",
+        AGENT_EMAIL_DOMAIN: undefined,
+        NOTIFICATION_EMAIL_DOMAIN: "dev.claritylabs.inc",
+        AUTH_EMAIL_DOMAIN: "dev.claritylabs.inc",
+        AUTH_EMAIL_FROM: "Glass Login <noreply@dev.claritylabs.inc>",
+      },
+      () => {
+        expect(getAgentDomains()).toEqual([
+          "dev.claritylabs.inc",
+          "glass.claritylabs.inc",
+        ]);
+        expect(getNotificationFromAddress("Glass Notifications")).toContain(
+          "<notifications@dev.claritylabs.inc>",
+        );
+        expect(getAuthFromAddress()).toBe(
+          "Glass Login <noreply@dev.claritylabs.inc>",
+        );
+        expect(isGlassOutboundAddress("agent@dev.claritylabs.inc")).toBe(true);
+      },
+    );
   });
 
   it("uses one browser app host for auth links and broker/client app links", () => {

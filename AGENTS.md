@@ -184,9 +184,10 @@ Two entrypoints, both PDF-only:
 2. Store the raw PDF in Convex file storage.
 3. Load the PDF bytes from Convex file storage, build local PDF.js source spans, and run `buildExtractor().extract(pdfBytes, documentId, { sourceSpans })`. Do not pass a signed storage URL into `cl-sdk`; review and follow-up extractors can run long enough that repeated URL fetches become unreliable.
 4. Verify critical policy-period dates from source text when a clear declaration-page period is present, then map `InsuranceDocument` into Glass policy fields.
-5. Persist the extracted document and metadata.
-6. Chunk the document and embed each chunk with `text-embedding-3-small`.
-7. Store chunks in `documentChunks` for semantic retrieval.
+5. Run coverage declaration scoping before persistence. When the SDK extracts multiple limits for the same coverage and limit role, Glass scores declarations, selected-option markers, summary/confirmation pages, endorsements, and source-span evidence; persists only the best current coverage value; and stores `extractionReview.questions` for any same-role limit conflict that still needs client/broker confirmation. Distinct limit roles such as per-occurrence and aggregate remain separate coverage rows.
+6. Persist the extracted document and metadata.
+7. Chunk the document and embed each chunk with `text-embedding-3-small`.
+8. Store chunks in `documentChunks` for semantic retrieval.
 
 Pipeline runtime state:
 

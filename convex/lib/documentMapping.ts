@@ -15,7 +15,12 @@ import type {
 import { sanitizeNulls } from "@claritylabs/cl-sdk";
 import dayjs from "dayjs";
 import customParseFormat from "dayjs/plugin/customParseFormat";
-import { isMissingCriticalValue } from "./policyPeriodExtraction";
+import {
+  declarationFieldValue,
+  normalizeCriticalString,
+  normalizePolicyDate,
+  resolvePolicyPeriod,
+} from "./policyPeriodExtraction";
 
 dayjs.extend(customParseFormat);
 
@@ -79,25 +84,8 @@ function normalizeOrgName(raw: unknown): string | undefined {
   return withoutAdminClause || value;
 }
 
-function normalizeDate(value: unknown): string | undefined {
-  if (typeof value !== "string" || isMissingCriticalValue(value)) return undefined;
-  const parsed = dayjs(
-    value.trim(),
-    [
-      "MM/DD/YYYY",
-      "M/D/YYYY",
-      "YYYY-MM-DD",
-      "YYYY/M/D",
-      "MMM D, YYYY",
-      "MMMM D, YYYY",
-    ],
-    true,
-  );
-  return parsed.isValid() ? parsed.format("MM/DD/YYYY") : value.trim();
-}
-
 function policyYearFromDate(value: unknown): number {
-  const normalized = normalizeDate(value);
+  const normalized = normalizePolicyDate(value);
   if (!normalized) return dayjs().year();
   const parsed = dayjs(
     normalized,
@@ -120,6 +108,14 @@ export function insuranceDocToPolicy(
     Array.isArray(d.policyTypes) && d.policyTypes.length > 0
       ? d.policyTypes
       : ["other"];
+  const declarationPolicyNumber = declarationFieldValue(d.declarations, [
+    "policyNumber",
+  ]);
+  const resolvedPeriod = resolvePolicyPeriod(d, []);
+  const effectiveDate =
+    normalizePolicyDate(d.effectiveDate) || resolvedPeriod?.effectiveDate;
+  const expirationDate =
+    normalizePolicyDate(d.expirationDate) || resolvedPeriod?.expirationDate;
 
   const fields: Record<string, unknown> = {
     carrier:
@@ -130,12 +126,12 @@ export function insuranceDocToPolicy(
     broker: normalizeOrgName(d.brokerAgency) ?? undefined,
     policyNumber: isQuote
       ? d.quoteNumber || "Unknown"
-      : d.policyNumber || "Unknown",
+      : normalizeCriticalString(d.policyNumber) || declarationPolicyNumber || "Unknown",
     policyTypes,
     documentType: d.type,
-    policyYear: policyYearFromDate(d.effectiveDate),
-    effectiveDate: normalizeDate(d.effectiveDate) || "Unknown",
-    expirationDate: normalizeDate(d.expirationDate) ?? "Unknown",
+    policyYear: policyYearFromDate(effectiveDate),
+    effectiveDate: effectiveDate || "Unknown",
+    expirationDate: expirationDate ?? "Unknown",
     isRenewal: d.isRenewal ?? false,
     coverages: normalizeCoverageValues(d.coverages),
     premium: d.premium ?? undefined,

@@ -40,8 +40,32 @@ export function isMissingCriticalValue(value: unknown): boolean {
   return PLACEHOLDER_VALUES.has(value.trim().toLowerCase());
 }
 
+export function normalizeCriticalString(value: unknown): string | undefined {
+  if (typeof value !== "string" || isMissingCriticalValue(value)) return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 function formatDate(date: dayjs.Dayjs) {
   return date.format("MM/DD/YYYY");
+}
+
+export function normalizePolicyDate(value: unknown): string | undefined {
+  const normalized = normalizeCriticalString(value);
+  if (!normalized) return undefined;
+  const parsed = dayjs(
+    normalized,
+    [
+      "MM/DD/YYYY",
+      "M/D/YYYY",
+      "YYYY-MM-DD",
+      "YYYY/M/D",
+      "MMM D, YYYY",
+      "MMMM D, YYYY",
+    ],
+    true,
+  );
+  return parsed.isValid() ? parsed.format("MM/DD/YYYY") : normalized;
 }
 
 function validDate(month: number, day: number, year: number) {
@@ -113,21 +137,23 @@ function parseTripletDates(text: string): string[] {
 
 function findPolicyPeriodInText(text: string): Omit<ExtractedPolicyPeriod, "pageNumber"> | null {
   const normalized = normalizeText(text);
-  const labelMatch = normalized.match(
-    /\b(?:PERIOD\s+OF\s+INSURANCE|POLICY\s+PERIOD|POLICY\s+TERM)\b/i,
-  );
-  if (!labelMatch || labelMatch.index == null) return null;
+  const labelRegex = /\b(?:ITEM\s*[0-9A-Z.:-]*\s*)?(?:PERIOD\s+OF\s+INSURANCE|POLICY\s+PERIOD|POLICY\s+TERM)\b/gi;
 
-  const window = normalized.slice(labelMatch.index, labelMatch.index + 700);
-  const dates = [...parseExplicitDates(window), ...parseTripletDates(window)];
-  const uniqueDates = [...new Set(dates)];
-  if (uniqueDates.length < 2) return null;
+  for (const labelMatch of normalized.matchAll(labelRegex)) {
+    if (labelMatch.index == null) continue;
+    const window = normalized.slice(labelMatch.index, labelMatch.index + 900);
+    const dates = [...parseExplicitDates(window), ...parseTripletDates(window)];
+    const uniqueDates = [...new Set(dates)];
+    if (uniqueDates.length < 2) continue;
 
-  return {
-    effectiveDate: uniqueDates[0],
-    expirationDate: uniqueDates[1],
-    source: "policy_period_label",
-  };
+    return {
+      effectiveDate: uniqueDates[0],
+      expirationDate: uniqueDates[1],
+      source: "policy_period_label",
+    };
+  }
+
+  return null;
 }
 
 function shouldReplaceDate(existing: unknown, replacement: string) {
@@ -154,11 +180,67 @@ export function extractPolicyPeriodFromSourceSpans(
   return null;
 }
 
+export function declarationFieldValue(
+  declarations: unknown,
+  fieldNames: string[],
+): string | undefined {
+  if (!declarations || typeof declarations !== "object") return undefined;
+  const fields = (declarations as { fields?: unknown }).fields;
+  if (!Array.isArray(fields)) return undefined;
+
+  const wanted = new Set(fieldNames.map((field) => field.toLowerCase()));
+  for (const rawField of fields) {
+    if (!rawField || typeof rawField !== "object") continue;
+    const field = rawField as { field?: unknown; value?: unknown };
+    if (typeof field.field !== "string") continue;
+    if (!wanted.has(field.field.toLowerCase())) continue;
+    const value = normalizeCriticalString(field.value);
+    if (value) return value;
+  }
+  return undefined;
+}
+
+export function extractPolicyPeriodFromDeclarations(
+  document: Record<string, unknown>,
+): ExtractedPolicyPeriod | null {
+  const effectiveDate = normalizePolicyDate(
+    declarationFieldValue(document.declarations, [
+      "policyPeriodFrom",
+      "policyEffectiveDate",
+      "effectiveDate",
+    ]),
+  );
+  const expirationDate = normalizePolicyDate(
+    declarationFieldValue(document.declarations, [
+      "policyPeriodTo",
+      "policyExpirationDate",
+      "expirationDate",
+    ]),
+  );
+
+  if (!effectiveDate || !expirationDate) return null;
+  return {
+    effectiveDate,
+    expirationDate,
+    source: "declarations_field",
+  };
+}
+
+export function resolvePolicyPeriod(
+  document: Record<string, unknown>,
+  sourceSpans: SourceSpanLike[] = [],
+): ExtractedPolicyPeriod | null {
+  return (
+    extractPolicyPeriodFromSourceSpans(sourceSpans) ??
+    extractPolicyPeriodFromDeclarations(document)
+  );
+}
+
 export function applyPolicyPeriodFallback(
   document: Record<string, unknown>,
   sourceSpans: SourceSpanLike[],
 ): { document: Record<string, unknown>; period: ExtractedPolicyPeriod | null; changed: boolean } {
-  const period = extractPolicyPeriodFromSourceSpans(sourceSpans);
+  const period = resolvePolicyPeriod(document, sourceSpans);
   if (!period) return { document, period: null, changed: false };
 
   const next = { ...document };
@@ -174,4 +256,3 @@ export function applyPolicyPeriodFallback(
 
   return { document: next, period, changed };
 }
-

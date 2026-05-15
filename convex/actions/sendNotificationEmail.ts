@@ -172,7 +172,7 @@ function buildCtaUrl(
   const p = actionPayload as Record<string, string>;
   switch (actionType) {
     case "view_policy":
-      return `${siteUrl}/policies/${p.policyId}`;
+      return `${siteUrl}/policies/${p.policyId}${p.tab ? `?tab=${encodeURIComponent(p.tab)}` : ""}`;
     case "view_thread":
       return `${siteUrl}/agent/thread/${p.threadId}`;
     case "view_vendor_compliance":

@@ -713,6 +713,9 @@ export default defineSchema({
         recordId: v.optional(v.string()),
         sourceSpanIds: v.optional(v.array(v.string())),
         sourceTextHash: v.optional(v.string()),
+        extractionReviewStatus: v.optional(v.string()),
+        extractionReviewReason: v.optional(v.string()),
+        reviewSourceSpanIds: v.optional(v.array(v.string())),
       }),
     ),
     premium: v.optional(v.string()),
@@ -779,6 +782,7 @@ export default defineSchema({
         }),
       ),
     ),
+    extractionReview: v.optional(v.any()),
     deletedAt: v.optional(v.number()),
     isDemo: v.optional(v.boolean()),
     // When true, this policy's chunks are excluded from vector search results

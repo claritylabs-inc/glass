@@ -12,20 +12,10 @@ function uniqueDomains(domains: string[]): string[] {
   return Array.from(new Set(domains.map(normalizeDomain).filter(Boolean)));
 }
 
-function migrateLegacyFromDomain(from: string, domain: string): string {
-  return from.replace(
-    /@(glass\.claritylabs\.inc|dev\.claritylabs\.inc)(?=>|\s|$)/gi,
-    `@${domain}`,
-  );
-}
-
 export function getAgentDomain(): string {
   const configured = process.env.AGENT_EMAIL_DOMAIN ?? process.env.AGENT_DOMAIN;
   if (!configured) return DEFAULT_AGENT_DOMAIN;
-  const normalized = normalizeDomain(configured);
-  return DEFAULT_LEGACY_AGENT_DOMAINS.includes(normalized)
-    ? DEFAULT_AGENT_DOMAIN
-    : normalized;
+  return normalizeDomain(configured);
 }
 
 export function getLegacyAgentDomains(): string[] {
@@ -63,9 +53,7 @@ export function getNotificationFromAddress(fromName: string): string {
 export function getAuthFromAddress(fromName?: string): string {
   if (fromName) return `${fromName} <noreply@${getAuthEmailDomain()}>`;
   const fallback = `Glass from Clarity Labs <noreply@${getAuthEmailDomain()}>`;
-  return process.env.AUTH_EMAIL_FROM
-    ? migrateLegacyFromDomain(process.env.AUTH_EMAIL_FROM, getAuthEmailDomain())
-    : fallback;
+  return process.env.AUTH_EMAIL_FROM ?? fallback;
 }
 
 export type ResendPayload = {

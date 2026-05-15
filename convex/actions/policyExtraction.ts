@@ -24,6 +24,7 @@ import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { getModelForOrg } from "../lib/models";
 import { applyPolicyPeriodFallback } from "../lib/policyPeriodExtraction";
+import { applyCoverageDeclarationScoping } from "../lib/coverageScoping";
 import { generateObject } from "ai";
 import { z } from "zod";
 
@@ -448,6 +449,138 @@ const orgNameNormalizationSchema = z.object({
   broker: z.string().nullable(),
   brokerAgency: z.string().nullable(),
 });
+
+const coverageReviewCopySchema = z.object({
+  questions: z.array(z.object({
+    id: z.string(),
+    question: z.string(),
+    reason: z.string(),
+    recommendation: z.string(),
+  })),
+});
+
+function compactCoverageReviewForPrompt(fields: Record<string, unknown>) {
+  const review = fields.extractionReview as { questions?: Array<Record<string, unknown>> } | undefined;
+  const questions = Array.isArray(review?.questions) ? review.questions : [];
+  return questions.map((question) => ({
+    id: question.id,
+    coverageName: question.coverageName,
+    limitType: question.limitType,
+    currentValue: question.currentValue,
+    reason: question.reason,
+    options: Array.isArray(question.options)
+      ? question.options.map((option) => {
+        const item = option as Record<string, unknown>;
+        const coverage = typeof item.coverage === "object" && item.coverage
+          ? item.coverage as Record<string, unknown>
+          : {};
+        return {
+          id: item.id,
+          label: item.label,
+          value: item.value,
+          limitType: item.limitType ?? coverage.limitType,
+          source: item.sourceLabel,
+          extractedAs: coverage.name,
+          originalText: coverage.originalContent,
+          reason: item.reason,
+        };
+      })
+      : [],
+  }));
+}
+
+async function refineCoverageReviewCopyWithLlm(
+  ctx: ActionCtx,
+  orgId: Id<"organizations">,
+  fields: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const review = fields.extractionReview as { questions?: Array<Record<string, unknown>> } | undefined;
+  const questions = Array.isArray(review?.questions) ? review.questions : [];
+  if (questions.length === 0) return fields;
+
+  try {
+    const model = await getModelForOrg(ctx, orgId, "extraction");
+    const result = await generateObject({
+      model,
+      schema: coverageReviewCopySchema,
+      prompt: `Rewrite coverage extraction review questions for a broker or client reviewing an insurance policy.
+
+Rules:
+- Keep each id unchanged.
+- Write clear, plain questions. Avoid duplicated words like "limit limit".
+- Do not ask users to choose between terms that can all be true. If options are a deductible, retroactive date, aggregate, and per-occurrence/per-claim limit, explain that the recommendation is the actual coverage limit and the others are separate policy terms.
+- Use "per occurrence" in user-facing wording instead of "per claim" unless quoting source text.
+- Include a short reason that explains why review is needed.
+- Include a short recommendation sentence that names the recommended option and why source evidence supports it.
+- Do not use jargon like extraction slot, candidate, or model.
+- Keep question under 120 characters and reason/recommendation under 180 characters.
+
+Review JSON:
+${JSON.stringify(compactCoverageReviewForPrompt(fields))}`,
+    });
+
+    const copyById = new Map(result.object.questions.map((question) => [question.id, question]));
+    return {
+      ...fields,
+      extractionReview: {
+        ...(review ?? {}),
+        questions: questions.map((question) => {
+          const copy = typeof question.id === "string" ? copyById.get(question.id) : undefined;
+          return copy
+            ? {
+              ...question,
+              question: copy.question,
+              reason: copy.reason,
+              recommendation: copy.recommendation,
+            }
+            : question;
+        }),
+      },
+    };
+  } catch (err) {
+    console.warn(
+      `LLM coverage-review copy failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return fields;
+  }
+}
+
+function openExtractionReviewQuestions(value: unknown): Array<Record<string, unknown>> {
+  const review = value as { questions?: Array<Record<string, unknown>> } | undefined;
+  if (!Array.isArray(review?.questions)) return [];
+  return review.questions.filter((question) =>
+    typeof question.id === "string" &&
+    question.status !== "confirmed" &&
+    question.status !== "dismissed"
+  );
+}
+
+async function notifyExtractionReviewRequired(
+  ctx: ActionCtx,
+  args: {
+    orgId: Id<"organizations">;
+    policyId: string;
+    policyNumber?: string;
+    carrier?: string;
+    questionCount: number;
+  },
+) {
+  const label = args.policyNumber && args.policyNumber !== "Unknown"
+    ? `policy ${args.policyNumber}`
+    : args.carrier
+      ? `${args.carrier} policy`
+      : "a policy";
+  await ctx.runMutation((internal as any).lib.notify.notifyInternal, {
+    orgId: args.orgId,
+    type: "incomplete_extraction",
+    title: "Policy extraction needs review",
+    body: `Glass finished extracting ${label}, but ${args.questionCount} coverage ${args.questionCount === 1 ? "term needs" : "terms need"} review.`,
+    severity: "warning",
+    actionType: "view_policy",
+    actionPayload: { policyId: args.policyId, tab: "review" },
+    sourceRef: { policyId: args.policyId, kind: "extraction_review" },
+  });
+}
 
 async function normalizeOrgNamesWithLlm(
   ctx: ActionCtx,
@@ -895,10 +1028,26 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
 
       // Save extracted fields to the policy row
       const mappedFields = insuranceDocToPolicy(result.document);
+      const scopedCoverage = applyCoverageDeclarationScoping({
+        fields: mappedFields,
+        sourceSpans,
+        nowMs: dayjs().valueOf(),
+      });
+      if (scopedCoverage.changed && scopedCoverage.review.questions.length > 0) {
+        await pCtx.log(
+          `Coverage scoping found ${scopedCoverage.review.questions.length} limit question${scopedCoverage.review.questions.length === 1 ? "" : "s"} for declaration review`,
+          "warn",
+        );
+      }
+      const reviewCopyFields = await refineCoverageReviewCopyWithLlm(
+        convexCtx,
+        state.orgId as Id<"organizations">,
+        scopedCoverage.fields,
+      );
       const fields = await normalizeOrgNamesWithLlm(
         convexCtx,
         state.orgId as Id<"organizations">,
-        mappedFields,
+        reviewCopyFields,
       );
       const docName = doc.type === "quote"
         ? (doc.quoteNumber || "quote")
@@ -1118,6 +1267,9 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
           orgId?: string;
           documentType?: string;
           uploadedBySide?: string;
+          extractionReview?: unknown;
+          policyNumber?: string;
+          carrier?: string;
         } | null;
         if (finalPolicy?.uploadedByBrokerOrgId && finalPolicy.orgId) {
           const docType = (finalPolicy.documentType ?? "policy") as "policy" | "quote";
@@ -1132,6 +1284,21 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
               summary: `${docType === "quote" ? "Quote" : "Policy"} extraction completed`,
             },
           );
+        }
+        if (finalPolicy?.orgId) {
+          const reviewQuestions = openExtractionReviewQuestions(finalPolicy.extractionReview);
+          if (reviewQuestions.length > 0) {
+            await notifyExtractionReviewRequired(convexCtx, {
+              orgId: finalPolicy.orgId as Id<"organizations">,
+              policyId,
+              policyNumber: finalPolicy.policyNumber,
+              carrier: finalPolicy.carrier,
+              questionCount: reviewQuestions.length,
+            });
+            await pCtx.log(
+              `Created extraction review notification for ${reviewQuestions.length} coverage ${reviewQuestions.length === 1 ? "term" : "terms"}`,
+            );
+          }
         }
       } catch { /* non-critical */ }
 
@@ -1359,9 +1526,27 @@ export const completeExternalExtract = action({
     requireExtractionWorkerSecret(args.secret);
     const state = args.state as PolicyExtractionState;
     const policyId = args.policyId;
-    const doc = args.document as Record<string, unknown>;
+    let doc = args.document as Record<string, unknown>;
     if (!state.orgId || !state.userId) {
       throw new Error("External extraction completion missing orgId or userId");
+    }
+
+    const periodFallback = applyPolicyPeriodFallback(
+      doc,
+      args.sourceSpans.map((span: Record<string, unknown>) => ({
+        text: typeof span.text === "string" ? span.text : undefined,
+        pageStart: typeof span.pageStart === "number" ? span.pageStart : undefined,
+      })),
+    );
+    if (periodFallback.changed) {
+      doc = periodFallback.document;
+      await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
+        jobId: policyId,
+        timestamp: nowMs(),
+        message: `Policy period verified from source text: ${periodFallback.period?.effectiveDate} to ${periodFallback.period?.expirationDate}`,
+        phase: "extract",
+        level: "info",
+      });
     }
 
     await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
@@ -1393,11 +1578,30 @@ export const completeExternalExtract = action({
       }
     }
 
-    const mappedFields = insuranceDocToPolicy(args.document);
+    const mappedFields = insuranceDocToPolicy(doc);
+    const scopedCoverage = applyCoverageDeclarationScoping({
+      fields: mappedFields,
+      sourceSpans: args.sourceSpans,
+      nowMs: nowMs(),
+    });
+    if (scopedCoverage.changed && scopedCoverage.review.questions.length > 0) {
+      await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
+        jobId: policyId,
+        timestamp: nowMs(),
+        message: `Coverage scoping found ${scopedCoverage.review.questions.length} limit question${scopedCoverage.review.questions.length === 1 ? "" : "s"} for declaration review`,
+        phase: "extract",
+        level: "warn",
+      });
+    }
+    const reviewCopyFields = await refineCoverageReviewCopyWithLlm(
+      ctx,
+      state.orgId as Id<"organizations">,
+      scopedCoverage.fields,
+    );
     const fields = await normalizeOrgNamesWithLlm(
       ctx,
       state.orgId as Id<"organizations">,
-      mappedFields,
+      reviewCopyFields,
     );
     const docName = doc.type === "quote"
       ? (doc.quoteNumber || "quote")
@@ -1416,7 +1620,7 @@ export const completeExternalExtract = action({
     if (state.policyFileId) {
       await ctx.runMutation((internal as any).policyFiles.updateExtraction, {
         id: state.policyFileId,
-        extractedData: args.document,
+        extractedData: doc,
       });
     }
 

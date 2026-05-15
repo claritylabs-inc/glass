@@ -470,6 +470,9 @@ const coverageValidator = v.object({
   recordId: v.optional(v.string()),
   sourceSpanIds: v.optional(v.array(v.string())),
   sourceTextHash: v.optional(v.string()),
+  extractionReviewStatus: v.optional(v.string()),
+  extractionReviewReason: v.optional(v.string()),
+  reviewSourceSpanIds: v.optional(v.array(v.string())),
 });
 
 const premiumLineValidator = v.object({
@@ -727,6 +730,7 @@ export const updateExtraction = mutation({
     rawMetadataResponse: v.optional(v.string()),
     // Typed declarations (cl-sdk 1.4+)
     declarations: v.optional(v.any()),
+    extractionReview: v.optional(v.any()),
     // cl-sdk 3.0+ fields
     policyTermType: v.optional(v.string()),
     nextReviewDate: v.optional(v.string()),
@@ -801,6 +805,7 @@ export const updateExtractedFields = mutation({
       depositPremium: v.optional(v.string()),
       summary: v.optional(v.string()),
       coverages: v.optional(v.array(coverageValidator)),
+      extractionReview: v.optional(v.any()),
       taxesAndFees: v.optional(v.array(taxFeeValidator)),
       premiumBreakdown: v.optional(v.array(premiumLineValidator)),
       limits: v.optional(v.any()),
@@ -831,6 +836,188 @@ export const updateExtractedFields = mutation({
       action: "manual_policy_update",
       detail: `Updated ${Object.keys(patch).join(", ")}`,
       metadata: { fields: Object.keys(patch) },
+    });
+  },
+});
+
+function normalizeReviewText(value: unknown): string {
+  return typeof value === "string"
+    ? value.toLowerCase().replace(/&/g, " and ").replace(/[^a-z0-9]+/g, " ").trim().replace(/\s+/g, " ")
+    : "";
+}
+
+function normalizeReviewCoverageName(value: unknown): string {
+  return normalizeReviewText(value)
+    .replace(/\b(each|per|policy|general|annual|aggregate|occurrence|claim|claims|limit|limits|deductible|retention|coverage)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function reviewLimitType(coverage: Record<string, unknown>): string {
+  const raw = normalizeReviewText(coverage.limitType);
+  if (raw.includes("aggregate")) return "aggregate";
+  if (raw.includes("occurrence")) return "per_occurrence";
+  if (raw.includes("claim")) return "per_claim";
+  if (raw.includes("person")) return "per_person";
+  if (raw.includes("accident")) return "per_accident";
+  if (raw) return raw;
+  const text = normalizeReviewText([coverage.name, coverage.originalContent, coverage.sectionRef].filter(Boolean).join(" "));
+  if (text.includes("aggregate")) return "aggregate";
+  if (text.includes("occurrence")) return "per_occurrence";
+  if (text.includes("claim")) return "per_claim";
+  if (text.includes("person")) return "per_person";
+  if (text.includes("accident")) return "per_accident";
+  return "limit";
+}
+
+export const answerCoverageReviewQuestion = mutation({
+  args: {
+    id: v.id("policies"),
+    questionId: v.string(),
+    selectedValue: v.string(),
+    selectedOptionId: v.optional(v.string()),
+    note: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const policy = await ctx.db.get(args.id);
+    if (!policy?.orgId) throw new Error("Not found");
+    const access = await getOrgAccessFor(ctx, policy.orgId);
+    assertCanUploadPolicy(access);
+
+    const review = policy.extractionReview as
+      | { questions?: Array<Record<string, unknown>> }
+      | undefined;
+    const questions = Array.isArray(review?.questions) ? review.questions : [];
+    const questionIndex = questions.findIndex((question) => question.id === args.questionId);
+    if (questionIndex < 0) throw new Error("Question not found");
+    const question = questions[questionIndex];
+    const options = Array.isArray(question.options)
+      ? question.options as Array<Record<string, unknown>>
+      : [];
+    const option = args.selectedOptionId
+      ? options.find((item) => item.id === args.selectedOptionId)
+      : options.find((item) => item.value === args.selectedValue);
+    if (!option) throw new Error("Selected option not found");
+    const optionCoverage = option.coverage as Record<string, unknown> | undefined;
+    if (!optionCoverage) throw new Error("Selected option is missing coverage data");
+
+    const targetName = normalizeReviewCoverageName(question.coverageName);
+    const targetLimitType = typeof question.limitType === "string" ? question.limitType : undefined;
+    const currentCoverages = Array.isArray(policy.coverages)
+      ? policy.coverages as Array<Record<string, unknown>>
+      : [];
+    let replaced = false;
+    const nextCoverages = currentCoverages.map((coverage) => {
+      const nameMatches = normalizeReviewCoverageName(coverage.name) === targetName;
+      const typeMatches = !targetLimitType || reviewLimitType(coverage) === targetLimitType;
+      if (!replaced && nameMatches && typeMatches) {
+        replaced = true;
+        return {
+          ...coverage,
+          ...optionCoverage,
+          extractionReviewStatus: "confirmed",
+          extractionReviewReason: args.note?.trim() || `Confirmed from extraction review: ${args.selectedValue}`,
+        };
+      }
+      return coverage;
+    });
+    if (!replaced) {
+      nextCoverages.push({
+        ...optionCoverage,
+        extractionReviewStatus: "confirmed",
+        extractionReviewReason: args.note?.trim() || `Confirmed from extraction review: ${args.selectedValue}`,
+      });
+    }
+
+    const now = nowMs();
+    const nextQuestions = [...questions];
+    nextQuestions[questionIndex] = {
+      ...question,
+      status: "confirmed",
+      answer: args.selectedValue,
+      note: args.note?.trim() || undefined,
+      answeredAt: now,
+      answeredByUserId: access.userId,
+    };
+
+    await ctx.db.patch(args.id, {
+      coverages: nextCoverages as any,
+      extractionReview: {
+        ...(review ?? {}),
+        questions: nextQuestions,
+      },
+    });
+    await ctx.db.insert("policyAuditLog", {
+      policyId: args.id,
+      userId: access.userId,
+      orgId: policy.orgId,
+      action: "answered_extraction_review_question",
+      detail: `${String(question.question ?? "Coverage review question")} ${args.selectedValue}`,
+      metadata: {
+        questionId: args.questionId,
+        selectedValue: args.selectedValue,
+        coverageName: question.coverageName,
+      },
+    });
+  },
+});
+
+export const requestCoverageReviewBrokerHelp = mutation({
+  args: {
+    id: v.id("policies"),
+    questionId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const policy = await ctx.db.get(args.id);
+    if (!policy?.orgId) throw new Error("Not found");
+    const access = await getOrgAccessFor(ctx, policy.orgId);
+    assertCanUploadPolicy(access);
+    const org = await ctx.db.get(policy.orgId);
+    if (!org || org.type !== "client" || !org.brokerOrgId) {
+      throw new Error("No connected broker is available for this policy");
+    }
+
+    const review = policy.extractionReview as
+      | { questions?: Array<Record<string, unknown>> }
+      | undefined;
+    const questions = Array.isArray(review?.questions) ? review.questions : [];
+    const questionIndex = questions.findIndex((question) => question.id === args.questionId);
+    if (questionIndex < 0) throw new Error("Question not found");
+    const question = questions[questionIndex];
+    const now = nowMs();
+    const nextQuestions = [...questions];
+    nextQuestions[questionIndex] = {
+      ...question,
+      status: "broker_help_requested",
+      brokerHelpRequestedAt: now,
+      brokerHelpRequestedByUserId: access.userId,
+    };
+
+    await ctx.db.patch(args.id, {
+      extractionReview: {
+        ...(review ?? {}),
+        questions: nextQuestions,
+      },
+    });
+    await notify(ctx, {
+      orgId: org.brokerOrgId,
+      type: "broker_action",
+      title: "Coverage extraction needs review",
+      body: `${org.name ?? "A client"} requested help confirming ${String(question.coverageName ?? "a coverage")} on policy ${policy.policyNumber ?? args.id}.`,
+      severity: "warning",
+      relatedOrgId: policy.orgId,
+      actionType: "view_policy",
+      actionPayload: { policyId: args.id },
+      sourceRef: { policyId: args.id, questionId: args.questionId },
+      coalesceKeyParts: ["coverage_review_help", String(args.id), args.questionId],
+    });
+    await ctx.db.insert("policyAuditLog", {
+      policyId: args.id,
+      userId: access.userId,
+      orgId: policy.orgId,
+      action: "requested_broker_extraction_review_help",
+      detail: String(question.question ?? "Coverage review question"),
+      metadata: { questionId: args.questionId },
     });
   },
 });
