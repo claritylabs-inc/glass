@@ -182,7 +182,7 @@ export function NotificationsPanel({
         <button
           type="button"
           onClick={onClose}
-          className="w-6 h-6 flex items-center justify-center rounded text-muted-foreground/40 hover:text-foreground hover:bg-foreground/[0.04] transition-colors cursor-pointer"
+          className="w-6 h-6 flex items-center justify-center rounded text-muted-foreground/40 hover:text-foreground hover:bg-foreground/[0.04] transition-colors"
         >
           <X className="w-3.5 h-3.5" />
         </button>
@@ -194,7 +194,7 @@ export function NotificationsPanel({
           role="tab"
           aria-selected={activeTab === "unread"}
           onClick={() => setActiveTab("unread")}
-          className={`min-w-0 flex-1 rounded-md px-2 py-1.5 text-body-sm transition-colors cursor-pointer ${
+          className={`min-w-0 flex-1 rounded-md px-2 py-1.5 text-body-sm transition-colors ${
             activeTab === "unread"
               ? "bg-foreground/[0.06] text-foreground"
               : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground"
@@ -212,7 +212,7 @@ export function NotificationsPanel({
           role="tab"
           aria-selected={activeTab === "read"}
           onClick={() => setActiveTab("read")}
-          className={`min-w-0 flex-1 rounded-md px-2 py-1.5 text-body-sm transition-colors cursor-pointer ${
+          className={`min-w-0 flex-1 rounded-md px-2 py-1.5 text-body-sm transition-colors ${
             activeTab === "read"
               ? "bg-foreground/[0.06] text-foreground"
               : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground"
@@ -251,7 +251,7 @@ export function NotificationsPanel({
                 onClick={() => handleNotificationClick(notification as Notification)}
                 className={`flex w-full min-w-0 items-start gap-2.5 border-b border-foreground/[0.04] px-3 py-2.5 text-left transition-colors ${
                   isClickable
-                    ? "hover:bg-foreground/[0.04] cursor-pointer"
+                    ? "hover:bg-foreground/[0.04]"
                     : "cursor-default"
                 } ${isUnread ? "bg-foreground/[0.02]" : ""}`}
               >
@@ -289,7 +289,7 @@ export function NotificationsPanel({
           <button
             type="button"
             onClick={() => markAllRead({ orgId })}
-            className="text-[11px] text-muted-foreground/50 hover:text-foreground transition-colors cursor-pointer"
+            className="text-[11px] text-muted-foreground/50 hover:text-foreground transition-colors"
           >
             Mark all as read
           </button>

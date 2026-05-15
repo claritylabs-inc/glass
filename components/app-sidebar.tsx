@@ -22,7 +22,6 @@ import {
   MessageCircle,
   Archive,
   ArrowLeft,
-  Bell,
   ClipboardCheck,
   Building2,
 } from "lucide-react";
@@ -50,6 +49,12 @@ import {
 import { getPublicAgentDomain } from "@/lib/domains";
 
 const AGENT_DOMAIN = getPublicAgentDomain();
+
+const MENU_ITEM_BASE = "rounded-md transition-colors";
+const MENU_ITEM_HOVER = "hover:bg-foreground/[0.035] hover:text-foreground";
+const MENU_ITEM_ACTIVE = "bg-foreground/[0.07] text-foreground hover:bg-foreground/[0.08]";
+const MENU_ITEM_INACTIVE = `text-muted-foreground ${MENU_ITEM_HOVER}`;
+const MENU_ITEM_INACTIVE_SUBTLE = "text-muted-foreground/40 hover:bg-foreground/[0.03] hover:text-muted-foreground/65";
 
 /** Wrapper so LogoIcon matches the lucide icon interface */
 function GlassStarIcon({ className }: { className?: string }) {
@@ -318,14 +323,14 @@ export function AppSidebar({
         <button
           type="button"
           onClick={toggleCollapse}
-          className="w-7 h-7 hidden lg:flex items-center justify-center rounded-md text-muted-foreground/40 hover:text-foreground hover:bg-foreground/[0.04] transition-colors cursor-pointer shrink-0"
+          className="w-7 h-7 hidden lg:flex items-center justify-center rounded-md text-muted-foreground/40 hover:text-foreground hover:bg-foreground/[0.04] transition-colors shrink-0"
         >
           {collapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronLeft className="w-3.5 h-3.5" />}
         </button>
       </div>
 
       {/* Settings nav */}
-      <nav className="flex-1 overflow-y-auto px-2 py-2">
+      <nav className="flex-1 overflow-y-auto px-2 py-2 space-y-0.5">
         {!collapsed && (
           <p className="text-[11px] font-medium text-muted-foreground/50 px-3 pt-3 pb-1.5">
             Settings
@@ -386,7 +391,7 @@ export function AppSidebar({
         <button
           type="button"
           onClick={toggleCollapse}
-          className="w-7 h-7 hidden lg:flex items-center justify-center rounded-md text-muted-foreground/40 hover:text-foreground hover:bg-foreground/[0.04] transition-colors cursor-pointer shrink-0"
+          className="w-7 h-7 hidden lg:flex items-center justify-center rounded-md text-muted-foreground/40 hover:text-foreground hover:bg-foreground/[0.04] transition-colors shrink-0"
         >
           {collapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronLeft className="w-3.5 h-3.5" />}
         </button>
@@ -396,17 +401,20 @@ export function AppSidebar({
         <button
           type="button"
           onClick={() => setNotificationsPanelOpen((v) => !v)}
-          className={`w-full flex items-center gap-2.5 px-3 py-1.5 rounded-md text-body-sm transition-colors cursor-pointer ${
+          className={`w-full flex items-center gap-2.5 px-3 py-1.5 ${MENU_ITEM_BASE} text-body-sm ${
             collapsed ? "justify-center" : ""
           } ${
             notificationsPanelOpen
-              ? "text-foreground bg-foreground/[0.05]"
-              : "text-muted-foreground hover:bg-foreground/[0.04]"
+              ? MENU_ITEM_ACTIVE
+              : MENU_ITEM_INACTIVE
           }`}
           title={collapsed ? "Notifications" : undefined}
         >
-          <Bell className="w-4 h-4 shrink-0" />
-          {!collapsed && <span className="flex-1 text-left">Notifications</span>}
+          {collapsed ? (
+            <span className="text-[11px] font-medium leading-none">N</span>
+          ) : (
+            <span className="flex-1 text-left">Notifications</span>
+          )}
           {(unreadCount ?? 0) > 0 && (
             <span
               className={`flex items-center justify-center rounded-full bg-blue-500 text-white text-[10px] font-medium leading-none shrink-0 ${
@@ -433,7 +441,7 @@ export function AppSidebar({
       </div>
 
       {/* Nav sections */}
-      <nav className="flex-1 overflow-y-auto px-2 pb-2">
+      <nav className="flex-1 overflow-y-auto px-2 pb-2 space-y-0.5">
         {/* MAIN NAV */}
         <SectionHeader label={isBroker ? "Partner" : "Insurance"} collapsed={collapsed} />
         {navItems.map((item) => (
@@ -486,7 +494,7 @@ export function AppSidebar({
               <button
                 type="button"
                 onClick={handleNewChat}
-                className="w-full flex items-center gap-2 px-3 py-1 rounded-md text-label-sm text-muted-foreground/60 hover:text-foreground hover:bg-foreground/[0.03] transition-colors cursor-pointer"
+                className={`w-full flex items-center gap-2 px-3 py-1 ${MENU_ITEM_BASE} text-label-sm text-muted-foreground/60 ${MENU_ITEM_HOVER}`}
               >
                 <Plus className="w-3 h-3 shrink-0" />
                 <span>New chat</span>
@@ -498,10 +506,10 @@ export function AppSidebar({
               <Link
                 key={`${item.kind}-${item.id}`}
                 href={`/agent/thread/${item.id}`}
-                className={`group flex items-center gap-2 px-3 py-1.5 rounded-md text-body-sm transition-colors ${
+                className={`group flex items-center gap-2 px-3 py-1.5 ${MENU_ITEM_BASE} text-body-sm ${
                   isConvActive
-                    ? "text-foreground bg-foreground/[0.05]"
-                    : "text-muted-foreground hover:bg-foreground/[0.04]"
+                    ? MENU_ITEM_ACTIVE
+                    : MENU_ITEM_INACTIVE
                 }`}
               >
                 {item.kind === "imessage" ? (
@@ -510,42 +518,42 @@ export function AppSidebar({
                   <Mail className="w-3.5 h-3.5 shrink-0" />
                 ) : null}
                 <span className="truncate flex-1">{item.label}</span>
-                {/* Shortcut hint — hidden when archive button shows */}
-                {showShortcuts && idx < 9 && (
-                  <kbd className="text-[10px] min-w-[18px] text-center px-1 py-0.5 rounded bg-foreground/[0.06] text-muted-foreground/50 border border-foreground/6 leading-none animate-in fade-in duration-150 group-hover:hidden">
-                    {idx + 1}
-                  </kbd>
-                )}
-                {/* Archive button — same size/shape as the + button above */}
-                <button
-                  type="button"
-                  onClick={async (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    await archiveThread({ id: item.id as Id<"threads"> });
-                    if (isConvActive) {
-                      const next = conversations.find((c) => c.id !== item.id);
-                      if (next) {
-                        router.push(`/agent/thread/${next.id}`);
-                      } else {
-                        // No unarchived threads left — start a new one
-                        const threadId = await createThread({ agentDomain: AGENT_DOMAIN });
-                        router.push(`/agent/thread/${threadId}`);
+                <span className="relative h-5 w-5 shrink-0">
+                  {showShortcuts && idx < 9 && (
+                    <kbd className="absolute inset-0 flex items-center justify-center rounded border border-foreground/6 bg-foreground/[0.06] px-1 text-[10px] leading-none text-muted-foreground/50 opacity-100 transition-opacity duration-150 group-hover:opacity-0">
+                      {idx + 1}
+                    </kbd>
+                  )}
+                  <button
+                    type="button"
+                    onClick={async (e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      await archiveThread({ id: item.id as Id<"threads"> });
+                      if (isConvActive) {
+                        const next = conversations.find((c) => c.id !== item.id);
+                        if (next) {
+                          router.push(`/agent/thread/${next.id}`);
+                        } else {
+                          // No unarchived threads left — start a new one
+                          const threadId = await createThread({ agentDomain: AGENT_DOMAIN });
+                          router.push(`/agent/thread/${threadId}`);
+                        }
                       }
-                    }
-                  }}
-                  className="hidden group-hover:flex w-5 h-5 items-center justify-center rounded text-muted-foreground/30 hover:text-foreground hover:bg-foreground/[0.06] transition-colors cursor-pointer shrink-0"
-                  title="Archive"
-                >
-                  <Archive className="w-3 h-3" />
-                </button>
+                    }}
+                    className="absolute inset-0 flex items-center justify-center rounded text-muted-foreground/30 opacity-0 transition-all duration-150 hover:bg-foreground/[0.06] hover:text-foreground group-hover:opacity-100"
+                    title="Archive"
+                  >
+                    <Archive className="w-3 h-3" />
+                  </button>
+                </span>
               </Link>
               );
             })}
             {archivedThreads && archivedThreads.length > 0 && (
               <Link
                 href="/agent/archive"
-                className="flex items-center gap-2 px-3 py-1 rounded-md text-label-sm text-muted-foreground/40 hover:text-muted-foreground/60 hover:bg-foreground/[0.03] transition-colors mt-0.5"
+                className={`mt-0.5 flex items-center gap-2 px-3 py-1 ${MENU_ITEM_BASE} text-label-sm ${MENU_ITEM_INACTIVE_SUBTLE}`}
               >
                 <Archive className="w-3 h-3 shrink-0" />
                 <span>Archived</span>
@@ -562,10 +570,10 @@ export function AppSidebar({
                   key={`${item.kind}-${item.id}`}
                   href={`/agent/thread/${item.id}`}
                   title={item.label}
-                  className={`flex items-center justify-center py-1.5 rounded-md transition-colors ${
+                  className={`flex items-center justify-center py-1.5 ${MENU_ITEM_BASE} ${
                     isConvActive
-                      ? "text-foreground bg-foreground/[0.05]"
-                      : "text-muted-foreground/40 hover:text-foreground hover:bg-foreground/[0.04]"
+                      ? MENU_ITEM_ACTIVE
+                      : MENU_ITEM_INACTIVE_SUBTLE
                   }`}
                 >
                 {item.kind === "imessage" ? (
@@ -625,7 +633,7 @@ export function AppSidebar({
             clearOnboardingCache();
             signOut();
           }}
-          className={`w-full flex items-center gap-2.5 px-3 py-1.5 rounded-md text-body-sm text-muted-foreground hover:bg-foreground/[0.04] transition-colors cursor-pointer ${
+          className={`w-full flex items-center gap-2.5 px-3 py-1.5 ${MENU_ITEM_BASE} text-body-sm ${MENU_ITEM_INACTIVE} ${
             collapsed ? "justify-center" : ""
           }`}
         >
@@ -677,12 +685,12 @@ export function AppSidebar({
         <button
           type="button"
           onClick={toggleCollapse}
-          className="w-7 h-7 hidden lg:flex items-center justify-center rounded-md text-muted-foreground/40 hover:text-foreground hover:bg-foreground/[0.04] transition-colors cursor-pointer shrink-0"
+          className="w-7 h-7 hidden lg:flex items-center justify-center rounded-md text-muted-foreground/40 hover:text-foreground hover:bg-foreground/[0.04] transition-colors shrink-0"
         >
           {collapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronLeft className="w-3.5 h-3.5" />}
         </button>
       </div>
-      <nav className="flex-1 overflow-y-auto px-2 py-2">
+      <nav className="flex-1 overflow-y-auto px-2 py-2 space-y-0.5">
         {!collapsed && (
           <p className="text-[11px] font-medium text-muted-foreground/50 px-3 pt-3 pb-1.5">
             Client
@@ -734,10 +742,10 @@ export function AppSidebar({
                 <Link
                   key={item._id}
                   href={href}
-                  className={`group flex items-center gap-2 px-3 py-1.5 rounded-md text-body-sm transition-colors ${
+                  className={`group flex items-center gap-2 px-3 py-1.5 ${MENU_ITEM_BASE} text-body-sm ${
                     isConvActive
-                      ? "text-foreground bg-foreground/[0.05]"
-                      : "text-muted-foreground hover:bg-foreground/[0.04]"
+                      ? MENU_ITEM_ACTIVE
+                      : MENU_ITEM_INACTIVE
                   }`}
                 >
                   {item.originChannel === "imessage" ? (
@@ -751,7 +759,7 @@ export function AppSidebar({
             })}
             <Link
               href={`/clients/${clientDetailId}/threads`}
-              className="flex items-center gap-2 px-3 py-1 rounded-md text-label-sm text-muted-foreground/40 hover:text-muted-foreground/60 hover:bg-foreground/[0.03] transition-colors mt-0.5"
+              className={`mt-0.5 flex items-center gap-2 px-3 py-1 ${MENU_ITEM_BASE} text-label-sm ${MENU_ITEM_INACTIVE_SUBTLE}`}
             >
               <MessageSquare className="w-3 h-3 shrink-0" />
               <span>All threads</span>
@@ -1010,12 +1018,12 @@ function NavItem({
   return (
     <Link
       href={href}
-      className={`flex items-center gap-2.5 px-3 py-1.5 rounded-md text-body-sm transition-colors ${
+      className={`flex items-center gap-2.5 px-3 py-1.5 ${MENU_ITEM_BASE} text-body-sm ${
         collapsed ? "justify-center" : ""
       } ${
         active
-          ? "text-foreground bg-foreground/[0.05]"
-          : "text-muted-foreground hover:bg-foreground/[0.04]"
+          ? MENU_ITEM_ACTIVE
+          : MENU_ITEM_INACTIVE
       }`}
       title={collapsed ? label : undefined}
     >

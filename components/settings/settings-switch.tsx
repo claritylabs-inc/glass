@@ -23,7 +23,7 @@ export function SettingsSwitch({
       aria-label={label}
       onClick={onCheckedChange}
       className={cn(
-        "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors cursor-pointer",
+        "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/10",
         !checked && "bg-foreground/15",
         className,
       )}

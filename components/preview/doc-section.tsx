@@ -41,7 +41,7 @@ export function DocSection({
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="flex w-full min-w-0 items-center gap-3 px-3 py-2.5 text-left hover:bg-secondary/50 transition-colors cursor-pointer"
+        className="flex w-full min-w-0 items-center gap-3 px-3 py-2.5 text-left hover:bg-secondary/50 transition-colors"
       >
         <span className="text-body-sm font-medium text-foreground flex-1 truncate">
           {title || typeLabel || "Section"}

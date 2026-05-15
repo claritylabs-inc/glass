@@ -249,7 +249,7 @@ export default function ProfilePage() {
                   key={value}
                   type="button"
                   onClick={() => setTheme(value)}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-body-sm font-medium transition-colors cursor-pointer ${
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-body-sm font-medium transition-colors ${
                     theme === value
                       ? "bg-foreground/[0.07] text-foreground"
                       : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground"

@@ -74,7 +74,7 @@ export function PolicyReferenceCard({
     <button
       type="button"
       onClick={() => openPreview({ type: "policy", id, page, citedSections, citedCoverageNames })}
-      className="inline-flex max-w-[18rem] items-center gap-1.5 rounded-md border border-foreground/6 bg-card px-2 py-1.5 text-left transition-colors hover:border-foreground/10 hover:bg-foreground/[0.02] cursor-pointer"
+      className="inline-flex max-w-[18rem] items-center gap-1.5 rounded-md border border-foreground/6 bg-card px-2 py-1.5 text-left transition-colors hover:border-foreground/10 hover:bg-foreground/[0.02]"
     >
       <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-foreground/[0.04]">
         <FileText className="h-3 w-3 text-muted-foreground/50" />

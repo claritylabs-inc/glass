@@ -67,7 +67,7 @@ export function SearchableSelect({
           if (!disabled) setOpen(!open);
         }}
         disabled={disabled}
-        className="w-full flex items-center justify-between rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm text-left transition-colors focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+        className="w-full flex items-center justify-between rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm text-left transition-colors hover:border-foreground/14 hover:bg-foreground/[0.015] focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-foreground/8 disabled:hover:bg-popover"
       >
         <span className={selectedLabel ? "text-foreground" : "text-muted-foreground/40"}>
           {selectedLabel || placeholder}
@@ -111,7 +111,7 @@ export function SearchableSelect({
                     onChange(option.value);
                     handleClose();
                   }}
-                  className="w-full flex items-center gap-2 px-3 py-1.5 text-body-sm text-left hover:bg-foreground/[0.04] transition-colors cursor-pointer"
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-body-sm text-left hover:bg-foreground/[0.04] transition-colors"
                 >
                   <span className="flex-1 truncate">{option.label}</span>
                   {option.value === value && (

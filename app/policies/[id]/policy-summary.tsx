@@ -74,7 +74,7 @@ function PdfThumbnail({ url }: { url: string }) {
     <button
       type="button"
       onClick={() => openWithUrl(url)}
-      className="shrink-0 rounded-md border border-foreground/8 bg-foreground/[0.02] overflow-hidden cursor-pointer hover:border-foreground/15 transition-colors w-[160px] aspect-[8.5/11]"
+      className="shrink-0 rounded-md border border-foreground/8 bg-foreground/[0.02] overflow-hidden hover:border-foreground/15 transition-colors w-[160px] aspect-[8.5/11]"
     >
       <Document
         file={url}

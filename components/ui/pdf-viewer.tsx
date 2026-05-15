@@ -389,7 +389,7 @@ export function PdfViewer({
               onClick={() => {
                 setError(null);
               }}
-              className="text-label-sm text-blue-600 hover:underline cursor-pointer"
+              className="text-label-sm text-blue-600 hover:underline"
             >
               Retry
             </button>

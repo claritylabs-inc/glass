@@ -72,7 +72,7 @@ export function AccentColorPicker({
       ))}
       <Popover>
         <PopoverTrigger
-          className="h-6 w-6 rounded-full border-2 border-dashed border-foreground/20 hover:border-foreground/40 transition-colors cursor-pointer flex items-center justify-center text-muted-foreground/60 text-xs"
+          className="h-6 w-6 rounded-full border-2 border-dashed border-foreground/20 hover:border-foreground/40 transition-colors flex items-center justify-center text-muted-foreground/60 text-xs"
           aria-label="Pick custom color"
           title="Custom color"
         >
@@ -112,7 +112,7 @@ function Swatch({
       onClick={onClick}
       aria-label={`Select ${color}`}
       title={title ?? color}
-      className={`relative h-6 w-6 rounded-full border border-foreground/10 transition-all cursor-pointer ${
+      className={`relative h-6 w-6 rounded-full border border-foreground/10 transition-all ${
         selected
           ? "ring-2 ring-foreground ring-offset-2 ring-offset-background"
           : "hover:scale-110"

@@ -100,7 +100,7 @@ export function InviteMemberDrawer({
                 key={r}
                 type="button"
                 onClick={() => setRole(r)}
-                className={`flex-1 py-2 rounded-lg border text-body-sm font-medium transition-colors cursor-pointer ${
+                className={`flex-1 py-2 rounded-lg border text-body-sm font-medium transition-colors ${
                   role === r
                     ? "border-foreground/15 bg-foreground/[0.03] text-foreground"
                     : "border-foreground/6 text-muted-foreground hover:border-foreground/10"
