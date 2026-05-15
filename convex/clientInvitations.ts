@@ -12,9 +12,10 @@ const internal = _internal as any;
 import { getOrgAccess, assertBrokerOrg } from "./lib/access";
 import { recordBrokerActivity } from "./lib/brokerActivity";
 import { notify } from "./lib/notify";
-import { sendResendEmail, getNotificationFromAddress } from "./lib/resend";
+import { sendResendEmail, getAuthFromAddress } from "./lib/resend";
 import { buildEmailShell } from "./lib/emailTemplate";
 import { getBrandingContext, isWhiteLabelingEnabled } from "./lib/branding";
+import { getAuthSiteUrl } from "./lib/domains";
 import type { MutationCtx } from "./_generated/server";
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
@@ -359,7 +360,7 @@ export const sendDraftInvite = action({
       orgId: draft.brokerOrgId,
     });
     const brokerName = brokerOrg?.name ?? "Your broker";
-    const siteUrl = process.env.SITE_URL ?? "https://glass.claritylabs.inc";
+    const siteUrl = getAuthSiteUrl();
     const inviteUrl = `${siteUrl}/invite/${rawToken}`;
     const recipient = draft.primaryContactName
       ? `${draft.primaryContactName} <${draft.primaryContactEmail}>`
@@ -404,7 +405,7 @@ ${messageBlock}
 
     const result = await sendResendEmail(
       {
-        from: getNotificationFromAddress(brokerName),
+        from: getAuthFromAddress(brokerName),
         to: recipient,
         subject,
         html,

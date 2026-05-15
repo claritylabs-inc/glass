@@ -36,6 +36,7 @@ import {
 import { searchPolicyDocumentWithSourceSpans } from "../lib/policyLookup";
 import { getNotificationFromAddress, sendResendEmail } from "../lib/resend";
 import { buildEmailShell, escapeHtml } from "../lib/emailTemplate";
+import { getPortalUrlForOrg } from "../lib/domains";
 import {
   buildEmailExpertTool,
   getEmailAgentFromName,
@@ -502,7 +503,7 @@ export const run = internalAction({
       });
       const userName = user?.name?.split(/\s+/)[0];
 
-      const siteUrl = process.env.SITE_URL ?? "https://glass.claritylabs.inc";
+      const siteUrl = getPortalUrlForOrg(org);
 
       // Build system prompt (reuse direct mode)
       const systemPrompt = buildSystemPromptForContext({
@@ -1084,8 +1085,7 @@ export const run = internalAction({
         content.trim()
       ) {
         try {
-          const siteUrl =
-            process.env.SITE_URL ?? "https://glass.claritylabs.inc";
+          const siteUrl = getPortalUrlForOrg(org);
           const threadUrl = `${siteUrl}/agent/thread/${args.threadId}`;
           const threadLabel =
             thread?.title && thread.title !== "New chat"

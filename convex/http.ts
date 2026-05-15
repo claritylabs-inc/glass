@@ -4,6 +4,7 @@ import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { auth } from "./auth";
 import { isImessageInboundEnabled } from "./lib/imessageConfig";
+import { getAuthSiteUrl, getClientPortalUrl } from "./lib/domains";
 const http = httpRouter();
 
 auth.addHttpRoutes(http);
@@ -141,7 +142,7 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     const url = new URL(request.url);
     const issuer = url.origin;
-    const siteUrl = process.env.SITE_URL ?? "https://glass.claritylabs.inc";
+    const siteUrl = getAuthSiteUrl();
 
     return new Response(
       JSON.stringify({
@@ -1562,7 +1563,7 @@ http.route({
 
       switch (method) {
         case "initialize": {
-          const siteUrl = process.env.SITE_URL ?? "https://glass.claritylabs.inc";
+          const siteUrl = getClientPortalUrl();
           return jsonRpcResponse(id, {
             protocolVersion: "2025-03-26",
             capabilities: { tools: {} },

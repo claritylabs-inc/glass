@@ -12,8 +12,9 @@ import { LogoIcon } from "@/components/ui/logo-icon";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { ArrowRight, Check, Copy, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { getPublicAgentDomain } from "@/lib/domains";
 
-const AGENT_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "glass.claritylabs.inc";
+const AGENT_DOMAIN = getPublicAgentDomain();
 const GLASS_IMESSAGE_NUMBER = process.env.NEXT_PUBLIC_GLASS_IMESSAGE_NUMBER ?? "";
 
 function companyNameFromEmail(email?: string | null): string {

@@ -2,10 +2,10 @@
 // URLs pointing to a publicly-reachable host serving the asset (e.g. SITE_URL).
 import type { BrandingContext } from "./branding";
 import { getDefaultBranding } from "./branding";
+import { getClientPortalUrl, getEmailAssetBaseUrl } from "./domains";
 
-const SITE_URL = process.env.SITE_URL ?? "https://glass.claritylabs.inc";
-const EMAIL_ASSET_BASE_URL =
-  process.env.EMAIL_ASSET_BASE_URL ?? "https://glass.claritylabs.inc";
+const SITE_URL = getClientPortalUrl();
+const EMAIL_ASSET_BASE_URL = getEmailAssetBaseUrl();
 
 /** Resolve a logo URL to an absolute URL usable from an email client. */
 function absoluteLogoUrl(logoUrl: string, siteUrl: string = SITE_URL): string {

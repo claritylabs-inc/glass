@@ -3,6 +3,7 @@
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
+import { getClientPortalUrl } from "./domains";
 
 type PolicyLike = {
   _id: Id<"policies">;
@@ -50,7 +51,7 @@ function sourceFromPolicy(policy: PolicyLike, siteUrl: string): EmailPolicySourc
 export async function buildEmailPolicySources(
   ctx: ActionCtx,
   policyIds: Array<Id<"policies"> | string> | undefined,
-  siteUrl: string = process.env.SITE_URL ?? "https://glass.claritylabs.inc",
+  siteUrl: string = getClientPortalUrl(),
 ): Promise<EmailPolicySource[]> {
   const uniqueIds = [...new Set((policyIds ?? []).filter(Boolean).map(String))];
   const sources: EmailPolicySource[] = [];

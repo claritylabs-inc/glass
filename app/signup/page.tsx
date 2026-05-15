@@ -53,7 +53,7 @@ export default function SignupPage() {
               </div>
               <div className="text-label-sm text-muted-foreground">
                 Use the signup link your partner shared with you (it looks like{" "}
-                glass.claritylabs.inc/signup/your-partner), or{" "}
+                auth.glass.insure/signup/your-partner), or{" "}
                 <Link href="/login" className="font-medium text-foreground underline-offset-2 hover:underline">
                   log in
                 </Link>{" "}

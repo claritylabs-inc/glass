@@ -11,9 +11,10 @@ import { markdownToHtml, stripMarkdown } from "./aiUtils";
 import { isWhiteLabelingEnabled } from "./branding";
 import { COI_GENERATION_FAILED_MESSAGE } from "./actionFailures";
 import { buildGlassEmailIconHtml } from "./emailTemplate";
+import { getClientPortalUrl } from "./domains";
 
 const MAX_EMAIL_SIZE = 38 * 1024 * 1024; // Resend limit is 40MB after Base64 encoding.
-const GLASS_PUBLIC_URL = "https://glass.claritylabs.inc";
+const GLASS_PUBLIC_URL = getClientPortalUrl();
 
 export type EmailAttachmentMeta = {
   filename: string;

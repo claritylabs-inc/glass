@@ -1,17 +1,71 @@
 const RESEND_API = "https://api.resend.com/emails";
-const DEFAULT_AGENT_DOMAIN = "dev.claritylabs.inc";
+const DEFAULT_AGENT_DOMAIN = "glass.insure";
+const DEFAULT_NOTIFICATION_EMAIL_DOMAIN = "notifications.glass.insure";
+const DEFAULT_AUTH_EMAIL_DOMAIN = "auth.glass.insure";
+const DEFAULT_LEGACY_AGENT_DOMAINS = ["glass.claritylabs.inc", "dev.claritylabs.inc"];
+
+function normalizeDomain(domain: string): string {
+  return domain.trim().toLowerCase().replace(/^@/, "");
+}
+
+function uniqueDomains(domains: string[]): string[] {
+  return Array.from(new Set(domains.map(normalizeDomain).filter(Boolean)));
+}
+
+function migrateLegacyFromDomain(from: string, domain: string): string {
+  return from.replace(
+    /@(glass\.claritylabs\.inc|dev\.claritylabs\.inc)(?=>|\s|$)/gi,
+    `@${domain}`,
+  );
+}
 
 export function getAgentDomain(): string {
-  return process.env.AGENT_DOMAIN ?? DEFAULT_AGENT_DOMAIN;
+  const configured = process.env.AGENT_EMAIL_DOMAIN ?? process.env.AGENT_DOMAIN;
+  if (!configured) return DEFAULT_AGENT_DOMAIN;
+  const normalized = normalizeDomain(configured);
+  return DEFAULT_LEGACY_AGENT_DOMAINS.includes(normalized)
+    ? DEFAULT_AGENT_DOMAIN
+    : normalized;
+}
+
+export function getLegacyAgentDomains(): string[] {
+  const configured = process.env.LEGACY_AGENT_DOMAINS;
+  if (!configured) return DEFAULT_LEGACY_AGENT_DOMAINS;
+  return configured.split(",").map(normalizeDomain).filter(Boolean);
+}
+
+export function getAgentDomains(): string[] {
+  return uniqueDomains([getAgentDomain(), ...getLegacyAgentDomains()]);
+}
+
+export function getNotificationEmailDomain(): string {
+  return process.env.NOTIFICATION_EMAIL_DOMAIN ?? DEFAULT_NOTIFICATION_EMAIL_DOMAIN;
+}
+
+export function getAuthEmailDomain(): string {
+  return process.env.AUTH_EMAIL_DOMAIN ?? DEFAULT_AUTH_EMAIL_DOMAIN;
+}
+
+export function isGlassOutboundAddress(address: string): boolean {
+  const domain = normalizeDomain(address.split("@").pop() ?? "");
+  return uniqueDomains([
+    getAgentDomain(),
+    ...getLegacyAgentDomains(),
+    getNotificationEmailDomain(),
+    getAuthEmailDomain(),
+  ]).includes(domain);
 }
 
 export function getNotificationFromAddress(fromName: string): string {
-  return `${fromName} <notifications@${getAgentDomain()}>`;
+  return `${fromName} <notifications@${getNotificationEmailDomain()}>`;
 }
 
 export function getAuthFromAddress(fromName?: string): string {
-  if (fromName) return `${fromName} <noreply@${getAgentDomain()}>`;
-  return process.env.AUTH_EMAIL_FROM ?? `Glass from Clarity Labs <noreply@${getAgentDomain()}>`;
+  if (fromName) return `${fromName} <noreply@${getAuthEmailDomain()}>`;
+  const fallback = `Glass from Clarity Labs <noreply@${getAuthEmailDomain()}>`;
+  return process.env.AUTH_EMAIL_FROM
+    ? migrateLegacyFromDomain(process.env.AUTH_EMAIL_FROM, getAuthEmailDomain())
+    : fallback;
 }
 
 export type ResendPayload = {

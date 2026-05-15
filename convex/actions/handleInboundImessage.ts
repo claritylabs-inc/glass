@@ -37,6 +37,7 @@ import {
   getImessageWorkerUrl,
   isImessageInboundEnabled,
 } from "../lib/imessageConfig";
+import { getClientPortalUrl } from "../lib/domains";
 import {
   anonymousParticipantLabel,
   buildImessageGroupMemberTitle,
@@ -322,7 +323,7 @@ export const processInbound = internalAction({
         isGroup,
         participants: args.participants,
       });
-    const siteUrl = process.env.SITE_URL ?? "https://glass.claritylabs.inc";
+    const siteUrl = getClientPortalUrl();
     const eventKey = buildInboundEventKey({
       fromPhone,
       chatGuid,

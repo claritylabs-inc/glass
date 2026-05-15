@@ -10,6 +10,7 @@ import {
   upsertEmailDraftArtifact,
 } from "../lib/emailSubagent";
 import { getImessageWorkerUrl } from "../lib/imessageConfig";
+import { getClientPortalUrl } from "../lib/domains";
 
 export type ComplianceEvent = {
   type:
@@ -137,7 +138,7 @@ export function buildFollowUpThreadContext(
 }
 
 function buildTextBody(event: ComplianceEvent) {
-  const reviewUrl = `${process.env.SITE_URL ?? "https://glass.claritylabs.inc"}/connect/vendors`;
+  const reviewUrl = `${getClientPortalUrl()}/connect/vendors`;
   return `Glass: ${event.vendorName} has ${event.issueLines.length} vendor compliance item${event.issueLines.length === 1 ? "" : "s"} needing attention for ${event.clientName}. Review: ${reviewUrl}`;
 }
 

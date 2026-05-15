@@ -27,7 +27,7 @@ describe("agentEmailTemplate", () => {
 describe("emailTemplate logo", () => {
   it("buildEmailLogoHtml uses the public asset host for default Glass icons", () => {
     const logo = buildEmailLogoHtml(branding, "https://dev.claritylabs.inc");
-    expect(logo).toContain('src="https://glass.claritylabs.inc/glass-icon.jpg"');
+    expect(logo).toContain('src="https://app.glass.insure/glass-icon.jpg"');
     expect(logo).toContain("Glass");
   });
 

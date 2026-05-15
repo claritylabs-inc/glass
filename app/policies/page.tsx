@@ -15,9 +15,9 @@ import { PolicyEmptyState } from "@/components/policy-empty-state";
 import { AgentContactCallout } from "@/components/agent-contact-callout";
 import { toast } from "sonner";
 import { Upload } from "lucide-react";
+import { getPublicAgentDomain } from "@/lib/domains";
 
-const AGENT_DOMAIN =
-  process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "glass.claritylabs.inc";
+const AGENT_DOMAIN = getPublicAgentDomain();
 
 const DOC_TYPE_TABS = [
   { id: "policy", label: "Policies" },

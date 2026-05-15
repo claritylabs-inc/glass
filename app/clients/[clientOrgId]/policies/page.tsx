@@ -14,6 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Upload } from "lucide-react";
 import { toast } from "sonner";
 import { useClientDetailActions } from "../layout";
+import { getPublicAgentDomain } from "@/lib/domains";
 
 type DocType = "policy" | "quote";
 
@@ -29,7 +30,7 @@ export default function ClientPoliciesPage() {
 
   // Broker's own agent email (shown in empty state for easy forwarding)
   const viewerOrg = useQuery(api.orgs.viewerOrg, {});
-  const AGENT_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "glass.claritylabs.inc";
+  const AGENT_DOMAIN = getPublicAgentDomain();
   const agentHandle = viewerOrg?.org?.agentHandle;
   const agentEmail = agentHandle ? `${agentHandle}@${AGENT_DOMAIN}` : null;
 

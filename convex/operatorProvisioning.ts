@@ -5,6 +5,7 @@ import { action, internalMutation, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
+import { getAuthSiteUrl } from "./lib/domains";
 
 const partnerTypeValidator = v.union(
   v.literal("broker"),
@@ -240,7 +241,7 @@ export const provisionBroker = action({
       markOnboardingComplete: args.markOnboardingComplete ?? true,
     });
 
-    const siteUrl = process.env.SITE_URL ?? "https://glass.claritylabs.inc";
+    const siteUrl = getAuthSiteUrl();
     return {
       ...result,
       signupUrl: result.slug ? `${siteUrl}/signup/${result.slug}?email=${encodeURIComponent(email)}` : null,

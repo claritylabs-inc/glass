@@ -11,8 +11,9 @@ import { LogoIcon } from "@/components/ui/logo-icon";
 import { AccentColorPicker } from "@/components/ui/accent-color-picker";
 import { useOnboardingCache } from "@/hooks/use-onboarding-cache";
 import { ArrowRight, Check, Loader2, X } from "lucide-react";
+import { getPublicAgentDomain } from "@/lib/domains";
 
-const WORKSPACE_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "glass.claritylabs.inc";
+const WORKSPACE_DOMAIN = getPublicAgentDomain();
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
   const n = hex.replace(/^#/, "");

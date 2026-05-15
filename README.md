@@ -51,9 +51,14 @@ Common variables used across major workflows:
 - `DEEPSEEK_API_KEY`
 - `AUTH_RESEND_KEY` — Resend API key (shared by all outbound email)
 - `RESEND_WEBHOOK_SECRET`
-- `AGENT_DOMAIN` — verified Resend sending domain (prod: `glass.claritylabs.inc`, dev: `dev.claritylabs.inc`). Used for agent addresses and the `notifications@{domain}` sender.
-- `AUTH_EMAIL_FROM` — optional `From:` override for OTP sign-in emails. Defaults to `Clarity Labs <noreply@{AGENT_DOMAIN}>`.
-- `SITE_URL`
+- `AGENT_DOMAIN` — verified Resend sending domain for agent mail. Defaults to `glass.insure`. Legacy inbound addresses at `glass.claritylabs.inc` and `dev.claritylabs.inc` remain recognized.
+- `NOTIFICATION_EMAIL_DOMAIN` — verified Resend sending domain for system notifications. Defaults to `notifications.glass.insure`.
+- `AUTH_EMAIL_DOMAIN` — verified Resend sending domain for OTP, auth, and invite mail. Defaults to `auth.glass.insure`.
+- `CLIENT_PORTAL_URL` / `APP_SITE_URL` — client portal URL. Defaults to `https://app.glass.insure`.
+- `BROKER_PORTAL_URL` / `BROKER_SITE_URL` — broker portal URL. Defaults to `https://broker.glass.insure`.
+- `AUTH_SITE_URL` — auth, login, signup, and invite URL. Defaults to `https://auth.glass.insure`.
+- `AUTH_EMAIL_FROM` — optional `From:` override for OTP sign-in emails. Defaults to `Glass from Clarity Labs <noreply@auth.glass.insure>`.
+- `SITE_URL` — legacy fallback for client-facing links when the newer portal URL variables are not set.
 
 Not every flow requires every variable; requirements depend on which features you are running.
 

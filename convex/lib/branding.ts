@@ -31,7 +31,7 @@ export function isWhiteLabelingEnabled(org?: {
 
 const DEFAULT_LOGO_URL = "/glass-icon.jpg";
 const DEFAULT_BRAND_COLOR = "#2563EB";
-const DEFAULT_SUPPORT_URL = "https://glass.claritylabs.inc/support";
+const DEFAULT_SUPPORT_URL = "https://app.glass.insure/support";
 
 /** Returns the default Glass branding context. */
 export function getDefaultBranding(): BrandingContext {

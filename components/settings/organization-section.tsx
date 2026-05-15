@@ -19,9 +19,9 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { PillButton } from "@/components/ui/pill-button";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { HandleAvailability } from "@/components/settings/handle-availability";
+import { getPublicAgentDomain } from "@/lib/domains";
 
-const WORKSPACE_DOMAIN =
-  process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "glass.claritylabs.inc";
+const WORKSPACE_DOMAIN = getPublicAgentDomain();
 
 export function OrganizationSection() {
   const viewer = useQuery(api.users.viewer);

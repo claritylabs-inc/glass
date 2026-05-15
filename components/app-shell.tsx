@@ -27,9 +27,9 @@ import { EntityPreviewProvider, useEntityPreview } from "@/hooks/use-entity-prev
 import { EntityPreviewPanel } from "@/components/entity-preview-panel";
 import { CommandPalette } from "@/components/command-palette";
 import dynamic from "next/dynamic";
+import { getPublicAgentDomain } from "@/lib/domains";
 
-const AGENT_DOMAIN =
-  process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "glass.claritylabs.inc";
+const AGENT_DOMAIN = getPublicAgentDomain();
 
 const PdfPanel = dynamic(
   () => import("@/components/ui/pdf-panel").then((m) => ({ default: m.PdfPanel })),

@@ -1,9 +1,10 @@
 // convex/lib/notificationEmailTemplate.ts
 import { getBrandingContext, getDefaultBranding } from "./branding";
+import { DEFAULT_CLIENT_PORTAL_URL } from "./domains";
 import { buildEmailShell, escapeHtml } from "./emailTemplate";
 
 const GLASS_ACCENT = "#2563eb";
-const SITE_URL_DEFAULT = "https://glass.claritylabs.inc";
+const SITE_URL_DEFAULT = DEFAULT_CLIENT_PORTAL_URL;
 const NOTIFICATION_FROM_NAME = "Glass Notifications";
 
 export type NotificationEmailBranding =

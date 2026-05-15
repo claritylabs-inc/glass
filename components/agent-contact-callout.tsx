@@ -5,9 +5,9 @@ import { PillButton } from "@/components/ui/pill-button";
 import { LogoIcon } from "@/components/ui/logo-icon";
 import { buildAgentContactVCard, downloadVCard } from "@/components/lib/agent-contact-vcard";
 import { AGENT_TEXT_NUMBER, IMESSAGE_CONTACT_ENABLED } from "@/lib/imessage-config";
+import { getPublicAgentDomain } from "@/lib/domains";
 
-const AGENT_DOMAIN =
-  process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "glass.claritylabs.inc";
+const AGENT_DOMAIN = getPublicAgentDomain();
 
 interface AgentContactCalloutProps {
   /** Linked broker partner, when present. Falls back to a Glass-branded card otherwise. */

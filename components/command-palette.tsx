@@ -8,8 +8,9 @@ import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowUp, Asterisk, Loader2 } from "lucide-react";
 import { usePageContext } from "@/hooks/use-page-context";
+import { getPublicAgentDomain } from "@/lib/domains";
 
-const AGENT_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "glass.claritylabs.inc";
+const AGENT_DOMAIN = getPublicAgentDomain();
 
 export function CommandPalette() {
   const router = useRouter();

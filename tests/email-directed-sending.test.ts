@@ -2,6 +2,12 @@ import { readFileSync } from "fs";
 import { join } from "path";
 import { describe, expect, it } from "vitest";
 import { resolveEmailAgentIdentity } from "../convex/lib/emailSubagent";
+import {
+  getAgentDomains,
+  getAuthFromAddress,
+  getNotificationFromAddress,
+  isGlassOutboundAddress,
+} from "../convex/lib/resend";
 import { shouldSkipImessageStatusCueForEmailApproval } from "../convex/actions/handleInboundImessage";
 
 describe("directed email sending", () => {
@@ -17,8 +23,22 @@ describe("directed email sending", () => {
     });
 
     expect(identity.canSend).toBe(true);
-    expect(identity.agentAddress).toBe("agent@dev.claritylabs.inc");
-    expect(identity.fromHeader).toContain("<agent@dev.claritylabs.inc>");
+    expect(identity.agentAddress).toBe("agent@glass.insure");
+    expect(identity.fromHeader).toContain("<agent@glass.insure>");
+  });
+
+  it("uses separated primary email domains while preserving legacy inbound agent domains", () => {
+    expect(getNotificationFromAddress("Glass Notifications")).toContain(
+      "<notifications@notifications.glass.insure>",
+    );
+    expect(getAuthFromAddress()).toContain("<noreply@auth.glass.insure>");
+    expect(getAgentDomains()).toEqual([
+      "glass.insure",
+      "glass.claritylabs.inc",
+      "dev.claritylabs.inc",
+    ]);
+    expect(isGlassOutboundAddress("agent@glass.claritylabs.inc")).toBe(true);
+    expect(isGlassOutboundAddress("noreply@auth.glass.insure")).toBe(true);
   });
 
   it("passes the current user email as the default recipient for email-me requests", () => {
@@ -54,7 +74,7 @@ describe("directed email sending", () => {
     expect(settingsSource).toContain("useState(true)");
     expect(settingsSource).toContain("org.bccRequesterOnAgentEmails ?? true");
     expect(settingsSource).toContain("bccRequesterOnAgentEmails,");
-    expect(settingsSource).toContain("bg-primary");
+    expect(settingsSource).toContain("SettingsSwitch");
     expect(webSource).toContain("defaultBcc:");
     expect(webSource).toContain("org.bccRequesterOnAgentEmails !== false");
     expect(smsSource).toContain("defaultBcc:");

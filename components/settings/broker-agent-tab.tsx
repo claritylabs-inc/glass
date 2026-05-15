@@ -9,6 +9,7 @@ import { Loader2 } from "lucide-react";
 import { useSettingsActions } from "@/components/settings/settings-actions-context";
 import { HandleAvailability } from "@/components/settings/handle-availability";
 import { SettingsSwitch } from "@/components/settings/settings-switch";
+import { getPublicAgentDomain } from "@/lib/domains";
 
 export function BrokerAgentTab() {
   const viewerOrg = useQuery(api.orgs.viewerOrg, {});
@@ -27,7 +28,7 @@ export function BrokerAgentTab() {
       }
     | undefined;
 
-  const agentDomain = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "glass.claritylabs.inc";
+  const agentDomain = getPublicAgentDomain();
 
   const [agentHandle, setAgentHandle] = useState("");
   const [debouncedHandle, setDebouncedHandle] = useState("");

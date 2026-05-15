@@ -79,6 +79,7 @@ describe("sendNotificationEmail", () => {
     // Verify sender and branding: notifications always use a stable Glass sender name.
     const callBody = JSON.parse(mockFetch.mock.calls[0][1].body);
     expect(callBody.from).toContain("Glass Notifications");
+    expect(callBody.from).toContain("<notifications@notifications.glass.insure>");
     expect(callBody.html).toContain("Smith Insurance");
 
     vi.unstubAllGlobals();

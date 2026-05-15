@@ -3,6 +3,7 @@ import { Email } from "@convex-dev/auth/providers/Email";
 import { buildOtpEmail } from "./lib/emailTemplate";
 import { getBrandingContext, isWhiteLabelingEnabled } from "./lib/branding";
 import { sendResendEmail, getAuthFromAddress } from "./lib/resend";
+import { getAuthSiteUrl } from "./lib/domains";
 import { internal } from "./_generated/api";
 
 
@@ -55,7 +56,7 @@ const sendVerificationRequest = async function (this: unknown, ...args: any[]) {
         })
       : getBrandingContext();
 
-    const { html, text } = buildOtpEmail(token, undefined, branding);
+    const { html, text } = buildOtpEmail(token, getAuthSiteUrl(), branding);
     const subjectBrand = brokerBranding?.name ?? "Glass from Clarity Labs";
     const subject = `Your ${subjectBrand} sign-in code`;
     const fromName = brokerBranding?.name ? `${brokerBranding.name} Login` : undefined;

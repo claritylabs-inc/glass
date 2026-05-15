@@ -1,5 +1,6 @@
 "use node";
 import type { ModelMessage } from "ai";
+import { getClientPortalUrl } from "./domains";
 
 export { buildConversationMemoryContext, buildConversationMemoryFromList, buildDocumentContext } from "./agentPrompts";
 
@@ -34,7 +35,7 @@ export function markdownToHtml(text: string): string {
 /* ── Email signature ── */
 
 export function buildSignature(): { text: string; html: string } {
-  const siteUrl = process.env.SITE_URL ?? "https://glass.claritylabs.inc";
+  const siteUrl = getClientPortalUrl();
   const text = "\n\nsent with Glass";
   const html = `<p style="font-size:12px;color:#999;margin:24px 0 0"><a href="${siteUrl}" style="color:#999;text-decoration:none">sent with Glass</a></p>`;
   return { text, html };
@@ -120,7 +121,7 @@ export function buildAgentCapabilityPrompt(params: {
     companyContext,
     mode,
     userName,
-    siteUrl = process.env.SITE_URL ?? "https://glass.claritylabs.inc",
+    siteUrl = getClientPortalUrl(),
     coiHandling,
     broker,
     now,
@@ -188,7 +189,7 @@ export function buildSystemPromptForContext(params: {
   siteUrl?: string;
 }): string {
   const { org, mode, userName } = params;
-  const siteUrl = params.siteUrl ?? process.env.SITE_URL ?? "https://glass.claritylabs.inc";
+  const siteUrl = params.siteUrl ?? getClientPortalUrl();
 
   return buildAgentCapabilityPrompt({
     companyName: org.name,

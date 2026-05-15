@@ -5,9 +5,10 @@ import { internal as internalApi } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { getOrgAccess, requireAuth } from "./lib/access";
-import { sendResendEmail, getNotificationFromAddress } from "./lib/resend";
+import { sendResendEmail, getAuthFromAddress } from "./lib/resend";
 import { buildEmailShell } from "./lib/emailTemplate";
 import { getBrandingContext } from "./lib/branding";
+import { getAuthSiteUrl } from "./lib/domains";
 
 const internal = internalApi as any;
 
@@ -108,14 +109,14 @@ ${safeNote ? `<tr><td style="padding:12px 40px 0 40px;"><p style="margin:0;font-
 
   const send = await sendResendEmail(
     {
-      from: getNotificationFromAddress("Glass"),
+      from: getAuthFromAddress("Glass"),
       to: args.vendorEmail,
       subject,
       html: buildEmailShell({
         title: subject,
         bodyHtml,
         branding: getBrandingContext(),
-        siteUrl: process.env.SITE_URL ?? "https://glass.claritylabs.inc",
+        siteUrl: getAuthSiteUrl(),
       }),
       text,
     },
@@ -286,7 +287,7 @@ export const requestVendorAccessByEmail = action({
       note: args.note,
     });
 
-    const siteUrl = process.env.SITE_URL ?? "https://glass.claritylabs.inc";
+    const siteUrl = getAuthSiteUrl();
     const requestUrl = `${siteUrl}/connect/request/${rawToken}`;
     const clientName = result.clientOrgName ?? "A client";
     await sendVendorRequestEmail({
@@ -319,7 +320,7 @@ export const resendVendorInvitation = action({
       },
     );
 
-    const siteUrl = process.env.SITE_URL ?? "https://glass.claritylabs.inc";
+    const siteUrl = getAuthSiteUrl();
     await sendVendorRequestEmail({
       vendorEmail: result.vendorEmail,
       clientName: result.clientOrgName ?? "A client",

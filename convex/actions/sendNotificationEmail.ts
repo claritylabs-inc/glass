@@ -8,6 +8,7 @@ import { buildNotificationEmail, NotificationEmailBranding } from "../lib/notifi
 import { NotificationType, getEffectiveEmailDefault } from "../lib/notificationTypes";
 import { sendResendEmail, getNotificationFromAddress } from "../lib/resend";
 import { isWhiteLabelingEnabled } from "../lib/branding";
+import { getPortalUrlForOrg } from "../lib/domains";
 
 export const send = internalAction({
   args: { notificationId: v.id("notifications") },
@@ -68,7 +69,7 @@ export const send = internalAction({
 
     // Resolve branding
     let branding: NotificationEmailBranding;
-    const siteUrl = process.env.SITE_URL ?? "https://glass.app";
+    const siteUrl = getPortalUrlForOrg(recipientOrg);
 
     if (recipientOrg.type === "client" && recipientOrg.brokerOrgId) {
       const brokerOrg = await ctx.runQuery(

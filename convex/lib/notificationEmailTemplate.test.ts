@@ -7,7 +7,7 @@ describe("buildNotificationEmail", () => {
     const result = buildNotificationEmail({
       title: "Your policy was delivered",
       body: "Smith Insurance delivered a policy.",
-      ctaUrl: "https://glass.app/policies/abc",
+      ctaUrl: "https://app.glass.insure/policies/abc",
       ctaLabel: "View Policy",
       branding: {
         kind: "broker",
@@ -16,13 +16,13 @@ describe("buildNotificationEmail", () => {
         accentColor: "#1a56db",
         logoUrl: null,
       },
-      siteUrl: "https://glass.app",
+      siteUrl: "https://app.glass.insure",
     });
 
     expect(result.fromName).toBe("Glass Notifications");
     expect(result.html).toContain("Smith Insurance");
     expect(result.html).toContain("Your policy was delivered");
-    expect(result.html).toContain("https://glass.app/policies/abc");
+    expect(result.html).toContain("https://app.glass.insure/policies/abc");
     expect(result.text).toContain("View Policy");
   });
 
@@ -30,16 +30,16 @@ describe("buildNotificationEmail", () => {
     const result = buildNotificationEmail({
       title: "Policy update",
       body: "Acme Co policy updated.",
-      ctaUrl: "https://glass.app/policies/xyz",
+      ctaUrl: "https://app.glass.insure/policies/xyz",
       ctaLabel: "Review",
       branding: { kind: "glass" },
-      siteUrl: "https://glass.app",
+      siteUrl: "https://app.glass.insure",
     });
 
     expect(result.fromName).toBe("Glass Notifications");
     expect(result.html).toContain("Policy update");
     expect(result.html).toContain("Glass");
-    expect(result.html).toContain('src="https://glass.claritylabs.inc/glass-icon.jpg"');
+    expect(result.html).toContain('src="https://app.glass.insure/glass-icon.jpg"');
     expect(result.text).toContain("Review");
   });
 
@@ -47,10 +47,10 @@ describe("buildNotificationEmail", () => {
     const result = buildNotificationEmail({
       title: "T",
       body: "B",
-      ctaUrl: "https://glass.app",
+      ctaUrl: "https://app.glass.insure",
       ctaLabel: "CTA",
       branding: { kind: "glass" },
-      siteUrl: "https://glass.app",
+      siteUrl: "https://app.glass.insure",
       threadLabel: "Renewal Review",
     });
 
@@ -65,10 +65,10 @@ describe("buildNotificationEmail", () => {
     const result = buildNotificationEmail({
       title: "Policy update",
       body: "Acme Co policy updated.",
-      ctaUrl: "https://glass.app/policies/xyz",
+      ctaUrl: "https://app.glass.insure/policies/xyz",
       ctaLabel: "Review",
       branding: { kind: "glass" },
-      siteUrl: "https://glass.app",
+      siteUrl: "https://app.glass.insure",
     });
 
     expect(result.html).toContain("border-radius:999px");

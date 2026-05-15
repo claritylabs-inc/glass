@@ -47,8 +47,9 @@ import {
   AGENT_TEXT_NUMBER_DISPLAY,
   IMESSAGE_CONTACT_ENABLED,
 } from "@/lib/imessage-config";
+import { getPublicAgentDomain } from "@/lib/domains";
 
-const AGENT_DOMAIN = process.env.NEXT_PUBLIC_AGENT_DOMAIN ?? "glass.claritylabs.inc";
+const AGENT_DOMAIN = getPublicAgentDomain();
 
 /** Wrapper so LogoIcon matches the lucide icon interface */
 function GlassStarIcon({ className }: { className?: string }) {

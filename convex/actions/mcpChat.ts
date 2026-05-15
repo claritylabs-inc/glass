@@ -32,6 +32,7 @@ import {
   normalizeGeneratedTitle,
   TITLE_SYSTEM_PROMPT,
 } from "./threadTitle";
+import { getClientPortalUrl } from "../lib/domains";
 
 /**
  * Simplified chat action for MCP — no streaming. Programmatic email draft/send
@@ -101,7 +102,7 @@ export const run = internalAction({
       ctx.runQuery(internal.policies.listAllInternal, { orgId: args.orgId }),
       ctx.runQuery(internal.threads.messagesInternal, { threadId }),
     ]);
-    const siteUrl = process.env.SITE_URL ?? "https://glass.claritylabs.inc";
+    const siteUrl = getClientPortalUrl();
 
     // Build system prompt
     const systemPrompt = buildSystemPromptForContext({

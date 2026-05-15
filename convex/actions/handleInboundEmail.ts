@@ -28,7 +28,9 @@ import { Id } from "../_generated/dataModel";
 import {
   sendResendEmail,
   getAgentDomain,
+  getAgentDomains,
   getAuthFromAddress,
+  isGlassOutboundAddress,
 } from "../lib/resend";
 import {
   buildGlassEmailIconHtml,
@@ -48,6 +50,7 @@ import {
   validateEmailRecipient,
 } from "../lib/security";
 import { isWhiteLabelingEnabled } from "../lib/branding";
+import { getAuthSiteUrl, getClientPortalUrl } from "../lib/domains";
 import {
   buildEmailExpertTool,
   toResendAttachments,
@@ -65,7 +68,7 @@ import {
 } from "../lib/complianceAgent";
 import { buildVendorComplianceTools } from "../lib/vendorComplianceTools";
 
-const GLASS_PUBLIC_URL = "https://glass.claritylabs.inc";
+const GLASS_PUBLIC_URL = getClientPortalUrl();
 
 const CONSUMER_DOMAINS = new Set([
   "gmail.com",
@@ -159,7 +162,8 @@ function findAgentHandle(
   addresses: string[],
 ): { handle: string; threadSuffix?: string } | null {
   for (const addr of addresses) {
-    if (addr.endsWith(`@${getAgentDomain()}`)) {
+    const domain = addr.split("@").pop()?.toLowerCase();
+    if (domain && getAgentDomains().includes(domain)) {
       const localPart = addr.split("@")[0];
       // Parse handle+threadSuffix format (e.g. "company+abc12345@agent.domain")
       const plusIdx = localPart.indexOf("+");
@@ -269,7 +273,7 @@ async function sendUnrecognizedSenderEmail({
   agentEmail: string;
   originalSubject?: string;
 }) {
-  const siteUrl = process.env.SITE_URL ?? "https://glass.claritylabs.inc";
+  const siteUrl = getAuthSiteUrl();
   const { html, text } = buildUnrecognizedInboundEmail(agentEmail, siteUrl);
   const subject = originalSubject
     ? `Email address not recognized: ${originalSubject}`
@@ -465,7 +469,7 @@ export const processInbound = internalAction({
     }
 
     // Loop prevention
-    if (fromEmail.endsWith(`@${getAgentDomain()}`)) {
+    if (isGlassOutboundAddress(fromEmail)) {
       console.log(
         "Loop prevention: ignoring email from agent domain",
         fromEmail,
@@ -832,7 +836,7 @@ export const processInbound = internalAction({
       const policies = await ctx.runQuery(internal.policies.listAllInternal, {
         orgId,
       });
-      const siteUrl = process.env.SITE_URL ?? "https://glass.claritylabs.inc";
+      const siteUrl = getClientPortalUrl();
 
       // Get primary user profile for name reference
       const primaryUser = await ctx.runQuery(internal.users.getInternal, {
