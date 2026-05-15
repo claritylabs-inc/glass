@@ -273,7 +273,7 @@ function PageRef({ page }: { page: number }) {
           pdf.navigateToPage(page);
         }
       }}
-      className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-foreground/5 text-muted-foreground/60 hover:bg-blue-100 hover:text-blue-600 transition-colors cursor-pointer"
+      className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-foreground/5 text-muted-foreground/60 hover:bg-blue-100 hover:text-blue-600 transition-colors"
     >
       p.{page}
     </span>
@@ -408,7 +408,7 @@ function DocumentSection({
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center gap-2 px-5 py-2.5 text-left hover:bg-foreground/[0.015] transition-colors cursor-pointer"
+        className="w-full flex items-center gap-2 px-5 py-2.5 text-left hover:bg-foreground/[0.015] transition-colors"
       >
         {expanded ? (
           <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
@@ -690,7 +690,7 @@ function StructuredItemsCard<T>({
             <button
               type="button"
               onClick={() => toggle(i)}
-              className="w-full flex items-center gap-2 px-5 py-2.5 text-left hover:bg-foreground/[0.015] transition-colors cursor-pointer"
+              className="w-full flex items-center gap-2 px-5 py-2.5 text-left hover:bg-foreground/[0.015] transition-colors"
             >
               {expanded.has(i) ? (
                 <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
@@ -821,7 +821,7 @@ function SupplementaryCard({
         <>
           <div className="px-5 py-3">{children}</div>
           <details className="group/raw border-t border-foreground/4">
-            <summary className="flex items-center gap-2 px-5 py-2.5 text-xs text-muted-foreground/50 cursor-pointer hover:text-muted-foreground hover:bg-foreground/[0.015] transition-colors select-none [&::-webkit-details-marker]:hidden [&::marker]:hidden list-none">
+            <summary className="flex items-center gap-2 px-5 py-2.5 text-xs text-muted-foreground/50 hover:text-muted-foreground hover:bg-foreground/[0.015] transition-colors select-none [&::-webkit-details-marker]:hidden [&::marker]:hidden list-none">
               <ChevronRight className="w-3.5 h-3.5 shrink-0 transition-transform duration-200 group-open/raw:rotate-90" />
               View raw text
             </summary>
@@ -1047,7 +1047,7 @@ export function GroupSection({
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center gap-2 px-5 py-3 text-left hover:bg-foreground/[0.02] transition-colors cursor-pointer"
+        className="w-full flex items-center gap-2 px-5 py-3 text-left hover:bg-foreground/[0.02] transition-colors"
       >
         {open ? (
           <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />

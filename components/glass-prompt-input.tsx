@@ -202,7 +202,7 @@ export const GlassPromptInput = forwardRef<
         onDragOver={handleDragOver}
         onDrop={handleDrop}
         className={cn(
-          "rounded-xl border border-foreground/6 bg-card focus-within:border-foreground/15 dark:focus-within:border-[#3a3a3a] transition-all overflow-hidden [&_[data-slot=input-group]]:border-0 [&_[data-slot=input-group]]:rounded-none [&_[data-slot=input-group]]:bg-transparent [&_[data-slot=input-group]]:shadow-none",
+          "rounded-xl border border-foreground/6 bg-card transition-all overflow-hidden hover:border-foreground/14 hover:bg-foreground/[0.01] focus-within:border-foreground/20 focus-within:bg-card dark:hover:border-[#2f2f2f] dark:focus-within:border-[#3a3a3a] [&_[data-slot=input-group]]:border-0 [&_[data-slot=input-group]]:rounded-none [&_[data-slot=input-group]]:bg-transparent [&_[data-slot=input-group]]:shadow-none",
           isDraggingFiles && "border-primary/40 bg-primary/5"
         )}
       >

@@ -52,7 +52,7 @@ export default function ClientThreadsPage() {
               onClick={() =>
                 router.push(`/clients/${clientOrgId}/threads/${thread._id}`)
               }
-              className="w-full text-left flex items-center gap-3 px-4 py-3 rounded-lg border border-foreground/6 bg-card hover:bg-foreground/[0.02] transition-colors group cursor-pointer"
+              className="w-full text-left flex items-center gap-3 px-4 py-3 rounded-lg border border-foreground/6 bg-card hover:bg-foreground/[0.02] transition-colors group"
             >
               <div className="shrink-0 text-muted-foreground/30">
                 {thread.originChannel === "imessage" ? (

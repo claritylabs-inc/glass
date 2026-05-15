@@ -117,7 +117,7 @@ export function EntityPreviewPanel({ fitContainer = false }: { fitContainer?: bo
               <button
                 type="button"
                 onClick={closePreview}
-                className="w-7 h-7 flex items-center justify-center rounded-md text-muted-foreground/40 hover:text-foreground hover:bg-foreground/[0.04] transition-colors cursor-pointer shrink-0"
+                className="w-7 h-7 flex items-center justify-center rounded-md text-muted-foreground/40 hover:text-foreground hover:bg-foreground/[0.04] transition-colors shrink-0"
               >
                 <X className="w-4 h-4" />
               </button>

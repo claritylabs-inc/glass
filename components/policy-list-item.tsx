@@ -64,7 +64,7 @@ export function PolicyListItem({
 
   return (
     <div
-      className="flex items-center justify-between px-4 py-3 border-t border-foreground/4 first:border-t-0 cursor-pointer hover:bg-muted/40 transition-colors"
+      className="flex items-center justify-between px-4 py-3 border-t border-foreground/4 first:border-t-0 hover:bg-muted/40 transition-colors"
       onClick={onClick}
     >
       <div className="space-y-1 min-w-0">

@@ -757,7 +757,7 @@ function PolicyChangesTab({
                 <div className="mt-2 space-y-2">
                   {artifacts.length > 0 ? artifacts.map((artifact, i) => (
                     <details key={`${String(artifact.kind ?? "artifact")}-${i}`} className="rounded-md border border-foreground/6 p-3">
-                      <summary className="cursor-pointer text-label-sm font-medium text-foreground">
+                      <summary className="text-label-sm font-medium text-foreground transition-colors hover:text-muted-foreground">
                         {String(artifact.title ?? artifact.kind ?? "Packet artifact")}
                       </summary>
                       <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-5 text-muted-foreground">
@@ -1538,7 +1538,7 @@ export function PolicyDetailBody({
           <button
             type="button"
             onClick={() => setDemoBannerDismissed(true)}
-            className="text-amber-500 hover:text-amber-700 transition-colors cursor-pointer"
+            className="text-amber-500 hover:text-amber-700 transition-colors"
           >
             <X className="w-3.5 h-3.5" />
           </button>
