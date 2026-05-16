@@ -440,7 +440,7 @@ function PolicyExtractionReview({
                         }))
                       }
                       aria-pressed={selected}
-                      className={`flex min-w-0 cursor-pointer flex-wrap items-start justify-between gap-3 rounded-md border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+                      className={`flex min-w-0 flex-wrap items-start justify-between gap-3 rounded-md border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
                         selected
                           ? "border-foreground/30 bg-foreground/[0.03] hover:border-foreground/40 hover:bg-foreground/[0.04]"
                           : "border-foreground/10 bg-background hover:border-foreground/20 hover:bg-foreground/[0.02]"
