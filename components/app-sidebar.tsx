@@ -69,6 +69,7 @@ const MENU_ITEM_INACTIVE_SUBTLE =
 const SHORTCUT_PREFIX_KEY = "g";
 const SHORTCUT_SEQUENCE_TIMEOUT_MS = 1500;
 const SHORTCUT_TOOLTIP_DELAY_MS = 1500;
+const SHORTCUT_TOOLTIP_SIDE_OFFSET = 4;
 const SHORTCUT_TOOLTIP_CLASS =
   "border border-foreground/10 bg-background text-foreground has-data-[slot=kbd]:pr-2.5 [&_[class*='size-2.5']]:hidden";
 
@@ -692,7 +693,7 @@ export function AppSidebar({
                   <TooltipContent
                     side="right"
                     align="center"
-                    sideOffset={8}
+                    sideOffset={SHORTCUT_TOOLTIP_SIDE_OFFSET}
                     className={SHORTCUT_TOOLTIP_CLASS}
                   >
                     <ShortcutTooltipContent
@@ -1226,7 +1227,7 @@ function NavItem({
       <TooltipContent
         side="right"
         align="center"
-        sideOffset={8}
+        sideOffset={SHORTCUT_TOOLTIP_SIDE_OFFSET}
         className={SHORTCUT_TOOLTIP_CLASS}
       >
         <ShortcutTooltipContent label={label} shortcut={shortcut} />
