@@ -1584,12 +1584,8 @@ export function PolicyDetailBody({
   };
   const reviewQuestions = extractionReviewQuestions(p);
   const hasExtractionReviews = reviewQuestions.length > 0;
-
-  useEffect(() => {
-    if (activeTab === "review" && !hasExtractionReviews) {
-      setActiveTab("details");
-    }
-  }, [activeTab, hasExtractionReviews]);
+  const visibleActiveTab =
+    activeTab === "review" && !hasExtractionReviews ? "details" : activeTab;
 
   useEffect(() => {
     loggedAuditIds.current.clear();
@@ -1943,7 +1939,7 @@ export function PolicyDetailBody({
       )}
 
       <Tabs
-        value={activeTab}
+        value={visibleActiveTab}
         onValueChange={(value) =>
           setActiveTab(value as PolicyDetailTab)
         }
@@ -1975,7 +1971,7 @@ export function PolicyDetailBody({
         </TabsList>
       </Tabs>
 
-      {activeTab === "details" && (
+      {visibleActiveTab === "details" && (
         <FadeIn when={true} staggerIndex={1} duration={0.5}>
           <PolicyExtractionBanner
             policyId={policy._id}
@@ -2010,7 +2006,7 @@ export function PolicyDetailBody({
         </FadeIn>
       )}
 
-      {activeTab === "review" && hasExtractionReviews && (
+      {visibleActiveTab === "review" && hasExtractionReviews && (
         <FadeIn when={true} staggerIndex={1} duration={0.5}>
           <PolicyExtractionReview
             policy={policy as unknown as Record<string, unknown> & { _id: Id<"policies"> }}
@@ -2020,15 +2016,15 @@ export function PolicyDetailBody({
         </FadeIn>
       )}
 
-      {activeTab === "changes" && (
+      {visibleActiveTab === "changes" && (
         <PolicyChangesTab policyId={id} canManage={canManagePolicyChanges} />
       )}
 
-      {activeTab === "certificates" && (
+      {visibleActiveTab === "certificates" && (
         <CertificatesTab policyId={policy._id} />
       )}
 
-      {activeTab === "extraction" && (
+      {visibleActiveTab === "extraction" && (
         <div className="space-y-4">
           <PolicyBreakdownEditor
             key={policy._id}

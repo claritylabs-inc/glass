@@ -1055,6 +1055,17 @@ export const createRequirementSourceDocumentInternal = internalMutation({
     sourceType: sourceDocumentTypeValidator,
     title: v.string(),
     sourceTextExcerpt: v.optional(v.string()),
+    parserBackend: v.optional(
+      v.union(
+        v.literal("docling"),
+        v.literal("pdfjs"),
+        v.literal("mammoth"),
+        v.literal("plain_text"),
+      ),
+    ),
+    parserVersion: v.optional(v.string()),
+    parsedAt: v.optional(v.number()),
+    parsingMs: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const membership = await ctx.db
@@ -1073,6 +1084,10 @@ export const createRequirementSourceDocumentInternal = internalMutation({
       sourceType: args.sourceType,
       title: args.title.trim() || args.fileName || "Requirement source",
       sourceTextExcerpt: args.sourceTextExcerpt?.trim() || undefined,
+      parserBackend: args.parserBackend,
+      parserVersion: args.parserVersion,
+      parsedAt: args.parsedAt,
+      parsingMs: args.parsingMs,
       status: "complete",
       createdByUserId: args.userId,
       createdAt: now,

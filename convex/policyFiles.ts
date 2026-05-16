@@ -1,3 +1,4 @@
+import dayjs from "dayjs";
 import { v } from "convex/values";
 import { query, internalQuery, internalMutation } from "./_generated/server";
 import { getOrgAccess } from "./lib/orgAuth";
@@ -44,13 +45,19 @@ export const insert = internalMutation({
       v.literal("unknown"),
     ),
     extractedData: v.optional(v.any()),
+    parsedMarkdown: v.optional(v.string()),
+    docTagsJson: v.optional(v.any()),
+    parserBackend: v.optional(v.union(v.literal("docling"), v.literal("vision-llm"))),
+    parserVersion: v.optional(v.string()),
+    parsedAt: v.optional(v.number()),
+    parsingMs: v.optional(v.number()),
     pageCount: v.optional(v.number()),
     orgId: v.id("organizations"),
   },
   handler: async (ctx, args) => {
     return await ctx.db.insert("policyFiles", {
       ...args,
-      createdAt: Date.now(),
+      createdAt: dayjs().valueOf(),
     });
   },
 });
@@ -59,6 +66,12 @@ export const updateExtraction = internalMutation({
   args: {
     id: v.id("policyFiles"),
     extractedData: v.optional(v.any()),
+    parsedMarkdown: v.optional(v.string()),
+    docTagsJson: v.optional(v.any()),
+    parserBackend: v.optional(v.union(v.literal("docling"), v.literal("vision-llm"))),
+    parserVersion: v.optional(v.string()),
+    parsedAt: v.optional(v.number()),
+    parsingMs: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const { id, ...fields } = args;
@@ -75,7 +88,7 @@ export const appendExtractionLog = internalMutation({
     const file = await ctx.db.get(args.id);
     if (!file) return;
     const log = file.pipelineLog ?? [];
-    log.push({ timestamp: Date.now(), message: args.message });
+    log.push({ timestamp: dayjs().valueOf(), message: args.message });
     await ctx.db.patch(args.id, { pipelineLog: log });
   },
 });

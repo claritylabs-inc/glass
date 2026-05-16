@@ -8,6 +8,9 @@ import { action, internalAction } from "../_generated/server";
 import dayjs from "dayjs";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
+import type { ActionCtx } from "../_generated/server";
+import { parsePdf } from "../lib/docling";
+import { isDoclingEnabled } from "../lib/featureFlags";
 import { getModel } from "../lib/models";
 
 const CATEGORY_VALUES = [
@@ -49,6 +52,17 @@ type ImportedRequirement = z.infer<typeof RequirementSchema>;
 type ExistingRequirement = {
   title: string;
   requirementText: string;
+};
+type RequirementImportContext = {
+  userId: Id<"users">;
+  existingRequirements: ExistingRequirement[];
+};
+type ExtractedFileText = {
+  text: string;
+  parserBackend?: "docling" | "pdfjs" | "mammoth" | "plain_text";
+  parserVersion?: string;
+  parsedAt?: number;
+  parsingMs?: number;
 };
 
 const MAX_SOURCE_CHARS = 40_000;
@@ -119,27 +133,59 @@ async function extractPdfText(buffer: ArrayBuffer) {
   return pages.join("\n\n");
 }
 
+async function extractPdfRequirementText(
+  ctx: ActionCtx,
+  orgId: Id<"organizations">,
+  buffer: ArrayBuffer,
+): Promise<ExtractedFileText> {
+  if (await isDoclingEnabled(ctx, orgId)) {
+    const parsed = await parsePdf({
+      pdfBytes: new Uint8Array(buffer),
+      mimeType: "application/pdf",
+    });
+    return {
+      text: parsed.markdown,
+      parserBackend: "docling",
+      parserVersion: parsed.parserVersion,
+      parsedAt: dayjs().valueOf(),
+      parsingMs: parsed.parsingMs,
+    };
+  }
+
+  return {
+    text: await extractPdfText(buffer),
+    parserBackend: "pdfjs",
+  };
+}
+
 async function extractDocxText(buffer: ArrayBuffer) {
   const result = await mammoth.extractRawText({ arrayBuffer: buffer });
   return result.value;
 }
 
 async function extractFileText({
+  ctx,
+  orgId,
   buffer,
   fileName,
   contentType,
 }: {
+  ctx: ActionCtx;
+  orgId: Id<"organizations">;
   buffer: ArrayBuffer;
   fileName?: string;
   contentType?: string;
-}) {
+}): Promise<ExtractedFileText> {
   const lowerName = (fileName ?? "").toLowerCase();
   const type = (contentType ?? "").toLowerCase();
   if (type.includes("pdf") || lowerName.endsWith(".pdf")) {
-    return await extractPdfText(buffer);
+    return await extractPdfRequirementText(ctx, orgId, buffer);
   }
   if (type.includes("wordprocessingml") || lowerName.endsWith(".docx")) {
-    return await extractDocxText(buffer);
+    return {
+      text: await extractDocxText(buffer),
+      parserBackend: "mammoth",
+    };
   }
   if (
     type.startsWith("text/") ||
@@ -151,7 +197,10 @@ async function extractFileText({
     lowerName.endsWith(".csv") ||
     lowerName.endsWith(".json")
   ) {
-    return decodeText(buffer);
+    return {
+      text: decodeText(buffer),
+      parserBackend: "plain_text",
+    };
   }
   throw new Error(
     "Unsupported requirement document type. Use TXT, Markdown, PDF, DOCX, CSV, or JSON.",
@@ -205,6 +254,101 @@ Source text:
 ${sourceText}`;
 }
 
+async function runRequirementImport(
+  ctx: ActionCtx,
+  args: {
+    orgId: Id<"organizations">;
+    pastedText?: string;
+    fileId?: Id<"_storage">;
+    fileName?: string;
+    contentType?: string;
+    sourceType?: "lease_agreement" | "client_contract" | "vendor_requirements" | "other";
+    appliesTo?: "vendors" | "own_org" | "both";
+  },
+  context: RequirementImportContext,
+  titlePrefix: "Pasted requirements" | "Mailbox requirements",
+  fallbackSourceDocumentName: "Pasted source text" | "Mailbox source text",
+): Promise<{
+  createdCount: number;
+  requirementIds: Id<"insuranceRequirements">[];
+}> {
+  let sourceText = args.pastedText?.trim() ?? "";
+  let fileExtraction: ExtractedFileText | undefined;
+  if (args.fileId) {
+    const blob = await ctx.storage.get(args.fileId);
+    if (!blob) throw new Error("Requirement document not found");
+    fileExtraction = await extractFileText({
+      ctx,
+      orgId: args.orgId,
+      buffer: await blob.arrayBuffer(),
+      fileName: args.fileName,
+      contentType: args.contentType,
+    });
+    sourceText = [sourceText, fileExtraction.text].filter(Boolean).join("\n\n");
+  }
+
+  sourceText = truncateSource(sourceText);
+  if (!sourceText)
+    throw new Error("Paste text or upload a requirement document first");
+
+  const sourceType =
+    args.sourceType ??
+    (args.fileName?.toLowerCase().includes("lease")
+      ? "lease_agreement"
+      : args.fileName?.toLowerCase().includes("contract")
+        ? "client_contract"
+        : "vendor_requirements");
+  const sourceDocumentId: Id<"requirementSourceDocuments"> =
+    await ctx.runMutation(
+      internal.compliance.createRequirementSourceDocumentInternal,
+      {
+        orgId: args.orgId,
+        userId: context.userId,
+        fileId: args.fileId,
+        fileName: args.fileName,
+        contentType: args.contentType,
+        sourceType,
+        title:
+          args.fileName ||
+          `${titlePrefix} ${dayjs().format("YYYY-MM-DD HH:mm")}`,
+        sourceTextExcerpt: sourceText.slice(0, 4000),
+        parserBackend: fileExtraction?.parserBackend,
+        parserVersion: fileExtraction?.parserVersion,
+        parsedAt: fileExtraction?.parsedAt,
+        parsingMs: fileExtraction?.parsingMs,
+      },
+    );
+
+  const result = await generateObject({
+    model: getModel("chat"),
+    schema: RequirementImportSchema,
+    system:
+      "You convert contract and certificate insurance language into coverage-shaped structured compliance requirements for Glass.",
+    prompt: buildPrompt({
+      sourceText,
+      existingRequirements: context.existingRequirements,
+      appliesTo: args.appliesTo ?? "vendors",
+    }),
+  });
+
+  const requirementIds: Id<"insuranceRequirements">[] = await ctx.runMutation(
+    internal.compliance.createRequirementsInternal,
+    {
+      orgId: args.orgId,
+      userId: context.userId,
+      appliesTo: args.appliesTo,
+      sourceDocumentId,
+      sourceDocumentName: args.fileName || fallbackSourceDocumentName,
+      sourceType,
+      requirements: result.object.requirements.map(
+        normalizeImportedRequirement,
+      ),
+    },
+  );
+
+  return { createdCount: requirementIds.length, requirementIds };
+}
+
 export const importRequirements = action({
   args: {
     orgId: v.id("organizations"),
@@ -231,85 +375,20 @@ export const importRequirements = action({
     createdCount: number;
     requirementIds: Id<"insuranceRequirements">[];
   }> => {
-    const context: {
-      userId: Id<"users">;
-      existingRequirements: ExistingRequirement[];
-    } = await ctx.runQuery(
+    const context: RequirementImportContext = await ctx.runQuery(
       internal.compliance.getRequirementImportContextInternal,
       {
         orgId: args.orgId,
       },
     );
 
-    let sourceText = args.pastedText?.trim() ?? "";
-    if (args.fileId) {
-      const blob = await ctx.storage.get(args.fileId);
-      if (!blob) throw new Error("Requirement document not found");
-      const fileText = await extractFileText({
-        buffer: await blob.arrayBuffer(),
-        fileName: args.fileName,
-        contentType: args.contentType,
-      });
-      sourceText = [sourceText, fileText].filter(Boolean).join("\n\n");
-    }
-
-    sourceText = truncateSource(sourceText);
-    if (!sourceText)
-      throw new Error("Paste text or upload a requirement document first");
-
-    const sourceType =
-      args.sourceType ??
-      (args.fileName?.toLowerCase().includes("lease")
-        ? "lease_agreement"
-        : args.fileName?.toLowerCase().includes("contract")
-          ? "client_contract"
-          : "vendor_requirements");
-    const sourceDocumentId: Id<"requirementSourceDocuments"> =
-      await ctx.runMutation(
-        internal.compliance.createRequirementSourceDocumentInternal,
-        {
-          orgId: args.orgId,
-          userId: context.userId,
-          fileId: args.fileId,
-          fileName: args.fileName,
-          contentType: args.contentType,
-          sourceType,
-          title:
-            args.fileName ||
-            `Pasted requirements ${dayjs().format("YYYY-MM-DD HH:mm")}`,
-          sourceTextExcerpt: sourceText.slice(0, 4000),
-        },
-      );
-
-    const model = getModel("chat");
-    const result = await generateObject({
-      model,
-      schema: RequirementImportSchema,
-      system:
-        "You convert contract and certificate insurance language into coverage-shaped structured compliance requirements for Glass.",
-      prompt: buildPrompt({
-        sourceText,
-        existingRequirements: context.existingRequirements,
-        appliesTo: args.appliesTo ?? "vendors",
-      }),
-    });
-
-    const requirementIds: Id<"insuranceRequirements">[] = await ctx.runMutation(
-      internal.compliance.createRequirementsInternal,
-      {
-        orgId: args.orgId,
-        userId: context.userId,
-        appliesTo: args.appliesTo,
-        sourceDocumentId,
-        sourceDocumentName: args.fileName || "Pasted source text",
-        sourceType,
-        requirements: result.object.requirements.map(
-          normalizeImportedRequirement,
-        ),
-      },
+    return await runRequirementImport(
+      ctx,
+      args,
+      context,
+      "Pasted requirements",
+      "Pasted source text",
     );
-
-    return { createdCount: requirementIds.length, requirementIds };
   },
 });
 
@@ -340,10 +419,7 @@ export const importRequirementsInternal = internalAction({
     createdCount: number;
     requirementIds: Id<"insuranceRequirements">[];
   }> => {
-    const context: {
-      userId: Id<"users">;
-      existingRequirements: ExistingRequirement[];
-    } = await ctx.runQuery(
+    const context: RequirementImportContext = await ctx.runQuery(
       internal.compliance.getRequirementImportContextForUserInternal,
       {
         orgId: args.orgId,
@@ -351,73 +427,12 @@ export const importRequirementsInternal = internalAction({
       },
     );
 
-    let sourceText = args.pastedText?.trim() ?? "";
-    if (args.fileId) {
-      const blob = await ctx.storage.get(args.fileId);
-      if (!blob) throw new Error("Requirement document not found");
-      const fileText = await extractFileText({
-        buffer: await blob.arrayBuffer(),
-        fileName: args.fileName,
-        contentType: args.contentType,
-      });
-      sourceText = [sourceText, fileText].filter(Boolean).join("\n\n");
-    }
-
-    sourceText = truncateSource(sourceText);
-    if (!sourceText)
-      throw new Error("Paste text or upload a requirement document first");
-
-    const sourceType =
-      args.sourceType ??
-      (args.fileName?.toLowerCase().includes("lease")
-        ? "lease_agreement"
-        : args.fileName?.toLowerCase().includes("contract")
-          ? "client_contract"
-          : "vendor_requirements");
-    const sourceDocumentId: Id<"requirementSourceDocuments"> =
-      await ctx.runMutation(
-        internal.compliance.createRequirementSourceDocumentInternal,
-        {
-          orgId: args.orgId,
-          userId: context.userId,
-          fileId: args.fileId,
-          fileName: args.fileName,
-          contentType: args.contentType,
-          sourceType,
-          title:
-            args.fileName ||
-            `Mailbox requirements ${dayjs().format("YYYY-MM-DD HH:mm")}`,
-          sourceTextExcerpt: sourceText.slice(0, 4000),
-        },
-      );
-
-    const result = await generateObject({
-      model: getModel("chat"),
-      schema: RequirementImportSchema,
-      system:
-        "You convert contract and certificate insurance language into coverage-shaped structured compliance requirements for Glass.",
-      prompt: buildPrompt({
-        sourceText,
-        existingRequirements: context.existingRequirements,
-        appliesTo: args.appliesTo ?? "vendors",
-      }),
-    });
-
-    const requirementIds: Id<"insuranceRequirements">[] = await ctx.runMutation(
-      internal.compliance.createRequirementsInternal,
-      {
-        orgId: args.orgId,
-        userId: context.userId,
-        appliesTo: args.appliesTo,
-        sourceDocumentId,
-        sourceDocumentName: args.fileName || "Mailbox source text",
-        sourceType,
-        requirements: result.object.requirements.map(
-          normalizeImportedRequirement,
-        ),
-      },
+    return await runRequirementImport(
+      ctx,
+      args,
+      context,
+      "Mailbox requirements",
+      "Mailbox source text",
     );
-
-    return { createdCount: requirementIds.length, requirementIds };
   },
 });

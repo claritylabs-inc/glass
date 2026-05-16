@@ -97,10 +97,6 @@ export default function ClientThreadReadOnlyPage() {
     );
   }
 
-  const lastAgentIdx = messages.reduce(
-    (acc, m, i) => (m.role === "agent" ? i : acc),
-    -1,
-  );
   const firstUserIdx = messages.findIndex((m) => m.role === "user");
 
   return (
@@ -124,7 +120,6 @@ export default function ClientThreadReadOnlyPage() {
               msg={msg}
               viewerId={viewer?._id}
               viewerEmail={viewer?.email ?? undefined}
-              isLastAgentMessage={idx === lastAgentIdx}
               isFirstUserMessage={false}
               threadContext={undefined}
               brokerPerspective
