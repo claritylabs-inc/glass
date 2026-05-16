@@ -94,7 +94,7 @@ export function ProseMarkdown({
   };
 
   return (
-    <div className={cn(compact ? COMPACT_STYLES : BASE_STYLES, "min-w-0 break-words [overflow-wrap:anywhere]", className)}>
+    <div className={cn(compact ? COMPACT_STYLES : BASE_STYLES, "min-w-0 wrap-break-word wrap-anywhere", className)}>
       <Markdown
         remarkPlugins={plugins}
         components={mergedComponents}

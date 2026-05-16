@@ -28,7 +28,7 @@ export function SettingsDrawer({
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.2, ease: EASE }}
-          className="max-lg:!fixed max-lg:!inset-0 max-lg:!z-50 flex h-full w-full shrink-0 overflow-hidden"
+          className="max-lg:fixed! max-lg:inset-0! max-lg:z-50! flex h-full w-full shrink-0 overflow-hidden"
         >
           <motion.div
             initial={{ opacity: 0, x: 30 }}
@@ -44,7 +44,7 @@ export function SettingsDrawer({
               <button
                 type="button"
                 onClick={() => onOpenChange(false)}
-                className="w-7 h-7 flex items-center justify-center rounded-md text-muted-foreground/40 hover:text-foreground hover:bg-foreground/[0.04] transition-colors shrink-0"
+                className="w-7 h-7 flex items-center justify-center rounded-md text-muted-foreground/40 hover:text-foreground hover:bg-foreground/4 transition-colors shrink-0"
                 aria-label="Close"
               >
                 <X className="w-4 h-4" />

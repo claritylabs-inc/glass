@@ -5,6 +5,7 @@ import { z } from "zod";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
+import dayjs from "dayjs";
 import { getModelForOrg, getProviderOptionsForTask } from "./models";
 import { sendResendEmail, getAgentDomain } from "./resend";
 import { markdownToHtml, stripMarkdown } from "./aiUtils";
@@ -655,7 +656,7 @@ async function runEmailSubagent(
 
     const sendDelay = context.emailSendDelay ?? 5;
     if (sendDelay > 0 && context.threadId) {
-      const scheduledSendTime = Date.now() + sendDelay * 1000;
+      const scheduledSendTime = dayjs().add(sendDelay, "second").valueOf();
       const pendingEmailId = await ctx.runMutation(internal.pendingEmails.create, {
         orgId: context.orgId,
         threadId: context.threadId,

@@ -24,7 +24,7 @@ export const MENU_ITEM_BASE =
   "rounded-md transition-[background-color,color,box-shadow] duration-200 ease-out";
 export const MENU_ITEM_HOVER = "hover:bg-muted hover:text-foreground";
 export const MENU_ITEM_ACTIVE =
-  "bg-foreground/10 text-foreground hover:bg-foreground/15";
+  "bg-foreground/4! text-foreground hover:bg-foreground/6";
 export const MENU_ITEM_INACTIVE = `text-muted-foreground ${MENU_ITEM_HOVER}`;
 export const MENU_ITEM_INACTIVE_SUBTLE =
   "text-muted-foreground/40 hover:bg-muted hover:text-muted-foreground/65";

@@ -485,7 +485,7 @@ export default function ClientOnboardingSetupPage() {
           <div className="space-y-8">
             {policyCount > 0 ? (
               <div className="rounded-lg border border-foreground/6 bg-card p-5 sm:p-6 flex items-start gap-3">
-                <div className="mt-0.5 h-8 w-8 rounded-full bg-foreground/[0.04] flex items-center justify-center shrink-0">
+                <div className="mt-0.5 h-8 w-8 rounded-full bg-foreground/4 flex items-center justify-center shrink-0">
                   <Check className="h-4 w-4 text-muted-foreground" />
                 </div>
                 <div className="min-w-0 flex-1">

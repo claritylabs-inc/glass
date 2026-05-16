@@ -62,17 +62,17 @@ function AttachmentTags({ roomyOnMobile = false }: { roomyOnMobile?: boolean }) 
       {attachments.files.map((file) => (
         <span
           key={file.id}
-          className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-foreground/[0.05] px-2.5 py-1 text-[11px] font-medium text-foreground/75"
+          className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-foreground/5 px-2.5 py-1 text-label-sm font-medium text-foreground/75"
         >
           <Paperclip className="h-3 w-3 shrink-0 text-muted-foreground" />
-          <span className="max-w-[180px] truncate sm:max-w-[240px]" title={file.filename}>
+          <span className="max-w-45 truncate sm:max-w-60" title={file.filename}>
             {file.filename}
           </span>
           <button
             type="button"
             onClick={() => attachments.remove(file.id)}
             title={`Remove ${file.filename}`}
-            className="-mr-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/[0.08] hover:text-foreground"
+            className="-mr-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/8 hover:text-foreground"
           >
             <X className="h-3 w-3" />
           </button>
@@ -202,7 +202,7 @@ export const GlassPromptInput = forwardRef<
         onDragOver={handleDragOver}
         onDrop={handleDrop}
         className={cn(
-          "rounded-xl border border-foreground/6 bg-card transition-all overflow-hidden hover:border-foreground/14 hover:bg-foreground/[0.01] focus-within:border-foreground/20 focus-within:bg-card dark:hover:border-[#2f2f2f] dark:focus-within:border-[#3a3a3a] [&_[data-slot=input-group]]:border-0 [&_[data-slot=input-group]]:rounded-none [&_[data-slot=input-group]]:bg-transparent [&_[data-slot=input-group]]:shadow-none",
+          "rounded-xl border border-foreground/6 bg-card shadow-none transition-all overflow-hidden hover:border-foreground/14 hover:bg-foreground/1 focus-within:border-foreground/20 focus-within:bg-card focus-within:shadow-none dark:hover:border-[#2f2f2f] dark:focus-within:border-[#3a3a3a] **:data-[slot=input-group]:!border-0 **:data-[slot=input-group]:!ring-0 **:data-[slot=input-group]:rounded-none **:data-[slot=input-group]:bg-transparent **:data-[slot=input-group]:!shadow-none",
           isDraggingFiles && "border-primary/40 bg-primary/5"
         )}
       >
@@ -211,8 +211,8 @@ export const GlassPromptInput = forwardRef<
           ref={textareaRef}
           placeholder={placeholder}
           className={roomyOnMobile
-            ? "min-h-[88px] sm:min-h-[22px] text-body-sm leading-6 sm:leading-5 px-4 sm:px-3 pt-3 sm:pt-2.5 pb-2 sm:pb-1 placeholder:text-muted-foreground/40"
-            : "min-h-[22px] text-body-sm leading-5 px-3 pt-2.5 pb-1 placeholder:text-muted-foreground/40"
+            ? "min-h-22 sm:min-h-5.5 text-body-sm leading-6 sm:leading-5 px-4 sm:px-3 pt-3 sm:pt-2.5 pb-2 sm:pb-1 placeholder:text-muted-foreground/40"
+            : "min-h-5.5 text-body-sm leading-5 px-3 pt-2.5 pb-1 placeholder:text-muted-foreground/40"
           }
         />
 
@@ -230,11 +230,11 @@ export const GlassPromptInput = forwardRef<
               ) : (
                 <LogoIcon size={14} color="#A0D2FA" static className="shrink-0" />
               )}
-              <span className="hidden sm:inline text-[11px] font-medium text-muted-foreground/40">
+              <span className="hidden sm:inline text-label-sm font-medium text-muted-foreground/40">
                 {agentBranding?.name ?? "Glass"}
               </span>
               {contextLabel && (
-                <span className="text-[10px] font-medium text-muted-foreground/30 bg-foreground/[0.03] px-1.5 py-0.5 rounded max-w-[200px] truncate inline-block align-middle" title={contextLabel}>
+                <span className="text-[10px] font-medium text-muted-foreground/30 bg-foreground/3 px-1.5 py-0.5 rounded max-w-50 truncate inline-block align-middle" title={contextLabel}>
                   {contextLabel}
                 </span>
               )}
@@ -250,7 +250,7 @@ export const GlassPromptInput = forwardRef<
                   type="button"
                   size="compact"
                   onClick={handleStopClick}
-                  className={roomyOnMobile ? "h-9 px-4 text-[12px] sm:h-7 sm:px-3 sm:text-[11px]" : undefined}
+                  className={roomyOnMobile ? "h-9 px-4 text-label sm:h-7 sm:px-3 sm:text-label-sm" : undefined}
                 >
                   <Square className={roomyOnMobile ? "h-3.5 w-3.5 fill-current sm:h-3 sm:w-3" : "h-3 w-3 fill-current"} />
                   Stop
@@ -260,7 +260,7 @@ export const GlassPromptInput = forwardRef<
                   type="submit"
                   size="compact"
                   disabled={disabled || isGenerating}
-                  className={roomyOnMobile ? "h-9 px-4 text-[12px] sm:h-7 sm:px-3 sm:text-[11px]" : undefined}
+                  className={roomyOnMobile ? "h-9 px-4 text-label sm:h-7 sm:px-3 sm:text-label-sm" : undefined}
                 >
                   {status === "submitted" ? (
                     <>
@@ -289,7 +289,7 @@ export const GlassPromptInput = forwardRef<
 export function ChatInputOverlay({ children }: { children: React.ReactNode }) {
   return (
     <div className="absolute bottom-0 left-0 right-0 z-10 pointer-events-none">
-      <div className="h-16 bg-gradient-to-b from-white/0 via-white/40 to-white/80 dark:from-black/0 dark:via-black/40 dark:to-black/80" />
+      <div className="h-16 bg-linear-to-b from-white/0 via-white/40 to-white/80 dark:from-black/0 dark:via-black/40 dark:to-black/80" />
       <div className="pointer-events-auto bg-white/80 dark:bg-black/80 px-4 md:px-6 lg:px-8 pt-2" style={{ paddingBottom: "calc(1.25rem + env(safe-area-inset-bottom, 0px))" }}>
         <div className="max-w-2xl mx-auto">{children}</div>
       </div>

@@ -170,7 +170,7 @@ export function BrokerAgentTab() {
       {isBroker ? (
         <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
           <div className="px-5 py-3.5 border-b border-foreground/6">
-            <h3 className="!mb-0 text-sm font-medium text-foreground">Agent email handle</h3>
+            <h3 className="mb-0! text-sm font-medium text-foreground">Agent email handle</h3>
           </div>
           <div className="px-5 py-5 space-y-1">
             <p className="text-body-sm text-muted-foreground/70 mb-3">
@@ -190,7 +190,7 @@ export function BrokerAgentTab() {
                 autoCorrect="off"
                 className="flex-1 min-w-0 rounded-l-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
               />
-              <span className="inline-flex items-center rounded-r-lg border border-l-0 border-foreground/8 bg-foreground/[0.03] px-3 text-body-sm text-muted-foreground select-none whitespace-nowrap">
+              <span className="inline-flex items-center rounded-r-lg border border-l-0 border-foreground/8 bg-foreground/3 px-3 text-body-sm text-muted-foreground select-none whitespace-nowrap">
                 @{agentDomain}
               </span>
             </div>
@@ -208,7 +208,7 @@ export function BrokerAgentTab() {
       ) : (
         <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
           <div className="px-5 py-3.5 border-b border-foreground/6">
-            <h3 className="!mb-0 text-sm font-medium text-foreground">Agent email address</h3>
+            <h3 className="mb-0! text-sm font-medium text-foreground">Agent email address</h3>
           </div>
           <div className="px-5 py-5 space-y-1">
             <p className="text-body-sm text-muted-foreground/70 mb-3">
@@ -227,7 +227,7 @@ export function BrokerAgentTab() {
       {/* Email behavior */}
       <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
         <div className="px-5 py-3.5 border-b border-foreground/6">
-          <h3 className="!mb-0 text-sm font-medium text-foreground">Email behavior</h3>
+          <h3 className="mb-0! text-sm font-medium text-foreground">Email behavior</h3>
         </div>
         <div className="px-5 py-2 divide-y divide-foreground/6">
           <div className="flex items-center justify-between gap-4 py-3">
@@ -282,7 +282,7 @@ export function BrokerAgentTab() {
       {/* Send delay */}
       <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
         <div className="px-5 py-3.5 border-b border-foreground/6">
-          <h3 className="!mb-0 text-sm font-medium text-foreground">Send delay</h3>
+          <h3 className="mb-0! text-sm font-medium text-foreground">Send delay</h3>
         </div>
         <div className="px-5 py-5">
           <div>
@@ -299,7 +299,7 @@ export function BrokerAgentTab() {
                     onClick={() => setEmailSendDelay(value)}
                     className={`rounded-lg border px-3 py-1.5 text-body-sm transition-colors ${
                       selected
-                        ? "border-foreground/20 bg-foreground/[0.03] text-foreground"
+                        ? "border-foreground/20 bg-foreground/3 text-foreground"
                         : "border-foreground/8 bg-popover text-muted-foreground hover:border-foreground/15"
                     }`}
                   >

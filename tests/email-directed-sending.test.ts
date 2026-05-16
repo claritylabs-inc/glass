@@ -211,8 +211,11 @@ describe("directed email sending", () => {
     expect(threadSource).toContain("View sent email");
     expect(threadSource).toContain("relatedEmailMessage");
     expect(threadSource).toContain("attachedEmailMessageIds");
+    expect(threadSource).toContain("findRelatedEmailMessage");
+    expect(threadSource).toContain("hiddenStatusMessageIds");
     expect(threadSource).toContain("lastAutoOpenedEmailId");
     expect(senderSource).toContain("updateChatMessage: false");
+    expect(senderSource).toContain("pendingEmailId: id");
   });
 
   it("keeps cc and bcc as structured email expert inputs", () => {
@@ -312,6 +315,19 @@ describe("directed email sending", () => {
 
     expect(source).toContain('emailResult.status === "pending"');
     expect(source).toContain("sendImmediateImessage({");
+    expect(source).toContain("pendingEmailId: emailResult.pendingEmailId");
     expect(source).toContain("responseAlreadySent ? \"\" : responseText");
+  });
+
+  it("uses the Glass logo and footer retry action on assistant chat bubbles", () => {
+    const source = readFileSync(
+      join(__dirname, "..", "app/agent/thread/[id]/page.tsx"),
+      "utf-8",
+    );
+
+    expect(source).toContain("LogoIcon");
+    expect(source).not.toContain("Asterisk");
+    expect(source).toContain("TryAgainMessageButton");
+    expect(source).toContain('title="Try again"');
   });
 });

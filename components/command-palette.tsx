@@ -95,7 +95,7 @@ export function CommandPalette() {
           {/* Palette */}
           <motion.div
             onClick={(e) => e.stopPropagation()}
-            className="fixed top-[28%] left-1/2 z-50 w-[90vw] max-w-[480px] -translate-x-1/2"
+            className="fixed top-[28%] left-1/2 z-50 w-[90vw] max-w-120 -translate-x-1/2"
             initial={{ opacity: 0, y: -12, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -12, scale: 0.98 }}
@@ -119,10 +119,10 @@ export function CommandPalette() {
                 <div className="flex items-center justify-between px-3 pb-2.5 pt-0">
                   <div className="flex items-center gap-1.5 ml-1">
                     <Asterisk className="w-3.5 h-3.5 text-primary-light" />
-                    <span className="text-[11px] font-medium text-muted-foreground/40">Glass</span>
+                    <span className="text-label-sm font-medium text-muted-foreground/40">Glass</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <kbd className="text-[10px] px-1.5 py-0.5 rounded bg-foreground/[0.04] text-muted-foreground/40 border border-foreground/6">
+                    <kbd className="text-[10px] px-1.5 py-0.5 rounded bg-foreground/4 text-muted-foreground/40 border border-foreground/6">
                       esc
                     </kbd>
                     <button

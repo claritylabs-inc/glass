@@ -92,6 +92,6 @@ export function HandleAvailability({
   }
 
   return (
-    <div className="flex items-center gap-2 min-h-[20px] pt-1">{content}</div>
+    <div className="flex items-center gap-2 min-h-5 pt-1">{content}</div>
   );
 }

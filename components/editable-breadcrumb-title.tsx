@@ -77,7 +77,7 @@ export function EditableBreadcrumbTitle({
             lineHeight: "inherit",
             letterSpacing: "inherit",
           }}
-          className="absolute inset-0 w-full text-foreground bg-foreground/[0.04] rounded-md outline-none border-0 px-1.5 py-0.5 focus:bg-foreground/[0.06] transition-colors"
+          className="absolute inset-0 w-full text-foreground bg-foreground/4 rounded-md outline-none border-0 px-1.5 py-0.5 focus:bg-foreground/6 transition-colors"
         />
       </span>
     );
@@ -91,7 +91,7 @@ export function EditableBreadcrumbTitle({
         setEditing(true);
       }}
       title="Rename"
-      className="-mx-1.5 px-1.5 py-0.5 rounded-md text-body-sm text-foreground truncate hover:bg-foreground/[0.04] transition-colors cursor-text text-left max-w-[60vw] align-middle"
+      className="-mx-1.5 px-1.5 py-0.5 rounded-md text-body-sm text-foreground truncate hover:bg-foreground/4 transition-colors cursor-text text-left max-w-[60vw] align-middle"
     >
       {display}
     </button>

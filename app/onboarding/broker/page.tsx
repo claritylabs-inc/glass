@@ -503,7 +503,7 @@ export default function BrokerOnboardingPage() {
             <div className="space-y-2">
               <label className={labelClass}>Workspace link</label>
               <div className="flex items-stretch gap-0">
-                <div className="flex items-center rounded-l-lg border border-r-0 border-foreground/8 bg-foreground/[0.02] px-3 py-2 text-label-sm text-muted-foreground/60 select-none whitespace-nowrap">
+                <div className="flex items-center rounded-l-lg border border-r-0 border-foreground/8 bg-foreground/2 px-3 py-2 text-label-sm text-muted-foreground/60 select-none whitespace-nowrap">
                   {WORKSPACE_DOMAIN}/
                 </div>
                 <input
@@ -518,7 +518,7 @@ export default function BrokerOnboardingPage() {
                 />
               </div>
 
-              <div className="flex items-center gap-2 min-h-[20px] pt-1">
+              <div className="flex items-center gap-2 min-h-5 pt-1">
                 {slugChecking ? (
                   <>
                     <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />
@@ -672,11 +672,11 @@ export default function BrokerOnboardingPage() {
                   autoFocus
                   className="flex-1 min-w-0 rounded-l-lg border border-r-0 border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
                 />
-                <div className="flex items-center rounded-r-lg border border-l-0 border-foreground/8 bg-foreground/[0.02] px-3 py-2 text-label-sm text-muted-foreground/60 select-none whitespace-nowrap">
+                <div className="flex items-center rounded-r-lg border border-l-0 border-foreground/8 bg-foreground/2 px-3 py-2 text-label-sm text-muted-foreground/60 select-none whitespace-nowrap">
                   @{WORKSPACE_DOMAIN}
                 </div>
               </div>
-              <div className="mt-2 flex items-center gap-2 min-h-[20px]">
+              <div className="mt-2 flex items-center gap-2 min-h-5">
                 {handleChecking ? (
                   <>
                     <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />

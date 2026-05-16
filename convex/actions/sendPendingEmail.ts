@@ -121,6 +121,7 @@ async function sendPendingEmailById(
             attachments: pending.attachments,
             referencedPolicyIds: pending.referencedPolicyIds,
             referencedQuoteIds: pending.referencedQuoteIds,
+            pendingEmailId: id,
           });
         }
 
@@ -142,6 +143,7 @@ async function sendPendingEmailById(
               role: "agent",
               content: confirmation,
               responseMessageId: `${id}:sent-confirmation`,
+              pendingEmailId: id,
             });
           }
         }

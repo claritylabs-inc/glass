@@ -69,7 +69,7 @@ export function EntityPreviewPanel({ fitContainer = false }: { fitContainer?: bo
               onPointerDown={onPointerDown}
               className="absolute left-0 top-0 bottom-0 z-10 w-1 cursor-col-resize group hover:bg-foreground/8 active:bg-foreground/12 transition-colors"
             >
-              <div className="absolute left-0 top-0 bottom-0 w-[3px] -translate-x-[1px]" />
+              <div className="absolute left-0 top-0 bottom-0 w-0.75 -translate-x-px" />
             </div>
           )}
 
@@ -117,7 +117,7 @@ export function EntityPreviewPanel({ fitContainer = false }: { fitContainer?: bo
               <button
                 type="button"
                 onClick={closePreview}
-                className="w-7 h-7 flex items-center justify-center rounded-md text-muted-foreground/40 hover:text-foreground hover:bg-foreground/[0.04] transition-colors shrink-0"
+                className="w-7 h-7 flex items-center justify-center rounded-md text-muted-foreground/40 hover:text-foreground hover:bg-foreground/4 transition-colors shrink-0"
               >
                 <X className="w-4 h-4" />
               </button>

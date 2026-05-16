@@ -211,10 +211,10 @@ function RequirementsLoadingSkeleton() {
           className="flex items-start justify-between gap-4 border-b border-foreground/4 px-5 py-4 last:border-b-0"
         >
           <div className="min-w-0 flex-1 space-y-2">
-            <div className="h-4 w-48 rounded-full bg-foreground/[0.06]" />
-            <div className="h-3 w-full max-w-xl rounded-full bg-foreground/[0.04]" />
+            <div className="h-4 w-48 rounded-full bg-foreground/6" />
+            <div className="h-3 w-full max-w-xl rounded-full bg-foreground/4" />
           </div>
-          <div className="h-7 w-20 rounded-full bg-foreground/[0.04]" />
+          <div className="h-7 w-20 rounded-full bg-foreground/4" />
         </div>
       ))}
     </div>
@@ -243,9 +243,9 @@ function ComplianceEmptyState({
       <button
         type="button"
         onClick={onBulkAdd}
-        className="mt-5 w-full rounded-lg border-2 border-dashed border-foreground/10 px-6 py-12 text-center transition-colors hover:border-foreground/20 hover:bg-foreground/[0.02]"
+        className="mt-5 w-full rounded-lg border-2 border-dashed border-foreground/10 px-6 py-12 text-center transition-colors hover:border-foreground/20 hover:bg-foreground/2"
       >
-        <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-foreground/[0.04] text-muted-foreground">
+        <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-foreground/4 text-muted-foreground">
           <ClipboardCheck className="h-4.5 w-4.5" />
         </div>
         <p className="text-body-sm font-medium text-foreground">
@@ -513,7 +513,7 @@ export function CompliancePage() {
           <label className="flex min-h-0 flex-1 flex-col gap-1.5 text-label-sm font-medium text-muted-foreground">
             Requirement text
             <Textarea
-              className="min-h-0 flex-1 resize-none [field-sizing:fixed]"
+              className="min-h-0 flex-1 resize-none field-sizing-fixed"
               rows={12}
               value={sourceText}
               onChange={(event) => setSourceText(event.target.value)}
@@ -591,7 +591,7 @@ export function CompliancePage() {
           <label className="flex min-h-0 flex-1 flex-col gap-1.5 text-label-sm font-medium text-muted-foreground">
             Requirement
             <Textarea
-              className="min-h-0 flex-1 resize-none [field-sizing:fixed]"
+              className="min-h-0 flex-1 resize-none field-sizing-fixed"
               rows={12}
               value={requirementText}
               onChange={(event) => setRequirementText(event.target.value)}

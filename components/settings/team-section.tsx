@@ -57,7 +57,7 @@ export function TeamSection() {
     <div className="space-y-4">
       <div className="rounded-lg border border-foreground/6 bg-card">
         <div className="px-5 py-3.5 border-b border-foreground/6">
-          <h3 className="!mb-0 text-sm font-medium text-foreground">Team Members</h3>
+          <h3 className="mb-0! text-sm font-medium text-foreground">Team Members</h3>
         </div>
         <div className="divide-y divide-foreground/6">
           {members.map((member) => (

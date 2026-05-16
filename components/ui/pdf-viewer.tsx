@@ -361,7 +361,7 @@ export function PdfViewer({
         <PillButton size="compact" variant="icon" onClick={zoomOut} disabled={scale <= 0.5}>
           <ZoomOut className="w-3.5 h-3.5" />
         </PillButton>
-        <span className="text-[11px] text-muted-foreground/40 w-10 text-center tabular-nums">
+        <span className="text-label-sm text-muted-foreground/40 w-10 text-center tabular-nums">
           {Math.round(scale * 100)}%
         </span>
         <PillButton size="compact" variant="icon" onClick={zoomIn} disabled={scale >= 3}>

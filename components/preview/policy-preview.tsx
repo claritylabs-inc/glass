@@ -120,7 +120,7 @@ export function PolicyPreview({ id, page, citedSections, citedCoverageNames, onH
       {/* Summary - at top, always expanded */}
       {policy.summary && (
         <div className="min-w-0">
-          <p className="break-words text-body-sm leading-relaxed text-foreground/90">{policy.summary}</p>
+          <p className="wrap-break-word text-body-sm leading-relaxed text-foreground/90">{policy.summary}</p>
         </div>
       )}
 
@@ -166,7 +166,7 @@ export function PolicyPreview({ id, page, citedSections, citedCoverageNames, onH
         {policy.insuredName && (
           <div className="min-w-0">
             <p className="text-xs text-muted-foreground/50 mb-1">Insured</p>
-            <p className="break-words text-body-sm text-muted-foreground">
+            <p className="wrap-break-word text-body-sm text-muted-foreground">
               {policy.insuredName}
             </p>
           </div>

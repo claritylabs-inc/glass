@@ -174,7 +174,7 @@ export function ModelsSection() {
     <div className="space-y-4">
       <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
         <div className="px-4 py-3 border-b border-foreground/6 flex items-center justify-between gap-3">
-          <h3 className="!mb-0 text-sm font-medium text-foreground">Provider keys</h3>
+          <h3 className="mb-0! text-sm font-medium text-foreground">Provider keys</h3>
           {(() => {
             const addable = visibleProviders.filter(
               (p) => !loadedSettings.providerKeys[p.id].configured && !drafts.includes(p.id),
@@ -315,7 +315,7 @@ export function ModelsSection() {
                 (autoMode ? "" : " border-b border-foreground/6")
               }
             >
-              <h3 className="!mb-0 text-sm font-medium text-foreground">Model routing</h3>
+              <h3 className="mb-0! text-sm font-medium text-foreground">Model routing</h3>
               {autoMode ? (
                 <span
                   className="inline-flex items-center gap-1.5 rounded-full bg-muted/60 px-2 py-0.5 text-label-sm text-muted-foreground"
@@ -368,7 +368,7 @@ export function ModelsSection() {
                     </p>
                   ) : (
                     <Select value={value} onValueChange={onChange} disabled={saving}>
-                      <SelectTrigger className="min-w-[260px]">
+                      <SelectTrigger className="min-w-65">
                         <SelectValue>
                           {route ? (
                             <span className="flex items-center gap-2">

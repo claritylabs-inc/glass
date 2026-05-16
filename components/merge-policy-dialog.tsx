@@ -33,7 +33,7 @@ function PolicySummaryCard({
 
   return (
     <div className="flex-1 rounded-md border border-foreground/10 p-3 space-y-1.5">
-      <p className="text-[11px] font-medium text-muted-foreground/50 uppercase tracking-wide">
+      <p className="text-label-sm font-medium text-muted-foreground/50 uppercase tracking-wide">
         {label}
       </p>
       {policy === undefined ? (
@@ -46,12 +46,12 @@ function PolicySummaryCard({
             {policy.policyNumber}
           </p>
           {policy.carrier && (
-            <p className="text-[11px] text-muted-foreground/70">{policy.carrier}</p>
+            <p className="text-label-sm text-muted-foreground/70">{policy.carrier}</p>
           )}
           {policy.insuredName && (
-            <p className="text-[11px] text-muted-foreground/70">{policy.insuredName}</p>
+            <p className="text-label-sm text-muted-foreground/70">{policy.insuredName}</p>
           )}
-          <p className="text-[11px] text-muted-foreground/50">
+          <p className="text-label-sm text-muted-foreground/50">
             {policy.effectiveDate} – {policy.expirationDate}
           </p>
         </>

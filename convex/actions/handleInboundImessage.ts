@@ -1247,6 +1247,7 @@ export const processInbound = internalAction({
               role: "agent",
               content: emailResult.responseBody,
               responseMessageId: `${eventKey}:pending-email`,
+              pendingEmailId: emailResult.pendingEmailId,
               referencedPolicyIds:
                 relevantPolicyIds.length > 0
                   ? (relevantPolicyIds as Id<"policies">[])

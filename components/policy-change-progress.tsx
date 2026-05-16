@@ -66,7 +66,7 @@ export function PolicyChangeProgress({
               className={cn(
                 "flex min-w-0 items-start gap-3 rounded-lg border px-3 py-3 sm:items-center",
                 current
-                  ? "border-foreground/14 bg-foreground/[0.025]"
+                  ? "border-foreground/14 bg-foreground/2.5"
                   : "border-foreground/6 bg-card",
               )}
             >

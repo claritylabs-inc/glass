@@ -100,10 +100,10 @@ function AgentForwardCard({
 
   return (
     <div
-      className={`rounded-lg border border-foreground/6 bg-foreground/[0.02] px-4 py-3 ${className ?? ""}`}
+      className={`rounded-lg border border-foreground/6 bg-foreground/2 px-4 py-3 ${className ?? ""}`}
     >
       <div className="flex items-start gap-3">
-        <div className="mt-0.5 h-8 w-8 rounded-full bg-foreground/[0.04] flex items-center justify-center shrink-0">
+        <div className="mt-0.5 h-8 w-8 rounded-full bg-foreground/4 flex items-center justify-center shrink-0">
           <CornerUpRight className="h-4 w-4 text-muted-foreground" />
         </div>
         <div className="min-w-0 flex-1">
@@ -117,7 +117,7 @@ function AgentForwardCard({
         <button
           type="button"
           onClick={handleCopy}
-          className="shrink-0 h-8 w-8 flex items-center justify-center rounded-md text-muted-foreground/70 hover:text-foreground hover:bg-foreground/[0.04] transition-colors"
+          className="shrink-0 h-8 w-8 flex items-center justify-center rounded-md text-muted-foreground/70 hover:text-foreground hover:bg-foreground/4 transition-colors"
           aria-label="Copy email"
         >
           <Copy className="h-4 w-4" />
@@ -220,11 +220,11 @@ function DropZone({
         }}
         className={`w-full rounded-lg border-2 border-dashed transition-colors px-6 py-12 text-center ${
           dragOver
-            ? "border-foreground/25 bg-foreground/[0.03]"
+            ? "border-foreground/25 bg-foreground/3"
             : "border-foreground/10 hover:border-foreground/20"
         }`}
       >
-        <div className="mx-auto h-10 w-10 flex items-center justify-center rounded-full bg-foreground/[0.04] text-muted-foreground mb-3">
+        <div className="mx-auto h-10 w-10 flex items-center justify-center rounded-full bg-foreground/4 text-muted-foreground mb-3">
           <FileUp className="h-4.5 w-4.5" />
         </div>
         <p className="text-body-sm font-semibold text-foreground">
@@ -263,7 +263,7 @@ function DropZone({
                 type="button"
                 onClick={() => removeAt(i)}
                 disabled={uploading}
-                className="w-6 h-6 flex items-center justify-center rounded-md text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.04] transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                className="w-6 h-6 flex items-center justify-center rounded-md text-muted-foreground/50 hover:text-foreground hover:bg-foreground/4 transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
                 aria-label={`Remove ${file.name}`}
               >
                 <X className="w-3.5 h-3.5" />

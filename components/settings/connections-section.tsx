@@ -85,8 +85,8 @@ export function ConnectionsSection() {
               <p className="text-body-sm text-muted-foreground">
                 Copy this key now. You won&apos;t be able to see it again.
               </p>
-              <div className="flex items-center gap-2 bg-foreground/[0.03] border border-foreground/6 rounded-lg p-3">
-                <code className="text-[12px] font-mono text-foreground flex-1 break-all select-all">
+              <div className="flex items-center gap-2 bg-foreground/3 border border-foreground/6 rounded-lg p-3">
+                <code className="text-label font-mono text-foreground flex-1 break-all select-all">
                   {generatedKey}
                 </code>
                 <button
@@ -288,7 +288,7 @@ export function ConnectionsSection() {
       {/* MCP connections */}
       <div className="rounded-lg border border-foreground/6 bg-card">
         <div className="px-5 py-3.5 border-b border-foreground/6">
-          <h3 className="!mb-0 text-sm font-medium text-foreground">MCP connections</h3>
+          <h3 className="mb-0! text-sm font-medium text-foreground">MCP connections</h3>
         </div>
         <div className="px-5 py-5 space-y-4">
           <p className="text-body-sm text-muted-foreground">
@@ -296,9 +296,9 @@ export function ConnectionsSection() {
             connector or integration settings, add a new MCP connection and paste the URL below.
             You&apos;ll be asked to sign in to Glass the first time you use it.
           </p>
-          <div className="flex items-center gap-2 bg-foreground/[0.03] border border-foreground/6 rounded-lg p-3">
+          <div className="flex items-center gap-2 bg-foreground/3 border border-foreground/6 rounded-lg p-3">
             <Globe className="w-4 h-4 text-muted-foreground shrink-0" />
-            <code className="text-[12px] font-mono text-foreground flex-1 break-all">{mcpUrl}</code>
+            <code className="text-label font-mono text-foreground flex-1 break-all">{mcpUrl}</code>
             <button
               type="button"
               onClick={() => copyTo(mcpUrl, "remote")}
@@ -317,7 +317,7 @@ export function ConnectionsSection() {
       {/* Glass CLI */}
       <div className="rounded-lg border border-foreground/6 bg-card">
         <div className="px-5 py-3.5 border-b border-foreground/6">
-          <h3 className="!mb-0 text-sm font-medium text-foreground">Glass CLI</h3>
+          <h3 className="mb-0! text-sm font-medium text-foreground">Glass CLI</h3>
         </div>
         <div className="px-5 py-5 space-y-4">
           <p className="text-body-sm text-muted-foreground">
@@ -325,7 +325,7 @@ export function ConnectionsSection() {
             automation. It uses the same OAuth sign-in as connected apps.
           </p>
           <div className="relative">
-            <pre className="text-[12px] bg-foreground/[0.03] border border-foreground/6 rounded-lg p-4 pr-11 overflow-x-auto text-muted-foreground">
+            <pre className="text-label bg-foreground/3 border border-foreground/6 rounded-lg p-4 pr-11 overflow-x-auto text-muted-foreground">
               {cliSnippet}
             </pre>
             <button
@@ -347,7 +347,7 @@ export function ConnectionsSection() {
       {/* Connected apps */}
       <div className="rounded-lg border border-foreground/6 bg-card">
         <div className="px-5 py-3.5 border-b border-foreground/6">
-          <h3 className="!mb-0 text-sm font-medium text-foreground">Connected apps</h3>
+          <h3 className="mb-0! text-sm font-medium text-foreground">Connected apps</h3>
         </div>
         {connectedApps === undefined ? (
           <div className="px-5 py-8 text-center">
@@ -396,7 +396,7 @@ export function ConnectionsSection() {
         <button
           type="button"
           onClick={() => setShowAdvanced((v) => !v)}
-          className="w-full px-5 py-3.5 border-b border-foreground/6 flex items-center justify-between hover:bg-foreground/[0.02] transition-colors"
+          className="w-full px-5 py-3.5 border-b border-foreground/6 flex items-center justify-between hover:bg-foreground/2 transition-colors"
           style={{ borderBottomWidth: showAdvanced ? 1 : 0 }}
         >
           <span className="text-sm font-medium text-foreground flex items-center gap-2">
@@ -418,13 +418,13 @@ export function ConnectionsSection() {
                 <h4 className="text-body-sm font-medium text-foreground mb-1">Local MCP</h4>
                 <p className="text-body-sm text-muted-foreground">
                   For Claude Code, Cursor, Codex, and other local MCP clients. Paste this into your MCP
-                  config (e.g. <code className="text-[12px] bg-foreground/5 px-1 py-0.5 rounded">~/.claude/mcp.json</code> or
-                  <code className="text-[12px] bg-foreground/5 px-1 py-0.5 rounded ml-1">~/.cursor/mcp.json</code>).
+                  config (e.g. <code className="text-label bg-foreground/5 px-1 py-0.5 rounded">~/.claude/mcp.json</code> or
+                  <code className="text-label bg-foreground/5 px-1 py-0.5 rounded ml-1">~/.cursor/mcp.json</code>).
                   On first run, a browser window will open to sign in.
                 </p>
               </div>
               <div className="relative">
-                <pre className="text-[12px] bg-foreground/[0.03] border border-foreground/6 rounded-lg p-4 overflow-x-auto text-muted-foreground">
+                <pre className="text-label bg-foreground/3 border border-foreground/6 rounded-lg p-4 overflow-x-auto text-muted-foreground">
                   {localSnippet}
                 </pre>
                 <button

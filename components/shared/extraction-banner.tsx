@@ -121,7 +121,7 @@ function ExtractionBannerBase({
             disabled={cancelling}
             variant="secondary"
             size="compact"
-            className="justify-center !border-background/35 !text-background hover:!border-background/60 hover:!text-background [&_span]:whitespace-nowrap"
+            className="justify-center border-background/35! text-background! hover:border-background/60! hover:text-background! [&_span]:whitespace-nowrap"
           >
             {cancelling ? (
               <Loader2 className="h-3 w-3 shrink-0 animate-spin" />
@@ -147,7 +147,7 @@ function ExtractionBannerBase({
                 onClick={onClick}
                 disabled={disabled}
                 variant="secondary"
-                className="!border-white/30 !bg-transparent !text-white hover:!border-white/50 hover:!bg-white/10 hover:!text-white"
+                className="border-white/30! bg-transparent! text-white! hover:border-white/50! hover:bg-white/10! hover:text-white!"
               >
                 {label}
               </PillButton>

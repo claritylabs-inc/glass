@@ -25,7 +25,7 @@ export function CoverageRow({ name, limit, deductible }: { name: string; limit?:
               *
             </TooltipTrigger>
             <TooltipContent
-              className="max-w-80 whitespace-normal text-left leading-5 [&_[class*='size-2.5']]:hidden"
+              className="max-w-80 whitespace-normal text-left leading-5 **:[[class*='size-2.5']]:hidden"
               side="top"
               align="end"
             >

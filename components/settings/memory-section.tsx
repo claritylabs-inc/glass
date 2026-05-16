@@ -85,7 +85,7 @@ export function MemorySection() {
               className="rounded-lg border border-foreground/6 bg-card overflow-hidden"
             >
               <div className="px-5 py-3.5 border-b border-foreground/6 flex items-center justify-between">
-                <h4 className="!mb-0 text-sm font-medium text-foreground">
+                <h4 className="mb-0! text-sm font-medium text-foreground">
                   {TYPE_LABELS[type] ?? type}
                 </h4>
                 <span className="text-label-sm text-muted-foreground/50">

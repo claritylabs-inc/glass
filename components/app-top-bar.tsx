@@ -103,7 +103,7 @@ export function AppTopBar({
       <button
         type="button"
         onClick={onMobileMenuToggle}
-        className="lg:hidden p-1.5 -ml-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] transition-colors"
+        className="lg:hidden p-1.5 -ml-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-foreground/4 transition-colors"
       >
         <Menu className="w-5 h-5" />
       </button>

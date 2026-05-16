@@ -837,6 +837,7 @@ export const insertImessageMessage = internalMutation({
       )
     ),
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
+    pendingEmailId: v.optional(v.id("pendingEmails")),
     status: v.optional(v.union(v.literal("processing"), v.literal("error"))),
     error: v.optional(v.string()),
   },
@@ -855,6 +856,7 @@ export const insertImessageMessage = internalMutation({
       responseMessageId: args.responseMessageId,
       attachments: args.attachments,
       referencedPolicyIds: args.referencedPolicyIds,
+      pendingEmailId: args.pendingEmailId,
       status: args.status,
       error: args.error,
     });

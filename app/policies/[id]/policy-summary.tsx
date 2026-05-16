@@ -74,7 +74,7 @@ function PdfThumbnail({ url }: { url: string }) {
     <button
       type="button"
       onClick={() => openWithUrl(url)}
-      className="shrink-0 rounded-md border border-foreground/8 bg-foreground/[0.02] overflow-hidden hover:border-foreground/15 transition-colors w-[160px] aspect-[8.5/11]"
+      className="shrink-0 rounded-md border border-foreground/8 bg-foreground/2 overflow-hidden hover:border-foreground/15 transition-colors w-40 aspect-8.5/11"
     >
       <Document
         file={url}
@@ -87,7 +87,7 @@ function PdfThumbnail({ url }: { url: string }) {
           width={160}
           renderTextLayer={false}
           renderAnnotationLayer={false}
-          className={`transition-opacity duration-300 [&_.react-pdf\_\_Page\_\_canvas]:!w-full [&_.react-pdf\_\_Page\_\_canvas]:!h-auto ${loaded ? "opacity-100" : "opacity-0"}`}
+          className={`transition-opacity duration-300 [&_.react-pdf\_\_Page\_\_canvas]:w-full! [&_.react-pdf\_\_Page\_\_canvas]:h-auto! ${loaded ? "opacity-100" : "opacity-0"}`}
         />
       </Document>
     </button>
@@ -234,7 +234,7 @@ export function PolicySummary({
 
       {/* AI summary if available */}
       {summary && (
-        <div className="px-5 py-3 border-t border-foreground/6 bg-foreground/[0.01]">
+        <div className="px-5 py-3 border-t border-foreground/6 bg-foreground/1">
           <p className="text-body-sm text-muted-foreground leading-relaxed">{summary}</p>
         </div>
       )}

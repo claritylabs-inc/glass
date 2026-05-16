@@ -182,7 +182,7 @@ export function NotificationsPanel({
         <button
           type="button"
           onClick={onClose}
-          className="w-6 h-6 flex items-center justify-center rounded text-muted-foreground/40 hover:text-foreground hover:bg-foreground/[0.04] transition-colors"
+          className="w-6 h-6 flex items-center justify-center rounded text-muted-foreground/40 hover:text-foreground hover:bg-foreground/4 transition-colors"
         >
           <X className="w-3.5 h-3.5" />
         </button>
@@ -196,8 +196,8 @@ export function NotificationsPanel({
           onClick={() => setActiveTab("unread")}
           className={`min-w-0 flex-1 rounded-md px-2 py-1.5 text-body-sm transition-colors ${
             activeTab === "unread"
-              ? "bg-foreground/[0.06] text-foreground"
-              : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground"
+              ? "bg-foreground/6 text-foreground"
+              : "text-muted-foreground hover:bg-foreground/4 hover:text-foreground"
           }`}
         >
           Unread
@@ -214,8 +214,8 @@ export function NotificationsPanel({
           onClick={() => setActiveTab("read")}
           className={`min-w-0 flex-1 rounded-md px-2 py-1.5 text-body-sm transition-colors ${
             activeTab === "read"
-              ? "bg-foreground/[0.06] text-foreground"
-              : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground"
+              ? "bg-foreground/6 text-foreground"
+              : "text-muted-foreground hover:bg-foreground/4 hover:text-foreground"
           }`}
         >
           Read
@@ -228,7 +228,7 @@ export function NotificationsPanel({
       </div>
 
       {/* List */}
-      <div className={variant === "pane" ? "min-h-0 flex-1 overflow-y-auto" : "max-h-[400px] overflow-y-auto"}>
+      <div className={variant === "pane" ? "min-h-0 flex-1 overflow-y-auto" : "max-h-100 overflow-y-auto"}>
         {isLoading ? (
           <div className="px-3 py-6 text-center text-body-sm text-muted-foreground/40">
             Loading...
@@ -249,28 +249,28 @@ export function NotificationsPanel({
                 key={notification._id}
                 type="button"
                 onClick={() => handleNotificationClick(notification as Notification)}
-                className={`flex w-full min-w-0 items-start gap-2.5 border-b border-foreground/[0.04] px-3 py-2.5 text-left transition-colors ${
+                className={`flex w-full min-w-0 items-start gap-2.5 border-b border-foreground/4 px-3 py-2.5 text-left transition-colors ${
                   isClickable
-                    ? "hover:bg-foreground/[0.04]"
+                    ? "hover:bg-foreground/4"
                     : "cursor-default"
-                } ${isUnread ? "bg-foreground/[0.02]" : ""}`}
+                } ${isUnread ? "bg-foreground/2" : ""}`}
               >
                 <div className="flex-1 min-w-0">
                   <div className="flex min-w-0 items-center gap-1.5">
                     <p className="min-w-0 flex-1 truncate text-body-sm text-foreground">{notification.title}</p>
                     {(notification.coalescedCount ?? 1) > 1 && (
-                      <span className="inline-flex items-center px-1 py-0 rounded text-[10px] font-medium bg-foreground/[0.08] text-muted-foreground">
+                      <span className="inline-flex items-center px-1 py-0 rounded text-[10px] font-medium bg-foreground/8 text-muted-foreground">
                         ×{notification.coalescedCount}
                       </span>
                     )}
                   </div>
                   {notification.relatedOrgName && (
-                    <p className="mt-0.5 truncate text-[11px] text-muted-foreground/50">{notification.relatedOrgName}</p>
+                    <p className="mt-0.5 truncate text-label-sm text-muted-foreground/50">{notification.relatedOrgName}</p>
                   )}
-                  <p className="mt-0.5 line-clamp-2 break-words text-[11px] text-muted-foreground/60">
+                  <p className="mt-0.5 line-clamp-2 wrap-break-word text-label-sm text-muted-foreground/60">
                     {notification.body}
                   </p>
-                  <p className="text-[11px] text-muted-foreground/40 mt-1">
+                  <p className="text-label-sm text-muted-foreground/40 mt-1">
                     {dayjs(notification.createdAt).fromNow()}
                   </p>
                 </div>
@@ -289,7 +289,7 @@ export function NotificationsPanel({
           <button
             type="button"
             onClick={() => markAllRead({ orgId })}
-            className="text-[11px] text-muted-foreground/50 hover:text-foreground transition-colors"
+            className="text-label-sm text-muted-foreground/50 hover:text-foreground transition-colors"
           >
             Mark all as read
           </button>

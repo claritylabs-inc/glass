@@ -317,7 +317,7 @@ export function OrganizationSection() {
       <div>
         <div className="rounded-lg border border-foreground/6 bg-card mb-4">
           <div className="px-5 py-3.5 border-b border-foreground/6">
-            <h3 className="!mb-0 text-sm font-medium text-foreground">Organization</h3>
+            <h3 className="mb-0! text-sm font-medium text-foreground">Organization</h3>
           </div>
           <div className="px-5 py-5 space-y-4">
             <div>
@@ -339,7 +339,7 @@ export function OrganizationSection() {
                   Workspace link
                 </label>
                 <div className="flex items-stretch gap-0">
-                  <span className="inline-flex items-center rounded-l-lg border border-r-0 border-foreground/8 bg-foreground/[0.03] px-3 text-body-sm text-muted-foreground select-none whitespace-nowrap">
+                  <span className="inline-flex items-center rounded-l-lg border border-r-0 border-foreground/8 bg-foreground/3 px-3 text-body-sm text-muted-foreground select-none whitespace-nowrap">
                     {WORKSPACE_DOMAIN}/
                   </span>
                   <input
@@ -436,7 +436,7 @@ export function OrganizationSection() {
         {!isBroker && (
         <div className="rounded-lg border border-foreground/6 bg-card mb-4">
           <div className="px-5 py-3.5 border-b border-foreground/6">
-            <h3 className="!mb-0 text-sm font-medium text-foreground">Relationship Context</h3>
+            <h3 className="mb-0! text-sm font-medium text-foreground">Relationship Context</h3>
           </div>
           <div className="px-5 py-5 space-y-4">
             <div>
@@ -510,7 +510,7 @@ export function OrganizationSection() {
       {/* Onboarding section */}
       <div className="rounded-lg border border-foreground/6 bg-card">
         <div className="px-5 py-3.5 border-b border-foreground/6">
-          <h3 className="!mb-0 text-sm font-medium text-foreground">Onboarding</h3>
+          <h3 className="mb-0! text-sm font-medium text-foreground">Onboarding</h3>
         </div>
         <div className="px-5 py-5">
           <div className="flex items-center justify-between">
@@ -544,7 +544,7 @@ export function OrganizationSection() {
         <div className="mt-4">
           <div className="rounded-lg border border-red-200 dark:border-red-900/50 bg-red-50/50 dark:bg-red-950/30">
             <div className="px-5 py-3.5 border-b border-red-200 dark:border-red-900/50">
-              <h3 className="!mb-0 text-sm font-medium text-red-900 dark:text-red-400">Danger Zone</h3>
+              <h3 className="mb-0! text-sm font-medium text-red-900 dark:text-red-400">Danger Zone</h3>
             </div>
             <div className="px-5 py-5">
               <div className="flex items-center justify-between">
@@ -668,7 +668,7 @@ function BrandingCard({
   return (
     <div className="rounded-lg border border-foreground/6 bg-card mb-4">
       <div className="px-5 py-3.5 border-b border-foreground/6">
-        <h3 className="!mb-0 text-sm font-medium text-foreground">Brand</h3>
+        <h3 className="mb-0! text-sm font-medium text-foreground">Brand</h3>
       </div>
       <div className="px-5 py-5 space-y-5">
         <div className="flex items-center justify-between gap-4 rounded-lg border border-foreground/6 bg-popover px-4 py-3">
@@ -720,7 +720,7 @@ function BrandingCard({
               whiteLabelingEnabled ? "" : "cursor-not-allowed"
             } ${
               dragActive && whiteLabelingEnabled
-                ? "border-foreground/30 bg-foreground/[0.03]"
+                ? "border-foreground/30 bg-foreground/3"
                 : "border-foreground/12 bg-popover hover:border-foreground/20"
             }`}
           >

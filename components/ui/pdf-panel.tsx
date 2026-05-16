@@ -84,7 +84,7 @@ export function PdfPanel({ fitContainer = false }: { fitContainer?: boolean }) {
               onPointerDown={onPointerDown}
               className="absolute left-0 top-0 bottom-0 z-10 w-1 cursor-col-resize group hover:bg-foreground/8 active:bg-foreground/12 transition-colors"
             >
-              <div className="absolute left-0 top-0 bottom-0 w-[3px] -translate-x-[1px]" />
+              <div className="absolute left-0 top-0 bottom-0 w-0.75 -translate-x-px" />
             </div>
           )}
 

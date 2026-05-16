@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { splitQuotedReply, QuotedContent } from "@/components/conversation-message";
 import { toast } from "sonner";
-import { Loader2, Archive, ArchiveRestore, FileText, Check, ClipboardList, Asterisk, Mail as MailIcon, MessageCircle, Paperclip, Download, Copy, RotateCcw, X, AlertTriangle, Clock } from "lucide-react";
+import { Loader2, Archive, ArchiveRestore, FileText, Check, ClipboardList, Mail as MailIcon, MessageCircle, Paperclip, Download, Copy, RotateCcw, X, AlertTriangle, Clock } from "lucide-react";
 import { EditableBreadcrumbTitle } from "@/components/editable-breadcrumb-title";
 import { usePdf } from "@/components/pdf-context";
 import { usePresence } from "@/hooks/use-presence";
@@ -27,6 +27,7 @@ import {
   formatPolicyChangeStatus,
   isPolicyChangeTerminal,
 } from "@/components/policy-change-progress";
+import { LogoIcon } from "@/components/ui/logo-icon";
 
 /* ═══════════════════════════════════════════════════
    Unified Thread View (new threads table)
@@ -90,6 +91,105 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
   lookup_vendor_policies: "Read vendor policies",
   lookup_vendor_compliance: "Checked vendor compliance",
 };
+
+const EMAIL_SENDING_RE = /^sending email to\s+(.+?)(?:\s*\(cc:.*\))?\s*\.{3}$/i;
+const EMAIL_SENT_RE = /^email sent to\s+(.+?)(?:\s*\(cc:.*\))?\s*\.$/i;
+
+function normalizeStatusContent(content: string) {
+  return content
+    .replace(/[*_`]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function getEmailStatusRecipient(message: ThreadMessage) {
+  const normalized = normalizeStatusContent(message.content);
+  const match = normalized.match(EMAIL_SENT_RE) ?? normalized.match(EMAIL_SENDING_RE);
+  return match?.[1]?.trim().toLowerCase();
+}
+
+function isEmailSendStatusMessage(message: ThreadMessage) {
+  if (message.role !== "agent") return false;
+  if (message.channel !== "chat" && message.channel !== "imessage") return false;
+  if (message.pendingEmailId) return true;
+  return getEmailStatusRecipient(message) != null;
+}
+
+function isEmailSendingStatusMessage(message: ThreadMessage) {
+  return EMAIL_SENDING_RE.test(normalizeStatusContent(message.content));
+}
+
+function isEmailSentStatusMessage(message: ThreadMessage) {
+  return EMAIL_SENT_RE.test(normalizeStatusContent(message.content));
+}
+
+function emailMessageMatchesRecipient(message: ThreadMessage, recipient?: string) {
+  if (!recipient) return true;
+  return message.toAddresses?.some((address) => address.toLowerCase() === recipient) ?? false;
+}
+
+function findRelatedEmailMessage(
+  messages: ThreadMessage[],
+  message: ThreadMessage,
+  index: number,
+  attachedEmailMessageIds: Set<string>,
+) {
+  if (!isEmailSendStatusMessage(message)) return undefined;
+
+  if (message.pendingEmailId) {
+    const linked = messages.find((candidate) =>
+      candidate.channel === "email" &&
+      candidate.role === "agent" &&
+      candidate.pendingEmailId === message.pendingEmailId &&
+      !attachedEmailMessageIds.has(candidate._id)
+    );
+    if (linked) return linked;
+  }
+
+  const recipient = getEmailStatusRecipient(message);
+  let start = index;
+  while (start > 0 && messages[start - 1]?.role !== "user") start -= 1;
+  let end = index;
+  while (end + 1 < messages.length && messages[end + 1]?.role !== "user") end += 1;
+
+  return messages
+    .slice(start, end + 1)
+    .filter((candidate) =>
+      candidate.channel === "email" &&
+      candidate.role === "agent" &&
+      candidate._id !== message._id &&
+      !attachedEmailMessageIds.has(candidate._id) &&
+      emailMessageMatchesRecipient(candidate, recipient)
+    )
+    .sort((a, b) =>
+      Math.abs(a._creationTime - message._creationTime) -
+      Math.abs(b._creationTime - message._creationTime)
+    )[0];
+}
+
+function hasLaterEmailSendCompletion(
+  messages: ThreadMessage[],
+  message: ThreadMessage,
+  index: number,
+) {
+  if (!isEmailSendingStatusMessage(message)) return false;
+  const recipient = getEmailStatusRecipient(message);
+  for (let i = index + 1; i < messages.length; i += 1) {
+    const candidate = messages[i];
+    if (!candidate || candidate.role === "user") return false;
+    if (
+      message.pendingEmailId &&
+      candidate.pendingEmailId === message.pendingEmailId &&
+      isEmailSentStatusMessage(candidate)
+    ) {
+      return true;
+    }
+    if (isEmailSentStatusMessage(candidate) && getEmailStatusRecipient(candidate) === recipient) {
+      return true;
+    }
+  }
+  return false;
+}
 
 function formatToolInput(input?: string) {
   if (!input) return "{}";
@@ -162,12 +262,34 @@ function ToolCallPanel({
   );
 }
 
+function EmailRecipientMeta({
+  toAddresses,
+  ccAddresses,
+}: {
+  toAddresses?: string[];
+  ccAddresses?: string[];
+}) {
+  if (!toAddresses?.length) return null;
+  const ccCount = ccAddresses?.length ?? 0;
+
+  return (
+    <span className="min-w-0 truncate text-label-sm font-normal text-muted-foreground/30">
+      <span className="text-muted-foreground/22">to</span>{" "}
+      <span className="text-muted-foreground/38">{toAddresses.join(", ")}</span>
+      {ccCount > 0 ? (
+        <span className="text-muted-foreground/28"> +{ccCount} cc</span>
+      ) : null}
+    </span>
+  );
+}
+
 function MessageFooterActions({
   refs,
   citedSections,
   citedCoverageNames,
   toolCalls,
   copyContent,
+  retryMessageId,
   showToolCalls,
   onToggleToolCalls,
   rightAligned,
@@ -177,11 +299,12 @@ function MessageFooterActions({
   citedCoverageNames?: string[];
   toolCalls: { name: string; input?: string }[];
   copyContent?: string;
+  retryMessageId?: Id<"threadMessages">;
   showToolCalls: boolean;
   onToggleToolCalls: () => void;
   rightAligned?: boolean;
 }) {
-  if (refs.length === 0 && toolCalls.length === 0 && !copyContent?.trim()) return null;
+  if (refs.length === 0 && toolCalls.length === 0 && !copyContent?.trim() && !retryMessageId) return null;
 
   return (
     <div className="mt-1.5 flex items-start gap-2">
@@ -206,7 +329,10 @@ function MessageFooterActions({
           </button>
         )}
       </div>
-      {copyContent?.trim() ? <CopyMessageButton content={copyContent} /> : null}
+      <div className="flex shrink-0 items-center gap-1">
+        {retryMessageId ? <TryAgainMessageButton messageId={retryMessageId} /> : null}
+        {copyContent?.trim() ? <CopyMessageButton content={copyContent} /> : null}
+      </div>
     </div>
   );
 }
@@ -1382,7 +1508,7 @@ export function UnifiedMessageBubble({
             // eslint-disable-next-line @next/next/no-img-element
             <img src={agentBranding.iconUrl} alt="" className="w-7 h-7 object-cover" />
           ) : (
-            <Asterisk className="w-3.5 h-3.5 text-primary-light" />
+            <LogoIcon size={14} static className="text-primary-light" />
           )}
         </div>
         <div className="flex-1 min-w-0">
@@ -1477,32 +1603,24 @@ export function UnifiedMessageBubble({
               // eslint-disable-next-line @next/next/no-img-element
               <img src={agentBranding.iconUrl} alt="" className="w-7 h-7 object-cover" />
             ) : (
-              <Asterisk className="w-3.5 h-3.5 text-primary-light" />
+              <LogoIcon size={14} static className="text-primary-light" />
             )}
           </div>
           <div className="flex-1 min-w-0">
             <div className={`flex items-center gap-2 mb-1 ${brokerPerspective ? "justify-end" : ""}`}>
               <div className="flex items-center gap-2 min-w-0">
-                <p className="text-label-sm font-medium text-muted-foreground/50">{agentBranding?.name ?? "Glass"}</p>
+                <p className="shrink-0 text-label-sm font-medium text-muted-foreground/50">{agentBranding?.name ?? "Glass"}</p>
+                {msg.channel === "email" && !collapseEmailMessages ? (
+                  <EmailRecipientMeta
+                    toAddresses={msg.toAddresses}
+                    ccAddresses={msg.ccAddresses}
+                  />
+                ) : null}
                 {channelIcon}
                 <span className="text-muted-foreground/20">·</span>
                 <span className="text-label-sm text-muted-foreground/25">{time.format("MMM D, h:mm A")}</span>
               </div>
             </div>
-            {msg.channel === "email" && !collapseEmailMessages && msg.toAddresses && (
-              <div className="flex flex-wrap gap-x-3 text-label-sm text-muted-foreground/35 mb-1">
-                <span className="truncate">
-                  <span className="text-muted-foreground/25">To:</span>{" "}
-                  {msg.toAddresses.join(", ")}
-                </span>
-                {msg.ccAddresses && msg.ccAddresses.length > 0 && (
-                  <span className="truncate">
-                    <span className="text-muted-foreground/25">CC:</span>{" "}
-                    {msg.ccAddresses.join(", ")}
-                  </span>
-                )}
-              </div>
-            )}
             {collapseEmailMessages && msg.channel === "email" ? (
               <EmailSummaryCard message={msg} onOpen={onOpenEmail} isOpen={openEmailMessageId === msg._id} />
             ) : (
@@ -1521,6 +1639,7 @@ export function UnifiedMessageBubble({
                   citedCoverageNames={citedCoverageNames}
                   toolCalls={toolCalls}
                   copyContent={msg.content}
+                  retryMessageId={msg.channel === "chat" || msg.channel === "imessage" ? msg._id : undefined}
                   showToolCalls={showToolCalls}
                   onToggleToolCalls={() => setShowToolCalls((value) => !value)}
                   rightAligned={brokerPerspective}
@@ -1602,25 +1721,17 @@ export function UnifiedMessageBubble({
       </div>
       <div className="flex-1 min-w-0">
         <div className={`flex items-center gap-2 mb-1 ${isOwnMessage ? "justify-end" : ""}`}>
-          <p className="text-label-sm font-medium text-muted-foreground/50">{displayName}</p>
+          <p className="shrink-0 text-label-sm font-medium text-muted-foreground/50">{displayName}</p>
+          {isEmail && !collapseEmailMessages ? (
+            <EmailRecipientMeta
+              toAddresses={msg.toAddresses}
+              ccAddresses={msg.ccAddresses}
+            />
+          ) : null}
           {channelIcon}
           <span className="text-muted-foreground/20">·</span>
           <span className="text-label-sm text-muted-foreground/25">{time.format("MMM D, h:mm A")}</span>
         </div>
-        {isEmail && !collapseEmailMessages && msg.toAddresses && (
-          <div className="flex flex-wrap gap-x-3 text-label-sm text-muted-foreground/35 mb-1">
-            <span className="truncate">
-              <span className="text-muted-foreground/25">To:</span>{" "}
-              {msg.toAddresses.join(", ")}
-            </span>
-            {msg.ccAddresses && msg.ccAddresses.length > 0 && (
-              <span className="truncate">
-                <span className="text-muted-foreground/25">CC:</span>{" "}
-                {msg.ccAddresses.join(", ")}
-              </span>
-            )}
-          </div>
-        )}
         {collapseEmailMessages && isEmail ? (
           <EmailSummaryCard message={msg} onOpen={onOpenEmail} isOpen={openEmailMessageId === msg._id} />
         ) : (
@@ -1708,6 +1819,32 @@ function CopyMessageButton({ content }: { content: string }) {
       title="Copy response"
     >
       {copied ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+    </button>
+  );
+}
+
+function TryAgainMessageButton({ messageId }: { messageId: Id<"threadMessages"> }) {
+  const retry = useMutation(api.threads.retryAgentResponse);
+  const [retrying, setRetrying] = useState(false);
+
+  return (
+    <button
+      type="button"
+      disabled={retrying}
+      onClick={async () => {
+        setRetrying(true);
+        try {
+          await retry({ messageId });
+        } catch {
+          toast.error("Failed to retry");
+        } finally {
+          setRetrying(false);
+        }
+      }}
+      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-transparent text-muted-foreground/40 transition-colors hover:border-foreground/8 hover:bg-foreground/[0.03] hover:text-foreground/70 disabled:opacity-50"
+      title="Try again"
+    >
+      <RotateCcw className={`h-3 w-3 ${retrying ? "animate-spin" : ""}`} />
     </button>
   );
 }
@@ -2022,23 +2159,32 @@ function UnifiedThreadContent({
             <NewChatEmptyState onSelectPrompt={(prompt) => chatInputRef.current?.setValueAndFocus(prompt)} />
           )}
           {(() => {
-            const lastAgentIdx = messages?.reduce((acc, m, i) => m.role === "agent" ? i : acc, -1) ?? -1;
-            const firstUserIdx = messages?.findIndex((m) => m.role === "user") ?? -1;
+            const threadMessages = messages ?? [];
+            const lastAgentIdx = threadMessages.reduce((acc, m, i) => m.role === "agent" ? i : acc, -1);
+            const firstUserIdx = threadMessages.findIndex((m) => m.role === "user");
             const attachedEmailMessageIds = new Set<string>();
-            return messages?.map((msg, idx) => {
+            const hiddenStatusMessageIds = new Set<string>();
+            const relatedEmailByMessageId = new Map<string, ThreadMessage>();
+            threadMessages.forEach((message, idx) => {
+              if (hasLaterEmailSendCompletion(threadMessages, message, idx)) {
+                hiddenStatusMessageIds.add(message._id);
+                return;
+              }
+              const relatedEmailMessage = findRelatedEmailMessage(threadMessages, message, idx, attachedEmailMessageIds);
+              if (relatedEmailMessage) {
+                relatedEmailByMessageId.set(message._id, relatedEmailMessage);
+                attachedEmailMessageIds.add(relatedEmailMessage._id);
+              }
+            });
+            return threadMessages.map((msg, idx) => {
+              if (hiddenStatusMessageIds.has(msg._id)) return null;
               if (attachedEmailMessageIds.has(msg._id)) return null;
               const isFirstUser = idx === firstUserIdx;
               const firstUserIsOwn =
                 isFirstUser &&
                 ((viewerId && msg.userId === viewerId) ||
                   (viewerEmail && msg.fromEmail?.toLowerCase() === viewerEmail.toLowerCase()));
-              const relatedEmailMessage = msg.role === "agent" && msg.channel === "chat" && msg.pendingEmailId
-                ? messages.find((candidate) =>
-                    candidate.channel === "email" &&
-                    candidate.role === "agent" &&
-                    candidate.pendingEmailId === msg.pendingEmailId)
-                : undefined;
-              if (relatedEmailMessage) attachedEmailMessageIds.add(relatedEmailMessage._id);
+              const relatedEmailMessage = relatedEmailByMessageId.get(msg._id);
 
               return (
                 <div key={msg._id}>

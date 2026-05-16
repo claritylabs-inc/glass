@@ -32,9 +32,9 @@ export function CollapsibleReasoning({
         aria-expanded={isOpen}
         className={cn(
           "inline-flex h-5 items-center gap-1 rounded-md border px-1.5 transition-colors",
-          "border-foreground/8 bg-foreground/[0.02] text-[11px] leading-none text-muted-foreground/55",
-          "hover:border-foreground/12 hover:bg-foreground/[0.04] hover:text-muted-foreground/80",
-          isOpen && "border-foreground/12 bg-foreground/[0.045] text-muted-foreground/80"
+          "border-foreground/8 bg-foreground/2 text-label-sm leading-none text-muted-foreground/55",
+          "hover:border-foreground/12 hover:bg-foreground/4 hover:text-muted-foreground/80",
+          isOpen && "border-foreground/12 bg-foreground/4.5 text-muted-foreground/80"
         )}
       >
         <ChevronDown
@@ -46,10 +46,10 @@ export function CollapsibleReasoning({
         {isStreaming ? (
           <span className="flex items-center gap-1.5">
             Thinking
-            <span className="flex items-center gap-[2px]">
-              <span className="h-[3px] w-[3px] rounded-full bg-current animate-pulse" />
-              <span className="h-[3px] w-[3px] rounded-full bg-current animate-pulse [animation-delay:150ms]" />
-              <span className="h-[3px] w-[3px] rounded-full bg-current animate-pulse [animation-delay:300ms]" />
+            <span className="flex items-center gap-0.5">
+              <span className="h-0.75 w-0.75 rounded-full bg-current animate-pulse" />
+              <span className="h-0.75 w-0.75 rounded-full bg-current animate-pulse [animation-delay:150ms]" />
+              <span className="h-0.75 w-0.75 rounded-full bg-current animate-pulse [animation-delay:300ms]" />
             </span>
           </span>
         ) : (
@@ -68,18 +68,18 @@ export function CollapsibleReasoning({
           isOpen ? "mt-2 max-h-64 opacity-100" : "mt-0 max-h-0 opacity-0"
         )}
       >
-        <div className="max-h-64 overflow-y-auto rounded-lg border border-foreground/8 bg-foreground/[0.025] px-3 pt-2 pb-1.5 shadow-sm shadow-black/[0.02]">
-          <div className="space-y-1.5 text-[13px] leading-5 text-muted-foreground/70">
+        <div className="max-h-64 overflow-y-auto rounded-lg border border-foreground/8 bg-foreground/2.5 px-3 pt-2 pb-1.5 shadow-sm shadow-black/2">
+          <div className="space-y-1.5 text-body-sm leading-5 text-muted-foreground/70">
             {lines.map((line, index) => (
               <p
                 key={`${index}-${line.slice(0, 16)}`}
-                className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]"
+                className="whitespace-pre-wrap wrap-break-word wrap-anywhere"
               >
                 {line}
               </p>
             ))}
             {isStreaming && (
-              <span className="inline-block h-3.5 w-[3px] rounded-[1px] bg-muted-foreground/35 align-middle animate-pulse" />
+              <span className="inline-block h-3.5 w-0.75 rounded-[1px] bg-muted-foreground/35 align-middle animate-pulse" />
             )}
           </div>
         </div>

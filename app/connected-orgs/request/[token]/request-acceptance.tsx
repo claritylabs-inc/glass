@@ -207,7 +207,7 @@ export default function VendorRequestAcceptance({ token }: { token: string }) {
         ) : step === "details" ? (
           <form onSubmit={handleDetailsSubmit} className="space-y-4">
             {requestData.note ? (
-              <p className="rounded-lg border border-foreground/6 bg-foreground/[0.03] p-3 text-sm text-muted-foreground">
+              <p className="rounded-lg border border-foreground/6 bg-foreground/3 p-3 text-sm text-muted-foreground">
                 {requestData.note}
               </p>
             ) : null}
