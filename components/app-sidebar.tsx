@@ -121,7 +121,9 @@ export function AppSidebar({
     return (unifiedThreads ?? []).slice(0, 8).map(
       (t): ConversationItem => ({
         kind:
-          t.originChannel === "imessage"
+          t.originChannel === "imessage" ||
+          Boolean(t.threadPhone) ||
+          t.title.startsWith("iMessage")
             ? "imessage"
             : t.originChannel === "email"
               ? "email"

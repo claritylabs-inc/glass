@@ -14,6 +14,14 @@ import { NavItem } from "./nav-item";
 import { SidebarHeader } from "./sidebar-header";
 import type { ClientThreadItem } from "./types";
 
+function isImessageThread(item: ClientThreadItem) {
+  return (
+    item.originChannel === "imessage" ||
+    Boolean(item.threadPhone) ||
+    item.title.startsWith("iMessage")
+  );
+}
+
 export function ClientDetailSidebarContent({
   collapsed,
   clientDetailBase,
@@ -109,7 +117,7 @@ export function ClientDetailSidebarContent({
                     isConvActive ? MENU_ITEM_ACTIVE : MENU_ITEM_INACTIVE
                   }`}
                 >
-                  {item.originChannel === "imessage" ? (
+                  {isImessageThread(item) ? (
                     <MessageCircle className="w-3.5 h-3.5 shrink-0" />
                   ) : item.originChannel === "email" ? (
                     <Mail className="w-3.5 h-3.5 shrink-0" />

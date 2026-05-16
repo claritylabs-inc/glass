@@ -41,6 +41,10 @@ import type {
   NavItemConfig,
 } from "./types";
 
+function isImessageConversation(item: ConversationItem) {
+  return item.kind === "imessage" || item.label.startsWith("iMessage");
+}
+
 export function MainSidebarContent({
   collapsed,
   isBroker,
@@ -283,7 +287,7 @@ function ExpandedThreadList({
               isConvActive ? MENU_ITEM_ACTIVE : MENU_ITEM_INACTIVE
             }`}
           >
-            {item.kind === "imessage" ? (
+            {isImessageConversation(item) ? (
               <MessageCircle className="w-3.5 h-3.5 shrink-0" />
             ) : item.kind === "email" ? (
               <Mail className="w-3.5 h-3.5 shrink-0" />
@@ -364,7 +368,7 @@ function CollapsedThreadList({
               isConvActive ? MENU_ITEM_ACTIVE : MENU_ITEM_INACTIVE_SUBTLE
             }`}
           >
-            {item.kind === "imessage" ? (
+            {isImessageConversation(item) ? (
               <MessageCircle className="w-3.5 h-3.5" />
             ) : item.kind === "email" ? (
               <Mail className="w-3.5 h-3.5" />
