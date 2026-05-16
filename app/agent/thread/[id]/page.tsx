@@ -395,6 +395,27 @@ function MessageFooterActions({
     ? (openMailboxArtifactRef?.index ?? null)
     : null;
   if (refs.length === 0 && toolCalls.length === 0 && !hasSubagentActivity && !hasMailboxTasks && !copyContent?.trim() && !retryMessageId) return null;
+  const renderMailboxAgentPill = (index: number) => {
+    const label = mailboxTaskDisplayName(normalizeMailboxTask(mailboxTasks[index].data));
+    const isSelected = selectedMailboxIndex === index;
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          if (!messageId) return;
+          onOpenMailboxArtifact?.({ messageId, index });
+        }}
+        className={`inline-flex h-6 max-w-48 items-center gap-1.5 rounded-full border bg-transparent px-2 text-label-sm font-medium transition-colors ${
+          isSelected
+            ? "border-foreground/18 bg-foreground/[0.04] text-foreground/75"
+            : "border-foreground/8 text-muted-foreground/60 hover:border-foreground/12 hover:bg-foreground/3 hover:text-foreground/75"
+        }`}
+      >
+        <span className="text-muted-foreground/35">{index + 1}</span>
+        <span className="truncate">{label}</span>
+      </button>
+    );
+  };
 
   return (
     <div className="mt-1.5 flex items-start gap-2">
@@ -430,21 +451,7 @@ function MessageFooterActions({
           </button>
         )}
         {mailboxTasks.length === 1 ? (
-          <button
-            type="button"
-            onClick={() => {
-              if (!messageId) return;
-              onOpenMailboxArtifact?.({ messageId, index: 0 });
-            }}
-            className={`inline-flex h-6 max-w-full items-center gap-1.5 rounded-full border bg-transparent px-2 text-label-sm font-medium transition-colors ${
-              selectedMailboxIndex === 0
-                ? "border-foreground/18 bg-foreground/[0.04] text-foreground/75"
-                : "border-foreground/8 text-muted-foreground/60 hover:border-foreground/12 hover:bg-foreground/3 hover:text-foreground/75"
-            }`}
-          >
-            <span className="text-muted-foreground/35">1</span>
-            <span className="truncate">Background agent</span>
-          </button>
+          renderMailboxAgentPill(0)
         ) : mailboxTasks.length > 1 ? (
           <>
             <button
@@ -458,28 +465,13 @@ function MessageFooterActions({
             {isMailboxExpanded ? (
               <div className="flex flex-wrap items-start gap-1.5">
                 {mailboxTasks.map((_, index) => {
-                  const isSelected = selectedMailboxIndex === index;
                   return (
                     <span
                       key={`mailbox-footer-${index}`}
                       className="transition-[opacity,transform] duration-200 ease-out"
                       style={{ transitionDelay: `${Math.min(index * 25, 100)}ms` }}
                     >
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (!messageId) return;
-                          onOpenMailboxArtifact?.({ messageId, index });
-                        }}
-                        className={`inline-flex h-6 max-w-48 items-center gap-1.5 rounded-full border bg-transparent px-2 text-label-sm font-medium transition-colors ${
-                          isSelected
-                            ? "border-foreground/18 bg-foreground/[0.04] text-foreground/75"
-                            : "border-foreground/8 text-muted-foreground/60 hover:border-foreground/12 hover:bg-foreground/3 hover:text-foreground/75"
-                        }`}
-                      >
-                        <span className="text-muted-foreground/35">{index + 1}</span>
-                        <span className="truncate">Background agent</span>
-                      </button>
+                      {renderMailboxAgentPill(index)}
                     </span>
                   );
                 })}
@@ -1322,6 +1314,18 @@ function formatAttachmentSize(size?: number) {
 }
 
 type MailboxTaskEmail = ReturnType<typeof normalizeMailboxTask>["emails"][number];
+type NormalizedMailboxTask = ReturnType<typeof normalizeMailboxTask>;
+
+function mailboxTaskDisplayName(task: NormalizedMailboxTask) {
+  const accountEmails = [
+    ...task.searches.map((search) => search.accountEmail),
+    ...task.emails.map((email) => email.accountEmail),
+  ].filter((email): email is string => typeof email === "string" && email.trim().length > 0);
+  const uniqueAccounts = Array.from(new Set(accountEmails));
+  if (uniqueAccounts.length === 0) return "Mailbox search";
+  if (uniqueAccounts.length === 1) return `Mailbox search - ${uniqueAccounts[0]}`;
+  return `Mailbox search - ${uniqueAccounts[0]} + ${uniqueAccounts.length - 1}`;
+}
 
 function isMailboxPdfAttachment(attachment: MailboxTaskEmail["attachments"][number]) {
   const name = attachment.filename.toLowerCase();
@@ -1743,12 +1747,13 @@ function MailboxTaskSidebar({
 }) {
   const task = normalizeMailboxTask(artifact.data);
   const isRunning = task.status === "running";
+  const displayName = mailboxTaskDisplayName(task);
 
   return (
     <aside className="flex h-full w-full flex-col overflow-hidden border-l border-foreground/8 bg-background">
       <div className="flex h-12 items-center justify-between gap-3 border-b border-foreground/8 px-4">
         <div className="flex min-w-0 items-center gap-2">
-          <h2 className="truncate text-body-sm font-semibold text-foreground">Mailbox search</h2>
+          <h2 className="truncate text-body-sm font-semibold text-foreground">{displayName}</h2>
           <Badge variant="outline" className="h-5 shrink-0 border-foreground/10 px-1.5 text-[10px] font-medium text-muted-foreground/55">
             {isRunning ? "Running" : "Background agent"}
           </Badge>
@@ -1762,7 +1767,7 @@ function MailboxTaskSidebar({
           artifact={artifact}
           orgId={orgId}
           threadId={threadId}
-          displayName="Mailbox search"
+          displayName={displayName}
           mode="detail"
           flat
         />
