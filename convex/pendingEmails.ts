@@ -5,7 +5,52 @@ import {
   internalQuery,
   internalMutation,
 } from "./_generated/server";
+import type { MutationCtx } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
 import { requireOrgAccess } from "./lib/orgAuth";
+
+async function restoreCancelledEmailAsDraft(
+  ctx: MutationCtx,
+  id: Id<"pendingEmails">,
+) {
+  const pending = await ctx.db.get(id);
+  if (!pending || pending.status !== "cancelled") {
+    return null;
+  }
+
+  await ctx.db.patch(id, {
+    status: "draft",
+    scheduledSendTime: 0,
+    sentMessageId: undefined,
+  });
+
+  if (pending.threadMessageId) {
+    await ctx.db.patch(pending.threadMessageId, {
+      content: pending.emailBody,
+      toAddresses: [pending.recipientEmail],
+      ccAddresses: pending.ccAddresses,
+      bccAddresses: pending.bccAddresses,
+      subject: pending.subject,
+      attachments: pending.attachments,
+      referencedPolicyIds: pending.referencedPolicyIds,
+      referencedQuoteIds: pending.referencedQuoteIds,
+      pendingEmailId: id,
+      responseMessageId: undefined,
+      status: "draft_email",
+      error: undefined,
+    });
+  }
+
+  if (pending.chatMessageId) {
+    await ctx.db.patch(pending.chatMessageId, {
+      content: "Email restored as a draft. Review it in the email draft card.",
+      status: undefined,
+      pendingEmailId: id,
+    });
+  }
+
+  return pending;
+}
 
 // ── Queries ──
 
@@ -46,6 +91,20 @@ export const cancel = mutation({
         pendingEmailId: undefined,
       });
     }
+  },
+});
+
+export const restoreAsDraft = mutation({
+  args: { id: v.id("pendingEmails") },
+  handler: async (ctx, args) => {
+    const { orgId } = await requireOrgAccess(ctx);
+    const pending = await ctx.db.get(args.id);
+    if (!pending || pending.orgId !== orgId) throw new Error("Not found");
+    if (pending.status !== "cancelled") {
+      throw new Error("Only cancelled emails can be restored");
+    }
+
+    await restoreCancelledEmailAsDraft(ctx, args.id);
   },
 });
 
@@ -171,6 +230,22 @@ export const findDraftByThread = internalQuery({
   },
 });
 
+export const findLatestCancelledByThread = internalQuery({
+  args: {
+    threadId: v.id("threads"),
+    orgId: v.id("organizations"),
+  },
+  handler: async (ctx, args) => {
+    const all = await ctx.db
+      .query("pendingEmails")
+      .withIndex("by_threadId", (q) => q.eq("threadId", args.threadId))
+      .collect();
+    return all
+      .filter((e) => e.orgId === args.orgId && e.status === "cancelled")
+      .sort((a, b) => b._creationTime - a._creationTime)[0] ?? null;
+  },
+});
+
 export const listDraftsInternal = internalQuery({
   args: {
     orgId: v.id("organizations"),
@@ -217,5 +292,13 @@ export const cancelInternal = internalMutation({
       });
     }
     return true;
+  },
+});
+
+export const restoreAsDraftInternal = internalMutation({
+  args: { id: v.id("pendingEmails") },
+  handler: async (ctx, args) => {
+    const restored = await restoreCancelledEmailAsDraft(ctx, args.id);
+    return restored ? { id: args.id } : null;
   },
 });

@@ -22,12 +22,13 @@ export const AGENT_DOMAIN = getPublicAgentDomain();
 
 export const MENU_ITEM_BASE =
   "rounded-md transition-[background-color,color,box-shadow] duration-200 ease-out";
-export const MENU_ITEM_HOVER = "hover:bg-muted hover:text-foreground";
+export const MENU_ITEM_HOVER =
+  "hover:bg-foreground/5 hover:text-foreground dark:hover:bg-foreground/10";
 export const MENU_ITEM_ACTIVE =
-  "bg-foreground/4! text-foreground hover:bg-foreground/6";
+  "bg-foreground/6 text-foreground hover:bg-foreground/10! dark:bg-foreground/10 dark:hover:bg-foreground/20!";
 export const MENU_ITEM_INACTIVE = `text-muted-foreground ${MENU_ITEM_HOVER}`;
 export const MENU_ITEM_INACTIVE_SUBTLE =
-  "text-muted-foreground/40 hover:bg-muted hover:text-muted-foreground/65";
+  "text-muted-foreground/40 hover:bg-foreground/5 hover:text-muted-foreground/65 dark:hover:bg-foreground/10 dark:hover:text-muted-foreground/80";
 
 export const SHORTCUT_PREFIX_KEY = "g";
 export const SHORTCUT_SEQUENCE_TIMEOUT_MS = 1500;

@@ -10,6 +10,11 @@ import {
 } from "../convex/lib/resend";
 import { getAuthSiteUrl, getPortalUrlForOrg } from "../convex/lib/domains";
 import { shouldSkipImessageStatusCueForEmailApproval } from "../convex/actions/handleInboundImessage";
+import {
+  isPendingEmailCancelConfirmation,
+  isPendingEmailCancelIntent,
+  isPendingEmailRestoreIntent,
+} from "../convex/lib/emailCancelIntent";
 
 function withEnv<T>(values: Record<string, string | undefined>, run: () => T): T {
   const previous = Object.fromEntries(
@@ -159,7 +164,7 @@ describe("directed email sending", () => {
     expect(settingsPageSource).toContain('section.id !== "agent"');
     expect(settingsPageSource).toContain("section === \"agent\" && isStandaloneClient");
     expect(sidebarSource).toContain("isStandaloneClient");
-    expect(sidebarSource).toContain("CLIENT_SETTINGS_WITH_AGENT");
+    expect(sidebarSource).toContain("isStandaloneClient={isStandaloneClient}");
     expect(agentTabSource).toContain('org?.type === "broker"');
     expect(agentTabSource).toContain("Agent email address");
     expect(agentTabSource).toContain('aria-disabled="true"');
@@ -199,11 +204,32 @@ describe("directed email sending", () => {
       join(__dirname, "..", "convex/actions/sendPendingEmail.ts"),
       "utf-8",
     );
+    const cancelIntentSource = readFileSync(
+      join(__dirname, "..", "convex/lib/emailCancelIntent.ts"),
+      "utf-8",
+    );
+    const imessageSource = readFileSync(
+      join(__dirname, "..", "convex/actions/handleInboundImessage.ts"),
+      "utf-8",
+    );
 
     expect(subagentSource).toContain("upsertEmailDraftArtifact");
     expect(subagentSource).toContain("findDraftByThread");
     expect(subagentSource).toContain("attachPendingEmailToAgentMessage");
     expect(processSource).toContain("sendDraftInternal");
+    expect(processSource).toContain("isPendingEmailCancelIntent");
+    expect(processSource).toContain("pendingEmailCancelConfirmationMessage");
+    expect(processSource).toContain("isPendingEmailCancelConfirmationPrompt");
+    expect(processSource).toContain("restoreAsDraftInternal");
+    expect(cancelIntentSource).toContain('/^(cancel|undo|stop|abort|nevermind|never mind|hold on|wait|no)$/');
+    expect(cancelIntentSource).toContain("isPendingEmailRestoreIntent");
+    expect(cancelIntentSource).not.toContain("\\b(cancel|undo|stop|don'?t send|abort");
+    expect(processSource).not.toContain("\\b(cancel|undo|stop|don'?t send|abort");
+    expect(imessageSource).toContain("isPendingEmailCancelConfirmationPrompt");
+    expect(imessageSource).toContain("pendingEmailCancelConfirmationMessage");
+    expect(imessageSource).toContain("restoreAsDraftInternal");
+    expect(threadSource).toContain("restoreAsDraft");
+    expect(threadSource).toContain("Restore draft");
     expect(processSource).toContain("`${content.trim()}\\n\\n${draftNotice}`");
     expect(threadSource).toContain("sendDraftNow");
     expect(threadSource).toContain("Send Email");
@@ -216,6 +242,19 @@ describe("directed email sending", () => {
     expect(threadSource).toContain("lastAutoOpenedEmailId");
     expect(senderSource).toContain("updateChatMessage: false");
     expect(senderSource).toContain("pendingEmailId: id");
+  });
+
+  it("does not treat cancellation-related document requests as email-cancel commands", () => {
+    expect(
+      isPendingEmailCancelIntent(
+        "can you attach the cancellation email itself as an attachment?",
+      ),
+    ).toBe(false);
+    expect(isPendingEmailCancelIntent("cancel")).toBe(true);
+    expect(isPendingEmailCancelIntent("don't send")).toBe(true);
+    expect(isPendingEmailCancelConfirmation("yes, cancel")).toBe(true);
+    expect(isPendingEmailRestoreIntent("undo cancel")).toBe(true);
+    expect(isPendingEmailRestoreIntent("restore the draft")).toBe(true);
   });
 
   it("keeps cc and bcc as structured email expert inputs", () => {

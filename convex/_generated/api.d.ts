@@ -10,6 +10,8 @@
 
 import type * as actions_backfillChunks from "../actions/backfillChunks.js";
 import type * as actions_complianceRequirements from "../actions/complianceRequirements.js";
+import type * as actions_connectedEmail from "../actions/connectedEmail.js";
+import type * as actions_createOutboundImessageGroup from "../actions/createOutboundImessageGroup.js";
 import type * as actions_detectDuplicatePolicies from "../actions/detectDuplicatePolicies.js";
 import type * as actions_emailDrafts from "../actions/emailDrafts.js";
 import type * as actions_extractCompanyInfo from "../actions/extractCompanyInfo.js";
@@ -19,6 +21,7 @@ import type * as actions_generateCoi from "../actions/generateCoi.js";
 import type * as actions_generateEmailBody from "../actions/generateEmailBody.js";
 import type * as actions_handleInboundEmail from "../actions/handleInboundEmail.js";
 import type * as actions_handleInboundImessage from "../actions/handleInboundImessage.js";
+import type * as actions_mailboxCoordinator from "../actions/mailboxCoordinator.js";
 import type * as actions_mcpChat from "../actions/mcpChat.js";
 import type * as actions_policyChangeRequests from "../actions/policyChangeRequests.js";
 import type * as actions_policyExtraction from "../actions/policyExtraction.js";
@@ -26,6 +29,7 @@ import type * as actions_processThreadChat from "../actions/processThreadChat.js
 import type * as actions_reExtractFromFile from "../actions/reExtractFromFile.js";
 import type * as actions_rechunkPolicy from "../actions/rechunkPolicy.js";
 import type * as actions_reconcilePolicy from "../actions/reconcilePolicy.js";
+import type * as actions_renderEmailPreview from "../actions/renderEmailPreview.js";
 import type * as actions_retryExtraction from "../actions/retryExtraction.js";
 import type * as actions_sendIntroImessage from "../actions/sendIntroImessage.js";
 import type * as actions_sendNotificationEmail from "../actions/sendNotificationEmail.js";
@@ -33,6 +37,7 @@ import type * as actions_sendPendingEmail from "../actions/sendPendingEmail.js";
 import type * as actions_threadTitle from "../actions/threadTitle.js";
 import type * as actions_updateDocumentChunk from "../actions/updateDocumentChunk.js";
 import type * as actions_vendorComplianceMonitor from "../actions/vendorComplianceMonitor.js";
+import type * as agentTargets from "../agentTargets.js";
 import type * as apiAuditLog from "../apiAuditLog.js";
 import type * as apiKeys from "../apiKeys.js";
 import type * as auth from "../auth.js";
@@ -42,6 +47,7 @@ import type * as clientInvitations from "../clientInvitations.js";
 import type * as clientInvitationsTest from "../clientInvitationsTest.js";
 import type * as clients from "../clients.js";
 import type * as compliance from "../compliance.js";
+import type * as connectedEmail from "../connectedEmail.js";
 import type * as connectedOrgs from "../connectedOrgs.js";
 import type * as conversationTurns from "../conversationTurns.js";
 import type * as crons from "../crons.js";
@@ -50,6 +56,7 @@ import type * as documentChunks from "../documentChunks.js";
 import type * as http from "../http.js";
 import type * as imessageChats from "../imessageChats.js";
 import type * as imessageInboundEvents from "../imessageInboundEvents.js";
+import type * as imessageOutboundGroups from "../imessageOutboundGroups.js";
 import type * as lib_access from "../lib/access.js";
 import type * as lib_accessTests from "../lib/accessTests.js";
 import type * as lib_actionFailures from "../lib/actionFailures.js";
@@ -73,6 +80,7 @@ import type * as lib_convexSourceRetriever from "../lib/convexSourceRetriever.js
 import type * as lib_coverageScoping from "../lib/coverageScoping.js";
 import type * as lib_documentMapping from "../lib/documentMapping.js";
 import type * as lib_domains from "../lib/domains.js";
+import type * as lib_emailCancelIntent from "../lib/emailCancelIntent.js";
 import type * as lib_emailPolicySources from "../lib/emailPolicySources.js";
 import type * as lib_emailSubagent from "../lib/emailSubagent.js";
 import type * as lib_emailTemplate from "../lib/emailTemplate.js";
@@ -138,6 +146,8 @@ import type {
 declare const fullApi: ApiFromModules<{
   "actions/backfillChunks": typeof actions_backfillChunks;
   "actions/complianceRequirements": typeof actions_complianceRequirements;
+  "actions/connectedEmail": typeof actions_connectedEmail;
+  "actions/createOutboundImessageGroup": typeof actions_createOutboundImessageGroup;
   "actions/detectDuplicatePolicies": typeof actions_detectDuplicatePolicies;
   "actions/emailDrafts": typeof actions_emailDrafts;
   "actions/extractCompanyInfo": typeof actions_extractCompanyInfo;
@@ -147,6 +157,7 @@ declare const fullApi: ApiFromModules<{
   "actions/generateEmailBody": typeof actions_generateEmailBody;
   "actions/handleInboundEmail": typeof actions_handleInboundEmail;
   "actions/handleInboundImessage": typeof actions_handleInboundImessage;
+  "actions/mailboxCoordinator": typeof actions_mailboxCoordinator;
   "actions/mcpChat": typeof actions_mcpChat;
   "actions/policyChangeRequests": typeof actions_policyChangeRequests;
   "actions/policyExtraction": typeof actions_policyExtraction;
@@ -154,6 +165,7 @@ declare const fullApi: ApiFromModules<{
   "actions/reExtractFromFile": typeof actions_reExtractFromFile;
   "actions/rechunkPolicy": typeof actions_rechunkPolicy;
   "actions/reconcilePolicy": typeof actions_reconcilePolicy;
+  "actions/renderEmailPreview": typeof actions_renderEmailPreview;
   "actions/retryExtraction": typeof actions_retryExtraction;
   "actions/sendIntroImessage": typeof actions_sendIntroImessage;
   "actions/sendNotificationEmail": typeof actions_sendNotificationEmail;
@@ -161,6 +173,7 @@ declare const fullApi: ApiFromModules<{
   "actions/threadTitle": typeof actions_threadTitle;
   "actions/updateDocumentChunk": typeof actions_updateDocumentChunk;
   "actions/vendorComplianceMonitor": typeof actions_vendorComplianceMonitor;
+  agentTargets: typeof agentTargets;
   apiAuditLog: typeof apiAuditLog;
   apiKeys: typeof apiKeys;
   auth: typeof auth;
@@ -170,6 +183,7 @@ declare const fullApi: ApiFromModules<{
   clientInvitationsTest: typeof clientInvitationsTest;
   clients: typeof clients;
   compliance: typeof compliance;
+  connectedEmail: typeof connectedEmail;
   connectedOrgs: typeof connectedOrgs;
   conversationTurns: typeof conversationTurns;
   crons: typeof crons;
@@ -178,6 +192,7 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   imessageChats: typeof imessageChats;
   imessageInboundEvents: typeof imessageInboundEvents;
+  imessageOutboundGroups: typeof imessageOutboundGroups;
   "lib/access": typeof lib_access;
   "lib/accessTests": typeof lib_accessTests;
   "lib/actionFailures": typeof lib_actionFailures;
@@ -201,6 +216,7 @@ declare const fullApi: ApiFromModules<{
   "lib/coverageScoping": typeof lib_coverageScoping;
   "lib/documentMapping": typeof lib_documentMapping;
   "lib/domains": typeof lib_domains;
+  "lib/emailCancelIntent": typeof lib_emailCancelIntent;
   "lib/emailPolicySources": typeof lib_emailPolicySources;
   "lib/emailSubagent": typeof lib_emailSubagent;
   "lib/emailTemplate": typeof lib_emailTemplate;

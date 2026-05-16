@@ -453,8 +453,18 @@ async function runEmailSubagent(
 ): Promise<EmailSubagentResult> {
   const preparedAttachments: EmailAttachmentMeta[] = [];
   const sourcePolicyIds = new Set((context.referencedPolicyIds ?? []).map(String));
+  const savedThreadAttachments = context.threadId
+    ? await ctx.runQuery(internal.threads.listThreadAttachmentsInternal, {
+        threadId: context.threadId,
+        orgId: context.orgId,
+      }) as EmailAttachmentMeta[]
+    : [];
+  const availableAttachments = uniqueAttachments([
+    ...(context.availableAttachments ?? []),
+    ...savedThreadAttachments,
+  ]);
   const allowedAttachmentIds = new Set(
-    (context.availableAttachments ?? []).map((att) => String(att.fileId)),
+    availableAttachments.map((att) => String(att.fileId)),
   );
   const attachedOriginalPolicyIds = new Set<string>();
   const attachedUploadedFileIds = new Set<string>();
@@ -496,7 +506,7 @@ async function runEmailSubagent(
     if (attachedUploadedFileIds.has(fileId)) {
       return "Uploaded file is already attached.";
     }
-    const found = (context.availableAttachments ?? []).find((att) => String(att.fileId) === fileId);
+    const found = availableAttachments.find((att) => String(att.fileId) === fileId);
     if (!found) return "Uploaded file not found.";
     attachedUploadedFileIds.add(fileId);
     addAttachment({ ...found, filename: filename ?? found.filename });
@@ -745,6 +755,7 @@ Be careful by default:
 - If the subject, body, or requested attachments are ambiguous, do not send.
 - If auto-send is disabled, draft first unless the caller says the user explicitly approved this exact email.
 - Attach original policy PDFs or generated COIs when requested. Never claim an attachment is included unless you used an attachment tool or it was already attached.
+- Available uploaded attachments may include files saved from connected mailboxes, including .eml exports of source emails. If the user asks to attach the email itself or proof from an email body, attach the saved .eml export with attach_uploaded_file.
 - For certificate/COI delivery requests, attach only the generated COI unless the request separately asks for the original/full policy PDF too.
 - Do not call an attachment tool for a document that is already listed in preparedAttachments.
 - Use concise professional formatting. Prefer 1-3 short paragraphs or a short bullet list.
@@ -776,7 +787,7 @@ Call send_or_draft_email exactly once after preparing any requested attachments.
         })),
         conversationContext: context.conversationContext,
         availablePolicies,
-        availableUploadedAttachments: context.availableAttachments?.map((att) => ({
+        availableUploadedAttachments: availableAttachments.map((att) => ({
           fileId: att.fileId,
           filename: att.filename,
           contentType: att.contentType,

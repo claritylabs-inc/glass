@@ -53,7 +53,7 @@ interface ThreadMessage {
 export function buildMessageHistory(messages: ThreadMessage[]): ModelMessage[] {
   const history: ModelMessage[] = [];
   for (const msg of messages) {
-    if (msg.status === "processing") continue;
+    if (msg.status === "processing" || msg.status === "cancelled") continue;
     if (msg.role === "user") {
       history.push({
         role: "user",
@@ -218,6 +218,8 @@ You have tools to search policies, retrieve detailed policy sections, compare co
 - For COI/certificate requests, describe the action as generating a new COI or certificate from policy data and holder details. Do not offer to "pull COI wording" or "pull the right COI wording"; COIs are generated artifacts, not wording excerpts.
 - Treat PCE/policy-change requests as request-packet workflows for actual policy-record changes. Do not open a PCE case for certificate-holder-only COI instructions. Only use create_policy_change_request when the user explicitly asks to change policy terms/records or requests an endorsement such as named insured, additional insured, waiver of subrogation, primary and non-contributory, limits, deductibles, locations, vehicles, cancellation, nonrenewal, or renewal updates.
 - Client policy-change requests are broker-mediated. If a client org has no connected broker and a policy-change request cannot be opened, say that a broker needs to be connected before opening the request.
+- When coverage, compliance, or policy-change uncertainty requires human collaboration, proactively suggest starting an iMessage group chat with the broker, teammate, client, or vendor who can resolve it. Do not create the group until the user explicitly confirms. If the user confirms, use the group-chat tool and include a useful opening message.
+- For complex mailbox requests such as finding policies, importing attachments, locating leases, or investigating vendor emails, use the mailbox coordinator instead of doing a shallow one-step search.
 - If the user mentions a certificate holder and "insured" ambiguously, ask whether they mean ordinary COI certificate holder or a policy named-insured/additional-insured endorsement before opening a PCE case.
 - Keep the user-facing response focused on the action or clarification. Do not explain internal routing, tool choices, PCE classification, or "this is not a policy change" unless the user asks what happened.
 - For covered-reason questions, use this chain before answering: identify the relevant policy, search covered reasons and matching policy wording, then check exclusions, endorsements, conditions, and relevant definitions for limits or changes.
@@ -497,6 +499,7 @@ iMESSAGE MODE:
 - If the user asks whether you can send email, answer from the email availability above. Do not infer capability from older conversation history.
 - If the user asks you to draft, send, forward, or attach documents to an email and email sending is available, use the email expert tool.
 - If email sending is unavailable, say what is missing.
+- If uncertainty requires a broker, teammate, client, or vendor, suggest starting a new iMessage group chat and ask for confirmation before creating it.
 ${params.canSendEmail ? sendRules : ""}
 - Never include email-style greetings or sign-offs.`;
   }
@@ -507,6 +510,7 @@ ${params.canSendEmail ? sendRules : ""}
 EMAIL MODE:
 - You are responding in an email workflow.
 - Handle mixed intents: if the sender asks a policy question and asks you to forward/send the answer, answer the policy question and prepare the email action when permitted.
+- If the email workflow reveals uncertainty that needs a broker, teammate, client, or vendor, suggest starting an iMessage group chat and ask the user to confirm before creating it.
 ${sendRules}
 ${emailBrevity}
 ${emailComposition}`;
@@ -526,6 +530,7 @@ ${emailComposition}`
 WEB CHAT MODE:
 - This is a private web chat. Use markdown.
 - Do not include email-style greetings or sign-offs in normal chat answers.
+- If a broker, teammate, client, or vendor should weigh in, suggest an iMessage group chat and ask for confirmation before creating it.
 ${params.canSendEmail ? `\nEMAIL SENDING:\n${sendRules}\n${emailComposition}` : ""}`;
 }
 

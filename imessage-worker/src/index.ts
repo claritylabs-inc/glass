@@ -11,9 +11,23 @@ type AdvancedImessageClient = {
       isGroup?: boolean;
       participants?: readonly { address: string }[];
     }>;
+    create(addresses: string[], options?: {
+      message?: string;
+      clientMessageId?: string;
+    }): Promise<{
+      chat: {
+        guid: string;
+        displayName?: string;
+        isGroup?: boolean;
+        participants?: readonly { address: string }[];
+      };
+    }>;
   };
   groups?: {
     leave(chatGuid: string): Promise<void>;
+    setDisplayName(chatGuid: string, displayName: string, options?: {
+      clientMessageId?: string;
+    }): Promise<unknown>;
   };
 };
 
@@ -92,6 +106,15 @@ function normalizePhone(raw: string): string {
   if (raw.includes("@")) return raw.trim().toLowerCase();
   const cleaned = raw.replace(/[^+\d]/g, "");
   return cleaned.startsWith("+") ? cleaned : `+${cleaned}`;
+}
+
+function deterministicTerminalGroupGuid(participants: string[]): string {
+  const key = participants.map(normalizePhone).sort().join(",");
+  let hash = 0;
+  for (let i = 0; i < key.length; i += 1) {
+    hash = ((hash << 5) - hash + key.charCodeAt(i)) | 0;
+  }
+  return `terminal-group-${Math.abs(hash)}`;
 }
 
 function getAdvancedImessageClient(app: SpectrumInstance, space?: Space): AdvancedImessageClient | undefined {
@@ -214,7 +237,14 @@ async function main() {
       req.on("error", reject);
     });
 
-    let payload: { toPhone?: string; chatGuid?: string; message?: string };
+    let payload: {
+      toPhone?: string;
+      chatGuid?: string;
+      participants?: string[];
+      message?: string;
+      title?: string;
+      clientMessageId?: string;
+    };
     try {
       payload = JSON.parse(body);
     } catch {
@@ -223,13 +253,70 @@ async function main() {
       return;
     }
 
-    if ((!payload.toPhone && !payload.chatGuid) || !payload.message) {
+    if ((!payload.toPhone && !payload.chatGuid && !payload.participants?.length) || !payload.message) {
       res.writeHead(400, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "toPhone or chatGuid and message are required" }));
+      res.end(JSON.stringify({ error: "toPhone, chatGuid, or participants and message are required" }));
       return;
     }
 
     try {
+      if (payload.participants?.length) {
+        const participants = [...new Set(payload.participants.map(normalizePhone).filter(Boolean))];
+        if (participants.length < 2) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "At least two participants are required for a group chat" }));
+          return;
+        }
+
+        if (TRANSPORT === "terminal") {
+          const terminalClient = terminal(app);
+          const space = await terminalClient.space({ id: TERMINAL_SPACE_ID });
+          await space.send(`[new group: ${participants.join(", ")}] ${payload.message}`);
+          const chatGuid = deterministicTerminalGroupGuid(participants);
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({
+            ok: true,
+            chatGuid,
+            isGroup: true,
+            participants: participants.map((address) => ({ address })),
+          }));
+          return;
+        }
+
+        const imessageClient = getAdvancedImessageClient(app);
+        if (!imessageClient?.chats?.create) {
+          res.writeHead(501, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "iMessage group creation is not available" }));
+          return;
+        }
+
+        const created = await imessageClient.chats.create(participants, {
+          message: payload.message,
+          clientMessageId: payload.clientMessageId,
+        });
+        const chatGuid = created.chat.guid;
+        if (payload.title?.trim() && imessageClient.groups?.setDisplayName) {
+          await imessageClient.groups.setDisplayName(chatGuid, payload.title.trim(), {
+            clientMessageId: payload.clientMessageId
+              ? `${payload.clientMessageId}:title`
+              : undefined,
+          });
+        }
+        const returnedParticipants = created.chat.participants?.length
+          ? created.chat.participants.map((participant) => ({
+              address: normalizePhone(participant.address),
+            }))
+          : participants.map((address) => ({ address }));
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({
+          ok: true,
+          chatGuid,
+          isGroup: true,
+          participants: returnedParticipants,
+        }));
+        return;
+      }
+
       const activeChatSpace = payload.chatGuid
         ? activeSpacesByChatGuid.get(payload.chatGuid)
         : undefined;

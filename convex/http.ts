@@ -1,6 +1,6 @@
 import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
-import { internal } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { auth } from "./auth";
 import { isImessageInboundEnabled } from "./lib/imessageConfig";
@@ -105,6 +105,36 @@ http.route({
         { status: 500, headers: { "Content-Type": "application/json" } },
       );
     }
+  }),
+});
+
+http.route({
+  path: "/cron/connected-email/scan",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const expectedSecret = process.env.EMAIL_SCAN_CRON_SECRET;
+    if (!expectedSecret) {
+      return new Response(JSON.stringify({ error: "EMAIL_SCAN_CRON_SECRET is not configured" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const authHeader = request.headers.get("Authorization") ?? "";
+    if (authHeader !== `Bearer ${expectedSecret}`) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const result = await ctx.runAction(api.actions.connectedEmail.scanPreviousDay, {
+      cronSecret: expectedSecret,
+    });
+    return new Response(JSON.stringify(result), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
   }),
 });
 

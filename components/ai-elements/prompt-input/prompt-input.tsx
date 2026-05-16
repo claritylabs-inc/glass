@@ -34,6 +34,11 @@ import type {
 export interface PromptInputMessage {
   text: string;
   files: FileUIPart[];
+  references?: Array<{
+    kind: "policy" | "quote" | "requirement" | "mailbox";
+    id: string;
+    label: string;
+  }>;
 }
 
 export type PromptInputProps = Omit<

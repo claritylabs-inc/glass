@@ -1011,6 +1011,40 @@ export const getRequirementImportContextInternal = internalQuery({
   },
 });
 
+export const getRequirementImportContextForUserInternal = internalQuery({
+  args: { orgId: v.id("organizations"), userId: v.id("users") },
+  handler: async (ctx, args) => {
+    const membership = await ctx.db
+      .query("orgMemberships")
+      .withIndex("by_orgId_userId", (q) =>
+        q.eq("orgId", args.orgId).eq("userId", args.userId),
+      )
+      .first();
+    if (membership?.role !== "admin")
+      throw new Error("Admin role required to import compliance requirements");
+    const existing = await listRequirementsForOrg(ctx, args.orgId);
+    return {
+      userId: args.userId,
+      existingRequirements: existing.map((requirement) => ({
+        title: requirement.title,
+        category: requirement.category,
+        requirementText: requirement.requirementText,
+        name: requirement.name,
+        coverageCode: requirement.coverageCode,
+        limit: requirement.limit,
+        limitAmount: requirement.limitAmount,
+        limitType: requirement.limitType,
+        limitValueType: requirement.limitValueType,
+        deductible: requirement.deductible,
+        deductibleAmount: requirement.deductibleAmount,
+        deductibleType: requirement.deductibleType,
+        deductibleValueType: requirement.deductibleValueType,
+        originalContent: requirement.originalContent,
+      })),
+    };
+  },
+});
+
 export const createRequirementSourceDocumentInternal = internalMutation({
   args: {
     orgId: v.id("organizations"),

@@ -61,8 +61,11 @@ export type ThreadMessage = {
   citedSections?: string[];
   citedCoverageNames?: string[];
   citedSourceSpanIds?: string[];
+  referencedQuoteIds?: Id<"policies">[];
+  referencedRequirementIds?: Id<"insuranceRequirements">[];
+  referencedMailboxIds?: Id<"connectedEmailAccounts">[];
   usedTools?: string[];
-  toolCalls?: { name: string; input?: string }[];
+  toolCalls?: { name: string; input?: string; output?: string }[];
   toolArtifacts?: { type: string; data: unknown }[];
   status?: "processing" | "error" | "pending_send" | "draft_email" | "cancelled";
   error?: string;
@@ -86,11 +89,46 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
   attach_policy_document: "Attached policy PDF",
   send_email: "Drafted email",
   email_expert: "Prepared email",
+  render_email_preview: "Rendered email preview",
   create_policy_change_request: "Created policy change request",
   lookup_connected_vendors: "Checked vendors",
   lookup_vendor_policies: "Read vendor policies",
   lookup_vendor_compliance: "Checked vendor compliance",
+  coordinate_mailbox_task: "Coordinated mailbox task",
 };
+
+const SUBAGENT_TOOL_NAMES = new Set(["email_expert", "coordinate_mailbox_task"]);
+const SCIENTIST_SURNAMES = [
+  "Curie",
+  "Einstein",
+  "Noether",
+  "Turing",
+  "Hopper",
+  "Feynman",
+  "Lovelace",
+  "Bohr",
+  "Faraday",
+  "Franklin",
+  "Maxwell",
+  "Meitner",
+  "Newton",
+  "Sagan",
+  "Tesla",
+  "Ramanujan",
+];
+
+function stableHash(value: string) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function scientistSurnameFor(seed: string, index: number) {
+  return SCIENTIST_SURNAMES[(stableHash(seed) + index * 7) % SCIENTIST_SURNAMES.length];
+}
 
 const EMAIL_SENDING_RE = /^sending email to\s+(.+?)(?:\s*\(cc:.*\))?\s*\.{3}$/i;
 const EMAIL_SENT_RE = /^email sent to\s+(.+?)(?:\s*\(cc:.*\))?\s*\.$/i;
@@ -123,6 +161,16 @@ function isEmailSentStatusMessage(message: ThreadMessage) {
   return EMAIL_SENT_RE.test(normalizeStatusContent(message.content));
 }
 
+function isSavedThreadAttachmentMessage(message: ThreadMessage) {
+  return (
+    message.role === "agent" &&
+    message.channel === "chat" &&
+    !!message.attachments?.length &&
+    /^Saved \d+ document/i.test(message.content.trim()) &&
+    message.content.includes("from connected email")
+  );
+}
+
 function emailMessageMatchesRecipient(message: ThreadMessage, recipient?: string) {
   if (!recipient) return true;
   return message.toAddresses?.some((address) => address.toLowerCase() === recipient) ?? false;
@@ -141,7 +189,7 @@ function findRelatedEmailMessage(
       candidate.channel === "email" &&
       candidate.role === "agent" &&
       candidate.pendingEmailId === message.pendingEmailId &&
-      !attachedEmailMessageIds.has(candidate._id)
+      candidate._id !== message._id
     );
     if (linked) return linked;
   }
@@ -203,12 +251,16 @@ function formatToolInput(input?: string) {
 function ToolCallCard({
   toolCall,
   index,
+  showOutput = false,
+  displayName: displayNameOverride,
 }: {
-  toolCall: { name: string; input?: string };
+  toolCall: { name: string; input?: string; output?: string };
   index: number;
+  showOutput?: boolean;
+  displayName?: string;
 }) {
   const [isOpen, setIsOpen] = useState(false);
-  const displayName = TOOL_DISPLAY_NAMES[toolCall.name] ?? toolCall.name;
+  const displayName = displayNameOverride ?? TOOL_DISPLAY_NAMES[toolCall.name] ?? toolCall.name;
 
   return (
     <div className="overflow-hidden rounded-md border border-foreground/6 bg-foreground/[0.015]">
@@ -234,13 +286,27 @@ function ToolCallCard({
         </span>
       </Button>
       {isOpen && (
-        <div className="border-t border-foreground/6 px-2.5 pb-2.5 pt-2">
-          <p className="mb-1 text-[10px] font-medium text-muted-foreground/40">
-            Parameters
-          </p>
-          <pre className="max-h-48 overflow-auto rounded border border-foreground/6 bg-background p-2 font-mono text-[10px] leading-4 text-foreground/70">
-            <code className="whitespace-pre-wrap break-words">{formatToolInput(toolCall.input)}</code>
-          </pre>
+        <div className="space-y-2 border-t border-foreground/6 px-2.5 pb-2.5 pt-2">
+          {showOutput && toolCall.output ? (
+            <div>
+              <p className="mb-1 text-[10px] font-medium text-muted-foreground/40">
+                Output
+              </p>
+              <pre className="max-h-64 overflow-auto rounded border border-foreground/6 bg-background p-2 font-mono text-[10px] leading-4 text-foreground/70">
+                <code className="whitespace-pre-wrap break-words">{formatToolInput(toolCall.output)}</code>
+              </pre>
+            </div>
+          ) : null}
+          {!showOutput || !toolCall.output ? (
+            <div>
+              <p className="mb-1 text-[10px] font-medium text-muted-foreground/40">
+                Parameters
+              </p>
+              <pre className="max-h-48 overflow-auto rounded border border-foreground/6 bg-background p-2 font-mono text-[10px] leading-4 text-foreground/70">
+                <code className="whitespace-pre-wrap break-words">{formatToolInput(toolCall.input)}</code>
+              </pre>
+            </div>
+          ) : null}
           <span className="sr-only">Tool call {index + 1}</span>
         </div>
       )}
@@ -251,7 +317,7 @@ function ToolCallCard({
 function ToolCallPanel({
   toolCalls,
 }: {
-  toolCalls: { name: string; input?: string }[];
+  toolCalls: { name: string; input?: string; output?: string }[];
 }) {
   return (
     <div className="mt-1.5 space-y-1.5">
@@ -288,23 +354,30 @@ function MessageFooterActions({
   citedSections,
   citedCoverageNames,
   toolCalls,
+  subagentActivityCount,
   copyContent,
   retryMessageId,
   showToolCalls,
   onToggleToolCalls,
+  showSubagentActivity,
+  onToggleSubagentActivity,
   rightAligned,
 }: {
   refs: { type: "policy"; id: string; page?: number }[];
   citedSections?: string[];
   citedCoverageNames?: string[];
-  toolCalls: { name: string; input?: string }[];
+  toolCalls: { name: string; input?: string; output?: string }[];
+  subagentActivityCount?: number;
   copyContent?: string;
   retryMessageId?: Id<"threadMessages">;
   showToolCalls: boolean;
   onToggleToolCalls: () => void;
+  showSubagentActivity?: boolean;
+  onToggleSubagentActivity?: () => void;
   rightAligned?: boolean;
 }) {
-  if (refs.length === 0 && toolCalls.length === 0 && !copyContent?.trim() && !retryMessageId) return null;
+  const hasSubagentActivity = (subagentActivityCount ?? 0) > 0;
+  if (refs.length === 0 && toolCalls.length === 0 && !hasSubagentActivity && !copyContent?.trim() && !retryMessageId) return null;
 
   return (
     <div className="mt-1.5 flex items-start gap-2">
@@ -326,6 +399,17 @@ function MessageFooterActions({
           >
             <ClipboardList className="h-3 w-3" />
             {toolCalls.length} tool{toolCalls.length === 1 ? "" : "s"}
+          </button>
+        )}
+        {hasSubagentActivity && (
+          <button
+            type="button"
+            onClick={onToggleSubagentActivity}
+            aria-expanded={showSubagentActivity}
+            className="inline-flex h-6 items-center gap-1.5 rounded-full border border-foreground/8 bg-transparent px-2 text-[11px] font-medium text-muted-foreground/55 transition-colors hover:border-foreground/12 hover:bg-foreground/[0.03] hover:text-foreground/75"
+          >
+            <LogoIcon size={12} static className="h-3 w-3" />
+            {subagentActivityCount} subagent{subagentActivityCount === 1 ? "" : "s"}
           </button>
         )}
       </div>
@@ -609,11 +693,13 @@ function EmailSummaryCard({
   isOpen?: boolean;
 }) {
   const sendDraft = useAction(api.actions.sendPendingEmail.sendDraftNow);
+  const restoreDraft = useMutation(api.pendingEmails.restoreAsDraft);
   const pendingEmail = useQuery(
     api.pendingEmails.get,
     message.pendingEmailId ? { id: message.pendingEmailId } : "skip",
   );
   const [isSending, setIsSending] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
   const recipients = message.toAddresses?.length
     ? message.toAddresses.join(", ")
     : message.fromEmail ?? "Email";
@@ -624,6 +710,9 @@ function EmailSummaryCard({
         ? "Email cancelled"
         : message.role === "agent" ? "Email sent" : "Email received";
   const canQuickSend = message.status === "draft_email" && pendingEmail?.status === "draft";
+  const canRestore = message.pendingEmailId && (
+    message.status === "cancelled" || pendingEmail?.status === "cancelled"
+  );
   const reviewLabel = canQuickSend
     ? "Review draft"
     : message.status === "cancelled" || pendingEmail?.status === "cancelled"
@@ -641,6 +730,20 @@ function EmailSummaryCard({
       toast.error(err instanceof Error ? err.message : "Failed to send email");
     } finally {
       setIsSending(false);
+    }
+  }
+
+  async function handleRestore(event: React.MouseEvent) {
+    event.stopPropagation();
+    if (!message.pendingEmailId) return;
+    setIsRestoring(true);
+    try {
+      await restoreDraft({ id: message.pendingEmailId });
+      toast.success("Email restored as draft");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to restore email");
+    } finally {
+      setIsRestoring(false);
     }
   }
 
@@ -685,6 +788,18 @@ function EmailSummaryCard({
               Send
             </PillButton>
           ) : null}
+          {canRestore ? (
+            <PillButton
+              type="button"
+              size="compact"
+              variant="primary"
+              onClick={handleRestore}
+              disabled={isRestoring}
+            >
+              {isRestoring ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}
+              Restore
+            </PillButton>
+          ) : null}
         </div>
       )}
     </div>
@@ -722,6 +837,8 @@ type VendorComplianceRow = {
 
 type VendorComplianceArtifactData = { type: string; data: unknown };
 type VendorComplianceArtifactRef = { messageId: Id<"threadMessages">; index: number };
+type ToolArtifactData = { type: string; data: unknown };
+type MailboxArtifactRef = { messageId: Id<"threadMessages">; index: number };
 
 function normalizeVendorComplianceRows(data: unknown): VendorComplianceRow[] {
   if (!Array.isArray(data)) return [];
@@ -1009,6 +1126,651 @@ function VendorComplianceArtifacts({
     </div>
   );
 }
+
+function normalizeMailboxTask(data: unknown): {
+  status?: string;
+  summary?: string;
+  steps: string[];
+  text?: string;
+  toolCalls: string[];
+  searches: Array<{
+    accountEmail?: string;
+    mailbox: string;
+    query?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    resultCount: number;
+    errorCount: number;
+    identified: Array<{
+      subject: string;
+      from?: string;
+      date?: string;
+      attachmentCount?: number;
+    }>;
+  }>;
+  emails: Array<{
+    emailRef?: string;
+    mailbox?: string;
+    accountEmail?: string;
+    subject: string;
+    from?: string;
+    date?: string;
+    reason?: string;
+    attachments: Array<{
+      filename: string;
+      contentType?: string;
+      size?: number;
+      reason?: string;
+    }>;
+  }>;
+} {
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    return { steps: [], toolCalls: [], searches: [], emails: [] };
+  }
+  const record = data as Record<string, unknown>;
+  const plan =
+    record.plan && typeof record.plan === "object" && !Array.isArray(record.plan)
+      ? (record.plan as Record<string, unknown>)
+      : undefined;
+  const steps = Array.isArray(plan?.steps)
+    ? plan.steps.filter((step): step is string => typeof step === "string" && step.trim().length > 0)
+    : [];
+  const toolCalls = Array.isArray(record.toolCalls)
+    ? record.toolCalls.filter((toolCall): toolCall is string => typeof toolCall === "string" && toolCall.trim().length > 0)
+    : [];
+  const searches = Array.isArray(record.searches)
+    ? record.searches
+        .filter((search): search is Record<string, unknown> => !!search && typeof search === "object" && !Array.isArray(search))
+        .map((search) => ({
+          accountEmail: typeof search.accountEmail === "string" ? search.accountEmail : undefined,
+          mailbox: typeof search.mailbox === "string" ? search.mailbox : "INBOX",
+          query: typeof search.query === "string" ? search.query : undefined,
+          dateFrom: typeof search.dateFrom === "string" ? search.dateFrom : undefined,
+          dateTo: typeof search.dateTo === "string" ? search.dateTo : undefined,
+          resultCount: typeof search.resultCount === "number" ? search.resultCount : 0,
+          errorCount: typeof search.errorCount === "number" ? search.errorCount : 0,
+          identified: Array.isArray(search.identified)
+            ? search.identified
+                .filter((item): item is Record<string, unknown> => !!item && typeof item === "object" && !Array.isArray(item))
+                .map((item) => ({
+                  subject: typeof item.subject === "string" ? item.subject : "(no subject)",
+                  from: typeof item.from === "string" ? item.from : undefined,
+                  date: typeof item.date === "string" ? item.date : undefined,
+                  attachmentCount: typeof item.attachmentCount === "number" ? item.attachmentCount : undefined,
+                }))
+            : [],
+        }))
+    : [];
+  const evidence =
+    record.evidence && typeof record.evidence === "object" && !Array.isArray(record.evidence)
+      ? (record.evidence as Record<string, unknown>)
+      : undefined;
+  const emails = Array.isArray(evidence?.emails)
+    ? evidence.emails
+        .filter((email): email is Record<string, unknown> => !!email && typeof email === "object" && !Array.isArray(email))
+        .map((email) => ({
+          emailRef: typeof email.emailRef === "string" ? email.emailRef : undefined,
+          mailbox: typeof email.mailbox === "string" ? email.mailbox : undefined,
+          accountEmail: typeof email.accountEmail === "string" ? email.accountEmail : undefined,
+          subject: typeof email.subject === "string" ? email.subject : "(no subject)",
+          from: typeof email.from === "string" ? email.from : undefined,
+          date: typeof email.date === "string" ? email.date : undefined,
+          reason: typeof email.reason === "string" ? email.reason : undefined,
+          attachments: Array.isArray(email.attachments)
+            ? email.attachments
+                .filter((attachment): attachment is Record<string, unknown> => !!attachment && typeof attachment === "object" && !Array.isArray(attachment))
+                .map((attachment) => ({
+                  filename: typeof attachment.filename === "string" ? attachment.filename : "Attachment",
+                  contentType: typeof attachment.contentType === "string" ? attachment.contentType : undefined,
+                  size: typeof attachment.size === "number" ? attachment.size : undefined,
+                  reason: typeof attachment.reason === "string" ? attachment.reason : undefined,
+                }))
+            : [],
+        }))
+    : [];
+  return {
+    status: typeof record.status === "string" ? record.status : undefined,
+    summary: typeof plan?.summary === "string" ? plan.summary : undefined,
+    steps,
+    text: typeof record.text === "string" ? record.text : undefined,
+    toolCalls,
+    searches,
+    emails,
+  };
+}
+
+function formatAttachmentSize(size?: number) {
+  if (typeof size !== "number") return undefined;
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+type MailboxTaskEmail = ReturnType<typeof normalizeMailboxTask>["emails"][number];
+
+function isMailboxPdfAttachment(attachment: MailboxTaskEmail["attachments"][number]) {
+  const name = attachment.filename.toLowerCase();
+  const type = attachment.contentType?.toLowerCase() ?? "";
+  return type.includes("pdf") || name.endsWith(".pdf");
+}
+
+function isMailboxRequirementAttachment(attachment: MailboxTaskEmail["attachments"][number]) {
+  const name = attachment.filename.toLowerCase();
+  const type = attachment.contentType?.toLowerCase() ?? "";
+  return (
+    type.includes("pdf") ||
+    type.includes("wordprocessingml") ||
+    type.startsWith("text/") ||
+    type.includes("json") ||
+    type.includes("csv") ||
+    name.endsWith(".pdf") ||
+    name.endsWith(".docx") ||
+    name.endsWith(".txt") ||
+    name.endsWith(".md") ||
+    name.endsWith(".markdown") ||
+    name.endsWith(".csv") ||
+    name.endsWith(".json")
+  );
+}
+
+function totalCreatedRequirements(result: unknown) {
+  if (!result || typeof result !== "object" || Array.isArray(result)) return 0;
+  const imports = (result as { imports?: unknown }).imports;
+  if (!Array.isArray(imports)) return 0;
+  return imports.reduce((total, item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return total;
+    const createdCount = (item as { createdCount?: unknown }).createdCount;
+    return total + (typeof createdCount === "number" ? createdCount : 0);
+  }, 0);
+}
+
+function MailboxSearchAudit({ searches }: { searches: ReturnType<typeof normalizeMailboxTask>["searches"] }) {
+  if (searches.length === 0) return null;
+  const totalMatches = searches.reduce((total, search) => total + search.resultCount, 0);
+  const totalErrors = searches.reduce((total, search) => total + search.errorCount, 0);
+
+  return (
+    <div>
+      <div className="mb-1.5 flex items-center justify-between gap-3">
+        <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/35">
+          Search audit
+        </p>
+        <span className="text-[11px] text-muted-foreground/40">
+          {searches.length} search{searches.length === 1 ? "" : "es"} · {totalMatches} match{totalMatches === 1 ? "" : "es"}{totalErrors ? ` · ${totalErrors} error${totalErrors === 1 ? "" : "s"}` : ""}
+        </span>
+      </div>
+      <div className="space-y-1.5">
+        {searches.map((search, index) => {
+          const windowText = [search.dateFrom, search.dateTo].filter(Boolean).join(" to ");
+          return (
+            <div key={`${search.accountEmail ?? "account"}-${search.mailbox}-${search.query ?? "all"}-${index}`} className="rounded-md border border-foreground/8 bg-foreground/[0.035] px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+              <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground/55">
+                <Badge variant="outline" className="h-5 border-foreground/8 px-1.5 text-[10px] font-medium text-muted-foreground/55">
+                  {search.accountEmail ?? "Mailbox"}
+                </Badge>
+                <span>{search.mailbox}</span>
+                {windowText ? <span>· {windowText}</span> : null}
+              </div>
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                <span className="min-w-0 truncate text-[12px] font-medium text-foreground/80">
+                  {search.query ? `"${search.query}"` : "All recent mail"}
+                </span>
+                <span className="shrink-0 text-[11px] text-muted-foreground/45">
+                  {search.resultCount} match{search.resultCount === 1 ? "" : "es"}
+                </span>
+              </div>
+              {search.identified.length > 0 ? (
+                <div className="mt-1.5 space-y-1">
+                  {search.identified.map((item, itemIndex) => (
+                    <div key={`${item.subject}-${itemIndex}`} className="flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground/55">
+                      <MailIcon className="h-3 w-3 shrink-0 text-muted-foreground/35" />
+                      <span className="min-w-0 flex-1 truncate">{item.subject}</span>
+                      {item.attachmentCount ? (
+                        <span className="shrink-0 text-muted-foreground/35">{item.attachmentCount} att.</span>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function MailboxTaskSummaryCard({
+  artifact,
+  orgId,
+  threadId,
+  displayName,
+  mode = "summary",
+  onOpen,
+  isSelected = false,
+  flat = false,
+}: {
+  artifact: ToolArtifactData;
+  orgId: Id<"organizations">;
+  threadId?: Id<"threads">;
+  displayName: string;
+  mode?: "summary" | "detail";
+  onOpen?: () => void;
+  isSelected?: boolean;
+  flat?: boolean;
+}) {
+  const importPolicyAttachments = useAction(api.actions.connectedEmail.importPolicyAttachments);
+  const importRequirementAttachments = useAction(api.actions.connectedEmail.importRequirementAttachments);
+  const saveAttachmentsToThread = useAction(api.actions.connectedEmail.saveAttachmentsToThread);
+  const [busyKey, setBusyKey] = useState<string | null>(null);
+
+  if (artifact.type !== "mailbox_task") return null;
+  const task = normalizeMailboxTask(artifact.data);
+  if (!task.summary && task.steps.length === 0 && task.toolCalls.length === 0 && task.searches.length === 0) return null;
+  const isRunning = task.status === "running";
+
+  async function handlePolicyImport(email: MailboxTaskEmail, index: number) {
+    if (!email.emailRef) return;
+    const filenames = email.attachments.filter(isMailboxPdfAttachment).map((attachment) => attachment.filename);
+    if (filenames.length === 0) {
+      toast.error("No PDF attachments found");
+      return;
+    }
+    const key = `policy-${index}`;
+    setBusyKey(key);
+    try {
+      const result = await importPolicyAttachments({
+        orgId,
+        emailRef: email.emailRef,
+        filenames,
+      }) as { status?: string; files?: unknown[] };
+      if (result.status === "no_pdf_attachments") {
+        toast.error("No PDF attachments found");
+      } else {
+        toast.success(`Started policy/quote import for ${result.files?.length ?? filenames.length} file${filenames.length === 1 ? "" : "s"}`);
+      }
+    } catch {
+      toast.error("Failed to import policy/quote");
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
+  async function handleSaveToThread(email: MailboxTaskEmail, index: number) {
+    if (!threadId || !email.emailRef) return;
+    const filenames = email.attachments.map((attachment) => attachment.filename);
+    if (filenames.length === 0) {
+      toast.error("No attachments found");
+      return;
+    }
+    const key = `save-${index}`;
+    setBusyKey(key);
+    try {
+      const result = await saveAttachmentsToThread({
+        orgId,
+        threadId,
+        emailRef: email.emailRef,
+        filenames,
+      }) as { status?: string; attachments?: unknown[] };
+      if (result.status === "no_saveable_attachments") {
+        toast.error("No saveable attachments found");
+      } else {
+        toast.success(`Saved ${result.attachments?.length ?? filenames.length} document${filenames.length === 1 ? "" : "s"} to this thread`);
+      }
+    } catch {
+      toast.error("Failed to save documents to thread");
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
+  async function handleRequirementImport(
+    email: MailboxTaskEmail,
+    index: number,
+    appliesTo: "vendors" | "own_org",
+  ) {
+    if (!email.emailRef) return;
+    const filenames = email.attachments
+      .filter(isMailboxRequirementAttachment)
+      .map((attachment) => attachment.filename);
+    const key = `${appliesTo}-${index}`;
+    setBusyKey(key);
+    try {
+      const result = await importRequirementAttachments({
+        orgId,
+        emailRef: email.emailRef,
+        filenames: filenames.length > 0 ? filenames : undefined,
+        includeEmailBody: true,
+        sourceType: appliesTo === "vendors" ? "vendor_requirements" : "other",
+        appliesTo,
+      });
+      const createdCount = totalCreatedRequirements(result);
+      if ((result as { status?: string })?.status === "no_requirement_sources") {
+        toast.error("No requirement source text found");
+      } else {
+        toast.success(
+          createdCount > 0
+            ? `Created ${createdCount} requirement${createdCount === 1 ? "" : "s"}`
+            : "Requirement import finished",
+        );
+      }
+    } catch {
+      toast.error("Failed to create requirements");
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
+  const totalMatches = task.searches.reduce((total, search) => total + search.resultCount, 0);
+  const meta = [
+    task.searches.length > 0 ? `${task.searches.length} searches` : undefined,
+    task.searches.length > 0 ? `${totalMatches} matches` : undefined,
+    task.emails.length > 0 ? `${task.emails.length} emails` : undefined,
+  ].filter(Boolean).join(" · ");
+
+  if (mode === "summary") {
+    return (
+      <button
+        type="button"
+        onClick={onOpen}
+        className={`mt-3 flex w-full max-w-lg items-center justify-between gap-3 rounded-md border bg-card px-3 py-2.5 text-left transition-colors ${
+          isSelected ? "border-foreground/18" : "border-foreground/8 hover:border-foreground/15 hover:bg-foreground/[0.025]"
+        }`}
+      >
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-foreground/5 text-muted-foreground">
+            {isRunning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <MailIcon className="h-3.5 w-3.5" />}
+          </span>
+          <span className="min-w-0">
+            <span className="block truncate text-[13px] font-medium text-foreground/85">{displayName}</span>
+            {meta ? <span className="block truncate text-[11px] text-muted-foreground/40">{meta}</span> : null}
+          </span>
+        </span>
+        <span className="flex shrink-0 items-center gap-2">
+          <Badge variant="outline" className="h-5 border-foreground/10 px-1.5 text-[10px] font-medium text-muted-foreground/55">
+            {isRunning ? "Running" : "Background process"}
+          </Badge>
+        </span>
+      </button>
+    );
+  }
+
+  return (
+    <div className={flat ? "w-full" : "w-full overflow-hidden rounded-md border border-foreground/8 bg-card"}>
+      <div className={flat ? "hidden" : "flex w-full items-center justify-between gap-3 border-b border-foreground/6 px-3 py-2.5 text-left"}>
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-foreground/5 text-muted-foreground">
+            {isRunning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <MailIcon className="h-3.5 w-3.5" />}
+          </span>
+          <span className="min-w-0">
+            <span className="block truncate text-[13px] font-medium text-foreground/85">
+              {displayName}
+            </span>
+            {meta ? (
+              <span className="block truncate text-[11px] text-muted-foreground/40">
+                {meta}
+              </span>
+            ) : null}
+          </span>
+        </div>
+        <span className="flex shrink-0 items-center gap-2">
+          <Badge variant="outline" className="h-5 border-foreground/10 px-1.5 text-[10px] font-medium text-muted-foreground/55">
+            {isRunning ? "Running" : "Background process"}
+          </Badge>
+        </span>
+      </div>
+      <div className={flat ? "space-y-4" : "space-y-3 px-3 py-3"}>
+        {task.summary ? (
+          <p className="text-[12px] leading-5 text-muted-foreground/75">
+            {task.summary}
+          </p>
+        ) : null}
+        {task.steps.length > 0 ? (
+          <div>
+            <p className="mb-1.5 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/35">
+              Plan
+            </p>
+            <ol className="space-y-1.5">
+              {task.steps.map((step, index) => (
+                <li key={`${step}-${index}`} className="flex gap-2 text-[12px] leading-5 text-muted-foreground/70">
+                  <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border border-foreground/8 text-[10px] text-muted-foreground/50">
+                    {index + 1}
+                  </span>
+                  <span>{step}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
+        ) : null}
+        {task.toolCalls.length > 0 ? (
+          <div className="flex flex-wrap gap-1.5">
+            {task.toolCalls.map((toolCall, index) => (
+              <Badge key={`${toolCall}-${index}`} variant="outline" className="h-5 border-foreground/8 px-1.5 text-[10px] font-medium text-muted-foreground/55">
+                {scientistSurnameFor(`mailbox-tool:${toolCall}`, index)}
+              </Badge>
+            ))}
+          </div>
+        ) : null}
+        <MailboxSearchAudit searches={task.searches} />
+        {task.emails.length > 0 ? (
+          <div>
+            <p className="mb-1.5 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/35">
+              Email context
+            </p>
+            <div className="space-y-2">
+              {task.emails.map((email, index) => (
+                <div key={`${email.emailRef ?? email.subject}-${index}`} className="rounded-md border border-foreground/6 bg-background px-3 py-2.5">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-foreground/85">
+                      {email.subject}
+                    </span>
+                    {email.accountEmail ? (
+                      <Badge variant="outline" className="h-5 border-foreground/8 px-1.5 text-[10px] font-medium text-muted-foreground/50">
+                        {email.accountEmail}
+                      </Badge>
+                    ) : null}
+                  </div>
+                  <p className="mt-1 truncate text-[11px] text-muted-foreground/45">
+                    {[email.from, email.mailbox, email.date ? dayjs(email.date).format("MMM D, YYYY h:mm A") : undefined].filter(Boolean).join(" · ")}
+                  </p>
+                  {email.reason ? (
+                    <p className="mt-1 text-[11px] leading-4 text-muted-foreground/65">
+                      {email.reason}
+                    </p>
+                  ) : null}
+                  {email.attachments.length > 0 ? (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {email.attachments.map((attachment, attachmentIndex) => {
+                        const size = formatAttachmentSize(attachment.size);
+                        return (
+                          <span
+                            key={`${attachment.filename}-${attachmentIndex}`}
+                            className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-foreground/8 bg-foreground/[0.02] px-2 py-1 text-[11px] text-muted-foreground/65"
+                          >
+                            <Paperclip className="h-3 w-3 shrink-0" />
+                            <span className="truncate">{attachment.filename}</span>
+                            {size ? <span className="text-muted-foreground/35">{size}</span> : null}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                  {email.emailRef ? (
+                    <div className="mt-2 flex flex-wrap gap-1.5 border-t border-foreground/6 pt-2">
+                      {threadId && email.attachments.length > 0 ? (
+                        <PillButton
+                          size="compact"
+                          variant="iconLabel"
+                          label="Save to thread"
+                          disabled={busyKey !== null}
+                          onClick={() => void handleSaveToThread(email, index)}
+                        >
+                          {busyKey === `save-${index}` ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <Paperclip className="h-3 w-3" />
+                          )}
+                        </PillButton>
+                      ) : null}
+                      {email.attachments.some(isMailboxPdfAttachment) ? (
+                        <PillButton
+                          size="compact"
+                          variant="iconLabel"
+                          label="Import policy/quote"
+                          disabled={busyKey !== null}
+                          onClick={() => void handlePolicyImport(email, index)}
+                        >
+                          {busyKey === `policy-${index}` ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <FileText className="h-3 w-3" />
+                          )}
+                        </PillButton>
+                      ) : null}
+                      <PillButton
+                        size="compact"
+                        variant="iconLabel"
+                        label="Create vendor requirements"
+                        disabled={busyKey !== null}
+                        onClick={() => void handleRequirementImport(email, index, "vendors")}
+                      >
+                        {busyKey === `vendors-${index}` ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <ClipboardList className="h-3 w-3" />
+                        )}
+                      </PillButton>
+                      <PillButton
+                        size="compact"
+                        variant="iconLabel"
+                        label="Create internal requirements"
+                        disabled={busyKey !== null}
+                        onClick={() => void handleRequirementImport(email, index, "own_org")}
+                      >
+                        {busyKey === `own_org-${index}` ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <ClipboardList className="h-3 w-3" />
+                        )}
+                      </PillButton>
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function MailboxTaskArtifacts({
+  artifacts,
+  orgId,
+  threadId,
+  messageId,
+  onOpenArtifact,
+  openArtifactRef,
+}: {
+  artifacts?: ToolArtifactData[];
+  orgId: Id<"organizations">;
+  threadId: Id<"threads">;
+  messageId: Id<"threadMessages">;
+  onOpenArtifact?: (ref: MailboxArtifactRef) => void;
+  openArtifactRef?: MailboxArtifactRef | null;
+}) {
+  const mailboxArtifacts = artifacts?.filter((artifact) => artifact.type === "mailbox_task") ?? [];
+  if (mailboxArtifacts.length === 0) return null;
+  return (
+    <div className="space-y-3">
+      {mailboxArtifacts.map((artifact, index) => {
+        return (
+          <MailboxTaskSummaryCard
+            key={`mailbox-task-${index}`}
+            artifact={artifact}
+            orgId={orgId}
+            threadId={threadId}
+            displayName={mailboxArtifacts.length > 1 ? `Mailbox search ${index + 1}` : "Mailbox search"}
+            onOpen={() => onOpenArtifact?.({ messageId, index })}
+            isSelected={openArtifactRef?.messageId === messageId && openArtifactRef.index === index}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+function MailboxTaskSidebar({
+  artifact,
+  orgId,
+  threadId,
+  onClose,
+}: {
+  artifact: ToolArtifactData;
+  orgId: Id<"organizations">;
+  threadId: Id<"threads">;
+  onClose: () => void;
+}) {
+  const task = normalizeMailboxTask(artifact.data);
+  const isRunning = task.status === "running";
+
+  return (
+    <aside className="flex h-full w-full flex-col overflow-hidden border-l border-foreground/8 bg-background">
+      <div className="flex h-12 items-center justify-between gap-3 border-b border-foreground/8 px-4">
+        <div className="flex min-w-0 items-center gap-2">
+          <h2 className="truncate text-body-sm font-semibold text-foreground">Mailbox search</h2>
+          <Badge variant="outline" className="h-5 shrink-0 border-foreground/10 px-1.5 text-[10px] font-medium text-muted-foreground/55">
+            {isRunning ? "Running" : "Background process"}
+          </Badge>
+        </div>
+        <PillButton size="compact" variant="icon" onClick={onClose} label="Close mailbox search">
+          <X className="h-4 w-4" />
+        </PillButton>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+        <MailboxTaskSummaryCard
+          artifact={artifact}
+          orgId={orgId}
+          threadId={threadId}
+          displayName="Mailbox search"
+          mode="detail"
+          flat
+        />
+      </div>
+    </aside>
+  );
+}
+
+function SubagentActivityPanel({
+  toolCalls,
+}: {
+  toolCalls: { name: string; input?: string; output?: string }[];
+}) {
+  const genericSubagentCalls = toolCalls.filter((toolCall) => toolCall.name !== "coordinate_mailbox_task");
+  if (genericSubagentCalls.length === 0) return null;
+
+  return (
+    <div className="mt-1.5 space-y-1.5">
+      {genericSubagentCalls.map((toolCall, index) => {
+        const displayName = scientistSurnameFor(
+          `${toolCall.name}:${toolCall.input ?? ""}:${toolCall.output ?? ""}`,
+          index,
+        );
+        return (
+          <ToolCallCard
+            key={`subagent-${toolCall.name}-${index}`}
+            toolCall={toolCall}
+            index={index}
+            showOutput
+            displayName={displayName}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
 function asRecordArray(value: unknown): Record<string, unknown>[] {
   return Array.isArray(value)
     ? value.filter((item): item is Record<string, unknown> => !!item && typeof item === "object" && !Array.isArray(item))
@@ -1288,12 +2050,14 @@ function EmailThreadSidebar({
 }) {
   const sendDraft = useAction(api.actions.sendPendingEmail.sendDraftNow);
   const cancelDraft = useMutation(api.pendingEmails.cancel);
+  const restoreDraft = useMutation(api.pendingEmails.restoreAsDraft);
   const pendingEmail = useQuery(
     api.pendingEmails.get,
     message?.pendingEmailId ? { id: message.pendingEmailId } : "skip",
   );
   const [isSending, setIsSending] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
 
   if (!message) return null;
   const isDraft = message.status === "draft_email" && pendingEmail?.status === "draft";
@@ -1332,6 +2096,19 @@ function EmailThreadSidebar({
       toast.error(err instanceof Error ? err.message : "Failed to cancel email");
     } finally {
       setIsCancelling(false);
+    }
+  }
+
+  async function handleRestore() {
+    if (!message?.pendingEmailId) return;
+    setIsRestoring(true);
+    try {
+      await restoreDraft({ id: message.pendingEmailId });
+      toast.success("Email restored as draft");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to restore email");
+    } finally {
+      setIsRestoring(false);
     }
   }
 
@@ -1385,6 +2162,19 @@ function EmailThreadSidebar({
           >
             {isSending ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <MailIcon className="mr-1.5 h-3.5 w-3.5" />}
             Send Email
+          </PillButton>
+        </div>
+      ) : isCancelled ? (
+        <div className="flex shrink-0 items-center justify-end gap-2 border-t border-foreground/8 px-4 py-3">
+          <PillButton
+            type="button"
+            size="compact"
+            variant="primary"
+            onClick={handleRestore}
+            disabled={isRestoring}
+          >
+            {isRestoring ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="mr-1.5 h-3.5 w-3.5" />}
+            Restore draft
           </PillButton>
         </div>
       ) : null}
@@ -1441,13 +2231,39 @@ function PendingSendCountdown({ pendingEmailId }: { pendingEmailId: Id<"pendingE
   );
 }
 
+function AgentProcessingActivity({
+  label,
+  isStale,
+  backgroundProcessCount,
+}: {
+  label?: string | null;
+  isStale?: boolean;
+  backgroundProcessCount: number;
+}) {
+  const status = label ?? (isStale ? "Taking longer than expected" : "Thinking");
+
+  return (
+    <div className="mt-2 flex max-w-full flex-wrap items-center gap-2">
+      <span className="inline-flex min-w-0 items-center gap-2 rounded-full border border-foreground/8 bg-foreground/[0.025] px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground/60">
+        <LogoIcon size={12} static className="h-3 w-3 shrink-0 animate-spin text-primary-light/70 [animation-duration:1.8s]" />
+        <span className="truncate">{status}</span>
+      </span>
+      {backgroundProcessCount > 0 ? (
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-foreground/8 bg-foreground/[0.025] px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground/55">
+          <Loader2 className="h-3 w-3 animate-spin text-primary-light/70" />
+          {backgroundProcessCount} background process{backgroundProcessCount === 1 ? "" : "es"} running
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 /* ── Unified message bubble ── */
 export function UnifiedMessageBubble({
   msg,
   relatedEmailMessage,
   viewerId,
   viewerEmail,
-  isLastAgentMessage,
   isFirstUserMessage,
   threadContext,
   brokerPerspective,
@@ -1459,12 +2275,13 @@ export function UnifiedMessageBubble({
   openPolicyChangeCaseId,
   onOpenVendorCompliance,
   openVendorComplianceArtifactRef,
+  onOpenMailboxArtifact,
+  openMailboxArtifactRef,
 }: {
   msg: ThreadMessage;
   relatedEmailMessage?: ThreadMessage;
   viewerId?: string;
   viewerEmail?: string;
-  isLastAgentMessage?: boolean;
   isFirstUserMessage?: boolean;
   threadContext?: { pageType: string; entityId?: string; summary?: string };
   /** When true, render agent messages as if sent "by the broker" — right-aligned. */
@@ -1478,9 +2295,12 @@ export function UnifiedMessageBubble({
   openPolicyChangeCaseId?: Id<"policyChangeCases"> | null;
   onOpenVendorCompliance?: (ref: VendorComplianceArtifactRef) => void;
   openVendorComplianceArtifactRef?: VendorComplianceArtifactRef | null;
+  onOpenMailboxArtifact?: (ref: MailboxArtifactRef) => void;
+  openMailboxArtifactRef?: MailboxArtifactRef | null;
 }) {
   const [showQuoted, setShowQuoted] = useState(false);
   const [showToolCalls, setShowToolCalls] = useState(false);
+  const [showSubagentActivity, setShowSubagentActivity] = useState(false);
   const [now] = useState(() => dayjs().valueOf());
   const time = dayjs(msg._creationTime);
   const channelIcon = msg.channel === "email"
@@ -1500,6 +2320,9 @@ export function UnifiedMessageBubble({
     const toolLabel = isToolStatus ? msg.content.trim().replace(/^\*|\*$/g, "") : null;
     // Clean content strips tool labels — only show real generated text
     const displayContent = isToolStatus ? "" : msg.content;
+    const mailboxArtifacts = msg.toolArtifacts?.filter((artifact) => artifact.type === "mailbox_task") ?? [];
+    const runningMailboxArtifacts = mailboxArtifacts.filter((artifact) => normalizeMailboxTask(artifact.data).status === "running");
+    const backgroundProcessCount = runningMailboxArtifacts.length || mailboxArtifacts.length;
 
     return (
       <div className="flex items-start gap-2.5 max-w-lg">
@@ -1526,24 +2349,26 @@ export function UnifiedMessageBubble({
             />
           )}
 
-          {/* Content bubble or thinking indicator */}
           {displayContent ? (
             <div className="rounded-lg bg-popover border border-foreground/6 px-3.5 py-2.5 mt-1">
               <ProseMarkdown gfm breaks className={MARKDOWN_STYLES} components={markdownComponents}>{displayContent}</ProseMarkdown>
-              <span className="inline-block w-1.5 h-4 bg-primary-light rounded-sm animate-pulse ml-0.5 align-middle" />
             </div>
-          ) : (
-            <div className="flex items-center gap-1.5 h-6 mt-1">
-              <span className="flex gap-[3px]">
-                <span className="w-1 h-1 rounded-full bg-primary-light/60 animate-pulse" />
-                <span className="w-1 h-1 rounded-full bg-primary-light/60 animate-pulse [animation-delay:150ms]" />
-                <span className="w-1 h-1 rounded-full bg-primary-light/60 animate-pulse [animation-delay:300ms]" />
-              </span>
-              <span className="text-label-sm text-muted-foreground/40 select-none">
-                {toolLabel ?? (isStale ? "Taking longer than expected" : "Thinking")}
-              </span>
-            </div>
-          )}
+          ) : null}
+          <AgentProcessingActivity
+            label={toolLabel}
+            isStale={isStale}
+            backgroundProcessCount={backgroundProcessCount}
+          />
+          {mailboxArtifacts.length > 0 ? (
+            <MailboxTaskArtifacts
+              artifacts={mailboxArtifacts}
+              orgId={msg.orgId}
+              threadId={msg.threadId}
+              messageId={msg._id}
+              onOpenArtifact={onOpenMailboxArtifact}
+              openArtifactRef={openMailboxArtifactRef}
+            />
+          ) : null}
           {relatedEmailMessage ? (
             <div className="mt-3">
               <EmailSummaryCard
@@ -1559,7 +2384,7 @@ export function UnifiedMessageBubble({
   }
 
   // Error state
-  if (msg.status === "error") {
+  if (msg.status === "error" && msg.role !== "agent") {
     return (
       <div className="rounded-lg bg-red-50/50 dark:bg-red-950/30 border border-red-100 dark:border-red-900/50 p-3">
         <p className="text-label-sm text-red-600 dark:text-red-400">
@@ -1572,7 +2397,12 @@ export function UnifiedMessageBubble({
 
   // Agent message
   if (msg.role === "agent") {
-    const fixedContent = msg.content;
+    const isError = msg.status === "error";
+    const fixedContent = msg.content?.trim()
+      ? msg.content
+      : isError
+        ? (msg.error ?? "An error occurred processing this message.")
+        : msg.content;
 
     // Cited sections from tool results (stored on message by processThreadChat)
     const citedSections = msg.citedSections;
@@ -1580,6 +2410,14 @@ export function UnifiedMessageBubble({
     const toolCalls = msg.toolCalls?.length
       ? msg.toolCalls
       : (msg.usedTools ?? []).map((name) => ({ name }));
+    const subagentToolCalls = toolCalls.filter((toolCall) => SUBAGENT_TOOL_NAMES.has(toolCall.name));
+    const regularToolCalls = toolCalls.filter((toolCall) => !SUBAGENT_TOOL_NAMES.has(toolCall.name));
+    const mailboxArtifacts = msg.toolArtifacts?.filter((artifact) => artifact.type === "mailbox_task") ?? [];
+    const genericSubagentToolCalls = subagentToolCalls.filter(
+      (toolCall) => toolCall.name !== "coordinate_mailbox_task",
+    );
+    const subagentActivityCount = genericSubagentToolCalls.length;
+    const savedAttachmentMessage = isSavedThreadAttachmentMessage(msg);
 
     // Build reference cards — referencedPolicyIds now only contains policies actually cited via lookup_policy_section
     const allRefs: { type: "policy"; id: string; page?: number }[] = [];
@@ -1630,18 +2468,32 @@ export function UnifiedMessageBubble({
                   reasoning={msg.reasoning ?? ""}
                   isStreaming={false}
                 />
-                <div className={`rounded-lg bg-popover border border-foreground/6 px-3.5 py-2.5 ${msg.reasoning ? "mt-1" : ""}`}>
+                <div className={`rounded-lg border px-3.5 py-2.5 ${msg.reasoning ? "mt-1" : ""} ${
+                  isError
+                    ? "border-red-500/20 bg-red-500/5 text-red-600 dark:text-red-400"
+                    : "border-foreground/6 bg-popover"
+                }`}>
                   <ProseMarkdown gfm breaks className={MARKDOWN_STYLES} components={markdownComponents}>{fixedContent}</ProseMarkdown>
+                  {savedAttachmentMessage ? (
+                    <div className="mt-2 flex flex-wrap gap-2 border-t border-foreground/6 pt-2">
+                      {msg.attachments?.map((att, i) => (
+                        <ThreadAttachmentChip key={i} attachment={att} threadId={msg.threadId} />
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
                 <MessageFooterActions
                   refs={allRefs}
                   citedSections={citedSections}
                   citedCoverageNames={citedCoverageNames}
-                  toolCalls={toolCalls}
-                  copyContent={msg.content}
+                  toolCalls={regularToolCalls}
+                  subagentActivityCount={subagentActivityCount}
+                  copyContent={fixedContent}
                   retryMessageId={msg.channel === "chat" || msg.channel === "imessage" ? msg._id : undefined}
                   showToolCalls={showToolCalls}
                   onToggleToolCalls={() => setShowToolCalls((value) => !value)}
+                  showSubagentActivity={showSubagentActivity}
+                  onToggleSubagentActivity={() => setShowSubagentActivity((value) => !value)}
                   rightAligned={brokerPerspective}
                 />
                 <VendorComplianceArtifacts
@@ -1649,6 +2501,14 @@ export function UnifiedMessageBubble({
                   artifacts={msg.toolArtifacts}
                   openArtifactRef={openVendorComplianceArtifactRef}
                   onOpenArtifact={onOpenVendorCompliance}
+                />
+                <MailboxTaskArtifacts
+                  artifacts={mailboxArtifacts}
+                  orgId={msg.orgId}
+                  threadId={msg.threadId}
+                  messageId={msg._id}
+                  onOpenArtifact={onOpenMailboxArtifact}
+                  openArtifactRef={openMailboxArtifactRef}
                 />
                 {relatedEmailMessage ? (
                   <div className="mt-4">
@@ -1669,10 +2529,15 @@ export function UnifiedMessageBubble({
                     />
                   </div>
                 ) : null}
-                {toolCalls.length > 0 && showToolCalls && <ToolCallPanel toolCalls={toolCalls} />}
+                {regularToolCalls.length > 0 && showToolCalls && <ToolCallPanel toolCalls={regularToolCalls} />}
+                {subagentActivityCount > 0 && showSubagentActivity && (
+                  <SubagentActivityPanel
+                    toolCalls={subagentToolCalls}
+                  />
+                )}
               </>
             )}
-            {!(collapseEmailMessages && msg.channel === "email") && msg.attachments && msg.attachments.length > 0 && (
+            {!savedAttachmentMessage && !(collapseEmailMessages && msg.channel === "email") && msg.attachments && msg.attachments.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-2">
                 {msg.attachments.map((att, i) => (
                   <ThreadAttachmentChip key={i} attachment={att} threadId={msg.threadId} />
@@ -1684,9 +2549,6 @@ export function UnifiedMessageBubble({
             )}
           </div>
         </div>
-        {isLastAgentMessage && (!msg.content || msg.content.trim().length === 0) && (
-          <RetryButton messageId={msg._id} />
-        )}
       </div>
     );
   }
@@ -1929,6 +2791,45 @@ function ThreadEmailLink({ threadEmail, subject }: { threadEmail?: string; subje
   );
 }
 
+function QueuedThreadMessage({
+  message,
+  sending,
+  onSendNow,
+  onCancel,
+}: {
+  message: PromptInputMessage;
+  sending: boolean;
+  onSendNow: () => void;
+  onCancel: () => void;
+}) {
+  const preview = message.text.trim() || (message.files.length > 0 ? `${message.files.length} attachment${message.files.length === 1 ? "" : "s"}` : "Message");
+  return (
+    <div className="mb-2 flex items-center gap-2 rounded-lg border border-foreground/8 bg-card px-2.5 py-2">
+      <Clock className="h-3.5 w-3.5 shrink-0 text-muted-foreground/35" />
+      <p className="min-w-0 flex-1 truncate text-label-sm text-muted-foreground/55">
+        Queued: <span className="text-foreground/75">{preview}</span>
+      </p>
+      <PillButton
+        type="button"
+        size="compact"
+        onClick={onSendNow}
+        disabled={sending}
+      >
+        {sending ? "Sending" : "Send now"}
+      </PillButton>
+      <button
+        type="button"
+        onClick={onCancel}
+        disabled={sending}
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted-foreground/35 transition-colors hover:bg-foreground/[0.04] hover:text-foreground/65 disabled:opacity-50"
+        aria-label="Remove queued message"
+      >
+        <X className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
+
 /* ── Unified thread content ── */
 function UnifiedThreadContent({
   threadId,
@@ -1959,9 +2860,12 @@ function UnifiedThreadContent({
   const lastAutoOpenedEmailId = useRef<string | null>(null);
   const lastAutoOpenedPolicyChangeCaseId = useRef<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [queuedMessage, setQueuedMessage] = useState<PromptInputMessage | null>(null);
+  const [sendingQueuedNow, setSendingQueuedNow] = useState(false);
   const [openEmailMessageId, setOpenEmailMessageId] = useState<Id<"threadMessages"> | null>(null);
   const [openPolicyChangeCaseId, setOpenPolicyChangeCaseId] = useState<Id<"policyChangeCases"> | null>(null);
   const [openVendorComplianceArtifactRef, setOpenVendorComplianceArtifactRef] = useState<VendorComplianceArtifactRef | null>(null);
+  const [openMailboxArtifactRef, setOpenMailboxArtifactRef] = useState<MailboxArtifactRef | null>(null);
   const openEmailMessage = useMemo(
     () => messages?.find((message) => message._id === openEmailMessageId) ?? null,
     [messages, openEmailMessageId],
@@ -1972,6 +2876,13 @@ function UnifiedThreadContent({
     const artifacts = message?.toolArtifacts?.filter((artifact) => artifact.type === "vendor_compliance") ?? [];
     return artifacts[openVendorComplianceArtifactRef.index] ?? null;
   }, [messages, openVendorComplianceArtifactRef]);
+  const openMailboxArtifact = useMemo(() => {
+    if (!openMailboxArtifactRef) return null;
+    const message = messages?.find((candidate) => candidate._id === openMailboxArtifactRef.messageId);
+    const artifacts = message?.toolArtifacts?.filter((artifact) => artifact.type === "mailbox_task") ?? [];
+    const artifact = artifacts[openMailboxArtifactRef.index];
+    return artifact ? { artifact, orgId: message?.orgId, threadId: message?.threadId } : null;
+  }, [messages, openMailboxArtifactRef]);
 
   // Error state for chat — stored as { threadId, message } so switching threads auto-clears it
   const [chatErrorState, setChatErrorState] = useState<{ threadId: string; message: string } | null>(null);
@@ -2025,10 +2936,19 @@ function UnifiedThreadContent({
                   onClose={() => setOpenVendorComplianceArtifactRef(null)}
                 />
               )
+            : openMailboxArtifact?.artifact && openMailboxArtifact.orgId && openMailboxArtifact.threadId
+              ? (
+                  <MailboxTaskSidebar
+                    artifact={openMailboxArtifact.artifact}
+                    orgId={openMailboxArtifact.orgId}
+                    threadId={openMailboxArtifact.threadId}
+                    onClose={() => setOpenMailboxArtifactRef(null)}
+                  />
+                )
           : null,
     );
     return () => onRightPanel(null);
-  }, [onRightPanel, openEmailMessage, openPolicyChangeCaseId, openVendorComplianceArtifact, policyChangeAccess]);
+  }, [onRightPanel, openEmailMessage, openPolicyChangeCaseId, openVendorComplianceArtifact, openMailboxArtifact, policyChangeAccess]);
 
   // Scroll to bottom when messages change or thread switches
   useEffect(() => {
@@ -2039,6 +2959,8 @@ function UnifiedThreadContent({
     if (isNew) {
       setOpenEmailMessageId(null);
       setOpenPolicyChangeCaseId(null);
+      setOpenVendorComplianceArtifactRef(null);
+      setOpenMailboxArtifactRef(null);
       lastAutoOpenedEmailId.current = null;
       lastAutoOpenedPolicyChangeCaseId.current = null;
     }
@@ -2053,6 +2975,8 @@ function UnifiedThreadContent({
     if (lastAutoOpenedEmailId.current === latestDraftEmail._id) return;
     lastAutoOpenedEmailId.current = latestDraftEmail._id;
     setOpenPolicyChangeCaseId(null);
+    setOpenVendorComplianceArtifactRef(null);
+    setOpenMailboxArtifactRef(null);
     setOpenEmailMessageId(latestDraftEmail._id);
   }, [messages]);
 
@@ -2064,6 +2988,8 @@ function UnifiedThreadContent({
     if (lastAutoOpenedPolicyChangeCaseId.current === latestPolicyChange.policyChangeCaseId) return;
     lastAutoOpenedPolicyChangeCaseId.current = latestPolicyChange.policyChangeCaseId;
     setOpenEmailMessageId(null);
+    setOpenVendorComplianceArtifactRef(null);
+    setOpenMailboxArtifactRef(null);
     setOpenPolicyChangeCaseId(latestPolicyChange.policyChangeCaseId);
   }, [messages]);
 
@@ -2089,13 +3015,25 @@ function UnifiedThreadContent({
     const lastAgentIndex = messages.reduce((acc, m, i) => m.role === "agent" ? i : acc, -1);
     return lastUserIndex > lastAgentIndex;
   }, [messages]);
-  const isInputBusy = isSubmitting || isAgentProcessing || isAwaitingAgent;
-  const inputBusyLabel = isSubmitting ? "Sending" : "Responding";
+  const isAgentActive = isAgentProcessing || isAwaitingAgent;
+  const isInputBusy = isSubmitting || sendingQueuedNow;
+  const inputBusyLabel = "Sending";
 
-  const handleSend = useCallback(async (message: PromptInputMessage) => {
-    if (isInputBusy) return;
+  const sendThreadMessage = useCallback(async (message: PromptInputMessage) => {
     const text = message.text.trim();
     if (!text && message.files.length === 0) return;
+    const referencedPolicyIds = message.references
+      ?.filter((reference) => reference.kind === "policy")
+      .map((reference) => reference.id as Id<"policies">);
+    const referencedQuoteIds = message.references
+      ?.filter((reference) => reference.kind === "quote")
+      .map((reference) => reference.id as Id<"policies">);
+    const referencedRequirementIds = message.references
+      ?.filter((reference) => reference.kind === "requirement")
+      .map((reference) => reference.id as Id<"insuranceRequirements">);
+    const referencedMailboxIds = message.references
+      ?.filter((reference) => reference.kind === "mailbox")
+      .map((reference) => reference.id as Id<"connectedEmailAccounts">);
 
     setIsSubmitting(true);
     try {
@@ -2128,17 +3066,59 @@ function UnifiedThreadContent({
           threadId,
           content: text || "(attached files)",
           attachments,
+          referencedPolicyIds,
+          referencedQuoteIds,
+          referencedRequirementIds,
+          referencedMailboxIds,
         });
         return;
       }
 
       // For text-only messages, send via Convex (processThreadChat handles the response)
       setChatError(null);
-      await sendMessage({ threadId, content: text });
+      await sendMessage({
+        threadId,
+        content: text,
+        referencedPolicyIds,
+        referencedQuoteIds,
+        referencedRequirementIds,
+        referencedMailboxIds,
+      });
     } finally {
       setIsSubmitting(false);
     }
-  }, [sendMessage, threadId, generateUploadUrl, setChatError, isInputBusy]);
+  }, [sendMessage, threadId, generateUploadUrl, setChatError]);
+
+  const handleSend = useCallback(async (message: PromptInputMessage) => {
+    if (isInputBusy) return;
+    if (isAgentActive) {
+      setQueuedMessage(message);
+      return;
+    }
+    await sendThreadMessage(message);
+  }, [isAgentActive, isInputBusy, sendThreadMessage]);
+
+  const sendQueuedNow = useCallback(async () => {
+    if (!queuedMessage || sendingQueuedNow) return;
+    setSendingQueuedNow(true);
+    const message = queuedMessage;
+    setQueuedMessage(null);
+    try {
+      await sendThreadMessage(message);
+    } finally {
+      setSendingQueuedNow(false);
+    }
+  }, [queuedMessage, sendThreadMessage, sendingQueuedNow]);
+
+  useEffect(() => {
+    if (!queuedMessage || isAgentActive || isSubmitting || sendingQueuedNow) return;
+    const message = queuedMessage;
+    const timeout = window.setTimeout(() => {
+      setQueuedMessage(null);
+      void sendThreadMessage(message);
+    }, 0);
+    return () => window.clearTimeout(timeout);
+  }, [isAgentActive, isSubmitting, queuedMessage, sendThreadMessage, sendingQueuedNow]);
 
   const collapseEmailMessages = thread?.originChannel !== "email";
 
@@ -2160,7 +3140,6 @@ function UnifiedThreadContent({
           )}
           {(() => {
             const threadMessages = messages ?? [];
-            const lastAgentIdx = threadMessages.reduce((acc, m, i) => m.role === "agent" ? i : acc, -1);
             const firstUserIdx = threadMessages.findIndex((m) => m.role === "user");
             const attachedEmailMessageIds = new Set<string>();
             const hiddenStatusMessageIds = new Set<string>();
@@ -2193,7 +3172,6 @@ function UnifiedThreadContent({
                     relatedEmailMessage={relatedEmailMessage}
                     viewerId={viewerId}
                     viewerEmail={viewerEmail}
-                    isLastAgentMessage={idx === lastAgentIdx}
                     isFirstUserMessage={false}
                     threadContext={undefined}
                     agentBranding={agentBranding}
@@ -2201,21 +3179,31 @@ function UnifiedThreadContent({
                     onOpenEmail={(message) => {
                       setOpenPolicyChangeCaseId(null);
                       setOpenVendorComplianceArtifactRef(null);
+                      setOpenMailboxArtifactRef(null);
                       setOpenEmailMessageId(message._id);
                     }}
                     openEmailMessageId={openEmailMessageId}
                     onOpenPolicyChange={(caseId) => {
                       setOpenEmailMessageId(null);
                       setOpenVendorComplianceArtifactRef(null);
+                      setOpenMailboxArtifactRef(null);
                       setOpenPolicyChangeCaseId(caseId);
                     }}
                     openPolicyChangeCaseId={openPolicyChangeCaseId}
                     onOpenVendorCompliance={(ref) => {
                       setOpenEmailMessageId(null);
                       setOpenPolicyChangeCaseId(null);
+                      setOpenMailboxArtifactRef(null);
                       setOpenVendorComplianceArtifactRef(ref);
                     }}
                     openVendorComplianceArtifactRef={openVendorComplianceArtifactRef}
+                    onOpenMailboxArtifact={(ref) => {
+                      setOpenEmailMessageId(null);
+                      setOpenPolicyChangeCaseId(null);
+                      setOpenVendorComplianceArtifactRef(null);
+                      setOpenMailboxArtifactRef(ref);
+                    }}
+                    openMailboxArtifactRef={openMailboxArtifactRef}
                   />
                   {isFirstUser && thread?.initialContext && (
                     <div className={`mt-2 flex ${firstUserIsOwn ? "justify-end mr-9.5" : "ml-9.5"}`}>
@@ -2240,6 +3228,14 @@ function UnifiedThreadContent({
         {messages && messages.length > 0 && thread.threadEmail && (
           <ThreadEmailLink threadEmail={thread.threadEmail} subject={thread.title !== "New chat" ? thread.title : undefined} />
         )}
+        {queuedMessage ? (
+          <QueuedThreadMessage
+            message={queuedMessage}
+            sending={sendingQueuedNow}
+            onSendNow={sendQueuedNow}
+            onCancel={() => setQueuedMessage(null)}
+          />
+        ) : null}
         <GlassPromptInput
           ref={chatInputRef}
           onSubmit={handleSend}
@@ -2249,6 +3245,7 @@ function UnifiedThreadContent({
           disabled={isInputBusy}
           status={isInputBusy ? "submitted" : undefined}
           submittedLabel={inputBusyLabel}
+          orgId={thread.orgId}
         />
       </ChatInputOverlay>
     </div>

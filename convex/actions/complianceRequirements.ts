@@ -4,7 +4,7 @@ import { generateObject } from "ai";
 import mammoth from "mammoth";
 import { z } from "zod";
 import { v } from "convex/values";
-import { action } from "../_generated/server";
+import { action, internalAction } from "../_generated/server";
 import dayjs from "dayjs";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
@@ -302,6 +302,115 @@ export const importRequirements = action({
         appliesTo: args.appliesTo,
         sourceDocumentId,
         sourceDocumentName: args.fileName || "Pasted source text",
+        sourceType,
+        requirements: result.object.requirements.map(
+          normalizeImportedRequirement,
+        ),
+      },
+    );
+
+    return { createdCount: requirementIds.length, requirementIds };
+  },
+});
+
+export const importRequirementsInternal = internalAction({
+  args: {
+    orgId: v.id("organizations"),
+    userId: v.id("users"),
+    pastedText: v.optional(v.string()),
+    fileId: v.optional(v.id("_storage")),
+    fileName: v.optional(v.string()),
+    contentType: v.optional(v.string()),
+    sourceType: v.optional(
+      v.union(
+        v.literal("lease_agreement"),
+        v.literal("client_contract"),
+        v.literal("vendor_requirements"),
+        v.literal("other"),
+      ),
+    ),
+    appliesTo: v.optional(
+      v.union(v.literal("vendors"), v.literal("own_org"), v.literal("both")),
+    ),
+  },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{
+    createdCount: number;
+    requirementIds: Id<"insuranceRequirements">[];
+  }> => {
+    const context: {
+      userId: Id<"users">;
+      existingRequirements: ExistingRequirement[];
+    } = await ctx.runQuery(
+      internal.compliance.getRequirementImportContextForUserInternal,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+      },
+    );
+
+    let sourceText = args.pastedText?.trim() ?? "";
+    if (args.fileId) {
+      const blob = await ctx.storage.get(args.fileId);
+      if (!blob) throw new Error("Requirement document not found");
+      const fileText = await extractFileText({
+        buffer: await blob.arrayBuffer(),
+        fileName: args.fileName,
+        contentType: args.contentType,
+      });
+      sourceText = [sourceText, fileText].filter(Boolean).join("\n\n");
+    }
+
+    sourceText = truncateSource(sourceText);
+    if (!sourceText)
+      throw new Error("Paste text or upload a requirement document first");
+
+    const sourceType =
+      args.sourceType ??
+      (args.fileName?.toLowerCase().includes("lease")
+        ? "lease_agreement"
+        : args.fileName?.toLowerCase().includes("contract")
+          ? "client_contract"
+          : "vendor_requirements");
+    const sourceDocumentId: Id<"requirementSourceDocuments"> =
+      await ctx.runMutation(
+        internal.compliance.createRequirementSourceDocumentInternal,
+        {
+          orgId: args.orgId,
+          userId: context.userId,
+          fileId: args.fileId,
+          fileName: args.fileName,
+          contentType: args.contentType,
+          sourceType,
+          title:
+            args.fileName ||
+            `Mailbox requirements ${dayjs().format("YYYY-MM-DD HH:mm")}`,
+          sourceTextExcerpt: sourceText.slice(0, 4000),
+        },
+      );
+
+    const result = await generateObject({
+      model: getModel("chat"),
+      schema: RequirementImportSchema,
+      system:
+        "You convert contract and certificate insurance language into coverage-shaped structured compliance requirements for Glass.",
+      prompt: buildPrompt({
+        sourceText,
+        existingRequirements: context.existingRequirements,
+        appliesTo: args.appliesTo ?? "vendors",
+      }),
+    });
+
+    const requirementIds: Id<"insuranceRequirements">[] = await ctx.runMutation(
+      internal.compliance.createRequirementsInternal,
+      {
+        orgId: args.orgId,
+        userId: context.userId,
+        appliesTo: args.appliesTo,
+        sourceDocumentId,
+        sourceDocumentName: args.fileName || "Mailbox source text",
         sourceType,
         requirements: result.object.requirements.map(
           normalizeImportedRequirement,

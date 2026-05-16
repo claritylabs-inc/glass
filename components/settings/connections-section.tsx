@@ -49,7 +49,6 @@ export function ConnectionsSection() {
   const [generatedKey, setGeneratedKey] = useState<string | null>(null);
   const [copiedKey, setCopiedKey] = useState(false);
   const [showRevokeKeyDialog, setShowRevokeKeyDialog] = useState<string | null>(null);
-
   const { setActions, setRightPanel } = useSettingsActions();
   useEffect(() => {
     setActions(null);

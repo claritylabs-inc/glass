@@ -35,6 +35,24 @@ describe("iMessage group chat surfaces", () => {
     expect(inbound).toContain("findOrCreateByImessageChat");
   });
 
+  it("can create outbound group chats through the worker and shared agent tool", () => {
+    const worker = read("imessage-worker/src/index.ts");
+    const action = read("convex/actions/createOutboundImessageGroup.ts");
+    const tools = read("convex/lib/chatTools.ts");
+    const chat = read("convex/actions/processThreadChat.ts");
+
+    expect(worker).toContain("payload.participants");
+    expect(worker).toContain("chats.create(participants");
+    expect(worker).toContain("deterministicTerminalGroupGuid");
+    expect(action).toContain("createOutboundImessageGroupInternal");
+    expect(action).toContain("internal.imessageChats.syncChat");
+    expect(action).toContain("internal.threads.findOrCreateByImessageChat");
+    expect(tools).toContain("createImessageGroupChat");
+    expect(tools).toContain("confirmed");
+    expect(chat).toContain("create_imessage_group_chat");
+    expect(chat).toContain("Ask the user to confirm before creating");
+  });
+
   it("keeps group fallback threads separate from direct iMessage DMs", () => {
     const direct = buildFallbackImessageChatGuid({
       fromPhone: "+15551234567",

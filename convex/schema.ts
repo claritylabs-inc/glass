@@ -171,6 +171,7 @@ export default defineSchema({
         email_extraction: v.optional(modelRouteValidator),
         document_extraction: v.optional(modelRouteValidator),
         security: v.optional(modelRouteValidator),
+        mailbox_coordinator: v.optional(modelRouteValidator),
         application_authoring: v.optional(modelRouteValidator),
         embeddings: v.optional(modelRouteValidator),
       }),
@@ -178,6 +179,32 @@ export default defineSchema({
     updatedBy: v.id("users"),
     updatedAt: v.number(),
   }).index("by_brokerOrgId", ["brokerOrgId"]),
+
+  connectedEmailAccounts: defineTable({
+    orgId: v.id("organizations"),
+    userId: v.id("users"),
+    scope: v.union(v.literal("user"), v.literal("org")),
+    label: v.optional(v.string()),
+    emailAddress: v.string(),
+    host: v.string(),
+    port: v.number(),
+    secure: v.boolean(),
+    username: v.string(),
+    encryptedPassword: v.string(),
+    encryptionKeyVersion: v.optional(v.string()),
+    status: v.union(
+      v.literal("active"),
+      v.literal("error"),
+      v.literal("revoked"),
+    ),
+    lastError: v.optional(v.string()),
+    lastTestedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_orgId", ["orgId"])
+    .index("by_userId", ["userId"])
+    .index("by_orgId_status", ["orgId", "status"]),
 
   // Org memory — persistent AI knowledge (facts, preferences, risk notes, observations)
   orgMemory: defineTable({
@@ -1373,6 +1400,8 @@ export default defineSchema({
     replyToMessageId: v.optional(v.id("threadMessages")),
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
     referencedQuoteIds: v.optional(v.any()), // legacy: may contain old quotes table IDs
+    referencedRequirementIds: v.optional(v.array(v.id("insuranceRequirements"))),
+    referencedMailboxIds: v.optional(v.array(v.id("connectedEmailAccounts"))),
     // Sections cited by the agent (titles captured from lookup_policy_section tool results)
     citedSections: v.optional(v.array(v.string())),
     // Structured coverage names cited by the agent when tool results match policy coverages
@@ -1387,6 +1416,7 @@ export default defineSchema({
         v.object({
           name: v.string(),
           input: v.optional(v.string()),
+          output: v.optional(v.string()),
         }),
       ),
     ),

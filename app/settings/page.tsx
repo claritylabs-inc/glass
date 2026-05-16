@@ -21,6 +21,7 @@ function GlassStarIcon({ className }: { className?: string }) {
 }
 import { OrganizationSection } from "@/components/settings/organization-section";
 import { TeamSection } from "@/components/settings/team-section";
+import { EmailConnectionsSection } from "@/components/settings/email-connections-section";
 import { ConnectionsSection } from "@/components/settings/connections-section";
 import { MemorySection } from "@/components/settings/memory-section";
 import { BrokerTeamTab } from "@/components/settings/broker-team-tab";
@@ -122,6 +123,7 @@ function SectionContent({
          section === "team" ? <BrokerTeamTab /> :
          section === "agent" ? <BrokerAgentTab /> :
          section === "models" ? <ModelsSection /> :
+         section === "email" ? <EmailConnectionsSection /> :
          section === "connections" ? <ConnectionsSection /> :
          section === "notifications" && currentOrg?.orgId ? (
            <NotificationPreferencesPage orgId={currentOrg.orgId} isBroker={isBroker} />
@@ -139,6 +141,8 @@ function SectionContent({
         <BrokerAgentTab />
       ) : section === "memory" ? (
         <MemorySection />
+      ) : section === "email" ? (
+        <EmailConnectionsSection />
       ) : section === "connections" ? (
         <ConnectionsSection />
       ) : section === "notifications" && currentOrg?.orgId ? (
