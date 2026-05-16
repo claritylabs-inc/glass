@@ -4,11 +4,19 @@ import { forwardRef, type ReactNode } from "react";
 import { motion, type HTMLMotionProps } from "framer-motion";
 import { cn } from "@/lib/utils";
 
-type PillButtonVariant = "primary" | "secondary" | "destructive" | "ghost" | "icon" | "iconLabel";
+type PillButtonVariant =
+  | "primary"
+  | "secondary"
+  | "destructive"
+  | "ghost"
+  | "icon"
+  | "iconLabel";
 type PillButtonSize = "default" | "compact";
 
-interface PillButtonProps
-  extends Omit<HTMLMotionProps<"button">, "ref" | "children"> {
+interface PillButtonProps extends Omit<
+  HTMLMotionProps<"button">,
+  "ref" | "children"
+> {
   variant?: PillButtonVariant;
   size?: PillButtonSize;
   label?: string;
@@ -28,36 +36,36 @@ type VariantConfig = {
 
 const variantConfig: Record<PillButtonVariant, VariantConfig> = {
   primary: {
-    classes: "bg-brand text-brand-foreground [color:var(--brand-foreground)] hover:[color:var(--brand-foreground)]",
-    hover: {
-      backgroundColor: "color-mix(in srgb, var(--brand) 88%, var(--background))",
-    },
-    tap: {
-      backgroundColor: "color-mix(in srgb, var(--brand) 78%, var(--background))",
-    },
+    classes:
+      "bg-brand !text-white dark:!text-black hover:bg-[color-mix(in_srgb,var(--brand)_68%,var(--background))] hover:ring-1 hover:ring-foreground/10 active:bg-[color-mix(in_srgb,var(--brand)_56%,var(--background))]",
   },
   secondary: {
-    classes: "border border-foreground/8 bg-transparent text-muted-foreground hover:border-foreground/14 hover:bg-foreground/[0.03] hover:text-foreground",
+    classes:
+      "border border-foreground/8 bg-transparent text-muted-foreground hover:border-foreground/14 hover:bg-foreground/[0.03] hover:text-foreground",
     hover: { filter: "brightness(0.98)" },
     tap: { opacity: 0.78 },
   },
   destructive: {
-    classes: "bg-red-500/10 text-destructive hover:bg-red-500/15 hover:text-red-600",
+    classes:
+      "bg-red-500/10 text-destructive hover:bg-red-500/15 hover:text-red-600",
     hover: { filter: "brightness(0.98)" },
     tap: { opacity: 0.78 },
   },
   ghost: {
-    classes: "bg-transparent text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground",
+    classes:
+      "bg-transparent text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground",
     hover: { filter: "brightness(0.98)" },
     tap: { opacity: 0.78 },
   },
   icon: {
-    classes: "bg-transparent text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground",
+    classes:
+      "bg-transparent text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground",
     hover: { filter: "brightness(0.98)" },
     tap: { opacity: 0.78 },
   },
   iconLabel: {
-    classes: "bg-transparent text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground",
+    classes:
+      "bg-transparent text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground",
     hover: { filter: "brightness(0.98)" },
     tap: { opacity: 0.78 },
   },
@@ -118,4 +126,9 @@ const PillButton = forwardRef<HTMLButtonElement, PillButtonProps>(
 
 PillButton.displayName = "PillButton";
 
-export { PillButton, type PillButtonProps, type PillButtonVariant, type PillButtonSize };
+export {
+  PillButton,
+  type PillButtonProps,
+  type PillButtonVariant,
+  type PillButtonSize,
+};

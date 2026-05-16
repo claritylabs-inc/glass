@@ -3,8 +3,14 @@
 import { Mail, MessageSquare, UserPlus } from "lucide-react";
 import { PillButton } from "@/components/ui/pill-button";
 import { LogoIcon } from "@/components/ui/logo-icon";
-import { buildAgentContactVCard, downloadVCard } from "@/components/lib/agent-contact-vcard";
-import { AGENT_TEXT_NUMBER, IMESSAGE_CONTACT_ENABLED } from "@/lib/imessage-config";
+import {
+  buildAgentContactVCard,
+  downloadVCard,
+} from "@/components/lib/agent-contact-vcard";
+import {
+  AGENT_TEXT_NUMBER,
+  IMESSAGE_CONTACT_ENABLED,
+} from "@/lib/imessage-config";
 import { getPublicAgentDomain } from "@/lib/domains";
 
 const AGENT_DOMAIN = getPublicAgentDomain();
@@ -36,7 +42,9 @@ export function AgentContactCallout({
   className,
 }: AgentContactCalloutProps) {
   const handle = broker?.agentHandle ?? fallbackAgentHandle ?? null;
-  const agentEmail = handle ? `${handle}@${AGENT_DOMAIN}` : `agent@${AGENT_DOMAIN}`;
+  const agentEmail = handle
+    ? `${handle}@${AGENT_DOMAIN}`
+    : `agent@${AGENT_DOMAIN}`;
 
   const handleEmail = () => {
     window.location.href = `mailto:${agentEmail}`;
@@ -64,14 +72,20 @@ export function AgentContactCallout({
         <div className="min-w-0 max-w-xl">
           <div className="text-3xl sm:text-4xl font-medium tracking-tight leading-[1.1]">
             Get answers about your insurance coverage, wherever you are
-            <LogoIcon className="inline -mt-0.5 ml-2.5 h-6 w-6"/>
+            <LogoIcon className="inline -mt-0.5 ml-2.5 h-6 w-6" />
           </div>
         </div>
 
         <div className="flex flex-col sm:flex-row shrink-0 items-stretch sm:items-center gap-2 mb-1">
-          <PillButton variant="primary" className="hidden sm:inline-flex" onClick={handleEmail}>
+          <PillButton
+            variant="primary"
+            className="hidden sm:inline-flex"
+            onClick={handleEmail}
+            title={agentEmail}
+            aria-label={`Email ${agentEmail}`}
+          >
             <Mail className="h-4 w-4" />
-            Email {agentEmail}
+            Email Agent
           </PillButton>
           {IMESSAGE_CONTACT_ENABLED ? (
             <>
@@ -83,7 +97,11 @@ export function AgentContactCallout({
                 <MessageSquare className="h-4 w-4" />
                 Text My Agent
               </PillButton>
-              <PillButton variant="primary" className="sm:hidden" onClick={handleText}>
+              <PillButton
+                variant="primary"
+                className="sm:hidden"
+                onClick={handleText}
+              >
                 <MessageSquare className="h-4 w-4" />
                 Text My Agent
               </PillButton>
