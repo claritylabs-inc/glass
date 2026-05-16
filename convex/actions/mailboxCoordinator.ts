@@ -68,17 +68,7 @@ type MailboxSearchLog = {
 };
 
 function formatMailboxProgressText(plan: { summary: string; steps: string[] }) {
-  const steps = plan.steps
-    .slice(0, 5)
-    .map((step, index) => `${index + 1}. ${step}`)
-    .join("\n");
-  return [
-    `I’m checking the mailbox now: ${plan.summary}`,
-    steps ? `\nPlan:\n${steps}` : undefined,
-    "\nI’ll show the mailbox search audit and any identified emails as soon as the search finishes.",
-  ]
-    .filter(Boolean)
-    .join("\n");
+  return `I’m checking the mailbox now: ${plan.summary}`;
 }
 
 async function sendMailboxStatusText(params: {

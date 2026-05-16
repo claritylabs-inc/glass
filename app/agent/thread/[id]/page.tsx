@@ -162,12 +162,15 @@ function isEmailSentStatusMessage(message: ThreadMessage) {
 }
 
 function isSavedThreadAttachmentMessage(message: ThreadMessage) {
+  const content = message.content.trim();
   return (
     message.role === "agent" &&
     message.channel === "chat" &&
     !!message.attachments?.length &&
-    /^Saved \d+ document/i.test(message.content.trim()) &&
-    message.content.includes("from connected email")
+    (
+      (/^Saved \d+ document/i.test(content) && content.includes("from connected email")) ||
+      /^Saved connected email message/i.test(content)
+    )
   );
 }
 
@@ -355,6 +358,10 @@ function MessageFooterActions({
   citedCoverageNames,
   toolCalls,
   subagentActivityCount,
+  mailboxArtifacts,
+  messageId,
+  onOpenMailboxArtifact,
+  openMailboxArtifactRef,
   copyContent,
   retryMessageId,
   showToolCalls,
@@ -368,6 +375,10 @@ function MessageFooterActions({
   citedCoverageNames?: string[];
   toolCalls: { name: string; input?: string; output?: string }[];
   subagentActivityCount?: number;
+  mailboxArtifacts?: ToolArtifactData[];
+  messageId?: Id<"threadMessages">;
+  onOpenMailboxArtifact?: (ref: MailboxArtifactRef) => void;
+  openMailboxArtifactRef?: MailboxArtifactRef | null;
   copyContent?: string;
   retryMessageId?: Id<"threadMessages">;
   showToolCalls: boolean;
@@ -376,8 +387,14 @@ function MessageFooterActions({
   onToggleSubagentActivity?: () => void;
   rightAligned?: boolean;
 }) {
+  const [isMailboxExpanded, setIsMailboxExpanded] = useState(false);
   const hasSubagentActivity = (subagentActivityCount ?? 0) > 0;
-  if (refs.length === 0 && toolCalls.length === 0 && !hasSubagentActivity && !copyContent?.trim() && !retryMessageId) return null;
+  const mailboxTasks = mailboxArtifacts?.filter((artifact) => artifact.type === "mailbox_task") ?? [];
+  const hasMailboxTasks = mailboxTasks.length > 0;
+  const selectedMailboxIndex = openMailboxArtifactRef?.messageId === messageId
+    ? (openMailboxArtifactRef?.index ?? null)
+    : null;
+  if (refs.length === 0 && toolCalls.length === 0 && !hasSubagentActivity && !hasMailboxTasks && !copyContent?.trim() && !retryMessageId) return null;
 
   return (
     <div className="mt-1.5 flex items-start gap-2">
@@ -412,6 +429,64 @@ function MessageFooterActions({
             {subagentActivityCount} subagent{subagentActivityCount === 1 ? "" : "s"}
           </button>
         )}
+        {mailboxTasks.length === 1 ? (
+          <button
+            type="button"
+            onClick={() => {
+              if (!messageId) return;
+              onOpenMailboxArtifact?.({ messageId, index: 0 });
+            }}
+            className={`inline-flex h-6 max-w-full items-center gap-1.5 rounded-full border bg-transparent px-2 text-label-sm font-medium transition-colors ${
+              selectedMailboxIndex === 0
+                ? "border-foreground/18 bg-foreground/[0.04] text-foreground/75"
+                : "border-foreground/8 text-muted-foreground/60 hover:border-foreground/12 hover:bg-foreground/3 hover:text-foreground/75"
+            }`}
+          >
+            <span className="text-muted-foreground/35">1</span>
+            <span className="truncate">Background agent</span>
+          </button>
+        ) : mailboxTasks.length > 1 ? (
+          <>
+            <button
+              type="button"
+              onClick={() => setIsMailboxExpanded((value) => !value)}
+              aria-expanded={isMailboxExpanded}
+              className="inline-flex h-6 items-center rounded-full border border-foreground/8 bg-transparent px-2 text-label-sm font-medium text-muted-foreground/55 transition-colors hover:border-foreground/12 hover:bg-foreground/3 hover:text-foreground/75"
+            >
+              {mailboxTasks.length}+ background agents
+            </button>
+            {isMailboxExpanded ? (
+              <div className="flex flex-wrap items-start gap-1.5">
+                {mailboxTasks.map((_, index) => {
+                  const isSelected = selectedMailboxIndex === index;
+                  return (
+                    <span
+                      key={`mailbox-footer-${index}`}
+                      className="transition-[opacity,transform] duration-200 ease-out"
+                      style={{ transitionDelay: `${Math.min(index * 25, 100)}ms` }}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!messageId) return;
+                          onOpenMailboxArtifact?.({ messageId, index });
+                        }}
+                        className={`inline-flex h-6 max-w-48 items-center gap-1.5 rounded-full border bg-transparent px-2 text-label-sm font-medium transition-colors ${
+                          isSelected
+                            ? "border-foreground/18 bg-foreground/[0.04] text-foreground/75"
+                            : "border-foreground/8 text-muted-foreground/60 hover:border-foreground/12 hover:bg-foreground/3 hover:text-foreground/75"
+                        }`}
+                      >
+                        <span className="text-muted-foreground/35">{index + 1}</span>
+                        <span className="truncate">Background agent</span>
+                      </button>
+                    </span>
+                  );
+                })}
+              </div>
+            ) : null}
+          </>
+        ) : null}
       </div>
       <div className="flex shrink-0 items-center gap-1">
         {retryMessageId ? <TryAgainMessageButton messageId={retryMessageId} /> : null}
@@ -1411,9 +1486,11 @@ function MailboxTaskSummaryCard({
         threadId,
         emailRef: email.emailRef,
         filenames,
-      }) as { status?: string; attachments?: unknown[] };
+      }) as { status?: string; attachments?: unknown[]; skippedDuplicateFilenames?: string[] };
       if (result.status === "no_saveable_attachments") {
         toast.error("No saveable attachments found");
+      } else if (result.status === "duplicate_attachments") {
+        toast.info("Those documents are already saved to this thread");
       } else {
         toast.success(`Saved ${result.attachments?.length ?? filenames.length} document${filenames.length === 1 ? "" : "s"} to this thread`);
       }
@@ -1473,24 +1550,12 @@ function MailboxTaskSummaryCard({
       <button
         type="button"
         onClick={onOpen}
-        className={`mt-3 flex w-full max-w-lg items-center justify-between gap-3 rounded-md border bg-card px-3 py-2.5 text-left transition-colors ${
-          isSelected ? "border-foreground/18" : "border-foreground/8 hover:border-foreground/15 hover:bg-foreground/[0.025]"
+        className={`inline-flex max-w-full items-center gap-1.5 rounded-full border bg-foreground/[0.025] px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground/55 transition-colors ${
+          isSelected ? "border-foreground/18 bg-foreground/[0.04]" : "border-foreground/8 hover:border-foreground/15 hover:bg-foreground/[0.04]"
         }`}
       >
-        <span className="flex min-w-0 items-center gap-2">
-          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-foreground/5 text-muted-foreground">
-            {isRunning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <MailIcon className="h-3.5 w-3.5" />}
-          </span>
-          <span className="min-w-0">
-            <span className="block truncate text-[13px] font-medium text-foreground/85">{displayName}</span>
-            {meta ? <span className="block truncate text-[11px] text-muted-foreground/40">{meta}</span> : null}
-          </span>
-        </span>
-        <span className="flex shrink-0 items-center gap-2">
-          <Badge variant="outline" className="h-5 border-foreground/10 px-1.5 text-[10px] font-medium text-muted-foreground/55">
-            {isRunning ? "Running" : "Background process"}
-          </Badge>
-        </span>
+        {isRunning ? <Loader2 className="h-3 w-3 shrink-0 animate-spin text-primary-light/70" /> : <MailIcon className="h-3 w-3 shrink-0 text-muted-foreground/45" />}
+        <span className="truncate">{displayName}</span>
       </button>
     );
   }
@@ -1515,7 +1580,7 @@ function MailboxTaskSummaryCard({
         </div>
         <span className="flex shrink-0 items-center gap-2">
           <Badge variant="outline" className="h-5 border-foreground/10 px-1.5 text-[10px] font-medium text-muted-foreground/55">
-            {isRunning ? "Running" : "Background process"}
+            {isRunning ? "Running" : "Background agent"}
           </Badge>
         </span>
       </div>
@@ -1665,42 +1730,6 @@ function MailboxTaskSummaryCard({
   );
 }
 
-function MailboxTaskArtifacts({
-  artifacts,
-  orgId,
-  threadId,
-  messageId,
-  onOpenArtifact,
-  openArtifactRef,
-}: {
-  artifacts?: ToolArtifactData[];
-  orgId: Id<"organizations">;
-  threadId: Id<"threads">;
-  messageId: Id<"threadMessages">;
-  onOpenArtifact?: (ref: MailboxArtifactRef) => void;
-  openArtifactRef?: MailboxArtifactRef | null;
-}) {
-  const mailboxArtifacts = artifacts?.filter((artifact) => artifact.type === "mailbox_task") ?? [];
-  if (mailboxArtifacts.length === 0) return null;
-  return (
-    <div className="space-y-3">
-      {mailboxArtifacts.map((artifact, index) => {
-        return (
-          <MailboxTaskSummaryCard
-            key={`mailbox-task-${index}`}
-            artifact={artifact}
-            orgId={orgId}
-            threadId={threadId}
-            displayName={mailboxArtifacts.length > 1 ? `Mailbox search ${index + 1}` : "Mailbox search"}
-            onOpen={() => onOpenArtifact?.({ messageId, index })}
-            isSelected={openArtifactRef?.messageId === messageId && openArtifactRef.index === index}
-          />
-        );
-      })}
-    </div>
-  );
-}
-
 function MailboxTaskSidebar({
   artifact,
   orgId,
@@ -1721,7 +1750,7 @@ function MailboxTaskSidebar({
         <div className="flex min-w-0 items-center gap-2">
           <h2 className="truncate text-body-sm font-semibold text-foreground">Mailbox search</h2>
           <Badge variant="outline" className="h-5 shrink-0 border-foreground/10 px-1.5 text-[10px] font-medium text-muted-foreground/55">
-            {isRunning ? "Running" : "Background process"}
+            {isRunning ? "Running" : "Background agent"}
           </Badge>
         </div>
         <PillButton size="compact" variant="icon" onClick={onClose} label="Close mailbox search">
@@ -2235,12 +2264,20 @@ function AgentProcessingActivity({
   label,
   isStale,
   backgroundProcessCount,
+  onOpenBackgroundProcess,
 }: {
   label?: string | null;
   isStale?: boolean;
   backgroundProcessCount: number;
+  onOpenBackgroundProcess?: () => void;
 }) {
   const status = label ?? (isStale ? "Taking longer than expected" : "Thinking");
+  const backgroundProcessContent = (
+    <>
+      <Loader2 className="h-3 w-3 animate-spin text-primary-light/70" />
+      {backgroundProcessCount} background agent{backgroundProcessCount === 1 ? "" : "s"} running
+    </>
+  );
 
   return (
     <div className="mt-2 flex max-w-full flex-wrap items-center gap-2">
@@ -2248,10 +2285,17 @@ function AgentProcessingActivity({
         <LogoIcon size={12} static className="h-3 w-3 shrink-0 animate-spin text-primary-light/70 [animation-duration:1.8s]" />
         <span className="truncate">{status}</span>
       </span>
-      {backgroundProcessCount > 0 ? (
+      {backgroundProcessCount > 0 && onOpenBackgroundProcess ? (
+        <button
+          type="button"
+          onClick={onOpenBackgroundProcess}
+          className="inline-flex items-center gap-1.5 rounded-full border border-foreground/8 bg-foreground/[0.025] px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground/55 transition-colors hover:border-foreground/15 hover:bg-foreground/[0.04]"
+        >
+          {backgroundProcessContent}
+        </button>
+      ) : backgroundProcessCount > 0 ? (
         <span className="inline-flex items-center gap-1.5 rounded-full border border-foreground/8 bg-foreground/[0.025] px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground/55">
-          <Loader2 className="h-3 w-3 animate-spin text-primary-light/70" />
-          {backgroundProcessCount} background process{backgroundProcessCount === 1 ? "" : "es"} running
+          {backgroundProcessContent}
         </span>
       ) : null}
     </div>
@@ -2358,17 +2402,12 @@ export function UnifiedMessageBubble({
             label={toolLabel}
             isStale={isStale}
             backgroundProcessCount={backgroundProcessCount}
+            onOpenBackgroundProcess={
+              mailboxArtifacts.length > 0
+                ? () => onOpenMailboxArtifact?.({ messageId: msg._id, index: 0 })
+                : undefined
+            }
           />
-          {mailboxArtifacts.length > 0 ? (
-            <MailboxTaskArtifacts
-              artifacts={mailboxArtifacts}
-              orgId={msg.orgId}
-              threadId={msg.threadId}
-              messageId={msg._id}
-              onOpenArtifact={onOpenMailboxArtifact}
-              openArtifactRef={openMailboxArtifactRef}
-            />
-          ) : null}
           {relatedEmailMessage ? (
             <div className="mt-3">
               <EmailSummaryCard
@@ -2488,6 +2527,10 @@ export function UnifiedMessageBubble({
                   citedCoverageNames={citedCoverageNames}
                   toolCalls={regularToolCalls}
                   subagentActivityCount={subagentActivityCount}
+                  mailboxArtifacts={mailboxArtifacts}
+                  messageId={msg._id}
+                  onOpenMailboxArtifact={onOpenMailboxArtifact}
+                  openMailboxArtifactRef={openMailboxArtifactRef}
                   copyContent={fixedContent}
                   retryMessageId={msg.channel === "chat" || msg.channel === "imessage" ? msg._id : undefined}
                   showToolCalls={showToolCalls}
@@ -2501,14 +2544,6 @@ export function UnifiedMessageBubble({
                   artifacts={msg.toolArtifacts}
                   openArtifactRef={openVendorComplianceArtifactRef}
                   onOpenArtifact={onOpenVendorCompliance}
-                />
-                <MailboxTaskArtifacts
-                  artifacts={mailboxArtifacts}
-                  orgId={msg.orgId}
-                  threadId={msg.threadId}
-                  messageId={msg._id}
-                  onOpenArtifact={onOpenMailboxArtifact}
-                  openArtifactRef={openMailboxArtifactRef}
                 />
                 {relatedEmailMessage ? (
                   <div className="mt-4">

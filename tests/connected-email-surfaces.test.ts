@@ -77,6 +77,13 @@ describe("connected email surfaces", () => {
     expect(coordinator).toContain("read_connected_email_attachment");
     expect(coordinator).toContain("save_connected_email_message_to_thread");
     expect(coordinator).toContain("send_connected_vendor_invite");
+    const progressFormatter = coordinator.slice(
+      coordinator.indexOf("function formatMailboxProgressText"),
+      coordinator.indexOf("async function sendMailboxStatusText"),
+    );
+    expect(progressFormatter).toContain("I’m checking the mailbox now");
+    expect(progressFormatter).not.toContain("Plan:");
+    expect(progressFormatter).not.toContain("plan.steps");
     expect(mcpChat).toContain("search_connected_email");
     expect(mcpChat).toContain("read_connected_email_attachment");
     expect(mcpChat).toContain("coordinate_mailbox_task");
@@ -93,6 +100,9 @@ describe("connected email surfaces", () => {
     expect(backend).toContain("saveMessageToThreadInternal");
     expect(backend).toContain("message/rfc822");
     expect(backend).toContain("safeEmailExportFilename");
+    expect(backend).toContain("normalizeThreadAttachmentFilename");
+    expect(backend).toContain("getExistingThreadAttachmentNames");
+    expect(backend).toContain("duplicate_attachments");
     expect(backend).toContain("THREAD_ATTACHMENT_MAX_BYTES");
     expect(backend).toContain("buildEmailRequirementText");
     expect(backend).toContain("includeEmailBody");
@@ -109,11 +119,21 @@ describe("connected email surfaces", () => {
     expect(threadPage).toContain("Create internal requirements");
     expect(threadPage).toContain("MailboxSearchAudit");
     expect(threadPage).toContain("Search audit");
-    expect(threadPage).toContain("Background process");
+    expect(threadPage).toContain("Background agent");
     expect(threadPage).toContain("MailboxTaskSidebar");
     expect(threadPage).toContain("AgentProcessingActivity");
     expect(threadPage).toContain("backgroundProcessCount");
-    expect(threadPage).toContain("background process{backgroundProcessCount === 1 ? \"\" : \"es\"} running");
+    expect(threadPage).toContain("onOpenBackgroundProcess");
+    expect(threadPage).toContain("background agent{backgroundProcessCount === 1 ? \"\" : \"s\"} running");
+    expect(threadPage).toContain("mailboxArtifacts={mailboxArtifacts}");
+    expect(threadPage).toContain("setIsMailboxExpanded");
+    expect(threadPage).toContain("{mailboxTasks.length}+ background agents");
+    expect(threadPage).toContain('<span className="text-muted-foreground/35">{index + 1}</span>');
+    expect(threadPage).not.toContain("<MailboxTaskArtifacts\n                  artifacts={mailboxArtifacts}");
+    expect(threadPage).not.toContain("AgentProcessingActivity\n            label={toolLabel}\n            isStale={isStale}\n            backgroundProcessCount={backgroundProcessCount}\n          />\n          {mailboxArtifacts.length > 0 ? (");
+    expect(threadPage).toContain("Saved connected email message");
+    expect(threadPage).toContain("savedAttachmentMessage ? (");
+    expect(backend).toContain("Saved 1 document from connected email for reuse in this thread.");
     expect(threadPage).toContain("openMailboxArtifactRef");
     expect(threadPage).toContain("onOpenMailboxArtifact");
     expect(threadPage).toContain('mode="detail"');

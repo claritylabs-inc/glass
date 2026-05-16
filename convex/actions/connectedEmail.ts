@@ -9,6 +9,7 @@ import { v } from "convex/values";
 import { generateObject } from "ai";
 import { z } from "zod";
 import { action, internalAction } from "../_generated/server";
+import type { ActionCtx } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import type { Id } from "../_generated/dataModel";
@@ -35,6 +36,25 @@ const SEARCH_CANDIDATE_MULTIPLIER = 3;
 const SEARCH_MAX_CANDIDATES = 30;
 const SEARCH_DOWNLOAD_MAX_BYTES = 5 * 1024 * 1024;
 const THREAD_ATTACHMENT_MAX_BYTES = 25 * 1024 * 1024;
+
+function normalizeThreadAttachmentFilename(filename?: string | null) {
+  return (filename?.trim() || "email-attachment").toLowerCase();
+}
+
+async function getExistingThreadAttachmentNames(
+  ctx: ActionCtx,
+  args: { threadId: Id<"threads">; orgId: Id<"organizations"> },
+) {
+  const attachments = await ctx.runQuery(
+    internal.threads.listThreadAttachmentsInternal,
+    args,
+  ) as Array<{ filename: string }>;
+  return new Set(
+    attachments.map((attachment) =>
+      normalizeThreadAttachmentFilename(attachment.filename),
+    ),
+  );
+}
 
 const DailyAttentionSchema = z.object({
   items: z.array(
@@ -671,13 +691,33 @@ export const saveAttachmentsToThreadInternal = internalAction({
     return await withClient(account, async (client): Promise<Record<string, unknown>> => {
       const parsed = await fetchParsedMessage(client, ref.mailbox, ref.uid);
       const requested = new Set((args.filenames ?? []).map((name) => name.toLowerCase()));
+      const existingNames = await getExistingThreadAttachmentNames(ctx, {
+        threadId: args.threadId,
+        orgId: args.orgId,
+      });
+      const skippedDuplicateFilenames: string[] = [];
       const attachments = parsed.attachments.filter((attachment) => {
         if (attachment.size > THREAD_ATTACHMENT_MAX_BYTES) return false;
         if (requested.size === 0) return true;
         return !!attachment.filename && requested.has(attachment.filename.toLowerCase());
+      }).filter((attachment) => {
+        const filename = attachment.filename ?? "email-attachment";
+        const normalized = normalizeThreadAttachmentFilename(filename);
+        if (existingNames.has(normalized)) {
+          skippedDuplicateFilenames.push(filename);
+          return false;
+        }
+        existingNames.add(normalized);
+        return true;
       });
       if (attachments.length === 0) {
-        return { status: "no_saveable_attachments" as const };
+        return skippedDuplicateFilenames.length > 0
+          ? {
+              status: "duplicate_attachments" as const,
+              attachments: [],
+              skippedDuplicateFilenames: [...new Set(skippedDuplicateFilenames)],
+            }
+          : { status: "no_saveable_attachments" as const };
       }
 
       const saved = [];
@@ -710,6 +750,7 @@ export const saveAttachmentsToThreadInternal = internalAction({
         status: "saved" as const,
         messageId,
         attachments: saved,
+        skippedDuplicateFilenames: [...new Set(skippedDuplicateFilenames)],
       };
     });
   },
@@ -750,8 +791,21 @@ export const saveMessageToThreadInternal = internalAction({
         };
       }
 
+      const filename = safeEmailExportFilename(parsed.subject ?? undefined, args.filename);
+      const existingNames = await getExistingThreadAttachmentNames(ctx, {
+        threadId: args.threadId,
+        orgId: args.orgId,
+      });
+      if (existingNames.has(normalizeThreadAttachmentFilename(filename))) {
+        return {
+          status: "duplicate_attachments" as const,
+          attachments: [],
+          skippedDuplicateFilenames: [filename],
+        };
+      }
+
       const saved = {
-        filename: safeEmailExportFilename(parsed.subject ?? undefined, args.filename),
+        filename,
         contentType: "message/rfc822",
         size,
         fileId: await ctx.storage.store(new Blob([exportContent], { type: "message/rfc822" })),
@@ -761,7 +815,7 @@ export const saveMessageToThreadInternal = internalAction({
         threadId: args.threadId,
         orgId: args.orgId,
         content: [
-          "Saved connected email message for reuse in this thread.",
+          "Saved 1 document from connected email for reuse in this thread.",
           parsed.subject ? `Source email: ${parsed.subject}` : undefined,
           parsed.from?.text ? `From: ${parsed.from.text}` : undefined,
         ].filter(Boolean).join("\n"),
