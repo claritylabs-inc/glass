@@ -75,4 +75,6 @@ npx convex env set DOCLING_HMAC_SECRET "<same value as Railway>"
 npx convex env set DOCLING_ENABLED "false"
 ```
 
+7. If production extraction uses `EXTRACTION_WORKER_MODE=external`, set the same `DOCLING_URL` and `DOCLING_HMAC_SECRET` on the Railway `glass-extraction-worker` service. Convex returns the per-org Docling enablement flag with each claimed extraction job, but the trusted worker calls the Docling service directly.
+
 Keep `DOCLING_ENABLED=false` globally until a single-org smoke test passes, then enable `organizations.featureFlags.docling=true` only for the target org.

@@ -17,6 +17,8 @@ import {
   confirmPolicyFact,
   generateCoi as generateCoiTool,
   createPolicyChangeRequest,
+  createImessageGroupChat,
+  coordinateMailboxTask,
 } from "../lib/chatTools";
 import {
   buildComplianceRequirementsContext,
@@ -61,6 +63,13 @@ import {
   formatComplianceRequirement,
 } from "../lib/complianceAgent";
 import { buildVendorComplianceTools } from "../lib/vendorComplianceTools";
+import {
+  isPendingEmailCancelConfirmation,
+  isPendingEmailCancelConfirmationPrompt,
+  isPendingEmailCancelIntent,
+  isPendingEmailRestoreIntent,
+  pendingEmailCancelConfirmationMessage,
+} from "../lib/emailCancelIntent";
 
 /** Normalize a raw phone string to E.164 (+1XXXXXXXXXX). */
 function normalizePhone(raw: string): string {
@@ -598,6 +607,97 @@ export const processInbound = internalAction({
       ]
         .filter((part) => part.trim().length > 0)
         .join("\n");
+
+      const draftEmail = await ctx.runQuery(
+        internal.pendingEmails.findDraftByThread,
+        { threadId },
+      );
+      const pendingEmails = await ctx.runQuery(
+        internal.pendingEmails.findPendingByThread,
+        { threadId },
+      ) as Array<{ _id: Id<"pendingEmails"> }>;
+      const latestCancelledEmail = await ctx.runQuery(
+        internal.pendingEmails.findLatestCancelledByThread,
+        { threadId, orgId },
+      );
+      const isCancelConfirmationContext = isPendingEmailCancelConfirmationPrompt(
+        recentConversationContext,
+      );
+      const shortText = args.messageText.trim().length < 100;
+      const replyWithEmailCancelStatus = async (response: string) => {
+        await ctx.runMutation(internal.threads.insertImessageMessage, {
+          threadId,
+          orgId,
+          role: "agent",
+          content: response,
+          responseMessageId: `${eventKey}:response`,
+        });
+        return await finish(response);
+      };
+
+      if (
+        latestCancelledEmail &&
+        shortText &&
+        isPendingEmailRestoreIntent(args.messageText)
+      ) {
+        const restored = await ctx.runMutation(
+          internal.pendingEmails.restoreAsDraftInternal,
+          { id: latestCancelledEmail._id },
+        );
+        return await replyWithEmailCancelStatus(
+          restored
+            ? "Email restored as a draft."
+            : "I couldn't restore that email.",
+        );
+      }
+
+      if (
+        draftEmail &&
+        shortText &&
+        isCancelConfirmationContext &&
+        isPendingEmailCancelConfirmation(args.messageText)
+      ) {
+        await ctx.runMutation(internal.pendingEmails.cancelInternal, {
+          id: draftEmail._id,
+        });
+        return await replyWithEmailCancelStatus("Email cancelled.");
+      }
+
+      if (draftEmail && shortText && isPendingEmailCancelIntent(args.messageText)) {
+        return await replyWithEmailCancelStatus(
+          pendingEmailCancelConfirmationMessage("draft"),
+        );
+      }
+
+      if (
+        pendingEmails.length > 0 &&
+        shortText &&
+        isCancelConfirmationContext &&
+        isPendingEmailCancelConfirmation(args.messageText)
+      ) {
+        let cancelledCount = 0;
+        for (const pendingEmail of pendingEmails) {
+          const ok = await ctx.runMutation(internal.pendingEmails.cancelInternal, {
+            id: pendingEmail._id,
+          });
+          if (ok) cancelledCount++;
+        }
+        return await replyWithEmailCancelStatus(
+          cancelledCount === 1
+            ? "Email cancelled."
+            : `${cancelledCount} pending emails cancelled.`,
+        );
+      }
+
+      if (
+        pendingEmails.length > 0 &&
+        shortText &&
+        isPendingEmailCancelIntent(args.messageText)
+      ) {
+        return await replyWithEmailCancelStatus(
+          pendingEmailCancelConfirmationMessage("pending", pendingEmails.length),
+        );
+      }
 
       // Send a model-decided status cue before heavier retrieval/tool work so SMS
       // users get immediate feedback when the agent needs to check policy data.
@@ -1181,6 +1281,47 @@ export const processInbound = internalAction({
             }
           },
         },
+        create_imessage_group_chat: {
+          ...createImessageGroupChat,
+          execute: async (params: {
+            recipients: string[];
+            openingMessage: string;
+            title?: string;
+            confirmed: boolean;
+          }) => {
+            if (!currentSenderIsLinked) {
+              return "Only a linked Glass user can start a new group chat.";
+            }
+            if (!params.confirmed) {
+              return "Ask the user to confirm before creating a new iMessage group chat.";
+            }
+            return await ctx.runAction(
+              internal.actions.createOutboundImessageGroup.createOutboundImessageGroupInternal,
+              {
+                orgId,
+                userId: user._id,
+                recipients: params.recipients,
+                openingMessage: params.openingMessage,
+                title: params.title,
+              },
+            );
+          },
+        },
+        ...(currentSenderIsLinked
+          ? {
+              coordinate_mailbox_task: {
+                ...coordinateMailboxTask,
+                execute: async (params: { task: string }) =>
+                  await ctx.runAction(internal.actions.mailboxCoordinator.runInternal, {
+                    orgId,
+                    userId: user._id,
+                    task: params.task,
+                    statusToPhone: fromPhone,
+                    statusChatGuid: chatGuid,
+                  }),
+              },
+            }
+          : {}),
         ...(currentSenderIsLinked &&
         emailIdentity.canSend &&
         emailIdentity.agentAddress &&

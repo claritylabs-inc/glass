@@ -281,7 +281,7 @@ function CoverageGroup({ coverages, citedCoverageNames }: {
           )}
         </p>
       </div>
-      <div className="min-w-0 divide-y divide-foreground/6 overflow-hidden rounded-lg border border-foreground/8 bg-white">
+      <div className="min-w-0 divide-y divide-foreground/6 overflow-hidden rounded-lg border border-foreground/8 bg-card text-card-foreground">
         {visibleWithNames.map((cov, i) => (
           <CoverageRow key={i} name={cov.name} limit={cov.limit} deductible={cov.deductible} />
         ))}

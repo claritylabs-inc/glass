@@ -10,6 +10,7 @@ export type ModelTask =
   | "email_extraction"
   | "document_extraction"
   | "security"
+  | "mailbox_coordinator"
   | "application_authoring"
   | "embeddings";
 
@@ -60,6 +61,7 @@ export const MODEL_TASK_LABELS: Record<ModelTask, string> = {
   email_extraction: "Email extraction",
   document_extraction: "Document extraction",
   security: "Security checks",
+  mailbox_coordinator: "Mailbox coordinator",
   application_authoring: "Application authoring",
   embeddings: "Embeddings",
 };
@@ -76,6 +78,7 @@ export const MODEL_TASK_DESCRIPTIONS: Record<ModelTask, string> = {
   email_extraction: "Low-cost extraction from email content.",
   document_extraction: "Document-level extraction subtasks.",
   security: "Prompt-injection and unsafe request classification.",
+  mailbox_coordinator: "Complex connected-mailbox workflows that search email, inspect attachments, import policies or requirements, and coordinate follow-up actions.",
   application_authoring: "Application or questionnaire drafting.",
   embeddings: "Vector search embeddings for policies and conversation memory.",
 };
@@ -132,6 +135,7 @@ export const MODEL_ROUTING: Record<ModelTask, ModelRoute> = {
   email_extraction: { model: "gpt-5.4-nano", provider: "openai" },
   document_extraction: { model: "gpt-5.4-nano", provider: "openai" },
   security: { model: "gpt-5.4-mini", provider: "openai" },
+  mailbox_coordinator: { model: "gpt-5.5", provider: "openai" },
   application_authoring: { model: "kimi-k2.6", provider: "moonshot" },
   embeddings: { model: "text-embedding-3-small", provider: "openai" },
 };

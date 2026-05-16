@@ -137,6 +137,7 @@ const MODEL_CONFIG: Record<Exclude<ModelTask, "embeddings">, () => LanguageModel
   email_extraction: () => openai()(GPT_54_NANO),
   document_extraction:   () => openai()(GPT_54_NANO),
   security:              () => openai()(GPT_54_MINI),
+  mailbox_coordinator:   () => openai()(GPT_55),
   application_authoring: () => moonshot()(KIMI_K26),
 };
 
@@ -265,6 +266,10 @@ function providerModel(provider: ModelProvider, model: string, apiKey?: string):
 
 function modelFromRoute(route: ModelRoute, apiKey?: string): LanguageModel {
   return providerModel(route.provider, route.model, apiKey);
+}
+
+export function getModelForRoute(route: ModelRoute): LanguageModel {
+  return modelFromRoute(route);
 }
 
 export function getModel(task: ModelTask): LanguageModel {

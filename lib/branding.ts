@@ -128,22 +128,23 @@ export function deriveTokens(accent: string, mode: "light" | "dark"): BrandToken
     // Fall back to slate.
     return mode === "light" ? BRAND_THEMES[0].light : BRAND_THEMES[0].dark;
   }
-  const fg = readableTextFor(accent) === "light" ? "#FFFFFF" : "#0F172A";
   const light = lighten(accent, mode === "light" ? 0.45 : 0.55);
+  const brand = mode === "dark" ? light : accent;
+  const fg = readableTextFor(brand) === "light" ? "#FFFFFF" : "#0F172A";
   const muted = lighten(accent, mode === "light" ? 0.2 : -0.1);
   const chart2 = light;
   return {
-    "--brand": accent,
+    "--brand": brand,
     "--brand-foreground": fg,
-    "--primary": accent,
+    "--primary": brand,
     "--primary-foreground": fg,
     "--primary-light": light,
     "--primary-muted": muted,
-    "--ring": accent,
-    "--sidebar-primary": accent,
+    "--ring": brand,
+    "--sidebar-primary": brand,
     "--sidebar-primary-foreground": fg,
-    "--sidebar-ring": accent,
-    "--chart-1": accent,
+    "--sidebar-ring": brand,
+    "--chart-1": brand,
     "--chart-2": chart2,
   };
 }

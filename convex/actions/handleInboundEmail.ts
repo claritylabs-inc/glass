@@ -16,6 +16,14 @@ import {
   generateCoi as generateCoiTool,
   extractPolicyAttachment,
   createPolicyChangeRequest,
+  createImessageGroupChat,
+  searchConnectedEmail,
+  readConnectedEmail,
+  readConnectedEmailAttachment,
+  importConnectedEmailPolicyAttachments,
+  importConnectedEmailRequirementAttachments,
+  sendConnectedVendorInvite,
+  coordinateMailboxTask,
 } from "../lib/chatTools";
 import { Webhook } from "svix";
 import {
@@ -1395,6 +1403,130 @@ export const processInbound = internalAction({
             }
           },
         },
+        ...(isInternal && effectiveMode === "direct"
+          ? {
+              create_imessage_group_chat: {
+                ...createImessageGroupChat,
+                execute: async (params: {
+                  recipients: string[];
+                  openingMessage: string;
+                  title?: string;
+                  confirmed: boolean;
+                }) => {
+                  if (!params.confirmed) {
+                    return "Ask the user to confirm before creating a new iMessage group chat.";
+                  }
+                  return await ctx.runAction(
+                    internal.actions.createOutboundImessageGroup.createOutboundImessageGroupInternal,
+                    {
+                      orgId,
+                      userId: primaryUserId,
+                      recipients: params.recipients,
+                      openingMessage: params.openingMessage,
+                      title: params.title,
+                    },
+                  );
+                },
+              },
+              search_connected_email: {
+                ...searchConnectedEmail,
+                execute: async (params: {
+                  query?: string;
+                  mailbox?: string;
+                  sinceDays?: number;
+                  dateFrom?: string;
+                  dateTo?: string;
+                  limit?: number;
+                }) =>
+                  await ctx.runAction(internal.actions.connectedEmail.searchInternal, {
+                    orgId,
+                    userId: primaryUserId,
+                    query: params.query,
+                    mailbox: params.mailbox,
+                    sinceDays: params.sinceDays,
+                    dateFrom: params.dateFrom,
+                    dateTo: params.dateTo,
+                    limit: params.limit,
+                  }),
+              },
+              read_connected_email: {
+                ...readConnectedEmail,
+                execute: async (params: { emailRef: string }) =>
+                  await ctx.runAction(internal.actions.connectedEmail.readInternal, {
+                    orgId,
+                    userId: primaryUserId,
+                    emailRef: params.emailRef,
+                  }),
+              },
+              read_connected_email_attachment: {
+                ...readConnectedEmailAttachment,
+                execute: async (params: { emailRef: string; filename: string }) =>
+                  await ctx.runAction(internal.actions.connectedEmail.readAttachmentInternal, {
+                    orgId,
+                    userId: primaryUserId,
+                    emailRef: params.emailRef,
+                    filename: params.filename,
+                  }),
+              },
+              import_connected_email_policy_attachments: {
+                ...importConnectedEmailPolicyAttachments,
+                execute: async (params: { emailRef: string; filenames?: string[] }) =>
+                  await ctx.runAction(
+                    internal.actions.connectedEmail.importPolicyAttachmentsInternal,
+                    {
+                      orgId,
+                      userId: primaryUserId,
+                      emailRef: params.emailRef,
+                      filenames: params.filenames,
+                    },
+                  ),
+              },
+              import_connected_email_requirement_attachments: {
+                ...importConnectedEmailRequirementAttachments,
+                execute: async (params: {
+                  emailRef: string;
+                  filenames?: string[];
+                  sourceType?: "lease_agreement" | "client_contract" | "vendor_requirements" | "other";
+                  appliesTo?: "vendors" | "own_org" | "both";
+                }) =>
+                  await ctx.runAction(
+                    internal.actions.connectedEmail.importRequirementAttachmentsInternal,
+                    {
+                      orgId,
+                      userId: primaryUserId,
+                      emailRef: params.emailRef,
+                      filenames: params.filenames,
+                      sourceType: params.sourceType,
+                      appliesTo: params.appliesTo,
+                    },
+                  ),
+              },
+              send_connected_vendor_invite: {
+                ...sendConnectedVendorInvite,
+                execute: async (params: {
+                  vendorEmail: string;
+                  relationshipLabel?: string;
+                  note?: string;
+                }) =>
+                  await ctx.runAction(internal.connectedOrgs.requestVendorAccessByEmailInternal, {
+                    clientOrgId: orgId,
+                    requestedByUserId: primaryUserId,
+                    vendorEmail: params.vendorEmail,
+                    relationshipLabel: params.relationshipLabel,
+                    note: params.note,
+                  }),
+              },
+              coordinate_mailbox_task: {
+                ...coordinateMailboxTask,
+                execute: async (params: { task: string }) =>
+                  await ctx.runAction(internal.actions.mailboxCoordinator.runInternal, {
+                    orgId,
+                    userId: primaryUserId,
+                    task: params.task,
+                  }),
+              },
+            }
+          : {}),
         extract_policy_attachment: {
           ...extractPolicyAttachment,
           execute: async (params: {

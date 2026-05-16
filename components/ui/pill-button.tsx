@@ -37,7 +37,7 @@ type VariantConfig = {
 const variantConfig: Record<PillButtonVariant, VariantConfig> = {
   primary: {
     classes:
-      "bg-brand !text-white dark:!text-black hover:bg-[color-mix(in_srgb,var(--brand)_68%,var(--background))] hover:ring-1 hover:ring-foreground/10 active:bg-[color-mix(in_srgb,var(--brand)_56%,var(--background))]",
+      "[--pill-primary-bg:var(--brand,#000000)] [--pill-primary-fg:var(--brand-foreground,#ffffff)] dark:[--pill-primary-bg:var(--foreground)] dark:[--pill-primary-fg:var(--background)] !bg-[var(--pill-primary-bg)] ![color:var(--pill-primary-fg)] hover:!bg-[color-mix(in_srgb,var(--pill-primary-bg)_86%,var(--background))] hover:ring-1 hover:ring-foreground/10 active:!bg-[color-mix(in_srgb,var(--pill-primary-bg)_76%,var(--background))]",
   },
   secondary: {
     classes:

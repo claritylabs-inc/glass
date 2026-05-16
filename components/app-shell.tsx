@@ -282,6 +282,18 @@ function PersistentChatBar() {
           threadId,
           content: text || "(attached files)",
           attachments: attachments.length > 0 ? attachments : undefined,
+          referencedPolicyIds: message.references
+            ?.filter((reference) => reference.kind === "policy")
+            .map((reference) => reference.id as Id<"policies">),
+          referencedQuoteIds: message.references
+            ?.filter((reference) => reference.kind === "quote")
+            .map((reference) => reference.id as Id<"policies">),
+          referencedRequirementIds: message.references
+            ?.filter((reference) => reference.kind === "requirement")
+            .map((reference) => reference.id as Id<"insuranceRequirements">),
+          referencedMailboxIds: message.references
+            ?.filter((reference) => reference.kind === "mailbox")
+            .map((reference) => reference.id as Id<"connectedEmailAccounts">),
         });
 
         router.push(`/agent/thread/${threadId}`);
@@ -320,6 +332,7 @@ function PersistentChatBar() {
             disabled={sending}
             status={sending ? "submitted" : "ready"}
             agentBranding={agentBranding}
+            orgId={viewerOrg?.org?._id}
           />
         </div>
       </div>

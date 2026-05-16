@@ -270,6 +270,10 @@ export const sendMessage = mutation({
         })
       )
     ),
+    referencedPolicyIds: v.optional(v.array(v.id("policies"))),
+    referencedQuoteIds: v.optional(v.array(v.id("policies"))),
+    referencedRequirementIds: v.optional(v.array(v.id("insuranceRequirements"))),
+    referencedMailboxIds: v.optional(v.array(v.id("connectedEmailAccounts"))),
     skipAgentResponse: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
@@ -279,6 +283,24 @@ export const sendMessage = mutation({
 
     const user = await ctx.db.get(userId);
     const userName = user?.name ?? user?.email ?? "User";
+    const messages = await ctx.db
+      .query("threadMessages")
+      .withIndex("by_threadId", (q) => q.eq("threadId", args.threadId))
+      .collect();
+    for (const message of messages) {
+      if (
+        message.orgId !== orgId ||
+        message.role !== "agent" ||
+        message.status !== "processing"
+      ) {
+        continue;
+      }
+      await ctx.db.patch(message._id, {
+        content: "Response cancelled.",
+        reasoning: undefined,
+        status: "cancelled",
+      });
+    }
 
     const messageId = await ctx.db.insert("threadMessages", {
       threadId: args.threadId,
@@ -289,6 +311,10 @@ export const sendMessage = mutation({
       userName,
       content: args.content,
       attachments: args.attachments,
+      referencedPolicyIds: args.referencedPolicyIds,
+      referencedQuoteIds: args.referencedQuoteIds,
+      referencedRequirementIds: args.referencedRequirementIds,
+      referencedMailboxIds: args.referencedMailboxIds,
     });
 
     await ctx.db.patch(args.threadId, { lastMessageAt: dayjs().valueOf() });
@@ -415,7 +441,11 @@ export const cancelProcessing = mutation({
     const msg = await ctx.db.get(args.messageId);
     if (!msg || msg.orgId !== orgId || msg.role !== "agent") throw new Error("Not found");
     if (msg.status !== "processing") return; // already finished
-    await ctx.db.delete(args.messageId);
+    await ctx.db.patch(args.messageId, {
+      content: "Response cancelled.",
+      reasoning: undefined,
+      status: "cancelled",
+    });
   },
 });
 
@@ -542,6 +572,7 @@ export const updateAgentMessage = internalMutation({
     toolCalls: v.optional(v.array(v.object({
       name: v.string(),
       input: v.optional(v.string()),
+      output: v.optional(v.string()),
     }))),
     toolArtifacts: v.optional(v.array(v.object({
       type: v.string(),
@@ -564,6 +595,8 @@ export const updateAgentMessage = internalMutation({
     )),
   },
   handler: async (ctx, args) => {
+    const existing = await ctx.db.get(args.id);
+    if (existing?.status === "cancelled") return;
     await ctx.db.patch(args.id, {
       content: args.content,
       status: args.status ?? undefined,
@@ -594,6 +627,61 @@ export const attachPendingEmailToAgentMessage = internalMutation({
   },
 });
 
+export const insertAttachmentMessageInternal = internalMutation({
+  args: {
+    threadId: v.id("threads"),
+    orgId: v.id("organizations"),
+    content: v.string(),
+    attachments: v.array(v.object({
+      filename: v.string(),
+      contentType: v.string(),
+      size: v.number(),
+      fileId: v.id("_storage"),
+    })),
+  },
+  handler: async (ctx, args) => {
+    const thread = await ctx.db.get(args.threadId);
+    if (!thread || thread.orgId !== args.orgId) {
+      throw new Error("Thread not found");
+    }
+    const messageId = await ctx.db.insert("threadMessages", {
+      threadId: args.threadId,
+      orgId: args.orgId,
+      channel: "chat",
+      role: "agent",
+      content: args.content,
+      attachments: args.attachments,
+    });
+    await ctx.db.patch(args.threadId, { lastMessageAt: dayjs().valueOf() });
+    return messageId;
+  },
+});
+
+export const listThreadAttachmentsInternal = internalQuery({
+  args: {
+    threadId: v.id("threads"),
+    orgId: v.id("organizations"),
+  },
+  handler: async (ctx, args) => {
+    const messages = await ctx.db
+      .query("threadMessages")
+      .withIndex("by_threadId", (q) => q.eq("threadId", args.threadId))
+      .collect();
+    return messages
+      .filter((message) => message.orgId === args.orgId)
+      .flatMap((message) =>
+        (message.attachments ?? [])
+          .filter((attachment) => attachment.fileId)
+          .map((attachment) => ({
+            filename: attachment.filename,
+            contentType: attachment.contentType,
+            size: attachment.size,
+            fileId: attachment.fileId!,
+          })),
+      );
+  },
+});
+
 export const deleteMessageInternal = internalMutation({
   args: { id: v.id("threadMessages") },
   handler: async (ctx, args) => {
@@ -605,7 +693,36 @@ export const deleteMessageInternal = internalMutation({
 export const streamAgentMessage = internalMutation({
   args: { id: v.id("threadMessages"), content: v.string() },
   handler: async (ctx, args) => {
+    const existing = await ctx.db.get(args.id);
+    if (existing?.status === "cancelled") return;
     await ctx.db.patch(args.id, { content: args.content });
+  },
+});
+
+export const streamAgentProgress = internalMutation({
+  args: {
+    id: v.id("threadMessages"),
+    content: v.optional(v.string()),
+    usedTools: v.optional(v.array(v.string())),
+    toolCalls: v.optional(v.array(v.object({
+      name: v.string(),
+      input: v.optional(v.string()),
+      output: v.optional(v.string()),
+    }))),
+    toolArtifacts: v.optional(v.array(v.object({
+      type: v.string(),
+      data: v.any(),
+    }))),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db.get(args.id);
+    if (existing?.status === "cancelled") return;
+    const patch: Record<string, unknown> = {};
+    if (args.content !== undefined) patch.content = args.content;
+    if (args.usedTools !== undefined) patch.usedTools = args.usedTools;
+    if (args.toolCalls !== undefined) patch.toolCalls = args.toolCalls;
+    if (args.toolArtifacts !== undefined) patch.toolArtifacts = args.toolArtifacts;
+    await ctx.db.patch(args.id, patch);
   },
 });
 
@@ -613,6 +730,8 @@ export const streamAgentMessage = internalMutation({
 export const streamReasoning = internalMutation({
   args: { id: v.id("threadMessages"), reasoning: v.string() },
   handler: async (ctx, args) => {
+    const existing = await ctx.db.get(args.id);
+    if (existing?.status === "cancelled") return;
     await ctx.db.patch(args.id, { reasoning: args.reasoning });
   },
 });
@@ -620,6 +739,8 @@ export const streamReasoning = internalMutation({
 export const updateAgentError = internalMutation({
   args: { id: v.id("threadMessages"), error: v.string(), content: v.optional(v.string()) },
   handler: async (ctx, args) => {
+    const existing = await ctx.db.get(args.id);
+    if (existing?.status === "cancelled") return;
     await ctx.db.patch(args.id, {
       status: "error",
       error: args.error,

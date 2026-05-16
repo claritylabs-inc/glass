@@ -97,6 +97,8 @@ async function listRowsForBroker(ctx: QueryCtx, brokerOrgId: Id<"organizations">
       const displayName =
         orgName && !isEmailLike(orgName) ? orgName : "Client organization";
       const primaryContactName = primaryUser?.name;
+      const primaryAssignment =
+        assignments.find((assignment) => assignment.role === "primary") ?? assignments[0];
 
       return {
         clientOrgId: org._id,
@@ -108,6 +110,7 @@ async function listRowsForBroker(ctx: QueryCtx, brokerOrgId: Id<"organizations">
         lastActivityAt: lastActivityEvent?.createdAt,
         activePoliciesCount: activePolicies,
         assignedProducerIds: assignments.map((a) => a.producerId),
+        primaryBrokerContactId: primaryAssignment?.producerId,
       };
     }),
   );

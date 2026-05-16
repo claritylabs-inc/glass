@@ -20,6 +20,7 @@ import { buildPdfSourceSpans } from "../lib/pdfSourceSpans";
 import type { ExtractionResult, ExtractionState, PipelineCheckpoint } from "../lib/extraction";
 import type { ExtractOptions } from "../lib/extraction";
 import { makeEmbedText, makeGenerateObject, type DoclingMeta } from "../lib/sdkCallbacks";
+import { isDoclingEnabled } from "../lib/featureFlags";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { getModelForOrg } from "../lib/models";
@@ -123,6 +124,9 @@ type ExternalClaimResult = {
   state: PolicyExtractionState;
   fileUrl: string;
   clSdkCheckpoint?: PipelineCheckpoint<ExtractionState>;
+  docling?: {
+    enabled: boolean;
+  };
   modelSettings?: {
     routes?: Record<string, { provider: string; model: string }>;
     providerKeys?: Record<string, string>;
@@ -1426,6 +1430,12 @@ export const claimExternalJob = action({
       state: claimed.checkpoint.state,
       fileUrl,
       clSdkCheckpoint: await loadClSdkCheckpoint(ctx, claimed.policyId, claimed.checkpoint.state),
+      docling: {
+        enabled: await isDoclingEnabled(
+          ctx,
+          claimed.checkpoint.state.orgId as Id<"organizations">,
+        ),
+      },
       modelSettings,
     };
   },
@@ -1524,6 +1534,7 @@ export const completeExternalExtract = action({
     tokenUsage: v.optional(v.any()),
     performanceReport: v.optional(v.any()),
     checkpoint: v.optional(v.any()),
+    doclingMeta: v.optional(v.any()),
   },
   handler: async (ctx, args): Promise<ExternalAckResult> => {
     requireExtractionWorkerSecret(args.secret);
@@ -1624,6 +1635,7 @@ export const completeExternalExtract = action({
       await ctx.runMutation((internal as any).policyFiles.updateExtraction, {
         id: state.policyFileId,
         extractedData: doc,
+        ...(args.doclingMeta ?? {}),
       });
     }
 

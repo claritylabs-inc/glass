@@ -1,0 +1,13 @@
+{
+  "name": "@glass/mailbox-scan-worker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Railway cron worker for Glass connected-mailbox attention scans",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "start": "node src/index.js"
+  }
+}

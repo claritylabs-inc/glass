@@ -209,6 +209,139 @@ export const createPolicyChangeRequest = tool({
   }),
 });
 
+export const createImessageGroupChat = tool({
+  description:
+    "Create a new iMessage group chat after the user explicitly asks for it or clearly approves the assistant's suggestion. Include the current user automatically; recipients can be teammate names, broker/client/vendor names, or explicit phone numbers. If any recipient is ambiguous or lacks a phone number, ask for clarification instead of guessing.",
+  inputSchema: z.object({
+    recipients: z
+      .array(z.string())
+      .min(1)
+      .describe("People or phone numbers to include besides the current user, such as Adyan, my broker, or +15555550123."),
+    openingMessage: z
+      .string()
+      .min(1)
+      .describe("The first message Glass should send into the new group chat."),
+    title: z
+      .string()
+      .optional()
+      .describe("Optional concise group title. Leave unset unless the user requested a title."),
+    confirmed: z
+      .boolean()
+      .describe("True only when the user has explicitly asked to create the group or has approved a prior suggestion."),
+  }),
+});
+
+export const searchConnectedEmail = tool({
+  description:
+    "Search connected IMAP email accounts live without persisting mailbox contents. Use this iteratively with targeted search terms and date windows when the user asks to find emails, policies, leases, vendor messages, requirements, receipts, or attachments in connected mailboxes.",
+  inputSchema: z.object({
+    query: z.string().optional().describe("Text to search for in subject, sender, recipients, or message body."),
+    mailbox: z.string().optional().describe("Mailbox/folder name. Defaults to INBOX."),
+    sinceDays: z.number().int().min(1).max(90).optional().describe("Fallback rolling lookback when dateFrom/dateTo are not known. Defaults to 14."),
+    dateFrom: z.string().optional().describe("Inclusive start date for a targeted search window in YYYY-MM-DD format."),
+    dateTo: z.string().optional().describe("Inclusive end date for a targeted search window in YYYY-MM-DD format."),
+    limit: z.number().int().min(1).max(25).optional().describe("Maximum matching emails to return."),
+  }),
+});
+
+export const readConnectedEmail = tool({
+  description:
+    "Read one connected-email message returned by search_connected_email, including bounded body text and attachment metadata.",
+  inputSchema: z.object({
+    emailRef: z.string().describe("Opaque emailRef returned by search_connected_email."),
+  }),
+});
+
+export const readConnectedEmailAttachment = tool({
+  description:
+    "Read text from a specific PDF, DOCX, TXT, Markdown, CSV, or JSON attachment on a connected-email message without persisting the mailbox message. Use after read_connected_email returns attachment metadata and the user needs the attachment contents inspected before deciding whether to import it.",
+  inputSchema: z.object({
+    emailRef: z.string().describe("Opaque emailRef returned by search_connected_email."),
+    filename: z.string().describe("Exact attachment filename returned by read_connected_email."),
+  }),
+});
+
+export const importConnectedEmailPolicyAttachments = tool({
+  description:
+    "Import PDF attachments from a connected-email message into the Glass policy library. Use after search/read confirms the attachments are policies, declarations, quotes, binders, COIs, or related insurance documents.",
+  inputSchema: z.object({
+    emailRef: z.string().describe("Opaque emailRef returned by search_connected_email."),
+    filenames: z.array(z.string()).optional().describe("Specific PDF filenames to import. Omit to import all PDF attachments on the email as one policy package."),
+  }),
+});
+
+export const importConnectedEmailRequirementAttachments = tool({
+  description:
+    "Import PDF/DOCX/TXT/CSV/JSON attachments and optionally the email body from a connected-email message as source-backed insurance compliance requirements. Use after search/read confirms the email or attachments contain leases, contracts, vendor requirement packets, or other insurance requirement language.",
+  inputSchema: z.object({
+    emailRef: z.string().describe("Opaque emailRef returned by search_connected_email."),
+    filenames: z.array(z.string()).optional().describe("Specific attachment filenames to import. Omit to import all requirement-like attachments on the email."),
+    includeEmailBody: z.boolean().optional().describe("Set true when the email body itself contains requirement language that should be imported."),
+    sourceType: z
+      .enum(["lease_agreement", "client_contract", "vendor_requirements", "other"])
+      .optional()
+      .describe("Source document type. Infer lease_agreement for leases and client_contract for customer/client contracts."),
+    appliesTo: z
+      .enum(["vendors", "own_org", "both"])
+      .optional()
+      .describe("Requirement ownership. Use own_org for the org's lease/client obligations, vendors for vendor/customer standards, or both if it applies to both."),
+  }),
+});
+
+export const saveConnectedEmailAttachmentsToThread = tool({
+  description:
+    "Save attachments from a connected-email message into the current Glass thread so they can be reused later and attached to outbound email drafts without searching the mailbox again. Use after search/read identifies documents that are relevant to the user's task.",
+  inputSchema: z.object({
+    emailRef: z.string().describe("Opaque emailRef returned by search_connected_email."),
+    filenames: z.array(z.string()).optional().describe("Specific attachment filenames to save. Omit to save all attachments on the email that fit size limits."),
+  }),
+});
+
+export const saveConnectedEmailMessageToThread = tool({
+  description:
+    "Export the connected-email message itself into the current Glass thread as an attachable .eml proof document. Use this when the user asks to attach, forward, preserve, or provide proof of an email whose relevant content is in the email body rather than an attachment, such as a cancellation email, receipt, confirmation, notice, or correspondence.",
+  inputSchema: z.object({
+    emailRef: z.string().describe("Opaque emailRef returned by search_connected_email or read_connected_email."),
+    filename: z
+      .string()
+      .optional()
+      .describe("Optional filename for the saved email export. Defaults to a subject-based .eml name."),
+  }),
+});
+
+export const sendConnectedVendorInvite = tool({
+  description:
+    "Send a connected-vendor access invitation to a vendor email address so the org can monitor that vendor's insurance records. Use only when the user asks to invite or connect a vendor, or explicitly approves doing so.",
+  inputSchema: z.object({
+    vendorEmail: z.string().email().describe("Vendor contact email address to invite."),
+    relationshipLabel: z.string().optional().describe("Optional vendor/company label for the connected-org relationship."),
+    note: z.string().optional().describe("Optional note to include in the vendor invitation email."),
+  }),
+});
+
+export const coordinateMailboxTask = tool({
+  description:
+    "Delegate a complex connected-mailbox workflow to the Glass mailbox coordinator. Use this for multi-step requests like finding policies and importing them, finding a lease and extracting insurance requirements, or investigating vendor email history.",
+  inputSchema: z.object({
+    task: z.string().min(1).describe("The full mailbox task to complete, including any target vendor, address, policy, lease, or date details."),
+  }),
+});
+
+export const renderEmailPreview = tool({
+  description:
+    "Render an outbound email draft as a visual artifact using a browser renderer. Use this when the user asks to screenshot, print, preview, inspect formatting, verify layout, or see what an email draft will look like. Returns a PNG screenshot or PDF printout attached to the current thread.",
+  inputSchema: z.object({
+    draftId: z
+      .string()
+      .optional()
+      .describe("Specific pending email draft ID. Omit to render the current draft in this thread."),
+    format: z
+      .enum(["png", "pdf"])
+      .optional()
+      .describe("Render format. Use png for screenshots and pdf for printouts. Defaults to png."),
+  }),
+});
+
 export const extractPolicyAttachment = tool({
   description:
     "Extract a policy from one OR MORE PDF attachments that were included with the email. " +

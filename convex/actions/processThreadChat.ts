@@ -6,7 +6,12 @@ import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import { streamText, stepCountIs } from "ai";
-import { getModelForOrg, getProviderOptionsForTask } from "../lib/models";
+import {
+  fallbackRouteForCall,
+  getModelAndRouteForOrg,
+  getModelForRoute,
+  getProviderOptionsForRoute,
+} from "../lib/models";
 import {
   lookupPolicy,
   lookupPolicySection,
@@ -17,6 +22,9 @@ import {
   confirmPolicyFact,
   generateCoi,
   createPolicyChangeRequest,
+  createImessageGroupChat,
+  coordinateMailboxTask,
+  renderEmailPreview,
 } from "../lib/chatTools";
 import {
   buildComplianceRequirementsContext,
@@ -60,12 +68,72 @@ import {
   formatComplianceRequirement,
 } from "../lib/complianceAgent";
 import { buildVendorComplianceTools } from "../lib/vendorComplianceTools";
+import {
+  isPendingEmailCancelConfirmation,
+  isPendingEmailCancelConfirmationPrompt,
+  isPendingEmailCancelIntent,
+  isPendingEmailRestoreIntent,
+  pendingEmailCancelConfirmationMessage,
+} from "../lib/emailCancelIntent";
+
+function errorText(error: unknown): string {
+  if (error instanceof Error) {
+    return `${error.name}: ${error.message}`;
+  }
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+}
+
+function errorCode(error: unknown): string {
+  if (!error || typeof error !== "object") return "";
+  const record = error as Record<string, unknown>;
+  const nested = record.error;
+  if (nested && typeof nested === "object") {
+    const nestedCode = (nested as Record<string, unknown>).code;
+    if (typeof nestedCode === "string") return nestedCode;
+  }
+  return typeof record.code === "string" ? record.code : "";
+}
+
+function errorStatus(error: unknown): number | undefined {
+  if (!error || typeof error !== "object") return undefined;
+  const record = error as Record<string, unknown>;
+  const status =
+    record.statusCode ??
+    record.status ??
+    (record.response && typeof record.response === "object"
+      ? (record.response as Record<string, unknown>).status
+      : undefined);
+  return typeof status === "number" ? status : undefined;
+}
+
+function isTransientChatStreamError(error: unknown): boolean {
+  const code = errorCode(error);
+  const status = errorStatus(error);
+  const text = errorText(error);
+  return (
+    code === "server_error" ||
+    (typeof status === "number" && status >= 500 && status < 600) ||
+    /server_error|internal server error|temporarily unavailable|overloaded|timeout|ECONNRESET|ETIMEDOUT|fetch failed/i.test(
+      text,
+    )
+  );
+}
 
 /** Build executable tools with Convex context wired in. */
 
 function buildTools(
   ctx: any,
-  args: { orgId: string; threadId: string; userId: string },
+  args: {
+    orgId: string;
+    threadId: string;
+    userId: string;
+    chatMessageId?: Id<"threadMessages">;
+    referencedMailboxIds?: Id<"connectedEmailAccounts">[];
+  },
   org?: Record<string, unknown>,
 ) {
   return {
@@ -367,6 +435,54 @@ function buildTools(
         }
       },
     },
+    create_imessage_group_chat: {
+      ...createImessageGroupChat,
+      execute: async (input: {
+        recipients: string[];
+        openingMessage: string;
+        title?: string;
+        confirmed: boolean;
+      }) => {
+        if (!input.confirmed) {
+          return "Ask the user to confirm before creating a new iMessage group chat.";
+        }
+        return await ctx.runAction(
+          internal.actions.createOutboundImessageGroup.createOutboundImessageGroupInternal,
+          {
+            orgId: args.orgId as Id<"organizations">,
+            userId: args.userId as Id<"users">,
+            recipients: input.recipients,
+            openingMessage: input.openingMessage,
+            title: input.title,
+          },
+        );
+      },
+    },
+    coordinate_mailbox_task: {
+      ...coordinateMailboxTask,
+      execute: async (input: { task: string }) => {
+        return await ctx.runAction(internal.actions.mailboxCoordinator.runInternal, {
+          orgId: args.orgId as Id<"organizations">,
+          userId: args.userId as Id<"users">,
+          task: input.task,
+          accountIds: args.referencedMailboxIds,
+          chatMessageId: args.chatMessageId,
+          threadId: args.threadId as Id<"threads">,
+        });
+      },
+    },
+    render_email_preview: {
+      ...renderEmailPreview,
+      execute: async (input: { draftId?: string; format?: "png" | "pdf" }) => {
+        return await ctx.runAction(internal.actions.renderEmailPreview.run, {
+          orgId: args.orgId as Id<"organizations">,
+          threadId: args.threadId as Id<"threads">,
+          userId: args.userId as Id<"users">,
+          draftId: input.draftId as Id<"pendingEmails"> | undefined,
+          format: input.format,
+        });
+      },
+    },
   };
 }
 
@@ -378,6 +494,15 @@ export const run = internalAction({
     userMessageId: v.id("threadMessages"),
   },
   handler: async (ctx, args) => {
+    const startingMessages = await ctx.runQuery(
+      internal.threads.messagesInternal,
+      { threadId: args.threadId },
+    );
+    const latestUserMessage = startingMessages
+      .filter((message: Record<string, unknown>) => message.role === "user")
+      .at(-1);
+    if (String(latestUserMessage?._id ?? "") !== String(args.userMessageId)) return;
+
     // Claim one agent response for this user message before any model calls.
     // This prevents duplicate scheduled actions from producing two assistant replies.
     const claim = await ctx.runMutation(internal.threads.claimAgentResponse, {
@@ -387,6 +512,16 @@ export const run = internalAction({
     });
     if (!claim.claimed) return;
     const agentMsgId = claim.messageId;
+    let lastCancellationCheck = 0;
+    const isAgentResponseCancelled = async (force = false) => {
+      const now = dayjs().valueOf();
+      if (!force && now - lastCancellationCheck < 500) return false;
+      lastCancellationCheck = now;
+      const agentMessage = await ctx.runQuery(internal.threads.getMessageInternal, {
+        id: agentMsgId,
+      });
+      return agentMessage?.status === "cancelled";
+    };
 
     try {
       // ── Check for cancel/undo intent targeting a pending email ──
@@ -399,21 +534,66 @@ export const run = internalAction({
         internal.pendingEmails.findDraftByThread,
         { threadId: args.threadId },
       );
+      const latestCancelledEmail = await ctx.runQuery(
+        internal.pendingEmails.findLatestCancelledByThread,
+        { threadId: args.threadId, orgId: args.orgId },
+      );
       const userMsg = await ctx.runQuery(internal.threads.getMessageInternal, {
         id: args.userMessageId,
       });
       const text = userMsg?.content.trim() ?? "";
-      const cancelWords =
-        /\b(cancel|undo|stop|don'?t send|abort|nevermind|never\s*mind|hold on|wait|no\b)/i;
+      const threadMessagesForIntent = await ctx.runQuery(
+        internal.threads.messagesInternal,
+        { threadId: args.threadId },
+      ) as Array<{ _id: Id<"threadMessages">; role: string; content: string; status?: string }>;
+      const previousAgentMessage = threadMessagesForIntent
+        .filter((message) => message._id !== agentMsgId && message._id !== args.userMessageId)
+        .filter((message) => message.role === "agent" && message.content)
+        .at(-1);
+      const isCancelConfirmationContext = isPendingEmailCancelConfirmationPrompt(
+        previousAgentMessage?.content,
+      );
       const approvalWords =
         /^(yes|yep|yeah|ok|okay|approved|approve|confirmed|confirm|send|send it|looks good|this is good|go ahead|do it|please send)\.?!?$/i;
 
-      if (draftEmail && text.length < 100 && cancelWords.test(text)) {
+      if (
+        latestCancelledEmail &&
+        text.length < 100 &&
+        isPendingEmailRestoreIntent(text)
+      ) {
+        const restored = await ctx.runMutation(
+          internal.pendingEmails.restoreAsDraftInternal,
+          { id: latestCancelledEmail._id },
+        );
+        await ctx.runMutation(internal.threads.updateAgentMessage, {
+          id: agentMsgId,
+          content: restored
+            ? "Email restored as a draft. Review it in the email draft card."
+            : "I couldn't restore that email.",
+          pendingEmailId: restored?.id,
+        });
+        return;
+      }
+
+      if (
+        draftEmail &&
+        text.length < 100 &&
+        isCancelConfirmationContext &&
+        isPendingEmailCancelConfirmation(text)
+      ) {
         await ctx.runMutation(internal.pendingEmails.cancelInternal, {
           id: draftEmail._id,
         });
         await ctx.runMutation(internal.threads.deleteMessageInternal, {
           id: agentMsgId,
+        });
+        return;
+      }
+
+      if (draftEmail && text.length < 100 && isPendingEmailCancelIntent(text)) {
+        await ctx.runMutation(internal.threads.updateAgentMessage, {
+          id: agentMsgId,
+          content: pendingEmailCancelConfirmationMessage("draft"),
         });
         return;
       }
@@ -441,7 +621,11 @@ export const run = internalAction({
       }
 
       if (pendingEmails.length > 0) {
-        if (text.length < 100 && cancelWords.test(text)) {
+        if (
+          text.length < 100 &&
+          isCancelConfirmationContext &&
+          isPendingEmailCancelConfirmation(text)
+        ) {
           let cancelledCount = 0;
           for (const pe of pendingEmails) {
             const ok = await ctx.runMutation(
@@ -455,11 +639,21 @@ export const run = internalAction({
               id: agentMsgId,
               content:
                 cancelledCount === 1
-                  ? "Done — email cancelled."
-                  : `Done — ${cancelledCount} pending emails cancelled.`,
+                  ? "Done - email cancelled."
+                  : `Done - ${cancelledCount} pending emails cancelled.`,
             });
             return;
           }
+        }
+        if (text.length < 100 && isPendingEmailCancelIntent(text)) {
+          await ctx.runMutation(internal.threads.updateAgentMessage, {
+            id: agentMsgId,
+            content: pendingEmailCancelConfirmationMessage(
+              "pending",
+              pendingEmails.length,
+            ),
+          });
+          return;
         }
       }
 
@@ -496,6 +690,18 @@ export const run = internalAction({
       const policies = await ctx.runQuery(internal.policies.listAllInternal, {
         orgId: args.orgId,
       });
+      const selectedPolicyIds = new Set<string>(
+        ((userMsgForGuard?.referencedPolicyIds as string[] | undefined) ?? []),
+      );
+      const selectedQuoteIds = new Set<string>(
+        ((userMsgForGuard?.referencedQuoteIds as string[] | undefined) ?? []),
+      );
+      const selectedRequirementIds = new Set<string>(
+        ((userMsgForGuard?.referencedRequirementIds as string[] | undefined) ?? []),
+      );
+      const referencedMailboxIds = ((userMsgForGuard?.referencedMailboxIds as
+        | Id<"connectedEmailAccounts">[]
+        | undefined) ?? []);
 
       // Get sender name
       const user = await ctx.runQuery(internal.users.getInternal, {
@@ -524,6 +730,14 @@ export const run = internalAction({
         .filter((m: Record<string, unknown>) => m.role === "user")
         .pop();
       const latestUserContent = latestUserMsg?.content ?? "";
+      const policyDocs = (policies as any[]).filter((policy) => policy.documentType !== "quote");
+      const quoteDocs = (policies as any[]).filter((policy) => policy.documentType === "quote");
+      const focusedPolicyDocs = selectedPolicyIds.size > 0
+        ? policyDocs.filter((policy) => selectedPolicyIds.has(String(policy._id)))
+        : policyDocs;
+      const focusedQuoteDocs = selectedQuoteIds.size > 0
+        ? quoteDocs.filter((quote) => selectedQuoteIds.has(String(quote._id)))
+        : quoteDocs;
 
       // Build document context (vector search with fallback)
       const {
@@ -533,8 +747,8 @@ export const run = internalAction({
       } = await buildDocumentContext(
         ctx,
         args.orgId,
-        policies,
-        [],
+        focusedPolicyDocs,
+        focusedQuoteDocs,
         latestUserContent,
       );
 
@@ -556,6 +770,56 @@ export const run = internalAction({
         ctx,
         args.orgId,
       );
+      const selectedRequirements = selectedRequirementIds.size > 0
+        ? (await ctx.runQuery(internal.compliance.listRequirementsInternal, {
+            orgId: args.orgId,
+          }) as Array<Record<string, unknown>>).filter((requirement) =>
+            selectedRequirementIds.has(String(requirement._id)),
+          )
+        : [];
+      const selectedMailboxes = referencedMailboxIds.length > 0
+        ? (
+            await Promise.all(
+              referencedMailboxIds.map((accountId) =>
+                ctx.runQuery(internal.connectedEmail.getAccessibleInternal, {
+                  accountId,
+                  orgId: args.orgId,
+                  userId: args.userId,
+                }),
+              ),
+            )
+          ).filter(Boolean) as Array<Record<string, unknown>>
+        : [];
+      const selectedSteeringBlock =
+        selectedPolicyIds.size > 0 ||
+        selectedQuoteIds.size > 0 ||
+        selectedRequirements.length > 0 ||
+        selectedMailboxes.length > 0
+          ? `\n\nUSER-SELECTED CONTEXT TARGETS:\n${[
+              focusedPolicyDocs.length
+                ? `Policies:\n${focusedPolicyDocs
+                    .map((policy: any) => `- ${policy.carrier || policy.security || "Unknown carrier"} #${policy.policyNumber} (ID:${policy._id})`)
+                    .join("\n")}`
+                : "",
+              focusedQuoteDocs.length
+                ? `Quotes:\n${focusedQuoteDocs
+                    .map((quote: any) => `- ${quote.carrier || quote.security || "Unknown carrier"} #${quote.quoteNumber || quote.policyNumber} (ID:${quote._id})`)
+                    .join("\n")}`
+                : "",
+              selectedRequirements.length
+                ? `Requirements:\n${selectedRequirements
+                    .map((requirement: any) => `- ${requirement.title} (${requirement.appliesTo ?? "vendors"}, ID:${requirement._id}): ${String(requirement.requirementText ?? "").slice(0, 500)}`)
+                    .join("\n")}`
+                : "",
+              selectedMailboxes.length
+                ? `Mailboxes:\n${selectedMailboxes
+                    .map((mailbox: any) => `- ${mailbox.label || mailbox.emailAddress} (${mailbox.emailAddress}, ID:${mailbox._id})`)
+                    .join("\n")}`
+                : "",
+            ]
+              .filter(Boolean)
+              .join("\n\n")}\nTreat these as explicit user steering. Prioritize them over generic retrieval. If mailbox work is needed and mailboxes are selected, keep the mailbox coordinator scoped to those accounts unless the user asks to broaden the search.`
+          : "";
 
       const complianceRows = await ctx
         .runQuery((internal as any).compliance.listVendorComplianceInternal, {
@@ -705,6 +969,7 @@ export const run = internalAction({
         memoryContext +
         orgMemoryBlock +
         requirementsBlock +
+        selectedSteeringBlock +
         complianceBlock +
         attachmentNote;
 
@@ -770,7 +1035,13 @@ export const run = internalAction({
       const tools = {
         ...buildTools(
           ctx,
-          { orgId: args.orgId, threadId: args.threadId, userId: args.userId },
+          {
+            orgId: args.orgId,
+            threadId: args.threadId,
+            userId: args.userId,
+            chatMessageId: agentMsgId,
+            referencedMailboxIds,
+          },
           org,
         ),
         ...(emailIdentity.canSend &&
@@ -806,6 +1077,11 @@ export const run = internalAction({
                 coiHandling: org.coiHandling,
                 conversationContext:
                   allMessages
+                    .filter(
+                      (m: Record<string, unknown>) =>
+                        m.status !== "processing" &&
+                        m.status !== "cancelled",
+                    )
                     .slice(-12)
                     .map(
                       (m: Record<string, unknown>) => `${m.role}: ${m.content}`,
@@ -828,6 +1104,7 @@ export const run = internalAction({
         id: agentMsgId,
         content: "",
       });
+      if (await isAgentResponseCancelled(true)) return;
 
       // Tool call display names for the "thinking" UI
       const TOOL_LABELS: Record<string, string> = {
@@ -845,17 +1122,26 @@ export const run = internalAction({
         confirm_policy_fact: "Confirming policy facts...",
         generate_coi: "Generating COI...",
         create_policy_change_request: "Creating policy change request...",
+        create_imessage_group_chat: "Starting iMessage group...",
+        coordinate_mailbox_task: "Coordinating mailbox task...",
+        render_email_preview: "Rendering email preview...",
       };
+      const SUBAGENT_TOOL_NAMES = new Set(["email_expert", "coordinate_mailbox_task"]);
 
-      const result = streamText({
-        model: await getModelForOrg(ctx, args.orgId, "chat"),
-        providerOptions: getProviderOptionsForTask("chat"),
-        maxOutputTokens: 4096,
-        system: fullSystemPrompt,
-        messages: messageHistory,
-        tools,
-        stopWhen: stepCountIs(25),
-      });
+      const chatModel = await getModelAndRouteForOrg(ctx, args.orgId, "chat");
+      const startChatStream = (
+        model: typeof chatModel.model,
+        route: typeof chatModel.route,
+      ) =>
+        streamText({
+          model,
+          providerOptions: getProviderOptionsForRoute(route),
+          maxOutputTokens: 4096,
+          system: fullSystemPrompt,
+          messages: messageHistory,
+          tools,
+          stopWhen: stepCountIs(25),
+        });
 
       let reasoning = "";
       let hasStartedReasoning = false;
@@ -865,7 +1151,7 @@ export const run = internalAction({
       const citedSourceSpanIds = new Set<string>(); // stable raw evidence IDs surfaced by tool results
       const citedPolicyIds = new Set<string>(); // policy IDs actually looked up via lookup_policy_section
       const usedTools: string[] = [];
-      const toolCalls: Array<{ name: string; input?: string }> = [];
+      const toolCalls: Array<{ name: string; input?: string; output?: string }> = [];
       const toolArtifacts: Array<{ type: string; data: unknown }> = [];
       const responseAttachments: Array<{
         filename: string;
@@ -877,93 +1163,136 @@ export const run = internalAction({
       let lastToolName = "";
       let lastToolPolicyId = "";
 
-      for await (const part of result.fullStream) {
-        if (part.type === "reasoning-delta") {
-          // Stream reasoning separately from content
-          reasoning +=
-            ((part as Record<string, unknown>).text as string) ??
-            ((part as Record<string, unknown>).delta as string) ??
-            "";
-          if (!hasStartedReasoning) {
-            hasStartedReasoning = true;
-          }
-          // Flush reasoning periodically
-          const now = dayjs().valueOf();
-          if (now - lastReasoningFlush >= FLUSH_INTERVAL) {
-            lastReasoningFlush = now;
-            await ctx.runMutation(internal.threads.streamReasoning, {
-              id: agentMsgId,
-              reasoning,
+      const resetStreamStateForRetry = async () => {
+        content = "";
+        reasoning = "";
+        hasStartedReasoning = false;
+        lastFlush = dayjs().valueOf();
+        lastReasoningFlush = dayjs().valueOf();
+        await ctx.runMutation(internal.threads.streamAgentMessage, {
+          id: agentMsgId,
+          content: "",
+        });
+        await ctx.runMutation(internal.threads.streamReasoning, {
+          id: agentMsgId,
+          reasoning: "",
+        });
+      };
+
+      const serializeToolOutput = (output: unknown) => {
+        if (typeof output === "string") return output.slice(0, 4000);
+        try {
+          return JSON.stringify(output, null, 2).slice(0, 4000);
+        } catch {
+          return String(output).slice(0, 4000);
+        }
+      };
+
+      const consumeChatStream = async (fullStream: AsyncIterable<any>) => {
+        for await (const part of fullStream) {
+          if (await isAgentResponseCancelled()) return false;
+          if (part.type === "error") {
+            throw part;
+          } else if (part.type === "reasoning-delta") {
+            // Stream reasoning separately from content
+            reasoning +=
+              ((part as Record<string, unknown>).text as string) ??
+              ((part as Record<string, unknown>).delta as string) ??
+              "";
+            if (!hasStartedReasoning) {
+              hasStartedReasoning = true;
+            }
+            // Flush reasoning periodically
+            const now = dayjs().valueOf();
+            if (now - lastReasoningFlush >= FLUSH_INTERVAL) {
+              lastReasoningFlush = now;
+              await ctx.runMutation(internal.threads.streamReasoning, {
+                id: agentMsgId,
+                reasoning,
+              });
+            }
+          } else if (part.type === "text-delta") {
+            content += part.text;
+            const now = dayjs().valueOf();
+            if (now - lastFlush >= FLUSH_INTERVAL) {
+              lastFlush = now;
+              await ctx.runMutation(internal.threads.streamAgentMessage, {
+                id: agentMsgId,
+                content,
+              });
+            }
+          } else if (part.type === "tool-call") {
+            lastToolName = part.toolName;
+            const input =
+              ((part as Record<string, unknown>).input as
+                | Record<string, unknown>
+                | undefined) ?? undefined;
+            lastToolPolicyId =
+              part.toolName === "lookup_policy_section"
+                ? ((input?.policyId as string) ?? "")
+                : "";
+            usedTools.push(part.toolName);
+            toolCalls.push({
+              name: part.toolName,
+              input: input ? JSON.stringify(input).slice(0, 500) : undefined,
             });
-          }
-        } else if (part.type === "text-delta") {
-          content += part.text;
-          const now = dayjs().valueOf();
-          if (now - lastFlush >= FLUSH_INTERVAL) {
-            lastFlush = now;
+            const label =
+              TOOL_LABELS[part.toolName] ?? `Using ${part.toolName}...`;
             await ctx.runMutation(internal.threads.streamAgentMessage, {
               id: agentMsgId,
-              content,
+              content: content ? content + `\n\n*${label}*` : `*${label}*`,
             });
-          }
-        } else if (part.type === "tool-call") {
-          lastToolName = part.toolName;
-          const input =
-            ((part as Record<string, unknown>).input as
-              | Record<string, unknown>
-              | undefined) ?? undefined;
-          lastToolPolicyId =
-            part.toolName === "lookup_policy_section"
-              ? ((input?.policyId as string) ?? "")
-              : "";
-          usedTools.push(part.toolName);
-          toolCalls.push({
-            name: part.toolName,
-            input: input ? JSON.stringify(input).slice(0, 500) : undefined,
-          });
-          const label =
-            TOOL_LABELS[part.toolName] ?? `Using ${part.toolName}...`;
-          await ctx.runMutation(internal.threads.streamAgentMessage, {
-            id: agentMsgId,
-            content: content ? content + `\n\n*${label}*` : `*${label}*`,
-          });
-        } else if (part.type === "tool-result") {
-          if (
-            (lastToolName === "generate_coi" ||
-              lastToolName === "attach_policy_document") &&
-            (part as Record<string, unknown>).output
-          ) {
+          } else if (part.type === "tool-result") {
             const output = (part as Record<string, unknown>).output;
+            let lastToolCall:
+              | { name: string; input?: string; output?: string }
+              | undefined;
+            for (let i = toolCalls.length - 1; i >= 0; i -= 1) {
+              const candidate = toolCalls[i];
+              if (candidate.name === lastToolName && !candidate.output) {
+                lastToolCall = candidate;
+                break;
+              }
+            }
+            if (lastToolCall && SUBAGENT_TOOL_NAMES.has(lastToolName)) {
+              lastToolCall.output = serializeToolOutput(output);
+            }
             if (
-              output &&
-              typeof output === "object" &&
-              "attachment" in output
+              (lastToolName === "generate_coi" ||
+                lastToolName === "attach_policy_document" ||
+                lastToolName === "render_email_preview") &&
+              output
             ) {
-              const attachment = (output as Record<string, unknown>).attachment;
-              if (attachment && typeof attachment === "object") {
-                responseAttachments.push(
-                  attachment as {
-                    filename: string;
-                    contentType: string;
-                    size: number;
-                    fileId?: Id<"_storage">;
-                  },
-                );
+              if (
+                output &&
+                typeof output === "object" &&
+                "attachment" in output
+              ) {
+                const attachment = (output as Record<string, unknown>).attachment;
+                if (attachment && typeof attachment === "object") {
+                  responseAttachments.push(
+                    attachment as {
+                      filename: string;
+                      contentType: string;
+                      size: number;
+                      fileId?: Id<"_storage">;
+                    },
+                  );
+                }
               }
             }
-          }
-          if (
-            lastToolName === "create_policy_change_request" &&
-            (part as Record<string, unknown>).output
-          ) {
-            const output = (part as Record<string, unknown>).output;
-            if (output && typeof output === "object" && "caseId" in output) {
-              const caseId = (output as Record<string, unknown>).caseId;
-              if (typeof caseId === "string" && caseId) {
-                policyChangeCaseId = caseId as Id<"policyChangeCases">;
+            if (
+              lastToolName === "create_policy_change_request" &&
+              (part as Record<string, unknown>).output
+            ) {
+              const output = (part as Record<string, unknown>).output;
+              if (output && typeof output === "object" && "caseId" in output) {
+                const caseId = (output as Record<string, unknown>).caseId;
+                if (typeof caseId === "string" && caseId) {
+                  policyChangeCaseId = caseId as Id<"policyChangeCases">;
+                }
               }
             }
-          }
           if (
             lastToolName === "lookup_vendor_compliance" &&
             (part as Record<string, unknown>).output
@@ -973,60 +1302,114 @@ export const run = internalAction({
               data: (part as Record<string, unknown>).output,
             });
           }
-          // Capture cited section titles and policy IDs from lookup_policy_section results
-          if (
-            lastToolName === "lookup_policy_section" &&
-            (part as Record<string, unknown>).output
-          ) {
-            const output = (part as Record<string, unknown>).output;
-            const results = Array.isArray(output) ? output : [output];
-            for (const r of results) {
-              if (r && typeof r === "object" && r.title) {
-                const resultType = (r as Record<string, unknown>).type;
-                if (resultType === "coverage") {
-                  citedCoverageNames.add(
-                    String((r as Record<string, unknown>).title),
-                  );
-                  if (lastToolPolicyId) citedPolicyIds.add(lastToolPolicyId);
-                } else {
-                  citedSections.add(
-                    String((r as Record<string, unknown>).title),
-                  );
-                  if (lastToolPolicyId) citedPolicyIds.add(lastToolPolicyId);
-                }
-                const sourceSpanIds = (r as Record<string, unknown>)
-                  .sourceSpanIds;
-                if (Array.isArray(sourceSpanIds)) {
-                  for (const id of sourceSpanIds) {
-                    if (typeof id === "string" && id)
-                      citedSourceSpanIds.add(id);
+            if (
+              lastToolName === "coordinate_mailbox_task" &&
+              (part as Record<string, unknown>).output
+            ) {
+              toolArtifacts.push({
+                type: "mailbox_task",
+                data: (part as Record<string, unknown>).output,
+              });
+            }
+            // Capture cited section titles and policy IDs from lookup_policy_section results
+            if (
+              lastToolName === "lookup_policy_section" &&
+              (part as Record<string, unknown>).output
+            ) {
+              const output = (part as Record<string, unknown>).output;
+              const results = Array.isArray(output) ? output : [output];
+              for (const r of results) {
+                if (r && typeof r === "object" && r.title) {
+                  const resultType = (r as Record<string, unknown>).type;
+                  if (resultType === "coverage") {
+                    citedCoverageNames.add(
+                      String((r as Record<string, unknown>).title),
+                    );
+                    if (lastToolPolicyId) citedPolicyIds.add(lastToolPolicyId);
+                  } else {
+                    citedSections.add(
+                      String((r as Record<string, unknown>).title),
+                    );
+                    if (lastToolPolicyId) citedPolicyIds.add(lastToolPolicyId);
+                  }
+                  const sourceSpanIds = (r as Record<string, unknown>)
+                    .sourceSpanIds;
+                  if (Array.isArray(sourceSpanIds)) {
+                    for (const id of sourceSpanIds) {
+                      if (typeof id === "string" && id)
+                        citedSourceSpanIds.add(id);
+                    }
                   }
                 }
               }
             }
+            // Clear the tool label but keep accumulated content
+            await ctx.runMutation(internal.threads.streamAgentMessage, {
+              id: agentMsgId,
+              content: content || "",
+            });
           }
-          // Clear the tool label but keep accumulated content
-          await ctx.runMutation(internal.threads.streamAgentMessage, {
-            id: agentMsgId,
-            content: content || "",
-          });
         }
+        return true;
+      };
+
+      try {
+        const completed = await consumeChatStream(
+          startChatStream(chatModel.model, chatModel.route).fullStream,
+        );
+        if (!completed) return;
+      } catch (streamError) {
+        const hasStartedSideEffectfulWork =
+          usedTools.length > 0 ||
+          toolCalls.length > 0 ||
+          toolArtifacts.length > 0 ||
+          responseAttachments.length > 0 ||
+          !!policyChangeCaseId;
+        if (
+          !isTransientChatStreamError(streamError) ||
+          hasStartedSideEffectfulWork
+        ) {
+          throw streamError;
+        }
+
+        const fallbackRoute = fallbackRouteForCall({
+          task: "chat",
+          taskKind: "query_reason",
+          primaryRoute: chatModel.route,
+        });
+        const retryRoute = fallbackRoute ?? chatModel.route;
+        const retryModel = fallbackRoute
+          ? getModelForRoute(fallbackRoute)
+          : chatModel.model;
+        console.warn(
+          `[processThreadChat] Retrying chat stream after transient provider error on ${chatModel.route.provider}:${chatModel.route.model}; retrying with ${retryRoute.provider}:${retryRoute.model}. ${errorText(streamError)}`,
+        );
+        await resetStreamStateForRetry();
+        const completed = await consumeChatStream(startChatStream(retryModel, retryRoute).fullStream);
+        if (!completed) return;
       }
 
+      if (await isAgentResponseCancelled(true)) return;
+
       // Final update — save content, reasoning, and cited sections
+      const finalReferencedPolicyIds = new Set<string>([
+        ...selectedPolicyIds,
+        ...citedPolicyIds,
+      ]);
+      const finalReferencedQuoteIds = new Set<string>([
+        ...selectedQuoteIds,
+        ...relevantQuoteIds.filter((qid: string) => citedPolicyIds.has(qid)),
+      ]);
       await ctx.runMutation(internal.threads.updateAgentMessage, {
         id: agentMsgId,
         content,
         referencedPolicyIds:
-          citedPolicyIds.size > 0
-            ? ([...citedPolicyIds] as Id<"policies">[])
+          finalReferencedPolicyIds.size > 0
+            ? ([...finalReferencedPolicyIds] as Id<"policies">[])
             : undefined,
         referencedQuoteIds:
-          relevantQuoteIds.filter((qid: string) => citedPolicyIds.has(qid))
-            .length > 0
-            ? (relevantQuoteIds.filter((qid: string) =>
-                citedPolicyIds.has(qid),
-              ) as Id<"policies">[])
+          finalReferencedQuoteIds.size > 0
+            ? ([...finalReferencedQuoteIds] as Id<"policies">[])
             : undefined,
         citedSections: citedSections.size > 0 ? [...citedSections] : undefined,
         citedCoverageNames:

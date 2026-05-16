@@ -1,6 +1,7 @@
 import { v } from "convex/values";
-import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import { action, internalAction, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { getAuthUserId } from "@convex-dev/auth/server";
+import dayjs from "dayjs";
 import { internal as internalApi } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
@@ -275,11 +276,48 @@ export const requestVendorAccessByEmail = action({
     const vendorEmail = normalizeEmail(args.vendorEmail);
     const rawToken = randomToken();
     const tokenHash = await sha256Hex(rawToken);
-    const expiresAt = Date.now() + 14 * 24 * 60 * 60 * 1000;
+    const expiresAt = dayjs().add(14, "day").valueOf();
 
     const result = await ctx.runMutation(internal.connectedOrgs.createEmailRequestInternal, {
       clientOrgId: args.clientOrgId,
       requestedByUserId: userId,
+      vendorEmail,
+      inviteTokenHash: tokenHash,
+      expiresAt,
+      relationshipLabel: args.relationshipLabel,
+      note: args.note,
+    });
+
+    const siteUrl = getAuthSiteUrl();
+    const requestUrl = `${siteUrl}/connect/request/${rawToken}`;
+    const clientName = result.clientOrgName ?? "A client";
+    await sendVendorRequestEmail({
+      vendorEmail,
+      clientName,
+      note: args.note,
+      requestUrl,
+    });
+    return { status: "pending", email: vendorEmail };
+  },
+});
+
+export const requestVendorAccessByEmailInternal = internalAction({
+  args: {
+    clientOrgId: v.id("organizations"),
+    requestedByUserId: v.id("users"),
+    vendorEmail: v.string(),
+    relationshipLabel: v.optional(v.string()),
+    note: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<{ status: "pending"; email: string }> => {
+    const vendorEmail = normalizeEmail(args.vendorEmail);
+    const rawToken = randomToken();
+    const tokenHash = await sha256Hex(rawToken);
+    const expiresAt = dayjs().add(14, "day").valueOf();
+
+    const result = await ctx.runMutation(internal.connectedOrgs.createEmailRequestInternal, {
+      clientOrgId: args.clientOrgId,
+      requestedByUserId: args.requestedByUserId,
       vendorEmail,
       inviteTokenHash: tokenHash,
       expiresAt,

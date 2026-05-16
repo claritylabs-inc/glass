@@ -31,6 +31,7 @@ type ClientListRecord = {
   createdAt: number;
   lastActivityAt?: number;
   activePoliciesCount?: number;
+  primaryBrokerContactId?: Id<"users">;
 };
 
 export function ClientList({
@@ -45,6 +46,7 @@ export function ClientList({
   const rows = useQuery(clientsApi.clients.listForBroker, {
     brokerOrgId: partnerOrgId,
   }) as ClientListRecord[] | undefined;
+  const brokerMembers = useQuery(api.orgs.listMembers);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
 
   const STATUS_FILTERS: { id: StatusFilter; label: string }[] = [
@@ -102,6 +104,8 @@ export function ClientList({
       createdAt: r.createdAt,
       lastActivityAt: r.lastActivityAt,
       activePoliciesCount: r.activePoliciesCount ?? 0,
+      primaryBrokerContactId: r.primaryBrokerContactId,
+      brokerMembers: brokerMembers ?? [],
     };
   }
 
