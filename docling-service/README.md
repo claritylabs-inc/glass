@@ -1,6 +1,6 @@
 # Glass Docling Service
 
-`docling-service` is a Railway-hosted FastAPI wrapper around `docling-serve`. Convex sends raw PDF bytes to `POST /v1/parse`; this service verifies an HMAC signature, forwards the PDF to the local `docling-serve` process, and returns structured markdown plus parser audit metadata.
+`docling-service` is a Railway-hosted FastAPI wrapper around Docling. Convex sends raw PDF bytes to `POST /v1/parse`; this service verifies an HMAC signature, parses the PDF with Docling, and returns structured markdown plus parser audit metadata.
 
 ## Endpoints
 
@@ -15,7 +15,7 @@ The parse response is:
 {
   "markdown": "# ...",
   "docTagsJson": {},
-  "parserVersion": "docling-serve:unknown",
+  "parserVersion": "docling:unknown",
   "parsingMs": 1234
 }
 ```
@@ -63,7 +63,6 @@ PY
 
 ```text
 DOCLING_HMAC_SECRET=<new random secret>
-DOCLING_UPSTREAM=http://127.0.0.1:5001
 ```
 
 5. Generate a public Railway domain for the service.
