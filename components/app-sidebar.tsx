@@ -38,6 +38,7 @@ import {
 } from "@/lib/settings-sections";
 import { LogoIcon } from "@/components/ui/logo-icon";
 import { PillButton } from "@/components/ui/pill-button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { NotificationsPanel } from "@/components/notifications-panel";
 import { MergePolicyDialog } from "@/components/merge-policy-dialog";
 import { buildAgentContactVCard, downloadVCard } from "@/components/lib/agent-contact-vcard";
@@ -50,11 +51,23 @@ import { getPublicAgentDomain } from "@/lib/domains";
 
 const AGENT_DOMAIN = getPublicAgentDomain();
 
-const MENU_ITEM_BASE = "rounded-md transition-colors";
-const MENU_ITEM_HOVER = "hover:bg-foreground/[0.035] hover:text-foreground";
-const MENU_ITEM_ACTIVE = "bg-foreground/[0.07] text-foreground hover:bg-foreground/[0.08]";
+const MENU_ITEM_BASE = "rounded-md transition-[background-color,color,box-shadow] duration-200 ease-out";
+const MENU_ITEM_HOVER = "hover:bg-foreground/[0.045] hover:text-foreground";
+const MENU_ITEM_ACTIVE = "bg-foreground/[0.085] text-foreground hover:bg-foreground/[0.095]";
 const MENU_ITEM_INACTIVE = `text-muted-foreground ${MENU_ITEM_HOVER}`;
-const MENU_ITEM_INACTIVE_SUBTLE = "text-muted-foreground/40 hover:bg-foreground/[0.03] hover:text-muted-foreground/65";
+const MENU_ITEM_INACTIVE_SUBTLE = "text-muted-foreground/40 hover:bg-foreground/[0.035] hover:text-muted-foreground/65";
+const SHORTCUT_PREFIX_KEY = "g";
+const SHORTCUT_SEQUENCE_TIMEOUT_MS = 1500;
+const SHORTCUT_TOOLTIP_DELAY_MS = 1500;
+
+type NavShortcut = {
+  key: string;
+  label: string;
+};
+
+function navShortcut(key: string): NavShortcut {
+  return { key, label: `G then ${key.toUpperCase()}` };
+}
 
 /** Wrapper so LogoIcon matches the lucide icon interface */
 function GlassStarIcon({ className }: { className?: string }) {
@@ -73,21 +86,21 @@ const BROKER_SETTINGS_WITH_AGENT = insertSettingsSectionAfterTeam(
 );
 
 const INSURANCE_ITEMS = [
-  { href: "/policies", label: "Policies", icon: FileText, shortcut: "O" },
-  { href: "/compliance", label: "Compliance", icon: ClipboardCheck },
+  { href: "/policies", label: "Policies", icon: FileText, shortcut: navShortcut("p") },
+  { href: "/compliance", label: "Compliance", icon: ClipboardCheck, shortcut: navShortcut("r") },
 ];
 
 const CONNECT_ITEMS = [
-  { href: "/connect/clients", label: "Clients", icon: Users },
-  { href: "/connect/vendors", label: "Vendors", icon: Building2 },
+  { href: "/connect/clients", label: "Clients", icon: Users, shortcut: navShortcut("l") },
+  { href: "/connect/vendors", label: "Vendors", icon: Building2, shortcut: navShortcut("v") },
 ];
 
 const ALL_NAV_ITEMS = [...INSURANCE_ITEMS];
 
 const BROKER_NAV_ITEMS = [
-  { href: "/clients", label: "Clients", icon: Users, shortcut: "K" },
-  { href: "/compliance", label: "Compliance", icon: ClipboardCheck },
-  { href: "/activity", label: "Activity", icon: Activity, shortcut: "U" },
+  { href: "/clients", label: "Clients", icon: Users, shortcut: navShortcut("c") },
+  { href: "/compliance", label: "Compliance", icon: ClipboardCheck, shortcut: navShortcut("r") },
+  { href: "/activity", label: "Activity", icon: Activity, shortcut: navShortcut("a") },
 ];
 
 /** Returns true if focus is inside an editable element */
@@ -177,11 +190,15 @@ export function AppSidebar({
   const pageShortcutMap = useMemo<Record<string, string>>(
     () => ({
       ...Object.fromEntries(
-        navItems.filter((item) => item.shortcut).map((item) => [item.shortcut!.toLowerCase(), item.href]),
+        navItems.filter((item) => item.shortcut).map((item) => [item.shortcut!.key.toLowerCase(), item.href]),
       ),
-      j: "/settings",
+      ...Object.fromEntries(
+        connectItems.filter((item) => item.shortcut).map((item) => [item.shortcut!.key.toLowerCase(), item.href]),
+      ),
+      s: "/settings",
+      u: "/profile",
     }),
-    [navItems],
+    [connectItems, navItems],
   );
 
   const [collapsed, setCollapsed] = useState(() => {
@@ -191,8 +208,8 @@ export function AppSidebar({
       return false;
     }
   });
-  const [showShortcuts, setShowShortcuts] = useState(false);
-  const cmdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const shortcutSequenceActiveRef = useRef(false);
+  const shortcutSequenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [notificationsPanelOpen, setNotificationsPanelOpen] = useState(false);
   const [mergeDialog, setMergeDialog] = useState<{
@@ -247,52 +264,71 @@ export function AppSidebar({
     }
   }
 
-  // Cmd+letter page nav, Cmd+number thread nav, Cmd held state
+  // "g" followed by a page key navigates between primary app areas.
   useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      if (e.metaKey || e.ctrlKey) {
-        if (!cmdTimerRef.current) {
-          cmdTimerRef.current = setTimeout(() => setShowShortcuts(true), 500);
-        }
-
-        // Skip navigation shortcuts when focus is in an editable element
-        if (isEditableTarget(e)) return;
-
-        // Cmd+letter — navigate to pages
-        const pageHref = pageShortcutMap[e.key.toLowerCase()];
-        if (pageHref) {
-          e.preventDefault();
-          router.push(pageHref);
-          return;
-        }
-
-        // Cmd+1-9 — navigate to threads
-        const num = parseInt(e.key, 10);
-        if (num >= 1 && num <= 9 && num <= conversations.length) {
-          e.preventDefault();
-          router.push(`/agent/thread/${conversations[num - 1].id}`);
-        }
+    function clearShortcutSequence() {
+      shortcutSequenceActiveRef.current = false;
+      if (shortcutSequenceTimerRef.current) {
+        clearTimeout(shortcutSequenceTimerRef.current);
+        shortcutSequenceTimerRef.current = null;
       }
     }
-    function clearCmd() {
-      setShowShortcuts(false);
-      if (cmdTimerRef.current) { clearTimeout(cmdTimerRef.current); cmdTimerRef.current = null; }
+
+    function startShortcutSequence() {
+      clearShortcutSequence();
+      shortcutSequenceActiveRef.current = true;
+      shortcutSequenceTimerRef.current = setTimeout(
+        clearShortcutSequence,
+        SHORTCUT_SEQUENCE_TIMEOUT_MS,
+      );
     }
-    function handleKeyUp(e: KeyboardEvent) {
-      if (e.key === "Meta" || e.key === "Control") clearCmd();
+
+    function handleKeyDown(e: KeyboardEvent) {
+      if (isEditableTarget(e) || e.metaKey || e.ctrlKey || e.altKey) return;
+
+      const key = e.key.toLowerCase();
+      if (!shortcutSequenceActiveRef.current) {
+        if (key === SHORTCUT_PREFIX_KEY) {
+          e.preventDefault();
+          startShortcutSequence();
+        }
+        return;
+      }
+
+      clearShortcutSequence();
+
+      if (key === SHORTCUT_PREFIX_KEY) {
+        e.preventDefault();
+        startShortcutSequence();
+        return;
+      }
+
+      const pageHref = pageShortcutMap[key];
+      if (pageHref) {
+        e.preventDefault();
+        router.push(pageHref);
+        return;
+      }
+
+      const num = parseInt(key, 10);
+      if (num >= 1 && num <= 9 && num <= conversations.length) {
+        e.preventDefault();
+        router.push(`/agent/thread/${conversations[num - 1].id}`);
+      }
     }
+
     function handleBlur() {
-      clearCmd();
+      clearShortcutSequence();
     }
+
     document.addEventListener("keydown", handleKeyDown);
-    document.addEventListener("keyup", handleKeyUp);
     window.addEventListener("blur", handleBlur);
     return () => {
+      clearShortcutSequence();
       document.removeEventListener("keydown", handleKeyDown);
-      document.removeEventListener("keyup", handleKeyUp);
       window.removeEventListener("blur", handleBlur);
     };
-  }, [collapsed, router, conversations, pageShortcutMap]);
+  }, [router, conversations, pageShortcutMap]);
 
   const partnerWhiteLabelingEnabled = viewerOrg?.brokerOrg?.whiteLabelingEnabled !== false;
   const headerOrgName =
@@ -352,7 +388,6 @@ export function AppSidebar({
               icon={item.icon}
               active={isItemActive}
               collapsed={collapsed}
-              cmdHeld={false}
             />
           );
         })}
@@ -453,7 +488,6 @@ export function AppSidebar({
             active={isActive(item.href)}
             collapsed={collapsed}
             shortcut={item.shortcut ?? undefined}
-            cmdHeld={showShortcuts}
           />
         ))}
 
@@ -466,7 +500,7 @@ export function AppSidebar({
             icon={item.icon}
             active={isActive(item.href)}
             collapsed={collapsed}
-            cmdHeld={showShortcuts}
+            shortcut={item.shortcut ?? undefined}
           />
         ))}
 
@@ -502,52 +536,58 @@ export function AppSidebar({
             )}
             {conversations.map((item, idx) => {
               const isConvActive = pathname === `/agent/thread/${item.id}`;
-              return (
-              <Link
-                key={`${item.kind}-${item.id}`}
-                href={`/agent/thread/${item.id}`}
-                className={`group flex items-center gap-2 px-3 py-1.5 ${MENU_ITEM_BASE} text-body-sm ${
-                  isConvActive
-                    ? MENU_ITEM_ACTIVE
-                    : MENU_ITEM_INACTIVE
-                }`}
-              >
-                {item.kind === "imessage" ? (
-                  <MessageCircle className="w-3.5 h-3.5 shrink-0" />
-                ) : item.kind === "email" ? (
-                  <Mail className="w-3.5 h-3.5 shrink-0" />
-                ) : null}
-                <span className="truncate flex-1">{item.label}</span>
-                <span className="relative h-5 w-5 shrink-0">
-                  {showShortcuts && idx < 9 && (
-                    <kbd className="absolute inset-0 flex items-center justify-center rounded border border-foreground/6 bg-foreground/[0.06] px-1 text-[10px] leading-none text-muted-foreground/50 opacity-100 transition-opacity duration-150 group-hover:opacity-0">
-                      {idx + 1}
-                    </kbd>
-                  )}
-                  <button
-                    type="button"
-                    onClick={async (e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      await archiveThread({ id: item.id as Id<"threads"> });
-                      if (isConvActive) {
-                        const next = conversations.find((c) => c.id !== item.id);
-                        if (next) {
-                          router.push(`/agent/thread/${next.id}`);
-                        } else {
-                          // No unarchived threads left — start a new one
-                          const threadId = await createThread({ agentDomain: AGENT_DOMAIN });
-                          router.push(`/agent/thread/${threadId}`);
+              const shortcut = idx < 9 ? navShortcut(String(idx + 1)) : undefined;
+              const threadLink = (
+                <Link
+                  href={`/agent/thread/${item.id}`}
+                  className={`group flex items-center gap-2 px-3 py-1.5 ${MENU_ITEM_BASE} text-body-sm ${
+                    isConvActive
+                      ? MENU_ITEM_ACTIVE
+                      : MENU_ITEM_INACTIVE
+                  }`}
+                >
+                  {item.kind === "imessage" ? (
+                    <MessageCircle className="w-3.5 h-3.5 shrink-0" />
+                  ) : item.kind === "email" ? (
+                    <Mail className="w-3.5 h-3.5 shrink-0" />
+                  ) : null}
+                  <span className="truncate flex-1">{item.label}</span>
+                  <span className="relative h-5 w-5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={async (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        await archiveThread({ id: item.id as Id<"threads"> });
+                        if (isConvActive) {
+                          const next = conversations.find((c) => c.id !== item.id);
+                          if (next) {
+                            router.push(`/agent/thread/${next.id}`);
+                          } else {
+                            // No unarchived threads left — start a new one
+                            const threadId = await createThread({ agentDomain: AGENT_DOMAIN });
+                            router.push(`/agent/thread/${threadId}`);
+                          }
                         }
-                      }
-                    }}
-                    className="absolute inset-0 flex items-center justify-center rounded text-muted-foreground/30 opacity-0 transition-all duration-150 hover:bg-foreground/[0.06] hover:text-foreground group-hover:opacity-100"
-                    title="Archive"
-                  >
-                    <Archive className="w-3 h-3" />
-                  </button>
-                </span>
-              </Link>
+                      }}
+                      className="absolute inset-0 flex items-center justify-center rounded text-muted-foreground/30 opacity-0 transition-all duration-150 hover:bg-foreground/[0.06] hover:text-foreground group-hover:opacity-100"
+                      title="Archive"
+                    >
+                      <Archive className="w-3 h-3" />
+                    </button>
+                  </span>
+                </Link>
+              );
+
+              if (!shortcut) return <div key={`${item.kind}-${item.id}`}>{threadLink}</div>;
+
+              return (
+                <Tooltip key={`${item.kind}-${item.id}`}>
+                  <TooltipTrigger render={threadLink} delay={SHORTCUT_TOOLTIP_DELAY_MS} />
+                  <TooltipContent side="right" align="center" sideOffset={8}>
+                    <ShortcutTooltipContent label={item.label} shortcut={shortcut} />
+                  </TooltipContent>
+                </Tooltip>
               );
             })}
             {archivedThreads && archivedThreads.length > 0 && (
@@ -616,8 +656,7 @@ export function AppSidebar({
           icon={Settings}
           active={isActive("/settings")}
           collapsed={collapsed}
-          shortcut="J"
-          cmdHeld={showShortcuts}
+          shortcut={navShortcut("s")}
         />
         <NavItem
           href="/profile"
@@ -625,7 +664,7 @@ export function AppSidebar({
           icon={User}
           active={isActive("/profile")}
           collapsed={collapsed}
-          cmdHeld={showShortcuts}
+          shortcut={navShortcut("u")}
         />
         <button
           type="button"
@@ -703,7 +742,6 @@ export function AppSidebar({
           icon={ArrowLeft}
           active={false}
           collapsed={collapsed}
-          cmdHeld={false}
         />
         {CLIENT_DETAIL_NAV.map((item) => (
           <NavItem
@@ -713,7 +751,6 @@ export function AppSidebar({
             icon={item.icon}
             active={isClientNavActive(item.href)}
             collapsed={collapsed}
-            cmdHeld={false}
           />
         ))}
 
@@ -1005,17 +1042,15 @@ function NavItem({
   active,
   collapsed,
   shortcut,
-  cmdHeld,
 }: {
   href: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   active: boolean;
   collapsed: boolean;
-  shortcut?: string;
-  cmdHeld?: boolean;
+  shortcut?: NavShortcut;
 }) {
-  return (
+  const link = (
     <Link
       href={href}
       className={`flex items-center gap-2.5 px-3 py-1.5 ${MENU_ITEM_BASE} text-body-sm ${
@@ -1025,15 +1060,41 @@ function NavItem({
           ? MENU_ITEM_ACTIVE
           : MENU_ITEM_INACTIVE
       }`}
-      title={collapsed ? label : undefined}
+      aria-label={collapsed ? label : undefined}
     >
       <Icon className="w-4 h-4 shrink-0" />
       {!collapsed && <span className="flex-1">{label}</span>}
-      {!collapsed && cmdHeld && shortcut != null && (
-        <kbd className="text-[10px] min-w-[18px] text-center px-1 py-0.5 rounded bg-foreground/[0.06] text-muted-foreground/50 border border-foreground/6 leading-none animate-in fade-in duration-150">
-          {shortcut}
-        </kbd>
-      )}
     </Link>
+  );
+
+  if (!shortcut) return link;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger render={link} delay={SHORTCUT_TOOLTIP_DELAY_MS} />
+      <TooltipContent side="right" align="center" sideOffset={8}>
+        <ShortcutTooltipContent label={label} shortcut={shortcut} />
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+function ShortcutTooltipContent({
+  label,
+  shortcut,
+}: {
+  label: string;
+  shortcut: NavShortcut;
+}) {
+  return (
+    <>
+      <span>Go to {label}</span>
+      <kbd
+        data-slot="kbd"
+        className="ml-1 border border-background/15 bg-background/10 px-1.5 py-0.5 text-[10px] leading-none text-background/75"
+      >
+        {shortcut.label}
+      </kbd>
+    </>
   );
 }
