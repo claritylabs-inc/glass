@@ -38,10 +38,17 @@ import {
 } from "@/lib/settings-sections";
 import { LogoIcon } from "@/components/ui/logo-icon";
 import { PillButton } from "@/components/ui/pill-button";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { NotificationsPanel } from "@/components/notifications-panel";
 import { MergePolicyDialog } from "@/components/merge-policy-dialog";
-import { buildAgentContactVCard, downloadVCard } from "@/components/lib/agent-contact-vcard";
+import {
+  buildAgentContactVCard,
+  downloadVCard,
+} from "@/components/lib/agent-contact-vcard";
 import {
   AGENT_TEXT_NUMBER,
   AGENT_TEXT_NUMBER_DISPLAY,
@@ -51,24 +58,26 @@ import { getPublicAgentDomain } from "@/lib/domains";
 
 const AGENT_DOMAIN = getPublicAgentDomain();
 
-const MENU_ITEM_BASE = "rounded-md transition-[background-color,color,box-shadow] duration-200 ease-out";
+const MENU_ITEM_BASE =
+  "rounded-md transition-[background-color,color,box-shadow] duration-200 ease-out";
 const MENU_ITEM_HOVER = "hover:bg-foreground/[0.07] hover:text-foreground";
-const MENU_ITEM_ACTIVE = "bg-foreground/[0.105] text-foreground hover:bg-foreground/[0.115]";
+const MENU_ITEM_ACTIVE =
+  "bg-foreground/[0.105] text-foreground hover:bg-foreground/[0.115]";
 const MENU_ITEM_INACTIVE = `text-muted-foreground ${MENU_ITEM_HOVER}`;
-const MENU_ITEM_INACTIVE_SUBTLE = "text-muted-foreground/40 hover:bg-foreground/[0.055] hover:text-muted-foreground/65";
+const MENU_ITEM_INACTIVE_SUBTLE =
+  "text-muted-foreground/40 hover:bg-foreground/[0.055] hover:text-muted-foreground/65";
 const SHORTCUT_PREFIX_KEY = "g";
 const SHORTCUT_SEQUENCE_TIMEOUT_MS = 1500;
 const SHORTCUT_TOOLTIP_DELAY_MS = 1500;
 const SHORTCUT_TOOLTIP_CLASS =
-  "border border-foreground/10 bg-background text-foreground shadow-sm has-data-[slot=kbd]:pr-2.5 [&_[class*='size-2.5']]:hidden";
+  "border border-foreground/10 bg-background text-foreground has-data-[slot=kbd]:pr-2.5 [&_[class*='size-2.5']]:hidden";
 
 type NavShortcut = {
   key: string;
-  label: string;
 };
 
 function navShortcut(key: string): NavShortcut {
-  return { key, label: `G then ${key.toUpperCase()}` };
+  return { key };
 }
 
 /** Wrapper so LogoIcon matches the lucide icon interface */
@@ -76,7 +85,11 @@ function GlassStarIcon({ className }: { className?: string }) {
   return <LogoIcon size={16} static className={className} />;
 }
 
-const AGENT_SETTINGS_SECTION: SettingsSection = { id: "agent", label: "Agent", icon: GlassStarIcon };
+const AGENT_SETTINGS_SECTION: SettingsSection = {
+  id: "agent",
+  label: "Agent",
+  icon: GlassStarIcon,
+};
 
 const CLIENT_SETTINGS_WITH_AGENT = insertSettingsSectionAfterTeam(
   CLIENT_SETTINGS_SECTIONS,
@@ -88,21 +101,56 @@ const BROKER_SETTINGS_WITH_AGENT = insertSettingsSectionAfterTeam(
 );
 
 const INSURANCE_ITEMS = [
-  { href: "/policies", label: "Policies", icon: FileText, shortcut: navShortcut("p") },
-  { href: "/compliance", label: "Compliance", icon: ClipboardCheck, shortcut: navShortcut("r") },
+  {
+    href: "/policies",
+    label: "Policies",
+    icon: FileText,
+    shortcut: navShortcut("p"),
+  },
+  {
+    href: "/compliance",
+    label: "Compliance",
+    icon: ClipboardCheck,
+    shortcut: navShortcut("r"),
+  },
 ];
 
 const CONNECT_ITEMS = [
-  { href: "/connect/clients", label: "Clients", icon: Users, shortcut: navShortcut("l") },
-  { href: "/connect/vendors", label: "Vendors", icon: Building2, shortcut: navShortcut("v") },
+  {
+    href: "/connect/clients",
+    label: "Clients",
+    icon: Users,
+    shortcut: navShortcut("l"),
+  },
+  {
+    href: "/connect/vendors",
+    label: "Vendors",
+    icon: Building2,
+    shortcut: navShortcut("v"),
+  },
 ];
 
 const ALL_NAV_ITEMS = [...INSURANCE_ITEMS];
 
 const BROKER_NAV_ITEMS = [
-  { href: "/clients", label: "Clients", icon: Users, shortcut: navShortcut("c") },
-  { href: "/compliance", label: "Compliance", icon: ClipboardCheck, shortcut: navShortcut("r") },
-  { href: "/activity", label: "Activity", icon: Activity, shortcut: navShortcut("a") },
+  {
+    href: "/clients",
+    label: "Clients",
+    icon: Users,
+    shortcut: navShortcut("c"),
+  },
+  {
+    href: "/compliance",
+    label: "Compliance",
+    icon: ClipboardCheck,
+    shortcut: navShortcut("r"),
+  },
+  {
+    href: "/activity",
+    label: "Activity",
+    icon: Activity,
+    shortcut: navShortcut("a"),
+  },
 ];
 
 /** Returns true if focus is inside an editable element */
@@ -184,7 +232,8 @@ export function AppSidebar({
   const { context: pageContext } = usePageContext();
   const currentOrg = useCurrentOrg();
   const isBroker = currentOrg?.isBroker ?? false;
-  const isStandaloneClient = currentOrg?.orgType === "client" && !viewerOrg?.brokerOrg;
+  const isStandaloneClient =
+    currentOrg?.orgType === "client" && !viewerOrg?.brokerOrg;
   const navItems = isBroker ? BROKER_NAV_ITEMS : ALL_NAV_ITEMS;
   const connectItems = CONNECT_ITEMS;
   const isDesktop = useMediaQuery("(min-width: 1024px)");
@@ -192,10 +241,14 @@ export function AppSidebar({
   const pageShortcutMap = useMemo<Record<string, string>>(
     () => ({
       ...Object.fromEntries(
-        navItems.filter((item) => item.shortcut).map((item) => [item.shortcut!.key.toLowerCase(), item.href]),
+        navItems
+          .filter((item) => item.shortcut)
+          .map((item) => [item.shortcut!.key.toLowerCase(), item.href]),
       ),
       ...Object.fromEntries(
-        connectItems.filter((item) => item.shortcut).map((item) => [item.shortcut!.key.toLowerCase(), item.href]),
+        connectItems
+          .filter((item) => item.shortcut)
+          .map((item) => [item.shortcut!.key.toLowerCase(), item.href]),
       ),
       s: "/settings",
       u: "/profile",
@@ -211,7 +264,9 @@ export function AppSidebar({
     }
   });
   const shortcutSequenceActiveRef = useRef(false);
-  const shortcutSequenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const shortcutSequenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
 
   const [notificationsPanelOpen, setNotificationsPanelOpen] = useState(false);
   const [mergeDialog, setMergeDialog] = useState<{
@@ -228,14 +283,26 @@ export function AppSidebar({
 
   // Unified thread list.
   const conversations = useMemo(() => {
-    type ConvItem = { kind: "email" | "chat" | "imessage"; id: string; label: string; time: number };
+    type ConvItem = {
+      kind: "email" | "chat" | "imessage";
+      id: string;
+      label: string;
+      time: number;
+    };
 
-    return (unifiedThreads ?? []).slice(0, 8).map((t): ConvItem => ({
-      kind: t.originChannel === "imessage" ? "imessage" : t.originChannel === "email" ? "email" : "chat",
-      id: t._id,
-      label: t.title,
-      time: t.lastMessageAt ?? t._creationTime,
-    }));
+    return (unifiedThreads ?? []).slice(0, 8).map(
+      (t): ConvItem => ({
+        kind:
+          t.originChannel === "imessage"
+            ? "imessage"
+            : t.originChannel === "email"
+              ? "email"
+              : "chat",
+        id: t._id,
+        label: t.title,
+        time: t.lastMessageAt ?? t._creationTime,
+      }),
+    );
   }, [unifiedThreads]);
 
   function toggleCollapse() {
@@ -259,7 +326,10 @@ export function AppSidebar({
 
   async function handleNewChat() {
     try {
-      const threadId = await createThread({ initialContext: pageContext ?? undefined, agentDomain: AGENT_DOMAIN });
+      const threadId = await createThread({
+        initialContext: pageContext ?? undefined,
+        agentDomain: AGENT_DOMAIN,
+      });
       router.push(`/agent/thread/${threadId}`);
     } catch {
       toast.error("Failed to create chat");
@@ -332,15 +402,16 @@ export function AppSidebar({
     };
   }, [router, conversations, pageShortcutMap]);
 
-  const partnerWhiteLabelingEnabled = viewerOrg?.brokerOrg?.whiteLabelingEnabled !== false;
+  const partnerWhiteLabelingEnabled =
+    viewerOrg?.brokerOrg?.whiteLabelingEnabled !== false;
   const headerOrgName =
     partnerWhiteLabelingEnabled && viewerOrg?.brokerOrg
       ? viewerOrg.brokerOrg.name
-      : viewerOrg?.org?.name ?? viewer?.name ?? viewer?.email ?? "";
+      : (viewerOrg?.org?.name ?? viewer?.name ?? viewer?.email ?? "");
   const headerOrgIcon =
     partnerWhiteLabelingEnabled && viewerOrg?.brokerOrg
       ? viewerOrg.brokerOrg.iconUrl
-      : viewerOrg?.org?.iconUrl ?? null;
+      : (viewerOrg?.org?.iconUrl ?? null);
   const initials = getInitials(headerOrgName, viewer?.email);
 
   const activeSettingsSection = searchParams.get("section") ?? "organization";
@@ -363,7 +434,11 @@ export function AppSidebar({
           onClick={toggleCollapse}
           className="w-7 h-7 hidden lg:flex items-center justify-center rounded-md text-muted-foreground/40 hover:text-foreground hover:bg-foreground/[0.04] transition-colors shrink-0"
         >
-          {collapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronLeft className="w-3.5 h-3.5" />}
+          {collapsed ? (
+            <ChevronRight className="w-3.5 h-3.5" />
+          ) : (
+            <ChevronLeft className="w-3.5 h-3.5" />
+          )}
         </button>
       </div>
 
@@ -411,17 +486,35 @@ export function AppSidebar({
       <div className="flex items-center gap-2 px-3 h-12 border-b border-foreground/6">
         {!collapsed && (
           <>
-            <div className={`ml-0.5 w-7 h-7 bg-foreground/8 flex items-center justify-center text-[11px] font-medium text-foreground shrink-0 overflow-hidden ${headerOrgIcon ? "rounded-md" : "rounded-full"}`}>
+            <div
+              className={`ml-0.5 w-7 h-7 bg-foreground/8 flex items-center justify-center text-[11px] font-medium text-foreground shrink-0 overflow-hidden ${headerOrgIcon ? "rounded-md" : "rounded-full"}`}
+            >
               {headerOrgIcon ? (
-                <Image src={headerOrgIcon} alt="" width={28} height={28} unoptimized className="w-7 h-7 object-contain bg-white" />
+                <Image
+                  src={headerOrgIcon}
+                  alt=""
+                  width={28}
+                  height={28}
+                  unoptimized
+                  className="w-7 h-7 object-contain bg-white"
+                />
               ) : viewer?.image ? (
-                <Image src={viewer.image} alt="" width={28} height={28} unoptimized className="w-7 h-7 rounded-full object-cover" />
+                <Image
+                  src={viewer.image}
+                  alt=""
+                  width={28}
+                  height={28}
+                  unoptimized
+                  className="w-7 h-7 rounded-full object-cover"
+                />
               ) : (
                 initials
               )}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-body-sm font-medium text-foreground truncate">{headerOrgName}</p>
+              <p className="text-body-sm font-medium text-foreground truncate">
+                {headerOrgName}
+              </p>
             </div>
           </>
         )}
@@ -430,7 +523,11 @@ export function AppSidebar({
           onClick={toggleCollapse}
           className="w-7 h-7 hidden lg:flex items-center justify-center rounded-md text-muted-foreground/40 hover:text-foreground hover:bg-foreground/[0.04] transition-colors shrink-0"
         >
-          {collapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronLeft className="w-3.5 h-3.5" />}
+          {collapsed ? (
+            <ChevronRight className="w-3.5 h-3.5" />
+          ) : (
+            <ChevronLeft className="w-3.5 h-3.5" />
+          )}
         </button>
       </div>
 
@@ -440,11 +537,7 @@ export function AppSidebar({
           onClick={() => setNotificationsPanelOpen((v) => !v)}
           className={`w-full flex items-center gap-2.5 px-3 py-1.5 ${MENU_ITEM_BASE} text-body-sm ${
             collapsed ? "justify-center" : ""
-          } ${
-            notificationsPanelOpen
-              ? MENU_ITEM_ACTIVE
-              : MENU_ITEM_INACTIVE
-          }`}
+          } ${notificationsPanelOpen ? MENU_ITEM_ACTIVE : MENU_ITEM_INACTIVE}`}
           title={collapsed ? "Notifications" : undefined}
         >
           {collapsed ? (
@@ -480,7 +573,10 @@ export function AppSidebar({
       {/* Nav sections */}
       <nav className="flex-1 overflow-y-auto px-2 pb-2 space-y-0.5">
         {/* MAIN NAV */}
-        <SectionHeader label={isBroker ? "Partner" : "Insurance"} collapsed={collapsed} />
+        <SectionHeader
+          label={isBroker ? "Partner" : "Insurance"}
+          collapsed={collapsed}
+        />
         {navItems.map((item) => (
           <NavItem
             key={item.href}
@@ -538,14 +634,13 @@ export function AppSidebar({
             )}
             {conversations.map((item, idx) => {
               const isConvActive = pathname === `/agent/thread/${item.id}`;
-              const shortcut = idx < 9 ? navShortcut(String(idx + 1)) : undefined;
+              const shortcut =
+                idx < 9 ? navShortcut(String(idx + 1)) : undefined;
               const threadLink = (
                 <Link
                   href={`/agent/thread/${item.id}`}
                   className={`group flex items-center gap-2 px-3 py-1.5 ${MENU_ITEM_BASE} text-body-sm ${
-                    isConvActive
-                      ? MENU_ITEM_ACTIVE
-                      : MENU_ITEM_INACTIVE
+                    isConvActive ? MENU_ITEM_ACTIVE : MENU_ITEM_INACTIVE
                   }`}
                 >
                   {item.kind === "imessage" ? (
@@ -562,12 +657,16 @@ export function AppSidebar({
                         e.stopPropagation();
                         await archiveThread({ id: item.id as Id<"threads"> });
                         if (isConvActive) {
-                          const next = conversations.find((c) => c.id !== item.id);
+                          const next = conversations.find(
+                            (c) => c.id !== item.id,
+                          );
                           if (next) {
                             router.push(`/agent/thread/${next.id}`);
                           } else {
                             // No unarchived threads left — start a new one
-                            const threadId = await createThread({ agentDomain: AGENT_DOMAIN });
+                            const threadId = await createThread({
+                              agentDomain: AGENT_DOMAIN,
+                            });
                             router.push(`/agent/thread/${threadId}`);
                           }
                         }
@@ -581,18 +680,25 @@ export function AppSidebar({
                 </Link>
               );
 
-              if (!shortcut) return <div key={`${item.kind}-${item.id}`}>{threadLink}</div>;
+              if (!shortcut)
+                return <div key={`${item.kind}-${item.id}`}>{threadLink}</div>;
 
               return (
                 <Tooltip key={`${item.kind}-${item.id}`}>
-                  <TooltipTrigger render={threadLink} delay={SHORTCUT_TOOLTIP_DELAY_MS} />
+                  <TooltipTrigger
+                    render={threadLink}
+                    delay={SHORTCUT_TOOLTIP_DELAY_MS}
+                  />
                   <TooltipContent
                     side="right"
                     align="center"
                     sideOffset={8}
                     className={SHORTCUT_TOOLTIP_CLASS}
                   >
-                    <ShortcutTooltipContent label={item.label} shortcut={shortcut} />
+                    <ShortcutTooltipContent
+                      label={item.label}
+                      shortcut={shortcut}
+                    />
                   </TooltipContent>
                 </Tooltip>
               );
@@ -618,16 +724,14 @@ export function AppSidebar({
                   href={`/agent/thread/${item.id}`}
                   title={item.label}
                   className={`flex items-center justify-center py-1.5 ${MENU_ITEM_BASE} ${
-                    isConvActive
-                      ? MENU_ITEM_ACTIVE
-                      : MENU_ITEM_INACTIVE_SUBTLE
+                    isConvActive ? MENU_ITEM_ACTIVE : MENU_ITEM_INACTIVE_SUBTLE
                   }`}
                 >
-                {item.kind === "imessage" ? (
-                  <MessageCircle className="w-3.5 h-3.5" />
-                ) : item.kind === "email" ? (
-                  <Mail className="w-3.5 h-3.5" />
-                ) : null}
+                  {item.kind === "imessage" ? (
+                    <MessageCircle className="w-3.5 h-3.5" />
+                  ) : item.kind === "email" ? (
+                    <Mail className="w-3.5 h-3.5" />
+                  ) : null}
                 </Link>
               );
             })}
@@ -705,7 +809,10 @@ export function AppSidebar({
 
   function isClientNavActive(href: string) {
     const full = `${clientDetailBase}${href}`;
-    if (href === "") return pathname === clientDetailBase || pathname === `${clientDetailBase}/`;
+    if (href === "")
+      return (
+        pathname === clientDetailBase || pathname === `${clientDetailBase}/`
+      );
     return pathname === full || pathname.startsWith(`${full}/`);
   }
 
@@ -714,17 +821,35 @@ export function AppSidebar({
       <div className="flex items-center gap-2 px-3 h-12 border-b border-foreground/6">
         {!collapsed && (
           <>
-            <div className={`ml-0.5 w-7 h-7 bg-foreground/8 flex items-center justify-center text-[11px] font-medium text-foreground shrink-0 overflow-hidden ${headerOrgIcon ? "rounded-md" : "rounded-full"}`}>
+            <div
+              className={`ml-0.5 w-7 h-7 bg-foreground/8 flex items-center justify-center text-[11px] font-medium text-foreground shrink-0 overflow-hidden ${headerOrgIcon ? "rounded-md" : "rounded-full"}`}
+            >
               {headerOrgIcon ? (
-                <Image src={headerOrgIcon} alt="" width={28} height={28} unoptimized className="w-7 h-7 object-contain bg-white" />
+                <Image
+                  src={headerOrgIcon}
+                  alt=""
+                  width={28}
+                  height={28}
+                  unoptimized
+                  className="w-7 h-7 object-contain bg-white"
+                />
               ) : viewer?.image ? (
-                <Image src={viewer.image} alt="" width={28} height={28} unoptimized className="w-7 h-7 rounded-full object-cover" />
+                <Image
+                  src={viewer.image}
+                  alt=""
+                  width={28}
+                  height={28}
+                  unoptimized
+                  className="w-7 h-7 rounded-full object-cover"
+                />
               ) : (
                 initials
               )}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-body-sm font-medium text-foreground truncate">{headerOrgName}</p>
+              <p className="text-body-sm font-medium text-foreground truncate">
+                {headerOrgName}
+              </p>
             </div>
           </>
         )}
@@ -733,7 +858,11 @@ export function AppSidebar({
           onClick={toggleCollapse}
           className="w-7 h-7 hidden lg:flex items-center justify-center rounded-md text-muted-foreground/40 hover:text-foreground hover:bg-foreground/[0.04] transition-colors shrink-0"
         >
-          {collapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronLeft className="w-3.5 h-3.5" />}
+          {collapsed ? (
+            <ChevronRight className="w-3.5 h-3.5" />
+          ) : (
+            <ChevronLeft className="w-3.5 h-3.5" />
+          )}
         </button>
       </div>
       <nav className="flex-1 overflow-y-auto px-2 py-2 space-y-0.5">
@@ -787,9 +916,7 @@ export function AppSidebar({
                   key={item._id}
                   href={href}
                   className={`group flex items-center gap-2 px-3 py-1.5 ${MENU_ITEM_BASE} text-body-sm ${
-                    isConvActive
-                      ? MENU_ITEM_ACTIVE
-                      : MENU_ITEM_INACTIVE
+                    isConvActive ? MENU_ITEM_ACTIVE : MENU_ITEM_INACTIVE
                   }`}
                 >
                   {item.originChannel === "imessage" ? (
@@ -864,7 +991,12 @@ export function AppSidebar({
               initial={{ x: -280 }}
               animate={{ x: 0 }}
               exit={{ x: -280 }}
-              transition={{ type: "spring", damping: 30, stiffness: 300, bounce: 0 }}
+              transition={{
+                type: "spring",
+                damping: 30,
+                stiffness: 300,
+                bounce: 0,
+              }}
               className="fixed left-0 top-0 bottom-0 w-[260px] z-50 bg-background border-r border-foreground/6 lg:hidden"
             >
               {activeContent}
@@ -911,7 +1043,9 @@ function SidebarBrokerContact({
   const brandColor = broker?.brandingColor ?? "#000000";
   const primaryContact = broker?.primaryContact ?? null;
   const handle = broker?.agentHandle ?? fallbackAgentHandle;
-  const agentEmail = handle ? `${handle}@${AGENT_DOMAIN}` : `agent@${AGENT_DOMAIN}`;
+  const agentEmail = handle
+    ? `${handle}@${AGENT_DOMAIN}`
+    : `agent@${AGENT_DOMAIN}`;
   const initial = name.charAt(0).toUpperCase();
 
   const handleSaveContact = async () => {
@@ -947,13 +1081,21 @@ function SidebarBrokerContact({
               <LogoIcon size={14} static color="#000000" />
             ) : iconUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={iconUrl} alt="" className="h-full w-full object-contain bg-white" />
+              <img
+                src={iconUrl}
+                alt=""
+                className="h-full w-full object-contain bg-white"
+              />
             ) : (
-              <span className="text-sm font-semibold text-white">{initial}</span>
+              <span className="text-sm font-semibold text-white">
+                {initial}
+              </span>
             )}
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-body-sm font-medium text-foreground truncate">{name}</p>
+            <p className="text-body-sm font-medium text-foreground truncate">
+              {name}
+            </p>
             {primaryContact?.name ? (
               <p className="text-label-sm text-muted-foreground truncate">
                 {primaryContact.name}
@@ -1033,7 +1175,13 @@ function SidebarBrokerContact({
   );
 }
 
-function SectionHeader({ label, collapsed }: { label: string; collapsed: boolean }) {
+function SectionHeader({
+  label,
+  collapsed,
+}: {
+  label: string;
+  collapsed: boolean;
+}) {
   if (collapsed) return <div className="pt-4 pb-1" />;
   return (
     <p className="text-[11px] font-medium text-muted-foreground/50  px-3 pt-5 pb-1.5">
@@ -1062,11 +1210,7 @@ function NavItem({
       href={href}
       className={`flex items-center gap-2.5 px-3 py-1.5 ${MENU_ITEM_BASE} text-body-sm ${
         collapsed ? "justify-center" : ""
-      } ${
-        active
-          ? MENU_ITEM_ACTIVE
-          : MENU_ITEM_INACTIVE
-      }`}
+      } ${active ? MENU_ITEM_ACTIVE : MENU_ITEM_INACTIVE}`}
       aria-label={collapsed ? label : undefined}
     >
       <Icon className="w-4 h-4 shrink-0" />
@@ -1101,12 +1245,22 @@ function ShortcutTooltipContent({
   return (
     <>
       <span>Go to {label}</span>
-      <kbd
-        data-slot="kbd"
-        className="ml-1 border border-foreground/10 bg-foreground/[0.04] px-1.5 py-0.5 text-xs leading-none text-muted-foreground"
-      >
-        {shortcut.label}
-      </kbd>
+      <span className="ml-1 inline-flex items-center gap-1 text-[11px] leading-none text-muted-foreground">
+        <ShortcutKeycap>G</ShortcutKeycap>
+        <span>then</span>
+        <ShortcutKeycap>{shortcut.key.toUpperCase()}</ShortcutKeycap>
+      </span>
     </>
+  );
+}
+
+function ShortcutKeycap({ children }: { children: React.ReactNode }) {
+  return (
+    <kbd
+      data-slot="kbd"
+      className="border border-foreground/10 bg-foreground/[0.04] px-1.5 py-0.5 font-mono text-[11px] leading-none text-muted-foreground"
+    >
+      {children}
+    </kbd>
   );
 }
