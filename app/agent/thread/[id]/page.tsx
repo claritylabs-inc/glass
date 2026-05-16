@@ -453,7 +453,7 @@ function MessageFooterActions({
               aria-expanded={isMailboxExpanded}
               className="inline-flex h-6 items-center rounded-full border border-foreground/8 bg-transparent px-2 text-label-sm font-medium text-muted-foreground/55 transition-colors hover:border-foreground/12 hover:bg-foreground/3 hover:text-foreground/75"
             >
-              {mailboxTasks.length}+ background agents
+              {mailboxTasks.length} background agents
             </button>
             {isMailboxExpanded ? (
               <div className="flex flex-wrap items-start gap-1.5">
