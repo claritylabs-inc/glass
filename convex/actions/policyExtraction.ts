@@ -19,7 +19,7 @@ import {
 import { buildPdfSourceSpans } from "../lib/pdfSourceSpans";
 import type { ExtractionResult, ExtractionState, PipelineCheckpoint } from "../lib/extraction";
 import type { ExtractOptions } from "../lib/extraction";
-import { makeEmbedText, makeGenerateObject } from "../lib/sdkCallbacks";
+import { makeEmbedText, makeGenerateObject, type DoclingMeta } from "../lib/sdkCallbacks";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { getModelForOrg } from "../lib/models";
@@ -917,11 +917,13 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         }
       }
 
+      let doclingMeta: DoclingMeta | undefined;
       const extractor = buildExtractor({
         ctx: convexCtx,
         orgId: state.orgId as Id<"organizations">,
         log: async (msg) => { await pCtx.log(msg); },
         onProgress: async (msg) => { await pCtx.log(msg); },
+        onDoclingMeta: (meta) => { doclingMeta = meta; },
         shouldCancel: async () => isExtractionCancelled(convexCtx, policyId),
         onCheckpointSave: async (cp) => {
           if (await isExtractionCancelled(convexCtx, policyId)) {
@@ -1073,6 +1075,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
           {
             id: state.policyFileId,
             extractedData: result.document,
+            ...(doclingMeta ?? {}),
           },
         );
       }

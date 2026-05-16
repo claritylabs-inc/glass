@@ -34,6 +34,7 @@ Core layers:
 - AI runtime: Vercel AI SDK (`ai`)
 - Extraction, query agent, and prompts: `@claritylabs/cl-sdk@1.1.x`
 - Providers: OpenAI, MoonshotAI, Anthropic, DeepSeek
+- PDF parsing: optional Docling two-stage extraction via the Railway `docling-service` service. When `DOCLING_ENABLED` or `organizations.featureFlags.docling` enables it for an org, Convex parses policy PDFs through Docling and passes parsed markdown to `cl-sdk` mapping callbacks instead of sending PDF file parts to the language model.
 - Email: outbound + inbound via Resend (no IMAP, no Gmail OAuth). All outbound Resend calls go through `convex/lib/resend.ts` (`sendResendEmail`). The primary signed-in web app is `app.glass.insure` for both broker and client users; broker/client landing is role-based after sign-in. `glass.claritylabs.inc` is the legacy browser host and redirects to `app.glass.insure`. `auth.glass.insure` is an auth/invite email sender domain rather than a separate web app host. Agent mail defaults to `glass.insure`, notification mail defaults to `notifications.glass.insure`, and auth/invite mail defaults to `auth.glass.insure`; legacy inbound agent addresses at `glass.claritylabs.inc` and `dev.claritylabs.inc` remain recognized. Inbound webhook at `POST /resend-inbound`.
 - iMessage / Spectrum: Photon-backed iMessage is production-only. Set `IMESSAGE_ENABLED=true`, `IMESSAGE_WORKER_URL`, `IMESSAGE_WORKER_SECRET`, and `NEXT_PUBLIC_GLASS_IMESSAGE_NUMBER` only in production with the production Photon account. For dev/preview testing, keep `IMESSAGE_ENABLED` false and use the Spectrum Terminal provider in `imessage-worker` (`SPECTRUM_PROVIDER=terminal`, `IMESSAGE_TERMINAL_FROM_PHONE=<test user phone>`). Convex accepts terminal-driven inbound messages only when `IMESSAGE_TERMINAL_ENABLED=true`; do not set `NEXT_PUBLIC_GLASS_IMESSAGE_NUMBER` in dev/preview unless intentionally advertising a test line. iMessage direct chats and groups both enter through `/imessage-inbound`; group chats are keyed by Photon chat GUID and mirrored into `imessageChats` / `imessageParticipants` so Glass can distinguish linked users from anonymous participants.
 
@@ -184,10 +185,10 @@ Two entrypoints, both PDF-only:
 
 1. Fetch or receive a PDF.
 2. Store the raw PDF in Convex file storage.
-3. Load the PDF bytes from Convex file storage, build local PDF.js source spans, and run `buildExtractor().extract(pdfBytes, documentId, { sourceSpans })`. Do not pass a signed storage URL into `cl-sdk`; review and follow-up extractors can run long enough that repeated URL fetches become unreliable.
+3. Load the PDF bytes from Convex file storage, build local PDF.js source spans, and run `buildExtractor().extract(pdfBytes, documentId, { sourceSpans })`. Do not pass a signed storage URL into `cl-sdk`; review and follow-up extractors can run long enough that repeated URL fetches become unreliable. If Docling is enabled for the org, `sdkCallbacks.ts` sends the PDF bytes to `DOCLING_URL`, appends the returned markdown to SDK prompts, and strips PDF file parts from the model call.
 4. Verify critical policy-period dates from source text when a clear declaration-page period is present, then map `InsuranceDocument` into Glass policy fields.
 5. Run coverage declaration scoping before persistence. When the SDK extracts multiple limits for the same coverage and limit role, Glass scores declarations, selected-option markers, summary/confirmation pages, endorsements, and source-span evidence; persists only the best current coverage value; and stores `extractionReview.questions` for any same-role limit conflict that still needs client/broker confirmation. Distinct limit roles such as per-occurrence and aggregate remain separate coverage rows.
-6. Persist the extracted document and metadata.
+6. Persist the extracted document and metadata. When Docling ran, persist parser audit fields (`parsedMarkdown`, `docTagsJson`, `parserBackend`, `parserVersion`, `parsedAt`, `parsingMs`) on `policyFiles`.
 7. Chunk the document and embed each chunk with `text-embedding-3-small`.
 8. Store chunks in `documentChunks` for semantic retrieval.
 

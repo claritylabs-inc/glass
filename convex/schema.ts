@@ -120,6 +120,11 @@ export default defineSchema({
       v.union(v.literal("light"), v.literal("dark"), v.literal("auto")),
     ),
     agentDisplayName: v.optional(v.string()),
+    featureFlags: v.optional(
+      v.object({
+        docling: v.optional(v.boolean()),
+      }),
+    ),
   })
     .index("by_agentHandle", ["agentHandle"])
     .index("by_type", ["type"])
@@ -917,6 +922,12 @@ export default defineSchema({
       v.literal("unknown"),
     ),
     extractedData: v.optional(v.any()), // Raw per-file extraction result (InsuranceDocument)
+    parsedMarkdown: v.optional(v.string()),
+    docTagsJson: v.optional(v.any()),
+    parserBackend: v.optional(v.union(v.literal("docling"), v.literal("vision-llm"))),
+    parserVersion: v.optional(v.string()),
+    parsedAt: v.optional(v.number()),
+    parsingMs: v.optional(v.number()),
     // Deprecated — kept optional for migration. Remove after removeDeprecatedExtractionFields runs.
     extractionStatus: v.optional(v.string()),
     extractionError: v.optional(v.string()),

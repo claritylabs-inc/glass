@@ -25,7 +25,7 @@ export { insuranceDocToPolicy, policyToInsuranceDoc } from "./documentMapping";
 // ── Glass extraction factory ──
 import { createExtractor } from "@claritylabs/cl-sdk";
 import type { ExtractionResult, ExtractionState, LogFn, PipelineCheckpoint, TokenUsage } from "@claritylabs/cl-sdk";
-import { makeGenerateText, makeGenerateObject } from "./sdkCallbacks";
+import { makeGenerateText, makeGenerateObject, type DoclingMeta } from "./sdkCallbacks";
 import { modelCapabilitiesForTask } from "./modelCatalog";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
@@ -58,10 +58,11 @@ export function buildExtractor(opts?: {
   onProgress?: (message: string) => void;
   onTokenUsage?: (usage: TokenUsage) => void;
   onCheckpointSave?: (checkpoint: PipelineCheckpoint<ExtractionState>) => Promise<void>;
+  onDoclingMeta?: (meta: DoclingMeta) => void;
   shouldCancel?: () => Promise<boolean>;
 }) {
   const routing = opts?.ctx && opts.orgId
-    ? { ctx: opts.ctx, orgId: opts.orgId }
+    ? { ctx: opts.ctx, orgId: opts.orgId, onDoclingMeta: opts.onDoclingMeta }
     : undefined;
   const generateText = makeGenerateText("extraction", routing);
   const generateObject = makeGenerateObject("extraction", routing);
