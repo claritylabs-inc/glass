@@ -697,7 +697,7 @@ export function AppSidebar({
                     className={SHORTCUT_TOOLTIP_CLASS}
                   >
                     <ShortcutTooltipContent
-                      label={item.label}
+                      label="thread"
                       shortcut={shortcut}
                     />
                   </TooltipContent>
@@ -895,7 +895,7 @@ export function AppSidebar({
         {!collapsed && clientDetailId && (
           <>
             <div className="flex items-center justify-between px-3 pt-5 pb-1.5">
-              <span className="text-[11px] font-medium text-muted-foreground/50">
+              <span className="text-label-sm font-medium text-muted-foreground/50">
                 Threads
               </span>
             </div>
