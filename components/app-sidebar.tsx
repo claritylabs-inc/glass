@@ -52,13 +52,15 @@ import { getPublicAgentDomain } from "@/lib/domains";
 const AGENT_DOMAIN = getPublicAgentDomain();
 
 const MENU_ITEM_BASE = "rounded-md transition-[background-color,color,box-shadow] duration-200 ease-out";
-const MENU_ITEM_HOVER = "hover:bg-foreground/[0.045] hover:text-foreground";
-const MENU_ITEM_ACTIVE = "bg-foreground/[0.085] text-foreground hover:bg-foreground/[0.095]";
+const MENU_ITEM_HOVER = "hover:bg-foreground/[0.07] hover:text-foreground";
+const MENU_ITEM_ACTIVE = "bg-foreground/[0.105] text-foreground hover:bg-foreground/[0.115]";
 const MENU_ITEM_INACTIVE = `text-muted-foreground ${MENU_ITEM_HOVER}`;
-const MENU_ITEM_INACTIVE_SUBTLE = "text-muted-foreground/40 hover:bg-foreground/[0.035] hover:text-muted-foreground/65";
+const MENU_ITEM_INACTIVE_SUBTLE = "text-muted-foreground/40 hover:bg-foreground/[0.055] hover:text-muted-foreground/65";
 const SHORTCUT_PREFIX_KEY = "g";
 const SHORTCUT_SEQUENCE_TIMEOUT_MS = 1500;
 const SHORTCUT_TOOLTIP_DELAY_MS = 1500;
+const SHORTCUT_TOOLTIP_CLASS =
+  "border border-foreground/10 bg-background text-foreground shadow-sm has-data-[slot=kbd]:pr-2.5 [&_[class*='size-2.5']]:hidden";
 
 type NavShortcut = {
   key: string;
@@ -584,7 +586,12 @@ export function AppSidebar({
               return (
                 <Tooltip key={`${item.kind}-${item.id}`}>
                   <TooltipTrigger render={threadLink} delay={SHORTCUT_TOOLTIP_DELAY_MS} />
-                  <TooltipContent side="right" align="center" sideOffset={8}>
+                  <TooltipContent
+                    side="right"
+                    align="center"
+                    sideOffset={8}
+                    className={SHORTCUT_TOOLTIP_CLASS}
+                  >
                     <ShortcutTooltipContent label={item.label} shortcut={shortcut} />
                   </TooltipContent>
                 </Tooltip>
@@ -1072,7 +1079,12 @@ function NavItem({
   return (
     <Tooltip>
       <TooltipTrigger render={link} delay={SHORTCUT_TOOLTIP_DELAY_MS} />
-      <TooltipContent side="right" align="center" sideOffset={8}>
+      <TooltipContent
+        side="right"
+        align="center"
+        sideOffset={8}
+        className={SHORTCUT_TOOLTIP_CLASS}
+      >
         <ShortcutTooltipContent label={label} shortcut={shortcut} />
       </TooltipContent>
     </Tooltip>
@@ -1091,7 +1103,7 @@ function ShortcutTooltipContent({
       <span>Go to {label}</span>
       <kbd
         data-slot="kbd"
-        className="ml-1 border border-background/15 bg-background/10 px-1.5 py-0.5 text-[10px] leading-none text-background/75"
+        className="ml-1 border border-foreground/10 bg-foreground/[0.04] px-1.5 py-0.5 text-xs leading-none text-muted-foreground"
       >
         {shortcut.label}
       </kbd>
