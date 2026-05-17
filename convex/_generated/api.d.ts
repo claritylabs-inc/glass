@@ -82,6 +82,7 @@ import type * as lib_doclingPreprocessor from "../lib/doclingPreprocessor.js";
 import type * as lib_documentMapping from "../lib/documentMapping.js";
 import type * as lib_domains from "../lib/domains.js";
 import type * as lib_emailCancelIntent from "../lib/emailCancelIntent.js";
+import type * as lib_emailDraftSummary from "../lib/emailDraftSummary.js";
 import type * as lib_emailPolicySources from "../lib/emailPolicySources.js";
 import type * as lib_emailSubagent from "../lib/emailSubagent.js";
 import type * as lib_emailTemplate from "../lib/emailTemplate.js";
@@ -219,6 +220,7 @@ declare const fullApi: ApiFromModules<{
   "lib/documentMapping": typeof lib_documentMapping;
   "lib/domains": typeof lib_domains;
   "lib/emailCancelIntent": typeof lib_emailCancelIntent;
+  "lib/emailDraftSummary": typeof lib_emailDraftSummary;
   "lib/emailPolicySources": typeof lib_emailPolicySources;
   "lib/emailSubagent": typeof lib_emailSubagent;
   "lib/emailTemplate": typeof lib_emailTemplate;
