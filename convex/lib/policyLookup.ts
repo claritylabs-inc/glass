@@ -4,7 +4,8 @@ import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { searchPolicyDocument } from "./aiUtils";
-import { buildPdfSourceSpans, type GlassSourceSpan } from "./pdfSourceSpans";
+import type { GlassSourceSpan } from "./pdfSourceSpans";
+import { preparePdfTextWithDoclingFallback } from "./doclingPreprocessor";
 import { makeEmbedText } from "./sdkCallbacks";
 
 type LookupResult = Record<string, unknown>;
@@ -111,7 +112,7 @@ function sourceOnlyResults(spans: Array<SourceSpanDoc & { score: number }>, maxR
     }));
 }
 
-function toSourceSpanDoc(span: GlassSourceSpan): SourceSpanDoc {
+function toSourceSpanDoc(span: GlassSourceSpan | { id: string; documentId: string; sourceKind: string; pageStart?: number; pageEnd?: number; sectionId?: string; formNumber?: string; text: string; textHash?: string; hash?: string }): SourceSpanDoc {
   return {
     spanId: span.id,
     documentId: span.documentId,
@@ -121,7 +122,7 @@ function toSourceSpanDoc(span: GlassSourceSpan): SourceSpanDoc {
     sectionId: span.sectionId,
     formNumber: span.formNumber,
     text: span.text,
-    textHash: span.textHash,
+    textHash: span.textHash ?? span.hash,
   };
 }
 
@@ -156,7 +157,7 @@ async function loadOriginalPdfSpans(
   if (!blob) return [];
 
   const bytes = new Uint8Array(await blob.arrayBuffer());
-  const { sourceSpans } = await buildPdfSourceSpans({
+  const { sourceSpans } = await preparePdfTextWithDoclingFallback({
     pdfBytes: bytes,
     documentId: policyId,
     sourceKind: "policy_pdf",

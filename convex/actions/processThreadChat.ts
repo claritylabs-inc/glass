@@ -2,10 +2,10 @@
 
 import dayjs from "dayjs";
 import { v } from "convex/values";
-import { internalAction } from "../_generated/server";
+import { internalAction, type ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
-import { streamText, stepCountIs } from "ai";
+import { streamText, stepCountIs, type ModelMessage } from "ai";
 import {
   fallbackRouteForCall,
   getModelAndRouteForOrg,
@@ -33,7 +33,6 @@ import {
 } from "../lib/agentPrompts";
 import {
   buildSystemPromptForContext,
-  buildMessageHistory,
   stripMarkdown,
   markdownToHtml,
   buildChannelInstructions,
@@ -42,6 +41,7 @@ import {
   logAiError,
 } from "../lib/aiUtils";
 import { searchPolicyDocumentWithSourceSpans } from "../lib/policyLookup";
+import { tryBuildDoclingPdfText } from "../lib/doclingPreprocessor";
 import { getNotificationFromAddress, sendResendEmail } from "../lib/resend";
 import { buildEmailShell, escapeHtml } from "../lib/emailTemplate";
 import { getPortalUrlForOrg } from "../lib/domains";
@@ -118,6 +118,189 @@ function isTransientChatStreamError(error: unknown): boolean {
     code === "server_error" ||
     (typeof status === "number" && status >= 500 && status < 600) ||
     /server_error|internal server error|temporarily unavailable|overloaded|timeout|ECONNRESET|ETIMEDOUT|fetch failed/i.test(
+      text,
+    )
+  );
+}
+
+function isTextLikeAttachment(filename: string, contentType: string) {
+  const lowerName = filename.toLowerCase();
+  const type = contentType.toLowerCase();
+  return (
+    type.startsWith("text/") ||
+    type.includes("csv") ||
+    type.includes("json") ||
+    type === "application/vnd.ms-excel" ||
+    lowerName.endsWith(".csv") ||
+    lowerName.endsWith(".tsv") ||
+    lowerName.endsWith(".txt") ||
+    lowerName.endsWith(".md") ||
+    lowerName.endsWith(".markdown") ||
+    lowerName.endsWith(".json")
+  );
+}
+
+type ChatAttachment = {
+  filename: string;
+  contentType: string;
+  size: number;
+  fileId?: string;
+};
+
+type ChatContentPart =
+  | { type: "text"; text: string }
+  | { type: "image"; image: string; mediaType: string }
+  | { type: "file"; data: string; mediaType: string };
+
+const MAX_ATTACHMENT_TEXT_CHARS = 80_000;
+const RECENT_ATTACHMENT_MESSAGE_LIMIT = 6;
+
+async function buildAttachmentParts(
+  ctx: ActionCtx,
+  attachments: ChatAttachment[],
+  options: {
+    includeRichParts: boolean;
+    remainingTextChars: { value: number };
+  },
+): Promise<{ parts: ChatContentPart[]; names: string[] }> {
+  const parts: ChatContentPart[] = [];
+  const names: string[] = [];
+
+  for (const att of attachments) {
+    if (!att.fileId) continue;
+    try {
+      const blob = await ctx.storage.get(att.fileId);
+      if (!blob) continue;
+      const buffer = Buffer.from(await blob.arrayBuffer());
+
+      if (att.contentType === "application/pdf") {
+        if (!options.includeRichParts) continue;
+        const doclingText = await tryBuildDoclingPdfText({
+          pdfBytes: buffer,
+          documentId: att.fileId,
+          sourceKind: "attachment",
+          timeoutMs: 20_000,
+        });
+        if (doclingText) {
+          parts.push({
+            type: "text",
+            text: `--- PDF attachment: ${att.filename} (Docling text) ---\n${doclingText}\n--- End PDF attachment ---`,
+          });
+        } else {
+          parts.push({
+            type: "file",
+            data: buffer.toString("base64"),
+            mediaType: "application/pdf",
+          });
+        }
+        names.push(att.filename);
+      } else if (att.contentType.startsWith("image/")) {
+        if (!options.includeRichParts) continue;
+        parts.push({
+          type: "image",
+          image: buffer.toString("base64"),
+          mediaType: att.contentType,
+        });
+        names.push(att.filename);
+      } else if (isTextLikeAttachment(att.filename, att.contentType)) {
+        const text = buffer.toString("utf-8");
+        const remaining = options.remainingTextChars.value;
+        if (remaining <= 0) continue;
+        const clipped =
+          text.length > remaining ? text.slice(0, remaining) : text;
+        options.remainingTextChars.value -= clipped.length;
+        const suffix =
+          clipped.length < text.length
+            ? "\n--- Attachment truncated for context ---"
+            : "";
+        parts.push({
+          type: "text",
+          text: `--- Attachment: ${att.filename} ---\n${clipped}${suffix}\n--- End attachment ---`,
+        });
+        names.push(att.filename);
+      }
+    } catch (err) {
+      console.warn(`Failed to read attachment ${att.filename}:`, err);
+    }
+  }
+
+  return { parts, names };
+}
+
+async function buildMessageHistoryWithAttachmentContext(
+  ctx: ActionCtx,
+  messages: Array<Record<string, unknown>>,
+  latestUserMessageId?: string,
+): Promise<{ history: ModelMessage[]; latestAttachmentNames: string[] }> {
+  const history: ModelMessage[] = [];
+  const remainingTextChars = { value: MAX_ATTACHMENT_TEXT_CHARS };
+  const recentUserAttachmentIds = new Set(
+    messages
+      .filter(
+        (msg) =>
+          msg.role === "user" &&
+          msg.status !== "processing" &&
+          msg.status !== "cancelled" &&
+          Array.isArray(msg.attachments) &&
+          msg.attachments.length > 0,
+      )
+      .slice(-RECENT_ATTACHMENT_MESSAGE_LIMIT)
+      .map((msg) => String(msg._id)),
+  );
+  let latestAttachmentNames: string[] = [];
+
+  for (const msg of messages) {
+    if (msg.status === "processing" || msg.status === "cancelled") continue;
+    const content = typeof msg.content === "string" ? msg.content : "";
+    if (msg.role === "user") {
+      const text = msg.userName
+        ? `[${String(msg.userName)}]: ${content}`
+        : content;
+      const attachments = Array.isArray(msg.attachments)
+        ? (msg.attachments as ChatAttachment[])
+        : [];
+      const isLatestUser = latestUserMessageId === String(msg._id);
+      const includeAttachmentContext =
+        attachments.length > 0 &&
+        (isLatestUser || recentUserAttachmentIds.has(String(msg._id)));
+
+      if (includeAttachmentContext) {
+        const attachmentContext = await buildAttachmentParts(ctx, attachments, {
+          includeRichParts: isLatestUser,
+          remainingTextChars,
+        });
+        if (isLatestUser) {
+          latestAttachmentNames = attachmentContext.names;
+        }
+        if (attachmentContext.parts.length > 0) {
+          history.push({
+            role: "user",
+            content: [...attachmentContext.parts, { type: "text", text }],
+          });
+          continue;
+        }
+      }
+
+      history.push({ role: "user", content: text });
+    } else if (msg.role === "agent" && content) {
+      history.push({ role: "assistant", content });
+    }
+  }
+
+  return { history, latestAttachmentNames };
+}
+
+function hasCoiEmailIntent(text: string): boolean {
+  return (
+    /\b(coi|certificate(?:\s+of\s+insurance)?)\b/i.test(text) &&
+    /\b(send|email|forward|deliver)\b/i.test(text)
+  );
+}
+
+function claimsCoiEmailCompletion(text: string): boolean {
+  return (
+    /\b(coi|certificate(?:\s+of\s+insurance)?)\b/i.test(text) &&
+    /\b(done|sent|sending|emailing|delivering|generated|attached)\b/i.test(
       text,
     )
   );
@@ -838,81 +1021,14 @@ export const run = internalAction({
               .join("\n")}`
           : "";
 
-      // Build message history (skip processing placeholders)
-      const messageHistory = buildMessageHistory(allMessages);
-
-      // ── Enrich last user message with file/image attachments ──
-      if (latestUserMsg?.attachments?.length) {
-        const contentParts: Array<
-          | { type: "text"; text: string }
-          | { type: "image"; image: string; mediaType: string }
-          | { type: "file"; data: string; mediaType: string }
-        > = [];
-        const attachmentNames: string[] = [];
-
-        for (const att of latestUserMsg.attachments as Array<{
-          filename: string;
-          contentType: string;
-          size: number;
-          fileId?: string;
-        }>) {
-          if (!att.fileId) continue;
-          try {
-            const blob = await ctx.storage.get(att.fileId);
-            if (!blob) continue;
-            const buffer = Buffer.from(await blob.arrayBuffer());
-
-            if (att.contentType === "application/pdf") {
-              contentParts.push({
-                type: "file",
-                data: buffer.toString("base64"),
-                mediaType: "application/pdf",
-              });
-              attachmentNames.push(att.filename);
-            } else if (att.contentType.startsWith("image/")) {
-              contentParts.push({
-                type: "image",
-                image: buffer.toString("base64"),
-                mediaType: att.contentType,
-              });
-              attachmentNames.push(att.filename);
-            } else if (
-              att.contentType.startsWith("text/") ||
-              att.contentType === "application/json"
-            ) {
-              contentParts.push({
-                type: "text",
-                text: `--- Attachment: ${att.filename} ---\n${buffer.toString("utf-8")}\n--- End attachment ---`,
-              });
-              attachmentNames.push(att.filename);
-            }
-          } catch (err) {
-            console.warn(`Failed to read attachment ${att.filename}:`, err);
-          }
-        }
-
-        if (contentParts.length > 0) {
-          // Replace the last user message with multipart content
-          let lastUserIdx = -1;
-          for (let i = messageHistory.length - 1; i >= 0; i--) {
-            if (messageHistory[i].role === "user") {
-              lastUserIdx = i;
-              break;
-            }
-          }
-          if (lastUserIdx !== -1) {
-            const existingText =
-              typeof messageHistory[lastUserIdx].content === "string"
-                ? (messageHistory[lastUserIdx].content as string)
-                : "";
-            contentParts.push({ type: "text", text: existingText });
-            messageHistory[lastUserIdx] = {
-              role: "user",
-              content: contentParts,
-            };
-          }
-        }
-      }
+      const {
+        history: messageHistory,
+        latestAttachmentNames,
+      } = await buildMessageHistoryWithAttachmentContext(
+        ctx,
+        allMessages as Array<Record<string, unknown>>,
+        latestUserMsg?._id ? String(latestUserMsg._id) : undefined,
+      );
 
       // Detect thread type
       const thread = await ctx.runQuery(internal.threads.getInternal, {
@@ -951,12 +1067,13 @@ export const run = internalAction({
       // Attachment context note
       let attachmentNote = "";
       if (latestUserMsg?.attachments?.length) {
-        const filenames = (
-          latestUserMsg.attachments as Array<{ filename: string }>
-        )
+        const filenames = (latestAttachmentNames.length > 0
+          ? latestAttachmentNames
+          : (latestUserMsg.attachments as Array<{ filename: string }>)
           .map((a) => a.filename)
+        )
           .join(", ");
-        attachmentNote = `\n\nATTACHMENTS: The user's message includes ${latestUserMsg.attachments.length} attachment(s): ${filenames}. The content has been provided to you as file/image content parts. Reference relevant information from attachments in your response when applicable.`;
+        attachmentNote = `\n\nATTACHMENTS: The user's message includes ${latestUserMsg.attachments.length} attachment(s): ${filenames}. The content has been provided to you as file, image, or text content parts. Reference relevant information from attachments in your response when applicable.`;
       }
 
       const fullSystemPrompt =
@@ -1392,6 +1509,22 @@ export const run = internalAction({
       if (await isAgentResponseCancelled(true)) return;
 
       // Final update — save content, reasoning, and cited sections
+      const completedCoiEmailSideEffect =
+        usedTools.includes("email_expert") ||
+        usedTools.includes("generate_coi") ||
+        responseAttachments.some((attachment) =>
+          /certificate[-_\s]?of[-_\s]?insurance|coi/i.test(
+            attachment.filename,
+          ),
+        );
+      if (
+        hasCoiEmailIntent(latestUserContent) &&
+        claimsCoiEmailCompletion(content) &&
+        !completedCoiEmailSideEffect
+      ) {
+        content =
+          "I haven't generated or emailed those COIs yet. I need to create the certificates and send the emails before marking this done.";
+      }
       const finalReferencedPolicyIds = new Set<string>([
         ...selectedPolicyIds,
         ...citedPolicyIds,

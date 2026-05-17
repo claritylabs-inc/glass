@@ -15,6 +15,7 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 import type { Id } from "../_generated/dataModel";
 import { getImessageWorkerUrl } from "../lib/imessageConfig";
 import { getModelForOrg, getProviderOptionsForTask } from "../lib/models";
+import { preparePdfTextWithDoclingFallback } from "../lib/doclingPreprocessor";
 
 type ConnectedEmailAccount = {
   _id: Id<"connectedEmailAccounts">;
@@ -357,27 +358,6 @@ function decodeText(buffer: ArrayBuffer) {
   return new TextDecoder("utf-8", { fatal: false }).decode(buffer);
 }
 
-async function extractPdfText(buffer: ArrayBuffer) {
-  const { getDocument, VerbosityLevel } =
-    await import("pdfjs-dist/legacy/build/pdf.mjs");
-  const loadingTask = getDocument({
-    data: new Uint8Array(buffer),
-    disableFontFace: true,
-    isEvalSupported: false,
-    useWorkerFetch: false,
-    verbosity: VerbosityLevel.ERRORS,
-  });
-  const pdf = await loadingTask.promise;
-  const pages: string[] = [];
-  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
-    const page = await pdf.getPage(pageNumber);
-    const textContent = await page.getTextContent();
-    const items = (textContent as { items: Array<{ str?: string }> }).items;
-    pages.push(items.map((item) => item.str ?? "").join(" "));
-  }
-  return pages.join("\n\n");
-}
-
 async function extractDocxText(buffer: ArrayBuffer) {
   const result = await mammoth.extractRawText({ arrayBuffer: buffer });
   return result.value;
@@ -390,7 +370,12 @@ async function extractAttachmentText(attachment: ParsedMail["attachments"][numbe
   copy.set(attachment.content);
   const buffer = copy.buffer;
   if (type.includes("pdf") || lowerName.endsWith(".pdf")) {
-    return await extractPdfText(buffer);
+    const prepared = await preparePdfTextWithDoclingFallback({
+      pdfBytes: new Uint8Array(buffer),
+      documentId: attachment.filename ?? "email-attachment",
+      sourceKind: "attachment",
+    });
+    return prepared.text;
   }
   if (type.includes("wordprocessingml") || lowerName.endsWith(".docx")) {
     return await extractDocxText(buffer);

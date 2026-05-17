@@ -33,6 +33,7 @@ import {
   policySearchScore,
 } from "../lib/aiUtils";
 import { searchPolicyDocumentWithSourceSpans } from "../lib/policyLookup";
+import { tryBuildDoclingPdfText } from "../lib/doclingPreprocessor";
 import { classifyPromptInjection, enforceInputLimits } from "../lib/security";
 import type { Id } from "../_generated/dataModel";
 import {
@@ -838,11 +839,24 @@ export const processInbound = internalAction({
           for (const att of attachmentRecords) {
             if (!att.buffer) continue;
             if (att.contentType === "application/pdf") {
-              parts.push({
-                type: "file",
-                data: att.buffer.toString("base64"),
-                mediaType: "application/pdf",
+              const doclingText = await tryBuildDoclingPdfText({
+                pdfBytes: att.buffer,
+                documentId: att.filename,
+                sourceKind: "attachment",
+                timeoutMs: 20_000,
               });
+              if (doclingText) {
+                parts.push({
+                  type: "text",
+                  text: `--- PDF attachment: ${att.filename} (Docling text) ---\n${doclingText}\n--- End PDF attachment ---`,
+                });
+              } else {
+                parts.push({
+                  type: "file",
+                  data: att.buffer.toString("base64"),
+                  mediaType: "application/pdf",
+                });
+              }
             } else if (att.contentType.startsWith("image/")) {
               parts.push({
                 type: "image",

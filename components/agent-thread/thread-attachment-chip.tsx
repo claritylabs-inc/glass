@@ -2,7 +2,7 @@
 
 import { type MouseEvent } from "react";
 import { useQuery } from "convex/react";
-import { FileText, Paperclip, Download } from "lucide-react";
+import { Paperclip } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { usePdf } from "@/components/pdf-context";
@@ -36,19 +36,16 @@ export function ThreadAttachmentChip({
       target={isPdf ? undefined : "_blank"}
       rel={isPdf ? undefined : "noopener noreferrer"}
       onClick={handleClick}
-      className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-label-sm transition-colors ${
+      title={url ? attachment.filename : `${attachment.filename} is not available yet`}
+      aria-label={url ? `Open ${attachment.filename}` : attachment.filename}
+      className={`inline-flex max-w-full items-center gap-1.5 rounded-full px-2.5 py-1 text-label-sm font-medium transition-colors ${
         url
-          ? "border-foreground/10 bg-card hover:bg-foreground/[0.03] hover:border-foreground/15"
-          : "border-foreground/6 bg-foreground/[0.02] text-muted-foreground/40 pointer-events-none"
+          ? "bg-foreground/5 text-foreground/75 hover:bg-foreground/8"
+          : "pointer-events-none bg-foreground/[0.03] text-muted-foreground/40"
       }`}
     >
-      {isPdf ? (
-        <FileText className="w-3.5 h-3.5 text-red-400 shrink-0" />
-      ) : (
-        <Paperclip className="w-3.5 h-3.5 text-muted-foreground/50 shrink-0" />
-      )}
-      <span className="truncate max-w-[180px] text-foreground/80">{attachment.filename}</span>
-      {url && !isPdf && <Download className="w-3 h-3 text-muted-foreground/30 shrink-0" />}
+      <Paperclip className="h-3 w-3 shrink-0 text-muted-foreground" />
+      <span className="max-w-45 truncate sm:max-w-60">{attachment.filename}</span>
     </a>
   );
 }

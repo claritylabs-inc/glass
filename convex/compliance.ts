@@ -1057,6 +1057,7 @@ export const createRequirementSourceDocumentInternal = internalMutation({
     sourceTextExcerpt: v.optional(v.string()),
     parserBackend: v.optional(
       v.union(
+        v.literal("docling"),
         v.literal("pdfjs"),
         v.literal("mammoth"),
         v.literal("plain_text"),

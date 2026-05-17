@@ -78,6 +78,7 @@ import type * as lib_convexDocumentStore from "../lib/convexDocumentStore.js";
 import type * as lib_convexMemoryStore from "../lib/convexMemoryStore.js";
 import type * as lib_convexSourceRetriever from "../lib/convexSourceRetriever.js";
 import type * as lib_coverageScoping from "../lib/coverageScoping.js";
+import type * as lib_doclingPreprocessor from "../lib/doclingPreprocessor.js";
 import type * as lib_documentMapping from "../lib/documentMapping.js";
 import type * as lib_domains from "../lib/domains.js";
 import type * as lib_emailCancelIntent from "../lib/emailCancelIntent.js";
@@ -214,6 +215,7 @@ declare const fullApi: ApiFromModules<{
   "lib/convexMemoryStore": typeof lib_convexMemoryStore;
   "lib/convexSourceRetriever": typeof lib_convexSourceRetriever;
   "lib/coverageScoping": typeof lib_coverageScoping;
+  "lib/doclingPreprocessor": typeof lib_doclingPreprocessor;
   "lib/documentMapping": typeof lib_documentMapping;
   "lib/domains": typeof lib_domains;
   "lib/emailCancelIntent": typeof lib_emailCancelIntent;

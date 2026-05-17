@@ -26,7 +26,7 @@
     "@auth/core": "^0.37.4",
     "@base-ui/react": "^1.2.0",
     "@claritylabs/cl-pipelines": "0.1.0",
-    "@claritylabs/cl-sdk": "^1.1.0",
+    "@claritylabs/cl-sdk": "^1.2.1",
     "@convex-dev/auth": "^0.0.91",
     "@lobehub/icons": "^5.5.4",
     "@mapbox/search-js-react": "^1.5.1",

@@ -27,6 +27,7 @@ import {
 import { policyToInsuranceDoc } from "../lib/documentMapping";
 import { makeGenerateObject, makeEmbedText } from "../lib/sdkCallbacks";
 import { Id } from "../_generated/dataModel";
+import { tryBuildDoclingPdfText } from "../lib/doclingPreprocessor";
 
 /**
  * Build a summary of data already captured by structured extractors.
@@ -118,13 +119,19 @@ export const extractOne = internalAction({
     if (!supplementary) throw new Error("Supplementary extractor not found in SDK");
 
     const generateObject = makeGenerateObject("extraction");
-    const pageCount = await getPdfPageCount(pdfBase64);
+    const doclingText = await tryBuildDoclingPdfText({
+      pdfBytes: new Uint8Array(arrayBuffer),
+      documentId: String(args.policyId),
+      sourceKind: "policy_pdf",
+    });
 
     // Build dedup context so the LLM skips already-extracted data
     const alreadyExtracted = buildAlreadyExtractedSummary(policy);
     // buildPrompt accepts optional alreadyExtractedSummary in 0.13.1+ (types lag behind)
     const buildPrompt = supplementary.buildPrompt as (summary?: string) => string;
-    const prompt = `${buildPrompt(alreadyExtracted || undefined)}\n\n[Document pages 1-${pageCount} are provided as a PDF file.]`;
+    const prompt = doclingText
+      ? `${buildPrompt(alreadyExtracted || undefined)}\n\n[Document text parsed with Docling]\n${doclingText}`
+      : `${buildPrompt(alreadyExtracted || undefined)}\n\n[Document pages 1-${await getPdfPageCount(pdfBase64)} are provided as a PDF file.]`;
     const strictSchema = toStrictSchema(supplementary.schema);
 
     const result: { object: unknown; usage?: unknown } = await withRetry(() =>
@@ -132,7 +139,7 @@ export const extractOne = internalAction({
         prompt,
         schema: strictSchema,
         maxTokens: supplementary.maxTokens ?? 2048,
-        providerOptions: { pdfBase64 },
+        providerOptions: doclingText ? { doclingText } : { pdfBase64 },
       }),
     );
 

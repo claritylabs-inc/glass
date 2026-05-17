@@ -57,6 +57,18 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
   coordinate_mailbox_task: "Coordinated mailbox task",
 };
 
+function inferAttachmentContentType(filename: string | undefined, mediaType: string | undefined) {
+  if (mediaType) return mediaType;
+  const lowerName = filename?.toLowerCase() ?? "";
+  if (lowerName.endsWith(".csv")) return "text/csv";
+  if (lowerName.endsWith(".tsv")) return "text/tab-separated-values";
+  if (lowerName.endsWith(".txt")) return "text/plain";
+  if (lowerName.endsWith(".md") || lowerName.endsWith(".markdown")) return "text/markdown";
+  if (lowerName.endsWith(".json")) return "application/json";
+  if (lowerName.endsWith(".pdf")) return "application/pdf";
+  return "application/octet-stream";
+}
+
 const SUBAGENT_TOOL_NAMES = new Set(["email_expert", "coordinate_mailbox_task"]);
 const EMAIL_SENDING_RE = /^sending email to\s+(.+?)(?:\s*\(cc:.*\))?\s*\.{3}$/i;
 const EMAIL_SENT_RE = /^email sent to\s+(.+?)(?:\s*\(cc:.*\))?\s*\.$/i;
@@ -1396,16 +1408,17 @@ export function UnifiedThreadContent({
         for (const file of message.files) {
           const url = await generateUploadUrl();
           const blob = await fetch(file.url).then((r) => r.blob());
+          const contentType = inferAttachmentContentType(file.filename, file.mediaType);
           const res = await fetch(url, {
             method: "POST",
-            headers: { "Content-Type": file.mediaType || "application/octet-stream" },
+            headers: { "Content-Type": contentType },
             body: blob,
           });
           if (res.ok) {
             const { storageId } = await res.json();
             attachments.push({
               filename: file.filename ?? "file",
-              contentType: file.mediaType || "application/octet-stream",
+              contentType,
               size: blob.size,
               fileId: storageId as Id<"_storage">,
             });

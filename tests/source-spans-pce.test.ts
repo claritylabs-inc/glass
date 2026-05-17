@@ -52,14 +52,14 @@ describe("source spans and PCE backend surfaces", () => {
   });
 
   it("renders policy change request artifacts in chat", () => {
-    const threadPage = read("app/agent/thread/[id]/page.tsx");
+    const policyChangeArtifact = read("components/agent-thread/artifacts/policy-change.tsx");
     const policyChanges = read("convex/policyChanges.ts");
 
-    expect(threadPage).toContain("function PolicyChangeSummaryCard");
-    expect(threadPage).toContain("function PolicyChangeThreadSidebar");
-    expect(threadPage).toContain("Policy change request");
-    expect(threadPage).toContain("Clients can review the request");
-    expect(threadPage).toContain("Policy change requests need to go through a broker");
+    expect(policyChangeArtifact).toContain("function PolicyChangeSummaryCard");
+    expect(policyChangeArtifact).toContain("function PolicyChangeThreadSidebar");
+    expect(policyChangeArtifact).toContain("Policy change request");
+    expect(policyChangeArtifact).toContain("Review request");
+    expect(policyChangeArtifact).toContain("Affected values");
     expect(policyChanges).toContain("assertCanManagePolicyChange");
     expect(policyChanges).toContain("assertCanCreatePolicyChange");
     expect(read("convex/actions/policyChangeRequests.ts")).toContain("STANDALONE_CLIENT_PCE_MESSAGE");
@@ -94,30 +94,36 @@ describe("source spans and PCE backend surfaces", () => {
   });
 
   it("renders chat sources and tool calls as compact footer controls", () => {
-    const threadPage = read("app/agent/thread/[id]/page.tsx");
+    const threadContent = read("components/agent-thread/thread-content.tsx");
     const referenceCards = read("components/context-reference-card.tsx");
 
-    expect(threadPage).toContain("function MessageFooterActions");
-    expect(threadPage).toContain("toolCalls.length} tool");
-    expect(threadPage).toContain("msg.usedTools ?? []");
-    expect(threadPage).toContain("relatedEmailMessage?.referencedPolicyIds");
+    expect(threadContent).toContain("function MessageFooterActions");
+    expect(threadContent).toContain("toolCalls.length} tool");
+    expect(threadContent).toContain("msg.usedTools ?? []");
+    expect(threadContent).toContain("relatedEmailMessage?.referencedPolicyIds");
     expect(referenceCards).toContain("function PolicyCitation");
     expect(referenceCards).toContain("function PolicySourcePill");
     expect(referenceCards).toContain("{refs.length} sources");
     expect(referenceCards).toContain("refs.length === 1");
     expect(referenceCards).not.toContain(">Sources<");
-    expect(threadPage).not.toContain("Hide tool calls");
+    expect(threadContent).not.toContain("Hide tool calls");
   });
 
-  it("builds PDF source spans before policy extraction", () => {
+  it("prepares Docling or PDF source spans before policy extraction", () => {
     const policyExtraction = read("convex/actions/policyExtraction.ts");
+    const doclingPreprocessor = read("convex/lib/doclingPreprocessor.ts");
     const pdfSourceSpans = read("convex/lib/pdfSourceSpans.ts");
 
+    expect(doclingPreprocessor).toContain("preparePdfTextWithDoclingFallback");
+    expect(doclingPreprocessor).toContain("normalizeDoclingDocument");
+    expect(doclingPreprocessor).toContain("EXTRACTION_WORKER_URL");
+    expect(doclingPreprocessor).toContain("buildPdfSourceSpans");
     expect(pdfSourceSpans).toContain("pdfjs-dist/legacy/build/pdf.mjs");
     expect(pdfSourceSpans).toContain("getTextContent");
     expect(pdfSourceSpans).toContain("splitPageIntoSectionCandidates");
     expect(pdfSourceSpans).toContain("sourceUnit: \"section_candidate\"");
-    expect(policyExtraction).toContain("buildPdfSourceSpans");
+    expect(policyExtraction).toContain("preparePdfTextWithDoclingFallback");
+    expect(policyExtraction).toContain("kind: \"docling_document\"");
     expect(policyExtraction).toContain("sourceSpans: pdfSource.sourceSpans as Array<Record<string, any>>");
     expect(policyExtraction).toContain(": pdfSource.sourceSpans as Array<Record<string, any>>");
     expect(policyExtraction).not.toContain("SDK source-grounding is disabled");

@@ -20,19 +20,19 @@ describe("chat duplicate prevention and COI preview UI", () => {
   });
 
   it("queues steering messages and allows sending immediately to cancel in-flight work", () => {
-    const threadPage = read("app/agent/thread/[id]/page.tsx");
+    const threadContent = read("components/agent-thread/thread-content.tsx");
     const threads = read("convex/threads.ts");
     const processThreadChat = read("convex/actions/processThreadChat.ts");
     const aiUtils = read("convex/lib/aiUtils.ts");
     const promptInput = read("components/ai-elements/prompt-input/prompt-input.tsx");
 
-    expect(threadPage).toContain("disabled={isInputBusy}");
-    expect(threadPage).toContain("QueuedThreadMessage");
-    expect(threadPage).toContain("setQueuedMessage(message)");
-    expect(threadPage).toContain("sendQueuedNow");
-    expect(threadPage).toContain("const isInputBusy = isSubmitting || sendingQueuedNow");
-    expect(threadPage).toContain("if (!queuedMessage || isAgentActive || isSubmitting || sendingQueuedNow) return");
-    expect(threadPage).toContain('const inputBusyLabel = "Sending"');
+    expect(threadContent).toContain("disabled={isInputBusy}");
+    expect(threadContent).toContain("QueuedThreadMessage");
+    expect(threadContent).toContain("setQueuedMessage(message)");
+    expect(threadContent).toContain("sendQueuedNow");
+    expect(threadContent).toContain("const isInputBusy = isSubmitting || sendingQueuedNow");
+    expect(threadContent).toContain("if (!queuedMessage || isAgentActive || isSubmitting || sendingQueuedNow) return");
+    expect(threadContent).toContain('const inputBusyLabel = "Sending"');
     expect(threads).toContain('message.status !== "processing"');
     expect(threads).toContain('content: "Response cancelled."');
     expect(processThreadChat).toContain("latestUserMessage");
@@ -58,10 +58,39 @@ describe("chat duplicate prevention and COI preview UI", () => {
   });
 
   it("renders generated agent attachments so COIs can be previewed", () => {
-    const threadPage = read("app/agent/thread/[id]/page.tsx");
+    const threadContent = read("components/agent-thread/thread-content.tsx");
 
-    expect(threadPage).toContain("msg.attachments && msg.attachments.length > 0");
-    expect(threadPage).toContain("<ThreadAttachmentChip key={i} attachment={att} threadId={msg.threadId} />");
+    expect(threadContent).toContain("msg.attachments && msg.attachments.length > 0");
+    expect(threadContent).toContain("<ThreadAttachmentChip key={i} attachment={att} threadId={msg.threadId} />");
+  });
+
+  it("reads CSV attachments for agent context by filename and content type", () => {
+    const threadContent = read("components/agent-thread/thread-content.tsx");
+    const appShell = read("components/app-shell.tsx");
+    const processThreadChat = read("convex/actions/processThreadChat.ts");
+
+    expect(threadContent).toContain('lowerName.endsWith(".csv")');
+    expect(threadContent).toContain('"text/csv"');
+    expect(appShell).toContain('lowerName.endsWith(".csv")');
+    expect(appShell).toContain('"text/csv"');
+    expect(processThreadChat).toContain("function isTextLikeAttachment");
+    expect(processThreadChat).toContain("buildMessageHistoryWithAttachmentContext");
+    expect(processThreadChat).toContain("RECENT_ATTACHMENT_MESSAGE_LIMIT");
+    expect(processThreadChat).toContain('lowerName.endsWith(".csv")');
+    expect(processThreadChat).toContain('type.includes("csv")');
+    expect(processThreadChat).toContain('type === "application/vnd.ms-excel"');
+    expect(processThreadChat).toContain("buffer.toString(\"utf-8\")");
+  });
+
+  it("does not let chat claim COI emails were sent without side-effect tools", () => {
+    const processThreadChat = read("convex/actions/processThreadChat.ts");
+
+    expect(processThreadChat).toContain("function hasCoiEmailIntent");
+    expect(processThreadChat).toContain("function claimsCoiEmailCompletion");
+    expect(processThreadChat).toContain("completedCoiEmailSideEffect");
+    expect(processThreadChat).toContain("usedTools.includes(\"email_expert\")");
+    expect(processThreadChat).toContain("usedTools.includes(\"generate_coi\")");
+    expect(processThreadChat).toContain("I haven't generated or emailed those COIs yet");
   });
 
   it("gives the agent a browser-backed email preview rendering tool", () => {
@@ -81,13 +110,13 @@ describe("chat duplicate prevention and COI preview UI", () => {
   });
 
   it("shows the email draft artifact every time a message references that draft", () => {
-    const threadPage = read("app/agent/thread/[id]/page.tsx");
+    const threadContent = read("components/agent-thread/thread-content.tsx");
     const pendingEmails = read("convex/pendingEmails.ts");
     const processThreadChat = read("convex/actions/processThreadChat.ts");
 
-    const pendingEmailLinkBlock = threadPage.slice(
-      threadPage.indexOf("if (message.pendingEmailId)"),
-      threadPage.indexOf("const recipient = getEmailStatusRecipient(message);"),
+    const pendingEmailLinkBlock = threadContent.slice(
+      threadContent.indexOf("if (message.pendingEmailId)"),
+      threadContent.indexOf("const recipient = getEmailStatusRecipient(message);"),
     );
     expect(pendingEmailLinkBlock).toContain("candidate.pendingEmailId === message.pendingEmailId");
     expect(pendingEmailLinkBlock).not.toContain("attachedEmailMessageIds.has");

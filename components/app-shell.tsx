@@ -31,6 +31,18 @@ import { getPublicAgentDomain } from "@/lib/domains";
 
 const AGENT_DOMAIN = getPublicAgentDomain();
 
+function inferAttachmentContentType(filename: string | undefined, mediaType: string | undefined) {
+  if (mediaType) return mediaType;
+  const lowerName = filename?.toLowerCase() ?? "";
+  if (lowerName.endsWith(".csv")) return "text/csv";
+  if (lowerName.endsWith(".tsv")) return "text/tab-separated-values";
+  if (lowerName.endsWith(".txt")) return "text/plain";
+  if (lowerName.endsWith(".md") || lowerName.endsWith(".markdown")) return "text/markdown";
+  if (lowerName.endsWith(".json")) return "application/json";
+  if (lowerName.endsWith(".pdf")) return "application/pdf";
+  return "application/octet-stream";
+}
+
 const PdfPanel = dynamic(
   () => import("@/components/ui/pdf-panel").then((m) => ({ default: m.PdfPanel })),
   { ssr: false },
@@ -258,10 +270,11 @@ function PersistentChatBar() {
           for (const file of message.files) {
             const uploadUrl = await generateUploadUrl();
             const blob = await fetch(file.url).then((r) => r.blob());
+            const contentType = inferAttachmentContentType(file.filename, file.mediaType);
             const res = await fetch(uploadUrl, {
               method: "POST",
               headers: {
-                "Content-Type": file.mediaType || "application/octet-stream",
+                "Content-Type": contentType,
               },
               body: blob,
             });
@@ -270,7 +283,7 @@ function PersistentChatBar() {
               const { storageId } = await res.json();
               attachments.push({
                 filename: file.filename ?? "file",
-                contentType: file.mediaType || "application/octet-stream",
+                contentType,
                 size: blob.size,
                 fileId: storageId as Id<"_storage">,
               });

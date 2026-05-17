@@ -32,9 +32,9 @@ Core layers:
 - Frontend: Next.js 16 App Router, React 19, Tailwind 4
 - Backend: Convex queries, mutations, actions, scheduler, file storage, vector search
 - AI runtime: Vercel AI SDK (`ai`)
-- Extraction, query agent, and prompts: `@claritylabs/cl-sdk@1.1.x`
+- Extraction, query agent, and prompts: `@claritylabs/cl-sdk@1.2.x`
 - Providers: OpenAI, MoonshotAI, Anthropic, DeepSeek
-- PDF parsing: policy and quote extraction use the single stable `cl-sdk` PDF pipeline. Glass builds local PDF.js source spans for citations and passes the raw PDF bytes to `cl-sdk`; there is no alternate parser service, worker, feature flag, or callback interception in the live extraction path.
+- PDF parsing: policy and quote extraction use the single stable `cl-sdk` pipeline. When the Railway extraction worker is available, Glass first preprocesses PDFs with Docling and passes serialized DoclingDocument JSON into `cl-sdk`; if Docling fails or times out, Glass falls back to raw PDF bytes plus local PDF.js source spans. Docling is hosted inside `extraction-worker/`, not as a separate service, feature flag, or callback interception layer.
 - Email: outbound + inbound via Resend, plus user-connected generic IMAP mailboxes for live agent search/read. All outbound Resend calls go through `convex/lib/resend.ts` (`sendResendEmail`). The primary signed-in web app is `app.glass.insure` for both broker and client users; broker/client landing is role-based after sign-in. `glass.claritylabs.inc` is the legacy browser host and redirects to `app.glass.insure`. `auth.glass.insure` is an auth/invite email sender domain rather than a separate web app host. Agent mail defaults to `glass.insure`, notification mail defaults to `notifications.glass.insure`, and auth/invite mail defaults to `auth.glass.insure`; legacy inbound agent addresses at `glass.claritylabs.inc` and `dev.claritylabs.inc` remain recognized. Inbound webhook at `POST /resend-inbound`.
 - iMessage / Spectrum: Photon-backed iMessage is production-only. Set `IMESSAGE_ENABLED=true`, `IMESSAGE_WORKER_URL`, `IMESSAGE_WORKER_SECRET`, and `NEXT_PUBLIC_GLASS_IMESSAGE_NUMBER` only in production with the production Photon account. For dev/preview testing, keep `IMESSAGE_ENABLED` false and use the Spectrum Terminal provider in `imessage-worker` (`SPECTRUM_PROVIDER=terminal`, `IMESSAGE_TERMINAL_FROM_PHONE=<test user phone>`). Convex accepts terminal-driven inbound messages only when `IMESSAGE_TERMINAL_ENABLED=true`; do not set `NEXT_PUBLIC_GLASS_IMESSAGE_NUMBER` in dev/preview unless intentionally advertising a test line. iMessage direct chats and groups both enter through `/imessage-inbound`; group chats are keyed by Photon chat GUID and mirrored into `imessageChats` / `imessageParticipants` so Glass can distinguish linked users from anonymous participants.
 
@@ -152,13 +152,15 @@ The Glass-specific `cl-sdk` wiring lives under `convex/lib/`.
 
 Current `cl-sdk` passes document content through callback `providerOptions`.
 
-- `providerOptions.pdfBase64` carries the PDF for classification, planning, review, and page-scoped extraction calls.
+- `providerOptions.pdfBase64` carries the PDF for classification, planning, review, and page-scoped extraction calls when extraction is using raw PDF input.
+- `providerOptions.doclingText` carries full or page-scoped text when extraction is using a host-provided DoclingDocument input.
 - `providerOptions.images` carries page images when PDF-to-image conversion is used.
 
 Glass translates those into AI SDK multipart message content in `sdkCallbacks.ts`:
 
 - PDFs become `{ type: "file", data, mediaType: "application/pdf" }`
 - images become `{ type: "image", image, mediaType }`
+- Docling text is already injected into the SDK prompt and preserved in `providerOptions.doclingText`; Glass callbacks do not convert it back to a PDF file part.
 
 Notes:
 
@@ -196,7 +198,7 @@ Two entrypoints, both PDF-only:
 
 1. Fetch or receive a PDF.
 2. Store the raw PDF in Convex file storage.
-3. Load the PDF bytes from Convex file storage, build local PDF.js source spans, and run `buildExtractor().extract(pdfBytes, documentId, { sourceSpans })`. Do not pass a signed storage URL into `cl-sdk`; review and follow-up extractors can run long enough that repeated URL fetches become unreliable.
+3. Load the PDF bytes from Convex file storage. If the Docling worker endpoint is configured, convert the PDF to a serialized DoclingDocument and run `buildExtractor().extract({ kind: "docling_document", document, sourceKind: "policy_pdf" }, documentId)`. If conversion is unavailable, build local PDF.js source spans and run `buildExtractor().extract(pdfBytes, documentId, { sourceSpans })`. Do not pass a signed storage URL into `cl-sdk`; review and follow-up extractors can run long enough that repeated URL fetches become unreliable.
 4. Verify critical policy-period dates from source text when a clear declaration-page period is present, then map `InsuranceDocument` into Glass policy fields.
 5. Run coverage declaration scoping before persistence. When the SDK extracts multiple limits for the same coverage and limit role, Glass scores declarations, selected-option markers, summary/confirmation pages, endorsements, and source-span evidence; persists only the best current coverage value; and stores `extractionReview.questions` for any same-role limit conflict that still needs client/broker confirmation. Distinct limit roles such as per-occurrence and aggregate remain separate coverage rows.
 6. Persist the extracted document and metadata.
@@ -210,7 +212,7 @@ Pipeline runtime state:
 - Query surfaces such as `policies.get` and `policies.getInternal` merge runtime state from `policyExtractionRuns`, falling back to legacy fields on `policies` for old in-flight jobs.
 - The extract phase stores `documentChunksForEmbedding`, `sourceSpansForStorage`, and `sourceChunksForEmbedding` in a storage-backed `embedding_payload` artifact before advancing to `embed_and_store`, so a resumed embedding phase can reload transient artifacts without inflating checkpoint documents. Artifact blobs are cleaned up after durable embedding/source-span storage succeeds, cancellation, terminal success, and full restart; generic errors keep artifacts for resume/retry.
 - Extraction concurrency defaults to 6 SDK worker calls (`EXTRACTION_CONCURRENCY`, bounded 1-8), and page mapping, focused extraction, and formatting default to that same concurrency unless independently tuned with `EXTRACTION_PAGE_MAP_CONCURRENCY`, `EXTRACTION_EXTRACTOR_CONCURRENCY`, and `EXTRACTION_FORMAT_CONCURRENCY` (each bounded 1-8). Review defaults to `EXTRACTION_REVIEW_MODE=auto` with 1 round (`EXTRACTION_MAX_REVIEW_ROUNDS`, bounded 0-2), so cl-sdk's evidence-gated review semantics decide when a repair pass is useful. Embedding defaults to 8 concurrent embedding calls (`EXTRACTION_EMBEDDING_CONCURRENCY`, bounded 1-16). Current dev/prod deployments intentionally run aggressive speed settings: extraction/page-map/extractor/format concurrency 8 and embedding concurrency 16.
-- Long-running SDK extraction can be offloaded to the standalone Railway worker in `extraction-worker/` by setting `EXTRACTION_WORKER_MODE=external` and a shared `EXTRACTION_WORKER_SECRET` on Convex, then running the worker with `CONVEX_URL` and the same secret. In external mode Convex remains the durable job ledger: uploads/retries create `policyExtractionRuns` checkpoints, the worker claims extract-phase leases, heartbeats, saves compact `cl-sdk` checkpoints to storage, completes extraction, and hands the job back to Convex for embedding/source-span persistence and post-processing. The claim action returns broker model routes/provider keys so trusted workers preserve extraction/classification overrides instead of falling back to only static env routing.
+- Long-running SDK extraction can be offloaded to the standalone Railway worker in `extraction-worker/` by setting `EXTRACTION_WORKER_MODE=external` and a shared `EXTRACTION_WORKER_SECRET` on Convex, then running the worker with `CONVEX_URL` and the same secret. In external mode Convex remains the durable job ledger: uploads/retries create `policyExtractionRuns` checkpoints, the worker claims extract-phase leases, heartbeats, saves compact `cl-sdk` checkpoints to storage, completes extraction, and hands the job back to Convex for embedding/source-span persistence and post-processing. The claim action returns broker model routes/provider keys so trusted workers preserve extraction/classification overrides instead of falling back to only static env routing. The same worker also exposes authenticated `POST /docling/convert` when `PORT` is set; configure Convex with `EXTRACTION_WORKER_URL` plus `EXTRACTION_WORKER_SECRET` so requirements imports, mailbox attachment reads, on-demand source lookup, supplementary extraction, and chat/email/iMessage PDF attachment context can use Docling text with PDF/PDF.js fallback.
 
 Cancellation:
 

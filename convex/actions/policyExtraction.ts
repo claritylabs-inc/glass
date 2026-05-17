@@ -16,7 +16,7 @@ import {
   insuranceDocToPolicy,
   summarizeExtractionCheckpoint,
 } from "../lib/extraction";
-import { buildPdfSourceSpans } from "../lib/pdfSourceSpans";
+import { preparePdfTextWithDoclingFallback } from "../lib/doclingPreprocessor";
 import type { ExtractionResult, ExtractionState, PipelineCheckpoint } from "../lib/extraction";
 import type { ExtractOptions } from "../lib/extraction";
 import { makeEmbedText, makeGenerateObject } from "../lib/sdkCallbacks";
@@ -849,13 +849,13 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
 
       const policyId = pCtx.jobId;
       const clSdkCheckpoint = await loadClSdkCheckpoint(convexCtx, policyId, state);
-      const pdfSource = await buildPdfSourceSpans({
+      const pdfSource = await preparePdfTextWithDoclingFallback({
         pdfBytes,
         documentId: policyId,
         sourceKind: "policy_pdf",
       });
       if (pdfSource.sourceSpans.length > 0) {
-        await pCtx.log(`Prepared ${pdfSource.sourceSpans.length} raw source spans for source-grounded extraction`);
+        await pCtx.log(`Prepared ${pdfSource.sourceSpans.length} ${pdfSource.parserBackend} source spans for source-grounded extraction`);
       }
 
       if (clSdkCheckpoint) {
@@ -954,7 +954,13 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
       let result: ExtractionResult;
       try {
         result = await extractor.extract(
-          pdfBytes,
+          pdfSource.doclingDocument
+            ? {
+                kind: "docling_document",
+                document: pdfSource.doclingDocument,
+                sourceKind: "policy_pdf",
+              }
+            : pdfBytes,
           policyId,
           extractOptions,
         );

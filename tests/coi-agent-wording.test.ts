@@ -8,5 +8,7 @@ describe("COI agent wording", () => {
     expect(instructions).toContain("generating a new COI or certificate");
     expect(instructions).toContain("COIs are generated artifacts");
     expect(instructions).toContain('Do not offer to "pull COI wording"');
+    expect(instructions).toContain("use the email expert tool when email is available");
+    expect(instructions).toContain("Never say COIs were generated, attached, sent, emailed, or are being emailed");
   });
 });

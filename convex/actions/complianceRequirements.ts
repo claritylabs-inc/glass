@@ -10,6 +10,7 @@ import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { getModel } from "../lib/models";
+import { preparePdfTextWithDoclingFallback } from "../lib/doclingPreprocessor";
 
 const CATEGORY_VALUES = [
   "general_liability",
@@ -57,7 +58,7 @@ type RequirementImportContext = {
 };
 type ExtractedFileText = {
   text: string;
-  parserBackend?: "pdfjs" | "mammoth" | "plain_text";
+  parserBackend?: "docling" | "pdfjs" | "mammoth" | "plain_text";
   parserVersion?: string;
   parsedAt?: number;
   parsingMs?: number;
@@ -110,31 +111,21 @@ function normalizeImportedRequirement(requirement: ImportedRequirement) {
   };
 }
 
-async function extractPdfText(buffer: ArrayBuffer) {
-  const { getDocument, VerbosityLevel } =
-    await import("pdfjs-dist/legacy/build/pdf.mjs");
-  const loadingTask = getDocument({
-    data: new Uint8Array(buffer),
-    disableFontFace: true,
-    isEvalSupported: false,
-    useWorkerFetch: false,
-    verbosity: VerbosityLevel.ERRORS,
+async function extractPdfRequirementText(
+  buffer: ArrayBuffer,
+  fileName?: string,
+): Promise<ExtractedFileText> {
+  const prepared = await preparePdfTextWithDoclingFallback({
+    pdfBytes: new Uint8Array(buffer),
+    documentId: fileName || "requirement-document",
+    sourceKind: "attachment",
   });
-  const pdf = await loadingTask.promise;
-  const pages: string[] = [];
-  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
-    const page = await pdf.getPage(pageNumber);
-    const textContent = await page.getTextContent();
-    const items = (textContent as { items: Array<{ str?: string }> }).items;
-    pages.push(items.map((item) => item.str ?? "").join(" "));
-  }
-  return pages.join("\n\n");
-}
-
-async function extractPdfRequirementText(buffer: ArrayBuffer): Promise<ExtractedFileText> {
   return {
-    text: await extractPdfText(buffer),
-    parserBackend: "pdfjs",
+    text: prepared.text,
+    parserBackend: prepared.parserBackend,
+    parserVersion: prepared.parserVersion,
+    parsedAt: prepared.parsedAt,
+    parsingMs: prepared.parsingMs,
   };
 }
 
@@ -155,7 +146,7 @@ async function extractFileText({
   const lowerName = (fileName ?? "").toLowerCase();
   const type = (contentType ?? "").toLowerCase();
   if (type.includes("pdf") || lowerName.endsWith(".pdf")) {
-    return await extractPdfRequirementText(buffer);
+    return await extractPdfRequirementText(buffer, fileName);
   }
   if (type.includes("wordprocessingml") || lowerName.endsWith(".docx")) {
     return {

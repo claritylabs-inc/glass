@@ -1,4 +1,5 @@
 import dayjs from "dayjs";
+import { createServer, type IncomingMessage, type ServerResponse } from "http";
 import { Output, generateText as aiGenerateText } from "ai";
 import type { LanguageModel } from "ai";
 import type { ProviderOptions } from "@ai-sdk/provider-utils";
@@ -23,6 +24,7 @@ import {
 } from "@claritylabs/cl-sdk";
 import { EXTRACTION_MODEL_CAPABILITIES } from "./modelCapabilities.js";
 import { buildPdfSourceSpans } from "./pdfSourceSpans.js";
+import { convertPdfWithDocling } from "./docling.js";
 
 type WorkerState = {
   sourceKind: "upload" | "agent_email";
@@ -136,6 +138,10 @@ const WORKER_ID = process.env.EXTRACTION_WORKER_ID ?? `extraction-worker-${proce
 const POLL_MS = readBoundedIntEnv("EXTRACTION_WORKER_POLL_MS", 5000, 500, 60_000);
 const IDLE_LOG_MS = readBoundedIntEnv("EXTRACTION_WORKER_IDLE_LOG_MS", 60_000, 5_000, 10 * 60_000);
 const HEARTBEAT_MS = readBoundedIntEnv("EXTRACTION_WORKER_HEARTBEAT_MS", 30_000, 5_000, 5 * 60_000);
+const HTTP_PORT = readOptionalIntEnv("PORT") ?? readOptionalIntEnv("DOCLING_HTTP_PORT");
+const HTTP_MAX_BODY_BYTES = readBoundedIntEnv("DOCLING_HTTP_MAX_BODY_BYTES", 50 * 1024 * 1024, 1024, 250 * 1024 * 1024);
+const DOCLING_MAX_PAGES = readOptionalIntEnv("DOCLING_MAX_PAGES");
+const DOCLING_MAX_FILE_SIZE = readOptionalIntEnv("DOCLING_MAX_FILE_SIZE_BYTES");
 
 const convex = new ConvexHttpClient(CONVEX_URL);
 
@@ -159,6 +165,13 @@ function readBoundedIntEnv(name: string, fallback: number, min: number, max: num
   const value = Number.parseInt(raw, 10);
   if (!Number.isFinite(value)) return fallback;
   return Math.max(min, Math.min(max, value));
+}
+
+function readOptionalIntEnv(name: string): number | undefined {
+  const raw = process.env[name];
+  if (!raw) return undefined;
+  const value = Number.parseInt(raw, 10);
+  return Number.isFinite(value) ? value : undefined;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -477,6 +490,89 @@ async function fetchPdfBytes(fileUrl: string): Promise<Uint8Array> {
   return new Uint8Array(await response.arrayBuffer());
 }
 
+function jsonResponse(
+  res: ServerResponse,
+  status: number,
+  body: Record<string, unknown>,
+): void {
+  const payload = JSON.stringify(body);
+  res.writeHead(status, {
+    "content-type": "application/json",
+    "content-length": Buffer.byteLength(payload),
+  });
+  res.end(payload);
+}
+
+async function readJsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
+  const chunks: Buffer[] = [];
+  let total = 0;
+  for await (const chunk of req) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    total += buffer.byteLength;
+    if (total > HTTP_MAX_BODY_BYTES) {
+      throw new Error("Request body is too large");
+    }
+    chunks.push(buffer);
+  }
+  if (chunks.length === 0) return {};
+  return JSON.parse(Buffer.concat(chunks).toString("utf8")) as Record<string, unknown>;
+}
+
+function isAuthorized(req: IncomingMessage): boolean {
+  const header = req.headers.authorization;
+  if (header === `Bearer ${SECRET}`) return true;
+  return req.headers["x-extraction-worker-secret"] === SECRET;
+}
+
+async function handleConvertRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  if (!isAuthorized(req)) {
+    jsonResponse(res, 401, { error: "Unauthorized" });
+    return;
+  }
+  const body = await readJsonBody(req);
+  const pdfBase64 = typeof body.pdfBase64 === "string" ? body.pdfBase64 : "";
+  if (!pdfBase64) {
+    jsonResponse(res, 400, { error: "Missing pdfBase64" });
+    return;
+  }
+
+  const pdfBytes = Buffer.from(pdfBase64, "base64");
+  const converted = await convertPdfWithDocling(pdfBytes, {
+    maxPages: DOCLING_MAX_PAGES,
+    maxFileSize: DOCLING_MAX_FILE_SIZE,
+  });
+  jsonResponse(res, 200, {
+    ok: true,
+    document: converted.document,
+    metadata: converted.metadata,
+  });
+}
+
+function startHttpServer(): { close: () => void } | null {
+  if (!HTTP_PORT) return null;
+  const server = createServer((req, res) => {
+    const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+    if (req.method === "GET" && url.pathname === "/health") {
+      jsonResponse(res, 200, { ok: true, workerId: WORKER_ID });
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/docling/convert") {
+      handleConvertRequest(req, res).catch((error) => {
+        console.error("Docling HTTP conversion failed:", error);
+        jsonResponse(res, 500, { error: errorMessage(error) });
+      });
+      return;
+    }
+    jsonResponse(res, 404, { error: "Not found" });
+  });
+  server.listen(HTTP_PORT, () => {
+    console.log(`Docling conversion endpoint listening on port ${HTTP_PORT}`);
+  });
+  return {
+    close: () => server.close(),
+  };
+}
+
 async function heartbeat(job: ClaimedJob): Promise<void> {
   const result = await convex.action(actions.heartbeatExternalJob, {
     secret: SECRET,
@@ -568,14 +664,6 @@ async function processJob(job: ClaimedJob): Promise<void> {
   try {
     const pdfBytes = await fetchPdfBytes(job.fileUrl);
     await logJob(job, `External worker fetched PDF (${pdfBytes.byteLength} bytes)`);
-    const fallbackSource = await buildPdfSourceSpans({
-      pdfBytes,
-      documentId: job.policyId,
-      sourceKind: "policy_pdf",
-    });
-    if (fallbackSource.sourceSpans.length > 0) {
-      await logJob(job, `Prepared ${fallbackSource.sourceSpans.length} raw source spans for source-grounded extraction`);
-    }
 
     const extractor = buildWorkerExtractor({
       log: async (message) => logJob(job, message),
@@ -589,16 +677,56 @@ async function processJob(job: ClaimedJob): Promise<void> {
       await logJob(job, `Resuming extraction from cl-sdk phase "${job.clSdkCheckpoint.phase}"`);
     }
 
-    const result = await extractor.extract(
-      pdfBytes,
-      job.policyId,
-      {
-        ...(job.clSdkCheckpoint ? { resumeFrom: job.clSdkCheckpoint } : {}),
-        ...(fallbackSource.sourceSpans.length > 0
-          ? { sourceSpans: fallbackSource.sourceSpans as unknown as Array<Record<string, unknown>> }
-          : {}),
-      },
-    );
+    let result: ExtractionResult;
+    let fallbackSource: Awaited<ReturnType<typeof buildPdfSourceSpans>> = {
+      sourceSpans: [],
+      sourceChunks: [],
+    };
+    try {
+      const converted = await convertPdfWithDocling(pdfBytes, {
+        maxPages: DOCLING_MAX_PAGES,
+        maxFileSize: DOCLING_MAX_FILE_SIZE,
+      });
+      await logJob(
+        job,
+        `Docling preprocessor parsed PDF in ${converted.metadata.parsingMs ?? 0}ms; running cl-sdk on DoclingDocument`,
+      );
+      result = await extractor.extract(
+        {
+          kind: "docling_document",
+          document: converted.document,
+          sourceKind: "policy_pdf",
+        },
+        job.policyId,
+        {
+          ...(job.clSdkCheckpoint ? { resumeFrom: job.clSdkCheckpoint } : {}),
+        },
+      );
+    } catch (error) {
+      await logJob(
+        job,
+        `Docling preprocessor unavailable; falling back to PDF extraction (${errorMessage(error)})`,
+        "warn",
+      );
+      fallbackSource = await buildPdfSourceSpans({
+        pdfBytes,
+        documentId: job.policyId,
+        sourceKind: "policy_pdf",
+      });
+      if (fallbackSource.sourceSpans.length > 0) {
+        await logJob(job, `Prepared ${fallbackSource.sourceSpans.length} raw source spans for source-grounded extraction`);
+      }
+      result = await extractor.extract(
+        pdfBytes,
+        job.policyId,
+        {
+          ...(job.clSdkCheckpoint ? { resumeFrom: job.clSdkCheckpoint } : {}),
+          ...(fallbackSource.sourceSpans.length > 0
+            ? { sourceSpans: fallbackSource.sourceSpans as unknown as Array<Record<string, unknown>> }
+            : {}),
+        },
+      );
+    }
 
     await completeJob(job, result, fallbackSource);
     console.log(`[${job.policyId}] completed external extraction`);
@@ -619,20 +747,25 @@ async function claimJob(): Promise<ClaimedJob | null> {
 
 async function main(): Promise<void> {
   console.log(`Glass extraction worker ${WORKER_ID} connected to ${CONVEX_URL}`);
+  const httpServer = startHttpServer();
   let lastIdleLogAt = 0;
-  while (!shuttingDown) {
-    const job = await claimJob();
-    if (job) {
-      await processJob(job);
-      continue;
-    }
+  try {
+    while (!shuttingDown) {
+      const job = await claimJob();
+      if (job) {
+        await processJob(job);
+        continue;
+      }
 
-    const now = nowMs();
-    if (now - lastIdleLogAt >= IDLE_LOG_MS) {
-      console.log("No extraction jobs available");
-      lastIdleLogAt = now;
+      const now = nowMs();
+      if (now - lastIdleLogAt >= IDLE_LOG_MS) {
+        console.log("No extraction jobs available");
+        lastIdleLogAt = now;
+      }
+      await sleep(POLL_MS);
     }
-    await sleep(POLL_MS);
+  } finally {
+    httpServer?.close();
   }
   console.log("Extraction worker shutting down");
 }
