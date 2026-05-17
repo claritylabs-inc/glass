@@ -32,7 +32,7 @@ import {
   buildConversationMemoryContext,
   buildIntelligenceContext,
 } from "../lib/agentPrompts";
-import { Id } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 import {
   sendResendEmail,
   getAgentDomain,
@@ -76,6 +76,11 @@ import {
   formatComplianceRequirement,
 } from "../lib/complianceAgent";
 import { buildVendorComplianceTools } from "../lib/vendorComplianceTools";
+import {
+  buildEmailDraftTextSummary,
+  isSendAllEmailDraftsIntent,
+  isShowMoreEmailDraftIntent,
+} from "../lib/emailDraftSummary";
 
 const GLASS_PUBLIC_URL = getClientPortalUrl();
 
@@ -1607,20 +1612,68 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
       }
 
       systemContext += attachmentToolHint;
+      const currentDraftEmails = await ctx.runQuery(
+        internal.pendingEmails.listDraftsInternal,
+        { threadId: unifiedThreadId, orgId },
+      ) as Array<Doc<"pendingEmails">>;
+      if (currentDraftEmails.length > 0) {
+        systemContext += `\n\nCURRENT EMAIL DRAFTS:\n${buildEmailDraftTextSummary(currentDraftEmails, {
+          sampleSize: Math.min(3, currentDraftEmails.length),
+          includeIds: false,
+          commands: "chat",
+        })}\n\nFor email replies about multiple drafts, show a short sample first and ask whether the user wants more detail instead of dumping every draft.`;
+      }
       systemContext += `\n\nYou have tools to look up policies, look up policy sections, compare coverages, check compliance requirements, look up connected vendors, inspect vendor policies, inspect requirement-by-requirement vendor compliance, save notes, generate COIs, and extract uploaded policy attachments. Use them as needed before answering. Decide yourself whether the email requires answering a question, generating a COI, and/or extracting an attached policy — you may do more than one.`;
 
-      // Agentic loop — the model decides tools (COI, policy extraction, Q&A)
-      const result = await generateText({
-        model: await getModelForOrg(ctx, orgId, "email_reply"),
-        providerOptions: getProviderOptionsForTask("email_reply"),
-        maxOutputTokens: 2048,
-        system: systemContext,
-        messages,
-        tools: emailTools,
-        stopWhen: stepCountIs(10),
-      });
-
-      let responseBody = result.text;
+      let responseBody: string;
+      const emailCommandText = stripQuotedText(body).trim();
+      const shortEmailCommand = emailCommandText.length < 120;
+      if (
+        currentDraftEmails.length > 0 &&
+        shortEmailCommand &&
+        isShowMoreEmailDraftIntent(emailCommandText)
+      ) {
+        responseBody = buildEmailDraftTextSummary(currentDraftEmails, {
+          sampleSize: currentDraftEmails.length,
+          includeBodyPreview: true,
+          commands: "chat",
+        });
+      } else if (
+        currentDraftEmails.length > 0 &&
+        shortEmailCommand &&
+        isSendAllEmailDraftsIntent(emailCommandText)
+      ) {
+        let sentCount = 0;
+        const failed: string[] = [];
+        for (const draftEmail of currentDraftEmails) {
+          try {
+            await ctx.runAction(
+              internal.actions.sendPendingEmail.sendDraftInternal,
+              { id: draftEmail._id },
+            );
+            sentCount++;
+          } catch (err) {
+            failed.push(err instanceof Error ? err.message : String(err));
+          }
+        }
+        responseBody = failed.length === 0
+          ? sentCount === 1
+            ? "Sent the draft email."
+            : `Sent ${sentCount} draft emails.`
+          : `Sent ${sentCount} draft email${sentCount === 1 ? "" : "s"}; ${failed.length} failed. ${failed[0]}`;
+      } else {
+        // Agentic loop — the model decides tools (COI, policy extraction, Q&A)
+        const result = await generateText({
+          model: await getModelForOrg(ctx, orgId, "email_reply"),
+          providerOptions: getProviderOptionsForTask("email_reply"),
+          maxOutputTokens: 2048,
+          system: systemContext,
+          messages,
+          tools: emailTools,
+          stopWhen: stepCountIs(10),
+        });
+        responseBody = result.text;
+      }
 
       const sentByTool = toolSentEmail as ToolSentEmail | null;
       if (sentByTool) {

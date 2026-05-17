@@ -5,6 +5,7 @@ import type { Id } from "./_generated/dataModel";
 import { auth } from "./auth";
 import { isImessageInboundEnabled } from "./lib/imessageConfig";
 import { getAuthSiteUrl, getClientPortalUrl } from "./lib/domains";
+import { buildEmailDraftTextSummary } from "./lib/emailDraftSummary";
 const http = httpRouter();
 
 auth.addHttpRoutes(http);
@@ -1108,11 +1109,12 @@ const MCP_TOOLS = [
   },
   {
     name: "list_email_drafts",
-    description: "List durable outbound email drafts for the organization. Optionally filter by threadId.",
+    description: "List durable outbound email drafts for the organization. Returns a compact text summary by default, with a sample and draft IDs. Optionally filter by threadId or set showAll to see every draft.",
     inputSchema: {
       type: "object" as const,
       properties: {
         threadId: { type: "string", description: "Optional thread ID" },
+        showAll: { type: "boolean", description: "Show every draft instead of a short sample" },
       },
     },
   },
@@ -1159,6 +1161,21 @@ const MCP_TOOLS = [
         draftId: { type: "string", description: "Draft ID returned by draft_email or list_email_drafts" },
       },
       required: ["draftId"],
+    },
+  },
+  {
+    name: "send_email_drafts",
+    description: "Send multiple durable outbound email drafts in one batch. Requires write scope.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        draftIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "Draft IDs returned by list_email_drafts",
+        },
+      },
+      required: ["draftIds"],
     },
   },
   {
@@ -1441,7 +1458,15 @@ async function handleToolCall(
           ? args.threadId as Id<"threads">
           : undefined,
       });
-      return { content: [{ type: "text", text: JSON.stringify(drafts, null, 2) }] };
+      const showAll = args.showAll === true;
+      const summary = drafts.length > 0
+        ? buildEmailDraftTextSummary(drafts, {
+            sampleSize: showAll ? drafts.length : 3,
+            includeIds: true,
+            commands: "mcp",
+          })
+        : "No email drafts found.";
+      return { content: [{ type: "text", text: summary }] };
     }
     case "draft_email":
     case "update_email_draft": {
@@ -1472,6 +1497,18 @@ async function handleToolCall(
         draftId: args.draftId as Id<"pendingEmails">,
       });
       return { content: [{ type: "text", text: JSON.stringify(draft, null, 2) }] };
+    }
+    case "send_email_drafts": {
+      requireMcpWriteScope(identity);
+      const draftIds = Array.isArray(args.draftIds)
+        ? args.draftIds.filter((value): value is Id<"pendingEmails"> => typeof value === "string") as Id<"pendingEmails">[]
+        : [];
+      if (draftIds.length === 0) throw new Error("Missing draftIds parameter");
+      const result = await ctx.runAction(internal.actions.emailDrafts.sendManyForMcp, {
+        orgId,
+        draftIds,
+      });
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
     case "cancel_email_draft": {
       requireMcpWriteScope(identity);
@@ -1704,11 +1741,21 @@ http.route({
       const identity = await requireMcpAuth(ctx, request);
       const url = new URL(request.url);
       const threadId = url.searchParams.get("threadId");
+      const showAll = url.searchParams.get("showAll") === "true";
       const drafts = await ctx.runQuery(internal.pendingEmails.listDraftsInternal, {
         orgId: identity.orgId as Id<"organizations">,
         threadId: threadId ? threadId as Id<"threads"> : undefined,
       });
-      return jsonResponse(drafts);
+      return jsonResponse({
+        summary: drafts.length > 0
+          ? buildEmailDraftTextSummary(drafts, {
+              sampleSize: showAll ? drafts.length : 3,
+              includeIds: true,
+              commands: "mcp",
+            })
+          : "No email drafts found.",
+        drafts,
+      });
     } catch (e) {
       if (e instanceof Response) return e;
       return jsonResponse({ error: String(e) }, 500);
@@ -1763,6 +1810,31 @@ http.route({
         draftId: body.draftId as Id<"pendingEmails">,
       });
       return jsonResponse(draft);
+    } catch (e) {
+      if (e instanceof Response) return e;
+      return jsonResponse({ error: String(e) }, 500);
+    }
+  }),
+});
+
+// POST /mcp/email/drafts/send-batch
+http.route({
+  path: "/mcp/email/drafts/send-batch",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const identity = await requireMcpAuth(ctx, request);
+      requireMcpWriteScope(identity);
+      const body = await request.json();
+      const draftIds = Array.isArray(body.draftIds)
+        ? body.draftIds.filter((value: unknown): value is Id<"pendingEmails"> => typeof value === "string")
+        : [];
+      if (draftIds.length === 0) return jsonResponse({ error: "Missing draftIds" }, 400);
+      const result = await ctx.runAction(internal.actions.emailDrafts.sendManyForMcp, {
+        orgId: identity.orgId as Id<"organizations">,
+        draftIds,
+      });
+      return jsonResponse(result);
     } catch (e) {
       if (e instanceof Response) return e;
       return jsonResponse({ error: String(e) }, 500);

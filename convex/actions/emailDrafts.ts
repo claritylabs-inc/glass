@@ -4,6 +4,7 @@ import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
+import { buildEmailDraftTextSummary } from "../lib/emailDraftSummary";
 import {
   resolveEmailAgentIdentity,
   upsertEmailDraftArtifact,
@@ -140,6 +141,78 @@ export const sendForMcp = internalAction({
       id: args.draftId,
     }) as Doc<"pendingEmails"> | null;
     return serializeDraft(updated);
+  },
+});
+
+export const sendManyForMcp = internalAction({
+  args: {
+    orgId: v.id("organizations"),
+    draftIds: v.array(v.id("pendingEmails")),
+  },
+  handler: async (ctx, args) => {
+    const uniqueIds = [...new Set(args.draftIds)];
+    if (uniqueIds.length === 0) {
+      throw new Error("No draft IDs provided.");
+    }
+
+    const drafts: Array<Doc<"pendingEmails">> = [];
+    for (const draftId of uniqueIds) {
+      const draft = await ctx.runQuery(internal.pendingEmails.getInternal, {
+        id: draftId,
+      }) as Doc<"pendingEmails"> | null;
+      if (!draft || draft.orgId !== args.orgId || draft.status !== "draft") {
+        throw new Error(`Draft ${draftId} not found`);
+      }
+      drafts.push(draft);
+    }
+
+    const sent: Array<{ id: Id<"pendingEmails">; recipientEmail: string }> = [];
+    const failed: Array<{ id: Id<"pendingEmails">; error: string }> = [];
+    for (const draft of drafts) {
+      try {
+        await ctx.runAction(internal.actions.sendPendingEmail.sendDraftInternal, {
+          id: draft._id,
+        });
+        sent.push({ id: draft._id, recipientEmail: draft.recipientEmail });
+      } catch (err) {
+        failed.push({
+          id: draft._id,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    return {
+      sent,
+      failed,
+      summary: failed.length === 0
+        ? `Sent ${sent.length} email${sent.length === 1 ? "" : "s"}.`
+        : `Sent ${sent.length} email${sent.length === 1 ? "" : "s"}; ${failed.length} failed.`,
+    };
+  },
+});
+
+export const summarizeForMcp = internalAction({
+  args: {
+    orgId: v.id("organizations"),
+    threadId: v.optional(v.id("threads")),
+    showAll: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const drafts = await ctx.runQuery(internal.pendingEmails.listDraftsInternal, {
+      orgId: args.orgId,
+      threadId: args.threadId,
+    }) as Array<Doc<"pendingEmails">>;
+    return {
+      summary: drafts.length > 0
+        ? buildEmailDraftTextSummary(drafts, {
+            sampleSize: args.showAll ? drafts.length : 3,
+            includeIds: true,
+            commands: "mcp",
+          })
+        : "No email drafts found.",
+      drafts: drafts.map(serializeDraft),
+    };
   },
 });
 

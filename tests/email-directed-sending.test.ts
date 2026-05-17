@@ -318,6 +318,44 @@ describe("directed email sending", () => {
     expect(sendPendingSource).toContain("too many certificate attachments");
   });
 
+  it("uses text summaries for multiple email draft workflows outside web cards", () => {
+    const summarySource = readFileSync(
+      join(__dirname, "..", "convex/lib/emailDraftSummary.ts"),
+      "utf-8",
+    );
+    const imessageSource = readFileSync(
+      join(__dirname, "..", "convex/actions/handleInboundImessage.ts"),
+      "utf-8",
+    );
+    const inboundEmailSource = readFileSync(
+      join(__dirname, "..", "convex/actions/handleInboundEmail.ts"),
+      "utf-8",
+    );
+    const httpSource = readFileSync(
+      join(__dirname, "..", "convex/http.ts"),
+      "utf-8",
+    );
+    const emailDraftsSource = readFileSync(
+      join(__dirname, "..", "convex/actions/emailDrafts.ts"),
+      "utf-8",
+    );
+
+    expect(summarySource).toContain("buildEmailDraftTextSummary");
+    expect(summarySource).toContain("Sample:");
+    expect(summarySource).toContain('Reply "show more"');
+    expect(summarySource).toContain("isShowMoreEmailDraftIntent");
+    expect(summarySource).toContain("isSendAllEmailDraftsIntent");
+    expect(imessageSource).toContain("buildEmailDraftTextSummary");
+    expect(imessageSource).toContain("isShowMoreEmailDraftIntent");
+    expect(imessageSource).toContain("isSendAllEmailDraftsIntent");
+    expect(inboundEmailSource).toContain("CURRENT EMAIL DRAFTS");
+    expect(inboundEmailSource).toContain("show a short sample first");
+    expect(httpSource).toContain("send_email_drafts");
+    expect(httpSource).toContain("/mcp/email/drafts/send-batch");
+    expect(emailDraftsSource).toContain("sendManyForMcp");
+    expect(emailDraftsSource).toContain("summarizeForMcp");
+  });
+
   it("does not append policy source blocks to outbound emails", () => {
     const subagentSource = readFileSync(
       join(__dirname, "..", "convex/lib/emailSubagent.ts"),

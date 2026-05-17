@@ -119,25 +119,30 @@ function ThreadAttachmentList({
 
   return (
     <div className="space-y-2">
-      {attachments.length > 1 ? (
-        <div className="flex items-center justify-end">
+      <div className="flex items-start gap-3">
+        <div className="grid min-w-0 flex-1 grid-cols-[repeat(auto-fit,minmax(min(100%,13rem),1fr))] gap-2">
+          {attachments.map((att, i) => (
+            <ThreadAttachmentChip
+              key={i}
+              attachment={att}
+              threadId={threadId}
+              className="w-full"
+            />
+          ))}
+        </div>
+        {attachments.length > 1 ? (
           <Button
             type="button"
             variant="ghost"
             size="sm"
             onClick={handleDownloadAll}
             disabled={!urls?.length}
-            className="h-7 gap-1.5 rounded-full px-2 text-label-sm text-muted-foreground/70 hover:text-foreground"
+            className="h-7 shrink-0 gap-1.5 rounded-full px-2 text-label-sm text-muted-foreground/70 hover:text-foreground"
           >
             <Download className="h-3.5 w-3.5" />
             Download all
           </Button>
-        </div>
-      ) : null}
-      <div className="flex flex-wrap gap-2">
-        {attachments.map((att, i) => (
-          <ThreadAttachmentChip key={i} attachment={att} threadId={threadId} />
-        ))}
+        ) : null}
       </div>
     </div>
   );

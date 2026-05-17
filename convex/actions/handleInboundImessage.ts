@@ -35,7 +35,7 @@ import {
 import { searchPolicyDocumentWithSourceSpans } from "../lib/policyLookup";
 import { tryBuildDoclingPdfText } from "../lib/doclingPreprocessor";
 import { classifyPromptInjection, enforceInputLimits } from "../lib/security";
-import type { Id } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 import {
   getImessageWorkerUrl,
   isImessageInboundEnabled,
@@ -71,6 +71,11 @@ import {
   isPendingEmailRestoreIntent,
   pendingEmailCancelConfirmationMessage,
 } from "../lib/emailCancelIntent";
+import {
+  buildEmailDraftTextSummary,
+  isSendAllEmailDraftsIntent,
+  isShowMoreEmailDraftIntent,
+} from "../lib/emailDraftSummary";
 
 /** Normalize a raw phone string to E.164 (+1XXXXXXXXXX). */
 function normalizePhone(raw: string): string {
@@ -612,7 +617,7 @@ export const processInbound = internalAction({
       const draftEmails = await ctx.runQuery(
         internal.pendingEmails.listDraftsInternal,
         { threadId, orgId },
-      ) as Array<{ _id: Id<"pendingEmails"> }>;
+      ) as Array<Doc<"pendingEmails">>;
       const pendingEmails = await ctx.runQuery(
         internal.pendingEmails.findPendingByThread,
         { threadId },
@@ -676,6 +681,47 @@ export const processInbound = internalAction({
         return await replyWithEmailCancelStatus(
           pendingEmailCancelConfirmationMessage("draft", draftEmails.length),
         );
+      }
+
+      if (
+        draftEmails.length > 0 &&
+        shortText &&
+        isShowMoreEmailDraftIntent(args.messageText)
+      ) {
+        return await replyWithEmailCancelStatus(
+          buildEmailDraftTextSummary(draftEmails, {
+            sampleSize: draftEmails.length,
+            commands: "chat",
+          }),
+        );
+      }
+
+      if (
+        draftEmails.length > 0 &&
+        shortText &&
+        isSendAllEmailDraftsIntent(args.messageText)
+      ) {
+        let sentCount = 0;
+        try {
+          for (const draftEmail of draftEmails) {
+            await ctx.runAction(
+              internal.actions.sendPendingEmail.sendDraftInternal,
+              { id: draftEmail._id },
+            );
+            sentCount++;
+          }
+          return await replyWithEmailCancelStatus(
+            sentCount === 1
+              ? "Sent the draft email."
+              : `Sent ${sentCount} draft emails.`,
+          );
+        } catch (err) {
+          return await replyWithEmailCancelStatus(
+            err instanceof Error
+              ? `I couldn't send all drafts: ${err.message}`
+              : "I couldn't send all drafts.",
+          );
+        }
       }
 
       if (
@@ -1370,7 +1416,14 @@ export const processInbound = internalAction({
                 emailSendDelay: org.emailSendDelay,
                 autoGenerateCoi: org.autoGenerateCoi,
                 coiHandling: org.coiHandling,
-                conversationContext: recentConversationContext,
+                conversationContext:
+                  recentConversationContext +
+                  (draftEmails.length > 0
+                    ? `\n\nCURRENT EMAIL DRAFTS:\n${buildEmailDraftTextSummary(draftEmails, {
+                        sampleSize: Math.min(3, draftEmails.length),
+                        commands: "chat",
+                      })}`
+                    : ""),
                 onResult: (result) => {
                   emailToolResult.current = result;
                 },
@@ -1396,6 +1449,21 @@ export const processInbound = internalAction({
       const emailResult = emailToolResult.current;
       if (emailResult) {
         responseText = emailResult.responseBody;
+        if (
+          emailResult.status === "draft" ||
+          emailResult.status === "needs_confirmation"
+        ) {
+          const draftsAfterEmailTool = await ctx.runQuery(
+            internal.pendingEmails.listDraftsInternal,
+            { threadId, orgId },
+          ) as Array<Doc<"pendingEmails">>;
+          if (draftsAfterEmailTool.length > 0) {
+            responseText = buildEmailDraftTextSummary(draftsAfterEmailTool, {
+              sampleSize: Math.min(3, draftsAfterEmailTool.length),
+              commands: "chat",
+            });
+          }
+        }
         if (emailResult.status === "pending") {
           const sent = await sendImmediateImessage({
             toPhone: fromPhone,
