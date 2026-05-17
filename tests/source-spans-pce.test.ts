@@ -100,7 +100,7 @@ describe("source spans and PCE backend surfaces", () => {
     expect(threadContent).toContain("function MessageFooterActions");
     expect(threadContent).toContain("toolCalls.length} tool");
     expect(threadContent).toContain("msg.usedTools ?? []");
-    expect(threadContent).toContain("relatedEmailMessage?.referencedPolicyIds");
+    expect(threadContent).toContain("relatedEmailMessages.flatMap");
     expect(referenceCards).toContain("function PolicyCitation");
     expect(referenceCards).toContain("function PolicySourcePill");
     expect(referenceCards).toContain("{refs.length} sources");

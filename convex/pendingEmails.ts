@@ -230,6 +230,26 @@ export const findDraftByThread = internalQuery({
   },
 });
 
+export const findDraftByThreadAndRecipient = internalQuery({
+  args: {
+    threadId: v.id("threads"),
+    recipientEmail: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const recipientEmail = args.recipientEmail.trim().toLowerCase();
+    const all = await ctx.db
+      .query("pendingEmails")
+      .withIndex("by_threadId", (q) => q.eq("threadId", args.threadId))
+      .collect();
+    return all
+      .filter((e) =>
+        e.status === "draft" &&
+        e.recipientEmail.trim().toLowerCase() === recipientEmail
+      )
+      .sort((a, b) => b._creationTime - a._creationTime)[0] ?? null;
+  },
+});
+
 export const findLatestCancelledByThread = internalQuery({
   args: {
     threadId: v.id("threads"),

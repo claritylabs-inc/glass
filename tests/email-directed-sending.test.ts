@@ -188,8 +188,16 @@ describe("directed email sending", () => {
   });
 
   it("uses a durable web email draft artifact with UI send fallback", () => {
-    const threadSource = readFileSync(
+    const threadPageSource = readFileSync(
       join(__dirname, "..", "app/agent/thread/[id]/page.tsx"),
+      "utf-8",
+    );
+    const threadSource = readFileSync(
+      join(__dirname, "..", "components/agent-thread/thread-content.tsx"),
+      "utf-8",
+    );
+    const emailArtifactSource = readFileSync(
+      join(__dirname, "..", "components/agent-thread/artifacts/email.tsx"),
       "utf-8",
     );
     const processSource = readFileSync(
@@ -214,7 +222,7 @@ describe("directed email sending", () => {
     );
 
     expect(subagentSource).toContain("upsertEmailDraftArtifact");
-    expect(subagentSource).toContain("findDraftByThread");
+    expect(subagentSource).toContain("findDraftByThreadAndRecipient");
     expect(subagentSource).toContain("attachPendingEmailToAgentMessage");
     expect(processSource).toContain("sendDraftInternal");
     expect(processSource).toContain("isPendingEmailCancelIntent");
@@ -228,20 +236,24 @@ describe("directed email sending", () => {
     expect(imessageSource).toContain("isPendingEmailCancelConfirmationPrompt");
     expect(imessageSource).toContain("pendingEmailCancelConfirmationMessage");
     expect(imessageSource).toContain("restoreAsDraftInternal");
-    expect(threadSource).toContain("restoreAsDraft");
-    expect(threadSource).toContain("Restore draft");
+    expect(emailArtifactSource).toContain("restoreAsDraft");
+    expect(emailArtifactSource).toContain("Restore draft");
     expect(processSource).toContain("`${content.trim()}\\n\\n${draftNotice}`");
-    expect(threadSource).toContain("sendDraftNow");
-    expect(threadSource).toContain("Send Email");
-    expect(threadSource).toContain("Review draft");
-    expect(threadSource).toContain("View sent email");
-    expect(threadSource).toContain("relatedEmailMessage");
+    expect(emailArtifactSource).toContain("sendDraftNow");
+    expect(emailArtifactSource).toContain("sendDraftsNow");
+    expect(threadSource).toContain("EmailStackCard");
+    expect(emailArtifactSource).toContain("Send all");
+    expect(emailArtifactSource).toContain("Send Email");
+    expect(emailArtifactSource).toContain("Review draft");
+    expect(emailArtifactSource).toContain("View sent email");
+    expect(threadSource).toContain("relatedEmailMessages");
     expect(threadSource).toContain("attachedEmailMessageIds");
-    expect(threadSource).toContain("findRelatedEmailMessage");
+    expect(threadSource).toContain("findRelatedEmailMessages");
     expect(threadSource).toContain("hiddenStatusMessageIds");
     expect(threadSource).toContain("lastAutoOpenedEmailId");
     expect(senderSource).toContain("updateChatMessage: false");
     expect(senderSource).toContain("pendingEmailId: id");
+    expect(threadPageSource).toContain("UnifiedThreadContent");
   });
 
   it("does not treat cancellation-related document requests as email-cancel commands", () => {
@@ -360,7 +372,7 @@ describe("directed email sending", () => {
 
   it("uses the Glass logo and footer retry action on assistant chat bubbles", () => {
     const source = readFileSync(
-      join(__dirname, "..", "app/agent/thread/[id]/page.tsx"),
+      join(__dirname, "..", "components/agent-thread/thread-content.tsx"),
       "utf-8",
     );
 

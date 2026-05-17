@@ -10,6 +10,10 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 
 type SendEmailResult = { recipientEmail: string } | null;
+type BulkDraftSendResult = {
+  sent: Array<{ id: Id<"pendingEmails">; recipientEmail: string }>;
+  failed: Array<{ id: Id<"pendingEmails">; error: string }>;
+};
 
 async function sendTextConfirmation(params: {
   toPhone: string;
@@ -213,5 +217,58 @@ export const sendDraftNow = action({
       notifyImessage: false,
     });
     return sent ?? { recipientEmail: pending.recipientEmail };
+  },
+});
+
+export const sendDraftsNow = action({
+  args: { ids: v.array(v.id("pendingEmails")) },
+  handler: async (ctx, args): Promise<BulkDraftSendResult> => {
+    const orgData = await ctx.runQuery(api.orgs.viewerOrg, {}) as {
+      membership?: { orgId: string };
+    } | null;
+    if (!orgData?.membership?.orgId) {
+      throw new Error("Not authenticated");
+    }
+
+    const uniqueIds = [...new Set(args.ids)];
+    if (uniqueIds.length === 0) {
+      throw new Error("No email drafts selected.");
+    }
+
+    const drafts: Array<Doc<"pendingEmails">> = [];
+    for (const id of uniqueIds) {
+      const pending = await ctx.runQuery(internal.pendingEmails.getInternal, {
+        id,
+      }) as Doc<"pendingEmails"> | null;
+      if (!pending || pending.orgId !== orgData.membership.orgId) {
+        throw new Error("Not found");
+      }
+      if (pending.status !== "draft") {
+        throw new Error("Only draft emails can be sent together.");
+      }
+      drafts.push(pending);
+    }
+
+    const result: BulkDraftSendResult = { sent: [], failed: [] };
+    for (const draft of drafts) {
+      try {
+        const sent = await sendPendingEmailById(ctx, draft._id, {
+          allowedStatuses: ["draft"],
+          updateChatMessage: false,
+          notifyImessage: false,
+        });
+        result.sent.push({
+          id: draft._id,
+          recipientEmail: sent?.recipientEmail ?? draft.recipientEmail,
+        });
+      } catch (err) {
+        result.failed.push({
+          id: draft._id,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    return result;
   },
 });

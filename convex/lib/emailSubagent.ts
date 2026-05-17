@@ -261,8 +261,9 @@ export async function upsertEmailDraftArtifact(
     references: context.references,
   });
 
-  const existing = await ctx.runQuery(internal.pendingEmails.findDraftByThread, {
+  const existing = await ctx.runQuery(internal.pendingEmails.findDraftByThreadAndRecipient, {
     threadId: context.threadId,
+    recipientEmail: params.to,
   });
 
   if (existing) {

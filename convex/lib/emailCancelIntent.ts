@@ -36,7 +36,7 @@ export function isPendingEmailCancelConfirmationPrompt(text?: string) {
 
 export function pendingEmailCancelConfirmationMessage(kind: "draft" | "pending", count = 1) {
   const target = kind === "draft"
-    ? "the draft email"
+    ? count === 1 ? "the draft email" : `${count} draft emails`
     : count === 1
       ? "the pending email"
       : `${count} pending emails`;

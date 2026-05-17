@@ -24,6 +24,7 @@ import { ThreadAttachmentChip } from "@/components/agent-thread/thread-attachmen
 import { scientistSurnameFor } from "@/components/agent-thread/scientist-surnames";
 import type { MailboxArtifactRef, PolicyChangeAccess, ThreadAttachment, ThreadMessage, ToolArtifactData, VendorComplianceArtifactRef } from "@/components/agent-thread/types";
 import {
+  EmailStackCard,
   EmailSummaryCard,
   EmailThreadSidebar,
   MailboxTaskSidebar,
@@ -179,13 +180,15 @@ function emailMessageMatchesRecipient(message: ThreadMessage, recipient?: string
   return message.toAddresses?.some((address) => address.toLowerCase() === recipient) ?? false;
 }
 
-function findRelatedEmailMessage(
+function findRelatedEmailMessages(
   messages: ThreadMessage[],
   message: ThreadMessage,
   index: number,
   attachedEmailMessageIds: Set<string>,
 ) {
-  if (!isEmailSendStatusMessage(message)) return undefined;
+  if (!isEmailSendStatusMessage(message)) return [];
+
+  const related = new Map<string, ThreadMessage>();
 
   if (message.pendingEmailId) {
     const linked = messages.find((candidate) =>
@@ -194,7 +197,9 @@ function findRelatedEmailMessage(
       candidate.pendingEmailId === message.pendingEmailId &&
       candidate._id !== message._id
     );
-    if (linked) return linked;
+    if (linked && !attachedEmailMessageIds.has(linked._id)) {
+      related.set(linked._id, linked);
+    }
   }
 
   const recipient = getEmailStatusRecipient(message);
@@ -203,7 +208,7 @@ function findRelatedEmailMessage(
   let end = index;
   while (end + 1 < messages.length && messages[end + 1]?.role !== "user") end += 1;
 
-  return messages
+  for (const candidate of messages
     .slice(start, end + 1)
     .filter((candidate) =>
       candidate.channel === "email" &&
@@ -215,7 +220,11 @@ function findRelatedEmailMessage(
     .sort((a, b) =>
       Math.abs(a._creationTime - message._creationTime) -
       Math.abs(b._creationTime - message._creationTime)
-    )[0];
+    )) {
+    related.set(candidate._id, candidate);
+  }
+
+  return [...related.values()].sort((a, b) => a._creationTime - b._creationTime);
 }
 
 function hasLaterEmailSendCompletion(
@@ -695,7 +704,7 @@ function AgentProcessingActivity({
 /* ── Unified message bubble ── */
 export function UnifiedMessageBubble({
   msg,
-  relatedEmailMessage,
+  relatedEmailMessages = [],
   viewerId,
   viewerEmail,
   isFirstUserMessage,
@@ -713,7 +722,7 @@ export function UnifiedMessageBubble({
   openMailboxArtifactRef,
 }: {
   msg: ThreadMessage;
-  relatedEmailMessage?: ThreadMessage;
+  relatedEmailMessages?: ThreadMessage[];
   viewerId?: string;
   viewerEmail?: string;
   isFirstUserMessage?: boolean;
@@ -798,12 +807,12 @@ export function UnifiedMessageBubble({
                 : undefined
             }
           />
-          {relatedEmailMessage ? (
+          {relatedEmailMessages.length > 0 ? (
             <div className="mt-3">
-              <EmailSummaryCard
-                message={relatedEmailMessage}
+              <EmailStackCard
+                messages={relatedEmailMessages}
                 onOpen={onOpenEmail}
-                compact
+                isOpenMessageId={openEmailMessageId}
               />
             </div>
           ) : null}
@@ -852,7 +861,7 @@ export function UnifiedMessageBubble({
     const allRefs: { type: "policy"; id: string; page?: number }[] = [];
     const referencedPolicyIds = [
       ...(msg.referencedPolicyIds ?? []),
-      ...(relatedEmailMessage?.referencedPolicyIds ?? []),
+      ...relatedEmailMessages.flatMap((emailMessage) => emailMessage.referencedPolicyIds ?? []),
     ];
     const seenRefKeys = new Set<string>();
     for (const pid of referencedPolicyIds) {
@@ -933,13 +942,12 @@ export function UnifiedMessageBubble({
                   openArtifactRef={openVendorComplianceArtifactRef}
                   onOpenArtifact={onOpenVendorCompliance}
                 />
-                {relatedEmailMessage ? (
+                {relatedEmailMessages.length > 0 ? (
                   <div className="mt-4">
-                    <EmailSummaryCard
-                      message={relatedEmailMessage}
+                    <EmailStackCard
+                      messages={relatedEmailMessages}
                       onOpen={onOpenEmail}
-                      compact
-                      isOpen={openEmailMessageId === relatedEmailMessage._id}
+                      isOpenMessageId={openEmailMessageId}
                     />
                   </div>
                 ) : null}
@@ -1563,16 +1571,16 @@ export function UnifiedThreadContent({
             const firstUserIdx = threadMessages.findIndex((m) => m.role === "user");
             const attachedEmailMessageIds = new Set<string>();
             const hiddenStatusMessageIds = new Set<string>();
-            const relatedEmailByMessageId = new Map<string, ThreadMessage>();
+            const relatedEmailsByMessageId = new Map<string, ThreadMessage[]>();
             threadMessages.forEach((message, idx) => {
               if (hasLaterEmailSendCompletion(threadMessages, message, idx)) {
                 hiddenStatusMessageIds.add(message._id);
                 return;
               }
-              const relatedEmailMessage = findRelatedEmailMessage(threadMessages, message, idx, attachedEmailMessageIds);
-              if (relatedEmailMessage) {
-                relatedEmailByMessageId.set(message._id, relatedEmailMessage);
-                attachedEmailMessageIds.add(relatedEmailMessage._id);
+              const relatedEmailMessages = findRelatedEmailMessages(threadMessages, message, idx, attachedEmailMessageIds);
+              if (relatedEmailMessages.length > 0) {
+                relatedEmailsByMessageId.set(message._id, relatedEmailMessages);
+                relatedEmailMessages.forEach((emailMessage) => attachedEmailMessageIds.add(emailMessage._id));
               }
             });
             return threadMessages.map((msg, idx) => {
@@ -1583,13 +1591,13 @@ export function UnifiedThreadContent({
                 isFirstUser &&
                 ((viewerId && msg.userId === viewerId) ||
                   (viewerEmail && msg.fromEmail?.toLowerCase() === viewerEmail.toLowerCase()));
-              const relatedEmailMessage = relatedEmailByMessageId.get(msg._id);
+              const relatedEmailMessages = relatedEmailsByMessageId.get(msg._id);
 
               return (
                 <div key={msg._id}>
                   <UnifiedMessageBubble
                     msg={msg}
-                    relatedEmailMessage={relatedEmailMessage}
+                    relatedEmailMessages={relatedEmailMessages}
                     viewerId={viewerId}
                     viewerEmail={viewerEmail}
                     isFirstUserMessage={false}

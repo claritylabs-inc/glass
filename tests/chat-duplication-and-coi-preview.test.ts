@@ -135,7 +135,7 @@ describe("chat duplicate prevention and COI preview UI", () => {
       threadContent.indexOf("const recipient = getEmailStatusRecipient(message);"),
     );
     expect(pendingEmailLinkBlock).toContain("candidate.pendingEmailId === message.pendingEmailId");
-    expect(pendingEmailLinkBlock).not.toContain("attachedEmailMessageIds.has");
+    expect(pendingEmailLinkBlock).toContain("!attachedEmailMessageIds.has(linked._id)");
     expect(pendingEmails).toContain("return restored ? { id: args.id } : null");
     expect(processThreadChat).toContain("pendingEmailId: restored?.id");
   });

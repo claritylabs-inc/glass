@@ -270,6 +270,143 @@ export function EmailSummaryCard({
   );
 }
 
+function getEmailSummaryRecipients(message: ThreadMessage) {
+  return message.toAddresses?.length
+    ? message.toAddresses.join(", ")
+    : message.fromEmail ?? "Email";
+}
+
+function getEmailSummaryPreview(message: ThreadMessage) {
+  return message.subject || message.content.split(/\n+/).find((line) => line.trim()) || "Email";
+}
+
+function getEmailStatusLabel(message: ThreadMessage) {
+  if (message.status === "draft_email") return "Draft";
+  if (message.status === "cancelled") return "Cancelled";
+  if (message.role === "agent") return "Sent";
+  return "Email";
+}
+
+export function EmailStackCard({
+  messages,
+  onOpen,
+  isOpenMessageId,
+}: {
+  messages: ThreadMessage[];
+  onOpen?: (message: ThreadMessage) => void;
+  isOpenMessageId?: Id<"threadMessages"> | null;
+}) {
+  const sendDrafts = useAction(api.actions.sendPendingEmail.sendDraftsNow);
+  const [isSendingAll, setIsSendingAll] = useState(false);
+  const orderedMessages = useMemo(
+    () => [...messages].sort((a, b) => a._creationTime - b._creationTime),
+    [messages],
+  );
+  const draftPendingEmailIds = useMemo(
+    () => [
+      ...new Set(
+        orderedMessages
+          .filter((message) => message.status === "draft_email" && message.pendingEmailId)
+          .map((message) => message.pendingEmailId as Id<"pendingEmails">),
+      ),
+    ],
+    [orderedMessages],
+  );
+  const draftCount = draftPendingEmailIds.length;
+
+  async function handleSendAll(event: MouseEvent) {
+    event.stopPropagation();
+    if (draftPendingEmailIds.length === 0) return;
+    setIsSendingAll(true);
+    try {
+      const result = await sendDrafts({ ids: draftPendingEmailIds });
+      if (result.failed.length > 0) {
+        toast.error(`Sent ${result.sent.length} email${result.sent.length === 1 ? "" : "s"}; ${result.failed.length} failed.`);
+      } else {
+        toast.success(`Sent ${result.sent.length} email${result.sent.length === 1 ? "" : "s"}.`);
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to send emails");
+    } finally {
+      setIsSendingAll(false);
+    }
+  }
+
+  if (orderedMessages.length === 1) {
+    const [message] = orderedMessages;
+    return (
+      <EmailSummaryCard
+        message={message}
+        onOpen={onOpen}
+        compact
+        isOpen={isOpenMessageId === message._id}
+      />
+    );
+  }
+
+  return (
+    <div className="w-full max-w-md overflow-hidden rounded-md border border-foreground/8 bg-card">
+      <div className="flex items-center justify-between gap-3 border-b border-foreground/6 px-3 py-2">
+        <div className="min-w-0">
+          <p className="text-[11px] font-medium leading-4 text-muted-foreground/45">Email drafts</p>
+          <p className="truncate text-[13px] font-medium leading-5 text-foreground/85">
+            {orderedMessages.length} email{orderedMessages.length === 1 ? "" : "s"}
+          </p>
+        </div>
+        {draftCount > 1 ? (
+          <PillButton
+            type="button"
+            size="compact"
+            variant="primary"
+            onClick={handleSendAll}
+            disabled={isSendingAll}
+          >
+            {isSendingAll ? <Loader2 className="h-3 w-3 animate-spin" /> : <MailIcon className="h-3 w-3" />}
+            Send all
+          </PillButton>
+        ) : null}
+      </div>
+      <div className="divide-y divide-foreground/6">
+        {orderedMessages.map((message) => {
+          const attachmentCount = message.attachments?.length ?? 0;
+          const isOpen = isOpenMessageId === message._id;
+          return (
+            <button
+              key={message._id}
+              type="button"
+              onClick={() => onOpen?.(message)}
+              className={`block w-full min-w-0 px-3 py-2.5 text-left transition-colors ${
+                isOpen ? "bg-foreground/[0.035]" : "hover:bg-foreground/[0.025]"
+              }`}
+            >
+              <span className="flex min-w-0 items-start justify-between gap-3">
+                <span className="min-w-0">
+                  <span className="block truncate text-[13px] font-medium leading-5 text-foreground/85">
+                    {getEmailSummaryPreview(message)}
+                  </span>
+                  <span className="block truncate text-[11px] leading-4 text-muted-foreground/45">
+                    {getEmailSummaryRecipients(message)}
+                  </span>
+                </span>
+                <span className="flex shrink-0 items-center gap-1.5">
+                  {attachmentCount > 0 ? (
+                    <span className="text-[11px] leading-4 text-muted-foreground/35">
+                      {attachmentCount} file{attachmentCount === 1 ? "" : "s"}
+                    </span>
+                  ) : null}
+                  <Badge variant="outline" className="h-5 border-foreground/10 px-1.5 text-[10px] font-medium text-muted-foreground/55">
+                    {getEmailStatusLabel(message)}
+                  </Badge>
+                </span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function EmailThreadSidebar({
   message,
   onClose,

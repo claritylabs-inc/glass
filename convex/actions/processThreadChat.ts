@@ -721,10 +721,10 @@ export const run = internalAction({
         internal.pendingEmails.findPendingByThread,
         { threadId: args.threadId },
       );
-      const draftEmail = await ctx.runQuery(
-        internal.pendingEmails.findDraftByThread,
-        { threadId: args.threadId },
-      );
+      const draftEmails = await ctx.runQuery(
+        internal.pendingEmails.listDraftsInternal,
+        { threadId: args.threadId, orgId: args.orgId },
+      ) as Array<{ _id: Id<"pendingEmails"> }>;
       const latestCancelledEmail = await ctx.runQuery(
         internal.pendingEmails.findLatestCancelledByThread,
         { threadId: args.threadId, orgId: args.orgId },
@@ -767,36 +767,38 @@ export const run = internalAction({
       }
 
       if (
-        draftEmail &&
+        draftEmails.length > 0 &&
         text.length < 100 &&
         isCancelConfirmationContext &&
         isPendingEmailCancelConfirmation(text)
       ) {
-        await ctx.runMutation(internal.pendingEmails.cancelInternal, {
-          id: draftEmail._id,
-        });
+        for (const draftEmail of draftEmails) {
+          await ctx.runMutation(internal.pendingEmails.cancelInternal, {
+            id: draftEmail._id,
+          });
+        }
         await ctx.runMutation(internal.threads.deleteMessageInternal, {
           id: agentMsgId,
         });
         return;
       }
 
-      if (draftEmail && text.length < 100 && isPendingEmailCancelIntent(text)) {
+      if (draftEmails.length > 0 && text.length < 100 && isPendingEmailCancelIntent(text)) {
         await ctx.runMutation(internal.threads.updateAgentMessage, {
           id: agentMsgId,
-          content: pendingEmailCancelConfirmationMessage("draft"),
+          content: pendingEmailCancelConfirmationMessage("draft", draftEmails.length),
         });
         return;
       }
 
-      if (draftEmail && text.length < 100 && approvalWords.test(text)) {
+      if (draftEmails.length > 0 && text.length < 100 && approvalWords.test(text)) {
         try {
-          await ctx.runAction(
-            internal.actions.sendPendingEmail.sendDraftInternal,
-            {
-              id: draftEmail._id,
-            },
-          );
+          for (const draftEmail of draftEmails) {
+            await ctx.runAction(
+              internal.actions.sendPendingEmail.sendDraftInternal,
+              { id: draftEmail._id },
+            );
+          }
           await ctx.runMutation(internal.threads.deleteMessageInternal, {
             id: agentMsgId,
           });
@@ -805,7 +807,9 @@ export const run = internalAction({
           await ctx.runMutation(internal.threads.updateAgentError, {
             id: agentMsgId,
             error: err instanceof Error ? err.message : String(err),
-            content: "Failed to send the draft email.",
+            content: draftEmails.length === 1
+              ? "Failed to send the draft email."
+              : "Failed to send one or more draft emails.",
           });
           return;
         }
@@ -1133,29 +1137,34 @@ export const run = internalAction({
               fileId: att.fileId!,
             })),
       );
-      const currentDraftEmail = await ctx.runQuery(
-        internal.pendingEmails.findDraftByThread,
-        { threadId: args.threadId },
+      const currentDraftEmails = await ctx.runQuery(
+        internal.pendingEmails.listDraftsInternal,
+        { threadId: args.threadId, orgId: args.orgId },
       );
-      const currentDraftContext = currentDraftEmail
+      const currentDraftContext = currentDraftEmails.length > 0
         ? [
-            "CURRENT EMAIL DRAFT ARTIFACT:",
-            `To: ${currentDraftEmail.recipientEmail}`,
-            currentDraftEmail.ccAddresses?.length
-              ? `Cc: ${currentDraftEmail.ccAddresses.join(", ")}`
-              : null,
-            currentDraftEmail.bccAddresses?.length
-              ? `Bcc: ${currentDraftEmail.bccAddresses.join(", ")}`
-              : null,
-            `Subject: ${currentDraftEmail.subject}`,
-            currentDraftEmail.attachments?.length
-              ? `Attachments: ${currentDraftEmail.attachments.map((a: { filename: string }) => a.filename).join(", ")}`
-              : null,
-            "",
-            currentDraftEmail.emailBody,
-          ]
-            .filter((line) => line !== null)
-            .join("\n")
+            currentDraftEmails.length === 1
+              ? "CURRENT EMAIL DRAFT ARTIFACT:"
+              : `CURRENT EMAIL DRAFT ARTIFACTS (${currentDraftEmails.length}):`,
+            ...currentDraftEmails.map((draft, index) => [
+              currentDraftEmails.length === 1 ? null : `Draft ${index + 1}:`,
+              `To: ${draft.recipientEmail}`,
+              draft.ccAddresses?.length
+                ? `Cc: ${draft.ccAddresses.join(", ")}`
+                : null,
+              draft.bccAddresses?.length
+                ? `Bcc: ${draft.bccAddresses.join(", ")}`
+                : null,
+              `Subject: ${draft.subject}`,
+              draft.attachments?.length
+                ? `Attachments: ${draft.attachments.map((a: { filename: string }) => a.filename).join(", ")}`
+                : null,
+              "",
+              draft.emailBody,
+            ]
+              .filter((line) => line !== null)
+              .join("\n")),
+          ].join("\n\n")
         : "";
       const emailToolResult: { current: EmailSubagentResult | null } = {
         current: null,

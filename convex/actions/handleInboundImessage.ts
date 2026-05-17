@@ -609,10 +609,10 @@ export const processInbound = internalAction({
         .filter((part) => part.trim().length > 0)
         .join("\n");
 
-      const draftEmail = await ctx.runQuery(
-        internal.pendingEmails.findDraftByThread,
-        { threadId },
-      );
+      const draftEmails = await ctx.runQuery(
+        internal.pendingEmails.listDraftsInternal,
+        { threadId, orgId },
+      ) as Array<{ _id: Id<"pendingEmails"> }>;
       const pendingEmails = await ctx.runQuery(
         internal.pendingEmails.findPendingByThread,
         { threadId },
@@ -653,20 +653,28 @@ export const processInbound = internalAction({
       }
 
       if (
-        draftEmail &&
+        draftEmails.length > 0 &&
         shortText &&
         isCancelConfirmationContext &&
         isPendingEmailCancelConfirmation(args.messageText)
       ) {
-        await ctx.runMutation(internal.pendingEmails.cancelInternal, {
-          id: draftEmail._id,
-        });
-        return await replyWithEmailCancelStatus("Email cancelled.");
+        let cancelledCount = 0;
+        for (const draftEmail of draftEmails) {
+          const ok = await ctx.runMutation(internal.pendingEmails.cancelInternal, {
+            id: draftEmail._id,
+          });
+          if (ok) cancelledCount++;
+        }
+        return await replyWithEmailCancelStatus(
+          cancelledCount === 1
+            ? "Email cancelled."
+            : `${cancelledCount} draft emails cancelled.`,
+        );
       }
 
-      if (draftEmail && shortText && isPendingEmailCancelIntent(args.messageText)) {
+      if (draftEmails.length > 0 && shortText && isPendingEmailCancelIntent(args.messageText)) {
         return await replyWithEmailCancelStatus(
-          pendingEmailCancelConfirmationMessage("draft"),
+          pendingEmailCancelConfirmationMessage("draft", draftEmails.length),
         );
       }
 
