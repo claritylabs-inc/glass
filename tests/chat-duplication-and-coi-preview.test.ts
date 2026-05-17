@@ -66,7 +66,7 @@ describe("chat duplicate prevention and COI preview UI", () => {
     expect(threadContent).toContain("Download all");
   });
 
-  it("reads CSV attachments for agent context by filename and content type", () => {
+  it("reads common file attachments for agent context by filename and content type", () => {
     const threadContent = read("components/agent-thread/thread-content.tsx");
     const appShell = read("components/app-shell.tsx");
     const processThreadChat = read("convex/actions/processThreadChat.ts");
@@ -75,12 +75,45 @@ describe("chat duplicate prevention and COI preview UI", () => {
     expect(threadContent).toContain('"text/csv"');
     expect(appShell).toContain('lowerName.endsWith(".csv")');
     expect(appShell).toContain('"text/csv"');
+    expect(threadContent).toContain('lowerName.endsWith(".xlsx")');
+    expect(threadContent).toContain("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    expect(threadContent).toContain('lowerName.endsWith(".docx")');
+    expect(threadContent).toContain("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    expect(threadContent).toContain('lowerName.endsWith(".pptx")');
+    expect(threadContent).toContain("application/vnd.openxmlformats-officedocument.presentationml.presentation");
+    expect(threadContent).toContain('lowerName.endsWith(".jpg")');
+    expect(threadContent).toContain('"image/png"');
+    expect(appShell).toContain('lowerName.endsWith(".xlsx")');
+    expect(appShell).toContain("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    expect(appShell).toContain('lowerName.endsWith(".docx")');
+    expect(appShell).toContain("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    expect(appShell).toContain('lowerName.endsWith(".pptx")');
+    expect(appShell).toContain("application/vnd.openxmlformats-officedocument.presentationml.presentation");
+    expect(appShell).toContain('lowerName.endsWith(".jpg")');
+    expect(appShell).toContain('"image/png"');
     expect(processThreadChat).toContain("function isTextLikeAttachment");
+    expect(processThreadChat).toContain("function isPdfAttachment");
+    expect(processThreadChat).toContain("function isImageAttachment");
+    expect(processThreadChat).toContain("function isSpreadsheetAttachment");
+    expect(processThreadChat).toContain("function isDocxAttachment");
+    expect(processThreadChat).toContain("function isPresentationAttachment");
+    expect(processThreadChat).toContain("spreadsheetBufferToText");
+    expect(processThreadChat).toContain("docxBufferToText");
+    expect(processThreadChat).toContain("pptxBufferToText");
     expect(processThreadChat).toContain("buildMessageHistoryWithAttachmentContext");
     expect(processThreadChat).toContain("RECENT_ATTACHMENT_MESSAGE_LIMIT");
     expect(processThreadChat).toContain('lowerName.endsWith(".csv")');
+    expect(processThreadChat).toContain('lowerName.endsWith(".xlsx")');
+    expect(processThreadChat).toContain('lowerName.endsWith(".docx")');
+    expect(processThreadChat).toContain('lowerName.endsWith(".pptx")');
+    expect(processThreadChat).toContain("isImageAttachment(att.filename, att.contentType)");
+    expect(processThreadChat).toContain("isPdfAttachment(att.filename, att.contentType)");
     expect(processThreadChat).toContain('type.includes("csv")');
-    expect(processThreadChat).toContain('type === "application/vnd.ms-excel"');
+    expect(processThreadChat).toContain('type.includes("spreadsheet")');
+    expect(processThreadChat).toContain("XLSX.read");
+    expect(processThreadChat).toContain("XLSX.utils.sheet_to_csv");
+    expect(processThreadChat).toContain("mammoth.extractRawText");
+    expect(processThreadChat).toContain("JSZip.loadAsync");
     expect(processThreadChat).toContain("buffer.toString(\"utf-8\")");
   });
 

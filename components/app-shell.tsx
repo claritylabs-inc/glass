@@ -36,6 +36,15 @@ function inferAttachmentContentType(filename: string | undefined, mediaType: str
   const lowerName = filename?.toLowerCase() ?? "";
   if (lowerName.endsWith(".csv")) return "text/csv";
   if (lowerName.endsWith(".tsv")) return "text/tab-separated-values";
+  if (lowerName.endsWith(".xlsx")) return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+  if (lowerName.endsWith(".xls")) return "application/vnd.ms-excel";
+  if (lowerName.endsWith(".xlsm")) return "application/vnd.ms-excel.sheet.macroEnabled.12";
+  if (lowerName.endsWith(".docx")) return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  if (lowerName.endsWith(".pptx")) return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+  if (lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg")) return "image/jpeg";
+  if (lowerName.endsWith(".png")) return "image/png";
+  if (lowerName.endsWith(".gif")) return "image/gif";
+  if (lowerName.endsWith(".webp")) return "image/webp";
   if (lowerName.endsWith(".txt")) return "text/plain";
   if (lowerName.endsWith(".md") || lowerName.endsWith(".markdown")) return "text/markdown";
   if (lowerName.endsWith(".json")) return "application/json";

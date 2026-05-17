@@ -6,6 +6,9 @@ import { internalAction, type ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import { streamText, stepCountIs, type ModelMessage } from "ai";
+import mammoth from "mammoth";
+import JSZip from "jszip";
+import * as XLSX from "xlsx";
 import {
   fallbackRouteForCall,
   getModelAndRouteForOrg,
@@ -130,7 +133,6 @@ function isTextLikeAttachment(filename: string, contentType: string) {
     type.startsWith("text/") ||
     type.includes("csv") ||
     type.includes("json") ||
-    type === "application/vnd.ms-excel" ||
     lowerName.endsWith(".csv") ||
     lowerName.endsWith(".tsv") ||
     lowerName.endsWith(".txt") ||
@@ -138,6 +140,126 @@ function isTextLikeAttachment(filename: string, contentType: string) {
     lowerName.endsWith(".markdown") ||
     lowerName.endsWith(".json")
   );
+}
+
+function isPdfAttachment(filename: string, contentType: string) {
+  return (
+    contentType.toLowerCase().includes("pdf") ||
+    filename.toLowerCase().endsWith(".pdf")
+  );
+}
+
+function isImageAttachment(filename: string, contentType: string) {
+  const lowerName = filename.toLowerCase();
+  const type = contentType.toLowerCase();
+  return (
+    type.startsWith("image/") ||
+    lowerName.endsWith(".jpg") ||
+    lowerName.endsWith(".jpeg") ||
+    lowerName.endsWith(".png") ||
+    lowerName.endsWith(".gif") ||
+    lowerName.endsWith(".webp")
+  );
+}
+
+function isSpreadsheetAttachment(filename: string, contentType: string) {
+  const lowerName = filename.toLowerCase();
+  const type = contentType.toLowerCase();
+  if (lowerName.endsWith(".csv") || lowerName.endsWith(".tsv")) return false;
+  return (
+    type.includes("spreadsheet") ||
+    type.includes("excel") ||
+    type === "application/vnd.ms-excel" ||
+    lowerName.endsWith(".xlsx") ||
+    lowerName.endsWith(".xls") ||
+    lowerName.endsWith(".xlsm")
+  );
+}
+
+function isDocxAttachment(filename: string, contentType: string) {
+  const lowerName = filename.toLowerCase();
+  const type = contentType.toLowerCase();
+  return (
+    type.includes("wordprocessingml") ||
+    lowerName.endsWith(".docx")
+  );
+}
+
+function isPresentationAttachment(filename: string, contentType: string) {
+  const lowerName = filename.toLowerCase();
+  const type = contentType.toLowerCase();
+  return (
+    type.includes("presentationml") ||
+    lowerName.endsWith(".pptx")
+  );
+}
+
+function bufferToArrayBuffer(buffer: Buffer): ArrayBuffer {
+  return buffer.buffer.slice(
+    buffer.byteOffset,
+    buffer.byteOffset + buffer.byteLength,
+  ) as ArrayBuffer;
+}
+
+function spreadsheetBufferToText(buffer: Buffer): string {
+  const workbook = XLSX.read(buffer, {
+    type: "buffer",
+    cellDates: true,
+    cellText: false,
+  });
+  const sections: string[] = [];
+  for (const sheetName of workbook.SheetNames) {
+    const worksheet = workbook.Sheets[sheetName];
+    if (!worksheet) continue;
+    const csv = XLSX.utils.sheet_to_csv(worksheet, {
+      blankrows: false,
+      FS: ",",
+      RS: "\n",
+    }).trim();
+    if (!csv) continue;
+    sections.push(`Sheet: ${sheetName}\n${csv}`);
+  }
+  return sections.join("\n\n");
+}
+
+async function docxBufferToText(buffer: Buffer): Promise<string> {
+  const result = await mammoth.extractRawText({
+    arrayBuffer: bufferToArrayBuffer(buffer),
+  });
+  return result.value.trim();
+}
+
+function decodeXmlEntities(value: string): string {
+  return value
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, "&");
+}
+
+async function pptxBufferToText(buffer: Buffer): Promise<string> {
+  const zip = await JSZip.loadAsync(buffer);
+  const slidePaths = Object.keys(zip.files)
+    .filter((path) => /^ppt\/slides\/slide\d+\.xml$/i.test(path))
+    .sort((a, b) => {
+      const aNum = Number(a.match(/slide(\d+)\.xml$/i)?.[1] ?? 0);
+      const bNum = Number(b.match(/slide(\d+)\.xml$/i)?.[1] ?? 0);
+      return aNum - bNum;
+    });
+  const slides: string[] = [];
+  for (const path of slidePaths) {
+    const file = zip.file(path);
+    if (!file) continue;
+    const xml = await file.async("text");
+    const texts = [...xml.matchAll(/<a:t[^>]*>([\s\S]*?)<\/a:t>/g)]
+      .map((match) => decodeXmlEntities(match[1] ?? "").trim())
+      .filter(Boolean);
+    if (!texts.length) continue;
+    const slideNumber = path.match(/slide(\d+)\.xml$/i)?.[1] ?? String(slides.length + 1);
+    slides.push(`Slide ${slideNumber}\n${texts.join("\n")}`);
+  }
+  return slides.join("\n\n");
 }
 
 type ChatAttachment = {
@@ -173,7 +295,7 @@ async function buildAttachmentParts(
       if (!blob) continue;
       const buffer = Buffer.from(await blob.arrayBuffer());
 
-      if (att.contentType === "application/pdf") {
+      if (isPdfAttachment(att.filename, att.contentType)) {
         if (!options.includeRichParts) continue;
         const doclingText = await tryBuildDoclingPdfText({
           pdfBytes: buffer,
@@ -194,12 +316,69 @@ async function buildAttachmentParts(
           });
         }
         names.push(att.filename);
-      } else if (att.contentType.startsWith("image/")) {
+      } else if (isImageAttachment(att.filename, att.contentType)) {
         if (!options.includeRichParts) continue;
+        const mediaType = att.contentType.startsWith("image/")
+          ? att.contentType
+          : att.filename.toLowerCase().endsWith(".png")
+            ? "image/png"
+            : att.filename.toLowerCase().endsWith(".gif")
+              ? "image/gif"
+              : att.filename.toLowerCase().endsWith(".webp")
+                ? "image/webp"
+                : "image/jpeg";
         parts.push({
           type: "image",
           image: buffer.toString("base64"),
-          mediaType: att.contentType,
+          mediaType,
+        });
+        names.push(att.filename);
+      } else if (isSpreadsheetAttachment(att.filename, att.contentType)) {
+        const text = spreadsheetBufferToText(buffer);
+        const remaining = options.remainingTextChars.value;
+        if (remaining <= 0 || !text.trim()) continue;
+        const clipped =
+          text.length > remaining ? text.slice(0, remaining) : text;
+        options.remainingTextChars.value -= clipped.length;
+        const suffix =
+          clipped.length < text.length
+            ? "\n--- Spreadsheet attachment truncated for context ---"
+            : "";
+        parts.push({
+          type: "text",
+          text: `--- Spreadsheet attachment: ${att.filename} ---\n${clipped}${suffix}\n--- End spreadsheet attachment ---`,
+        });
+        names.push(att.filename);
+      } else if (isDocxAttachment(att.filename, att.contentType)) {
+        const text = await docxBufferToText(buffer);
+        const remaining = options.remainingTextChars.value;
+        if (remaining <= 0 || !text.trim()) continue;
+        const clipped =
+          text.length > remaining ? text.slice(0, remaining) : text;
+        options.remainingTextChars.value -= clipped.length;
+        const suffix =
+          clipped.length < text.length
+            ? "\n--- DOCX attachment truncated for context ---"
+            : "";
+        parts.push({
+          type: "text",
+          text: `--- DOCX attachment: ${att.filename} ---\n${clipped}${suffix}\n--- End DOCX attachment ---`,
+        });
+        names.push(att.filename);
+      } else if (isPresentationAttachment(att.filename, att.contentType)) {
+        const text = await pptxBufferToText(buffer);
+        const remaining = options.remainingTextChars.value;
+        if (remaining <= 0 || !text.trim()) continue;
+        const clipped =
+          text.length > remaining ? text.slice(0, remaining) : text;
+        options.remainingTextChars.value -= clipped.length;
+        const suffix =
+          clipped.length < text.length
+            ? "\n--- PPTX attachment truncated for context ---"
+            : "";
+        parts.push({
+          type: "text",
+          text: `--- PPTX attachment: ${att.filename} ---\n${clipped}${suffix}\n--- End PPTX attachment ---`,
         });
         names.push(att.filename);
       } else if (isTextLikeAttachment(att.filename, att.contentType)) {
