@@ -76,18 +76,20 @@ describe("sdkCallbacks Docling interception", () => {
     expect(metas[0]).toMatchObject({ parserBackend: "docling", parserVersion: "docling-test", parsedMarkdown: "# Docling markdown" });
   });
 
-  test("fails closed when Docling parsing fails", async () => {
+  test("keeps original PDF input when Docling parsing fails", async () => {
     mocks.isDoclingEnabled.mockResolvedValue(true);
     mocks.parsePdf.mockRejectedValue(new Error("docling down"));
     const generateObject = makeGenerateObject("extraction", { ctx: { runQuery: vi.fn() } as any, orgId: "org" as any });
 
-    await expect(generateObject({
+    await generateObject({
       prompt: "Extract",
       system: "sys",
       schema: {} as any,
       maxTokens: 100,
       providerOptions: { pdfBytes: new Uint8Array([1, 2, 3]) } as any,
-    })).rejects.toThrow("docling down");
-    expect(mocks.generateStructuredWithFallback).not.toHaveBeenCalled();
+    });
+
+    const input = mocks.generateStructuredWithFallback.mock.calls[0][0];
+    expect(input.messages[0].content.some((part: any) => part.type === "file")).toBe(true);
   });
 });

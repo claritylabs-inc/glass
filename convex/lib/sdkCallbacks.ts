@@ -173,7 +173,17 @@ async function maybeApplyDocling(
     }));
     cache.set(cacheKey, parsePromise);
   }
-  const meta = await parsePromise;
+  let meta: DoclingMeta;
+  try {
+    meta = await parsePromise;
+  } catch (error) {
+    cache.delete(cacheKey);
+    console.warn(
+      "Docling parsing failed; falling back to original PDF model input",
+      error instanceof Error ? error.message : String(error),
+    );
+    return { prompt, providerOptions };
+  }
   routing.onDoclingMeta?.(meta);
 
   return {

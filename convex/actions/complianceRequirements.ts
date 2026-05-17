@@ -139,17 +139,24 @@ async function extractPdfRequirementText(
   buffer: ArrayBuffer,
 ): Promise<ExtractedFileText> {
   if (await isDoclingEnabled(ctx, orgId)) {
-    const parsed = await parsePdf({
-      pdfBytes: new Uint8Array(buffer),
-      mimeType: "application/pdf",
-    });
-    return {
-      text: parsed.markdown,
-      parserBackend: "docling",
-      parserVersion: parsed.parserVersion,
-      parsedAt: dayjs().valueOf(),
-      parsingMs: parsed.parsingMs,
-    };
+    try {
+      const parsed = await parsePdf({
+        pdfBytes: new Uint8Array(buffer),
+        mimeType: "application/pdf",
+      });
+      return {
+        text: parsed.markdown,
+        parserBackend: "docling",
+        parserVersion: parsed.parserVersion,
+        parsedAt: dayjs().valueOf(),
+        parsingMs: parsed.parsingMs,
+      };
+    } catch (error) {
+      console.warn(
+        "Docling requirement parsing failed; falling back to PDF.js",
+        error instanceof Error ? error.message : String(error),
+      );
+    }
   }
 
   return {

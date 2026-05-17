@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+import logging
 import os
 import tempfile
 import time
@@ -11,6 +12,7 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 app = FastAPI(title="Glass Docling Service")
+logger = logging.getLogger("glass-docling-service")
 
 MAX_CLOCK_SKEW_SECONDS = 5 * 60
 converter: DocumentConverter | None = None
@@ -57,6 +59,19 @@ def _export_doc_tags(document: Any) -> Any:
     return None
 
 
+def _export_markdown(document: Any) -> str:
+    markdown = document.export_to_markdown() if hasattr(document, "export_to_markdown") else ""
+    if isinstance(markdown, str) and markdown.strip():
+        return markdown
+
+    text = document.export_to_text() if hasattr(document, "export_to_text") else ""
+    if isinstance(text, str) and text.strip():
+        logger.warning("Docling returned empty markdown; using text export fallback")
+        return text
+
+    return ""
+
+
 @app.get("/healthz")
 async def healthz() -> dict[str, bool]:
     return {"ok": True}
@@ -83,8 +98,9 @@ async def parse_pdf(
             raise HTTPException(status_code=502, detail=f"Docling conversion failed: {exc}") from exc
 
     document = result.document
-    markdown = document.export_to_markdown()
+    markdown = _export_markdown(document)
     if not markdown:
+        logger.warning("Docling returned no markdown or text")
         raise HTTPException(status_code=502, detail="Docling returned no markdown")
 
     return JSONResponse(
