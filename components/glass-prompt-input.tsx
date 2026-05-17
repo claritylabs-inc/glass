@@ -129,7 +129,6 @@ function TriggerHintTags({
           key={`${reference.kind}-${reference.id}`}
           className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-foreground/5 px-2.5 py-1 text-label-sm font-medium text-foreground/75"
         >
-          <span className="text-muted-foreground">{referenceIcon(reference.kind)}</span>
           <span className="text-muted-foreground/45">
             {reference.kind === "mailbox" ? "/" : "@"}
           </span>
