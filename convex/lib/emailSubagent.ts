@@ -454,10 +454,14 @@ async function runEmailSubagent(
 ): Promise<EmailSubagentResult> {
   const preparedAttachments: EmailAttachmentMeta[] = [];
   const sourcePolicyIds = new Set((context.referencedPolicyIds ?? []).map(String));
+  const suppressOriginalPolicyForCoiRequest =
+    isCoiDeliveryRequest(input.request) && !explicitlyRequestsOriginalPolicy(input.request);
   const savedThreadAttachments = context.threadId
     ? await ctx.runQuery(internal.threads.listThreadAttachmentsInternal, {
         threadId: context.threadId,
         orgId: context.orgId,
+        excludeEmailArtifacts: true,
+        excludeAgentCoiAttachments: suppressOriginalPolicyForCoiRequest,
       }) as EmailAttachmentMeta[]
     : [];
   const availableAttachments = uniqueAttachments([
@@ -470,8 +474,7 @@ async function runEmailSubagent(
   const attachedOriginalPolicyIds = new Set<string>();
   const attachedUploadedFileIds = new Set<string>();
   const attachedCoiKeys = new Set<string>();
-  const suppressOriginalPolicyForCoiRequest =
-    isCoiDeliveryRequest(input.request) && !explicitlyRequestsOriginalPolicy(input.request);
+  const generatedCoiAttachmentIds = new Set<string>();
 
   const addAttachment = (attachment: EmailAttachmentMeta) => {
     preparedAttachments.push(attachment);
@@ -552,6 +555,7 @@ async function runEmailSubagent(
       size: generated.size,
       fileId: generated.storageId as Id<"_storage">,
     });
+    generatedCoiAttachmentIds.add(generated.storageId);
     return "Attached generated COI.";
   };
 
@@ -599,7 +603,12 @@ async function runEmailSubagent(
     const body = (params.body ?? input.body ?? "").trim();
     const cc = [...new Set([...(params.cc ?? []), ...defaultCc].map(normalizeEmail).filter((email) => email && email !== to))];
     const bcc = [...new Set([...(params.bcc ?? []), ...defaultBcc].map(normalizeEmail).filter((email) => email && email !== to && !cc.includes(email)))];
-    const attachments = uniqueAttachments(preparedAttachments);
+    const attachments = uniqueAttachments(preparedAttachments).filter((attachment) => {
+      if (!suppressOriginalPolicyForCoiRequest || generatedCoiAttachmentIds.size === 0) {
+        return true;
+      }
+      return generatedCoiAttachmentIds.has(String(attachment.fileId));
+    });
     const approvedToSend = params.approvedToSend === true || input.approvedToSend === true;
     const autoSend = context.autoSendEmails === true;
 
@@ -764,6 +773,7 @@ Be careful by default:
 - Attach original policy PDFs or generated COIs when requested. Never claim an attachment is included unless you used an attachment tool or it was already attached.
 - Available uploaded attachments may include files saved from connected mailboxes, including .eml exports of source emails. If the user asks to attach the email itself or proof from an email body, attach the saved .eml export with attach_uploaded_file.
 - For certificate/COI delivery requests, attach only the generated COI unless the request separately asks for the original/full policy PDF too.
+- When drafting COIs for multiple recipients, each recipient's email must include only that recipient's generated COI, not the full batch of generated COIs.
 - Do not call an attachment tool for a document that is already listed in preparedAttachments.
 - Use concise professional formatting. Prefer 1-3 short paragraphs or a short bullet list.
 - Include only the policy facts that are directly useful to the recipient. Avoid exhaustive coverage memos unless explicitly requested.

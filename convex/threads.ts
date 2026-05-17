@@ -692,6 +692,8 @@ export const listThreadAttachmentsInternal = internalQuery({
   args: {
     threadId: v.id("threads"),
     orgId: v.id("organizations"),
+    excludeEmailArtifacts: v.optional(v.boolean()),
+    excludeAgentCoiAttachments: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const messages = await ctx.db
@@ -699,10 +701,26 @@ export const listThreadAttachmentsInternal = internalQuery({
       .withIndex("by_threadId", (q) => q.eq("threadId", args.threadId))
       .collect();
     return messages
-      .filter((message) => message.orgId === args.orgId)
+      .filter((message) => {
+        if (message.orgId !== args.orgId) return false;
+        if (args.excludeEmailArtifacts && message.channel === "email") {
+          return false;
+        }
+        return true;
+      })
       .flatMap((message) =>
         (message.attachments ?? [])
           .filter((attachment) => attachment.fileId)
+          .filter(
+            (attachment) =>
+              !(
+                args.excludeAgentCoiAttachments &&
+                message.role === "agent" &&
+                /\b(coi|certificate[-_\s]?of[-_\s]?insurance)\b/i.test(
+                  attachment.filename,
+                )
+              ),
+          )
           .map((attachment) => ({
             filename: attachment.filename,
             contentType: attachment.contentType,

@@ -294,11 +294,22 @@ describe("directed email sending", () => {
       join(__dirname, "..", "convex/lib/emailSubagent.ts"),
       "utf-8",
     );
+    const threadsSource = readFileSync(
+      join(__dirname, "..", "convex/threads.ts"),
+      "utf-8",
+    );
 
     expect(source).toContain("suppressOriginalPolicyForCoiRequest");
     expect(source).toContain("Generated COI is already attached.");
     expect(source).toContain("For certificate/COI delivery requests, attach only the generated COI");
     expect(source).toContain("do not include original_policy unless the user separately asked");
+    expect(source).toContain("excludeEmailArtifacts: true");
+    expect(source).toContain("excludeAgentCoiAttachments: suppressOriginalPolicyForCoiRequest");
+    expect(source).toContain("generatedCoiAttachmentIds");
+    expect(source).toContain("each recipient's email must include only that recipient's generated COI");
+    expect(threadsSource).toContain("excludeEmailArtifacts: v.optional(v.boolean())");
+    expect(threadsSource).toContain("excludeAgentCoiAttachments: v.optional(v.boolean())");
+    expect(threadsSource).toContain('message.channel === "email"');
   });
 
   it("does not append policy source blocks to outbound emails", () => {
