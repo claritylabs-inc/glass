@@ -9,8 +9,6 @@ import dayjs from "dayjs";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
-import { parsePdf } from "../lib/docling";
-import { isDoclingEnabled } from "../lib/featureFlags";
 import { getModel } from "../lib/models";
 
 const CATEGORY_VALUES = [
@@ -59,7 +57,7 @@ type RequirementImportContext = {
 };
 type ExtractedFileText = {
   text: string;
-  parserBackend?: "docling" | "pdfjs" | "mammoth" | "plain_text";
+  parserBackend?: "pdfjs" | "mammoth" | "plain_text";
   parserVersion?: string;
   parsedAt?: number;
   parsingMs?: number;
@@ -133,32 +131,7 @@ async function extractPdfText(buffer: ArrayBuffer) {
   return pages.join("\n\n");
 }
 
-async function extractPdfRequirementText(
-  ctx: ActionCtx,
-  orgId: Id<"organizations">,
-  buffer: ArrayBuffer,
-): Promise<ExtractedFileText> {
-  if (await isDoclingEnabled(ctx, orgId)) {
-    try {
-      const parsed = await parsePdf({
-        pdfBytes: new Uint8Array(buffer),
-        mimeType: "application/pdf",
-      });
-      return {
-        text: parsed.markdown,
-        parserBackend: "docling",
-        parserVersion: parsed.parserVersion,
-        parsedAt: dayjs().valueOf(),
-        parsingMs: parsed.parsingMs,
-      };
-    } catch (error) {
-      console.warn(
-        "Docling requirement parsing failed; falling back to PDF.js",
-        error instanceof Error ? error.message : String(error),
-      );
-    }
-  }
-
+async function extractPdfRequirementText(buffer: ArrayBuffer): Promise<ExtractedFileText> {
   return {
     text: await extractPdfText(buffer),
     parserBackend: "pdfjs",
@@ -171,14 +144,10 @@ async function extractDocxText(buffer: ArrayBuffer) {
 }
 
 async function extractFileText({
-  ctx,
-  orgId,
   buffer,
   fileName,
   contentType,
 }: {
-  ctx: ActionCtx;
-  orgId: Id<"organizations">;
   buffer: ArrayBuffer;
   fileName?: string;
   contentType?: string;
@@ -186,7 +155,7 @@ async function extractFileText({
   const lowerName = (fileName ?? "").toLowerCase();
   const type = (contentType ?? "").toLowerCase();
   if (type.includes("pdf") || lowerName.endsWith(".pdf")) {
-    return await extractPdfRequirementText(ctx, orgId, buffer);
+    return await extractPdfRequirementText(buffer);
   }
   if (type.includes("wordprocessingml") || lowerName.endsWith(".docx")) {
     return {
@@ -285,8 +254,6 @@ async function runRequirementImport(
     const blob = await ctx.storage.get(args.fileId);
     if (!blob) throw new Error("Requirement document not found");
     fileExtraction = await extractFileText({
-      ctx,
-      orgId: args.orgId,
       buffer: await blob.arrayBuffer(),
       fileName: args.fileName,
       contentType: args.contentType,

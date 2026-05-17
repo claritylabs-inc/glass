@@ -45,12 +45,6 @@ export const insert = internalMutation({
       v.literal("unknown"),
     ),
     extractedData: v.optional(v.any()),
-    parsedMarkdown: v.optional(v.string()),
-    docTagsJson: v.optional(v.any()),
-    parserBackend: v.optional(v.union(v.literal("docling"), v.literal("vision-llm"))),
-    parserVersion: v.optional(v.string()),
-    parsedAt: v.optional(v.number()),
-    parsingMs: v.optional(v.number()),
     pageCount: v.optional(v.number()),
     orgId: v.id("organizations"),
   },
@@ -66,12 +60,6 @@ export const updateExtraction = internalMutation({
   args: {
     id: v.id("policyFiles"),
     extractedData: v.optional(v.any()),
-    parsedMarkdown: v.optional(v.string()),
-    docTagsJson: v.optional(v.any()),
-    parserBackend: v.optional(v.union(v.literal("docling"), v.literal("vision-llm"))),
-    parserVersion: v.optional(v.string()),
-    parsedAt: v.optional(v.number()),
-    parsingMs: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const { id, ...fields } = args;

@@ -8,7 +8,6 @@
  */
 
 import { Output, embed } from "ai";
-import dayjs from "dayjs";
 import type { LanguageModelUsage } from "ai";
 import type { ProviderOptions } from "@ai-sdk/provider-utils";
 import { createOpenAI } from "@ai-sdk/openai";
@@ -24,8 +23,6 @@ import {
   type ModelRoute,
   type ModelTask,
 } from "./models";
-import { parsePdf, type DoclingParserAudit } from "./docling";
-import { isDoclingEnabled } from "./featureFlags";
 import type { GenerateText, GenerateObject, EmbedText, TokenUsage } from "@claritylabs/cl-sdk";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
@@ -52,13 +49,9 @@ type ExtractionProviderOptions = ProviderOptions & {
   images?: ExtractionImage[];
 };
 
-export type DoclingMeta = DoclingParserAudit & { parsedAt: number };
-
 type ModelRoutingContext = {
   ctx?: ActionCtx;
   orgId?: Id<"organizations">;
-  onDoclingMeta?: (meta: DoclingMeta) => void;
-  doclingCache?: Map<string, Promise<DoclingMeta>>;
 };
 
 type PdfFilePart = {
@@ -123,77 +116,6 @@ function getEffectiveMaxTokens(
     return Math.max(maxTokens, EXTRACTION_MAX_TOKEN_OVERRIDES.exclusions);
   }
   return maxTokens;
-}
-
-function base64ToBytes(value: string): Uint8Array {
-  return new Uint8Array(Buffer.from(value, "base64"));
-}
-
-function bytesCacheKey(bytes: Uint8Array): string {
-  return `${bytes.byteLength}:${Buffer.from(bytes.subarray(0, 64)).toString("base64")}`;
-}
-
-function omitPdfProviderOptions(
-  providerOptions?: Record<string, unknown>,
-): Record<string, unknown> | undefined {
-  if (!providerOptions) return undefined;
-  const { pdfBase64: _pdfBase64, pdfBytes: _pdfBytes, pdfUrl: _pdfUrl, fileId: _fileId, ...rest } = providerOptions as ExtractionProviderOptions;
-  return rest;
-}
-
-async function maybeApplyDocling(
-  prompt: string,
-  providerOptions: Record<string, unknown> | undefined,
-  routing: ModelRoutingContext | undefined,
-): Promise<{ prompt: string; providerOptions?: Record<string, unknown> }> {
-  const options = providerOptions as ExtractionProviderOptions | undefined;
-  const pdfBytes = options?.pdfBytes ?? (options?.pdfBase64 ? base64ToBytes(options.pdfBase64) : undefined);
-  if (!pdfBytes || !routing?.ctx || !routing.orgId) {
-    return { prompt, providerOptions };
-  }
-
-  const enabled = await isDoclingEnabled(routing.ctx, routing.orgId);
-  if (!enabled) return { prompt, providerOptions };
-
-  const cache = routing.doclingCache ?? new Map<string, Promise<DoclingMeta>>();
-  routing.doclingCache = cache;
-  const cacheKey = bytesCacheKey(pdfBytes);
-  let parsePromise = cache.get(cacheKey);
-  if (!parsePromise) {
-    parsePromise = parsePdf({
-      pdfBytes,
-      mimeType: options?.mimeType ?? "application/pdf",
-    }).then((parsed) => ({
-      parserBackend: "docling" as const,
-      parserVersion: parsed.parserVersion,
-      parsedMarkdown: parsed.markdown,
-      docTagsJson: parsed.docTagsJson,
-      parsingMs: parsed.parsingMs,
-      parsedAt: dayjs().valueOf(),
-    }));
-    cache.set(cacheKey, parsePromise);
-  }
-  let meta: DoclingMeta;
-  try {
-    meta = await parsePromise;
-  } catch (error) {
-    cache.delete(cacheKey);
-    console.warn(
-      "Docling parsing failed; falling back to original PDF model input",
-      error instanceof Error ? error.message : String(error),
-    );
-    return { prompt, providerOptions };
-  }
-  routing.onDoclingMeta?.(meta);
-
-  return {
-    prompt: `${prompt}
-
-Parsed PDF markdown from Docling:
-
-${meta.parsedMarkdown}`,
-    providerOptions: omitPdfProviderOptions(providerOptions),
-  };
 }
 
 function buildPromptInput(
@@ -293,7 +215,6 @@ export function makeGenerateText(
 ): GenerateText {
   return async (params) => {
     const { prompt, system, maxTokens, providerOptions } = params;
-    const doclingInput = await maybeApplyDocling(prompt, providerOptions as Record<string, unknown> | undefined, routing);
     const taskKind = readTaskKind(params as ParamsWithOptionalTaskKind);
     const effectiveTask = modelTaskForCall(task, taskKind);
     const effectiveMaxTokens = getEffectiveMaxTokens(effectiveTask, prompt, maxTokens);
@@ -307,11 +228,11 @@ export function makeGenerateText(
     const result = await generateTextWithFallback({
       model,
       system,
-      ...buildPromptInput(doclingInput.prompt, doclingInput.providerOptions),
+      ...buildPromptInput(prompt, providerOptions as Record<string, unknown> | undefined),
       maxOutputTokens: effectiveMaxTokens,
       providerOptions: mergeProviderOptions(
         getProviderOptionsForTask(effectiveTask),
-        doclingInput.providerOptions as ProviderOptions,
+        providerOptions as ProviderOptions,
       ),
     }, {
       task: effectiveTask,
@@ -335,7 +256,6 @@ export function makeGenerateObject(
 ): GenerateObject {
   return async (params) => {
     const { prompt, system, schema, maxTokens, providerOptions } = params;
-    const doclingInput = await maybeApplyDocling(prompt, providerOptions as Record<string, unknown> | undefined, routing);
     const taskKind = readTaskKind(params as ParamsWithOptionalTaskKind);
     const effectiveTask = modelTaskForCall(task, taskKind);
     const effectiveMaxTokens = getEffectiveMaxTokens(effectiveTask, prompt, maxTokens);
@@ -350,12 +270,12 @@ export function makeGenerateObject(
       const result = await generateStructuredWithFallback({
         model,
         system,
-        ...buildPromptInput(doclingInput.prompt, doclingInput.providerOptions),
+        ...buildPromptInput(prompt, providerOptions as Record<string, unknown> | undefined),
         output: Output.object({ schema }),
         maxOutputTokens: effectiveMaxTokens,
         providerOptions: mergeProviderOptions(
           getProviderOptionsForTask(effectiveTask),
-          doclingInput.providerOptions as ProviderOptions,
+          providerOptions as ProviderOptions,
         ),
       }, {
         task: effectiveTask,

@@ -16,7 +16,6 @@ Required env:
 - `CONVEX_URL` - Convex deployment URL, for example `https://acoustic-caiman-755.convex.cloud`
 - `EXTRACTION_WORKER_SECRET` - shared secret that also exists on the Convex deployment
 - provider keys for default routing, usually `OPENAI_API_KEY`; broker-owned provider keys are returned with each trusted claim when configured
-- `DOCLING_URL` and `DOCLING_HMAC_SECRET` when Docling is enabled for a claimed org; these point at the Railway `docling-service` and use the same HMAC secret configured there
 
 Set `EXTRACTION_WORKER_MODE=external` on the Convex deployment to queue new and retried extraction jobs for this worker.
 

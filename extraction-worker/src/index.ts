@@ -1,4 +1,3 @@
-import { createHash, createHmac } from "crypto";
 import dayjs from "dayjs";
 import { Output, generateText as aiGenerateText } from "ai";
 import type { LanguageModel } from "ai";
@@ -43,9 +42,6 @@ type ClaimedJob = {
   state: WorkerState;
   fileUrl: string;
   clSdkCheckpoint?: PipelineCheckpoint<ExtractionState>;
-  docling?: {
-    enabled: boolean;
-  };
   modelSettings?: WorkerModelSettings;
 };
 
@@ -75,15 +71,6 @@ type AckResult = {
   ok: boolean;
   leaseExpiresAt?: number;
   checkpointFileId?: string;
-};
-
-type DoclingMeta = {
-  parserBackend: "docling";
-  parserVersion?: string;
-  parsedMarkdown: string;
-  docTagsJson?: unknown;
-  parsedAt: number;
-  parsingMs?: number;
 };
 
 const actions = {
@@ -133,7 +120,6 @@ const actions = {
       tokenUsage?: unknown;
       performanceReport?: unknown;
       checkpoint?: PipelineCheckpoint<ExtractionState>;
-      doclingMeta?: DoclingMeta;
     },
     AckResult
   >("actions/policyExtraction.js:completeExternalExtract"),
@@ -294,12 +280,6 @@ type ExtractionProviderOptions = Record<string, unknown> & {
   images?: ExtractionImage[];
 };
 
-type WorkerDoclingConfig = {
-  enabled: boolean;
-  url?: string;
-  secret?: string;
-};
-
 function buildPdfFilePart(opts: {
   pdfUrl?: URL | string;
   pdfBytes?: Uint8Array;
@@ -391,143 +371,6 @@ function buildPromptInput(prompt: string, providerOptions?: Record<string, unkno
   return { prompt };
 }
 
-function base64ToBytes(value: string): Uint8Array {
-  return new Uint8Array(Buffer.from(value, "base64"));
-}
-
-function bytesCacheKey(bytes: Uint8Array): string {
-  return `${bytes.byteLength}:${Buffer.from(bytes.subarray(0, 64)).toString("base64")}`;
-}
-
-function omitPdfProviderOptions(
-  providerOptions?: Record<string, unknown>,
-): Record<string, unknown> | undefined {
-  if (!providerOptions) return undefined;
-  const { pdfBase64: _pdfBase64, pdfBytes: _pdfBytes, pdfUrl: _pdfUrl, fileId: _fileId, ...rest } =
-    providerOptions as ExtractionProviderOptions & { fileId?: string };
-  return rest;
-}
-
-function sanitizeForConvex(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map((item) => sanitizeForConvex(item));
-  if (value && typeof value === "object") {
-    const sanitized: Record<string, unknown> = {};
-    for (const [rawKey, rawValue] of Object.entries(value)) {
-      const key = rawKey.startsWith("$")
-        ? `docling_${rawKey.slice(1) || "value"}`
-        : rawKey;
-      sanitized[key] = sanitizeForConvex(rawValue);
-    }
-    return sanitized;
-  }
-  return value;
-}
-
-async function parseWithDocling(config: WorkerDoclingConfig, pdfBytes: Uint8Array, mimeType = "application/pdf") {
-  if (!config.url || !config.secret) {
-    throw new Error("Docling is enabled but DOCLING_URL or DOCLING_HMAC_SECRET is not configured on the extraction worker");
-  }
-
-  const body = Buffer.from(pdfBytes);
-  const bodyHash = createHash("sha256").update(body).digest("hex");
-  const timestamp = Math.floor(dayjs().valueOf() / 1000).toString();
-  const signature = createHmac("sha256", config.secret)
-    .update(`${timestamp}.${bodyHash}`)
-    .digest("hex");
-  const endpoint = new URL("/v1/parse", config.url).toString();
-
-  let lastError: unknown;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: {
-          "content-type": mimeType,
-          "X-Docling-Timestamp": timestamp,
-          "X-Docling-Signature": signature,
-        },
-        body,
-      });
-      if (response.status >= 500 && attempt === 0) {
-        lastError = new Error(`Docling parse failed with ${response.status}: ${await response.text()}`);
-        continue;
-      }
-      if (!response.ok) {
-        throw new Error(`Docling parse failed with ${response.status}: ${await response.text()}`);
-      }
-      const json = await response.json() as {
-        markdown?: unknown;
-        docTagsJson?: unknown;
-        parserVersion?: unknown;
-        parsingMs?: unknown;
-      };
-      if (typeof json.markdown !== "string" || json.markdown.length === 0) {
-        throw new Error("Docling parse response did not include markdown");
-      }
-      return {
-        markdown: json.markdown,
-        docTagsJson: sanitizeForConvex(json.docTagsJson),
-        parserVersion: typeof json.parserVersion === "string" ? json.parserVersion : undefined,
-        parsingMs: typeof json.parsingMs === "number" ? json.parsingMs : undefined,
-      };
-    } catch (error) {
-      lastError = error;
-      if (attempt > 0) break;
-      if (error instanceof Error && !error.message.includes("fetch")) break;
-    }
-  }
-
-  throw lastError instanceof Error ? lastError : new Error(String(lastError));
-}
-
-async function maybeApplyDocling(
-  prompt: string,
-  providerOptions: Record<string, unknown> | undefined,
-  docling: WorkerDoclingConfig | undefined,
-  cache: Map<string, Promise<DoclingMeta>>,
-  onDoclingMeta?: (meta: DoclingMeta) => void,
-): Promise<{ prompt: string; providerOptions?: Record<string, unknown> }> {
-  if (!docling?.enabled) return { prompt, providerOptions };
-  const options = providerOptions as ExtractionProviderOptions | undefined;
-  const pdfBytes = options?.pdfBytes ?? (options?.pdfBase64 ? base64ToBytes(options.pdfBase64) : undefined);
-  if (!pdfBytes) return { prompt, providerOptions };
-
-  const cacheKey = bytesCacheKey(pdfBytes);
-  let parsePromise = cache.get(cacheKey);
-  if (!parsePromise) {
-    parsePromise = parseWithDocling(docling, pdfBytes, options?.mimeType ?? "application/pdf")
-      .then((parsed) => ({
-        parserBackend: "docling" as const,
-        parserVersion: parsed.parserVersion,
-        parsedMarkdown: parsed.markdown,
-        docTagsJson: parsed.docTagsJson,
-        parsingMs: parsed.parsingMs,
-        parsedAt: dayjs().valueOf(),
-      }));
-    cache.set(cacheKey, parsePromise);
-  }
-  let meta: DoclingMeta;
-  try {
-    meta = await parsePromise;
-  } catch (error) {
-    cache.delete(cacheKey);
-    console.warn(
-      "Docling parsing failed; falling back to original PDF model input",
-      error instanceof Error ? error.message : String(error),
-    );
-    return { prompt, providerOptions };
-  }
-  onDoclingMeta?.(meta);
-
-  return {
-    prompt: `${prompt}
-
-Parsed PDF markdown from Docling:
-
-${meta.parsedMarkdown}`,
-    providerOptions: omitPdfProviderOptions(providerOptions),
-  };
-}
 
 async function generateWithFallback(
   options: Parameters<typeof aiGenerateText>[0],
@@ -548,26 +391,16 @@ async function generateWithFallback(
 function buildWorkerExtractor(opts: {
   log: (message: string) => Promise<void>;
   onCheckpointSave: (checkpoint: PipelineCheckpoint<ExtractionState>) => Promise<void>;
-  onDoclingMeta?: (meta: DoclingMeta) => void;
-  docling?: WorkerDoclingConfig;
   modelSettings?: WorkerModelSettings;
 }) {
-  const doclingCache = new Map<string, Promise<DoclingMeta>>();
   const generateText: GenerateText = async (params) => {
     const taskKind = readTaskKind(params);
-    const doclingInput = await maybeApplyDocling(
-      params.prompt,
-      params.providerOptions,
-      opts.docling,
-      doclingCache,
-      opts.onDoclingMeta,
-    );
     const result = await generateWithFallback({
       model: getModelForTaskKind(taskKind, opts.modelSettings),
       system: params.system,
-      ...buildPromptInput(doclingInput.prompt, doclingInput.providerOptions),
+      ...buildPromptInput(params.prompt, params.providerOptions),
       maxOutputTokens: getEffectiveMaxTokens(params.prompt, params.maxTokens),
-      providerOptions: doclingInput.providerOptions as ProviderOptions | undefined,
+      providerOptions: params.providerOptions as ProviderOptions | undefined,
     }, taskKind);
     return {
       text: result.text,
@@ -577,21 +410,14 @@ function buildWorkerExtractor(opts: {
 
   const generateObject: GenerateObject = async (params) => {
     const taskKind = readTaskKind(params);
-    const doclingInput = await maybeApplyDocling(
-      params.prompt,
-      params.providerOptions,
-      opts.docling,
-      doclingCache,
-      opts.onDoclingMeta,
-    );
     try {
       const result = await generateWithFallback({
         model: getModelForTaskKind(taskKind, opts.modelSettings),
         system: params.system,
-        ...buildPromptInput(doclingInput.prompt, doclingInput.providerOptions),
+        ...buildPromptInput(params.prompt, params.providerOptions),
         output: Output.object({ schema: params.schema }),
         maxOutputTokens: getEffectiveMaxTokens(params.prompt, params.maxTokens),
-        providerOptions: doclingInput.providerOptions as ProviderOptions | undefined,
+        providerOptions: params.providerOptions as ProviderOptions | undefined,
       }, taskKind);
       return {
         object: result.output!,
@@ -687,7 +513,6 @@ async function completeJob(
   job: ClaimedJob,
   result: ExtractionResult,
   fallbackSource: Awaited<ReturnType<typeof buildPdfSourceSpans>>,
-  doclingMeta?: DoclingMeta,
 ): Promise<void> {
   const resultSourceSpans = Array.isArray((result as unknown as { sourceSpans?: unknown[] }).sourceSpans)
     ? (result as unknown as { sourceSpans: Array<Record<string, unknown>> }).sourceSpans
@@ -715,7 +540,6 @@ async function completeJob(
     tokenUsage: result.tokenUsage,
     performanceReport: result.performanceReport,
     checkpoint: result.checkpoint,
-    doclingMeta,
   });
   if (!completed.ok) {
     throw new Error(`Convex rejected completion for ${job.policyId}`);
@@ -753,19 +577,10 @@ async function processJob(job: ClaimedJob): Promise<void> {
       await logJob(job, `Prepared ${fallbackSource.sourceSpans.length} raw source spans for source-grounded extraction`);
     }
 
-    let doclingMeta: DoclingMeta | undefined;
     const extractor = buildWorkerExtractor({
       log: async (message) => logJob(job, message),
       onCheckpointSave: async (checkpoint) => {
         await saveCheckpoint(job, checkpoint);
-      },
-      onDoclingMeta: (meta) => {
-        doclingMeta = meta;
-      },
-      docling: {
-        enabled: job.docling?.enabled === true,
-        url: process.env.DOCLING_URL,
-        secret: process.env.DOCLING_HMAC_SECRET,
       },
       modelSettings: job.modelSettings,
     });
@@ -785,7 +600,7 @@ async function processJob(job: ClaimedJob): Promise<void> {
       },
     );
 
-    await completeJob(job, result, fallbackSource, doclingMeta);
+    await completeJob(job, result, fallbackSource);
     console.log(`[${job.policyId}] completed external extraction`);
   } catch (error) {
     console.error(`[${job.policyId}] extraction failed:`, error);

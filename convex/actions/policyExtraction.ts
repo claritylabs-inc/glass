@@ -19,8 +19,7 @@ import {
 import { buildPdfSourceSpans } from "../lib/pdfSourceSpans";
 import type { ExtractionResult, ExtractionState, PipelineCheckpoint } from "../lib/extraction";
 import type { ExtractOptions } from "../lib/extraction";
-import { makeEmbedText, makeGenerateObject, type DoclingMeta } from "../lib/sdkCallbacks";
-import { isDoclingEnabled } from "../lib/featureFlags";
+import { makeEmbedText, makeGenerateObject } from "../lib/sdkCallbacks";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { getModelForOrg } from "../lib/models";
@@ -124,9 +123,6 @@ type ExternalClaimResult = {
   state: PolicyExtractionState;
   fileUrl: string;
   clSdkCheckpoint?: PipelineCheckpoint<ExtractionState>;
-  docling?: {
-    enabled: boolean;
-  };
   modelSettings?: {
     routes?: Record<string, { provider: string; model: string }>;
     providerKeys?: Record<string, string>;
@@ -921,13 +917,11 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         }
       }
 
-      let doclingMeta: DoclingMeta | undefined;
       const extractor = buildExtractor({
         ctx: convexCtx,
         orgId: state.orgId as Id<"organizations">,
         log: async (msg) => { await pCtx.log(msg); },
         onProgress: async (msg) => { await pCtx.log(msg); },
-        onDoclingMeta: (meta) => { doclingMeta = meta; },
         shouldCancel: async () => isExtractionCancelled(convexCtx, policyId),
         onCheckpointSave: async (cp) => {
           if (await isExtractionCancelled(convexCtx, policyId)) {
@@ -1079,7 +1073,6 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
           {
             id: state.policyFileId,
             extractedData: result.document,
-            ...(doclingMeta ?? {}),
           },
         );
       }
@@ -1430,12 +1423,6 @@ export const claimExternalJob = action({
       state: claimed.checkpoint.state,
       fileUrl,
       clSdkCheckpoint: await loadClSdkCheckpoint(ctx, claimed.policyId, claimed.checkpoint.state),
-      docling: {
-        enabled: await isDoclingEnabled(
-          ctx,
-          claimed.checkpoint.state.orgId as Id<"organizations">,
-        ),
-      },
       modelSettings,
     };
   },
@@ -1534,7 +1521,6 @@ export const completeExternalExtract = action({
     tokenUsage: v.optional(v.any()),
     performanceReport: v.optional(v.any()),
     checkpoint: v.optional(v.any()),
-    doclingMeta: v.optional(v.any()),
   },
   handler: async (ctx, args): Promise<ExternalAckResult> => {
     requireExtractionWorkerSecret(args.secret);
@@ -1635,7 +1621,6 @@ export const completeExternalExtract = action({
       await ctx.runMutation((internal as any).policyFiles.updateExtraction, {
         id: state.policyFileId,
         extractedData: doc,
-        ...(args.doclingMeta ?? {}),
       });
     }
 
