@@ -4,7 +4,7 @@ import logging
 import os
 import tempfile
 import time
-from typing import Any
+from typing import Any, Tuple
 
 import docling
 from docling.document_converter import DocumentConverter
@@ -59,17 +59,81 @@ def _export_doc_tags(document: Any) -> Any:
     return None
 
 
-def _export_markdown(document: Any) -> str:
+def _collection_length(value: Any) -> int | None:
+    try:
+        return len(value)
+    except TypeError:
+        return None
+
+
+def _document_stat(document: Any, name: str) -> int | None:
+    value = getattr(document, name, None)
+    if value is None:
+        return None
+    return _collection_length(value)
+
+
+def _extract_pdfium_text(pdf_path: str) -> str:
+    try:
+        import pypdfium2 as pdfium
+    except Exception as exc:
+        logger.warning("PyPDFium fallback unavailable: %s", exc)
+        return ""
+
+    pages: list[str] = []
+    try:
+        pdf = pdfium.PdfDocument(pdf_path)
+        try:
+            for index in range(len(pdf)):
+                page = pdf[index]
+                try:
+                    textpage = page.get_textpage()
+                    try:
+                        text = textpage.get_text_range()
+                    finally:
+                        if hasattr(textpage, "close"):
+                            textpage.close()
+                finally:
+                    if hasattr(page, "close"):
+                        page.close()
+
+                if isinstance(text, str) and text.strip():
+                    pages.append(f"Page {index + 1}\n\n{text.strip()}")
+        finally:
+            if hasattr(pdf, "close"):
+                pdf.close()
+    except Exception as exc:
+        logger.warning("PyPDFium fallback failed: %s", exc)
+        return ""
+
+    return "\n\n".join(pages)
+
+
+def _export_markdown(document: Any, pdf_path: str) -> Tuple[str, str]:
     markdown = document.export_to_markdown() if hasattr(document, "export_to_markdown") else ""
     if isinstance(markdown, str) and markdown.strip():
-        return markdown
+        return markdown, "docling_markdown"
+
+    strict_text = (
+        document.export_to_markdown(strict_text=True)
+        if hasattr(document, "export_to_markdown")
+        else ""
+    )
+    if isinstance(strict_text, str) and strict_text.strip():
+        logger.warning("Docling returned empty markdown; using strict text export fallback")
+        return strict_text, "docling_strict_text"
 
     text = document.export_to_text() if hasattr(document, "export_to_text") else ""
     if isinstance(text, str) and text.strip():
         logger.warning("Docling returned empty markdown; using text export fallback")
-        return text
+        return text, "docling_text"
 
-    return ""
+    pdfium_text = _extract_pdfium_text(pdf_path)
+    if pdfium_text.strip():
+        logger.warning("Docling returned empty text; using PyPDFium text fallback")
+        return pdfium_text, "pypdfium2_text"
+
+    return "", "empty"
 
 
 @app.get("/healthz")
@@ -89,25 +153,48 @@ async def parse_pdf(
     _verify_signature(body, x_docling_timestamp, x_docling_signature)
 
     started = time.monotonic()
+    request_id = hashlib.sha256(body).hexdigest()[:12]
     with tempfile.NamedTemporaryFile(suffix=".pdf") as pdf:
         pdf.write(body)
         pdf.flush()
         try:
             result = _converter().convert(pdf.name)
         except Exception as exc:
+            logger.warning(
+                "Docling conversion failed request_id=%s bytes=%d error=%s",
+                request_id,
+                len(body),
+                exc,
+            )
             raise HTTPException(status_code=502, detail=f"Docling conversion failed: {exc}") from exc
 
-    document = result.document
-    markdown = _export_markdown(document)
+        document = result.document
+        markdown, export_backend = _export_markdown(document, pdf.name)
+
+    parsing_ms = round((time.monotonic() - started) * 1000)
+    log_fields = {
+        "request_id": request_id,
+        "bytes": len(body),
+        "pages": _document_stat(document, "pages"),
+        "texts": _document_stat(document, "texts"),
+        "tables": _document_stat(document, "tables"),
+        "pictures": _document_stat(document, "pictures"),
+        "markdown_chars": len(markdown),
+        "export_backend": export_backend,
+        "parsing_ms": parsing_ms,
+    }
     if not markdown:
-        logger.warning("Docling returned no markdown or text")
-        raise HTTPException(status_code=502, detail="Docling returned no markdown")
+        logger.warning("Docling returned no extractable text: %s", log_fields)
+        raise HTTPException(status_code=422, detail="Docling returned no extractable text")
+
+    logger.info("Docling parse completed: %s", log_fields)
 
     return JSONResponse(
         {
             "markdown": markdown,
             "docTagsJson": _export_doc_tags(document),
             "parserVersion": f"docling:{getattr(docling, '__version__', 'unknown')}",
-            "parsingMs": round((time.monotonic() - started) * 1000),
+            "parsingMs": parsing_ms,
+            "exportBackend": export_backend,
         }
     )

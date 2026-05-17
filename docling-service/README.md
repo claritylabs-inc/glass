@@ -2,6 +2,8 @@
 
 `docling-service` is a Railway-hosted FastAPI wrapper around Docling. Convex sends raw PDF bytes to `POST /v1/parse`; this service verifies an HMAC signature, parses the PDF with Docling, and returns structured markdown plus parser audit metadata.
 
+Docling can successfully convert a PDF while producing no Markdown for a small page slice, blank page, unsupported layout, or page where OCR finds no text. The service treats that as a non-fatal parse miss: it tries Docling strict text, Docling text, and PyPDFium text fallbacks before returning `422`.
+
 ## Endpoints
 
 - `GET /healthz` returns `{ "ok": true }`.
@@ -16,9 +18,12 @@ The parse response is:
   "markdown": "# ...",
   "docTagsJson": {},
   "parserVersion": "docling:unknown",
-  "parsingMs": 1234
+  "parsingMs": 1234,
+  "exportBackend": "docling_markdown"
 }
 ```
+
+`exportBackend` is one of `docling_markdown`, `docling_strict_text`, `docling_text`, or `pypdfium2_text`.
 
 ## Local Docker run
 
