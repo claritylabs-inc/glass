@@ -212,6 +212,10 @@ describe("directed email sending", () => {
       join(__dirname, "..", "convex/actions/sendPendingEmail.ts"),
       "utf-8",
     );
+    const pendingEmailsSource = readFileSync(
+      join(__dirname, "..", "convex/pendingEmails.ts"),
+      "utf-8",
+    );
     const cancelIntentSource = readFileSync(
       join(__dirname, "..", "convex/lib/emailCancelIntent.ts"),
       "utf-8",
@@ -253,6 +257,9 @@ describe("directed email sending", () => {
     expect(threadSource).toContain("lastAutoOpenedEmailId");
     expect(senderSource).toContain("updateChatMessage: false");
     expect(senderSource).toContain("pendingEmailId: id");
+    expect(pendingEmailsSource).toContain('content: "Email cancelled."');
+    expect(pendingEmailsSource).toContain("pendingEmailId: args.id");
+    expect(pendingEmailsSource).not.toContain("pendingEmailId: undefined");
     expect(threadPageSource).toContain("UnifiedThreadContent");
   });
 

@@ -88,7 +88,7 @@ export const cancel = mutation({
       await ctx.db.patch(pending.chatMessageId, {
         content: "Email cancelled.",
         status: undefined,
-        pendingEmailId: undefined,
+        pendingEmailId: args.id,
       });
     }
   },
@@ -308,7 +308,7 @@ export const cancelInternal = internalMutation({
       await ctx.db.patch(pending.chatMessageId, {
         content: "Email cancelled.",
         status: undefined,
-        pendingEmailId: undefined,
+        pendingEmailId: args.id,
       });
     }
     return true;
