@@ -201,7 +201,7 @@ function buildHtmlBody(body: string, signature: { html: string }): string {
     .join("\n") + signature.html;
 }
 
-function buildEmailPayload(params: {
+export function buildEmailPayload(params: {
   fromHeader: string;
   to: string;
   cc: string[];
@@ -393,8 +393,85 @@ function isCoiDeliveryRequest(request: string): boolean {
   return /\b(coi|certificate of insurance|insurance certificate)\b/i.test(request);
 }
 
+function explicitlyRequestsCoiBatchForOneEmail(request: string): boolean {
+  return (
+    /\b(bundle|packet|package|zip|all (?:of )?(?:the )?(?:cois|certificates)|attach (?:all|every))\b/i.test(request) &&
+    !/\b(separate|separately|individual|individually|one per|each holder|each recipient)\b/i.test(request)
+  );
+}
+
 function explicitlyRequestsOriginalPolicy(request: string): boolean {
   return /\b(original|full|complete|entire|copy of (?:the )?policy|policy pdf|policy document|declarations?|wording|specimen)\b/i.test(request);
+}
+
+function normalizeMatchText(value: string | undefined): string {
+  return (value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9@.+-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function recipientSearchTokens(email: string | null | undefined): string[] {
+  if (!email) return [];
+  const normalized = normalizeEmail(email);
+  const localPart = normalized.split("@")[0] ?? "";
+  const plusTag = localPart.includes("+") ? localPart.split("+").at(-1) : localPart;
+  return [normalized, localPart, plusTag ?? ""]
+    .map((value) => normalizeMatchText(value).replace(/\d+$/g, ""))
+    .filter((value) => value.length >= 4);
+}
+
+function narrowCoiAttachmentsForSingleRecipient(
+  input: {
+    request: string;
+    to?: string;
+    recipientName?: string;
+    attachments?: Array<{
+      kind: "original_policy" | "coi" | "uploaded_file";
+      policyId?: string;
+      fileId?: string;
+      filename?: string;
+      certificateHolder?: string;
+    }>;
+  },
+  context: EmailExpertContext,
+): {
+  attachments: NonNullable<typeof input.attachments>;
+  warning?: string;
+} {
+  const attachments = input.attachments ?? [];
+  const coiAttachments = attachments.filter((attachment) => attachment.kind === "coi");
+  if (coiAttachments.length <= 1 || explicitlyRequestsCoiBatchForOneEmail(input.request)) {
+    return { attachments };
+  }
+
+  const nonCoiAttachments = attachments.filter((attachment) => attachment.kind !== "coi");
+  const recipient = extractEmail(input.to) ?? extractEmail(context.defaultTo);
+  const tokens = [
+    ...recipientSearchTokens(recipient),
+    normalizeMatchText(input.recipientName),
+    normalizeMatchText(context.defaultRecipientName),
+  ].filter((token) => token.length >= 4);
+
+  const matches = coiAttachments.filter((attachment) => {
+    const searchable = normalizeMatchText([
+      attachment.certificateHolder,
+      attachment.filename,
+      attachment.fileId,
+    ].filter(Boolean).join(" "));
+    return tokens.some((token) => searchable.includes(token));
+  });
+
+  if (matches.length === 1) {
+    return { attachments: [...nonCoiAttachments, matches[0]] };
+  }
+
+  return {
+    attachments: nonCoiAttachments,
+    warning:
+      "A single recipient email was given multiple COI attachments. I did not attach the batch because each holder email must include only that holder's COI.",
+  };
 }
 
 export function buildEmailExpertTool(
@@ -453,6 +530,7 @@ async function runEmailSubagent(
   },
 ): Promise<EmailSubagentResult> {
   const preparedAttachments: EmailAttachmentMeta[] = [];
+  const safeRequestedAttachments = narrowCoiAttachmentsForSingleRecipient(input, context);
   const sourcePolicyIds = new Set((context.referencedPolicyIds ?? []).map(String));
   const suppressOriginalPolicyForCoiRequest =
     isCoiDeliveryRequest(input.request) && !explicitlyRequestsOriginalPolicy(input.request);
@@ -559,7 +637,15 @@ async function runEmailSubagent(
     return "Attached generated COI.";
   };
 
-  for (const requested of input.attachments ?? []) {
+  if (safeRequestedAttachments.warning && safeRequestedAttachments.attachments.length === 0) {
+    return {
+      status: "needs_confirmation",
+      responseBody: safeRequestedAttachments.warning,
+      confirmationReason: safeRequestedAttachments.warning,
+    };
+  }
+
+  for (const requested of safeRequestedAttachments.attachments) {
     if (requested.kind === "original_policy" && requested.policyId) {
       await attachOriginalPolicy(requested.policyId);
     } else if (requested.kind === "coi" && requested.policyId) {
@@ -797,6 +883,7 @@ Call send_or_draft_email exactly once after preparing any requested attachments.
           approvedToSend: input.approvedToSend === true,
         },
         requestedAttachments: input.attachments ?? [],
+        attachmentSafetyWarning: safeRequestedAttachments.warning,
         preparedAttachments: preparedAttachments.map((att) => ({
           filename: att.filename,
           contentType: att.contentType,

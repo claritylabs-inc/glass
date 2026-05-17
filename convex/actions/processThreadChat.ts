@@ -49,6 +49,8 @@ import { getNotificationFromAddress, sendResendEmail } from "../lib/resend";
 import { buildEmailShell, escapeHtml } from "../lib/emailTemplate";
 import { getPortalUrlForOrg } from "../lib/domains";
 import {
+  buildEmailPayload,
+  buildEmailSignature,
   buildEmailExpertTool,
   getEmailAgentFromName,
   resolveEmailAgentIdentity,
@@ -78,6 +80,24 @@ import {
   isPendingEmailRestoreIntent,
   pendingEmailCancelConfirmationMessage,
 } from "../lib/emailCancelIntent";
+
+type DraftEmailForBatchRevision = {
+  _id: Id<"pendingEmails">;
+  recipientEmail: string;
+  ccAddresses?: string[];
+  bccAddresses?: string[];
+  subject: string;
+  emailBody: string;
+  attachments?: Array<{
+    filename: string;
+    contentType: string;
+    size: number;
+    fileId: Id<"_storage">;
+  }>;
+  referencedPolicyIds?: Id<"policies">[];
+  referencedQuoteIds?: Id<"policies">[];
+  threadMessageId?: Id<"threadMessages">;
+};
 
 function errorText(error: unknown): string {
   if (error instanceof Error) {
@@ -123,6 +143,91 @@ function isTransientChatStreamError(error: unknown): boolean {
     /server_error|internal server error|temporarily unavailable|overloaded|timeout|ECONNRESET|ETIMEDOUT|fetch failed/i.test(
       text,
     )
+  );
+}
+
+function normalizeDraftMatchText(value: string | undefined): string {
+  return (value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9@.+-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function parseCoiAttachmentName(filename: string): {
+  holder?: string;
+  policyRef?: string;
+} {
+  const match = filename.match(/^COI\s+-\s+(.+?)\s+-\s+([A-Z0-9][A-Z0-9-]{5,})\.pdf$/i);
+  if (!match) return {};
+  return {
+    holder: match[1]?.trim(),
+    policyRef: match[2]?.trim(),
+  };
+}
+
+function draftRecipientTokens(recipientEmail: string): string[] {
+  const normalized = recipientEmail.toLowerCase().trim();
+  const localPart = normalized.split("@")[0] ?? "";
+  const plusTag = localPart.includes("+") ? localPart.split("+").at(-1) : localPart;
+  return [normalized, localPart, plusTag ?? ""]
+    .map((token) => normalizeDraftMatchText(token).replace(/\d+$/g, ""))
+    .filter((token) => token.length >= 4);
+}
+
+function selectSafeDraftAttachments(
+  draft: DraftEmailForBatchRevision,
+): DraftEmailForBatchRevision["attachments"] {
+  const attachments = draft.attachments ?? [];
+  const coiAttachments = attachments.filter((attachment) =>
+    isCoiAttachmentFilename(attachment.filename),
+  );
+  if (coiAttachments.length <= 1) return attachments;
+
+  const tokens = [
+    ...draftRecipientTokens(draft.recipientEmail),
+    normalizeDraftMatchText(draft.emailBody),
+  ].filter((token) => token.length >= 4);
+  const matches = coiAttachments.filter((attachment) => {
+    const { holder } = parseCoiAttachmentName(attachment.filename);
+    const searchable = normalizeDraftMatchText(`${attachment.filename} ${holder ?? ""}`);
+    return tokens.some((token) => searchable.includes(token));
+  });
+
+  return matches.length === 1 ? [matches[0]] : [];
+}
+
+function buildElaboratedCoiDraftBody(params: {
+  draft: DraftEmailForBatchRevision;
+  attachments: DraftEmailForBatchRevision["attachments"];
+  coveredName: string;
+}) {
+  const attachment = params.attachments?.find((candidate) =>
+    isCoiAttachmentFilename(candidate.filename),
+  );
+  const parsed = attachment ? parseCoiAttachmentName(attachment.filename) : {};
+  const holder =
+    parsed.holder ??
+    params.draft.emailBody.match(/for\s+(.+?)\s+for\s+Sentinel/i)?.[1]?.trim() ??
+    "the listed certificate holder";
+  const policyRef =
+    parsed.policyRef ??
+    params.draft.emailBody.match(/#([A-Z0-9][A-Z0-9-]{5,})/i)?.[1]?.trim() ??
+    "the referenced policy";
+
+  return [
+    `Attached is the Certificate of Insurance for ${holder}.`,
+    "",
+    `The certificate is for Sentinel Pacific Specialty Insurance Company policy #${policyRef} and reflects coverage for ${params.coveredName}.`,
+  ].join("\n");
+}
+
+function isMultiDraftElaborationRequest(text: string): boolean {
+  return (
+    /\b(email|draft)s?\b/i.test(text) &&
+    /\b(elaborate|revise|update|edit|change|mention|include|add)\b/i.test(text) &&
+    /\b(holder|certificate|coi|covering|covers|policy)\b/i.test(text) &&
+    !/\b(send|cancel|delete|remove)\b/i.test(text)
   );
 }
 
@@ -1345,6 +1450,85 @@ export const run = internalAction({
               .join("\n")),
           ].join("\n\n")
         : "";
+      if (
+        currentDraftEmails.length > 1 &&
+        isMultiDraftElaborationRequest(text) &&
+        emailIdentity.canSend &&
+        emailIdentity.agentAddress &&
+        emailIdentity.fromHeader
+      ) {
+        const agentAddress = thread?.threadEmail ?? emailIdentity.agentAddress;
+        const fromHeader = `${getEmailAgentFromName(emailIdentity.brokerBranding)} <${agentAddress}>`;
+        const signature = buildEmailSignature(agentAddress, emailIdentity.brokerBranding);
+        let revisedCount = 0;
+        let repairedAttachmentCount = 0;
+
+        for (const draft of currentDraftEmails as DraftEmailForBatchRevision[]) {
+          const attachments = selectSafeDraftAttachments(draft);
+          if ((draft.attachments?.length ?? 0) > (attachments?.length ?? 0)) {
+            repairedAttachmentCount += 1;
+          }
+          const body = buildElaboratedCoiDraftBody({
+            draft,
+            attachments,
+            coveredName:
+              typeof org.name === "string" && org.name.trim()
+                ? org.name
+                : "us",
+          });
+          const emailPayload = buildEmailPayload({
+            fromHeader,
+            to: draft.recipientEmail,
+            cc: draft.ccAddresses ?? [],
+            bcc: draft.bccAddresses ?? [],
+            subject: draft.subject,
+            body,
+            signature,
+          });
+
+          await ctx.runMutation(internal.pendingEmails.updateDraftInternal, {
+            id: draft._id,
+            emailPayload: JSON.stringify(emailPayload),
+            recipientEmail: draft.recipientEmail,
+            ccAddresses: draft.ccAddresses,
+            bccAddresses: draft.bccAddresses,
+            subject: draft.subject,
+            emailBody: body,
+            attachments: attachments && attachments.length > 0 ? attachments : undefined,
+            referencedPolicyIds: draft.referencedPolicyIds,
+            referencedQuoteIds: draft.referencedQuoteIds,
+            chatMessageId: agentMsgId,
+          });
+
+          if (draft.threadMessageId) {
+            await ctx.runMutation(internal.threads.updateEmailMessage, {
+              id: draft.threadMessageId,
+              content: body,
+              toAddresses: [draft.recipientEmail],
+              ccAddresses: draft.ccAddresses,
+              bccAddresses: draft.bccAddresses,
+              subject: draft.subject,
+              attachments: attachments && attachments.length > 0 ? attachments : undefined,
+              referencedPolicyIds: draft.referencedPolicyIds,
+              referencedQuoteIds: draft.referencedQuoteIds,
+              pendingEmailId: draft._id,
+              status: "draft_email",
+            });
+          }
+          revisedCount += 1;
+        }
+
+        await ctx.runMutation(internal.threads.updateAgentMessage, {
+          id: agentMsgId,
+          content: [
+            `Done — I revised all ${revisedCount} email drafts with the holder, policy, and coverage details.`,
+            repairedAttachmentCount > 0
+              ? `I also repaired ${repairedAttachmentCount} draft${repairedAttachmentCount === 1 ? "" : "s"} so each email only has that recipient's COI attached.`
+              : null,
+          ].filter(Boolean).join("\n\n"),
+        });
+        return;
+      }
       const emailToolResult: { current: EmailSubagentResult | null } = {
         current: null,
       };

@@ -311,11 +311,26 @@ describe("directed email sending", () => {
     expect(source).toContain("excludeAgentCoiAttachments: suppressOriginalPolicyForCoiRequest");
     expect(source).toContain("generatedCoiAttachmentIds");
     expect(source).toContain("each recipient's email must include only that recipient's generated COI");
+    expect(source).toContain("narrowCoiAttachmentsForSingleRecipient");
+    expect(source).toContain("A single recipient email was given multiple COI attachments");
     expect(threadsSource).toContain("excludeEmailArtifacts: v.optional(v.boolean())");
     expect(threadsSource).toContain("excludeAgentCoiAttachments: v.optional(v.boolean())");
     expect(threadsSource).toContain('message.channel === "email"');
     expect(sendPendingSource).toContain("assertSafeDraftAttachments(pending)");
     expect(sendPendingSource).toContain("too many certificate attachments");
+  });
+
+  it("revises multi-draft COI batches in place instead of updating one draft", () => {
+    const processThreadChat = readFileSync(
+      join(__dirname, "..", "convex/actions/processThreadChat.ts"),
+      "utf-8",
+    );
+
+    expect(processThreadChat).toContain("isMultiDraftElaborationRequest");
+    expect(processThreadChat).toContain("currentDraftEmails.length > 1");
+    expect(processThreadChat).toContain("selectSafeDraftAttachments");
+    expect(processThreadChat).toContain("I also repaired");
+    expect(processThreadChat).toContain("buildElaboratedCoiDraftBody");
   });
 
   it("uses text summaries for multiple email draft workflows outside web cards", () => {
