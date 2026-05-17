@@ -9,9 +9,13 @@ import type { PipelineStatus, LogEntry } from "@claritylabs/cl-pipelines";
 import { PillButton } from "@/components/ui/pill-button";
 import { Loader2, AlertCircle, CircleStop } from "lucide-react";
 import { useAction } from "convex/react";
+import { useState } from "react";
+import { toast } from "sonner";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+
+type RetryMode = "resume" | "full";
 
 const STATUS_TEXT_TRANSITION = {
   duration: 0.28,
@@ -41,13 +45,36 @@ export function PolicyExtractionBanner({
   cancelling?: boolean;
 }) {
   const retry = useAction(api.actions.retryExtraction.retryExtraction);
+  const [retryingMode, setRetryingMode] = useState<RetryMode | null>(null);
+
+  const handleRetry = async (mode: RetryMode) => {
+    if (retryingMode) return;
+
+    setRetryingMode(mode);
+    try {
+      const result = await retry({ policyId, mode });
+      if (result && typeof result === "object" && "error" in result) {
+        throw new Error(String(result.error));
+      }
+      toast.success(
+        mode === "resume" ? "Extraction resumed" : "Extraction restarted",
+      );
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to restart extraction",
+      );
+    } finally {
+      setRetryingMode(null);
+    }
+  };
 
   return (
     <ExtractionBannerBase
       status={status}
       error={error}
       log={log}
-      onRetry={(mode) => void retry({ policyId, mode })}
+      onRetry={handleRetry}
+      retryingMode={retryingMode}
       onCancel={onCancel}
       cancelling={cancelling}
     />
@@ -60,6 +87,7 @@ function ExtractionBannerBase({
   log,
   labels,
   onRetry,
+  retryingMode,
   onCancel,
   cancelling,
 }: {
@@ -67,7 +95,8 @@ function ExtractionBannerBase({
   error?: string;
   log?: LogEntry[];
   labels?: { running?: string; error?: string };
-  onRetry: (mode: "resume" | "full") => void;
+  onRetry: (mode: RetryMode) => void | Promise<void>;
+  retryingMode?: RetryMode | null;
   onCancel?: () => void;
   cancelling?: boolean;
 }) {
@@ -143,6 +172,7 @@ function ExtractionBannerBase({
         <StatusBanner.Actions className="relative z-10 shrink-0">
           <RetryButtons
             onRetry={onRetry}
+            disabled={!!retryingMode}
             className="flex gap-1.5"
             labels={{ resume: "Resume", full: "Restart" }}
             renderButton={(mode, onClick, label, disabled) => (
@@ -155,6 +185,9 @@ function ExtractionBannerBase({
                 variant="secondary"
                 className="border-white/30! bg-transparent! text-white! hover:border-white/50! hover:bg-white/10! hover:text-white!"
               >
+                {retryingMode === mode && (
+                  <Loader2 className="h-3 w-3 shrink-0 animate-spin" />
+                )}
                 {label}
               </PillButton>
             )}
