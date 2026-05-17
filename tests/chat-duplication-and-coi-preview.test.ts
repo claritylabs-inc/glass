@@ -31,7 +31,8 @@ describe("chat duplicate prevention and COI preview UI", () => {
     expect(threadContent).toContain("setQueuedMessage(message)");
     expect(threadContent).toContain("sendQueuedNow");
     expect(threadContent).toContain("const isInputBusy = isSubmitting || sendingQueuedNow");
-    expect(threadContent).toContain("if (!queuedMessage || isAgentActive || isSubmitting || sendingQueuedNow) return");
+    expect(threadContent).toContain("if (!queuedMessage || isAgentActive || isSubmitting || sendingQueuedNow)");
+    expect(threadContent).toContain("return;");
     expect(threadContent).toContain('const inputBusyLabel = "Sending"');
     expect(threads).toContain('message.status !== "processing"');
     expect(threads).toContain('content: "Response cancelled."');
@@ -177,7 +178,8 @@ describe("chat duplicate prevention and COI preview UI", () => {
     const emailArtifact = read("components/agent-thread/artifacts/email.tsx");
 
     expect(emailArtifact).toContain("function EmailHeaderAttachments");
-    expect(emailArtifact).toContain("col-span-2 mt-2");
+    expect(emailArtifact).toContain("col-span-1 mt-2");
+    expect(emailArtifact).toContain("visibleAttachments");
     expect(emailArtifact).toContain("Attachments");
   });
 });

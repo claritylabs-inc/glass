@@ -23,7 +23,10 @@ type EmailPayloadPreview = {
 
 function normalizeEmailPayloadAddresses(value: unknown): string[] {
   if (Array.isArray(value)) {
-    return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+    return value.filter(
+      (item): item is string =>
+        typeof item === "string" && item.trim().length > 0,
+    );
   }
   if (typeof value === "string" && value.trim().length > 0) {
     return [value];
@@ -31,7 +34,9 @@ function normalizeEmailPayloadAddresses(value: unknown): string[] {
   return [];
 }
 
-function parseEmailPayloadPreview(payload: string | undefined): EmailPayloadPreview | null {
+function parseEmailPayloadPreview(
+  payload: string | undefined,
+): EmailPayloadPreview | null {
   if (!payload) return null;
   try {
     const parsed = JSON.parse(payload) as Record<string, unknown>;
@@ -48,15 +53,19 @@ function parseEmailPayloadPreview(payload: string | undefined): EmailPayloadPrev
   }
 }
 
-function formatEmailAddressList(addresses: string[] | undefined): string | null {
+function formatEmailAddressList(
+  addresses: string[] | undefined,
+): string | null {
   return addresses?.filter(Boolean).join(", ") || null;
 }
 
 function isSafeEmailPreviewUrl(value: string) {
   try {
     const url = new URL(value, window.location.origin);
-    return ["http:", "https:", "mailto:"].includes(url.protocol)
-      || value.startsWith("data:image/");
+    return (
+      ["http:", "https:", "mailto:"].includes(url.protocol) ||
+      value.startsWith("data:image/")
+    );
   } catch {
     return false;
   }
@@ -65,7 +74,9 @@ function isSafeEmailPreviewUrl(value: string) {
 function sanitizeEmailPreviewHtml(html: string | undefined): string | null {
   if (!html || typeof window === "undefined") return null;
   const document = new DOMParser().parseFromString(html, "text/html");
-  document.querySelectorAll("script, style, iframe, object, embed, link, meta").forEach((node) => node.remove());
+  document
+    .querySelectorAll("script, style, iframe, object, embed, link, meta")
+    .forEach((node) => node.remove());
   document.body.querySelectorAll("*").forEach((element) => {
     for (const attr of Array.from(element.attributes)) {
       const name = attr.name.toLowerCase();
@@ -74,7 +85,10 @@ function sanitizeEmailPreviewHtml(html: string | undefined): string | null {
         element.removeAttribute(attr.name);
         continue;
       }
-      if ((name === "href" || name === "src") && !isSafeEmailPreviewUrl(value)) {
+      if (
+        (name === "href" || name === "src") &&
+        !isSafeEmailPreviewUrl(value)
+      ) {
         element.removeAttribute(attr.name);
         continue;
       }
@@ -109,13 +123,23 @@ function EmailBodyPreview({ html, text }: { html?: string; text: string }) {
   );
 }
 
-function EmailHeaderRow({ label, value }: { label: string; value: string | null }) {
+function EmailHeaderRow({
+  label,
+  value,
+}: {
+  label: string;
+  value: string | null;
+}) {
   if (!value) return null;
 
   return (
     <>
-      <dt className="pt-0.5 text-[13px] font-medium leading-5 text-muted-foreground/55">{label}</dt>
-      <dd className="min-w-0 break-words text-[13px] leading-6 text-foreground/80">{value}</dd>
+      <dt className="pt-0.5 text-[13px] font-medium leading-5 text-muted-foreground/55">
+        {label}
+      </dt>
+      <dd className="min-w-0 break-words text-[13px] leading-6 text-foreground/80">
+        {value}
+      </dd>
     </>
   );
 }
@@ -127,18 +151,39 @@ function EmailHeaderAttachments({
   attachments: ThreadMessage["attachments"];
   threadId: Id<"threads">;
 }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+
   if (!attachments?.length) return null;
+
+  const hasHiddenAttachments = attachments.length > 2;
+  const hiddenAttachmentCount = Math.max(attachments.length - 2, 0);
+  const visibleAttachments =
+    hasHiddenAttachments && !isExpanded ? attachments.slice(0, 2) : attachments;
 
   return (
     <>
-      <dt className="col-span-2 mt-2 text-[12px] font-medium leading-4 text-muted-foreground/55">
+      <dt className="col-span-1 mt-2 text-[12px] font-medium leading-4 text-muted-foreground/55">
         Attachments
       </dt>
-      <dd className="col-span-2 min-w-0">
+      <dd className="col-span-1 min-w-0 mt-1">
         <div className="flex flex-wrap gap-2">
-          {attachments.map((att, index) => (
-            <ThreadAttachmentChip key={index} attachment={att} threadId={threadId} />
+          {visibleAttachments.map((att, index) => (
+            <ThreadAttachmentChip
+              key={index}
+              attachment={att}
+              threadId={threadId}
+            />
           ))}
+          {hasHiddenAttachments ? (
+            <button
+              type="button"
+              aria-expanded={isExpanded}
+              onClick={() => setIsExpanded((value) => !value)}
+              className="inline-flex h-6 shrink-0 items-center rounded-full bg-foreground/5 px-2 text-[11px] font-medium text-foreground/40 transition-colors hover:bg-foreground/8 hover:text-foreground/80"
+            >
+              {isExpanded ? "Hide" : `+ ${hiddenAttachmentCount} more`}
+            </button>
+          ) : null}
         </div>
       </dd>
     </>
@@ -166,17 +211,24 @@ export function EmailSummaryCard({
   const [isRestoring, setIsRestoring] = useState(false);
   const recipients = message.toAddresses?.length
     ? message.toAddresses.join(", ")
-    : message.fromEmail ?? "Email";
-  const preview = message.subject || message.content.split(/\n+/).find((line) => line.trim()) || "Email";
-  const label = message.status === "draft_email"
-    ? "Email draft"
+    : (message.fromEmail ?? "Email");
+  const preview =
+    message.subject ||
+    message.content.split(/\n+/).find((line) => line.trim()) ||
+    "Email";
+  const label =
+    message.status === "draft_email"
+      ? "Email draft"
       : message.status === "cancelled"
         ? "Email cancelled"
-        : message.role === "agent" ? "Email sent" : "Email received";
-  const canQuickSend = message.status === "draft_email" && pendingEmail?.status === "draft";
-  const canRestore = message.pendingEmailId && (
-    message.status === "cancelled" || pendingEmail?.status === "cancelled"
-  );
+        : message.role === "agent"
+          ? "Email sent"
+          : "Email received";
+  const canQuickSend =
+    message.status === "draft_email" && pendingEmail?.status === "draft";
+  const canRestore =
+    message.pendingEmailId &&
+    (message.status === "cancelled" || pendingEmail?.status === "cancelled");
   const reviewLabel = canQuickSend
     ? "Review draft"
     : message.status === "cancelled" || pendingEmail?.status === "cancelled"
@@ -205,14 +257,18 @@ export function EmailSummaryCard({
       await restoreDraft({ id: message.pendingEmailId });
       toast.success("Email restored as draft");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to restore email");
+      toast.error(
+        err instanceof Error ? err.message : "Failed to restore email",
+      );
     } finally {
       setIsRestoring(false);
     }
   }
 
   return (
-    <div className={`${compact ? "mt-2" : ""} w-fit min-w-64 max-w-sm overflow-hidden rounded-md border border-foreground/8 bg-card transition-colors hover:border-foreground/15 hover:bg-foreground/[0.025]`}>
+    <div
+      className={`${compact ? "mt-2" : ""} w-fit min-w-64 max-w-sm overflow-hidden rounded-md border border-foreground/8 bg-card transition-colors hover:border-foreground/15 hover:bg-foreground/[0.025]`}
+    >
       <button
         type="button"
         onClick={() => onOpen?.(message)}
@@ -222,8 +278,12 @@ export function EmailSummaryCard({
           <span className="block truncate text-[11px] font-medium leading-4 text-muted-foreground/45">
             {label}
           </span>
-          <span className="block truncate text-[13px] font-medium leading-5 text-foreground/85">{preview}</span>
-          <span className="block truncate text-[11px] leading-4 text-muted-foreground/40">{recipients}</span>
+          <span className="block truncate text-[13px] font-medium leading-5 text-foreground/85">
+            {preview}
+          </span>
+          <span className="block truncate text-[11px] leading-4 text-muted-foreground/40">
+            {recipients}
+          </span>
         </span>
       </button>
       {isOpen ? null : (
@@ -248,7 +308,11 @@ export function EmailSummaryCard({
               onClick={handleQuickSend}
               disabled={isSending}
             >
-              {isSending ? <Loader2 className="h-3 w-3 animate-spin" /> : <MailIcon className="h-3 w-3" />}
+              {isSending ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <MailIcon className="h-3 w-3" />
+              )}
               Send
             </PillButton>
           ) : null}
@@ -260,7 +324,11 @@ export function EmailSummaryCard({
               onClick={handleRestore}
               disabled={isRestoring}
             >
-              {isRestoring ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}
+              {isRestoring ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <RotateCcw className="h-3 w-3" />
+              )}
               Restore
             </PillButton>
           ) : null}
@@ -273,11 +341,15 @@ export function EmailSummaryCard({
 function getEmailSummaryRecipients(message: ThreadMessage) {
   return message.toAddresses?.length
     ? message.toAddresses.join(", ")
-    : message.fromEmail ?? "Email";
+    : (message.fromEmail ?? "Email");
 }
 
 function getEmailSummaryPreview(message: ThreadMessage) {
-  return message.subject || message.content.split(/\n+/).find((line) => line.trim()) || "Email";
+  return (
+    message.subject ||
+    message.content.split(/\n+/).find((line) => line.trim()) ||
+    "Email"
+  );
 }
 
 function getEmailStatusLabel(message: ThreadMessage) {
@@ -306,7 +378,10 @@ export function EmailStackCard({
     () => [
       ...new Set(
         orderedMessages
-          .filter((message) => message.status === "draft_email" && message.pendingEmailId)
+          .filter(
+            (message) =>
+              message.status === "draft_email" && message.pendingEmailId,
+          )
           .map((message) => message.pendingEmailId as Id<"pendingEmails">),
       ),
     ],
@@ -321,9 +396,13 @@ export function EmailStackCard({
     try {
       const result = await sendDrafts({ ids: draftPendingEmailIds });
       if (result.failed.length > 0) {
-        toast.error(`Sent ${result.sent.length} email${result.sent.length === 1 ? "" : "s"}; ${result.failed.length} failed.`);
+        toast.error(
+          `Sent ${result.sent.length} email${result.sent.length === 1 ? "" : "s"}; ${result.failed.length} failed.`,
+        );
       } else {
-        toast.success(`Sent ${result.sent.length} email${result.sent.length === 1 ? "" : "s"}.`);
+        toast.success(
+          `Sent ${result.sent.length} email${result.sent.length === 1 ? "" : "s"}.`,
+        );
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to send emails");
@@ -348,9 +427,12 @@ export function EmailStackCard({
     <div className="w-full max-w-md overflow-hidden rounded-md border border-foreground/8 bg-card">
       <div className="flex items-center justify-between gap-3 border-b border-foreground/6 px-3 py-2">
         <div className="min-w-0">
-          <p className="text-[11px] font-medium leading-4 text-muted-foreground/45">Email drafts</p>
+          <p className="text-[11px] font-medium leading-4 text-muted-foreground/45">
+            Email drafts
+          </p>
           <p className="truncate text-[13px] font-medium leading-5 text-foreground/85">
-            {orderedMessages.length} email{orderedMessages.length === 1 ? "" : "s"}
+            {orderedMessages.length} email
+            {orderedMessages.length === 1 ? "" : "s"}
           </p>
         </div>
         {draftCount > 1 ? (
@@ -361,7 +443,11 @@ export function EmailStackCard({
             onClick={handleSendAll}
             disabled={isSendingAll}
           >
-            {isSendingAll ? <Loader2 className="h-3 w-3 animate-spin" /> : <MailIcon className="h-3 w-3" />}
+            {isSendingAll ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <MailIcon className="h-3 w-3" />
+            )}
             Send all
           </PillButton>
         ) : null}
@@ -394,7 +480,10 @@ export function EmailStackCard({
                       {attachmentCount} file{attachmentCount === 1 ? "" : "s"}
                     </span>
                   ) : null}
-                  <Badge variant="outline" className="h-5 border-foreground/10 px-1.5 text-[10px] font-medium text-muted-foreground/55">
+                  <Badge
+                    variant="outline"
+                    className="h-5 border-foreground/10 px-1.5 text-[10px] font-medium text-muted-foreground/55"
+                  >
                     {getEmailStatusLabel(message)}
                   </Badge>
                 </span>
@@ -426,15 +515,28 @@ export function EmailThreadSidebar({
   const [isRestoring, setIsRestoring] = useState(false);
 
   if (!message) return null;
-  const isDraft = message.status === "draft_email" && pendingEmail?.status === "draft";
+  const isDraft =
+    message.status === "draft_email" && pendingEmail?.status === "draft";
   const isSent = pendingEmail?.status === "sent" || !!message.responseMessageId;
-  const isCancelled = pendingEmail?.status === "cancelled" || message.status === "cancelled";
+  const isCancelled =
+    pendingEmail?.status === "cancelled" || message.status === "cancelled";
   const payloadPreview = parseEmailPayloadPreview(pendingEmail?.emailPayload);
-  const fromLine = payloadPreview?.from
-    ?? (message.fromEmail ? (message.fromName ? `${message.fromName} <${message.fromEmail}>` : message.fromEmail) : null);
-  const toLine = formatEmailAddressList(payloadPreview?.to) ?? formatEmailAddressList(message.toAddresses);
-  const ccLine = formatEmailAddressList(payloadPreview?.cc) ?? formatEmailAddressList(message.ccAddresses);
-  const bccLine = formatEmailAddressList(payloadPreview?.bcc) ?? formatEmailAddressList(message.bccAddresses);
+  const fromLine =
+    payloadPreview?.from ??
+    (message.fromEmail
+      ? message.fromName
+        ? `${message.fromName} <${message.fromEmail}>`
+        : message.fromEmail
+      : null);
+  const toLine =
+    formatEmailAddressList(payloadPreview?.to) ??
+    formatEmailAddressList(message.toAddresses);
+  const ccLine =
+    formatEmailAddressList(payloadPreview?.cc) ??
+    formatEmailAddressList(message.ccAddresses);
+  const bccLine =
+    formatEmailAddressList(payloadPreview?.bcc) ??
+    formatEmailAddressList(message.bccAddresses);
   const previewBody = payloadPreview?.text ?? message.content;
   const previewHtml = payloadPreview?.html;
   const sentAt = dayjs(message._creationTime).format("MMM D, YYYY [at] h:mm A");
@@ -459,7 +561,9 @@ export function EmailThreadSidebar({
       await cancelDraft({ id: message.pendingEmailId });
       toast.success("Email draft cancelled");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to cancel email");
+      toast.error(
+        err instanceof Error ? err.message : "Failed to cancel email",
+      );
     } finally {
       setIsCancelling(false);
     }
@@ -472,7 +576,9 @@ export function EmailThreadSidebar({
       await restoreDraft({ id: message.pendingEmailId });
       toast.success("Email restored as draft");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to restore email");
+      toast.error(
+        err instanceof Error ? err.message : "Failed to restore email",
+      );
     } finally {
       setIsRestoring(false);
     }
@@ -483,26 +589,47 @@ export function EmailThreadSidebar({
       <div className="flex h-12 items-center justify-between gap-3 border-b border-foreground/8 px-4">
         <div className="flex min-w-0 items-center gap-2">
           <h2 className="truncate text-body-sm font-semibold text-foreground">
-            {message.subject || (message.role === "agent" ? "Sent email" : "Received email")}
+            {message.subject ||
+              (message.role === "agent" ? "Sent email" : "Received email")}
           </h2>
-          <Badge variant="outline" className="h-5 shrink-0 border-foreground/10 px-1.5 text-[10px] font-medium text-muted-foreground/55">
-            {isDraft ? "Draft" : isCancelled ? "Cancelled" : isSent ? "Sent" : "Email"}
+          <Badge
+            variant="outline"
+            className="h-5 shrink-0 border-foreground/10 px-1.5 text-[10px] font-medium text-muted-foreground/55"
+          >
+            {isDraft
+              ? "Draft"
+              : isCancelled
+                ? "Cancelled"
+                : isSent
+                  ? "Sent"
+                  : "Email"}
           </Badge>
         </div>
-        <PillButton size="compact" variant="icon" onClick={onClose} label="Close email">
+        <PillButton
+          size="compact"
+          variant="icon"
+          onClick={onClose}
+          label="Close email"
+        >
           <X className="h-4 w-4" />
         </PillButton>
       </div>
       <dl
         className="grid items-start gap-x-4 border-b border-foreground/8 px-5 py-5"
-        style={{ gridTemplateColumns: "6rem minmax(0, 1fr)", rowGap: "0.25rem" }}
+        style={{
+          gridTemplateColumns: "6rem minmax(0, 1fr)",
+          rowGap: "0.25rem",
+        }}
       >
         <EmailHeaderRow label="From" value={fromLine} />
         <EmailHeaderRow label="To" value={toLine} />
         <EmailHeaderRow label="Cc" value={ccLine} />
         <EmailHeaderRow label="Bcc" value={bccLine} />
         <EmailHeaderRow label="Time" value={sentAt} />
-        <EmailHeaderAttachments attachments={message.attachments} threadId={message.threadId} />
+        <EmailHeaderAttachments
+          attachments={message.attachments}
+          threadId={message.threadId}
+        />
       </dl>
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
         <EmailBodyPreview html={previewHtml} text={previewBody} />
@@ -516,7 +643,9 @@ export function EmailThreadSidebar({
             onClick={handleCancel}
             disabled={isSending || isCancelling}
           >
-            {isCancelling ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
+            {isCancelling ? (
+              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+            ) : null}
             Cancel
           </PillButton>
           <PillButton
@@ -526,7 +655,11 @@ export function EmailThreadSidebar({
             onClick={handleSend}
             disabled={isSending || isCancelling}
           >
-            {isSending ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <MailIcon className="mr-1.5 h-3.5 w-3.5" />}
+            {isSending ? (
+              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <MailIcon className="mr-1.5 h-3.5 w-3.5" />
+            )}
             Send Email
           </PillButton>
         </div>
@@ -539,7 +672,11 @@ export function EmailThreadSidebar({
             onClick={handleRestore}
             disabled={isRestoring}
           >
-            {isRestoring ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="mr-1.5 h-3.5 w-3.5" />}
+            {isRestoring ? (
+              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
+            )}
             Restore draft
           </PillButton>
         </div>
