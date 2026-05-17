@@ -18,6 +18,21 @@ export type DoclingParserAudit = {
   parsingMs?: number;
 };
 
+function sanitizeForConvex(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map((item) => sanitizeForConvex(item));
+  if (value && typeof value === "object") {
+    const sanitized: Record<string, unknown> = {};
+    for (const [rawKey, rawValue] of Object.entries(value)) {
+      const key = rawKey.startsWith("$")
+        ? `docling_${rawKey.slice(1) || "value"}`
+        : rawKey;
+      sanitized[key] = sanitizeForConvex(rawValue);
+    }
+    return sanitized;
+  }
+  return value;
+}
+
 export async function parsePdf({
   pdfBytes,
   mimeType = "application/pdf",
@@ -67,7 +82,7 @@ export async function parsePdf({
       }
       return {
         markdown: json.markdown,
-        docTagsJson: json.docTagsJson,
+        docTagsJson: sanitizeForConvex(json.docTagsJson),
         parserVersion: typeof json.parserVersion === "string" ? json.parserVersion : undefined,
         parsingMs: typeof json.parsingMs === "number" ? json.parsingMs : undefined,
       };

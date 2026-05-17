@@ -52,11 +52,26 @@ def _verify_signature(body: bytes, timestamp: str | None, signature: str | None)
 
 
 def _export_doc_tags(document: Any) -> Any:
+    exported = None
     if hasattr(document, "export_to_dict"):
-        return document.export_to_dict()
-    if hasattr(document, "model_dump"):
-        return document.model_dump(mode="json")
-    return None
+        exported = document.export_to_dict()
+    elif hasattr(document, "model_dump"):
+        exported = document.model_dump(mode="json")
+    return _sanitize_json_for_convex(exported)
+
+
+def _sanitize_json_for_convex(value: Any) -> Any:
+    if isinstance(value, dict):
+        sanitized: dict[str, Any] = {}
+        for raw_key, raw_value in value.items():
+            key = str(raw_key)
+            if key.startswith("$"):
+                key = f"docling_{key[1:] or 'value'}"
+            sanitized[key] = _sanitize_json_for_convex(raw_value)
+        return sanitized
+    if isinstance(value, list):
+        return [_sanitize_json_for_convex(item) for item in value]
+    return value
 
 
 def _collection_length(value: Any) -> int | None:

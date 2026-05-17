@@ -408,6 +408,21 @@ function omitPdfProviderOptions(
   return rest;
 }
 
+function sanitizeForConvex(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map((item) => sanitizeForConvex(item));
+  if (value && typeof value === "object") {
+    const sanitized: Record<string, unknown> = {};
+    for (const [rawKey, rawValue] of Object.entries(value)) {
+      const key = rawKey.startsWith("$")
+        ? `docling_${rawKey.slice(1) || "value"}`
+        : rawKey;
+      sanitized[key] = sanitizeForConvex(rawValue);
+    }
+    return sanitized;
+  }
+  return value;
+}
+
 async function parseWithDocling(config: WorkerDoclingConfig, pdfBytes: Uint8Array, mimeType = "application/pdf") {
   if (!config.url || !config.secret) {
     throw new Error("Docling is enabled but DOCLING_URL or DOCLING_HMAC_SECRET is not configured on the extraction worker");
@@ -451,7 +466,7 @@ async function parseWithDocling(config: WorkerDoclingConfig, pdfBytes: Uint8Arra
       }
       return {
         markdown: json.markdown,
-        docTagsJson: json.docTagsJson,
+        docTagsJson: sanitizeForConvex(json.docTagsJson),
         parserVersion: typeof json.parserVersion === "string" ? json.parserVersion : undefined,
         parsingMs: typeof json.parsingMs === "number" ? json.parsingMs : undefined,
       };

@@ -30,6 +30,29 @@ describe("parsePdf", () => {
     expect(init.headers["X-Docling-Signature"]).toBe(expectedSignature);
   });
 
+  test("sanitizes Docling JSON keys reserved by Convex", async () => {
+    vi.stubEnv("DOCLING_URL", "https://docling.example");
+    vi.stubEnv("DOCLING_HMAC_SECRET", "secret");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        markdown: "# Parsed",
+        docTagsJson: {
+          "$ref": "#/texts/0",
+          nested: [{ "$schema": "docling" }],
+        },
+      }),
+    }));
+
+    await expect(parsePdf({ pdfBytes: new Uint8Array([1]) })).resolves.toMatchObject({
+      docTagsJson: {
+        docling_ref: "#/texts/0",
+        nested: [{ docling_schema: "docling" }],
+      },
+    });
+  });
+
   test("fails fast when env is missing", async () => {
     await expect(parsePdf({ pdfBytes: new Uint8Array([1]) })).rejects.toThrow("DOCLING_URL");
   });
