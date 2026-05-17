@@ -508,6 +508,12 @@ async function runEmailSubagent(
     }
     const found = availableAttachments.find((att) => String(att.fileId) === fileId);
     if (!found) return "Uploaded file not found.";
+    if (
+      suppressOriginalPolicyForCoiRequest &&
+      !/\b(coi|certificate[-_\s]?of[-_\s]?insurance)\b/i.test(found.filename)
+    ) {
+      return "Skipped uploaded file because COI delivery requests should attach only the generated COI.";
+    }
     attachedUploadedFileIds.add(fileId);
     addAttachment({ ...found, filename: filename ?? found.filename });
     return `Attached uploaded file: ${filename ?? found.filename}`;
@@ -524,7 +530,7 @@ async function runEmailSubagent(
       if (context.coiHandling === "member") return "COI auto-generation is off. Confirm the org's insurance contact should handle this COI.";
       return "COI auto-generation is disabled.";
     }
-    let generated: { storageId: string; size: number };
+    let generated: { storageId: string; size: number; fileName: string };
     try {
       generated = await ctx.runAction(internal.actions.generateCoi.run, {
         policyId: policyId as Id<"policies">,
@@ -540,7 +546,7 @@ async function runEmailSubagent(
     if (!generated) return COI_GENERATION_FAILED_MESSAGE;
     attachedCoiKeys.add(coiKey);
     addAttachment({
-      filename: "certificate-of-insurance.pdf",
+      filename: generated.fileName,
       contentType: "application/pdf",
       size: generated.size,
       fileId: generated.storageId as Id<"_storage">,

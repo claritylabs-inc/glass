@@ -61,7 +61,9 @@ describe("chat duplicate prevention and COI preview UI", () => {
     const threadContent = read("components/agent-thread/thread-content.tsx");
 
     expect(threadContent).toContain("msg.attachments && msg.attachments.length > 0");
-    expect(threadContent).toContain("<ThreadAttachmentChip key={i} attachment={att} threadId={msg.threadId} />");
+    expect(threadContent).toContain("function ThreadAttachmentList");
+    expect(threadContent).toContain("api.threads.getAttachmentUrls");
+    expect(threadContent).toContain("Download all");
   });
 
   it("reads CSV attachments for agent context by filename and content type", () => {
@@ -91,6 +93,20 @@ describe("chat duplicate prevention and COI preview UI", () => {
     expect(processThreadChat).toContain("usedTools.includes(\"email_expert\")");
     expect(processThreadChat).toContain("usedTools.includes(\"generate_coi\")");
     expect(processThreadChat).toContain("I haven't generated or emailed those COIs yet");
+    expect(processThreadChat).toContain("function claimsEmailDraftCompletion");
+    expect(processThreadChat).toContain("I haven't created an email draft yet");
+  });
+
+  it("names generated COI files by holder and policy and keeps unrelated uploads out of COI emails", () => {
+    const generateCoi = read("convex/actions/generateCoi.ts");
+    const processThreadChat = read("convex/actions/processThreadChat.ts");
+    const emailSubagent = read("convex/lib/emailSubagent.ts");
+
+    expect(generateCoi).toContain("function buildCoiFileName");
+    expect(generateCoi).toContain("COI - ${holder} - ${policyRef}.pdf");
+    expect(processThreadChat).toContain("filename: generated.fileName");
+    expect(emailSubagent).toContain("filename: generated.fileName");
+    expect(emailSubagent).toContain("Skipped uploaded file because COI delivery requests should attach only the generated COI");
   });
 
   it("gives the agent a browser-backed email preview rendering tool", () => {
@@ -122,5 +138,13 @@ describe("chat duplicate prevention and COI preview UI", () => {
     expect(pendingEmailLinkBlock).not.toContain("attachedEmailMessageIds.has");
     expect(pendingEmails).toContain("return restored ? { id: args.id } : null");
     expect(processThreadChat).toContain("pendingEmailId: restored?.id");
+  });
+
+  it("shows email attachments as a compact labeled section", () => {
+    const emailArtifact = read("components/agent-thread/artifacts/email.tsx");
+
+    expect(emailArtifact).toContain("function EmailHeaderAttachments");
+    expect(emailArtifact).toContain("col-span-2 mt-2");
+    expect(emailArtifact).toContain("Attachments");
   });
 });

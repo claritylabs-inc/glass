@@ -256,6 +256,37 @@ export const getAttachmentUrl = query({
   },
 });
 
+export const getAttachmentUrls = query({
+  args: { threadId: v.id("threads"), fileIds: v.array(v.id("_storage")) },
+  handler: async (ctx, args) => {
+    const { orgId } = await requireOrgAccess(ctx);
+    const thread = await ctx.db.get(args.threadId);
+    if (!thread || thread.orgId !== orgId) return [];
+    const requested = new Set(args.fileIds);
+    const messages = await ctx.db
+      .query("threadMessages")
+      .withIndex("by_threadId", (q) => q.eq("threadId", args.threadId))
+      .collect();
+    const allowed = new Set<string>();
+    for (const message of messages) {
+      if (message.orgId !== orgId) continue;
+      for (const attachment of message.attachments ?? []) {
+        if (attachment.fileId && requested.has(attachment.fileId)) {
+          allowed.add(attachment.fileId);
+        }
+      }
+    }
+    const entries = await Promise.all(
+      args.fileIds.map(async (fileId) => {
+        if (!allowed.has(fileId)) return null;
+        const url = await ctx.storage.getUrl(fileId);
+        return url ? { fileId, url } : null;
+      }),
+    );
+    return entries.filter((entry) => entry !== null);
+  },
+});
+
 export const sendMessage = mutation({
   args: {
     threadId: v.id("threads"),

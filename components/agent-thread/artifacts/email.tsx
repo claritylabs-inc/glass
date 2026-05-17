@@ -131,8 +131,10 @@ function EmailHeaderAttachments({
 
   return (
     <>
-      <dt className="pt-1.5 text-[13px] font-medium leading-5 text-muted-foreground/55">Attachments</dt>
-      <dd className="min-w-0">
+      <dt className="col-span-2 mt-2 text-[12px] font-medium leading-4 text-muted-foreground/55">
+        Attachments
+      </dt>
+      <dd className="col-span-2 min-w-0">
         <div className="flex flex-wrap gap-2">
           {attachments.map((att, index) => (
             <ThreadAttachmentChip key={index} attachment={att} threadId={threadId} />

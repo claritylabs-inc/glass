@@ -306,6 +306,14 @@ function claimsCoiEmailCompletion(text: string): boolean {
   );
 }
 
+function claimsEmailDraftCompletion(text: string): boolean {
+  return /\b(drafted|prepared)\b[\s\S]{0,80}\bemail\b/i.test(text);
+}
+
+function isCoiAttachmentFilename(filename: string): boolean {
+  return /\b(coi|certificate[-_\s]?of[-_\s]?insurance)\b/i.test(filename);
+}
+
 /** Build executable tools with Convex context wired in. */
 
 function buildTools(
@@ -565,7 +573,7 @@ function buildTools(
           return {
             message: "COI generated and attached to this response.",
             attachment: {
-              filename: "certificate-of-insurance.pdf",
+              filename: generated.fileName,
               contentType: "application/pdf",
               size: generated.size,
               fileId: generated.storageId as Id<"_storage">,
@@ -1113,6 +1121,11 @@ export const run = internalAction({
               | undefined) ?? []
           )
             .filter((att) => att.fileId)
+            .filter(
+              (att) =>
+                m.role !== "agent" ||
+                !isCoiAttachmentFilename(att.filename),
+            )
             .map((att) => ({
               filename: att.filename,
               contentType: att.contentType,
@@ -1524,6 +1537,13 @@ export const run = internalAction({
       ) {
         content =
           "I haven't generated or emailed those COIs yet. I need to create the certificates and send the emails before marking this done.";
+      }
+      if (
+        claimsEmailDraftCompletion(content) &&
+        !usedTools.includes("email_expert")
+      ) {
+        content =
+          "I haven't created an email draft yet. I can prepare one once the recipient, policy, and attachments are confirmed.";
       }
       const finalReferencedPolicyIds = new Set<string>([
         ...selectedPolicyIds,

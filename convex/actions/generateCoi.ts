@@ -6,6 +6,26 @@ import { internal } from "../_generated/api";
 import { generateCoiPdf, policyToCoiData } from "../lib/coiGenerator";
 import { logAiError } from "../lib/aiUtils";
 
+function cleanFilenamePart(value: unknown, fallback: string): string {
+  const text = String(value ?? "")
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return (text || fallback).slice(0, 90).trim();
+}
+
+function buildCoiFileName(policy: Record<string, unknown>, certificateHolder?: string, certificateHolderName?: string) {
+  const holder = cleanFilenamePart(
+    certificateHolderName ?? certificateHolder?.split(/\r?\n/)[0],
+    "certificate-holder",
+  );
+  const policyRef = cleanFilenamePart(
+    policy.policyNumber ?? policy.security ?? policy.carrier,
+    "policy",
+  );
+  return `COI - ${holder} - ${policyRef}.pdf`;
+}
+
 /**
  * Generate a COI PDF for a policy and store it in file storage.
  * Returns the storage ID and byte size for download/attachment metadata.
@@ -29,7 +49,7 @@ export const run = internalAction({
     )),
     createdByUserId: v.optional(v.id("users")),
   },
-  handler: async (ctx, args): Promise<{ storageId: string; size: number }> => {
+  handler: async (ctx, args): Promise<{ storageId: string; size: number; fileName: string }> => {
     try {
       const policy = await ctx.runQuery(internal.policies.getInternal, { id: args.policyId });
 
@@ -52,19 +72,20 @@ export const run = internalAction({
       const blob = new Blob([arrayBuffer], { type: "application/pdf" });
       const storageId = await ctx.storage.store(blob);
       const size = pdfBuffer.byteLength;
+      const fileName = buildCoiFileName(policy, args.certificateHolder, args.certificateHolderName);
 
       await ctx.runMutation(internal.certificates.recordGenerated, {
         orgId: args.orgId,
         policyId: args.policyId,
         fileId: storageId,
-        fileName: "certificate-of-insurance.pdf",
+        fileName,
         certificateHolder: args.certificateHolder,
         certificateHolderName: args.certificateHolderName,
         source: args.source,
         createdByUserId: args.createdByUserId,
       });
 
-      return { storageId: storageId as string, size };
+      return { storageId: storageId as string, size, fileName };
     } catch (err) {
       logAiError("generateCoi", err, { policyId: args.policyId });
       throw err;

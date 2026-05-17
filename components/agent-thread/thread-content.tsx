@@ -5,7 +5,7 @@ import { useQuery, useMutation } from "convex/react";
 import Link from "next/link";
 import dayjs from "dayjs";
 import { toast } from "sonner";
-import { Loader2, Archive, ArchiveRestore, Check, ClipboardList, Mail as MailIcon, MessageCircle, Copy, RotateCcw, X, Clock } from "lucide-react";
+import { Loader2, Archive, ArchiveRestore, Check, ClipboardList, Mail as MailIcon, MessageCircle, Copy, RotateCcw, X, Clock, Download } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { Badge } from "@/components/ui/badge";
@@ -22,7 +22,7 @@ import { NewChatEmptyState } from "@/components/new-chat-empty-state";
 import { LogoIcon } from "@/components/ui/logo-icon";
 import { ThreadAttachmentChip } from "@/components/agent-thread/thread-attachment-chip";
 import { scientistSurnameFor } from "@/components/agent-thread/scientist-surnames";
-import type { MailboxArtifactRef, PolicyChangeAccess, ThreadMessage, ToolArtifactData, VendorComplianceArtifactRef } from "@/components/agent-thread/types";
+import type { MailboxArtifactRef, PolicyChangeAccess, ThreadAttachment, ThreadMessage, ToolArtifactData, VendorComplianceArtifactRef } from "@/components/agent-thread/types";
 import {
   EmailSummaryCard,
   EmailThreadSidebar,
@@ -72,6 +72,66 @@ function inferAttachmentContentType(filename: string | undefined, mediaType: str
 const SUBAGENT_TOOL_NAMES = new Set(["email_expert", "coordinate_mailbox_task"]);
 const EMAIL_SENDING_RE = /^sending email to\s+(.+?)(?:\s*\(cc:.*\))?\s*\.{3}$/i;
 const EMAIL_SENT_RE = /^email sent to\s+(.+?)(?:\s*\(cc:.*\))?\s*\.$/i;
+
+function ThreadAttachmentList({
+  attachments,
+  threadId,
+}: {
+  attachments: ThreadAttachment[];
+  threadId: Id<"threads">;
+}) {
+  const fileIds = useMemo(
+    () =>
+      attachments
+        .map((attachment) => attachment.fileId)
+        .filter((fileId): fileId is Id<"_storage"> => Boolean(fileId)),
+    [attachments],
+  );
+  const urls = useQuery(
+    api.threads.getAttachmentUrls,
+    fileIds.length > 1 ? { threadId, fileIds } : "skip",
+  );
+
+  const handleDownloadAll = useCallback(() => {
+    if (!urls?.length) return;
+    for (const entry of urls) {
+      const attachment = attachments.find((att) => att.fileId === entry.fileId);
+      const link = document.createElement("a");
+      link.href = entry.url;
+      link.download = attachment?.filename ?? "attachment";
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    }
+  }, [attachments, urls]);
+
+  return (
+    <div className="space-y-2">
+      {attachments.length > 1 ? (
+        <div className="flex items-center justify-end">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={handleDownloadAll}
+            disabled={!urls?.length}
+            className="h-7 gap-1.5 rounded-full px-2 text-label-sm text-muted-foreground/70 hover:text-foreground"
+          >
+            <Download className="h-3.5 w-3.5" />
+            Download all
+          </Button>
+        </div>
+      ) : null}
+      <div className="flex flex-wrap gap-2">
+        {attachments.map((att, i) => (
+          <ThreadAttachmentChip key={i} attachment={att} threadId={threadId} />
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function normalizeStatusContent(content: string) {
   return content
@@ -844,10 +904,8 @@ export function UnifiedMessageBubble({
                 }`}>
                   <ProseMarkdown gfm breaks className={MARKDOWN_STYLES} components={markdownComponents}>{fixedContent}</ProseMarkdown>
                   {savedAttachmentMessage ? (
-                    <div className="mt-2 flex flex-wrap gap-2 border-t border-foreground/6 pt-2">
-                      {msg.attachments?.map((att, i) => (
-                        <ThreadAttachmentChip key={i} attachment={att} threadId={msg.threadId} />
-                      ))}
+                    <div className="mt-2">
+                      <ThreadAttachmentList attachments={msg.attachments ?? []} threadId={msg.threadId} />
                     </div>
                   ) : null}
                 </div>
@@ -903,10 +961,8 @@ export function UnifiedMessageBubble({
               </>
             )}
             {!savedAttachmentMessage && !(collapseEmailMessages && msg.channel === "email") && msg.attachments && msg.attachments.length > 0 && (
-              <div className="mt-2 flex flex-wrap gap-2">
-                {msg.attachments.map((att, i) => (
-                  <ThreadAttachmentChip key={i} attachment={att} threadId={msg.threadId} />
-                ))}
+              <div className="mt-2">
+                <ThreadAttachmentList attachments={msg.attachments} threadId={msg.threadId} />
               </div>
             )}
             {msg.status === "pending_send" && msg.pendingEmailId && (
@@ -983,10 +1039,8 @@ export function UnifiedMessageBubble({
             </>
           )}
           {msg.attachments && msg.attachments.length > 0 && (
-            <div className="mt-3 pt-3 border-t border-foreground/6 flex flex-wrap gap-2">
-              {msg.attachments.map((att, i) => (
-                <ThreadAttachmentChip key={i} attachment={att} threadId={msg.threadId} />
-              ))}
+            <div className="mt-2">
+              <ThreadAttachmentList attachments={msg.attachments} threadId={msg.threadId} />
             </div>
           )}
         </div>

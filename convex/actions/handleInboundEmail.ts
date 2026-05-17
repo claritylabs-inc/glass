@@ -1405,7 +1405,7 @@ export const processInbound = internalAction({
               );
               if (!generated) return COI_GENERATION_FAILED_MESSAGE;
               generatedCoiAttachments.push({
-                filename: "certificate-of-insurance.pdf",
+                filename: generated.fileName,
                 contentType: "application/pdf",
                 size: generated.size,
                 fileId: generated.storageId as Id<"_storage">,
