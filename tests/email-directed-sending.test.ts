@@ -294,6 +294,10 @@ describe("directed email sending", () => {
       join(__dirname, "..", "convex/lib/emailSubagent.ts"),
       "utf-8",
     );
+    const sendPendingSource = readFileSync(
+      join(__dirname, "..", "convex/actions/sendPendingEmail.ts"),
+      "utf-8",
+    );
     const threadsSource = readFileSync(
       join(__dirname, "..", "convex/threads.ts"),
       "utf-8",
@@ -310,6 +314,8 @@ describe("directed email sending", () => {
     expect(threadsSource).toContain("excludeEmailArtifacts: v.optional(v.boolean())");
     expect(threadsSource).toContain("excludeAgentCoiAttachments: v.optional(v.boolean())");
     expect(threadsSource).toContain('message.channel === "email"');
+    expect(sendPendingSource).toContain("assertSafeDraftAttachments(pending)");
+    expect(sendPendingSource).toContain("too many certificate attachments");
   });
 
   it("does not append policy source blocks to outbound emails", () => {

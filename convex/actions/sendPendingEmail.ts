@@ -15,6 +15,30 @@ type BulkDraftSendResult = {
   failed: Array<{ id: Id<"pendingEmails">; error: string }>;
 };
 
+function isCoiText(text: string | undefined): boolean {
+  return /\b(coi|certificate(?:\s+of\s+insurance)?)\b/i.test(text ?? "");
+}
+
+function isCoiAttachment(filename: string): boolean {
+  return /\b(coi|certificate[-_\s]?of[-_\s]?insurance)\b/i.test(filename);
+}
+
+function assertSafeDraftAttachments(pending: Doc<"pendingEmails">) {
+  const attachments = pending.attachments ?? [];
+  if (!attachments.length) return;
+  const coiAttachmentCount = attachments.filter((attachment) =>
+    isCoiAttachment(attachment.filename),
+  ).length;
+  if (
+    coiAttachmentCount > 3 &&
+    (isCoiText(pending.subject) || isCoiText(pending.emailBody))
+  ) {
+    throw new Error(
+      "This COI draft has too many certificate attachments. Cancel it and regenerate the draft before sending.",
+    );
+  }
+}
+
 async function sendTextConfirmation(params: {
   toPhone: string;
   chatGuid?: string;
@@ -66,6 +90,7 @@ async function sendPendingEmailById(
     if (!pending.recipientEmail || !pending.subject || !pending.emailBody) {
       throw new Error("Draft is missing required email fields.");
     }
+    assertSafeDraftAttachments(pending);
 
     try {
       const payload = JSON.parse(pending.emailPayload);
