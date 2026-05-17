@@ -108,7 +108,7 @@ function ExtractionBannerBase({
         />
         <AnimatedStatusText
           value={statusDetail}
-          className="min-w-0 truncate text-sm opacity-75"
+          className="min-w-0 truncate text-sm"
           shimmer={!isError}
         />
       </div>
@@ -182,7 +182,12 @@ function AnimatedStatusText({
           transition={STATUS_TEXT_TRANSITION}
         >
           {shimmer ? (
-            <Shimmer as="span" duration={1.6} spread={2.6} className="block truncate">
+            <Shimmer
+              as="span"
+              duration={1.4}
+              spread={3.4}
+              className="block truncate [--shimmer-base:rgba(255,255,255,0.68)] [--shimmer-highlight:rgba(255,255,255,1)]"
+            >
               {value}
             </Shimmer>
           ) : (
