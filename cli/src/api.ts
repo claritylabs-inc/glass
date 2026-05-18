@@ -61,6 +61,7 @@ export class GlassApi {
       headers: {
         Authorization: `Bearer ${this.config.accessToken}`,
         "Content-Type": "application/json",
+        ...(this.config.orgId ? { "X-Org-Id": this.config.orgId } : {}),
       },
       body: JSON.stringify(body),
     });
@@ -72,6 +73,7 @@ export class GlassApi {
         headers: {
           Authorization: `Bearer ${this.config.accessToken}`,
           "Content-Type": "application/json",
+          ...(this.config.orgId ? { "X-Org-Id": this.config.orgId } : {}),
         },
         body: JSON.stringify(body),
       });

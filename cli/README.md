@@ -31,3 +31,14 @@ glass policies:list
 glass policies:get <policyId>
 glass query:ask "What policies expire next month?"
 ```
+
+
+## Broker workspaces
+
+Select a broker org with `glass auth:whoami --set-org <brokerOrgId>` before running broker portfolio queries. `glass query:ask` sends the selected `X-Org-Id` on POST requests, so asking from a broker org can answer across managed client organizations with client-labeled results, for example:
+
+```sh
+glass query:ask "Which clients have general liability policies expiring next month?"
+```
+
+Use `glass clients:list` to inspect broker-visible clients before asking portfolio-level questions.

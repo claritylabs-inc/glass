@@ -27,12 +27,13 @@ import {
 } from "../lib/chatTools";
 import { Webhook } from "svix";
 import {
-  buildComplianceRequirementsContext,
-  buildDocumentContext,
   buildConversationMemoryContext,
-  buildIntelligenceContext,
+  buildScopedDocumentContext,
+  buildScopedOrgMemoryContext,
+  buildScopedRequirementsContext,
 } from "../lib/agentPrompts";
 import type { Doc, Id } from "../_generated/dataModel";
+import { isOrgReadableByScope, orgLabelForScope, type AgentScope } from "../lib/agentScope";
 import {
   sendResendEmail,
   getAgentDomain,
@@ -46,6 +47,7 @@ import {
 } from "../lib/emailTemplate";
 import {
   buildSystemPromptForContext,
+  buildBrokerPortfolioSystemPrompt,
   buildChannelInstructions,
   buildPolicyToolInstructions,
   policySearchScore,
@@ -846,10 +848,22 @@ export const processInbound = internalAction({
     }
 
     try {
-      // Fetch org's policies and quotes
-      const policies = await ctx.runQuery(internal.policies.listAllInternal, {
+      const scope = (await ctx.runQuery((internal as any).lib.agentScope.resolveForAction, {
         orgId,
-      });
+        userId: primaryUserId,
+        surface: "email",
+        allowBrokerPortfolio: org.type === "broker" && isInternal && effectiveMode === "direct",
+      })) as AgentScope;
+
+      const policiesByOrg = new Map<string, { policies: any[]; quotes: any[] }>();
+      await Promise.all(scope.readOrgIds.map(async (readOrgId) => {
+        const docs = await ctx.runQuery(internal.policies.listAllInternal, { orgId: readOrgId });
+        policiesByOrg.set(String(readOrgId), {
+          policies: (docs as any[]).filter((policy) => policy.documentType !== "quote"),
+          quotes: (docs as any[]).filter((policy) => policy.documentType === "quote"),
+        });
+      }));
+      const policies = Array.from(policiesByOrg.values()).flatMap((entry) => [...entry.policies, ...entry.quotes]);
       const siteUrl = getClientPortalUrl();
 
       // Get primary user profile for name reference
@@ -880,37 +894,43 @@ export const processInbound = internalAction({
           }
         }
       }
-      const systemPrompt = buildSystemPromptForContext({
-        org: {
-          name: org.name,
-          context: org.context,
-          coiHandling: org.coiHandling,
-          broker: brokerName
-            ? {
-                name: brokerName,
-                contactName: brokerContactName,
-                contactEmail: brokerContactEmail,
-              }
-            : undefined,
-        },
-        mode:
-          effectiveMode === "direct"
-            ? "direct"
-            : effectiveMode === "cc"
-              ? "cc"
-              : "forward",
-        userName,
-        siteUrl,
-      });
+      const systemPrompt = scope.mode === "broker_portfolio"
+        ? buildBrokerPortfolioSystemPrompt({
+            brokerName: typeof org.name === "string" ? org.name : undefined,
+            brokerContext: typeof org.context === "string" ? org.context : undefined,
+            userName,
+            siteUrl,
+          })
+        : buildSystemPromptForContext({
+            org: {
+              name: org.name,
+              context: org.context,
+              coiHandling: org.coiHandling,
+              broker: brokerName
+                ? {
+                    name: brokerName,
+                    contactName: brokerContactName,
+                    contactEmail: brokerContactEmail,
+                  }
+                : undefined,
+            },
+            mode:
+              effectiveMode === "direct"
+                ? "direct"
+                : effectiveMode === "cc"
+                  ? "cc"
+                  : "forward",
+            userName,
+            siteUrl,
+          });
       const {
         context: policyContext,
         relevantPolicyIds,
         relevantQuoteIds,
-      } = await buildDocumentContext(
+      } = await buildScopedDocumentContext(
         ctx,
-        orgId,
-        policies,
-        [],
+        scope,
+        policiesByOrg,
         subject + " " + body,
       );
       const referencedPolicySourceIds = new Set<string>([
@@ -924,16 +944,13 @@ export const processInbound = internalAction({
         orgId,
         subject + " " + body,
       );
-      const orgMemoryBlock = await buildIntelligenceContext(
+      const orgMemoryBlock = await buildScopedOrgMemoryContext(
         ctx,
-        orgId,
+        scope,
         subject + " " + body,
         relevantPolicyIds.map((id: string) => id),
       );
-      const requirementsBlock = await buildComplianceRequirementsContext(
-        ctx,
-        orgId,
-      );
+      const requirementsBlock = await buildScopedRequirementsContext(ctx, scope);
 
       // Build messages — include thread history for context
       const messages: ModelMessage[] = [];
@@ -1116,6 +1133,8 @@ export const processInbound = internalAction({
             }
             return matches.slice(0, 5).map((p: any) => ({
               id: p._id,
+              client: scope.mode === "broker_portfolio" ? orgLabelForScope(scope, p.orgId) : undefined,
+              orgId: p.orgId,
               insured: p.insuredName,
               carrier: p.security,
               type: p.policyTypes?.join(", "),
@@ -1138,7 +1157,7 @@ export const processInbound = internalAction({
               internal.policies.getInternal,
               { id: params.policyId as Id<"policies"> },
             );
-            if (!policy || policy.orgId !== orgId) return "Policy not found.";
+            if (!policy || !isOrgReadableByScope(scope, policy.orgId)) return "Policy not found.";
             referencedPolicySourceIds.add(String(policy._id));
             return searchPolicyDocumentWithSourceSpans(
               ctx,

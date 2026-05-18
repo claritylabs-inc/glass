@@ -179,7 +179,7 @@ export function MainSidebarContent({
           />
         ))}
 
-        {isBroker ? null : !collapsed ? (
+        {!collapsed ? (
           <ExpandedThreadList
             conversations={conversations}
             archivedThreadCount={archivedThreadCount}
@@ -196,7 +196,7 @@ export function MainSidebarContent({
         )}
       </nav>
 
-      {!isBroker && !collapsed ? (
+      {!collapsed ? (
         <SidebarBrokerContact
           broker={broker}
           fallbackAgentHandle={fallbackAgentHandle}

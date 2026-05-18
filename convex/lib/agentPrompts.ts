@@ -531,3 +531,105 @@ export function buildConversationMemoryFromList(
   if (entries.length === 0) return "";
   return `\n\nCONVERSATION MEMORY (past conversations from this organization):\n${entries.join("\n\n")}`;
 }
+
+import type { AgentScope } from "./agentScope";
+import { formatAgentScopePortfolioIndex, orgLabelForScope } from "./agentScope";
+
+export async function buildScopedDocumentContext(
+  ctx: ActionCtx,
+  scope: AgentScope,
+  policiesByOrg: Map<string, { policies: Doc<"policies">[]; quotes: Doc<"policies">[] }>,
+  queryText: string,
+): Promise<{
+  context: string;
+  relevantPolicyIds: Id<"policies">[];
+  relevantQuoteIds: Id<"policies">[];
+}> {
+  if (scope.mode !== "broker_portfolio") {
+    const docs = policiesByOrg.get(String(scope.primaryOrgId)) ?? { policies: [], quotes: [] };
+    return buildDocumentContext(ctx, scope.primaryOrgId, docs.policies, docs.quotes, queryText);
+  }
+
+  const relevantPolicyIds: Id<"policies">[] = [];
+  const relevantQuoteIds: Id<"policies">[] = [];
+  const parts = [formatAgentScopePortfolioIndex(scope)];
+  const orderedOrgIds = [
+    ...(scope.focusedOrgId ? [scope.focusedOrgId] : []),
+    ...scope.readOrgIds.filter((orgId) => String(orgId) !== String(scope.focusedOrgId)),
+  ];
+
+  for (const orgId of orderedOrgIds) {
+    const docs = policiesByOrg.get(String(orgId)) ?? { policies: [], quotes: [] };
+    const result = await buildDocumentContext(ctx, orgId, docs.policies, docs.quotes, queryText);
+    relevantPolicyIds.push(...result.relevantPolicyIds);
+    relevantQuoteIds.push(...result.relevantQuoteIds);
+    parts.push(`\n\nCLIENT/ORG: ${orgLabelForScope(scope, orgId)} (orgId: ${orgId})\n${result.context}`);
+  }
+
+  return {
+    context: parts.join(""),
+    relevantPolicyIds,
+    relevantQuoteIds,
+  };
+}
+
+export async function buildScopedOrgMemoryContext(
+  ctx: ActionCtx,
+  scope: AgentScope,
+  queryText: string,
+  excludePolicyIds?: string[],
+): Promise<string> {
+  if (scope.mode !== "broker_portfolio") {
+    return buildIntelligenceContext(ctx, scope.primaryOrgId, queryText, excludePolicyIds);
+  }
+  const parts: string[] = [];
+  for (const orgId of scope.readOrgIds) {
+    const block = await buildIntelligenceContext(ctx, orgId, queryText, excludePolicyIds);
+    if (block.trim()) {
+      parts.push(`\n\nORG MEMORY — ${orgLabelForScope(scope, orgId)} (orgId: ${orgId})${block}`);
+    }
+  }
+  return parts.join("");
+}
+
+export async function buildScopedRequirementsContext(
+  ctx: ActionCtx,
+  scope: AgentScope,
+): Promise<string> {
+  if (scope.mode !== "broker_portfolio") {
+    return buildComplianceRequirementsContext(ctx, scope.primaryOrgId);
+  }
+  const parts: string[] = [];
+  for (const orgId of scope.readOrgIds) {
+    const block = await buildComplianceRequirementsContext(ctx, orgId);
+    if (block.trim()) {
+      parts.push(`\n\nCOMPLIANCE REQUIREMENTS — ${orgLabelForScope(scope, orgId)} (orgId: ${orgId})${block}`);
+    }
+  }
+  return parts.join("");
+}
+
+export async function buildScopedVendorComplianceContext(
+  ctx: ActionCtx,
+  scope: AgentScope,
+): Promise<string> {
+  const ids = scope.mode === "broker_portfolio" ? scope.readOrgIds : [scope.primaryOrgId];
+  const parts: string[] = [];
+  for (const orgId of ids) {
+    const complianceRows = await ctx
+      .runQuery((internal as any).compliance.listVendorComplianceInternal, {
+        clientOrgId: orgId,
+      })
+      .catch(() => []);
+    if (!Array.isArray(complianceRows) || complianceRows.length === 0) continue;
+    parts.push(
+      `\n\nVENDOR COMPLIANCE SNAPSHOT — ${orgLabelForScope(scope, orgId)} (orgId: ${orgId}):\n${complianceRows
+        .map((row: any) => {
+          const failed = (row.checks ?? []).filter((check: any) => check.status !== "met");
+          return `- ${row.vendorOrg?.name ?? row.vendorOrgId}: ${failed.length === 0 ? "compliant" : `${failed.length} open issue(s)`}`;
+        })
+        .join("\n")}`,
+    );
+  }
+  return parts.join("");
+}
