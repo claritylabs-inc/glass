@@ -744,6 +744,7 @@ export default defineSchema({
         v.object({
           name: v.string(),
           amount: v.string(),
+          amountValue: v.optional(v.number()),
           type: v.optional(v.string()), // tax, fee, surcharge, assessment
           description: v.optional(v.string()),
         }),
@@ -754,6 +755,7 @@ export default defineSchema({
         v.object({
           line: v.string(),
           amount: v.string(),
+          amountValue: v.optional(v.number()),
         }),
       ),
     ),
@@ -804,7 +806,9 @@ export default defineSchema({
       }),
     ),
     premium: v.optional(v.string()),
+    premiumAmount: v.optional(v.number()),
     totalCost: v.optional(v.string()),
+    totalCostAmount: v.optional(v.number()),
     insuredName: v.string(),
     summary: v.optional(v.string()),
     // Provenance — page references for key metadata
@@ -838,7 +842,9 @@ export default defineSchema({
     policyTermType: v.optional(v.string()),
     nextReviewDate: v.optional(v.string()),
     minPremium: v.optional(v.string()),
+    minPremiumAmount: v.optional(v.number()),
     depositPremium: v.optional(v.string()),
+    depositPremiumAmount: v.optional(v.number()),
     auditProvision: v.optional(v.boolean()),
     cancellationProvisions: v.optional(v.string()),
     nonRenewalProvisions: v.optional(v.string()),

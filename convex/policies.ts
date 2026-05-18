@@ -15,6 +15,12 @@ import { notify } from "./lib/notify";
 import type { Id as DataModelId } from "./_generated/dataModel";
 import dayjs from "dayjs";
 import customParseFormat from "dayjs/plugin/customParseFormat";
+import {
+  normalizeExtractedDate,
+  normalizeMoneyField,
+  normalizeMoneyString,
+  parseExtractedNumber,
+} from "./lib/valueNormalization";
 
 dayjs.extend(customParseFormat);
 
@@ -37,13 +43,68 @@ function nowMs(): number {
 }
 
 function policyYearFromInput(value: string | undefined): number | undefined {
-  if (!value?.trim()) return undefined;
+  const normalized = normalizeExtractedDate(value);
+  if (!normalized) return undefined;
   const parsed = dayjs(
-    value.trim(),
+    normalized,
     ["MM/DD/YYYY", "M/D/YYYY", "YYYY-MM-DD", "YYYY/M/D"],
     true,
   );
   return parsed.isValid() ? parsed.year() : undefined;
+}
+
+function normalizeEditableFields(fields: Record<string, unknown>): Record<string, unknown> {
+  const next = { ...fields };
+  for (const key of ["effectiveDate", "expirationDate", "retroactiveDate", "nextReviewDate"]) {
+    if (typeof next[key] === "string") next[key] = normalizeExtractedDate(next[key]) ?? next[key];
+  }
+
+  for (const [textKey, amountKey] of [
+    ["premium", "premiumAmount"],
+    ["totalCost", "totalCostAmount"],
+    ["minPremium", "minPremiumAmount"],
+    ["depositPremium", "depositPremiumAmount"],
+  ] as const) {
+    if (next[textKey] !== undefined) {
+      const money = normalizeMoneyField(next[textKey]);
+      if (money.text !== undefined) next[textKey] = money.text;
+      if (money.amount !== undefined) next[amountKey] = money.amount;
+    }
+  }
+
+  if (Array.isArray(next.coverages)) {
+    next.coverages = next.coverages.map((coverage) => {
+      const row = { ...(coverage as Record<string, unknown>) };
+      const limitAmount = typeof row.limitAmount === "number"
+        ? row.limitAmount
+        : parseExtractedNumber(row.limit) ?? parseExtractedNumber(row.originalContent);
+      const deductibleAmount = typeof row.deductibleAmount === "number"
+        ? row.deductibleAmount
+        : parseExtractedNumber(row.deductible);
+      if (row.limit !== undefined) row.limit = normalizeMoneyString(row.limit) ?? row.limit;
+      if (row.deductible !== undefined) row.deductible = normalizeMoneyString(row.deductible) ?? row.deductible;
+      if (row.retroactiveDate !== undefined) {
+        row.retroactiveDate = normalizeExtractedDate(row.retroactiveDate) ?? row.retroactiveDate;
+      }
+      if (limitAmount !== undefined) row.limitAmount = limitAmount;
+      if (deductibleAmount !== undefined) row.deductibleAmount = deductibleAmount;
+      return row;
+    });
+  }
+
+  for (const key of ["taxesAndFees", "premiumBreakdown"]) {
+    if (!Array.isArray(next[key])) continue;
+    next[key] = (next[key] as Array<Record<string, unknown>>).map((row) => {
+      const money = normalizeMoneyField(row.amount);
+      return {
+        ...row,
+        ...(money.text !== undefined ? { amount: money.text } : {}),
+        ...(money.amount !== undefined ? { amountValue: money.amount } : {}),
+      };
+    });
+  }
+
+  return next;
 }
 
 async function getPolicyExtractionRun(ctx: any, policyId: DataModelId<"policies">) {
@@ -446,9 +507,11 @@ const coverageValidator = v.object({
   coverageCode: v.optional(v.string()),
   formEditionDate: v.optional(v.string()),
   limit: v.optional(v.string()),
+  limitAmount: v.optional(v.number()),
   limitType: v.optional(v.string()),
   limitValueType: v.optional(v.string()),
   deductible: v.optional(v.string()),
+  deductibleAmount: v.optional(v.number()),
   deductibleType: v.optional(v.string()),
   deductibleValueType: v.optional(v.string()),
   formNumber: v.optional(v.string()),
@@ -478,6 +541,7 @@ const coverageValidator = v.object({
 const premiumLineValidator = v.object({
   line: v.string(),
   amount: v.string(),
+  amountValue: v.optional(v.number()),
 });
 
 const addressValidator = v.object({
@@ -591,6 +655,7 @@ const formReferenceValidator = v.object({
 const taxFeeValidator = v.object({
   name: v.string(),
   amount: v.string(),
+  amountValue: v.optional(v.number()),
   type: v.optional(v.string()),
   description: v.optional(v.string()),
 });
@@ -719,7 +784,9 @@ export const updateExtraction = mutation({
     isRenewal: v.optional(v.boolean()),
     coverages: v.optional(v.array(coverageValidator)),
     premium: v.optional(v.string()),
+    premiumAmount: v.optional(v.number()),
     totalCost: v.optional(v.string()),
+    totalCostAmount: v.optional(v.number()),
     insuredName: v.optional(v.string()),
     summary: v.optional(v.string()),
     metadataSource: v.optional(metadataSourceValidator),
@@ -735,7 +802,9 @@ export const updateExtraction = mutation({
     policyTermType: v.optional(v.string()),
     nextReviewDate: v.optional(v.string()),
     minPremium: v.optional(v.string()),
+    minPremiumAmount: v.optional(v.number()),
     depositPremium: v.optional(v.string()),
+    depositPremiumAmount: v.optional(v.number()),
     auditProvision: v.optional(v.boolean()),
     cancellationProvisions: v.optional(v.string()),
     nonRenewalProvisions: v.optional(v.string()),
@@ -763,7 +832,7 @@ export const updateExtraction = mutation({
   },
   handler: async (ctx, args) => {
     const { id, ...fields } = args;
-    await ctx.db.patch(id, fields);
+    await ctx.db.patch(id, normalizeEditableFields(fields));
 
     // Emit broker activity if extraction is now complete
     if ((fields as { pipelineStatus?: string }).pipelineStatus === "complete") {
@@ -800,9 +869,13 @@ export const updateExtractedFields = mutation({
       expirationDate: v.optional(v.string()),
       insuredName: v.optional(v.string()),
       premium: v.optional(v.string()),
+      premiumAmount: v.optional(v.number()),
       totalCost: v.optional(v.string()),
+      totalCostAmount: v.optional(v.number()),
       minPremium: v.optional(v.string()),
+      minPremiumAmount: v.optional(v.number()),
       depositPremium: v.optional(v.string()),
+      depositPremiumAmount: v.optional(v.number()),
       summary: v.optional(v.string()),
       coverages: v.optional(v.array(coverageValidator)),
       extractionReview: v.optional(v.any()),
@@ -819,12 +892,13 @@ export const updateExtractedFields = mutation({
     assertCanUploadPolicy(access);
 
     const patch: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(args.fields)) {
+    const normalizedFields = normalizeEditableFields(args.fields);
+    for (const [key, value] of Object.entries(normalizedFields)) {
       if (value !== undefined) patch[key] = value;
     }
 
     const derivedYear =
-      args.fields.policyYear ?? policyYearFromInput(args.fields.effectiveDate);
+      args.fields.policyYear ?? policyYearFromInput(patch.effectiveDate as string | undefined);
     if (derivedYear !== undefined) patch.policyYear = derivedYear;
 
     if (Object.keys(patch).length === 0) return;
@@ -940,13 +1014,13 @@ export const answerCoverageReviewQuestion = mutation({
       answeredByUserId: access.userId,
     };
 
-    await ctx.db.patch(args.id, {
+    await ctx.db.patch(args.id, normalizeEditableFields({
       coverages: nextCoverages as any,
       extractionReview: {
         ...(review ?? {}),
         questions: nextQuestions,
       },
-    });
+    }));
     await ctx.db.insert("policyAuditLog", {
       policyId: args.id,
       userId: access.userId,
@@ -1483,7 +1557,7 @@ export const updateExtractionInternal = internalMutation({
     fields: v.any(), // Accept any policy fields from insuranceDocToPolicy
   },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.id, args.fields);
+    await ctx.db.patch(args.id, normalizeEditableFields(args.fields));
   },
 });
 

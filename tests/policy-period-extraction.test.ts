@@ -113,6 +113,35 @@ describe("policy period extraction fallback", () => {
     expect(result.document.expirationDate).toBe("09/10/2026");
   });
 
+  it("keeps same-day effective and expiration date/time rows as distinct policy period endpoints", () => {
+    const result = applyPolicyPeriodFallback(
+      {
+        type: "policy",
+        effectiveDate: "Unknown",
+        expirationDate: "Unknown",
+      },
+      [
+        {
+          pageStart: 1,
+          text: `
+            POLICY PERIOD
+            Effective Date / Time 07/16/2026 at 6:00 PM
+            Expiration Date / Time 07/16/2026 at 11:59 PM
+            Prior Policy No. NEW
+          `,
+        },
+      ],
+    );
+
+    expect(result.period).toMatchObject({
+      effectiveDate: "07/16/2026",
+      expirationDate: "07/16/2026",
+      source: "policy_period_label",
+    });
+    expect(result.document.effectiveDate).toBe("07/16/2026");
+    expect(result.document.expirationDate).toBe("07/16/2026");
+  });
+
   it("accepts close declaration field names for policy period start and end", () => {
     const result = applyPolicyPeriodFallback(
       {

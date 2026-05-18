@@ -145,12 +145,11 @@ function findPolicyPeriodInText(text: string): Omit<ExtractedPolicyPeriod, "page
     if (labelMatch.index == null) continue;
     const window = normalized.slice(labelMatch.index, labelMatch.index + 900);
     const dates = [...parseExplicitDates(window), ...parseTripletDates(window)];
-    const uniqueDates = [...new Set(dates)];
-    if (uniqueDates.length < 2) continue;
+    if (dates.length < 2) continue;
 
     return {
-      effectiveDate: uniqueDates[0],
-      expirationDate: uniqueDates[1],
+      effectiveDate: dates[0],
+      expirationDate: dates[1],
       source: "policy_period_label",
     };
   }

@@ -184,6 +184,7 @@ Notes:
 Glass persists:
 
 - Top-level policy financials: `premium`, `totalCost`, `taxesAndFees`, `premiumBreakdown`, `minPremium`, `depositPremium`
+- Extracted dates are normalized to `MM/DD/YYYY` before persistence where the source value is parseable. Monetary and limit-like fields keep user-facing display strings while also storing numeric companions such as `premiumAmount`, `totalCostAmount`, coverage `limitAmount` / `deductibleAmount`, and row-level `amountValue` for deterministic comparison.
 - Document detail: `document.sections`, `document.definitions`, `document.coveredReasons`, `document.endorsements`, `document.exclusions`, `document.conditions`
 - Declarations, form inventory, and supplementary facts as top-level policy fields
 - Raw source evidence in `sourceSpans` and embedded `sourceChunks` when cl-sdk returns source spans/chunks. These source units preserve stable `sourceSpanIds` for exact policy citations.

@@ -115,6 +115,7 @@ import type * as lib_sdkCallbacks from "../lib/sdkCallbacks.js";
 import type * as lib_security from "../lib/security.js";
 import type * as lib_threadAccess from "../lib/threadAccess.js";
 import type * as lib_userPhone from "../lib/userPhone.js";
+import type * as lib_valueNormalization from "../lib/valueNormalization.js";
 import type * as lib_vendorComplianceTools from "../lib/vendorComplianceTools.js";
 import type * as migrations from "../migrations.js";
 import type * as migrations_cleanOrphanAuth from "../migrations/cleanOrphanAuth.js";
@@ -256,6 +257,7 @@ declare const fullApi: ApiFromModules<{
   "lib/security": typeof lib_security;
   "lib/threadAccess": typeof lib_threadAccess;
   "lib/userPhone": typeof lib_userPhone;
+  "lib/valueNormalization": typeof lib_valueNormalization;
   "lib/vendorComplianceTools": typeof lib_vendorComplianceTools;
   migrations: typeof migrations;
   "migrations/cleanOrphanAuth": typeof migrations_cleanOrphanAuth;

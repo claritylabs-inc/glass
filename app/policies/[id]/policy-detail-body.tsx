@@ -9,6 +9,8 @@ import { BadgeCheck, CheckCircle2, Download, FileText, Loader2, Plus, RotateCw, 
 import { Skeleton } from "@/components/ui/skeleton";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import dayjs from "dayjs";
+import customParseFormat from "dayjs/plugin/customParseFormat";
 import { Id } from "@/convex/_generated/dataModel";
 import { PillButton } from "@/components/ui/pill-button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -36,6 +38,8 @@ import {
   isPolicyChangeTerminal,
 } from "@/components/policy-change-progress";
 
+dayjs.extend(customParseFormat);
+
 type PolicyAuditLogEntry = {
   _id: string;
   _creationTime: number;
@@ -58,7 +62,9 @@ type PolicyPipelineLogEntry = LogEntry & {
 type EditableCoverage = {
   name: string;
   limit?: string;
+  limitAmount?: number;
   deductible?: string;
+  deductibleAmount?: number;
   coverageCode?: string;
   originalContent?: string;
 };
@@ -66,11 +72,13 @@ type EditableCoverage = {
 type EditablePremiumLine = {
   line: string;
   amount: string;
+  amountValue?: number;
 };
 
 type EditableTaxFee = {
   name: string;
   amount: string;
+  amountValue?: number;
   type?: string;
   description?: string;
 };
@@ -122,7 +130,48 @@ function logPolicyActivityToBrowser(
 }
 
 function stringValue(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
   return typeof value === "string" ? value : "";
+}
+
+function parseMoneyInput(value: unknown): number | undefined {
+  if (typeof value === "number") return Number.isFinite(value) ? value : undefined;
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim();
+  if (!normalized) return undefined;
+  const match = normalized.match(/-?[0-9][0-9,]*(?:\.[0-9]+)?/);
+  if (!match) return undefined;
+  const parsed = Number.parseFloat(match[0].replace(/,/g, ""));
+  return Number.isFinite(parsed)
+    ? Math.round((parsed + Number.EPSILON) * 100) / 100
+    : undefined;
+}
+
+function formatMoneyInput(value: unknown) {
+  const amount = parseMoneyInput(value);
+  if (amount === undefined) return stringValue(value);
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: Number.isInteger(amount) ? 0 : 2,
+    maximumFractionDigits: 2,
+  }).format(amount);
+}
+
+function normalizeDateInput(value: unknown) {
+  const raw = stringValue(value);
+  if (!raw || raw.toLowerCase() === "unknown") return "";
+  const parsed = dayjs(
+    raw,
+    ["YYYY-MM-DD", "MM/DD/YYYY", "M/D/YYYY", "YYYY/M/D", "MMM D, YYYY", "MMMM D, YYYY"],
+    true,
+  );
+  return parsed.isValid() ? parsed.format("YYYY-MM-DD") : "";
+}
+
+function dateValueFromInput(value: string) {
+  const parsed = dayjs(value, "YYYY-MM-DD", true);
+  return parsed.isValid() ? parsed.format("MM/DD/YYYY") : "";
 }
 
 function normalizeCoverageRows(value: unknown): EditableCoverage[] {
@@ -134,7 +183,13 @@ function normalizeCoverageRows(value: unknown): EditableCoverage[] {
         ...row,
         name: stringValue(row.name),
         limit: stringValue(row.limit) || undefined,
+        limitAmount: typeof row.limitAmount === "number"
+          ? row.limitAmount
+          : parseMoneyInput(row.limit),
         deductible: stringValue(row.deductible) || undefined,
+        deductibleAmount: typeof row.deductibleAmount === "number"
+          ? row.deductibleAmount
+          : parseMoneyInput(row.deductible),
         coverageCode: stringValue(row.coverageCode) || undefined,
         originalContent: stringValue(row.originalContent) || undefined,
       };
@@ -150,6 +205,9 @@ function normalizePremiumRows(value: unknown): EditablePremiumLine[] {
       return {
         line: stringValue(row.line),
         amount: stringValue(row.amount),
+        amountValue: typeof row.amountValue === "number"
+          ? row.amountValue
+          : parseMoneyInput(row.amount),
       };
     })
     .filter((row) => row.line.trim() || row.amount.trim());
@@ -163,6 +221,9 @@ function normalizeTaxRows(value: unknown): EditableTaxFee[] {
       return {
         name: stringValue(row.name),
         amount: stringValue(row.amount),
+        amountValue: typeof row.amountValue === "number"
+          ? row.amountValue
+          : parseMoneyInput(row.amount),
         type: stringValue(row.type) || undefined,
         description: stringValue(row.description) || undefined,
       };
@@ -582,7 +643,24 @@ function PolicyBreakdownEditor({
 
   const setScalar = (key: keyof typeof draft, value: string) => {
     setDraft((current) => ({ ...current, [key]: value }));
-    saveFields({ [key]: value });
+    const moneyKey = key === "premium" || key === "totalCost" || key === "minPremium" || key === "depositPremium";
+    const amount = moneyKey ? parseMoneyInput(value) : undefined;
+    saveFields({
+      [key]: value,
+      ...(key === "premium" && amount !== undefined ? { premiumAmount: amount } : {}),
+      ...(key === "totalCost" && amount !== undefined ? { totalCostAmount: amount } : {}),
+      ...(key === "minPremium" && amount !== undefined ? { minPremiumAmount: amount } : {}),
+      ...(key === "depositPremium" && amount !== undefined ? { depositPremiumAmount: amount } : {}),
+    });
+  };
+
+  const setDateScalar = (key: "effectiveDate" | "expirationDate", value: string) => {
+    setScalar(key, dateValueFromInput(value));
+  };
+
+  const formatScalarMoney = (key: "premium" | "totalCost" | "minPremium" | "depositPremium") => {
+    const formatted = formatMoneyInput(draft[key]);
+    if (formatted !== draft[key]) setScalar(key, formatted);
   };
 
   const updatePremiumBreakdown = (next: EditablePremiumLine[]) => {
@@ -592,6 +670,9 @@ function PolicyBreakdownEditor({
       premiumBreakdown: rows.map((row) => ({
         line: row.line.trim() || "Premium line",
         amount: row.amount.trim(),
+        ...(parseMoneyInput(row.amount) !== undefined
+          ? { amountValue: parseMoneyInput(row.amount) }
+          : {}),
       })),
     });
   };
@@ -603,6 +684,9 @@ function PolicyBreakdownEditor({
       taxesAndFees: rows.map((row) => ({
         name: row.name.trim() || "Fee",
         amount: row.amount.trim(),
+        ...(parseMoneyInput(row.amount) !== undefined
+          ? { amountValue: parseMoneyInput(row.amount) }
+          : {}),
         ...(row.type?.trim() ? { type: row.type.trim() } : {}),
         ...(row.description?.trim() ? { description: row.description.trim() } : {}),
       })),
@@ -617,7 +701,13 @@ function PolicyBreakdownEditor({
         ...row,
         name: row.name.trim(),
         ...(row.limit?.trim() ? { limit: row.limit.trim() } : {}),
+        ...(parseMoneyInput(row.limit) !== undefined
+          ? { limitAmount: parseMoneyInput(row.limit) }
+          : {}),
         ...(row.deductible?.trim() ? { deductible: row.deductible.trim() } : {}),
+        ...(parseMoneyInput(row.deductible) !== undefined
+          ? { deductibleAmount: parseMoneyInput(row.deductible) }
+          : {}),
         ...(row.coverageCode?.trim() ? { coverageCode: row.coverageCode.trim() } : {}),
         ...(row.originalContent?.trim() ? { originalContent: row.originalContent.trim() } : {}),
       })),
@@ -627,15 +717,15 @@ function PolicyBreakdownEditor({
   if (readOnly) return null;
 
   const fields = [
-    ["carrier", "Carrier"],
-    ["policyNumber", "Policy number"],
-    ["insuredName", "Named insured"],
-    ["effectiveDate", "Effective date"],
-    ["expirationDate", "Expiration date"],
-    ["premium", "Premium"],
-    ["totalCost", "Total cost"],
-    ["minPremium", "Minimum premium"],
-    ["depositPremium", "Deposit premium"],
+    { key: "carrier", label: "Carrier", kind: "text" },
+    { key: "policyNumber", label: "Policy number", kind: "text" },
+    { key: "insuredName", label: "Named insured", kind: "text" },
+    { key: "effectiveDate", label: "Effective date", kind: "date" },
+    { key: "expirationDate", label: "Expiration date", kind: "date" },
+    { key: "premium", label: "Premium", kind: "money" },
+    { key: "totalCost", label: "Total cost", kind: "money" },
+    { key: "minPremium", label: "Minimum premium", kind: "money" },
+    { key: "depositPremium", label: "Deposit premium", kind: "money" },
   ] as const;
 
   return (
@@ -646,12 +736,23 @@ function PolicyBreakdownEditor({
       </div>
       <div className="p-5 space-y-5">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          {fields.map(([key, label]) => (
+          {fields.map(({ key, label, kind }) => (
             <div key={key} className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">{label}</Label>
               <Input
-                value={draft[key]}
-                onChange={(event) => setScalar(key, event.target.value)}
+                type={kind === "date" ? "date" : "text"}
+                inputMode={kind === "money" ? "decimal" : undefined}
+                value={kind === "date" ? normalizeDateInput(draft[key]) : draft[key]}
+                onChange={(event) => {
+                  if (kind === "date") {
+                    setDateScalar(key, event.target.value);
+                    return;
+                  }
+                  setScalar(key, event.target.value);
+                }}
+                onBlur={() => {
+                  if (kind === "money") formatScalarMoney(key);
+                }}
               />
             </div>
           ))}
@@ -683,10 +784,16 @@ function PolicyBreakdownEditor({
                 />
                 <Input
                   placeholder="Amount"
+                  inputMode="decimal"
                   value={row.amount}
                   onChange={(event) => {
                     const next = [...draft.premiumBreakdown];
                     next[index] = { ...row, amount: event.target.value };
+                    updatePremiumBreakdown(next);
+                  }}
+                  onBlur={() => {
+                    const next = [...draft.premiumBreakdown];
+                    next[index] = { ...row, amount: formatMoneyInput(row.amount) };
                     updatePremiumBreakdown(next);
                   }}
                 />
@@ -729,10 +836,16 @@ function PolicyBreakdownEditor({
                 />
                 <Input
                   placeholder="Amount"
+                  inputMode="decimal"
                   value={row.amount}
                   onChange={(event) => {
                     const next = [...draft.taxesAndFees];
                     next[index] = { ...row, amount: event.target.value };
+                    updateTaxesAndFees(next);
+                  }}
+                  onBlur={() => {
+                    const next = [...draft.taxesAndFees];
+                    next[index] = { ...row, amount: formatMoneyInput(row.amount) };
                     updateTaxesAndFees(next);
                   }}
                 />
@@ -784,19 +897,31 @@ function PolicyBreakdownEditor({
                 />
                 <Input
                   placeholder="Limit"
+                  inputMode="decimal"
                   value={row.limit ?? ""}
                   onChange={(event) => {
                     const next = [...draft.coverages];
                     next[index] = { ...row, limit: event.target.value };
                     updateCoverages(next);
                   }}
+                  onBlur={() => {
+                    const next = [...draft.coverages];
+                    next[index] = { ...row, limit: formatMoneyInput(row.limit) };
+                    updateCoverages(next);
+                  }}
                 />
                 <Input
                   placeholder="Deductible"
+                  inputMode="decimal"
                   value={row.deductible ?? ""}
                   onChange={(event) => {
                     const next = [...draft.coverages];
                     next[index] = { ...row, deductible: event.target.value };
+                    updateCoverages(next);
+                  }}
+                  onBlur={() => {
+                    const next = [...draft.coverages];
+                    next[index] = { ...row, deductible: formatMoneyInput(row.deductible) };
                     updateCoverages(next);
                   }}
                 />
