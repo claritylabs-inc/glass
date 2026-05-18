@@ -21,6 +21,9 @@ describe("program administrator authority model", () => {
     const partners = readFileSync(join(ROOT, "convex/partnerPrograms.ts"), "utf-8");
     const certificates = readFileSync(join(ROOT, "convex/certificates.ts"), "utf-8");
     const pce = readFileSync(join(ROOT, "convex/actions/policyChangeRequests.ts"), "utf-8");
+    const signup = readFileSync(join(ROOT, "app/signup/page.tsx"), "utf-8");
+    const programAdminSignup = readFileSync(join(ROOT, "app/signup/program-admin/page.tsx"), "utf-8");
+    const programAdminOnboarding = readFileSync(join(ROOT, "app/onboarding/program-admin/page.tsx"), "utf-8");
 
     expect(partners).toContain("resolveCertificateAuthority");
     expect(partners).toContain("createCertificateRequestInternal");
@@ -29,5 +32,9 @@ describe("program administrator authority model", () => {
     expect(certificates).toContain("pending_approval");
     expect(certificates).toContain("standing_authorization");
     expect(pce).toContain("markPolicyChangePendingPartnerInternal");
+    expect(signup).toContain("I&apos;m a broker or insurance agent");
+    expect(signup).toContain("I&apos;m an MGA or program administrator");
+    expect(programAdminSignup).toContain('role="partner"');
+    expect(programAdminOnboarding).toContain("createPartnerOrg");
   });
 });

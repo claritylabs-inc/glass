@@ -346,9 +346,6 @@ export const createBrokerOrg = mutation({
       role: "admin",
     });
 
-    await ctx.db.patch(userId, { onboardingComplete: true });
-    await ctx.db.patch(orgId, { onboardingComplete: true });
-
     return orgId;
   },
 });
@@ -358,6 +355,8 @@ export const createPartnerOrg = mutation({
   args: {
     name: v.string(),
     website: v.optional(v.string()),
+    programName: v.optional(v.string()),
+    aliases: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
@@ -375,6 +374,17 @@ export const createPartnerOrg = mutation({
       userId,
       role: "admin",
     });
+
+    await ctx.db.insert("partnerPrograms", {
+      partnerOrgId: orgId,
+      name: args.programName?.trim() || args.name.trim(),
+      aliases: args.aliases ?? [],
+      status: "active",
+      createdAt: dayjs().valueOf(),
+      updatedAt: dayjs().valueOf(),
+    });
+    await ctx.db.patch(userId, { onboardingComplete: true });
+    await ctx.db.patch(orgId, { onboardingComplete: true });
 
     return orgId;
   },

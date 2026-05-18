@@ -28,7 +28,7 @@ export function AuthEntryPage({
   role = "client",
 }: {
   mode: "login" | "signup";
-  role?: "broker" | "client";
+  role?: "broker" | "client" | "partner";
 }) {
   const { signIn } = useAuthActions();
   const { isAuthenticated } = useConvexAuth();
@@ -36,8 +36,13 @@ export function AuthEntryPage({
   const searchParams = useSearchParams();
 
   const isBroker = role === "broker";
+  const isPartner = role === "partner";
   const nextPath = searchParams.get("next");
-  const defaultPostLogin = isBroker && mode === "signup" ? "/onboarding?type=broker" : "/";
+  const defaultPostLogin = isPartner && mode === "signup"
+    ? "/onboarding?type=partner"
+    : isBroker && mode === "signup"
+      ? "/onboarding?type=broker"
+      : "/";
   const postLoginPath =
     nextPath && nextPath.startsWith("/") && !nextPath.startsWith("//") ? nextPath : defaultPostLogin;
 
@@ -82,12 +87,16 @@ export function AuthEntryPage({
 
   const isSignup = mode === "signup";
   const title = isSignup
-    ? isBroker
+    ? isPartner
+      ? "Create your program administrator account"
+      : isBroker
       ? "Create your brokerage account"
       : "Create account"
     : "Log in";
   const subtitle = isSignup
-    ? isBroker
+    ? isPartner
+      ? "Set up your MGA or program administrator workspace on Glass."
+      : isBroker
       ? "Set up your brokerage on Glass."
       : "Use your work email to get started."
     : "Use your work email to continue.";

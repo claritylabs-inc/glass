@@ -21,6 +21,7 @@ export default function OnboardingRoutePage() {
     }
 
     const requestedBrokerFlow = searchParams?.get("type") === "broker";
+    const requestedPartnerFlow = searchParams?.get("type") === "partner";
     const orgType = (viewerOrg?.org as { type?: "broker" | "client" | "partner" } | undefined)?.type;
     const source = searchParams?.get("source");
     const client = searchParams?.get("client");
@@ -31,13 +32,13 @@ export default function OnboardingRoutePage() {
       ? `/onboarding/setup?${setupParams.toString()}`
       : "/onboarding/setup";
 
-    if (requestedBrokerFlow || orgType === "broker") {
-      router.replace("/onboarding/broker");
+    if (requestedPartnerFlow || orgType === "partner") {
+      router.replace("/onboarding/program-admin");
       return;
     }
 
-    if (orgType === "partner") {
-      router.replace("/partner/approvals");
+    if (requestedBrokerFlow || orgType === "broker") {
+      router.replace("/onboarding/broker");
       return;
     }
 

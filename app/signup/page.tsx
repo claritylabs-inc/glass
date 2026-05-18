@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Briefcase, UserRound, ArrowRight, Building2 } from "lucide-react";
+import { Briefcase, UserRound, ArrowRight, Building2, ShieldCheck } from "lucide-react";
 import { AuthCard, AuthMinimalShell, BrandWordmark } from "@/components/auth-shell";
 
 export default function SignupPage() {
@@ -20,10 +20,26 @@ export default function SignupPage() {
             <Briefcase className="mt-0.5 h-5 w-5 text-foreground" />
             <div className="flex-1">
               <div className="text-body-sm font-medium text-foreground">
-                I&apos;m a partner or admin
+                I&apos;m a broker or insurance agent
               </div>
               <div className="text-label-sm text-muted-foreground">
-                Set up your organization and invite clients.
+                Set up your brokerage and invite clients.
+              </div>
+            </div>
+            <ArrowRight className="mt-1 h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+          </Link>
+
+          <Link
+            href="/signup/program-admin"
+            className="group flex items-start gap-3 rounded-lg border border-foreground/8 bg-popover p-4 transition-colors hover:border-foreground/20"
+          >
+            <ShieldCheck className="mt-0.5 h-5 w-5 text-foreground" />
+            <div className="flex-1">
+              <div className="text-body-sm font-medium text-foreground">
+                I&apos;m an MGA or program administrator
+              </div>
+              <div className="text-label-sm text-muted-foreground">
+                Approve PCEs and certify COIs for partnered programs.
               </div>
             </div>
             <ArrowRight className="mt-1 h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
