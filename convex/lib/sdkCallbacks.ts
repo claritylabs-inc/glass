@@ -103,6 +103,22 @@ const EXTRACTION_MAX_TOKEN_OVERRIDES: Record<string, number> = {
 const SECTIONS_EXTRACTOR_PROMPT_MARKER =
   "Extract ALL sections, clauses, endorsements, and schedules from this document";
 
+const POLICY_PERIOD_EXTRACTION_GUIDANCE = `
+
+Critical policy period rule:
+- Treat "Effective Date", "Effective Date / Time", "Policy Effective Date", "From", "Start Date", and close variants as the policy period start.
+- Treat "Expiration Date", "Expiry Date", "Expiration Date / Time", "Policy Expiration Date", "To", "End Date", and close variants as the policy period end.
+- When these labels appear inside a POLICY PERIOD / POLICY TERM / PERIOD OF INSURANCE table, populate top-level effectiveDate and expirationDate from them even if the table does not literally repeat "policy period" on each row.
+- Do not leave effectiveDate or expirationDate unknown when declaration-page policy-period rows are visible.`;
+
+function addPolicyPeriodGuidance(prompt: string): string {
+  if (!prompt.includes("effectiveDate") && !prompt.includes("expirationDate")) {
+    return prompt;
+  }
+  if (prompt.includes("Critical policy period rule:")) return prompt;
+  return `${prompt}${POLICY_PERIOD_EXTRACTION_GUIDANCE}`;
+}
+
 function getEffectiveMaxTokens(
   task: ModelTask,
   prompt: string,
@@ -215,9 +231,10 @@ export function makeGenerateText(
 ): GenerateText {
   return async (params) => {
     const { prompt, system, maxTokens, providerOptions } = params;
+    const guidedPrompt = addPolicyPeriodGuidance(prompt);
     const taskKind = readTaskKind(params as ParamsWithOptionalTaskKind);
     const effectiveTask = modelTaskForCall(task, taskKind);
-    const effectiveMaxTokens = getEffectiveMaxTokens(effectiveTask, prompt, maxTokens);
+    const effectiveMaxTokens = getEffectiveMaxTokens(effectiveTask, guidedPrompt, maxTokens);
     let primaryRoute: ModelRoute | undefined;
     const model = routing?.ctx && routing.orgId
       ? await getModelAndRouteForOrg(routing.ctx, routing.orgId, effectiveTask).then((resolved) => {
@@ -228,7 +245,7 @@ export function makeGenerateText(
     const result = await generateTextWithFallback({
       model,
       system,
-      ...buildPromptInput(prompt, providerOptions as Record<string, unknown> | undefined),
+      ...buildPromptInput(guidedPrompt, providerOptions as Record<string, unknown> | undefined),
       maxOutputTokens: effectiveMaxTokens,
       providerOptions: mergeProviderOptions(
         getProviderOptionsForTask(effectiveTask),
@@ -256,9 +273,10 @@ export function makeGenerateObject(
 ): GenerateObject {
   return async (params) => {
     const { prompt, system, schema, maxTokens, providerOptions } = params;
+    const guidedPrompt = addPolicyPeriodGuidance(prompt);
     const taskKind = readTaskKind(params as ParamsWithOptionalTaskKind);
     const effectiveTask = modelTaskForCall(task, taskKind);
-    const effectiveMaxTokens = getEffectiveMaxTokens(effectiveTask, prompt, maxTokens);
+    const effectiveMaxTokens = getEffectiveMaxTokens(effectiveTask, guidedPrompt, maxTokens);
     let primaryRoute: ModelRoute | undefined;
     const model = routing?.ctx && routing.orgId
       ? await getModelAndRouteForOrg(routing.ctx, routing.orgId, effectiveTask).then((resolved) => {
@@ -270,7 +288,7 @@ export function makeGenerateObject(
       const result = await generateStructuredWithFallback({
         model,
         system,
-        ...buildPromptInput(prompt, providerOptions as Record<string, unknown> | undefined),
+        ...buildPromptInput(guidedPrompt, providerOptions as Record<string, unknown> | undefined),
         output: Output.object({ schema }),
         maxOutputTokens: effectiveMaxTokens,
         providerOptions: mergeProviderOptions(
@@ -289,7 +307,7 @@ export function makeGenerateObject(
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const isSectionsExtractor =
-        effectiveTask === "extraction" && prompt.includes(SECTIONS_EXTRACTOR_PROMPT_MARKER);
+        effectiveTask === "extraction" && guidedPrompt.includes(SECTIONS_EXTRACTOR_PROMPT_MARKER);
 
       if (isSectionsExtractor && message.includes("No output generated")) {
         return {

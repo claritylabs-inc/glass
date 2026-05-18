@@ -35,4 +35,33 @@ describe("insurance document mapping", () => {
     expect(fields.expirationDate).toBe("05/01/2027");
     expect(fields.policyYear).toBe(2026);
   });
+
+  it("maps effective and expiry declaration aliases into top-level policy period fields", () => {
+    const fields = insuranceDocToPolicy({
+      type: "policy",
+      carrier: "Starstone Specialty Insurance Company",
+      insuredName: "Clarity Labs Inc.",
+      policyNumber: "SS-MEC-2026-09921",
+      effectiveDate: "Unknown",
+      expirationDate: "Unknown",
+      policyTypes: ["general_liability"],
+      coverages: [],
+      declarations: {
+        fields: [
+          {
+            field: "Effective Date / Time",
+            value: "09/09/2026 at 8:00 AM",
+          },
+          {
+            field: "Expiration Date / Time",
+            value: "09/10/2026 at 8:00 PM",
+          },
+        ],
+      },
+    } as never);
+
+    expect(fields.effectiveDate).toBe("09/09/2026");
+    expect(fields.expirationDate).toBe("09/10/2026");
+    expect(fields.policyYear).toBe(2026);
+  });
 });

@@ -53,6 +53,8 @@ function formatDate(date: dayjs.Dayjs) {
 export function normalizePolicyDate(value: unknown): string | undefined {
   const normalized = normalizeCriticalString(value);
   if (!normalized) return undefined;
+  const explicitDate = parseExplicitDates(normalized)[0];
+  if (explicitDate) return explicitDate;
   const parsed = dayjs(
     normalized,
     [
@@ -104,7 +106,7 @@ function inferLabelDateOrder(text: string): "month_day" | "day_month" | "ambiguo
 function parseExplicitDates(text: string): string[] {
   const dates: string[] = [];
   const regex =
-    /\b([0-9]{1,2})\s*[/-]\s*([0-9]{1,2})\s*[/-]\s*([0-9]{2,4})\b/g;
+    /\b([0-9]{1,2})\s*[/-]\s*([0-9]{1,2})\s*[/-]\s*([0-9]{2,4})(?:\s+(?:at\s+)?[0-9]{1,2}(?::[0-9]{2})?\s*(?:a\.?m\.?|p\.?m\.?)?)?\b/gi;
   for (const match of text.matchAll(regex)) {
     const year = Number(match[3]?.length === 2 ? `20${match[3]}` : match[3]);
     const date = dateFromParts(
@@ -137,7 +139,7 @@ function parseTripletDates(text: string): string[] {
 
 function findPolicyPeriodInText(text: string): Omit<ExtractedPolicyPeriod, "pageNumber"> | null {
   const normalized = normalizeText(text);
-  const labelRegex = /\b(?:ITEM\s*[0-9A-Z.:-]*\s*)?(?:PERIOD\s+OF\s+INSURANCE|POLICY\s+PERIOD|POLICY\s+TERM)\b/gi;
+  const labelRegex = /\b(?:ITEM\s*[0-9A-Z.:-]*\s*)?(?:PERIOD\s+OF\s+INSURANCE|POLICY\s+PERIOD|POLICY\s+TERM)\b|(?:EFFECTIVE|EFF\.?)\s+DATE(?:\s*\/\s*TIME)?|(?:EXPIRY|EXPIRATION|EXP\.?)\s+DATE(?:\s*\/\s*TIME)?/gi;
 
   for (const labelMatch of normalized.matchAll(labelRegex)) {
     if (labelMatch.index == null) continue;
@@ -188,12 +190,14 @@ export function declarationFieldValue(
   const fields = (declarations as { fields?: unknown }).fields;
   if (!Array.isArray(fields)) return undefined;
 
-  const wanted = new Set(fieldNames.map((field) => field.toLowerCase()));
+  const normalizeFieldName = (value: string) =>
+    value.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const wanted = new Set(fieldNames.map(normalizeFieldName));
   for (const rawField of fields) {
     if (!rawField || typeof rawField !== "object") continue;
     const field = rawField as { field?: unknown; value?: unknown };
     if (typeof field.field !== "string") continue;
-    if (!wanted.has(field.field.toLowerCase())) continue;
+    if (!wanted.has(normalizeFieldName(field.field))) continue;
     const value = normalizeCriticalString(field.value);
     if (value) return value;
   }
@@ -208,6 +212,13 @@ export function extractPolicyPeriodFromDeclarations(
       "policyPeriodFrom",
       "policyEffectiveDate",
       "effectiveDate",
+      "effectiveDateTime",
+      "effectiveDateAndTime",
+      "effective",
+      "periodStart",
+      "policyPeriodStart",
+      "policyStartDate",
+      "startDate",
     ]),
   );
   const expirationDate = normalizePolicyDate(
@@ -215,6 +226,17 @@ export function extractPolicyPeriodFromDeclarations(
       "policyPeriodTo",
       "policyExpirationDate",
       "expirationDate",
+      "expiryDate",
+      "expirationDateTime",
+      "expiryDateTime",
+      "expirationDateAndTime",
+      "expiryDateAndTime",
+      "expiration",
+      "expiry",
+      "periodEnd",
+      "policyPeriodEnd",
+      "policyEndDate",
+      "endDate",
     ]),
   );
 

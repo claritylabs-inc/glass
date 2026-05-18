@@ -270,6 +270,22 @@ const EXTRACTION_MAX_TOKEN_OVERRIDES: Record<string, number> = {
 const SECTIONS_EXTRACTOR_PROMPT_MARKER =
   "Extract ALL sections, clauses, endorsements, and schedules from this document";
 
+const POLICY_PERIOD_EXTRACTION_GUIDANCE = `
+
+Critical policy period rule:
+- Treat "Effective Date", "Effective Date / Time", "Policy Effective Date", "From", "Start Date", and close variants as the policy period start.
+- Treat "Expiration Date", "Expiry Date", "Expiration Date / Time", "Policy Expiration Date", "To", "End Date", and close variants as the policy period end.
+- When these labels appear inside a POLICY PERIOD / POLICY TERM / PERIOD OF INSURANCE table, populate top-level effectiveDate and expirationDate from them even if the table does not literally repeat "policy period" on each row.
+- Do not leave effectiveDate or expirationDate unknown when declaration-page policy-period rows are visible.`;
+
+function addPolicyPeriodGuidance(prompt: string): string {
+  if (!prompt.includes("effectiveDate") && !prompt.includes("expirationDate")) {
+    return prompt;
+  }
+  if (prompt.includes("Critical policy period rule:")) return prompt;
+  return `${prompt}${POLICY_PERIOD_EXTRACTION_GUIDANCE}`;
+}
+
 function getEffectiveMaxTokens(prompt: string, maxTokens: number): number {
   if (prompt.includes("Extract ALL covered reasons from this document")) {
     return Math.max(maxTokens, EXTRACTION_MAX_TOKEN_OVERRIDES.coveredReasons);
@@ -408,11 +424,12 @@ function buildWorkerExtractor(opts: {
 }) {
   const generateText: GenerateText = async (params) => {
     const taskKind = readTaskKind(params);
+    const guidedPrompt = addPolicyPeriodGuidance(params.prompt);
     const result = await generateWithFallback({
       model: getModelForTaskKind(taskKind, opts.modelSettings),
       system: params.system,
-      ...buildPromptInput(params.prompt, params.providerOptions),
-      maxOutputTokens: getEffectiveMaxTokens(params.prompt, params.maxTokens),
+      ...buildPromptInput(guidedPrompt, params.providerOptions),
+      maxOutputTokens: getEffectiveMaxTokens(guidedPrompt, params.maxTokens),
       providerOptions: params.providerOptions as ProviderOptions | undefined,
     }, taskKind);
     return {
@@ -423,13 +440,14 @@ function buildWorkerExtractor(opts: {
 
   const generateObject: GenerateObject = async (params) => {
     const taskKind = readTaskKind(params);
+    const guidedPrompt = addPolicyPeriodGuidance(params.prompt);
     try {
       const result = await generateWithFallback({
         model: getModelForTaskKind(taskKind, opts.modelSettings),
         system: params.system,
-        ...buildPromptInput(params.prompt, params.providerOptions),
+        ...buildPromptInput(guidedPrompt, params.providerOptions),
         output: Output.object({ schema: params.schema }),
-        maxOutputTokens: getEffectiveMaxTokens(params.prompt, params.maxTokens),
+        maxOutputTokens: getEffectiveMaxTokens(guidedPrompt, params.maxTokens),
         providerOptions: params.providerOptions as ProviderOptions | undefined,
       }, taskKind);
       return {
@@ -437,7 +455,7 @@ function buildWorkerExtractor(opts: {
         usage: mapUsage(result.usage),
       };
     } catch (error) {
-      const isSectionsExtractor = params.prompt.includes(SECTIONS_EXTRACTOR_PROMPT_MARKER);
+      const isSectionsExtractor = guidedPrompt.includes(SECTIONS_EXTRACTOR_PROMPT_MARKER);
       if (isSectionsExtractor && errorMessage(error).includes("No output generated")) {
         return { object: { sections: [] }, usage: undefined };
       }
@@ -617,12 +635,14 @@ async function completeJob(
     ? (result as unknown as { sourceChunks: Array<Record<string, unknown>> }).sourceChunks
     : [];
 
+  const rawSourceSpans = fallbackSource.sourceSpans as unknown as Array<Record<string, unknown>>;
+  const rawSourceChunks = fallbackSource.sourceChunks as unknown as Array<Record<string, unknown>>;
   const sourceSpans = resultSourceSpans.length > 0
-    ? resultSourceSpans
-    : fallbackSource.sourceSpans as unknown as Array<Record<string, unknown>>;
+    ? [...resultSourceSpans, ...rawSourceSpans]
+    : rawSourceSpans;
   const sourceChunks = resultSourceChunks.length > 0
-    ? resultSourceChunks
-    : fallbackSource.sourceChunks as unknown as Array<Record<string, unknown>>;
+    ? [...resultSourceChunks, ...rawSourceChunks]
+    : rawSourceChunks;
 
   const completed = await convex.action(actions.completeExternalExtract, {
     secret: SECRET,
@@ -677,11 +697,16 @@ async function processJob(job: ClaimedJob): Promise<void> {
       await logJob(job, `Resuming extraction from cl-sdk phase "${job.clSdkCheckpoint.phase}"`);
     }
 
+    const fallbackSource = await buildPdfSourceSpans({
+      pdfBytes,
+      documentId: job.policyId,
+      sourceKind: "policy_pdf",
+    });
+    if (fallbackSource.sourceSpans.length > 0) {
+      await logJob(job, `Prepared ${fallbackSource.sourceSpans.length} raw source spans for source-grounded extraction`);
+    }
+
     let result: ExtractionResult;
-    let fallbackSource: Awaited<ReturnType<typeof buildPdfSourceSpans>> = {
-      sourceSpans: [],
-      sourceChunks: [],
-    };
     try {
       const converted = await convertPdfWithDocling(pdfBytes, {
         maxPages: DOCLING_MAX_PAGES,
@@ -708,14 +733,6 @@ async function processJob(job: ClaimedJob): Promise<void> {
         `Docling preprocessor unavailable; falling back to PDF extraction (${errorMessage(error)})`,
         "warn",
       );
-      fallbackSource = await buildPdfSourceSpans({
-        pdfBytes,
-        documentId: job.policyId,
-        sourceKind: "policy_pdf",
-      });
-      if (fallbackSource.sourceSpans.length > 0) {
-        await logJob(job, `Prepared ${fallbackSource.sourceSpans.length} raw source spans for source-grounded extraction`);
-      }
       result = await extractor.extract(
         pdfBytes,
         job.policyId,

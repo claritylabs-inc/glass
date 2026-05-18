@@ -121,7 +121,19 @@ export async function preparePdfTextWithDoclingFallback(params: {
       documentId: params.documentId,
       sourceKind: params.sourceKind ?? "policy_pdf",
     });
-    const sourceChunks = chunkSourceSpans(normalized.sourceSpans);
+    const rawSource = await buildPdfSourceSpans({
+      pdfBytes: params.pdfBytes,
+      documentId: params.documentId,
+      sourceKind: params.sourceKind ?? "policy_pdf",
+    });
+    const sourceSpans = [
+      ...normalized.sourceSpans,
+      ...rawSource.sourceSpans,
+    ];
+    const sourceChunks = [
+      ...chunkSourceSpans(normalized.sourceSpans),
+      ...rawSource.sourceChunks,
+    ];
     return {
       text: normalized.fullText,
       parserBackend: "docling",
@@ -129,7 +141,7 @@ export async function preparePdfTextWithDoclingFallback(params: {
       parsedAt: converted.metadata.parsedAt ?? dayjs().valueOf(),
       parsingMs: converted.metadata.parsingMs,
       doclingDocument: converted.document,
-      sourceSpans: normalized.sourceSpans,
+      sourceSpans,
       sourceChunks,
     };
   }
