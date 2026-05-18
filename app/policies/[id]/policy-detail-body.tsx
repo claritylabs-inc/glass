@@ -1205,7 +1205,13 @@ function PolicyChangesTab({
   );
 }
 
-function ViewPdfButton({ url }: { url?: string | null }) {
+function ViewPdfButton({
+  url,
+  disabled = false,
+}: {
+  url?: string | null;
+  disabled?: boolean;
+}) {
   const { isPdfOpen, togglePdf, openWithUrl } = usePdf();
   if (!url) return null;
   return (
@@ -1213,6 +1219,7 @@ function ViewPdfButton({ url }: { url?: string | null }) {
       variant="icon"
       size="compact"
       label={isPdfOpen ? "Hide PDF" : "View PDF"}
+      disabled={disabled}
       onClick={() => (isPdfOpen ? togglePdf() : openWithUrl(url))}
       className="hidden lg:inline-flex"
     >
@@ -1551,6 +1558,11 @@ export function PolicyDetailBody({
   const pipelineStatus = p.pipelineStatus as PipelineStatus | undefined;
   const canCancelExtraction =
     pipelineStatus === "running" || pipelineStatus === "paused";
+  const isProcessingPolicy =
+    !pipelineStatus ||
+    pipelineStatus === "idle" ||
+    pipelineStatus === "running" ||
+    pipelineStatus === "paused";
   const rawPipelineLog = p.pipelineLog;
   const pipelineLog: PolicyPipelineLogEntry[] = useMemo(
     () => Array.isArray(rawPipelineLog)
@@ -1737,7 +1749,7 @@ export function PolicyDetailBody({
             size="compact"
             variant="icon"
             label="Re-extract"
-            disabled={reExtracting || cancelingExtraction}
+            disabled={isProcessingPolicy || reExtracting || cancelingExtraction}
             onClick={() => setShowRefreshDialog(true)}
           >
             {reExtracting ? (
@@ -1747,10 +1759,11 @@ export function PolicyDetailBody({
             )}
           </PillButton>
         )}
-        <ViewPdfButton url={fileUrl} />
+        <ViewPdfButton url={fileUrl} disabled={isProcessingPolicy} />
         {!readOnly && !isDeleted && (
           <PillButton
             size="compact"
+            disabled={isProcessingPolicy}
             onClick={() => setShowCertificateSheet(true)}
           >
             <Plus className="w-3.5 h-3.5" />
@@ -1768,6 +1781,7 @@ export function PolicyDetailBody({
     reExtracting,
     cancelingExtraction,
     canCancelExtraction,
+    isProcessingPolicy,
     handleCancelExtraction,
     fileUrl,
     setShowCertificateSheet,
