@@ -4,6 +4,10 @@ import { useCallback, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Copy, CornerUpRight, FileUp, FileText, X } from "lucide-react";
 import { PillButton } from "@/components/ui/pill-button";
+import {
+  PolicyUploadModeToggle,
+  type PolicyUploadMode,
+} from "@/components/policy-upload-mode-toggle";
 
 export interface PolicyEmptyStateProps {
   /** "policy" or "quote" — controls copy only. */
@@ -13,7 +17,7 @@ export interface PolicyEmptyStateProps {
   /** Upload-in-flight flag. */
   uploading: boolean;
   /** Called when the user presses Upload with 1+ staged files. */
-  onUpload: (files: File[]) => void;
+  onUpload: (files: File[], mode: PolicyUploadMode) => void;
   /** Override the default title/subtitle if needed. */
   title?: string;
   subtitle?: string;
@@ -23,6 +27,10 @@ export interface PolicyEmptyStateProps {
   staged?: File[];
   /** Called when the staged-files list changes (controlled mode). */
   onStagedChange?: (files: File[]) => void;
+  /** Optional controlled import mode. Pair with `onUploadModeChange`. */
+  uploadMode?: PolicyUploadMode;
+  /** Called when the import mode changes. */
+  onUploadModeChange?: (mode: PolicyUploadMode) => void;
   /** When true, hide the internal "Upload" button so the parent can drive uploading. */
   hideUploadButton?: boolean;
 }
@@ -37,6 +45,8 @@ export function PolicyEmptyState({
   bare = false,
   staged,
   onStagedChange,
+  uploadMode,
+  onUploadModeChange,
   hideUploadButton = false,
 }: PolicyEmptyStateProps) {
   const plural = docType === "quote" ? "quotes" : "policies";
@@ -68,6 +78,8 @@ export function PolicyEmptyState({
         className={agentEmail ? "mt-3" : hasHeader ? "mt-5" : ""}
         staged={staged}
         onStagedChange={onStagedChange}
+        uploadMode={uploadMode}
+        onUploadModeChange={onUploadModeChange}
         hideUploadButton={hideUploadButton}
       />
     </>
@@ -134,21 +146,29 @@ function DropZone({
   className,
   staged: stagedProp,
   onStagedChange,
+  uploadMode: uploadModeProp,
+  onUploadModeChange,
   hideUploadButton = false,
 }: {
   docType: "policy" | "quote";
   uploading: boolean;
-  onUpload: (files: File[]) => void;
+  onUpload: (files: File[], mode: PolicyUploadMode) => void;
   className?: string;
   staged?: File[];
   onStagedChange?: (files: File[]) => void;
+  uploadMode?: PolicyUploadMode;
+  onUploadModeChange?: (mode: PolicyUploadMode) => void;
   hideUploadButton?: boolean;
 }) {
   const label = docType === "quote" ? "quote" : "policy";
+  const pluralLabel = docType === "quote" ? "quotes" : "policies";
   const [dragOver, setDragOver] = useState(false);
+  const [internalUploadMode, setInternalUploadMode] =
+    useState<PolicyUploadMode>("combined");
   const [internalStaged, setInternalStaged] = useState<File[]>([]);
   const isControlled = stagedProp !== undefined;
   const staged = isControlled ? stagedProp : internalStaged;
+  const uploadMode = uploadModeProp ?? internalUploadMode;
   const inputRef = useRef<HTMLInputElement>(null);
 
   const updateStaged = useCallback(
@@ -161,6 +181,16 @@ function DropZone({
       }
     },
     [isControlled, onStagedChange],
+  );
+
+  const updateUploadMode = useCallback(
+    (next: PolicyUploadMode) => {
+      if (uploadModeProp === undefined) {
+        setInternalUploadMode(next);
+      }
+      onUploadModeChange?.(next);
+    },
+    [uploadModeProp, onUploadModeChange],
   );
 
   const addFiles = useCallback(
@@ -198,9 +228,10 @@ function DropZone({
 
   const handleUpload = useCallback(() => {
     if (staged.length === 0) return;
-    onUpload(staged);
+    onUpload(staged, uploadMode);
     updateStaged([]);
-  }, [staged, onUpload, updateStaged]);
+    updateUploadMode("combined");
+  }, [staged, uploadMode, onUpload, updateStaged, updateUploadMode]);
 
   return (
     <div className={`space-y-3 ${className ?? ""}`}>
@@ -234,7 +265,9 @@ function DropZone({
           or click to choose {staged.length > 0 ? "more" : "a"} file
         </p>
         <p className="text-body-sm text-muted-foreground/60 mt-3">
-          Multiple PDFs will be combined into a single {label}.
+          {uploadMode === "separate"
+            ? `Multiple PDFs will create separate ${pluralLabel}.`
+            : `Multiple PDFs will be combined into a single ${label}.`}
         </p>
         <input
           ref={inputRef}
@@ -249,6 +282,15 @@ function DropZone({
           }}
         />
       </button>
+
+      {staged.length > 1 ? (
+        <PolicyUploadModeToggle
+          value={uploadMode}
+          onChange={updateUploadMode}
+          docType={docType}
+          disabled={uploading}
+        />
+      ) : null}
 
       {staged.length > 0 ? (
         <div className="rounded-lg border border-foreground/6 bg-white overflow-hidden">
@@ -282,8 +324,10 @@ function DropZone({
         >
           {uploading
             ? "Uploading…"
-            : staged.length > 1
-              ? `Upload ${staged.length} files`
+            : staged.length > 1 && uploadMode === "separate"
+              ? `Upload ${staged.length} ${pluralLabel}`
+              : staged.length > 1
+                ? `Upload ${staged.length} files`
               : "Upload"}
         </PillButton>
       ) : null}

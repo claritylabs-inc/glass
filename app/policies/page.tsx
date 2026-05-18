@@ -11,6 +11,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PillButton } from "@/components/ui/pill-button";
 import { PolicyListItem } from "@/components/policy-list-item";
 import { PolicyUploadDrawer } from "@/components/policy-upload-drawer";
+import type { PolicyUploadMode } from "@/components/policy-upload-mode-toggle";
 import { PolicyEmptyState } from "@/components/policy-empty-state";
 import { AgentContactCallout } from "@/components/agent-contact-callout";
 import { toast } from "sonner";
@@ -86,6 +87,7 @@ export default function PoliciesPage() {
     async (
       files: File[],
       documentType: "policy" | "quote",
+      uploadMode: PolicyUploadMode = "combined",
     ): Promise<void> => {
       if (files.length === 0) return;
       setUploading(true);
@@ -97,27 +99,44 @@ export default function PoliciesPage() {
           storageIds.push(id as Id<"_storage">);
         }
 
-        if (files.length > 1) {
+        if (files.length > 1 && uploadMode === "combined") {
           toast.info(`Merging ${files.length} files…`);
         }
 
-        const result = (await extractFromUpload({
-          fileId: storageIds[0],
-          fileName: files[0].name,
-          additionalFiles: storageIds.slice(1).map((fileId, i) => ({
-            fileId,
-            fileName: files[i + 1].name,
-          })),
-        })) as
-          | { error: string }
-          | { success: true; type: string; id: string };
+        if (uploadMode === "separate") {
+          for (let i = 0; i < storageIds.length; i++) {
+            const result = (await extractFromUpload({
+              fileId: storageIds[i],
+              fileName: files[i].name,
+            })) as
+              | { error: string }
+              | { success: true; type: string; id: string };
 
-        if ("error" in result) {
-          throw new Error(result.error);
+            if ("error" in result) {
+              throw new Error(result.error);
+            }
+          }
+        } else {
+          const result = (await extractFromUpload({
+            fileId: storageIds[0],
+            fileName: files[0].name,
+            additionalFiles: storageIds.slice(1).map((fileId, i) => ({
+              fileId,
+              fileName: files[i + 1].name,
+            })),
+          })) as
+            | { error: string }
+            | { success: true; type: string; id: string };
+
+          if ("error" in result) {
+            throw new Error(result.error);
+          }
         }
 
         toast.success(
-          `${documentType === "quote" ? "Quote" : "Policy"} uploaded — extraction running in the background.`,
+          uploadMode === "separate" && files.length > 1
+            ? `${files.length} ${documentType === "quote" ? "quotes" : "policies"} uploaded — extraction running in the background.`
+            : `${documentType === "quote" ? "Quote" : "Policy"} uploaded — extraction running in the background.`,
         );
       } catch (err) {
         console.error(err);
@@ -130,16 +149,16 @@ export default function PoliciesPage() {
   );
 
   const handleDrawerUpload = useCallback(
-    async (files: File[]) => {
-      await uploadMany(files, docTypeTab);
+    async (files: File[], uploadMode: PolicyUploadMode) => {
+      await uploadMany(files, docTypeTab, uploadMode);
       setUploaderOpen(false);
     },
     [uploadMany, docTypeTab],
   );
 
   const handleEmptyStateFiles = useCallback(
-    (files: File[]) => {
-      void uploadMany(files, docTypeTab);
+    (files: File[], uploadMode: PolicyUploadMode) => {
+      void uploadMany(files, docTypeTab, uploadMode);
     },
     [uploadMany, docTypeTab],
   );

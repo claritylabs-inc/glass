@@ -8,6 +8,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import { BrandWordmark, PartnerWordmark } from "@/components/auth-shell";
 import { PolicyEmptyState } from "@/components/policy-empty-state";
+import type { PolicyUploadMode } from "@/components/policy-upload-mode-toggle";
 import { PillButton } from "@/components/ui/pill-button";
 import { LogoIcon } from "@/components/ui/logo-icon";
 import { PhoneInput } from "@/components/ui/phone-input";
@@ -176,6 +177,8 @@ export default function ClientOnboardingSetupPage() {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
   const [stagedPolicies, setStagedPolicies] = useState<File[]>([]);
+  const [policyUploadMode, setPolicyUploadMode] =
+    useState<PolicyUploadMode>("combined");
   const isVendorInvite = searchParams?.get("source") === "vendor-invite";
   const invitingClientName = searchParams?.get("client")?.trim() || "your client";
   const trimmedUserPhone = userPhone.trim();
@@ -297,7 +300,7 @@ export default function ClientOnboardingSetupPage() {
   }, [updateOrg, createClientOrg, viewerOrg, orgName, website, extractCompanyInfo]);
 
   const handleFilesUpload = useCallback(
-    async (files: File[]) => {
+    async (files: File[], uploadMode: PolicyUploadMode = policyUploadMode) => {
       if (files.length === 0) return false;
       setUploading(true);
       try {
@@ -314,17 +317,44 @@ export default function ClientOnboardingSetupPage() {
           storageIds.push(storageId);
         }
 
-        await extractFromUpload({
-          fileId: storageIds[0] as never,
-          fileName: files[0].name,
-          additionalFiles: storageIds.slice(1).map((fileId, i) => ({
-            fileId: fileId as never,
-            fileName: files[i + 1].name,
-          })),
-        });
+        if (uploadMode === "separate") {
+          for (let i = 0; i < storageIds.length; i++) {
+            const result = await extractFromUpload({
+              fileId: storageIds[i] as never,
+              fileName: files[i].name,
+            });
+            if (
+              result &&
+              typeof result === "object" &&
+              "error" in result &&
+              typeof result.error === "string"
+            ) {
+              throw new Error(result.error);
+            }
+          }
+        } else {
+          const result = await extractFromUpload({
+            fileId: storageIds[0] as never,
+            fileName: files[0].name,
+            additionalFiles: storageIds.slice(1).map((fileId, i) => ({
+              fileId: fileId as never,
+              fileName: files[i + 1].name,
+            })),
+          });
+          if (
+            result &&
+            typeof result === "object" &&
+            "error" in result &&
+            typeof result.error === "string"
+          ) {
+            throw new Error(result.error);
+          }
+        }
 
         toast.success(
-          files.length > 1
+          uploadMode === "separate" && files.length > 1
+            ? `${files.length} policies uploaded — extraction runs in the background.`
+            : files.length > 1
             ? `${files.length} files uploaded and merged — extraction runs in the background.`
             : "Upload started — extraction runs in the background.",
         );
@@ -337,17 +367,18 @@ export default function ClientOnboardingSetupPage() {
         setUploading(false);
       }
     },
-    [generateUploadUrl, extractFromUpload],
+    [generateUploadUrl, extractFromUpload, policyUploadMode],
   );
 
   const handleStep2Continue = useCallback(async () => {
     if (stagedPolicies.length > 0) {
-      const ok = await handleFilesUpload(stagedPolicies);
+      const ok = await handleFilesUpload(stagedPolicies, policyUploadMode);
       if (!ok) return;
       setStagedPolicies([]);
+      setPolicyUploadMode("combined");
     }
     setCurrentStep(3);
-  }, [stagedPolicies, handleFilesUpload]);
+  }, [stagedPolicies, handleFilesUpload, policyUploadMode]);
 
   const handleFinish = useCallback(async () => {
     setSubmitting(true);
@@ -556,6 +587,8 @@ export default function ClientOnboardingSetupPage() {
                 bare
                 staged={stagedPolicies}
                 onStagedChange={setStagedPolicies}
+                uploadMode={policyUploadMode}
+                onUploadModeChange={setPolicyUploadMode}
                 hideUploadButton
               />
             )}

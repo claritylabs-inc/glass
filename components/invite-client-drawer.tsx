@@ -10,6 +10,10 @@ import { PillButton } from "@/components/ui/pill-button";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { PolicyListItem } from "@/components/policy-list-item";
+import {
+  PolicyUploadModeToggle,
+  type PolicyUploadMode,
+} from "@/components/policy-upload-mode-toggle";
 import { FileText, FileUp, X } from "lucide-react";
 
 const INPUT_CLASSES =
@@ -78,6 +82,8 @@ export function InviteClientDrawer({
   const [contactPhoneInput, setContactPhoneInput] = useState<string | null>(null);
   const [debouncedPhone, setDebouncedPhone] = useState("");
   const [policyFiles, setPolicyFiles] = useState<File[]>([]);
+  const [policyUploadMode, setPolicyUploadMode] =
+    useState<PolicyUploadMode>("combined");
   const [dragOver, setDragOver] = useState(false);
   const [sending, setSending] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
@@ -194,23 +200,59 @@ export function InviteClientDrawer({
         storageIds.push(storageId);
       }
 
-      const policyId = await createBrokerUpload({
-        clientOrgId: id,
-        fileId: storageIds[0] as Id<"_storage">,
-        fileName: policyFiles[0].name,
-        documentType: "policy",
-      });
-      await extractFromUpload({
-        fileId: storageIds[0] as Id<"_storage">,
-        fileName: policyFiles[0].name,
-        policyId,
-        additionalFiles: storageIds.slice(1).map((fileId, index) => ({
-          fileId: fileId as Id<"_storage">,
-          fileName: policyFiles[index + 1].name,
-        })),
-      });
+      if (policyUploadMode === "separate") {
+        for (let i = 0; i < storageIds.length; i++) {
+          const policyId = await createBrokerUpload({
+            clientOrgId: id,
+            fileId: storageIds[i] as Id<"_storage">,
+            fileName: policyFiles[i].name,
+            documentType: "policy",
+          });
+          const result = await extractFromUpload({
+            fileId: storageIds[i] as Id<"_storage">,
+            fileName: policyFiles[i].name,
+            policyId,
+          });
+          if (
+            result &&
+            typeof result === "object" &&
+            "error" in result &&
+            typeof result.error === "string"
+          ) {
+            throw new Error(result.error);
+          }
+        }
+      } else {
+        const policyId = await createBrokerUpload({
+          clientOrgId: id,
+          fileId: storageIds[0] as Id<"_storage">,
+          fileName: policyFiles[0].name,
+          documentType: "policy",
+        });
+        const result = await extractFromUpload({
+          fileId: storageIds[0] as Id<"_storage">,
+          fileName: policyFiles[0].name,
+          policyId,
+          additionalFiles: storageIds.slice(1).map((fileId, index) => ({
+            fileId: fileId as Id<"_storage">,
+            fileName: policyFiles[index + 1].name,
+          })),
+        });
+        if (
+          result &&
+          typeof result === "object" &&
+          "error" in result &&
+          typeof result.error === "string"
+        ) {
+          throw new Error(result.error);
+        }
+      }
       setPolicyFiles([]);
-      toast.success("Policy upload started — extraction will run in the background.");
+      toast.success(
+        policyUploadMode === "separate" && policyFiles.length > 1
+          ? `${policyFiles.length} policies started — extraction will run in the background.`
+          : "Policy upload started — extraction will run in the background.",
+      );
     } finally {
       setUploadingPolicies(false);
     }
@@ -289,6 +331,7 @@ export function InviteClientDrawer({
     setContactPhoneInput(null);
     setDebouncedPhone("");
     setPolicyFiles([]);
+    setPolicyUploadMode("combined");
     setDragOver(false);
     onOpenChange(false);
   }
@@ -489,6 +532,15 @@ export function InviteClientDrawer({
               }}
             />
           </button>
+          {policyFiles.length > 1 ? (
+            <PolicyUploadModeToggle
+              value={policyUploadMode}
+              onChange={setPolicyUploadMode}
+              docType="policy"
+              disabled={busy}
+              className="mt-2"
+            />
+          ) : null}
           {policyFiles.length > 0 ? (
             <div className="mt-2 rounded-lg border border-foreground/6 bg-card">
               {policyFiles.map((file, index) => (

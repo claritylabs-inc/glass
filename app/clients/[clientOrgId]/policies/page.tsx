@@ -9,6 +9,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PillButton } from "@/components/ui/pill-button";
 import { PolicyListItem } from "@/components/policy-list-item";
 import { PolicyUploadDrawer } from "@/components/policy-upload-drawer";
+import type { PolicyUploadMode } from "@/components/policy-upload-mode-toggle";
 import { PolicyEmptyState } from "@/components/policy-empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Upload } from "lucide-react";
@@ -79,7 +80,7 @@ export default function ClientPoliciesPage() {
   );
 
   const handleUpload = useCallback(
-    async (files: File[]) => {
+    async (files: File[], uploadMode: PolicyUploadMode = "combined") => {
       if (!clientOrgId || files.length === 0) return;
       setUploading(true);
       try {
@@ -88,25 +89,63 @@ export default function ClientPoliciesPage() {
           toast.info(`Uploading ${i + 1} of ${files.length}…`);
           storageIds.push(await uploadStorage(files[i]));
         }
-        const policyId = (await createBrokerUpload({
-          clientOrgId: clientOrgId as Id<"organizations">,
-          fileId: storageIds[0] as Id<"_storage">,
-          fileName: files[0].name,
-          documentType: docType,
-        })) as Id<"policies">;
 
-        if (files.length > 1) toast.info(`Merging ${files.length} files…`);
-        await extractFromUpload({
-          fileId: storageIds[0] as Id<"_storage">,
-          fileName: files[0].name,
-          policyId,
-          additionalFiles: storageIds.slice(1).map((fileId, i) => ({
-            fileId: fileId as Id<"_storage">,
-            fileName: files[i + 1].name,
-          })),
-        });
+        if (uploadMode === "separate") {
+          for (let i = 0; i < storageIds.length; i++) {
+            const policyId = (await createBrokerUpload({
+              clientOrgId: clientOrgId as Id<"organizations">,
+              fileId: storageIds[i] as Id<"_storage">,
+              fileName: files[i].name,
+              documentType: docType,
+            })) as Id<"policies">;
 
-        toast.success("Upload started — the client will see it shortly.");
+            const result = await extractFromUpload({
+              fileId: storageIds[i] as Id<"_storage">,
+              fileName: files[i].name,
+              policyId,
+            });
+            if (
+              result &&
+              typeof result === "object" &&
+              "error" in result &&
+              typeof result.error === "string"
+            ) {
+              throw new Error(result.error);
+            }
+          }
+        } else {
+          const policyId = (await createBrokerUpload({
+            clientOrgId: clientOrgId as Id<"organizations">,
+            fileId: storageIds[0] as Id<"_storage">,
+            fileName: files[0].name,
+            documentType: docType,
+          })) as Id<"policies">;
+
+          if (files.length > 1) toast.info(`Merging ${files.length} files…`);
+          const result = await extractFromUpload({
+            fileId: storageIds[0] as Id<"_storage">,
+            fileName: files[0].name,
+            policyId,
+            additionalFiles: storageIds.slice(1).map((fileId, i) => ({
+              fileId: fileId as Id<"_storage">,
+              fileName: files[i + 1].name,
+            })),
+          });
+          if (
+            result &&
+            typeof result === "object" &&
+            "error" in result &&
+            typeof result.error === "string"
+          ) {
+            throw new Error(result.error);
+          }
+        }
+
+        toast.success(
+          uploadMode === "separate" && files.length > 1
+            ? `${files.length} ${docType === "quote" ? "quotes" : "policies"} started — the client will see them shortly.`
+            : "Upload started — the client will see it shortly.",
+        );
       } catch (err) {
         toast.error("Upload failed. Please try again.");
         console.error(err);

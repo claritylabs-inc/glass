@@ -5,6 +5,10 @@ import { X, FileText, FileUp } from "lucide-react";
 import { toast } from "sonner";
 import { PillButton } from "@/components/ui/pill-button";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
+import {
+  PolicyUploadModeToggle,
+  type PolicyUploadMode,
+} from "@/components/policy-upload-mode-toggle";
 
 export type DocumentType = "policy" | "quote";
 
@@ -14,7 +18,7 @@ const LABEL_CLASSES =
 interface PolicyUploadDrawerProps {
   open: boolean;
   onClose: () => void;
-  onUpload: (files: File[]) => Promise<void>;
+  onUpload: (files: File[], mode: PolicyUploadMode) => Promise<void>;
   uploading: boolean;
   /** Drives the drawer title + copy only — actual type is inferred during extraction. */
   docType?: DocumentType;
@@ -46,6 +50,7 @@ export function PolicyUploadDrawer({
 }: PolicyUploadDrawerProps) {
   const [dragOver, setDragOver] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
+  const [uploadMode, setUploadMode] = useState<PolicyUploadMode>("combined");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const addFiles = useCallback((incoming: File[]) => {
@@ -69,12 +74,14 @@ export function PolicyUploadDrawer({
       fileInputRef.current?.click();
       return;
     }
-    await onUpload(files);
+    await onUpload(files, uploadMode);
     setFiles([]);
+    setUploadMode("combined");
     onClose();
-  }, [files, onUpload, onClose]);
+  }, [files, uploadMode, onUpload, onClose]);
 
   const typeLabel = docType === "quote" ? "quote" : "policy";
+  const typePlural = docType === "quote" ? "quotes" : "policies";
   const canUpload = files.length > 0 && !uploading;
 
   return (
@@ -92,8 +99,10 @@ export function PolicyUploadDrawer({
         >
           {uploading
             ? "Uploading…"
-            : files.length > 1
-              ? `Upload ${files.length} files`
+            : files.length > 1 && uploadMode === "separate"
+              ? `Upload ${files.length} ${typePlural}`
+              : files.length > 1
+                ? `Upload ${files.length} files`
               : files.length === 1
                 ? "Upload"
                 : "Choose files to upload"}
@@ -131,7 +140,9 @@ export function PolicyUploadDrawer({
             or click to choose {files.length > 0 ? "more" : "a"} file
           </p>
           <p className="text-label-sm text-muted-foreground/60 mt-3">
-            Multiple PDFs will be combined into a single {typeLabel}.
+            {uploadMode === "separate"
+              ? `Multiple PDFs will create separate ${typePlural}.`
+              : `Multiple PDFs will be combined into a single ${typeLabel}.`}
           </p>
           <input
             ref={fileInputRef}
@@ -146,6 +157,15 @@ export function PolicyUploadDrawer({
             }}
           />
         </button>
+
+        {files.length > 1 ? (
+          <PolicyUploadModeToggle
+            value={uploadMode}
+            onChange={setUploadMode}
+            docType={docType}
+            disabled={uploading}
+          />
+        ) : null}
 
         {files.length > 0 ? (
           <div>
