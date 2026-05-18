@@ -101,6 +101,14 @@ export function SidebarBrokerContact({
                 {primaryContact.email}
               </a>
             ) : null}
+            {primaryContact?.phone ? (
+              <a
+                href={`tel:${primaryContact.phone}`}
+                className="block text-label-sm text-muted-foreground hover:text-foreground truncate"
+              >
+                {primaryContact.phone}
+              </a>
+            ) : null}
             {agentEmail ? (
               <a
                 href={`mailto:${agentEmail}`}

@@ -231,6 +231,14 @@ function isMultiDraftElaborationRequest(text: string): boolean {
   );
 }
 
+function isBrokerDirectedEmailRequest(content: string) {
+  const normalized = content.toLowerCase();
+  return (
+    /\b(my|our|the)\s+broker\b/.test(normalized) &&
+    /\b(send|email|e-mail|forward|share|draft)\b/.test(normalized)
+  );
+}
+
 function isTextLikeAttachment(filename: string, contentType: string) {
   const lowerName = filename.toLowerCase();
   const type = contentType.toLowerCase();
@@ -1189,10 +1197,26 @@ export const run = internalAction({
       const userName = user?.name?.split(/\s+/)[0];
 
       const siteUrl = getPortalUrlForOrg(org);
+      const brokerIdentity = org.type === "client"
+        ? await ctx.runQuery(internal.orgs.resolveBrokerIdentityInternal, {
+            clientOrgId: args.orgId,
+          })
+        : null;
+      const brokerContext = brokerIdentity?.brokerCompanyName
+        ? {
+            name: brokerIdentity.brokerCompanyName,
+            contactName: brokerIdentity.contactName,
+            contactEmail: brokerIdentity.contactEmail,
+            contactPhone: brokerIdentity.contactPhone,
+          }
+        : undefined;
 
       // Build system prompt (reuse direct mode)
       const systemPrompt = buildSystemPromptForContext({
-        org,
+        org: {
+          ...org,
+          broker: brokerContext,
+        },
         mode: "direct",
         userName,
         siteUrl,
@@ -1392,10 +1416,22 @@ export const run = internalAction({
       const orgMemberEmails = orgMembers
         .map((m: any) => m?.email)
         .filter(Boolean) as string[];
-      const allowedRecipients = collectAllowedRecipients(
+      const baseAllowedRecipients = collectAllowedRecipients(
         allMessages as Parameters<typeof collectAllowedRecipients>[0],
         orgMemberEmails,
       );
+      const allowedRecipients = brokerIdentity?.contactEmail
+        ? [...new Set([...baseAllowedRecipients, brokerIdentity.contactEmail])]
+        : baseAllowedRecipients;
+      const brokerDirectedEmailRequest = isBrokerDirectedEmailRequest(
+        String(latestUserContent ?? ""),
+      );
+      const brokerRecipientEmail = brokerDirectedEmailRequest
+        ? brokerIdentity?.contactEmail
+        : undefined;
+      const brokerRecipientName = brokerDirectedEmailRequest
+        ? brokerIdentity?.contactName ?? brokerIdentity?.brokerCompanyName
+        : undefined;
       const availableAttachments = allMessages.flatMap(
         (m: Record<string, unknown>) =>
           (
@@ -1559,8 +1595,12 @@ export const run = internalAction({
                 agentAddress: thread?.threadEmail ?? emailIdentity.agentAddress,
                 brokerBranding: emailIdentity.brokerBranding,
                 senderEmail: user?.email,
-                defaultTo: user?.email,
-                defaultRecipientName: user?.name,
+                defaultTo: brokerDirectedEmailRequest
+                  ? brokerRecipientEmail
+                  : user?.email,
+                defaultRecipientName: brokerDirectedEmailRequest
+                  ? brokerRecipientName
+                  : user?.name,
                 defaultBcc:
                   org.bccRequesterOnAgentEmails !== false && user?.email
                     ? [user.email]
@@ -1573,7 +1613,9 @@ export const run = internalAction({
                 availableAttachments,
                 referencedPolicyIds: relevantPolicyIds as Id<"policies">[],
                 referencedQuoteIds: relevantQuoteIds as Id<"policies">[],
-                autoSendEmails: org.autoSendEmails === true,
+                autoSendEmails: brokerDirectedEmailRequest
+                  ? false
+                  : org.autoSendEmails === true,
                 emailSendDelay: org.emailSendDelay,
                 autoGenerateCoi: org.autoGenerateCoi,
                 coiHandling: org.coiHandling,

@@ -2015,6 +2015,7 @@ export function UnifiedThreadContent({
         <div className="max-w-2xl mx-auto space-y-4">
           {(!messages || messages.length === 0) && (
             <NewChatEmptyState
+              orgId={thread.orgId}
               onSelectPrompt={(prompt) =>
                 chatInputRef.current?.setValueAndFocus(prompt)
               }

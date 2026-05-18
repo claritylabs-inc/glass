@@ -19,6 +19,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { PillButton } from "@/components/ui/pill-button";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { HandleAvailability } from "@/components/settings/handle-availability";
+import { BrokerIdentitySection } from "@/components/settings/broker-identity-section";
 import { getPublicAgentDomain } from "@/lib/domains";
 
 const WORKSPACE_DOMAIN = getPublicAgentDomain();
@@ -431,6 +432,14 @@ export function OrganizationSection() {
         </div>
 
         {isBroker && <BrandingCard website={website} />}
+
+        {!isBroker && currentOrg?.orgId && (
+          <div className="mb-4">
+            <BrokerIdentitySection
+              orgId={currentOrg.orgId as Id<"organizations">}
+            />
+          </div>
+        )}
 
         {/* Relationship Context section — client orgs only */}
         {!isBroker && (

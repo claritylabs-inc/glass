@@ -78,6 +78,7 @@ interface OrgContext {
     name?: string;
     contactName?: string;
     contactEmail?: string;
+    contactPhone?: string;
   };
 }
 
@@ -140,7 +141,7 @@ export function buildAgentCapabilityPrompt(params: {
     : "";
 
   const brokerContext = broker?.name
-    ? `\n\nBROKER CONTEXT:\nBroker: ${broker.name}${broker.contactName ? `\nPrimary contact: ${broker.contactName}` : ""}${broker.contactEmail ? ` <${broker.contactEmail}>` : ""}`
+    ? `\n\nBROKER CONTEXT:\nBroker: ${broker.name}${broker.contactName ? `\nPrimary contact: ${broker.contactName}` : ""}${broker.contactEmail ? ` <${broker.contactEmail}>` : ""}${broker.contactPhone ? `\nPrimary contact phone: ${broker.contactPhone}` : ""}\nWhen the user refers to "my broker", use this broker contact. If the user asks to email or send something to their broker, draft the email to the broker contact email when available and ask for confirmation before sending.`
     : "";
 
   return `IDENTITY:

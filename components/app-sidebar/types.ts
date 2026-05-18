@@ -38,6 +38,7 @@ export type BrokerContact = {
     userId: string;
     name?: string;
     email?: string;
+    phone?: string;
     title?: string;
   } | null;
 } | null;

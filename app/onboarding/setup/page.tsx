@@ -2,6 +2,7 @@
 
 import { useAuthActions } from "@convex-dev/auth/react";
 import { useAction, useMutation, useQuery } from "convex/react";
+import { isValidPhoneNumber } from "react-phone-number-input";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/convex/_generated/api";
@@ -168,6 +169,7 @@ export default function ClientOnboardingSetupPage() {
   const [userName, setUserName] = useState("");
   const [userRole, setUserRole] = useState("");
   const [userPhone, setUserPhone] = useState("");
+  const [debouncedUserPhone, setDebouncedUserPhone] = useState("");
   const [orgName, setOrgName] = useState("");
   const [website, setWebsite] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -176,6 +178,23 @@ export default function ClientOnboardingSetupPage() {
   const [stagedPolicies, setStagedPolicies] = useState<File[]>([]);
   const isVendorInvite = searchParams?.get("source") === "vendor-invite";
   const invitingClientName = searchParams?.get("client")?.trim() || "your client";
+  const trimmedUserPhone = userPhone.trim();
+  const phoneHasDigits = /\d/.test(trimmedUserPhone);
+  const phoneValid = trimmedUserPhone.length > 0 && isValidPhoneNumber(trimmedUserPhone);
+  const phoneInvalid =
+    phoneHasDigits && !phoneValid && trimmedUserPhone.replace(/\D/g, "").length >= 7;
+  const shouldCheckPhone = phoneValid && trimmedUserPhone !== (viewer?.phone ?? "");
+  const phoneAvailability = useQuery(
+    api.users.checkPhoneAvailability,
+    shouldCheckPhone && debouncedUserPhone === trimmedUserPhone
+      ? { phone: debouncedUserPhone }
+      : "skip",
+  );
+  const phoneChecking =
+    shouldCheckPhone &&
+    (debouncedUserPhone !== trimmedUserPhone || phoneAvailability === undefined);
+  const phoneUnavailable = shouldCheckPhone && phoneAvailability?.available === false;
+  const phoneBlocked = phoneInvalid || phoneChecking || phoneUnavailable;
 
   // If already complete, bounce home.
   useEffect(() => {
@@ -207,6 +226,11 @@ export default function ClientOnboardingSetupPage() {
     });
   }, [viewerOrg, viewer]);
 
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedUserPhone(trimmedUserPhone), 300);
+    return () => clearTimeout(timer);
+  }, [trimmedUserPhone]);
+
   const brokerAgentHandle = viewerOrg?.brokerOrg?.agentHandle ?? viewerOrg?.org?.agentHandle;
   const brokerAgentEmail = brokerAgentHandle
     ? `${brokerAgentHandle}@${AGENT_DOMAIN}`
@@ -224,15 +248,22 @@ export default function ClientOnboardingSetupPage() {
       await updateProfile({
         name: userName.trim(),
         title: userRole.trim(),
-        phone: userPhone.trim() || undefined,
+        phone: trimmedUserPhone || undefined,
       });
       setCurrentStep(1);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to save");
+      const message = e instanceof Error ? e.message : "Failed to save";
+      setError(
+        message.includes("This phone number is already used")
+          ? "This phone number is already used by another user."
+          : message.includes("Enter a valid phone number")
+            ? "Enter a valid phone number with country code."
+            : message,
+      );
     } finally {
       setSubmitting(false);
     }
-  }, [updateProfile, userName, userRole, userPhone]);
+  }, [updateProfile, userName, userRole, trimmedUserPhone]);
 
   const handleStep1Next = useCallback(async () => {
     setSubmitting(true);
@@ -330,7 +361,8 @@ export default function ClientOnboardingSetupPage() {
     }
   }, [completeOnboarding, isVendorInvite, router]);
 
-  const canContinueStep0 = userName.trim().length > 0 && userRole.trim().length > 0;
+  const canContinueStep0 =
+    userName.trim().length > 0 && userRole.trim().length > 0 && !phoneBlocked;
   const canContinueStep1 = orgName.trim().length > 0;
 
   const policyCount = policies?.length ?? 0;
@@ -412,7 +444,21 @@ export default function ClientOnboardingSetupPage() {
                   placeholder="Enter phone number"
                 />
                 <p className="text-label-sm text-muted-foreground/70">
-                  Used for iMessage access to your Glass agent.
+                  {phoneInvalid ? (
+                    <span className="text-red-500/80">
+                      Enter a valid phone number with country code.
+                    </span>
+                  ) : phoneChecking ? (
+                    "Checking phone number"
+                  ) : phoneUnavailable ? (
+                    <span className="text-red-500/80">
+                      This phone number is already used by another user.
+                    </span>
+                  ) : shouldCheckPhone && phoneAvailability?.available ? (
+                    "Phone number is available for iMessage."
+                  ) : (
+                    "Used for iMessage access to your Glass agent."
+                  )}
                 </p>
               </div>
             </div>

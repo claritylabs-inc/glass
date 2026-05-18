@@ -9,6 +9,7 @@ import {
   resolveImessageConversationScope,
   type ResolvedImessageParticipant,
 } from "./lib/imessageGroupResolution";
+import { resolveBrokerIdentityForClient } from "./lib/brokerIdentity";
 
 function looksLikePhone(value: string): boolean {
   const digits = value.replace(/\D/g, "");
@@ -66,18 +67,22 @@ async function firstContactForOrg(ctx: any, orgId: Id<"organizations">) {
 
 async function brokerContactForClient(ctx: any, clientOrg: Doc<"organizations">) {
   if (!clientOrg.brokerOrgId) return null;
-  const assignments = await ctx.db
-    .query("brokerClientAssignments")
-    .withIndex("by_clientOrgId", (q: any) => q.eq("clientOrgId", clientOrg._id))
-    .collect();
-  const primaryAssignment =
-    assignments.find((assignment: Doc<"brokerClientAssignments">) => assignment.role === "primary") ??
-    assignments[0];
-  if (primaryAssignment) {
-    const assignedUser = await ctx.db.get(primaryAssignment.producerId);
-    if (assignedUser?.phone) {
-      const brokerOrg = await ctx.db.get(primaryAssignment.orgId);
-      if (brokerOrg) return { org: brokerOrg, user: assignedUser };
+  const brokerIdentity = await resolveBrokerIdentityForClient(ctx, clientOrg);
+  if (brokerIdentity.brokerOrgId && brokerIdentity.contactUserId && brokerIdentity.contactPhone) {
+    const [brokerOrg, contactUser] = await Promise.all([
+      ctx.db.get(brokerIdentity.brokerOrgId),
+      ctx.db.get(brokerIdentity.contactUserId),
+    ]);
+    if (brokerOrg && contactUser) {
+      return {
+        org: brokerOrg,
+        user: {
+          ...contactUser,
+          name: brokerIdentity.contactName ?? contactUser.name,
+          email: brokerIdentity.contactEmail ?? contactUser.email,
+          phone: brokerIdentity.contactPhone,
+        },
+      };
     }
   }
   return await firstContactForOrg(ctx, clientOrg.brokerOrgId);

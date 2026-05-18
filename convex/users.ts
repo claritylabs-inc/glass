@@ -2,13 +2,10 @@ import { v } from "convex/values";
 import { query, mutation, internalQuery } from "./_generated/server";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { notify } from "./lib/notify";
-
-function normalizePhone(phone: string): string | undefined {
-  const compact = phone.trim().replace(/[^+\d]/g, "").replace(/(?!^)\+/g, "");
-  const digits = compact.replace(/\D/g, "");
-  if (!digits) return undefined;
-  return compact.startsWith("+") ? compact : `+${compact}`;
-}
+import {
+  normalizeAvailableUserPhone,
+  normalizeUserPhone,
+} from "./lib/userPhone";
 
 export const viewer = query({
   args: {},
@@ -36,7 +33,12 @@ export const checkPhoneAvailability = query({
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("Not authenticated");
 
-    const normalized = normalizePhone(args.phone);
+    let normalized: string | undefined;
+    try {
+      normalized = normalizeUserPhone(args.phone);
+    } catch {
+      return { available: false, normalized: "" };
+    }
     if (!normalized) return { available: false, normalized: "" };
 
     const existing = await ctx.db
@@ -97,15 +99,12 @@ export const updateProfile = mutation({
     if (args.name !== undefined) patch.name = args.name;
     if (args.title !== undefined) patch.title = args.title;
     if (args.phone !== undefined) {
-      const normalized = normalizePhone(args.phone);
+      const normalized = await normalizeAvailableUserPhone(
+        ctx,
+        args.phone,
+        userId,
+      );
       if (normalized) {
-        const existing = await ctx.db
-          .query("users")
-          .withIndex("phone", (q) => q.eq("phone", normalized))
-          .first();
-        if (existing && existing._id !== userId) {
-          throw new Error("Phone number is already in use");
-        }
         patch.phone = normalized;
       } else {
         patch.phone = undefined;

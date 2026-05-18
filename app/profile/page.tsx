@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { isValidPhoneNumber } from "react-phone-number-input";
+import dayjs from "dayjs";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
@@ -104,9 +105,16 @@ export default function ProfilePage() {
         phone: next.phone,
       });
       setPersistedValues(next);
-      setSavedAt(Date.now());
+      setSavedAt(dayjs().valueOf());
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to save profile");
+      const message = err instanceof Error ? err.message : "Failed to save profile";
+      toast.error(
+        message.includes("This phone number is already used")
+          ? "This phone number is already used by another user."
+          : message.includes("Enter a valid phone number")
+            ? "Enter a valid phone number with country code."
+            : message,
+      );
     } finally {
       setSaving(false);
     }

@@ -149,7 +149,7 @@ async function fetchWithRawHtml(url: string): Promise<string | null> {
 }
 
 export const extractCompanyInfo = action({
-  args: { url: v.string() },
+  args: { url: v.string(), orgId: v.optional(v.id("organizations")) },
   returns: v.any(),
   handler: async (ctx, args): Promise<ExtractCompanyInfoResult> => {
     const viewer = await ctx.runQuery(api.users.viewer);
@@ -158,25 +158,34 @@ export const extractCompanyInfo = action({
       api.orgs.viewerOrg,
       {},
     );
-    if (!viewerOrg?.org) throw new Error("Organization not found");
+    const targetOrgId = args.orgId ?? viewerOrg?.org?._id;
+    if (!targetOrgId) throw new Error("Organization not found");
+    if (args.orgId && args.orgId !== viewerOrg?.org?._id) {
+      const access = await ctx.runQuery(
+        internal.clientInvitations.resolveAccessInternal,
+        {
+          userId: viewer._id,
+          orgId: args.orgId,
+        },
+      );
+      if (!access) throw new Error("Not authorized");
+    }
 
     // Favicon — best effort, parallel with content fetch
-    if (viewerOrg.org) {
-      void (async () => {
-        try {
-          const iconBlob = await fetchFavicon(args.url);
-          if (iconBlob) {
-            const iconStorageId = await ctx.storage.store(iconBlob);
-            await ctx.runMutation(internal.orgs.setIconInternal, {
-              orgId: viewerOrg.org._id,
-              iconStorageId,
-            });
-          }
-        } catch {
-          // ignore favicon failures
+    void (async () => {
+      try {
+        const iconBlob = await fetchFavicon(args.url);
+        if (iconBlob) {
+          const iconStorageId = await ctx.storage.store(iconBlob);
+          await ctx.runMutation(internal.orgs.setIconInternal, {
+            orgId: targetOrgId,
+            iconStorageId,
+          });
         }
-      })();
-    }
+      } catch {
+        // ignore favicon failures
+      }
+    })();
 
     const content =
       (await fetchWithExa(args.url)) ?? (await fetchWithRawHtml(args.url));
@@ -185,7 +194,7 @@ export const extractCompanyInfo = action({
     }
 
     const { output: object } = (await generateText({
-      model: await getModelForOrg(ctx, viewerOrg.org._id, "triage"),
+      model: await getModelForOrg(ctx, targetOrgId, "triage"),
       output: Output.object({ schema: CompanyInfoSchema }),
       maxOutputTokens: 2048,
       prompt: `Extract company information from the website content below.
@@ -210,7 +219,7 @@ ${content}`,
 
     const companyContext = object.companyContext;
 
-    if (viewerOrg?.org) {
+    if (targetOrgId) {
       const orgUpdates: Record<string, string> = { context: companyContext };
       if (industry) orgUpdates.industry = industry;
       if (industryVertical) orgUpdates.industryVertical = industryVertical;
@@ -219,7 +228,10 @@ ${content}`,
       if (object.insuranceContext) orgUpdates.insuranceContext = object.insuranceContext;
       if (object.investorsContext) orgUpdates.investorsContext = object.investorsContext;
       if (object.partnersContext) orgUpdates.partnersContext = object.partnersContext;
-      await ctx.runMutation(api.orgs.updateOrg, orgUpdates);
+      await ctx.runMutation(internal.orgs.updateProfileInternal, {
+        orgId: targetOrgId,
+        ...orgUpdates,
+      });
 
       // Write extracted facts to orgMemory (website source).
       // Each memory entry is a single atomic fact — no verbose paragraphs,
@@ -238,7 +250,7 @@ ${content}`,
           return true;
         })
         .map((content) => ({
-          orgId: viewerOrg.org._id,
+          orgId: targetOrgId,
           type: "fact" as const,
           content,
           source: "extraction" as const,

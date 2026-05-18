@@ -77,6 +77,14 @@ import {
   isShowMoreEmailDraftIntent,
 } from "../lib/emailDraftSummary";
 
+function isBrokerDirectedEmailRequest(content: string) {
+  const normalized = content.toLowerCase();
+  return (
+    /\b(my|our|the)\s+broker\b/.test(normalized) &&
+    /\b(send|email|e-mail|forward|share|draft)\b/.test(normalized)
+  );
+}
+
 /** Normalize a raw phone string to E.164 (+1XXXXXXXXXX). */
 function normalizePhone(raw: string): string {
   if (raw.includes("@")) return raw.trim().toLowerCase();
@@ -930,27 +938,11 @@ export const processInbound = internalAction({
       }
 
       // ── 12. Build system prompt ───────────────────────────────────────────
-      let brokerName: string | undefined;
-      let brokerContactName: string | undefined;
-      let brokerContactEmail: string | undefined;
-      if (org.type === "client" && org.brokerOrgId) {
-        const brokerRecord = await ctx.runQuery(internal.orgs.getInternal, {
-          id: org.brokerOrgId,
-        });
-        if (brokerRecord) {
-          brokerName = brokerRecord.name;
-          if (brokerRecord.primaryInsuranceContactId) {
-            const brokerContact = await ctx.runQuery(
-              internal.users.getInternal,
-              {
-                id: brokerRecord.primaryInsuranceContactId,
-              },
-            );
-            brokerContactName = brokerContact?.name;
-            brokerContactEmail = brokerContact?.email;
-          }
-        }
-      }
+      const brokerIdentity = org.type === "client"
+        ? await ctx.runQuery(internal.orgs.resolveBrokerIdentityInternal, {
+            clientOrgId: orgId,
+          })
+        : null;
 
       const systemPrompt =
         buildSystemPromptForContext({
@@ -958,11 +950,12 @@ export const processInbound = internalAction({
             name: org.name,
             context: org.context,
             coiHandling: org.coiHandling,
-            broker: brokerName
+            broker: brokerIdentity?.brokerCompanyName
               ? {
-                  name: brokerName,
-                  contactName: brokerContactName,
-                  contactEmail: brokerContactEmail,
+                  name: brokerIdentity.brokerCompanyName,
+                  contactName: brokerIdentity.contactName,
+                  contactEmail: brokerIdentity.contactEmail,
+                  contactPhone: brokerIdentity.contactPhone,
                 }
               : undefined,
           },
@@ -1000,11 +993,22 @@ export const processInbound = internalAction({
       });
       const allowedRecipients = [
         ...new Set(
-          [user.email, ...orgMembers.map((member: any) => member?.email)]
+          [
+            user.email,
+            brokerIdentity?.contactEmail,
+            ...orgMembers.map((member: any) => member?.email),
+          ]
             .filter(Boolean)
             .map((email) => String(email).toLowerCase()),
         ),
       ];
+      const brokerDirectedEmailRequest = isBrokerDirectedEmailRequest(args.messageText);
+      const brokerRecipientEmail = brokerDirectedEmailRequest
+        ? brokerIdentity?.contactEmail
+        : undefined;
+      const brokerRecipientName = brokerDirectedEmailRequest
+        ? brokerIdentity?.contactName ?? brokerIdentity?.brokerCompanyName
+        : undefined;
       const availableEmailAttachments = attachmentRecords
         .filter(
           (att): att is typeof att & { fileId: Id<"_storage"> } => !!att.fileId,
@@ -1403,8 +1407,10 @@ export const processInbound = internalAction({
                 agentAddress: emailIdentity.agentAddress,
                 brokerBranding: emailIdentity.brokerBranding,
                 senderEmail: user.email,
-                defaultTo: user.email,
-                defaultRecipientName: user.name,
+                defaultTo: brokerDirectedEmailRequest ? brokerRecipientEmail : user.email,
+                defaultRecipientName: brokerDirectedEmailRequest
+                  ? brokerRecipientName
+                  : user.name,
                 defaultBcc:
                   org.bccRequesterOnAgentEmails !== false && user.email
                     ? [user.email]
@@ -1412,7 +1418,9 @@ export const processInbound = internalAction({
                 allowedRecipients,
                 availableAttachments: availableEmailAttachments,
                 referencedPolicyIds: relevantPolicyIds as Id<"policies">[],
-                autoSendEmails: org.autoSendEmails === true,
+                autoSendEmails: brokerDirectedEmailRequest
+                  ? false
+                  : org.autoSendEmails === true,
                 emailSendDelay: org.emailSendDelay,
                 autoGenerateCoi: org.autoGenerateCoi,
                 coiHandling: org.coiHandling,

@@ -136,14 +136,50 @@ async function requireOrgAdmin(ctx: QueryCtx | MutationCtx, orgId: Id<"organizat
   return access;
 }
 
+async function requireConnectClientOrg(
+  ctx: QueryCtx | MutationCtx,
+  orgId: Id<"organizations">,
+) {
+  const org = await ctx.db.get(orgId);
+  if (!org) throw new Error("Organization not found");
+  if ((org.type ?? "client") === "broker") {
+    throw new Error("Connect vendor/client features are not available for broker organizations");
+  }
+  return org;
+}
+
+async function requireConnectVendorOrg(
+  ctx: QueryCtx | MutationCtx,
+  orgId: Id<"organizations">,
+) {
+  const org = await ctx.db.get(orgId);
+  if (!org) throw new Error("Vendor organization not found");
+  if ((org.type ?? "client") === "broker") {
+    throw new Error("Broker organizations cannot be connected as vendors");
+  }
+  return org;
+}
+
 async function pickUserOrg(ctx: QueryCtx | MutationCtx, userId: Id<"users">) {
   const memberships = await ctx.db
     .query("orgMemberships")
     .withIndex("by_userId", (q) => q.eq("userId", userId))
     .collect();
-  const membership = memberships.find((m) => m.role === "admin") ?? memberships[0];
+  const membershipCandidates = await Promise.all(
+    memberships.map(async (membership) => ({
+      membership,
+      org: await ctx.db.get(membership.orgId),
+    })),
+  );
+  const eligible = membershipCandidates.filter(
+    (candidate) => candidate.org && (candidate.org.type ?? "client") !== "broker",
+  );
+  const picked =
+    eligible.find((candidate) => candidate.membership.role === "admin") ??
+    eligible[0];
+  const membership = picked?.membership;
   if (!membership) return null;
-  const org = await ctx.db.get(membership.orgId);
+  const org = picked.org;
   if (!org) return null;
   return { membership, org };
 }
@@ -190,6 +226,8 @@ export const listVendors = query({
     for (const membership of memberships) {
       const access = await getOrgAccess(ctx, membership.orgId);
       if (access.accessType !== "member") continue;
+      const org = await ctx.db.get(membership.orgId);
+      if ((org?.type ?? "client") === "broker") continue;
       const [relationships, invitations] = await Promise.all([
         ctx.db
           .query("connectedOrgRelationships")
@@ -238,6 +276,8 @@ export const listClients = query({
     for (const membership of memberships) {
       const access = await getOrgAccess(ctx, membership.orgId);
       if (access.accessType !== "member") continue;
+      const org = await ctx.db.get(membership.orgId);
+      if ((org?.type ?? "client") === "broker") continue;
       const [relationships, invitations] = await Promise.all([
         ctx.db
           .query("connectedOrgRelationships")
@@ -382,9 +422,9 @@ export const requestVendorAccess = mutation({
     if (access.accessType !== "member" || access.role !== "admin") {
       throw new Error("Admin role required to request vendor access");
     }
+    await requireConnectClientOrg(ctx, args.clientOrgId);
     if (args.clientOrgId === args.vendorOrgId) throw new Error("Cannot connect an org to itself");
-    const vendor = await ctx.db.get(args.vendorOrgId);
-    if (!vendor) throw new Error("Vendor organization not found");
+    await requireConnectVendorOrg(ctx, args.vendorOrgId);
 
     return await upsertRelationship(ctx, {
       clientOrgId: args.clientOrgId,
@@ -406,6 +446,8 @@ async function upsertRelationship(
     note?: string;
   },
 ) {
+  await requireConnectClientOrg(ctx, args.clientOrgId);
+  await requireConnectVendorOrg(ctx, args.vendorOrgId);
   const existing = await ctx.db
     .query("connectedOrgRelationships")
     .withIndex("by_clientOrgId_vendorOrgId", (q) =>
@@ -440,6 +482,7 @@ export const approve = mutation({
   handler: async (ctx, args) => {
     const rel = await ctx.db.get(args.relationshipId);
     if (!rel) throw new Error("Connection request not found");
+    await requireConnectVendorOrg(ctx, rel.vendorOrgId);
     const access = await requireOrgAdmin(ctx, rel.vendorOrgId);
     await ctx.db.patch(args.relationshipId, {
       status: "active",
@@ -466,6 +509,7 @@ export const acceptInvitation = mutation({
       throw new Error("This vendor invite has expired");
     }
 
+    await requireConnectClientOrg(ctx, inv.clientOrgId);
     let vendorOrgId = inv.vendorOrgId;
     if (!vendorOrgId) {
       const picked = await pickUserOrg(ctx, userId);
@@ -480,6 +524,7 @@ export const acceptInvitation = mutation({
         await ctx.db.insert("orgMemberships", { orgId: vendorOrgId, userId, role: "admin" });
       }
     } else {
+      await requireConnectVendorOrg(ctx, vendorOrgId);
       await requireOrgAdmin(ctx, vendorOrgId);
     }
 
@@ -574,8 +619,7 @@ export const createEmailRequestInternal = internalMutation({
       throw new Error("Admin role required to request vendor access");
     }
 
-    const clientOrg = await ctx.db.get(args.clientOrgId);
-    if (!clientOrg) throw new Error("Client organization not found");
+    const clientOrg = await requireConnectClientOrg(ctx, args.clientOrgId);
     const existingUser = await ctx.db
       .query("users")
       .withIndex("email", (q) => q.eq("email", args.vendorEmail))

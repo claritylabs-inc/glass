@@ -82,6 +82,16 @@ Surfaces:
 
 Glass supports one-way connected organization relationships for vendor/client insurance access, modeled after the platform/connected-account idea of a parent org receiving scoped access to a connected org's records. The implementation intentionally keeps this separate from the broker/client hierarchy so broker portal features remain broker-only.
 
+## Broker Identity For Client Orgs
+
+Client-side broker identity is resolved through [convex/lib/brokerIdentity.ts](convex/lib/brokerIdentity.ts). For broker-connected client orgs, Glass uses the primary `brokerClientAssignments` producer as the per-client broker contact, with optional assignment-level overrides for contact name, email, and phone. If no per-client assignment exists, Glass falls back to the broker org's `primaryInsuranceContactId`. Standalone client orgs can store manual broker company/contact/email/phone fields directly on `organizations`.
+
+The shared resolver is used by web chat, inbound email, iMessage, email drafting, sidebar broker contact display, and iMessage group recipient resolution. When a client asks Glass to send something to "my broker," the email path should resolve the broker contact email from this identity and draft for confirmation rather than auto-sending. Connected broker identity is editable by broker admins from the client settings surface; standalone manual broker identity is editable by the client org admin.
+
+## Broker-Created Client Drafts
+
+Broker-created client drafts are created only from explicit invite-drawer actions, not while the broker types. The broker-side client invite drawer can prefill the client's org name, website, primary user name, primary user phone, and policy PDFs before sending. Email remains required because it creates or updates the invited user record and is the invite recipient; phone is optional but must be a unique valid E.164-capable user phone because iMessage identity depends on user-phone uniqueness. Website enrichment for broker-created drafts must target the client org, not the broker org, and staged policy PDFs are uploaded only after the draft exists so extraction can run in the background against the client org.
+
 ## Operator Provisioning
 
 Broker orgs and broker admin accounts can be created from the private installable operator CLI without adding an admin web portal or requiring a customer OTP during setup. The CLI package lives in `operator-cli/` as `@claritylabs/glass-operator` and exposes the `glass-operator` binary; the repo wrapper `npm run operator:provision-broker` builds and runs the same package locally. It calls `convex/operatorProvisioning.ts` directly through Convex. The Convex deployment requires `OPERATOR_PROVISIONING_SECRET`; the CLI stores that token locally with `glass-operator auth:login` or reads `GLASS_OPERATOR_TOKEN` in agent environments. Requests are HMAC-signed with timestamp, nonce, and body hash, and Convex stores used nonces in `operatorAuthNonces` to reject replay. This flow may create or update the broker org, create/link the admin user account for the provided email, add the admin org membership, mark onboarding complete, and optionally seed draft client orgs. It deliberately does not create a browser session or bypass normal login; the broker contact still signs in with the usual OTP when they first access Glass.

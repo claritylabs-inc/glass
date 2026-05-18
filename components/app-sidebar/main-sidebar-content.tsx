@@ -166,18 +166,22 @@ export function MainSidebarContent({
           />
         ))}
 
-        <SectionHeader label="Connect" collapsed={collapsed} />
-        {connectItems.map((item) => (
-          <NavItem
-            key={item.href}
-            href={item.href}
-            label={item.label}
-            icon={item.icon}
-            active={isActive(item.href)}
-            collapsed={collapsed}
-            shortcut={item.shortcut ?? undefined}
-          />
-        ))}
+        {connectItems.length > 0 ? (
+          <>
+            <SectionHeader label="Connect" collapsed={collapsed} />
+            {connectItems.map((item) => (
+              <NavItem
+                key={item.href}
+                href={item.href}
+                label={item.label}
+                icon={item.icon}
+                active={isActive(item.href)}
+                collapsed={collapsed}
+                shortcut={item.shortcut ?? undefined}
+              />
+            ))}
+          </>
+        ) : null}
 
         {isBroker ? null : !collapsed ? (
           <ExpandedThreadList

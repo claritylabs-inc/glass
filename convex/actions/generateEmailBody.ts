@@ -22,11 +22,10 @@ export const run = internalAction({
   handler: async (ctx, args): Promise<{ subject: string; body: string }> => {
     const org = await ctx.runQuery(internal.orgs.getInternal, { id: args.orgId });
     if (!org) throw new Error("Organization not found");
-    const brokerOrg = org.type === "client" && org.brokerOrgId
-      ? await ctx.runQuery(internal.orgs.getInternal, { id: org.brokerOrgId })
-      : null;
-    const brokerContact = brokerOrg?.primaryInsuranceContactId
-      ? await ctx.runQuery(internal.users.getInternal, { id: brokerOrg.primaryInsuranceContactId })
+    const brokerIdentity = org.type === "client"
+      ? await ctx.runQuery(internal.orgs.resolveBrokerIdentityInternal, {
+          clientOrgId: args.orgId,
+        })
       : null;
 
     const memoryBlock = await buildIntelligenceContext(ctx, args.orgId, args.intent);
@@ -36,7 +35,7 @@ export const run = internalAction({
 
 Organization: ${org.name}
 Industry: ${org.industry ?? "N/A"}
-Broker: ${brokerOrg?.name ?? "N/A"} (Contact: ${brokerContact?.name ?? "N/A"})
+Broker: ${brokerIdentity?.brokerCompanyName ?? "N/A"} (Contact: ${brokerIdentity?.contactName ?? "N/A"}${brokerIdentity?.contactEmail ? ` <${brokerIdentity.contactEmail}>` : ""}${brokerIdentity?.contactPhone ? `, ${brokerIdentity.contactPhone}` : ""})
 Tone: ${tone}
 
 Intent: ${args.intent}

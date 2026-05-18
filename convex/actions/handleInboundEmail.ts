@@ -84,6 +84,14 @@ import {
 
 const GLASS_PUBLIC_URL = getClientPortalUrl();
 
+function isBrokerDirectedEmailRequest(content: string) {
+  const normalized = content.toLowerCase();
+  return (
+    /\b(my|our|the)\s+broker\b/.test(normalized) &&
+    /\b(send|email|e-mail|forward|share|draft)\b/.test(normalized)
+  );
+}
+
 const CONSUMER_DOMAINS = new Set([
   "gmail.com",
   "googlemail.com",
@@ -858,38 +866,22 @@ export const processInbound = internalAction({
       });
       const userName = primaryUser?.name?.split(/\s+/)[0];
 
-      // Resolve the connected broker (if this is a client org) for COI/broker prompts.
-      let brokerName: string | undefined;
-      let brokerContactName: string | undefined;
-      let brokerContactEmail: string | undefined;
-      if (org.type === "client" && org.brokerOrgId) {
-        const brokerRecord = await ctx.runQuery(internal.orgs.getInternal, {
-          id: org.brokerOrgId,
-        });
-        if (brokerRecord) {
-          brokerName = brokerRecord.name;
-          if (brokerRecord.primaryInsuranceContactId) {
-            const brokerContact = await ctx.runQuery(
-              internal.users.getInternal,
-              {
-                id: brokerRecord.primaryInsuranceContactId,
-              },
-            );
-            brokerContactName = brokerContact?.name;
-            brokerContactEmail = brokerContact?.email;
-          }
-        }
-      }
+      const brokerIdentity = org.type === "client"
+        ? await ctx.runQuery(internal.orgs.resolveBrokerIdentityInternal, {
+            clientOrgId: orgId,
+          })
+        : null;
       const systemPrompt = buildSystemPromptForContext({
         org: {
           name: org.name,
           context: org.context,
           coiHandling: org.coiHandling,
-          broker: brokerName
+          broker: brokerIdentity?.brokerCompanyName
             ? {
-                name: brokerName,
-                contactName: brokerContactName,
-                contactEmail: brokerContactEmail,
+                name: brokerIdentity.brokerCompanyName,
+                contactName: brokerIdentity.contactName,
+                contactEmail: brokerIdentity.contactEmail,
+                contactPhone: brokerIdentity.contactPhone,
               }
             : undefined,
         },
@@ -1083,6 +1075,15 @@ export const processInbound = internalAction({
       };
       let toolSentEmail: ToolSentEmail | null = null;
       const generatedCoiAttachments: EmailAttachmentMeta[] = [];
+      const brokerDirectedEmailRequest = isBrokerDirectedEmailRequest(
+        [subject ?? "", body].join("\n\n"),
+      );
+      const brokerRecipientEmail = brokerDirectedEmailRequest
+        ? brokerIdentity?.contactEmail
+        : undefined;
+      const brokerRecipientName = brokerDirectedEmailRequest
+        ? brokerIdentity?.contactName ?? brokerIdentity?.brokerCompanyName
+        : undefined;
 
       const emailTools = {
         lookup_policy: {
@@ -1238,8 +1239,12 @@ export const processInbound = internalAction({
                 agentAddress,
                 brokerBranding,
                 senderEmail: fromEmail,
-                defaultTo: fromEmail,
-                defaultRecipientName: fromName,
+                defaultTo: brokerDirectedEmailRequest
+                  ? brokerRecipientEmail
+                  : fromEmail,
+                defaultRecipientName: brokerDirectedEmailRequest
+                  ? brokerRecipientName
+                  : fromName,
                 defaultBcc:
                   org.bccRequesterOnAgentEmails !== false
                     ? [fromEmail]
@@ -1266,7 +1271,10 @@ export const processInbound = internalAction({
                         memberEmails,
                       ),
                       ...memberEmails,
-                    ].map((email) => email.toLowerCase()),
+                      brokerIdentity?.contactEmail,
+                    ]
+                      .filter(Boolean)
+                      .map((email) => String(email).toLowerCase()),
                   ),
                 ],
                 availableAttachments: attachmentRecords
@@ -1288,7 +1296,9 @@ export const processInbound = internalAction({
                   relevantQuoteIds.length > 0
                     ? (relevantQuoteIds as Id<"policies">[])
                     : undefined,
-                autoSendEmails: org.autoSendEmails === true,
+                autoSendEmails: brokerDirectedEmailRequest
+                  ? false
+                  : org.autoSendEmails === true,
                 emailSendDelay: org.emailSendDelay,
                 autoGenerateCoi: org.autoGenerateCoi,
                 coiHandling: org.coiHandling,

@@ -17,6 +17,11 @@ import { buildEmailShell } from "./lib/emailTemplate";
 import { getBrandingContext, isWhiteLabelingEnabled } from "./lib/branding";
 import { getAuthSiteUrl } from "./lib/domains";
 import type { MutationCtx } from "./_generated/server";
+import {
+  findUserByNormalizedPhone,
+  normalizeAvailableUserPhone,
+  normalizeUserPhone,
+} from "./lib/userPhone";
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
@@ -55,6 +60,57 @@ function companyNameFromEmail(email: string | undefined | null): string | null {
     .map((part) => part[0]!.toUpperCase() + part.slice(1))
     .join(" ")
     .slice(0, 80);
+}
+
+function normalizeEmail(email: string) {
+  return email.trim().toLowerCase();
+}
+
+function cleanOptionalString(value: string | undefined | null) {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function normalizeWebsite(value: string | undefined | null) {
+  const trimmed = cleanOptionalString(value);
+  if (!trimmed) return undefined;
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+}
+
+async function findUserByEmail(ctx: MutationCtx, email: string) {
+  return await ctx.db
+    .query("users")
+    .withIndex("email", (q) => q.eq("email", email))
+    .first();
+}
+
+async function upsertInvitedUser(
+  ctx: MutationCtx,
+  args: {
+    email: string;
+    name?: string;
+    phone?: string;
+  },
+) {
+  const email = normalizeEmail(args.email);
+  if (!email) throw new Error("Client email is required");
+  const existing = await findUserByEmail(ctx, email);
+  const phone = await normalizeAvailableUserPhone(ctx, args.phone, existing?._id);
+  const name = cleanOptionalString(args.name);
+
+  if (existing) {
+    const patch: { name?: string; phone?: string | undefined } = {};
+    if (name) patch.name = name;
+    if (args.phone !== undefined) patch.phone = phone;
+    if (Object.keys(patch).length > 0) await ctx.db.patch(existing._id, patch);
+    return existing._id;
+  }
+
+  return await ctx.db.insert("users", {
+    email,
+    ...(name ? { name } : {}),
+    ...(phone ? { phone } : {}),
+  });
 }
 
 /**
@@ -173,36 +229,47 @@ export const joinBroker = mutation({
 
 // ── Draft client flow ────────────────────────────────────────────────────────
 //
-// Brokers create a "draft" client org up front so they can attach policy
-// uploads + contact details before the invite email goes out. When they send
-// the invite, the org flips from draft → invited and the invitation record is
-// created. When the client accepts, the org transitions to active (inviteStatus
-// cleared) and the invitation links to the already-existing org.
+// Brokers create a "draft" client org only when they explicitly save or send
+// from the invite drawer. When they send the invite, the org flips from draft →
+// invited and the invitation record is created. When the client accepts, the org
+// transitions to active (inviteStatus cleared) and the invitation links to the
+// already-existing org.
 
 /** Create a draft client org. Broker members only. */
 export const createDraftClient = mutation({
   args: {
     brokerOrgId: v.id("organizations"),
     clientOrgName: v.optional(v.string()),
+    website: v.optional(v.string()),
     primaryContactEmail: v.string(),
     primaryContactName: v.optional(v.string()),
+    primaryContactPhone: v.optional(v.string()),
     customMessage: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const access = await getOrgAccess(ctx, args.brokerOrgId);
     assertBrokerOrg(access);
+    const primaryContactEmail = normalizeEmail(args.primaryContactEmail);
+    if (!primaryContactEmail) throw new Error("Client email is required");
+    await upsertInvitedUser(ctx, {
+      email: primaryContactEmail,
+      name: args.primaryContactName,
+      phone: args.primaryContactPhone,
+    });
 
     const name =
       args.clientOrgName?.trim() ||
-      companyNameFromEmail(args.primaryContactEmail) ||
+      companyNameFromEmail(primaryContactEmail) ||
       "Draft client";
     const clientOrgId = await ctx.db.insert("organizations", {
       name,
+      website: normalizeWebsite(args.website),
       type: "client",
       brokerOrgId: args.brokerOrgId,
       inviteStatus: "draft",
       primaryContactName: args.primaryContactName?.trim() || undefined,
-      primaryContactEmail: args.primaryContactEmail.trim(),
+      primaryContactEmail,
+      primaryContactPhone: normalizeUserPhone(args.primaryContactPhone),
       inviteCustomMessage: args.customMessage?.trim() || undefined,
       draftCreatedByUserId: access.userId,
     });
@@ -232,10 +299,39 @@ export const getDraftClient = query({
     return {
       clientOrgId: org._id,
       name: org.name,
+      website: org.website,
       primaryContactName: org.primaryContactName,
       primaryContactEmail: org.primaryContactEmail,
+      primaryContactPhone: org.primaryContactPhone,
       customMessage: org.inviteCustomMessage,
       inviteStatus: org.inviteStatus,
+    };
+  },
+});
+
+export const checkInvitePhoneAvailability = query({
+  args: {
+    brokerOrgId: v.id("organizations"),
+    email: v.string(),
+    phone: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const access = await getOrgAccess(ctx, args.brokerOrgId);
+    assertBrokerOrg(access);
+    const normalized = (() => {
+      try {
+        return normalizeUserPhone(args.phone);
+      } catch {
+        return undefined;
+      }
+    })();
+    if (!normalized) return { available: false, normalized: "" };
+
+    const existing = await findUserByNormalizedPhone(ctx, normalized);
+    if (!existing) return { available: true, normalized };
+    return {
+      available: existing.email?.toLowerCase() === normalizeEmail(args.email),
+      normalized,
     };
   },
 });
@@ -245,8 +341,10 @@ export const updateDraftClient = mutation({
   args: {
     clientOrgId: v.id("organizations"),
     clientOrgName: v.optional(v.string()),
+    website: v.optional(v.string()),
     primaryContactEmail: v.optional(v.string()),
     primaryContactName: v.optional(v.string()),
+    primaryContactPhone: v.optional(v.string()),
     customMessage: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -259,15 +357,34 @@ export const updateDraftClient = mutation({
     assertBrokerOrg(access);
 
     const patch: Record<string, unknown> = {};
+    const email = args.primaryContactEmail
+      ? normalizeEmail(args.primaryContactEmail)
+      : org.primaryContactEmail;
+    if (args.primaryContactEmail !== undefined && !email) {
+      throw new Error("Client email is required");
+    }
+    if (email && (args.primaryContactEmail !== undefined || args.primaryContactName !== undefined || args.primaryContactPhone !== undefined)) {
+      await upsertInvitedUser(ctx, {
+        email,
+        name: args.primaryContactName ?? org.primaryContactName,
+        phone: args.primaryContactPhone,
+      });
+    }
     if (args.clientOrgName !== undefined) {
       const trimmed = args.clientOrgName.trim();
       if (trimmed) patch.name = trimmed;
     }
+    if (args.website !== undefined) {
+      patch.website = normalizeWebsite(args.website);
+    }
     if (args.primaryContactEmail !== undefined) {
-      patch.primaryContactEmail = args.primaryContactEmail.trim() || undefined;
+      patch.primaryContactEmail = email;
     }
     if (args.primaryContactName !== undefined) {
       patch.primaryContactName = args.primaryContactName.trim() || undefined;
+    }
+    if (args.primaryContactPhone !== undefined) {
+      patch.primaryContactPhone = normalizeUserPhone(args.primaryContactPhone);
     }
     if (args.customMessage !== undefined) {
       patch.inviteCustomMessage = args.customMessage.trim() || undefined;
@@ -350,7 +467,8 @@ export const sendDraftInvite = action({
       createdAt: Date.now(),
     });
 
-    // Link invitation ↔ client org + flip status to invited
+    // Link invitation ↔ client org + flip status to invited. Resends revoke
+    // older pending tokens for the same draft so only the newest link works.
     await ctx.runMutation(internal.clientInvitations.attachInvitationToDraft, {
       clientOrgId: args.clientOrgId,
       tokenHash,
@@ -649,7 +767,22 @@ export const attachInvitationToDraft = internalMutation({
       .query("clientInvitations")
       .withIndex("by_tokenHash", (q) => q.eq("inviteTokenHash", tokenHash))
       .first();
-    if (inv) await ctx.db.patch(inv._id, { clientOrgId });
+    if (inv) {
+      const previousInvites = await ctx.db
+        .query("clientInvitations")
+        .withIndex("by_brokerOrgId", (q) => q.eq("brokerOrgId", inv.brokerOrgId))
+        .collect();
+      for (const previous of previousInvites) {
+        if (
+          previous.clientOrgId === clientOrgId &&
+          previous.status === "pending" &&
+          previous._id !== inv._id
+        ) {
+          await ctx.db.patch(previous._id, { status: "revoked" });
+        }
+      }
+      await ctx.db.patch(inv._id, { clientOrgId });
+    }
     await ctx.db.patch(clientOrgId, { inviteStatus: "invited" });
   },
 });

@@ -78,6 +78,12 @@ export default defineSchema({
     agentHandle: v.optional(v.string()),
     // Primary insurance contact for the org
     primaryInsuranceContactId: v.optional(v.id("users")),
+    // Manual broker identity for standalone client orgs that are not connected
+    // to a broker org.
+    brokerCompanyName: v.optional(v.string()),
+    brokerContactName: v.optional(v.string()),
+    brokerContactEmail: v.optional(v.string()),
+    brokerContactPhone: v.optional(v.string()),
     // Agent settings
     chatEmailNotifications: v.optional(v.boolean()), // send email notifications for chat responses in email threads
     autoSendEmails: v.optional(v.boolean()), // when false, drafted emails from chat require confirmation before sending
@@ -107,6 +113,7 @@ export default defineSchema({
     // Mirrored into clientPassport on accept.
     primaryContactName: v.optional(v.string()),
     primaryContactEmail: v.optional(v.string()),
+    primaryContactPhone: v.optional(v.string()),
     inviteCustomMessage: v.optional(v.string()),
     // Broker user who created the draft.
     draftCreatedByUserId: v.optional(v.id("users")),
@@ -256,6 +263,9 @@ export default defineSchema({
     clientOrgId: v.id("organizations"), // client org
     producerId: v.id("users"), // broker user
     role: v.union(v.literal("primary"), v.literal("secondary")),
+    contactNameOverride: v.optional(v.string()),
+    contactEmailOverride: v.optional(v.string()),
+    contactPhoneOverride: v.optional(v.string()),
     createdAt: v.number(),
   })
     .index("by_orgId_clientOrgId", ["orgId", "clientOrgId"])

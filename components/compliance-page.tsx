@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useAction, useMutation, useQuery } from "convex/react";
 import type { FunctionReference } from "convex/server";
 import { AppShell } from "@/components/app-shell";
@@ -268,8 +269,16 @@ function ComplianceEmptyState({
 }
 
 export function CompliancePage() {
+  const router = useRouter();
   const currentOrg = useCurrentOrg();
-  const orgId = currentOrg?.orgId as Id<"organizations"> | undefined;
+  useEffect(() => {
+    if (currentOrg?.orgType === "broker") router.replace("/clients");
+  }, [currentOrg?.orgType, router]);
+
+  const isBroker = currentOrg?.orgType === "broker";
+  const orgId = !isBroker
+    ? (currentOrg?.orgId as Id<"organizations"> | undefined)
+    : undefined;
   const requirements = useQuery(
     complianceApi.compliance.listRequirements,
     orgId ? { orgId } : "skip",
@@ -311,6 +320,8 @@ export function CompliancePage() {
   const [requirementText, setRequirementText] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [importing, setImporting] = useState(false);
+
+  if (isBroker) return null;
 
   const hasActiveClients = (clientRows ?? []).some(
     (row) => row.status === "active",

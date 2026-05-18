@@ -89,6 +89,7 @@ export const CONNECT_ITEMS: NavItemConfig[] = [
     shortcut: navShortcut("v"),
   },
 ];
+export const NO_CONNECT_ITEMS: NavItemConfig[] = [];
 
 export const ALL_NAV_ITEMS = [...INSURANCE_ITEMS];
 
@@ -98,12 +99,6 @@ export const BROKER_NAV_ITEMS: NavItemConfig[] = [
     label: "Clients",
     icon: Users,
     shortcut: navShortcut("c"),
-  },
-  {
-    href: "/compliance",
-    label: "Compliance",
-    icon: ClipboardCheck,
-    shortcut: navShortcut("r"),
   },
   {
     href: "/activity",

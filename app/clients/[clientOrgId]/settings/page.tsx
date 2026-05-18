@@ -8,6 +8,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Loader2, X } from "lucide-react";
 import { toast } from "sonner";
+import { BrokerIdentitySection } from "@/components/settings/broker-identity-section";
 
 type Verification = "strict" | "domain" | "open";
 
@@ -104,6 +105,8 @@ export default function ClientSettingsPage() {
 
   return (
     <div className="w-full space-y-6">
+      <BrokerIdentitySection orgId={clientOrgId as Id<"organizations">} />
+
       <section className="rounded-xl border border-foreground/6 bg-card overflow-hidden">
         <header className="px-6 py-5 border-b border-foreground/6">
           <h2 className="text-base font-medium text-foreground">
