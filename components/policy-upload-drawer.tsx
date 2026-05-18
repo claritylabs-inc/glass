@@ -134,10 +134,12 @@ export function PolicyUploadDrawer({
             <FileUp className="h-4 w-4" />
           </div>
           <p className="text-base font-semibold text-foreground">
-            Drag and drop a {typeLabel} PDF
+            Drag and drop {typeLabel} PDFs
           </p>
           <p className="text-body-sm text-muted-foreground mt-1">
-            or click to choose {files.length > 0 ? "more" : "a"} file
+            {files.length > 0
+              ? "or click to add more files"
+              : "or click to choose files"}
           </p>
           <p className="text-label-sm text-muted-foreground/60 mt-3">
             {uploadMode === "separate"

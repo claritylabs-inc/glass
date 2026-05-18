@@ -259,10 +259,12 @@ function DropZone({
           <FileUp className="h-4.5 w-4.5" />
         </div>
         <p className="text-body-sm font-semibold text-foreground">
-          Drag and drop a {label} PDF
+          Drag and drop {label} PDFs
         </p>
         <p className="text-body-sm text-muted-foreground mt-1">
-          or click to choose {staged.length > 0 ? "more" : "a"} file
+          {staged.length > 0
+            ? "or click to add more files"
+            : "or click to choose files"}
         </p>
         <p className="text-body-sm text-muted-foreground/60 mt-3">
           {uploadMode === "separate"
