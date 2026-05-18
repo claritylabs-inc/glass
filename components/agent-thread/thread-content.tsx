@@ -152,9 +152,11 @@ const EMAIL_SENT_RE = /^email sent to\s+(.+?)(?:\s*\(cc:.*\))?\s*\.$/i;
 function ThreadAttachmentList({
   attachments,
   threadId,
+  rightAligned,
 }: {
   attachments: ThreadAttachment[];
   threadId: Id<"threads">;
+  rightAligned?: boolean;
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isDownloadingAll, setIsDownloadingAll] = useState(false);
@@ -219,7 +221,7 @@ function ThreadAttachmentList({
   }
 
   return (
-    <div className="flex min-w-0 flex-wrap items-start gap-1.5">
+    <>
       <button
         type="button"
         onClick={() => setIsExpanded((value) => !value)}
@@ -230,7 +232,11 @@ function ThreadAttachmentList({
         {attachments.length} files
       </button>
       {isExpanded ? (
-        <div className="flex min-w-0 flex-wrap items-start gap-1.5">
+        <div
+          className={`flex min-w-0 basis-full flex-wrap items-start gap-1.5 ${
+            rightAligned ? "justify-end" : ""
+          }`}
+        >
           {attachments.map((att, i) => (
             <span
               key={`${att.fileId ?? att.filename}-${i}`}
@@ -257,7 +263,7 @@ function ThreadAttachmentList({
           </Button>
         </div>
       ) : null}
-    </div>
+    </>
   );
 }
 
@@ -544,8 +550,24 @@ function MessageFooterActions({
   rightAligned?: boolean;
 }) {
   const [isMailboxExpanded, setIsMailboxExpanded] = useState(false);
+  const [isAttachmentExpanded, setIsAttachmentExpanded] = useState(false);
+  const [isDownloadingAttachments, setIsDownloadingAttachments] = useState(false);
   const hasSubagentActivity = (subagentActivityCount ?? 0) > 0;
-  const hasAttachments = (attachments?.length ?? 0) > 0;
+  const attachmentList = useMemo(() => attachments ?? [], [attachments]);
+  const hasAttachments = attachmentList.length > 0;
+  const attachmentFileIds = useMemo(
+    () =>
+      attachmentList
+        .map((attachment) => attachment.fileId)
+        .filter((fileId): fileId is Id<"_storage"> => Boolean(fileId)),
+    [attachmentList],
+  );
+  const attachmentUrls = useQuery(
+    api.threads.getAttachmentUrls,
+    attachmentFileIds.length > 1
+      ? { threadId, fileIds: attachmentFileIds }
+      : "skip",
+  );
   const mailboxTasks =
     mailboxArtifacts?.filter((artifact) => artifact.type === "mailbox_task") ??
     [];
@@ -564,6 +586,43 @@ function MessageFooterActions({
     !retryMessageId
   )
     return null;
+
+  const handleDownloadAttachments = async () => {
+    if (!attachmentUrls?.length) return;
+    setIsDownloadingAttachments(true);
+    try {
+      const zip = new JSZip();
+      const usedNames = new Set<string>();
+      for (const entry of attachmentUrls) {
+        const attachment = attachmentList.find(
+          (att) => att.fileId === entry.fileId,
+        );
+        const filename = uniqueZipFilename(
+          attachment?.filename ?? "attachment",
+          usedNames,
+        );
+        const response = await fetch(entry.url);
+        if (!response.ok) {
+          throw new Error(`Failed to download ${attachment?.filename ?? entry.fileId}`);
+        }
+        zip.file(filename, await response.blob());
+      }
+      const blob = await zip.generateAsync({ type: "blob" });
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = "thread-attachments.zip";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    } catch {
+      toast.error("Failed to download attachments");
+    } finally {
+      setIsDownloadingAttachments(false);
+    }
+  };
+
   const renderMailboxAgentPill = (index: number) => {
     const label = mailboxTaskDisplayName(
       normalizeMailboxTask(mailboxTasks[index].data),
@@ -589,87 +648,132 @@ function MessageFooterActions({
   };
 
   return (
-    <div className="mt-1.5 flex items-start gap-2">
-      <div
-        className={`flex min-w-0 flex-1 flex-wrap items-start gap-1.5 ${rightAligned ? "justify-end" : ""}`}
-      >
-        {refs.length > 0 && (
-          <ReferenceCardStrip
-            refs={refs}
-            citedSections={citedSections}
-            citedCoverageNames={citedCoverageNames}
-            rightAligned={rightAligned}
-          />
-        )}
-        {toolCalls.length > 0 && (
-          <button
-            type="button"
-            onClick={onToggleToolCalls}
-            aria-expanded={showToolCalls}
-            className="inline-flex h-6 items-center gap-1.5 rounded-full border border-foreground/8 bg-transparent px-2 text-[11px] font-medium text-muted-foreground/55 transition-colors hover:border-foreground/12 hover:bg-foreground/[0.03] hover:text-foreground/75"
-          >
-            <ClipboardList className="h-3 w-3" />
-            {toolCalls.length} tool{toolCalls.length === 1 ? "" : "s"}
-          </button>
-        )}
-        {hasAttachments ? (
-          <ThreadAttachmentList
-            attachments={attachments ?? []}
-            threadId={threadId}
-          />
-        ) : null}
-        {hasSubagentActivity && (
-          <button
-            type="button"
-            onClick={onToggleSubagentActivity}
-            aria-expanded={showSubagentActivity}
-            className="inline-flex h-6 items-center gap-1.5 rounded-full border border-foreground/8 bg-transparent px-2 text-[11px] font-medium text-muted-foreground/55 transition-colors hover:border-foreground/12 hover:bg-foreground/[0.03] hover:text-foreground/75"
-          >
-            <LogoIcon size={12} static className="h-3 w-3" />
-            {subagentActivityCount} subagent
-            {subagentActivityCount === 1 ? "" : "s"}
-          </button>
-        )}
-        {mailboxTasks.length === 1 ? (
-          renderMailboxAgentPill(0)
-        ) : mailboxTasks.length > 1 ? (
-          <>
+    <div className="mt-1.5 min-w-0">
+      <div className="flex items-start gap-2">
+        <div
+          className={`flex min-w-0 flex-1 flex-wrap items-start gap-1.5 ${rightAligned ? "justify-end" : ""}`}
+        >
+          {refs.length > 0 && (
+            <ReferenceCardStrip
+              refs={refs}
+              citedSections={citedSections}
+              citedCoverageNames={citedCoverageNames}
+              rightAligned={rightAligned}
+            />
+          )}
+          {toolCalls.length > 0 && (
             <button
               type="button"
-              onClick={() => setIsMailboxExpanded((value) => !value)}
-              aria-expanded={isMailboxExpanded}
-              className="inline-flex h-6 items-center rounded-full border border-foreground/8 bg-transparent px-2 text-label-sm font-medium text-muted-foreground/55 transition-colors hover:border-foreground/12 hover:bg-foreground/3 hover:text-foreground/75"
+              onClick={onToggleToolCalls}
+              aria-expanded={showToolCalls}
+              className="inline-flex h-6 items-center gap-1.5 rounded-full border border-foreground/8 bg-transparent px-2 text-[11px] font-medium text-muted-foreground/55 transition-colors hover:border-foreground/12 hover:bg-foreground/[0.03] hover:text-foreground/75"
             >
-              {mailboxTasks.length} background agents
+              <ClipboardList className="h-3 w-3" />
+              {toolCalls.length} tool{toolCalls.length === 1 ? "" : "s"}
             </button>
-            {isMailboxExpanded ? (
-              <div className="flex flex-wrap items-start gap-1.5">
-                {mailboxTasks.map((_, index) => {
-                  return (
-                    <span
-                      key={`mailbox-footer-${index}`}
-                      className="transition-[opacity,transform] duration-200 ease-out"
-                      style={{
-                        transitionDelay: `${Math.min(index * 25, 100)}ms`,
-                      }}
-                    >
-                      {renderMailboxAgentPill(index)}
-                    </span>
-                  );
-                })}
-              </div>
-            ) : null}
-          </>
-        ) : null}
+          )}
+          {attachmentList.length === 1 ? (
+            <ThreadAttachmentChip
+              attachment={attachmentList[0]}
+              threadId={threadId}
+              className="w-fit"
+            />
+          ) : attachmentList.length > 1 ? (
+            <button
+              type="button"
+              onClick={() => setIsAttachmentExpanded((value) => !value)}
+              aria-expanded={isAttachmentExpanded}
+              className="inline-flex h-6 items-center gap-1.5 rounded-full border border-foreground/8 bg-transparent px-2 text-[11px] font-medium text-muted-foreground/55 transition-colors hover:border-foreground/12 hover:bg-foreground/3 hover:text-foreground/75"
+            >
+              <Paperclip className="h-3 w-3" />
+              {attachmentList.length} files
+            </button>
+          ) : null}
+          {hasSubagentActivity && (
+            <button
+              type="button"
+              onClick={onToggleSubagentActivity}
+              aria-expanded={showSubagentActivity}
+              className="inline-flex h-6 items-center gap-1.5 rounded-full border border-foreground/8 bg-transparent px-2 text-[11px] font-medium text-muted-foreground/55 transition-colors hover:border-foreground/12 hover:bg-foreground/[0.03] hover:text-foreground/75"
+            >
+              <LogoIcon size={12} static className="h-3 w-3" />
+              {subagentActivityCount} subagent
+              {subagentActivityCount === 1 ? "" : "s"}
+            </button>
+          )}
+          {mailboxTasks.length === 1 ? (
+            renderMailboxAgentPill(0)
+          ) : mailboxTasks.length > 1 ? (
+            <>
+              <button
+                type="button"
+                onClick={() => setIsMailboxExpanded((value) => !value)}
+                aria-expanded={isMailboxExpanded}
+                className="inline-flex h-6 items-center rounded-full border border-foreground/8 bg-transparent px-2 text-label-sm font-medium text-muted-foreground/55 transition-colors hover:border-foreground/12 hover:bg-foreground/3 hover:text-foreground/75"
+              >
+                {mailboxTasks.length} background agents
+              </button>
+              {isMailboxExpanded ? (
+                <div className="flex flex-wrap items-start gap-1.5">
+                  {mailboxTasks.map((_, index) => {
+                    return (
+                      <span
+                        key={`mailbox-footer-${index}`}
+                        className="transition-[opacity,transform] duration-200 ease-out"
+                        style={{
+                          transitionDelay: `${Math.min(index * 25, 100)}ms`,
+                        }}
+                      >
+                        {renderMailboxAgentPill(index)}
+                      </span>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </>
+          ) : null}
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          {retryMessageId ? (
+            <TryAgainMessageButton messageId={retryMessageId} />
+          ) : null}
+          {copyContent?.trim() ? (
+            <CopyMessageButton content={copyContent} />
+          ) : null}
+        </div>
       </div>
-      <div className="flex shrink-0 items-center gap-1">
-        {retryMessageId ? (
-          <TryAgainMessageButton messageId={retryMessageId} />
-        ) : null}
-        {copyContent?.trim() ? (
-          <CopyMessageButton content={copyContent} />
-        ) : null}
-      </div>
+      {attachmentList.length > 1 && isAttachmentExpanded ? (
+        <div
+          className={`mt-1.5 flex w-full min-w-0 flex-wrap items-start gap-1.5 ${
+            rightAligned ? "justify-end" : ""
+          }`}
+        >
+          {attachmentList.map((att, i) => (
+            <span
+              key={`${att.fileId ?? att.filename}-${i}`}
+              className="min-w-0 transition-[opacity,transform] duration-200 ease-out"
+              style={{ transitionDelay: `${Math.min(i * 25, 100)}ms` }}
+            >
+              <ThreadAttachmentChip
+                attachment={att}
+                threadId={threadId}
+                className="w-fit"
+              />
+            </span>
+          ))}
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={handleDownloadAttachments}
+            disabled={!attachmentUrls?.length || isDownloadingAttachments}
+            className="h-6 shrink-0 gap-1.5 rounded-full px-2 text-[11px] font-medium text-muted-foreground/60 hover:bg-foreground/3 hover:text-foreground"
+          >
+            <Download className="h-3.5 w-3.5" />
+            {isDownloadingAttachments ? "Preparing..." : "Download all"}
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }
