@@ -100,11 +100,11 @@ export function PolicyUploadDrawer({
           {uploading
             ? "Uploading…"
             : files.length > 1 && uploadMode === "separate"
-              ? `Upload ${files.length} ${typePlural}`
+              ? `Upload as ${files.length} ${typePlural}`
               : files.length > 1
-                ? `Upload ${files.length} files`
+                ? `Upload as one ${typeLabel}`
               : files.length === 1
-                ? "Upload"
+                ? `Upload ${typeLabel}`
                 : "Choose files to upload"}
         </PillButton>
       }

@@ -327,10 +327,10 @@ function DropZone({
           {uploading
             ? "Uploading…"
             : staged.length > 1 && uploadMode === "separate"
-              ? `Upload ${staged.length} ${pluralLabel}`
+              ? `Upload as ${staged.length} ${pluralLabel}`
               : staged.length > 1
-                ? `Upload ${staged.length} files`
-              : "Upload"}
+                ? `Upload as one ${label}`
+                : `Upload ${label}`}
         </PillButton>
       ) : null}
     </div>
