@@ -30,12 +30,15 @@ import {
   renderEmailPreview,
 } from "../lib/chatTools";
 import {
-  buildComplianceRequirementsContext,
-  buildDocumentContext,
   buildConversationMemoryContext,
+  buildScopedDocumentContext,
+  buildScopedOrgMemoryContext,
+  buildScopedRequirementsContext,
+  buildScopedVendorComplianceContext,
 } from "../lib/agentPrompts";
 import {
   buildSystemPromptForContext,
+  buildBrokerPortfolioSystemPrompt,
   stripMarkdown,
   markdownToHtml,
   buildChannelInstructions,
@@ -56,7 +59,7 @@ import {
   resolveEmailAgentIdentity,
   type EmailSubagentResult,
 } from "../lib/emailSubagent";
-import { buildIntelligenceContext } from "../lib/agentPrompts";
+import { isOrgReadableByScope, orgLabelForScope, type AgentScope } from "../lib/agentScope";
 import {
   classifyPromptInjection,
   collectAllowedRecipients,
@@ -608,6 +611,20 @@ function isCoiAttachmentFilename(filename: string): boolean {
 
 /** Build executable tools with Convex context wired in. */
 
+async function listPoliciesForToolScope(ctx: any, orgId: string, scope?: AgentScope) {
+  const readOrgIds = scope?.mode === "broker_portfolio" ? scope.readOrgIds : [orgId as Id<"organizations">];
+  const rows = await Promise.all(
+    readOrgIds.map(async (readOrgId) => {
+      const policies = await ctx.runQuery(internal.policies.listAllInternal, { orgId: readOrgId });
+      return (policies as Array<Record<string, unknown>>).map((policy) => ({
+        ...policy,
+        _scopeOrgName: scope ? orgLabelForScope(scope, readOrgId) : undefined,
+      }));
+    }),
+  );
+  return rows.flat();
+}
+
 function buildTools(
   ctx: any,
   args: {
@@ -616,6 +633,7 @@ function buildTools(
     userId: string;
     chatMessageId?: Id<"threadMessages">;
     referencedMailboxIds?: Id<"connectedEmailAccounts">[];
+    scope?: AgentScope;
   },
   org?: Record<string, unknown>,
 ) {
@@ -627,9 +645,7 @@ function buildTools(
         policyType?: string;
         carrier?: string;
       }) => {
-        const policies = await ctx.runQuery(internal.policies.listAllInternal, {
-          orgId: args.orgId,
-        });
+        const policies = await listPoliciesForToolScope(ctx, args.orgId, args.scope);
         const scored = policies
           .map((p: Record<string, unknown>) => ({
             policy: p,
@@ -653,6 +669,8 @@ function buildTools(
 
         return matches.slice(0, 5).map((p: any) => ({
           id: p._id,
+          client: p._scopeOrgName,
+          orgId: p.orgId,
           insured: p.insuredName,
           carrier: p.security,
           type: p.policyTypes?.join(", "),
@@ -671,9 +689,7 @@ function buildTools(
     compare_coverages: {
       ...compareCoverages,
       execute: async (params: { policyId1: string; policyId2: string }) => {
-        const policies = await ctx.runQuery(internal.policies.listAllInternal, {
-          orgId: args.orgId,
-        });
+        const policies = await listPoliciesForToolScope(ctx, args.orgId, args.scope);
         const p1 = policies.find(
           (p: Record<string, unknown>) => p._id === params.policyId1,
         );
@@ -683,6 +699,8 @@ function buildTools(
         if (!p1 || !p2) return "One or both policies not found.";
         const mapPolicy = (p: any) => ({
           id: p._id,
+          client: p._scopeOrgName,
+          orgId: p.orgId,
           carrier: p.security,
           type: p.policyTypes,
           limits: p.limits,
@@ -703,18 +721,26 @@ function buildTools(
         query?: string;
         appliesTo?: "vendors" | "own_org" | "both" | "all";
       }) => {
-        const requirements = await ctx.runQuery(
-          internal.compliance.listRequirementsInternal,
-          { orgId: args.orgId },
-        );
-        const matches = filterComplianceRequirements(requirements, params);
-        if (matches.length === 0) {
+        const readOrgIds = args.scope?.mode === "broker_portfolio" ? args.scope.readOrgIds : [args.orgId as Id<"organizations">];
+        const blocks: string[] = [];
+        for (const readOrgId of readOrgIds) {
+          const requirements = await ctx.runQuery(
+            internal.compliance.listRequirementsInternal,
+            { orgId: readOrgId },
+          );
+          const matches = filterComplianceRequirements(requirements, params);
+          if (matches.length > 0) {
+            const label = args.scope ? orgLabelForScope(args.scope, readOrgId) : "Organization";
+            blocks.push(`Requirements for ${label} (orgId: ${readOrgId}):\n${matches.map(formatComplianceRequirement).join("\n")}`);
+          }
+        }
+        if (blocks.length === 0) {
           return "No matching compliance requirements found. Vendor/contractor requirements and internal requirements are stored separately.";
         }
-        return matches.map(formatComplianceRequirement).join("\n");
+        return blocks.join("\n\n");
       },
     },
-    ...buildVendorComplianceTools(ctx, [args.orgId]),
+    ...buildVendorComplianceTools(ctx, args.scope?.mode === "broker_portfolio" ? args.scope.readOrgIds : [args.orgId]),
     lookup_policy_section: {
       ...lookupPolicySection,
       execute: async (params: { policyId: string; query: string }) => {
@@ -723,7 +749,11 @@ function buildTools(
         });
         // Enforce org ownership — prevent cross-org policy access
         try {
-          assertOrgOwnership(policy, args.orgId, "Policy");
+          if (args.scope) {
+            if (!policy || !isOrgReadableByScope(args.scope, policy.orgId)) throw new Error("Policy not found");
+          } else {
+            assertOrgOwnership(policy, args.orgId, "Policy");
+          }
         } catch {
           return "Policy not found.";
         }
@@ -769,7 +799,11 @@ function buildTools(
           id: input.policyId as Id<"policies">,
         });
         try {
-          assertOrgOwnership(policy, args.orgId, "Policy");
+          if (args.scope) {
+            if (!policy || !isOrgReadableByScope(args.scope, policy.orgId)) throw new Error("Policy not found");
+          } else {
+            assertOrgOwnership(policy, args.orgId, "Policy");
+          }
         } catch {
           return "Policy not found.";
         }
@@ -800,16 +834,21 @@ function buildTools(
           id: params.policyId as Id<"policies">,
         });
         try {
-          assertOrgOwnership(policy, args.orgId, "Policy");
+          if (args.scope) {
+            if (!policy || !isOrgReadableByScope(args.scope, policy.orgId)) throw new Error("Policy not found");
+          } else {
+            assertOrgOwnership(policy, args.orgId, "Policy");
+          }
         } catch {
           return "Policy not found.";
         }
         try {
+          const targetOrgId = (policy.orgId ?? args.orgId) as Id<"organizations">;
           const result = await ctx.runMutation(
             internal.policies.confirmPolicyFactFromSource,
             {
               id: params.policyId as Id<"policies">,
-              orgId: args.orgId as Id<"organizations">,
+              orgId: targetOrgId,
               userId: args.userId as Id<"users">,
               fact: params.fact,
               sourceSpanIds: params.sourceSpanIds,
@@ -849,11 +888,20 @@ function buildTools(
           return `COI auto-generation is disabled for this organization.`;
         }
         try {
+          const policy: any = await ctx.runQuery(internal.policies.getInternal, {
+            id: input.policyId as Id<"policies">,
+          });
+          if (args.scope) {
+            if (!policy || !isOrgReadableByScope(args.scope, policy.orgId)) return "Policy not found.";
+          } else {
+            try { assertOrgOwnership(policy, args.orgId, "Policy"); } catch { return "Policy not found."; }
+          }
+          const targetOrgId = (policy.orgId ?? args.orgId) as Id<"organizations">;
           const generated = await ctx.runAction(
             internal.actions.generateCoi.run,
             {
               policyId: input.policyId as Id<"policies">,
-              orgId: args.orgId,
+              orgId: targetOrgId,
               certificateHolder: input.certificateHolder,
               certificateHolderName:
                 input.certificateHolder?.split(/\r?\n/)[0]?.trim() || undefined,
@@ -896,10 +944,21 @@ function buildTools(
           });
           if (!intake.allowed) return intake.message;
 
+          let targetOrgId = args.orgId as Id<"organizations">;
+          if (input.policyId) {
+            const policy: any = await ctx.runQuery(internal.policies.getInternal, { id: input.policyId as Id<"policies"> });
+            if (args.scope) {
+              if (!policy || !isOrgReadableByScope(args.scope, policy.orgId)) return "Policy not found.";
+            } else {
+              try { assertOrgOwnership(policy, args.orgId, "Policy"); } catch { return "Policy not found."; }
+            }
+            targetOrgId = (policy.orgId ?? args.orgId) as Id<"organizations">;
+          }
+
           const result = await ctx.runAction(
             internal.actions.policyChangeRequests.createFromChatForThread,
             {
-              orgId: args.orgId as Id<"organizations">,
+              orgId: targetOrgId,
               userId: args.userId as Id<"users">,
               policyId: input.policyId as Id<"policies"> | undefined,
               requestText: input.requestText,
@@ -1174,9 +1233,6 @@ export const run = internalAction({
         }
       }
 
-      const policies = await ctx.runQuery(internal.policies.listAllInternal, {
-        orgId: args.orgId,
-      });
       const selectedPolicyIds = new Set<string>(
         ((userMsgForGuard?.referencedPolicyIds as string[] | undefined) ?? []),
       );
@@ -1211,16 +1267,38 @@ export const run = internalAction({
           }
         : undefined;
 
-      // Build system prompt (reuse direct mode)
-      const systemPrompt = buildSystemPromptForContext({
-        org: {
-          ...org,
-          broker: brokerContext,
-        },
-        mode: "direct",
-        userName,
-        siteUrl,
-      });
+      const scope = (await ctx.runQuery((internal as any).lib.agentScope.resolveForAction, {
+        orgId: args.orgId,
+        userId: args.userId,
+        surface: "web",
+      })) as AgentScope;
+
+      // Build system prompt. Broker orgs use an internal portfolio prompt.
+      const systemPrompt = scope.mode === "broker_portfolio"
+        ? buildBrokerPortfolioSystemPrompt({
+            brokerName: typeof org.name === "string" ? org.name : undefined,
+            brokerContext: typeof org.context === "string" ? org.context : undefined,
+            userName,
+            siteUrl,
+          })
+        : buildSystemPromptForContext({
+            org: {
+              ...org,
+              broker: brokerContext,
+            },
+            mode: "direct",
+            userName,
+            siteUrl,
+          });
+
+      const policiesByOrg = new Map<string, { policies: any[]; quotes: any[] }>();
+      await Promise.all(scope.readOrgIds.map(async (readOrgId) => {
+        const docs = await ctx.runQuery(internal.policies.listAllInternal, { orgId: readOrgId });
+        policiesByOrg.set(String(readOrgId), {
+          policies: (docs as any[]).filter((policy) => policy.documentType !== "quote"),
+          quotes: (docs as any[]).filter((policy) => policy.documentType === "quote"),
+        });
+      }));
 
       // Load thread messages for history
       const allMessages = await ctx.runQuery(
@@ -1233,25 +1311,26 @@ export const run = internalAction({
         .filter((m: Record<string, unknown>) => m.role === "user")
         .pop();
       const latestUserContent = latestUserMsg?.content ?? "";
-      const policyDocs = (policies as any[]).filter((policy) => policy.documentType !== "quote");
-      const quoteDocs = (policies as any[]).filter((policy) => policy.documentType === "quote");
+      const primaryDocs = policiesByOrg.get(String(args.orgId)) ?? { policies: [], quotes: [] };
       const focusedPolicyDocs = selectedPolicyIds.size > 0
-        ? policyDocs.filter((policy) => selectedPolicyIds.has(String(policy._id)))
-        : policyDocs;
+        ? Array.from(policiesByOrg.values()).flatMap((entry) => entry.policies).filter((policy) => selectedPolicyIds.has(String(policy._id)))
+        : primaryDocs.policies;
       const focusedQuoteDocs = selectedQuoteIds.size > 0
-        ? quoteDocs.filter((quote) => selectedQuoteIds.has(String(quote._id)))
-        : quoteDocs;
+        ? Array.from(policiesByOrg.values()).flatMap((entry) => entry.quotes).filter((quote) => selectedQuoteIds.has(String(quote._id)))
+        : primaryDocs.quotes;
+      if (selectedPolicyIds.size > 0 || selectedQuoteIds.size > 0) {
+        policiesByOrg.set(String(args.orgId), { policies: focusedPolicyDocs, quotes: focusedQuoteDocs });
+      }
 
-      // Build document context (vector search with fallback)
+      // Build document context (isolated per org in broker portfolio mode)
       const {
         context: docContext,
         relevantPolicyIds,
         relevantQuoteIds,
-      } = await buildDocumentContext(
+      } = await buildScopedDocumentContext(
         ctx,
-        args.orgId,
-        focusedPolicyDocs,
-        focusedQuoteDocs,
+        scope,
+        policiesByOrg,
         latestUserContent,
       );
 
@@ -1263,16 +1342,13 @@ export const run = internalAction({
       );
 
       // Load business intelligence (vector search, deduped against policy context)
-      const orgMemoryBlock = await buildIntelligenceContext(
+      const orgMemoryBlock = await buildScopedOrgMemoryContext(
         ctx,
-        args.orgId,
+        scope,
         latestUserContent,
         relevantPolicyIds.map((id: string) => id),
       );
-      const requirementsBlock = await buildComplianceRequirementsContext(
-        ctx,
-        args.orgId,
-      );
+      const requirementsBlock = await buildScopedRequirementsContext(ctx, scope);
       const selectedRequirements = selectedRequirementIds.size > 0
         ? (await ctx.runQuery(internal.compliance.listRequirementsInternal, {
             orgId: args.orgId,
@@ -1324,22 +1400,7 @@ export const run = internalAction({
               .join("\n\n")}\nTreat these as explicit user steering. Prioritize them over generic retrieval. If mailbox work is needed and mailboxes are selected, keep the mailbox coordinator scoped to those accounts unless the user asks to broaden the search.`
           : "";
 
-      const complianceRows = await ctx
-        .runQuery((internal as any).compliance.listVendorComplianceInternal, {
-          clientOrgId: args.orgId,
-        })
-        .catch(() => []);
-      const complianceBlock =
-        Array.isArray(complianceRows) && complianceRows.length > 0
-          ? `\n\nVENDOR COMPLIANCE SNAPSHOT:\n${complianceRows
-              .map((row: any) => {
-                const failed = (row.checks ?? []).filter(
-                  (check: any) => check.status !== "met",
-                );
-                return `- ${row.vendorOrg?.name ?? row.vendorOrgId}: ${failed.length === 0 ? "compliant" : `${failed.length} open issue(s)`}`;
-              })
-              .join("\n")}`
-          : "";
+      const complianceBlock = await buildScopedVendorComplianceContext(ctx, scope);
 
       const {
         history: messageHistory,
@@ -1579,6 +1640,7 @@ export const run = internalAction({
             userId: args.userId,
             chatMessageId: agentMsgId,
             referencedMailboxIds,
+            scope,
           },
           org,
         ),

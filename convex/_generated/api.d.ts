@@ -62,6 +62,7 @@ import type * as lib_accessTests from "../lib/accessTests.js";
 import type * as lib_actionFailures from "../lib/actionFailures.js";
 import type * as lib_agentEmailTemplate from "../lib/agentEmailTemplate.js";
 import type * as lib_agentPrompts from "../lib/agentPrompts.js";
+import type * as lib_agentScope from "../lib/agentScope.js";
 import type * as lib_ai from "../lib/ai.js";
 import type * as lib_aiClassifier from "../lib/aiClassifier.js";
 import type * as lib_aiUtils from "../lib/aiUtils.js";
@@ -202,6 +203,7 @@ declare const fullApi: ApiFromModules<{
   "lib/actionFailures": typeof lib_actionFailures;
   "lib/agentEmailTemplate": typeof lib_agentEmailTemplate;
   "lib/agentPrompts": typeof lib_agentPrompts;
+  "lib/agentScope": typeof lib_agentScope;
   "lib/ai": typeof lib_ai;
   "lib/aiClassifier": typeof lib_aiClassifier;
   "lib/aiUtils": typeof lib_aiUtils;

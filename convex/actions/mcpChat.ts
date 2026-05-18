@@ -6,13 +6,15 @@ import { internal } from "../_generated/api";
 import { generateText, stepCountIs } from "ai";
 import { getModelForOrg, getProviderOptionsForTask } from "../lib/models";
 import {
-  buildComplianceRequirementsContext,
-  buildDocumentContext,
   buildConversationMemoryContext,
-  buildIntelligenceContext,
+  buildScopedDocumentContext,
+  buildScopedOrgMemoryContext,
+  buildScopedRequirementsContext,
+  buildScopedVendorComplianceContext,
 } from "../lib/agentPrompts";
 import {
   buildSystemPromptForContext,
+  buildBrokerPortfolioSystemPrompt,
   buildMessageHistory,
   buildPolicyToolInstructions,
   policySearchScore,
@@ -34,6 +36,7 @@ import { searchPolicyDocumentWithSourceSpans } from "../lib/policyLookup";
 import { buildVendorComplianceTools } from "../lib/vendorComplianceTools";
 import { classifyPromptInjection, enforceInputLimits } from "../lib/security";
 import type { Id } from "../_generated/dataModel";
+import { isOrgReadableByScope, orgLabelForScope, type AgentScope } from "../lib/agentScope";
 import {
   buildTitlePromptContent,
   fallbackTitle,
@@ -105,27 +108,45 @@ export const run = internalAction({
       content: args.message,
     });
 
-    // Load data for context
-    const [policies, allMessages] = await Promise.all([
-      ctx.runQuery(internal.policies.listAllInternal, { orgId: args.orgId }),
-      ctx.runQuery(internal.threads.messagesInternal, { threadId }),
-    ]);
+    const scope = (await ctx.runQuery((internal as any).lib.agentScope.resolveForAction, {
+      orgId: args.orgId,
+      userId: args.userId,
+      surface: "mcp",
+    })) as AgentScope;
+
+    const allMessages = await ctx.runQuery(internal.threads.messagesInternal, { threadId });
+    const policiesByOrg = new Map<string, { policies: any[]; quotes: any[] }>();
+    await Promise.all(scope.readOrgIds.map(async (readOrgId) => {
+      const docs = await ctx.runQuery(internal.policies.listAllInternal, { orgId: readOrgId });
+      policiesByOrg.set(String(readOrgId), {
+        policies: (docs as any[]).filter((policy) => policy.documentType !== "quote"),
+        quotes: (docs as any[]).filter((policy) => policy.documentType === "quote"),
+      });
+    }));
+    const policies = Array.from(policiesByOrg.values()).flatMap((entry) => [...entry.policies, ...entry.quotes]);
     const siteUrl = getClientPortalUrl();
 
     // Build system prompt
-    const systemPrompt = buildSystemPromptForContext({
-      org,
-      mode: "direct",
-      userName,
-      siteUrl,
-    });
+    const systemPrompt = scope.mode === "broker_portfolio"
+      ? buildBrokerPortfolioSystemPrompt({
+          brokerName: typeof org.name === "string" ? org.name : undefined,
+          brokerContext: typeof org.context === "string" ? org.context : undefined,
+          userName,
+          siteUrl,
+        })
+      : buildSystemPromptForContext({
+          org,
+          mode: "direct",
+          userName,
+          siteUrl,
+        });
 
-    // Document context (vector search with fallback)
+    // Document context (vector search with per-org isolation in broker mode)
     const {
       context: docContext,
       relevantPolicyIds,
       relevantQuoteIds,
-    } = await buildDocumentContext(ctx, args.orgId, policies, [], args.message);
+    } = await buildScopedDocumentContext(ctx, scope, policiesByOrg, args.message);
 
     // Cross-thread conversation memory (vector search)
     const memoryContext = await buildConversationMemoryContext(
@@ -135,16 +156,13 @@ export const run = internalAction({
     );
 
     // Load business intelligence (vector search, deduped against policy context)
-    const orgMemoryBlock = await buildIntelligenceContext(
+    const orgMemoryBlock = await buildScopedOrgMemoryContext(
       ctx,
-      args.orgId,
+      scope,
       args.message,
       relevantPolicyIds.map((id: unknown) => id as string),
     );
-    const requirementsBlock = await buildComplianceRequirementsContext(
-      ctx,
-      args.orgId,
-    );
+    const requirementsBlock = await buildScopedRequirementsContext(ctx, scope);
 
     const connectedVendors = await ctx
       .runQuery((internal as any).connectedOrgs.listActiveVendorsInternal, {
@@ -156,22 +174,7 @@ export const run = internalAction({
         ? `\n\nCONNECTED VENDOR ACCESS:\nThe caller's org has read-only access to these vendor organizations. When the user asks about vendor/client risk, vendor COIs, or vendor policies, tell them to use MCP vendor tools for exact policy lists and use this roster for disambiguation. Do not imply write access.\n${connectedVendors.map((row: any) => `- ${row.vendorOrg?.name ?? row.vendorOrgId} (vendorOrgId: ${row.vendorOrgId}, status: ${row.status})`).join("\n")}`
         : "";
 
-    const complianceRows = await ctx
-      .runQuery((internal as any).compliance.listVendorComplianceInternal, {
-        clientOrgId: args.orgId,
-      })
-      .catch(() => []);
-    const complianceBlock =
-      Array.isArray(complianceRows) && complianceRows.length > 0
-        ? `\n\nVENDOR COMPLIANCE SNAPSHOT:\n${complianceRows
-            .map((row: any) => {
-              const failed = (row.checks ?? []).filter(
-                (check: any) => check.status !== "met",
-              );
-              return `- ${row.vendorOrg?.name ?? row.vendorOrgId}: ${failed.length === 0 ? "compliant" : `${failed.length} open issue(s)`}`;
-            })
-            .join("\n")}`
-        : "";
+    const complianceBlock = await buildScopedVendorComplianceContext(ctx, scope);
 
     const mcpAddendum = `
 
@@ -215,6 +218,8 @@ MCP MODE:
             return "No policies found for this organization.";
           return matches.slice(0, 5).map((p: any) => ({
             id: p._id,
+            client: scope.mode === "broker_portfolio" ? orgLabelForScope(scope, p.orgId) : undefined,
+            orgId: p.orgId,
             insured: p.insuredName,
             carrier: p.security,
             type: p.policyTypes?.join(", "),
@@ -237,7 +242,7 @@ MCP MODE:
             internal.policies.getInternal,
             { id: params.policyId as Id<"policies"> },
           );
-          if (!policy || policy.orgId !== args.orgId) return "Policy not found.";
+          if (!policy || !isOrgReadableByScope(scope, policy.orgId)) return "Policy not found.";
           return searchPolicyDocumentWithSourceSpans(
             ctx,
             policy,
@@ -258,13 +263,13 @@ MCP MODE:
             internal.policies.getInternal,
             { id: params.policyId as Id<"policies"> },
           );
-          if (!policy || policy.orgId !== args.orgId) return "Policy not found.";
+          if (!policy || !isOrgReadableByScope(scope, policy.orgId)) return "Policy not found.";
           try {
             const result = await ctx.runMutation(
               internal.policies.confirmPolicyFactFromSource,
               {
                 id: params.policyId as Id<"policies">,
-                orgId: args.orgId,
+                orgId: (policy.orgId ?? args.orgId) as Id<"organizations">,
                 userId: args.userId,
                 fact: params.fact,
                 sourceSpanIds: params.sourceSpanIds,
@@ -289,7 +294,7 @@ MCP MODE:
 
     const tools = {
       ...policyTools,
-      ...buildVendorComplianceTools(ctx, [args.orgId]),
+      ...buildVendorComplianceTools(ctx, scope.mode === "broker_portfolio" ? scope.readOrgIds : [args.orgId]),
       create_imessage_group_chat: {
         ...createImessageGroupChat,
         execute: async (params: {

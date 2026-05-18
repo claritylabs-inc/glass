@@ -1085,7 +1085,7 @@ const MCP_TOOLS = [
   },
   {
     name: "ask_glass",
-    description: "Alias for ask_glass (legacy name). Ask the Glass AI assistant a question about the organization's insurance portfolio.",
+    description: "Alias for ask_glass (legacy name). Ask the Glass AI assistant a question about the organization's insurance portfolio. When the selected org is a broker workspace, Glass can answer across managed client organizations with client-labeled results.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -1097,7 +1097,7 @@ const MCP_TOOLS = [
   },
   {
     name: "ask_glass",
-    description: "Ask the Glass AI assistant a question about the organization's insurance portfolio, policies, quotes, or coverage details. Glass has full context about all policies and quotes and can answer complex insurance questions. Optionally pass a threadId to continue an existing conversation.",
+    description: "Ask the Glass AI assistant a question about the organization's insurance portfolio, policies, quotes, or coverage details. For client orgs, Glass answers within that org; for broker workspaces, Glass can answer across managed clients with client-labeled results. Optionally pass a threadId to continue an existing conversation.",
     inputSchema: {
       type: "object" as const,
       properties: {

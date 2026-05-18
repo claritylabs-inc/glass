@@ -183,7 +183,7 @@ export function MainSidebarContent({
           </>
         ) : null}
 
-        {isBroker ? null : !collapsed ? (
+        {!collapsed ? (
           <ExpandedThreadList
             conversations={conversations}
             archivedThreadCount={archivedThreadCount}

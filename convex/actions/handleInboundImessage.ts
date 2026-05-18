@@ -36,6 +36,7 @@ import { searchPolicyDocumentWithSourceSpans } from "../lib/policyLookup";
 import { tryBuildDoclingPdfText } from "../lib/doclingPreprocessor";
 import { classifyPromptInjection, enforceInputLimits } from "../lib/security";
 import type { Doc, Id } from "../_generated/dataModel";
+import type { AgentScope } from "../lib/agentScope";
 import {
   getImessageWorkerUrl,
   isImessageInboundEnabled,
@@ -529,8 +530,15 @@ export const processInbound = internalAction({
       // ── 5. Fetch org context ──────────────────────────────────────────────
       const org = await ctx.runQuery(internal.orgs.getInternal, { id: orgId });
       if (!org) return await finish("Unable to find your account.");
+      const agentScope = (await ctx.runQuery((internal as any).lib.agentScope.resolveForAction, {
+        orgId,
+        userId: user._id,
+        surface: "imessage",
+        allowBrokerPortfolio: org.type === "broker" && scope.kind === "single_org",
+      })) as AgentScope;
+      const readOrgIds = agentScope.mode === "broker_portfolio" ? agentScope.readOrgIds : scope.orgIds;
       const scopedOrgs = await Promise.all(
-        scope.orgIds.map((scopedOrgId) =>
+        readOrgIds.map((scopedOrgId) =>
           ctx.runQuery(internal.orgs.getInternal, { id: scopedOrgId }),
         ),
       );
@@ -794,7 +802,7 @@ export const processInbound = internalAction({
 
       // ── 9. Build retrieval context ────────────────────────────────────────
       const scopedPolicySets = await Promise.all(
-        scope.orgIds.map(async (scopedOrgId) => ({
+        readOrgIds.map(async (scopedOrgId) => ({
           orgId: scopedOrgId,
           policies: await ctx.runQuery(internal.policies.listAllInternal, {
             orgId: scopedOrgId,
@@ -830,7 +838,7 @@ export const processInbound = internalAction({
         retrievalQuery,
       );
       const orgMemoryBlocks = await Promise.all(
-        scope.orgIds.map(async (scopedOrgId) => {
+        readOrgIds.map(async (scopedOrgId) => {
           const orgName =
             orgNamesById[String(scopedOrgId)] ?? "Linked organization";
           const block = await buildIntelligenceContext(
@@ -846,7 +854,7 @@ export const processInbound = internalAction({
       );
       const orgMemoryBlock = orgMemoryBlocks.join("");
       const requirementBlocks = await Promise.all(
-        scope.orgIds.map(async (scopedOrgId) => {
+        readOrgIds.map(async (scopedOrgId) => {
           const orgName =
             orgNamesById[String(scopedOrgId)] ?? "Linked organization";
           const block = await buildComplianceRequirementsContext(
@@ -1050,6 +1058,8 @@ export const processInbound = internalAction({
             if (matches.length === 0) return "No policies found.";
             return matches.slice(0, 5).map((p: any) => ({
               id: p._id,
+              client: orgNamesById[String(p.orgId)] ?? p.orgId,
+              orgId: p.orgId,
               insured: p.insuredName,
               carrier: p.security,
               type: p.policyTypes?.join(", "),
@@ -1076,7 +1086,7 @@ export const processInbound = internalAction({
             );
             if (
               !policy ||
-              !scope.orgIds.map(String).includes(String(policy.orgId))
+              !readOrgIds.map(String).includes(String(policy.orgId))
             )
               return "Policy not found.";
             return searchPolicyDocumentWithSourceSpans(
@@ -1167,7 +1177,7 @@ export const processInbound = internalAction({
           }) => {
             const allRequirements = (
               await Promise.all(
-                scope.orgIds.map((scopedOrgId) =>
+                readOrgIds.map((scopedOrgId) =>
                   ctx
                     .runQuery(internal.compliance.listRequirementsInternal, {
                       orgId: scopedOrgId,
@@ -1188,7 +1198,7 @@ export const processInbound = internalAction({
         },
         ...buildVendorComplianceTools(
           ctx,
-          scope.orgIds.map((scopedOrgId) => String(scopedOrgId)),
+          readOrgIds.map((scopedOrgId) => String(scopedOrgId)),
         ),
         save_note: {
           ...saveNote,

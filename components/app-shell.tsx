@@ -250,7 +250,6 @@ function PersistentChatBar() {
   const isThreadPage = pathname.startsWith("/agent/thread/");
   const hasContext = !!pageContext;
   const viewerOrg = useQuery(api.orgs.viewerOrg, {});
-  const isBroker = (viewerOrg?.org as { type?: "broker" | "client" } | undefined)?.type === "broker";
   const agentBranding = viewerOrg?.brokerOrg?.whiteLabelingEnabled !== false && viewerOrg?.brokerOrg
     ? { name: `${viewerOrg.brokerOrg.name} Agent`, iconUrl: viewerOrg.brokerOrg.iconUrl }
     : undefined;
@@ -335,7 +334,7 @@ function PersistentChatBar() {
     ],
   );
 
-  if (isThreadPage || !hasContext || isBroker) return null;
+  if (isThreadPage || !hasContext) return null;
 
   return (
     <div className="absolute bottom-0 left-0 right-0 z-10 pointer-events-none">
