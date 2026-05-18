@@ -288,18 +288,6 @@ function isEmailSentStatusMessage(message: ThreadMessage) {
   return EMAIL_SENT_RE.test(normalizeStatusContent(message.content));
 }
 
-function isSavedThreadAttachmentMessage(message: ThreadMessage) {
-  const content = message.content.trim();
-  return (
-    message.role === "agent" &&
-    message.channel === "chat" &&
-    !!message.attachments?.length &&
-    ((/^Saved \d+ document/i.test(content) &&
-      content.includes("from connected email")) ||
-      /^Saved connected email message/i.test(content))
-  );
-}
-
 function emailMessageMatchesRecipient(
   message: ThreadMessage,
   recipient?: string,
@@ -520,6 +508,8 @@ function MessageFooterActions({
   refs,
   citedSections,
   citedCoverageNames,
+  attachments,
+  threadId,
   toolCalls,
   subagentActivityCount,
   mailboxArtifacts,
@@ -537,6 +527,8 @@ function MessageFooterActions({
   refs: { type: "policy"; id: string; page?: number }[];
   citedSections?: string[];
   citedCoverageNames?: string[];
+  attachments?: ThreadAttachment[];
+  threadId: Id<"threads">;
   toolCalls: { name: string; input?: string; output?: string }[];
   subagentActivityCount?: number;
   mailboxArtifacts?: ToolArtifactData[];
@@ -553,6 +545,7 @@ function MessageFooterActions({
 }) {
   const [isMailboxExpanded, setIsMailboxExpanded] = useState(false);
   const hasSubagentActivity = (subagentActivityCount ?? 0) > 0;
+  const hasAttachments = (attachments?.length ?? 0) > 0;
   const mailboxTasks =
     mailboxArtifacts?.filter((artifact) => artifact.type === "mailbox_task") ??
     [];
@@ -565,6 +558,7 @@ function MessageFooterActions({
     refs.length === 0 &&
     toolCalls.length === 0 &&
     !hasSubagentActivity &&
+    !hasAttachments &&
     !hasMailboxTasks &&
     !copyContent?.trim() &&
     !retryMessageId
@@ -618,6 +612,12 @@ function MessageFooterActions({
             {toolCalls.length} tool{toolCalls.length === 1 ? "" : "s"}
           </button>
         )}
+        {hasAttachments ? (
+          <ThreadAttachmentList
+            attachments={attachments ?? []}
+            threadId={threadId}
+          />
+        ) : null}
         {hasSubagentActivity && (
           <button
             type="button"
@@ -1122,7 +1122,6 @@ export function UnifiedMessageBubble({
       (toolCall) => toolCall.name !== "coordinate_mailbox_task",
     );
     const subagentActivityCount = genericSubagentToolCalls.length;
-    const savedAttachmentMessage = isSavedThreadAttachmentMessage(msg);
 
     // Build reference cards — referencedPolicyIds now only contains policies actually cited via lookup_policy_section
     const allRefs: { type: "policy"; id: string; page?: number }[] = [];
@@ -1206,19 +1205,13 @@ export function UnifiedMessageBubble({
                   >
                     {fixedContent}
                   </ProseMarkdown>
-                  {savedAttachmentMessage ? (
-                    <div className="mt-2">
-                      <ThreadAttachmentList
-                        attachments={msg.attachments ?? []}
-                        threadId={msg.threadId}
-                      />
-                    </div>
-                  ) : null}
                 </div>
                 <MessageFooterActions
                   refs={allRefs}
                   citedSections={citedSections}
                   citedCoverageNames={citedCoverageNames}
+                  attachments={msg.attachments}
+                  threadId={msg.threadId}
                   toolCalls={regularToolCalls}
                   subagentActivityCount={subagentActivityCount}
                   mailboxArtifacts={mailboxArtifacts}
@@ -1271,17 +1264,6 @@ export function UnifiedMessageBubble({
                 )}
               </>
             )}
-            {!savedAttachmentMessage &&
-              !(collapseEmailMessages && msg.channel === "email") &&
-              msg.attachments &&
-              msg.attachments.length > 0 && (
-                <div className="mt-2">
-                  <ThreadAttachmentList
-                    attachments={msg.attachments}
-                    threadId={msg.threadId}
-                  />
-                </div>
-              )}
             {msg.status === "pending_send" && msg.pendingEmailId && (
               <PendingSendCountdown pendingEmailId={msg.pendingEmailId} />
             )}
