@@ -80,6 +80,7 @@ export default function ConnectedVendorPoliciesPage({
                 carrier={policy.carrier}
                 administrator={policy.mga}
                 policyNumber={policy.policyNumber}
+                fileName={policy.fileName}
                 effectiveDate={policy.effectiveDate}
                 expirationDate={policy.expirationDate}
                 pipelineStatus={policy.pipelineStatus}

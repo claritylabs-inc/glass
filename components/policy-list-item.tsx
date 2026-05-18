@@ -8,6 +8,7 @@ interface PolicyListItemProps {
   carrier: string;
   administrator?: string;
   policyNumber: string;
+  fileName?: string | null;
   effectiveDate?: string;
   expirationDate?: string;
   pipelineStatus?: string;
@@ -45,6 +46,7 @@ export function PolicyListItem({
   carrier,
   administrator,
   policyNumber,
+  fileName,
   effectiveDate,
   expirationDate,
   pipelineStatus,
@@ -55,11 +57,14 @@ export function PolicyListItem({
   const carrierClean = cleanField(carrier);
   const administratorClean = cleanField(administrator);
   const policyNumberClean = cleanField(policyNumber);
+  const fileNameClean = cleanField(fileName ?? undefined);
   const effectiveClean = cleanField(effectiveDate);
   const expirationClean = cleanField(expirationDate);
 
   const title =
-    administratorClean ?? carrierClean ?? (isProcessing ? "New upload" : "Untitled policy");
+    administratorClean ??
+    carrierClean ??
+    (isProcessing ? fileNameClean ?? "New upload" : "Untitled policy");
   const hasDates = effectiveClean && expirationClean;
 
   return (

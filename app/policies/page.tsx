@@ -167,6 +167,7 @@ export default function PoliciesPage() {
   const list = (policies ?? []) as Array<{
     _id: string;
     carrier?: string | null;
+    fileName?: string | null;
     policyNumber?: string | null;
     effectiveDate?: string | null;
     expirationDate?: string | null;
@@ -238,6 +239,7 @@ export default function PoliciesPage() {
                 carrier={p.carrier}
                 administrator={p.mga}
                 policyNumber={p.policyNumber}
+                fileName={p.fileName}
                 effectiveDate={p.effectiveDate}
                 expirationDate={p.expirationDate}
                 pipelineStatus={p.pipelineStatus}

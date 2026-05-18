@@ -208,6 +208,7 @@ export default function ClientPoliciesPage() {
               carrier={p.carrier}
               administrator={p.mga}
               policyNumber={p.policyNumber}
+              fileName={p.fileName}
               effectiveDate={p.effectiveDate}
               expirationDate={p.expirationDate}
               pipelineStatus={p.pipelineStatus}
