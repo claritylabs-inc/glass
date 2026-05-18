@@ -36,6 +36,7 @@ export type EmailSubagentResult = {
   responseMessageId?: string;
   pendingEmailId?: Id<"pendingEmails">;
   attachments?: EmailAttachmentMeta[];
+  allowMultipleCoiAttachments?: boolean;
 };
 
 export type BrokerBranding = {
@@ -242,6 +243,7 @@ export async function upsertEmailDraftArtifact(
     subject: string;
     body: string;
     attachments: EmailAttachmentMeta[];
+    allowMultipleCoiAttachments?: boolean;
     referencedPolicyIds?: Id<"policies">[];
     referencedQuoteIds?: Id<"policies">[];
   },
@@ -276,6 +278,7 @@ export async function upsertEmailDraftArtifact(
       subject: params.subject,
       emailBody: params.body,
       attachments: params.attachments.length > 0 ? params.attachments : undefined,
+      allowMultipleCoiAttachments: params.allowMultipleCoiAttachments,
       referencedPolicyIds: params.referencedPolicyIds,
       referencedQuoteIds: params.referencedQuoteIds,
       chatMessageId: context.chatMessageId,
@@ -316,6 +319,7 @@ export async function upsertEmailDraftArtifact(
     subject: params.subject,
     emailBody: params.body,
     attachments: params.attachments.length > 0 ? params.attachments : undefined,
+    allowMultipleCoiAttachments: params.allowMultipleCoiAttachments,
     referencedPolicyIds: params.referencedPolicyIds,
     referencedQuoteIds: params.referencedQuoteIds,
     status: "draft",
@@ -393,9 +397,12 @@ function isCoiDeliveryRequest(request: string): boolean {
   return /\b(coi|certificate of insurance|insurance certificate)\b/i.test(request);
 }
 
-function explicitlyRequestsCoiBatchForOneEmail(request: string): boolean {
+export function explicitlyRequestsCoiBatchForOneEmail(request: string): boolean {
   return (
-    /\b(bundle|packet|package|zip|all (?:of )?(?:the )?(?:cois|certificates)|attach (?:all|every))\b/i.test(request) &&
+    /\b(bundle|packet|package|zip|same email|one email|single email|together)\b/i.test(request) ||
+    /\b(?:all|every|both|\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+(?:of\s+)?(?:the\s+)?(?:cois|certificates|certificates of insurance)\b/i.test(request) ||
+    /\battach\s+(?:all|every|both|\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b/i.test(request)
+  ) && (
     !/\b(separate|separately|individual|individually|one per|each holder|each recipient)\b/i.test(request)
   );
 }
@@ -530,6 +537,7 @@ async function runEmailSubagent(
   },
 ): Promise<EmailSubagentResult> {
   const preparedAttachments: EmailAttachmentMeta[] = [];
+  const allowMultipleCoiAttachments = explicitlyRequestsCoiBatchForOneEmail(input.request);
   const safeRequestedAttachments = narrowCoiAttachmentsForSingleRecipient(input, context);
   const sourcePolicyIds = new Set((context.referencedPolicyIds ?? []).map(String));
   const suppressOriginalPolicyForCoiRequest =
@@ -722,6 +730,7 @@ async function runEmailSubagent(
             subject,
             body,
             attachments,
+            allowMultipleCoiAttachments,
             referencedPolicyIds,
             referencedQuoteIds: context.referencedQuoteIds,
           })
@@ -747,6 +756,7 @@ async function runEmailSubagent(
         emailBody: body,
         pendingEmailId: draftPendingEmailId,
         attachments,
+        allowMultipleCoiAttachments,
       };
       return finalResult;
     }
@@ -781,6 +791,7 @@ async function runEmailSubagent(
         subject,
         emailBody: body,
         attachments: attachments.length > 0 ? attachments : undefined,
+        allowMultipleCoiAttachments,
         referencedPolicyIds: sourcePolicyIds.size > 0 ? ([...sourcePolicyIds] as Id<"policies">[]) : undefined,
         referencedQuoteIds: context.referencedQuoteIds,
       });
@@ -860,6 +871,7 @@ Be careful by default:
 - Available uploaded attachments may include files saved from connected mailboxes, including .eml exports of source emails. If the user asks to attach the email itself or proof from an email body, attach the saved .eml export with attach_uploaded_file.
 - For certificate/COI delivery requests, attach only the generated COI unless the request separately asks for the original/full policy PDF too.
 - When drafting COIs for multiple recipients, each recipient's email must include only that recipient's generated COI, not the full batch of generated COIs.
+- When the user explicitly asks to bundle all COIs/certificates into one email for a single recipient, attach the requested COIs together in that one email.
 - Do not call an attachment tool for a document that is already listed in preparedAttachments.
 - Use concise professional formatting. Prefer 1-3 short paragraphs or a short bullet list.
 - Include only the policy facts that are directly useful to the recipient. Avoid exhaustive coverage memos unless explicitly requested.

@@ -23,9 +23,23 @@ function isCoiAttachment(filename: string): boolean {
   return /\b(coi|certificate[-_\s]?of[-_\s]?insurance)\b/i.test(filename);
 }
 
+function explicitlyAllowsCoiBatch(text: string | undefined): boolean {
+  return (
+    /\b(bundle|packet|package|zip|same email|one email|single email|together)\b/i.test(text ?? "") ||
+    /\b(?:all|every|both|\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+(?:of\s+)?(?:the\s+)?(?:cois|certificates|certificates of insurance)\b/i.test(text ?? "") ||
+    /\battach\s+(?:all|every|both|\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b/i.test(text ?? "")
+  ) && !/\b(separate|separately|individual|individually|one per|each holder|each recipient)\b/i.test(text ?? "");
+}
+
 function assertSafeDraftAttachments(pending: Doc<"pendingEmails">) {
   const attachments = pending.attachments ?? [];
   if (!attachments.length) return;
+  if (
+    pending.allowMultipleCoiAttachments ||
+    explicitlyAllowsCoiBatch(`${pending.subject}\n${pending.emailBody}`)
+  ) {
+    return;
+  }
   const coiAttachmentCount = attachments.filter((attachment) =>
     isCoiAttachment(attachment.filename),
   ).length;

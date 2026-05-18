@@ -1559,6 +1559,7 @@ export default defineSchema({
         }),
       ),
     ),
+    allowMultipleCoiAttachments: v.optional(v.boolean()),
     // For unified thread dual-write
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
     referencedQuoteIds: v.optional(v.any()), // legacy: may contain old quotes table IDs

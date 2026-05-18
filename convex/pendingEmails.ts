@@ -133,6 +133,7 @@ export const create = internalMutation({
         })
       )
     ),
+    allowMultipleCoiAttachments: v.optional(v.boolean()),
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
     referencedQuoteIds: v.optional(v.array(v.id("policies"))),
     status: v.optional(v.union(v.literal("draft"), v.literal("pending"))),
@@ -171,6 +172,7 @@ export const updateDraftInternal = internalMutation({
       size: v.number(),
       fileId: v.id("_storage"),
     }))),
+    allowMultipleCoiAttachments: v.optional(v.boolean()),
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
     referencedQuoteIds: v.optional(v.array(v.id("policies"))),
     chatMessageId: v.optional(v.id("threadMessages")),

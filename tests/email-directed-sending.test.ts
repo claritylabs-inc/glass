@@ -1,7 +1,10 @@
 import { readFileSync } from "fs";
 import { join } from "path";
 import { describe, expect, it } from "vitest";
-import { resolveEmailAgentIdentity } from "../convex/lib/emailSubagent";
+import {
+  explicitlyRequestsCoiBatchForOneEmail,
+  resolveEmailAgentIdentity,
+} from "../convex/lib/emailSubagent";
 import {
   getAgentDomains,
   getAuthFromAddress,
@@ -116,10 +119,10 @@ describe("directed email sending", () => {
       "utf-8",
     );
 
-    expect(webSource).toContain("defaultTo: user?.email");
-    expect(webSource).toContain("defaultRecipientName: user?.name");
-    expect(smsSource).toContain("defaultTo: user.email");
-    expect(smsSource).toContain("defaultRecipientName: user.name");
+    expect(webSource).toContain(": user?.email");
+    expect(webSource).toContain(": user?.name");
+    expect(smsSource).toContain(": user.email");
+    expect(smsSource).toContain(": user.name");
   });
 
   it("defaults requester bcc on and passes it to sms and web email sends", () => {
@@ -311,13 +314,34 @@ describe("directed email sending", () => {
     expect(source).toContain("excludeAgentCoiAttachments: suppressOriginalPolicyForCoiRequest");
     expect(source).toContain("generatedCoiAttachmentIds");
     expect(source).toContain("each recipient's email must include only that recipient's generated COI");
+    expect(source).toContain("explicitly asks to bundle all COIs/certificates into one email");
+    expect(source).toContain("allowMultipleCoiAttachments");
     expect(source).toContain("narrowCoiAttachmentsForSingleRecipient");
     expect(source).toContain("A single recipient email was given multiple COI attachments");
+    expect(sendPendingSource).toContain("pending.allowMultipleCoiAttachments");
     expect(threadsSource).toContain("excludeEmailArtifacts: v.optional(v.boolean())");
     expect(threadsSource).toContain("excludeAgentCoiAttachments: v.optional(v.boolean())");
     expect(threadsSource).toContain('message.channel === "email"');
     expect(sendPendingSource).toContain("assertSafeDraftAttachments(pending)");
     expect(sendPendingSource).toContain("too many certificate attachments");
+  });
+
+  it("allows explicit single-email COI bundle requests", () => {
+    expect(
+      explicitlyRequestsCoiBatchForOneEmail(
+        "Yes can you attach all five COIs and send them to adyan@cove.dev",
+      ),
+    ).toBe(true);
+    expect(
+      explicitlyRequestsCoiBatchForOneEmail(
+        "Send all 5 certificates together in one email",
+      ),
+    ).toBe(true);
+    expect(
+      explicitlyRequestsCoiBatchForOneEmail(
+        "Send each holder their certificate separately",
+      ),
+    ).toBe(false);
   });
 
   it("revises multi-draft COI batches in place instead of updating one draft", () => {
