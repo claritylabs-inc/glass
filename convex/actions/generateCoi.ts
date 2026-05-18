@@ -48,8 +48,22 @@ export const run = internalAction({
       v.literal("unknown"),
     )),
     createdByUserId: v.optional(v.id("users")),
+    authorityType: v.optional(v.union(v.literal("non_binding"), v.literal("certified"))),
+    certificationStatus: v.optional(
+      v.union(
+        v.literal("not_applicable"),
+        v.literal("pending"),
+        v.literal("certified"),
+        v.literal("declined"),
+      ),
+    ),
+    partnerOrgId: v.optional(v.id("organizations")),
+    partnerProgramId: v.optional(v.id("partnerPrograms")),
+    templateId: v.optional(v.id("coiTemplates")),
+    standingAuthorizationId: v.optional(v.id("standingAuthorizations")),
+    disclaimer: v.optional(v.string()),
   },
-  handler: async (ctx, args): Promise<{ storageId: string; size: number; fileName: string }> => {
+  handler: async (ctx, args): Promise<{ storageId: string; size: number; fileName: string; certificateId: string }> => {
     try {
       const policy = await ctx.runQuery(internal.policies.getInternal, { id: args.policyId });
 
@@ -60,6 +74,9 @@ export const run = internalAction({
       if (args.certificateHolder) {
         coiData.certificateHolder = args.certificateHolder;
       }
+      coiData.authorityType = args.authorityType ?? "non_binding";
+      coiData.certificationStatus = args.certificationStatus ?? "not_applicable";
+      coiData.certificationNotice = args.disclaimer;
 
       const pdfBuffer = await generateCoiPdf(coiData);
 
@@ -74,7 +91,7 @@ export const run = internalAction({
       const size = pdfBuffer.byteLength;
       const fileName = buildCoiFileName(policy, args.certificateHolder, args.certificateHolderName);
 
-      await ctx.runMutation(internal.certificates.recordGenerated, {
+      const certificateId = await ctx.runMutation(internal.certificates.recordGenerated, {
         orgId: args.orgId,
         policyId: args.policyId,
         fileId: storageId,
@@ -83,9 +100,16 @@ export const run = internalAction({
         certificateHolderName: args.certificateHolderName,
         source: args.source,
         createdByUserId: args.createdByUserId,
+        authorityType: args.authorityType,
+        certificationStatus: args.certificationStatus,
+        partnerOrgId: args.partnerOrgId,
+        partnerProgramId: args.partnerProgramId,
+        templateId: args.templateId,
+        standingAuthorizationId: args.standingAuthorizationId,
+        disclaimer: args.disclaimer,
       });
 
-      return { storageId: storageId as string, size, fileName };
+      return { storageId: storageId as string, size, fileName, certificateId: String(certificateId) };
     } catch (err) {
       logAiError("generateCoi", err, { policyId: args.policyId });
       throw err;

@@ -13,7 +13,7 @@ type Ctx = QueryCtx | MutationCtx;
 export type OrgAccess = {
   userId: Id<"users">;
   org: Doc<"organizations">;
-  orgType: "broker" | "client";
+  orgType: "broker" | "client" | "partner";
   accessType: "member" | "broker_of_client" | "connected_client";
   role: "admin" | "member" | undefined;
   brokerOrgId: Id<"organizations"> | undefined;
@@ -46,7 +46,8 @@ export async function getOrgAccess(ctx: Ctx, orgId: Id<"organizations">): Promis
   const org = await ctx.db.get(orgId);
   if (!org) throw new Error("Organization not found");
 
-  const orgType: "broker" | "client" = (org.type as "broker" | "client") ?? "client";
+  const orgType: "broker" | "client" | "partner" =
+    (org.type as "broker" | "client" | "partner") ?? "client";
 
   // 1. Direct membership
   const membership = await ctx.db
@@ -128,6 +129,10 @@ export function assertBrokerOrg(access: OrgAccess): void {
 
 export function assertClientOrg(access: OrgAccess): void {
   if (access.orgType !== "client") throw new Error("Expected a client organization");
+}
+
+export function assertPartnerOrg(access: OrgAccess): void {
+  if (access.orgType !== "partner") throw new Error("Expected a partner organization");
 }
 
 export function assertCanReadPassport(_access: OrgAccess): void {
@@ -219,7 +224,7 @@ export async function requireBrokerAccessToClient(
   const org = await ctx.db.get(clientOrgId);
   if (!org) throw new Error("Organization not found");
 
-  const orgType: "broker" | "client" = (org.type as "broker" | "client") ?? "client";
+  const orgType = (org.type as "broker" | "client" | "partner") ?? "client";
   if (orgType !== "client" || !org.brokerOrgId) {
     throw new Error("Broker access required for this client");
   }

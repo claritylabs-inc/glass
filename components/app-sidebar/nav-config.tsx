@@ -4,6 +4,7 @@ import {
   Building2,
   ClipboardCheck,
   FileText,
+  ShieldCheck,
   Settings,
   User,
   Users,
@@ -104,6 +105,15 @@ export const BROKER_NAV_ITEMS: NavItemConfig[] = [
     href: "/activity",
     label: "Activity",
     icon: Activity,
+    shortcut: navShortcut("a"),
+  },
+];
+
+export const PARTNER_NAV_ITEMS: NavItemConfig[] = [
+  {
+    href: "/partner/approvals",
+    label: "Approvals",
+    icon: ShieldCheck,
     shortcut: navShortcut("a"),
   },
 ];

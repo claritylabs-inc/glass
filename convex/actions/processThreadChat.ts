@@ -888,25 +888,35 @@ function buildTools(
           }
           const targetOrgId = (policy.orgId ?? args.orgId) as Id<"organizations">;
           const generated = await ctx.runAction(
-            internal.actions.generateCoi.run,
+            internal.certificates.generateForOrg,
             {
               policyId: input.policyId as Id<"policies">,
               orgId: targetOrgId,
+              holderName:
+                input.certificateHolder?.split(/\r?\n/)[0]?.trim() || "Certificate holder",
               certificateHolder: input.certificateHolder,
-              certificateHolderName:
-                input.certificateHolder?.split(/\r?\n/)[0]?.trim() || undefined,
               source: "chat",
               createdByUserId: args.userId as Id<"users">,
             },
           );
           if (!generated) return COI_GENERATION_FAILED_MESSAGE;
+          if (generated.status === "pending_approval") {
+            return {
+              message: "Certified COI request created and sent to the program administrator for approval.",
+              requestId: generated.requestId,
+              authorityType: generated.authorityType,
+              certificationStatus: generated.certificationStatus,
+            };
+          }
           return {
-            message: "COI generated and attached to this response.",
+            message: generated.authorityType === "certified"
+              ? "Certified COI generated and attached to this response."
+              : "Non-binding COI generated and attached to this response.",
             attachment: {
               filename: generated.fileName,
               contentType: "application/pdf",
               size: generated.size,
-              fileId: generated.storageId as Id<"_storage">,
+              fileId: generated.fileId as Id<"_storage">,
             },
           };
         } catch (err) {
@@ -1511,7 +1521,15 @@ export const run = internalAction({
       const currentDraftEmails = await ctx.runQuery(
         internal.pendingEmails.listDraftsInternal,
         { threadId: args.threadId, orgId: args.orgId },
-      );
+      ) as Array<{
+        recipientEmail?: string;
+        ccAddresses?: string[];
+        bccAddresses?: string[];
+        subject?: string;
+        body?: string;
+        emailBody?: string;
+        attachments?: Array<{ filename: string }>;
+      }>;
       const currentDraftContext = currentDraftEmails.length > 0
         ? [
             currentDraftEmails.length === 1

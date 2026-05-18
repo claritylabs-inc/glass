@@ -529,13 +529,13 @@ async function runEmailSubagent(
       if (context.coiHandling === "member") return "COI auto-generation is off. Confirm the org's insurance contact should handle this COI.";
       return "COI auto-generation is disabled.";
     }
-    let generated: { storageId: string; size: number; fileName: string };
+    let generated: any;
     try {
-      generated = await ctx.runAction(internal.actions.generateCoi.run, {
+      generated = await ctx.runAction(internal.certificates.generateForOrg, {
         policyId: policyId as Id<"policies">,
         orgId: context.orgId,
+        holderName: certificateHolder?.split(/\r?\n/)[0]?.trim() || "Certificate holder",
         certificateHolder,
-        certificateHolderName: certificateHolder?.split(/\r?\n/)[0]?.trim() || undefined,
         source: context.channel === "web" ? "chat" : context.channel,
       });
     } catch (err) {
@@ -543,15 +543,20 @@ async function runEmailSubagent(
       return COI_GENERATION_FAILED_MESSAGE;
     }
     if (!generated) return COI_GENERATION_FAILED_MESSAGE;
+    if (generated.status === "pending_approval") {
+      return "Certified COI approval has been requested from the program administrator; no certificate PDF is attached yet.";
+    }
     attachedCoiKeys.add(coiKey);
     addAttachment({
       filename: generated.fileName,
       contentType: "application/pdf",
       size: generated.size,
-      fileId: generated.storageId as Id<"_storage">,
+      fileId: generated.fileId as Id<"_storage">,
     });
-    generatedCoiAttachmentIds.add(generated.storageId);
-    return "Attached generated COI.";
+    generatedCoiAttachmentIds.add(String(generated.fileId));
+    return generated.authorityType === "certified"
+      ? "Attached certified COI."
+      : "Attached non-binding COI.";
   };
 
   if (safeRequestedAttachments.warning && safeRequestedAttachments.attachments.length === 0) {
@@ -781,6 +786,7 @@ Be careful by default:
 - For certificate/COI delivery requests, attach only the generated COI unless the request separately asks for the original/full policy PDF too.
 - When drafting COIs for multiple recipients, each recipient's email must include only that recipient's generated COI, not the full batch of generated COIs.
 - When the user explicitly asks to bundle all COIs/certificates into one email for a single recipient, attach the requested COIs together in that one email.
+- Use "certified COI" only when the attachment tool says the generated certificate is certified. Otherwise call it a non-binding COI or certificate.
 - Do not call an attachment tool for a document that is already listed in preparedAttachments.
 - Use concise professional formatting. Prefer 1-3 short paragraphs or a short bullet list.
 - Include only the policy facts that are directly useful to the recipient. Avoid exhaustive coverage memos unless explicitly requested.

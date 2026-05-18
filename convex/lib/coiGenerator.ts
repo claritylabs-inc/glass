@@ -47,6 +47,9 @@ export interface CoiData {
   revisionNumber?: string;
   certificateHolder?: string;
   description?: string; // "Description of Operations / Locations / Vehicles"
+  authorityType?: "non_binding" | "certified";
+  certificationStatus?: "not_applicable" | "pending" | "certified" | "declined";
+  certificationNotice?: string;
 }
 
 /** One coverage section in the ACORD 25 grid. */
@@ -577,8 +580,10 @@ function drawNoticeAndCompanies(
   data: CoiData,
 ) {
   doc.rect(x, y, w, h).stroke();
-  const notice =
-    "This certificate is issued as a matter of information only and confers no rights upon the certificate holder. This certificate does not amend, extend or alter the coverage afforded by the policies below.";
+  const notice = data.authorityType === "certified" && data.certificationStatus === "certified"
+    ? (data.certificationNotice ||
+      "This certified certificate was approved by the program administrator for the policy shown below. Coverage remains subject to the terms, conditions and exclusions of the policy.")
+    : "NON-BINDING: This certificate is issued as a matter of information only and confers no rights upon the certificate holder. This certificate does not amend, extend, alter or certify the coverage afforded by the policies below.";
   doc.font("Helvetica").fontSize(FS_DISCLAIMER).fillColor(C_BLACK);
   doc.text(notice, x + 5, y + 5, { width: w - 10, height: 30 });
 

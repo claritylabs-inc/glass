@@ -131,7 +131,7 @@ async function loadStoredSourceSpans(
   policyId: Id<"policies">,
 ): Promise<SourceSpanDoc[]> {
   return ctx.runQuery(internal.sourceSpans.listSpansByPolicyInternal, { policyId })
-    .then((docs) => docs.map((doc) => ({
+    .then((docs: SourceSpanDoc[]) => docs.map((doc) => ({
       spanId: doc.spanId,
       documentId: doc.documentId,
       sourceKind: doc.sourceKind,
@@ -191,11 +191,11 @@ async function searchSemanticSourceChunks(
       });
       if (!chunk || String(chunk.policyId) !== String(policyId)) continue;
       const matched = chunk.sourceSpanIds
-        .map((id) => spansById.get(id))
-        .filter((span): span is SourceSpanDoc => Boolean(span));
+        .map((id: string) => spansById.get(id))
+        .filter((span: SourceSpanDoc | undefined): span is SourceSpanDoc => Boolean(span));
       if (matched.length > 0) {
         semantic.push(
-          ...matched.map((span) => ({
+          ...matched.map((span: SourceSpanDoc) => ({
             ...span,
             semanticScore: Math.max(span.semanticScore ?? 0, result._score),
           })),

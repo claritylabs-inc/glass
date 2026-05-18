@@ -134,6 +134,7 @@ import type * as operatorProvisioning from "../operatorProvisioning.js";
 import type * as orgMemory from "../orgMemory.js";
 import type * as organizations from "../organizations.js";
 import type * as orgs from "../orgs.js";
+import type * as partnerPrograms from "../partnerPrograms.js";
 import type * as pendingEmails from "../pendingEmails.js";
 import type * as policies from "../policies.js";
 import type * as policyAuditLog from "../policyAuditLog.js";
@@ -279,6 +280,7 @@ declare const fullApi: ApiFromModules<{
   orgMemory: typeof orgMemory;
   organizations: typeof organizations;
   orgs: typeof orgs;
+  partnerPrograms: typeof partnerPrograms;
   pendingEmails: typeof pendingEmails;
   policies: typeof policies;
   policyAuditLog: typeof policyAuditLog;

@@ -21,6 +21,7 @@ import {
   BROKER_NAV_ITEMS,
   CONNECT_ITEMS,
   NO_CONNECT_ITEMS,
+  PARTNER_NAV_ITEMS,
   SHORTCUT_PREFIX_KEY,
   SHORTCUT_SEQUENCE_TIMEOUT_MS,
 } from "@/components/app-sidebar/nav-config";
@@ -71,8 +72,9 @@ export function AppSidebar({
   const isBroker = currentOrg?.isBroker ?? false;
   const isStandaloneClient =
     currentOrg?.orgType === "client" && !viewerOrg?.brokerOrg;
-  const navItems = isBroker ? BROKER_NAV_ITEMS : ALL_NAV_ITEMS;
-  const connectItems = isBroker ? NO_CONNECT_ITEMS : CONNECT_ITEMS;
+  const isPartner = currentOrg?.isPartner ?? false;
+  const navItems = isPartner ? PARTNER_NAV_ITEMS : isBroker ? BROKER_NAV_ITEMS : ALL_NAV_ITEMS;
+  const connectItems = isBroker || isPartner ? NO_CONNECT_ITEMS : CONNECT_ITEMS;
   const isDesktop = useMediaQuery("(min-width: 1024px)");
 
   const pageShortcutMap = useMemo<Record<string, string>>(

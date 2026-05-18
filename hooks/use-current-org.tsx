@@ -18,8 +18,9 @@ export function useCurrentOrg() {
     orgId: org._id,
     org,
     brokerOrg,
-    orgType: (org as { type?: "broker" | "client" }).type ?? "client",
+    orgType: (org as { type?: "broker" | "client" | "partner" }).type ?? "client",
     role: membership.role,
-    isBroker: (org as { type?: "broker" | "client" }).type === "broker",
+    isBroker: (org as { type?: "broker" | "client" | "partner" }).type === "broker",
+    isPartner: (org as { type?: "broker" | "client" | "partner" }).type === "partner",
   };
 }

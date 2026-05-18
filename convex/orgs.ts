@@ -346,6 +346,36 @@ export const createBrokerOrg = mutation({
       role: "admin",
     });
 
+    await ctx.db.patch(userId, { onboardingComplete: true });
+    await ctx.db.patch(orgId, { onboardingComplete: true });
+
+    return orgId;
+  },
+});
+
+/** Create a program administrator partner org. */
+export const createPartnerOrg = mutation({
+  args: {
+    name: v.string(),
+    website: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
+
+    const orgId = await ctx.db.insert("organizations", {
+      name: args.name.trim(),
+      type: "partner",
+      partnerKind: "program_admin",
+      ...(args.website && { website: args.website }),
+    });
+
+    await ctx.db.insert("orgMemberships", {
+      orgId,
+      userId,
+      role: "admin",
+    });
+
     return orgId;
   },
 });

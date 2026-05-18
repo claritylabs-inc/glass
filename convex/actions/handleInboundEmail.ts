@@ -1418,26 +1418,31 @@ export const processInbound = internalAction({
             }
             try {
               const generated = await ctx.runAction(
-                internal.actions.generateCoi.run,
+                internal.certificates.generateForOrg,
                 {
                   policyId: params.policyId as Id<"policies">,
                   orgId,
-                  certificateHolder: params.certificateHolder,
-                  certificateHolderName:
+                  holderName:
                     params.certificateHolder?.split(/\r?\n/)[0]?.trim() ||
-                    undefined,
+                    "Certificate holder",
+                  certificateHolder: params.certificateHolder,
                   source: "email",
                   createdByUserId: primaryUserId,
                 },
               );
               if (!generated) return COI_GENERATION_FAILED_MESSAGE;
+              if (generated.status === "pending_approval") {
+                return "Certified COI approval has been requested from the program administrator. No certificate PDF is attached yet.";
+              }
               generatedCoiAttachments.push({
                 filename: generated.fileName,
                 contentType: "application/pdf",
                 size: generated.size,
-                fileId: generated.storageId as Id<"_storage">,
+                fileId: generated.fileId as Id<"_storage">,
               });
-              return "COI generated successfully and will be attached to this email reply.";
+              return generated.authorityType === "certified"
+                ? "Certified COI generated successfully and will be attached to this email reply."
+                : "Non-binding COI generated successfully and will be attached to this email reply.";
             } catch (err) {
               console.error("[email] COI generation failed:", err);
               return COI_GENERATION_FAILED_MESSAGE;

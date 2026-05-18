@@ -1,4 +1,5 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
+import dayjs from "dayjs";
 import { v } from "convex/values";
 import { action, internalAction, internalMutation, internalQuery, query } from "./_generated/server";
 import { api, internal } from "./_generated/api";
@@ -151,7 +152,7 @@ export const generateForPolicy = action({
     state: v.optional(v.string()),
     postalCode: v.optional(v.string()),
   },
-  handler: async (ctx, args): Promise<{ fileId: Id<"_storage">; url: string | null }> => {
+  handler: async (ctx, args): Promise<any> => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("Not authenticated");
 
@@ -182,6 +183,7 @@ export const generateForOrg = internalAction({
     orgId: v.id("organizations"),
     policyId: v.id("policies"),
     holderName: v.string(),
+    certificateHolder: v.optional(v.string()),
     addressLine1: v.optional(v.string()),
     addressLine2: v.optional(v.string()),
     city: v.optional(v.string()),
@@ -190,7 +192,7 @@ export const generateForOrg = internalAction({
     source: v.optional(certificateSourceValidator),
     createdByUserId: v.optional(v.id("users")),
   },
-  handler: async (ctx, args): Promise<{ fileId: Id<"_storage">; url: string | null }> => {
+  handler: async (ctx, args): Promise<any> => {
     const holderName = args.holderName.trim();
     if (!holderName) throw new Error("Certificate holder is required.");
 
@@ -198,7 +200,43 @@ export const generateForOrg = internalAction({
       orgId: args.orgId,
       policyId: args.policyId,
     });
-    const certificateHolder = compactCertificateHolder({ ...args, holderName });
+    const certificateHolder = args.certificateHolder?.trim() || compactCertificateHolder({ ...args, holderName });
+
+    const authority = await ctx.runQuery(internal.partnerPrograms.resolveCertificateAuthority, {
+      policyId: args.policyId,
+    }) as {
+      authorityType: "non_binding" | "certified";
+      certificationStatus: "not_applicable" | "pending" | "certified" | "declined";
+      partnerOrgId?: Id<"organizations">;
+      partnerProgramId?: Id<"partnerPrograms">;
+      templateId?: Id<"coiTemplates">;
+      standingAuthorizationId?: Id<"standingAuthorizations">;
+      approvalType?: "standing_authorization";
+      disclaimer?: string;
+    };
+
+    if (authority.authorityType === "certified" && authority.certificationStatus === "pending" && authority.partnerOrgId) {
+      const requestId = await ctx.runMutation(internal.partnerPrograms.createCertificateRequestInternal, {
+        orgId: args.orgId,
+        policyId: args.policyId,
+        partnerOrgId: authority.partnerOrgId,
+        partnerProgramId: authority.partnerProgramId,
+        templateId: authority.templateId,
+        holderName,
+        certificateHolder,
+        source: args.source,
+        createdByUserId: args.createdByUserId,
+      });
+      return {
+        status: "pending_approval",
+        requestId,
+        authorityType: "certified",
+        certificationStatus: "pending",
+        partnerOrgId: authority.partnerOrgId,
+        partnerProgramId: authority.partnerProgramId,
+        templateId: authority.templateId,
+      };
+    }
 
     const generated = await ctx.runAction(internal.actions.generateCoi.run, {
       policyId: args.policyId,
@@ -207,13 +245,44 @@ export const generateForOrg = internalAction({
       certificateHolderName: holderName,
       source: args.source,
       createdByUserId: args.createdByUserId,
+      authorityType: authority.authorityType,
+      certificationStatus: authority.certificationStatus,
+      partnerOrgId: authority.partnerOrgId,
+      partnerProgramId: authority.partnerProgramId,
+      templateId: authority.templateId,
+      standingAuthorizationId: authority.standingAuthorizationId,
+      disclaimer: authority.disclaimer,
     });
     if (!generated) throw new Error("COI generation failed.");
 
     const fileId = generated.storageId as Id<"_storage">;
+    if (authority.approvalType === "standing_authorization" && authority.partnerOrgId) {
+      const approvalId = await ctx.runMutation(internal.partnerPrograms.recordCertificateApprovalInternal, {
+        orgId: args.orgId,
+        policyId: args.policyId,
+        certificateId: generated.certificateId as Id<"certificates">,
+        partnerOrgId: authority.partnerOrgId,
+        partnerProgramId: authority.partnerProgramId,
+        templateId: authority.templateId,
+        standingAuthorizationId: authority.standingAuthorizationId,
+        approvalType: "standing_authorization",
+        status: "approved",
+        notes: authority.disclaimer,
+      });
+      await ctx.runMutation(internal.partnerPrograms.linkCertificateApprovalInternal, {
+        certificateId: generated.certificateId as Id<"certificates">,
+        approvalId,
+      });
+    }
     return {
+      status: "generated",
       fileId,
       url: await ctx.storage.getUrl(fileId),
+      fileName: generated.fileName,
+      size: generated.size,
+      certificateId: generated.certificateId,
+      authorityType: authority.authorityType,
+      certificationStatus: authority.certificationStatus,
     };
   },
 });
@@ -228,6 +297,20 @@ export const recordGenerated = internalMutation({
     certificateHolderName: v.optional(v.string()),
     source: v.optional(certificateSourceValidator),
     createdByUserId: v.optional(v.id("users")),
+    authorityType: v.optional(v.union(v.literal("non_binding"), v.literal("certified"))),
+    certificationStatus: v.optional(
+      v.union(
+        v.literal("not_applicable"),
+        v.literal("pending"),
+        v.literal("certified"),
+        v.literal("declined"),
+      ),
+    ),
+    partnerOrgId: v.optional(v.id("organizations")),
+    partnerProgramId: v.optional(v.id("partnerPrograms")),
+    templateId: v.optional(v.id("coiTemplates")),
+    standingAuthorizationId: v.optional(v.id("standingAuthorizations")),
+    disclaimer: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const policy = await ctx.db.get(args.policyId);
@@ -244,7 +327,14 @@ export const recordGenerated = internalMutation({
       certificateHolderName: args.certificateHolderName,
       source: args.source ?? "agent",
       createdByUserId: args.createdByUserId,
-      createdAt: Date.now(),
+      authorityType: args.authorityType ?? "non_binding",
+      certificationStatus: args.certificationStatus ?? "not_applicable",
+      partnerOrgId: args.partnerOrgId,
+      partnerProgramId: args.partnerProgramId,
+      templateId: args.templateId,
+      standingAuthorizationId: args.standingAuthorizationId,
+      disclaimer: args.disclaimer,
+      createdAt: dayjs().valueOf(),
     });
   },
 });

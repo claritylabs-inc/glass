@@ -414,7 +414,7 @@ export const processInbound = internalAction({
       );
       const linkedUsers = await ctx.runQuery(internal.users.findManyByPhones, {
         phones,
-      });
+      }) as Array<Doc<"users"> | null>;
       const usersByPhone = new Map(
         linkedUsers
           .filter((user) => user?.phone)
@@ -422,7 +422,7 @@ export const processInbound = internalAction({
       );
       const memberships = await ctx.runQuery(internal.orgs.getUserMemberships, {
         userIds: linkedUsers.map((user) => user!._id),
-      });
+      }) as Array<Doc<"orgMemberships"> | null>;
       const membershipByUserId = new Map(
         memberships.map((membership) => [
           String(membership!.userId),
@@ -534,7 +534,7 @@ export const processInbound = internalAction({
         readOrgIds.map((scopedOrgId) =>
           ctx.runQuery(internal.orgs.getInternal, { id: scopedOrgId }),
         ),
-      );
+      ) as Array<Doc<"organizations"> | null>;
       const orgNamesById = Object.fromEntries(
         scopedOrgs
           .filter(Boolean)
@@ -608,7 +608,13 @@ export const processInbound = internalAction({
       const history = await ctx.runQuery(internal.threads.getImessageHistory, {
         threadId,
         limit: 16,
-      });
+      }) as Array<{
+        status?: string;
+        role: string;
+        content: string;
+        userName?: string;
+        responseMessageId?: string;
+      }>;
       const historyForContext = history.filter((msg) => {
         if (msg.status === "processing") return false;
         if (isImessageStatusCue(msg)) return false;
@@ -1332,24 +1338,29 @@ export const processInbound = internalAction({
             try {
               // Run COI generation inline so we can attach the PDF to the iMessage reply
               const generated = await ctx.runAction(
-                internal.actions.generateCoi.run,
+                internal.certificates.generateForOrg,
                 {
                   policyId: params.policyId as Id<"policies">,
                   orgId,
-                  certificateHolder: params.certificateHolder,
-                  certificateHolderName:
+                  holderName:
                     params.certificateHolder?.split(/\r?\n/)[0]?.trim() ||
-                    undefined,
+                    "Certificate holder",
+                  certificateHolder: params.certificateHolder,
                   source: "imessage",
                   createdByUserId: user._id,
                 },
               );
               if (!generated) return COI_GENERATION_FAILED_MESSAGE;
+              if (generated.status === "pending_approval") {
+                return "Certified COI approval requested from the program administrator. I will not send a certificate PDF until it is approved.";
+              }
               responseFileAttachments.push({
-                storageId: generated.storageId as Id<"_storage">,
+                storageId: generated.fileId as Id<"_storage">,
                 filename: generated.fileName,
               });
-              return "COI generated and will be sent as an attachment.";
+              return generated.authorityType === "certified"
+                ? "Certified COI generated and will be sent as an attachment."
+                : "Non-binding COI generated and will be sent as an attachment.";
             } catch (err) {
               console.error("[imessage] COI generation failed:", err);
               return COI_GENERATION_FAILED_MESSAGE;

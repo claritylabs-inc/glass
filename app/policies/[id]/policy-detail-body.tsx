@@ -1074,7 +1074,7 @@ function PolicyChangesTab({
               <PolicyChangeProgress status={change.status} className="mt-4" />
 
               <div className="mt-3 flex flex-wrap gap-3 text-[11px] text-muted-foreground">
-                <span>Updated {new Date(change.updatedAt).toLocaleDateString()}</span>
+                <span>Updated {dayjs(change.updatedAt).format("MMM D, YYYY")}</span>
                 {missingInfoCount > 0 && <span>{missingInfoCount} question{missingInfoCount === 1 ? "" : "s"} open</span>}
                 {issueCount > 0 && <span>{issueCount} issue{issueCount === 1 ? "" : "s"} to review</span>}
               </div>
@@ -1131,7 +1131,7 @@ function PolicyChangesTab({
               </div>
               <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
                 <span>{change.sourceKind.replace("_", " ")}</span>
-                <span>{new Date(change.updatedAt).toLocaleDateString()}</span>
+                <span>{dayjs(change.updatedAt).format("MMM D, YYYY")}</span>
                 <span>{missingInfoCount} questions</span>
                 <span>{validationIssueCount} validation issues</span>
                 {(change.evidenceSourceIds?.length ?? 0) > 0 && (
@@ -1306,12 +1306,12 @@ function PolicyChangesTab({
                   <div className="space-y-2">
                     {(detail.messages ?? []).map((message) => (
                       <div key={message._id} className="text-[11px] text-muted-foreground">
-                        {new Date(message.createdAt).toLocaleString()} · {message.direction} · {message.channel ?? "case"} · {message.content.slice(0, 140)}
+                        {dayjs(message.createdAt).format("MMM D, YYYY h:mm A")} · {message.direction} · {message.channel ?? "case"} · {message.content.slice(0, 140)}
                       </div>
                     ))}
                     {(detail.validationReports ?? []).map((report) => (
                       <div key={report._id} className="text-[11px] text-muted-foreground">
-                        {new Date(report.createdAt).toLocaleString()} · validation {report.status}
+                        {dayjs(report.createdAt).format("MMM D, YYYY h:mm A")} · validation {report.status}
                       </div>
                     ))}
                     {(detail.evidenceLinks ?? []).map((link) => (
@@ -1354,13 +1354,7 @@ function ViewPdfButton({
 }
 
 function formatCertificateTimestamp(value: number) {
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(new Date(value));
+  return dayjs(value).format("MMM D, YYYY h:mm A");
 }
 
 function CertificateCreatePanel({
@@ -1408,7 +1402,17 @@ function CertificateCreatePanel({
         state: state.trim() || undefined,
         postalCode: postalCode.trim() || undefined,
       });
-      toast.success("Certificate generated");
+      if ((result as { status?: string }).status === "pending_approval") {
+        toast.success("Certified COI sent for program administrator approval");
+        onOpenChange(false);
+        reset();
+        return;
+      }
+      toast.success(
+        (result as { authorityType?: string }).authorityType === "certified"
+          ? "Certified certificate generated"
+          : "Non-binding certificate generated",
+      );
       onOpenChange(false);
       reset();
       if (result.url) window.open(result.url, "_blank", "noopener,noreferrer");
@@ -1564,6 +1568,10 @@ function CertificatesTab({ policyId }: { policyId: Id<"policies"> }) {
               <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
                 <span>{formatCertificateTimestamp(certificate.createdAt)}</span>
                 {certificate.source && <span>{certificate.source.replace("_", " ")}</span>}
+                <span>
+                  {certificate.authorityType === "certified" ? "certified" : "non-binding"}
+                </span>
+                {certificate.certificationStatus === "pending" && <span>pending approval</span>}
               </div>
             </div>
             <PillButton
@@ -1764,7 +1772,7 @@ export function PolicyDetailBody({
         metadata: entry.metadata,
         userId: entry.userId,
         orgId: entry.orgId,
-        timestamp: new Date(entry._creationTime).toISOString(),
+        timestamp: dayjs(entry._creationTime).toISOString(),
       });
     }
   }, [auditEntries, policyNumber]);
@@ -1783,7 +1791,7 @@ export function PolicyDetailBody({
       logPolicyActivityToBrowser("pipeline_log", {
         policyId: id,
         policyNumber,
-        timestamp: new Date(entry.timestamp).toISOString(),
+        timestamp: dayjs(entry.timestamp).toISOString(),
         phase: entry.phase,
         level: entry.level ?? "info",
         message: entry.message,
