@@ -19,6 +19,7 @@ const BREADCRUMB_MAP: Record<string, { label: string; href?: string }> = {
   "/agent": { label: "Agent Threads", href: "/policies" },
   "/settings": { label: "Settings" },
   "/profile": { label: "Profile" },
+  "/partner": { label: "Program admin", href: "/partner/approvals" },
 };
 
 export interface PresenceUser {
