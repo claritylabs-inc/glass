@@ -6,6 +6,7 @@ import { api, internal } from "../_generated/api";
 import { sendResendEmail } from "../lib/resend";
 import { toResendAttachments } from "../lib/emailSubagent";
 import { getImessageWorkerUrl } from "../lib/imessageConfig";
+import { shouldBlockUnapprovedCoiAttachmentBatch } from "../lib/coiAttachmentGuards";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 
@@ -15,38 +16,12 @@ type BulkDraftSendResult = {
   failed: Array<{ id: Id<"pendingEmails">; error: string }>;
 };
 
-function isCoiText(text: string | undefined): boolean {
-  return /\b(coi|certificate(?:\s+of\s+insurance)?)\b/i.test(text ?? "");
-}
-
-function isCoiAttachment(filename: string): boolean {
-  return /\b(coi|certificate[-_\s]?of[-_\s]?insurance)\b/i.test(filename);
-}
-
-function explicitlyAllowsCoiBatch(text: string | undefined): boolean {
-  return (
-    /\b(bundle|packet|package|zip|same email|one email|single email|together)\b/i.test(text ?? "") ||
-    /\b(?:all|every|both|\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+(?:of\s+)?(?:the\s+)?(?:cois|certificates|certificates of insurance)\b/i.test(text ?? "") ||
-    /\battach\s+(?:all|every|both|\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b/i.test(text ?? "")
-  ) && !/\b(separate|separately|individual|individually|one per|each holder|each recipient)\b/i.test(text ?? "");
-}
-
 function assertSafeDraftAttachments(pending: Doc<"pendingEmails">) {
-  const attachments = pending.attachments ?? [];
-  if (!attachments.length) return;
-  if (
-    pending.allowMultipleCoiAttachments ||
-    explicitlyAllowsCoiBatch(`${pending.subject}\n${pending.emailBody}`)
-  ) {
-    return;
-  }
-  const coiAttachmentCount = attachments.filter((attachment) =>
-    isCoiAttachment(attachment.filename),
-  ).length;
-  if (
-    coiAttachmentCount > 3 &&
-    (isCoiText(pending.subject) || isCoiText(pending.emailBody))
-  ) {
+  if (shouldBlockUnapprovedCoiAttachmentBatch({
+    attachments: pending.attachments,
+    requestText: `${pending.subject}\n${pending.emailBody}`,
+    allowMultipleCoiAttachments: pending.allowMultipleCoiAttachments,
+  })) {
     throw new Error(
       "This COI draft has too many certificate attachments. Cancel it and regenerate the draft before sending.",
     );

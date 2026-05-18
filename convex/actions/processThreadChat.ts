@@ -59,6 +59,8 @@ import {
   resolveEmailAgentIdentity,
   type EmailSubagentResult,
 } from "../lib/emailSubagent";
+import { isBrokerDirectedEmailRequest } from "../lib/emailIntentGuards";
+import { isCoiAttachmentFilename } from "../lib/coiAttachmentGuards";
 import { isOrgReadableByScope, orgLabelForScope, type AgentScope } from "../lib/agentScope";
 import {
   classifyPromptInjection,
@@ -231,14 +233,6 @@ function isMultiDraftElaborationRequest(text: string): boolean {
     /\b(elaborate|revise|update|edit|change|mention|include|add)\b/i.test(text) &&
     /\b(holder|certificate|coi|covering|covers|policy)\b/i.test(text) &&
     !/\b(send|cancel|delete|remove)\b/i.test(text)
-  );
-}
-
-function isBrokerDirectedEmailRequest(content: string) {
-  const normalized = content.toLowerCase();
-  return (
-    /\b(my|our|the)\s+broker\b/.test(normalized) &&
-    /\b(send|email|e-mail|forward|share|draft)\b/.test(normalized)
   );
 }
 
@@ -603,10 +597,6 @@ function claimsCoiEmailCompletion(text: string): boolean {
 
 function claimsEmailDraftCompletion(text: string): boolean {
   return /\b(drafted|prepared)\b[\s\S]{0,80}\bemail\b/i.test(text);
-}
-
-function isCoiAttachmentFilename(filename: string): boolean {
-  return /\b(coi|certificate[-_\s]?of[-_\s]?insurance)\b/i.test(filename);
 }
 
 /** Build executable tools with Convex context wired in. */

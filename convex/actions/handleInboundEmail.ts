@@ -68,6 +68,7 @@ import {
   type EmailAttachmentMeta,
   type EmailSubagentResult,
 } from "../lib/emailSubagent";
+import { isBrokerDirectedEmailRequest } from "../lib/emailIntentGuards";
 import {
   COI_GENERATION_FAILED_MESSAGE,
   FATAL_ACTION_FAILED_MESSAGE,
@@ -85,14 +86,6 @@ import {
 } from "../lib/emailDraftSummary";
 
 const GLASS_PUBLIC_URL = getClientPortalUrl();
-
-function isBrokerDirectedEmailRequest(content: string) {
-  const normalized = content.toLowerCase();
-  return (
-    /\b(my|our|the)\s+broker\b/.test(normalized) &&
-    /\b(send|email|e-mail|forward|share|draft)\b/.test(normalized)
-  );
-}
 
 const CONSUMER_DOMAINS = new Set([
   "gmail.com",

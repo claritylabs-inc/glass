@@ -55,6 +55,7 @@ import {
   resolveEmailAgentIdentity,
   type EmailSubagentResult,
 } from "../lib/emailSubagent";
+import { isBrokerDirectedEmailRequest } from "../lib/emailIntentGuards";
 import {
   COI_GENERATION_FAILED_MESSAGE,
   FATAL_ACTION_FAILED_MESSAGE,
@@ -77,14 +78,6 @@ import {
   isSendAllEmailDraftsIntent,
   isShowMoreEmailDraftIntent,
 } from "../lib/emailDraftSummary";
-
-function isBrokerDirectedEmailRequest(content: string) {
-  const normalized = content.toLowerCase();
-  return (
-    /\b(my|our|the)\s+broker\b/.test(normalized) &&
-    /\b(send|email|e-mail|forward|share|draft)\b/.test(normalized)
-  );
-}
 
 /** Normalize a raw phone string to E.164 (+1XXXXXXXXXX). */
 function normalizePhone(raw: string): string {

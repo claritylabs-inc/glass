@@ -13,6 +13,17 @@ import { isWhiteLabelingEnabled } from "./branding";
 import { COI_GENERATION_FAILED_MESSAGE } from "./actionFailures";
 import { buildGlassEmailIconHtml } from "./emailTemplate";
 import { getClientPortalUrl } from "./domains";
+import {
+  extractEmailAddress,
+  normalizeEmailAddress,
+} from "./emailAddress";
+import {
+  isCoiAttachmentFilename,
+  normalizeAttachmentText,
+  resolveRequestedCoiAttachmentsForRecipient,
+  shouldSuppressOriginalPolicyForCoiRequest,
+  type RequestedEmailAttachment,
+} from "./coiAttachmentGuards";
 
 const MAX_EMAIL_SIZE = 38 * 1024 * 1024; // Resend limit is 40MB after Base64 encoding.
 const GLASS_PUBLIC_URL = getClientPortalUrl();
@@ -155,16 +166,6 @@ export async function resolveEmailAgentIdentity(
     fromHeader: `${getEmailAgentFromName(brokerBranding)} <${agentAddress}>`,
     brokerBranding,
   };
-}
-
-function normalizeEmail(email: string): string {
-  return email.toLowerCase().trim();
-}
-
-function extractEmail(value: string | undefined): string | null {
-  if (!value) return null;
-  const match = value.match(/[\w.+-]+@[\w.-]+\.\w+/);
-  return match ? normalizeEmail(match[0]) : null;
 }
 
 function formatDraft(params: {
@@ -389,98 +390,6 @@ function uniqueAttachments(attachments: EmailAttachmentMeta[]): EmailAttachmentM
   return result;
 }
 
-function normalizeAttachmentText(value: string | undefined): string {
-  return (value ?? "").trim().toLowerCase().replace(/\s+/g, " ");
-}
-
-function isCoiDeliveryRequest(request: string): boolean {
-  return /\b(coi|certificate of insurance|insurance certificate)\b/i.test(request);
-}
-
-export function explicitlyRequestsCoiBatchForOneEmail(request: string): boolean {
-  return (
-    /\b(bundle|packet|package|zip|same email|one email|single email|together)\b/i.test(request) ||
-    /\b(?:all|every|both|\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+(?:of\s+)?(?:the\s+)?(?:cois|certificates|certificates of insurance)\b/i.test(request) ||
-    /\battach\s+(?:all|every|both|\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b/i.test(request)
-  ) && (
-    !/\b(separate|separately|individual|individually|one per|each holder|each recipient)\b/i.test(request)
-  );
-}
-
-function explicitlyRequestsOriginalPolicy(request: string): boolean {
-  return /\b(original|full|complete|entire|copy of (?:the )?policy|policy pdf|policy document|declarations?|wording|specimen)\b/i.test(request);
-}
-
-function normalizeMatchText(value: string | undefined): string {
-  return (value ?? "")
-    .toLowerCase()
-    .replace(/[^a-z0-9@.+-]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function recipientSearchTokens(email: string | null | undefined): string[] {
-  if (!email) return [];
-  const normalized = normalizeEmail(email);
-  const localPart = normalized.split("@")[0] ?? "";
-  const plusTag = localPart.includes("+") ? localPart.split("+").at(-1) : localPart;
-  return [normalized, localPart, plusTag ?? ""]
-    .map((value) => normalizeMatchText(value).replace(/\d+$/g, ""))
-    .filter((value) => value.length >= 4);
-}
-
-function narrowCoiAttachmentsForSingleRecipient(
-  input: {
-    request: string;
-    to?: string;
-    recipientName?: string;
-    attachments?: Array<{
-      kind: "original_policy" | "coi" | "uploaded_file";
-      policyId?: string;
-      fileId?: string;
-      filename?: string;
-      certificateHolder?: string;
-    }>;
-  },
-  context: EmailExpertContext,
-): {
-  attachments: NonNullable<typeof input.attachments>;
-  warning?: string;
-} {
-  const attachments = input.attachments ?? [];
-  const coiAttachments = attachments.filter((attachment) => attachment.kind === "coi");
-  if (coiAttachments.length <= 1 || explicitlyRequestsCoiBatchForOneEmail(input.request)) {
-    return { attachments };
-  }
-
-  const nonCoiAttachments = attachments.filter((attachment) => attachment.kind !== "coi");
-  const recipient = extractEmail(input.to) ?? extractEmail(context.defaultTo);
-  const tokens = [
-    ...recipientSearchTokens(recipient),
-    normalizeMatchText(input.recipientName),
-    normalizeMatchText(context.defaultRecipientName),
-  ].filter((token) => token.length >= 4);
-
-  const matches = coiAttachments.filter((attachment) => {
-    const searchable = normalizeMatchText([
-      attachment.certificateHolder,
-      attachment.filename,
-      attachment.fileId,
-    ].filter(Boolean).join(" "));
-    return tokens.some((token) => searchable.includes(token));
-  });
-
-  if (matches.length === 1) {
-    return { attachments: [...nonCoiAttachments, matches[0]] };
-  }
-
-  return {
-    attachments: nonCoiAttachments,
-    warning:
-      "A single recipient email was given multiple COI attachments. I did not attach the batch because each holder email must include only that holder's COI.",
-  };
-}
-
 export function buildEmailExpertTool(
   ctx: ActionCtx,
   params: EmailExpertContext,
@@ -527,21 +436,21 @@ async function runEmailSubagent(
     cc?: string[];
     bcc?: string[];
     approvedToSend?: boolean;
-    attachments?: Array<{
-      kind: "original_policy" | "coi" | "uploaded_file";
-      policyId?: string;
-      fileId?: string;
-      filename?: string;
-      certificateHolder?: string;
-    }>;
+    attachments?: RequestedEmailAttachment[];
   },
 ): Promise<EmailSubagentResult> {
   const preparedAttachments: EmailAttachmentMeta[] = [];
-  const allowMultipleCoiAttachments = explicitlyRequestsCoiBatchForOneEmail(input.request);
-  const safeRequestedAttachments = narrowCoiAttachmentsForSingleRecipient(input, context);
+  const safeRequestedAttachments = resolveRequestedCoiAttachmentsForRecipient({
+    request: input.request,
+    to: input.to,
+    recipientName: input.recipientName,
+    defaultTo: context.defaultTo,
+    defaultRecipientName: context.defaultRecipientName,
+    attachments: input.attachments,
+  });
+  const { allowMultipleCoiAttachments } = safeRequestedAttachments;
   const sourcePolicyIds = new Set((context.referencedPolicyIds ?? []).map(String));
-  const suppressOriginalPolicyForCoiRequest =
-    isCoiDeliveryRequest(input.request) && !explicitlyRequestsOriginalPolicy(input.request);
+  const suppressOriginalPolicyForCoiRequest = shouldSuppressOriginalPolicyForCoiRequest(input.request);
   const savedThreadAttachments = context.threadId
     ? await ctx.runQuery(internal.threads.listThreadAttachmentsInternal, {
         threadId: context.threadId,
@@ -600,7 +509,7 @@ async function runEmailSubagent(
     if (!found) return "Uploaded file not found.";
     if (
       suppressOriginalPolicyForCoiRequest &&
-      !/\b(coi|certificate[-_\s]?of[-_\s]?insurance)\b/i.test(found.filename)
+      !isCoiAttachmentFilename(found.filename)
     ) {
       return "Skipped uploaded file because COI delivery requests should attach only the generated COI.";
     }
@@ -678,7 +587,7 @@ async function runEmailSubagent(
   }));
 
   const allowedRecipients = (context.allowedRecipients ?? [])
-    .map(normalizeEmail)
+    .map(normalizeEmailAddress)
     .filter(Boolean);
   const defaultCc = [...new Set([...(context.defaultCc ?? []), ...(input.cc ?? [])].filter(Boolean))];
   const defaultBcc = [...new Set([...(context.defaultBcc ?? []), ...(input.bcc ?? [])].filter(Boolean))];
@@ -692,11 +601,11 @@ async function runEmailSubagent(
     bcc?: string[];
     approvedToSend?: boolean;
   }): Promise<EmailSubagentResult> => {
-    const to = extractEmail(params.to) ?? extractEmail(input.to) ?? extractEmail(context.defaultTo);
+    const to = extractEmailAddress(params.to) ?? extractEmailAddress(input.to) ?? extractEmailAddress(context.defaultTo);
     const subject = (params.subject ?? input.subject ?? context.subjectHint ?? "").trim();
     const body = (params.body ?? input.body ?? "").trim();
-    const cc = [...new Set([...(params.cc ?? []), ...defaultCc].map(normalizeEmail).filter((email) => email && email !== to))];
-    const bcc = [...new Set([...(params.bcc ?? []), ...defaultBcc].map(normalizeEmail).filter((email) => email && email !== to && !cc.includes(email)))];
+    const cc = [...new Set([...(params.cc ?? []), ...defaultCc].map(normalizeEmailAddress).filter((email) => email && email !== to))];
+    const bcc = [...new Set([...(params.bcc ?? []), ...defaultBcc].map(normalizeEmailAddress).filter((email) => email && email !== to && !cc.includes(email)))];
     const attachments = uniqueAttachments(preparedAttachments).filter((attachment) => {
       if (!suppressOriginalPolicyForCoiRequest || generatedCoiAttachmentIds.size === 0) {
         return true;

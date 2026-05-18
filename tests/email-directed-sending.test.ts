@@ -2,9 +2,10 @@ import { readFileSync } from "fs";
 import { join } from "path";
 import { describe, expect, it } from "vitest";
 import {
-  explicitlyRequestsCoiBatchForOneEmail,
   resolveEmailAgentIdentity,
 } from "../convex/lib/emailSubagent";
+import { explicitlyRequestsCoiBatchForOneEmail } from "../convex/lib/coiAttachmentGuards";
+import { isBrokerDirectedEmailRequest } from "../convex/lib/emailIntentGuards";
 import {
   getAgentDomains,
   getAuthFromAddress,
@@ -301,6 +302,10 @@ describe("directed email sending", () => {
       join(__dirname, "..", "convex/actions/sendPendingEmail.ts"),
       "utf-8",
     );
+    const coiGuardsSource = readFileSync(
+      join(__dirname, "..", "convex/lib/coiAttachmentGuards.ts"),
+      "utf-8",
+    );
     const threadsSource = readFileSync(
       join(__dirname, "..", "convex/threads.ts"),
       "utf-8",
@@ -316,13 +321,14 @@ describe("directed email sending", () => {
     expect(source).toContain("each recipient's email must include only that recipient's generated COI");
     expect(source).toContain("explicitly asks to bundle all COIs/certificates into one email");
     expect(source).toContain("allowMultipleCoiAttachments");
-    expect(source).toContain("narrowCoiAttachmentsForSingleRecipient");
-    expect(source).toContain("A single recipient email was given multiple COI attachments");
+    expect(source).toContain("resolveRequestedCoiAttachmentsForRecipient");
+    expect(coiGuardsSource).toContain("A single recipient email was given multiple COI attachments");
     expect(sendPendingSource).toContain("pending.allowMultipleCoiAttachments");
     expect(threadsSource).toContain("excludeEmailArtifacts: v.optional(v.boolean())");
     expect(threadsSource).toContain("excludeAgentCoiAttachments: v.optional(v.boolean())");
     expect(threadsSource).toContain('message.channel === "email"');
     expect(sendPendingSource).toContain("assertSafeDraftAttachments(pending)");
+    expect(sendPendingSource).toContain("shouldBlockUnapprovedCoiAttachmentBatch");
     expect(sendPendingSource).toContain("too many certificate attachments");
   });
 
@@ -342,6 +348,12 @@ describe("directed email sending", () => {
         "Send each holder their certificate separately",
       ),
     ).toBe(false);
+  });
+
+  it("centralizes broker-directed email intent detection", () => {
+    expect(isBrokerDirectedEmailRequest("Can you send this to my broker?")).toBe(true);
+    expect(isBrokerDirectedEmailRequest("Please draft an email for our broker")).toBe(true);
+    expect(isBrokerDirectedEmailRequest("Send this to adyan@example.com")).toBe(false);
   });
 
   it("revises multi-draft COI batches in place instead of updating one draft", () => {
