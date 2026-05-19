@@ -67,6 +67,7 @@ import {
   normalizeSelectedPartnerProgramId,
   type CertificateProgramSelection,
 } from "../lib/certificateProgramSelection";
+import { resolvePolicyReferenceForOrg } from "../lib/policyToolResolution";
 import { evaluatePceIntake, type PceRequestKind } from "../lib/pceIntake";
 import {
   filterComplianceRequirements,
@@ -1263,12 +1264,12 @@ export const processInbound = internalAction({
             if (!currentSenderIsLinked) {
               return "Only a linked Glass user in this chat can request the original policy PDF.";
             }
-            const requestedPolicy: any = await ctx.runQuery(
-              internal.policies.getInternal,
-              {
-                id: params.policyId as Id<"policies">,
-              },
-            );
+            const resolvedPolicy = await resolvePolicyReferenceForOrg(ctx, {
+              orgIds: [orgId],
+              reference: params.policyId,
+            });
+            if (!resolvedPolicy.ok) return resolvedPolicy.message;
+            const requestedPolicy: any = resolvedPolicy.policy;
             if (
               !requestedPolicy ||
               String(requestedPolicy.orgId) !== String(orgId)
@@ -1370,7 +1371,7 @@ export const processInbound = internalAction({
               const generated = await ctx.runAction(
                 internal.certificates.generateForOrg,
                 {
-                  policyId: params.policyId as Id<"policies">,
+                  policyId: requestedPolicy._id,
                   orgId,
                   holderName:
                     params.certificateHolder?.split(/\r?\n/)[0]?.trim() ||
@@ -1389,7 +1390,7 @@ export const processInbound = internalAction({
               }
               if (generated.status === "needs_program_selection") {
                 const selection = buildCertificateProgramSelection({
-                  policyId: params.policyId,
+                  policyId: String(requestedPolicy._id),
                   holderName:
                     params.certificateHolder?.split(/\r?\n/)[0]?.trim() ||
                     "Certificate holder",
@@ -1474,6 +1475,11 @@ export const processInbound = internalAction({
                 defaultRecipientName: brokerDirectedEmailRequest
                   ? brokerRecipientName
                   : user.name,
+                requireKnownRecipient: brokerDirectedEmailRequest,
+                missingRecipientMessage:
+                  "No broker contact email is set for this organization. Add the broker contact in Settings, or send me the broker's email address first.",
+                unknownRecipientMessage:
+                  "I cannot use that broker recipient because it is not the configured broker contact in Glass. Add the broker contact in Settings, or send me the correct broker email address explicitly.",
                 defaultBcc:
                   org.bccRequesterOnAgentEmails !== false && user.email
                     ? [user.email]

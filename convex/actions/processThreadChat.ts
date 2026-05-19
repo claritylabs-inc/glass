@@ -78,6 +78,7 @@ import {
   normalizeSelectedPartnerProgramId,
   type CertificateProgramSelection,
 } from "../lib/certificateProgramSelection";
+import { resolvePolicyReferenceForOrg } from "../lib/policyToolResolution";
 import { evaluatePceIntake, type PceRequestKind } from "../lib/pceIntake";
 import {
   filterComplianceRequirements,
@@ -902,9 +903,15 @@ function buildTools(
           return `COI auto-generation is disabled for this organization.`;
         }
         try {
-          const policy: any = await ctx.runQuery(internal.policies.getInternal, {
-            id: input.policyId as Id<"policies">,
+          const orgIds = args.scope?.mode === "broker_portfolio"
+            ? args.scope.readOrgIds
+            : [args.orgId as Id<"organizations">];
+          const resolved = await resolvePolicyReferenceForOrg(ctx, {
+            orgIds: orgIds as Id<"organizations">[],
+            reference: input.policyId,
           });
+          if (!resolved.ok) return resolved.message;
+          const policy: any = resolved.policy;
           if (args.scope) {
             if (!policy || !isOrgReadableByScope(args.scope, policy.orgId)) return "Policy not found.";
           } else {
@@ -914,7 +921,7 @@ function buildTools(
           const generated = await ctx.runAction(
             internal.certificates.generateForOrg,
             {
-              policyId: input.policyId as Id<"policies">,
+              policyId: policy._id,
               orgId: targetOrgId,
               holderName:
                 input.certificateHolder?.split(/\r?\n/)[0]?.trim() || "Certificate holder",
@@ -1716,6 +1723,11 @@ export const run = internalAction({
                 defaultRecipientName: brokerDirectedEmailRequest
                   ? brokerRecipientName
                   : user?.name,
+                requireKnownRecipient: brokerDirectedEmailRequest,
+                missingRecipientMessage:
+                  "No broker contact email is set for this organization. Add the broker contact in Settings, or provide the broker's email address before I draft or send this.",
+                unknownRecipientMessage:
+                  "I cannot use that broker recipient because it is not the configured broker contact in Glass. Add the broker contact in Settings, or provide the correct broker email address explicitly.",
                 defaultBcc:
                   org.bccRequesterOnAgentEmails !== false && user?.email
                     ? [user.email]

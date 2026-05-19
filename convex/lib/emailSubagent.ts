@@ -29,6 +29,7 @@ import {
   formatCertificateProgramSelectionForUser,
   normalizeSelectedPartnerProgramId,
 } from "./certificateProgramSelection";
+import { resolvePolicyReferenceForOrg } from "./policyToolResolution";
 
 const MAX_EMAIL_SIZE = 38 * 1024 * 1024; // Resend limit is 40MB after Base64 encoding.
 const GLASS_PUBLIC_URL = getClientPortalUrl();
@@ -78,6 +79,9 @@ type EmailExpertContext = {
   inReplyTo?: string;
   references?: string;
   allowedRecipients?: string[];
+  requireKnownRecipient?: boolean;
+  missingRecipientMessage?: string;
+  unknownRecipientMessage?: string;
   availableAttachments?: EmailAttachmentMeta[];
   referencedPolicyIds?: Id<"policies">[];
   referencedQuoteIds?: Id<"policies">[];
@@ -528,8 +532,14 @@ async function runEmailSubagent(
     certificateHolder?: string,
     partnerProgramId?: string,
   ): Promise<string> => {
-    sourcePolicyIds.add(policyId);
-    const coiKey = `${policyId}:${normalizeAttachmentText(certificateHolder)}`;
+    const resolved = await resolvePolicyReferenceForOrg(ctx, {
+      orgIds: [context.orgId],
+      reference: policyId,
+    });
+    if (!resolved.ok) return resolved.message;
+    const resolvedPolicyId = resolved.policy._id;
+    sourcePolicyIds.add(String(resolvedPolicyId));
+    const coiKey = `${resolvedPolicyId}:${normalizeAttachmentText(certificateHolder)}`;
     if (attachedCoiKeys.has(coiKey)) {
       return "Generated COI is already attached.";
     }
@@ -541,7 +551,7 @@ async function runEmailSubagent(
     let generated: any;
     try {
       generated = await ctx.runAction(internal.certificates.generateForOrg, {
-        policyId: policyId as Id<"policies">,
+        policyId: resolvedPolicyId,
         orgId: context.orgId,
         holderName: certificateHolder?.split(/\r?\n/)[0]?.trim() || "Certificate holder",
         certificateHolder,
@@ -645,12 +655,27 @@ async function runEmailSubagent(
     const autoSend = context.autoSendEmails === true;
 
     const uncertainty: string[] = [];
-    if (!to) uncertainty.push("Confirm the recipient email address.");
+    if (!to) {
+      uncertainty.push(
+        context.missingRecipientMessage ?? "Confirm the recipient email address.",
+      );
+    }
     if (!subject) uncertainty.push("Confirm the subject line.");
     if (!body) uncertainty.push("Confirm the email body.");
     const unknownRecipients = [to, ...cc, ...bcc]
       .filter((email): email is string => !!email)
       .filter((email) => allowedRecipients.length > 0 && !allowedRecipients.includes(email));
+    if (context.requireKnownRecipient && unknownRecipients.length > 0) {
+      const message =
+        context.unknownRecipientMessage ??
+        "I cannot use that recipient because it is not a known contact in Glass. Add the contact in settings or provide the correct recipient explicitly.";
+      finalResult = {
+        status: "needs_confirmation",
+        responseBody: message,
+        confirmationReason: message,
+      };
+      return finalResult;
+    }
     if (unknownRecipients.length > 0 && !approvedToSend) {
       uncertainty.push(`Confirm that ${unknownRecipients.join(", ")} ${unknownRecipients.length === 1 ? "is" : "are"} the intended recipient${unknownRecipients.length === 1 ? "" : "s"}.`);
     }
@@ -802,6 +827,7 @@ You only handle Glass Agent outbound email. Your job is to draft or send polishe
 
 Be careful by default:
 - If the recipient email is missing, inferred, or not clearly the intended recipient, do not send. Produce a draft and ask for confirmation.
+- Never invent broker, carrier, underwriter, MGA, client, or vendor recipient emails. If a requested recipient is not supplied or present in known contacts/context, ask for the missing contact information instead.
 - If the request says "email me", "send me", or "email this to me", use the supplied default recipient as the recipient.
 - If the subject, body, or requested attachments are ambiguous, do not send.
 - If auto-send is disabled, draft first unless the caller says the user explicitly approved this exact email.
@@ -832,6 +858,13 @@ Call send_or_draft_email exactly once after preparing any requested attachments.
           cc: defaultCc,
           bcc: defaultBcc,
           approvedToSend: input.approvedToSend === true,
+          recipientGuard: context.requireKnownRecipient
+            ? {
+                requireKnownRecipient: true,
+                missingRecipientMessage: context.missingRecipientMessage,
+                unknownRecipientMessage: context.unknownRecipientMessage,
+              }
+            : undefined,
         },
         requestedAttachments: input.attachments ?? [],
         attachmentSafetyWarning: safeRequestedAttachments.warning,

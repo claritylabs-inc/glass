@@ -80,6 +80,7 @@ import {
   normalizeSelectedPartnerProgramId,
   type CertificateProgramSelection,
 } from "../lib/certificateProgramSelection";
+import { resolvePolicyReferenceForOrg } from "../lib/policyToolResolution";
 import { evaluatePceIntake, type PceRequestKind } from "../lib/pceIntake";
 import {
   filterComplianceRequirements,
@@ -1288,6 +1289,11 @@ export const processInbound = internalAction({
                 defaultRecipientName: brokerDirectedEmailRequest
                   ? brokerRecipientName
                   : fromName,
+                requireKnownRecipient: brokerDirectedEmailRequest,
+                missingRecipientMessage:
+                  "No broker contact email is set for this organization. Add the broker contact in Settings, or provide the broker's email address before I draft or send this.",
+                unknownRecipientMessage:
+                  "I cannot use that broker recipient because it is not the configured broker contact in Glass. Add the broker contact in Settings, or provide the correct broker email address explicitly.",
                 defaultBcc:
                   org.bccRequesterOnAgentEmails !== false
                     ? [fromEmail]
@@ -1436,7 +1442,6 @@ export const processInbound = internalAction({
             certificateHolder?: string;
             partnerProgramId?: string;
           }) => {
-            referencedPolicySourceIds.add(String(params.policyId));
             const autoGenerate = org.autoGenerateCoi !== false;
             if (!autoGenerate) {
               const handling = org.coiHandling ?? "ignore";
@@ -1449,10 +1454,16 @@ export const processInbound = internalAction({
               return `COI auto-generation is disabled for this organization.`;
             }
             try {
+              const resolvedPolicy = await resolvePolicyReferenceForOrg(ctx, {
+                orgIds: [orgId],
+                reference: params.policyId,
+              });
+              if (!resolvedPolicy.ok) return resolvedPolicy.message;
+              referencedPolicySourceIds.add(String(resolvedPolicy.policy._id));
               const generated = await ctx.runAction(
                 internal.certificates.generateForOrg,
                 {
-                  policyId: params.policyId as Id<"policies">,
+                  policyId: resolvedPolicy.policy._id,
                   orgId,
                   holderName:
                     params.certificateHolder?.split(/\r?\n/)[0]?.trim() ||
@@ -1471,7 +1482,7 @@ export const processInbound = internalAction({
               }
               if (generated.status === "needs_program_selection") {
                 const selection = buildCertificateProgramSelection({
-                  policyId: params.policyId,
+                  policyId: String(resolvedPolicy.policy._id),
                   holderName:
                     params.certificateHolder?.split(/\r?\n/)[0]?.trim() ||
                     "Certificate holder",

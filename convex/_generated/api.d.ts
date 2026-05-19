@@ -113,6 +113,7 @@ import type * as lib_pdfSourceSpans from "../lib/pdfSourceSpans.js";
 import type * as lib_pipelineMutations from "../lib/pipelineMutations.js";
 import type * as lib_policyLookup from "../lib/policyLookup.js";
 import type * as lib_policyPeriodExtraction from "../lib/policyPeriodExtraction.js";
+import type * as lib_policyToolResolution from "../lib/policyToolResolution.js";
 import type * as lib_policyTypes from "../lib/policyTypes.js";
 import type * as lib_queryAgent from "../lib/queryAgent.js";
 import type * as lib_resend from "../lib/resend.js";
@@ -261,6 +262,7 @@ declare const fullApi: ApiFromModules<{
   "lib/pipelineMutations": typeof lib_pipelineMutations;
   "lib/policyLookup": typeof lib_policyLookup;
   "lib/policyPeriodExtraction": typeof lib_policyPeriodExtraction;
+  "lib/policyToolResolution": typeof lib_policyToolResolution;
   "lib/policyTypes": typeof lib_policyTypes;
   "lib/queryAgent": typeof lib_queryAgent;
   "lib/resend": typeof lib_resend;
