@@ -27,6 +27,7 @@ import {
 import {
   buildCertificateProgramSelection,
   formatCertificateProgramSelectionForUser,
+  normalizeSelectedPartnerProgramId,
 } from "./certificateProgramSelection";
 
 const MAX_EMAIL_SIZE = 38 * 1024 * 1024; // Resend limit is 40MB after Base64 encoding.
@@ -544,7 +545,7 @@ async function runEmailSubagent(
         orgId: context.orgId,
         holderName: certificateHolder?.split(/\r?\n/)[0]?.trim() || "Certificate holder",
         certificateHolder,
-        selectedPartnerProgramId: partnerProgramId as Id<"partnerPrograms"> | undefined,
+        selectedPartnerProgramId: normalizeSelectedPartnerProgramId(partnerProgramId),
         source: context.channel === "web" ? "chat" : context.channel,
       });
     } catch (err) {

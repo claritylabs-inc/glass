@@ -1,3 +1,5 @@
+import type { Id } from "../_generated/dataModel";
+
 export type CertificateProgramCandidate = {
   programId: string;
   programName: string;
@@ -14,6 +16,13 @@ export type CertificateProgramSelection = {
   candidates: CertificateProgramCandidate[];
   source: "chat" | "email" | "imessage" | "sms" | "agent";
 };
+
+export function normalizeSelectedPartnerProgramId(
+  value?: string | null,
+): Id<"partnerPrograms"> | undefined {
+  const trimmed = typeof value === "string" ? value.trim() : "";
+  return trimmed ? (trimmed as Id<"partnerPrograms">) : undefined;
+}
 
 type RawCandidate = Record<string, unknown>;
 

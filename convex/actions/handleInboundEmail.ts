@@ -77,6 +77,7 @@ import {
   buildCertificateProgramSelection,
   formatCertificateProgramSelectionForModel,
   formatCertificateProgramSelectionForUser,
+  normalizeSelectedPartnerProgramId,
   type CertificateProgramSelection,
 } from "../lib/certificateProgramSelection";
 import { evaluatePceIntake, type PceRequestKind } from "../lib/pceIntake";
@@ -1457,7 +1458,9 @@ export const processInbound = internalAction({
                     params.certificateHolder?.split(/\r?\n/)[0]?.trim() ||
                     "Certificate holder",
                   certificateHolder: params.certificateHolder,
-                  selectedPartnerProgramId: params.partnerProgramId as Id<"partnerPrograms"> | undefined,
+                  selectedPartnerProgramId: normalizeSelectedPartnerProgramId(
+                    params.partnerProgramId,
+                  ),
                   source: "email",
                   createdByUserId: primaryUserId,
                 },

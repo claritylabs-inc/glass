@@ -48,6 +48,7 @@ function isImessageConversation(item: ConversationItem) {
 export function MainSidebarContent({
   collapsed,
   isBroker,
+  canManageSettings,
   pathname,
   headerOrgIcon,
   viewerImage,
@@ -73,6 +74,7 @@ export function MainSidebarContent({
 }: {
   collapsed: boolean;
   isBroker: boolean;
+  canManageSettings: boolean;
   pathname: string;
   headerOrgIcon?: string | null;
   viewerImage?: string | null;
@@ -208,14 +210,16 @@ export function MainSidebarContent({
       ) : null}
 
       <div className="border-t border-foreground/6 px-2 py-2 space-y-0.5">
-        <NavItem
-          href="/settings"
-          label="Settings"
-          icon={Settings}
-          active={isActive("/settings")}
-          collapsed={collapsed}
-          shortcut={navShortcut("s")}
-        />
+        {canManageSettings ? (
+          <NavItem
+            href="/settings"
+            label="Settings"
+            icon={Settings}
+            active={isActive("/settings")}
+            collapsed={collapsed}
+            shortcut={navShortcut("s")}
+          />
+        ) : null}
         <NavItem
           href="/profile"
           label="Profile"

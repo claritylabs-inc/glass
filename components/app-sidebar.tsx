@@ -73,6 +73,7 @@ export function AppSidebar({
   const isStandaloneClient =
     currentOrg?.orgType === "client" && !viewerOrg?.brokerOrg;
   const isPartner = currentOrg?.isPartner ?? false;
+  const canManageSettings = currentOrg?.role === "admin";
   const navItems = isPartner ? PARTNER_NAV_ITEMS : isBroker ? BROKER_NAV_ITEMS : ALL_NAV_ITEMS;
   const connectItems = isBroker || isPartner ? NO_CONNECT_ITEMS : CONNECT_ITEMS;
   const isDesktop = useMediaQuery("(min-width: 1024px)");
@@ -89,10 +90,10 @@ export function AppSidebar({
           .filter((item) => item.shortcut)
           .map((item) => [item.shortcut!.key.toLowerCase(), item.href]),
       ),
-      s: "/settings",
+      ...(canManageSettings ? { s: "/settings" } : {}),
       u: "/profile",
     }),
-    [connectItems, navItems],
+    [canManageSettings, connectItems, navItems],
   );
 
   const [collapsed, setCollapsed] = useState(() => {
@@ -284,6 +285,7 @@ export function AppSidebar({
     <MainSidebarContent
       collapsed={collapsed}
       isBroker={isBroker}
+      canManageSettings={canManageSettings}
       pathname={pathname}
       headerOrgIcon={headerOrgIcon}
       viewerImage={viewer?.image}

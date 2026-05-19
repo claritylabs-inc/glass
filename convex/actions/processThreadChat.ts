@@ -75,6 +75,7 @@ import {
 import {
   buildCertificateProgramSelection,
   formatCertificateProgramSelectionForModel,
+  normalizeSelectedPartnerProgramId,
   type CertificateProgramSelection,
 } from "../lib/certificateProgramSelection";
 import { evaluatePceIntake, type PceRequestKind } from "../lib/pceIntake";
@@ -918,7 +919,9 @@ function buildTools(
               holderName:
                 input.certificateHolder?.split(/\r?\n/)[0]?.trim() || "Certificate holder",
               certificateHolder: input.certificateHolder,
-              selectedPartnerProgramId: input.partnerProgramId as Id<"partnerPrograms"> | undefined,
+              selectedPartnerProgramId: normalizeSelectedPartnerProgramId(
+                input.partnerProgramId,
+              ),
               source: "chat",
               createdByUserId: args.userId as Id<"users">,
             },
