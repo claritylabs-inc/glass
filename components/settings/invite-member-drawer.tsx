@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { useMutation } from "convex/react";
+import { useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
 import { PillButton } from "@/components/ui/pill-button";
@@ -20,7 +20,7 @@ export function InviteMemberDrawer({
   open: boolean;
   onOpenChange: (v: boolean) => void;
 }) {
-  const inviteMember = useMutation(api.orgs.inviteMember);
+  const sendMemberInvitation = useAction(api.orgs.sendMemberInvitation);
 
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<"admin" | "member">("member");
@@ -37,7 +37,7 @@ export function InviteMemberDrawer({
     if (!email) return;
     setSending(true);
     try {
-      await inviteMember({ email, role });
+      await sendMemberInvitation({ email, role });
       toast.success(`Invitation sent to ${email}`);
       resetAndClose();
     } catch (err) {

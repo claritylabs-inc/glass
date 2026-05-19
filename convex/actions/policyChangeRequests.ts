@@ -159,6 +159,18 @@ async function createPolicyChangeCase(
           evidenceSourceIds: sdkResult.state.evidenceSources?.map((source: { id: string }) => source.id) ?? args.evidenceSourceIds,
           packetArtifacts: sdkResult.packet.artifacts,
         });
+        if (args.policyId) {
+          const partner = await ctx.runQuery(internal.partnerPrograms.resolvePolicyPartner, {
+            policyId: args.policyId,
+          });
+          if (partner?.partnerOrgId) {
+            await ctx.runMutation(internal.partnerPrograms.markPolicyChangePendingPartnerInternal, {
+              caseId,
+              partnerOrgId: partner.partnerOrgId,
+              partnerProgramId: partner.partnerProgramId,
+            });
+          }
+        }
         return { caseId: String(caseId), usedSdkPce: true };
       }
     } catch (error) {
@@ -181,5 +193,17 @@ async function createPolicyChangeCase(
           requestText: args.requestText,
           evidenceSourceIds: args.evidenceSourceIds,
         });
+    if (args.policyId) {
+      const partner = await ctx.runQuery(internal.partnerPrograms.resolvePolicyPartner, {
+        policyId: args.policyId,
+      });
+      if (partner?.partnerOrgId) {
+        await ctx.runMutation(internal.partnerPrograms.markPolicyChangePendingPartnerInternal, {
+          caseId,
+          partnerOrgId: partner.partnerOrgId,
+          partnerProgramId: partner.partnerProgramId,
+        });
+      }
+    }
     return { caseId: String(caseId), usedSdkPce: false };
 }

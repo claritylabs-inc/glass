@@ -400,8 +400,20 @@ export const get = query({
       return null;
     }
     const enrichedPolicy = await mergePolicyPipelineState(ctx, policy);
+    const partnerProgram = policy.partnerProgramId
+      ? await ctx.db.get(policy.partnerProgramId)
+      : null;
     return {
       ...enrichedPolicy,
+      partnerProgram: partnerProgram && partnerProgram.status === "active"
+        ? {
+          programId: partnerProgram._id,
+          programName: partnerProgram.name,
+          categoryLabels: partnerProgram.categoryLabels,
+          categoryLabel: partnerProgram.categoryLabels?.join(", ") ?? partnerProgram.categoryLabel,
+          approvalMode: partnerProgram.approvalMode,
+        }
+        : null,
       hasRawResponse: !!policy.rawExtractionResponse,
       hasRawMetadata: !!policy.rawMetadataResponse,
     };

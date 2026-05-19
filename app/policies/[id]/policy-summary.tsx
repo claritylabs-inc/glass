@@ -106,7 +106,6 @@ export interface PolicySummaryProps {
   effectiveDate?: string;
   expirationDate?: string;
   premium?: string;
-  totalCost?: string;
   policyTypes: string[];
   policyTermType?: string;
   limits?: Record<string, unknown>;
@@ -125,7 +124,6 @@ export function PolicySummary({
   effectiveDate,
   expirationDate,
   premium,
-  totalCost,
   policyTypes,
   policyTermType,
   limits,
@@ -135,8 +133,6 @@ export function PolicySummary({
   documentType,
   pdfUrl,
 }: PolicySummaryProps) {
-  const displayPremium = totalCost || premium;
-
   const periodValue =
     effectiveDate === "Unknown" && !expirationDate
       ? documentType === "quote"
@@ -224,8 +220,8 @@ export function PolicySummary({
           {(effectiveDate || expirationDate) && (
             <SummaryRow label="Policy period" value={periodValue} />
           )}
-          {displayPremium && (
-            <SummaryRow label="Premium" value={displayPremium} />
+          {premium && (
+            <SummaryRow label="Premium" value={premium} />
           )}
           {keyLimits.map(({ label, value }) => (
             <SummaryRow key={label} label={label} value={value} />

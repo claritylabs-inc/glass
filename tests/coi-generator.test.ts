@@ -87,6 +87,33 @@ describe("policyToCoiData", () => {
     expect(data.coverages[0]?.policyNumber).toBe("MKLM7PLCA00098");
     expect(data.coverages[0]?.effectiveDate).toBe("5/1/2024");
   });
+
+  it("keeps extracted deductible-only coverage rows for COI coverage tables", () => {
+    const data = policyToCoiData({
+      policyTypes: ["lease_guarantee"],
+      policyNumber: "REL-123",
+      effectiveDate: "07/01/2025",
+      expirationDate: "06/30/2026",
+      carrier: "ReLease Coverage Company",
+      insuredName: "HH Red Stone",
+      coverages: [
+        {
+          name: "RELEASE MID-LEASE COVERAGE",
+          deductible: "$1,500",
+          sectionRef: "3. PRODUCTS AND COVERAGES",
+          originalContent:
+            "RELEASE MID-LEASE COVERAGE Coverage Period: Jul 1, 2025 - Jun 30, 2026 Deductible: $1,500.00 Notice Period: 20 days",
+        },
+      ],
+    });
+
+    expect(data.coverages).toHaveLength(1);
+    expect(data.coverages[0]?.type).toBe("RELEASE MID-LEASE COVERAGE");
+    expect(data.coverages[0]?.deductible).toBe("$1,500");
+    expect(data.coverages[0]?.sectionRef).toBe("3. PRODUCTS AND COVERAGES");
+    expect(data.coverages[0]?.description).toContain("Notice Period: 20 days");
+    expect(data.coverages[0]?.limits).toContainEqual({ label: "Deductible", value: "$1,500" });
+  });
 });
 
 describe("COI PDF footer copy", () => {

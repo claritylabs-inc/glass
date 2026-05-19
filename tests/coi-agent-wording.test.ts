@@ -10,5 +10,7 @@ describe("COI agent wording", () => {
     expect(instructions).toContain('Do not offer to "pull COI wording"');
     expect(instructions).toContain("use the email expert tool when email is available");
     expect(instructions).toContain("Never say COIs were generated, attached, sent, emailed, or are being emailed");
+    expect(instructions).toContain("Distinguish non-binding COIs from certified COIs");
+    expect(instructions).toContain("program-administrator approval/standing-authorization record");
   });
 });

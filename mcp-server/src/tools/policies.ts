@@ -65,7 +65,7 @@ export function registerPolicyTools(server: McpServer, client: GlassClient) {
 
   server.tool(
     "list_policy_certificates",
-    "List generated Certificates of Insurance for a policy, including download URLs.",
+    "List generated Certificates of Insurance for a policy, including download URLs and non-binding/certified authority metadata.",
     {
       policyId: z.string().describe("The policy ID"),
     },
@@ -77,7 +77,7 @@ export function registerPolicyTools(server: McpServer, client: GlassClient) {
 
   server.tool(
     "generate_policy_certificate",
-    "Generate a Certificate of Insurance PDF for a policy. Requires write scope.",
+    "Generate a Certificate of Insurance PDF for a policy. Returns non-binding/certified authority metadata or a pending approval request. Requires write scope.",
     {
       policyId: z.string().describe("The policy ID"),
       holderName: z.string().describe("Certificate holder name"),

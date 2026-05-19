@@ -28,6 +28,8 @@ export const ALL_NOTIFICATION_TYPES = [
   "vendor_compliance_gap",
   "vendor_policy_expiring",
   "vendor_policy_expired",
+  "program_admin_certificate_request",
+  "program_admin_pce_request",
 ] as const;
 
 export type NotificationType = (typeof ALL_NOTIFICATION_TYPES)[number];
@@ -60,6 +62,8 @@ export const NOTIFICATION_SEVERITY: Record<NotificationType, NotificationSeverit
   vendor_compliance_gap: "warning",
   vendor_policy_expiring: "warning",
   vendor_policy_expired: "critical",
+  program_admin_certificate_request: "info",
+  program_admin_pce_request: "info",
 };
 
 /** Types that coalesce within a 10-minute window. Value is window in ms. */

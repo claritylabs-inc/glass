@@ -162,4 +162,74 @@ describe("policy period extraction fallback", () => {
     expect(result.document.effectiveDate).toBe("09/09/2026");
     expect(result.document.expirationDate).toBe("09/10/2026");
   });
+
+  it("uses lease term dates as a low-confidence fallback when policy dates are missing", () => {
+    const result = applyPolicyPeriodFallback(
+      {
+        type: "policy",
+        effectiveDate: "Unknown",
+        expirationDate: "Unknown",
+      },
+      [
+        {
+          pageStart: 2,
+          text: `
+            PLAN DETAILS
+            Lease Address: 1208 Pine Street, 101
+            Lease Term: Jul 1, 2025 - Jun 30, 2026
+            Lease Signing Date: Jun 2, 2025
+          `,
+        },
+      ],
+    );
+
+    expect(result.period).toMatchObject({
+      effectiveDate: "07/01/2025",
+      expirationDate: "06/30/2026",
+      source: "agreement_term_fallback",
+    });
+    expect(result.document.effectiveDate).toBe("07/01/2025");
+    expect(result.document.expirationDate).toBe("06/30/2026");
+  });
+
+  it("replaces suspicious same-day extracted policy dates with agreement term fallback dates", () => {
+    const result = applyPolicyPeriodFallback(
+      {
+        type: "policy",
+        effectiveDate: "05/18/2026",
+        expirationDate: "05/18/2026",
+      },
+      [
+        {
+          pageStart: 2,
+          text: "Lease Term: Jul 1, 2025 - Jun 30, 2026",
+        },
+      ],
+    );
+
+    expect(result.changed).toBe(true);
+    expect(result.document.effectiveDate).toBe("07/01/2025");
+    expect(result.document.expirationDate).toBe("06/30/2026");
+  });
+
+  it("does not overwrite distinct valid policy dates with lease term fallback dates", () => {
+    const result = applyPolicyPeriodFallback(
+      {
+        type: "policy",
+        effectiveDate: "01/01/2026",
+        expirationDate: "01/01/2027",
+      },
+      [
+        {
+          pageStart: 2,
+          text: "Lease Term: Jul 1, 2025 - Jun 30, 2026",
+        },
+      ],
+    );
+
+    expect(result.period?.source).toBe("agreement_term_fallback");
+    expect(result.changed).toBe(false);
+    expect(result.document.effectiveDate).toBe("01/01/2026");
+    expect(result.document.expirationDate).toBe("01/01/2027");
+  });
 });

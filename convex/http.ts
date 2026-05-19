@@ -494,6 +494,11 @@ function requireMcpWriteScope(identity: McpIdentity): void {
 function normalizeCertificateRequest(body: Record<string, unknown>) {
   const certificateHolder =
     typeof body.certificate_holder === "string" ? body.certificate_holder.trim() : "";
+  const selectedPartnerProgramId =
+    (typeof body.selectedPartnerProgramId === "string" && body.selectedPartnerProgramId.trim()) ||
+    (typeof body.partner_program_id === "string" && body.partner_program_id.trim()) ||
+    (typeof body.selected_partner_program_id === "string" && body.selected_partner_program_id.trim()) ||
+    undefined;
   const holderName =
     (typeof body.holderName === "string" && body.holderName.trim()) ||
     (typeof body.certificate_holder_name === "string" && body.certificate_holder_name.trim()) ||
@@ -522,6 +527,7 @@ function normalizeCertificateRequest(body: Record<string, unknown>) {
       (typeof body.postalCode === "string" && body.postalCode.trim()) ||
       (typeof body.postal_code === "string" && body.postal_code.trim()) ||
       undefined,
+    selectedPartnerProgramId: selectedPartnerProgramId as Id<"partnerPrograms"> | undefined,
   };
 }
 
@@ -534,6 +540,14 @@ function serializeCertificate(certificate: any) {
     certificate_holder: certificate.certificateHolder ?? null,
     certificate_holder_name: certificate.certificateHolderName ?? null,
     source: certificate.source ?? null,
+    authority_type: certificate.authorityType ?? "non_binding",
+    certification_status: certificate.certificationStatus ?? "not_applicable",
+    partner_org_id: certificate.partnerOrgId ?? null,
+    partner_program_id: certificate.partnerProgramId ?? null,
+    template_id: certificate.templateId ?? null,
+    approval_id: certificate.approvalId ?? null,
+    standing_authorization_id: certificate.standingAuthorizationId ?? null,
+    disclaimer: certificate.disclaimer ?? null,
     created_at: certificate.createdAt,
     url: certificate.url ?? null,
   };
@@ -1020,7 +1034,7 @@ const MCP_TOOLS = [
   },
   {
     name: "list_policy_certificates",
-    description: "List generated Certificates of Insurance for a policy, including download URLs.",
+    description: "List generated Certificates of Insurance for a policy, including download URLs and non-binding/certified authority metadata.",
     inputSchema: {
       type: "object" as const,
       properties: { policyId: { type: "string", description: "The policy ID" } },
@@ -1029,7 +1043,7 @@ const MCP_TOOLS = [
   },
   {
     name: "generate_policy_certificate",
-    description: "Generate a Certificate of Insurance PDF for a policy. Requires write scope.",
+    description: "Generate a Certificate of Insurance PDF for a policy. Returns non-binding/certified authority metadata or a pending approval request. Requires write scope.",
     inputSchema: {
       type: "object" as const,
       properties: {

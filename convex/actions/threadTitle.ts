@@ -145,10 +145,12 @@ export const generate = internalAction({
       const promptContent = buildTitlePromptContent({
         userMessage: seed,
         initialContext: thread.initialContext,
-        attachments: message?.attachments?.map((attachment) => ({
-          filename: attachment.filename,
-          contentType: attachment.contentType,
-        })),
+        attachments: message?.attachments
+          ?.filter((attachment: { filename?: string }) => Boolean(attachment.filename))
+          .map((attachment: { filename?: string; contentType?: string }) => ({
+            filename: attachment.filename!,
+            contentType: attachment.contentType,
+          })),
       });
 
       let title = fallbackTitle(seed);

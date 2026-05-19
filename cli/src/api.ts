@@ -15,7 +15,7 @@ export class GlassApi {
   }
 
   async generateCoi(policyId: string, holderName: string, holderAddress?: string) {
-    const prompt = `Generate a COI for policy ${policyId} for certificate holder ${holderName}${holderAddress ? ` at ${holderAddress}` : ""}.`;
+    const prompt = `Generate a COI for policy ${policyId} for certificate holder ${holderName}${holderAddress ? ` at ${holderAddress}` : ""}. Use the policy's authority route: certified only if a program administrator approval or standing authorization exists; otherwise generate a non-binding COI.`;
     return this.askGlass(prompt);
   }
 

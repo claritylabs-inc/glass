@@ -57,6 +57,7 @@ import type {
   VendorComplianceArtifactRef,
 } from "@/components/agent-thread/types";
 import {
+  CertificateProgramSelectionArtifacts,
   EmailStackCard,
   EmailSummaryCard,
   EmailThreadSidebar,
@@ -1341,6 +1342,9 @@ export function UnifiedMessageBubble({
                   artifacts={msg.toolArtifacts}
                   openArtifactRef={openVendorComplianceArtifactRef}
                   onOpenArtifact={onOpenVendorCompliance}
+                />
+                <CertificateProgramSelectionArtifacts
+                  artifacts={msg.toolArtifacts}
                 />
                 {relatedEmailMessages.length > 0 ? (
                   <div className="mt-4">

@@ -4,8 +4,8 @@ import { cn } from "@/lib/utils";
 const POLICY_CHANGE_STEPS = [
   { label: "Requested", detail: "Request received" },
   { label: "Review", detail: "Checking details" },
-  { label: "Ready", detail: "Ready for broker submission" },
-  { label: "Submitted", detail: "Sent to the broker or carrier" },
+  { label: "Ready", detail: "Ready for broker or program administrator review" },
+  { label: "Submitted", detail: "Sent to the broker, carrier or program administrator" },
   { label: "Complete", detail: "Change resolved" },
 ];
 

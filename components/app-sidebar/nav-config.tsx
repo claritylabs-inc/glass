@@ -1,9 +1,12 @@
 import {
   Activity,
   ArrowLeft,
+  BadgeCheck,
   Building2,
   ClipboardCheck,
   FileText,
+  FileStack,
+  ShieldCheck,
   Settings,
   User,
   Users,
@@ -105,6 +108,39 @@ export const BROKER_NAV_ITEMS: NavItemConfig[] = [
     label: "Activity",
     icon: Activity,
     shortcut: navShortcut("a"),
+  },
+];
+
+export const PARTNER_NAV_ITEMS: NavItemConfig[] = [
+  {
+    href: "/partner/approvals",
+    label: "Approvals",
+    icon: ShieldCheck,
+    shortcut: navShortcut("a"),
+  },
+  {
+    href: "/partner/policies",
+    label: "Policies",
+    icon: FileText,
+    shortcut: navShortcut("o"),
+  },
+  {
+    href: "/partner/certificates",
+    label: "Certificates",
+    icon: BadgeCheck,
+    shortcut: navShortcut("c"),
+  },
+  {
+    href: "/partner/programs",
+    label: "Programs",
+    icon: ClipboardCheck,
+    shortcut: navShortcut("p"),
+  },
+  {
+    href: "/partner/templates",
+    label: "Templates",
+    icon: FileStack,
+    shortcut: navShortcut("t"),
   },
 ];
 

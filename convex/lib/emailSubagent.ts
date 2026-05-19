@@ -24,6 +24,10 @@ import {
   shouldSuppressOriginalPolicyForCoiRequest,
   type RequestedEmailAttachment,
 } from "./coiAttachmentGuards";
+import {
+  buildCertificateProgramSelection,
+  formatCertificateProgramSelectionForUser,
+} from "./certificateProgramSelection";
 
 const MAX_EMAIL_SIZE = 38 * 1024 * 1024; // Resend limit is 40MB after Base64 encoding.
 const GLASS_PUBLIC_URL = getClientPortalUrl();
@@ -518,7 +522,11 @@ async function runEmailSubagent(
     return `Attached uploaded file: ${filename ?? found.filename}`;
   };
 
-  const generateCoiAttachment = async (policyId: string, certificateHolder?: string): Promise<string> => {
+  const generateCoiAttachment = async (
+    policyId: string,
+    certificateHolder?: string,
+    partnerProgramId?: string,
+  ): Promise<string> => {
     sourcePolicyIds.add(policyId);
     const coiKey = `${policyId}:${normalizeAttachmentText(certificateHolder)}`;
     if (attachedCoiKeys.has(coiKey)) {
@@ -529,13 +537,14 @@ async function runEmailSubagent(
       if (context.coiHandling === "member") return "COI auto-generation is off. Confirm the org's insurance contact should handle this COI.";
       return "COI auto-generation is disabled.";
     }
-    let generated: { storageId: string; size: number; fileName: string };
+    let generated: any;
     try {
-      generated = await ctx.runAction(internal.actions.generateCoi.run, {
+      generated = await ctx.runAction(internal.certificates.generateForOrg, {
         policyId: policyId as Id<"policies">,
         orgId: context.orgId,
+        holderName: certificateHolder?.split(/\r?\n/)[0]?.trim() || "Certificate holder",
         certificateHolder,
-        certificateHolderName: certificateHolder?.split(/\r?\n/)[0]?.trim() || undefined,
+        selectedPartnerProgramId: partnerProgramId as Id<"partnerPrograms"> | undefined,
         source: context.channel === "web" ? "chat" : context.channel,
       });
     } catch (err) {
@@ -543,15 +552,34 @@ async function runEmailSubagent(
       return COI_GENERATION_FAILED_MESSAGE;
     }
     if (!generated) return COI_GENERATION_FAILED_MESSAGE;
+    if (generated.status === "pending_approval") {
+      return "Certified COI approval has been requested from the program administrator; no certificate PDF is attached yet.";
+    }
+    if (generated.status === "needs_program_selection") {
+      const selection = buildCertificateProgramSelection({
+        policyId,
+        holderName:
+          certificateHolder?.split(/\r?\n/)[0]?.trim() ||
+          "Certificate holder",
+        certificateHolder,
+        candidates: generated.matchCandidates,
+        source: context.channel === "imessage" ? "imessage" : "agent",
+      });
+      return selection
+        ? formatCertificateProgramSelectionForUser(selection)
+        : "I found multiple possible program administrator programs. Choose the correct program before I attach the certified COI.";
+    }
     attachedCoiKeys.add(coiKey);
     addAttachment({
       filename: generated.fileName,
       contentType: "application/pdf",
       size: generated.size,
-      fileId: generated.storageId as Id<"_storage">,
+      fileId: generated.fileId as Id<"_storage">,
     });
-    generatedCoiAttachmentIds.add(generated.storageId);
-    return "Attached generated COI.";
+    generatedCoiAttachmentIds.add(String(generated.fileId));
+    return generated.authorityType === "certified"
+      ? "Attached certified COI."
+      : "Attached non-binding COI.";
   };
 
   if (safeRequestedAttachments.warning && safeRequestedAttachments.attachments.length === 0) {
@@ -781,6 +809,7 @@ Be careful by default:
 - For certificate/COI delivery requests, attach only the generated COI unless the request separately asks for the original/full policy PDF too.
 - When drafting COIs for multiple recipients, each recipient's email must include only that recipient's generated COI, not the full batch of generated COIs.
 - When the user explicitly asks to bundle all COIs/certificates into one email for a single recipient, attach the requested COIs together in that one email.
+- Use "certified COI" only when the attachment tool says the generated certificate is certified. Otherwise call it a non-binding COI or certificate.
 - Do not call an attachment tool for a document that is already listed in preparedAttachments.
 - Use concise professional formatting. Prefer 1-3 short paragraphs or a short bullet list.
 - Include only the policy facts that are directly useful to the recipient. Avoid exhaustive coverage memos unless explicitly requested.
@@ -840,8 +869,10 @@ Call send_or_draft_email exactly once after preparing any requested attachments.
         inputSchema: z.object({
           policyId: z.string(),
           certificateHolder: z.string().optional(),
+          partnerProgramId: z.string().optional(),
         }),
-        execute: async ({ policyId, certificateHolder }) => generateCoiAttachment(policyId, certificateHolder),
+        execute: async ({ policyId, certificateHolder, partnerProgramId }) =>
+          generateCoiAttachment(policyId, certificateHolder, partnerProgramId),
       }),
       send_or_draft_email: tool({
         description: "Finalize the email. This either sends, queues, or returns a confirmation draft based on safety and org settings.",

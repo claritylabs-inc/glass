@@ -122,7 +122,7 @@ function ExtractionBannerBase({
         "relative mb-4 flex items-center gap-3 overflow-hidden rounded-xl border px-4 py-2.5 shadow-sm transition-colors duration-300",
         isError
           ? "border-destructive bg-destructive text-white"
-          : "border-foreground/10 bg-foreground text-white",
+          : "border-white/10 bg-black text-white",
       ].join(" ")}
     >
       {isError && (
@@ -156,7 +156,7 @@ function ExtractionBannerBase({
             disabled={cancelling}
             variant="secondary"
             size="compact"
-            className="justify-center border-background/35! text-background! hover:border-background/60! hover:text-background! [&_span]:whitespace-nowrap"
+            className="justify-center border-white/35! bg-white! text-black! hover:border-white/60! hover:bg-white/90! hover:text-black! [&_span]:whitespace-nowrap"
           >
             {cancelling ? (
               <Loader2 className="h-3 w-3 shrink-0 animate-spin" />

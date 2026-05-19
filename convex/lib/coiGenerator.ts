@@ -47,6 +47,9 @@ export interface CoiData {
   revisionNumber?: string;
   certificateHolder?: string;
   description?: string; // "Description of Operations / Locations / Vehicles"
+  authorityType?: "non_binding" | "certified";
+  certificationStatus?: "not_applicable" | "pending" | "certified" | "declined";
+  certificationNotice?: string;
 }
 
 /** One coverage section in the ACORD 25 grid. */
@@ -68,6 +71,9 @@ export interface CoverageLine {
   expirationDate?: string;
   /** Key/value limit pairs in ACORD 25 display order */
   limits: Array<{ label: string; value: string }>;
+  deductible?: string;
+  sectionRef?: string;
+  description?: string;
 }
 
 // ─── Mapping helpers ──────────────────────────────────────────────────────────
@@ -334,30 +340,57 @@ function buildCoverageLines(
   const rawCoverages = Array.isArray(policy.coverages) ? policy.coverages : [];
   if (!rawCoverages.length) return [];
 
-  const grouped = new Map<string, Array<{ label: string; value: string }>>();
-  for (const coverage of rawCoverages) {
-    const value = formatMoneyLike(coverage.limit);
-    if (!value) continue;
-
-    const group = coverageGroupName(coverage.name ?? coverage.type ?? "");
-    const label = coverageLimitLabel(coverage);
-    const rows = grouped.get(group) ?? [];
-    const key = `${label}:${value}`;
-    if (!rows.some((row) => `${row.label}:${row.value}` === key)) {
-      rows.push({ label, value });
+  const grouped = new Map<
+    string,
+    {
+      limits: Array<{ label: string; value: string }>;
+      deductible?: string;
+      sectionRef?: string;
+      description?: string;
     }
-    grouped.set(group, rows);
+  >();
+  for (const coverage of rawCoverages) {
+    const group = coverageGroupName(coverage.name ?? coverage.type ?? "");
+    const row = grouped.get(group) ?? { limits: [] };
+    const value = formatMoneyLike(coverage.limit);
+    const label = coverageLimitLabel(coverage);
+    if (value) {
+      const key = `${label}:${value}`;
+      if (!row.limits.some((item) => `${item.label}:${item.value}` === key)) {
+        row.limits.push({ label, value });
+      }
+    }
+    const deductible = formatMoneyLike(coverage.deductible);
+    if (deductible && !row.deductible) {
+      row.deductible = deductible;
+      const key = `Deductible:${deductible}`;
+      if (!row.limits.some((item) => `${item.label}:${item.value}` === key)) {
+        row.limits.push({ label: "Deductible", value: deductible });
+      }
+    }
+    if (!row.sectionRef && coverage.sectionRef) row.sectionRef = String(coverage.sectionRef);
+    if (!row.description) {
+      row.description = String(
+        coverage.originalContent ?? coverage.description ?? coverage.content ?? "",
+      ).trim();
+    }
+    if (row.limits.length > 0 || row.deductible || row.description || row.sectionRef) {
+      grouped.set(group, row);
+    }
   }
 
   return Array.from(grouped.entries())
-    .map(([type, limits]) => ({
+    .map(([type, row]) => ({
       type,
       insurerLetter: "A",
       coverageForm: defaults.coverageForm === "claims_made" ? "claims_made" as const : "occurrence" as const,
       policyNumber: defaults.policyNumber,
       effectiveDate: defaults.effectiveDate,
       expirationDate: defaults.expirationDate,
-      limits: limits.slice(0, 8),
+      limits: row.limits.slice(0, 8),
+      deductible: row.deductible,
+      sectionRef: row.sectionRef,
+      description: row.description,
     }))
     .slice(0, 5);
 }
@@ -577,8 +610,10 @@ function drawNoticeAndCompanies(
   data: CoiData,
 ) {
   doc.rect(x, y, w, h).stroke();
-  const notice =
-    "This certificate is issued as a matter of information only and confers no rights upon the certificate holder. This certificate does not amend, extend or alter the coverage afforded by the policies below.";
+  const notice = data.authorityType === "certified" && data.certificationStatus === "certified"
+    ? (data.certificationNotice ||
+      "This certified certificate was approved by the program administrator for the policy shown below. Coverage remains subject to the terms, conditions and exclusions of the policy.")
+    : "NON-BINDING: This certificate is issued as a matter of information only and confers no rights upon the certificate holder. This certificate does not amend, extend, alter or certify the coverage afforded by the policies below.";
   doc.font("Helvetica").fontSize(FS_DISCLAIMER).fillColor(C_BLACK);
   doc.text(notice, x + 5, y + 5, { width: w - 10, height: 30 });
 

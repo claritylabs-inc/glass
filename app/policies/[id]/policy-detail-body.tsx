@@ -2,10 +2,13 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo, type FormEvent, type ReactNode } from "react";
 import { useQuery, useMutation, useAction } from "convex/react";
+import { AddressAutofill } from "@mapbox/search-js-react";
+import type { AddressAutofillRetrieveResponse } from "@mapbox/search-js-core";
+import type { Theme as MapboxSearchTheme } from "@mapbox/search-js-web";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
 import { FadeIn } from "@/components/ui/fade-in";
-import { BadgeCheck, CheckCircle2, Download, FileText, Loader2, Plus, RotateCw, Send, Trash2, Eye, X } from "lucide-react";
+import { BadgeCheck, CheckCircle2, FileText, Loader2, Plus, RotateCw, Send, Trash2, Eye, X } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -121,6 +124,95 @@ const LOG_POLICY_ACTIVITY_IN_BROWSER =
   process.env.NEXT_PUBLIC_VERCEL_ENV === "preview" ||
   process.env.NEXT_PUBLIC_VERCEL_ENV === "development";
 
+const MAPBOX_ACCESS_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+
+const MAPBOX_ADDRESS_AUTOFILL_THEME = {
+  variables: {
+    unit: "14px",
+    minWidth: "min(388px, calc(100vw - 32px))",
+    spacing: "0",
+    padding: "8px",
+    paddingFooterLabel: "8px 10px",
+    colorText: "var(--popover-foreground)",
+    colorPrimary: "var(--primary)",
+    colorSecondary: "var(--muted-foreground)",
+    colorBackground: "var(--popover)",
+    colorBackgroundHover: "var(--accent)",
+    colorBackgroundActive: "var(--secondary)",
+    border: "1px solid var(--border)",
+    borderRadius: "8px",
+    boxShadow: "0 16px 40px rgba(0, 0, 0, 0.35)",
+    fontFamily: "inherit",
+    fontWeight: "400",
+    fontWeightSemibold: "500",
+    fontWeightBold: "500",
+    lineHeight: "1.35",
+  },
+  cssText: `
+    .MapboxSearchListbox {
+      overflow: hidden;
+    }
+
+    .MapboxSearchListbox * {
+      letter-spacing: 0;
+    }
+  `,
+} satisfies MapboxSearchTheme;
+
+const US_STATE_ABBREVIATIONS: Record<string, string> = {
+  alabama: "AL",
+  alaska: "AK",
+  arizona: "AZ",
+  arkansas: "AR",
+  california: "CA",
+  colorado: "CO",
+  connecticut: "CT",
+  delaware: "DE",
+  "district of columbia": "DC",
+  florida: "FL",
+  georgia: "GA",
+  hawaii: "HI",
+  idaho: "ID",
+  illinois: "IL",
+  indiana: "IN",
+  iowa: "IA",
+  kansas: "KS",
+  kentucky: "KY",
+  louisiana: "LA",
+  maine: "ME",
+  maryland: "MD",
+  massachusetts: "MA",
+  michigan: "MI",
+  minnesota: "MN",
+  mississippi: "MS",
+  missouri: "MO",
+  montana: "MT",
+  nebraska: "NE",
+  nevada: "NV",
+  "new hampshire": "NH",
+  "new jersey": "NJ",
+  "new mexico": "NM",
+  "new york": "NY",
+  "north carolina": "NC",
+  "north dakota": "ND",
+  ohio: "OH",
+  oklahoma: "OK",
+  oregon: "OR",
+  pennsylvania: "PA",
+  "rhode island": "RI",
+  "south carolina": "SC",
+  "south dakota": "SD",
+  tennessee: "TN",
+  texas: "TX",
+  utah: "UT",
+  vermont: "VT",
+  virginia: "VA",
+  washington: "WA",
+  "west virginia": "WV",
+  wisconsin: "WI",
+  wyoming: "WY",
+};
+
 function logPolicyActivityToBrowser(
   event: "status" | "audit" | "pipeline_log",
   payload: Record<string, unknown>,
@@ -132,6 +224,17 @@ function logPolicyActivityToBrowser(
 function stringValue(value: unknown) {
   if (typeof value === "number" && Number.isFinite(value)) return String(value);
   return typeof value === "string" ? value : "";
+}
+
+function normalizeUsState(value?: string) {
+  const trimmed = value?.trim();
+  if (!trimmed) return "";
+  if (/^[A-Za-z]{2}$/.test(trimmed)) return trimmed.toUpperCase();
+  return US_STATE_ABBREVIATIONS[trimmed.toLowerCase()] ?? trimmed;
+}
+
+function firstMapboxAddressFeature(response: AddressAutofillRetrieveResponse) {
+  return response.features[0]?.properties;
 }
 
 function parseMoneyInput(value: unknown): number | undefined {
@@ -603,9 +706,6 @@ function PolicyBreakdownEditor({
     effectiveDate: stringValue(policy.effectiveDate),
     expirationDate: stringValue(policy.expirationDate),
     premium: stringValue(policy.premium),
-    totalCost: stringValue(policy.totalCost),
-    minPremium: stringValue(policy.minPremium),
-    depositPremium: stringValue(policy.depositPremium),
     premiumBreakdown: normalizePremiumRows(policy.premiumBreakdown),
     taxesAndFees: normalizeTaxRows(policy.taxesAndFees),
     coverages: normalizeCoverageRows(policy.coverages),
@@ -643,14 +743,11 @@ function PolicyBreakdownEditor({
 
   const setScalar = (key: keyof typeof draft, value: string) => {
     setDraft((current) => ({ ...current, [key]: value }));
-    const moneyKey = key === "premium" || key === "totalCost" || key === "minPremium" || key === "depositPremium";
+    const moneyKey = key === "premium";
     const amount = moneyKey ? parseMoneyInput(value) : undefined;
     saveFields({
       [key]: value,
       ...(key === "premium" && amount !== undefined ? { premiumAmount: amount } : {}),
-      ...(key === "totalCost" && amount !== undefined ? { totalCostAmount: amount } : {}),
-      ...(key === "minPremium" && amount !== undefined ? { minPremiumAmount: amount } : {}),
-      ...(key === "depositPremium" && amount !== undefined ? { depositPremiumAmount: amount } : {}),
     });
   };
 
@@ -658,7 +755,7 @@ function PolicyBreakdownEditor({
     setScalar(key, dateValueFromInput(value));
   };
 
-  const formatScalarMoney = (key: "premium" | "totalCost" | "minPremium" | "depositPremium") => {
+  const formatScalarMoney = (key: "premium") => {
     const formatted = formatMoneyInput(draft[key]);
     if (formatted !== draft[key]) setScalar(key, formatted);
   };
@@ -723,9 +820,6 @@ function PolicyBreakdownEditor({
     { key: "effectiveDate", label: "Effective date", kind: "date" },
     { key: "expirationDate", label: "Expiration date", kind: "date" },
     { key: "premium", label: "Premium", kind: "money" },
-    { key: "totalCost", label: "Total cost", kind: "money" },
-    { key: "minPremium", label: "Minimum premium", kind: "money" },
-    { key: "depositPremium", label: "Deposit premium", kind: "money" },
   ] as const;
 
   return (
@@ -1074,7 +1168,7 @@ function PolicyChangesTab({
               <PolicyChangeProgress status={change.status} className="mt-4" />
 
               <div className="mt-3 flex flex-wrap gap-3 text-[11px] text-muted-foreground">
-                <span>Updated {new Date(change.updatedAt).toLocaleDateString()}</span>
+                <span>Updated {dayjs(change.updatedAt).format("MMM D, YYYY")}</span>
                 {missingInfoCount > 0 && <span>{missingInfoCount} question{missingInfoCount === 1 ? "" : "s"} open</span>}
                 {issueCount > 0 && <span>{issueCount} issue{issueCount === 1 ? "" : "s"} to review</span>}
               </div>
@@ -1131,7 +1225,7 @@ function PolicyChangesTab({
               </div>
               <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
                 <span>{change.sourceKind.replace("_", " ")}</span>
-                <span>{new Date(change.updatedAt).toLocaleDateString()}</span>
+                <span>{dayjs(change.updatedAt).format("MMM D, YYYY")}</span>
                 <span>{missingInfoCount} questions</span>
                 <span>{validationIssueCount} validation issues</span>
                 {(change.evidenceSourceIds?.length ?? 0) > 0 && (
@@ -1306,12 +1400,12 @@ function PolicyChangesTab({
                   <div className="space-y-2">
                     {(detail.messages ?? []).map((message) => (
                       <div key={message._id} className="text-[11px] text-muted-foreground">
-                        {new Date(message.createdAt).toLocaleString()} · {message.direction} · {message.channel ?? "case"} · {message.content.slice(0, 140)}
+                        {dayjs(message.createdAt).format("MMM D, YYYY h:mm A")} · {message.direction} · {message.channel ?? "case"} · {message.content.slice(0, 140)}
                       </div>
                     ))}
                     {(detail.validationReports ?? []).map((report) => (
                       <div key={report._id} className="text-[11px] text-muted-foreground">
-                        {new Date(report.createdAt).toLocaleString()} · validation {report.status}
+                        {dayjs(report.createdAt).format("MMM D, YYYY h:mm A")} · validation {report.status}
                       </div>
                     ))}
                     {(detail.evidenceLinks ?? []).map((link) => (
@@ -1354,31 +1448,61 @@ function ViewPdfButton({
 }
 
 function formatCertificateTimestamp(value: number) {
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(new Date(value));
+  return dayjs(value).format("MMM D, YYYY h:mm A");
+}
+
+type ProgramMatchCandidate = {
+  programId?: Id<"partnerPrograms">;
+  programName?: string;
+  _id?: Id<"partnerPrograms">;
+  name?: string;
+  categoryLabels?: string[];
+  categoryLabel?: string;
+  approvalMode?: string;
+  score?: number;
+};
+
+function normalizeProgramMatchCandidate(candidate: ProgramMatchCandidate) {
+  const programId = candidate.programId ?? candidate._id;
+  if (!programId) return null;
+  return {
+    ...candidate,
+    programId,
+    programName: candidate.programName ?? candidate.name ?? "Program",
+  };
 }
 
 function CertificateCreatePanel({
   open,
   onOpenChange,
   policyId,
+  initialProgram,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   policyId: Id<"policies">;
+  initialProgram?: ProgramMatchCandidate | null;
 }) {
   const generateCertificate = useAction(api.certificates.generateForPolicy);
+  const previewCertificateAuthority = useAction(api.certificates.previewAuthorityForPolicy);
+  const { openWithUrl } = usePdf();
+  const initialProgramCandidate = useMemo(
+    () => normalizeProgramMatchCandidate(initialProgram ?? {}),
+    [initialProgram],
+  );
   const [holderName, setHolderName] = useState("");
   const [addressLine1, setAddressLine1] = useState("");
   const [addressLine2, setAddressLine2] = useState("");
   const [city, setCity] = useState("");
   const [state, setState] = useState("");
   const [postalCode, setPostalCode] = useState("");
+  const [selectedPartnerProgramId, setSelectedPartnerProgramId] = useState<Id<"partnerPrograms"> | undefined>(
+    initialProgramCandidate?.programId,
+  );
+  const [programCandidates, setProgramCandidates] = useState<ProgramMatchCandidate[]>(
+    () => initialProgramCandidate ? [initialProgramCandidate] : [],
+  );
+  const [resolvingProgram, setResolvingProgram] = useState(false);
   const [generating, setGenerating] = useState(false);
 
   const reset = () => {
@@ -1388,7 +1512,69 @@ function CertificateCreatePanel({
     setCity("");
     setState("");
     setPostalCode("");
+    setSelectedPartnerProgramId(initialProgramCandidate?.programId);
+    setProgramCandidates(initialProgramCandidate ? [initialProgramCandidate] : []);
+    setResolvingProgram(false);
   };
+
+  const handleAddressRetrieve = useCallback((response: AddressAutofillRetrieveResponse) => {
+    const address = firstMapboxAddressFeature(response);
+    if (!address) return;
+
+    const nextAddressLine1 = address.address_line1 ?? address.address ?? address.feature_name ?? "";
+    const nextAddressLine2 = address.address_line2 ?? "";
+    const nextCity = address.address_level2 ?? address.address_level3 ?? "";
+    const nextState = normalizeUsState(address.address_level1);
+    const nextPostalCode = address.postcode ?? "";
+
+    if (nextAddressLine1) setAddressLine1(nextAddressLine1);
+    setAddressLine2(nextAddressLine2);
+    if (nextCity) setCity(nextCity);
+    if (nextState) setState(nextState);
+    if (nextPostalCode) setPostalCode(nextPostalCode);
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    if (initialProgramCandidate) return;
+    let cancelled = false;
+
+    void Promise.resolve()
+      .then(() => {
+        if (cancelled) return;
+        setResolvingProgram(true);
+        setSelectedPartnerProgramId(undefined);
+        setProgramCandidates([]);
+        return previewCertificateAuthority({ policyId });
+      })
+      .then((result) => {
+        if (cancelled || !result) return;
+        const selectedProgram = normalizeProgramMatchCandidate(
+          (result as { selectedProgram?: ProgramMatchCandidate | null }).selectedProgram ?? {},
+        );
+        const candidates = ((result as { matchCandidates?: ProgramMatchCandidate[] }).matchCandidates ?? [])
+          .map(normalizeProgramMatchCandidate)
+          .filter(Boolean) as Array<ProgramMatchCandidate & {
+            programId: Id<"partnerPrograms">;
+            programName: string;
+          }>;
+        const nextCandidates = selectedProgram ? [selectedProgram] : candidates;
+        setProgramCandidates(nextCandidates);
+        setSelectedPartnerProgramId(nextCandidates[0]?.programId);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          toast.error(error instanceof Error ? error.message : "Could not check certificate program");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setResolvingProgram(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [initialProgramCandidate, open, policyId, previewCertificateAuthority]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -1407,11 +1593,34 @@ function CertificateCreatePanel({
         city: city.trim() || undefined,
         state: state.trim() || undefined,
         postalCode: postalCode.trim() || undefined,
+        selectedPartnerProgramId,
       });
-      toast.success("Certificate generated");
+      if ((result as { status?: string }).status === "pending_approval") {
+        toast.success("Certified COI sent for program administrator approval");
+        onOpenChange(false);
+        reset();
+        return;
+      }
+      if ((result as { status?: string }).status === "needs_program_selection") {
+        const candidates = ((result as { matchCandidates?: ProgramMatchCandidate[] }).matchCandidates ?? [])
+          .map(normalizeProgramMatchCandidate)
+          .filter(Boolean) as Array<ProgramMatchCandidate & {
+            programId: Id<"partnerPrograms">;
+            programName: string;
+          }>;
+        setProgramCandidates(candidates);
+        setSelectedPartnerProgramId(candidates[0]?.programId);
+        toast.message("Confirm the correct program before generating this certified COI");
+        return;
+      }
+      toast.success(
+        (result as { authorityType?: string }).authorityType === "certified"
+          ? "Certified certificate generated"
+          : "Non-binding certificate generated",
+      );
       onOpenChange(false);
       reset();
-      if (result.url) window.open(result.url, "_blank", "noopener,noreferrer");
+      if (result.url) openWithUrl(result.url);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not generate certificate");
     } finally {
@@ -1422,7 +1631,11 @@ function CertificateCreatePanel({
   return (
     <SettingsDrawer
       open={open}
-      onOpenChange={(value) => !generating && onOpenChange(value)}
+      onOpenChange={(value) => {
+        if (generating) return;
+        onOpenChange(value);
+        if (!value) reset();
+      }}
       title="Generate COI"
       footer={
         <>
@@ -1438,7 +1651,7 @@ function CertificateCreatePanel({
             type="submit"
             form="certificate-create-form"
             size="compact"
-            disabled={generating || !holderName.trim()}
+            disabled={generating || resolvingProgram || !holderName.trim()}
           >
             {generating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <BadgeCheck className="w-3.5 h-3.5" />}
             Generate
@@ -1452,6 +1665,56 @@ function CertificateCreatePanel({
         </p>
 
         <form id="certificate-create-form" onSubmit={handleSubmit} className="space-y-4">
+          {resolvingProgram || programCandidates.length > 0 ? (
+            <div className="rounded-lg border border-foreground/8 bg-card p-3">
+              <p className="text-body-sm font-medium text-foreground">
+                {programCandidates.length > 1 ? "Choose program" : "Program"}
+              </p>
+              <div className="mt-3 grid gap-2">
+                {resolvingProgram ? (
+                  <div className="rounded-md border border-foreground/8 px-3 py-2">
+                    <div className="flex items-center gap-2 text-body-sm text-muted-foreground">
+                      <Loader2 className="size-3.5 animate-spin" />
+                      Checking policy program...
+                    </div>
+                  </div>
+                ) : programCandidates.map((candidate) => {
+                  const selected = selectedPartnerProgramId === candidate.programId;
+                  return (
+                    <button
+                      key={candidate.programId}
+                      type="button"
+                      className={`rounded-md border px-3 py-2 text-left transition-colors ${
+                        selected
+                          ? "border-foreground/30 bg-foreground/5"
+                          : "border-foreground/8 hover:bg-foreground/[0.03]"
+                      }`}
+                      onClick={() => setSelectedPartnerProgramId(candidate.programId)}
+                      disabled={generating}
+                      aria-pressed={selected}
+                    >
+                      <span className="block text-body-sm font-medium text-foreground">
+                        {candidate.programName}
+                      </span>
+                      <span className="mt-0.5 block text-label-sm text-muted-foreground/70">
+                        {[
+                          (candidate.categoryLabels?.length
+                            ? candidate.categoryLabels
+                            : candidate.categoryLabel
+                              ? [candidate.categoryLabel]
+                              : []
+                          ).join(", "),
+                          candidate.approvalMode,
+                        ].filter(Boolean).join(" · ") ||
+                          "Program administrator program"}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+
           <div className="space-y-2">
             <Label htmlFor="certificate-holder-name">Certificate holder</Label>
             <Input
@@ -1459,6 +1722,7 @@ function CertificateCreatePanel({
               value={holderName}
               onChange={(event) => setHolderName(event.target.value)}
               placeholder="Company or individual name"
+              autoComplete="organization"
               autoFocus
               disabled={generating}
             />
@@ -1466,13 +1730,33 @@ function CertificateCreatePanel({
 
           <div className="space-y-2">
             <Label htmlFor="certificate-address-1">Address line 1</Label>
-            <Input
-              id="certificate-address-1"
-              value={addressLine1}
-              onChange={(event) => setAddressLine1(event.target.value)}
-              placeholder="Street address"
-              disabled={generating}
-            />
+            {MAPBOX_ACCESS_TOKEN ? (
+              <AddressAutofill
+                accessToken={MAPBOX_ACCESS_TOKEN}
+                options={{ country: "US", language: "en", proximity: "ip" }}
+                theme={MAPBOX_ADDRESS_AUTOFILL_THEME}
+                popoverOptions={{ placement: "bottom-start", flip: true, offset: 6 }}
+                onRetrieve={handleAddressRetrieve}
+              >
+                <Input
+                  id="certificate-address-1"
+                  value={addressLine1}
+                  onChange={(event) => setAddressLine1(event.target.value)}
+                  placeholder="Street address"
+                  autoComplete="section-certificate address-line1"
+                  disabled={generating}
+                />
+              </AddressAutofill>
+            ) : (
+              <Input
+                id="certificate-address-1"
+                value={addressLine1}
+                onChange={(event) => setAddressLine1(event.target.value)}
+                placeholder="Street address"
+                autoComplete="section-certificate address-line1"
+                disabled={generating}
+              />
+            )}
           </div>
 
           <div className="space-y-2">
@@ -1482,6 +1766,7 @@ function CertificateCreatePanel({
               value={addressLine2}
               onChange={(event) => setAddressLine2(event.target.value)}
               placeholder="Suite, floor, attention line"
+              autoComplete="section-certificate address-line2"
               disabled={generating}
             />
           </div>
@@ -1493,6 +1778,7 @@ function CertificateCreatePanel({
                 id="certificate-city"
                 value={city}
                 onChange={(event) => setCity(event.target.value)}
+                autoComplete="section-certificate address-level2"
                 disabled={generating}
               />
             </div>
@@ -1502,6 +1788,7 @@ function CertificateCreatePanel({
                 id="certificate-state"
                 value={state}
                 onChange={(event) => setState(event.target.value)}
+                autoComplete="section-certificate address-level1"
                 disabled={generating}
               />
             </div>
@@ -1511,6 +1798,7 @@ function CertificateCreatePanel({
                 id="certificate-postal-code"
                 value={postalCode}
                 onChange={(event) => setPostalCode(event.target.value)}
+                autoComplete="section-certificate postal-code"
                 disabled={generating}
               />
             </div>
@@ -1523,6 +1811,7 @@ function CertificateCreatePanel({
 
 function CertificatesTab({ policyId }: { policyId: Id<"policies"> }) {
   const certificates = useQuery(api.certificates.listByPolicy, { policyId });
+  const { openWithUrl } = usePdf();
 
   if (certificates === undefined) {
     return (
@@ -1564,15 +1853,19 @@ function CertificatesTab({ policyId }: { policyId: Id<"policies"> }) {
               <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
                 <span>{formatCertificateTimestamp(certificate.createdAt)}</span>
                 {certificate.source && <span>{certificate.source.replace("_", " ")}</span>}
+                <span>
+                  {certificate.authorityType === "certified" ? "certified" : "non-binding"}
+                </span>
+                {certificate.certificationStatus === "pending" && <span>pending approval</span>}
               </div>
             </div>
             <PillButton
               variant="secondary"
               size="compact"
               disabled={!certificate.url}
-              onClick={() => certificate.url && window.open(certificate.url, "_blank", "noopener,noreferrer")}
+              onClick={() => certificate.url && openWithUrl(certificate.url)}
             >
-              <Download className="w-3.5 h-3.5" />
+              <Eye className="w-3.5 h-3.5" />
               PDF
             </PillButton>
           </div>
@@ -1764,7 +2057,7 @@ export function PolicyDetailBody({
         metadata: entry.metadata,
         userId: entry.userId,
         orgId: entry.orgId,
-        timestamp: new Date(entry._creationTime).toISOString(),
+        timestamp: dayjs(entry._creationTime).toISOString(),
       });
     }
   }, [auditEntries, policyNumber]);
@@ -1783,7 +2076,7 @@ export function PolicyDetailBody({
       logPolicyActivityToBrowser("pipeline_log", {
         policyId: id,
         policyNumber,
-        timestamp: new Date(entry.timestamp).toISOString(),
+        timestamp: dayjs(entry.timestamp).toISOString(),
         phase: entry.phase,
         level: entry.level ?? "info",
         message: entry.message,
@@ -1923,6 +2216,7 @@ export function PolicyDetailBody({
         open={showCertificateSheet}
         onOpenChange={setShowCertificateSheet}
         policyId={policy._id}
+        initialProgram={(policy as { partnerProgram?: ProgramMatchCandidate | null }).partnerProgram ?? null}
       />,
     );
     return () => onRightPanel(null);
@@ -2132,7 +2426,6 @@ export function PolicyDetailBody({
             effectiveDate={policy.effectiveDate}
             expirationDate={policy.expirationDate}
             premium={policy.premium}
-            totalCost={p.totalCost as string | undefined}
             policyTypes={policyTypes}
             policyTermType={p.policyTermType as string | undefined}
             limits={limits}

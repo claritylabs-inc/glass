@@ -10,7 +10,9 @@ export default function RootPage() {
 
   useEffect(() => {
     if (!currentOrg) return; // still loading
-    if (currentOrg.isBroker) {
+    if (currentOrg.isPartner) {
+      router.replace("/partner/approvals");
+    } else if (currentOrg.isBroker) {
       router.replace("/clients");
     } else {
       router.replace("/policies");

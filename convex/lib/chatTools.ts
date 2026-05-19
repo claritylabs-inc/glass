@@ -182,6 +182,10 @@ export const generateCoi = tool({
       .string()
       .optional()
       .describe("Name/address of the certificate holder"),
+    partnerProgramId: z
+      .string()
+      .optional()
+      .describe("Optional program administrator program ID to use when Glass asks the broker to choose a program"),
   }),
 });
 

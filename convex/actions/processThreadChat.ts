@@ -72,6 +72,11 @@ import {
   COI_GENERATION_FAILED_MESSAGE,
   FATAL_ACTION_FAILED_MESSAGE,
 } from "../lib/actionFailures";
+import {
+  buildCertificateProgramSelection,
+  formatCertificateProgramSelectionForModel,
+  type CertificateProgramSelection,
+} from "../lib/certificateProgramSelection";
 import { evaluatePceIntake, type PceRequestKind } from "../lib/pceIntake";
 import {
   filterComplianceRequirements,
@@ -572,7 +577,24 @@ async function buildMessageHistoryWithAttachmentContext(
 
       history.push({ role: "user", content: text });
     } else if (msg.role === "agent" && content) {
-      history.push({ role: "assistant", content });
+      const pendingSelections = Array.isArray(msg.toolArtifacts)
+        ? (msg.toolArtifacts as Array<{ type?: string; data?: unknown }>)
+            .filter((artifact) => artifact.type === "certificate_program_selection")
+            .map((artifact) => artifact.data)
+        : [];
+      const selectionContext = pendingSelections
+        .map((selection) =>
+          formatCertificateProgramSelectionForModel(
+            selection as CertificateProgramSelection,
+          ),
+        )
+        .join("\n\n");
+      history.push({
+        role: "assistant",
+        content: selectionContext
+          ? `${content}\n\n${selectionContext}`
+          : content,
+      });
     }
   }
 
@@ -864,6 +886,7 @@ function buildTools(
       execute: async (input: {
         policyId: string;
         certificateHolder?: string;
+        partnerProgramId?: string;
       }) => {
         // Check org settings — autoGenerateCoi defaults to true if not set
         const autoGenerate = org?.autoGenerateCoi !== false;
@@ -888,25 +911,54 @@ function buildTools(
           }
           const targetOrgId = (policy.orgId ?? args.orgId) as Id<"organizations">;
           const generated = await ctx.runAction(
-            internal.actions.generateCoi.run,
+            internal.certificates.generateForOrg,
             {
               policyId: input.policyId as Id<"policies">,
               orgId: targetOrgId,
+              holderName:
+                input.certificateHolder?.split(/\r?\n/)[0]?.trim() || "Certificate holder",
               certificateHolder: input.certificateHolder,
-              certificateHolderName:
-                input.certificateHolder?.split(/\r?\n/)[0]?.trim() || undefined,
+              selectedPartnerProgramId: input.partnerProgramId as Id<"partnerPrograms"> | undefined,
               source: "chat",
               createdByUserId: args.userId as Id<"users">,
             },
           );
           if (!generated) return COI_GENERATION_FAILED_MESSAGE;
+          if (generated.status === "pending_approval") {
+            return {
+              message: "Certified COI request created and sent to the program administrator for approval.",
+              requestId: generated.requestId,
+              authorityType: generated.authorityType,
+              certificationStatus: generated.certificationStatus,
+            };
+          }
+          if (generated.status === "needs_program_selection") {
+            const selection = buildCertificateProgramSelection({
+              policyId: input.policyId,
+              holderName:
+                input.certificateHolder?.split(/\r?\n/)[0]?.trim() ||
+                "Certificate holder",
+              certificateHolder: input.certificateHolder,
+              candidates: generated.matchCandidates,
+              source: "chat",
+            });
+            return {
+              message: "I found multiple possible program administrator programs. Choose one to generate the certified COI.",
+              candidates: generated.matchCandidates,
+              programSelection: selection,
+              authorityType: generated.authorityType,
+              certificationStatus: generated.certificationStatus,
+            };
+          }
           return {
-            message: "COI generated and attached to this response.",
+            message: generated.authorityType === "certified"
+              ? "Certified COI generated and attached to this response."
+              : "Non-binding COI generated and attached to this response.",
             attachment: {
               filename: generated.fileName,
               contentType: "application/pdf",
               size: generated.size,
-              fileId: generated.storageId as Id<"_storage">,
+              fileId: generated.fileId as Id<"_storage">,
             },
           };
         } catch (err) {
@@ -1511,7 +1563,15 @@ export const run = internalAction({
       const currentDraftEmails = await ctx.runQuery(
         internal.pendingEmails.listDraftsInternal,
         { threadId: args.threadId, orgId: args.orgId },
-      );
+      ) as Array<{
+        recipientEmail?: string;
+        ccAddresses?: string[];
+        bccAddresses?: string[];
+        subject?: string;
+        body?: string;
+        emailBody?: string;
+        attachments?: Array<{ filename: string }>;
+      }>;
       const currentDraftContext = currentDraftEmails.length > 0
         ? [
             currentDraftEmails.length === 1
@@ -1886,6 +1946,27 @@ export const run = internalAction({
                 const caseId = (output as Record<string, unknown>).caseId;
                 if (typeof caseId === "string" && caseId) {
                   policyChangeCaseId = caseId as Id<"policyChangeCases">;
+                }
+              }
+            }
+            if (
+              lastToolName === "generate_coi" &&
+              (part as Record<string, unknown>).output
+            ) {
+              const output = (part as Record<string, unknown>).output;
+              if (
+                output &&
+                typeof output === "object" &&
+                "programSelection" in output
+              ) {
+                const programSelection = (
+                  output as Record<string, unknown>
+                ).programSelection;
+                if (programSelection) {
+                  toolArtifacts.push({
+                    type: "certificate_program_selection",
+                    data: programSelection,
+                  });
                 }
               }
             }

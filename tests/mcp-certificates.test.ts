@@ -15,6 +15,9 @@ describe("certificate API surfaces", () => {
     expect(http).toContain('/mcp/policies/certificates/generate');
     expect(http).toContain('name: "list_policy_certificates"');
     expect(http).toContain('name: "generate_policy_certificate"');
+    expect(http).toContain("authority_type");
+    expect(http).toContain("certification_status");
+    expect(http).toContain("standing_authorization_id");
 
     expect(mcpPolicies).toContain('"list_policy_certificates"');
     expect(mcpPolicies).toContain('"generate_policy_certificate"');
