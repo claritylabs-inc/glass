@@ -25,9 +25,13 @@ async function createMemberInvitation(
   args: {
     email: string;
     role: "admin" | "member";
+    invitedByUserId?: Id<"users">;
   },
 ) {
-  const { userId, orgId } = await requireOrgAdmin(ctx);
+  const access = args.invitedByUserId
+    ? await requireOrgAdminForUser(ctx, args.invitedByUserId)
+    : await requireOrgAdmin(ctx);
+  const { userId, orgId } = access;
   const email = normalizeEmail(args.email);
   if (!email) throw new Error("Email is required");
 
@@ -71,6 +75,19 @@ async function createMemberInvitation(
     expiresAt,
   });
   return { invitationId, reusedExisting: false };
+}
+
+async function requireOrgAdminForUser(ctx: MutationCtx, userId: Id<"users">) {
+  const membership = await ctx.db
+    .query("orgMemberships")
+    .withIndex("by_userId", (q) => q.eq("userId", userId))
+    .first();
+  if (!membership) throw new Error("No organization membership");
+  if (membership.role !== "admin") throw new Error("Admin access required");
+
+  const org = await ctx.db.get(membership.orgId);
+  if (!org) throw new Error("Organization not found");
+  return { userId, orgId: membership.orgId, role: membership.role, org };
 }
 
 // ── Queries ──
@@ -813,7 +830,13 @@ export const sendMemberInvitation = action({
     role: v.union(v.literal("admin"), v.literal("member")),
   },
   handler: async (ctx, args) => {
-    const invitationResult = await ctx.runMutation(internal.orgs.createMemberInvitationInternal, args);
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
+
+    const invitationResult = await ctx.runMutation(internal.orgs.createMemberInvitationInternal, {
+      ...args,
+      invitedByUserId: userId,
+    });
     const invitationId = invitationResult.invitationId;
     const context = await ctx.runQuery(internal.orgs.getMemberInvitationEmailContextInternal, {
       invitationId,
@@ -885,6 +908,7 @@ export const createMemberInvitationInternal = internalMutation({
   args: {
     email: v.string(),
     role: v.union(v.literal("admin"), v.literal("member")),
+    invitedByUserId: v.id("users"),
   },
   handler: async (ctx, args) => {
     return await createMemberInvitation(ctx, args);
