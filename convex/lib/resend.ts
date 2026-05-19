@@ -50,10 +50,22 @@ export function getNotificationFromAddress(fromName: string): string {
   return `${fromName} <notifications@${getNotificationEmailDomain()}>`;
 }
 
+function extractEmailAddress(value: string): string {
+  const match = value.match(/<([^>]+)>/);
+  return (match?.[1] ?? value).trim();
+}
+
+function sanitizeFromName(value: string): string {
+  return value.replace(/[\r\n<>]/g, " ").replace(/\s+/g, " ").trim();
+}
+
 export function getAuthFromAddress(fromName?: string): string {
-  if (fromName) return `${fromName} <noreply@${getAuthEmailDomain()}>`;
   const fallback = `Glass from Clarity Labs <noreply@${getAuthEmailDomain()}>`;
-  return process.env.AUTH_EMAIL_FROM ?? fallback;
+  const configured = process.env.AUTH_EMAIL_FROM;
+  if (!fromName) return configured ?? fallback;
+
+  const address = extractEmailAddress(configured ?? fallback);
+  return `${sanitizeFromName(fromName)} <${address}>`;
 }
 
 export type ResendPayload = {
