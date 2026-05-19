@@ -1310,6 +1310,7 @@ export const processInbound = internalAction({
           execute: async (params: {
             policyId: string;
             certificateHolder?: string;
+            partnerProgramId?: string;
           }) => {
             if (!currentSenderIsLinked) {
               return "Only a linked Glass user in this group can generate a certificate.";
@@ -1346,6 +1347,7 @@ export const processInbound = internalAction({
                     params.certificateHolder?.split(/\r?\n/)[0]?.trim() ||
                     "Certificate holder",
                   certificateHolder: params.certificateHolder,
+                  selectedPartnerProgramId: params.partnerProgramId as Id<"partnerPrograms"> | undefined,
                   source: "imessage",
                   createdByUserId: user._id,
                 },
@@ -1353,6 +1355,9 @@ export const processInbound = internalAction({
               if (!generated) return COI_GENERATION_FAILED_MESSAGE;
               if (generated.status === "pending_approval") {
                 return "Certified COI approval requested from the program administrator. I will not send a certificate PDF until it is approved.";
+              }
+              if (generated.status === "needs_program_selection") {
+                return "Glass found multiple possible program administrator programs. Please choose the correct program in Glass before I generate a certified COI.";
               }
               responseFileAttachments.push({
                 storageId: generated.fileId as Id<"_storage">,

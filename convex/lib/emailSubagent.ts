@@ -518,7 +518,11 @@ async function runEmailSubagent(
     return `Attached uploaded file: ${filename ?? found.filename}`;
   };
 
-  const generateCoiAttachment = async (policyId: string, certificateHolder?: string): Promise<string> => {
+  const generateCoiAttachment = async (
+    policyId: string,
+    certificateHolder?: string,
+    partnerProgramId?: string,
+  ): Promise<string> => {
     sourcePolicyIds.add(policyId);
     const coiKey = `${policyId}:${normalizeAttachmentText(certificateHolder)}`;
     if (attachedCoiKeys.has(coiKey)) {
@@ -536,6 +540,7 @@ async function runEmailSubagent(
         orgId: context.orgId,
         holderName: certificateHolder?.split(/\r?\n/)[0]?.trim() || "Certificate holder",
         certificateHolder,
+        selectedPartnerProgramId: partnerProgramId as Id<"partnerPrograms"> | undefined,
         source: context.channel === "web" ? "chat" : context.channel,
       });
     } catch (err) {
@@ -545,6 +550,9 @@ async function runEmailSubagent(
     if (!generated) return COI_GENERATION_FAILED_MESSAGE;
     if (generated.status === "pending_approval") {
       return "Certified COI approval has been requested from the program administrator; no certificate PDF is attached yet.";
+    }
+    if (generated.status === "needs_program_selection") {
+      return "Glass found multiple possible program administrator programs. Ask the broker to choose the correct program before attaching a certified COI.";
     }
     attachedCoiKeys.add(coiKey);
     addAttachment({
@@ -846,8 +854,10 @@ Call send_or_draft_email exactly once after preparing any requested attachments.
         inputSchema: z.object({
           policyId: z.string(),
           certificateHolder: z.string().optional(),
+          partnerProgramId: z.string().optional(),
         }),
-        execute: async ({ policyId, certificateHolder }) => generateCoiAttachment(policyId, certificateHolder),
+        execute: async ({ policyId, certificateHolder, partnerProgramId }) =>
+          generateCoiAttachment(policyId, certificateHolder, partnerProgramId),
       }),
       send_or_draft_email: tool({
         description: "Finalize the email. This either sends, queues, or returns a confirmation draft based on safety and org settings.",

@@ -1403,6 +1403,7 @@ export const processInbound = internalAction({
           execute: async (params: {
             policyId: string;
             certificateHolder?: string;
+            partnerProgramId?: string;
           }) => {
             referencedPolicySourceIds.add(String(params.policyId));
             const autoGenerate = org.autoGenerateCoi !== false;
@@ -1426,6 +1427,7 @@ export const processInbound = internalAction({
                     params.certificateHolder?.split(/\r?\n/)[0]?.trim() ||
                     "Certificate holder",
                   certificateHolder: params.certificateHolder,
+                  selectedPartnerProgramId: params.partnerProgramId as Id<"partnerPrograms"> | undefined,
                   source: "email",
                   createdByUserId: primaryUserId,
                 },
@@ -1433,6 +1435,9 @@ export const processInbound = internalAction({
               if (!generated) return COI_GENERATION_FAILED_MESSAGE;
               if (generated.status === "pending_approval") {
                 return "Certified COI approval has been requested from the program administrator. No certificate PDF is attached yet.";
+              }
+              if (generated.status === "needs_program_selection") {
+                return "Glass found multiple possible program administrator programs. Please choose the correct program in Glass before generating a certified COI.";
               }
               generatedCoiAttachments.push({
                 filename: generated.fileName,

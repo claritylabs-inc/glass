@@ -10,6 +10,7 @@ import { SettingsActionsContext } from "@/components/settings/settings-actions-c
 import {
   BROKER_SETTINGS_SECTIONS,
   CLIENT_SETTINGS_SECTIONS,
+  PARTNER_SETTINGS_SECTIONS,
   insertSettingsSectionAfterTeam,
   type SettingsSection,
   type SettingsSectionId,
@@ -50,9 +51,12 @@ export default function SettingsPage() {
   const [rightPanel, setRightPanel] = useState<React.ReactNode>(null);
   const currentOrg = useCurrentOrg();
   const isBroker = currentOrg?.isBroker ?? false;
+  const isPartner = currentOrg?.orgType === "partner";
   const isStandaloneClient = currentOrg?.orgType === "client" && !currentOrg?.brokerOrg;
 
-  const SETTINGS_SECTIONS_ACTIVE = isBroker
+  const SETTINGS_SECTIONS_ACTIVE = isPartner
+    ? PARTNER_SETTINGS_SECTIONS
+    : isBroker
     ? BROKER_SETTINGS_WITH_AGENT
     : isStandaloneClient
       ? CLIENT_SETTINGS_WITH_AGENT
@@ -99,7 +103,12 @@ export default function SettingsPage() {
         </div>
 
         {/* Section content — sidebar navigation is handled by the main app sidebar on desktop */}
-        <SectionContent section={activeSection} isBroker={isBroker} isStandaloneClient={isStandaloneClient} />
+        <SectionContent
+          section={activeSection}
+          isBroker={isBroker}
+          isPartner={isPartner}
+          isStandaloneClient={isStandaloneClient}
+        />
       </AppShell>
     </SettingsActionsContext.Provider>
   );
@@ -108,13 +117,29 @@ export default function SettingsPage() {
 function SectionContent({
   section,
   isBroker,
+  isPartner,
   isStandaloneClient,
 }: {
   section: SettingsSectionId;
   isBroker: boolean;
+  isPartner: boolean;
   isStandaloneClient: boolean;
 }) {
   const currentOrg = useCurrentOrg();
+
+  if (isPartner) {
+    return (
+      <div>
+        {section === "organization" ? (
+          <OrganizationSection />
+        ) : section === "team" ? (
+          <TeamSection />
+        ) : section === "notifications" && currentOrg?.orgId ? (
+          <NotificationPreferencesPage orgId={currentOrg.orgId} orgType="partner" />
+        ) : null}
+      </div>
+    );
+  }
 
   if (isBroker) {
     return (
@@ -126,7 +151,7 @@ function SectionContent({
          section === "email" ? <EmailConnectionsSection /> :
          section === "connections" ? <ConnectionsSection /> :
          section === "notifications" && currentOrg?.orgId ? (
-           <NotificationPreferencesPage orgId={currentOrg.orgId} isBroker={isBroker} />
+           <NotificationPreferencesPage orgId={currentOrg.orgId} orgType="broker" />
          ) : null}
       </div>
     );
@@ -146,7 +171,7 @@ function SectionContent({
       ) : section === "connections" ? (
         <ConnectionsSection />
       ) : section === "notifications" && currentOrg?.orgId ? (
-        <NotificationPreferencesPage orgId={currentOrg.orgId} isBroker={isBroker} />
+        <NotificationPreferencesPage orgId={currentOrg.orgId} orgType="client" />
       ) : null}
     </div>
   );

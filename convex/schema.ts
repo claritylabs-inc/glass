@@ -138,6 +138,19 @@ export default defineSchema({
     partnerOrgId: v.id("organizations"),
     name: v.string(),
     aliases: v.array(v.string()),
+    description: v.optional(v.string()),
+    categoryLabels: v.optional(v.array(v.string())),
+    // Deprecated compatibility field. New UI/backend code should use categoryLabels.
+    categoryLabel: v.optional(v.string()),
+    defaultTemplateId: v.optional(v.id("coiTemplates")),
+    approvalMode: v.optional(
+      v.union(
+        v.literal("auto_approve_all"),
+        v.literal("require_approval_all"),
+        v.literal("llm_review"),
+      ),
+    ),
+    approvalRuleText: v.optional(v.string()),
     status: v.union(v.literal("active"), v.literal("inactive")),
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -149,10 +162,19 @@ export default defineSchema({
     partnerOrgId: v.id("organizations"),
     programId: v.optional(v.id("partnerPrograms")),
     name: v.string(),
-    templateKind: v.union(v.literal("pdf_fields"), v.literal("standard_overlay")),
+    templateKind: v.union(
+      v.literal("standard_glass"),
+      v.literal("custom_glass"),
+      v.literal("pdf_overlay"),
+      // Deprecated legacy values from the first program-admin pass.
+      v.literal("pdf_fields"),
+      v.literal("standard_overlay"),
+    ),
     fileId: v.optional(v.id("_storage")),
+    fileName: v.optional(v.string()),
     fieldMappings: v.optional(v.any()),
     certifiedNotice: v.optional(v.string()),
+    fallbackToStandard: v.optional(v.boolean()),
     status: v.union(v.literal("active"), v.literal("inactive")),
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -160,6 +182,24 @@ export default defineSchema({
     .index("by_partnerOrgId", ["partnerOrgId"])
     .index("by_programId", ["programId"])
     .index("by_status", ["status"]),
+
+  partnerProgramEmbeddings: defineTable({
+    partnerOrgId: v.id("organizations"),
+    programId: v.id("partnerPrograms"),
+    matchText: v.string(),
+    embedding: v.array(v.float64()),
+    status: v.union(v.literal("active"), v.literal("inactive")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_partnerOrgId", ["partnerOrgId"])
+    .index("by_programId", ["programId"])
+    .index("by_status", ["status"])
+    .vectorIndex("by_embedding", {
+      vectorField: "embedding",
+      dimensions: 1536,
+      filterFields: ["partnerOrgId", "status"],
+    }),
 
   standingAuthorizations: defineTable({
     partnerOrgId: v.id("organizations"),
@@ -1071,6 +1111,14 @@ export default defineSchema({
     templateId: v.optional(v.id("coiTemplates")),
     standingAuthorizationId: v.optional(v.id("standingAuthorizations")),
     approvalId: v.optional(v.id("certificateApprovals")),
+    approvalMode: v.optional(
+      v.union(
+        v.literal("auto_approve_all"),
+        v.literal("require_approval_all"),
+        v.literal("llm_review"),
+      ),
+    ),
+    approvalAudit: v.optional(v.any()),
     disclaimer: v.optional(v.string()),
     createdAt: v.number(),
   })
@@ -1108,6 +1156,15 @@ export default defineSchema({
     createdByUserId: v.optional(v.id("users")),
     approvalId: v.optional(v.id("certificateApprovals")),
     certificateId: v.optional(v.id("certificates")),
+    matchCandidates: v.optional(v.any()),
+    approvalMode: v.optional(
+      v.union(
+        v.literal("auto_approve_all"),
+        v.literal("require_approval_all"),
+        v.literal("llm_review"),
+      ),
+    ),
+    approvalAudit: v.optional(v.any()),
     notes: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -1129,6 +1186,14 @@ export default defineSchema({
     approvalType: v.union(v.literal("human"), v.literal("standing_authorization")),
     status: v.union(v.literal("approved"), v.literal("declined")),
     approvedByUserId: v.optional(v.id("users")),
+    approvalMode: v.optional(
+      v.union(
+        v.literal("auto_approve_all"),
+        v.literal("require_approval_all"),
+        v.literal("llm_review"),
+      ),
+    ),
+    audit: v.optional(v.any()),
     notes: v.optional(v.string()),
     createdAt: v.number(),
     approvedAt: v.number(),

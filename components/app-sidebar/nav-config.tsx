@@ -4,6 +4,7 @@ import {
   Building2,
   ClipboardCheck,
   FileText,
+  FileStack,
   ShieldCheck,
   Settings,
   User,
@@ -115,6 +116,18 @@ export const PARTNER_NAV_ITEMS: NavItemConfig[] = [
     label: "Approvals",
     icon: ShieldCheck,
     shortcut: navShortcut("a"),
+  },
+  {
+    href: "/partner/programs",
+    label: "Programs",
+    icon: ClipboardCheck,
+    shortcut: navShortcut("p"),
+  },
+  {
+    href: "/partner/templates",
+    label: "Templates",
+    icon: FileStack,
+    shortcut: navShortcut("t"),
   },
 ];
 

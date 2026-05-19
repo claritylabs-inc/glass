@@ -200,7 +200,7 @@ export default function ProgramAdminApprovalsPage() {
 
   return (
     <AppShell breadcrumbDetail="Program approvals">
-      <div className="flex w-full max-w-5xl flex-col gap-4">
+      <div className="flex w-full flex-col gap-4">
         {queue === undefined ? (
           <ProgramApprovalsLoadingSkeleton />
         ) : totalPending === 0 ? (

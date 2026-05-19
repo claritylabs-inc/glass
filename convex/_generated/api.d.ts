@@ -76,6 +76,7 @@ import type * as lib_brokerIdentity from "../lib/brokerIdentity.js";
 import type * as lib_chatTools from "../lib/chatTools.js";
 import type * as lib_coiAttachmentGuards from "../lib/coiAttachmentGuards.js";
 import type * as lib_coiGenerator from "../lib/coiGenerator.js";
+import type * as lib_coiTemplateOverlay from "../lib/coiTemplateOverlay.js";
 import type * as lib_complianceAgent from "../lib/complianceAgent.js";
 import type * as lib_convexDocumentStore from "../lib/convexDocumentStore.js";
 import type * as lib_convexMemoryStore from "../lib/convexMemoryStore.js";
@@ -222,6 +223,7 @@ declare const fullApi: ApiFromModules<{
   "lib/chatTools": typeof lib_chatTools;
   "lib/coiAttachmentGuards": typeof lib_coiAttachmentGuards;
   "lib/coiGenerator": typeof lib_coiGenerator;
+  "lib/coiTemplateOverlay": typeof lib_coiTemplateOverlay;
   "lib/complianceAgent": typeof lib_complianceAgent;
   "lib/convexDocumentStore": typeof lib_convexDocumentStore;
   "lib/convexMemoryStore": typeof lib_convexMemoryStore;

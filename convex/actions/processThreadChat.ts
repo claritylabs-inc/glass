@@ -864,6 +864,7 @@ function buildTools(
       execute: async (input: {
         policyId: string;
         certificateHolder?: string;
+        partnerProgramId?: string;
       }) => {
         // Check org settings — autoGenerateCoi defaults to true if not set
         const autoGenerate = org?.autoGenerateCoi !== false;
@@ -895,6 +896,7 @@ function buildTools(
               holderName:
                 input.certificateHolder?.split(/\r?\n/)[0]?.trim() || "Certificate holder",
               certificateHolder: input.certificateHolder,
+              selectedPartnerProgramId: input.partnerProgramId as Id<"partnerPrograms"> | undefined,
               source: "chat",
               createdByUserId: args.userId as Id<"users">,
             },
@@ -904,6 +906,14 @@ function buildTools(
             return {
               message: "Certified COI request created and sent to the program administrator for approval.",
               requestId: generated.requestId,
+              authorityType: generated.authorityType,
+              certificationStatus: generated.certificationStatus,
+            };
+          }
+          if (generated.status === "needs_program_selection") {
+            return {
+              message: "Glass found multiple possible program administrator programs. Ask the broker to choose the correct program before generating a certified COI.",
+              candidates: generated.matchCandidates,
               authorityType: generated.authorityType,
               certificationStatus: generated.certificationStatus,
             };

@@ -494,6 +494,11 @@ function requireMcpWriteScope(identity: McpIdentity): void {
 function normalizeCertificateRequest(body: Record<string, unknown>) {
   const certificateHolder =
     typeof body.certificate_holder === "string" ? body.certificate_holder.trim() : "";
+  const selectedPartnerProgramId =
+    (typeof body.selectedPartnerProgramId === "string" && body.selectedPartnerProgramId.trim()) ||
+    (typeof body.partner_program_id === "string" && body.partner_program_id.trim()) ||
+    (typeof body.selected_partner_program_id === "string" && body.selected_partner_program_id.trim()) ||
+    undefined;
   const holderName =
     (typeof body.holderName === "string" && body.holderName.trim()) ||
     (typeof body.certificate_holder_name === "string" && body.certificate_holder_name.trim()) ||
@@ -522,6 +527,7 @@ function normalizeCertificateRequest(body: Record<string, unknown>) {
       (typeof body.postalCode === "string" && body.postalCode.trim()) ||
       (typeof body.postal_code === "string" && body.postal_code.trim()) ||
       undefined,
+    selectedPartnerProgramId: selectedPartnerProgramId as Id<"partnerPrograms"> | undefined,
   };
 }
 

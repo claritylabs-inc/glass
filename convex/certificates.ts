@@ -151,6 +151,7 @@ export const generateForPolicy = action({
     city: v.optional(v.string()),
     state: v.optional(v.string()),
     postalCode: v.optional(v.string()),
+    selectedPartnerProgramId: v.optional(v.id("partnerPrograms")),
   },
   handler: async (ctx, args): Promise<any> => {
     const userId = await getAuthUserId(ctx);
@@ -172,6 +173,7 @@ export const generateForPolicy = action({
       city: args.city,
       state: args.state,
       postalCode: args.postalCode,
+      selectedPartnerProgramId: args.selectedPartnerProgramId,
       source: "policy_page",
       createdByUserId: context.userId,
     });
@@ -191,6 +193,7 @@ export const generateForOrg = internalAction({
     postalCode: v.optional(v.string()),
     source: v.optional(certificateSourceValidator),
     createdByUserId: v.optional(v.id("users")),
+    selectedPartnerProgramId: v.optional(v.id("partnerPrograms")),
   },
   handler: async (ctx, args): Promise<any> => {
     const holderName = args.holderName.trim();
@@ -202,18 +205,31 @@ export const generateForOrg = internalAction({
     });
     const certificateHolder = args.certificateHolder?.trim() || compactCertificateHolder({ ...args, holderName });
 
-    const authority = await ctx.runQuery(internal.partnerPrograms.resolveCertificateAuthority, {
+    const authority = await ctx.runAction(internal.partnerPrograms.resolveCertificateAuthority, {
       policyId: args.policyId,
+      selectedPartnerProgramId: args.selectedPartnerProgramId,
     }) as {
       authorityType: "non_binding" | "certified";
-      certificationStatus: "not_applicable" | "pending" | "certified" | "declined";
+      certificationStatus: "not_applicable" | "pending" | "certified" | "declined" | "needs_program_selection";
       partnerOrgId?: Id<"organizations">;
       partnerProgramId?: Id<"partnerPrograms">;
       templateId?: Id<"coiTemplates">;
       standingAuthorizationId?: Id<"standingAuthorizations">;
       approvalType?: "standing_authorization";
+      approvalMode?: "auto_approve_all" | "require_approval_all" | "llm_review";
+      approvalAudit?: unknown;
+      matchCandidates?: unknown;
       disclaimer?: string;
     };
+
+    if (authority.certificationStatus === "needs_program_selection") {
+      return {
+        status: "needs_program_selection",
+        authorityType: "certified",
+        certificationStatus: "needs_program_selection",
+        matchCandidates: authority.matchCandidates ?? [],
+      };
+    }
 
     if (authority.authorityType === "certified" && authority.certificationStatus === "pending" && authority.partnerOrgId) {
       const requestId = await ctx.runMutation(internal.partnerPrograms.createCertificateRequestInternal, {
@@ -226,6 +242,9 @@ export const generateForOrg = internalAction({
         certificateHolder,
         source: args.source,
         createdByUserId: args.createdByUserId,
+        matchCandidates: authority.matchCandidates,
+        approvalMode: authority.approvalMode,
+        approvalAudit: authority.approvalAudit,
       });
       return {
         status: "pending_approval",
@@ -251,6 +270,8 @@ export const generateForOrg = internalAction({
       partnerProgramId: authority.partnerProgramId,
       templateId: authority.templateId,
       standingAuthorizationId: authority.standingAuthorizationId,
+      approvalMode: authority.approvalMode,
+      approvalAudit: authority.approvalAudit,
       disclaimer: authority.disclaimer,
     });
     if (!generated) throw new Error("COI generation failed.");
@@ -267,6 +288,8 @@ export const generateForOrg = internalAction({
         standingAuthorizationId: authority.standingAuthorizationId,
         approvalType: "standing_authorization",
         status: "approved",
+        approvalMode: authority.approvalMode,
+        audit: authority.approvalAudit,
         notes: authority.disclaimer,
       });
       await ctx.runMutation(internal.partnerPrograms.linkCertificateApprovalInternal, {
@@ -310,6 +333,12 @@ export const recordGenerated = internalMutation({
     partnerProgramId: v.optional(v.id("partnerPrograms")),
     templateId: v.optional(v.id("coiTemplates")),
     standingAuthorizationId: v.optional(v.id("standingAuthorizations")),
+    approvalMode: v.optional(v.union(
+      v.literal("auto_approve_all"),
+      v.literal("require_approval_all"),
+      v.literal("llm_review"),
+    )),
+    approvalAudit: v.optional(v.any()),
     disclaimer: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -333,6 +362,8 @@ export const recordGenerated = internalMutation({
       partnerProgramId: args.partnerProgramId,
       templateId: args.templateId,
       standingAuthorizationId: args.standingAuthorizationId,
+      approvalMode: args.approvalMode,
+      approvalAudit: args.approvalAudit,
       disclaimer: args.disclaimer,
       createdAt: dayjs().valueOf(),
     });

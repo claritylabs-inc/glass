@@ -1357,6 +1357,15 @@ function formatCertificateTimestamp(value: number) {
   return dayjs(value).format("MMM D, YYYY h:mm A");
 }
 
+type ProgramMatchCandidate = {
+  programId: Id<"partnerPrograms">;
+  programName: string;
+  categoryLabels?: string[];
+  categoryLabel?: string;
+  approvalMode?: string;
+  score?: number;
+};
+
 function CertificateCreatePanel({
   open,
   onOpenChange,
@@ -1373,6 +1382,8 @@ function CertificateCreatePanel({
   const [city, setCity] = useState("");
   const [state, setState] = useState("");
   const [postalCode, setPostalCode] = useState("");
+  const [selectedPartnerProgramId, setSelectedPartnerProgramId] = useState<Id<"partnerPrograms"> | undefined>();
+  const [programCandidates, setProgramCandidates] = useState<ProgramMatchCandidate[]>([]);
   const [generating, setGenerating] = useState(false);
 
   const reset = () => {
@@ -1382,6 +1393,8 @@ function CertificateCreatePanel({
     setCity("");
     setState("");
     setPostalCode("");
+    setSelectedPartnerProgramId(undefined);
+    setProgramCandidates([]);
   };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -1401,11 +1414,19 @@ function CertificateCreatePanel({
         city: city.trim() || undefined,
         state: state.trim() || undefined,
         postalCode: postalCode.trim() || undefined,
+        selectedPartnerProgramId,
       });
       if ((result as { status?: string }).status === "pending_approval") {
         toast.success("Certified COI sent for program administrator approval");
         onOpenChange(false);
         reset();
+        return;
+      }
+      if ((result as { status?: string }).status === "needs_program_selection") {
+        const candidates = ((result as { matchCandidates?: ProgramMatchCandidate[] }).matchCandidates ?? []);
+        setProgramCandidates(candidates);
+        setSelectedPartnerProgramId(candidates[0]?.programId);
+        toast.message("Choose the correct program before generating this certified COI");
         return;
       }
       toast.success(
@@ -1456,6 +1477,46 @@ function CertificateCreatePanel({
         </p>
 
         <form id="certificate-create-form" onSubmit={handleSubmit} className="space-y-4">
+          {programCandidates.length > 0 ? (
+            <div className="rounded-lg border border-foreground/8 bg-card p-3">
+              <p className="text-body-sm font-medium text-foreground">Choose program</p>
+              <div className="mt-3 grid gap-2">
+                {programCandidates.map((candidate) => {
+                  const selected = selectedPartnerProgramId === candidate.programId;
+                  return (
+                    <button
+                      key={candidate.programId}
+                      type="button"
+                      className={`rounded-md border px-3 py-2 text-left transition-colors ${
+                        selected
+                          ? "border-foreground/30 bg-foreground/5"
+                          : "border-foreground/8 hover:bg-foreground/[0.03]"
+                      }`}
+                      onClick={() => setSelectedPartnerProgramId(candidate.programId)}
+                      disabled={generating}
+                    >
+                      <span className="block text-body-sm font-medium text-foreground">
+                        {candidate.programName}
+                      </span>
+                      <span className="mt-0.5 block text-label-sm text-muted-foreground/70">
+                        {[
+                          (candidate.categoryLabels?.length
+                            ? candidate.categoryLabels
+                            : candidate.categoryLabel
+                              ? [candidate.categoryLabel]
+                              : []
+                          ).join(", "),
+                          candidate.approvalMode,
+                        ].filter(Boolean).join(" · ") ||
+                          "Program administrator program"}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+
           <div className="space-y-2">
             <Label htmlFor="certificate-holder-name">Certificate holder</Label>
             <Input
