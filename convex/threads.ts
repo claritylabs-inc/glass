@@ -1006,6 +1006,10 @@ export const insertImessageMessage = internalMutation({
         })
       )
     ),
+    toolArtifacts: v.optional(v.array(v.object({
+      type: v.string(),
+      data: v.any(),
+    }))),
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
     pendingEmailId: v.optional(v.id("pendingEmails")),
     status: v.optional(v.union(v.literal("processing"), v.literal("error"))),
@@ -1025,6 +1029,7 @@ export const insertImessageMessage = internalMutation({
       messageId: args.messageId,
       responseMessageId: args.responseMessageId,
       attachments: args.attachments,
+      toolArtifacts: args.toolArtifacts,
       referencedPolicyIds: args.referencedPolicyIds,
       pendingEmailId: args.pendingEmailId,
       status: args.status,
@@ -1239,6 +1244,10 @@ export const insertEmailMessage = internalMutation({
         })
       )
     ),
+    toolArtifacts: v.optional(v.array(v.object({
+      type: v.string(),
+      data: v.any(),
+    }))),
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
     referencedQuoteIds: v.optional(v.array(v.id("policies"))),
     resendEmailId: v.optional(v.string()),
@@ -1270,6 +1279,7 @@ export const insertEmailMessage = internalMutation({
       responseMessageId: args.responseMessageId,
       resendEmailId: args.resendEmailId,
       attachments: args.attachments,
+      toolArtifacts: args.toolArtifacts,
       referencedPolicyIds: args.referencedPolicyIds,
       referencedQuoteIds: args.referencedQuoteIds,
       status: args.status,

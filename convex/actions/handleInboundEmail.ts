@@ -73,6 +73,12 @@ import {
   COI_GENERATION_FAILED_MESSAGE,
   FATAL_ACTION_FAILED_MESSAGE,
 } from "../lib/actionFailures";
+import {
+  buildCertificateProgramSelection,
+  formatCertificateProgramSelectionForModel,
+  formatCertificateProgramSelectionForUser,
+  type CertificateProgramSelection,
+} from "../lib/certificateProgramSelection";
 import { evaluatePceIntake, type PceRequestKind } from "../lib/pceIntake";
 import {
   filterComplianceRequirements,
@@ -940,9 +946,12 @@ export const processInbound = internalAction({
       // Build messages — include thread history for context
       const messages: ModelMessage[] = [];
       let threadMessagesForGuards: Array<{
+        role?: string;
+        content?: string;
         fromEmail?: string;
         toAddresses?: string[];
         ccAddresses?: string[];
+        toolArtifacts?: Array<{ type: string; data: unknown }>;
       }> = [];
 
       if (unifiedThreadId) {
@@ -958,7 +967,27 @@ export const processInbound = internalAction({
               content: `Subject: ${msg.subject ?? subject}\n\nFrom: ${msg.fromName ? `${msg.fromName} <${msg.fromEmail}>` : msg.fromEmail}\n\n${msg.content}`,
             });
           } else if (msg.role === "agent") {
-            messages.push({ role: "assistant", content: msg.content });
+            const pendingSelections = Array.isArray(msg.toolArtifacts)
+              ? msg.toolArtifacts
+                  .filter(
+                    (artifact) =>
+                      artifact.type === "certificate_program_selection",
+                  )
+                  .map((artifact) => artifact.data)
+              : [];
+            const selectionContext = pendingSelections
+              .map((selection) =>
+                formatCertificateProgramSelectionForModel(
+                  selection as CertificateProgramSelection,
+                ),
+              )
+              .join("\n\n");
+            messages.push({
+              role: "assistant",
+              content: selectionContext
+                ? `${msg.content}\n\n${selectionContext}`
+                : msg.content,
+            });
           }
         }
       }
@@ -1085,6 +1114,7 @@ export const processInbound = internalAction({
       };
       let toolSentEmail: ToolSentEmail | null = null;
       const generatedCoiAttachments: EmailAttachmentMeta[] = [];
+      const certificateProgramSelectionArtifacts: CertificateProgramSelection[] = [];
       const brokerDirectedEmailRequest = isBrokerDirectedEmailRequest(
         [subject ?? "", body].join("\n\n"),
       );
@@ -1437,7 +1467,20 @@ export const processInbound = internalAction({
                 return "Certified COI approval has been requested from the program administrator. No certificate PDF is attached yet.";
               }
               if (generated.status === "needs_program_selection") {
-                return "Glass found multiple possible program administrator programs. Please choose the correct program in Glass before generating a certified COI.";
+                const selection = buildCertificateProgramSelection({
+                  policyId: params.policyId,
+                  holderName:
+                    params.certificateHolder?.split(/\r?\n/)[0]?.trim() ||
+                    "Certificate holder",
+                  certificateHolder: params.certificateHolder,
+                  candidates: generated.matchCandidates,
+                  source: "email",
+                });
+                if (selection) {
+                  certificateProgramSelectionArtifacts.push(selection);
+                  return formatCertificateProgramSelectionForUser(selection);
+                }
+                return "I found multiple possible program administrator programs. Reply with the correct program name before I generate the certified COI.";
               }
               generatedCoiAttachments.push({
                 filename: generated.fileName,
@@ -2031,6 +2074,13 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
         attachments:
           generatedCoiAttachments.length > 0
             ? generatedCoiAttachments
+            : undefined,
+        toolArtifacts:
+          certificateProgramSelectionArtifacts.length > 0
+            ? certificateProgramSelectionArtifacts.map((selection) => ({
+                type: "certificate_program_selection",
+                data: selection,
+              }))
             : undefined,
       });
 

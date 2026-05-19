@@ -72,6 +72,11 @@ import {
   COI_GENERATION_FAILED_MESSAGE,
   FATAL_ACTION_FAILED_MESSAGE,
 } from "../lib/actionFailures";
+import {
+  buildCertificateProgramSelection,
+  formatCertificateProgramSelectionForModel,
+  type CertificateProgramSelection,
+} from "../lib/certificateProgramSelection";
 import { evaluatePceIntake, type PceRequestKind } from "../lib/pceIntake";
 import {
   filterComplianceRequirements,
@@ -572,7 +577,24 @@ async function buildMessageHistoryWithAttachmentContext(
 
       history.push({ role: "user", content: text });
     } else if (msg.role === "agent" && content) {
-      history.push({ role: "assistant", content });
+      const pendingSelections = Array.isArray(msg.toolArtifacts)
+        ? (msg.toolArtifacts as Array<{ type?: string; data?: unknown }>)
+            .filter((artifact) => artifact.type === "certificate_program_selection")
+            .map((artifact) => artifact.data)
+        : [];
+      const selectionContext = pendingSelections
+        .map((selection) =>
+          formatCertificateProgramSelectionForModel(
+            selection as CertificateProgramSelection,
+          ),
+        )
+        .join("\n\n");
+      history.push({
+        role: "assistant",
+        content: selectionContext
+          ? `${content}\n\n${selectionContext}`
+          : content,
+      });
     }
   }
 
@@ -911,9 +933,19 @@ function buildTools(
             };
           }
           if (generated.status === "needs_program_selection") {
-            return {
-              message: "Glass found multiple possible program administrator programs. Ask the broker to choose the correct program before generating a certified COI.",
+            const selection = buildCertificateProgramSelection({
+              policyId: input.policyId,
+              holderName:
+                input.certificateHolder?.split(/\r?\n/)[0]?.trim() ||
+                "Certificate holder",
+              certificateHolder: input.certificateHolder,
               candidates: generated.matchCandidates,
+              source: "chat",
+            });
+            return {
+              message: "I found multiple possible program administrator programs. Choose one to generate the certified COI.",
+              candidates: generated.matchCandidates,
+              programSelection: selection,
               authorityType: generated.authorityType,
               certificationStatus: generated.certificationStatus,
             };
@@ -1914,6 +1946,27 @@ export const run = internalAction({
                 const caseId = (output as Record<string, unknown>).caseId;
                 if (typeof caseId === "string" && caseId) {
                   policyChangeCaseId = caseId as Id<"policyChangeCases">;
+                }
+              }
+            }
+            if (
+              lastToolName === "generate_coi" &&
+              (part as Record<string, unknown>).output
+            ) {
+              const output = (part as Record<string, unknown>).output;
+              if (
+                output &&
+                typeof output === "object" &&
+                "programSelection" in output
+              ) {
+                const programSelection = (
+                  output as Record<string, unknown>
+                ).programSelection;
+                if (programSelection) {
+                  toolArtifacts.push({
+                    type: "certificate_program_selection",
+                    data: programSelection,
+                  });
                 }
               }
             }

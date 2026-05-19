@@ -1,8 +1,8 @@
 "use client";
 
-import { useConvexAuth, useQuery } from "convex/react";
+import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "@/convex/_generated/api";
 import { AppShell } from "@/components/app-shell";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -78,6 +78,9 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { onboardingComplete: cachedOnboarding, setOnboardingComplete } = useOnboardingCache();
+  const acceptInvitation = useMutation(api.orgs.acceptInvitation);
+  const handledInvitationIdRef = useRef<string | null>(null);
+  const [inviteAcceptError, setInviteAcceptError] = useState(false);
 
   const isPublic = PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
   const isOnboarding = pathname === ONBOARDING_PATH || pathname.startsWith(`${ONBOARDING_PATH}/`);
@@ -86,6 +89,10 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   // Only query viewer when authenticated
   const viewer = useQuery(api.users.viewer, isAuthenticated ? {} : "skip");
   const viewerOrg = useQuery(api.orgs.viewerOrg, isAuthenticated ? {} : "skip");
+  const pendingInvitation = useQuery(
+    api.orgs.pendingInvitationForViewer,
+    isAuthenticated ? {} : "skip",
+  );
 
   // Update cached onboarding state when we learn it from the server
   useEffect(() => {
@@ -95,10 +102,41 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   }, [viewer, setOnboardingComplete]);
 
   useEffect(() => {
+    if (!isAuthenticated || !pendingInvitation || inviteAcceptError) return;
+    const invitationId = String(pendingInvitation.invitationId);
+    if (handledInvitationIdRef.current === invitationId) return;
+
+    handledInvitationIdRef.current = invitationId;
+    acceptInvitation({ invitationId: pendingInvitation.invitationId })
+      .then(() => {
+        setOnboardingComplete(true);
+        router.replace("/");
+      })
+      .catch((error) => {
+        setInviteAcceptError(true);
+        console.warn("[AuthGuard] Failed to accept pending team invitation", error);
+      });
+  }, [
+    acceptInvitation,
+    inviteAcceptError,
+    isAuthenticated,
+    pendingInvitation,
+    router,
+    setOnboardingComplete,
+  ]);
+
+  useEffect(() => {
     if (isLoading) return;
 
     if (!isAuthenticated && !isPublic) {
       router.replace("/login");
+      return;
+    }
+
+    if (
+      isAuthenticated &&
+      (pendingInvitation === undefined || (pendingInvitation && !inviteAcceptError))
+    ) {
       return;
     }
 
@@ -122,10 +160,27 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
         return;
       }
     }
-  }, [isLoading, isAuthenticated, isPublic, isOnboarding, isAdminPath, viewer, viewerOrg, router, pathname]);
+  }, [
+    inviteAcceptError,
+    isLoading,
+    isAuthenticated,
+    isPublic,
+    isOnboarding,
+    isAdminPath,
+    pendingInvitation,
+    viewer,
+    viewerOrg,
+    router,
+    pathname,
+  ]);
 
   // Loading state - use cached onboarding preference to show appropriate skeleton
-  if (isLoading || (isAuthenticated && viewer === undefined)) {
+  if (
+    isLoading ||
+    (isAuthenticated && viewer === undefined) ||
+    (isAuthenticated && pendingInvitation === undefined) ||
+    (isAuthenticated && pendingInvitation && !inviteAcceptError)
+  ) {
     if (isPublic) return null;
 
     // If we know from cache that onboarding is NOT complete, show onboarding loading

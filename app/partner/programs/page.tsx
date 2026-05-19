@@ -48,7 +48,7 @@ type Program = {
 const MODE_LABELS: Record<ApprovalMode, string> = {
   auto_approve_all: "Auto-approve all",
   require_approval_all: "Require approval",
-  llm_review: "LLM review",
+  llm_review: "Agentic review",
 };
 
 const STANDARD_TEMPLATE_VALUE = "__standard_glass__";
@@ -297,18 +297,19 @@ export default function PartnerProgramsPage() {
                 <SelectContent>
                   <SelectItem value="auto_approve_all">Auto-approve all</SelectItem>
                   <SelectItem value="require_approval_all">Always require approval</SelectItem>
-                  <SelectItem value="llm_review">LLM review</SelectItem>
+                  <SelectItem value="llm_review">Agentic review</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             {approvalMode === "llm_review" ? (
               <label className="flex flex-col gap-1.5 text-label-sm font-medium text-muted-foreground">
-                LLM review rule
+                Agentic review instructions
                 <Textarea
                   value={approvalRuleText}
                   onChange={(event) => setApprovalRuleText(event.target.value)}
-                  rows={5}
-                  placeholder="Auto-approve certificates only when the policy is active, limits meet the program minimums, and no excluded class is present."
+                  rows={10}
+                  className="min-h-44 resize-y"
+                  placeholder="Describe how Glass should review certificate requests for this program. Include eligibility rules, required policy conditions, excluded classes, limit requirements and when to route the request to a program administrator."
                 />
               </label>
             ) : null}

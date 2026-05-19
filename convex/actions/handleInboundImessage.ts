@@ -60,6 +60,12 @@ import {
   COI_GENERATION_FAILED_MESSAGE,
   FATAL_ACTION_FAILED_MESSAGE,
 } from "../lib/actionFailures";
+import {
+  buildCertificateProgramSelection,
+  formatCertificateProgramSelectionForModel,
+  formatCertificateProgramSelectionForUser,
+  type CertificateProgramSelection,
+} from "../lib/certificateProgramSelection";
 import { evaluatePceIntake, type PceRequestKind } from "../lib/pceIntake";
 import {
   filterComplianceRequirements,
@@ -614,6 +620,7 @@ export const processInbound = internalAction({
         content: string;
         userName?: string;
         responseMessageId?: string;
+        toolArtifacts?: Array<{ type: string; data: unknown }>;
       }>;
       const historyForContext = history.filter((msg) => {
         if (msg.status === "processing") return false;
@@ -883,7 +890,27 @@ export const processInbound = internalAction({
               : msg.content,
           });
         } else if (msg.role === "agent" && msg.content) {
-          modelMessages.push({ role: "assistant", content: msg.content });
+          const pendingSelections = Array.isArray(msg.toolArtifacts)
+            ? msg.toolArtifacts
+                .filter(
+                  (artifact) =>
+                    artifact.type === "certificate_program_selection",
+                )
+                .map((artifact) => artifact.data)
+            : [];
+          const selectionContext = pendingSelections
+            .map((selection) =>
+              formatCertificateProgramSelectionForModel(
+                selection as CertificateProgramSelection,
+              ),
+            )
+            .join("\n\n");
+          modelMessages.push({
+            role: "assistant",
+            content: selectionContext
+              ? `${msg.content}\n\n${selectionContext}`
+              : msg.content,
+          });
         }
       }
       // Append current message
@@ -995,6 +1022,7 @@ export const processInbound = internalAction({
         storageId: Id<"_storage">;
         filename: string;
       }> = [];
+      const certificateProgramSelectionArtifacts: CertificateProgramSelection[] = [];
       const orgMembers = await ctx.runQuery(internal.users.listByOrgInternal, {
         orgId,
       });
@@ -1357,7 +1385,20 @@ export const processInbound = internalAction({
                 return "Certified COI approval requested from the program administrator. I will not send a certificate PDF until it is approved.";
               }
               if (generated.status === "needs_program_selection") {
-                return "Glass found multiple possible program administrator programs. Please choose the correct program in Glass before I generate a certified COI.";
+                const selection = buildCertificateProgramSelection({
+                  policyId: params.policyId,
+                  holderName:
+                    params.certificateHolder?.split(/\r?\n/)[0]?.trim() ||
+                    "Certificate holder",
+                  certificateHolder: params.certificateHolder,
+                  candidates: generated.matchCandidates,
+                  source: "imessage",
+                });
+                if (selection) {
+                  certificateProgramSelectionArtifacts.push(selection);
+                  return formatCertificateProgramSelectionForUser(selection);
+                }
+                return "I found multiple possible program administrator programs. Reply with the correct program name before I generate the certified COI.";
               }
               responseFileAttachments.push({
                 storageId: generated.fileId as Id<"_storage">,
@@ -1556,6 +1597,13 @@ export const processInbound = internalAction({
               : undefined,
           attachments:
             agentAttachments.length > 0 ? agentAttachments : undefined,
+          toolArtifacts:
+            certificateProgramSelectionArtifacts.length > 0
+              ? certificateProgramSelectionArtifacts.map((selection) => ({
+                  type: "certificate_program_selection",
+                  data: selection,
+                }))
+              : undefined,
         });
       }
 

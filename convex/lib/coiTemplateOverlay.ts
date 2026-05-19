@@ -42,9 +42,11 @@ export type CoiOverlayMapping = {
 
 function joinCoverageLimits(data: CoiData) {
   return data.coverages
-    .flatMap((coverage) =>
-      coverage.limits.map((limit) => `${coverage.type} ${limit.label}: ${limit.value}`),
-    )
+    .flatMap((coverage) => {
+      const limitLines = coverage.limits.map((limit) => `${coverage.type} ${limit.label}: ${limit.value}`);
+      if (limitLines.length > 0) return limitLines;
+      return [coverage.description, coverage.sectionRef].filter(Boolean).map((value) => `${coverage.type}: ${value}`);
+    })
     .join("\n");
 }
 
@@ -137,10 +139,74 @@ function coverageColumnValue(
     case "aggregate_limit":
       return coverageLimitValue(coverage, "aggregate");
     case "coverage_description":
-      return coverage.typeNotes ?? "";
+      return coverage.description ?? coverage.typeNotes ?? "";
     case "limits":
-      return coverage.limits.map((limit) => `${limit.label}: ${limit.value}`).join("; ");
+      return [
+        ...coverage.limits.map((limit) => `${limit.label}: ${limit.value}`),
+        coverage.sectionRef ? `Section: ${coverage.sectionRef}` : undefined,
+      ]
+        .filter(Boolean)
+        .join("; ");
   }
+}
+
+function coverageColumnWeight(column: CoverageColumnKey) {
+  switch (column) {
+    case "coverage_name":
+      return 1.6;
+    case "policy_number":
+      return 1.35;
+    case "effective_date":
+    case "expiration_date":
+      return 0.85;
+    case "per_occurrence_limit":
+    case "aggregate_limit":
+      return 1;
+    case "coverage_description":
+      return 1.8;
+    case "limits":
+      return 1.5;
+  }
+}
+
+function coverageColumnAlign(column: CoverageColumnKey): CoiOverlayField["align"] {
+  switch (column) {
+    case "effective_date":
+    case "expiration_date":
+    case "per_occurrence_limit":
+    case "aggregate_limit":
+      return "center";
+    default:
+      return "left";
+  }
+}
+
+function normalizeCellText(value: string) {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function fitSingleLineText(
+  text: string,
+  width: number,
+  font: Awaited<ReturnType<PDFDocument["embedFont"]>>,
+  preferredSize: number,
+) {
+  const normalized = normalizeCellText(text);
+  const minSize = Math.max(4.5, preferredSize * 0.62);
+  let size = preferredSize;
+  while (size > minSize && font.widthOfTextAtSize(normalized, size) > width) {
+    size -= 0.25;
+  }
+  if (font.widthOfTextAtSize(normalized, size) <= width) {
+    return { text: normalized, size };
+  }
+
+  const ellipsis = "...";
+  let truncated = normalized;
+  while (truncated.length > 1 && font.widthOfTextAtSize(`${truncated}${ellipsis}`, size) > width) {
+    truncated = truncated.slice(0, -1);
+  }
+  return { text: `${truncated.trimEnd()}${ellipsis}`, size };
 }
 
 function filteredCoverages(data: CoiData, field: CoiOverlayField) {
@@ -157,6 +223,9 @@ function filteredCoverages(data: CoiData, field: CoiOverlayField) {
     const haystack = [
       coverage.type,
       coverage.typeNotes,
+      coverage.description,
+      coverage.sectionRef,
+      coverage.deductible,
       coverage.policyNumber,
       ...coverage.limits.flatMap((limit) => [limit.label, limit.value]),
     ]
@@ -180,22 +249,26 @@ function drawCoverageTable(
     ? field.coverageConfig.columns
     : (["coverage_name", "policy_number", "effective_date", "expiration_date", "per_occurrence_limit", "aggregate_limit"] as CoverageColumnKey[]);
   const rowHeight = Math.max(fontSize + 4, normalizeUnit(field.coverageConfig?.rowHeight ?? 0.045, box.pageHeight));
-  const columnWidth = box.width / columns.length;
+  const totalWeight = columns.reduce((sum, column) => sum + coverageColumnWeight(column), 0);
+  const columnWidths = columns.map((column) => (box.width * coverageColumnWeight(column)) / totalWeight);
   const rows = filteredCoverages(data, field);
   const maxRows = Math.max(1, Math.floor(box.height / rowHeight));
 
   rows.slice(0, maxRows).forEach((coverage, rowIndex) => {
-    const y = box.pageHeight - box.yTop - (rowIndex + 1) * rowHeight + Math.max(2, (rowHeight - fontSize) / 2);
+    const rowTop = box.pageHeight - box.yTop - rowIndex * rowHeight;
     columns.forEach((column, columnIndex) => {
       const text = coverageColumnValue(coverage, column);
       if (!text.trim()) return;
-      page.drawText(text.slice(0, 120), {
-        x: box.x + columnIndex * columnWidth + 2,
+      const columnX = box.x + columnWidths.slice(0, columnIndex).reduce((sum, width) => sum + width, 0);
+      const cellWidth = Math.max(8, columnWidths[columnIndex] - 4);
+      const fitted = fitSingleLineText(text, cellWidth, font, fontSize);
+      const y = rowTop - (rowHeight + fitted.size) / 2;
+      page.drawText(fitted.text, {
+        x: alignX(fitted.text, columnX + 2, cellWidth, font, fitted.size, coverageColumnAlign(column)),
         y,
-        size: fontSize,
+        size: fitted.size,
         font,
         color: rgb(0, 0, 0),
-        maxWidth: Math.max(8, columnWidth - 4),
       });
     });
   });

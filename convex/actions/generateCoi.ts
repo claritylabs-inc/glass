@@ -1,5 +1,6 @@
 "use node";
 
+import dayjs from "dayjs";
 import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
@@ -24,7 +25,16 @@ function cleanFilenamePart(value: unknown, fallback: string): string {
   return (text || fallback).slice(0, 90).trim();
 }
 
-function buildCoiFileName(policy: Record<string, unknown>, certificateHolder?: string, certificateHolderName?: string) {
+function stringifyFilenameToken(value: unknown, fallback = "") {
+  return cleanFilenamePart(value, fallback);
+}
+
+function buildCoiFileName(
+  policy: Record<string, unknown>,
+  certificateHolder?: string,
+  certificateHolderName?: string,
+  outputFileName?: string,
+) {
   const holder = cleanFilenamePart(
     certificateHolderName ?? certificateHolder?.split(/\r?\n/)[0],
     "certificate-holder",
@@ -33,7 +43,26 @@ function buildCoiFileName(policy: Record<string, unknown>, certificateHolder?: s
     policy.policyNumber ?? policy.security ?? policy.carrier,
     "policy",
   );
-  return `COI - ${holder} - ${policyRef}.pdf`;
+  const fallback = `COI - ${holder} - ${policyRef}.pdf`;
+  const template = outputFileName?.trim();
+  if (!template) return fallback;
+
+  const rendered = template.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_match, key: string) => {
+    const normalized = key.toLowerCase();
+    const values: Record<string, string> = {
+      holder,
+      certificate_holder: holder,
+      policy: policyRef,
+      policy_number: policyRef,
+      carrier: stringifyFilenameToken(policy.carrier ?? policy.security ?? policy.carrierLegalName, "carrier"),
+      insured: stringifyFilenameToken(policy.insuredName ?? policy.namedInsured, "insured"),
+      date: dayjs().format("YYYY-MM-DD"),
+    };
+    return values[normalized] ?? "";
+  });
+  const withoutExtension = rendered.replace(/\.pdf$/i, "");
+  const clean = cleanFilenamePart(withoutExtension, "").slice(0, 120).trim();
+  return clean ? `${clean}.pdf` : fallback;
 }
 
 function trimForPrompt(value: unknown, maxLength = 24000): string {
@@ -184,10 +213,12 @@ export const run = internalAction({
       coiData.certificationNotice = args.disclaimer;
 
       let pdfBuffer: Buffer | null = null;
+      let outputFileName: string | undefined;
       if (args.templateId) {
         const template = await ctx.runQuery(internal.partnerPrograms.getTemplateInternal, {
           templateId: args.templateId,
         });
+        outputFileName = template?.outputFileName;
         const kind = template?.templateKind;
         if ((kind === "pdf_overlay" || kind === "pdf_fields") && template?.fileId) {
           try {
@@ -229,7 +260,12 @@ export const run = internalAction({
       const blob = new Blob([arrayBuffer], { type: "application/pdf" });
       const storageId = await ctx.storage.store(blob);
       const size = pdfBuffer.byteLength;
-      const fileName = buildCoiFileName(policy, args.certificateHolder, args.certificateHolderName);
+      const fileName = buildCoiFileName(
+        policy,
+        args.certificateHolder,
+        args.certificateHolderName,
+        outputFileName,
+      );
 
       const certificateId = await ctx.runMutation(internal.certificates.recordGenerated, {
         orgId: args.orgId,

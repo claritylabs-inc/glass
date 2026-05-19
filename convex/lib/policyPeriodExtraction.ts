@@ -14,7 +14,7 @@ export type ExtractedPolicyPeriod = {
   effectiveDate: string;
   expirationDate: string;
   pageNumber?: number;
-  source: "policy_period_label" | "declarations_field";
+  source: "policy_period_label" | "declarations_field" | "agreement_term_fallback";
 };
 
 const PLACEHOLDER_VALUES = new Set([
@@ -120,6 +120,22 @@ function parseExplicitDates(text: string): string[] {
   return dates;
 }
 
+function parseNamedDates(text: string): string[] {
+  const dates: string[] = [];
+  const regex =
+    /\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?\s+[0-9]{1,2},?\s+(?:19|20)[0-9]{2}\b/gi;
+  for (const match of text.matchAll(regex)) {
+    const raw = match[0]?.replace(/\./g, "");
+    const parsed = dayjs(
+      raw,
+      ["MMM D, YYYY", "MMMM D, YYYY", "MMM D YYYY", "MMMM D YYYY"],
+      true,
+    );
+    if (parsed.isValid()) dates.push(formatDate(parsed));
+  }
+  return dates;
+}
+
 function parseTripletDates(text: string): string[] {
   const dates: string[] = [];
   const order = inferLabelDateOrder(text);
@@ -137,6 +153,14 @@ function parseTripletDates(text: string): string[] {
   return dates;
 }
 
+function parseDatesInText(text: string) {
+  return [
+    ...parseExplicitDates(text),
+    ...parseNamedDates(text),
+    ...parseTripletDates(text),
+  ];
+}
+
 function findPolicyPeriodInText(text: string): Omit<ExtractedPolicyPeriod, "pageNumber"> | null {
   const normalized = normalizeText(text);
   const labelRegex = /\b(?:ITEM\s*[0-9A-Z.:-]*\s*)?(?:PERIOD\s+OF\s+INSURANCE|POLICY\s+PERIOD|POLICY\s+TERM)\b|(?:EFFECTIVE|EFF\.?)\s+DATE(?:\s*\/\s*TIME)?|(?:EXPIRY|EXPIRATION|EXP\.?)\s+DATE(?:\s*\/\s*TIME)?/gi;
@@ -144,13 +168,34 @@ function findPolicyPeriodInText(text: string): Omit<ExtractedPolicyPeriod, "page
   for (const labelMatch of normalized.matchAll(labelRegex)) {
     if (labelMatch.index == null) continue;
     const window = normalized.slice(labelMatch.index, labelMatch.index + 900);
-    const dates = [...parseExplicitDates(window), ...parseTripletDates(window)];
+    const dates = parseDatesInText(window);
     if (dates.length < 2) continue;
 
     return {
       effectiveDate: dates[0],
       expirationDate: dates[1],
       source: "policy_period_label",
+    };
+  }
+
+  return null;
+}
+
+function findAgreementTermFallbackInText(text: string): Omit<ExtractedPolicyPeriod, "pageNumber"> | null {
+  const normalized = normalizeText(text);
+  const labelRegex =
+    /\b(?:LEASE\s+TERM|RENTAL\s+TERM|AGREEMENT\s+TERM|COVERAGE\s+PERIOD|COVERAGE\s+TERM|PLAN\s+TERM)\b/gi;
+
+  for (const labelMatch of normalized.matchAll(labelRegex)) {
+    if (labelMatch.index == null) continue;
+    const window = normalized.slice(labelMatch.index, labelMatch.index + 320);
+    const dates = parseDatesInText(window);
+    if (dates.length < 2) continue;
+
+    return {
+      effectiveDate: dates[0],
+      expirationDate: dates[1],
+      source: "agreement_term_fallback",
     };
   }
 
@@ -176,6 +221,17 @@ export function extractPolicyPeriodFromSourceSpans(
   for (const span of sourceSpans) {
     if (!span.text) continue;
     const period = findPolicyPeriodInText(span.text);
+    if (period) return { ...period, pageNumber: span.pageStart };
+  }
+  return null;
+}
+
+export function extractAgreementTermFallbackFromSourceSpans(
+  sourceSpans: SourceSpanLike[],
+): ExtractedPolicyPeriod | null {
+  for (const span of sourceSpans) {
+    if (!span.text) continue;
+    const period = findAgreementTermFallbackInText(span.text);
     if (period) return { ...period, pageNumber: span.pageStart };
   }
   return null;
@@ -253,8 +309,48 @@ export function resolvePolicyPeriod(
 ): ExtractedPolicyPeriod | null {
   return (
     extractPolicyPeriodFromSourceSpans(sourceSpans) ??
-    extractPolicyPeriodFromDeclarations(document)
+    extractPolicyPeriodFromDeclarations(document) ??
+    extractAgreementTermFallbackFromSourceSpans(sourceSpans)
   );
+}
+
+function shouldReplaceWithFallback(existing: unknown, replacement: string) {
+  if (shouldReplaceDate(existing, replacement) && isMissingCriticalValue(existing)) return true;
+  if (typeof existing !== "string") return true;
+
+  const parsedExisting = dayjs(
+    existing,
+    ["MM/DD/YYYY", "M/D/YYYY", "YYYY-MM-DD", "YYYY/M/D"],
+    true,
+  );
+  if (!parsedExisting.isValid()) return true;
+
+  return false;
+}
+
+function shouldReplaceAgreementTermDates(document: Record<string, unknown>, period: ExtractedPolicyPeriod) {
+  if (period.source !== "agreement_term_fallback") {
+    return {
+      effectiveDate: shouldReplaceDate(document.effectiveDate, period.effectiveDate),
+      expirationDate: shouldReplaceDate(document.expirationDate, period.expirationDate),
+    };
+  }
+
+  const existingEffective = normalizePolicyDate(document.effectiveDate);
+  const existingExpiration = normalizePolicyDate(document.expirationDate);
+  const sameDayExisting =
+    existingEffective &&
+    existingExpiration &&
+    dayjs(existingEffective, "MM/DD/YYYY", true).isSame(dayjs(existingExpiration, "MM/DD/YYYY", true), "day");
+
+  return {
+    effectiveDate:
+      shouldReplaceWithFallback(document.effectiveDate, period.effectiveDate) ||
+      Boolean(sameDayExisting),
+    expirationDate:
+      shouldReplaceWithFallback(document.expirationDate, period.expirationDate) ||
+      Boolean(sameDayExisting),
+  };
 }
 
 export function applyPolicyPeriodFallback(
@@ -266,11 +362,12 @@ export function applyPolicyPeriodFallback(
 
   const next = { ...document };
   let changed = false;
-  if (shouldReplaceDate(next.effectiveDate, period.effectiveDate)) {
+  const replacement = shouldReplaceAgreementTermDates(next, period);
+  if (replacement.effectiveDate) {
     next.effectiveDate = period.effectiveDate;
     changed = true;
   }
-  if (shouldReplaceDate(next.expirationDate, period.expirationDate)) {
+  if (replacement.expirationDate) {
     next.expirationDate = period.expirationDate;
     changed = true;
   }

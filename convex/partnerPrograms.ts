@@ -161,11 +161,34 @@ async function activeTemplate(ctx: any, program: any) {
     const template = await ctx.db.get(program.defaultTemplateId);
     if (template && template.status === "active") return template;
   }
-  return await ctx.db
-    .query("coiTemplates")
-    .withIndex("by_programId", (q: any) => q.eq("programId", program._id))
-    .filter((q: any) => q.eq(q.field("status"), "active"))
-    .first();
+  return null;
+}
+
+async function brokerSummaryForPolicy(ctx: any, policy: any) {
+  const clientOrg = policy.orgId ? await ctx.db.get(policy.orgId) : null;
+  const brokerOrgId =
+    policy.uploadedByBrokerOrgId ?? clientOrg?.brokerOrgId ?? undefined;
+  const brokerOrg = brokerOrgId ? await ctx.db.get(brokerOrgId) : null;
+  const brokerName =
+    brokerOrg?.name ??
+    policy.brokerAgency ??
+    policy.broker ??
+    clientOrg?.brokerCompanyName ??
+    "Unknown broker";
+  return {
+    brokerOrgId,
+    brokerName,
+    clientOrgId: clientOrg?._id,
+    clientOrgName: clientOrg?.name,
+  };
+}
+
+function policyDisplayName(policy: any) {
+  return [
+    policy.mga || policy.security || policy.carrier || "Policy",
+    policy.policyNumber,
+    policy.insuredName,
+  ].filter(Boolean).join(" - ");
 }
 
 async function requireCurrentPartnerAccess(ctx: any) {
@@ -180,6 +203,119 @@ async function requireCurrentPartnerAccess(ctx: any) {
   assertPartnerOrg(access);
   return access;
 }
+
+export const listPartnerPolicies = query({
+  args: {},
+  handler: async (ctx) => {
+    const access = await requireCurrentPartnerAccess(ctx);
+    const policies = await ctx.db
+      .query("policies")
+      .withIndex("by_partnerOrgId", (q) => q.eq("partnerOrgId", access.org._id))
+      .collect();
+
+    const rows = await Promise.all(
+      policies.map(async (policy) => {
+        const [program, broker, fileUrl] = await Promise.all([
+          policy.partnerProgramId ? ctx.db.get(policy.partnerProgramId) : null,
+          brokerSummaryForPolicy(ctx, policy),
+          policy.fileId ? ctx.storage.getUrl(policy.fileId) : null,
+        ]);
+        return {
+          _id: policy._id,
+          displayName: policyDisplayName(policy),
+          carrier: policy.carrier,
+          security: policy.security,
+          mga: policy.mga,
+          policyNumber: policy.policyNumber,
+          insuredName: policy.insuredName,
+          effectiveDate: policy.effectiveDate,
+          expirationDate: policy.expirationDate,
+          premium: policy.premium,
+          pipelineStatus: policy.pipelineStatus,
+          fileName: policy.fileName,
+          fileUrl,
+          createdAt: policy._creationTime,
+          updatedAt: policy._creationTime,
+          program: program
+            ? {
+                _id: program._id,
+                name: program.name,
+                categoryLabels: program.categoryLabels,
+              }
+            : null,
+          broker,
+        };
+      }),
+    );
+
+    return rows.sort((a, b) => (b.updatedAt ?? b.createdAt ?? 0) - (a.updatedAt ?? a.createdAt ?? 0));
+  },
+});
+
+export const listPartnerCertificates = query({
+  args: {},
+  handler: async (ctx) => {
+    const access = await requireCurrentPartnerAccess(ctx);
+    const certificates = await ctx.db
+      .query("certificates")
+      .withIndex("by_partnerOrgId", (q) => q.eq("partnerOrgId", access.org._id))
+      .collect();
+
+    const rows = await Promise.all(
+      certificates.map(async (certificate) => {
+        const [policy, program, fileUrl] = await Promise.all([
+          ctx.db.get(certificate.policyId),
+          certificate.partnerProgramId
+            ? ctx.db.get(certificate.partnerProgramId)
+            : null,
+          ctx.storage.getUrl(certificate.fileId),
+        ]);
+        const broker = policy
+          ? await brokerSummaryForPolicy(ctx, policy)
+          : {
+              brokerOrgId: undefined,
+              brokerName: "Unknown broker",
+              clientOrgId: undefined,
+              clientOrgName: undefined,
+            };
+        return {
+          _id: certificate._id,
+          fileName: certificate.fileName,
+          fileUrl,
+          certificateHolderName: certificate.certificateHolderName,
+          certificateHolder: certificate.certificateHolder,
+          source: certificate.source,
+          authorityType: certificate.authorityType,
+          certificationStatus: certificate.certificationStatus,
+          createdAt: certificate.createdAt,
+          policy: policy
+            ? {
+                _id: policy._id,
+                displayName: policyDisplayName(policy),
+                carrier: policy.carrier,
+                security: policy.security,
+                mga: policy.mga,
+                policyNumber: policy.policyNumber,
+                insuredName: policy.insuredName,
+                effectiveDate: policy.effectiveDate,
+                expirationDate: policy.expirationDate,
+              }
+            : null,
+          program: program
+            ? {
+                _id: program._id,
+                name: program.name,
+                categoryLabels: program.categoryLabels,
+              }
+            : null,
+          broker,
+        };
+      }),
+    );
+
+    return rows.sort((a, b) => b.createdAt - a.createdAt);
+  },
+});
 
 export const upsertProgram = mutation({
   args: {
@@ -303,9 +439,6 @@ export const listPrograms = query({
         defaultTemplate: program.defaultTemplateId
           ? templateById.get(String(program.defaultTemplateId)) ?? null
           : null,
-        templateCount: templates.filter(
-          (template) => String(template.programId) === String(program._id),
-        ).length,
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
   },
@@ -314,11 +447,11 @@ export const listPrograms = query({
 export const createTemplate = mutation({
   args: {
     templateId: v.optional(v.id("coiTemplates")),
-    programId: v.optional(v.id("partnerPrograms")),
     name: v.string(),
     templateKind: v.optional(templateKindValidator),
     fileId: v.optional(v.id("_storage")),
     fileName: v.optional(v.string()),
+    outputFileName: v.optional(v.string()),
     fieldMappings: v.optional(v.any()),
     certifiedNotice: v.optional(v.string()),
     fallbackToStandard: v.optional(v.boolean()),
@@ -327,20 +460,15 @@ export const createTemplate = mutation({
   handler: async (ctx, args) => {
     const access = await requireCurrentPartnerAccess(ctx);
     if (access.role !== "admin") throw new Error("Admin role required");
-    if (args.programId) {
-      const program = await ctx.db.get(args.programId);
-      if (!program || program.partnerOrgId !== access.org._id) {
-        throw new Error("Program not found");
-      }
-    }
     const now = dayjs().valueOf();
     const patch = {
       partnerOrgId: access.org._id,
-      programId: args.programId,
+      programId: undefined,
       name: args.name.trim(),
       templateKind: args.templateKind ?? "standard_glass",
       fileId: args.fileId,
       fileName: args.fileName,
+      outputFileName: args.outputFileName?.trim() || undefined,
       fieldMappings: args.fieldMappings,
       certifiedNotice: args.certifiedNotice,
       fallbackToStandard: args.fallbackToStandard ?? true,
@@ -435,26 +563,14 @@ export const listTemplates = query({
   args: {},
   handler: async (ctx) => {
     const access = await requireCurrentPartnerAccess(ctx);
-    const [templates, programs] = await Promise.all([
-      ctx.db
-        .query("coiTemplates")
-        .withIndex("by_partnerOrgId", (q) => q.eq("partnerOrgId", access.org._id))
-        .collect(),
-      ctx.db
-        .query("partnerPrograms")
-        .withIndex("by_partnerOrgId", (q) => q.eq("partnerOrgId", access.org._id))
-        .collect(),
-    ]);
-    const programById = new Map(
-      programs.map((program) => [String(program._id), program]),
-    );
+    const templates = await ctx.db
+      .query("coiTemplates")
+      .withIndex("by_partnerOrgId", (q) => q.eq("partnerOrgId", access.org._id))
+      .collect();
     return await Promise.all(
       templates.map(async (template) => ({
         ...template,
         fileUrl: template.fileId ? await ctx.storage.getUrl(template.fileId) : null,
-        program: template.programId
-          ? programById.get(String(template.programId)) ?? null
-          : null,
       })),
     );
   },
@@ -509,11 +625,21 @@ export const resolveCertificateAuthority = internalAction({
 
     let program: any = null;
     let matchCandidates: any[] = [];
+    let matchSource: "manual" | "alias" | undefined;
 
     if (args.selectedPartnerProgramId) {
       program = await ctx.runQuery(internal.partnerPrograms.getProgramInternal, {
         programId: args.selectedPartnerProgramId,
       });
+      matchSource = "manual";
+    } else if (policy.partnerProgramId) {
+      const cachedProgram = await ctx.runQuery(internal.partnerPrograms.getProgramInternal, {
+        programId: policy.partnerProgramId,
+      });
+      if (cachedProgram?.status === "active") {
+        program = cachedProgram;
+        matchSource = policy.partnerMatchSource ?? "alias";
+      }
     } else {
       const matchText = policyMatchText(policy);
       if (matchText.trim()) {
@@ -548,6 +674,7 @@ export const resolveCertificateAuthority = internalAction({
         const second = matchCandidates[1];
         if (top && top.score >= 0.72 && (!second || top.score - second.score >= 0.05)) {
           program = top;
+          matchSource = "alias";
         }
       }
     }
@@ -558,6 +685,8 @@ export const resolveCertificateAuthority = internalAction({
           authorityType: "certified",
           certificationStatus: "needs_program_selection",
           matchCandidates: matchCandidates.map((candidate) => ({
+            programId: candidate._id,
+            programName: candidate.name,
             _id: candidate._id,
             name: candidate.name,
             aliases: candidate.aliases,
@@ -575,6 +704,19 @@ export const resolveCertificateAuthority = internalAction({
         disclaimer:
           "This non-binding certificate is issued for information only and does not amend, extend, alter or certify coverage.",
       };
+    }
+
+    if (
+      program &&
+      (String(policy.partnerProgramId ?? "") !== String(program._id) ||
+        String(policy.partnerOrgId ?? "") !== String(program.partnerOrgId ?? ""))
+    ) {
+      await ctx.runMutation(internal.partnerPrograms.persistPolicyProgramMatchInternal, {
+        policyId: args.policyId,
+        partnerOrgId: program.partnerOrgId,
+        partnerProgramId: program._id,
+        partnerMatchSource: matchSource ?? "alias",
+      });
     }
 
     const template = await ctx.runQuery(
@@ -679,6 +821,29 @@ export const resolveCertificateAuthority = internalAction({
       approvalMode,
       disclaimer: `Certification requires approval from ${program.name}.`,
     };
+  },
+});
+
+export const persistPolicyProgramMatchInternal = internalMutation({
+  args: {
+    policyId: v.id("policies"),
+    partnerOrgId: v.optional(v.id("organizations")),
+    partnerProgramId: v.id("partnerPrograms"),
+    partnerMatchSource: v.union(
+      v.literal("alias"),
+      v.literal("manual"),
+      v.literal("standing_authorization"),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const policy = await ctx.db.get(args.policyId);
+    const program = await ctx.db.get(args.partnerProgramId);
+    if (!policy || !program || program.status !== "active") return;
+    await ctx.db.patch(args.policyId, {
+      partnerOrgId: args.partnerOrgId ?? program.partnerOrgId,
+      partnerProgramId: args.partnerProgramId,
+      partnerMatchSource: args.partnerMatchSource,
+    });
   },
 });
 

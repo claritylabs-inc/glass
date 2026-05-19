@@ -52,16 +52,9 @@ pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/b
 
 type TemplateKind = "standard_glass" | "pdf_overlay";
 
-const ANY_PROGRAM_VALUE = "__any_program__";
-
 const TEMPLATE_KIND_LABELS: Record<TemplateKind, string> = {
   standard_glass: "Standard Glass certificate",
   pdf_overlay: "Existing PDF template with fields",
-};
-
-type Program = {
-  _id: Id<"partnerPrograms">;
-  name: string;
 };
 
 type CoverageColumnKey =
@@ -108,11 +101,10 @@ type OverlayFieldResizeUpdate = {
 type Template = {
   _id: Id<"coiTemplates">;
   name: string;
-  programId?: Id<"partnerPrograms">;
-  program?: Program | null;
   templateKind: TemplateKind | "pdf_fields" | "standard_overlay";
   fileId?: Id<"_storage">;
   fileName?: string;
+  outputFileName?: string;
   fileUrl?: string | null;
   certifiedNotice?: string;
   fieldMappings?: { fields?: OverlayField[] };
@@ -1610,7 +1602,6 @@ function PdfTemplateBuilderPanel({
 
 export default function PartnerTemplatesPage() {
   const templates = useQuery(api.partnerPrograms.listTemplates, {}) as Template[] | undefined;
-  const programs = useQuery(api.partnerPrograms.listPrograms, {}) as Program[] | undefined;
   const autoPlaceTemplateFields = useAction(api.partnerPrograms.autoPlaceTemplateFields);
   const generateUploadUrl = useMutation(api.partnerPrograms.generateTemplateUploadUrl);
   const saveTemplate = useMutation(api.partnerPrograms.createTemplate);
@@ -1621,10 +1612,10 @@ export default function PartnerTemplatesPage() {
   const [saveState, setSaveState] = useState<"idle" | "saved" | "error">("idle");
   const [uploading, setUploading] = useState(false);
   const [name, setName] = useState("");
-  const [programId, setProgramId] = useState("");
   const [templateKind, setTemplateKind] = useState<TemplateKind>("standard_glass");
   const [fileId, setFileId] = useState("");
   const [fileName, setFileName] = useState("");
+  const [outputFileName, setOutputFileName] = useState("");
   const [fileUrl, setFileUrl] = useState<string | null>(null);
   const [certifiedNotice, setCertifiedNotice] = useState("");
   const [status, setStatus] = useState<"active" | "inactive">("active");
@@ -1708,7 +1699,6 @@ export default function PartnerTemplatesPage() {
     setCurrentTemplateId(template?._id);
     setSaveState(template ? "saved" : "idle");
     setName(template?.name ?? "");
-    setProgramId(template?.programId ?? "");
     setTemplateKind(
       template?.templateKind === "pdf_fields" || template?.templateKind === "pdf_overlay"
         ? "pdf_overlay"
@@ -1716,6 +1706,7 @@ export default function PartnerTemplatesPage() {
     );
     setFileId(template?.fileId ?? "");
     setFileName(template?.fileName ?? "");
+    setOutputFileName(template?.outputFileName ?? "");
     setFileUrl(template?.fileUrl ?? null);
     setCertifiedNotice(template?.certifiedNotice ?? "");
     setFields(template?.fieldMappings?.fields ?? []);
@@ -2042,10 +2033,10 @@ export default function PartnerTemplatesPage() {
       const savedId = await saveTemplate({
         templateId: currentTemplateId,
         name: name.trim(),
-        programId: programId ? (programId as Id<"partnerPrograms">) : undefined,
         templateKind,
         fileId: fileId ? (fileId as Id<"_storage">) : undefined,
         fileName: fileName || undefined,
+        outputFileName: outputFileName.trim() || undefined,
         certifiedNotice: certifiedNotice || undefined,
         fieldMappings: templateKind === "pdf_overlay" ? { fields } : undefined,
         fallbackToStandard: true,
@@ -2067,7 +2058,7 @@ export default function PartnerTemplatesPage() {
     fileId,
     fileName,
     name,
-    programId,
+    outputFileName,
     saveTemplate,
     status,
     templateKind,
@@ -2082,7 +2073,7 @@ export default function PartnerTemplatesPage() {
     return () => {
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     };
-  }, [drawerOpen, name, programId, templateKind, fileId, fileName, certifiedNotice, fields, status, persistTemplate]);
+  }, [drawerOpen, name, templateKind, fileId, fileName, outputFileName, certifiedNotice, fields, status, persistTemplate]);
 
   useEffect(() => {
     if (!builderOpen) return;
@@ -2148,35 +2139,17 @@ export default function PartnerTemplatesPage() {
               Template name
               <Input value={name} onChange={(event) => setName(event.target.value)} placeholder="Template name" />
             </label>
-            <div className="flex flex-col gap-1.5">
-              <p className="text-label-sm font-medium text-muted-foreground">Program</p>
-              <Select
-                value={programId || ANY_PROGRAM_VALUE}
-                onValueChange={(value) => {
-                  if (!value || value === ANY_PROGRAM_VALUE) {
-                    setProgramId("");
-                    return;
-                  }
-                  setProgramId(value);
-                }}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue>
-                    {programId
-                      ? (programs ?? []).find((program) => program._id === programId)?.name
-                      : "Any program"}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ANY_PROGRAM_VALUE}>Any program</SelectItem>
-                {(programs ?? []).map((program) => (
-                  <SelectItem key={program._id} value={program._id}>
-                    {program.name}
-                  </SelectItem>
-                ))}
-                </SelectContent>
-              </Select>
-            </div>
+            <label className="flex flex-col gap-1.5 text-label-sm font-medium text-muted-foreground">
+              Generated PDF file name
+              <Input
+                value={outputFileName}
+                onChange={(event) => setOutputFileName(event.target.value)}
+                placeholder="COI - {{holder}} - {{policy_number}}.pdf"
+              />
+              <span className="text-label-sm font-normal leading-5 text-muted-foreground/60">
+                Optional. Supports {"{{holder}}"}, {"{{policy_number}}"}, {"{{carrier}}"}, {"{{insured}}"} and {"{{date}}"}.
+              </span>
+            </label>
             <div className="flex flex-col gap-1.5">
               <p className="text-label-sm font-medium text-muted-foreground">Generation process</p>
               <Select value={templateKind} onValueChange={(value) => setTemplateKind(value as TemplateKind)}>
@@ -2189,14 +2162,16 @@ export default function PartnerTemplatesPage() {
                 </SelectContent>
               </Select>
             </div>
-            <label className="flex flex-col gap-1.5 text-label-sm font-medium text-muted-foreground">
-              Certified notice
-              <Textarea value={certifiedNotice} onChange={(event) => setCertifiedNotice(event.target.value)} rows={3} />
-              <span className="text-label-sm font-normal leading-5 text-muted-foreground/60">
-                Optional language printed on certified COIs, usually the MGA approval or certification statement.
-                Example: “Approved and certified by ReLease for the named program.”
-              </span>
-            </label>
+            {templateKind !== "pdf_overlay" ? (
+              <label className="flex flex-col gap-1.5 text-label-sm font-medium text-muted-foreground">
+                Certified notice
+                <Textarea value={certifiedNotice} onChange={(event) => setCertifiedNotice(event.target.value)} rows={3} />
+                <span className="text-label-sm font-normal leading-5 text-muted-foreground/60">
+                  Optional language printed on certified COIs, usually the MGA approval or certification statement.
+                  Example: “Approved and certified by ReLease for the named program.”
+                </span>
+              </label>
+            ) : null}
 
             {templateKind === "pdf_overlay" ? (
               <>
@@ -2279,7 +2254,11 @@ export default function PartnerTemplatesPage() {
                     </Badge>
                   </div>
                   <p className="mt-1 line-clamp-1 text-sm text-muted-foreground">
-                    {[template.program?.name ?? "Any program", template.fileName].filter(Boolean).join(" · ")}
+                    {[
+                      template.outputFileName
+                        ? `Outputs ${template.outputFileName}`
+                        : template.fileName,
+                    ].filter(Boolean).join(" · ")}
                   </p>
                 </div>
               </button>

@@ -1,6 +1,7 @@
 import {
   Activity,
   ArrowLeft,
+  BadgeCheck,
   Building2,
   ClipboardCheck,
   FileText,
@@ -116,6 +117,18 @@ export const PARTNER_NAV_ITEMS: NavItemConfig[] = [
     label: "Approvals",
     icon: ShieldCheck,
     shortcut: navShortcut("a"),
+  },
+  {
+    href: "/partner/policies",
+    label: "Policies",
+    icon: FileText,
+    shortcut: navShortcut("o"),
+  },
+  {
+    href: "/partner/certificates",
+    label: "Certificates",
+    icon: BadgeCheck,
+    shortcut: navShortcut("c"),
   },
   {
     href: "/partner/programs",

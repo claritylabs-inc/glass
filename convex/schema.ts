@@ -172,6 +172,7 @@ export default defineSchema({
     ),
     fileId: v.optional(v.id("_storage")),
     fileName: v.optional(v.string()),
+    outputFileName: v.optional(v.string()),
     fieldMappings: v.optional(v.any()),
     certifiedNotice: v.optional(v.string()),
     fallbackToStandard: v.optional(v.boolean()),
@@ -1003,7 +1004,8 @@ export default defineSchema({
     .index("by_carrier", ["carrier"])
     .index("by_policyYear", ["policyYear"])
     .index("by_userId", ["userId"])
-    .index("by_orgId", ["orgId"]),
+    .index("by_orgId", ["orgId"])
+    .index("by_partnerOrgId", ["partnerOrgId"]),
 
   // Runtime state for policy extraction. Keep high-churn logs, leases, and
   // large resumable checkpoints off the policy document itself.
@@ -1124,7 +1126,8 @@ export default defineSchema({
   })
     .index("by_policyId", ["policyId"])
     .index("by_orgId", ["orgId"])
-    .index("by_fileId", ["fileId"]),
+    .index("by_fileId", ["fileId"])
+    .index("by_partnerOrgId", ["partnerOrgId"]),
 
   certificateRequests: defineTable({
     orgId: v.id("organizations"),

@@ -1,14 +1,77 @@
 import { v } from "convex/values";
-import { query, mutation, internalQuery, internalMutation } from "./_generated/server";
-import type { QueryCtx } from "./_generated/server";
+import { query, mutation, action, internalQuery, internalMutation } from "./_generated/server";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
 import dayjs from "dayjs";
 import { parsePhoneNumberFromString } from "libphonenumber-js/min";
 import { requireOrgAccess, requireOrgAdmin, getOrgAccess } from "./lib/orgAuth";
 import { getAuthUserId } from "@convex-dev/auth/server";
+import { internal as _internal } from "./_generated/api";
 import { getOrgAccess as getOrgAccessNew, assertBrokerOrg } from "./lib/access";
 import type { Id } from "./_generated/dataModel";
-import { isWhiteLabelingEnabled } from "./lib/branding";
+import { getBrandingContext, isWhiteLabelingEnabled } from "./lib/branding";
 import { resolveBrokerIdentityForClient } from "./lib/brokerIdentity";
+import { buildEmailShell, escapeHtml } from "./lib/emailTemplate";
+import { getAuthSiteUrl } from "./lib/domains";
+import { getAuthFromAddress, sendResendEmail } from "./lib/resend";
+
+const internal = _internal as any;
+
+function normalizeEmail(email: string) {
+  return email.trim().toLowerCase();
+}
+
+async function createMemberInvitation(
+  ctx: MutationCtx,
+  args: {
+    email: string;
+    role: "admin" | "member";
+  },
+) {
+  const { userId, orgId } = await requireOrgAdmin(ctx);
+  const email = normalizeEmail(args.email);
+  if (!email) throw new Error("Email is required");
+
+  const memberships = await ctx.db
+    .query("orgMemberships")
+    .withIndex("by_orgId", (q) => q.eq("orgId", orgId))
+    .collect();
+  const existingUser = await ctx.db
+    .query("users")
+    .withIndex("email", (q) => q.eq("email", email))
+    .first();
+  if (existingUser && memberships.some((m) => m.userId === existingUser._id)) {
+    throw new Error("User is already a member");
+  }
+
+  const now = dayjs().valueOf();
+  const expiresAt = dayjs(now).add(7, "day").valueOf();
+  const existingInvites = await ctx.db
+    .query("orgInvitations")
+    .withIndex("by_email", (q) => q.eq("email", email))
+    .collect();
+  const pendingForOrg = existingInvites.find(
+    (i) => i.orgId === orgId && i.status === "pending",
+  );
+
+  if (pendingForOrg) {
+    await ctx.db.patch(pendingForOrg._id, {
+      role: args.role,
+      invitedBy: userId,
+      expiresAt,
+    });
+    return { invitationId: pendingForOrg._id, reusedExisting: true };
+  }
+
+  const invitationId = await ctx.db.insert("orgInvitations", {
+    orgId,
+    email,
+    role: args.role,
+    invitedBy: userId,
+    status: "pending",
+    expiresAt,
+  });
+  return { invitationId, reusedExisting: false };
+}
 
 // ── Queries ──
 
@@ -221,20 +284,21 @@ export const checkSlugAvailability = query({
 export const checkPendingInvitation = query({
   args: { email: v.string() },
   handler: async (ctx, args) => {
+    const email = normalizeEmail(args.email);
     // Check both original case and lowercase since invitations may be stored either way
     const byOriginal = await ctx.db
       .query("orgInvitations")
       .withIndex("by_email", (q) => q.eq("email", args.email))
       .collect();
-    const byLower = args.email !== args.email.toLowerCase()
+    const byLower = args.email !== email
       ? await ctx.db
           .query("orgInvitations")
-          .withIndex("by_email", (q) => q.eq("email", args.email.toLowerCase()))
+          .withIndex("by_email", (q) => q.eq("email", email))
           .collect()
       : [];
     const all = [...byOriginal, ...byLower];
     const pending = all.find(
-      (i) => i.status === "pending" && i.expiresAt > Date.now(),
+      (i) => i.status === "pending" && i.expiresAt > dayjs().valueOf(),
     );
     return { hasPendingInvitation: !!pending };
   },
@@ -255,7 +319,7 @@ export const pendingInvitationForViewer = query({
       .query("orgInvitations")
       .withIndex("by_email", (q) => q.eq("email", user.email!))
       .collect();
-    const lowerEmail = user.email!.toLowerCase();
+    const lowerEmail = normalizeEmail(user.email!);
     const byLower = user.email !== lowerEmail
       ? await ctx.db
           .query("orgInvitations")
@@ -264,7 +328,7 @@ export const pendingInvitationForViewer = query({
       : [];
     const all = [...byOriginal, ...byLower];
     const pending = all.find(
-      (i) => i.status === "pending" && i.expiresAt > Date.now(),
+      (i) => i.status === "pending" && i.expiresAt > dayjs().valueOf(),
     );
     if (!pending) return null;
 
@@ -738,43 +802,128 @@ export const inviteMember = mutation({
     role: v.union(v.literal("admin"), v.literal("member")),
   },
   handler: async (ctx, args) => {
-    const { userId, orgId } = await requireOrgAdmin(ctx);
+    const result = await createMemberInvitation(ctx, args);
+    return result.invitationId;
+  },
+});
 
-    // Check if already a member
-    const memberships = await ctx.db
-      .query("orgMemberships")
-      .withIndex("by_orgId", (q) => q.eq("orgId", orgId))
-      .collect();
-    const existingUser = await ctx.db
-      .query("users")
-      .withIndex("email", (q) => q.eq("email", args.email))
-      .first();
-    if (existingUser && memberships.some((m) => m.userId === existingUser._id)) {
-      throw new Error("User is already a member");
-    }
-
-    // Check for existing pending invitation
-    const existingInvites = await ctx.db
-      .query("orgInvitations")
-      .withIndex("by_email", (q) => q.eq("email", args.email))
-      .collect();
-    const pendingForOrg = existingInvites.find(
-      (i) => i.orgId === orgId && i.status === "pending",
-    );
-    if (pendingForOrg) {
-      throw new Error("Invitation already pending for this email");
-    }
-
-    const invitationId = await ctx.db.insert("orgInvitations", {
-      orgId,
-      email: args.email,
-      role: args.role,
-      invitedBy: userId,
-      status: "pending",
-      expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000, // 7 days
+export const sendMemberInvitation = action({
+  args: {
+    email: v.string(),
+    role: v.union(v.literal("admin"), v.literal("member")),
+  },
+  handler: async (ctx, args) => {
+    const invitationResult = await ctx.runMutation(internal.orgs.createMemberInvitationInternal, args);
+    const invitationId = invitationResult.invitationId;
+    const context = await ctx.runQuery(internal.orgs.getMemberInvitationEmailContextInternal, {
+      invitationId,
     });
+    if (!context) throw new Error("Invitation not found");
+
+    const siteUrl = getAuthSiteUrl();
+    const invitedEmail = context.invitation.email;
+    const inviteUrl = `${siteUrl.replace(/\/$/, "")}/login?email=${encodeURIComponent(invitedEmail)}&next=${encodeURIComponent("/")}`;
+    const orgName = context.org.name;
+    const inviterName = context.invitedBy.name ?? context.invitedBy.email ?? "A team member";
+    const roleLabel = context.invitation.role === "admin" ? "admin" : "member";
+    const subject = `${inviterName} invited you to join ${orgName} on Glass`;
+    const escapedOrgName = escapeHtml(orgName);
+    const escapedInviterName = escapeHtml(inviterName);
+    const escapedInviteUrl = escapeHtml(inviteUrl);
+    const escapedEmail = escapeHtml(invitedEmail);
+    const branding = context.whiteLabelingEnabled
+      ? getBrandingContext({
+          agentDisplayName: context.org.agentDisplayName ?? orgName,
+          brandingColor: context.org.brandingColor,
+          logoUrl: context.org.iconUrl ?? undefined,
+        })
+      : getBrandingContext();
+    const bodyHtml = `
+<tr><td style="padding:28px 40px 0 40px;">
+  <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:15px;color:#374151;line-height:1.6;">
+    <strong>${escapedInviterName}</strong> invited you to join <strong>${escapedOrgName}</strong> on Glass as a ${roleLabel}.
+  </p>
+</td></tr>
+<tr><td align="center" style="padding:24px 40px 0 40px;">
+  <a href="${escapedInviteUrl}" style="display:inline-block;padding:8px 22px;background-color:#000000;color:#ffffff;font-family:-apple-system,sans-serif;font-size:14px;font-weight:500;text-decoration:none;border-radius:999px;line-height:1.4;">Accept invitation</a>
+</td></tr>
+<tr><td style="padding:20px 40px 0 40px;">
+  <p style="margin:0;font-family:-apple-system,sans-serif;font-size:12px;color:#6b7280;line-height:1.6;">
+    Sign in or create an account with ${escapedEmail}. You can also copy this link:<br>
+    <a href="${escapedInviteUrl}" style="color:#6b7280;word-break:break-all;">${escapedInviteUrl}</a>
+  </p>
+</td></tr>
+<tr><td style="padding:16px 40px 32px 40px;">
+  <p style="margin:0;font-family:-apple-system,sans-serif;font-size:11px;color:#9ca3af;">This invitation expires in 7 days.</p>
+</td></tr>`;
+    const html = buildEmailShell({ title: subject, bodyHtml, branding, siteUrl });
+    const text = `${inviterName} invited you to join ${orgName} on Glass as a ${roleLabel}.\n\nAccept invitation:\n${inviteUrl}\n\nSign in or create an account with ${invitedEmail}. This invitation expires in 7 days.`;
+
+    const result = await sendResendEmail(
+      {
+        from: getAuthFromAddress(orgName),
+        to: invitedEmail,
+        subject,
+        html,
+        text,
+      },
+      { retries: 2 },
+    );
+
+    if (!result.ok) {
+      if (!invitationResult.reusedExisting) {
+        await ctx.runMutation(internal.orgs.deleteInvitationInternal, { invitationId });
+      }
+      throw new Error(`Failed to send invitation email: ${result.error}`);
+    }
 
     return invitationId;
+  },
+});
+
+export const createMemberInvitationInternal = internalMutation({
+  args: {
+    email: v.string(),
+    role: v.union(v.literal("admin"), v.literal("member")),
+  },
+  handler: async (ctx, args) => {
+    return await createMemberInvitation(ctx, args);
+  },
+});
+
+export const getMemberInvitationEmailContextInternal = internalQuery({
+  args: { invitationId: v.id("orgInvitations") },
+  handler: async (ctx, args) => {
+    const invitation = await ctx.db.get(args.invitationId);
+    if (!invitation) return null;
+    const org = await ctx.db.get(invitation.orgId);
+    const invitedBy = await ctx.db.get(invitation.invitedBy);
+    if (!org || !invitedBy) return null;
+    const iconUrl = org.iconStorageId ? await ctx.storage.getUrl(org.iconStorageId) : null;
+    return {
+      invitation,
+      org: {
+        name: org.name,
+        brandingColor: org.brandingColor,
+        agentDisplayName: org.agentDisplayName,
+        iconUrl,
+      },
+      whiteLabelingEnabled: isWhiteLabelingEnabled(org),
+      invitedBy: {
+        name: invitedBy.name,
+        email: invitedBy.email,
+      },
+    };
+  },
+});
+
+export const deleteInvitationInternal = internalMutation({
+  args: { invitationId: v.id("orgInvitations") },
+  handler: async (ctx, args) => {
+    const invitation = await ctx.db.get(args.invitationId);
+    if (invitation?.status === "pending") {
+      await ctx.db.delete(args.invitationId);
+    }
   },
 });
 
@@ -787,7 +936,7 @@ export const acceptInvitation = mutation({
     const invitation = await ctx.db.get(args.invitationId);
     if (!invitation) throw new Error("Invitation not found");
     if (invitation.status !== "pending") throw new Error("Invitation is no longer valid");
-    if (invitation.expiresAt < Date.now()) {
+    if (invitation.expiresAt < dayjs().valueOf()) {
       await ctx.db.patch(args.invitationId, { status: "expired" });
       throw new Error("Invitation has expired");
     }
@@ -804,6 +953,7 @@ export const acceptInvitation = mutation({
       .first();
     if (existing) {
       await ctx.db.patch(args.invitationId, { status: "accepted" });
+      await ctx.db.patch(userId, { onboardingComplete: true });
       return existing._id;
     }
 
@@ -815,6 +965,7 @@ export const acceptInvitation = mutation({
     });
 
     await ctx.db.patch(args.invitationId, { status: "accepted" });
+    await ctx.db.patch(userId, { onboardingComplete: true });
     return membershipId;
   },
 });

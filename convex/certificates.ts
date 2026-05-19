@@ -146,6 +146,7 @@ export const generateForPolicy = action({
   args: {
     policyId: v.id("policies"),
     holderName: v.string(),
+    certificateHolder: v.optional(v.string()),
     addressLine1: v.optional(v.string()),
     addressLine2: v.optional(v.string()),
     city: v.optional(v.string()),
@@ -168,6 +169,7 @@ export const generateForPolicy = action({
       policyId: args.policyId,
       orgId: context.orgId,
       holderName,
+      certificateHolder: args.certificateHolder,
       addressLine1: args.addressLine1,
       addressLine2: args.addressLine2,
       city: args.city,
@@ -177,6 +179,52 @@ export const generateForPolicy = action({
       source: "policy_page",
       createdByUserId: context.userId,
     });
+  },
+});
+
+export const previewAuthorityForPolicy = action({
+  args: {
+    policyId: v.id("policies"),
+  },
+  handler: async (ctx, args): Promise<any> => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
+
+    await ctx.runQuery(api.certificates.getGenerationContext, {
+      policyId: args.policyId,
+    });
+
+    const authority = await ctx.runAction(internal.partnerPrograms.resolveCertificateAuthority, {
+      policyId: args.policyId,
+    }) as {
+      authorityType: "non_binding" | "certified";
+      certificationStatus: "not_applicable" | "pending" | "certified" | "declined" | "needs_program_selection";
+      partnerProgramId?: Id<"partnerPrograms">;
+      approvalMode?: "auto_approve_all" | "require_approval_all" | "llm_review";
+      matchCandidates?: unknown[];
+    };
+
+    const selectedProgram = authority.partnerProgramId
+      ? await ctx.runQuery(internal.partnerPrograms.getProgramInternal, {
+        programId: authority.partnerProgramId,
+      })
+      : null;
+
+    return {
+      authorityType: authority.authorityType,
+      certificationStatus: authority.certificationStatus,
+      approvalMode: authority.approvalMode,
+      selectedProgram: selectedProgram
+        ? {
+          programId: selectedProgram._id,
+          programName: selectedProgram.name,
+          categoryLabels: selectedProgram.categoryLabels,
+          categoryLabel: selectedProgram.categoryLabels?.join(", ") ?? selectedProgram.categoryLabel,
+          approvalMode: selectedProgram.approvalMode,
+        }
+        : null,
+      matchCandidates: authority.matchCandidates ?? [],
+    };
   },
 });
 

@@ -179,9 +179,6 @@ type ComplaintContact = {
 type PolicyDocument = {
   coverages?: CoverageEntry[];
   premium?: string;
-  totalCost?: string;
-  minPremium?: string;
-  depositPremium?: string;
   taxesAndFees?: FeeEntry[];
   premiumBreakdown?: PremiumLine[];
   limits?: Record<string, unknown>;
@@ -597,6 +594,52 @@ function DefinitionBody({ definition }: { definition: DefinitionEntry }) {
   );
 }
 
+function splitLabeledText(value: string) {
+  const match = value.match(/^([^:]{2,64}):\s*(.+)$/);
+  if (!match) return null;
+  return {
+    label: match[1].trim(),
+    value: match[2].trim(),
+  };
+}
+
+function CoveredReasonDetailSection({
+  title,
+  items,
+}: {
+  title: string;
+  items?: string[];
+}) {
+  if (!items?.length) return null;
+  const labeledRows = items
+    .map(splitLabeledText)
+    .filter((row): row is { label: string; value: string } => Boolean(row));
+  const shouldUseTable = labeledRows.length === items.length;
+
+  return (
+    <div className="border-t border-foreground/4 px-5 pt-3 sm:pl-[2.625rem] sm:pr-5">
+      <p className="mb-2 text-xs font-medium text-muted-foreground">
+        {title}
+      </p>
+      {shouldUseTable ? (
+        <div className="overflow-hidden rounded-md border border-foreground/6">
+          <KeyValueTable
+            rows={labeledRows}
+            labelCellClassName="!pl-3 sm:!pl-3"
+            valueCellClassName="!pr-3 sm:!pr-3"
+          />
+        </div>
+      ) : (
+        <div className="space-y-1.5 text-sm leading-relaxed text-foreground">
+          {items.map((item, i) => (
+            <p key={`${title}-${i}`}>{item}</p>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CoveredReasonBody({ reason }: { reason: CoveredReasonEntry }) {
   const metaItems = [
     reason.coverageName && { label: "Coverage", value: reason.coverageName },
@@ -620,26 +663,14 @@ function CoveredReasonBody({ reason }: { reason: CoveredReasonEntry }) {
           <DocContent>{reason.content}</DocContent>
         </div>
       )}
-      {reason.conditions?.length ? (
-        <div>
-          <p className="text-xs font-semibold text-muted-foreground mb-1.5">Conditions</p>
-          <ul className="space-y-1.5">
-            {reason.conditions.map((condition, i) => (
-              <li key={i} className="text-sm text-foreground">{condition}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-      {reason.exceptions?.length ? (
-        <div>
-          <p className="text-xs font-semibold text-muted-foreground mb-1.5">Exceptions</p>
-          <ul className="space-y-1.5">
-            {reason.exceptions.map((exception, i) => (
-              <li key={i} className="text-sm text-foreground">{exception}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
+      <CoveredReasonDetailSection
+        title="Conditions"
+        items={reason.conditions}
+      />
+      <CoveredReasonDetailSection
+        title="Exceptions"
+        items={reason.exceptions}
+      />
     </div>
   );
 }
@@ -1083,9 +1114,6 @@ export function ExtractionCards({
     : [];
   const premiumRows = [
     policyDocument?.premium && { label: "Premium", value: policyDocument.premium },
-    policyDocument?.totalCost && { label: "Total cost", value: policyDocument.totalCost },
-    policyDocument?.minPremium && { label: "Minimum premium", value: policyDocument.minPremium },
-    policyDocument?.depositPremium && { label: "Deposit premium", value: policyDocument.depositPremium },
   ].filter(Boolean) as { label: string; value: string }[];
   const taxesAndFees = policyDocument?.taxesAndFees ?? [];
   const premiumBreakdown = policyDocument?.premiumBreakdown ?? [];

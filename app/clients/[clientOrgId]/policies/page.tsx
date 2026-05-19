@@ -3,21 +3,71 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useQuery, useMutation, useAction } from "convex/react";
+import dayjs from "dayjs";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PillButton } from "@/components/ui/pill-button";
-import { PolicyListItem } from "@/components/policy-list-item";
 import { PolicyUploadDrawer } from "@/components/policy-upload-drawer";
 import type { PolicyUploadMode } from "@/components/policy-upload-mode-toggle";
 import { PolicyEmptyState } from "@/components/policy-empty-state";
+import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Upload } from "lucide-react";
 import { toast } from "sonner";
 import { useClientDetailActions } from "../layout";
 import { getPublicAgentDomain } from "@/lib/domains";
 
 type DocType = "policy" | "quote";
+
+type BrokerPolicyRow = {
+  _id: Id<"policies">;
+  carrier?: string | null;
+  mga?: string | null;
+  policyNumber?: string | null;
+  fileName?: string | null;
+  effectiveDate?: string | null;
+  expirationDate?: string | null;
+  pipelineStatus?: string | null;
+  uploadedBySide?: "broker" | "client" | "email_scan" | "agent_email" | null;
+  premium?: string | null;
+};
+
+function cleanField(value?: string | null): string | undefined {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  if (/^extracting/i.test(trimmed)) return undefined;
+  return trimmed;
+}
+
+function formatDate(value?: string | null) {
+  const cleaned = cleanField(value);
+  if (!cleaned) return "No date";
+  const parsed = dayjs(cleaned, ["MM/DD/YYYY", "M/D/YYYY", "YYYY-MM-DD"], true);
+  return parsed.isValid() ? parsed.format("MMM D, YYYY") : cleaned;
+}
+
+function displayStatus(status?: string | null) {
+  if (!status) return "Processing";
+  return status.replace(/_/g, " ");
+}
+
+function displayUploadedBy(side?: BrokerPolicyRow["uploadedBySide"]) {
+  if (side === "broker") return "Broker";
+  if (side === "client") return "Client";
+  if (side === "email_scan") return "Email scan";
+  if (side === "agent_email") return "Agent email";
+  return "Unknown";
+}
 
 export default function ClientPoliciesPage() {
   const { clientOrgId } = useParams<{ clientOrgId: string }>();
@@ -176,7 +226,7 @@ export default function ClientPoliciesPage() {
   }, [setRightPanel, uploaderOpen, uploading, docType, handleUpload]);
 
   const isLoading = policies === undefined;
-  const rows = policies ?? [];
+  const rows = (policies ?? []) as BrokerPolicyRow[];
 
   return (
     <div className="space-y-4">
@@ -188,9 +238,18 @@ export default function ClientPoliciesPage() {
       </Tabs>
 
       {isLoading ? (
-        <div className="space-y-2">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-14 w-full rounded-lg" />
+        <div className="overflow-hidden rounded-lg border border-foreground/6 bg-card">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="border-t border-foreground/4 px-4 py-3 first:border-t-0">
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex min-w-0 flex-1 flex-col gap-2">
+                  <Skeleton className="h-4 w-48" />
+                  <Skeleton className="h-3 w-32" />
+                </div>
+                <Skeleton className="h-4 w-28" />
+                <Skeleton className="h-7 w-16 rounded-full" />
+              </div>
+            </div>
           ))}
         </div>
       ) : rows.length === 0 ? (
@@ -201,24 +260,64 @@ export default function ClientPoliciesPage() {
           onUpload={handleUpload}
         />
       ) : (
-        <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
-          {rows.map((p) => (
-            <PolicyListItem
-              key={p._id}
-              carrier={p.carrier}
-              administrator={p.mga}
-              policyNumber={p.policyNumber}
-              fileName={p.fileName}
-              effectiveDate={p.effectiveDate}
-              expirationDate={p.expirationDate}
-              pipelineStatus={p.pipelineStatus}
-              uploadedBySide={p.uploadedBySide}
-              onClick={() =>
-                router.push(`/clients/${clientOrgId}/policies/${p._id}`)
-              }
-            />
-          ))}
-        </div>
+        <section className="overflow-hidden rounded-lg border border-foreground/6 bg-card">
+          <Table className="min-w-[900px]">
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="w-[22%] px-4 text-label-sm text-muted-foreground">Carrier</TableHead>
+                <TableHead className="w-[16%] text-label-sm text-muted-foreground">Policy no.</TableHead>
+                <TableHead className="w-[20%] text-label-sm text-muted-foreground">Term</TableHead>
+                <TableHead className="w-[12%] text-label-sm text-muted-foreground">Premium</TableHead>
+                <TableHead className="w-[12%] text-label-sm text-muted-foreground">Uploaded by</TableHead>
+                <TableHead className="w-[10%] text-label-sm text-muted-foreground">Status</TableHead>
+                <TableHead className="w-[18%] px-4 text-label-sm text-muted-foreground">File</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((policy) => {
+                const carrier = cleanField(policy.mga) ?? cleanField(policy.carrier) ?? "Untitled policy";
+                const policyNumber = cleanField(policy.policyNumber) ?? "No policy number";
+                return (
+                  <TableRow
+                    key={policy._id}
+                    tabIndex={0}
+                    onClick={() => router.push(`/clients/${clientOrgId}/policies/${policy._id}`)}
+                    onKeyDown={(event) => {
+                      if (event.key !== "Enter" && event.key !== " ") return;
+                      event.preventDefault();
+                      router.push(`/clients/${clientOrgId}/policies/${policy._id}`);
+                    }}
+                    className="cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                  >
+                    <TableCell className="px-4">
+                      <p className="truncate font-medium text-foreground">{carrier}</p>
+                    </TableCell>
+                    <TableCell className="max-w-44 truncate text-muted-foreground">
+                      {policyNumber}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {formatDate(policy.effectiveDate)} - {formatDate(policy.expirationDate)}
+                    </TableCell>
+                    <TableCell className="max-w-28 truncate text-muted-foreground">
+                      {cleanField(policy.premium) ?? "-"}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {displayUploadedBy(policy.uploadedBySide)}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="secondary" className="font-normal text-muted-foreground">
+                        {displayStatus(policy.pipelineStatus)}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="max-w-60 px-4 truncate text-muted-foreground">
+                      {cleanField(policy.fileName) ?? "-"}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </section>
       )}
 
     </div>

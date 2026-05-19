@@ -24,6 +24,10 @@ import {
   shouldSuppressOriginalPolicyForCoiRequest,
   type RequestedEmailAttachment,
 } from "./coiAttachmentGuards";
+import {
+  buildCertificateProgramSelection,
+  formatCertificateProgramSelectionForUser,
+} from "./certificateProgramSelection";
 
 const MAX_EMAIL_SIZE = 38 * 1024 * 1024; // Resend limit is 40MB after Base64 encoding.
 const GLASS_PUBLIC_URL = getClientPortalUrl();
@@ -552,7 +556,18 @@ async function runEmailSubagent(
       return "Certified COI approval has been requested from the program administrator; no certificate PDF is attached yet.";
     }
     if (generated.status === "needs_program_selection") {
-      return "Glass found multiple possible program administrator programs. Ask the broker to choose the correct program before attaching a certified COI.";
+      const selection = buildCertificateProgramSelection({
+        policyId,
+        holderName:
+          certificateHolder?.split(/\r?\n/)[0]?.trim() ||
+          "Certificate holder",
+        certificateHolder,
+        candidates: generated.matchCandidates,
+        source: context.channel === "imessage" ? "imessage" : "agent",
+      });
+      return selection
+        ? formatCertificateProgramSelectionForUser(selection)
+        : "I found multiple possible program administrator programs. Choose the correct program before I attach the certified COI.";
     }
     attachedCoiKeys.add(coiKey);
     addAttachment({
