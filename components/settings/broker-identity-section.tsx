@@ -180,6 +180,10 @@ function BrokerIdentityForm({
   const overrideEmailInvalid =
     identity.canEditConnected && optionalEmailInvalid(overrideEmail);
   const emailInvalid = manualEmailInvalid || overrideEmailInvalid;
+  const twoColumnGridClass =
+    surface === "plain" ? "grid gap-4" : "grid gap-4 sm:grid-cols-2";
+  const threeColumnGridClass =
+    surface === "plain" ? "grid gap-4" : "grid gap-4 sm:grid-cols-3";
 
   const saveManual = useCallback(async () => {
     setSaving(true);
@@ -275,7 +279,7 @@ function BrokerIdentityForm({
         </div>
       ) : null}
       <div className={surface === "card" ? "space-y-4 px-5 py-5" : "space-y-4"}>
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className={twoColumnGridClass}>
           <div>
             <label className="mb-1.5 block text-label-sm font-medium text-muted-foreground">
               Broker company
@@ -325,7 +329,7 @@ function BrokerIdentityForm({
         </div>
 
         {identity.canEditConnected ? (
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className={threeColumnGridClass}>
             <div>
               <label className="mb-1.5 block text-label-sm font-medium text-muted-foreground">
                 Name override
@@ -378,7 +382,7 @@ function BrokerIdentityForm({
             </div>
           </div>
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className={twoColumnGridClass}>
             <div>
               <label className="mb-1.5 block text-label-sm font-medium text-muted-foreground">
                 Contact email

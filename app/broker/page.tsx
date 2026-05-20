@@ -1,15 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ComponentType } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  Building2,
-  Loader2,
-  Mail,
-  Pencil,
-  Phone,
-  UserRound,
-} from "lucide-react";
+import { Loader2, Pencil } from "lucide-react";
 import { useQuery } from "convex/react";
 import { AppShell } from "@/components/app-shell";
 import {
@@ -18,48 +11,19 @@ import {
 } from "@/components/settings/broker-identity-section";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { PillButton } from "@/components/ui/pill-button";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { api } from "@/convex/_generated/api";
 import { useCurrentOrg } from "@/hooks/use-current-org";
 
-type DetailItemProps = {
-  icon: ComponentType<{ className?: string }>;
-  label: string;
-  value?: string;
-  href?: string;
-};
-
-function DetailItem({ icon: Icon, label, value, href }: DetailItemProps) {
-  const displayValue = value?.trim() || "Not set";
-  const muted = !value?.trim();
-
-  return (
-    <div className="flex min-w-0 gap-3 border-b border-foreground/6 py-5 pr-6">
-      <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-foreground/[0.04] text-muted-foreground">
-        <Icon className="h-4 w-4" />
-      </div>
-      <div className="min-w-0">
-        <div className="text-label-sm font-medium text-muted-foreground">
-          {label}
-        </div>
-        {href && !muted ? (
-          <a
-            href={href}
-            className="mt-1 block truncate text-body-sm text-foreground underline-offset-4 hover:underline"
-          >
-            {displayValue}
-          </a>
-        ) : (
-          <div
-            className={`mt-1 truncate text-body-sm ${
-              muted ? "text-muted-foreground/60" : "text-foreground"
-            }`}
-          >
-            {displayValue}
-          </div>
-        )}
-      </div>
-    </div>
-  );
+function displayValue(value?: string) {
+  return value?.trim() || "Not set";
 }
 
 function relationshipLabel(identity: BrokerIdentity) {
@@ -95,21 +59,11 @@ export default function BrokerPage() {
     contactEmail ||
     contactPhone
   );
-  const summary = useMemo(() => {
-    if (!identity) return "";
-    if (!hasBrokerInfo) {
-      return canEdit
-        ? "Add the broker contact your team should use for insurance support."
-        : "Your broker contact has not been added yet.";
-    }
-    const pieces = [contactName, contactEmail, contactPhone].filter(Boolean);
-    return pieces.length > 0
-      ? pieces.join(" · ")
-      : "Your insurance broker contact.";
-  }, [canEdit, contactEmail, contactName, contactPhone, hasBrokerInfo, identity]);
 
   if (!currentOrg?.orgId || !brokerPageContext?.showBrokerPage) return null;
 
+  const breadcrumbDetail =
+    identity === undefined ? undefined : brokerName || "No broker contact";
   const actions = canEdit ? (
     <PillButton
       variant="secondary"
@@ -124,6 +78,7 @@ export default function BrokerPage() {
   return (
     <AppShell
       actions={actions}
+      breadcrumbDetail={breadcrumbDetail}
       rightPanel={
         <SettingsDrawer
           open={editOpen}
@@ -139,60 +94,66 @@ export default function BrokerPage() {
           <Loader2 className="h-5 w-5 animate-spin" />
         </div>
       ) : (
-        <div className="w-full max-w-6xl space-y-8">
-          <section className="border-b border-foreground/6 pb-6">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-              <div className="min-w-0">
-                <div className="mb-3 inline-flex items-center rounded-full bg-foreground/[0.04] px-2.5 py-1 text-label-sm font-medium text-muted-foreground">
-                  {identity ? relationshipLabel(identity) : "Broker"}
-                </div>
-                <h1 className="mb-0! truncate text-2xl font-medium tracking-normal text-foreground">
-                  {brokerName || "No broker contact set"}
-                </h1>
-                <p className="mt-2 max-w-2xl text-body-sm text-muted-foreground">
-                  {summary}
-                </p>
-              </div>
-              {canEdit ? (
-                <PillButton
-                  variant="secondary"
-                  size="compact"
-                  className="sm:hidden"
-                  onClick={() => setEditOpen(true)}
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                  Edit
-                </PillButton>
-              ) : null}
-            </div>
-          </section>
-
-          <section
-            className="grid border-t border-foreground/6 md:grid-cols-2"
-            aria-label="Broker contact details"
-          >
-            <DetailItem
-              icon={Building2}
-              label="Broker company"
-              value={brokerName}
-            />
-            <DetailItem
-              icon={UserRound}
-              label="Primary contact"
-              value={contactName}
-            />
-            <DetailItem
-              icon={Mail}
-              label="Email"
-              value={contactEmail}
-              href={contactEmail ? `mailto:${contactEmail}` : undefined}
-            />
-            <DetailItem
-              icon={Phone}
-              label="Phone"
-              value={contactPhone}
-              href={contactPhone ? `tel:${contactPhone}` : undefined}
-            />
+        <div className="w-full space-y-5">
+          <section className="w-full overflow-hidden rounded-lg border border-foreground/6 bg-card">
+            <Table className="min-w-[880px]">
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead className="w-[22%] px-4 text-label-sm text-muted-foreground">
+                    Broker company
+                  </TableHead>
+                  <TableHead className="w-[22%] text-label-sm text-muted-foreground">
+                    Primary contact
+                  </TableHead>
+                  <TableHead className="w-[24%] text-label-sm text-muted-foreground">
+                    Email
+                  </TableHead>
+                  <TableHead className="w-[18%] text-label-sm text-muted-foreground">
+                    Phone
+                  </TableHead>
+                  <TableHead className="w-[14%] pr-4 text-label-sm text-muted-foreground">
+                    Relationship
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableRow className="hover:bg-transparent">
+                  <TableCell className="px-4 py-4 text-body-sm font-medium text-foreground">
+                    {displayValue(brokerName)}
+                  </TableCell>
+                  <TableCell className="py-4 text-body-sm text-foreground">
+                    {displayValue(contactName)}
+                  </TableCell>
+                  <TableCell className="py-4 text-body-sm">
+                    {contactEmail ? (
+                      <a
+                        href={`mailto:${contactEmail}`}
+                        className="text-foreground underline-offset-4 hover:underline"
+                      >
+                        {contactEmail}
+                      </a>
+                    ) : (
+                      <span className="text-muted-foreground/60">Not set</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="py-4 text-body-sm">
+                    {contactPhone ? (
+                      <a
+                        href={`tel:${contactPhone}`}
+                        className="text-foreground underline-offset-4 hover:underline"
+                      >
+                        {contactPhone}
+                      </a>
+                    ) : (
+                      <span className="text-muted-foreground/60">Not set</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="py-4 pr-4 text-body-sm text-muted-foreground">
+                    {identity ? relationshipLabel(identity) : "Broker"}
+                  </TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
           </section>
 
           {!hasBrokerInfo && canEdit ? (
