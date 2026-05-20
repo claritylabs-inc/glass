@@ -1109,6 +1109,7 @@ export function UnifiedMessageBubble({
   viewerId,
   viewerEmail,
   isFirstUserMessage,
+  mirroredToImessage,
   threadContext,
   brokerPerspective,
   agentBranding,
@@ -1127,6 +1128,7 @@ export function UnifiedMessageBubble({
   viewerId?: string;
   viewerEmail?: string;
   isFirstUserMessage?: boolean;
+  mirroredToImessage?: boolean;
   threadContext?: { pageType: string; entityId?: string; summary?: string };
   /** When true, render agent messages as if sent "by the broker" — right-aligned. */
   brokerPerspective?: boolean;
@@ -1150,7 +1152,7 @@ export function UnifiedMessageBubble({
   const channelIcon =
     msg.channel === "email" ? (
       <MailIcon className="w-3 h-3 text-muted-foreground/30" />
-    ) : msg.channel === "imessage" ? (
+    ) : msg.channel === "imessage" || mirroredToImessage ? (
       <MessageCircle className="w-3 h-3 text-muted-foreground/30" />
     ) : null;
 
@@ -2163,7 +2165,7 @@ export function UnifiedThreadContent({
         className="absolute inset-0 overflow-y-auto p-4 pr-5"
       >
         <div className="max-w-2xl mx-auto space-y-4">
-          {(!messages || messages.length === 0) && (
+          {messages && messages.length === 0 && (
             <NewChatEmptyState
               orgId={thread.orgId}
               onSelectPrompt={(prompt) =>
@@ -2228,6 +2230,10 @@ export function UnifiedThreadContent({
                     relatedEmailMessages={relatedEmailMessages}
                     viewerId={viewerId}
                     viewerEmail={viewerEmail}
+                    mirroredToImessage={
+                      thread.originChannel === "imessage" &&
+                      msg.channel === "chat"
+                    }
                     isFirstUserMessage={false}
                     threadContext={undefined}
                     agentBranding={agentBranding}

@@ -102,6 +102,8 @@ export function NewChatEmptyState({
     api.connectedOrgs.listVendors,
     orgId ? { orgId } : "skip",
   ) as ConnectedVendorRow[] | undefined;
+  const isLoadingContext =
+    Boolean(orgId) && (targets === undefined || vendorRows === undefined);
   const prompts = useMemo(() => {
     const counts = {
       policies: targets?.policies.length ?? 0,
@@ -123,6 +125,10 @@ export function NewChatEmptyState({
       item.requires.every((requirement) => has[requirement]),
     ).slice(0, 7);
   }, [targets, vendorRows]);
+
+  if (isLoadingContext) {
+    return null;
+  }
 
   if (prompts.length === 0) {
     return (

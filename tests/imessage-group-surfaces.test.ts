@@ -70,11 +70,21 @@ describe("iMessage group chat surfaces", () => {
     expect(chat).toContain("formatWebChatAgentMirrorText");
     expect(chat).toContain("storedAttachmentsToImessageOutbound");
     expect(threadContent).toContain("hasEarlierIdenticalAgentMessage");
+    expect(threadContent).toContain("mirroredToImessage");
     expect(worker).toContain("claimSendIdempotencyKey");
     expect(worker).toContain("payload.attachments");
     expect(worker).toContain("sendOutboundAttachments");
     expect(worker).toContain("sendByChatGuid");
     expect(agents).toContain("mirrors the web user message and Glass reply back");
+  });
+
+  it("waits for policy-aware empty state context before rendering suggestions", () => {
+    const threadContent = read("components/agent-thread/thread-content.tsx");
+    const emptyState = read("components/new-chat-empty-state.tsx");
+
+    expect(threadContent).toContain("messages && messages.length === 0");
+    expect(emptyState).toContain("isLoadingContext");
+    expect(emptyState).toContain("return null");
   });
 
   it("keeps group fallback threads separate from direct iMessage DMs", () => {
