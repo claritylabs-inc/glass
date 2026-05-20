@@ -23,6 +23,19 @@ function clean(value: string | undefined | null) {
   const trimmed = value?.trim();
   return trimmed ? trimmed : undefined;
 }
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+export function normalizeOptionalEmail(
+  value: string | undefined | null,
+  options?: { strict?: boolean },
+) {
+  const cleaned = clean(value)?.toLowerCase();
+  if (!cleaned) return undefined;
+  if (!EMAIL_PATTERN.test(cleaned)) {
+    if (!options?.strict) return undefined;
+    throw new Error("Enter a valid broker email address");
+  }
+  return cleaned;
+}
 
 function applyOverrides(
   assignment: Doc<"brokerClientAssignments"> | null,
@@ -30,7 +43,9 @@ function applyOverrides(
 ) {
   return {
     contactName: clean(assignment?.contactNameOverride) ?? clean(user?.name),
-    contactEmail: clean(assignment?.contactEmailOverride) ?? clean(user?.email),
+    contactEmail:
+      normalizeOptionalEmail(assignment?.contactEmailOverride) ??
+      normalizeOptionalEmail(user?.email),
     contactPhone: clean(assignment?.contactPhoneOverride) ?? clean(user?.phone),
   };
 }
@@ -86,7 +101,7 @@ export async function resolveBrokerIdentityForClient(
         brokerCompanyName: brokerOrg.name,
         contactUserId: contactUser?._id,
         contactName: clean(contactUser?.name),
-        contactEmail: clean(contactUser?.email),
+        contactEmail: normalizeOptionalEmail(contactUser?.email),
         contactPhone: clean(contactUser?.phone),
         source: "broker_default",
       };
@@ -102,7 +117,7 @@ export async function resolveBrokerIdentityForClient(
 
   const brokerCompanyName = clean(clientOrg.brokerCompanyName);
   const contactName = clean(clientOrg.brokerContactName);
-  const contactEmail = clean(clientOrg.brokerContactEmail);
+  const contactEmail = normalizeOptionalEmail(clientOrg.brokerContactEmail);
   const contactPhone = clean(clientOrg.brokerContactPhone);
   const hasManualIdentity = !!(
     brokerCompanyName ||

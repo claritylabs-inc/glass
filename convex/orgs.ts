@@ -9,7 +9,7 @@ import { internal as _internal } from "./_generated/api";
 import { getOrgAccess as getOrgAccessNew, assertBrokerOrg } from "./lib/access";
 import type { Id } from "./_generated/dataModel";
 import { getBrandingContext, isWhiteLabelingEnabled } from "./lib/branding";
-import { resolveBrokerIdentityForClient } from "./lib/brokerIdentity";
+import { normalizeOptionalEmail, resolveBrokerIdentityForClient } from "./lib/brokerIdentity";
 import { buildEmailShell, escapeHtml } from "./lib/emailTemplate";
 import { getAuthSiteUrl } from "./lib/domains";
 import { getAuthFromAddress, sendResendEmail } from "./lib/resend";
@@ -620,6 +620,37 @@ export const getBrokerIdentity = query({
   },
 });
 
+export const getBrokerPageContext = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) return { showBrokerPage: false, isVendorOnly: false };
+    const membership = await ctx.db
+      .query("orgMemberships")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .first();
+    if (!membership) return { showBrokerPage: false, isVendorOnly: false };
+    const org = await ctx.db.get(membership.orgId);
+    if (!org || (org.type ?? "client") !== "client") {
+      return { showBrokerPage: false, isVendorOnly: false };
+    }
+    const customerRelationship = await ctx.db
+      .query("connectedOrgRelationships")
+      .withIndex("by_clientOrgId_status", (q) =>
+        q.eq("clientOrgId", org._id).eq("status", "active"),
+      )
+      .first();
+    const vendorRelationship = await ctx.db
+      .query("connectedOrgRelationships")
+      .withIndex("by_vendorOrgId_status", (q) =>
+        q.eq("vendorOrgId", org._id).eq("status", "active"),
+      )
+      .first();
+    const isVendorOnly = !!vendorRelationship && !customerRelationship && !org.brokerOrgId;
+    return { showBrokerPage: !isVendorOnly, isVendorOnly };
+  },
+});
+
 export const updateStandaloneBrokerIdentity = mutation({
   args: {
     orgId: v.id("organizations"),
@@ -643,7 +674,7 @@ export const updateStandaloneBrokerIdentity = mutation({
     await ctx.db.patch(args.orgId, {
       brokerCompanyName: cleanOptionalString(args.brokerCompanyName),
       brokerContactName: cleanOptionalString(args.brokerContactName),
-      brokerContactEmail: cleanOptionalString(args.brokerContactEmail)?.toLowerCase(),
+      brokerContactEmail: normalizeOptionalEmail(args.brokerContactEmail, { strict: true }),
       brokerContactPhone: normalizeBrokerPhone(args.brokerContactPhone),
     });
   },
@@ -687,7 +718,7 @@ export const updateConnectedClientBrokerIdentity = mutation({
     const patch = {
       role: "primary" as const,
       contactNameOverride: cleanOptionalString(args.contactNameOverride),
-      contactEmailOverride: cleanOptionalString(args.contactEmailOverride)?.toLowerCase(),
+      contactEmailOverride: normalizeOptionalEmail(args.contactEmailOverride, { strict: true }),
       contactPhoneOverride: normalizeBrokerPhone(args.contactPhoneOverride),
     };
 

@@ -54,6 +54,7 @@ export function AppSidebar({
 
   const viewer = useQuery(api.users.viewer);
   const viewerOrg = useQuery(api.orgs.viewerOrg, {});
+  const brokerPageContext = useQuery(api.orgs.getBrokerPageContext, {});
   const unifiedThreads = useQuery(api.threads.list, { archived: false });
   const archivedThreads = useQuery(api.threads.list, { archived: true });
   const clientThreads = useQuery(
@@ -74,7 +75,8 @@ export function AppSidebar({
     currentOrg?.orgType === "client" && !viewerOrg?.brokerOrg;
   const isPartner = currentOrg?.isPartner ?? false;
   const canManageSettings = currentOrg?.role === "admin";
-  const navItems = isPartner ? PARTNER_NAV_ITEMS : isBroker ? BROKER_NAV_ITEMS : ALL_NAV_ITEMS;
+  const navItems = (isPartner ? PARTNER_NAV_ITEMS : isBroker ? BROKER_NAV_ITEMS : ALL_NAV_ITEMS)
+    .filter((item) => item.href !== "/broker" || brokerPageContext?.showBrokerPage);
   const connectItems = isBroker || isPartner ? NO_CONNECT_ITEMS : CONNECT_ITEMS;
   const isDesktop = useMediaQuery("(min-width: 1024px)");
 
