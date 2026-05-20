@@ -20,11 +20,12 @@ function optionalEmailInvalid(value: string) {
   return trimmed.length > 0 && !EMAIL_PATTERN.test(trimmed);
 }
 
-type BrokerIdentity = {
+export type BrokerIdentity = {
   brokerCompanyName?: string;
   contactName?: string;
   contactEmail?: string;
   contactPhone?: string;
+  source?: "assignment" | "broker_default" | "manual" | "none";
   connected: boolean;
   canEditConnected: boolean;
   canEditManual: boolean;
@@ -58,8 +59,10 @@ function identityKey(identity: BrokerIdentity) {
 
 export function BrokerIdentitySection({
   orgId,
+  surface = "card",
 }: {
   orgId: Id<"organizations">;
+  surface?: "card" | "plain";
 }) {
   const identity = useQuery(api.orgs.getBrokerIdentity, { orgId }) as
     | BrokerIdentity
@@ -68,7 +71,13 @@ export function BrokerIdentitySection({
 
   if (identity === undefined) {
     return (
-      <section className="rounded-lg border border-foreground/6 bg-card">
+      <section
+        className={
+          surface === "card"
+            ? "rounded-lg border border-foreground/6 bg-card"
+            : "min-h-28"
+        }
+      >
         <div className="flex items-center justify-center py-10 text-muted-foreground">
           <Loader2 className="h-5 w-5 animate-spin" />
         </div>
@@ -83,6 +92,7 @@ export function BrokerIdentitySection({
       key={identityKey(identity)}
       orgId={orgId}
       identity={identity}
+      surface={surface}
     />
   );
 }
@@ -90,9 +100,11 @@ export function BrokerIdentitySection({
 function BrokerIdentityForm({
   orgId,
   identity,
+  surface,
 }: {
   orgId: Id<"organizations">;
   identity: BrokerIdentity;
+  surface: "card" | "plain";
 }) {
   const updateManual = useMutation(api.orgs.updateStandaloneBrokerIdentity);
   const updateConnected = useMutation(api.orgs.updateConnectedClientBrokerIdentity);
@@ -250,11 +262,19 @@ function BrokerIdentityForm({
   ]);
 
   return (
-    <section className="rounded-lg border border-foreground/6 bg-card">
-      <div className="border-b border-foreground/6 px-5 py-3.5">
-        <h3 className="mb-0! text-sm font-medium text-foreground">Broker</h3>
-      </div>
-      <div className="space-y-4 px-5 py-5">
+    <section
+      className={
+        surface === "card"
+          ? "rounded-lg border border-foreground/6 bg-card"
+          : "space-y-4"
+      }
+    >
+      {surface === "card" ? (
+        <div className="border-b border-foreground/6 px-5 py-3.5">
+          <h3 className="mb-0! text-sm font-medium text-foreground">Broker</h3>
+        </div>
+      ) : null}
+      <div className={surface === "card" ? "space-y-4 px-5 py-5" : "space-y-4"}>
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <label className="mb-1.5 block text-label-sm font-medium text-muted-foreground">
