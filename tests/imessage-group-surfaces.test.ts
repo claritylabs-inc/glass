@@ -65,9 +65,12 @@ describe("iMessage group chat surfaces", () => {
     expect(threads).toContain("internal.actions.mirrorWebChatToImessage.run");
     expect(mirror).toContain('message.role !== "user" || message.channel !== "chat"');
     expect(outbound).toContain("formatWebChatUserMirrorText");
+    expect(outbound).toContain("sendIdempotentOutboundImessage");
+    expect(outbound).toContain("internal.imessageOutboundSends.claim");
     expect(chat).toContain("formatWebChatAgentMirrorText");
     expect(chat).toContain("storedAttachmentsToImessageOutbound");
     expect(threadContent).toContain("hasEarlierIdenticalAgentMessage");
+    expect(worker).toContain("claimSendIdempotencyKey");
     expect(worker).toContain("payload.attachments");
     expect(worker).toContain("sendOutboundAttachments");
     expect(worker).toContain("sendByChatGuid");

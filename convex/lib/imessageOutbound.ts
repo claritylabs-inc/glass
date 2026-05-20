@@ -1,5 +1,6 @@
 "use node";
 
+import { internal } from "../_generated/api";
 import type { ActionCtx } from "../_generated/server";
 import type { Id } from "../_generated/dataModel";
 import { getImessageWorkerUrl } from "./imessageConfig";
@@ -152,4 +153,49 @@ export async function sendOutboundImessage(params: {
     );
     return false;
   }
+}
+
+export async function sendIdempotentOutboundImessage(
+  ctx: ActionCtx,
+  params: {
+    idempotencyKey: string;
+    orgId?: Id<"organizations">;
+    threadId?: Id<"threads">;
+    threadMessageId?: Id<"threadMessages">;
+    toPhone?: string;
+    chatGuid?: string;
+    message: string;
+    attachments?: ImessageOutboundAttachment[];
+    logPrefix?: string;
+  },
+): Promise<boolean> {
+  const claim = await ctx.runMutation(internal.imessageOutboundSends.claim, {
+    idempotencyKey: params.idempotencyKey,
+    orgId: params.orgId,
+    threadId: params.threadId,
+    threadMessageId: params.threadMessageId,
+  });
+  if (!claim.claimed) return true;
+
+  const sent = await sendOutboundImessage({
+    toPhone: params.toPhone,
+    chatGuid: params.chatGuid,
+    message: params.message,
+    attachments: params.attachments,
+    clientMessageId: params.idempotencyKey,
+    logPrefix: params.logPrefix,
+  });
+
+  if (sent) {
+    await ctx.runMutation(internal.imessageOutboundSends.complete, {
+      idempotencyKey: params.idempotencyKey,
+    });
+  } else {
+    await ctx.runMutation(internal.imessageOutboundSends.fail, {
+      idempotencyKey: params.idempotencyKey,
+      error: "Worker send failed or iMessage worker is not configured.",
+    });
+  }
+
+  return sent;
 }

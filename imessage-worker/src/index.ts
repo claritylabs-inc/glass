@@ -70,6 +70,11 @@ const TERMINAL_FROM_PHONE =
   process.env.DEV_IMESSAGE_FROM_PHONE ??
   "";
 const TERMINAL_SPACE_ID = process.env.IMESSAGE_TERMINAL_SPACE_ID ?? "chat-1";
+const SEND_IDEMPOTENCY_TTL_MS = 10 * 60 * 1000;
+const sendIdempotencyKeys = new Map<
+  string,
+  { status: "sending" | "sent"; expiresAt: number }
+>();
 
 if (TRANSPORT === "imessage" && !IMESSAGE_ENABLED) {
   console.error("IMESSAGE_ENABLED must be true before connecting to Photon iMessage");
@@ -88,6 +93,42 @@ if (TRANSPORT === "terminal" && !TERMINAL_FROM_PHONE) {
     "IMESSAGE_TERMINAL_FROM_PHONE is required for terminal mode so Convex can route to a Glass user",
   );
   process.exit(1);
+}
+
+function pruneSendIdempotencyKeys() {
+  const now = Date.now();
+  for (const [key, value] of sendIdempotencyKeys.entries()) {
+    if (value.expiresAt <= now) {
+      sendIdempotencyKeys.delete(key);
+    }
+  }
+}
+
+function claimSendIdempotencyKey(clientMessageId?: string) {
+  if (!clientMessageId) return true;
+  pruneSendIdempotencyKeys();
+  if (sendIdempotencyKeys.has(clientMessageId)) return false;
+  sendIdempotencyKeys.set(clientMessageId, {
+    status: "sending",
+    expiresAt: Date.now() + SEND_IDEMPOTENCY_TTL_MS,
+  });
+  return true;
+}
+
+function completeSendIdempotencyKey(clientMessageId?: string) {
+  if (!clientMessageId) return;
+  sendIdempotencyKeys.set(clientMessageId, {
+    status: "sent",
+    expiresAt: Date.now() + SEND_IDEMPOTENCY_TTL_MS,
+  });
+}
+
+function releaseSendIdempotencyKey(clientMessageId?: string) {
+  if (!clientMessageId) return;
+  const existing = sendIdempotencyKeys.get(clientMessageId);
+  if (existing?.status === "sending") {
+    sendIdempotencyKeys.delete(clientMessageId);
+  }
 }
 
 function readStringField(value: unknown, fieldNames: string[]): string | undefined {
@@ -149,6 +190,7 @@ async function sendAttachmentsThroughClient(
   client: AdvancedImessageClient,
   chatGuid: string,
   attachments?: ImessageResponseAttachment[],
+  clientMessageId?: string,
 ) {
   if (!attachments?.length) return;
   if (!client.attachments?.upload || !client.messages?.sendAttachment) {
@@ -156,7 +198,7 @@ async function sendAttachmentsThroughClient(
     return;
   }
 
-  for (const att of attachments) {
+  for (const [index, att] of attachments.entries()) {
     try {
       const res = await fetch(att.url);
       if (!res.ok) {
@@ -167,7 +209,11 @@ async function sendAttachmentsThroughClient(
         data: Buffer.from(await res.arrayBuffer()),
         fileName: att.filename,
       });
-      await client.messages.sendAttachment(chatGuid, uploaded.attachment.guid);
+      await client.messages.sendAttachment(chatGuid, uploaded.attachment.guid, {
+        clientMessageId: clientMessageId
+          ? `${clientMessageId}:attachment:${index}`
+          : undefined,
+      });
     } catch (err) {
       console.warn(`[glass-imessage] Failed to send attachment ${att.filename}:`, err);
     }
@@ -179,17 +225,21 @@ async function sendByChatGuid(params: {
   chatGuid: string;
   message: string;
   attachments?: ImessageResponseAttachment[];
+  clientMessageId?: string;
 }) {
   if (TRANSPORT !== "imessage") return false;
   const client = getAdvancedImessageClient(params.app);
   if (!client?.messages?.sendText) return false;
 
   try {
-    await client.messages.sendText(params.chatGuid, params.message);
+    await client.messages.sendText(params.chatGuid, params.message, {
+      clientMessageId: params.clientMessageId,
+    });
     await sendAttachmentsThroughClient(
       client,
       params.chatGuid,
       params.attachments,
+      params.clientMessageId,
     );
     return true;
   } catch (err) {
@@ -359,10 +409,17 @@ async function main() {
       return;
     }
 
+    if (!claimSendIdempotencyKey(payload.clientMessageId)) {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, duplicate: true }));
+      return;
+    }
+
     try {
       if (payload.participants?.length) {
         const participants = [...new Set(payload.participants.map(normalizePhone).filter(Boolean))];
         if (participants.length < 2) {
+          releaseSendIdempotencyKey(payload.clientMessageId);
           res.writeHead(400, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: "At least two participants are required for a group chat" }));
           return;
@@ -381,11 +438,13 @@ async function main() {
             isGroup: true,
             participants: participants.map((address) => ({ address })),
           }));
+          completeSendIdempotencyKey(payload.clientMessageId);
           return;
         }
 
         const imessageClient = getAdvancedImessageClient(app);
         if (!imessageClient?.chats?.create) {
+          releaseSendIdempotencyKey(payload.clientMessageId);
           res.writeHead(501, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: "iMessage group creation is not available" }));
           return;
@@ -418,6 +477,7 @@ async function main() {
           isGroup: true,
           participants: returnedParticipants,
         }));
+        completeSendIdempotencyKey(payload.clientMessageId);
         return;
       }
 
@@ -429,6 +489,7 @@ async function main() {
         await sendOutboundAttachments(activeChatSpace, payload.attachments);
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: true }));
+        completeSendIdempotencyKey(payload.clientMessageId);
         return;
       }
 
@@ -438,15 +499,18 @@ async function main() {
           chatGuid: payload.chatGuid,
           message: payload.message,
           attachments: payload.attachments,
+          clientMessageId: payload.clientMessageId,
         });
         if (sentByChatGuid) {
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ ok: true }));
+          completeSendIdempotencyKey(payload.clientMessageId);
           return;
         }
       }
 
       if (!payload.toPhone) {
+        releaseSendIdempotencyKey(payload.clientMessageId);
         res.writeHead(404, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: "No active chat space" }));
         return;
@@ -459,6 +523,7 @@ async function main() {
         await sendOutboundAttachments(activeSpace, payload.attachments);
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: true }));
+        completeSendIdempotencyKey(payload.clientMessageId);
         return;
       }
 
@@ -469,6 +534,7 @@ async function main() {
         await sendOutboundAttachments(space, payload.attachments);
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: true }));
+        completeSendIdempotencyKey(payload.clientMessageId);
         return;
       }
 
@@ -479,7 +545,9 @@ async function main() {
       await sendOutboundAttachments(space, payload.attachments);
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true }));
+      completeSendIdempotencyKey(payload.clientMessageId);
     } catch (err) {
+      releaseSendIdempotencyKey(payload.clientMessageId);
       console.error("[glass-imessage] Failed to send outbound message:", err);
       res.writeHead(500, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: "Failed to send message" }));

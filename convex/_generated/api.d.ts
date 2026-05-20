@@ -58,6 +58,7 @@ import type * as http from "../http.js";
 import type * as imessageChats from "../imessageChats.js";
 import type * as imessageInboundEvents from "../imessageInboundEvents.js";
 import type * as imessageOutboundGroups from "../imessageOutboundGroups.js";
+import type * as imessageOutboundSends from "../imessageOutboundSends.js";
 import type * as lib_access from "../lib/access.js";
 import type * as lib_accessTests from "../lib/accessTests.js";
 import type * as lib_actionFailures from "../lib/actionFailures.js";
@@ -209,6 +210,7 @@ declare const fullApi: ApiFromModules<{
   imessageChats: typeof imessageChats;
   imessageInboundEvents: typeof imessageInboundEvents;
   imessageOutboundGroups: typeof imessageOutboundGroups;
+  imessageOutboundSends: typeof imessageOutboundSends;
   "lib/access": typeof lib_access;
   "lib/accessTests": typeof lib_accessTests;
   "lib/actionFailures": typeof lib_actionFailures;

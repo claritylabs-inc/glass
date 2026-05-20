@@ -1709,6 +1709,23 @@ export default defineSchema({
     .index("by_eventKey", ["eventKey"])
     .index("by_fromPhone", ["fromPhone"]),
 
+  imessageOutboundSends: defineTable({
+    idempotencyKey: v.string(),
+    orgId: v.optional(v.id("organizations")),
+    threadId: v.optional(v.id("threads")),
+    threadMessageId: v.optional(v.id("threadMessages")),
+    status: v.union(
+      v.literal("sending"),
+      v.literal("sent"),
+      v.literal("failed"),
+    ),
+    error: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_idempotencyKey", ["idempotencyKey"])
+    .index("by_threadMessageId", ["threadMessageId"]),
+
   imessageChats: defineTable({
     chatGuid: v.string(),
     isGroup: v.boolean(),

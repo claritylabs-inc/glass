@@ -54,7 +54,7 @@ import { getPortalUrlForOrg } from "../lib/domains";
 import {
   formatWebChatAgentMirrorText,
   getImessageOutboundRoute,
-  sendOutboundImessage,
+  sendIdempotentOutboundImessage,
   storedAttachmentsToImessageOutbound,
 } from "../lib/imessageOutbound";
 import {
@@ -2194,14 +2194,17 @@ export const run = internalAction({
             ctx,
             responseAttachments,
           );
-          await sendOutboundImessage({
+          await sendIdempotentOutboundImessage(ctx, {
             ...route,
+            idempotencyKey: `web-agent:${agentMsgId}`,
+            orgId: args.orgId,
+            threadId: args.threadId,
+            threadMessageId: agentMsgId,
             message: formatWebChatAgentMirrorText({
               content: stripMarkdown(content),
               hasAttachments: imessageAttachments.length > 0,
             }),
             attachments: imessageAttachments,
-            clientMessageId: `web-agent:${agentMsgId}`,
             logPrefix: "processThreadChat",
           });
         }

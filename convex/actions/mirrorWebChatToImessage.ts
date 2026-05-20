@@ -7,7 +7,7 @@ import type { Doc } from "../_generated/dataModel";
 import {
   formatWebChatUserMirrorText,
   getImessageOutboundRoute,
-  sendOutboundImessage,
+  sendIdempotentOutboundImessage,
   storedAttachmentsToImessageOutbound,
 } from "../lib/imessageOutbound";
 
@@ -38,15 +38,18 @@ export const run = internalAction({
       ctx,
       message.attachments,
     );
-    await sendOutboundImessage({
+    await sendIdempotentOutboundImessage(ctx, {
       ...route,
+      idempotencyKey: `web-chat:${message._id}`,
+      orgId: message.orgId,
+      threadId: message.threadId,
+      threadMessageId: message._id,
       message: formatWebChatUserMirrorText({
         userName: message.userName,
         content: message.content,
         hasAttachments: attachments.length > 0,
       }),
       attachments,
-      clientMessageId: `web-chat:${message._id}`,
       logPrefix: "mirrorWebChatToImessage",
     });
   },
