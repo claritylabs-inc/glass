@@ -272,6 +272,15 @@ function normalizeStatusContent(content: string) {
   return content.replace(/[*_`]/g, "").replace(/\s+/g, " ").trim();
 }
 
+function normalizeMessageForDedupe(content: string) {
+  return normalizeStatusContent(content)
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/<([^>\s]+@[^>\s]+)>/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
 function getEmailStatusRecipient(message: ThreadMessage) {
   const normalized = normalizeStatusContent(message.content);
   const match =
@@ -387,6 +396,18 @@ function hasLaterEmailSendCompletion(
   return false;
 }
 
+function hasSameEmailSentStatus(
+  first: ThreadMessage,
+  second: ThreadMessage,
+) {
+  if (!isEmailSentStatusMessage(first) || !isEmailSentStatusMessage(second))
+    return false;
+  const firstRecipient = getEmailStatusRecipient(first);
+  const secondRecipient = getEmailStatusRecipient(second);
+  if (!firstRecipient || !secondRecipient) return false;
+  return firstRecipient === secondRecipient;
+}
+
 function hasEarlierIdenticalAgentMessage(
   messages: ThreadMessage[],
   message: ThreadMessage,
@@ -395,8 +416,7 @@ function hasEarlierIdenticalAgentMessage(
   if (message.role !== "agent") return false;
   if (message.channel !== "chat" && message.channel !== "imessage")
     return false;
-  if (message.attachments?.length) return false;
-  const normalized = normalizeStatusContent(message.content);
+  const normalized = normalizeMessageForDedupe(message.content);
   if (!normalized) return false;
 
   for (let i = index - 1; i >= 0; i -= 1) {
@@ -405,12 +425,26 @@ function hasEarlierIdenticalAgentMessage(
     if (candidate.role !== "agent") continue;
     if (candidate.channel !== "chat" && candidate.channel !== "imessage")
       continue;
-    if (normalizeStatusContent(candidate.content) === normalized) {
+    if (
+      normalizeMessageForDedupe(candidate.content) === normalized ||
+      hasSameEmailSentStatus(candidate, message)
+    ) {
       return true;
     }
   }
 
   return false;
+}
+
+function isImessageSyncMessage(message: ThreadMessage) {
+  if (message.role !== "agent" || message.channel !== "imessage") return false;
+  const normalized = normalizeMessageForDedupe(message.content);
+  return (
+    /^glass replied in web chat:?/.test(normalized) ||
+    /\bfrom glass web chat:/.test(normalized) ||
+    /\bshared attachment\(s\) from glass web chat\.?$/.test(normalized) ||
+    /\bsent (?:a )?message from glass web chat\.?$/.test(normalized)
+  );
 }
 
 function formatToolInput(input?: string) {
@@ -2146,6 +2180,10 @@ export function UnifiedThreadContent({
             const hiddenStatusMessageIds = new Set<string>();
             const relatedEmailsByMessageId = new Map<string, ThreadMessage[]>();
             threadMessages.forEach((message, idx) => {
+              if (isImessageSyncMessage(message)) {
+                hiddenStatusMessageIds.add(message._id);
+                return;
+              }
               if (
                 hasEarlierIdenticalAgentMessage(threadMessages, message, idx)
               ) {
