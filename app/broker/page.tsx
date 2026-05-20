@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Pencil } from "lucide-react";
 import { useQuery } from "convex/react";
+import { AgentContactCallout } from "@/components/agent-contact-callout";
 import { AppShell } from "@/components/app-shell";
 import {
   BrokerIdentitySection,
@@ -53,6 +54,9 @@ export default function BrokerPage() {
   const contactName = identity?.contactName?.trim();
   const contactEmail = identity?.contactEmail?.trim();
   const contactPhone = identity?.contactPhone?.trim();
+  const fallbackAgentHandle =
+    (currentOrg?.org as { agentHandle?: string } | undefined)?.agentHandle ??
+    null;
   const hasBrokerInfo = !!(
     brokerName ||
     contactName ||
@@ -95,6 +99,12 @@ export default function BrokerPage() {
         </div>
       ) : (
         <div className="w-full space-y-5">
+          <AgentContactCallout
+            broker={currentOrg.brokerOrg ?? null}
+            fallbackAgentHandle={fallbackAgentHandle}
+            className="mb-0"
+          />
+
           <section className="w-full overflow-hidden rounded-lg border border-foreground/6 bg-card">
             <Table className="min-w-[880px]">
               <TableHeader>
