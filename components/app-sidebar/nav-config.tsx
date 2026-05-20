@@ -2,6 +2,7 @@ import {
   Activity,
   ArrowLeft,
   BadgeCheck,
+  Briefcase,
   Building2,
   ClipboardCheck,
   FileText,
@@ -69,6 +70,12 @@ export const INSURANCE_ITEMS: NavItemConfig[] = [
     label: "Policies",
     icon: FileText,
     shortcut: navShortcut("p"),
+  },
+  {
+    href: "/broker",
+    label: "Broker",
+    icon: Briefcase,
+    shortcut: navShortcut("b"),
   },
   {
     href: "/compliance",
