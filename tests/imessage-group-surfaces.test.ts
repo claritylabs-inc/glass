@@ -53,6 +53,27 @@ describe("iMessage group chat surfaces", () => {
     expect(chat).toContain("Ask the user to confirm before creating");
   });
 
+  it("mirrors web chat additions back to iMessage-origin threads", () => {
+    const threads = read("convex/threads.ts");
+    const mirror = read("convex/actions/mirrorWebChatToImessage.ts");
+    const outbound = read("convex/lib/imessageOutbound.ts");
+    const chat = read("convex/actions/processThreadChat.ts");
+    const threadContent = read("components/agent-thread/thread-content.tsx");
+    const worker = read("imessage-worker/src/index.ts");
+    const agents = read("AGENTS.md");
+
+    expect(threads).toContain("internal.actions.mirrorWebChatToImessage.run");
+    expect(mirror).toContain('message.role !== "user" || message.channel !== "chat"');
+    expect(outbound).toContain("formatWebChatUserMirrorText");
+    expect(chat).toContain("formatWebChatAgentMirrorText");
+    expect(chat).toContain("storedAttachmentsToImessageOutbound");
+    expect(threadContent).toContain("hasEarlierIdenticalAgentMessage");
+    expect(worker).toContain("payload.attachments");
+    expect(worker).toContain("sendOutboundAttachments");
+    expect(worker).toContain("sendByChatGuid");
+    expect(agents).toContain("mirrors the web user message and Glass reply back");
+  });
+
   it("keeps group fallback threads separate from direct iMessage DMs", () => {
     const direct = buildFallbackImessageChatGuid({
       fromPhone: "+15551234567",

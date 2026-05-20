@@ -2,9 +2,19 @@ import http from "node:http";
 import { Spectrum, attachment, type Space, type SpectrumInstance } from "spectrum-ts";
 import { imessage } from "spectrum-ts/providers/imessage";
 import { terminal } from "spectrum-ts/providers/terminal";
-import { sendToConvex, type ImessageAttachment } from "./convex.js";
+import {
+  sendToConvex,
+  type ImessageAttachment,
+  type ImessageResponseAttachment,
+} from "./convex.js";
 
 type AdvancedImessageClient = {
+  attachments?: {
+    upload(input: {
+      data: Buffer;
+      fileName: string;
+    }): Promise<{ attachment: { guid: string } }>;
+  };
   chats?: {
     get(chatGuid: string): Promise<{
       displayName?: string;
@@ -28,6 +38,18 @@ type AdvancedImessageClient = {
     setDisplayName(chatGuid: string, displayName: string, options?: {
       clientMessageId?: string;
     }): Promise<unknown>;
+  };
+  messages?: {
+    sendAttachment(
+      chatGuid: string,
+      attachmentGuid: string,
+      options?: Record<string, unknown>,
+    ): Promise<unknown>;
+    sendText(
+      chatGuid: string,
+      text: string,
+      options?: Record<string, unknown>,
+    ): Promise<unknown>;
   };
 };
 
@@ -100,6 +122,83 @@ function readTimestamp(value: unknown, fieldNames: string[]): number | undefined
     }
   }
   return undefined;
+}
+
+async function sendOutboundAttachments(
+  space: Space,
+  attachments?: ImessageResponseAttachment[],
+) {
+  for (const att of attachments ?? []) {
+    try {
+      const res = await fetch(att.url);
+      if (!res.ok) {
+        console.warn(`[glass-imessage] Failed to download attachment ${att.filename}: ${res.status}`);
+        continue;
+      }
+      const buffer = Buffer.from(await res.arrayBuffer());
+      await space.send(
+        attachment(buffer, { name: att.filename, mimeType: att.mimeType }),
+      );
+    } catch (err) {
+      console.warn(`[glass-imessage] Failed to send attachment ${att.filename}:`, err);
+    }
+  }
+}
+
+async function sendAttachmentsThroughClient(
+  client: AdvancedImessageClient,
+  chatGuid: string,
+  attachments?: ImessageResponseAttachment[],
+) {
+  if (!attachments?.length) return;
+  if (!client.attachments?.upload || !client.messages?.sendAttachment) {
+    console.warn("[glass-imessage] Attachment send by chat GUID is not available");
+    return;
+  }
+
+  for (const att of attachments) {
+    try {
+      const res = await fetch(att.url);
+      if (!res.ok) {
+        console.warn(`[glass-imessage] Failed to download attachment ${att.filename}: ${res.status}`);
+        continue;
+      }
+      const uploaded = await client.attachments.upload({
+        data: Buffer.from(await res.arrayBuffer()),
+        fileName: att.filename,
+      });
+      await client.messages.sendAttachment(chatGuid, uploaded.attachment.guid);
+    } catch (err) {
+      console.warn(`[glass-imessage] Failed to send attachment ${att.filename}:`, err);
+    }
+  }
+}
+
+async function sendByChatGuid(params: {
+  app: SpectrumInstance;
+  chatGuid: string;
+  message: string;
+  attachments?: ImessageResponseAttachment[];
+}) {
+  if (TRANSPORT !== "imessage") return false;
+  const client = getAdvancedImessageClient(params.app);
+  if (!client?.messages?.sendText) return false;
+
+  try {
+    await client.messages.sendText(params.chatGuid, params.message);
+    await sendAttachmentsThroughClient(
+      client,
+      params.chatGuid,
+      params.attachments,
+    );
+    return true;
+  } catch (err) {
+    console.warn(
+      `[glass-imessage] Failed to send by chat GUID ${params.chatGuid}:`,
+      err,
+    );
+    return false;
+  }
 }
 
 function normalizePhone(raw: string): string {
@@ -244,6 +343,7 @@ async function main() {
       message?: string;
       title?: string;
       clientMessageId?: string;
+      attachments?: ImessageResponseAttachment[];
     };
     try {
       payload = JSON.parse(body);
@@ -272,6 +372,7 @@ async function main() {
           const terminalClient = terminal(app);
           const space = await terminalClient.space({ id: TERMINAL_SPACE_ID });
           await space.send(`[new group: ${participants.join(", ")}] ${payload.message}`);
+          await sendOutboundAttachments(space, payload.attachments);
           const chatGuid = deterministicTerminalGroupGuid(participants);
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify({
@@ -294,6 +395,9 @@ async function main() {
           message: payload.message,
           clientMessageId: payload.clientMessageId,
         });
+        if (payload.attachments?.length) {
+          console.warn("[glass-imessage] Attachment send is not available during new group creation");
+        }
         const chatGuid = created.chat.guid;
         if (payload.title?.trim() && imessageClient.groups?.setDisplayName) {
           await imessageClient.groups.setDisplayName(chatGuid, payload.title.trim(), {
@@ -322,9 +426,24 @@ async function main() {
         : undefined;
       if (activeChatSpace) {
         await activeChatSpace.send(payload.message);
+        await sendOutboundAttachments(activeChatSpace, payload.attachments);
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: true }));
         return;
+      }
+
+      if (payload.chatGuid) {
+        const sentByChatGuid = await sendByChatGuid({
+          app,
+          chatGuid: payload.chatGuid,
+          message: payload.message,
+          attachments: payload.attachments,
+        });
+        if (sentByChatGuid) {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: true }));
+          return;
+        }
       }
 
       if (!payload.toPhone) {
@@ -337,6 +456,7 @@ async function main() {
       const activeSpace = activeSpacesByPhone.get(toPhone);
       if (activeSpace) {
         await activeSpace.send(payload.message);
+        await sendOutboundAttachments(activeSpace, payload.attachments);
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: true }));
         return;
@@ -346,6 +466,7 @@ async function main() {
         const terminalClient = terminal(app);
         const space = await terminalClient.space({ id: TERMINAL_SPACE_ID });
         await space.send(payload.message);
+        await sendOutboundAttachments(space, payload.attachments);
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: true }));
         return;
@@ -355,6 +476,7 @@ async function main() {
       const user = await imessageClient.user(payload.toPhone);
       const space = await imessageClient.space(user);
       await space.send(payload.message);
+      await sendOutboundAttachments(space, payload.attachments);
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true }));
     } catch (err) {
@@ -466,23 +588,7 @@ async function main() {
           }
 
           // Send any file attachments (e.g. COI PDFs)
-          if (result.attachments && result.attachments.length > 0) {
-            for (const att of result.attachments) {
-              try {
-                const res = await fetch(att.url);
-                if (!res.ok) {
-                  console.warn(`[glass-imessage] Failed to download attachment ${att.filename}: ${res.status}`);
-                  continue;
-                }
-                const buffer = Buffer.from(await res.arrayBuffer());
-                await space.send(
-                  attachment(buffer, { name: att.filename, mimeType: att.mimeType }),
-                );
-              } catch (err) {
-                console.warn(`[glass-imessage] Failed to send attachment ${att.filename}:`, err);
-              }
-            }
-          }
+          await sendOutboundAttachments(space, result.attachments);
 
           if (result.leaveGroup && result.chatGuid && TRANSPORT === "imessage") {
             try {

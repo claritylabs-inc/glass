@@ -350,6 +350,16 @@ export const sendMessage = mutation({
 
     await ctx.db.patch(args.threadId, { lastMessageAt: dayjs().valueOf() });
 
+    if (
+      thread.originChannel === "imessage" &&
+      (thread.imessageChatGuid || thread.threadPhone)
+    ) {
+      await ctx.scheduler.runAfter(0, internal.actions.mirrorWebChatToImessage.run, {
+        threadId: args.threadId,
+        messageId,
+      });
+    }
+
     // Schedule agent response (skip when streaming API route handles it)
     if (!args.skipAgentResponse) {
       await ctx.scheduler.runAfter(0, internal.actions.processThreadChat.run, {

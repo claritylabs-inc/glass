@@ -5,8 +5,8 @@ import { action, internalAction } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import { sendResendEmail } from "../lib/resend";
 import { toResendAttachments } from "../lib/emailSubagent";
-import { getImessageWorkerUrl } from "../lib/imessageConfig";
 import { shouldBlockUnapprovedCoiAttachmentBatch } from "../lib/coiAttachmentGuards";
+import { sendOutboundImessage } from "../lib/imessageOutbound";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 
@@ -33,32 +33,12 @@ async function sendTextConfirmation(params: {
   chatGuid?: string;
   message: string;
 }): Promise<boolean> {
-  const workerUrl = getImessageWorkerUrl();
-  if (!workerUrl) return false;
-
-  try {
-    const res = await fetch(`${workerUrl}/send`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${process.env.IMESSAGE_WORKER_SECRET ?? ""}`,
-      },
-      body: JSON.stringify({
-        toPhone: params.toPhone,
-        chatGuid: params.chatGuid,
-        message: params.message,
-      }),
-    });
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      console.warn(`[sendPendingEmail] SMS sent confirmation failed ${res.status}: ${body}`);
-      return false;
-    }
-    return true;
-  } catch (err) {
-    console.warn("[sendPendingEmail] SMS sent confirmation failed:", err);
-    return false;
-  }
+  return await sendOutboundImessage({
+    toPhone: params.toPhone,
+    chatGuid: params.chatGuid,
+    message: params.message,
+    logPrefix: "sendPendingEmail",
+  });
 }
 
 async function sendPendingEmailById(

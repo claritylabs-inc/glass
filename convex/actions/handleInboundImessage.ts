@@ -37,10 +37,8 @@ import { tryBuildDoclingPdfText } from "../lib/doclingPreprocessor";
 import { classifyPromptInjection, enforceInputLimits } from "../lib/security";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { AgentScope } from "../lib/agentScope";
-import {
-  getImessageWorkerUrl,
-  isImessageInboundEnabled,
-} from "../lib/imessageConfig";
+import { isImessageInboundEnabled } from "../lib/imessageConfig";
+import { sendOutboundImessage } from "../lib/imessageOutbound";
 import { getClientPortalUrl } from "../lib/domains";
 import {
   anonymousParticipantLabel,
@@ -173,33 +171,12 @@ async function sendImmediateImessage(params: {
   chatGuid?: string;
   message: string;
 }): Promise<boolean> {
-  const workerUrl = getImessageWorkerUrl();
-  if (!workerUrl) return false;
-
-  try {
-    const res = await fetch(`${workerUrl}/send`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${process.env.IMESSAGE_WORKER_SECRET ?? ""}`,
-      },
-      body: JSON.stringify({
-        toPhone: params.toPhone,
-        chatGuid: params.chatGuid,
-        message: params.message,
-      }),
-    });
-
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      console.warn(`[imessage] Status cue send failed ${res.status}: ${body}`);
-      return false;
-    }
-    return true;
-  } catch (err) {
-    console.warn("[imessage] Status cue send failed:", err);
-    return false;
-  }
+  return await sendOutboundImessage({
+    toPhone: params.toPhone,
+    chatGuid: params.chatGuid,
+    message: params.message,
+    logPrefix: "imessage",
+  });
 }
 
 async function generateImessageStatusCue(params: {

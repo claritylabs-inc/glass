@@ -23,6 +23,7 @@ import type * as actions_handleInboundEmail from "../actions/handleInboundEmail.
 import type * as actions_handleInboundImessage from "../actions/handleInboundImessage.js";
 import type * as actions_mailboxCoordinator from "../actions/mailboxCoordinator.js";
 import type * as actions_mcpChat from "../actions/mcpChat.js";
+import type * as actions_mirrorWebChatToImessage from "../actions/mirrorWebChatToImessage.js";
 import type * as actions_policyChangeRequests from "../actions/policyChangeRequests.js";
 import type * as actions_policyExtraction from "../actions/policyExtraction.js";
 import type * as actions_processThreadChat from "../actions/processThreadChat.js";
@@ -96,6 +97,7 @@ import type * as lib_emailTemplate from "../lib/emailTemplate.js";
 import type * as lib_extraction from "../lib/extraction.js";
 import type * as lib_imessageConfig from "../lib/imessageConfig.js";
 import type * as lib_imessageGroupResolution from "../lib/imessageGroupResolution.js";
+import type * as lib_imessageOutbound from "../lib/imessageOutbound.js";
 import type * as lib_industries from "../lib/industries.js";
 import type * as lib_mcpAuth from "../lib/mcpAuth.js";
 import type * as lib_mergePdfs from "../lib/mergePdfs.js";
@@ -172,6 +174,7 @@ declare const fullApi: ApiFromModules<{
   "actions/handleInboundImessage": typeof actions_handleInboundImessage;
   "actions/mailboxCoordinator": typeof actions_mailboxCoordinator;
   "actions/mcpChat": typeof actions_mcpChat;
+  "actions/mirrorWebChatToImessage": typeof actions_mirrorWebChatToImessage;
   "actions/policyChangeRequests": typeof actions_policyChangeRequests;
   "actions/policyExtraction": typeof actions_policyExtraction;
   "actions/processThreadChat": typeof actions_processThreadChat;
@@ -245,6 +248,7 @@ declare const fullApi: ApiFromModules<{
   "lib/extraction": typeof lib_extraction;
   "lib/imessageConfig": typeof lib_imessageConfig;
   "lib/imessageGroupResolution": typeof lib_imessageGroupResolution;
+  "lib/imessageOutbound": typeof lib_imessageOutbound;
   "lib/industries": typeof lib_industries;
   "lib/mcpAuth": typeof lib_mcpAuth;
   "lib/mergePdfs": typeof lib_mergePdfs;

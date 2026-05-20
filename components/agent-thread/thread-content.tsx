@@ -387,6 +387,32 @@ function hasLaterEmailSendCompletion(
   return false;
 }
 
+function hasEarlierIdenticalAgentMessage(
+  messages: ThreadMessage[],
+  message: ThreadMessage,
+  index: number,
+) {
+  if (message.role !== "agent") return false;
+  if (message.channel !== "chat" && message.channel !== "imessage")
+    return false;
+  if (message.attachments?.length) return false;
+  const normalized = normalizeStatusContent(message.content);
+  if (!normalized) return false;
+
+  for (let i = index - 1; i >= 0; i -= 1) {
+    const candidate = messages[i];
+    if (!candidate || candidate.role === "user") return false;
+    if (candidate.role !== "agent") continue;
+    if (candidate.channel !== "chat" && candidate.channel !== "imessage")
+      continue;
+    if (normalizeStatusContent(candidate.content) === normalized) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function formatToolInput(input?: string) {
   if (!input) return "{}";
   try {
@@ -2120,6 +2146,12 @@ export function UnifiedThreadContent({
             const hiddenStatusMessageIds = new Set<string>();
             const relatedEmailsByMessageId = new Map<string, ThreadMessage[]>();
             threadMessages.forEach((message, idx) => {
+              if (
+                hasEarlierIdenticalAgentMessage(threadMessages, message, idx)
+              ) {
+                hiddenStatusMessageIds.add(message._id);
+                return;
+              }
               if (hasLaterEmailSendCompletion(threadMessages, message, idx)) {
                 hiddenStatusMessageIds.add(message._id);
                 return;

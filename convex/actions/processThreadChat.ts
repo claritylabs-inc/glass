@@ -52,6 +52,12 @@ import { getNotificationFromAddress, sendResendEmail } from "../lib/resend";
 import { buildEmailShell, escapeHtml } from "../lib/emailTemplate";
 import { getPortalUrlForOrg } from "../lib/domains";
 import {
+  formatWebChatAgentMirrorText,
+  getImessageOutboundRoute,
+  sendOutboundImessage,
+  storedAttachmentsToImessageOutbound,
+} from "../lib/imessageOutbound";
+import {
   buildEmailPayload,
   buildEmailSignature,
   buildEmailExpertTool,
@@ -2176,6 +2182,31 @@ export const run = internalAction({
           content = emailResult.responseBody;
         }
       }
+
+      if (
+        thread?.originChannel === "imessage" &&
+        latestUserMsg?.channel === "chat" &&
+        String(latestUserMsg._id ?? "") === String(args.userMessageId)
+      ) {
+        const route = getImessageOutboundRoute(thread);
+        if (route) {
+          const imessageAttachments = await storedAttachmentsToImessageOutbound(
+            ctx,
+            responseAttachments,
+          );
+          await sendOutboundImessage({
+            ...route,
+            message: formatWebChatAgentMirrorText({
+              content: stripMarkdown(content),
+              hasAttachments: imessageAttachments.length > 0,
+            }),
+            attachments: imessageAttachments,
+            clientMessageId: `web-agent:${agentMsgId}`,
+            logPrefix: "processThreadChat",
+          });
+        }
+      }
+
       if (
         !emailResult &&
         org.chatEmailNotifications === true &&
