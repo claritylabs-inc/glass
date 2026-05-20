@@ -13,6 +13,13 @@ import { PhoneInput } from "@/components/ui/phone-input";
 const INPUT_CLASSES =
   "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors disabled:opacity-50";
 
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function optionalEmailInvalid(value: string) {
+  const trimmed = value.trim();
+  return trimmed.length > 0 && !EMAIL_PATTERN.test(trimmed);
+}
+
 type BrokerIdentity = {
   brokerCompanyName?: string;
   contactName?: string;
@@ -116,18 +123,33 @@ function BrokerIdentityForm({
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const initialStateRef = useRef(
-    JSON.stringify({
-      brokerCompanyName: identity.brokerCompanyName ?? "",
-      brokerContactName: identity.contactName ?? "",
-      brokerContactEmail: identity.contactEmail ?? "",
-      brokerContactPhone: identity.contactPhone ?? "",
-      producerId: identity.selectedContactUserId ?? "",
-      overrideName: identity.overrides?.contactName ?? "",
-      overrideEmail: identity.overrides?.contactEmail ?? "",
-      overridePhone: identity.overrides?.contactPhone ?? "",
+  const currentState = useMemo(
+    () => ({
+      brokerCompanyName,
+      brokerContactName,
+      brokerContactEmail,
+      brokerContactPhone,
+      producerId,
+      overrideName,
+      overrideEmail,
+      overridePhone,
     }),
+    [
+      brokerCompanyName,
+      brokerContactName,
+      brokerContactEmail,
+      brokerContactPhone,
+      producerId,
+      overrideName,
+      overrideEmail,
+      overridePhone,
+    ],
   );
+  const currentStateKey = useMemo(
+    () => JSON.stringify(currentState),
+    [currentState],
+  );
+  const initialStateRef = useRef(currentStateKey);
   const selectedMember = useMemo(
     () => identity.brokerMembers.find((member) => member.userId === producerId),
     [identity.brokerMembers, producerId],
@@ -141,6 +163,11 @@ function BrokerIdentityForm({
     overridePhone.trim().length > 0 &&
     !isValidPhoneNumber(overridePhone);
   const phoneInvalid = manualPhoneInvalid || overridePhoneInvalid;
+  const manualEmailInvalid =
+    identity.canEditManual && optionalEmailInvalid(brokerContactEmail);
+  const overrideEmailInvalid =
+    identity.canEditConnected && optionalEmailInvalid(overrideEmail);
+  const emailInvalid = manualEmailInvalid || overrideEmailInvalid;
 
   const saveManual = useCallback(async () => {
     setSaving(true);
@@ -152,6 +179,7 @@ function BrokerIdentityForm({
         brokerContactEmail,
         brokerContactPhone,
       });
+      initialStateRef.current = currentStateKey;
       setSavedAt(dayjs().valueOf());
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to save broker information");
@@ -165,6 +193,7 @@ function BrokerIdentityForm({
     brokerContactName,
     brokerContactEmail,
     brokerContactPhone,
+    currentStateKey,
   ]);
 
   const saveConnected = useCallback(async () => {
@@ -180,6 +209,7 @@ function BrokerIdentityForm({
         contactEmailOverride: overrideEmail,
         contactPhoneOverride: overridePhone,
       });
+      initialStateRef.current = currentStateKey;
       setSavedAt(dayjs().valueOf());
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to save broker contact");
@@ -193,23 +223,14 @@ function BrokerIdentityForm({
     overrideName,
     overrideEmail,
     overridePhone,
+    currentStateKey,
   ]);
 
   useEffect(() => {
     if (!identity.canEditManual && !identity.canEditConnected) return;
-    const currentState = JSON.stringify({
-      brokerCompanyName,
-      brokerContactName,
-      brokerContactEmail,
-      brokerContactPhone,
-      producerId,
-      overrideName,
-      overrideEmail,
-      overridePhone,
-    });
-    if (currentState === initialStateRef.current) return;
+    if (currentStateKey === initialStateRef.current) return;
     if (identity.canEditConnected && !producerId) return;
-    if (phoneInvalid) return;
+    if (phoneInvalid || emailInvalid) return;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
       void (identity.canEditConnected ? saveConnected() : saveManual());
@@ -220,17 +241,12 @@ function BrokerIdentityForm({
   }, [
     identity.canEditManual,
     identity.canEditConnected,
-    brokerCompanyName,
-    brokerContactName,
-    brokerContactEmail,
-    brokerContactPhone,
+    currentStateKey,
     producerId,
-    overrideName,
-    overrideEmail,
-    overridePhone,
     saveManual,
     saveConnected,
     phoneInvalid,
+    emailInvalid,
   ]);
 
   return (
@@ -309,8 +325,16 @@ function BrokerIdentityForm({
                 value={overrideEmail}
                 onChange={(event) => setOverrideEmail(event.target.value)}
                 placeholder={selectedMember?.email ?? "Use selected user's email"}
+                type="email"
                 className={INPUT_CLASSES}
               />
+              <p className="mt-1.5 min-h-4 text-label-sm text-muted-foreground/60">
+                {overrideEmailInvalid ? (
+                  <span className="text-red-500/80">
+                    Enter a valid email address.
+                  </span>
+                ) : null}
+              </p>
             </div>
             <div>
               <label className="mb-1.5 block text-label-sm font-medium text-muted-foreground">
@@ -344,8 +368,16 @@ function BrokerIdentityForm({
                 onChange={(event) => setBrokerContactEmail(event.target.value)}
                 disabled={identity.connected || !identity.canEditManual}
                 placeholder="broker@example.com"
+                type="email"
                 className={INPUT_CLASSES}
               />
+              <p className="mt-1.5 min-h-4 text-label-sm text-muted-foreground/60">
+                {manualEmailInvalid ? (
+                  <span className="text-red-500/80">
+                    Enter a valid email address.
+                  </span>
+                ) : null}
+              </p>
             </div>
             <div>
               <label className="mb-1.5 block text-label-sm font-medium text-muted-foreground">
