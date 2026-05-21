@@ -18,7 +18,7 @@ type SourceSpanDoc = {
 };
 
 const STANDALONE_CLIENT_PCE_MESSAGE =
-  "Policy change requests need to go through a broker. Connect a broker before opening this request.";
+  "I can't handle this policy change request because your broker isn't connected to Glass. Please contact your broker directly for help.";
 
 function toEvidenceSource(span: SourceSpanDoc) {
   return {
