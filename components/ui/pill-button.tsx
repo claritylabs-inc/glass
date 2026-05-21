@@ -24,8 +24,8 @@ interface PillButtonProps extends Omit<
 }
 
 const MOTION_TRANSITION = {
-  duration: 0.16,
-  ease: [0.22, 1, 0.36, 1] as const,
+  duration: 0.08,
+  ease: [0.2, 0, 0, 1] as const,
 };
 
 type VariantConfig = {
@@ -42,31 +42,26 @@ const variantConfig: Record<PillButtonVariant, VariantConfig> = {
   secondary: {
     classes:
       "border border-foreground/8 bg-transparent text-muted-foreground hover:border-foreground/14 hover:bg-foreground/[0.03] hover:text-foreground",
-    hover: { filter: "brightness(0.98)" },
     tap: { opacity: 0.78 },
   },
   destructive: {
     classes:
       "bg-red-500/10 text-destructive hover:bg-red-500/15 hover:text-red-600",
-    hover: { filter: "brightness(0.98)" },
     tap: { opacity: 0.78 },
   },
   ghost: {
     classes:
       "bg-transparent text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground",
-    hover: { filter: "brightness(0.98)" },
     tap: { opacity: 0.78 },
   },
   icon: {
     classes:
       "bg-transparent text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground",
-    hover: { filter: "brightness(0.98)" },
     tap: { opacity: 0.78 },
   },
   iconLabel: {
     classes:
       "bg-transparent text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground",
-    hover: { filter: "brightness(0.98)" },
     tap: { opacity: 0.78 },
   },
 };

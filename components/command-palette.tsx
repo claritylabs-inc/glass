@@ -9,6 +9,9 @@ import { motion, AnimatePresence } from "framer-motion";
 import { ArrowUp, Asterisk, Loader2 } from "lucide-react";
 import { usePageContext } from "@/hooks/use-page-context";
 import { getPublicAgentDomain } from "@/lib/domains";
+import { createClientMutationId } from "@/lib/sync/client-mutation-id";
+import { useCachedQuery } from "@/lib/sync/use-cached-query";
+import { useThreadCacheActions } from "@/lib/sync/glass-cached-queries";
 
 const AGENT_DOMAIN = getPublicAgentDomain();
 
@@ -17,6 +20,17 @@ export function CommandPalette() {
   const createThread = useMutation(api.threads.create);
   const sendThreadMessage = useMutation(api.threads.sendMessage);
   const { context: pageContext } = usePageContext();
+  const viewerOrg = useCachedQuery(
+    "commandPalette.viewerOrg",
+    api.orgs.viewerOrg,
+    {},
+  );
+  const viewer = useCachedQuery("commandPalette.viewer", api.users.viewer, {});
+  const {
+    appendOptimisticSend,
+    markOptimisticSendFailed,
+    seedOptimisticThread,
+  } = useThreadCacheActions();
 
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState("");
@@ -52,7 +66,6 @@ export function CommandPalette() {
   // Auto-focus
   useEffect(() => {
     if (open) {
-      // Delay to allow animation to start
       requestAnimationFrame(() => inputRef.current?.focus());
     }
   }, [open]);
@@ -64,16 +77,48 @@ export function CommandPalette() {
 
     setSending(true);
     try {
+      const messageClientMutationId = createClientMutationId("message");
       const threadId = await createThread({
         initialContext: pageContext ?? undefined,
         agentDomain: AGENT_DOMAIN,
+        clientMutationId: createClientMutationId("thread"),
       });
-      await sendThreadMessage({ threadId, content });
+      if (viewerOrg?.org?._id && viewer?._id) {
+        await seedOptimisticThread({
+          threadId,
+          orgId: viewerOrg.org._id,
+          createdBy: viewer._id,
+          initialContext: pageContext ?? undefined,
+        });
+        await appendOptimisticSend({
+          threadId,
+          orgId: viewerOrg.org._id,
+          content,
+          clientMutationId: messageClientMutationId,
+          userId: viewer._id,
+          userName: viewer.name ?? viewer.email ?? "You",
+        });
+      }
       close();
       router.push(`/agent/thread/${threadId}`);
+      setSending(false);
+      void sendThreadMessage({
+        threadId,
+        content,
+        clientMutationId: messageClientMutationId,
+      }).catch(async (error) => {
+        if (viewerOrg?.org?._id) {
+          await markOptimisticSendFailed({
+            threadId,
+            clientMutationId: messageClientMutationId,
+            error:
+              error instanceof Error ? error.message : "Failed to send message",
+          });
+        }
+        toast.error("Failed to send message");
+      });
     } catch {
       toast.error("Failed to start chat");
-    } finally {
       setSending(false);
     }
   }
@@ -88,7 +133,7 @@ export function CommandPalette() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.2, ease: [0.32, 0.72, 0, 1] }}
+            transition={{ duration: 0.08, ease: [0.2, 0, 0, 1] }}
             onClick={close}
           />
 
@@ -96,10 +141,10 @@ export function CommandPalette() {
           <motion.div
             onClick={(e) => e.stopPropagation()}
             className="fixed top-[28%] left-1/2 z-50 w-[90vw] max-w-120 -translate-x-1/2"
-            initial={{ opacity: 0, y: -12, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -12, scale: 0.98 }}
-            transition={{ duration: 0.25, ease: [0.32, 0.72, 0, 1] }}
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.1, ease: [0.2, 0, 0, 1] }}
           >
             <form onSubmit={handleSubmit}>
               <div className="rounded-xl overflow-hidden shadow-2xl bg-white/95 dark:bg-popover/95 backdrop-blur-sm border border-black/8 dark:border-[#3a3a3a]">
@@ -119,7 +164,9 @@ export function CommandPalette() {
                 <div className="flex items-center justify-between px-3 pb-2.5 pt-0">
                   <div className="flex items-center gap-1.5 ml-1">
                     <Asterisk className="w-3.5 h-3.5 text-primary-light" />
-                    <span className="text-label-sm font-medium text-muted-foreground/40">Glass</span>
+                    <span className="text-label-sm font-medium text-muted-foreground/40">
+                      Glass
+                    </span>
                   </div>
                   <div className="flex items-center gap-2">
                     <kbd className="text-[10px] px-1.5 py-0.5 rounded bg-foreground/4 text-muted-foreground/40 border border-foreground/6">

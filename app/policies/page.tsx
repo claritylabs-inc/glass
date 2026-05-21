@@ -1,12 +1,10 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
-import { useAction, useMutation, useQuery } from "convex/react";
+import { useAction, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { AppShell } from "@/components/app-shell";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PillButton } from "@/components/ui/pill-button";
 import { PolicyListItem } from "@/components/policy-list-item";
@@ -17,6 +15,10 @@ import { AgentContactCallout } from "@/components/agent-contact-callout";
 import { toast } from "sonner";
 import { Upload } from "lucide-react";
 import { getPublicAgentDomain } from "@/lib/domains";
+import {
+  useCachedPolicyList,
+  useCachedViewerOrg,
+} from "@/lib/sync/glass-cached-queries";
 
 const AGENT_DOMAIN = getPublicAgentDomain();
 
@@ -27,41 +29,13 @@ const DOC_TYPE_TABS = [
 
 type DocTypeTab = (typeof DOC_TYPE_TABS)[number]["id"];
 
-function PoliciesLoadingSkeleton() {
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-1 mb-4">
-        <Skeleton className="h-7 w-20 rounded-full" />
-        <Skeleton className="h-7 w-16 rounded-full" />
-      </div>
-      <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
-        {Array.from({ length: 5 }).map((_, i) => (
-          <div
-            key={i}
-            className="flex items-center justify-between px-4 py-3 border-t border-foreground/4 first:border-t-0"
-          >
-            <div className="space-y-1.5">
-              <Skeleton className="h-4 w-36" />
-              <Skeleton className="h-3 w-24" />
-            </div>
-            <Skeleton className="h-4 w-24 hidden sm:block" />
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 export default function PoliciesPage() {
-  const router = useRouter();
   const [docTypeTab, setDocTypeTab] = useState<DocTypeTab>("policy");
   const [uploaderOpen, setUploaderOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
 
-  const policies = useQuery(api.policies.listForClient, {
-    documentType: docTypeTab,
-  });
-  const viewerOrg = useQuery(api.orgs.viewerOrg, {});
+  const policies = useCachedPolicyList(docTypeTab);
+  const viewerOrg = useCachedViewerOrg();
 
   const generateUploadUrl = useMutation(api.policies.generateUploadUrl);
   const extractFromUpload = useAction(
@@ -164,6 +138,7 @@ export default function PoliciesPage() {
   );
 
   const isLoading = policies === undefined;
+  const isViewerOrgLoading = viewerOrg === undefined;
   const list = (policies ?? []) as Array<{
     _id: string;
     carrier?: string | null;
@@ -204,10 +179,15 @@ export default function PoliciesPage() {
       }
     >
       <div className="space-y-4">
-        <AgentContactCallout
-          broker={brokerForCallout}
-          fallbackAgentHandle={fallbackHandle}
-        />
+        {isViewerOrgLoading ? (
+          <div className="mb-6 sm:min-h-56" aria-hidden="true" />
+        ) : (
+          <AgentContactCallout
+            broker={brokerForCallout}
+            fallbackAgentHandle={fallbackHandle}
+            dismissKey="glass:agent-contact-callout:policies"
+          />
+        )}
         <Tabs
           value={docTypeTab}
           onValueChange={(v) => setDocTypeTab(v as DocTypeTab)}
@@ -222,7 +202,7 @@ export default function PoliciesPage() {
         </Tabs>
 
         {isLoading ? (
-          <PoliciesLoadingSkeleton />
+          <div className="min-h-32" aria-hidden="true" />
         ) : list.length === 0 ? (
           <PolicyEmptyState
             docType={docTypeTab}
@@ -244,7 +224,7 @@ export default function PoliciesPage() {
                 expirationDate={p.expirationDate}
                 pipelineStatus={p.pipelineStatus}
                 uploadedBySide={p.uploadedBySide}
-                onClick={() => router.push(`/policies/${p._id}`)}
+                href={`/policies/${p._id}`}
               />
             ))}
           </div>

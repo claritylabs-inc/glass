@@ -5,7 +5,6 @@ import { useParams } from "next/navigation";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { Loader2 } from "lucide-react";
 import {
   PolicyChangeThreadSidebar,
   UnifiedMessageBubble,
@@ -18,14 +17,18 @@ import { useClientDetailActions } from "../../layout";
 export default function ClientThreadReadOnlyPage() {
   const { clientOrgId, id } = useParams<{ clientOrgId: string; id: string }>();
   const { setBreadcrumbExtra, setRightPanel } = useClientDetailActions();
-  const [openPolicyChangeCaseId, setOpenPolicyChangeCaseId] = useState<Id<"policyChangeCases"> | null>(null);
+  const [openPolicyChangeCaseId, setOpenPolicyChangeCaseId] =
+    useState<Id<"policyChangeCases"> | null>(null);
 
   const viewer = useQuery(api.users.viewer);
-  const policyChangeAccess = useMemo<PolicyChangeAccess>(() => ({
-    canManage: true,
-    actorLabel: "broker",
-    brokerConnected: true,
-  }), []);
+  const policyChangeAccess = useMemo<PolicyChangeAccess>(
+    () => ({
+      canManage: true,
+      actorLabel: "broker",
+      brokerConnected: true,
+    }),
+    [],
+  );
 
   const thread = useQuery(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -40,7 +43,11 @@ export default function ClientThreadReadOnlyPage() {
     | {
         _id: Id<"threads">;
         title: string;
-        initialContext?: { pageType: string; entityId?: string; summary?: string };
+        initialContext?: {
+          pageType: string;
+          entityId?: string;
+          summary?: string;
+        };
         originChannel?: "chat" | "email" | "imessage";
       }
     | null
@@ -68,31 +75,27 @@ export default function ClientThreadReadOnlyPage() {
 
   useEffect(() => {
     setRightPanel(
-      openPolicyChangeCaseId
-        ? (
-            <PolicyChangeThreadSidebar
-              caseId={openPolicyChangeCaseId}
-              access={policyChangeAccess}
-              onClose={() => setOpenPolicyChangeCaseId(null)}
-            />
-          )
-        : null,
+      openPolicyChangeCaseId ? (
+        <PolicyChangeThreadSidebar
+          caseId={openPolicyChangeCaseId}
+          access={policyChangeAccess}
+          onClose={() => setOpenPolicyChangeCaseId(null)}
+        />
+      ) : null,
     );
     return () => setRightPanel(null);
   }, [openPolicyChangeCaseId, policyChangeAccess, setRightPanel]);
 
   if (thread === undefined || messages === undefined) {
-    return (
-      <div className="flex items-center justify-center py-16">
-        <Loader2 className="w-5 h-5 animate-spin text-muted-foreground/30" />
-      </div>
-    );
+    return <div className="min-h-40" />;
   }
 
   if (thread === null) {
     return (
       <div className="text-center py-16">
-        <p className="text-body-sm text-muted-foreground/40">Thread not found</p>
+        <p className="text-body-sm text-muted-foreground/40">
+          Thread not found
+        </p>
       </div>
     );
   }

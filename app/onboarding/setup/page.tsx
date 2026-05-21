@@ -17,13 +17,17 @@ import { toast } from "sonner";
 import { getPublicAgentDomain } from "@/lib/domains";
 
 const AGENT_DOMAIN = getPublicAgentDomain();
-const GLASS_IMESSAGE_NUMBER = process.env.NEXT_PUBLIC_GLASS_IMESSAGE_NUMBER ?? "";
+const GLASS_IMESSAGE_NUMBER =
+  process.env.NEXT_PUBLIC_GLASS_IMESSAGE_NUMBER ?? "";
 
 function companyNameFromEmail(email?: string | null): string {
   if (!email) return "";
   const domain = email.split("@")[1]?.toLowerCase();
   if (!domain) return "";
-  const root = domain.split(".")[0]?.replace(/[^a-z0-9-_ ]/gi, "").trim();
+  const root = domain
+    .split(".")[0]
+    ?.replace(/[^a-z0-9-_ ]/gi, "")
+    .trim();
   if (!root) return "";
   return root
     .split(/[-_\s]+/)
@@ -38,8 +42,16 @@ function websiteFromEmail(email?: string | null): string {
   const domain = email.split("@")[1]?.toLowerCase().trim();
   if (!domain) return "";
   const free = new Set([
-    "gmail.com", "yahoo.com", "hotmail.com", "outlook.com", "icloud.com",
-    "proton.me", "protonmail.com", "aol.com", "me.com", "live.com",
+    "gmail.com",
+    "yahoo.com",
+    "hotmail.com",
+    "outlook.com",
+    "icloud.com",
+    "proton.me",
+    "protonmail.com",
+    "aol.com",
+    "me.com",
+    "live.com",
   ]);
   if (free.has(domain)) return "";
   return domain;
@@ -48,16 +60,27 @@ function websiteFromEmail(email?: string | null): string {
 type Step = 0 | 1 | 2 | 3;
 
 const STEPS: ReadonlyArray<{ label: string; subtitle?: string }> = [
-  { label: "Welcome to Glass", subtitle: "Start by telling us a little about yourself." },
-  { label: "Your organization", subtitle: "Confirm your company name and website." },
-  { label: "Add your policies", subtitle: "Add policies so you can manage them, get answers and generate COIs." },
+  {
+    label: "Welcome to Glass",
+    subtitle: "Start by telling us a little about yourself.",
+  },
+  {
+    label: "Your organization",
+    subtitle: "Confirm your company name and website.",
+  },
+  {
+    label: "Add your policies",
+    subtitle:
+      "Add policies so you can manage them, get answers and generate COIs.",
+  },
   { label: "You're all set", subtitle: "Here's what you can do next." },
 ] as const;
 
 const inputClass =
   "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
 
-const labelClass = "text-label-sm font-medium text-muted-foreground block mb-1.5";
+const labelClass =
+  "text-label-sm font-medium text-muted-foreground block mb-1.5";
 
 function StepDots({ currentStep }: { currentStep: Step }) {
   return (
@@ -65,7 +88,7 @@ function StepDots({ currentStep }: { currentStep: Step }) {
       {STEPS.map((step, index) => (
         <div
           key={step.label}
-          className={`rounded-full transition-all ${
+          className={`rounded-full transition-colors duration-100 ${
             index === currentStep
               ? "h-1.5 w-6 bg-foreground sm:h-1.5 sm:w-7"
               : "h-1.5 w-1.5 bg-foreground/15 sm:h-1.5 sm:w-1.5"
@@ -104,14 +127,20 @@ function Shell({
             </div>
             <div className="hidden sm:block">
               {broker?.whiteLabelingEnabled !== false && broker ? (
-                <PartnerWordmark name={broker.name} iconUrl={broker.iconUrl} website={broker.website} />
+                <PartnerWordmark
+                  name={broker.name}
+                  iconUrl={broker.iconUrl}
+                  website={broker.website}
+                />
               ) : (
                 <BrandWordmark />
               )}
             </div>
           </div>
           <div className="justify-self-center">
-            {typeof currentStep === "number" ? <StepDots currentStep={currentStep} /> : null}
+            {typeof currentStep === "number" ? (
+              <StepDots currentStep={currentStep} />
+            ) : null}
           </div>
           <div className="justify-self-end text-right text-sm text-muted-foreground min-w-0">
             {email ? (
@@ -159,12 +188,16 @@ export default function ClientOnboardingSetupPage() {
   const createClientOrg = useMutation(api.orgs.createClientOrg);
   const completeOnboarding = useMutation(api.users.completeOnboarding);
   const generateUploadUrl = useMutation(api.policies.generateUploadUrl);
-  const extractFromUpload = useAction(api.actions.extractFromUpload.extractFromUpload);
-  const extractCompanyInfo = useAction(api.actions.extractCompanyInfo.extractCompanyInfo);
+  const extractFromUpload = useAction(
+    api.actions.extractFromUpload.extractFromUpload,
+  );
+  const extractCompanyInfo = useAction(
+    api.actions.extractCompanyInfo.extractCompanyInfo,
+  );
 
-  const policies = useQuery(api.policies.listForClient, { documentType: "policy" }) as
-    | PolicyRow[]
-    | undefined;
+  const policies = useQuery(api.policies.listForClient, {
+    documentType: "policy",
+  }) as PolicyRow[] | undefined;
 
   const [currentStep, setCurrentStep] = useState<Step>(0);
   const [userName, setUserName] = useState("");
@@ -180,13 +213,18 @@ export default function ClientOnboardingSetupPage() {
   const [policyUploadMode, setPolicyUploadMode] =
     useState<PolicyUploadMode>("combined");
   const isVendorInvite = searchParams?.get("source") === "vendor-invite";
-  const invitingClientName = searchParams?.get("client")?.trim() || "your client";
+  const invitingClientName =
+    searchParams?.get("client")?.trim() || "your client";
   const trimmedUserPhone = userPhone.trim();
   const phoneHasDigits = /\d/.test(trimmedUserPhone);
-  const phoneValid = trimmedUserPhone.length > 0 && isValidPhoneNumber(trimmedUserPhone);
+  const phoneValid =
+    trimmedUserPhone.length > 0 && isValidPhoneNumber(trimmedUserPhone);
   const phoneInvalid =
-    phoneHasDigits && !phoneValid && trimmedUserPhone.replace(/\D/g, "").length >= 7;
-  const shouldCheckPhone = phoneValid && trimmedUserPhone !== (viewer?.phone ?? "");
+    phoneHasDigits &&
+    !phoneValid &&
+    trimmedUserPhone.replace(/\D/g, "").length >= 7;
+  const shouldCheckPhone =
+    phoneValid && trimmedUserPhone !== (viewer?.phone ?? "");
   const phoneAvailability = useQuery(
     api.users.checkPhoneAvailability,
     shouldCheckPhone && debouncedUserPhone === trimmedUserPhone
@@ -195,8 +233,10 @@ export default function ClientOnboardingSetupPage() {
   );
   const phoneChecking =
     shouldCheckPhone &&
-    (debouncedUserPhone !== trimmedUserPhone || phoneAvailability === undefined);
-  const phoneUnavailable = shouldCheckPhone && phoneAvailability?.available === false;
+    (debouncedUserPhone !== trimmedUserPhone ||
+      phoneAvailability === undefined);
+  const phoneUnavailable =
+    shouldCheckPhone && phoneAvailability?.available === false;
   const phoneBlocked = phoneInvalid || phoneChecking || phoneUnavailable;
 
   // If already complete, bounce home.
@@ -206,7 +246,8 @@ export default function ClientOnboardingSetupPage() {
 
   // If somehow this is a broker, redirect.
   useEffect(() => {
-    const type = (viewerOrg?.org as { type?: "broker" | "client" } | undefined)?.type;
+    const type = (viewerOrg?.org as { type?: "broker" | "client" } | undefined)
+      ?.type;
     if (type === "broker") router.replace("/onboarding/broker");
   }, [viewerOrg, router]);
 
@@ -230,11 +271,15 @@ export default function ClientOnboardingSetupPage() {
   }, [viewerOrg, viewer]);
 
   useEffect(() => {
-    const timer = setTimeout(() => setDebouncedUserPhone(trimmedUserPhone), 300);
+    const timer = setTimeout(
+      () => setDebouncedUserPhone(trimmedUserPhone),
+      300,
+    );
     return () => clearTimeout(timer);
   }, [trimmedUserPhone]);
 
-  const brokerAgentHandle = viewerOrg?.brokerOrg?.agentHandle ?? viewerOrg?.org?.agentHandle;
+  const brokerAgentHandle =
+    viewerOrg?.brokerOrg?.agentHandle ?? viewerOrg?.org?.agentHandle;
   const brokerAgentEmail = brokerAgentHandle
     ? `${brokerAgentHandle}@${AGENT_DOMAIN}`
     : `agent@${AGENT_DOMAIN}`;
@@ -286,9 +331,15 @@ export default function ClientOnboardingSetupPage() {
         });
       }
       if (trimmedSite) {
-        const enrichToast = toast.loading("Enriching your profile from your website…");
+        const enrichToast = toast.loading(
+          "Enriching your profile from your website…",
+        );
         void extractCompanyInfo({ url: trimmedSite })
-          .then(() => toast.success("Profile enriched from your website.", { id: enrichToast }))
+          .then(() =>
+            toast.success("Profile enriched from your website.", {
+              id: enrichToast,
+            }),
+          )
           .catch(() => toast.dismiss(enrichToast));
       }
       setCurrentStep(2);
@@ -297,7 +348,14 @@ export default function ClientOnboardingSetupPage() {
     } finally {
       setSubmitting(false);
     }
-  }, [updateOrg, createClientOrg, viewerOrg, orgName, website, extractCompanyInfo]);
+  }, [
+    updateOrg,
+    createClientOrg,
+    viewerOrg,
+    orgName,
+    website,
+    extractCompanyInfo,
+  ]);
 
   const handleFilesUpload = useCallback(
     async (files: File[], uploadMode: PolicyUploadMode = policyUploadMode) => {
@@ -355,8 +413,8 @@ export default function ClientOnboardingSetupPage() {
           uploadMode === "separate" && files.length > 1
             ? `${files.length} policies uploaded — extraction runs in the background.`
             : files.length > 1
-            ? `${files.length} files uploaded and merged — extraction runs in the background.`
-            : "Upload started — extraction runs in the background.",
+              ? `${files.length} files uploaded and merged — extraction runs in the background.`
+              : "Upload started — extraction runs in the background.",
         );
         return true;
       } catch (err) {
@@ -405,21 +463,29 @@ export default function ClientOnboardingSetupPage() {
         },
         {
           label: "Your organization",
-          subtitle: "Confirm the company that will share insurance records with this client.",
+          subtitle:
+            "Confirm the company that will share insurance records with this client.",
         },
         {
           label: "Add insurance documents",
-          subtitle: "Upload policies or certificates your client can use to review their vendor requirements.",
+          subtitle:
+            "Upload policies or certificates your client can use to review their vendor requirements.",
         },
         {
           label: "You're connected",
-          subtitle: "Your client can now review the insurance records you choose to keep in Glass.",
+          subtitle:
+            "Your client can now review the insurance records you choose to keep in Glass.",
         },
       ] satisfies ReadonlyArray<{ label: string; subtitle?: string }>)
     : STEPS;
 
   return (
-    <Shell currentStep={currentStep} email={viewer?.email} onLogout={handleLogout} broker={viewerOrg?.brokerOrg ?? null}>
+    <Shell
+      currentStep={currentStep}
+      email={viewer?.email}
+      onLogout={handleLogout}
+      broker={viewerOrg?.brokerOrg ?? null}
+    >
       <div className="w-full max-w-md space-y-8">
         <div className="space-y-3 text-left">
           <h1 className="text-base font-medium tracking-tight">
@@ -431,7 +497,9 @@ export default function ClientOnboardingSetupPage() {
               : stepContent[currentStep].label}
           </h1>
           {stepContent[currentStep].subtitle ? (
-            <p className="text-base text-muted-foreground">{stepContent[currentStep].subtitle}</p>
+            <p className="text-base text-muted-foreground">
+              {stepContent[currentStep].subtitle}
+            </p>
           ) : null}
         </div>
 
@@ -494,7 +562,9 @@ export default function ClientOnboardingSetupPage() {
               </div>
             </div>
 
-            {error ? <p className="text-sm text-muted-foreground">{error}</p> : null}
+            {error ? (
+              <p className="text-sm text-muted-foreground">{error}</p>
+            ) : null}
 
             <PillButton
               type="submit"
@@ -539,12 +609,15 @@ export default function ClientOnboardingSetupPage() {
                   className={inputClass}
                 />
                 <p className="text-label-sm text-muted-foreground/70">
-                  We&apos;ll use this to enrich your company profile automatically.
+                  We&apos;ll use this to enrich your company profile
+                  automatically.
                 </p>
               </div>
             </div>
 
-            {error ? <p className="text-sm text-muted-foreground">{error}</p> : null}
+            {error ? (
+              <p className="text-sm text-muted-foreground">{error}</p>
+            ) : null}
 
             <PillButton
               type="submit"
@@ -572,7 +645,8 @@ export default function ClientOnboardingSetupPage() {
                       : `${policyCount} policies uploaded`}
                   </div>
                   <div className="text-body-sm text-muted-foreground mt-0.5">
-                    We&apos;re extracting the details in the background — you can move on.
+                    We&apos;re extracting the details in the background — you
+                    can move on.
                   </div>
                 </div>
               </div>
@@ -593,7 +667,9 @@ export default function ClientOnboardingSetupPage() {
               />
             )}
 
-            {error ? <p className="text-sm text-muted-foreground">{error}</p> : null}
+            {error ? (
+              <p className="text-sm text-muted-foreground">{error}</p>
+            ) : null}
 
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between -mt-4">
               <button
@@ -613,7 +689,9 @@ export default function ClientOnboardingSetupPage() {
                 }
                 className="w-full justify-center text-sm shadow-none sm:w-auto"
               >
-                {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                {uploading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : null}
                 Continue
                 {!uploading ? <ArrowRight className="h-4 w-4" /> : null}
               </PillButton>
@@ -644,7 +722,9 @@ export default function ClientOnboardingSetupPage() {
                 </li>
               ))}
               <li>
-                <span className="shrink-0 tabular-nums text-foreground/30">4.</span>
+                <span className="shrink-0 tabular-nums text-foreground/30">
+                  4.
+                </span>
                 <span>
                   Email{" "}
                   <button
@@ -665,7 +745,9 @@ export default function ClientOnboardingSetupPage() {
               </li>
               {GLASS_IMESSAGE_NUMBER ? (
                 <li>
-                  <span className="shrink-0 tabular-nums text-foreground/30">5.</span>
+                  <span className="shrink-0 tabular-nums text-foreground/30">
+                    5.
+                  </span>
                   <span>
                     Or text{" "}
                     <button
@@ -687,7 +769,9 @@ export default function ClientOnboardingSetupPage() {
               ) : null}
             </ol>
 
-            {error ? <p className="text-sm text-muted-foreground">{error}</p> : null}
+            {error ? (
+              <p className="text-sm text-muted-foreground">{error}</p>
+            ) : null}
 
             <PillButton
               type="button"
@@ -695,7 +779,11 @@ export default function ClientOnboardingSetupPage() {
               disabled={submitting}
               className="w-full justify-center text-sm shadow-none sm:w-auto"
             >
-              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+              {submitting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Check className="h-4 w-4" />
+              )}
               {submitting ? "Finishing…" : "Finish setup"}
             </PillButton>
           </div>

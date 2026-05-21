@@ -1,14 +1,20 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import dayjs from "dayjs";
-import { useMutation, useQuery } from "convex/react";
+import { useMutation } from "convex/react";
 import { isValidPhoneNumber } from "react-phone-number-input";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { PhoneInput } from "@/components/ui/phone-input";
+import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
+import {
+  cachedQueryArgsKey,
+  cachedQueryCollectionFor,
+  useCachedQuery,
+} from "@/lib/sync/use-cached-query";
 
 const INPUT_CLASSES =
   "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors disabled:opacity-50";
@@ -43,6 +49,24 @@ export type BrokerIdentity = {
   }>;
 };
 
+type BrokerIdentitySaveArgs =
+  | {
+      mode: "manual";
+      orgId: Id<"organizations">;
+      brokerCompanyName: string;
+      brokerContactName: string;
+      brokerContactEmail: string;
+      brokerContactPhone: string;
+    }
+  | {
+      mode: "connected";
+      orgId: Id<"organizations">;
+      producerId: Id<"users">;
+      overrideName: string;
+      overrideEmail: string;
+      overridePhone: string;
+    };
+
 function identityKey(identity: BrokerIdentity) {
   return [
     identity.connected ? "connected" : "manual",
@@ -64,10 +88,11 @@ export function BrokerIdentitySection({
   orgId: Id<"organizations">;
   surface?: "card" | "plain";
 }) {
-  const identity = useQuery(api.orgs.getBrokerIdentity, { orgId }) as
-    | BrokerIdentity
-    | null
-    | undefined;
+  const identity = useCachedQuery(
+    "orgs.getBrokerIdentity",
+    api.orgs.getBrokerIdentity,
+    { orgId },
+  ) as BrokerIdentity | null | undefined;
 
   if (identity === undefined) {
     return (
@@ -107,7 +132,9 @@ function BrokerIdentityForm({
   surface: "card" | "plain";
 }) {
   const updateManual = useMutation(api.orgs.updateStandaloneBrokerIdentity);
-  const updateConnected = useMutation(api.orgs.updateConnectedClientBrokerIdentity);
+  const updateConnected = useMutation(
+    api.orgs.updateConnectedClientBrokerIdentity,
+  );
   const [brokerCompanyName, setBrokerCompanyName] = useState(
     identity.brokerCompanyName ?? "",
   );
@@ -132,9 +159,6 @@ function BrokerIdentityForm({
   const [overridePhone, setOverridePhone] = useState(
     identity.overrides?.contactPhone ?? "",
   );
-  const [saving, setSaving] = useState(false);
-  const [savedAt, setSavedAt] = useState<number | null>(null);
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const currentState = useMemo(
     () => ({
       brokerCompanyName,
@@ -161,7 +185,6 @@ function BrokerIdentityForm({
     () => JSON.stringify(currentState),
     [currentState],
   );
-  const initialStateRef = useRef(currentStateKey);
   const selectedMember = useMemo(
     () => identity.brokerMembers.find((member) => member.userId === producerId),
     [identity.brokerMembers, producerId],
@@ -185,85 +208,105 @@ function BrokerIdentityForm({
   const threeColumnGridClass =
     surface === "plain" ? "grid gap-4" : "grid gap-4 sm:grid-cols-3";
 
-  const saveManual = useCallback(async () => {
-    setSaving(true);
-    try {
+  const saveBrokerIdentity = useCallback(
+    async (args: BrokerIdentitySaveArgs) => {
+      if (args.mode === "connected") {
+        await updateConnected({
+          clientOrgId: args.orgId,
+          producerId: args.producerId,
+          contactNameOverride: args.overrideName,
+          contactEmailOverride: args.overrideEmail,
+          contactPhoneOverride: args.overridePhone,
+        });
+        return;
+      }
+
       await updateManual({
+        orgId: args.orgId,
+        brokerCompanyName: args.brokerCompanyName,
+        brokerContactName: args.brokerContactName,
+        brokerContactEmail: args.brokerContactEmail,
+        brokerContactPhone: args.brokerContactPhone,
+      });
+    },
+    [updateConnected, updateManual],
+  );
+
+  const saveArgs: BrokerIdentitySaveArgs = identity.canEditConnected
+    ? {
+        mode: "connected",
+        orgId,
+        producerId: producerId as Id<"users">,
+        overrideName,
+        overrideEmail,
+        overridePhone,
+      }
+    : {
+        mode: "manual",
         orgId,
         brokerCompanyName,
         brokerContactName,
         brokerContactEmail,
         brokerContactPhone,
-      });
-      initialStateRef.current = currentStateKey;
-      setSavedAt(dayjs().valueOf());
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to save broker information");
-    } finally {
-      setSaving(false);
-    }
-  }, [
-    updateManual,
-    orgId,
-    brokerCompanyName,
-    brokerContactName,
-    brokerContactEmail,
-    brokerContactPhone,
-    currentStateKey,
-  ]);
+      };
 
-  const saveConnected = useCallback(async () => {
-    if (!producerId) {
-      return;
-    }
-    setSaving(true);
-    try {
-      await updateConnected({
-        clientOrgId: orgId,
-        producerId,
-        contactNameOverride: overrideName,
-        contactEmailOverride: overrideEmail,
-        contactPhoneOverride: overridePhone,
-      });
-      initialStateRef.current = currentStateKey;
-      setSavedAt(dayjs().valueOf());
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to save broker contact");
-    } finally {
-      setSaving(false);
-    }
-  }, [
-    updateConnected,
-    orgId,
-    producerId,
-    overrideName,
-    overrideEmail,
-    overridePhone,
-    currentStateKey,
-  ]);
+  const autoSave = useLocalFirstAutoSave({
+    mutationName: `brokerIdentity.update.${orgId}`,
+    args: saveArgs,
+    valueKey: currentStateKey,
+    canSave:
+      (identity.canEditManual || identity.canEditConnected) &&
+      (!identity.canEditConnected || !!producerId) &&
+      !phoneInvalid &&
+      !emailInvalid,
+    applyLocal: (store, args) => {
+      const collection = cachedQueryCollectionFor<BrokerIdentity | null>(
+        "orgs.getBrokerIdentity",
+      );
+      const argsKey = cachedQueryArgsKey({ orgId: args.orgId });
+      const current = store.getCollection(collection, argsKey)?.[0]?.value;
+      if (!current) return;
 
-  useEffect(() => {
-    if (!identity.canEditManual && !identity.canEditConnected) return;
-    if (currentStateKey === initialStateRef.current) return;
-    if (identity.canEditConnected && !producerId) return;
-    if (phoneInvalid || emailInvalid) return;
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => {
-      void (identity.canEditConnected ? saveConnected() : saveManual());
-    }, 600);
-    return () => {
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    };
-  }, [
-    identity.canEditManual,
-    identity.canEditConnected,
-    currentStateKey,
-    producerId,
-    saveManual,
-    saveConnected,
-    phoneInvalid,
-    emailInvalid,
-  ]);
+      const next =
+        args.mode === "connected"
+          ? {
+              ...current,
+              selectedContactUserId: args.producerId,
+              overrides: {
+                contactName: args.overrideName,
+                contactEmail: args.overrideEmail,
+                contactPhone: args.overridePhone,
+              },
+            }
+          : {
+              ...current,
+              brokerCompanyName: args.brokerCompanyName,
+              contactName: args.brokerContactName,
+              contactEmail: args.brokerContactEmail,
+              contactPhone: args.brokerContactPhone,
+            };
+
+      void store.upsertCollection(collection, argsKey, [
+        {
+          _id: "result",
+          value: next,
+          updatedAt: dayjs().valueOf(),
+        },
+      ]);
+    },
+    flush: saveBrokerIdentity,
+    onError: (error) =>
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : identity.canEditConnected
+            ? "Failed to save broker contact"
+            : "Failed to save broker information",
+      ),
+  });
+
+  const saving = autoSave.saving;
+  const savedAt = autoSave.savedAt;
 
   return (
     <section
@@ -285,7 +328,11 @@ function BrokerIdentityForm({
               Broker company
             </label>
             <input
-              value={identity.connected ? identity.brokerCompanyName ?? "" : brokerCompanyName}
+              value={
+                identity.connected
+                  ? (identity.brokerCompanyName ?? "")
+                  : brokerCompanyName
+              }
               onChange={(event) => setBrokerCompanyName(event.target.value)}
               disabled={identity.connected || !identity.canEditManual}
               placeholder="Broker company"
@@ -318,7 +365,11 @@ function BrokerIdentityForm({
                 Contact name
               </label>
               <input
-                value={identity.connected ? identity.contactName ?? "" : brokerContactName}
+                value={
+                  identity.connected
+                    ? (identity.contactName ?? "")
+                    : brokerContactName
+                }
                 onChange={(event) => setBrokerContactName(event.target.value)}
                 disabled={identity.connected || !identity.canEditManual}
                 placeholder="Contact name"
@@ -348,7 +399,9 @@ function BrokerIdentityForm({
               <input
                 value={overrideEmail}
                 onChange={(event) => setOverrideEmail(event.target.value)}
-                placeholder={selectedMember?.email ?? "Use selected user's email"}
+                placeholder={
+                  selectedMember?.email ?? "Use selected user's email"
+                }
                 type="email"
                 className={INPUT_CLASSES}
               />
@@ -368,7 +421,9 @@ function BrokerIdentityForm({
                 value={overridePhone || undefined}
                 onChange={(value) => setOverridePhone(value ?? "")}
                 defaultCountry="US"
-                placeholder={selectedMember?.phone ?? "Use selected user's phone"}
+                placeholder={
+                  selectedMember?.phone ?? "Use selected user's phone"
+                }
               />
               <p className="mt-1.5 min-h-4 text-label-sm text-muted-foreground/60">
                 {overridePhoneInvalid ? (
@@ -388,7 +443,11 @@ function BrokerIdentityForm({
                 Contact email
               </label>
               <input
-                value={identity.connected ? identity.contactEmail ?? "" : brokerContactEmail}
+                value={
+                  identity.connected
+                    ? (identity.contactEmail ?? "")
+                    : brokerContactEmail
+                }
                 onChange={(event) => setBrokerContactEmail(event.target.value)}
                 disabled={identity.connected || !identity.canEditManual}
                 placeholder="broker@example.com"
@@ -408,7 +467,11 @@ function BrokerIdentityForm({
                 Contact phone
               </label>
               <PhoneInput
-                value={(identity.connected ? identity.contactPhone : brokerContactPhone) || undefined}
+                value={
+                  (identity.connected
+                    ? identity.contactPhone
+                    : brokerContactPhone) || undefined
+                }
                 onChange={(value) => setBrokerContactPhone(value ?? "")}
                 defaultCountry="US"
                 disabled={identity.connected || !identity.canEditManual}

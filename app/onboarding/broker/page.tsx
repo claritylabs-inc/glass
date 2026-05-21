@@ -32,7 +32,11 @@ function relativeLuminance(hex: string): number {
     const v = c / 255;
     return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
   };
-  return 0.2126 * linearize(rgb.r) + 0.7152 * linearize(rgb.g) + 0.0722 * linearize(rgb.b);
+  return (
+    0.2126 * linearize(rgb.r) +
+    0.7152 * linearize(rgb.g) +
+    0.0722 * linearize(rgb.b)
+  );
 }
 
 function readableTextFor(accent: string): "light" | "dark" {
@@ -43,14 +47,21 @@ function extractDomain(url: string): string | null {
   const trimmed = url.trim();
   if (!trimmed) return null;
   try {
-    const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+    const withProtocol = /^https?:\/\//i.test(trimmed)
+      ? trimmed
+      : `https://${trimmed}`;
     return new URL(withProtocol).hostname;
   } catch {
     return null;
   }
 }
 
-function desaturate(r: number, g: number, b: number, factor = 0.35): [number, number, number] {
+function desaturate(
+  r: number,
+  g: number,
+  b: number,
+  factor = 0.35,
+): [number, number, number] {
   const gray = 0.299 * r + 0.587 * g + 0.114 * b;
   return [
     Math.round(r + (gray - r) * factor),
@@ -76,18 +87,34 @@ async function sampleBrandColors(imgUrl: string): Promise<string[]> {
         if (!ctx) return resolve([]);
         ctx.drawImage(img, 0, 0, size, size);
         const { data } = ctx.getImageData(0, 0, size, size);
-        const buckets = new Map<string, { r: number; g: number; b: number; count: number; sat: number }>();
+        const buckets = new Map<
+          string,
+          { r: number; g: number; b: number; count: number; sat: number }
+        >();
         for (let i = 0; i < data.length; i += 4) {
-          const r = data[i], g = data[i + 1], b = data[i + 2], a = data[i + 3];
+          const r = data[i],
+            g = data[i + 1],
+            b = data[i + 2],
+            a = data[i + 3];
           if (a < 128) continue;
-          const max = Math.max(r, g, b), min = Math.min(r, g, b);
+          const max = Math.max(r, g, b),
+            min = Math.min(r, g, b);
           const sat = max === 0 ? 0 : (max - min) / max;
           const light = (max + min) / 2 / 255;
           if (sat < 0.15 || light < 0.12 || light > 0.92) continue;
           const key = `${Math.round(r / 40)}-${Math.round(g / 40)}-${Math.round(b / 40)}`;
-          const existing = buckets.get(key) ?? { r: 0, g: 0, b: 0, count: 0, sat: 0 };
-          existing.r += r; existing.g += g; existing.b += b;
-          existing.count += 1; existing.sat = Math.max(existing.sat, sat);
+          const existing = buckets.get(key) ?? {
+            r: 0,
+            g: 0,
+            b: 0,
+            count: 0,
+            sat: 0,
+          };
+          existing.r += r;
+          existing.g += g;
+          existing.b += b;
+          existing.count += 1;
+          existing.sat = Math.max(existing.sat, sat);
           buckets.set(key, existing);
         }
         if (buckets.size === 0) return resolve([]);
@@ -103,7 +130,9 @@ async function sampleBrandColors(imgUrl: string): Promise<string[]> {
             0.3,
           );
           const hex = `#${[dr, dg, db]
-            .map((v) => Math.max(0, Math.min(255, v)).toString(16).padStart(2, "0"))
+            .map((v) =>
+              Math.max(0, Math.min(255, v)).toString(16).padStart(2, "0"),
+            )
             .join("")
             .toUpperCase()}`;
           if (!colors.some((c) => c === hex)) colors.push(hex);
@@ -123,9 +152,19 @@ type Step = 0 | 1 | 2 | 3;
 
 const STEPS: ReadonlyArray<{ label: string; subtitle?: string }> = [
   { label: "Set up your organization", subtitle: "Tell us about your firm." },
-  { label: "Claim your workspace link", subtitle: "Pick the web address your clients will use to reach you." },
-  { label: "Brand your agent", subtitle: "Choose how your AI agent shows up to clients." },
-  { label: "Set up your email handle", subtitle: "Optional — your clients can email this to reach your agent. You can set this up later." },
+  {
+    label: "Claim your workspace link",
+    subtitle: "Pick the web address your clients will use to reach you.",
+  },
+  {
+    label: "Brand your agent",
+    subtitle: "Choose how your AI agent shows up to clients.",
+  },
+  {
+    label: "Set up your email handle",
+    subtitle:
+      "Optional — your clients can email this to reach your agent. You can set this up later.",
+  },
 ] as const;
 
 function StepDots({ currentStep }: { currentStep: Step }) {
@@ -134,7 +173,7 @@ function StepDots({ currentStep }: { currentStep: Step }) {
       {STEPS.map((step, index) => (
         <div
           key={step.label}
-          className={`rounded-full transition-all ${
+          className={`rounded-full transition-colors duration-100 ${
             index === currentStep
               ? "h-1.5 w-6 bg-foreground sm:h-1.5 sm:w-7"
               : "h-1.5 w-1.5 bg-foreground/15 sm:h-1.5 sm:w-1.5"
@@ -169,7 +208,9 @@ function Shell({
             </div>
           </div>
           <div className="justify-self-center">
-            {typeof currentStep === "number" ? <StepDots currentStep={currentStep} /> : null}
+            {typeof currentStep === "number" ? (
+              <StepDots currentStep={currentStep} />
+            ) : null}
           </div>
           <div className="justify-self-end text-right text-sm text-muted-foreground min-w-0">
             {email ? (
@@ -199,7 +240,8 @@ function Shell({
 const inputClass =
   "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
 
-const labelClass = "text-label-sm font-medium text-muted-foreground block mb-1.5";
+const labelClass =
+  "text-label-sm font-medium text-muted-foreground block mb-1.5";
 
 export default function BrokerOnboardingPage() {
   const router = useRouter();
@@ -209,11 +251,14 @@ export default function BrokerOnboardingPage() {
   const viewerOrg = useQuery(api.orgs.viewerOrg, {});
   const createBrokerOrg = useMutation(api.orgs.createBrokerOrg);
   const updateOrg = useMutation(api.orgs.updateOrg);
-  const updateBrokerBranding = useMutation(api.organizations.updateBrokerBranding);
+  const updateBrokerBranding = useMutation(
+    api.organizations.updateBrokerBranding,
+  );
   const claimAgentHandle = useMutation(api.orgs.claimAgentHandle);
   const completeOnboarding = useMutation(api.users.completeOnboarding);
   const updateProfile = useMutation(api.users.updateProfile);
-  const { setOnboardingComplete, clearCache: clearOnboardingCache } = useOnboardingCache();
+  const { setOnboardingComplete, clearCache: clearOnboardingCache } =
+    useOnboardingCache();
 
   const stepParam = searchParams?.get("step");
   const parsedStep = stepParam ? Number(stepParam) : NaN;
@@ -228,7 +273,9 @@ export default function BrokerOnboardingPage() {
     (next: Step) => {
       const params = new URLSearchParams(searchParams?.toString() ?? "");
       params.set("step", String(next));
-      router.replace(`/onboarding/broker?${params.toString()}`, { scroll: false });
+      router.replace(`/onboarding/broker?${params.toString()}`, {
+        scroll: false,
+      });
     },
     [router, searchParams],
   );
@@ -247,11 +294,17 @@ export default function BrokerOnboardingPage() {
   const [userTitleInput, setUserTitle] = useState<string | null>(null);
   const [orgNameInput, setOrgName] = useState<string | null>(null);
   const [websiteInput, setWebsite] = useState<string | null>(null);
-  const [partnerType, setPartnerType] = useState<"broker" | "program_admin" | "carrier" | "other">("broker");
+  const [partnerType, setPartnerType] = useState<
+    "broker" | "program_admin" | "carrier" | "other"
+  >("broker");
   const [slugInputOverride, setSlugInput] = useState<string | null>(null);
   const [debouncedSlug, setDebouncedSlug] = useState("");
-  const [brandingColorOverride, setBrandingColor] = useState<string | null>(null);
-  const [brandingTextOnAccentOverride, setBrandingTextOnAccent] = useState<"light" | "dark" | "auto" | null>(null);
+  const [brandingColorOverride, setBrandingColor] = useState<string | null>(
+    null,
+  );
+  const [brandingTextOnAccentOverride, setBrandingTextOnAccent] = useState<
+    "light" | "dark" | "auto" | null
+  >(null);
   const [sampleResult, setSampleResult] = useState<{
     domain: string;
     colors: string[];
@@ -268,11 +321,17 @@ export default function BrokerOnboardingPage() {
   const slugInput = slugInputOverride ?? viewerOrg?.org?.slug ?? "";
   const agentHandle = agentHandleOverride ?? viewerOrg?.org?.agentHandle ?? "";
   const samplingDomain = extractDomain(website);
-  const sampledColors = sampleResult?.domain === samplingDomain ? sampleResult.colors : [];
+  const sampledColors =
+    sampleResult?.domain === samplingDomain ? sampleResult.colors : [];
   const brandingColor =
-    brandingColorOverride ?? viewerOrg?.org?.brandingColor ?? sampledColors[0] ?? "#1E293B";
+    brandingColorOverride ??
+    viewerOrg?.org?.brandingColor ??
+    sampledColors[0] ??
+    "#1E293B";
   const brandingTextOnAccent =
-    brandingTextOnAccentOverride ?? viewerOrg?.org?.brandingTextOnAccent ?? "auto";
+    brandingTextOnAccentOverride ??
+    viewerOrg?.org?.brandingTextOnAccent ??
+    "auto";
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSlug(slugInput), 300);
@@ -301,11 +360,14 @@ export default function BrokerOnboardingPage() {
     api.orgs.checkSlugAvailability,
     debouncedSlug.length >= 3 ? { slug: debouncedSlug } : "skip",
   );
-  const slugChecking = slugInput.length >= 3 && (slugInput !== debouncedSlug || slugCheck === undefined);
+  const slugChecking =
+    slugInput.length >= 3 &&
+    (slugInput !== debouncedSlug || slugCheck === undefined);
 
   const handleCheck = useQuery(
     api.orgs.checkHandleAvailability,
-    debouncedHandle.length >= 3 && debouncedHandle !== viewerOrg?.org?.agentHandle
+    debouncedHandle.length >= 3 &&
+      debouncedHandle !== viewerOrg?.org?.agentHandle
       ? { handle: debouncedHandle }
       : "skip",
   );
@@ -395,17 +457,29 @@ export default function BrokerOnboardingPage() {
   }
 
   const canContinueName =
-    orgName.trim().length > 0 && userName.trim().length > 0 && userTitle.trim().length > 0;
+    orgName.trim().length > 0 &&
+    userName.trim().length > 0 &&
+    userTitle.trim().length > 0;
   const canContinueSlug =
-    debouncedSlug.length >= 3 && slugInput === debouncedSlug && slugCheck?.available === true;
+    debouncedSlug.length >= 3 &&
+    slugInput === debouncedSlug &&
+    slugCheck?.available === true;
 
   return (
-    <Shell currentStep={currentStep} email={viewer?.email} onLogout={handleLogout}>
+    <Shell
+      currentStep={currentStep}
+      email={viewer?.email}
+      onLogout={handleLogout}
+    >
       <div className="w-full max-w-md space-y-8">
         <div className="space-y-3 text-left">
-          <h1 className="text-base font-medium tracking-tight">{STEPS[currentStep].label}</h1>
+          <h1 className="text-base font-medium tracking-tight">
+            {STEPS[currentStep].label}
+          </h1>
           {STEPS[currentStep].subtitle ? (
-            <p className="text-base text-muted-foreground">{STEPS[currentStep].subtitle}</p>
+            <p className="text-base text-muted-foreground">
+              {STEPS[currentStep].subtitle}
+            </p>
           ) : null}
         </div>
 
@@ -456,7 +530,9 @@ export default function BrokerOnboardingPage() {
                 <label className={labelClass}>Partner type</label>
                 <select
                   value={partnerType}
-                  onChange={(e) => setPartnerType(e.target.value as typeof partnerType)}
+                  onChange={(e) =>
+                    setPartnerType(e.target.value as typeof partnerType)
+                  }
                   className={inputClass}
                 >
                   <option value="broker">Insurance broker</option>
@@ -477,7 +553,9 @@ export default function BrokerOnboardingPage() {
               </div>
             </div>
 
-            {error ? <p className="text-sm text-muted-foreground">{error}</p> : null}
+            {error ? (
+              <p className="text-sm text-muted-foreground">{error}</p>
+            ) : null}
 
             <PillButton
               type="submit"
@@ -510,7 +588,9 @@ export default function BrokerOnboardingPage() {
                   type="text"
                   value={slugInput}
                   onChange={(e) =>
-                    setSlugInput(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))
+                    setSlugInput(
+                      e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""),
+                    )
                   }
                   placeholder="acme-brokers"
                   autoFocus
@@ -522,10 +602,14 @@ export default function BrokerOnboardingPage() {
                 {slugChecking ? (
                   <>
                     <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />
-                    <span className="text-label-sm text-muted-foreground">Checking...</span>
+                    <span className="text-label-sm text-muted-foreground">
+                      Checking...
+                    </span>
                   </>
                 ) : null}
-                {!slugChecking && debouncedSlug.length >= 3 && slugCheck?.available ? (
+                {!slugChecking &&
+                debouncedSlug.length >= 3 &&
+                slugCheck?.available ? (
                   <>
                     <Check className="w-3.5 h-3.5 text-emerald-600" />
                     <span className="text-body-sm text-emerald-600">
@@ -533,7 +617,10 @@ export default function BrokerOnboardingPage() {
                     </span>
                   </>
                 ) : null}
-                {!slugChecking && debouncedSlug.length >= 3 && slugCheck && !slugCheck.available ? (
+                {!slugChecking &&
+                debouncedSlug.length >= 3 &&
+                slugCheck &&
+                !slugCheck.available ? (
                   <>
                     <X className="w-3.5 h-3.5 text-red-500" />
                     <span className="text-body-sm text-red-500">
@@ -549,7 +636,9 @@ export default function BrokerOnboardingPage() {
               </div>
             </div>
 
-            {error ? <p className="text-sm text-muted-foreground">{error}</p> : null}
+            {error ? (
+              <p className="text-sm text-muted-foreground">{error}</p>
+            ) : null}
 
             <PillButton
               type="submit"
@@ -568,7 +657,9 @@ export default function BrokerOnboardingPage() {
             <div className="space-y-6">
               {(() => {
                 const textColor =
-                  readableTextFor(brandingColor) === "light" ? "#FFFFFF" : "#0F172A";
+                  readableTextFor(brandingColor) === "light"
+                    ? "#FFFFFF"
+                    : "#0F172A";
                 const previewDomain = extractDomain(website);
                 const faviconUrl = previewDomain
                   ? `https://www.google.com/s2/favicons?domain=${encodeURIComponent(previewDomain)}&sz=64`
@@ -593,7 +684,11 @@ export default function BrokerOnboardingPage() {
                       <div className="rounded-md p-3 flex items-center gap-3 border border-foreground/8 bg-card">
                         <div
                           className="h-8 w-8 rounded-md shrink-0 overflow-hidden flex items-center justify-center"
-                          style={{ backgroundColor: faviconUrl ? "#FFFFFF" : brandingColor }}
+                          style={{
+                            backgroundColor: faviconUrl
+                              ? "#FFFFFF"
+                              : brandingColor,
+                          }}
                         >
                           {faviconUrl ? (
                             // eslint-disable-next-line @next/next/no-img-element
@@ -602,7 +697,9 @@ export default function BrokerOnboardingPage() {
                               alt=""
                               className="h-full w-full object-contain"
                               onError={(e) => {
-                                (e.currentTarget as HTMLImageElement).style.display = "none";
+                                (
+                                  e.currentTarget as HTMLImageElement
+                                ).style.display = "none";
                               }}
                             />
                           ) : null}
@@ -619,7 +716,10 @@ export default function BrokerOnboardingPage() {
                           type="button"
                           disabled
                           className="rounded-full px-3.5 py-1.5 text-xs font-medium"
-                          style={{ backgroundColor: brandingColor, color: textColor }}
+                          style={{
+                            backgroundColor: brandingColor,
+                            color: textColor,
+                          }}
                         >
                           Continue
                         </button>
@@ -630,7 +730,9 @@ export default function BrokerOnboardingPage() {
               })()}
             </div>
 
-            {error ? <p className="text-sm text-muted-foreground">{error}</p> : null}
+            {error ? (
+              <p className="text-sm text-muted-foreground">{error}</p>
+            ) : null}
 
             <PillButton
               type="button"
@@ -666,7 +768,12 @@ export default function BrokerOnboardingPage() {
                   type="text"
                   value={agentHandle}
                   onChange={(e) =>
-                    setAgentHandle(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 30))
+                    setAgentHandle(
+                      e.target.value
+                        .toLowerCase()
+                        .replace(/[^a-z0-9-]/g, "")
+                        .slice(0, 30),
+                    )
                   }
                   placeholder="acme"
                   autoFocus
@@ -680,7 +787,9 @@ export default function BrokerOnboardingPage() {
                 {handleChecking ? (
                   <>
                     <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />
-                    <span className="text-label-sm text-muted-foreground">Checking…</span>
+                    <span className="text-label-sm text-muted-foreground">
+                      Checking…
+                    </span>
                   </>
                 ) : null}
                 {!handleChecking &&
@@ -707,7 +816,9 @@ export default function BrokerOnboardingPage() {
                   </>
                 ) : null}
                 {agentHandle.length > 0 && agentHandle.length < 3 ? (
-                  <span className="text-body-sm text-muted-foreground/50">Minimum 3 characters</span>
+                  <span className="text-body-sm text-muted-foreground/50">
+                    Minimum 3 characters
+                  </span>
                 ) : null}
                 {agentHandle.length === 0 ? (
                   <span className="text-label-sm text-muted-foreground">
@@ -717,21 +828,26 @@ export default function BrokerOnboardingPage() {
               </div>
             </div>
 
-            {error ? <p className="text-sm text-muted-foreground">{error}</p> : null}
+            {error ? (
+              <p className="text-sm text-muted-foreground">{error}</p>
+            ) : null}
 
             <PillButton
               type="submit"
               disabled={
                 submitting ||
-                (agentHandle.length > 0 &&
-                  agentHandle.length < 3) ||
+                (agentHandle.length > 0 && agentHandle.length < 3) ||
                 (agentHandle.length >= 3 &&
                   agentHandle !== viewerOrg?.org?.agentHandle &&
                   (handleChecking || !handleCheck?.available))
               }
               className="w-full justify-center text-sm shadow-none sm:w-auto"
             >
-              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+              {submitting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Check className="h-4 w-4" />
+              )}
               {submitting ? "Finishing…" : "Finish setup"}
             </PillButton>
           </form>

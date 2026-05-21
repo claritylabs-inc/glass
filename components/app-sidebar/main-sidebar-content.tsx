@@ -311,7 +311,7 @@ function ExpandedThreadList({
                   e.stopPropagation();
                   await onArchiveThread(item.id, isConvActive);
                 }}
-                className="absolute inset-0 flex items-center justify-center rounded text-muted-foreground/30 opacity-0 transition-all duration-150 hover:bg-foreground/6 hover:text-foreground group-hover:opacity-100"
+                className="absolute inset-0 flex items-center justify-center rounded text-muted-foreground/30 opacity-0 transition-[background-color,color,opacity] duration-100 hover:bg-foreground/6 hover:text-foreground group-hover:opacity-100"
                 title="Archive"
               >
                 <Archive className="w-3 h-3" />

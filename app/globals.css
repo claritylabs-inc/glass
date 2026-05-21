@@ -60,6 +60,10 @@
   --chart-5: #737373;
 
   --radius: 0.625rem;
+  --motion-fast: 80ms;
+  --motion-medium: 120ms;
+  --motion-slow: 160ms;
+  --motion-ease: cubic-bezier(0.2, 0, 0, 1);
 
   /* Sidebar */
   --sidebar: #ffffff;
@@ -168,7 +172,8 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
 
-  --font-sans: var(--font-geist-sans), "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-sans:
+    var(--font-geist-sans), "Geist", ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), "Geist Mono", ui-monospace, monospace;
   --font-serif: var(--font-instrument-serif);
 
@@ -196,7 +201,7 @@
   }
 
   html {
-    scroll-behavior: smooth;
+    scroll-behavior: auto;
     background: var(--background);
     overscroll-behavior: none;
   }
@@ -220,13 +225,17 @@
 
   /* Prevent iOS Safari zoom on form field focus (requires >= 16px) */
   @media screen and (max-width: 767px) {
-    input, select, textarea {
+    input,
+    select,
+    textarea {
       font-size: 16px !important;
     }
   }
 
   /* Remove the default webkit inset shadow on form fields */
-  input, select, textarea {
+  input,
+  select,
+  textarea {
     -webkit-appearance: none;
     appearance: none;
     box-shadow: none;
@@ -236,7 +245,12 @@
     appearance: auto;
   }
 
-  h1, h2, h3, h4, h5, h6 {
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
     font-family: var(--font-geist-sans), system-ui, sans-serif;
     font-weight: 500;
     color: var(--foreground-highlight);
@@ -245,16 +259,32 @@
   }
 
   /* Page-level heading sizes — only apply when NOT overridden by Tailwind */
-  h1:not([class*="text-"]) { font-size: 1.45rem; }
-  h2:not([class*="text-"]) { font-size: 1.25rem; }
-  h3:not([class*="text-"]) { font-size: 1.05rem; }
-  h4:not([class*="text-"]) { font-size: 0.95rem; }
+  h1:not([class*="text-"]) {
+    font-size: 1.45rem;
+  }
+  h2:not([class*="text-"]) {
+    font-size: 1.25rem;
+  }
+  h3:not([class*="text-"]) {
+    font-size: 1.05rem;
+  }
+  h4:not([class*="text-"]) {
+    font-size: 0.95rem;
+  }
 
   @media (min-width: 768px) {
-    h1:not([class*="text-"]) { font-size: 1.65rem; }
-    h2:not([class*="text-"]) { font-size: 1.35rem; }
-    h3:not([class*="text-"]) { font-size: 1.1rem; }
-    h4:not([class*="text-"]) { font-size: 1rem; }
+    h1:not([class*="text-"]) {
+      font-size: 1.65rem;
+    }
+    h2:not([class*="text-"]) {
+      font-size: 1.35rem;
+    }
+    h3:not([class*="text-"]) {
+      font-size: 1.1rem;
+    }
+    h4:not([class*="text-"]) {
+      font-size: 1rem;
+    }
   }
 }
 
@@ -267,7 +297,24 @@
 }
 
 .sidebar-transition {
-  transition: width 200ms ease;
+  transition: width var(--motion-medium) var(--motion-ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-delay: 0ms !important;
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-delay: 0ms !important;
+    transition-duration: 1ms !important;
+  }
 }
 
 /* =============================================================================

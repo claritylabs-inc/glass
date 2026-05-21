@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { useQuery } from "convex/react";
 import type { FunctionReference } from "convex/server";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -9,6 +8,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { UserPlus } from "lucide-react";
 import { EmptyStateCard } from "@/components/ui/empty-state-card";
 import { ClientListRow, type ClientRow } from "@/components/client-list-row";
+import { useCachedQuery } from "@/lib/sync/use-cached-query";
 
 type StatusFilter = "all" | "draft" | "invited" | "onboarding" | "active";
 type ClientListStatus = Exclude<StatusFilter, "all">;
@@ -43,10 +43,18 @@ export function ClientList({
   onInvite: () => void;
   onResumeDraft: (clientOrgId: Id<"organizations">) => void;
 }) {
-  const rows = useQuery(clientsApi.clients.listForBroker, {
-    brokerOrgId: partnerOrgId,
-  }) as ClientListRecord[] | undefined;
-  const brokerMembers = useQuery(api.orgs.listMembers);
+  const rows = useCachedQuery(
+    "clients.listForBroker",
+    clientsApi.clients.listForBroker,
+    {
+      brokerOrgId: partnerOrgId,
+    },
+  ) as ClientListRecord[] | undefined;
+  const brokerMembers = useCachedQuery(
+    "orgs.listMembers",
+    api.orgs.listMembers,
+    {},
+  );
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
 
   const STATUS_FILTERS: { id: StatusFilter; label: string }[] = [
@@ -127,9 +135,7 @@ export function ClientList({
       </div>
 
       {rows === undefined ? (
-        <div className="py-16 text-center">
-          <p className="text-sm text-muted-foreground/60">Loading…</p>
-        </div>
+        <div className="min-h-32" aria-hidden="true" />
       ) : filteredRows.length === 0 ? (
         rows.length === 0 ? (
           <EmptyStateCard

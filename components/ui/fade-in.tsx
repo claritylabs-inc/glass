@@ -1,8 +1,9 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 
-const STAGGER_INTERVAL = 0.16;
+const STAGGER_INTERVAL = 0.025;
+const MAX_DURATION = 0.14;
 
 interface FadeInProps {
   children: React.ReactNode;
@@ -24,34 +25,35 @@ export function FadeIn({
   direction = "up",
   when,
   as: Component = "div",
-  duration = 1.5,
+  duration = 0.12,
   onClick,
 }: FadeInProps) {
-  const resolvedDelay =
-    delay ?? (staggerIndex !== undefined ? staggerIndex * STAGGER_INTERVAL : 0.05);
+  const reduceMotion = useReducedMotion();
+  const resolvedDelay = reduceMotion
+    ? 0
+    : (delay ??
+      (staggerIndex !== undefined ? staggerIndex * STAGGER_INTERVAL : 0));
   const initial = {
     opacity: 0,
-    y: direction === "up" ? 18 : 0,
-    filter: "blur(4px)",
+    y: direction === "up" ? 4 : 0,
   };
   const animate = {
     opacity: 1,
     y: 0,
-    filter: "blur(0px)",
   };
 
   const MotionComponent = motion[Component] as typeof motion.div;
 
   return (
     <MotionComponent
-      initial={initial}
+      initial={reduceMotion ? false : initial}
       {...(when !== undefined
         ? { animate: when ? animate : initial }
         : { whileInView: animate, viewport: { once: true, margin: "-100px" } })}
       transition={{
-        duration,
+        duration: reduceMotion ? 0 : Math.min(duration, MAX_DURATION),
         delay: resolvedDelay,
-        ease: [0.16, 1, 0.3, 1],
+        ease: [0.2, 0, 0, 1],
       }}
       className={className}
       onClick={onClick}

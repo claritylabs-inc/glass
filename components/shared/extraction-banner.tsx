@@ -11,22 +11,16 @@ import { Loader2, AlertCircle, CircleStop } from "lucide-react";
 import { useAction } from "convex/react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 
 type RetryMode = "resume" | "full";
 
-const STATUS_TEXT_TRANSITION = {
-  duration: 0.28,
-  ease: [0.33, 1, 0.68, 1],
-} as const;
-
 const PROGRESS_TRANSITION = {
-  duration: 1.8,
+  duration: 1.2,
   ease: "easeInOut",
   repeat: Number.POSITIVE_INFINITY,
-  repeatDelay: 0.1,
 } as const;
 
 export function PolicyExtractionBanner({
@@ -103,15 +97,18 @@ function ExtractionBannerBase({
   if (!status || status === "idle" || status === "complete") return null;
 
   const isError = status === "error";
-  const isNonInsuranceDocument = isError && error?.startsWith("This document is not an insurance policy or quote");
+  const isNonInsuranceDocument =
+    isError &&
+    error?.startsWith("This document is not an insurance policy or quote");
   const latestLog = log && log.length > 0 ? log[log.length - 1] : undefined;
-  const runningLabel = labels?.running ?? (status === "paused" ? "Paused" : "Extracting policy");
+  const runningLabel =
+    labels?.running ?? (status === "paused" ? "Paused" : "Extracting policy");
   const errorLabel = isNonInsuranceDocument
     ? "Not an insurance document"
-    : labels?.error ?? "Extraction failed";
+    : (labels?.error ?? "Extraction failed");
   const statusDetail = isError
-    ? error ?? "Unknown error"
-    : latestLog?.message ?? "Starting...";
+    ? (error ?? "Unknown error")
+    : (latestLog?.message ?? "Starting...");
 
   return (
     <StatusBanner
@@ -119,7 +116,7 @@ function ExtractionBannerBase({
       error={error}
       log={log}
       className={[
-        "relative mb-4 flex items-center gap-3 overflow-hidden rounded-xl border px-4 py-2.5 shadow-sm transition-colors duration-300",
+        "relative mb-4 flex items-center gap-3 overflow-hidden rounded-xl border px-4 py-2.5 shadow-sm transition-colors duration-150",
         isError
           ? "border-destructive bg-destructive text-white"
           : "border-white/10 bg-black text-white",
@@ -207,22 +204,9 @@ function AnimatedStatusText({
   value: string;
   className: string;
 }) {
-  const reduceMotion = useReducedMotion();
-
   return (
     <span className={className}>
-      <AnimatePresence mode="wait" initial={false}>
-        <motion.span
-          key={value}
-          className="block truncate"
-          initial={reduceMotion ? false : { y: 3, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          exit={reduceMotion ? { opacity: 0 } : { y: -3, opacity: 0 }}
-          transition={STATUS_TEXT_TRANSITION}
-        >
-          {value}
-        </motion.span>
-      </AnimatePresence>
+      <span className="block truncate">{value}</span>
     </span>
   );
 }

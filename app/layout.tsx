@@ -69,7 +69,7 @@ export default function RootLayout({
         <head>
           <script
             dangerouslySetInnerHTML={{
-              __html: `(function(){try{var t=localStorage.getItem("theme");if(t==="dark"||(t!=="light"&&matchMedia("(prefers-color-scheme:dark)").matches))document.documentElement.classList.add("dark")}catch(e){}})()`,
+              __html: `(function(){try{var t=localStorage.getItem("theme");if(t==="dark"||(t!=="light"&&matchMedia("(prefers-color-scheme:dark)").matches))document.documentElement.classList.add("dark");var b=localStorage.getItem("glass:boot-state");var s=localStorage.getItem("glass:sync-scope");if(b&&s){b=JSON.parse(b);s=JSON.parse(s);if(b&&s&&b.userId===s.userId&&b.orgId===s.orgId)window.__GLASS_BOOT__={onboardingComplete:b.onboardingComplete,membershipRole:b.membershipRole,userId:b.userId,orgId:b.orgId}}}catch(e){}})()`,
             }}
           />
         </head>

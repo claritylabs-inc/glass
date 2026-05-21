@@ -27,7 +27,10 @@ export type ActivityEvent = {
   payload?: Record<string, unknown>;
 };
 
-const TYPE_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
+const TYPE_ICONS: Record<
+  string,
+  React.ComponentType<{ className?: string }>
+> = {
   invitation_accepted: UserCheck,
   onboarding_completed: CheckCircle,
   document_uploaded: FileUp,
@@ -51,8 +54,11 @@ const TYPE_LABELS: Record<string, string> = {
   notification_fired: "Notification",
 };
 
-function groupByDay(events: ActivityEvent[]): { date: Date; events: ActivityEvent[] }[] {
-  const groups: Map<string, { date: Date; events: ActivityEvent[] }> = new Map();
+function groupByDay(
+  events: ActivityEvent[],
+): { date: Date; events: ActivityEvent[] }[] {
+  const groups: Map<string, { date: Date; events: ActivityEvent[] }> =
+    new Map();
   for (const event of events) {
     const d = new Date(event.createdAt);
     const key = format(d, "yyyy-MM-dd");
@@ -102,7 +108,7 @@ export function ActivityFeed({
       ) : null}
 
       {events === undefined ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
+        <div className="min-h-24" />
       ) : grouped.length === 0 ? (
         <EmptyStateCard
           icon={<Bell className="w-5 h-5" />}
@@ -117,7 +123,8 @@ export function ActivityFeed({
             </p>
             <div className="space-y-2">
               {group.events.map((event) => {
-                const Icon: React.ComponentType<{ className?: string }> = TYPE_ICONS[event.type] ?? Bell;
+                const Icon: React.ComponentType<{ className?: string }> =
+                  TYPE_ICONS[event.type] ?? Bell;
                 return (
                   <div
                     key={event._id}

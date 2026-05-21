@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Pencil } from "lucide-react";
-import { useQuery } from "convex/react";
+import { Pencil } from "lucide-react";
 import { AgentContactCallout } from "@/components/agent-contact-callout";
 import { AppShell } from "@/components/app-shell";
 import {
@@ -22,6 +21,7 @@ import {
 } from "@/components/ui/table";
 import { api } from "@/convex/_generated/api";
 import { useCurrentOrg } from "@/hooks/use-current-org";
+import { useCachedQuery } from "@/lib/sync/use-cached-query";
 
 function displayValue(value?: string) {
   return value?.trim() || "Not set";
@@ -37,8 +37,13 @@ export default function BrokerPage() {
   const router = useRouter();
   const currentOrg = useCurrentOrg();
   const [editOpen, setEditOpen] = useState(false);
-  const brokerPageContext = useQuery(api.orgs.getBrokerPageContext, {});
-  const identity = useQuery(
+  const brokerPageContext = useCachedQuery(
+    "orgs.getBrokerPageContext",
+    api.orgs.getBrokerPageContext,
+    {},
+  );
+  const identity = useCachedQuery(
+    "orgs.getBrokerIdentity",
     api.orgs.getBrokerIdentity,
     currentOrg?.orgId ? { orgId: currentOrg.orgId } : "skip",
   ) as BrokerIdentity | null | undefined;
@@ -94,15 +99,14 @@ export default function BrokerPage() {
       }
     >
       {identity === undefined ? (
-        <div className="flex items-center justify-center py-16 text-muted-foreground">
-          <Loader2 className="h-5 w-5 animate-spin" />
-        </div>
+        <div className="min-h-32" aria-hidden="true" />
       ) : (
         <div className="w-full space-y-5">
           <AgentContactCallout
             broker={currentOrg.brokerOrg ?? null}
             fallbackAgentHandle={fallbackAgentHandle}
             className="mb-0"
+            dismissKey="glass:agent-contact-callout:broker"
           />
 
           <section className="w-full overflow-hidden rounded-lg border border-foreground/6 bg-card">

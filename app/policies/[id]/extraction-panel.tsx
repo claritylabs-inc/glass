@@ -1,10 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import {
-  ChevronDown,
-  ChevronRight,
-} from "lucide-react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { usePdf } from "@/components/pdf-context";
 import { ProseMarkdown } from "@/components/prose-markdown";
 
@@ -224,8 +221,7 @@ const SECTION_TYPE_COLORS: Record<string, string> = {
     "bg-green-50 text-green-600 dark:bg-green-950/40 dark:text-green-400",
   policy_form:
     "bg-cyan-50 text-cyan-600 dark:bg-cyan-950/40 dark:text-cyan-400",
-  endorsement:
-    "bg-sky-50 text-sky-600 dark:bg-sky-950/40 dark:text-sky-400",
+  endorsement: "bg-sky-50 text-sky-600 dark:bg-sky-950/40 dark:text-sky-400",
   application:
     "bg-lime-50 text-lime-600 dark:bg-lime-950/40 dark:text-lime-400",
   exclusion: "bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400",
@@ -307,8 +303,10 @@ function formatStructuredLabel(value?: string | null) {
 function stringifyValue(value: unknown): string {
   if (value == null || value === "") return "";
   if (typeof value === "string") return value;
-  if (typeof value === "number" || typeof value === "boolean") return String(value);
-  if (Array.isArray(value)) return value.map(stringifyValue).filter(Boolean).join(", ");
+  if (typeof value === "number" || typeof value === "boolean")
+    return String(value);
+  if (Array.isArray(value))
+    return value.map(stringifyValue).filter(Boolean).join(", ");
   return JSON.stringify(value);
 }
 
@@ -322,7 +320,12 @@ function objectEntries(value?: Record<string, unknown>) {
     .filter((entry) => entry.value);
 }
 
-type DataRow = { label: string; value: string; section?: string; pageNumber?: number };
+type DataRow = {
+  label: string;
+  value: string;
+  section?: string;
+  pageNumber?: number;
+};
 type DataSection = { label: string; rows: DataRow[] };
 
 const STRUCTURED_BODY_LABEL_CLASS = "sm:pl-[2.625rem]";
@@ -392,15 +395,15 @@ function DocumentSection({
   useEffect(() => {
     if (!highlighted) return;
     const timer = setTimeout(() => {
-      sectionRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-    }, 150);
+      sectionRef.current?.scrollIntoView({ behavior: "auto", block: "center" });
+    }, 50);
     return () => clearTimeout(timer);
   }, [highlighted]);
 
   return (
     <div
       ref={sectionRef}
-      className={`border-t border-foreground/4 transition-colors duration-700 ${highlighted ? "bg-blue-50/60 dark:bg-blue-950/30" : ""}`}
+      className={`border-t border-foreground/4 transition-colors duration-150 ${highlighted ? "bg-blue-50/60 dark:bg-blue-950/30" : ""}`}
     >
       <button
         type="button"
@@ -490,7 +493,9 @@ function ExclusionBody({ ex }: { ex: PolicyExclusion }) {
 }
 
 function ConditionBody({ c }: { c: PolicyCondition }) {
-  const keyValues = c?.keyValues as { key: string; value: string }[] | undefined;
+  const keyValues = c?.keyValues as
+    | { key: string; value: string }[]
+    | undefined;
   return (
     <div className="space-y-3">
       {keyValues && keyValues.length > 0 && (
@@ -572,7 +577,10 @@ function CoverageBody({ coverage }: { coverage: CoverageEntry }) {
 function DefinitionBody({ definition }: { definition: DefinitionEntry }) {
   const metaItems = [
     definition.formNumber && { label: "Form", value: definition.formNumber },
-    definition.formTitle && { label: "Form title", value: definition.formTitle },
+    definition.formTitle && {
+      label: "Form title",
+      value: definition.formTitle,
+    },
     definition.sectionRef && { label: "Section", value: definition.sectionRef },
   ].filter(Boolean) as { label: string; value: string }[];
 
@@ -618,9 +626,7 @@ function CoveredReasonDetailSection({
 
   return (
     <div className="border-t border-foreground/4 px-5 pt-3 sm:pl-[2.625rem] sm:pr-5">
-      <p className="mb-2 text-xs font-medium text-muted-foreground">
-        {title}
-      </p>
+      <p className="mb-2 text-xs font-medium text-muted-foreground">{title}</p>
       {shouldUseTable ? (
         <div className="overflow-hidden rounded-md border border-foreground/6">
           <KeyValueTable
@@ -646,7 +652,10 @@ function CoveredReasonBody({ reason }: { reason: CoveredReasonEntry }) {
     reason.formNumber && { label: "Form", value: reason.formNumber },
     reason.formTitle && { label: "Form title", value: reason.formTitle },
     reason.sectionRef && { label: "Section", value: reason.sectionRef },
-    reason.appliesTo?.length && { label: "Applies to", value: reason.appliesTo.join(", ") },
+    reason.appliesTo?.length && {
+      label: "Applies to",
+      value: reason.appliesTo.join(", "),
+    },
   ].filter(Boolean) as { label: string; value: string }[];
 
   return (
@@ -717,7 +726,10 @@ function StructuredItemsCard<T>({
         const badges = getBadges?.(item) ?? [];
         const page = getPage?.(item);
         return (
-          <div key={i} className="border-t border-foreground/4 first:border-t-0">
+          <div
+            key={i}
+            className="border-t border-foreground/4 first:border-t-0"
+          >
             <button
               type="button"
               onClick={() => toggle(i)}
@@ -789,9 +801,7 @@ function ContactCard({
     <div className="border-t border-foreground/4 first:border-t-0 px-4 py-3">
       <div className="flex items-center gap-2">
         {contact.name && (
-          <p className="text-sm font-medium text-foreground">
-            {contact.name}
-          </p>
+          <p className="text-sm font-medium text-foreground">{contact.name}</p>
         )}
         {showType && contact.type && (
           <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-foreground/5 text-muted-foreground">
@@ -800,9 +810,7 @@ function ContactCard({
         )}
       </div>
       {contact.title && (
-        <p className="text-sm text-muted-foreground mt-0.5">
-          {contact.title}
-        </p>
+        <p className="text-sm text-muted-foreground mt-0.5">{contact.title}</p>
       )}
       {fields.length > 0 && (
         <div className="flex flex-wrap gap-x-5 gap-y-0.5 mt-1">
@@ -815,9 +823,7 @@ function ContactCard({
         </div>
       )}
       {contact.address && (
-        <p className="text-sm text-muted-foreground mt-1">
-          {contact.address}
-        </p>
+        <p className="text-sm text-muted-foreground mt-1">{contact.address}</p>
       )}
     </div>
   );
@@ -842,9 +848,7 @@ function SupplementaryCard({
     <div>
       <div className="px-5 py-3 border-b border-foreground/4">
         <div className="flex items-center gap-2">
-          <p className="text-sm font-medium text-foreground">
-            {title}
-          </p>
+          <p className="text-sm font-medium text-foreground">{title}</p>
           {pageNumber != null && <PageRef page={pageNumber} />}
         </div>
       </div>
@@ -920,7 +924,11 @@ function RegulatoryContextStructured({ data }: { data: RegulatoryContext }) {
   );
 }
 
-function ComplaintContactStructured({ contacts }: { contacts?: ContactEntry[] }) {
+function ComplaintContactStructured({
+  contacts,
+}: {
+  contacts?: ContactEntry[];
+}) {
   if (!contacts?.length) return null;
   return (
     <div className="-mx-4 -mt-3">
@@ -1002,7 +1010,9 @@ function KeyValueTable({
                 </span>
               )}
             </td>
-            <td className={`block px-5 pt-0 pb-3 text-sm text-foreground font-normal sm:table-cell sm:py-2.5 ${valueCellClassName}`}>
+            <td
+              className={`block px-5 pt-0 pb-3 text-sm text-foreground font-normal sm:table-cell sm:py-2.5 ${valueCellClassName}`}
+            >
               <span className="inline-flex items-center gap-1.5 break-words">
                 <span>{row.value}</span>
                 {row.pageNumber != null && <PageRef page={row.pageNumber} />}
@@ -1015,13 +1025,7 @@ function KeyValueTable({
   );
 }
 
-function DataCard({
-  title,
-  rows,
-}: {
-  title: string;
-  rows: DataRow[];
-}) {
+function DataCard({ title, rows }: { title: string; rows: DataRow[] }) {
   if (!rows.length) return null;
   return (
     <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
@@ -1040,7 +1044,9 @@ function SectionedDataCard({
   title: string;
   sections: DataSection[];
 }) {
-  const nonEmptySections = sections.filter((section) => section.rows.length > 0);
+  const nonEmptySections = sections.filter(
+    (section) => section.rows.length > 0,
+  );
   if (!nonEmptySections.length) return null;
 
   return (
@@ -1109,11 +1115,21 @@ export function ExtractionCards({
   initialPage,
 }: ExtractionPanelProps) {
   const coverages = policyDocument?.coverages ?? [];
-  const declarations = Array.isArray((policyDocument?.declarations as { fields?: DeclarationField[] } | undefined)?.fields)
-    ? ((policyDocument?.declarations as { fields?: DeclarationField[] }).fields ?? [])
+  const declarations = Array.isArray(
+    (
+      policyDocument?.declarations as
+        | { fields?: DeclarationField[] }
+        | undefined
+    )?.fields,
+  )
+    ? ((policyDocument?.declarations as { fields?: DeclarationField[] })
+        .fields ?? [])
     : [];
   const premiumRows = [
-    policyDocument?.premium && { label: "Premium", value: policyDocument.premium },
+    policyDocument?.premium && {
+      label: "Premium",
+      value: policyDocument.premium,
+    },
   ].filter(Boolean) as { label: string; value: string }[];
   const taxesAndFees = policyDocument?.taxesAndFees ?? [];
   const premiumBreakdown = policyDocument?.premiumBreakdown ?? [];
@@ -1135,9 +1151,13 @@ export function ExtractionCards({
       label: formatStructuredLabel(field.field) ?? field.field ?? "Field",
       value: field.value ?? "",
       section: field.section
-        ? formatStructuredLabel(field.section) ?? field.section
+        ? (formatStructuredLabel(field.section) ?? field.section)
         : undefined,
-      pageNumber: firstNumericPage(field.pageNumber, field.pageStart, declarationsPage),
+      pageNumber: firstNumericPage(
+        field.pageNumber,
+        field.pageStart,
+        declarationsPage,
+      ),
     }))
     .filter((row) => row.value);
 
@@ -1173,21 +1193,27 @@ export function ExtractionCards({
       {taxesAndFees.length > 0 && (
         <DataCard
           title="Taxes & fees"
-          rows={taxesAndFees.map((item) => ({
-            label: item.name,
-            value: item.amount ?? "",
-            section: item.type ? formatStructuredLabel(item.type) ?? item.type : item.description,
-          })).filter((row) => row.label && row.value)}
+          rows={taxesAndFees
+            .map((item) => ({
+              label: item.name,
+              value: item.amount ?? "",
+              section: item.type
+                ? (formatStructuredLabel(item.type) ?? item.type)
+                : item.description,
+            }))
+            .filter((row) => row.label && row.value)}
         />
       )}
 
       {premiumBreakdown.length > 0 && (
         <DataCard
           title="Premium breakdown"
-          rows={premiumBreakdown.map((item) => ({
-            label: item.line ?? "Premium line",
-            value: item.amount ?? "",
-          })).filter((row) => row.value)}
+          rows={premiumBreakdown
+            .map((item) => ({
+              label: item.line ?? "Premium line",
+              value: item.amount ?? "",
+            }))
+            .filter((row) => row.value)}
         />
       )}
 
@@ -1229,7 +1255,9 @@ export function ExtractionCards({
       )}
 
       {limits.length > 0 && <DataCard title="Limits" rows={limits} />}
-      {deductibles.length > 0 && <DataCard title="Deductibles" rows={deductibles} />}
+      {deductibles.length > 0 && (
+        <DataCard title="Deductibles" rows={deductibles} />
+      )}
 
       {definitions.length > 0 && (
         <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
@@ -1250,7 +1278,9 @@ export function ExtractionCards({
                   ]
                 : []
             }
-            renderBody={(definition) => <DefinitionBody definition={definition} />}
+            renderBody={(definition) => (
+              <DefinitionBody definition={definition} />
+            )}
           />
         </div>
       )}
@@ -1265,7 +1295,9 @@ export function ExtractionCards({
               [
                 reason.reasonNumber,
                 reason.title ?? reason.coverageName ?? "Covered reason",
-              ].filter(Boolean).join(". ")
+              ]
+                .filter(Boolean)
+                .join(". ")
             }
             getPage={(reason) => reason.pageNumber}
             getBadges={(reason) =>
@@ -1294,28 +1326,38 @@ export function ExtractionCards({
       {formInventory.length > 0 && (
         <DataCard
           title="Form inventory"
-          rows={formInventory.map((form) => ({
-            label: form.title || form.formNumber || "Untitled form",
-            value: [
-              form.formType ? formatStructuredLabel(form.formType) ?? form.formType : null,
-              form.formNumber,
-              form.editionDate,
-              form.pageStart != null
-                ? `Pages ${form.pageStart}${form.pageEnd && form.pageEnd !== form.pageStart ? `-${form.pageEnd}` : ""}`
-                : null,
-            ].filter(Boolean).join(" | "),
-          })).filter((row) => row.value)}
+          rows={formInventory
+            .map((form) => ({
+              label: form.title || form.formNumber || "Untitled form",
+              value: [
+                form.formType
+                  ? (formatStructuredLabel(form.formType) ?? form.formType)
+                  : null,
+                form.formNumber,
+                form.editionDate,
+                form.pageStart != null
+                  ? `Pages ${form.pageStart}${form.pageEnd && form.pageEnd !== form.pageStart ? `-${form.pageEnd}` : ""}`
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(" | "),
+            }))
+            .filter((row) => row.value)}
         />
       )}
 
       {supplementaryFacts.length > 0 && (
         <DataCard
           title="Supplementary facts"
-          rows={supplementaryFacts.map((fact) => ({
-            label: formatStructuredLabel(fact.key) ?? fact.key ?? "Fact",
-            value: fact.value ?? "",
-            section: [fact.subject, fact.context].filter(Boolean).join(" | ") || undefined,
-          })).filter((row) => row.value)}
+          rows={supplementaryFacts
+            .map((fact) => ({
+              label: formatStructuredLabel(fact.key) ?? fact.key ?? "Fact",
+              value: fact.value ?? "",
+              section:
+                [fact.subject, fact.context].filter(Boolean).join(" | ") ||
+                undefined,
+            }))
+            .filter((row) => row.value)}
         />
       )}
 
@@ -1407,24 +1449,22 @@ export function ExtractionCards({
                     </tr>
                   </thead>
                   <tbody>
-                    {(fees as Record<string, unknown>[]).map(
-                      (f, i: number) => (
-                        <tr
-                          key={i}
-                          className="border-t border-foreground/4 hover:bg-foreground/[0.015] transition-colors"
-                        >
-                          <td className="px-4 py-2.5 text-sm text-foreground font-medium">
-                            {String(f.name ?? "—")}
-                          </td>
-                          <td className="px-4 py-2.5 text-sm font-medium text-foreground text-right">
-                            {String(f.amount ?? "—")}
-                          </td>
-                          <td className="hidden sm:table-cell px-4 py-2.5 text-sm text-muted-foreground">
-                            {String(f.type ?? "—")}
-                          </td>
-                        </tr>
-                      ),
-                    )}
+                    {(fees as Record<string, unknown>[]).map((f, i: number) => (
+                      <tr
+                        key={i}
+                        className="border-t border-foreground/4 hover:bg-foreground/[0.015] transition-colors"
+                      >
+                        <td className="px-4 py-2.5 text-sm text-foreground font-medium">
+                          {String(f.name ?? "—")}
+                        </td>
+                        <td className="px-4 py-2.5 text-sm font-medium text-foreground text-right">
+                          {String(f.amount ?? "—")}
+                        </td>
+                        <td className="hidden sm:table-cell px-4 py-2.5 text-sm text-muted-foreground">
+                          {String(f.type ?? "—")}
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
@@ -1446,7 +1486,9 @@ export function ExtractionCards({
                 : (ex?.name ?? ex?.title ?? "Unnamed exclusion")
             }
             getPage={(ex) =>
-              typeof ex === "string" ? undefined : ex.pageNumber ?? ex.pageStart
+              typeof ex === "string"
+                ? undefined
+                : (ex.pageNumber ?? ex.pageStart)
             }
             getBadges={(ex) => {
               if (typeof ex === "string") return [];
@@ -1524,9 +1566,7 @@ export function ExtractionCards({
             title="Complaint contact"
             pageNumber={policyDocument.complaintContact.pageNumber}
             content={policyDocument.complaintContact.content}
-            hasStructured={
-              !!policyDocument.complaintContact.contacts?.length
-            }
+            hasStructured={!!policyDocument.complaintContact.contacts?.length}
           >
             <ComplaintContactStructured
               contacts={policyDocument.complaintContact.contacts}

@@ -5,13 +5,21 @@ import { motion, AnimatePresence } from "framer-motion";
 import { usePdf } from "@/components/pdf-context";
 import { PdfViewer } from "@/components/ui/pdf-viewer";
 
-const EASE = [0.16, 1, 0.3, 1] as const;
+const EASE = [0.2, 0, 0, 1] as const;
 const MIN_WIDTH = 360;
 const MAX_WIDTH = 900;
 const DEFAULT_WIDTH = 540;
 
 export function PdfPanel({ fitContainer = false }: { fitContainer?: boolean }) {
-  const { isPdfOpen, closePdf, fileUrl, currentPage, navigateToPage, setNumPages, highlightedPage } = usePdf();
+  const {
+    isPdfOpen,
+    closePdf,
+    fileUrl,
+    currentPage,
+    navigateToPage,
+    setNumPages,
+    highlightedPage,
+  } = usePdf();
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   const [isDraggingState, setIsDraggingState] = useState(false);
   const isDragging = useRef(false);
@@ -33,7 +41,10 @@ export function PdfPanel({ fitContainer = false }: { fitContainer?: boolean }) {
     const onMove = (ev: PointerEvent) => {
       if (!isDragging.current) return;
       const delta = startX - ev.clientX; // dragging left = wider
-      const nextWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, startWidth + delta));
+      const nextWidth = Math.min(
+        MAX_WIDTH,
+        Math.max(MIN_WIDTH, startWidth + delta),
+      );
       if (nextWidth === widthRef.current) return;
       pendingWidth.current = nextWidth;
       if (dragFrame.current !== null) return;
@@ -71,11 +82,12 @@ export function PdfPanel({ fitContainer = false }: { fitContainer?: boolean }) {
     <AnimatePresence mode="popLayout">
       {isPdfOpen && (
         <motion.div
-          layout
           initial={fitContainer ? false : { width: 0 }}
           animate={fitContainer ? { width: "100%" } : { width }}
           exit={fitContainer ? undefined : { width: 0 }}
-          transition={isDraggingState ? { duration: 0 } : { duration: 0.5, ease: EASE }}
+          transition={
+            isDraggingState ? { duration: 0 } : { duration: 0.12, ease: EASE }
+          }
           className={`flex h-full overflow-hidden relative ${fitContainer ? "min-w-0 w-full max-w-full flex-1" : "shrink-0"}`}
         >
           {/* Resize handle */}
@@ -89,10 +101,10 @@ export function PdfPanel({ fitContainer = false }: { fitContainer?: boolean }) {
           )}
 
           <motion.div
-            initial={{ opacity: 0, x: 40 }}
+            initial={{ opacity: 0, x: 8 }}
             animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 40 }}
-            transition={{ duration: 0.4, ease: EASE, delay: 0.05 }}
+            exit={{ opacity: 0, x: 8 }}
+            transition={{ duration: 0.1, ease: EASE }}
             className="flex min-w-0 max-w-full flex-1 flex-col min-h-0 border-l border-foreground/6 bg-background"
             style={fitContainer ? undefined : { width }}
           >

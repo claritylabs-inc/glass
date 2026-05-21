@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { useQuery, useMutation, useAction } from "convex/react";
+import { useMutation, useAction } from "convex/react";
 import dayjs from "dayjs";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -12,7 +12,6 @@ import { PolicyUploadDrawer } from "@/components/policy-upload-drawer";
 import type { PolicyUploadMode } from "@/components/policy-upload-mode-toggle";
 import { PolicyEmptyState } from "@/components/policy-empty-state";
 import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -25,6 +24,7 @@ import { Upload } from "lucide-react";
 import { toast } from "sonner";
 import { useClientDetailActions } from "../layout";
 import { getPublicAgentDomain } from "@/lib/domains";
+import { useCachedQuery } from "@/lib/sync/use-cached-query";
 
 type DocType = "policy" | "quote";
 
@@ -80,7 +80,7 @@ export default function ClientPoliciesPage() {
   const label = docType === "quote" ? "quote" : "policy";
 
   // Broker's own agent email (shown in empty state for easy forwarding)
-  const viewerOrg = useQuery(api.orgs.viewerOrg, {});
+  const viewerOrg = useCachedQuery("orgs.viewerOrg", api.orgs.viewerOrg, {});
   const AGENT_DOMAIN = getPublicAgentDomain();
   const agentHandle = viewerOrg?.org?.agentHandle;
   const agentEmail = agentHandle ? `${agentHandle}@${AGENT_DOMAIN}` : null;
@@ -100,7 +100,8 @@ export default function ClientPoliciesPage() {
     return () => setActions(null);
   }, [setActions, label]);
 
-  const policies = useQuery(
+  const policies = useCachedQuery(
+    "policies.listForBroker",
     api.policies.listForBroker,
     clientOrgId
       ? {
@@ -112,7 +113,9 @@ export default function ClientPoliciesPage() {
 
   const generateUploadUrl = useMutation(api.policies.generateUploadUrl);
   const createBrokerUpload = useMutation(api.policies.createBrokerUpload);
-  const extractFromUpload = useAction(api.actions.extractFromUpload.extractFromUpload);
+  const extractFromUpload = useAction(
+    api.actions.extractFromUpload.extractFromUpload,
+  );
 
   const uploadStorage = useCallback(
     async (file: File): Promise<string> => {
@@ -238,20 +241,7 @@ export default function ClientPoliciesPage() {
       </Tabs>
 
       {isLoading ? (
-        <div className="overflow-hidden rounded-lg border border-foreground/6 bg-card">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="border-t border-foreground/4 px-4 py-3 first:border-t-0">
-              <div className="flex items-center justify-between gap-4">
-                <div className="flex min-w-0 flex-1 flex-col gap-2">
-                  <Skeleton className="h-4 w-48" />
-                  <Skeleton className="h-3 w-32" />
-                </div>
-                <Skeleton className="h-4 w-28" />
-                <Skeleton className="h-7 w-16 rounded-full" />
-              </div>
-            </div>
-          ))}
-        </div>
+        <div className="min-h-32" aria-hidden="true" />
       ) : rows.length === 0 ? (
         <PolicyEmptyState
           docType={docType}
@@ -264,39 +254,66 @@ export default function ClientPoliciesPage() {
           <Table className="min-w-[900px]">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className="w-[22%] px-4 text-label-sm text-muted-foreground">Carrier</TableHead>
-                <TableHead className="w-[16%] text-label-sm text-muted-foreground">Policy no.</TableHead>
-                <TableHead className="w-[20%] text-label-sm text-muted-foreground">Term</TableHead>
-                <TableHead className="w-[12%] text-label-sm text-muted-foreground">Premium</TableHead>
-                <TableHead className="w-[12%] text-label-sm text-muted-foreground">Uploaded by</TableHead>
-                <TableHead className="w-[10%] text-label-sm text-muted-foreground">Status</TableHead>
-                <TableHead className="w-[18%] px-4 text-label-sm text-muted-foreground">File</TableHead>
+                <TableHead className="w-[22%] px-4 text-label-sm text-muted-foreground">
+                  Carrier
+                </TableHead>
+                <TableHead className="w-[16%] text-label-sm text-muted-foreground">
+                  Policy no.
+                </TableHead>
+                <TableHead className="w-[20%] text-label-sm text-muted-foreground">
+                  Term
+                </TableHead>
+                <TableHead className="w-[12%] text-label-sm text-muted-foreground">
+                  Premium
+                </TableHead>
+                <TableHead className="w-[12%] text-label-sm text-muted-foreground">
+                  Uploaded by
+                </TableHead>
+                <TableHead className="w-[10%] text-label-sm text-muted-foreground">
+                  Status
+                </TableHead>
+                <TableHead className="w-[18%] px-4 text-label-sm text-muted-foreground">
+                  File
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {rows.map((policy) => {
-                const carrier = cleanField(policy.mga) ?? cleanField(policy.carrier) ?? "Untitled policy";
-                const policyNumber = cleanField(policy.policyNumber) ?? "No policy number";
+                const carrier =
+                  cleanField(policy.mga) ??
+                  cleanField(policy.carrier) ??
+                  "Untitled policy";
+                const policyNumber =
+                  cleanField(policy.policyNumber) ?? "No policy number";
                 return (
                   <TableRow
                     key={policy._id}
                     tabIndex={0}
-                    onClick={() => router.push(`/clients/${clientOrgId}/policies/${policy._id}`)}
+                    onClick={() =>
+                      router.push(
+                        `/clients/${clientOrgId}/policies/${policy._id}`,
+                      )
+                    }
                     onKeyDown={(event) => {
                       if (event.key !== "Enter" && event.key !== " ") return;
                       event.preventDefault();
-                      router.push(`/clients/${clientOrgId}/policies/${policy._id}`);
+                      router.push(
+                        `/clients/${clientOrgId}/policies/${policy._id}`,
+                      );
                     }}
                     className="cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
                   >
                     <TableCell className="px-4">
-                      <p className="truncate font-medium text-foreground">{carrier}</p>
+                      <p className="truncate font-medium text-foreground">
+                        {carrier}
+                      </p>
                     </TableCell>
                     <TableCell className="max-w-44 truncate text-muted-foreground">
                       {policyNumber}
                     </TableCell>
                     <TableCell className="text-muted-foreground">
-                      {formatDate(policy.effectiveDate)} - {formatDate(policy.expirationDate)}
+                      {formatDate(policy.effectiveDate)} -{" "}
+                      {formatDate(policy.expirationDate)}
                     </TableCell>
                     <TableCell className="max-w-28 truncate text-muted-foreground">
                       {cleanField(policy.premium) ?? "-"}
@@ -305,7 +322,10 @@ export default function ClientPoliciesPage() {
                       {displayUploadedBy(policy.uploadedBySide)}
                     </TableCell>
                     <TableCell>
-                      <Badge variant="secondary" className="font-normal text-muted-foreground">
+                      <Badge
+                        variant="secondary"
+                        className="font-normal text-muted-foreground"
+                      >
                         {displayStatus(policy.pipelineStatus)}
                       </Badge>
                     </TableCell>
@@ -319,7 +339,6 @@ export default function ClientPoliciesPage() {
           </Table>
         </section>
       )}
-
     </div>
   );
 }

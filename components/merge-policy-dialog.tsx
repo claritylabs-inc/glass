@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery, useAction } from "convex/react";
+import { useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import {
@@ -11,6 +11,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { useCachedPolicyDetail } from "@/lib/sync/glass-cached-queries";
 
 interface MergePolicyDialogProps {
   open: boolean;
@@ -27,9 +28,7 @@ function PolicySummaryCard({
   policyId: string;
   label: string;
 }) {
-  const policy = useQuery(api.policies.get, {
-    id: policyId as Id<"policies">,
-  });
+  const policy = useCachedPolicyDetail(policyId as Id<"policies">);
 
   return (
     <div className="flex-1 rounded-md border border-foreground/10 p-3 space-y-1.5">
@@ -37,7 +36,7 @@ function PolicySummaryCard({
         {label}
       </p>
       {policy === undefined ? (
-        <p className="text-body-sm text-muted-foreground/40">Loading...</p>
+        <div className="min-h-16" aria-hidden="true" />
       ) : policy === null ? (
         <p className="text-body-sm text-muted-foreground/40">Not found</p>
       ) : (
@@ -46,10 +45,14 @@ function PolicySummaryCard({
             {policy.policyNumber}
           </p>
           {policy.carrier && (
-            <p className="text-label-sm text-muted-foreground/70">{policy.carrier}</p>
+            <p className="text-label-sm text-muted-foreground/70">
+              {policy.carrier}
+            </p>
           )}
           {policy.insuredName && (
-            <p className="text-label-sm text-muted-foreground/70">{policy.insuredName}</p>
+            <p className="text-label-sm text-muted-foreground/70">
+              {policy.insuredName}
+            </p>
           )}
           <p className="text-label-sm text-muted-foreground/50">
             {policy.effectiveDate} – {policy.expirationDate}
@@ -69,7 +72,9 @@ export function MergePolicyDialog({
 }: MergePolicyDialogProps) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const _api = api as any;
-  const mergePolicies = useAction(_api.actions.detectDuplicatePolicies.mergePolicies);
+  const mergePolicies = useAction(
+    _api.actions.detectDuplicatePolicies.mergePolicies,
+  );
 
   async function handleMerge() {
     try {
@@ -85,15 +90,20 @@ export function MergePolicyDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={(isOpen: boolean) => { if (!isOpen) onClose(); }}>
+    <Dialog
+      open={open}
+      onOpenChange={(isOpen: boolean) => {
+        if (!isOpen) onClose();
+      }}
+    >
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>Merge policies</DialogTitle>
         </DialogHeader>
 
         <p className="text-body-sm text-muted-foreground">
-          The primary policy will be kept and updated with any missing data from the
-          secondary. The secondary policy will be removed.
+          The primary policy will be kept and updated with any missing data from
+          the secondary. The secondary policy will be removed.
         </p>
 
         <div className="flex gap-3 mt-1">
@@ -111,9 +121,7 @@ export function MergePolicyDialog({
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={handleMerge}>
-            Merge
-          </Button>
+          <Button onClick={handleMerge}>Merge</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

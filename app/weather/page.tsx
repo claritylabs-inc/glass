@@ -59,10 +59,7 @@ export default function WeatherPage() {
         {!config ? (
           <div className="space-y-3">
             {Array.from({ length: 8 }).map((_, i) => (
-              <div
-                key={i}
-                className="h-12 rounded-lg bg-foreground/[0.03] animate-pulse"
-              />
+              <div key={i} className="h-12 rounded-lg bg-foreground/[0.03]" />
             ))}
           </div>
         ) : (
@@ -116,8 +113,8 @@ export default function WeatherPage() {
 
             <p className="mt-4 text-xs text-foreground/30">
               Fallback:{" "}
-              <span className="font-mono">{config.fallback.model}</span>
-              {" "}({config.fallback.provider})
+              <span className="font-mono">{config.fallback.model}</span> (
+              {config.fallback.provider})
             </p>
           </>
         )}

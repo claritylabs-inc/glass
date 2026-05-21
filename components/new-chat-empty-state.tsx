@@ -2,10 +2,12 @@
 
 import { useMemo } from "react";
 import Link from "next/link";
-import { useQuery } from "convex/react";
 import { ClipboardList, FileUp, Inbox, Link2 } from "lucide-react";
-import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import {
+  useCachedAgentTargets,
+  useCachedConnectedVendors,
+} from "@/lib/sync/glass-cached-queries";
 
 type ExamplePrompt = {
   label: string;
@@ -97,11 +99,10 @@ export function NewChatEmptyState({
   onSelectPrompt: (prompt: string) => void;
   orgId?: Id<"organizations">;
 }) {
-  const targets = useQuery(api.agentTargets.list, orgId ? { orgId } : "skip");
-  const vendorRows = useQuery(
-    api.connectedOrgs.listVendors,
-    orgId ? { orgId } : "skip",
-  ) as ConnectedVendorRow[] | undefined;
+  const targets = useCachedAgentTargets(orgId);
+  const vendorRows = useCachedConnectedVendors(orgId) as
+    | ConnectedVendorRow[]
+    | undefined;
   const isLoadingContext =
     Boolean(orgId) && (targets === undefined || vendorRows === undefined);
   const prompts = useMemo(() => {

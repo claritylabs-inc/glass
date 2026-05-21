@@ -18,9 +18,7 @@ export default function ClientsPage() {
   if (!currentOrg) {
     return (
       <AppShell>
-        <div className="py-16 text-center">
-          <p className="text-sm text-muted-foreground/60">Loading…</p>
-        </div>
+        <div className="min-h-32" aria-hidden="true" />
       </AppShell>
     );
   }

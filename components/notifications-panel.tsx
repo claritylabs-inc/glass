@@ -1,13 +1,17 @@
 "use client";
 
 import { useRef, useEffect, useMemo, useState } from "react";
-import { useQuery, useMutation } from "convex/react";
+import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useRouter } from "next/navigation";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 import { X } from "lucide-react";
+import {
+  useCachedNotifications,
+  useNotificationCacheActions,
+} from "@/lib/sync/glass-cached-queries";
 
 dayjs.extend(relativeTime);
 
@@ -53,7 +57,10 @@ interface Notification {
 interface NotificationsPanelProps {
   orgId: Id<"organizations">;
   onClose: () => void;
-  onMergeSuggestion?: (payload: { primaryPolicyId: string; secondaryPolicyId: string }) => void;
+  onMergeSuggestion?: (payload: {
+    primaryPolicyId: string;
+    secondaryPolicyId: string;
+  }) => void;
   variant?: "popover" | "pane";
 }
 
@@ -67,26 +74,18 @@ export function NotificationsPanel({
   const _api = api as any;
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<"unread" | "read">("unread");
-  const unreadNotifications = useQuery(_api.notifications.listInbox, {
-    orgId,
-    status: "unread",
-  }) as
+  const unreadNotifications = useCachedNotifications(orgId, "unread") as
     | (Notification & { relatedOrgName?: string })[]
     | undefined;
-  const readNotifications = useQuery(_api.notifications.listInbox, {
-    orgId,
-    status: "read",
-  }) as
+  const readNotifications = useCachedNotifications(orgId, "read") as
     | (Notification & { relatedOrgName?: string })[]
     | undefined;
-  const actionedNotifications = useQuery(_api.notifications.listInbox, {
-    orgId,
-    status: "actioned",
-  }) as
+  const actionedNotifications = useCachedNotifications(orgId, "actioned") as
     | (Notification & { relatedOrgName?: string })[]
     | undefined;
   const markRead = useMutation(_api.notifications.markRead);
   const markAllRead = useMutation(_api.notifications.markAllRead);
+  const { markReadLocally } = useNotificationCacheActions(orgId);
   const panelRef = useRef<HTMLDivElement>(null);
 
   // Close on outside click
@@ -113,6 +112,7 @@ export function NotificationsPanel({
 
   async function handleNotificationClick(notification: Notification) {
     if (notification.status === "unread") {
+      void markReadLocally([notification]);
       await markRead({ ids: [notification._id] });
     }
 
@@ -121,7 +121,9 @@ export function NotificationsPanel({
       const p = notification.actionPayload as Record<string, string>;
       switch (notification.actionType) {
         case "view_policy":
-          router.push(`/policies/${p.policyId}${p.tab ? `?tab=${encodeURIComponent(p.tab)}` : ""}`);
+          router.push(
+            `/policies/${p.policyId}${p.tab ? `?tab=${encodeURIComponent(p.tab)}` : ""}`,
+          );
           break;
         case "view_thread":
           router.push(`/agent/thread/${p.threadId}`);
@@ -157,12 +159,17 @@ export function NotificationsPanel({
   }, [actionedNotifications, readNotifications]);
 
   const visibleUnreadNotifications = useMemo(
-    () => unreadNotifications?.filter((n: Notification) => n.status !== "dismissed"),
+    () =>
+      unreadNotifications?.filter(
+        (n: Notification) => n.status !== "dismissed",
+      ),
     [unreadNotifications],
   );
 
   const activeNotifications =
-    activeTab === "unread" ? visibleUnreadNotifications : visibleReadNotifications;
+    activeTab === "unread"
+      ? visibleUnreadNotifications
+      : visibleReadNotifications;
   const isLoading = activeNotifications === undefined;
   const unreadCount = visibleUnreadNotifications?.length ?? 0;
   const readCount = visibleReadNotifications?.length ?? 0;
@@ -178,7 +185,9 @@ export function NotificationsPanel({
     >
       {/* Header */}
       <div className="flex h-12 shrink-0 items-center justify-between border-b border-foreground/6 px-3">
-        <span className="min-w-0 truncate text-body-sm font-medium text-foreground">Notifications</span>
+        <span className="min-w-0 truncate text-body-sm font-medium text-foreground">
+          Notifications
+        </span>
         <button
           type="button"
           onClick={onClose}
@@ -188,7 +197,10 @@ export function NotificationsPanel({
         </button>
       </div>
 
-      <div className="flex h-12 min-w-0 shrink-0 items-center gap-1 border-b border-foreground/6 px-2" role="tablist">
+      <div
+        className="flex h-12 min-w-0 shrink-0 items-center gap-1 border-b border-foreground/6 px-2"
+        role="tablist"
+      >
         <button
           type="button"
           role="tab"
@@ -228,11 +240,15 @@ export function NotificationsPanel({
       </div>
 
       {/* List */}
-      <div className={variant === "pane" ? "min-h-0 flex-1 overflow-y-auto" : "max-h-100 overflow-y-auto"}>
+      <div
+        className={
+          variant === "pane"
+            ? "min-h-0 flex-1 overflow-y-auto"
+            : "max-h-100 overflow-y-auto"
+        }
+      >
         {isLoading ? (
-          <div className="px-3 py-6 text-center text-body-sm text-muted-foreground/40">
-            Loading...
-          </div>
+          <div className="min-h-24" aria-hidden="true" />
         ) : activeNotifications.length === 0 ? (
           <div className="px-3 py-6 text-center text-body-sm text-muted-foreground/40">
             No {activeTab} notifications
@@ -242,22 +258,25 @@ export function NotificationsPanel({
             const isUnread = notification.status === "unread";
             const isClickable =
               !!(notification.actionType && notification.actionPayload) ||
-              (notification.type === "merge_suggestion" && !!notification.actionPayload);
+              (notification.type === "merge_suggestion" &&
+                !!notification.actionPayload);
 
             return (
               <button
                 key={notification._id}
                 type="button"
-                onClick={() => handleNotificationClick(notification as Notification)}
+                onClick={() =>
+                  handleNotificationClick(notification as Notification)
+                }
                 className={`flex w-full min-w-0 items-start gap-2.5 border-b border-foreground/4 px-3 py-2.5 text-left transition-colors ${
-                  isClickable
-                    ? "hover:bg-foreground/4"
-                    : "cursor-default"
+                  isClickable ? "hover:bg-foreground/4" : "cursor-default"
                 } ${isUnread ? "bg-foreground/2" : ""}`}
               >
                 <div className="flex-1 min-w-0">
                   <div className="flex min-w-0 items-center gap-1.5">
-                    <p className="min-w-0 flex-1 truncate text-body-sm text-foreground">{notification.title}</p>
+                    <p className="min-w-0 flex-1 truncate text-body-sm text-foreground">
+                      {notification.title}
+                    </p>
                     {(notification.coalescedCount ?? 1) > 1 && (
                       <span className="inline-flex items-center px-1 py-0 rounded text-[10px] font-medium bg-foreground/8 text-muted-foreground">
                         ×{notification.coalescedCount}
@@ -265,7 +284,9 @@ export function NotificationsPanel({
                     )}
                   </div>
                   {notification.relatedOrgName && (
-                    <p className="mt-0.5 truncate text-label-sm text-muted-foreground/50">{notification.relatedOrgName}</p>
+                    <p className="mt-0.5 truncate text-label-sm text-muted-foreground/50">
+                      {notification.relatedOrgName}
+                    </p>
                   )}
                   <p className="mt-0.5 line-clamp-2 wrap-break-word text-label-sm text-muted-foreground/60">
                     {notification.body}
@@ -288,7 +309,12 @@ export function NotificationsPanel({
         <div className="px-3 py-2 border-t border-foreground/6">
           <button
             type="button"
-            onClick={() => markAllRead({ orgId })}
+            onClick={() => {
+              if (visibleUnreadNotifications) {
+                void markReadLocally(visibleUnreadNotifications);
+              }
+              void markAllRead({ orgId });
+            }}
             className="text-label-sm text-muted-foreground/50 hover:text-foreground transition-colors"
           >
             Mark all as read

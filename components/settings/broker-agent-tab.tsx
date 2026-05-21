@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -10,9 +10,21 @@ import { useSettingsActions } from "@/components/settings/settings-actions-conte
 import { HandleAvailability } from "@/components/settings/handle-availability";
 import { SettingsSwitch } from "@/components/settings/settings-switch";
 import { getPublicAgentDomain } from "@/lib/domains";
+import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
+import {
+  patchCachedViewerOrg,
+  useCachedViewerOrg,
+} from "@/lib/sync/glass-cached-queries";
+
+type AgentSettingsArgs = {
+  chatEmailNotifications: boolean;
+  autoSendEmails: boolean;
+  bccRequesterOnAgentEmails: boolean;
+  emailSendDelay: number;
+};
 
 export function BrokerAgentTab() {
-  const viewerOrg = useQuery(api.orgs.viewerOrg, {});
+  const viewerOrg = useCachedViewerOrg();
   const updateOrg = useMutation(api.orgs.updateOrg);
   const claimAgentHandle = useMutation(api.orgs.claimAgentHandle);
 
@@ -35,13 +47,12 @@ export function BrokerAgentTab() {
   const [savingHandle, setSavingHandle] = useState(false);
   const [chatEmailNotifications, setChatEmailNotifications] = useState(false);
   const [autoSendEmails, setAutoSendEmails] = useState(false);
-  const [bccRequesterOnAgentEmails, setBccRequesterOnAgentEmails] = useState(true);
+  const [bccRequesterOnAgentEmails, setBccRequesterOnAgentEmails] =
+    useState(true);
   const [emailSendDelay, setEmailSendDelay] = useState<number>(5);
+  const [settingsHydrated, setSettingsHydrated] = useState(false);
 
   const hydratedRef = useRef(false);
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [savedAt, setSavedAt] = useState<number | null>(null);
 
   const { setActions } = useSettingsActions();
 
@@ -54,37 +65,47 @@ export function BrokerAgentTab() {
       setBccRequesterOnAgentEmails(org.bccRequesterOnAgentEmails ?? true);
       setEmailSendDelay(org.emailSendDelay ?? 5);
       hydratedRef.current = true;
+      setSettingsHydrated(true);
     }
   }, [org]);
 
-  const saveNow = useCallback(async () => {
-    setSaving(true);
-    try {
-      await updateOrg({
+  const settingsValueKey = useMemo(
+    () =>
+      JSON.stringify({
         chatEmailNotifications,
         autoSendEmails,
         bccRequesterOnAgentEmails,
         emailSendDelay,
-      });
-      setSavedAt(Date.now());
-      toast.success("Agent settings saved");
-    } catch {
-      toast.error("Failed to save agent settings");
-    } finally {
-      setSaving(false);
-    }
-  }, [updateOrg, chatEmailNotifications, autoSendEmails, bccRequesterOnAgentEmails, emailSendDelay]);
+      }),
+    [
+      autoSendEmails,
+      bccRequesterOnAgentEmails,
+      chatEmailNotifications,
+      emailSendDelay,
+    ],
+  );
 
-  useEffect(() => {
-    if (!hydratedRef.current) return;
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => {
-      void saveNow();
-    }, 600);
-    return () => {
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    };
-  }, [saveNow]);
+  const saveAgentSettings = useCallback(
+    async (args: AgentSettingsArgs) => {
+      await updateOrg(args);
+    },
+    [updateOrg],
+  );
+
+  const { saving, savedAt } = useLocalFirstAutoSave({
+    mutationName: "settings.agent.updateOrg",
+    args: {
+      chatEmailNotifications,
+      autoSendEmails,
+      bccRequesterOnAgentEmails,
+      emailSendDelay,
+    },
+    valueKey: settingsValueKey,
+    enabled: settingsHydrated,
+    applyLocal: (store, args) => patchCachedViewerOrg(store, args),
+    flush: saveAgentSettings,
+    onError: () => toast.error("Failed to save agent settings"),
+  });
 
   useEffect(() => {
     setActions(
@@ -111,12 +132,14 @@ export function BrokerAgentTab() {
     return () => clearTimeout(t);
   }, [normalizedInput]);
 
-  const shouldCheck =
-    !!debouncedHandle && debouncedHandle !== currentHandle;
+  const shouldCheck = !!debouncedHandle && debouncedHandle !== currentHandle;
   const availability = useQuery(
     api.orgs.checkHandleAvailability,
     shouldCheck && org?._id
-      ? { handle: debouncedHandle, excludeOrgId: org._id as Id<"organizations"> }
+      ? {
+          handle: debouncedHandle,
+          excludeOrgId: org._id as Id<"organizations">,
+        }
       : "skip",
   );
   const handleChecking =
@@ -136,14 +159,19 @@ export function BrokerAgentTab() {
     (async () => {
       setSavingHandle(true);
       try {
-        const normalized = await claimAgentHandle({ handle: availability.normalized });
+        const normalized = await claimAgentHandle({
+          handle: availability.normalized,
+        });
         if (!cancelled) {
           setAgentHandle(normalized);
           setDebouncedHandle(normalized);
           toast.success("Agent handle saved");
         }
       } catch (err) {
-        if (!cancelled) toast.error(err instanceof Error ? err.message : "Failed to update handle");
+        if (!cancelled)
+          toast.error(
+            err instanceof Error ? err.message : "Failed to update handle",
+          );
       } finally {
         if (!cancelled) setSavingHandle(false);
       }
@@ -151,7 +179,13 @@ export function BrokerAgentTab() {
     return () => {
       cancelled = true;
     };
-  }, [shouldCheck, normalizedInput, debouncedHandle, availability, claimAgentHandle]);
+  }, [
+    shouldCheck,
+    normalizedInput,
+    debouncedHandle,
+    availability,
+    claimAgentHandle,
+  ]);
 
   if (viewerOrg === undefined) {
     return (
@@ -170,19 +204,24 @@ export function BrokerAgentTab() {
       {isBroker ? (
         <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
           <div className="px-5 py-3.5 border-b border-foreground/6">
-            <h3 className="mb-0! text-sm font-medium text-foreground">Agent email handle</h3>
+            <h3 className="mb-0! text-sm font-medium text-foreground">
+              Agent email handle
+            </h3>
           </div>
           <div className="px-5 py-5 space-y-1">
             <p className="text-body-sm text-muted-foreground/70 mb-3">
-              Clients and carriers email your agent at this address. Forwarding a
-              policy or asking a question routes to the Glass agent for this org.
+              Clients and carriers email your agent at this address. Forwarding
+              a policy or asking a question routes to the Glass agent for this
+              org.
             </p>
             <div className="flex items-stretch gap-0">
               <input
                 type="text"
                 value={agentHandle}
                 onChange={(e) =>
-                  setAgentHandle(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))
+                  setAgentHandle(
+                    e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""),
+                  )
                 }
                 placeholder="your-broker-name"
                 spellCheck={false}
@@ -199,7 +238,9 @@ export function BrokerAgentTab() {
               checking={handleChecking}
               input={normalizedInput}
               current={currentHandle}
-              availability={normalizedInput === debouncedHandle ? availability : undefined}
+              availability={
+                normalizedInput === debouncedHandle ? availability : undefined
+              }
               currentLabel="Current agent handle"
               renderAvailablePreview={(s) => `${s}@${agentDomain} is available`}
             />
@@ -208,11 +249,14 @@ export function BrokerAgentTab() {
       ) : (
         <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
           <div className="px-5 py-3.5 border-b border-foreground/6">
-            <h3 className="mb-0! text-sm font-medium text-foreground">Agent email address</h3>
+            <h3 className="mb-0! text-sm font-medium text-foreground">
+              Agent email address
+            </h3>
           </div>
           <div className="px-5 py-5 space-y-1">
             <p className="text-body-sm text-muted-foreground/70 mb-3">
-              Email sent to this address routes to your Glass agent for this org.
+              Email sent to this address routes to your Glass agent for this
+              org.
             </p>
             <div
               aria-disabled="true"
@@ -227,7 +271,9 @@ export function BrokerAgentTab() {
       {/* Email behavior */}
       <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
         <div className="px-5 py-3.5 border-b border-foreground/6">
-          <h3 className="mb-0! text-sm font-medium text-foreground">Email behavior</h3>
+          <h3 className="mb-0! text-sm font-medium text-foreground">
+            Email behavior
+          </h3>
         </div>
         <div className="px-5 py-2 divide-y divide-foreground/6">
           <div className="flex items-center justify-between gap-4 py-3">
@@ -236,7 +282,8 @@ export function BrokerAgentTab() {
                 Email notifications for chat responses
               </p>
               <p className="text-label-sm text-muted-foreground/60 mt-0.5 max-w-md">
-                Send the requesting team member an email copy when the agent replies in chat.
+                Send the requesting team member an email copy when the agent
+                replies in chat.
               </p>
             </div>
             <SettingsSwitch
@@ -249,7 +296,9 @@ export function BrokerAgentTab() {
 
           <div className="flex items-center justify-between gap-4 py-3">
             <div>
-              <p className="text-body-sm font-medium text-foreground">Auto-send emails</p>
+              <p className="text-body-sm font-medium text-foreground">
+                Auto-send emails
+              </p>
               <p className="text-label-sm text-muted-foreground/60 mt-0.5 max-w-md">
                 When off, drafted emails require confirmation before sending.
               </p>
@@ -264,7 +313,9 @@ export function BrokerAgentTab() {
 
           <div className="flex items-center justify-between gap-4 py-3">
             <div>
-              <p className="text-body-sm font-medium text-foreground">BCC requester</p>
+              <p className="text-body-sm font-medium text-foreground">
+                BCC requester
+              </p>
               <p className="text-label-sm text-muted-foreground/60 mt-0.5 max-w-md">
                 Blind copy the team member who asked the agent to send an email.
               </p>
@@ -282,7 +333,9 @@ export function BrokerAgentTab() {
       {/* Send delay */}
       <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
         <div className="px-5 py-3.5 border-b border-foreground/6">
-          <h3 className="mb-0! text-sm font-medium text-foreground">Send delay</h3>
+          <h3 className="mb-0! text-sm font-medium text-foreground">
+            Send delay
+          </h3>
         </div>
         <div className="px-5 py-5">
           <div>

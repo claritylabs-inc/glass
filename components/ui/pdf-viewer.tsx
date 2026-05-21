@@ -4,7 +4,16 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
-import { ChevronUp, ChevronDown, ZoomIn, ZoomOut, Loader2, AlertTriangle, PanelRightClose, Download } from "lucide-react";
+import {
+  ChevronUp,
+  ChevronDown,
+  ZoomIn,
+  ZoomOut,
+  Loader2,
+  AlertTriangle,
+  PanelRightClose,
+  Download,
+} from "lucide-react";
 import { PillButton } from "@/components/ui/pill-button";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
@@ -23,7 +32,10 @@ const RENDER_BUFFER = 2;
 const PAGE_GAP = 12; // mb-3 = 0.75rem = 12px
 
 /** Clear scrollingToPage flag using scrollend event with fallback */
-function clearScrollFlag(container: HTMLElement, scrollingRef: React.MutableRefObject<number | null>) {
+function clearScrollFlag(
+  container: HTMLElement,
+  scrollingRef: React.MutableRefObject<number | null>,
+) {
   let cleared = false;
   const cleanup = () => {
     if (cleared) return;
@@ -39,7 +51,11 @@ function clearScrollFlag(container: HTMLElement, scrollingRef: React.MutableRefO
 type PageDims = Map<number, { width: number; height: number }>;
 
 /** Compute scaled page height from intrinsic dimensions */
-function getPageHeight(page: number, pageWidth: number | undefined, dims: PageDims): number {
+function getPageHeight(
+  page: number,
+  pageWidth: number | undefined,
+  dims: PageDims,
+): number {
   if (!pageWidth) return 792;
   const d = dims.get(page);
   if (!d) return 792;
@@ -47,7 +63,12 @@ function getPageHeight(page: number, pageWidth: number | undefined, dims: PageDi
 }
 
 /** Compute scroll offset to the top of a target page using cached dimensions */
-function computeScrollOffset(targetPage: number, pageWidth: number, dims: PageDims, gap: number): number {
+function computeScrollOffset(
+  targetPage: number,
+  pageWidth: number,
+  dims: PageDims,
+  gap: number,
+): number {
   let offset = 0;
   for (let p = 1; p < targetPage; p++) {
     offset += getPageHeight(p, pageWidth, dims) + gap;
@@ -58,7 +79,14 @@ function computeScrollOffset(targetPage: number, pageWidth: number, dims: PageDi
 }
 
 /** Find which page is visible at a given scroll position */
-function findVisiblePage(scrollTop: number, viewportHeight: number, numPages: number, pageWidth: number, dims: PageDims, gap: number): number {
+function findVisiblePage(
+  scrollTop: number,
+  viewportHeight: number,
+  numPages: number,
+  pageWidth: number,
+  dims: PageDims,
+  gap: number,
+): number {
   const scrollCenter = scrollTop + viewportHeight / 3; // bias toward top
   let offset = 0;
   for (let p = 1; p <= numPages; p++) {
@@ -124,18 +152,25 @@ export function PdfViewer({
       if (pageEl) {
         const elRect = pageEl.getBoundingClientRect();
         const containerRect = container.getBoundingClientRect();
-        const paddingTop = parseFloat(getComputedStyle(container).paddingTop) || 0;
-        const targetTop = elRect.top - containerRect.top + container.scrollTop - paddingTop;
+        const paddingTop =
+          parseFloat(getComputedStyle(container).paddingTop) || 0;
+        const targetTop =
+          elRect.top - containerRect.top + container.scrollTop - paddingTop;
         const diff = Math.abs(container.scrollTop - targetTop);
         if (diff > 10) {
           scrollingToPage.current = currentPage;
-          container.scrollTo({ top: targetTop, behavior: "smooth" });
+          container.scrollTo({ top: targetTop, behavior: "auto" });
           clearScrollFlag(container, scrollingToPage);
         }
       }
     } else {
       // Use arithmetic offset
-      const targetTop = computeScrollOffset(currentPage, pw, pageDimensions, PAGE_GAP);
+      const targetTop = computeScrollOffset(
+        currentPage,
+        pw,
+        pageDimensions,
+        PAGE_GAP,
+      );
       const diff = Math.abs(container.scrollTop - targetTop);
       if (diff > 10) {
         scrollingToPage.current = currentPage;
@@ -152,8 +187,13 @@ export function PdfViewer({
               if (pageEl) {
                 const elRect = pageEl.getBoundingClientRect();
                 const containerRect = container.getBoundingClientRect();
-                const paddingTop = parseFloat(getComputedStyle(container).paddingTop) || 0;
-                const corrected = elRect.top - containerRect.top + container.scrollTop - paddingTop;
+                const paddingTop =
+                  parseFloat(getComputedStyle(container).paddingTop) || 0;
+                const corrected =
+                  elRect.top -
+                  containerRect.top +
+                  container.scrollTop -
+                  paddingTop;
                 const corrDiff = Math.abs(container.scrollTop - corrected);
                 if (corrDiff > 2) {
                   container.scrollTo({ top: corrected, behavior: "instant" });
@@ -163,7 +203,7 @@ export function PdfViewer({
             });
           });
         } else {
-          container.scrollTo({ top: targetTop, behavior: "smooth" });
+          container.scrollTo({ top: targetTop, behavior: "auto" });
           clearScrollFlag(container, scrollingToPage);
         }
       }
@@ -176,7 +216,7 @@ export function PdfViewer({
     return () => clearTimeout(inputTimer);
   }, [currentPage, numPages, pageDimensions]);
 
-    // Detect visible page on manual scroll
+  // Detect visible page on manual scroll
   useEffect(() => {
     const container = containerRef.current;
     if (!container || !numPages) return;
@@ -187,7 +227,14 @@ export function PdfViewer({
 
       if (pw && pageDimensions.size > 0) {
         // Arithmetic-based detection
-        const page = findVisiblePage(container.scrollTop, container.clientHeight, numPages, pw, pageDimensions, PAGE_GAP);
+        const page = findVisiblePage(
+          container.scrollTop,
+          container.clientHeight,
+          numPages,
+          pw,
+          pageDimensions,
+          PAGE_GAP,
+        );
         if (page !== visiblePageRef.current) {
           visiblePageRef.current = page;
           setVisiblePage(page);
@@ -199,7 +246,10 @@ export function PdfViewer({
         let closest = 1;
         let closestDist = Infinity;
         for (const [page, el] of pageRefs.current) {
-          const elTop = el.getBoundingClientRect().top - container.getBoundingClientRect().top + container.scrollTop;
+          const elTop =
+            el.getBoundingClientRect().top -
+            container.getBoundingClientRect().top +
+            container.scrollTop;
           const dist = Math.abs(elTop - scrollCenter);
           if (dist < closestDist) {
             closestDist = dist;
@@ -237,7 +287,12 @@ export function PdfViewer({
 
       // Scroll immediately with current dimensions if available
       if (pageDimensions.size > 0) {
-        const targetTop = computeScrollOffset(pageToRestore, pw, pageDimensions, PAGE_GAP);
+        const targetTop = computeScrollOffset(
+          pageToRestore,
+          pw,
+          pageDimensions,
+          PAGE_GAP,
+        );
         container.scrollTo({ top: targetTop, behavior: "instant" });
       }
 
@@ -246,15 +301,25 @@ export function PdfViewer({
         requestAnimationFrame(() => {
           if (!container) return;
           if (pageDimensions.size > 0) {
-            const targetTop = computeScrollOffset(pageToRestore, pw, pageDimensions, PAGE_GAP);
+            const targetTop = computeScrollOffset(
+              pageToRestore,
+              pw,
+              pageDimensions,
+              PAGE_GAP,
+            );
             container.scrollTo({ top: targetTop, behavior: "instant" });
           } else {
             const pageEl = pageRefs.current.get(pageToRestore);
             if (pageEl) {
               const elRect = pageEl.getBoundingClientRect();
               const containerRect = container.getBoundingClientRect();
-              const paddingTop = parseFloat(getComputedStyle(container).paddingTop) || 0;
-              const targetTop = elRect.top - containerRect.top + container.scrollTop - paddingTop;
+              const paddingTop =
+                parseFloat(getComputedStyle(container).paddingTop) || 0;
+              const targetTop =
+                elRect.top -
+                containerRect.top +
+                container.scrollTop -
+                paddingTop;
               container.scrollTo({ top: targetTop, behavior: "instant" });
             }
           }
@@ -265,7 +330,17 @@ export function PdfViewer({
   }, [scale, numPages, pageDimensions]);
 
   const handleDocumentLoad = useCallback(
-    (pdf: { numPages: number; getPage: (n: number) => Promise<{ getViewport: (opts: { scale: number }) => { width: number; height: number } }> }) => {
+    (pdf: {
+      numPages: number;
+      getPage: (
+        n: number,
+      ) => Promise<{
+        getViewport: (opts: { scale: number }) => {
+          width: number;
+          height: number;
+        };
+      }>;
+    }) => {
       const n = pdf.numPages;
       setNumPages(n);
       setError(null);
@@ -278,13 +353,13 @@ export function PdfViewer({
             pdf.getPage(i + 1).then((page) => {
               const vp = page.getViewport({ scale: 1 });
               dims.set(i + 1, { width: vp.width, height: vp.height });
-            })
-          )
+            }),
+          ),
         );
         setPageDimensions(dims);
       })();
     },
-    [onDocumentLoad]
+    [onDocumentLoad],
   );
 
   const handleLoadError = useCallback(() => {
@@ -297,7 +372,7 @@ export function PdfViewer({
       const clamped = Math.max(1, Math.min(page, numPages));
       onPageChange(clamped);
     },
-    [numPages, onPageChange]
+    [numPages, onPageChange],
   );
 
   const handlePageInputSubmit = (e: React.FormEvent) => {
@@ -313,7 +388,8 @@ export function PdfViewer({
   const zoomIn = () => setScale((s) => Math.min(s + 0.25, 3));
   const zoomOut = () => setScale((s) => Math.max(s - 0.25, 0.5));
 
-  const pageWidth = containerWidth > 0 ? (containerWidth - 24) * scale : undefined;
+  const pageWidth =
+    containerWidth > 0 ? (containerWidth - 24) * scale : undefined;
   // Keep ref in sync with computed pageWidth (outside of render body — using layout effect)
   // We use a layout effect here so the ref is updated before paint
   useEffect(() => {
@@ -331,7 +407,12 @@ export function PdfViewer({
       {/* Toolbar — single unified bar */}
       <div className="flex items-center gap-0.5 px-2 h-12 border-b border-foreground/6 shrink-0">
         {onClose && (
-          <PillButton size="compact" variant="icon" onClick={onClose} label="Close">
+          <PillButton
+            size="compact"
+            variant="icon"
+            onClick={onClose}
+            label="Close"
+          >
             <PanelRightClose className="w-4 h-4" />
           </PillButton>
         )}
@@ -339,39 +420,69 @@ export function PdfViewer({
         {onClose && <div className="w-px h-4 bg-foreground/8 mx-1" />}
 
         {/* Page navigation */}
-        <PillButton size="compact" variant="icon" onClick={() => goToPage(displayPage - 1)} disabled={displayPage <= 1}>
+        <PillButton
+          size="compact"
+          variant="icon"
+          onClick={() => goToPage(displayPage - 1)}
+          disabled={displayPage <= 1}
+        >
           <ChevronUp className="w-3.5 h-3.5" />
         </PillButton>
-        <PillButton size="compact" variant="icon" onClick={() => goToPage(displayPage + 1)} disabled={displayPage >= numPages}>
+        <PillButton
+          size="compact"
+          variant="icon"
+          onClick={() => goToPage(displayPage + 1)}
+          disabled={displayPage >= numPages}
+        >
           <ChevronDown className="w-3.5 h-3.5" />
         </PillButton>
-        <form onSubmit={handlePageInputSubmit} className="flex items-center gap-1 ml-0.5">
+        <form
+          onSubmit={handlePageInputSubmit}
+          className="flex items-center gap-1 ml-0.5"
+        >
           <input
             type="text"
             value={pageInput}
             onChange={(e) => setPageInput(e.target.value)}
             className="w-9 text-center text-label-sm border border-foreground/8 rounded px-1 py-0.5 bg-popover focus:outline-none focus:border-foreground/20"
           />
-          <span className="text-label-sm text-muted-foreground/40">/ {numPages || "—"}</span>
+          <span className="text-label-sm text-muted-foreground/40">
+            / {numPages || "—"}
+          </span>
         </form>
 
         <div className="flex-1" />
 
         {/* Zoom */}
-        <PillButton size="compact" variant="icon" onClick={zoomOut} disabled={scale <= 0.5}>
+        <PillButton
+          size="compact"
+          variant="icon"
+          onClick={zoomOut}
+          disabled={scale <= 0.5}
+        >
           <ZoomOut className="w-3.5 h-3.5" />
         </PillButton>
         <span className="text-label-sm text-muted-foreground/40 w-10 text-center tabular-nums">
           {Math.round(scale * 100)}%
         </span>
-        <PillButton size="compact" variant="icon" onClick={zoomIn} disabled={scale >= 3}>
+        <PillButton
+          size="compact"
+          variant="icon"
+          onClick={zoomIn}
+          disabled={scale >= 3}
+        >
           <ZoomIn className="w-3.5 h-3.5" />
         </PillButton>
 
         {onClose && (
           <>
             <div className="w-px h-4 bg-foreground/8 mx-1" />
-            <PillButton size="compact" variant="icon" onClick={() => window.open(fileUrl, "_blank")} label="Download">
+            <PillButton
+              size="compact"
+              variant="icon"
+              onClick={() => window.open(fileUrl, "_blank")}
+              label="Download"
+            >
               <Download className="w-3.5 h-3.5" />
             </PillButton>
           </>
@@ -379,7 +490,15 @@ export function PdfViewer({
       </div>
 
       {/* PDF content */}
-      <div ref={containerRef} className="flex-1 min-h-0 overflow-auto bg-neutral-100/80 dark:bg-neutral-900/80 p-3 -webkit-overflow-scrolling-touch" style={{ overscrollBehavior: "contain", WebkitOverflowScrolling: "touch", touchAction: "pan-y" }}>
+      <div
+        ref={containerRef}
+        className="flex-1 min-h-0 overflow-auto bg-neutral-100/80 dark:bg-neutral-900/80 p-3 -webkit-overflow-scrolling-touch"
+        style={{
+          overscrollBehavior: "contain",
+          WebkitOverflowScrolling: "touch",
+          touchAction: "pan-y",
+        }}
+      >
         {error ? (
           <div className="flex flex-col items-center justify-center h-full gap-3 text-muted-foreground">
             <AlertTriangle className="w-8 h-8 text-red-400" />

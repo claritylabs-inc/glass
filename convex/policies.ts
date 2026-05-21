@@ -420,6 +420,66 @@ export const get = query({
   },
 });
 
+export const getSummary = query({
+  args: { id: v.id("policies") },
+  handler: async (ctx, args) => {
+    const policy = await ctx.db.get(args.id);
+    if (!policy || !policy.orgId) return null;
+    try {
+      await getOrgAccessFor(ctx, policy.orgId);
+    } catch {
+      return null;
+    }
+
+    const enrichedPolicy = await mergePolicyPipelineState(ctx, policy);
+    const partnerProgram = policy.partnerProgramId
+      ? await ctx.db.get(policy.partnerProgramId)
+      : null;
+
+    return {
+      _id: enrichedPolicy._id,
+      _creationTime: enrichedPolicy._creationTime,
+      orgId: enrichedPolicy.orgId,
+      fileId: enrichedPolicy.fileId,
+      fileName: enrichedPolicy.fileName,
+      documentType: enrichedPolicy.documentType,
+      policyNumber: enrichedPolicy.policyNumber,
+      policyType: enrichedPolicy.policyType,
+      policyTypes: enrichedPolicy.policyTypes,
+      policyTermType: enrichedPolicy.policyTermType,
+      carrier: enrichedPolicy.carrier,
+      carrierLegalName: enrichedPolicy.carrierLegalName,
+      security: enrichedPolicy.security,
+      mga: enrichedPolicy.mga,
+      insuredName: enrichedPolicy.insuredName,
+      effectiveDate: enrichedPolicy.effectiveDate,
+      expirationDate: enrichedPolicy.expirationDate,
+      premium: enrichedPolicy.premium,
+      limits: enrichedPolicy.limits,
+      deductibles: enrichedPolicy.deductibles,
+      summary: enrichedPolicy.summary,
+      isRenewal: enrichedPolicy.isRenewal,
+      isDemo: enrichedPolicy.isDemo,
+      deletedAt: enrichedPolicy.deletedAt,
+      dismissed: enrichedPolicy.dismissed,
+      pipelineStatus: enrichedPolicy.pipelineStatus,
+      pipelineError: enrichedPolicy.pipelineError,
+      extractionReview: enrichedPolicy.extractionReview,
+      partnerProgram: partnerProgram && partnerProgram.status === "active"
+        ? {
+          programId: partnerProgram._id,
+          programName: partnerProgram.name,
+          categoryLabels: partnerProgram.categoryLabels,
+          categoryLabel: partnerProgram.categoryLabels?.join(", ") ?? partnerProgram.categoryLabel,
+          approvalMode: partnerProgram.approvalMode,
+        }
+        : null,
+      hasRawResponse: !!policy.rawExtractionResponse,
+      hasRawMetadata: !!policy.rawMetadataResponse,
+    };
+  },
+});
+
 export const getFileUrl = query({
   args: { fileId: v.id("_storage") },
   handler: async (ctx, args) => {

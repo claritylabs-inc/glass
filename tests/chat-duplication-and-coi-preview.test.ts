@@ -12,11 +12,33 @@ describe("chat duplicate prevention and COI preview UI", () => {
     const processThreadChat = read("convex/actions/processThreadChat.ts");
 
     expect(schema).toContain('replyToMessageId: v.optional(v.id("threadMessages"))');
+    expect(schema).toContain("agentRunStartedAt: v.optional(v.number())");
     expect(schema).toContain('.index("by_replyToMessageId", ["replyToMessageId"])');
     expect(threads).toContain("export const claimAgentResponse = internalMutation");
+    expect(threads).toContain("agentMessage.agentRunStartedAt");
     expect(threads).toContain('withIndex("by_replyToMessageId"');
     expect(processThreadChat).toContain("internal.threads.claimAgentResponse");
+    expect(processThreadChat).toContain("agentMessageId: args.agentMessageId");
     expect(processThreadChat).toContain("if (!claim.claimed) return");
+  });
+
+  it("uses client mutation ids so local-first retries do not duplicate chat work", () => {
+    const schema = read("convex/schema.ts");
+    const threads = read("convex/threads.ts");
+    const appShell = read("components/app-shell.tsx");
+    const threadContent = read("components/agent-thread/thread-content.tsx");
+    const commandPalette = read("components/command-palette.tsx");
+
+    expect(schema).toContain("clientMutationId: v.optional(v.string())");
+    expect(schema).toContain('.index("by_orgId_clientMutationId", ["orgId", "clientMutationId"])');
+    expect(threads).toContain("args.clientMutationId");
+    expect(threads).toContain('withIndex("by_orgId_clientMutationId"');
+    expect(threads).toContain("agentMessageId");
+    expect(appShell).toContain("createClientMutationId(\"thread\")");
+    expect(appShell).toContain("createClientMutationId(\"message\")");
+    expect(threadContent).toContain("createClientMutationId(\"message\")");
+    expect(commandPalette).toContain("createClientMutationId(\"thread\")");
+    expect(commandPalette).toContain("createClientMutationId(\"message\")");
   });
 
   it("queues steering messages and allows sending immediately to cancel in-flight work", () => {

@@ -3,16 +3,13 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useSettingsActions } from "@/components/settings/settings-actions-context";
 import { useQuery, useMutation, useAction } from "convex/react";
+import type { FunctionReference } from "convex/server";
 import { useRouter } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import { useCurrentOrg } from "@/hooks/use-current-org";
 import type { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
-import {
-  Loader2,
-  AlertTriangle,
-  RotateCcw,
-} from "lucide-react";
+import { Loader2, AlertTriangle, RotateCcw } from "lucide-react";
 import { AccentColorPicker } from "@/components/ui/accent-color-picker";
 import { INDUSTRIES } from "@/convex/lib/industries";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -20,8 +17,40 @@ import { PillButton } from "@/components/ui/pill-button";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { HandleAvailability } from "@/components/settings/handle-availability";
 import { getPublicAgentDomain } from "@/lib/domains";
+import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
+import { patchCachedViewerOrg } from "@/lib/sync/glass-cached-queries";
 
 const WORKSPACE_DOMAIN = getPublicAgentDomain();
+
+type OrganizationsApi = {
+  organizations: {
+    updateSlug: FunctionReference<"mutation">;
+    updateBrokerBranding: FunctionReference<"mutation">;
+    generateLogoUploadUrl: FunctionReference<"mutation">;
+  };
+};
+
+const organizationsApi = api as unknown as OrganizationsApi;
+
+type OrgSettingsArgs = {
+  name?: string;
+  website?: string;
+  context?: string;
+  industry?: string;
+  industryVertical?: string;
+  clientsContext?: string;
+  vendorsContext?: string;
+  insuranceContext?: string;
+  investorsContext?: string;
+  partnersContext?: string;
+};
+
+type BrandingSettingsArgs = {
+  brokerOrgId: Id<"organizations">;
+  whiteLabelingEnabled: boolean;
+  brandingColor: string;
+  brandingTextOnAccent: "auto";
+};
 
 export function OrganizationSection() {
   const viewer = useQuery(api.users.viewer);
@@ -29,7 +58,9 @@ export function OrganizationSection() {
   const updateOrg = useMutation(api.orgs.updateOrg);
   const resetAccount = useMutation(api.users.resetAccount);
   const restartOnboarding = useMutation(api.users.restartOnboarding);
-  const extractCompanyInfo = useAction(api.actions.extractCompanyInfo.extractCompanyInfo);
+  const extractCompanyInfo = useAction(
+    api.actions.extractCompanyInfo.extractCompanyInfo,
+  );
   const router = useRouter();
 
   const org = orgData?.org;
@@ -44,10 +75,10 @@ export function OrganizationSection() {
   const [insuranceContext, setInsuranceContext] = useState("");
   const [investorsContext, setInvestorsContext] = useState("");
   const [partnersContext, setPartnersContext] = useState("");
+  const [settingsHydrated, setSettingsHydrated] = useState(false);
   const currentOrg = useCurrentOrg();
   const isBroker = currentOrg?.isBroker ?? false;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const updateSlug = useMutation((api as any).organizations.updateSlug);
+  const updateSlug = useMutation(organizationsApi.organizations.updateSlug);
   const currentSlug =
     (currentOrg?.org as { slug?: string } | undefined)?.slug ?? "";
   const [slug, setSlug] = useState(currentSlug);
@@ -80,11 +111,8 @@ export function OrganizationSection() {
     slug !== currentSlug &&
     (slug !== debouncedSlug || slugCheck === undefined);
 
-  const [saving, setSaving] = useState(false);
-  const [savedAt, setSavedAt] = useState<number | null>(null);
   const [extracting, setExtracting] = useState(false);
   const hydratedRef = useRef(false);
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showResetDialog, setShowResetDialog] = useState(false);
   const [resetting, setResetting] = useState(false);
 
@@ -152,46 +180,45 @@ export function OrganizationSection() {
       setInvestorsContext(org.investorsContext ?? "");
       setPartnersContext(org.partnersContext ?? "");
       hydratedRef.current = true;
+      setSettingsHydrated(true);
     }
   }, [org]);
 
-  useEffect(() => { autoResize(); }, [context, autoResize]);
-
-  const saveNow = useCallback(async () => {
-    setSaving(true);
-    try {
-      await updateOrg({
-        name: name || undefined,
-        website: website || undefined,
-        context: context || undefined,
-        industry: industry || undefined,
-        industryVertical: industryVertical || undefined,
-        clientsContext: clientsContext || undefined,
-        vendorsContext: vendorsContext || undefined,
-        insuranceContext: insuranceContext || undefined,
-        investorsContext: investorsContext || undefined,
-        partnersContext: partnersContext || undefined,
-      });
-      setSavedAt(Date.now());
-    } catch {
-      toast.error("Failed to save settings");
-    } finally {
-      setSaving(false);
-    }
-  }, [
-    updateOrg,
-    name, website, context, industry, industryVertical,
-    clientsContext, vendorsContext, insuranceContext, investorsContext, partnersContext,
-  ]);
-
   useEffect(() => {
-    if (!hydratedRef.current) return;
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => { void saveNow(); }, 600);
-    return () => {
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    };
-  }, [saveNow]);
+    autoResize();
+  }, [context, autoResize]);
+
+  const orgSettingsArgs: OrgSettingsArgs = {
+    name: name || undefined,
+    website: website || undefined,
+    context: context || undefined,
+    industry: industry || undefined,
+    industryVertical: industryVertical || undefined,
+    clientsContext: clientsContext || undefined,
+    vendorsContext: vendorsContext || undefined,
+    insuranceContext: insuranceContext || undefined,
+    investorsContext: investorsContext || undefined,
+    partnersContext: partnersContext || undefined,
+  };
+
+  const saveOrgSettings = useCallback(
+    async (args: OrgSettingsArgs) => {
+      await updateOrg(args);
+    },
+    [updateOrg],
+  );
+
+  const orgAutoSave = useLocalFirstAutoSave({
+    mutationName: "settings.organization.updateOrg",
+    args: orgSettingsArgs,
+    enabled: settingsHydrated,
+    applyLocal: (store, args) => patchCachedViewerOrg(store, args),
+    flush: saveOrgSettings,
+    onError: () => toast.error("Failed to save settings"),
+  });
+
+  const saving = orgAutoSave.saving;
+  const savedAt = orgAutoSave.savedAt;
 
   useEffect(() => {
     setActions(
@@ -212,15 +239,13 @@ export function OrganizationSection() {
           onClick={handleExtract}
           disabled={extracting || !website}
         >
-          {extracting ? (
-            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-          ) : null}
+          {extracting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
           {extracting ? "Extracting…" : "Extract from website"}
         </PillButton>
       </div>,
     );
     return () => setActions(null);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [saving, savedAt, extracting, website]);
 
   useEffect(() => {
@@ -238,7 +263,11 @@ export function OrganizationSection() {
             >
               Cancel
             </PillButton>
-            <PillButton variant="destructive" onClick={handleReset} disabled={resetting}>
+            <PillButton
+              variant="destructive"
+              onClick={handleReset}
+              disabled={resetting}
+            >
               {resetting ? "Resetting…" : "Yes, reset everything"}
             </PillButton>
           </>
@@ -247,8 +276,9 @@ export function OrganizationSection() {
         <div className="flex items-start gap-3">
           <AlertTriangle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
           <p className="text-body-sm text-muted-foreground">
-            This will permanently delete all policies (including stored files), emails,
-            connections, and conversations for your organization. This action cannot be undone.
+            This will permanently delete all policies (including stored files),
+            emails, connections, and conversations for your organization. This
+            action cannot be undone.
           </p>
         </div>
       </SettingsDrawer>,
@@ -265,7 +295,6 @@ export function OrganizationSection() {
       if (!url.startsWith("http")) url = "https://" + url;
       // Persist the current website immediately so the server-side extract
       // and the re-fetched org reflect what the user actually typed.
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       await updateOrg({ website: url });
       setWebsite(url);
       // Synchronous await is intentional — website scrape typically < 5s.
@@ -317,7 +346,9 @@ export function OrganizationSection() {
       <div>
         <div className="rounded-lg border border-foreground/6 bg-card mb-4">
           <div className="px-5 py-3.5 border-b border-foreground/6">
-            <h3 className="mb-0! text-sm font-medium text-foreground">Organization</h3>
+            <h3 className="mb-0! text-sm font-medium text-foreground">
+              Organization
+            </h3>
           </div>
           <div className="px-5 py-5 space-y-4">
             <div>
@@ -361,7 +392,9 @@ export function OrganizationSection() {
                   current={currentSlug}
                   availability={slug === debouncedSlug ? slugCheck : undefined}
                   currentLabel="Current workspace link"
-                  renderAvailablePreview={(s) => `${WORKSPACE_DOMAIN}/${s} is available`}
+                  renderAvailablePreview={(s) =>
+                    `${WORKSPACE_DOMAIN}/${s} is available`
+                  }
                 />
               </div>
             )}
@@ -386,7 +419,10 @@ export function OrganizationSection() {
                     Industry
                   </label>
                   <SearchableSelect
-                    options={INDUSTRIES.map((ind) => ({ value: ind.value, label: ind.label }))}
+                    options={INDUSTRIES.map((ind) => ({
+                      value: ind.value,
+                      label: ind.label,
+                    }))}
                     value={industry}
                     onChange={(v) => {
                       setIndustry(v);
@@ -400,7 +436,14 @@ export function OrganizationSection() {
                     Vertical
                   </label>
                   <SearchableSelect
-                    options={INDUSTRIES.find((i) => i.value === industry)?.verticals.map((v) => ({ value: v.value, label: v.label })) ?? []}
+                    options={
+                      INDUSTRIES.find(
+                        (i) => i.value === industry,
+                      )?.verticals.map((v) => ({
+                        value: v.value,
+                        label: v.label,
+                      })) ?? []
+                    }
                     value={industryVertical}
                     onChange={setIndustryVertical}
                     placeholder="Select vertical..."
@@ -426,7 +469,6 @@ export function OrganizationSection() {
                 />
               </div>
             )}
-
           </div>
         </div>
 
@@ -434,90 +476,96 @@ export function OrganizationSection() {
 
         {/* Relationship Context section — client orgs only */}
         {!isBroker && (
-        <div className="rounded-lg border border-foreground/6 bg-card mb-4">
-          <div className="px-5 py-3.5 border-b border-foreground/6">
-            <h3 className="mb-0! text-sm font-medium text-foreground">Relationship Context</h3>
-          </div>
-          <div className="px-5 py-5 space-y-4">
-            <div>
-              <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
-                Clients &amp; Customers
-              </label>
-              <input
-                type="text"
-                value={clientsContext}
-                onChange={(e) => setClientsContext(e.target.value)}
-                placeholder="e.g. Small to mid-size restaurants in the Bay Area"
-                className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
-              />
+          <div className="rounded-lg border border-foreground/6 bg-card mb-4">
+            <div className="px-5 py-3.5 border-b border-foreground/6">
+              <h3 className="mb-0! text-sm font-medium text-foreground">
+                Relationship Context
+              </h3>
             </div>
-            <div>
-              <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
-                Vendors &amp; Service Providers
-              </label>
-              <input
-                type="text"
-                value={vendorsContext}
-                onChange={(e) => setVendorsContext(e.target.value)}
-                placeholder="e.g. AWS for cloud, Stripe for payments, WeWork for office space"
-                className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
-              />
-            </div>
-            <div>
-              <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
-                Insurance Relationships
-              </label>
-              <input
-                type="text"
-                value={insuranceContext}
-                onChange={(e) => setInsuranceContext(e.target.value)}
-                placeholder="e.g. Marsh as broker, Hartford and Travelers as carriers"
-                className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
-              />
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="px-5 py-5 space-y-4">
               <div>
                 <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
-                  Investors &amp; Shareholders
+                  Clients &amp; Customers
                 </label>
                 <input
                   type="text"
-                  value={investorsContext}
-                  onChange={(e) => setInvestorsContext(e.target.value)}
-                  placeholder="e.g. Series A from Sequoia, angel investors"
+                  value={clientsContext}
+                  onChange={(e) => setClientsContext(e.target.value)}
+                  placeholder="e.g. Small to mid-size restaurants in the Bay Area"
                   className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
                 />
               </div>
               <div>
                 <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
-                  Partners &amp; Affiliates
+                  Vendors &amp; Service Providers
                 </label>
                 <input
                   type="text"
-                  value={partnersContext}
-                  onChange={(e) => setPartnersContext(e.target.value)}
-                  placeholder="e.g. Joint venture with ABC Corp, reseller agreement with XYZ"
+                  value={vendorsContext}
+                  onChange={(e) => setVendorsContext(e.target.value)}
+                  placeholder="e.g. AWS for cloud, Stripe for payments, WeWork for office space"
                   className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
                 />
               </div>
+              <div>
+                <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
+                  Insurance Relationships
+                </label>
+                <input
+                  type="text"
+                  value={insuranceContext}
+                  onChange={(e) => setInsuranceContext(e.target.value)}
+                  placeholder="e.g. Marsh as broker, Hartford and Travelers as carriers"
+                  className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
+                    Investors &amp; Shareholders
+                  </label>
+                  <input
+                    type="text"
+                    value={investorsContext}
+                    onChange={(e) => setInvestorsContext(e.target.value)}
+                    placeholder="e.g. Series A from Sequoia, angel investors"
+                    className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                  />
+                </div>
+                <div>
+                  <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
+                    Partners &amp; Affiliates
+                  </label>
+                  <input
+                    type="text"
+                    value={partnersContext}
+                    onChange={(e) => setPartnersContext(e.target.value)}
+                    placeholder="e.g. Joint venture with ABC Corp, reseller agreement with XYZ"
+                    className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                  />
+                </div>
+              </div>
             </div>
           </div>
-        </div>
         )}
-
       </div>
 
       {/* Onboarding section */}
       <div className="rounded-lg border border-foreground/6 bg-card">
         <div className="px-5 py-3.5 border-b border-foreground/6">
-          <h3 className="mb-0! text-sm font-medium text-foreground">Onboarding</h3>
+          <h3 className="mb-0! text-sm font-medium text-foreground">
+            Onboarding
+          </h3>
         </div>
         <div className="px-5 py-5">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-body-sm font-medium text-foreground">Re-run Setup</p>
+              <p className="text-body-sm font-medium text-foreground">
+                Re-run Setup
+              </p>
               <p className="text-label-sm text-muted-foreground mt-0.5">
-                Walk through the onboarding steps again. Your existing data will not be affected.
+                Walk through the onboarding steps again. Your existing data will
+                not be affected.
               </p>
             </div>
             <PillButton
@@ -544,14 +592,19 @@ export function OrganizationSection() {
         <div className="mt-4">
           <div className="rounded-lg border border-red-200 dark:border-red-900/50 bg-red-50/50 dark:bg-red-950/30">
             <div className="px-5 py-3.5 border-b border-red-200 dark:border-red-900/50">
-              <h3 className="mb-0! text-sm font-medium text-red-900 dark:text-red-400">Danger Zone</h3>
+              <h3 className="mb-0! text-sm font-medium text-red-900 dark:text-red-400">
+                Danger Zone
+              </h3>
             </div>
             <div className="px-5 py-5">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-body-sm font-medium text-foreground">Reset Organization</p>
+                  <p className="text-body-sm font-medium text-foreground">
+                    Reset Organization
+                  </p>
                   <p className="text-label-sm text-muted-foreground mt-0.5">
-                    Delete all policies, emails, connections, and conversations. This cannot be undone.
+                    Delete all policies, emails, connections, and conversations.
+                    This cannot be undone.
                   </p>
                 </div>
                 <PillButton
@@ -565,7 +618,6 @@ export function OrganizationSection() {
           </div>
         </div>
       )}
-
     </div>
   );
 }
@@ -580,11 +632,7 @@ const brandingLabelClass =
 type BrandingMode = "light" | "dark";
 type TextOnAccent = "light" | "dark" | "auto";
 
-function BrandingCard({
-  website,
-}: {
-  website: string;
-}) {
+function BrandingCard({ website }: { website: string }) {
   const currentOrg = useCurrentOrg();
   const org = currentOrg?.org as
     | {
@@ -598,50 +646,64 @@ function BrandingCard({
     | undefined;
   const orgId = currentOrg?.orgId as Id<"organizations"> | undefined;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const updateBranding = useMutation((api as any).organizations.updateBrokerBranding);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const generateUploadUrl = useMutation((api as any).organizations.generateLogoUploadUrl);
+  const updateBranding = useMutation(
+    organizationsApi.organizations.updateBrokerBranding,
+  );
+  const generateUploadUrl = useMutation(
+    organizationsApi.organizations.generateLogoUploadUrl,
+  );
 
   const [brandingColor, setBrandingColor] = useState("#1E293B");
   const [whiteLabelingEnabled, setWhiteLabelingEnabled] = useState(true);
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const hydratedRef = useRef(false);
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [brandingHydrated, setBrandingHydrated] = useState(false);
 
   useEffect(() => {
     if (org && !hydratedRef.current) {
       setBrandingColor(org.brandingColor ?? "#1E293B");
       setWhiteLabelingEnabled(org.whiteLabelingEnabled !== false);
       hydratedRef.current = true;
+      setBrandingHydrated(true);
     }
   }, [org]);
 
-  const saveNow = useCallback(async () => {
-    if (!orgId) return;
-    try {
-      await updateBranding({
+  const brandingArgs: BrandingSettingsArgs | null = orgId
+    ? {
         brokerOrgId: orgId,
         whiteLabelingEnabled,
         brandingColor,
         brandingTextOnAccent: "auto",
-      });
-    } catch {
-      toast.error("Failed to save branding");
-    }
-  }, [orgId, updateBranding, whiteLabelingEnabled, brandingColor]);
+      }
+    : null;
 
-  useEffect(() => {
-    if (!hydratedRef.current) return;
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => {
-      void saveNow();
-    }, 600);
-    return () => {
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    };
-  }, [saveNow]);
+  const saveBranding = useCallback(
+    async (args: BrandingSettingsArgs) => {
+      await updateBranding(args);
+    },
+    [updateBranding],
+  );
+
+  useLocalFirstAutoSave({
+    mutationName: "settings.organization.updateBranding",
+    args: brandingArgs ?? {
+      brokerOrgId: "" as Id<"organizations">,
+      whiteLabelingEnabled,
+      brandingColor,
+      brandingTextOnAccent: "auto",
+    },
+    enabled: brandingHydrated,
+    canSave: !!brandingArgs,
+    applyLocal: (store, args) =>
+      patchCachedViewerOrg(store, {
+        whiteLabelingEnabled: args.whiteLabelingEnabled,
+        brandingColor: args.brandingColor,
+        brandingTextOnAccent: args.brandingTextOnAccent,
+      }),
+    flush: saveBranding,
+    onError: () => toast.error("Failed to save branding"),
+  });
 
   async function handleLogoUpload(file: File) {
     if (!orgId) return;
@@ -677,7 +739,8 @@ function BrandingCard({
               White labeling
             </p>
             <p className="text-label-sm text-muted-foreground/60 mt-0.5 max-w-md">
-              Apply your broker logo, accent color, agent name, and branded emails to client-facing surfaces.
+              Apply your broker logo, accent color, agent name, and branded
+              emails to client-facing surfaces.
             </p>
           </div>
           <button
@@ -727,9 +790,15 @@ function BrandingCard({
             <div className="h-10 w-10 rounded-md border border-foreground/8 bg-white flex items-center justify-center overflow-hidden shrink-0">
               {logoUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={logoUrl} alt="Logo" className="h-full w-full object-contain" />
+                <img
+                  src={logoUrl}
+                  alt="Logo"
+                  className="h-full w-full object-contain"
+                />
               ) : (
-                <span className="text-label-sm text-muted-foreground/60">—</span>
+                <span className="text-label-sm text-muted-foreground/60">
+                  —
+                </span>
               )}
             </div>
             <div className="flex-1 min-w-0">
@@ -737,7 +806,8 @@ function BrandingCard({
                 {logoUrl ? "Replace logo" : "Upload logo"}
               </div>
               <div className="text-label-sm text-muted-foreground/70">
-                Drop an image, or click to browse. Auto-filled from your website.
+                Drop an image, or click to browse. Auto-filled from your
+                website.
               </div>
             </div>
             <input
@@ -754,7 +824,11 @@ function BrandingCard({
         </div>
 
         {/* Accent color */}
-        <div className={!whiteLabelingEnabled ? "pointer-events-none opacity-50" : undefined}>
+        <div
+          className={
+            !whiteLabelingEnabled ? "pointer-events-none opacity-50" : undefined
+          }
+        >
           <label className={brandingLabelClass}>Accent color</label>
           <AccentColorPicker
             value={brandingColor}
@@ -762,7 +836,6 @@ function BrandingCard({
             website={website}
           />
         </div>
-
       </div>
     </div>
   );

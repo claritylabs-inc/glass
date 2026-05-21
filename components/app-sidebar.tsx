@@ -36,6 +36,8 @@ import {
   isEditableTarget,
   useMediaQuery,
 } from "@/components/app-sidebar/utils";
+import { useCachedQuery, useSetCachedQuery } from "@/lib/sync/use-cached-query";
+import { createClientMutationId } from "@/lib/sync/client-mutation-id";
 
 export function AppSidebar({
   mobileOpen,
@@ -52,11 +54,27 @@ export function AppSidebar({
   const isClientDetailMode = !!clientDetailMatch;
   const clientDetailId = clientDetailMatch?.[1];
 
-  const viewer = useQuery(api.users.viewer);
-  const viewerOrg = useQuery(api.orgs.viewerOrg, {});
-  const brokerPageContext = useQuery(api.orgs.getBrokerPageContext, {});
-  const unifiedThreads = useQuery(api.threads.list, { archived: false });
-  const archivedThreads = useQuery(api.threads.list, { archived: true });
+  const viewer = useCachedQuery("users.viewer", api.users.viewer, {});
+  const viewerOrg = useCachedQuery("orgs.viewerOrg", api.orgs.viewerOrg, {});
+  const brokerPageContext = useCachedQuery(
+    "orgs.getBrokerPageContext",
+    api.orgs.getBrokerPageContext,
+    {},
+  );
+  const unifiedThreads = useCachedQuery(
+    "threads.list.active",
+    api.threads.list,
+    { archived: false },
+  );
+  const archivedThreads = useCachedQuery(
+    "threads.list.archived",
+    api.threads.list,
+    { archived: true },
+  );
+  const setThreadDetail = useSetCachedQuery<
+    NonNullable<typeof unifiedThreads>[number],
+    { id: Id<"threads"> }
+  >("threads.get.current");
   const clientThreads = useQuery(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (api as any).threads.listForClient,
@@ -75,10 +93,21 @@ export function AppSidebar({
     currentOrg?.orgType === "client" && !viewerOrg?.brokerOrg;
   const isPartner = currentOrg?.isPartner ?? false;
   const canManageSettings = currentOrg?.role === "admin";
-  const navItems = (isPartner ? PARTNER_NAV_ITEMS : isBroker ? BROKER_NAV_ITEMS : ALL_NAV_ITEMS)
-    .filter((item) => item.href !== "/broker" || brokerPageContext?.showBrokerPage);
+  const navItems = (
+    isPartner ? PARTNER_NAV_ITEMS : isBroker ? BROKER_NAV_ITEMS : ALL_NAV_ITEMS
+  ).filter(
+    (item) => item.href !== "/broker" || brokerPageContext?.showBrokerPage,
+  );
   const connectItems = isBroker || isPartner ? NO_CONNECT_ITEMS : CONNECT_ITEMS;
   const isDesktop = useMediaQuery("(min-width: 1024px)");
+
+  useEffect(() => {
+    const rows = [...(unifiedThreads ?? []), ...(archivedThreads ?? [])];
+    if (rows.length === 0) return;
+    void Promise.all(
+      rows.map((thread) => setThreadDetail({ id: thread._id }, thread)),
+    );
+  }, [archivedThreads, setThreadDetail, unifiedThreads]);
 
   const pageShortcutMap = useMemo<Record<string, string>>(
     () => ({
@@ -158,6 +187,7 @@ export function AppSidebar({
       const threadId = await createThread({
         initialContext: pageContext ?? undefined,
         agentDomain: AGENT_DOMAIN,
+        clientMutationId: createClientMutationId("thread"),
       });
       router.push(`/agent/thread/${threadId}`);
     } catch {
@@ -175,7 +205,10 @@ export function AppSidebar({
       return;
     }
 
-    const nextThreadId = await createThread({ agentDomain: AGENT_DOMAIN });
+    const nextThreadId = await createThread({
+      agentDomain: AGENT_DOMAIN,
+      clientMutationId: createClientMutationId("thread"),
+    });
     router.push(`/agent/thread/${nextThreadId}`);
   }
 
@@ -373,12 +406,7 @@ export function AppSidebar({
               initial={{ x: -280 }}
               animate={{ x: 0 }}
               exit={{ x: -280 }}
-              transition={{
-                type: "spring",
-                damping: 30,
-                stiffness: 300,
-                bounce: 0,
-              }}
+              transition={{ duration: 0.12, ease: [0.2, 0, 0, 1] }}
               className="fixed left-0 top-0 bottom-0 w-[260px] z-50 bg-background border-r border-foreground/6 lg:hidden"
             >
               {activeContent}

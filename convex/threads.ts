@@ -197,9 +197,19 @@ export const create = mutation({
       summary: v.optional(v.string()),
     })),
     agentDomain: v.optional(v.string()),
+    clientMutationId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const { userId, orgId } = await requireOrgAccess(ctx);
+    if (args.clientMutationId) {
+      const existing = await ctx.db
+        .query("threads")
+        .withIndex("by_orgId_clientMutationId", (q) =>
+          q.eq("orgId", orgId).eq("clientMutationId", args.clientMutationId),
+        )
+        .first();
+      if (existing) return existing._id;
+    }
     const now = dayjs().valueOf();
     const domain = args.agentDomain || FALLBACK_AGENT_DOMAIN;
 
@@ -214,6 +224,7 @@ export const create = mutation({
       orgId,
       title: args.title ?? "New chat",
       createdBy: userId,
+      clientMutationId: args.clientMutationId,
       lastMessageAt: now,
       initialContext: args.initialContext,
       threadEmail,
@@ -306,11 +317,24 @@ export const sendMessage = mutation({
     referencedRequirementIds: v.optional(v.array(v.id("insuranceRequirements"))),
     referencedMailboxIds: v.optional(v.array(v.id("connectedEmailAccounts"))),
     skipAgentResponse: v.optional(v.boolean()),
+    clientMutationId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const { userId, orgId } = await requireOrgAccess(ctx);
     const thread = await ctx.db.get(args.threadId);
     if (!thread || thread.orgId !== orgId) throw new Error("Not found");
+
+    if (args.clientMutationId) {
+      const existing = await ctx.db
+        .query("threadMessages")
+        .withIndex("by_orgId_clientMutationId", (q) =>
+          q.eq("orgId", orgId).eq("clientMutationId", args.clientMutationId),
+        )
+        .first();
+      if (existing && existing.threadId === args.threadId && existing.role === "user") {
+        return existing._id;
+      }
+    }
 
     const user = await ctx.db.get(userId);
     const userName = user?.name ?? user?.email ?? "User";
@@ -336,6 +360,7 @@ export const sendMessage = mutation({
     const messageId = await ctx.db.insert("threadMessages", {
       threadId: args.threadId,
       orgId,
+      clientMutationId: args.clientMutationId,
       channel: "chat",
       role: "user",
       userId,
@@ -349,6 +374,18 @@ export const sendMessage = mutation({
     });
 
     await ctx.db.patch(args.threadId, { lastMessageAt: dayjs().valueOf() });
+
+    const agentMessageId = args.skipAgentResponse
+      ? undefined
+      : await ctx.db.insert("threadMessages", {
+          threadId: args.threadId,
+          orgId,
+          channel: "chat",
+          role: "agent",
+          content: "",
+          status: "processing",
+          replyToMessageId: messageId,
+        });
 
     if (
       thread.originChannel === "imessage" &&
@@ -367,6 +404,7 @@ export const sendMessage = mutation({
         orgId,
         userId,
         userMessageId: messageId,
+        agentMessageId,
       });
     }
 
@@ -577,14 +615,38 @@ export const claimAgentResponse = internalMutation({
     threadId: v.id("threads"),
     orgId: v.id("organizations"),
     userMessageId: v.id("threadMessages"),
+    agentMessageId: v.optional(v.id("threadMessages")),
   },
   handler: async (ctx, args) => {
+    const now = dayjs().valueOf();
+    if (args.agentMessageId) {
+      const agentMessage = await ctx.db.get(args.agentMessageId);
+      if (
+        !agentMessage ||
+        agentMessage.threadId !== args.threadId ||
+        agentMessage.orgId !== args.orgId ||
+        agentMessage.role !== "agent" ||
+        agentMessage.replyToMessageId !== args.userMessageId
+      ) {
+        return { messageId: args.agentMessageId, claimed: false };
+      }
+      if (agentMessage.agentRunStartedAt) {
+        return { messageId: agentMessage._id, claimed: false };
+      }
+      await ctx.db.patch(agentMessage._id, { agentRunStartedAt: now });
+      return { messageId: agentMessage._id, claimed: true };
+    }
+
     const existing = await ctx.db
       .query("threadMessages")
       .withIndex("by_replyToMessageId", (q) => q.eq("replyToMessageId", args.userMessageId))
       .first();
     if (existing) {
-      return { messageId: existing._id, claimed: false };
+      if (existing.agentRunStartedAt) {
+        return { messageId: existing._id, claimed: false };
+      }
+      await ctx.db.patch(existing._id, { agentRunStartedAt: now });
+      return { messageId: existing._id, claimed: true };
     }
 
     const messageId = await ctx.db.insert("threadMessages", {
@@ -595,6 +657,7 @@ export const claimAgentResponse = internalMutation({
       content: "",
       status: "processing",
       replyToMessageId: args.userMessageId,
+      agentRunStartedAt: now,
     });
     return { messageId, claimed: true };
   },

@@ -61,6 +61,24 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  async headers() {
+    return [
+      {
+        source: "/sw.js",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "no-store, must-revalidate",
+          },
+          {
+            key: "Service-Worker-Allowed",
+            value: "/",
+          },
+        ],
+      },
+    ];
+  },
+  transpilePackages: ["@claritylabs/cl-sync"],
   serverExternalPackages: ["canvas"],
   turbopack: {
     root: process.cwd(),

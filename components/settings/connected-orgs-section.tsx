@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useAction, useMutation, useQuery } from "convex/react";
+import { useAction, useMutation } from "convex/react";
 import type { FunctionReference } from "convex/server";
 import dayjs from "dayjs";
 import { api } from "@/convex/_generated/api";
@@ -26,6 +26,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { useSettingsActions } from "@/components/settings/settings-actions-context";
 import { useCurrentOrg } from "@/lib/hooks/use-current-org";
+import { useCachedQuery } from "@/lib/sync/use-cached-query";
 
 type ConnectedOrgsApi = {
   connectedOrgs: {
@@ -71,11 +72,7 @@ type ConnectedOrgRow = {
 
 type VendorComplianceSummary = {
   relationshipId: Id<"connectedOrgRelationships">;
-  status:
-    | "non_compliant"
-    | "attention"
-    | "no_requirements"
-    | "compliant";
+  status: "non_compliant" | "attention" | "no_requirements" | "compliant";
   requirementCount: number;
   policyCount: number;
   metCount: number;
@@ -268,9 +265,7 @@ function VendorComplianceChecklist({
                       <>
                         {" "}
                         · Limit{" "}
-                        <span className="text-foreground">
-                          {detectedLimit}
-                        </span>
+                        <span className="text-foreground">{detectedLimit}</span>
                       </>
                     ) : null}
                   </p>
@@ -393,9 +388,7 @@ function RelationshipCard({
           ) : null}
         </div>
         <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:shrink-0 sm:justify-end">
-          {side === "vendor" &&
-          row.status === "active" &&
-          complianceSummary ? (
+          {side === "vendor" && row.status === "active" && complianceSummary ? (
             <PillButton
               size="compact"
               variant="secondary"
@@ -439,7 +432,10 @@ function RelationshipCard({
             </PillButton>
           ) : null}
           {onApprove && row.status === "pending" && relationshipId ? (
-            <PillButton size="compact" onClick={() => onApprove(relationshipId)}>
+            <PillButton
+              size="compact"
+              onClick={() => onApprove(relationshipId)}
+            >
               <Check className="h-3.5 w-3.5" />
               Approve
             </PillButton>
@@ -470,15 +466,18 @@ export function ConnectedOrgsSection({
 }) {
   const router = useRouter();
   const currentOrg = useCurrentOrg();
-  const vendorRows = useQuery(
+  const vendorRows = useCachedQuery(
+    "connectedOrgs.listVendors",
     connectedOrgsApi.connectedOrgs.listVendors,
     currentOrg?.orgId ? { orgId: currentOrg.orgId } : "skip",
   ) as ConnectedOrgRow[] | undefined;
-  const clientRows = useQuery(
+  const clientRows = useCachedQuery(
+    "connectedOrgs.listClients",
     connectedOrgsApi.connectedOrgs.listClients,
     currentOrg?.orgId ? { orgId: currentOrg.orgId } : "skip",
   ) as ConnectedOrgRow[] | undefined;
-  const vendorCompliance = useQuery(
+  const vendorCompliance = useCachedQuery(
+    "compliance.listVendorCompliance",
     connectedOrgsApi.compliance.listVendorCompliance,
     currentOrg?.orgId ? { clientOrgId: currentOrg.orgId } : "skip",
   ) as VendorComplianceSummary[] | undefined;
@@ -673,12 +672,11 @@ export function ConnectedOrgsSection({
     return null;
   }
 
-  if (rows === undefined || (page === "vendors" && vendorCompliance === undefined)) {
-    return (
-      <p className="py-16 text-center text-sm text-muted-foreground/60">
-        Loading…
-      </p>
-    );
+  if (
+    rows === undefined ||
+    (page === "vendors" && vendorCompliance === undefined)
+  ) {
+    return <div className="min-h-32" aria-hidden="true" />;
   }
 
   if (rows.length === 0) {

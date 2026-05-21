@@ -5,7 +5,7 @@ import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { FadeIn } from "@/components/ui/fade-in";
-import { Loader2, Mail, MessageCircle } from "lucide-react";
+import { Mail, MessageCircle } from "lucide-react";
 import dayjs from "dayjs";
 
 export default function ClientThreadsPage() {
@@ -29,23 +29,21 @@ export default function ClientThreadsPage() {
       }>
     | undefined;
 
+  const visibleThreads = threads ?? [];
+
   return (
-    <FadeIn when={threads !== undefined} duration={0.4}>
-      {threads === undefined && (
-        <div className="flex items-center justify-center py-16">
-          <Loader2 className="w-5 h-5 animate-spin text-muted-foreground/30" />
-        </div>
-      )}
-
-      {threads && threads.length === 0 && (
+    <FadeIn when={true} duration={0.12}>
+      {visibleThreads.length === 0 && (
         <div className="text-center py-16">
-          <p className="text-body-sm text-muted-foreground/40">No threads yet</p>
+          <p className="text-body-sm text-muted-foreground/40">
+            No threads yet
+          </p>
         </div>
       )}
 
-      {threads && threads.length > 0 && (
+      {visibleThreads.length > 0 && (
         <div className="space-y-1">
-          {threads.map((thread) => (
+          {visibleThreads.map((thread) => (
             <button
               key={thread._id}
               type="button"
@@ -69,7 +67,11 @@ export default function ClientThreadsPage() {
                   {dayjs(thread.lastMessageAt ?? thread._creationTime).format(
                     "MMM D, YYYY · h:mm A",
                   )}
-                  {thread.originChannel === "imessage" ? " · iMessage" : thread.originChannel === "email" ? " · Email" : " · Chat"}
+                  {thread.originChannel === "imessage"
+                    ? " · iMessage"
+                    : thread.originChannel === "email"
+                      ? " · Email"
+                      : " · Chat"}
                 </p>
               </div>
             </button>

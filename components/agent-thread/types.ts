@@ -5,6 +5,7 @@ export type ThreadMessage = {
   _creationTime: number;
   threadId: Id<"threads">;
   orgId: Id<"organizations">;
+  clientMutationId?: string;
   channel: "chat" | "email" | "imessage";
   role: "user" | "agent" | "system";
   userId?: Id<"users">;
@@ -22,7 +23,12 @@ export type ThreadMessage = {
   reasoning?: string;
   messageId?: string;
   responseMessageId?: string;
-  attachments?: { filename: string; contentType: string; size: number; fileId?: Id<"_storage"> }[];
+  attachments?: {
+    filename: string;
+    contentType: string;
+    size: number;
+    fileId?: Id<"_storage">;
+  }[];
   replyToMessageId?: Id<"threadMessages">;
   referencedPolicyIds?: Id<"policies">[];
   citedSections?: string[];
@@ -34,7 +40,12 @@ export type ThreadMessage = {
   usedTools?: string[];
   toolCalls?: { name: string; input?: string; output?: string }[];
   toolArtifacts?: { type: string; data: unknown }[];
-  status?: "processing" | "error" | "pending_send" | "draft_email" | "cancelled";
+  status?:
+    | "processing"
+    | "error"
+    | "pending_send"
+    | "draft_email"
+    | "cancelled";
   error?: string;
   pendingEmailId?: Id<"pendingEmails">;
   policyChangeCaseId?: Id<"policyChangeCases">;
@@ -46,7 +57,9 @@ export type PolicyChangeAccess = {
   brokerConnected: boolean;
 };
 
-export type ThreadAttachment = NonNullable<ThreadMessage["attachments"]>[number];
+export type ThreadAttachment = NonNullable<
+  ThreadMessage["attachments"]
+>[number];
 
 export type ToolArtifactData = { type: string; data: unknown };
 

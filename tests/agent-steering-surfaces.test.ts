@@ -12,7 +12,7 @@ describe("agent steering surfaces", () => {
 
     expect(messageType).toContain('"policy" | "quote" | "requirement" | "mailbox"');
     expect(promptInput).toContain("findActiveTrigger");
-    expect(promptInput).toContain("api.agentTargets.list");
+    expect(promptInput).toContain("useCachedAgentTargets");
     expect(promptInput).toContain('activeTrigger.marker === "/"');
     expect(promptInput).toContain('["policy", "quote", "requirement"]');
     expect(promptInput).toContain("TriggerHintTags");

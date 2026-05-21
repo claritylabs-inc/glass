@@ -7,17 +7,18 @@ import { useCurrentOrg } from "@/hooks/use-current-org";
 export default function RootPage() {
   const router = useRouter();
   const currentOrg = useCurrentOrg();
+  const targetHref = !currentOrg
+    ? null
+    : currentOrg.isPartner
+      ? "/partner/approvals"
+      : currentOrg.isBroker
+        ? "/clients"
+        : "/policies";
 
   useEffect(() => {
-    if (!currentOrg) return; // still loading
-    if (currentOrg.isPartner) {
-      router.replace("/partner/approvals");
-    } else if (currentOrg.isBroker) {
-      router.replace("/clients");
-    } else {
-      router.replace("/policies");
-    }
-  }, [currentOrg, router]);
+    if (!targetHref) return;
+    router.replace(targetHref);
+  }, [router, targetHref]);
 
   return null;
 }

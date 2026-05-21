@@ -1,6 +1,7 @@
 "use client";
 
-import { Mail, MessageSquare, UserPlus } from "lucide-react";
+import { useState } from "react";
+import { Mail, MessageSquare, UserPlus, X } from "lucide-react";
 import { PillButton } from "@/components/ui/pill-button";
 import { LogoIcon } from "@/components/ui/logo-icon";
 import {
@@ -28,6 +29,8 @@ interface AgentContactCalloutProps {
   fallbackAgentHandle?: string | null;
   /** Optional className to merge on the outer card. */
   className?: string;
+  /** Local storage key for dismissing this callout on a specific surface. */
+  dismissKey?: string;
 }
 
 /**
@@ -40,7 +43,15 @@ export function AgentContactCallout({
   broker,
   fallbackAgentHandle,
   className,
+  dismissKey = "glass:agent-contact-callout:dismissed",
 }: AgentContactCalloutProps) {
+  const [dismissed, setDismissed] = useState(() => {
+    try {
+      return localStorage.getItem(dismissKey) === "1";
+    } catch {
+      return false;
+    }
+  });
   const handle = broker?.agentHandle ?? fallbackAgentHandle ?? null;
   const agentEmail = handle
     ? `${handle}@${AGENT_DOMAIN}`
@@ -64,10 +75,27 @@ export function AgentContactCallout({
     downloadVCard(vcard, fileName);
   };
 
+  const handleDismiss = () => {
+    setDismissed(true);
+    try {
+      localStorage.setItem(dismissKey, "1");
+    } catch {}
+  };
+
+  if (dismissed) return null;
+
   return (
     <div
-      className={`mb-6 sm:min-h-56 flex items-stretch rounded-xl bg-card text-card-foreground border px-6 py-6 sm:px-8 sm:py-7 ${className ?? ""}`}
+      className={`relative mb-6 sm:min-h-56 flex items-stretch rounded-xl bg-card text-card-foreground border px-6 py-6 sm:px-8 sm:py-7 ${className ?? ""}`}
     >
+      <button
+        type="button"
+        onClick={handleDismiss}
+        className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground/45 transition-colors hover:bg-foreground/[0.04] hover:text-foreground"
+        aria-label="Dismiss"
+      >
+        <X className="h-3.5 w-3.5" />
+      </button>
       <div className="w-full flex flex-col gap-10 sm:gap-6 justify-between">
         <div className="min-w-0 max-w-xl">
           <div className="text-3xl sm:text-4xl font-medium tracking-tight leading-[1.1]">

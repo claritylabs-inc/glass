@@ -25,7 +25,7 @@ import type { NavItemConfig, NavShortcut } from "./types";
 export const AGENT_DOMAIN = getPublicAgentDomain();
 
 export const MENU_ITEM_BASE =
-  "rounded-md transition-[background-color,color,box-shadow] duration-200 ease-out";
+  "rounded-md transition-[background-color,color,box-shadow] duration-100 ease-out";
 export const MENU_ITEM_HOVER =
   "hover:bg-foreground/5 hover:text-foreground dark:hover:bg-foreground/10";
 export const MENU_ITEM_ACTIVE =

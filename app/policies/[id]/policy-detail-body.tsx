@@ -1,14 +1,33 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback, useMemo, type FormEvent, type ReactNode } from "react";
+import {
+  useState,
+  useRef,
+  useEffect,
+  useCallback,
+  useMemo,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 import { useQuery, useMutation, useAction } from "convex/react";
-import { AddressAutofill } from "@mapbox/search-js-react";
 import type { AddressAutofillRetrieveResponse } from "@mapbox/search-js-core";
 import type { Theme as MapboxSearchTheme } from "@mapbox/search-js-web";
+import dynamic from "next/dynamic";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
 import { FadeIn } from "@/components/ui/fade-in";
-import { BadgeCheck, CheckCircle2, FileText, Loader2, Plus, RotateCw, Send, Trash2, Eye, X } from "lucide-react";
+import {
+  BadgeCheck,
+  CheckCircle2,
+  FileText,
+  Loader2,
+  Plus,
+  RotateCw,
+  Send,
+  Trash2,
+  Eye,
+  X,
+} from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -32,14 +51,49 @@ import { usePdf } from "@/components/pdf-context";
 import { usePageContext } from "@/hooks/use-page-context";
 
 import { PolicySummary } from "./policy-summary";
-import { ExtractionCards } from "./extraction-panel";
 import { PolicyExtractionBanner } from "@/components/shared/extraction-banner";
+import {
+  useCachedPolicyDetail,
+  useCachedPolicySummary,
+  useCachedViewerOrg,
+} from "@/lib/sync/glass-cached-queries";
+import {
+  cachedQueryArgsKey,
+  cachedQueryCollectionFor,
+} from "@/lib/sync/use-cached-query";
+import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
 import type { PipelineStatus, LogEntry } from "@claritylabs/cl-pipelines";
 import {
   PolicyChangeProgress,
   formatPolicyChangeStatus,
   isPolicyChangeTerminal,
 } from "@/components/policy-change-progress";
+import { PolicyDetailSkeleton } from "./policy-detail-skeleton";
+
+const AddressAutofill = dynamic(
+  () =>
+    import("@mapbox/search-js-react").then((module) => ({
+      default: module.AddressAutofill,
+    })),
+  { ssr: false },
+);
+
+const ExtractionCards = dynamic(
+  () =>
+    import("./extraction-panel").then((module) => ({
+      default: module.ExtractionCards,
+    })),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="space-y-2">
+        {Array.from({ length: 3 }).map((_, index) => (
+          <Skeleton key={index} className="h-20 w-full rounded-lg" />
+        ))}
+      </div>
+    ),
+  },
+);
 
 dayjs.extend(customParseFormat);
 
@@ -110,10 +164,20 @@ type CoverageReviewQuestion = {
   options?: CoverageReviewOption[];
 };
 
-type PolicyDetailTab = "details" | "review" | "extraction" | "certificates" | "changes";
+type PolicyDetailTab =
+  | "details"
+  | "review"
+  | "extraction"
+  | "certificates"
+  | "changes";
 
 function parsePolicyDetailTab(value: string | null): PolicyDetailTab {
-  if (value === "review" || value === "extraction" || value === "certificates" || value === "changes") {
+  if (
+    value === "review" ||
+    value === "extraction" ||
+    value === "certificates" ||
+    value === "changes"
+  ) {
     return value;
   }
   return "details";
@@ -238,7 +302,8 @@ function firstMapboxAddressFeature(response: AddressAutofillRetrieveResponse) {
 }
 
 function parseMoneyInput(value: unknown): number | undefined {
-  if (typeof value === "number") return Number.isFinite(value) ? value : undefined;
+  if (typeof value === "number")
+    return Number.isFinite(value) ? value : undefined;
   if (typeof value !== "string") return undefined;
   const normalized = value.trim();
   if (!normalized) return undefined;
@@ -266,7 +331,14 @@ function normalizeDateInput(value: unknown) {
   if (!raw || raw.toLowerCase() === "unknown") return "";
   const parsed = dayjs(
     raw,
-    ["YYYY-MM-DD", "MM/DD/YYYY", "M/D/YYYY", "YYYY/M/D", "MMM D, YYYY", "MMMM D, YYYY"],
+    [
+      "YYYY-MM-DD",
+      "MM/DD/YYYY",
+      "M/D/YYYY",
+      "YYYY/M/D",
+      "MMM D, YYYY",
+      "MMMM D, YYYY",
+    ],
     true,
   );
   return parsed.isValid() ? parsed.format("YYYY-MM-DD") : "";
@@ -286,13 +358,15 @@ function normalizeCoverageRows(value: unknown): EditableCoverage[] {
         ...row,
         name: stringValue(row.name),
         limit: stringValue(row.limit) || undefined,
-        limitAmount: typeof row.limitAmount === "number"
-          ? row.limitAmount
-          : parseMoneyInput(row.limit),
+        limitAmount:
+          typeof row.limitAmount === "number"
+            ? row.limitAmount
+            : parseMoneyInput(row.limit),
         deductible: stringValue(row.deductible) || undefined,
-        deductibleAmount: typeof row.deductibleAmount === "number"
-          ? row.deductibleAmount
-          : parseMoneyInput(row.deductible),
+        deductibleAmount:
+          typeof row.deductibleAmount === "number"
+            ? row.deductibleAmount
+            : parseMoneyInput(row.deductible),
         coverageCode: stringValue(row.coverageCode) || undefined,
         originalContent: stringValue(row.originalContent) || undefined,
       };
@@ -308,9 +382,10 @@ function normalizePremiumRows(value: unknown): EditablePremiumLine[] {
       return {
         line: stringValue(row.line),
         amount: stringValue(row.amount),
-        amountValue: typeof row.amountValue === "number"
-          ? row.amountValue
-          : parseMoneyInput(row.amount),
+        amountValue:
+          typeof row.amountValue === "number"
+            ? row.amountValue
+            : parseMoneyInput(row.amount),
       };
     })
     .filter((row) => row.line.trim() || row.amount.trim());
@@ -324,9 +399,10 @@ function normalizeTaxRows(value: unknown): EditableTaxFee[] {
       return {
         name: stringValue(row.name),
         amount: stringValue(row.amount),
-        amountValue: typeof row.amountValue === "number"
-          ? row.amountValue
-          : parseMoneyInput(row.amount),
+        amountValue:
+          typeof row.amountValue === "number"
+            ? row.amountValue
+            : parseMoneyInput(row.amount),
         type: stringValue(row.type) || undefined,
         description: stringValue(row.description) || undefined,
       };
@@ -334,13 +410,18 @@ function normalizeTaxRows(value: unknown): EditableTaxFee[] {
     .filter((row) => row.name.trim() || row.amount.trim());
 }
 
-function extractionReviewQuestions(policy: Record<string, unknown>): CoverageReviewQuestion[] {
-  const review = policy.extractionReview as { questions?: CoverageReviewQuestion[] } | undefined;
+function extractionReviewQuestions(
+  policy: Record<string, unknown>,
+): CoverageReviewQuestion[] {
+  const review = policy.extractionReview as
+    | { questions?: CoverageReviewQuestion[] }
+    | undefined;
   if (!Array.isArray(review?.questions)) return [];
-  return review.questions.filter((question) =>
-    question.id &&
-    question.status !== "confirmed" &&
-    question.status !== "dismissed",
+  return review.questions.filter(
+    (question) =>
+      question.id &&
+      question.status !== "confirmed" &&
+      question.status !== "dismissed",
   );
 }
 
@@ -366,19 +447,24 @@ function normalizedReviewText(value: unknown) {
 
 function optionTermKind(option: CoverageReviewOption) {
   const coverage = option.coverage ?? {};
-  const text = normalizedReviewText([
-    option.label,
-    option.value,
-    option.detail,
-    coverage.name,
-    coverage.limit,
-    coverage.deductible,
-    coverage.originalContent,
-    coverage.resolvedOriginalContent,
-    coverage.sectionRef,
-  ].filter(Boolean).join(" "));
+  const text = normalizedReviewText(
+    [
+      option.label,
+      option.value,
+      option.detail,
+      coverage.name,
+      coverage.limit,
+      coverage.deductible,
+      coverage.originalContent,
+      coverage.resolvedOriginalContent,
+      coverage.sectionRef,
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
   if (text.includes("retroactive")) return "retroactive date";
-  if (text.includes("deductible") || text.includes("retention")) return "deductible";
+  if (text.includes("deductible") || text.includes("retention"))
+    return "deductible";
   return "limit";
 }
 
@@ -393,7 +479,9 @@ function optionDetailParts(option: CoverageReviewOption) {
         : typeof coverage.pageNumber === "number"
           ? `page ${coverage.pageNumber}`
           : "",
-    ].filter(Boolean).join(", ");
+    ]
+      .filter(Boolean)
+      .join(", ");
   const type = formatReviewLimitType(option.limitType ?? coverage.limitType);
   const name = reviewString(coverage.name);
   const text = reviewString(coverage.originalContent);
@@ -411,8 +499,13 @@ function optionDisplayLabel(option: CoverageReviewOption) {
   const value = reviewString(option.value ?? option.label) || "As stated";
   const label = reviewString(option.label);
   if (label && label !== value) return label;
-  const type = formatReviewLimitType(option.limitType ?? option.coverage?.limitType);
-  if (type && !normalizedReviewText(value).includes(normalizedReviewText(type))) {
+  const type = formatReviewLimitType(
+    option.limitType ?? option.coverage?.limitType,
+  );
+  if (
+    type &&
+    !normalizedReviewText(value).includes(normalizedReviewText(type))
+  ) {
     return `${value} ${type}`;
   }
   return value;
@@ -428,15 +521,19 @@ function optionKey(option: CoverageReviewOption, index: number) {
 
 function optionEvidenceScore(option: CoverageReviewOption) {
   const coverage = option.coverage ?? {};
-  const text = normalizedReviewText([
-    option.sourceLabel,
-    option.reason,
-    option.detail,
-    coverage.sectionRef,
-    coverage.formNumber,
-    coverage.originalContent,
-    coverage.resolvedOriginalContent,
-  ].filter(Boolean).join(" "));
+  const text = normalizedReviewText(
+    [
+      option.sourceLabel,
+      option.reason,
+      option.detail,
+      coverage.sectionRef,
+      coverage.formNumber,
+      coverage.originalContent,
+      coverage.resolvedOriginalContent,
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
   let score = 0;
   if (optionTermKind(option) === "limit") score += 8;
   if (text.includes("item 6") || text.includes("declarations")) score += 5;
@@ -446,19 +543,29 @@ function optionEvidenceScore(option: CoverageReviewOption) {
   return score;
 }
 
-function recommendedOption(question: CoverageReviewQuestion, options: CoverageReviewOption[]) {
+function recommendedOption(
+  question: CoverageReviewQuestion,
+  options: CoverageReviewOption[],
+) {
   if (question.recommendedOptionId) {
-    const explicit = options.find((option) => option.id === question.recommendedOptionId);
+    const explicit = options.find(
+      (option) => option.id === question.recommendedOptionId,
+    );
     if (explicit) return explicit;
   }
   const current = options
     .filter((option) => option.value === question.currentValue)
     .sort((a, b) => optionEvidenceScore(b) - optionEvidenceScore(a))[0];
   if (current) return current;
-  return [...options].sort((a, b) => optionEvidenceScore(b) - optionEvidenceScore(a))[0];
+  return [...options].sort(
+    (a, b) => optionEvidenceScore(b) - optionEvidenceScore(a),
+  )[0];
 }
 
-function recommendationText(question: CoverageReviewQuestion, option?: CoverageReviewOption) {
+function recommendationText(
+  question: CoverageReviewQuestion,
+  option?: CoverageReviewOption,
+) {
   if (question.recommendation) return question.recommendation;
   if (!option) return "";
   const details = optionDetailParts(option);
@@ -478,10 +585,14 @@ function displayReviewQuestion(question: CoverageReviewQuestion) {
   }
   const coverageName = reviewString(question.coverageName)
     .replace(/\s+[-—]\s+.*?(?:limit|deductible|retroactive\s+date)$/i, "")
-    .replace(/\s+(each\s+claim|per\s+claim|each\s+occurrence|per\s+occurrence|each\s+loss|aggregate|policy\s+aggregate)(?:\s+limit)?$/i, "")
+    .replace(
+      /\s+(each\s+claim|per\s+claim|each\s+occurrence|per\s+occurrence|each\s+loss|aggregate|policy\s+aggregate)(?:\s+limit)?$/i,
+      "",
+    )
     .trim();
   const type = formatReviewLimitType(question.options?.[0]?.limitType);
-  if (coverageName && type) return `Review the ${type} limit for ${coverageName}`;
+  if (coverageName && type)
+    return `Review the ${type} limit for ${coverageName}`;
   if (coverageName) return `Review the extracted value for ${coverageName}`;
   return "Review this extracted value";
 }
@@ -505,13 +616,21 @@ function PolicyExtractionReview({
 }) {
   const questions = extractionReviewQuestions(policy);
   const answerQuestion = useMutation(api.policies.answerCoverageReviewQuestion);
-  const requestBrokerHelp = useMutation(api.policies.requestCoverageReviewBrokerHelp);
+  const requestBrokerHelp = useMutation(
+    api.policies.requestCoverageReviewBrokerHelp,
+  );
   const [pendingId, setPendingId] = useState<string | null>(null);
-  const [selectedOptions, setSelectedOptions] = useState<Record<string, string>>({});
+  const [selectedOptions, setSelectedOptions] = useState<
+    Record<string, string>
+  >({});
 
   if (questions.length === 0) return null;
 
-  const confirmAnswer = async (questionId: string, selectedValue: string, selectedOptionId?: string) => {
+  const confirmAnswer = async (
+    questionId: string,
+    selectedValue: string,
+    selectedOptionId?: string,
+  ) => {
     setPendingId(`${questionId}:confirm`);
     try {
       await answerQuestion({
@@ -527,7 +646,9 @@ function PolicyExtractionReview({
       });
       toast.success("Coverage confirmed");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not confirm coverage");
+      toast.error(
+        error instanceof Error ? error.message : "Could not confirm coverage",
+      );
     } finally {
       setPendingId(null);
     }
@@ -542,7 +663,11 @@ function PolicyExtractionReview({
       });
       toast.success("Broker help requested");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not request broker help");
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Could not request broker help",
+      );
     } finally {
       setPendingId(null);
     }
@@ -554,7 +679,9 @@ function PolicyExtractionReview({
         {questions.map((question) => {
           const questionId = question.id!;
           const brokerRequested = question.status === "broker_help_requested";
-          const options = Array.isArray(question.options) ? question.options : [];
+          const options = Array.isArray(question.options)
+            ? question.options
+            : [];
           const recommended = recommendedOption(question, options);
           const optionEntries = options
             .map((option, index) => ({ option, key: optionKey(option, index) }))
@@ -562,16 +689,29 @@ function PolicyExtractionReview({
           const recommendedEntry = recommended
             ? optionEntries.find(({ option }) => option === recommended)
             : undefined;
-          const alternativeEntries = optionEntries.filter(({ option }) => option !== recommended);
-          const selectedKey = selectedOptions[questionId] ?? recommendedEntry?.key;
-          const selectedEntry = optionEntries.find(({ key }) => key === selectedKey);
+          const alternativeEntries = optionEntries.filter(
+            ({ option }) => option !== recommended,
+          );
+          const selectedKey =
+            selectedOptions[questionId] ?? recommendedEntry?.key;
+          const selectedEntry = optionEntries.find(
+            ({ key }) => key === selectedKey,
+          );
           const isConfirming = pendingId === `${questionId}:confirm`;
           const optionCards = [
-            ...(recommendedEntry ? [{ ...recommendedEntry, heading: "Recommended Value" }] : []),
-            ...alternativeEntries.map((entry) => ({ ...entry, heading: "Other Extracted Entry" })),
+            ...(recommendedEntry
+              ? [{ ...recommendedEntry, heading: "Recommended Value" }]
+              : []),
+            ...alternativeEntries.map((entry) => ({
+              ...entry,
+              heading: "Other Extracted Entry",
+            })),
           ];
           return (
-            <div key={questionId} className="rounded-lg border border-foreground/10 bg-background p-4">
+            <div
+              key={questionId}
+              className="rounded-lg border border-foreground/10 bg-background p-4"
+            >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
                   <p className="text-body-sm font-medium text-foreground">
@@ -611,13 +751,17 @@ function PolicyExtractionReview({
                       }`}
                     >
                       <div className="min-w-0">
-                        <p className="text-label-sm font-medium text-muted-foreground">{heading}</p>
+                        <p className="text-label-sm font-medium text-muted-foreground">
+                          {heading}
+                        </p>
                         <p className="mt-1 text-body-sm font-medium text-foreground">
                           {optionDisplayLabel(option)}
                         </p>
                         {details.source || details.type ? (
                           <p className="mt-1 text-[11px] leading-4 text-muted-foreground">
-                            {[details.type, details.source].filter(Boolean).join(" | ")}
+                            {[details.type, details.source]
+                              .filter(Boolean)
+                              .join(" | ")}
                           </p>
                         ) : null}
                         {key === recommendedEntry?.key ? (
@@ -635,10 +779,10 @@ function PolicyExtractionReview({
                           </p>
                         ) : null}
                       </div>
-                      <span
-                        className="inline-flex items-center gap-1.5 rounded-full border border-foreground/10 px-3 py-1 text-[11px] font-medium text-muted-foreground"
-                      >
-                        {selected ? <CheckCircle2 className="size-3.5" /> : null}
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-foreground/10 px-3 py-1 text-[11px] font-medium text-muted-foreground">
+                        {selected ? (
+                          <CheckCircle2 className="size-3.5" />
+                        ) : null}
                         {selected ? "Selected" : "Select"}
                       </span>
                     </button>
@@ -653,7 +797,11 @@ function PolicyExtractionReview({
                   disabled={readOnly || pendingId !== null || !selectedEntry}
                   onClick={() =>
                     selectedEntry
-                      ? confirmAnswer(questionId, optionValue(selectedEntry.option), selectedEntry.option.id)
+                      ? confirmAnswer(
+                          questionId,
+                          optionValue(selectedEntry.option),
+                          selectedEntry.option.id,
+                        )
                       : undefined
                   }
                 >
@@ -696,9 +844,9 @@ function PolicyBreakdownEditor({
   readOnly: boolean;
 }) {
   const updateExtractedFields = useMutation(api.policies.updateExtractedFields);
-  const [saving, setSaving] = useState(false);
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingFieldsRef = useRef<Record<string, unknown>>({});
+  const [pendingFields, setPendingFields] = useState<Record<string, unknown>>(
+    {},
+  );
   const [draft, setDraft] = useState(() => ({
     carrier: stringValue(policy.carrier),
     policyNumber: stringValue(policy.policyNumber),
@@ -711,35 +859,58 @@ function PolicyBreakdownEditor({
     coverages: normalizeCoverageRows(policy.coverages),
   }));
 
+  const savePolicyFields = useCallback(
+    async (args: { id: Id<"policies">; fields: Record<string, unknown> }) => {
+      await updateExtractedFields(args);
+    },
+    [updateExtractedFields],
+  );
+
+  const policyFieldAutoSave = useLocalFirstAutoSave({
+    mutationName: `policy.updateExtractedFields.${policy._id}`,
+    args: {
+      id: policy._id,
+      fields: pendingFields,
+    },
+    valueKey: JSON.stringify({ id: policy._id, fields: pendingFields }),
+    enabled: !readOnly,
+    canSave: !readOnly && Object.keys(pendingFields).length > 0,
+    delayMs: 500,
+    applyLocal: (store, args) => {
+      for (const cacheName of ["policies.get", "policies.getSummary"]) {
+        const collection = cachedQueryCollectionFor<Record<
+          string,
+          unknown
+        > | null>(cacheName);
+        const argsKey = cachedQueryArgsKey({ id: args.id });
+        const current = store.getCollection(collection, argsKey)?.[0]?.value;
+        if (!current || typeof current !== "object") continue;
+        void store.upsertCollection(collection, argsKey, [
+          {
+            _id: "result",
+            value: {
+              ...current,
+              ...args.fields,
+            },
+            updatedAt: dayjs().valueOf(),
+          },
+        ]);
+      }
+    },
+    flush: savePolicyFields,
+    onQueued: () => setPendingFields({}),
+    onError: () => toast.error("Failed to save policy fields"),
+  });
+
+  const saving = policyFieldAutoSave.saving;
+
   const saveFields = useCallback(
     (fields: Record<string, unknown>) => {
       if (readOnly) return;
-      pendingFieldsRef.current = { ...pendingFieldsRef.current, ...fields };
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = setTimeout(async () => {
-        const fieldsToSave = pendingFieldsRef.current;
-        pendingFieldsRef.current = {};
-        setSaving(true);
-        try {
-          await updateExtractedFields({
-            id: policy._id,
-            fields: fieldsToSave,
-          });
-        } catch {
-          toast.error("Failed to save policy fields");
-        } finally {
-          setSaving(false);
-        }
-      }, 500);
+      setPendingFields((current) => ({ ...current, ...fields }));
     },
-    [policy._id, readOnly, updateExtractedFields],
+    [readOnly],
   );
-
-  useEffect(() => {
-    return () => {
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    };
-  }, []);
 
   const setScalar = (key: keyof typeof draft, value: string) => {
     setDraft((current) => ({ ...current, [key]: value }));
@@ -747,11 +918,16 @@ function PolicyBreakdownEditor({
     const amount = moneyKey ? parseMoneyInput(value) : undefined;
     saveFields({
       [key]: value,
-      ...(key === "premium" && amount !== undefined ? { premiumAmount: amount } : {}),
+      ...(key === "premium" && amount !== undefined
+        ? { premiumAmount: amount }
+        : {}),
     });
   };
 
-  const setDateScalar = (key: "effectiveDate" | "expirationDate", value: string) => {
+  const setDateScalar = (
+    key: "effectiveDate" | "expirationDate",
+    value: string,
+  ) => {
     setScalar(key, dateValueFromInput(value));
   };
 
@@ -785,7 +961,9 @@ function PolicyBreakdownEditor({
           ? { amountValue: parseMoneyInput(row.amount) }
           : {}),
         ...(row.type?.trim() ? { type: row.type.trim() } : {}),
-        ...(row.description?.trim() ? { description: row.description.trim() } : {}),
+        ...(row.description?.trim()
+          ? { description: row.description.trim() }
+          : {}),
       })),
     });
   };
@@ -801,12 +979,18 @@ function PolicyBreakdownEditor({
         ...(parseMoneyInput(row.limit) !== undefined
           ? { limitAmount: parseMoneyInput(row.limit) }
           : {}),
-        ...(row.deductible?.trim() ? { deductible: row.deductible.trim() } : {}),
+        ...(row.deductible?.trim()
+          ? { deductible: row.deductible.trim() }
+          : {}),
         ...(parseMoneyInput(row.deductible) !== undefined
           ? { deductibleAmount: parseMoneyInput(row.deductible) }
           : {}),
-        ...(row.coverageCode?.trim() ? { coverageCode: row.coverageCode.trim() } : {}),
-        ...(row.originalContent?.trim() ? { originalContent: row.originalContent.trim() } : {}),
+        ...(row.coverageCode?.trim()
+          ? { coverageCode: row.coverageCode.trim() }
+          : {}),
+        ...(row.originalContent?.trim()
+          ? { originalContent: row.originalContent.trim() }
+          : {}),
       })),
     });
   };
@@ -825,8 +1009,12 @@ function PolicyBreakdownEditor({
   return (
     <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
       <div className="px-5 py-3 border-b border-foreground/4 flex items-center gap-3">
-        <p className="text-sm font-medium text-foreground flex-1">Editable extracted fields</p>
-        <span className="text-xs text-muted-foreground">{saving ? "Saving..." : "Saved on change"}</span>
+        <p className="text-sm font-medium text-foreground flex-1">
+          Editable extracted fields
+        </p>
+        <span className="text-xs text-muted-foreground">
+          {saving ? "Saving..." : "Saved on change"}
+        </span>
       </div>
       <div className="p-5 space-y-5">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -836,7 +1024,9 @@ function PolicyBreakdownEditor({
               <Input
                 type={kind === "date" ? "date" : "text"}
                 inputMode={kind === "money" ? "decimal" : undefined}
-                value={kind === "date" ? normalizeDateInput(draft[key]) : draft[key]}
+                value={
+                  kind === "date" ? normalizeDateInput(draft[key]) : draft[key]
+                }
                 onChange={(event) => {
                   if (kind === "date") {
                     setDateScalar(key, event.target.value);
@@ -854,11 +1044,18 @@ function PolicyBreakdownEditor({
 
         <div className="space-y-2">
           <div className="flex items-center gap-3">
-            <p className="text-sm font-medium text-foreground flex-1">Premium breakdown</p>
+            <p className="text-sm font-medium text-foreground flex-1">
+              Premium breakdown
+            </p>
             <PillButton
               size="compact"
               variant="secondary"
-              onClick={() => updatePremiumBreakdown([...draft.premiumBreakdown, { line: "", amount: "" }])}
+              onClick={() =>
+                updatePremiumBreakdown([
+                  ...draft.premiumBreakdown,
+                  { line: "", amount: "" },
+                ])
+              }
             >
               <Plus className="size-3.5" />
               Add
@@ -866,7 +1063,10 @@ function PolicyBreakdownEditor({
           </div>
           <div className="space-y-2">
             {draft.premiumBreakdown.map((row, index) => (
-              <div key={index} className="grid grid-cols-1 sm:grid-cols-[1fr_160px_auto] gap-2">
+              <div
+                key={index}
+                className="grid grid-cols-1 sm:grid-cols-[1fr_160px_auto] gap-2"
+              >
                 <Input
                   placeholder="Line"
                   value={row.line}
@@ -887,7 +1087,10 @@ function PolicyBreakdownEditor({
                   }}
                   onBlur={() => {
                     const next = [...draft.premiumBreakdown];
-                    next[index] = { ...row, amount: formatMoneyInput(row.amount) };
+                    next[index] = {
+                      ...row,
+                      amount: formatMoneyInput(row.amount),
+                    };
                     updatePremiumBreakdown(next);
                   }}
                 />
@@ -895,7 +1098,11 @@ function PolicyBreakdownEditor({
                   size="compact"
                   variant="icon"
                   label="Remove"
-                  onClick={() => updatePremiumBreakdown(draft.premiumBreakdown.filter((_, i) => i !== index))}
+                  onClick={() =>
+                    updatePremiumBreakdown(
+                      draft.premiumBreakdown.filter((_, i) => i !== index),
+                    )
+                  }
                 >
                   <Trash2 className="size-3.5" />
                 </PillButton>
@@ -906,11 +1113,18 @@ function PolicyBreakdownEditor({
 
         <div className="space-y-2">
           <div className="flex items-center gap-3">
-            <p className="text-sm font-medium text-foreground flex-1">Taxes and fees</p>
+            <p className="text-sm font-medium text-foreground flex-1">
+              Taxes and fees
+            </p>
             <PillButton
               size="compact"
               variant="secondary"
-              onClick={() => updateTaxesAndFees([...draft.taxesAndFees, { name: "", amount: "" }])}
+              onClick={() =>
+                updateTaxesAndFees([
+                  ...draft.taxesAndFees,
+                  { name: "", amount: "" },
+                ])
+              }
             >
               <Plus className="size-3.5" />
               Add
@@ -918,7 +1132,10 @@ function PolicyBreakdownEditor({
           </div>
           <div className="space-y-2">
             {draft.taxesAndFees.map((row, index) => (
-              <div key={index} className="grid grid-cols-1 sm:grid-cols-[1fr_140px_120px_auto] gap-2">
+              <div
+                key={index}
+                className="grid grid-cols-1 sm:grid-cols-[1fr_140px_120px_auto] gap-2"
+              >
                 <Input
                   placeholder="Name"
                   value={row.name}
@@ -939,7 +1156,10 @@ function PolicyBreakdownEditor({
                   }}
                   onBlur={() => {
                     const next = [...draft.taxesAndFees];
-                    next[index] = { ...row, amount: formatMoneyInput(row.amount) };
+                    next[index] = {
+                      ...row,
+                      amount: formatMoneyInput(row.amount),
+                    };
                     updateTaxesAndFees(next);
                   }}
                 />
@@ -956,7 +1176,11 @@ function PolicyBreakdownEditor({
                   size="compact"
                   variant="icon"
                   label="Remove"
-                  onClick={() => updateTaxesAndFees(draft.taxesAndFees.filter((_, i) => i !== index))}
+                  onClick={() =>
+                    updateTaxesAndFees(
+                      draft.taxesAndFees.filter((_, i) => i !== index),
+                    )
+                  }
                 >
                   <Trash2 className="size-3.5" />
                 </PillButton>
@@ -967,11 +1191,18 @@ function PolicyBreakdownEditor({
 
         <div className="space-y-2">
           <div className="flex items-center gap-3">
-            <p className="text-sm font-medium text-foreground flex-1">Coverages</p>
+            <p className="text-sm font-medium text-foreground flex-1">
+              Coverages
+            </p>
             <PillButton
               size="compact"
               variant="secondary"
-              onClick={() => updateCoverages([...draft.coverages, { name: "", limit: "", deductible: "" }])}
+              onClick={() =>
+                updateCoverages([
+                  ...draft.coverages,
+                  { name: "", limit: "", deductible: "" },
+                ])
+              }
             >
               <Plus className="size-3.5" />
               Add
@@ -979,7 +1210,10 @@ function PolicyBreakdownEditor({
           </div>
           <div className="space-y-2">
             {draft.coverages.map((row, index) => (
-              <div key={index} className="grid grid-cols-1 sm:grid-cols-[1.2fr_1fr_1fr_auto] gap-2">
+              <div
+                key={index}
+                className="grid grid-cols-1 sm:grid-cols-[1.2fr_1fr_1fr_auto] gap-2"
+              >
                 <Input
                   placeholder="Coverage"
                   value={row.name}
@@ -1000,7 +1234,10 @@ function PolicyBreakdownEditor({
                   }}
                   onBlur={() => {
                     const next = [...draft.coverages];
-                    next[index] = { ...row, limit: formatMoneyInput(row.limit) };
+                    next[index] = {
+                      ...row,
+                      limit: formatMoneyInput(row.limit),
+                    };
                     updateCoverages(next);
                   }}
                 />
@@ -1015,7 +1252,10 @@ function PolicyBreakdownEditor({
                   }}
                   onBlur={() => {
                     const next = [...draft.coverages];
-                    next[index] = { ...row, deductible: formatMoneyInput(row.deductible) };
+                    next[index] = {
+                      ...row,
+                      deductible: formatMoneyInput(row.deductible),
+                    };
                     updateCoverages(next);
                   }}
                 />
@@ -1023,7 +1263,11 @@ function PolicyBreakdownEditor({
                   size="compact"
                   variant="icon"
                   label="Remove"
-                  onClick={() => updateCoverages(draft.coverages.filter((_, i) => i !== index))}
+                  onClick={() =>
+                    updateCoverages(
+                      draft.coverages.filter((_, i) => i !== index),
+                    )
+                  }
                 >
                   <Trash2 className="size-3.5" />
                 </PillButton>
@@ -1043,7 +1287,8 @@ function PolicyChangesTab({
   policyId: string;
   canManage: boolean;
 }) {
-  const [selectedCaseId, setSelectedCaseId] = useState<Id<"policyChangeCases"> | null>(null);
+  const [selectedCaseId, setSelectedCaseId] =
+    useState<Id<"policyChangeCases"> | null>(null);
   const [packetLoading, setPacketLoading] = useState(false);
   const [statusLoading, setStatusLoading] = useState<string | null>(null);
   const [cancelLoading, setCancelLoading] = useState<string | null>(null);
@@ -1086,20 +1331,26 @@ function PolicyChangesTab({
       await generatePacket({ caseId: activeCaseId });
       toast.success("Carrier packet generated");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not generate packet");
+      toast.error(
+        error instanceof Error ? error.message : "Could not generate packet",
+      );
     } finally {
       setPacketLoading(false);
     }
   };
 
-  const handleStatus = async (status: "submitted" | "accepted" | "declined") => {
+  const handleStatus = async (
+    status: "submitted" | "accepted" | "declined",
+  ) => {
     if (!activeCaseId) return;
     setStatusLoading(status);
     try {
       await markStatus({ caseId: activeCaseId, status });
       toast.success(`Marked ${status}`);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not update status");
+      toast.error(
+        error instanceof Error ? error.message : "Could not update status",
+      );
     } finally {
       setStatusLoading(null);
     }
@@ -1111,7 +1362,9 @@ function PolicyChangesTab({
       await cancelRequest({ caseId });
       toast.success("Policy change request cancelled");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not cancel request");
+      toast.error(
+        error instanceof Error ? error.message : "Could not cancel request",
+      );
     } finally {
       setCancelLoading(null);
     }
@@ -1168,9 +1421,20 @@ function PolicyChangesTab({
               <PolicyChangeProgress status={change.status} className="mt-4" />
 
               <div className="mt-3 flex flex-wrap gap-3 text-[11px] text-muted-foreground">
-                <span>Updated {dayjs(change.updatedAt).format("MMM D, YYYY")}</span>
-                {missingInfoCount > 0 && <span>{missingInfoCount} question{missingInfoCount === 1 ? "" : "s"} open</span>}
-                {issueCount > 0 && <span>{issueCount} issue{issueCount === 1 ? "" : "s"} to review</span>}
+                <span>
+                  Updated {dayjs(change.updatedAt).format("MMM D, YYYY")}
+                </span>
+                {missingInfoCount > 0 && (
+                  <span>
+                    {missingInfoCount} question
+                    {missingInfoCount === 1 ? "" : "s"} open
+                  </span>
+                )}
+                {issueCount > 0 && (
+                  <span>
+                    {issueCount} issue{issueCount === 1 ? "" : "s"} to review
+                  </span>
+                )}
               </div>
             </div>
           );
@@ -1181,14 +1445,18 @@ function PolicyChangesTab({
 
   const activeCase = detail?.case;
   const packet = detail?.latestPacket;
-  const items = Array.isArray(activeCase?.items) ? activeCase.items as Record<string, unknown>[] : [];
+  const items = Array.isArray(activeCase?.items)
+    ? (activeCase.items as Record<string, unknown>[])
+    : [];
   const missingInfo = Array.isArray(activeCase?.missingInfoQuestions)
-    ? activeCase.missingInfoQuestions as Record<string, unknown>[]
+    ? (activeCase.missingInfoQuestions as Record<string, unknown>[])
     : [];
   const validationIssues = Array.isArray(activeCase?.validationIssues)
-    ? activeCase.validationIssues as Record<string, unknown>[]
+    ? (activeCase.validationIssues as Record<string, unknown>[])
     : [];
-  const artifacts = Array.isArray(packet?.artifacts) ? packet.artifacts as Record<string, unknown>[] : [];
+  const artifacts = Array.isArray(packet?.artifacts)
+    ? (packet.artifacts as Record<string, unknown>[])
+    : [];
 
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(260px,0.9fr)_minmax(0,1.4fr)]">
@@ -1207,7 +1475,9 @@ function PolicyChangesTab({
               type="button"
               onClick={() => setSelectedCaseId(change._id)}
               className={`block w-full text-left px-4 py-3 border-b border-foreground/[0.04] last:border-b-0 transition-colors ${
-                isActive ? "bg-foreground/[0.035]" : "hover:bg-foreground/[0.02]"
+                isActive
+                  ? "bg-foreground/[0.035]"
+                  : "hover:bg-foreground/[0.02]"
               }`}
             >
               <div className="flex items-start justify-between gap-4">
@@ -1263,7 +1533,11 @@ function PolicyChangesTab({
                     onClick={handleGeneratePacket}
                     disabled={packetLoading}
                   >
-                    {packetLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
+                    {packetLoading ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <FileText className="w-3.5 h-3.5" />
+                    )}
                     Packet
                   </PillButton>
                   <PillButton
@@ -1272,7 +1546,11 @@ function PolicyChangesTab({
                     onClick={() => handleStatus("submitted")}
                     disabled={statusLoading !== null}
                   >
-                    {statusLoading === "submitted" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                    {statusLoading === "submitted" ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Send className="w-3.5 h-3.5" />
+                    )}
                     Submitted
                   </PillButton>
                   <PillButton
@@ -1281,7 +1559,11 @@ function PolicyChangesTab({
                     onClick={() => handleStatus("accepted")}
                     disabled={statusLoading !== null}
                   >
-                    {statusLoading === "accepted" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                    {statusLoading === "accepted" ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                    )}
                     Accepted
                   </PillButton>
                   <PillButton
@@ -1290,68 +1572,105 @@ function PolicyChangesTab({
                     onClick={() => handleStatus("declined")}
                     disabled={statusLoading !== null}
                   >
-                    {statusLoading === "declined" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />}
+                    {statusLoading === "declined" ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <X className="w-3.5 h-3.5" />
+                    )}
                     Declined
                   </PillButton>
-                  {activeCase.status !== "cancelled" && activeCase.status !== "accepted" && activeCase.status !== "declined" && (
-                    <PillButton
-                      variant="secondary"
-                      size="compact"
-                      onClick={() => handleCancel(activeCase._id)}
-                      disabled={cancelLoading !== null}
-                    >
-                      {cancelLoading === activeCase._id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />}
-                      Cancel
-                    </PillButton>
-                  )}
+                  {activeCase.status !== "cancelled" &&
+                    activeCase.status !== "accepted" &&
+                    activeCase.status !== "declined" && (
+                      <PillButton
+                        variant="secondary"
+                        size="compact"
+                        onClick={() => handleCancel(activeCase._id)}
+                        disabled={cancelLoading !== null}
+                      >
+                        {cancelLoading === activeCase._id ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <X className="w-3.5 h-3.5" />
+                        )}
+                        Cancel
+                      </PillButton>
+                    )}
                 </div>
               </div>
             </div>
 
             <div className="p-4 grid gap-4 xl:grid-cols-2">
               <section>
-                <h3 className="text-label-sm font-medium text-foreground">Affected Values</h3>
+                <h3 className="text-label-sm font-medium text-foreground">
+                  Affected Values
+                </h3>
                 <div className="mt-2 space-y-2">
-                  {items.length > 0 ? items.map((item, i) => (
-                    <div key={String(item.id ?? i)} className="rounded-md border border-foreground/6 p-3">
-                      <p className="text-label-sm font-medium text-foreground">
-                        {String(item.label ?? item.fieldPath ?? "Change item")}
-                      </p>
-                      <p className="mt-1 text-[11px] text-muted-foreground">
-                        {String(item.action ?? "update")} · {String(item.kind ?? "general")}
-                      </p>
-                      <p className="mt-2 text-label-sm text-muted-foreground">
-                        {String(item.beforeValue ?? "(not cited)")} → {String(item.requestedValue ?? item.afterValue ?? "(pending)")}
-                      </p>
-                      {Array.isArray(item.sourceSpanIds) && item.sourceSpanIds.length > 0 && (
-                        <p className="mt-2 text-[11px] text-muted-foreground break-all">
-                          evidence: {item.sourceSpanIds.join(", ")}
+                  {items.length > 0 ? (
+                    items.map((item, i) => (
+                      <div
+                        key={String(item.id ?? i)}
+                        className="rounded-md border border-foreground/6 p-3"
+                      >
+                        <p className="text-label-sm font-medium text-foreground">
+                          {String(
+                            item.label ?? item.fieldPath ?? "Change item",
+                          )}
                         </p>
-                      )}
-                    </div>
-                  )) : (
-                    <p className="text-label-sm text-muted-foreground">No structured change items yet.</p>
+                        <p className="mt-1 text-[11px] text-muted-foreground">
+                          {String(item.action ?? "update")} ·{" "}
+                          {String(item.kind ?? "general")}
+                        </p>
+                        <p className="mt-2 text-label-sm text-muted-foreground">
+                          {String(item.beforeValue ?? "(not cited)")} →{" "}
+                          {String(
+                            item.requestedValue ??
+                              item.afterValue ??
+                              "(pending)",
+                          )}
+                        </p>
+                        {Array.isArray(item.sourceSpanIds) &&
+                          item.sourceSpanIds.length > 0 && (
+                            <p className="mt-2 text-[11px] text-muted-foreground break-all">
+                              evidence: {item.sourceSpanIds.join(", ")}
+                            </p>
+                          )}
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-label-sm text-muted-foreground">
+                      No structured change items yet.
+                    </p>
                   )}
                 </div>
               </section>
 
               <section>
-                <h3 className="text-label-sm font-medium text-foreground">Validation</h3>
+                <h3 className="text-label-sm font-medium text-foreground">
+                  Validation
+                </h3>
                 <div className="mt-2 space-y-2">
-                  {validationIssues.length > 0 ? validationIssues.map((issue, i) => (
-                    <div key={`${String(issue.code ?? "issue")}-${i}`} className="rounded-md border border-foreground/6 p-3">
-                      <p className="text-label-sm font-medium text-foreground">
-                        {String(issue.code ?? "validation issue")}
-                      </p>
-                      <p className="mt-1 text-[11px] text-muted-foreground">
-                        {String(issue.severity ?? "warning")}
-                      </p>
-                      <p className="mt-2 text-label-sm text-muted-foreground">
-                        {String(issue.message ?? "")}
-                      </p>
-                    </div>
-                  )) : (
-                    <p className="text-label-sm text-muted-foreground">No validation issues recorded.</p>
+                  {validationIssues.length > 0 ? (
+                    validationIssues.map((issue, i) => (
+                      <div
+                        key={`${String(issue.code ?? "issue")}-${i}`}
+                        className="rounded-md border border-foreground/6 p-3"
+                      >
+                        <p className="text-label-sm font-medium text-foreground">
+                          {String(issue.code ?? "validation issue")}
+                        </p>
+                        <p className="mt-1 text-[11px] text-muted-foreground">
+                          {String(issue.severity ?? "warning")}
+                        </p>
+                        <p className="mt-2 text-label-sm text-muted-foreground">
+                          {String(issue.message ?? "")}
+                        </p>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-label-sm text-muted-foreground">
+                      No validation issues recorded.
+                    </p>
                   )}
                 </div>
               </section>
@@ -1359,30 +1678,48 @@ function PolicyChangesTab({
 
             <div className="p-4 grid gap-4 xl:grid-cols-2">
               <section>
-                <h3 className="text-label-sm font-medium text-foreground">Packet Preview</h3>
+                <h3 className="text-label-sm font-medium text-foreground">
+                  Packet Preview
+                </h3>
                 <div className="mt-2 space-y-2">
-                  {artifacts.length > 0 ? artifacts.map((artifact, i) => (
-                    <details key={`${String(artifact.kind ?? "artifact")}-${i}`} className="rounded-md border border-foreground/6 p-3">
-                      <summary className="text-label-sm font-medium text-foreground transition-colors hover:text-muted-foreground">
-                        {String(artifact.title ?? artifact.kind ?? "Packet artifact")}
-                      </summary>
-                      <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-5 text-muted-foreground">
-                        {String(artifact.content ?? "")}
-                      </pre>
-                    </details>
-                  )) : (
-                    <p className="text-label-sm text-muted-foreground">No generated packet yet.</p>
+                  {artifacts.length > 0 ? (
+                    artifacts.map((artifact, i) => (
+                      <details
+                        key={`${String(artifact.kind ?? "artifact")}-${i}`}
+                        className="rounded-md border border-foreground/6 p-3"
+                      >
+                        <summary className="text-label-sm font-medium text-foreground transition-colors hover:text-muted-foreground">
+                          {String(
+                            artifact.title ??
+                              artifact.kind ??
+                              "Packet artifact",
+                          )}
+                        </summary>
+                        <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-5 text-muted-foreground">
+                          {String(artifact.content ?? "")}
+                        </pre>
+                      </details>
+                    ))
+                  ) : (
+                    <p className="text-label-sm text-muted-foreground">
+                      No generated packet yet.
+                    </p>
                   )}
                 </div>
               </section>
 
               <section>
-                <h3 className="text-label-sm font-medium text-foreground">Missing Info And Audit</h3>
+                <h3 className="text-label-sm font-medium text-foreground">
+                  Missing Info And Audit
+                </h3>
                 <div className="mt-2 space-y-3">
                   {missingInfo.length > 0 ? (
                     <div className="space-y-2">
                       {missingInfo.map((question, i) => (
-                        <div key={String(question.id ?? i)} className="rounded-md border border-foreground/6 p-3">
+                        <div
+                          key={String(question.id ?? i)}
+                          className="rounded-md border border-foreground/6 p-3"
+                        >
                           <p className="text-label-sm text-foreground">
                             {String(question.question ?? "Missing information")}
                           </p>
@@ -1395,21 +1732,35 @@ function PolicyChangesTab({
                       ))}
                     </div>
                   ) : (
-                    <p className="text-label-sm text-muted-foreground">No open missing-info questions.</p>
+                    <p className="text-label-sm text-muted-foreground">
+                      No open missing-info questions.
+                    </p>
                   )}
                   <div className="space-y-2">
                     {(detail.messages ?? []).map((message) => (
-                      <div key={message._id} className="text-[11px] text-muted-foreground">
-                        {dayjs(message.createdAt).format("MMM D, YYYY h:mm A")} · {message.direction} · {message.channel ?? "case"} · {message.content.slice(0, 140)}
+                      <div
+                        key={message._id}
+                        className="text-[11px] text-muted-foreground"
+                      >
+                        {dayjs(message.createdAt).format("MMM D, YYYY h:mm A")}{" "}
+                        · {message.direction} · {message.channel ?? "case"} ·{" "}
+                        {message.content.slice(0, 140)}
                       </div>
                     ))}
                     {(detail.validationReports ?? []).map((report) => (
-                      <div key={report._id} className="text-[11px] text-muted-foreground">
-                        {dayjs(report.createdAt).format("MMM D, YYYY h:mm A")} · validation {report.status}
+                      <div
+                        key={report._id}
+                        className="text-[11px] text-muted-foreground"
+                      >
+                        {dayjs(report.createdAt).format("MMM D, YYYY h:mm A")} ·
+                        validation {report.status}
                       </div>
                     ))}
                     {(detail.evidenceLinks ?? []).map((link) => (
-                      <div key={link._id} className="text-[11px] text-muted-foreground break-all">
+                      <div
+                        key={link._id}
+                        className="text-[11px] text-muted-foreground break-all"
+                      >
                         evidence · {link.itemId ?? "case"} · {link.sourceSpanId}
                       </div>
                     ))}
@@ -1484,7 +1835,9 @@ function CertificateCreatePanel({
   initialProgram?: ProgramMatchCandidate | null;
 }) {
   const generateCertificate = useAction(api.certificates.generateForPolicy);
-  const previewCertificateAuthority = useAction(api.certificates.previewAuthorityForPolicy);
+  const previewCertificateAuthority = useAction(
+    api.certificates.previewAuthorityForPolicy,
+  );
   const { openWithUrl } = usePdf();
   const initialProgramCandidate = useMemo(
     () => normalizeProgramMatchCandidate(initialProgram ?? {}),
@@ -1496,12 +1849,12 @@ function CertificateCreatePanel({
   const [city, setCity] = useState("");
   const [state, setState] = useState("");
   const [postalCode, setPostalCode] = useState("");
-  const [selectedPartnerProgramId, setSelectedPartnerProgramId] = useState<Id<"partnerPrograms"> | undefined>(
-    initialProgramCandidate?.programId,
-  );
-  const [programCandidates, setProgramCandidates] = useState<ProgramMatchCandidate[]>(
-    () => initialProgramCandidate ? [initialProgramCandidate] : [],
-  );
+  const [selectedPartnerProgramId, setSelectedPartnerProgramId] = useState<
+    Id<"partnerPrograms"> | undefined
+  >(initialProgramCandidate?.programId);
+  const [programCandidates, setProgramCandidates] = useState<
+    ProgramMatchCandidate[]
+  >(() => (initialProgramCandidate ? [initialProgramCandidate] : []));
   const [resolvingProgram, setResolvingProgram] = useState(false);
   const [generating, setGenerating] = useState(false);
 
@@ -1513,26 +1866,32 @@ function CertificateCreatePanel({
     setState("");
     setPostalCode("");
     setSelectedPartnerProgramId(initialProgramCandidate?.programId);
-    setProgramCandidates(initialProgramCandidate ? [initialProgramCandidate] : []);
+    setProgramCandidates(
+      initialProgramCandidate ? [initialProgramCandidate] : [],
+    );
     setResolvingProgram(false);
   };
 
-  const handleAddressRetrieve = useCallback((response: AddressAutofillRetrieveResponse) => {
-    const address = firstMapboxAddressFeature(response);
-    if (!address) return;
+  const handleAddressRetrieve = useCallback(
+    (response: AddressAutofillRetrieveResponse) => {
+      const address = firstMapboxAddressFeature(response);
+      if (!address) return;
 
-    const nextAddressLine1 = address.address_line1 ?? address.address ?? address.feature_name ?? "";
-    const nextAddressLine2 = address.address_line2 ?? "";
-    const nextCity = address.address_level2 ?? address.address_level3 ?? "";
-    const nextState = normalizeUsState(address.address_level1);
-    const nextPostalCode = address.postcode ?? "";
+      const nextAddressLine1 =
+        address.address_line1 ?? address.address ?? address.feature_name ?? "";
+      const nextAddressLine2 = address.address_line2 ?? "";
+      const nextCity = address.address_level2 ?? address.address_level3 ?? "";
+      const nextState = normalizeUsState(address.address_level1);
+      const nextPostalCode = address.postcode ?? "";
 
-    if (nextAddressLine1) setAddressLine1(nextAddressLine1);
-    setAddressLine2(nextAddressLine2);
-    if (nextCity) setCity(nextCity);
-    if (nextState) setState(nextState);
-    if (nextPostalCode) setPostalCode(nextPostalCode);
-  }, []);
+      if (nextAddressLine1) setAddressLine1(nextAddressLine1);
+      setAddressLine2(nextAddressLine2);
+      if (nextCity) setCity(nextCity);
+      if (nextState) setState(nextState);
+      if (nextPostalCode) setPostalCode(nextPostalCode);
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -1550,21 +1909,31 @@ function CertificateCreatePanel({
       .then((result) => {
         if (cancelled || !result) return;
         const selectedProgram = normalizeProgramMatchCandidate(
-          (result as { selectedProgram?: ProgramMatchCandidate | null }).selectedProgram ?? {},
+          (result as { selectedProgram?: ProgramMatchCandidate | null })
+            .selectedProgram ?? {},
         );
-        const candidates = ((result as { matchCandidates?: ProgramMatchCandidate[] }).matchCandidates ?? [])
+        const candidates = (
+          (result as { matchCandidates?: ProgramMatchCandidate[] })
+            .matchCandidates ?? []
+        )
           .map(normalizeProgramMatchCandidate)
-          .filter(Boolean) as Array<ProgramMatchCandidate & {
+          .filter(Boolean) as Array<
+          ProgramMatchCandidate & {
             programId: Id<"partnerPrograms">;
             programName: string;
-          }>;
+          }
+        >;
         const nextCandidates = selectedProgram ? [selectedProgram] : candidates;
         setProgramCandidates(nextCandidates);
         setSelectedPartnerProgramId(nextCandidates[0]?.programId);
       })
       .catch((error) => {
         if (!cancelled) {
-          toast.error(error instanceof Error ? error.message : "Could not check certificate program");
+          toast.error(
+            error instanceof Error
+              ? error.message
+              : "Could not check certificate program",
+          );
         }
       })
       .finally(() => {
@@ -1601,16 +1970,25 @@ function CertificateCreatePanel({
         reset();
         return;
       }
-      if ((result as { status?: string }).status === "needs_program_selection") {
-        const candidates = ((result as { matchCandidates?: ProgramMatchCandidate[] }).matchCandidates ?? [])
+      if (
+        (result as { status?: string }).status === "needs_program_selection"
+      ) {
+        const candidates = (
+          (result as { matchCandidates?: ProgramMatchCandidate[] })
+            .matchCandidates ?? []
+        )
           .map(normalizeProgramMatchCandidate)
-          .filter(Boolean) as Array<ProgramMatchCandidate & {
+          .filter(Boolean) as Array<
+          ProgramMatchCandidate & {
             programId: Id<"partnerPrograms">;
             programName: string;
-          }>;
+          }
+        >;
         setProgramCandidates(candidates);
         setSelectedPartnerProgramId(candidates[0]?.programId);
-        toast.message("Confirm the correct program before generating this certified COI");
+        toast.message(
+          "Confirm the correct program before generating this certified COI",
+        );
         return;
       }
       toast.success(
@@ -1622,7 +2000,11 @@ function CertificateCreatePanel({
       reset();
       if (result.url) openWithUrl(result.url);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not generate certificate");
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Could not generate certificate",
+      );
     } finally {
       setGenerating(false);
     }
@@ -1653,7 +2035,11 @@ function CertificateCreatePanel({
             size="compact"
             disabled={generating || resolvingProgram || !holderName.trim()}
           >
-            {generating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <BadgeCheck className="w-3.5 h-3.5" />}
+            {generating ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <BadgeCheck className="w-3.5 h-3.5" />
+            )}
             Generate
           </PillButton>
         </>
@@ -1661,10 +2047,15 @@ function CertificateCreatePanel({
     >
       <div className="space-y-4">
         <p className="text-body-sm text-muted-foreground">
-          Create a certificate from this policy and list the certificate holder on the PDF.
+          Create a certificate from this policy and list the certificate holder
+          on the PDF.
         </p>
 
-        <form id="certificate-create-form" onSubmit={handleSubmit} className="space-y-4">
+        <form
+          id="certificate-create-form"
+          onSubmit={handleSubmit}
+          className="space-y-4"
+        >
           {resolvingProgram || programCandidates.length > 0 ? (
             <div className="rounded-lg border border-foreground/8 bg-card p-3">
               <p className="text-body-sm font-medium text-foreground">
@@ -1678,39 +2069,45 @@ function CertificateCreatePanel({
                       Checking policy program...
                     </div>
                   </div>
-                ) : programCandidates.map((candidate) => {
-                  const selected = selectedPartnerProgramId === candidate.programId;
-                  return (
-                    <button
-                      key={candidate.programId}
-                      type="button"
-                      className={`rounded-md border px-3 py-2 text-left transition-colors ${
-                        selected
-                          ? "border-foreground/30 bg-foreground/5"
-                          : "border-foreground/8 hover:bg-foreground/[0.03]"
-                      }`}
-                      onClick={() => setSelectedPartnerProgramId(candidate.programId)}
-                      disabled={generating}
-                      aria-pressed={selected}
-                    >
-                      <span className="block text-body-sm font-medium text-foreground">
-                        {candidate.programName}
-                      </span>
-                      <span className="mt-0.5 block text-label-sm text-muted-foreground/70">
-                        {[
-                          (candidate.categoryLabels?.length
-                            ? candidate.categoryLabels
-                            : candidate.categoryLabel
-                              ? [candidate.categoryLabel]
-                              : []
-                          ).join(", "),
-                          candidate.approvalMode,
-                        ].filter(Boolean).join(" · ") ||
-                          "Program administrator program"}
-                      </span>
-                    </button>
-                  );
-                })}
+                ) : (
+                  programCandidates.map((candidate) => {
+                    const selected =
+                      selectedPartnerProgramId === candidate.programId;
+                    return (
+                      <button
+                        key={candidate.programId}
+                        type="button"
+                        className={`rounded-md border px-3 py-2 text-left transition-colors ${
+                          selected
+                            ? "border-foreground/30 bg-foreground/5"
+                            : "border-foreground/8 hover:bg-foreground/[0.03]"
+                        }`}
+                        onClick={() =>
+                          setSelectedPartnerProgramId(candidate.programId)
+                        }
+                        disabled={generating}
+                        aria-pressed={selected}
+                      >
+                        <span className="block text-body-sm font-medium text-foreground">
+                          {candidate.programName}
+                        </span>
+                        <span className="mt-0.5 block text-label-sm text-muted-foreground/70">
+                          {[
+                            (candidate.categoryLabels?.length
+                              ? candidate.categoryLabels
+                              : candidate.categoryLabel
+                                ? [candidate.categoryLabel]
+                                : []
+                            ).join(", "),
+                            candidate.approvalMode,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ") || "Program administrator program"}
+                        </span>
+                      </button>
+                    );
+                  })
+                )}
               </div>
             </div>
           ) : null}
@@ -1735,7 +2132,11 @@ function CertificateCreatePanel({
                 accessToken={MAPBOX_ACCESS_TOKEN}
                 options={{ country: "US", language: "en", proximity: "ip" }}
                 theme={MAPBOX_ADDRESS_AUTOFILL_THEME}
-                popoverOptions={{ placement: "bottom-start", flip: true, offset: 6 }}
+                popoverOptions={{
+                  placement: "bottom-start",
+                  flip: true,
+                  offset: 6,
+                }}
                 onRetrieve={handleAddressRetrieve}
               >
                 <Input
@@ -1827,7 +2228,9 @@ function CertificatesTab({ policyId }: { policyId: Id<"policies"> }) {
     return (
       <div className="rounded-lg border border-foreground/6 bg-card px-4 py-8 text-center">
         <BadgeCheck className="mx-auto mb-3 h-5 w-5 text-muted-foreground/50" />
-        <p className="text-body-sm font-medium text-foreground">No certificates yet</p>
+        <p className="text-body-sm font-medium text-foreground">
+          No certificates yet
+        </p>
         <p className="mt-1 text-label-sm text-muted-foreground">
           Generate a COI from the page header to store it here.
         </p>
@@ -1845,18 +2248,26 @@ function CertificatesTab({ policyId }: { policyId: Id<"policies"> }) {
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               <p className="text-body-sm font-medium text-foreground truncate">
-                {certificate.certificateHolderName ?? "Certificate of Insurance"}
+                {certificate.certificateHolderName ??
+                  "Certificate of Insurance"}
               </p>
               <p className="mt-1 whitespace-pre-line text-label-sm text-muted-foreground">
-                {certificate.certificateHolder ?? "No certificate holder recorded"}
+                {certificate.certificateHolder ??
+                  "No certificate holder recorded"}
               </p>
               <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
                 <span>{formatCertificateTimestamp(certificate.createdAt)}</span>
-                {certificate.source && <span>{certificate.source.replace("_", " ")}</span>}
+                {certificate.source && (
+                  <span>{certificate.source.replace("_", " ")}</span>
+                )}
                 <span>
-                  {certificate.authorityType === "certified" ? "certified" : "non-binding"}
+                  {certificate.authorityType === "certified"
+                    ? "certified"
+                    : "non-binding"}
                 </span>
-                {certificate.certificationStatus === "pending" && <span>pending approval</span>}
+                {certificate.certificationStatus === "pending" && (
+                  <span>pending approval</span>
+                )}
               </div>
             </div>
             <PillButton
@@ -1897,8 +2308,20 @@ export function PolicyDetailBody({
   afterDeleteHref = "/policies",
   readOnly = false,
 }: PolicyDetailBodyProps) {
-  const policy = useQuery(api.policies.get, { id: id as Id<"policies"> });
-  const viewerOrg = useQuery(api.orgs.viewerOrg, {});
+  const viewerOrg = useCachedViewerOrg();
+  const searchParams = useSearchParams();
+  const [showCertificateSheet, setShowCertificateSheet] = useState(false);
+  const [activeTab, setActiveTab] = useState<PolicyDetailTab>(() =>
+    parsePolicyDetailTab(searchParams.get("tab")),
+  );
+  const shouldLoadFullPolicy =
+    activeTab === "extraction" || showCertificateSheet;
+  const policySummary = useCachedPolicySummary(id as Id<"policies">);
+  const fullPolicy = useCachedPolicyDetail(
+    id as Id<"policies">,
+    shouldLoadFullPolicy,
+  );
+  const policy = fullPolicy ?? policySummary;
   const auditEntries = useQuery(
     api.policyAuditLog.listByPolicy,
     LOG_POLICY_ACTIVITY_IN_BROWSER
@@ -1913,21 +2336,18 @@ export function PolicyDetailBody({
   const softDelete = useMutation(api.policies.softDelete);
   const restorePolicy = useMutation(api.policies.restore);
   const cancelExtraction = useMutation(api.policies.cancelExtraction);
-  const retryExtraction = useAction(api.actions.retryExtraction.retryExtraction);
+  const retryExtraction = useAction(
+    api.actions.retryExtraction.retryExtraction,
+  );
 
   const [reExtracting, setReExtracting] = useState(false);
   const [cancelingExtraction, setCancelingExtraction] = useState(false);
   const router = useRouter();
-  const searchParams = useSearchParams();
   const initialPage = Number(searchParams.get("page")) || undefined;
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showRefreshDialog, setShowRefreshDialog] = useState(false);
-  const [showCertificateSheet, setShowCertificateSheet] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [demoBannerDismissed, setDemoBannerDismissed] = useState(false);
-  const [activeTab, setActiveTab] = useState<PolicyDetailTab>(() =>
-    parsePolicyDetailTab(searchParams.get("tab")),
-  );
   const loggedAuditIds = useRef<Set<string>>(new Set());
   const loggedPipelineEntries = useRef<Set<string>>(new Set());
   const loggedStatus = useRef<string | null>(null);
@@ -1960,10 +2380,11 @@ export function PolicyDetailBody({
   }, [fileUrl, initialPage, openWithUrl, preloadPdfUrl]);
 
   const p = (policy ?? {}) as unknown as Record<string, unknown>;
-  const policyTypes: string[] =
-    (p.policyTypes as string[] | undefined) ??
-    [(p.policyType as string | undefined) ?? "other"];
-  const documentType: string = (p.documentType as string | undefined) ?? "policy";
+  const policyTypes: string[] = (p.policyTypes as string[] | undefined) ?? [
+    (p.policyType as string | undefined) ?? "other",
+  ];
+  const documentType: string =
+    (p.documentType as string | undefined) ?? "policy";
   const carrierName = (p.carrier as string | undefined) ?? "";
   const administratorName = (p.mga as string | undefined) ?? "";
   const displayName = administratorName || carrierName;
@@ -1983,9 +2404,10 @@ export function PolicyDetailBody({
     pipelineStatus === "paused";
   const rawPipelineLog = p.pipelineLog;
   const pipelineLog: PolicyPipelineLogEntry[] = useMemo(
-    () => Array.isArray(rawPipelineLog)
-      ? (rawPipelineLog as PolicyPipelineLogEntry[])
-      : [],
+    () =>
+      Array.isArray(rawPipelineLog)
+        ? (rawPipelineLog as PolicyPipelineLogEntry[])
+        : [],
     [rawPipelineLog],
   );
   const policyDocument: Record<string, unknown> | undefined = p.document as
@@ -2042,8 +2464,9 @@ export function PolicyDetailBody({
 
   useEffect(() => {
     if (!LOG_POLICY_ACTIVITY_IN_BROWSER || !auditEntries) return;
-    const orderedEntries = [...(auditEntries as PolicyAuditLogEntry[])]
-      .sort((a, b) => a._creationTime - b._creationTime);
+    const orderedEntries = [...(auditEntries as PolicyAuditLogEntry[])].sort(
+      (a, b) => a._creationTime - b._creationTime,
+    );
     for (const entry of orderedEntries) {
       if (loggedAuditIds.current.has(entry._id)) continue;
       loggedAuditIds.current.add(entry._id);
@@ -2216,38 +2639,17 @@ export function PolicyDetailBody({
         open={showCertificateSheet}
         onOpenChange={setShowCertificateSheet}
         policyId={policy._id}
-        initialProgram={(policy as { partnerProgram?: ProgramMatchCandidate | null }).partnerProgram ?? null}
+        initialProgram={
+          (policy as { partnerProgram?: ProgramMatchCandidate | null })
+            .partnerProgram ?? null
+        }
       />,
     );
     return () => onRightPanel(null);
   }, [onRightPanel, policy, readOnly, showCertificateSheet]);
 
   if (policy === undefined) {
-    return (
-      <>
-        <Skeleton className="h-4 w-28 mb-4" />
-        <div className="flex items-start justify-between mb-6">
-          <div>
-            <Skeleton className="h-7 w-48 mb-2" />
-            <div className="flex gap-1.5">
-              <Skeleton className="h-5 w-24 rounded-full" />
-              <Skeleton className="h-5 w-20 rounded-full" />
-            </div>
-          </div>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <div
-              key={i}
-              className="rounded-lg border border-foreground/6 bg-card px-4 py-3"
-            >
-              <Skeleton className="h-5 w-32 mb-1" />
-              <Skeleton className="h-3 w-24" />
-            </div>
-          ))}
-        </div>
-      </>
-    );
+    return <PolicyDetailSkeleton />;
   }
 
   if (policy === null) {
@@ -2373,16 +2775,16 @@ export function PolicyDetailBody({
 
       <Tabs
         value={visibleActiveTab}
-        onValueChange={(value) =>
-          setActiveTab(value as PolicyDetailTab)
-        }
+        onValueChange={(value) => setActiveTab(value as PolicyDetailTab)}
         className="mb-6"
       >
         <TabsList variant="pill">
           {(
             [
               { id: "details" as const, label: "Summary" },
-              ...(hasExtractionReviews ? [{ id: "review" as const, label: "Review" }] : []),
+              ...(hasExtractionReviews
+                ? [{ id: "review" as const, label: "Review" }]
+                : []),
               { id: "extraction" as const, label: "Breakdown" },
               { id: "certificates" as const, label: "Certificates" },
               { id: "changes" as const, label: "Changes" },
@@ -2441,7 +2843,11 @@ export function PolicyDetailBody({
       {visibleActiveTab === "review" && hasExtractionReviews && (
         <FadeIn when={true} staggerIndex={1} duration={0.5}>
           <PolicyExtractionReview
-            policy={policy as unknown as Record<string, unknown> & { _id: Id<"policies"> }}
+            policy={
+              policy as unknown as Record<string, unknown> & {
+                _id: Id<"policies">;
+              }
+            }
             readOnly={readOnly || isDeleted}
             canRequestBrokerHelp={canRequestBrokerExtractionHelp}
           />
@@ -2458,15 +2864,25 @@ export function PolicyDetailBody({
 
       {visibleActiveTab === "extraction" && (
         <div className="space-y-4">
-          <PolicyBreakdownEditor
-            key={policy._id}
-            policy={policy as unknown as Record<string, unknown> & { _id: Id<"policies"> }}
-            readOnly={readOnly || isDeleted}
-          />
-          <ExtractionCards
-            policyDocument={extractionData}
-            initialPage={initialPage}
-          />
+          {fullPolicy === undefined || fullPolicy === null ? (
+            <PolicyDetailSkeleton />
+          ) : (
+            <>
+              <PolicyBreakdownEditor
+                key={fullPolicy._id}
+                policy={
+                  fullPolicy as unknown as Record<string, unknown> & {
+                    _id: Id<"policies">;
+                  }
+                }
+                readOnly={readOnly || isDeleted}
+              />
+              <ExtractionCards
+                policyDocument={extractionData}
+                initialPage={initialPage}
+              />
+            </>
+          )}
         </div>
       )}
     </>

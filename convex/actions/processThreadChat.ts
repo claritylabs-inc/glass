@@ -1092,6 +1092,7 @@ export const run = internalAction({
     orgId: v.id("organizations"),
     userId: v.id("users"),
     userMessageId: v.id("threadMessages"),
+    agentMessageId: v.optional(v.id("threadMessages")),
   },
   handler: async (ctx, args) => {
     const startingMessages = await ctx.runQuery(
@@ -1109,6 +1110,7 @@ export const run = internalAction({
       threadId: args.threadId,
       orgId: args.orgId,
       userMessageId: args.userMessageId,
+      agentMessageId: args.agentMessageId,
     });
     if (!claim.claimed) return;
     const agentMsgId = claim.messageId;

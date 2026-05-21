@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
+import type { FunctionReturnType } from "convex/server";
 import { isValidPhoneNumber } from "react-phone-number-input";
 import dayjs from "dayjs";
 import { api } from "@/convex/_generated/api";
@@ -11,10 +12,17 @@ import { FadeIn } from "@/components/ui/fade-in";
 import { Loader2, Monitor, Moon, Sun } from "lucide-react";
 import { useTheme } from "@/hooks/use-theme";
 import { PhoneInput } from "@/components/ui/phone-input";
+import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
+import {
+  cachedQueryArgsKey,
+  cachedQueryCollectionFor,
+  useCachedQuery,
+} from "@/lib/sync/use-cached-query";
 
 const inputClass =
   "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
-const labelClass = "text-label-sm font-medium text-muted-foreground block mb-1.5";
+const labelClass =
+  "text-label-sm font-medium text-muted-foreground block mb-1.5";
 
 type ProfileValues = {
   name: string;
@@ -22,12 +30,14 @@ type ProfileValues = {
   phone: string;
 };
 
+type Viewer = FunctionReturnType<typeof api.users.viewer>;
+
 function valuesEqual(a: ProfileValues | null, b: ProfileValues) {
   return a?.name === b.name && a.title === b.title && a.phone === b.phone;
 }
 
 export default function ProfilePage() {
-  const viewer = useQuery(api.users.viewer);
+  const viewer = useCachedQuery("users.viewer", api.users.viewer, {});
   const updateProfile = useMutation(api.users.updateProfile);
   const { theme, setTheme } = useTheme();
 
@@ -35,11 +45,9 @@ export default function ProfilePage() {
   const [title, setTitle] = useState("");
   const [phone, setPhone] = useState("");
   const [debouncedPhone, setDebouncedPhone] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [savedAt, setSavedAt] = useState<number | null>(null);
-  const [persistedValues, setPersistedValues] = useState<ProfileValues | null>(null);
-
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [persistedValues, setPersistedValues] = useState<ProfileValues | null>(
+    null,
+  );
 
   useEffect(() => {
     if (!viewer || persistedValues) return;
@@ -66,16 +74,24 @@ export default function ProfilePage() {
   const trimmedPhone = phone.trim();
   const phoneChanged = trimmedPhone !== currentPhone;
   const phoneHasDigits = /\d/.test(trimmedPhone);
-  const phoneValid = trimmedPhone.length > 0 && isValidPhoneNumber(trimmedPhone);
-  const phoneInvalid = phoneHasDigits && !phoneValid && trimmedPhone.replace(/\D/g, "").length >= 7;
+  const phoneValid =
+    trimmedPhone.length > 0 && isValidPhoneNumber(trimmedPhone);
+  const phoneInvalid =
+    phoneHasDigits &&
+    !phoneValid &&
+    trimmedPhone.replace(/\D/g, "").length >= 7;
   const shouldCheckPhone = phoneChanged && phoneValid;
   const phoneAvailability = useQuery(
     api.users.checkPhoneAvailability,
-    shouldCheckPhone && debouncedPhone === trimmedPhone ? { phone: debouncedPhone } : "skip",
+    shouldCheckPhone && debouncedPhone === trimmedPhone
+      ? { phone: debouncedPhone }
+      : "skip",
   );
   const phoneChecking =
-    shouldCheckPhone && (debouncedPhone !== trimmedPhone || phoneAvailability === undefined);
-  const phoneUnavailable = shouldCheckPhone && phoneAvailability?.available === false;
+    shouldCheckPhone &&
+    (debouncedPhone !== trimmedPhone || phoneAvailability === undefined);
+  const phoneUnavailable =
+    shouldCheckPhone && phoneAvailability?.available === false;
   const phoneBlocked = phoneInvalid || phoneChecking || phoneUnavailable;
 
   const currentValues: ProfileValues = {
@@ -83,31 +99,49 @@ export default function ProfilePage() {
     title: title.trim(),
     phone: trimmedPhone,
   };
-  const hasChanges = persistedValues !== null && !valuesEqual(persistedValues, currentValues);
+  const hasChanges =
+    persistedValues !== null && !valuesEqual(persistedValues, currentValues);
 
-  const saveNow = useCallback(async () => {
-    if (!persistedValues) return;
-    const next = {
-      name: name.trim(),
-      title: title.trim(),
-      phone: phone.trim(),
-    };
-    if (valuesEqual(persistedValues, next)) return;
-    if (next.phone && !isValidPhoneNumber(next.phone)) return;
-    if (next.phone && next.phone !== persistedValues.phone) {
-      if (!phoneAvailability?.available) return;
-    }
-    setSaving(true);
-    try {
+  const saveProfile = useCallback(
+    async (next: ProfileValues) => {
       await updateProfile({
         name: next.name,
         title: next.title,
         phone: next.phone,
       });
-      setPersistedValues(next);
-      setSavedAt(dayjs().valueOf());
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to save profile";
+    },
+    [updateProfile],
+  );
+
+  const profileAutoSave = useLocalFirstAutoSave({
+    mutationName: "profile.update",
+    args: currentValues,
+    valueKey: JSON.stringify(currentValues),
+    enabled: persistedValues !== null,
+    canSave: hasChanges && !phoneBlocked,
+    applyLocal: (store, next) => {
+      const collection = cachedQueryCollectionFor<Viewer>("users.viewer");
+      const argsKey = cachedQueryArgsKey({});
+      const current = store.getCollection(collection, argsKey)?.[0]?.value;
+      if (!current) return;
+      void store.upsertCollection(collection, argsKey, [
+        {
+          _id: "result",
+          value: {
+            ...current,
+            name: next.name,
+            title: next.title,
+            phone: next.phone,
+          },
+          updatedAt: dayjs().valueOf(),
+        },
+      ]);
+    },
+    flush: saveProfile,
+    onQueued: () => setPersistedValues(currentValues),
+    onError: (err) => {
+      const message =
+        err instanceof Error ? err.message : "Failed to save profile";
       toast.error(
         message.includes("This phone number is already used")
           ? "This phone number is already used by another user."
@@ -115,26 +149,16 @@ export default function ProfilePage() {
             ? "Enter a valid phone number with country code."
             : message,
       );
-    } finally {
-      setSaving(false);
-    }
-  }, [name, persistedValues, phone, phoneAvailability?.available, title, updateProfile]);
+    },
+  });
 
-  useEffect(() => {
-    if (!hasChanges || phoneBlocked) return;
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => {
-      void saveNow();
-    }, 600);
-    return () => {
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    };
-  }, [hasChanges, phoneBlocked, saveNow]);
+  const saving = profileAutoSave.saving;
+  const savedAt = profileAutoSave.savedAt;
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!hasChanges || phoneBlocked || saving) return;
-    void saveNow();
+    profileAutoSave.saveNow();
   }
 
   if (viewer === undefined) {
@@ -166,7 +190,9 @@ export default function ProfilePage() {
         <form onSubmit={handleSubmit}>
           <div className="rounded-lg border border-foreground/6 bg-card mb-4">
             <div className="px-5 py-3.5 border-b border-foreground/6">
-              <h3 className="!mb-0 text-sm font-medium text-foreground">Account</h3>
+              <h3 className="!mb-0 text-sm font-medium text-foreground">
+                Account
+              </h3>
             </div>
             <div className="px-5 py-5 space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -234,9 +260,13 @@ export default function ProfilePage() {
 
           <p className="text-label-sm text-muted-foreground/50 mt-2">
             Company settings, broker info, and team management are in{" "}
-            <a href="/settings" className="text-foreground/60 hover:text-foreground underline">
+            <a
+              href="/settings"
+              className="text-foreground/60 hover:text-foreground underline"
+            >
               Organization Settings
-            </a>.
+            </a>
+            .
           </p>
         </form>
       </FadeIn>
@@ -244,7 +274,9 @@ export default function ProfilePage() {
       <FadeIn when={true} staggerIndex={2} duration={0.6}>
         <div className="rounded-lg border border-foreground/6 bg-card mt-4">
           <div className="px-5 py-3.5 border-b border-foreground/6">
-            <h3 className="!mb-0 text-sm font-medium text-foreground">Appearance</h3>
+            <h3 className="!mb-0 text-sm font-medium text-foreground">
+              Appearance
+            </h3>
           </div>
           <div className="px-5 py-5">
             <div className="flex gap-2">

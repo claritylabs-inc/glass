@@ -23,6 +23,9 @@ import {
 } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { useCachedQuery } from "@/lib/sync/use-cached-query";
+import { createClientMutationId } from "@/lib/sync/client-mutation-id";
+import { useThreadCacheActions } from "@/lib/sync/glass-cached-queries";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PillButton } from "@/components/ui/pill-button";
@@ -189,7 +192,9 @@ function ThreadAttachmentList({
         );
         const response = await fetch(entry.url);
         if (!response.ok) {
-          throw new Error(`Failed to download ${attachment?.filename ?? entry.fileId}`);
+          throw new Error(
+            `Failed to download ${attachment?.filename ?? entry.fileId}`,
+          );
         }
         zip.file(filename, await response.blob());
       }
@@ -396,10 +401,7 @@ function hasLaterEmailSendCompletion(
   return false;
 }
 
-function hasSameEmailSentStatus(
-  first: ThreadMessage,
-  second: ThreadMessage,
-) {
+function hasSameEmailSentStatus(first: ThreadMessage, second: ThreadMessage) {
   if (!isEmailSentStatusMessage(first) || !isEmailSentStatusMessage(second))
     return false;
   const firstRecipient = getEmailStatusRecipient(first);
@@ -612,7 +614,8 @@ function MessageFooterActions({
 }) {
   const [isMailboxExpanded, setIsMailboxExpanded] = useState(false);
   const [isAttachmentExpanded, setIsAttachmentExpanded] = useState(false);
-  const [isDownloadingAttachments, setIsDownloadingAttachments] = useState(false);
+  const [isDownloadingAttachments, setIsDownloadingAttachments] =
+    useState(false);
   const hasSubagentActivity = (subagentActivityCount ?? 0) > 0;
   const attachmentList = useMemo(() => attachments ?? [], [attachments]);
   const hasAttachments = attachmentList.length > 0;
@@ -664,7 +667,9 @@ function MessageFooterActions({
         );
         const response = await fetch(entry.url);
         if (!response.ok) {
-          throw new Error(`Failed to download ${attachment?.filename ?? entry.fileId}`);
+          throw new Error(
+            `Failed to download ${attachment?.filename ?? entry.fileId}`,
+          );
         }
         zip.file(filename, await response.blob());
       }
@@ -1796,11 +1801,17 @@ export function UnifiedThreadContent({
   agentBranding?: { name: string; iconUrl?: string | null };
   policyChangeAccess: PolicyChangeAccess;
 }) {
-  const thread = useQuery(api.threads.get, { id: threadId });
-  const messages = useQuery(api.threads.messages, { threadId }) as
-    | ThreadMessage[]
-    | undefined;
+  const thread = useCachedQuery("threads.get.current", api.threads.get, {
+    id: threadId,
+  });
+  const messages = useCachedQuery(
+    "threads.messages.current",
+    api.threads.messages,
+    { threadId },
+  ) as ThreadMessage[] | undefined;
   const sendMessage = useMutation(api.threads.sendMessage);
+  const { appendOptimisticSend, markOptimisticSendFailed } =
+    useThreadCacheActions();
   const updateTitle = useMutation(api.threads.updateTitle);
   const generateUploadUrl = useMutation(api.threads.generateUploadUrl);
   const messagesRef = useRef<HTMLDivElement>(null);
@@ -1998,7 +2009,7 @@ export function UnifiedThreadContent({
     if (!lastMsg || lastMsg.role !== "agent") return;
     const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 200;
     if (isNearBottom) {
-      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+      el.scrollTo({ top: el.scrollHeight, behavior: "auto" });
     }
   }, [messages]);
 
@@ -2021,13 +2032,16 @@ export function UnifiedThreadContent({
     return lastUserIndex > lastAgentIndex;
   }, [messages]);
   const isAgentActive = isAgentProcessing || isAwaitingAgent;
-  const isInputBusy = isSubmitting || sendingQueuedNow;
+  const isInputBusy = false;
   const inputBusyLabel = "Sending";
 
   const sendThreadMessage = useCallback(
     async (message: PromptInputMessage) => {
       const text = message.text.trim();
       if (!text && message.files.length === 0) return;
+      if (!thread) return;
+      const content = text || "(attached files)";
+      const clientMutationId = createClientMutationId("message");
       const referencedPolicyIds = message.references
         ?.filter((reference) => reference.kind === "policy")
         .map((reference) => reference.id as Id<"policies">);
@@ -2040,8 +2054,33 @@ export function UnifiedThreadContent({
       const referencedMailboxIds = message.references
         ?.filter((reference) => reference.kind === "mailbox")
         .map((reference) => reference.id as Id<"connectedEmailAccounts">);
+      const optimisticAttachments =
+        message.files.length > 0
+          ? message.files.map((file) => ({
+              filename: file.filename ?? "file",
+              contentType: inferAttachmentContentType(
+                file.filename,
+                file.mediaType,
+              ),
+              size: 0,
+            }))
+          : undefined;
 
-      setIsSubmitting(true);
+      await appendOptimisticSend({
+        threadId,
+        orgId: thread.orgId,
+        content,
+        clientMutationId,
+        userId: viewerId as Id<"users"> | undefined,
+        userName: viewerEmail ?? "You",
+        attachments: optimisticAttachments,
+        referencedPolicyIds,
+        referencedQuoteIds,
+        referencedRequirementIds,
+        referencedMailboxIds,
+      });
+      setChatError(null);
+
       try {
         // Upload files first if any
         const attachments: {
@@ -2079,43 +2118,60 @@ export function UnifiedThreadContent({
         if (attachments.length > 0) {
           await sendMessage({
             threadId,
-            content: text || "(attached files)",
+            content,
             attachments,
             referencedPolicyIds,
             referencedQuoteIds,
             referencedRequirementIds,
             referencedMailboxIds,
+            clientMutationId,
           });
           return;
         }
 
         // For text-only messages, send via Convex (processThreadChat handles the response)
-        setChatError(null);
         await sendMessage({
           threadId,
-          content: text,
+          content,
           referencedPolicyIds,
           referencedQuoteIds,
           referencedRequirementIds,
           referencedMailboxIds,
+          clientMutationId,
         });
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Failed to send message";
+        await markOptimisticSendFailed({
+          threadId,
+          clientMutationId,
+          error: message,
+        });
+        setChatError(message);
+        toast.error("Failed to send message");
       } finally {
         setIsSubmitting(false);
       }
     },
-    [sendMessage, threadId, generateUploadUrl, setChatError],
+    [
+      appendOptimisticSend,
+      generateUploadUrl,
+      markOptimisticSendFailed,
+      sendMessage,
+      setChatError,
+      thread,
+      threadId,
+      viewerEmail,
+      viewerId,
+    ],
   );
 
   const handleSend = useCallback(
-    async (message: PromptInputMessage) => {
+    (message: PromptInputMessage) => {
       if (isInputBusy) return;
-      if (isAgentActive) {
-        setQueuedMessage(message);
-        return;
-      }
-      await sendThreadMessage(message);
+      void sendThreadMessage(message);
     },
-    [isAgentActive, isInputBusy, sendThreadMessage],
+    [isInputBusy, sendThreadMessage],
   );
 
   const sendQueuedNow = useCallback(async () => {
@@ -2150,11 +2206,7 @@ export function UnifiedThreadContent({
   const collapseEmailMessages = thread?.originChannel !== "email";
 
   if (!thread) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <Loader2 className="w-5 h-5 animate-spin text-muted-foreground/30" />
-      </div>
-    );
+    return <div className="h-full" />;
   }
 
   return (

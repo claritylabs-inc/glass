@@ -97,9 +97,7 @@ export function ClientDetailSidebarContent({
               </span>
             </div>
             {clientThreads === undefined && (
-              <p className="px-3 py-1 text-label-sm text-muted-foreground/40">
-                Loading…
-              </p>
+              <div className="min-h-7" aria-hidden="true" />
             )}
             {clientThreads && clientThreads.length === 0 && (
               <p className="px-3 py-1 text-label-sm text-muted-foreground/40">

@@ -1,14 +1,20 @@
 "use client";
 
 import { POLICY_TYPE_LABELS } from "@/convex/lib/policyTypes";
-import { usePdf } from "@/components/pdf-context";
-import { Document, Page, pdfjs } from "react-pdf";
-import "react-pdf/dist/Page/AnnotationLayer.css";
-import "react-pdf/dist/Page/TextLayer.css";
 import dayjs from "dayjs";
-import { useState } from "react";
+import dynamic from "next/dynamic";
+import { Skeleton } from "@/components/ui/skeleton";
 
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+const PolicyPdfThumbnail = dynamic(
+  () =>
+    import("./policy-pdf-thumbnail").then((module) => ({
+      default: module.PolicyPdfThumbnail,
+    })),
+  {
+    ssr: false,
+    loading: () => <Skeleton className="hidden aspect-8.5/11 w-40 shrink-0 bg-white sm:block" />,
+  },
+);
 
 function SummaryRow({
   label,
@@ -63,38 +69,6 @@ function StatusBadge({ expirationDate }: { effectiveDate?: string; expirationDat
     <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-label-sm font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400">
       Active
     </span>
-  );
-}
-
-function PdfThumbnail({ url }: { url: string }) {
-  const [loaded, setLoaded] = useState(false);
-  const { openWithUrl } = usePdf();
-
-  return (
-    <button
-      type="button"
-      onClick={() => openWithUrl(url)}
-      className="group relative shrink-0 w-40 bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/15"
-      aria-label="Open policy PDF"
-    >
-      <div className="relative z-0">
-        <Document
-          file={url}
-          loading={<div className="aspect-8.5/11 w-full animate-pulse bg-foreground/5" />}
-          error={null}
-          onLoadSuccess={() => setLoaded(true)}
-        >
-          <Page
-            pageNumber={1}
-            width={160}
-            renderTextLayer={false}
-            renderAnnotationLayer={false}
-            className={`transition-opacity duration-300 [&_.react-pdf\_\_Page\_\_canvas]:block [&_.react-pdf\_\_Page\_\_canvas]:w-full! [&_.react-pdf\_\_Page\_\_canvas]:h-auto! ${loaded ? "opacity-100" : "opacity-0"}`}
-          />
-        </Document>
-      </div>
-      <div className="pointer-events-none absolute inset-0 z-10 rounded-md border border-foreground/8 transition-colors group-hover:border-foreground/25 group-focus-visible:border-foreground/25" />
-    </button>
   );
 }
 
@@ -180,7 +154,7 @@ export function PolicySummary({
       {/* Body — stacks when narrow, side-by-side when wide */}
       <div className="flex flex-col @lg:flex-row gap-5 p-5">
         {/* PDF thumbnail */}
-        {pdfUrl && <PdfThumbnail url={pdfUrl} />}
+        {pdfUrl && <PolicyPdfThumbnail url={pdfUrl} />}
 
         {/* Details column */}
         <div className="flex-1 min-w-0 space-y-2.5">

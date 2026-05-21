@@ -3,7 +3,11 @@
 import { useEffect, useState } from "react";
 import { Check, Loader2 } from "lucide-react";
 import { HexColorPicker, HexColorInput } from "react-colorful";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   BRAND_SWATCHES,
   extractDomain,
@@ -44,7 +48,8 @@ export function AccentColorPicker({
   }, [domain]);
 
   const presets = BRAND_SWATCHES;
-  const sampledColors = sampleResult?.domain === domain ? sampleResult.colors : [];
+  const sampledColors =
+    sampleResult?.domain === domain ? sampleResult.colors : [];
   const sampling = Boolean(domain && sampleResult?.domain !== domain);
   const isSelected = (c: string) => value.toLowerCase() === c.toLowerCase();
 
@@ -112,10 +117,10 @@ function Swatch({
       onClick={onClick}
       aria-label={`Select ${color}`}
       title={title ?? color}
-      className={`relative h-6 w-6 rounded-full border border-foreground/10 transition-all ${
+      className={`relative h-6 w-6 rounded-full border border-foreground/10 transition-[border-color,box-shadow] duration-100 ${
         selected
           ? "ring-2 ring-foreground ring-offset-2 ring-offset-background"
-          : "hover:scale-110"
+          : "hover:border-foreground/30"
       }`}
       style={{ backgroundColor: color }}
     >

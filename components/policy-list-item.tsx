@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 
 type UploadedBySide = "broker" | "client" | "email_scan" | "agent_email" | undefined;
@@ -13,6 +14,7 @@ interface PolicyListItemProps {
   expirationDate?: string;
   pipelineStatus?: string;
   uploadedBySide?: UploadedBySide;
+  href?: string;
   onClick?: () => void;
 }
 
@@ -51,6 +53,7 @@ export function PolicyListItem({
   expirationDate,
   pipelineStatus,
   uploadedBySide,
+  href,
   onClick,
 }: PolicyListItemProps) {
   const isProcessing = pipelineStatus === "running" || !pipelineStatus;
@@ -66,12 +69,10 @@ export function PolicyListItem({
     carrierClean ??
     (isProcessing ? fileNameClean ?? "New upload" : "Untitled policy");
   const hasDates = effectiveClean && expirationClean;
-
-  return (
-    <div
-      className="flex items-center justify-between px-4 py-3 border-t border-foreground/4 first:border-t-0 hover:bg-muted/40 transition-colors"
-      onClick={onClick}
-    >
+  const rowClass =
+    "flex items-center justify-between px-4 py-3 border-t border-foreground/4 first:border-t-0 hover:bg-muted/40 transition-colors";
+  const content = (
+    <>
       <div className="space-y-1 min-w-0">
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium text-foreground truncate">{title}</span>
@@ -91,6 +92,20 @@ export function PolicyListItem({
           {effectiveClean} – {expirationClean}
         </span>
       ) : null}
+    </>
+  );
+
+  if (href) {
+    return (
+      <Link href={href} prefetch className={rowClass}>
+        {content}
+      </Link>
+    );
+  }
+
+  return (
+    <div className={rowClass} onClick={onClick}>
+      {content}
     </div>
   );
 }

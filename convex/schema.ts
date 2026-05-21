@@ -1552,6 +1552,7 @@ export default defineSchema({
     title: v.string(),
     threadEmail: v.optional(v.string()),
     createdBy: v.id("users"),
+    clientMutationId: v.optional(v.string()),
     lastMessageAt: v.number(),
     archivedAt: v.optional(v.number()),
     originChannel: v.optional(
@@ -1587,6 +1588,7 @@ export default defineSchema({
   })
     .index("by_orgId", ["orgId"])
     .index("by_orgId_lastMessageAt", ["orgId", "lastMessageAt"])
+    .index("by_orgId_clientMutationId", ["orgId", "clientMutationId"])
     .index("by_threadEmail", ["threadEmail"])
     .index("by_threadPhone", ["threadPhone"])
     .index("by_orgId_threadPhone", ["orgId", "threadPhone"])
@@ -1596,6 +1598,7 @@ export default defineSchema({
   threadMessages: defineTable({
     threadId: v.id("threads"),
     orgId: v.id("organizations"),
+    clientMutationId: v.optional(v.string()),
     channel: v.union(
       v.literal("chat"),
       v.literal("email"),
@@ -1678,11 +1681,13 @@ export default defineSchema({
         v.literal("cancelled"),
       ),
     ),
+    agentRunStartedAt: v.optional(v.number()),
     error: v.optional(v.string()),
     pendingEmailId: v.optional(v.id("pendingEmails")),
     policyChangeCaseId: v.optional(v.id("policyChangeCases")),
   })
     .index("by_threadId", ["threadId"])
+    .index("by_orgId_clientMutationId", ["orgId", "clientMutationId"])
     .index("by_messageId", ["messageId"])
     .index("by_responseMessageId", ["responseMessageId"])
     .index("by_resendEmailId", ["resendEmailId"])

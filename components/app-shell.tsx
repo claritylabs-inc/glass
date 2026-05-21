@@ -11,7 +11,7 @@ import {
   useEffect,
 } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { useMutation, useQuery } from "convex/react";
+import { useMutation } from "convex/react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { AppTopBar, type PresenceUser } from "@/components/app-top-bar";
 import { GlassPromptInput } from "@/components/glass-prompt-input";
@@ -19,11 +19,17 @@ import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
+import { useCachedQuery } from "@/lib/sync/use-cached-query";
+import { createClientMutationId } from "@/lib/sync/client-mutation-id";
+import { useThreadCacheActions } from "@/lib/sync/glass-cached-queries";
 
 import { PdfProvider, usePdf } from "@/components/pdf-context";
 import { PageContextProvider } from "@/hooks/use-page-context";
 import { usePageContext } from "@/hooks/use-page-context";
-import { EntityPreviewProvider, useEntityPreview } from "@/hooks/use-entity-preview";
+import {
+  EntityPreviewProvider,
+  useEntityPreview,
+} from "@/hooks/use-entity-preview";
 import { EntityPreviewPanel } from "@/components/entity-preview-panel";
 import { CommandPalette } from "@/components/command-palette";
 import dynamic from "next/dynamic";
@@ -31,29 +37,39 @@ import { getPublicAgentDomain } from "@/lib/domains";
 
 const AGENT_DOMAIN = getPublicAgentDomain();
 
-function inferAttachmentContentType(filename: string | undefined, mediaType: string | undefined) {
+function inferAttachmentContentType(
+  filename: string | undefined,
+  mediaType: string | undefined,
+) {
   if (mediaType) return mediaType;
   const lowerName = filename?.toLowerCase() ?? "";
   if (lowerName.endsWith(".csv")) return "text/csv";
   if (lowerName.endsWith(".tsv")) return "text/tab-separated-values";
-  if (lowerName.endsWith(".xlsx")) return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+  if (lowerName.endsWith(".xlsx"))
+    return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
   if (lowerName.endsWith(".xls")) return "application/vnd.ms-excel";
-  if (lowerName.endsWith(".xlsm")) return "application/vnd.ms-excel.sheet.macroEnabled.12";
-  if (lowerName.endsWith(".docx")) return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-  if (lowerName.endsWith(".pptx")) return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
-  if (lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg")) return "image/jpeg";
+  if (lowerName.endsWith(".xlsm"))
+    return "application/vnd.ms-excel.sheet.macroEnabled.12";
+  if (lowerName.endsWith(".docx"))
+    return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  if (lowerName.endsWith(".pptx"))
+    return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+  if (lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg"))
+    return "image/jpeg";
   if (lowerName.endsWith(".png")) return "image/png";
   if (lowerName.endsWith(".gif")) return "image/gif";
   if (lowerName.endsWith(".webp")) return "image/webp";
   if (lowerName.endsWith(".txt")) return "text/plain";
-  if (lowerName.endsWith(".md") || lowerName.endsWith(".markdown")) return "text/markdown";
+  if (lowerName.endsWith(".md") || lowerName.endsWith(".markdown"))
+    return "text/markdown";
   if (lowerName.endsWith(".json")) return "application/json";
   if (lowerName.endsWith(".pdf")) return "application/pdf";
   return "application/octet-stream";
 }
 
 const PdfPanel = dynamic(
-  () => import("@/components/ui/pdf-panel").then((m) => ({ default: m.PdfPanel })),
+  () =>
+    import("@/components/ui/pdf-panel").then((m) => ({ default: m.PdfPanel })),
   { ssr: false },
 );
 
@@ -106,8 +122,12 @@ function ResizableRightPanelSlot({
 
   const onPointerDown = useCallback((event: React.PointerEvent) => {
     event.preventDefault();
-    const measuredWidth = slotRef.current?.getBoundingClientRect().width ?? widthRef.current;
-    const startWidth = Math.min(MAX_RIGHT_PANEL_WIDTH, Math.max(MIN_RIGHT_PANEL_WIDTH, measuredWidth));
+    const measuredWidth =
+      slotRef.current?.getBoundingClientRect().width ?? widthRef.current;
+    const startWidth = Math.min(
+      MAX_RIGHT_PANEL_WIDTH,
+      Math.max(MIN_RIGHT_PANEL_WIDTH, measuredWidth),
+    );
     const startX = event.clientX;
     widthRef.current = startWidth;
     setWidth(startWidth);
@@ -115,7 +135,10 @@ function ResizableRightPanelSlot({
 
     const onMove = (moveEvent: PointerEvent) => {
       const delta = startX - moveEvent.clientX;
-      const nextWidth = Math.min(MAX_RIGHT_PANEL_WIDTH, Math.max(MIN_RIGHT_PANEL_WIDTH, startWidth + delta));
+      const nextWidth = Math.min(
+        MAX_RIGHT_PANEL_WIDTH,
+        Math.max(MIN_RIGHT_PANEL_WIDTH, startWidth + delta),
+      );
       if (nextWidth === widthRef.current) return;
       widthRef.current = nextWidth;
       setWidth(nextWidth);
@@ -148,7 +171,9 @@ function ResizableRightPanelSlot({
         onPointerDown={onPointerDown}
         className="absolute left-0 top-0 bottom-0 z-10 w-1 cursor-col-resize hover:bg-foreground/8 active:bg-foreground/12"
       />
-      <div className="flex h-full min-w-0 w-full max-w-full flex-1 overflow-hidden">{children}</div>
+      <div className="flex h-full min-w-0 w-full max-w-full flex-1 overflow-hidden">
+        {children}
+      </div>
     </div>
   );
 }
@@ -172,7 +197,8 @@ function ShellContent({
   const hasPdfPanel = isPdfOpen && !!fileUrl;
   const hasEntityPanel = !!entityPreview;
   const hasRightPanel = hasVisibleRightPanel(rightPanel);
-  const visiblePanelCount = (hasRightPanel ? 1 : 0) + (hasEntityPanel ? 1 : 0) + (hasPdfPanel ? 1 : 0);
+  const visiblePanelCount =
+    (hasRightPanel ? 1 : 0) + (hasEntityPanel ? 1 : 0) + (hasPdfPanel ? 1 : 0);
   const useEqualPanelLayout = visiblePanelCount >= 2;
 
   return (
@@ -187,9 +213,11 @@ function ShellContent({
       </Suspense>
       <div className="flex min-w-0 flex-1 overflow-hidden">
         {/* Main content column */}
-        <div className={`flex flex-col min-w-0 overflow-hidden ${
-          useEqualPanelLayout ? "flex-1 basis-0" : "flex-1"
-        }`}>
+        <div
+          className={`flex flex-col min-w-0 overflow-hidden ${
+            useEqualPanelLayout ? "flex-1 basis-0" : "flex-1"
+          }`}
+        >
           <AppTopBar
             actions={actions}
             breadcrumbDetail={breadcrumbDetail}
@@ -207,8 +235,8 @@ function ShellContent({
           </div>
         </div>
         {/* Right-side panels can stack: policy, email/drawer, then PDF. */}
-        {hasEntityPanel && (
-          useEqualPanelLayout ? (
+        {hasEntityPanel &&
+          (useEqualPanelLayout ? (
             <ResizableRightPanelSlot equalLayout>
               <EntityPreviewPanel fitContainer />
             </ResizableRightPanelSlot>
@@ -216,15 +244,14 @@ function ShellContent({
             <div className="hidden h-full min-w-0 shrink-0 lg:flex">
               <EntityPreviewPanel />
             </div>
-          )
-        )}
+          ))}
         {hasRightPanel && rightPanel && (
           <ResizableRightPanelSlot equalLayout={useEqualPanelLayout}>
             {rightPanel}
           </ResizableRightPanelSlot>
         )}
-        {hasPdfPanel && (
-          useEqualPanelLayout ? (
+        {hasPdfPanel &&
+          (useEqualPanelLayout ? (
             <ResizableRightPanelSlot equalLayout>
               <PdfPanel fitContainer />
             </ResizableRightPanelSlot>
@@ -232,8 +259,7 @@ function ShellContent({
             <div className="hidden h-full min-w-0 shrink-0 lg:flex">
               <PdfPanel />
             </div>
-          )
-        )}
+          ))}
       </div>
     </div>
   );
@@ -246,13 +272,27 @@ function PersistentChatBar() {
   const createThread = useMutation(api.threads.create);
   const sendThreadMessage = useMutation(api.threads.sendMessage);
   const generateUploadUrl = useMutation(api.threads.generateUploadUrl);
+  const {
+    appendOptimisticSend,
+    markOptimisticSendFailed,
+    seedOptimisticThread,
+  } = useThreadCacheActions();
   const [sending, setSending] = useState(false);
   const isThreadPage = pathname.startsWith("/agent/thread/");
   const hasContext = !!pageContext;
-  const viewerOrg = useQuery(api.orgs.viewerOrg, {});
-  const agentBranding = viewerOrg?.brokerOrg?.whiteLabelingEnabled !== false && viewerOrg?.brokerOrg
-    ? { name: `${viewerOrg.brokerOrg.name} Agent`, iconUrl: viewerOrg.brokerOrg.iconUrl }
-    : undefined;
+  const viewerOrg = useCachedQuery(
+    "appShell.viewerOrg",
+    api.orgs.viewerOrg,
+    {},
+  );
+  const viewer = useCachedQuery("appShell.viewer", api.users.viewer, {});
+  const agentBranding =
+    viewerOrg?.brokerOrg?.whiteLabelingEnabled !== false && viewerOrg?.brokerOrg
+      ? {
+          name: `${viewerOrg.brokerOrg.name} Agent`,
+          iconUrl: viewerOrg.brokerOrg.iconUrl,
+        }
+      : undefined;
 
   const handleSubmit = useCallback(
     async (message: PromptInputMessage) => {
@@ -262,75 +302,148 @@ function PersistentChatBar() {
 
       setSending(true);
       try {
+        const messageClientMutationId = createClientMutationId("message");
         const threadId = await createThread({
           initialContext: pageContext ?? undefined,
           agentDomain: AGENT_DOMAIN,
+          clientMutationId: createClientMutationId("thread"),
         });
-
-        const attachments: {
-          filename: string;
-          contentType: string;
-          size: number;
-          fileId: Id<"_storage">;
-        }[] = [];
-
-        if (message.files.length > 0) {
-          for (const file of message.files) {
-            const uploadUrl = await generateUploadUrl();
-            const blob = await fetch(file.url).then((r) => r.blob());
-            const contentType = inferAttachmentContentType(file.filename, file.mediaType);
-            const res = await fetch(uploadUrl, {
-              method: "POST",
-              headers: {
-                "Content-Type": contentType,
-              },
-              body: blob,
-            });
-
-            if (res.ok) {
-              const { storageId } = await res.json();
-              attachments.push({
+        const content = text || "(attached files)";
+        const optimisticAttachments =
+          message.files.length > 0
+            ? message.files.map((file) => ({
                 filename: file.filename ?? "file",
-                contentType,
-                size: blob.size,
-                fileId: storageId as Id<"_storage">,
-              });
-            }
-          }
+                contentType: inferAttachmentContentType(
+                  file.filename,
+                  file.mediaType,
+                ),
+                size: 0,
+              }))
+            : undefined;
+
+        if (viewerOrg?.org?._id && viewer?._id) {
+          await seedOptimisticThread({
+            threadId,
+            orgId: viewerOrg.org._id,
+            createdBy: viewer._id,
+            initialContext: pageContext ?? undefined,
+          });
+          await appendOptimisticSend({
+            threadId,
+            orgId: viewerOrg.org._id,
+            content,
+            clientMutationId: messageClientMutationId,
+            userId: viewer._id,
+            userName: viewer.name ?? viewer.email ?? "You",
+            attachments: optimisticAttachments,
+            referencedPolicyIds: message.references
+              ?.filter((reference) => reference.kind === "policy")
+              .map((reference) => reference.id as Id<"policies">),
+            referencedQuoteIds: message.references
+              ?.filter((reference) => reference.kind === "quote")
+              .map((reference) => reference.id as Id<"policies">),
+            referencedRequirementIds: message.references
+              ?.filter((reference) => reference.kind === "requirement")
+              .map((reference) => reference.id as Id<"insuranceRequirements">),
+            referencedMailboxIds: message.references
+              ?.filter((reference) => reference.kind === "mailbox")
+              .map((reference) => reference.id as Id<"connectedEmailAccounts">),
+          });
         }
 
-        await sendThreadMessage({
-          threadId,
-          content: text || "(attached files)",
-          attachments: attachments.length > 0 ? attachments : undefined,
-          referencedPolicyIds: message.references
-            ?.filter((reference) => reference.kind === "policy")
-            .map((reference) => reference.id as Id<"policies">),
-          referencedQuoteIds: message.references
-            ?.filter((reference) => reference.kind === "quote")
-            .map((reference) => reference.id as Id<"policies">),
-          referencedRequirementIds: message.references
-            ?.filter((reference) => reference.kind === "requirement")
-            .map((reference) => reference.id as Id<"insuranceRequirements">),
-          referencedMailboxIds: message.references
-            ?.filter((reference) => reference.kind === "mailbox")
-            .map((reference) => reference.id as Id<"connectedEmailAccounts">),
-        });
-
         router.push(`/agent/thread/${threadId}`);
+        setSending(false);
+
+        void (async () => {
+          const attachments: {
+            filename: string;
+            contentType: string;
+            size: number;
+            fileId: Id<"_storage">;
+          }[] = [];
+
+          try {
+            if (message.files.length > 0) {
+              for (const file of message.files) {
+                const uploadUrl = await generateUploadUrl();
+                const blob = await fetch(file.url).then((r) => r.blob());
+                const contentType = inferAttachmentContentType(
+                  file.filename,
+                  file.mediaType,
+                );
+                const res = await fetch(uploadUrl, {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": contentType,
+                  },
+                  body: blob,
+                });
+
+                if (res.ok) {
+                  const { storageId } = await res.json();
+                  attachments.push({
+                    filename: file.filename ?? "file",
+                    contentType,
+                    size: blob.size,
+                    fileId: storageId as Id<"_storage">,
+                  });
+                }
+              }
+            }
+
+            await sendThreadMessage({
+              threadId,
+              content,
+              attachments: attachments.length > 0 ? attachments : undefined,
+              referencedPolicyIds: message.references
+                ?.filter((reference) => reference.kind === "policy")
+                .map((reference) => reference.id as Id<"policies">),
+              referencedQuoteIds: message.references
+                ?.filter((reference) => reference.kind === "quote")
+                .map((reference) => reference.id as Id<"policies">),
+              referencedRequirementIds: message.references
+                ?.filter((reference) => reference.kind === "requirement")
+                .map(
+                  (reference) => reference.id as Id<"insuranceRequirements">,
+                ),
+              referencedMailboxIds: message.references
+                ?.filter((reference) => reference.kind === "mailbox")
+                .map(
+                  (reference) => reference.id as Id<"connectedEmailAccounts">,
+                ),
+              clientMutationId: messageClientMutationId,
+            });
+          } catch (error) {
+            if (viewerOrg?.org?._id) {
+              await markOptimisticSendFailed({
+                threadId,
+                clientMutationId: messageClientMutationId,
+                error:
+                  error instanceof Error
+                    ? error.message
+                    : "Failed to send message",
+              });
+            }
+            toast.error("Failed to send message");
+          }
+        })();
       } catch {
         toast.error("Failed to start chat");
-      } finally {
         setSending(false);
       }
     },
     [
+      appendOptimisticSend,
       createThread,
       generateUploadUrl,
+      markOptimisticSendFailed,
       pageContext,
       router,
+      seedOptimisticThread,
       sendThreadMessage,
       sending,
+      viewer,
+      viewerOrg,
     ],
   );
 
@@ -348,7 +461,9 @@ function PersistentChatBar() {
         <div className="max-w-2xl mx-auto">
           <GlassPromptInput
             onSubmit={handleSubmit}
-            placeholder={agentBranding ? `Ask ${agentBranding.name}...` : "Ask Glass..."}
+            placeholder={
+              agentBranding ? `Ask ${agentBranding.name}...` : "Ask Glass..."
+            }
             contextLabel={pageContext?.summary}
             disabled={sending}
             status={sending ? "submitted" : "ready"}

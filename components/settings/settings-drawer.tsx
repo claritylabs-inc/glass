@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X } from "lucide-react";
 
-const EASE = [0.16, 1, 0.3, 1] as const;
+const EASE = [0.2, 0, 0, 1] as const;
 
 export function SettingsDrawer({
   open,
@@ -23,18 +23,17 @@ export function SettingsDrawer({
     <AnimatePresence mode="popLayout">
       {open && (
         <motion.div
-          layout
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.2, ease: EASE }}
+          transition={{ duration: 0.08, ease: EASE }}
           className="max-lg:fixed! max-lg:inset-0! max-lg:z-50! flex h-full w-full shrink-0 overflow-hidden"
         >
           <motion.div
-            initial={{ opacity: 0, x: 30 }}
+            initial={{ opacity: 0, x: 8 }}
             animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 30 }}
-            transition={{ duration: 0.35, ease: EASE, delay: 0.05 }}
+            exit={{ opacity: 0, x: 8 }}
+            transition={{ duration: 0.1, ease: EASE }}
             className="flex min-h-0 w-full flex-1 flex-col border-l border-foreground/6 bg-background"
           >
             <div className="h-12 flex items-center gap-3 px-4 border-b border-foreground/6 shrink-0">
