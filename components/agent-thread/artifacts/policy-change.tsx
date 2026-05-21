@@ -231,7 +231,7 @@ export function PolicyChangeThreadSidebar({
             type="button"
             variant="secondary"
             size="compact"
-            onClick={() => runAction("packet", () => generatePacket({ caseId }), "Carrier packet generated")}
+            onClick={() => runAction("packet", () => generatePacket({ caseId }), "Policy change packet generated")}
             disabled={loadingAction !== null}
           >
             {loadingAction === "packet" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
@@ -255,11 +255,11 @@ export function PolicyChangeThreadSidebar({
               type="button"
               variant="secondary"
               size="compact"
-              onClick={() => runAction(status, () => markStatus({ caseId, status }), `Marked ${status}`)}
+              onClick={() => runAction(status, () => markStatus({ caseId, status }), status === "submitted" ? "Marked sent" : `Marked ${status}`)}
               disabled={loadingAction !== null}
             >
               {loadingAction === status ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-              <span className="capitalize">{status}</span>
+              <span className="capitalize">{status === "submitted" ? "sent" : status}</span>
             </PillButton>
           ))}
         </div>

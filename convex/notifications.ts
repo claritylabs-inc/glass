@@ -223,6 +223,24 @@ export const patchEmailStatus = internalMutation({
   },
 });
 
+export const patchImessageStatus = internalMutation({
+  args: {
+    id: v.id("notifications"),
+    imessageStatus: v.union(
+      v.literal("not_scheduled"),
+      v.literal("scheduled"),
+      v.literal("sent"),
+      v.literal("suppressed_by_preference"),
+      v.literal("failed"),
+    ),
+    imessageSentAt: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const { id, ...patch } = args;
+    await ctx.db.patch(id, patch);
+  },
+});
+
 export const sweepStale = internalMutation({
   args: {},
   handler: async (ctx) => {

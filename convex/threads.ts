@@ -1235,6 +1235,30 @@ export const findThreadByEmailMessageId = internalQuery({
   },
 });
 
+export const findEmailMessageByMessageId = internalQuery({
+  args: {
+    orgId: v.id("organizations"),
+    messageId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const candidates = [args.messageId, normalizeMessageId(args.messageId)];
+    for (const candidate of [...new Set(candidates)]) {
+      const byMessageId = await ctx.db
+        .query("threadMessages")
+        .withIndex("by_messageId", (q) => q.eq("messageId", candidate))
+        .first();
+      if (byMessageId && byMessageId.orgId === args.orgId) return byMessageId;
+
+      const byResponseMessageId = await ctx.db
+        .query("threadMessages")
+        .withIndex("by_responseMessageId", (q) => q.eq("responseMessageId", candidate))
+        .first();
+      if (byResponseMessageId && byResponseMessageId.orgId === args.orgId) return byResponseMessageId;
+    }
+    return null;
+  },
+});
+
 export const findEmailThreadBySubject = internalQuery({
   args: {
     orgId: v.id("organizations"),
@@ -1272,6 +1296,21 @@ export const findEmailThreadBySubject = internalQuery({
 
     return threads.find((thread) =>
       thread.title.replace(/^(\s*(re|fwd?)\s*:\s*)+/i, "").trim().toLowerCase() === baseSubject
+    ) ?? null;
+  },
+});
+
+export const findLatestPolicyChangeEmailInThread = internalQuery({
+  args: { threadId: v.id("threads") },
+  handler: async (ctx, args) => {
+    const messages = await ctx.db
+      .query("threadMessages")
+      .withIndex("by_threadId", (q) => q.eq("threadId", args.threadId))
+      .order("desc")
+      .take(50);
+    return messages.find((message) =>
+      message.channel === "email" &&
+      (message.policyChangeCaseId || message.pendingEmailId)
     ) ?? null;
   },
 });
@@ -1333,6 +1372,7 @@ export const insertEmailMessage = internalMutation({
     )),
     error: v.optional(v.string()),
     pendingEmailId: v.optional(v.id("pendingEmails")),
+    policyChangeCaseId: v.optional(v.id("policyChangeCases")),
   },
   handler: async (ctx, args) => {
     const messageDocId = await ctx.db.insert("threadMessages", {
@@ -1358,6 +1398,7 @@ export const insertEmailMessage = internalMutation({
       status: args.status,
       error: args.error,
       pendingEmailId: args.pendingEmailId,
+      policyChangeCaseId: args.policyChangeCaseId,
     });
 
     // Update the thread's lastMessageAt
@@ -1375,7 +1416,9 @@ export const updateEmailMessage = internalMutation({
     ccAddresses: v.optional(v.array(v.string())),
     bccAddresses: v.optional(v.array(v.string())),
     subject: v.optional(v.string()),
+    messageId: v.optional(v.string()),
     responseMessageId: v.optional(v.string()),
+    resendEmailId: v.optional(v.string()),
     attachments: v.optional(v.array(v.object({
       filename: v.string(),
       contentType: v.string(),
@@ -1385,6 +1428,7 @@ export const updateEmailMessage = internalMutation({
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
     referencedQuoteIds: v.optional(v.array(v.id("policies"))),
     pendingEmailId: v.optional(v.id("pendingEmails")),
+    policyChangeCaseId: v.optional(v.id("policyChangeCases")),
     status: v.optional(v.union(v.literal("draft_email"), v.literal("cancelled"))),
     clearStatus: v.optional(v.boolean()),
     error: v.optional(v.string()),

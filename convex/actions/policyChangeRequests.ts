@@ -4,52 +4,41 @@ import { v } from "convex/values";
 import { action, internalAction } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
-import { makeGenerateObject } from "../lib/sdkCallbacks";
-import { modelCapabilitiesForTask } from "../lib/modelCatalog";
 
-type SourceSpanDoc = {
-  spanId: string;
-  documentId?: string;
-  pageStart?: number;
-  sectionId?: string;
-  formNumber?: string;
-  text: string;
-  metadata?: Record<string, string>;
-};
-
-const STANDALONE_CLIENT_PCE_MESSAGE =
-  "I can't handle this policy change request because your broker isn't connected to Glass. Please contact your broker directly for help.";
-
-function toEvidenceSource(span: SourceSpanDoc) {
+function brokerRecipientQuestion() {
   return {
-    id: span.spanId,
-    label: span.formNumber ?? span.sectionId ?? "Source span",
-    documentId: span.documentId,
-    page: span.pageStart,
-    fieldPath: span.sectionId,
-    text: span.text,
-    metadata: span.metadata,
+    code: "broker_contact_required",
+    question: "Which broker email or contact should receive this policy change request?",
+    reason: "Policy change emails are broker-mediated and need an explicit broker recipient before Glass can draft or send one.",
   };
 }
 
-async function runSdkPceIfAvailable(params: {
-  requestText: string;
-  evidenceSources: ReturnType<typeof toEvidenceSource>[];
-}) {
-  const sdk = await import("@claritylabs/cl-sdk") as Record<string, any>;
-  if (typeof sdk.createPceAgent !== "function") return null;
+function buildBrokerSubmissionFromIdentity(identity: any | null) {
+  if (!identity || !identity.clientOrgId) return undefined;
+  const recipientEmail = typeof identity.contactEmail === "string"
+    ? identity.contactEmail.trim()
+    : "";
+  const recipientName = identity.contactName ?? identity.brokerCompanyName;
+  const routingStatus = recipientEmail
+    ? "recipient_ready"
+    : identity.source === "none"
+      ? "needs_broker_contact"
+      : "needs_broker_recipient";
 
-  const agent = sdk.createPceAgent({
-    generateObject: makeGenerateObject("analysis"),
-    executionMode: "auto",
-    modelCapabilities: modelCapabilitiesForTask("analysis"),
-  });
-  const result = await agent.processChangeRequest({
-    requestText: params.requestText,
-    evidenceSources: params.evidenceSources,
-  });
-  const packet = agent.generateSubmissionPacket({ state: result.state });
-  return { state: result.state, packet };
+  return {
+    routingStatus,
+    source: identity.source,
+    brokerOrgId: identity.brokerOrgId,
+    brokerCompanyName: identity.brokerCompanyName,
+    recipientEmail: recipientEmail || undefined,
+    recipientName,
+    contactPhone: identity.contactPhone,
+    needsRecipient: !recipientEmail,
+  };
+}
+
+function missingBrokerRecipientInfo(brokerSubmission: any | undefined) {
+  return brokerSubmission?.needsRecipient ? [brokerRecipientQuestion()] : [];
 }
 
 export const createFromChat = action({
@@ -121,9 +110,26 @@ async function createPolicyChangeCase(
 ): Promise<{ caseId?: string; usedSdkPce: boolean; error?: string }> {
     const org = await ctx.runQuery(internal.orgs.getInternal, { id: args.orgId });
     if (!org) return { usedSdkPce: false, error: "Organization not found" };
-    if ((org.type ?? "client") === "client" && !org.brokerOrgId) {
-      return { usedSdkPce: false, error: STANDALONE_CLIENT_PCE_MESSAGE };
+    const createAccess = await ctx.runQuery(
+      internal.policyChanges.canCreatePolicyChangeForUserInternal,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+      },
+    );
+    if (!createAccess?.allowed) {
+      return {
+        usedSdkPce: false,
+        error: createAccess?.error ?? "Policy change requests require direct org membership or broker access",
+      };
     }
+    const brokerIdentity = (org.type ?? "client") === "client"
+      ? await ctx.runQuery(internal.orgs.resolveBrokerIdentityInternal, {
+          clientOrgId: args.orgId,
+        })
+      : null;
+    const brokerSubmission = buildBrokerSubmissionFromIdentity(brokerIdentity);
+    const brokerMissingInfo = missingBrokerRecipientInfo(brokerSubmission);
     if (args.policyId) {
       const policy = await ctx.runQuery(internal.policies.getInternal, { id: args.policyId });
       if (!policy || policy.orgId !== args.orgId) {
@@ -131,68 +137,16 @@ async function createPolicyChangeCase(
       }
     }
 
-    const spans = args.policyId
-      ? await ctx.runQuery(internal.sourceSpans.listSpansByPolicyInternal, { policyId: args.policyId })
-      : [];
-    const filteredSpans = args.evidenceSourceIds?.length
-      ? spans.filter((span: SourceSpanDoc) => args.evidenceSourceIds!.includes(span.spanId))
-      : spans.slice(0, 12);
-    const evidenceSources = filteredSpans.map((span: SourceSpanDoc) => toEvidenceSource(span));
-
-    try {
-      const sdkResult = await runSdkPceIfAvailable({
-        requestText: args.requestText,
-        evidenceSources,
-      });
-      if (sdkResult) {
-      const caseId = await ctx.runMutation(internal.policyChanges.createAnalyzedInternal, {
-          orgId: args.orgId,
-          userId: args.userId,
-          policyId: args.policyId,
-          requestText: args.requestText,
-          sourceKind: args.sourceKind ?? "chat",
-          summary: sdkResult.state.summary,
-          items: sdkResult.state.items,
-          impacts: sdkResult.state.impacts,
-          missingInfoQuestions: sdkResult.state.missingInfoQuestions,
-          validationIssues: sdkResult.state.validationIssues,
-          evidenceSourceIds: sdkResult.state.evidenceSources?.map((source: { id: string }) => source.id) ?? args.evidenceSourceIds,
-          packetArtifacts: sdkResult.packet.artifacts,
-        });
-        if (args.policyId) {
-          const partner = await ctx.runQuery(internal.partnerPrograms.resolvePolicyPartner, {
-            policyId: args.policyId,
-          });
-          if (partner?.partnerOrgId) {
-            await ctx.runMutation(internal.partnerPrograms.markPolicyChangePendingPartnerInternal, {
-              caseId,
-              partnerOrgId: partner.partnerOrgId,
-              partnerProgramId: partner.partnerProgramId,
-            });
-          }
-        }
-        return { caseId: String(caseId), usedSdkPce: true };
-      }
-    } catch (error) {
-      console.warn(`SDK PCE action failed; falling back to deterministic case creation: ${error instanceof Error ? error.message : String(error)}`);
-    }
-
-    const caseId = args.sourceKind === "email"
-      ? await ctx.runMutation(internal.policyChanges.createAnalyzedInternal, {
-          orgId: args.orgId,
-          userId: args.userId,
-          policyId: args.policyId,
-          requestText: args.requestText,
-          sourceKind: "email",
-          evidenceSourceIds: args.evidenceSourceIds,
-        })
-      : await ctx.runMutation(internal.policyChanges.createFromChatInternal, {
-          orgId: args.orgId,
-          userId: args.userId,
-          policyId: args.policyId,
-          requestText: args.requestText,
-          evidenceSourceIds: args.evidenceSourceIds,
-        });
+    const caseId = await ctx.runMutation(internal.policyChanges.createFromChatInternal, {
+      orgId: args.orgId,
+      userId: args.userId,
+      policyId: args.policyId,
+      requestText: args.requestText,
+      sourceKind: args.sourceKind ?? "chat",
+      evidenceSourceIds: args.evidenceSourceIds,
+      missingInfoQuestions: brokerMissingInfo,
+      brokerSubmission,
+    });
     if (args.policyId) {
       const partner = await ctx.runQuery(internal.partnerPrograms.resolvePolicyPartner, {
         policyId: args.policyId,

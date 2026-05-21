@@ -19,6 +19,8 @@ export type BrokerIdentity = {
   assignmentId?: Id<"brokerClientAssignments">;
 };
 
+type BrokerIdentityCtx = Pick<QueryCtx, "db">;
+
 function clean(value: string | undefined | null) {
   const trimmed = value?.trim();
   return trimmed ? trimmed : undefined;
@@ -51,7 +53,7 @@ function applyOverrides(
 }
 
 export async function resolveBrokerIdentityForClient(
-  ctx: QueryCtx,
+  ctx: BrokerIdentityCtx,
   clientOrg: Doc<"organizations">,
 ): Promise<BrokerIdentity> {
   if ((clientOrg.type ?? "client") !== "client") {

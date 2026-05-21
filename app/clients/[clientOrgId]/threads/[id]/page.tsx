@@ -25,7 +25,6 @@ export default function ClientThreadReadOnlyPage() {
     () => ({
       canManage: true,
       actorLabel: "broker",
-      brokerConnected: true,
     }),
     [],
   );

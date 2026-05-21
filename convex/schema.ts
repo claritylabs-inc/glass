@@ -27,6 +27,28 @@ const pipelineStatusValidator = v.union(
   v.literal("error"),
 );
 
+const notificationChannelValidator = v.union(
+  v.literal("in_app"),
+  v.literal("email"),
+  v.literal("imessage"),
+);
+
+const policyChangeStatusValidator = v.union(
+  // Legacy statuses kept during widen-migrate-narrow.
+  v.literal("draft"),
+  v.literal("ready"),
+  v.literal("accepted"),
+  v.literal("needs_info"),
+  v.literal("submitted"),
+  v.literal("declined"),
+  v.literal("cancelled"),
+  // Simplified CLA-28 workflow statuses.
+  v.literal("intake"),
+  v.literal("ready_to_submit"),
+  v.literal("waiting_for_endorsement"),
+  v.literal("completed"),
+);
+
 export default defineSchema({
   ...authTables,
 
@@ -1239,6 +1261,9 @@ export default defineSchema({
       v.literal("vendor_policy_expired"),
       v.literal("program_admin_certificate_request"),
       v.literal("program_admin_pce_request"),
+      v.literal("policy_declaration_discrepancy"),
+      v.literal("policy_change_needs_info"),
+      v.literal("policy_change_completed"),
     ),
     title: v.string(),
     body: v.string(),
@@ -1275,6 +1300,16 @@ export default defineSchema({
       ),
     ),
     emailSentAt: v.optional(v.number()),
+    imessageStatus: v.optional(
+      v.union(
+        v.literal("not_scheduled"),
+        v.literal("scheduled"),
+        v.literal("sent"),
+        v.literal("suppressed_by_preference"),
+        v.literal("failed"),
+      ),
+    ),
+    imessageSentAt: v.optional(v.number()),
   })
     .index("by_orgId", ["orgId"])
     .index("by_orgId_status", ["orgId", "status"])
@@ -1286,7 +1321,7 @@ export default defineSchema({
     userId: v.id("users"),
     orgId: v.id("organizations"),
     type: v.string(), // matches notifications.type or "__all__"
-    channel: v.union(v.literal("in_app"), v.literal("email")),
+    channel: notificationChannelValidator,
     enabled: v.boolean(),
     updatedAt: v.number(),
   })
@@ -1412,19 +1447,19 @@ export default defineSchema({
     sourceKind: v.union(
       v.literal("chat"),
       v.literal("email"),
+      v.literal("imessage"),
+      v.literal("mcp"),
+      v.literal("cli"),
       v.literal("uploaded_document"),
       v.literal("manual"),
     ),
-    status: v.union(
-      v.literal("draft"),
-      v.literal("needs_info"),
-      v.literal("ready"),
-      v.literal("submitted"),
-      v.literal("accepted"),
-      v.literal("declined"),
-      v.literal("cancelled"),
-    ),
+    status: policyChangeStatusValidator,
     summary: v.optional(v.string()),
+    affectedPolicyIds: v.optional(v.array(v.id("policies"))),
+    pendingQuestions: v.optional(v.array(v.string())),
+    internalPceAnalysis: v.optional(v.any()),
+    brokerSubmission: v.optional(v.any()),
+    completion: v.optional(v.any()),
     items: v.optional(v.any()),
     impacts: v.optional(v.any()),
     missingInfoQuestions: v.optional(v.any()),
@@ -1453,6 +1488,87 @@ export default defineSchema({
     .index("by_orgId_status", ["orgId", "status"])
     .index("by_partnerOrgId_approval", ["partnerOrgId", "partnerApprovalStatus"]),
 
+  policyUpdateRuns: defineTable({
+    orgId: v.id("organizations"),
+    policyId: v.id("policies"),
+    caseId: v.optional(v.id("policyChangeCases")),
+    sourcePolicyFileIds: v.optional(v.array(v.id("policyFiles"))),
+    sourceFileIds: v.optional(v.array(v.id("_storage"))),
+    updateMode: v.union(v.literal("append_to_existing")),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("complete"),
+      v.literal("needs_review"),
+      v.literal("error"),
+    ),
+    beforeSnapshot: v.optional(v.any()),
+    afterSnapshot: v.optional(v.any()),
+    fieldDiffs: v.optional(v.array(v.any())),
+    summary: v.optional(v.string()),
+    error: v.optional(v.string()),
+    createdByUserId: v.optional(v.id("users")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_orgId", ["orgId"])
+    .index("by_policyId", ["policyId"])
+    .index("by_caseId", ["caseId"])
+    .index("by_status", ["status"]),
+
+  policyDeclarationFacts: defineTable({
+    orgId: v.id("organizations"),
+    policyId: v.id("policies"),
+    policyFileId: v.optional(v.id("policyFiles")),
+    fieldPath: v.string(),
+    fieldGroup: v.string(),
+    displayValue: v.string(),
+    normalizedValue: v.string(),
+    valueKind: v.union(
+      v.literal("string"),
+      v.literal("number"),
+      v.literal("date"),
+      v.literal("money"),
+      v.literal("address"),
+      v.literal("list"),
+      v.literal("unknown"),
+    ),
+    sourceSpanIds: v.optional(v.array(v.string())),
+    effectiveDate: v.optional(v.string()),
+    expirationDate: v.optional(v.string()),
+    observedAt: v.number(),
+    active: v.boolean(),
+    recordHash: v.string(),
+  })
+    .index("by_orgId", ["orgId"])
+    .index("by_policyId", ["policyId"])
+    .index("by_orgId_fieldGroup", ["orgId", "fieldGroup"])
+    .index("by_policyId_active", ["policyId", "active"])
+    .index("by_recordHash", ["recordHash"]),
+
+  declarationDiscrepancies: defineTable({
+    orgId: v.id("organizations"),
+    fieldGroup: v.string(),
+    likelyCurrentValue: v.optional(v.string()),
+    conflictingValues: v.array(v.any()),
+    affectedPolicyIds: v.array(v.id("policies")),
+    severity: v.union(v.literal("info"), v.literal("warning"), v.literal("critical")),
+    status: v.union(
+      v.literal("open"),
+      v.literal("notified"),
+      v.literal("confirmed"),
+      v.literal("dismissed"),
+      v.literal("case_created"),
+    ),
+    notificationId: v.optional(v.id("notifications")),
+    threadId: v.optional(v.id("threads")),
+    caseId: v.optional(v.id("policyChangeCases")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_orgId", ["orgId"])
+    .index("by_orgId_status", ["orgId", "status"])
+    .index("by_orgId_fieldGroup", ["orgId", "fieldGroup"]),
+
   pcePackets: defineTable({
     orgId: v.id("organizations"),
     caseId: v.id("policyChangeCases"),
@@ -1478,6 +1594,9 @@ export default defineSchema({
       v.union(
         v.literal("chat"),
         v.literal("email"),
+        v.literal("imessage"),
+        v.literal("mcp"),
+        v.literal("cli"),
         v.literal("uploaded_document"),
         v.literal("manual"),
       ),
@@ -1778,6 +1897,7 @@ export default defineSchema({
     // For updating the chat message after send
     chatMessageId: v.optional(v.id("threadMessages")),
     threadMessageId: v.optional(v.id("threadMessages")),
+    policyChangeCaseId: v.optional(v.id("policyChangeCases")),
     // Metadata for the sent email record
     recipientEmail: v.string(),
     ccAddresses: v.optional(v.array(v.string())),

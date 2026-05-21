@@ -5,30 +5,45 @@ const POLICY_CHANGE_STEPS = [
   { label: "Requested", detail: "Request received" },
   { label: "Review", detail: "Checking details" },
   { label: "Ready", detail: "Ready for broker or program administrator review" },
-  { label: "Submitted", detail: "Sent to the broker, carrier or program administrator" },
+  { label: "Sent", detail: "Email sent to the broker or program administrator" },
   { label: "Complete", detail: "Change resolved" },
 ];
 
 export function formatPolicyChangeStatus(status?: string) {
   if (!status) return "Request";
-  return status.replace(/_/g, " ");
+  const normalized =
+    status === "draft" ? "intake" :
+    status === "ready" ? "ready_to_submit" :
+    status === "accepted" ? "completed" :
+    status;
+  if (normalized === "submitted") return "sent";
+  return normalized.replace(/_/g, " ");
 }
 
 export function isPolicyChangeTerminal(status?: string) {
-  return status === "accepted" || status === "declined" || status === "cancelled";
+  return (
+    status === "accepted" ||
+    status === "completed" ||
+    status === "declined" ||
+    status === "cancelled"
+  );
 }
 
 function policyChangeProgress(status?: string) {
   switch (status) {
     case "draft":
+    case "intake":
       return 1;
     case "needs_info":
       return 2;
     case "ready":
+    case "ready_to_submit":
       return 3;
     case "submitted":
+    case "waiting_for_endorsement":
       return 4;
     case "accepted":
+    case "completed":
       return 5;
     case "declined":
     case "cancelled":

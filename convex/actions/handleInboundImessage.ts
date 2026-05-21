@@ -17,6 +17,9 @@ import {
   confirmPolicyFact,
   generateCoi as generateCoiTool,
   createPolicyChangeRequest,
+  addPolicyChangeInfo,
+  draftPolicyChangeSubmission,
+  completePolicyChangeFromEndorsement,
   createImessageGroupChat,
   coordinateMailboxTask,
 } from "../lib/chatTools";
@@ -1150,6 +1153,93 @@ export const processInbound = internalAction({
               requestKind: intake.kind,
               usedSdkPce: Boolean(result?.usedSdkPce),
             };
+          },
+        },
+        add_policy_change_info: {
+          ...addPolicyChangeInfo,
+          execute: async (params: {
+            caseId: string;
+            infoText: string;
+            sourceSpanIds?: string[];
+          }) => {
+            if (!currentSenderIsLinked) {
+              return "Only a linked Glass user in this group can update a policy change request.";
+            }
+            await ctx.runMutation(internal.policyChanges.addInfo, {
+              caseId: params.caseId as Id<"policyChangeCases">,
+              userId: user._id,
+              infoText: params.infoText,
+              sourceSpanIds: params.sourceSpanIds,
+            });
+            return { status: "updated", caseId: params.caseId };
+          },
+        },
+        draft_policy_change_email: {
+          ...draftPolicyChangeSubmission,
+          execute: async (params: {
+            caseId: string;
+            recipientEmail?: string;
+            recipientName?: string;
+            instructions?: string;
+          }) => {
+            if (!currentSenderIsLinked) {
+              return "Only a linked Glass user in this group can draft a policy change email.";
+            }
+            const draft = await ctx.runMutation(internal.policyChanges.draftSubmission, {
+              caseId: params.caseId as Id<"policyChangeCases">,
+              userId: user._id,
+              recipientEmail: params.recipientEmail,
+              recipientName: params.recipientName,
+              instructions: params.instructions,
+            });
+            return {
+              status: draft.needsRecipient ? "needs_recipient" : "drafted",
+              caseId: params.caseId,
+              readyToSend: !draft.needsRecipient,
+              nextAction: draft.needsRecipient
+                ? "Ask for the broker email address."
+                : "Summarize the email briefly and ask for approval before sending.",
+              emailDraft: {
+                recipientEmail: draft.recipientEmail,
+                recipientName: draft.recipientName,
+                subject: draft.subject,
+                body: draft.body,
+              },
+            };
+          },
+        },
+        complete_policy_change_from_endorsement: {
+          ...completePolicyChangeFromEndorsement,
+          execute: async (params: {
+            caseId?: string;
+            policyId: string;
+            files: Array<{ fileId: string; fileName: string }>;
+            summary?: string;
+            fieldUpdates?: Record<string, unknown>;
+          }) => {
+            if (!currentSenderIsLinked) {
+              return "Only a linked Glass user in this group can complete a policy change request.";
+            }
+            for (const file of params.files) {
+              const matched = availableEmailAttachments.some(
+                (attachment) => String(attachment.fileId) === file.fileId,
+              );
+              if (!matched) {
+                return `Storage ID ${file.fileId} does not match any attachment on this message.`;
+              }
+            }
+            const result = await ctx.runMutation(internal.policyChanges.completeFromEndorsement, {
+              caseId: params.caseId as Id<"policyChangeCases"> | undefined,
+              userId: user._id,
+              policyId: params.policyId as Id<"policies">,
+              files: params.files.map((file) => ({
+                fileId: file.fileId as Id<"_storage">,
+                fileName: file.fileName,
+              })),
+              summary: params.summary,
+              fieldUpdates: params.fieldUpdates,
+            });
+            return { status: "completed", ...result };
           },
         },
         compare_coverages: {

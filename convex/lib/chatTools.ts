@@ -191,7 +191,7 @@ export const generateCoi = tool({
 
 export const createPolicyChangeRequest = tool({
   description:
-    "Create a policy change endorsement (PCE) request packet from the user's instructions. Use this only for actual policy-record changes: named insured changes, additional insured/endorsement requests, limit or deductible changes, location/vehicle changes, cancellations, nonrenewals, renewal update packets, or certificate-driven endorsement requirements. Do not use this for ordinary COI generation or certificate-holder-only instructions.",
+    "Create a policy change endorsement (PCE) request from the user's instructions. Use this immediately for actual policy-record changes: named insured changes, DBA/entity/FEIN changes, mailing address or location changes, additional insured/endorsement requests, limit or deductible changes, vehicle changes, cancellations, nonrenewals, renewal update packets, or certificate-driven endorsement requirements. A policy number plus the requested new value is enough to open the intake case; missing broker recipient details should be handled later by draft_policy_change_email. Do not use this for ordinary COI generation or certificate-holder-only instructions.",
   inputSchema: z.object({
     requestKind: z
       .enum(PCE_REQUEST_KINDS)
@@ -210,6 +210,45 @@ export const createPolicyChangeRequest = tool({
       .describe(
         "Stable source span IDs that support quoted existing policy values",
       ),
+  }),
+});
+
+export const addPolicyChangeInfo = tool({
+  description:
+    "Add missing or corrected information to an existing policy change request. Use this when the user answers Glass's follow-up questions or clarifies what changed.",
+  inputSchema: z.object({
+    caseId: z.string().describe("Existing policy change case ID"),
+    infoText: z.string().describe("The additional details or clarification to add"),
+    sourceSpanIds: z.array(z.string()).optional().describe("Optional source span IDs supporting the clarification"),
+  }),
+});
+
+export const draftPolicyChangeSubmission = tool({
+  description:
+    "Draft the broker email for an existing policy change request. If the recipient is unknown, draft the email and ask for the recipient instead of inventing an email address.",
+  inputSchema: z.object({
+    caseId: z.string().describe("Existing policy change case ID"),
+    recipientEmail: z.string().optional().describe("Known recipient email, if explicitly provided or already known"),
+    recipientName: z.string().optional().describe("Known recipient name, if available"),
+    instructions: z.string().optional().describe("Extra instructions to include in the draft"),
+  }),
+});
+
+export const completePolicyChangeFromEndorsement = tool({
+  description:
+    "Complete a policy change after the updated endorsement has been received. Use only with actual endorsement files already stored in the current thread or inbound message. This appends the endorsement to the existing policy and marks the case complete.",
+  inputSchema: z.object({
+    caseId: z.string().optional().describe("Policy change case ID, if known"),
+    policyId: z.string().describe("Existing policy ID to append the endorsement to"),
+    files: z
+      .array(z.object({
+        fileId: z.string().describe("Stored Convex file ID for the endorsement attachment"),
+        fileName: z.string().describe("Attachment filename"),
+      }))
+      .min(1)
+      .describe("Stored endorsement files to append"),
+    summary: z.string().optional().describe("Short completion summary"),
+    fieldUpdates: z.record(z.string(), z.any()).optional().describe("Only fields explicitly changed by the endorsement"),
   }),
 });
 

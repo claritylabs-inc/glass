@@ -1329,7 +1329,7 @@ function PolicyChangesTab({
     setPacketLoading(true);
     try {
       await generatePacket({ caseId: activeCaseId });
-      toast.success("Carrier packet generated");
+      toast.success("Policy change packet generated");
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Could not generate packet",
@@ -1340,13 +1340,13 @@ function PolicyChangesTab({
   };
 
   const handleStatus = async (
-    status: "submitted" | "accepted" | "declined",
+    status: "submitted" | "waiting_for_endorsement" | "completed" | "declined",
   ) => {
     if (!activeCaseId) return;
     setStatusLoading(status);
     try {
       await markStatus({ caseId: activeCaseId, status });
-      toast.success(`Marked ${status}`);
+      toast.success(status === "submitted" ? "Marked sent" : `Marked ${status}`);
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Could not update status",
@@ -1551,20 +1551,33 @@ function PolicyChangesTab({
                     ) : (
                       <Send className="w-3.5 h-3.5" />
                     )}
-                    Submitted
+                    Sent
                   </PillButton>
                   <PillButton
                     variant="secondary"
                     size="compact"
-                    onClick={() => handleStatus("accepted")}
+                    onClick={() => handleStatus("waiting_for_endorsement")}
                     disabled={statusLoading !== null}
                   >
-                    {statusLoading === "accepted" ? (
+                    {statusLoading === "waiting_for_endorsement" ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
                     ) : (
                       <CheckCircle2 className="w-3.5 h-3.5" />
                     )}
-                    Accepted
+                    Waiting
+                  </PillButton>
+                  <PillButton
+                    variant="secondary"
+                    size="compact"
+                    onClick={() => handleStatus("completed")}
+                    disabled={statusLoading !== null}
+                  >
+                    {statusLoading === "completed" ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                    )}
+                    Complete
                   </PillButton>
                   <PillButton
                     variant="secondary"
@@ -1581,6 +1594,7 @@ function PolicyChangesTab({
                   </PillButton>
                   {activeCase.status !== "cancelled" &&
                     activeCase.status !== "accepted" &&
+                    activeCase.status !== "completed" &&
                     activeCase.status !== "declined" && (
                       <PillButton
                         variant="secondary"

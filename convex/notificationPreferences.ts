@@ -1,8 +1,20 @@
 // convex/notificationPreferences.ts
 import { v } from "convex/values";
+import dayjs from "dayjs";
 import { mutation, query, internalQuery, MutationCtx } from "./_generated/server";
 import { requireOrgAccess } from "./lib/orgAuth";
 import { Id } from "./_generated/dataModel";
+import {
+  getEffectiveChannelDefault,
+  type NotificationChannel,
+  type NotificationSeverity,
+} from "./lib/notificationTypes";
+
+const channelValidator = v.union(
+  v.literal("in_app"),
+  v.literal("email"),
+  v.literal("imessage"),
+);
 
 // ── Shared helpers ──────────────────────────────────────────────────────────
 
@@ -11,7 +23,7 @@ async function upsertPref(
   userId: Id<"users">,
   orgId: Id<"organizations">,
   type: string,
-  channel: "in_app" | "email",
+  channel: NotificationChannel,
   enabled: boolean,
 ) {
   const existing = await ctx.db
@@ -22,7 +34,7 @@ async function upsertPref(
     .first();
 
   if (existing) {
-    await ctx.db.patch(existing._id, { enabled, updatedAt: Date.now() });
+    await ctx.db.patch(existing._id, { enabled, updatedAt: dayjs().valueOf() });
   } else {
     await ctx.db.insert("notificationPreferences", {
       userId,
@@ -30,7 +42,7 @@ async function upsertPref(
       type,
       channel,
       enabled,
-      updatedAt: Date.now(),
+      updatedAt: dayjs().valueOf(),
     });
   }
 }
@@ -39,10 +51,10 @@ async function upsertPref(
 
 export const set = mutation({
   args: {
-    orgId: v.id("organizations"),
-    type: v.string(),
-    channel: v.union(v.literal("in_app"), v.literal("email")),
-    enabled: v.boolean(),
+	    orgId: v.id("organizations"),
+	    type: v.string(),
+	    channel: channelValidator,
+	    enabled: v.boolean(),
   },
   handler: async (ctx, args) => {
     const { userId } = await requireOrgAccess(ctx);
@@ -58,6 +70,18 @@ export const setAllEmail = mutation({
   handler: async (ctx, args) => {
     const { userId } = await requireOrgAccess(ctx);
     await upsertPref(ctx, userId, args.orgId, "__all__", "email", args.enabled);
+  },
+});
+
+export const setAllChannel = mutation({
+  args: {
+    orgId: v.id("organizations"),
+    channel: channelValidator,
+    enabled: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const { userId } = await requireOrgAccess(ctx);
+    await upsertPref(ctx, userId, args.orgId, "__all__", args.channel, args.enabled);
   },
 });
 
@@ -99,5 +123,37 @@ export const resolveForUser = internalQuery({
     if (catchAll !== null) return catchAll.enabled;
 
     return null;
+  },
+});
+
+export const resolveChannelForUser = internalQuery({
+  args: {
+    userId: v.id("users"),
+    orgId: v.id("organizations"),
+    type: v.string(),
+    channel: channelValidator,
+    severity: v.optional(v.union(v.literal("info"), v.literal("warning"), v.literal("critical"))),
+  },
+  handler: async (ctx, args): Promise<boolean> => {
+    const perType = await ctx.db
+      .query("notificationPreferences")
+      .withIndex("by_userId_orgId_type_channel", (q) =>
+        q.eq("userId", args.userId).eq("orgId", args.orgId).eq("type", args.type).eq("channel", args.channel)
+      )
+      .first();
+    if (perType !== null) return perType.enabled;
+
+    const catchAll = await ctx.db
+      .query("notificationPreferences")
+      .withIndex("by_userId_orgId_type_channel", (q) =>
+        q.eq("userId", args.userId).eq("orgId", args.orgId).eq("type", "__all__").eq("channel", args.channel)
+      )
+      .first();
+    if (catchAll !== null) return catchAll.enabled;
+
+    return getEffectiveChannelDefault(
+      args.channel,
+      (args.severity ?? "info") as NotificationSeverity,
+    );
   },
 });

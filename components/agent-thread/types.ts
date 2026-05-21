@@ -54,7 +54,6 @@ export type ThreadMessage = {
 export type PolicyChangeAccess = {
   canManage: boolean;
   actorLabel: "broker" | "client";
-  brokerConnected: boolean;
 };
 
 export type ThreadAttachment = NonNullable<

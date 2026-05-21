@@ -44,18 +44,11 @@ export default function ThreadPage({
       : undefined;
   const policyChangeAccess = useMemo<PolicyChangeAccess>(() => {
     const isBroker = viewerOrg?.org?.type === "broker";
-    const brokerConnected =
-      isBroker || !!viewerOrg?.org?.brokerOrgId || !!viewerOrg?.brokerOrg?._id;
     return {
       canManage: isBroker,
       actorLabel: isBroker ? "broker" : "client",
-      brokerConnected,
     };
-  }, [
-    viewerOrg?.brokerOrg?._id,
-    viewerOrg?.org?.brokerOrgId,
-    viewerOrg?.org?.type,
-  ]);
+  }, [viewerOrg?.org?.type]);
 
   // Thread metadata lifted from child components for AppShell header
   const [threadMeta, setThreadMeta] = useState<{

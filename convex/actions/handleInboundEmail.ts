@@ -16,6 +16,9 @@ import {
   generateCoi as generateCoiTool,
   extractPolicyAttachment,
   createPolicyChangeRequest,
+  addPolicyChangeInfo,
+  draftPolicyChangeSubmission,
+  completePolicyChangeFromEndorsement,
   createImessageGroupChat,
   searchConnectedEmail,
   readConnectedEmail,
@@ -652,15 +655,44 @@ export const processInbound = internalAction({
     }
 
     const inReplyTo = getHeader("In-Reply-To");
+    const references = getHeader("References");
     const subject = data.subject ?? "(no subject)";
 
     // Resolve thread
     let existingThreadId: Id<"threads"> | undefined;
     let threadRootMode: "direct" | "cc" | "forward" | "unknown" | undefined;
+    let matchedParentEmailMessage: Doc<"threadMessages"> | null = null;
+    let correlatedPolicyChangeCaseId: Id<"policyChangeCases"> | undefined;
+
+    const replyMessageIdCandidates = [
+      inReplyTo,
+      ...(references ? references.trim().split(/\s+/).reverse() : []),
+    ].filter((value): value is string => Boolean(value?.trim()));
+    for (const candidate of [...new Set(replyMessageIdCandidates)]) {
+      const matched = await ctx.runQuery(
+        internal.threads.findEmailMessageByMessageId,
+        { orgId, messageId: candidate },
+      ) as Doc<"threadMessages"> | null;
+      if (!matched) continue;
+      matchedParentEmailMessage = matched;
+      existingThreadId = matched.threadId;
+      const pending = matched.pendingEmailId
+        ? await ctx.runQuery(internal.pendingEmails.getInternal, {
+            id: matched.pendingEmailId,
+          }) as Doc<"pendingEmails"> | null
+        : null;
+      correlatedPolicyChangeCaseId =
+        matched.policyChangeCaseId ?? pending?.policyChangeCaseId;
+      const parentThread = await ctx.runQuery(internal.threads.getInternal, {
+        id: matched.threadId,
+      });
+      threadRootMode = parentThread?.emailMode;
+      break;
+    }
 
     // First: try resolving via +threadSuffix in the recipient address.
     // This is the most reliable method because threadEmail is unique per thread.
-    if (threadSuffix && agentAddressWithSuffix) {
+    if (!existingThreadId && threadSuffix && agentAddressWithSuffix) {
       const unifiedThread = await ctx.runQuery(internal.threads.findByEmail, {
         threadEmail: agentAddressWithSuffix,
       });
@@ -690,11 +722,27 @@ export const processInbound = internalAction({
       if (subjectMatch) {
         existingThreadId = subjectMatch._id;
         threadRootMode = subjectMatch.emailMode;
+        const latestPolicyChangeEmail = await ctx.runQuery(
+          internal.threads.findLatestPolicyChangeEmailInThread,
+          { threadId: subjectMatch._id },
+        ) as Doc<"threadMessages"> | null;
+        if (latestPolicyChangeEmail) {
+          matchedParentEmailMessage = latestPolicyChangeEmail;
+          const pending = latestPolicyChangeEmail.pendingEmailId
+            ? await ctx.runQuery(internal.pendingEmails.getInternal, {
+                id: latestPolicyChangeEmail.pendingEmailId,
+              }) as Doc<"pendingEmails"> | null
+            : null;
+          correlatedPolicyChangeCaseId =
+            latestPolicyChangeEmail.policyChangeCaseId ?? pending?.policyChangeCaseId;
+        }
       }
     }
 
     let effectiveMode = threadRootMode ?? mode;
-    if (effectiveMode === "direct" && !isInternal) {
+    if (matchedParentEmailMessage || correlatedPolicyChangeCaseId) {
+      effectiveMode = "direct";
+    } else if (effectiveMode === "direct" && !isInternal) {
       effectiveMode = "unknown";
     }
     // When an internal user replies to an unknown-mode thread, treat as direct.
@@ -763,8 +811,20 @@ export const processInbound = internalAction({
         resendEmailId: resendEmailId || undefined,
         attachments:
           attachmentRecords.length > 0 ? (attachmentRecords as any) : undefined,
+        pendingEmailId: matchedParentEmailMessage?.pendingEmailId,
+        policyChangeCaseId: correlatedPolicyChangeCaseId,
       },
     );
+
+    if (correlatedPolicyChangeCaseId) {
+      await ctx.runMutation(internal.policyChanges.recordBrokerEmailReplyInternal, {
+        caseId: correlatedPolicyChangeCaseId,
+        userId: primaryUserId,
+        fromEmail,
+        subject,
+        content: body,
+      });
+    }
 
     // Unknown mode: notify the primary insurance contact (or first admin)
     if (effectiveMode === "unknown") {
@@ -885,6 +945,11 @@ export const processInbound = internalAction({
         ? await ctx.runQuery(internal.orgs.resolveBrokerIdentityInternal, {
             clientOrgId: orgId,
           })
+        : null;
+      const correlatedPolicyChangeCase = correlatedPolicyChangeCaseId
+        ? await ctx.runQuery(internal.policyChanges.getInternal, {
+            caseId: correlatedPolicyChangeCaseId,
+          }) as Doc<"policyChangeCases"> | null
         : null;
       const systemPrompt = scope.mode === "broker_portfolio"
         ? buildBrokerPortfolioSystemPrompt({
@@ -1067,6 +1132,15 @@ export const processInbound = internalAction({
         const filenames = claudeAttachments.map((a) => a.filename).join(", ");
         systemContext += `\n\nATTACHMENTS: The user's email includes ${claudeAttachments.length} attachment(s): ${filenames}. The content has been provided to you. Reference relevant information from attachments in your response when applicable.`;
       }
+      if (correlatedPolicyChangeCase) {
+        systemContext += `\n\nPOLICY CHANGE EMAIL REPLY:
+This inbound email is a reply to a broker email for policy change case ${correlatedPolicyChangeCase._id}.
+Case status: ${correlatedPolicyChangeCase.status}.
+Case request: ${correlatedPolicyChangeCase.requestText}
+${correlatedPolicyChangeCase.policyId ? `Policy ID: ${correlatedPolicyChangeCase.policyId}` : "Policy ID: not set"}
+
+If the broker attached an endorsement or confirmation for this change, use complete_policy_change_from_endorsement with the known case ID and policy ID. Do not import an endorsement as a separate policy unless it is clearly a standalone policy document. If the attachment is only a note or the policy ID is missing, summarize the broker reply and ask for the missing information.`;
+      }
 
       // ── Build agentic tool set — the model decides whether to answer,
       // generate a COI, or extract an uploaded policy from attachments. ──
@@ -1225,6 +1299,76 @@ export const processInbound = internalAction({
               requestKind: intake.kind,
               usedSdkPce: Boolean(result?.usedSdkPce),
             };
+          },
+        },
+        add_policy_change_info: {
+          ...addPolicyChangeInfo,
+          execute: async (params: {
+            caseId: string;
+            infoText: string;
+            sourceSpanIds?: string[];
+          }) => {
+            await ctx.runMutation(internal.policyChanges.addInfo, {
+              caseId: params.caseId as Id<"policyChangeCases">,
+              userId: primaryUserId,
+              infoText: params.infoText,
+              sourceSpanIds: params.sourceSpanIds,
+            });
+            return { status: "updated", caseId: params.caseId };
+          },
+        },
+        draft_policy_change_email: {
+          ...draftPolicyChangeSubmission,
+          execute: async (params: {
+            caseId: string;
+            recipientEmail?: string;
+            recipientName?: string;
+            instructions?: string;
+          }) => {
+            const draft = await ctx.runMutation(internal.policyChanges.draftSubmission, {
+              caseId: params.caseId as Id<"policyChangeCases">,
+              userId: primaryUserId,
+              recipientEmail: params.recipientEmail,
+              recipientName: params.recipientName,
+              instructions: params.instructions,
+            });
+            return {
+              status: draft.needsRecipient ? "needs_recipient" : "drafted",
+              caseId: params.caseId,
+              readyToSend: !draft.needsRecipient,
+              nextAction: draft.needsRecipient
+                ? "Ask for the broker email address."
+                : "Show the email details and ask for approval before sending.",
+              emailDraft: {
+                recipientEmail: draft.recipientEmail,
+                recipientName: draft.recipientName,
+                subject: draft.subject,
+                body: draft.body,
+              },
+            };
+          },
+        },
+        complete_policy_change_from_endorsement: {
+          ...completePolicyChangeFromEndorsement,
+          execute: async (params: {
+            caseId?: string;
+            policyId: string;
+            files: Array<{ fileId: string; fileName: string }>;
+            summary?: string;
+            fieldUpdates?: Record<string, unknown>;
+          }) => {
+            const result = await ctx.runMutation(internal.policyChanges.completeFromEndorsement, {
+              caseId: params.caseId as Id<"policyChangeCases"> | undefined,
+              userId: primaryUserId,
+              policyId: params.policyId as Id<"policies">,
+              files: params.files.map((file) => ({
+                fileId: file.fileId as Id<"_storage">,
+                fileName: file.fileName,
+              })),
+              summary: params.summary,
+              fieldUpdates: params.fieldUpdates,
+            });
+            return { status: "completed", ...result };
           },
         },
         compare_coverages: {
@@ -1690,7 +1834,13 @@ export const processInbound = internalAction({
           })
           .filter(Boolean);
         if (pdfAttachments.length > 0) {
-          attachmentToolHint = `\n\nATTACHMENT TOOLS:
+          attachmentToolHint = correlatedPolicyChangeCase
+            ? `\n\nATTACHMENT TOOLS:
+This email is linked to policy change case ${correlatedPolicyChangeCase._id}. If any attached PDF is an endorsement or confirmation of the requested change, call complete_policy_change_from_endorsement with caseId "${correlatedPolicyChangeCase._id}"${correlatedPolicyChangeCase.policyId ? ` and policyId "${correlatedPolicyChangeCase.policyId}"` : ""}. Only use extract_policy_attachment if the PDF is clearly a new standalone policy, quote, binder, or COI that should be added to the library separately.
+
+PDF ATTACHMENT MANIFEST (storageId -> fileName):
+${pdfAttachments.join("\n")}`
+            : `\n\nATTACHMENT TOOLS:
 If any attached PDF appears to be a policy, declarations page, quote, binder, COI, or other insurance document that should be added to the organization's policy library, call the extract_policy_attachment tool. PDFs are also provided inline so you may read them to answer questions.
 
 PDF ATTACHMENT MANIFEST (storageId -> fileName):

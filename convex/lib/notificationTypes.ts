@@ -30,6 +30,9 @@ export const ALL_NOTIFICATION_TYPES = [
   "vendor_policy_expired",
   "program_admin_certificate_request",
   "program_admin_pce_request",
+  "policy_declaration_discrepancy",
+  "policy_change_needs_info",
+  "policy_change_completed",
 ] as const;
 
 export type NotificationType = (typeof ALL_NOTIFICATION_TYPES)[number];
@@ -64,6 +67,9 @@ export const NOTIFICATION_SEVERITY: Record<NotificationType, NotificationSeverit
   vendor_policy_expired: "critical",
   program_admin_certificate_request: "info",
   program_admin_pce_request: "info",
+  policy_declaration_discrepancy: "warning",
+  policy_change_needs_info: "warning",
+  policy_change_completed: "info",
 };
 
 /** Types that coalesce within a 10-minute window. Value is window in ms. */
@@ -73,6 +79,7 @@ export const COALESCE_WINDOW_MS: Partial<Record<NotificationType, number>> = {
   vendor_compliance_gap: 24 * 60 * 60 * 1000,
   vendor_policy_expiring: 24 * 60 * 60 * 1000,
   vendor_policy_expired: 24 * 60 * 60 * 1000,
+  policy_declaration_discrepancy: 24 * 60 * 60 * 1000,
 };
 
 /**
@@ -93,4 +100,15 @@ export function buildCoalesceKey(
 /** Returns true when the type's severity triggers email by default. */
 export function getEffectiveEmailDefault(severity: NotificationSeverity): boolean {
   return severity === "warning" || severity === "critical";
+}
+
+export type NotificationChannel = "in_app" | "email" | "imessage";
+
+export function getEffectiveChannelDefault(
+  channel: NotificationChannel,
+  severity: NotificationSeverity,
+): boolean {
+  if (channel === "in_app") return true;
+  if (channel === "email") return getEffectiveEmailDefault(severity);
+  return false;
 }

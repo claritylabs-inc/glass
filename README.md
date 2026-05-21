@@ -47,7 +47,6 @@ Common variables used across major workflows:
 - `CONVEX_DEPLOYMENT`
 - `OPENAI_API_KEY`
 - `ANTHROPIC_API_KEY`
-- `MOONSHOTAI_API_KEY`
 - `DEEPSEEK_API_KEY`
 - `AUTH_RESEND_KEY` — Resend API key (shared by all outbound email)
 - `RESEND_WEBHOOK_SECRET`

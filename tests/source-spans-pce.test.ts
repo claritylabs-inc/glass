@@ -38,11 +38,18 @@ describe("source spans and PCE backend surfaces", () => {
   it("wires the create_policy_change_request agent tool", () => {
     const chatTools = read("convex/lib/chatTools.ts");
     const threadChat = read("convex/actions/processThreadChat.ts");
+    const aiUtils = read("convex/lib/aiUtils.ts");
 
     expect(chatTools).toContain("createPolicyChangeRequest");
     expect(chatTools).toContain("certificate_holder_only");
     expect(chatTools).toContain("requestKind");
+    expect(chatTools).toContain("policy number plus the requested new value is enough");
+    expect(aiUtils).toContain("Do not ask \"if you want me to proceed\"");
+    expect(aiUtils).toContain("Missing recipient information should not block creating the case");
     expect(threadChat).toContain("create_policy_change_request");
+    expect(threadChat).toContain("add_policy_change_info");
+    expect(threadChat).toContain("draft_policy_change_email");
+    expect(threadChat).toContain("complete_policy_change_from_endorsement");
     expect(threadChat).toContain("evaluatePceIntake");
     expect(threadChat).toContain("internal.actions.policyChangeRequests.createFromChatForThread");
     expect(threadChat).toContain("policyChangeCaseId");
@@ -62,7 +69,12 @@ describe("source spans and PCE backend surfaces", () => {
     expect(policyChangeArtifact).toContain("Affected values");
     expect(policyChanges).toContain("assertCanManagePolicyChange");
     expect(policyChanges).toContain("assertCanCreatePolicyChange");
-    expect(read("convex/actions/policyChangeRequests.ts")).toContain("STANDALONE_CLIENT_PCE_MESSAGE");
+    expect(read("convex/actions/policyChangeRequests.ts")).toContain("broker_contact_required");
+    expect(read("convex/actions/policyChangeRequests.ts")).not.toContain("STANDALONE_CLIENT_PCE_MESSAGE");
+    expect(read("convex/lib/access.ts")).toContain("assertCanDraftPolicyChangeSubmission");
+    expect(read("convex/policyChanges.ts")).toContain("canCreatePolicyChangeForUserInternal");
+    expect(read("convex/policyChanges.ts")).toContain("Policy change requests require direct org membership or broker access");
+    expect(read("convex/lib/aiUtils.ts")).toContain("Create the case and ask for the broker contact");
   });
 
   it("prefers source chunks in agent retrieval context", () => {

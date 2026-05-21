@@ -37,7 +37,12 @@ type NotificationType =
   | "vendor_compliance_met"
   | "vendor_compliance_gap"
   | "vendor_policy_expiring"
-  | "vendor_policy_expired";
+  | "vendor_policy_expired"
+  | "program_admin_certificate_request"
+  | "program_admin_pce_request"
+  | "policy_declaration_discrepancy"
+  | "policy_change_needs_info"
+  | "policy_change_completed";
 
 interface Notification {
   _id: Id<"notifications">;

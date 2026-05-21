@@ -8,7 +8,6 @@ import { createCohere } from "@ai-sdk/cohere";
 import { createDeepSeek } from "@ai-sdk/deepseek";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createMistral } from "@ai-sdk/mistral";
-import { createMoonshotAI } from "@ai-sdk/moonshotai";
 import { createXai } from "@ai-sdk/xai";
 import { createOpenAI } from "@ai-sdk/openai";
 import { ConvexHttpClient } from "convex/browser";
@@ -54,7 +53,6 @@ type ModelProvider =
   | "xai"
   | "mistral"
   | "cohere"
-  | "moonshot"
   | "deepseek";
 
 type ModelTask = "extraction" | "classification";
@@ -210,7 +208,6 @@ function isModelProvider(value: string): value is ModelProvider {
     "xai",
     "mistral",
     "cohere",
-    "moonshot",
     "deepseek",
   ].includes(value);
 }
@@ -229,8 +226,6 @@ function routeToModel(route: WorkerModelRoute, apiKey?: string): LanguageModel {
       return createMistral(apiKey ? { apiKey } : undefined)(route.model);
     case "cohere":
       return createCohere(apiKey ? { apiKey } : undefined)(route.model);
-    case "moonshot":
-      return createMoonshotAI(apiKey ? { apiKey } : undefined)(route.model);
     case "deepseek":
       return createDeepSeek(apiKey ? { apiKey } : undefined)(route.model);
   }

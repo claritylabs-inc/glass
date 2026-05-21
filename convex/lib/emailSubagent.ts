@@ -69,6 +69,7 @@ type EmailExpertContext = {
   channel: "web" | "email" | "imessage" | "mcp";
   fromHeader: string;
   agentAddress: string;
+  replyTo?: string;
   brokerBranding?: BrokerBranding;
   senderEmail?: string;
   defaultTo?: string;
@@ -85,6 +86,7 @@ type EmailExpertContext = {
   availableAttachments?: EmailAttachmentMeta[];
   referencedPolicyIds?: Id<"policies">[];
   referencedQuoteIds?: Id<"policies">[];
+  policyChangeCaseId?: Id<"policyChangeCases">;
   autoSendEmails?: boolean;
   emailSendDelay?: number;
   autoGenerateCoi?: boolean;
@@ -222,6 +224,7 @@ export function buildEmailPayload(params: {
   signature: { text: string; html: string };
   inReplyTo?: string;
   references?: string;
+  replyTo?: string;
 }) {
   const plainText = stripMarkdown(params.body) + params.signature.text;
   const html = buildHtmlBody(params.body, { html: params.signature.html });
@@ -234,6 +237,7 @@ export function buildEmailPayload(params: {
   };
   if (params.cc.length > 0) payload.cc = params.cc;
   if (params.bcc.length > 0) payload.bcc = params.bcc;
+  if (params.replyTo) payload.reply_to = params.replyTo;
   const headers: Record<string, string> = {};
   if (params.inReplyTo) headers["In-Reply-To"] = params.inReplyTo;
   if (params.references ?? params.inReplyTo) {
@@ -256,6 +260,7 @@ export async function upsertEmailDraftArtifact(
     allowMultipleCoiAttachments?: boolean;
     referencedPolicyIds?: Id<"policies">[];
     referencedQuoteIds?: Id<"policies">[];
+    policyChangeCaseId?: Id<"policyChangeCases">;
   },
 ): Promise<Id<"pendingEmails"> | undefined> {
   if (!["web", "mcp"].includes(context.channel) || !context.threadId) return undefined;
@@ -271,6 +276,11 @@ export async function upsertEmailDraftArtifact(
     signature,
     inReplyTo: context.inReplyTo,
     references: context.references,
+    replyTo: context.replyTo ?? (
+      context.threadId && context.agentAddress.includes("+")
+        ? context.agentAddress
+        : undefined
+    ),
   });
 
   const existing = await ctx.runQuery(internal.pendingEmails.findDraftByThreadAndRecipient, {
@@ -291,6 +301,7 @@ export async function upsertEmailDraftArtifact(
       allowMultipleCoiAttachments: params.allowMultipleCoiAttachments,
       referencedPolicyIds: params.referencedPolicyIds,
       referencedQuoteIds: params.referencedQuoteIds,
+      policyChangeCaseId: params.policyChangeCaseId,
       chatMessageId: context.chatMessageId,
     });
     if (existing.threadMessageId) {
@@ -304,6 +315,7 @@ export async function upsertEmailDraftArtifact(
         attachments: params.attachments.length > 0 ? params.attachments : undefined,
         referencedPolicyIds: params.referencedPolicyIds,
         referencedQuoteIds: params.referencedQuoteIds,
+        policyChangeCaseId: params.policyChangeCaseId,
         pendingEmailId: existing._id,
         status: "draft_email",
       });
@@ -332,6 +344,7 @@ export async function upsertEmailDraftArtifact(
     allowMultipleCoiAttachments: params.allowMultipleCoiAttachments,
     referencedPolicyIds: params.referencedPolicyIds,
     referencedQuoteIds: params.referencedQuoteIds,
+    policyChangeCaseId: params.policyChangeCaseId,
     status: "draft",
   });
   const draftMessageId = await ctx.runMutation(internal.threads.insertEmailMessage, {
@@ -348,6 +361,7 @@ export async function upsertEmailDraftArtifact(
     attachments: params.attachments.length > 0 ? params.attachments : undefined,
     referencedPolicyIds: params.referencedPolicyIds,
     referencedQuoteIds: params.referencedQuoteIds,
+    policyChangeCaseId: params.policyChangeCaseId,
     status: "draft_email",
     pendingEmailId,
   });

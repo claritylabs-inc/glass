@@ -23,6 +23,10 @@ import {
   lookupPolicy,
   lookupPolicySection,
   confirmPolicyFact,
+  createPolicyChangeRequest,
+  addPolicyChangeInfo,
+  draftPolicyChangeSubmission,
+  completePolicyChangeFromEndorsement,
   createImessageGroupChat,
   searchConnectedEmail,
   readConnectedEmail,
@@ -34,6 +38,7 @@ import {
 } from "../lib/chatTools";
 import { searchPolicyDocumentWithSourceSpans } from "../lib/policyLookup";
 import { buildVendorComplianceTools } from "../lib/vendorComplianceTools";
+import { evaluatePceIntake, type PceRequestKind } from "../lib/pceIntake";
 import { classifyPromptInjection, enforceInputLimits } from "../lib/security";
 import type { Id } from "../_generated/dataModel";
 import { isOrgReadableByScope, orgLabelForScope, type AgentScope } from "../lib/agentScope";
@@ -295,6 +300,122 @@ MCP MODE:
     const tools = {
       ...policyTools,
       ...buildVendorComplianceTools(ctx, scope.mode === "broker_portfolio" ? scope.readOrgIds : [args.orgId]),
+      create_policy_change_request: {
+        ...createPolicyChangeRequest,
+        execute: async (params: {
+          requestKind?: PceRequestKind;
+          requestText: string;
+          policyId?: string;
+          evidenceSourceIds?: string[];
+        }) => {
+          const intake = evaluatePceIntake({
+            requestKind: params.requestKind,
+            requestText: params.requestText,
+          });
+          if (!intake.allowed) return intake.message;
+          let targetOrgId = args.orgId;
+          if (params.policyId) {
+            const policy: any = await ctx.runQuery(
+              internal.policies.getInternal,
+              { id: params.policyId as Id<"policies"> },
+            );
+            if (!policy || !isOrgReadableByScope(scope, policy.orgId)) return "Policy not found.";
+            targetOrgId = policy.orgId as Id<"organizations">;
+          }
+          const result = await ctx.runAction(
+            internal.actions.policyChangeRequests.createFromChatForThread,
+            {
+              orgId: targetOrgId,
+              userId: args.userId,
+              policyId: params.policyId as Id<"policies"> | undefined,
+              requestText: params.requestText,
+              evidenceSourceIds: params.evidenceSourceIds,
+            },
+          );
+          if (result?.error) return result.error;
+          return {
+            status: "created",
+            caseId: result?.caseId,
+            requestKind: intake.kind,
+            usedSdkPce: Boolean(result?.usedSdkPce),
+          };
+        },
+      },
+      add_policy_change_info: {
+        ...addPolicyChangeInfo,
+        execute: async (params: {
+          caseId: string;
+          infoText: string;
+          sourceSpanIds?: string[];
+        }) => {
+          await ctx.runMutation(internal.policyChanges.addInfo, {
+            caseId: params.caseId as Id<"policyChangeCases">,
+            userId: args.userId,
+            infoText: params.infoText,
+            sourceSpanIds: params.sourceSpanIds,
+          });
+          return { status: "updated", caseId: params.caseId };
+        },
+      },
+      draft_policy_change_email: {
+        ...draftPolicyChangeSubmission,
+        execute: async (params: {
+          caseId: string;
+          recipientEmail?: string;
+          recipientName?: string;
+          instructions?: string;
+        }) => {
+          const draft = await ctx.runMutation(internal.policyChanges.draftSubmission, {
+            caseId: params.caseId as Id<"policyChangeCases">,
+            userId: args.userId,
+            recipientEmail: params.recipientEmail,
+            recipientName: params.recipientName,
+            instructions: params.instructions,
+          });
+          return {
+            status: draft.needsRecipient ? "needs_recipient" : "drafted",
+            caseId: params.caseId,
+            readyToSend: !draft.needsRecipient,
+            nextAction: draft.needsRecipient
+              ? "Ask for the broker email address."
+              : "Show the email details and ask for approval before sending.",
+            emailDraft: {
+              recipientEmail: draft.recipientEmail,
+              recipientName: draft.recipientName,
+              subject: draft.subject,
+              body: draft.body,
+            },
+          };
+        },
+      },
+      complete_policy_change_from_endorsement: {
+        ...completePolicyChangeFromEndorsement,
+        execute: async (params: {
+          caseId?: string;
+          policyId: string;
+          files: Array<{ fileId: string; fileName: string }>;
+          summary?: string;
+          fieldUpdates?: Record<string, unknown>;
+        }) => {
+          const policy: any = await ctx.runQuery(
+            internal.policies.getInternal,
+            { id: params.policyId as Id<"policies"> },
+          );
+          if (!policy || !isOrgReadableByScope(scope, policy.orgId)) return "Policy not found.";
+          const result = await ctx.runMutation(internal.policyChanges.completeFromEndorsement, {
+            caseId: params.caseId as Id<"policyChangeCases"> | undefined,
+            userId: args.userId,
+            policyId: params.policyId as Id<"policies">,
+            files: params.files.map((file) => ({
+              fileId: file.fileId as Id<"_storage">,
+              fileName: file.fileName,
+            })),
+            summary: params.summary,
+            fieldUpdates: params.fieldUpdates,
+          });
+          return { status: "completed", ...result };
+        },
+      },
       create_imessage_group_chat: {
         ...createImessageGroupChat,
         execute: async (params: {

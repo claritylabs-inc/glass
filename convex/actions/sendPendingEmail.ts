@@ -3,7 +3,7 @@
 import { v } from "convex/values";
 import { action, internalAction } from "../_generated/server";
 import { api, internal } from "../_generated/api";
-import { sendResendEmail } from "../lib/resend";
+import { getAgentDomain, sendResendEmail } from "../lib/resend";
 import { toResendAttachments } from "../lib/emailSubagent";
 import { shouldBlockUnapprovedCoiAttachmentBatch } from "../lib/coiAttachmentGuards";
 import { sendOutboundImessage } from "../lib/imessageOutbound";
@@ -26,6 +26,10 @@ function assertSafeDraftAttachments(pending: Doc<"pendingEmails">) {
       "This COI draft has too many certificate attachments. Cancel it and regenerate the draft before sending.",
     );
   }
+}
+
+function outboundMessageIdForPending(id: Id<"pendingEmails">) {
+  return `<glass-pending-${String(id)}@${getAgentDomain()}>`;
 }
 
 async function sendTextConfirmation(params: {
@@ -63,6 +67,19 @@ async function sendPendingEmailById(
 
     try {
       const payload = JSON.parse(pending.emailPayload);
+      const thread = pending.threadId
+        ? await ctx.runQuery(internal.threads.getInternal, {
+            id: pending.threadId,
+          })
+        : null;
+      const outboundMessageId = outboundMessageIdForPending(id);
+      payload.headers = {
+        ...(payload.headers && typeof payload.headers === "object" ? payload.headers : {}),
+        "Message-ID": outboundMessageId,
+      };
+      if (thread?.threadEmail && !payload.reply_to) {
+        payload.reply_to = thread.threadEmail;
+      }
       if (pending.attachments && pending.attachments.length > 0) {
         payload.attachments = await toResendAttachments(ctx, pending.attachments);
       }
@@ -88,9 +105,6 @@ async function sendPendingEmailById(
       }
 
       if (pending.threadId) {
-        const thread = await ctx.runQuery(internal.threads.getInternal, {
-          id: pending.threadId,
-        });
         if (pending.threadMessageId) {
           await ctx.runMutation(internal.threads.updateEmailMessage, {
             id: pending.threadMessageId,
@@ -99,10 +113,13 @@ async function sendPendingEmailById(
             ccAddresses: pending.ccAddresses,
             bccAddresses: pending.bccAddresses,
             subject: pending.subject,
+            messageId: outboundMessageId,
             responseMessageId: sentMessageId,
+            resendEmailId: sentMessageId,
             attachments: pending.attachments,
             referencedPolicyIds: pending.referencedPolicyIds,
             referencedQuoteIds: pending.referencedQuoteIds,
+            policyChangeCaseId: pending.policyChangeCaseId,
             clearStatus: true,
           });
         } else {
@@ -115,11 +132,21 @@ async function sendPendingEmailById(
             ccAddresses: pending.ccAddresses,
             bccAddresses: pending.bccAddresses,
             subject: pending.subject,
+            messageId: outboundMessageId,
             responseMessageId: sentMessageId,
+            resendEmailId: sentMessageId,
             attachments: pending.attachments,
             referencedPolicyIds: pending.referencedPolicyIds,
             referencedQuoteIds: pending.referencedQuoteIds,
             pendingEmailId: id,
+            policyChangeCaseId: pending.policyChangeCaseId,
+          });
+        }
+        if (pending.policyChangeCaseId) {
+          await ctx.runMutation(internal.policyChanges.markBrokerEmailSentInternal, {
+            caseId: pending.policyChangeCaseId,
+            recipientEmail: pending.recipientEmail,
+            content: pending.emailBody,
           });
         }
 

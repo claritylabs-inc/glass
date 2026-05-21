@@ -23,7 +23,6 @@ const TASK_LABELS: Record<string, string> = {
 const PROVIDER_COLORS: Record<string, string> = {
   OpenAI: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
   Anthropic: "bg-orange-500/15 text-orange-700 dark:text-orange-400",
-  MoonshotAI: "bg-violet-500/15 text-violet-700 dark:text-violet-400",
   DeepSeek: "bg-blue-500/15 text-blue-700 dark:text-blue-400",
 };
 

@@ -875,7 +875,7 @@ export const markPolicyChangePendingPartnerInternal = internalMutation({
       partnerOrgId: args.partnerOrgId,
       partnerProgramId: args.partnerProgramId,
       partnerApprovalStatus: "pending",
-      status: "ready",
+      status: "ready_to_submit",
       updatedAt: dayjs().valueOf(),
     });
     await notify(ctx, {
@@ -1145,8 +1145,18 @@ export const approvePolicyChangeCase = mutation({
         status: "approved_by_program_admin",
         notes: args.notes,
       },
-      status: "accepted",
+      status: "completed",
       updatedAt: dayjs().valueOf(),
+    });
+    await notify(ctx, {
+      orgId: changeCase.orgId,
+      type: "policy_change_completed",
+      title: "Policy change approved",
+      body: changeCase.summary ?? "A policy change request was approved by the program administrator.",
+      actionType: changeCase.policyId ? "view_policy" : undefined,
+      actionPayload: changeCase.policyId ? { policyId: changeCase.policyId, tab: "changes" } : undefined,
+      sourceRef: { caseId: args.caseId, policyId: changeCase.policyId },
+      coalesceKeyParts: ["policy_change_completed", String(changeCase.orgId), String(args.caseId)],
     });
   },
 });

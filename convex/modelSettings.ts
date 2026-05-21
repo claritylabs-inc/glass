@@ -26,7 +26,6 @@ const configurableProviderValidator = v.union(
   v.literal("google"),
   v.literal("xai"),
   v.literal("cohere"),
-  v.literal("moonshot"),
   v.literal("deepseek"),
 );
 

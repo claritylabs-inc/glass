@@ -202,14 +202,24 @@ export function assertCanCreatePolicyChange(access: OrgAccess): void {
   }
   if (access.accessType === "broker_of_client") return;
   if (access.orgType === "broker") return;
-  if (access.orgType === "client" && access.org.brokerOrgId) return;
-  throw new Error("Policy change requests require a connected broker");
+  if (access.orgType === "client" && access.accessType === "member") return;
+  throw new Error("Policy change requests require direct org membership or broker access");
+}
+
+export function assertCanDraftPolicyChangeSubmission(access: OrgAccess): void {
+  if (access.accessType === "connected_client") {
+    throw new Error("Connected clients have read-only vendor access");
+  }
+  if (access.accessType === "broker_of_client") return;
+  if (access.accessType === "member" && access.orgType === "broker") return;
+  if (access.accessType === "member" && access.orgType === "client") return;
+  throw new Error("Policy change email drafting requires org membership or broker access");
 }
 
 export function assertCanManagePolicyChange(access: OrgAccess): void {
   if (access.accessType === "broker_of_client") return;
   if (access.accessType === "member" && access.orgType === "broker") return;
-  throw new Error("Policy change submission is handled by the broker");
+  throw new Error("Policy change status updates are handled by the broker");
 }
 
 /**

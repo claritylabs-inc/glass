@@ -10,6 +10,7 @@ import {
   COALESCE_WINDOW_MS,
   buildCoalesceKey,
   getEffectiveEmailDefault,
+  getEffectiveChannelDefault,
   NotificationSeverity,
 } from "./notificationTypes";
 
@@ -65,7 +66,33 @@ export async function resolveEmailPreference(
   }
 
   // Severity default
-  return { shouldEmail: getEffectiveEmailDefault(severity) };
+    return { shouldEmail: getEffectiveEmailDefault(severity) };
+}
+
+async function resolveImessagePreference(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+  orgId: Id<"organizations">,
+  type: NotificationType,
+  severity: NotificationSeverity,
+): Promise<boolean> {
+  const perType = await ctx.db
+    .query("notificationPreferences")
+    .withIndex("by_userId_orgId_type_channel", (q) =>
+      q.eq("userId", userId).eq("orgId", orgId).eq("type", type).eq("channel", "imessage")
+    )
+    .first();
+  if (perType !== null) return perType.enabled;
+
+  const catchAll = await ctx.db
+    .query("notificationPreferences")
+    .withIndex("by_userId_orgId_type_channel", (q) =>
+      q.eq("userId", userId).eq("orgId", orgId).eq("type", "__all__").eq("channel", "imessage")
+    )
+    .first();
+  if (catchAll !== null) return catchAll.enabled;
+
+  return getEffectiveChannelDefault("imessage", severity);
 }
 
 /**
@@ -134,10 +161,11 @@ export const notifyInternal = internalMutation({
       coalescedCount: 1,
       lastEventAt: nowMs,
       emailStatus: "not_scheduled",
+      imessageStatus: "not_scheduled",
       createdAt: nowMs,
     });
 
-    // 3. Email scheduling — per-user or org-wide
+    // 3. External scheduling — per-user or org-wide
     const memberships = args.userId
       ? [{ userId: args.userId }]
       : await ctx.db
@@ -146,6 +174,7 @@ export const notifyInternal = internalMutation({
           .collect();
 
     let anyEmailScheduled = false;
+    let anyImessageScheduled = false;
     for (const m of memberships) {
       const { shouldEmail } = await resolveEmailPreference(
         ctx,
@@ -156,8 +185,16 @@ export const notifyInternal = internalMutation({
       );
       if (shouldEmail) {
         anyEmailScheduled = true;
-        break;
       }
+      const shouldImessage = await resolveImessagePreference(
+        ctx,
+        m.userId,
+        args.orgId,
+        type,
+        severity,
+      );
+      if (shouldImessage) anyImessageScheduled = true;
+      if (anyEmailScheduled && anyImessageScheduled) break;
     }
 
     if (anyEmailScheduled) {
@@ -170,6 +207,18 @@ export const notifyInternal = internalMutation({
       const hasPrefs = memberships.length > 0;
       await ctx.db.patch(notificationId, {
         emailStatus: hasPrefs ? "suppressed_by_preference" : "not_scheduled",
+      });
+    }
+
+    if (anyImessageScheduled) {
+      await ctx.db.patch(notificationId, { imessageStatus: "scheduled" });
+      await ctx.scheduler.runAfter(0, (internal as any).actions.sendNotificationImessage.send, {
+        notificationId,
+      });
+    } else {
+      const hasPrefs = memberships.length > 0;
+      await ctx.db.patch(notificationId, {
+        imessageStatus: hasPrefs ? "suppressed_by_preference" : "not_scheduled",
       });
     }
 

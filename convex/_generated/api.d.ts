@@ -34,6 +34,7 @@ import type * as actions_renderEmailPreview from "../actions/renderEmailPreview.
 import type * as actions_retryExtraction from "../actions/retryExtraction.js";
 import type * as actions_sendIntroImessage from "../actions/sendIntroImessage.js";
 import type * as actions_sendNotificationEmail from "../actions/sendNotificationEmail.js";
+import type * as actions_sendNotificationImessage from "../actions/sendNotificationImessage.js";
 import type * as actions_sendPendingEmail from "../actions/sendPendingEmail.js";
 import type * as actions_threadTitle from "../actions/threadTitle.js";
 import type * as actions_updateDocumentChunk from "../actions/updateDocumentChunk.js";
@@ -52,6 +53,7 @@ import type * as connectedEmail from "../connectedEmail.js";
 import type * as connectedOrgs from "../connectedOrgs.js";
 import type * as conversationTurns from "../conversationTurns.js";
 import type * as crons from "../crons.js";
+import type * as declarationFacts from "../declarationFacts.js";
 import type * as devClear from "../devClear.js";
 import type * as documentChunks from "../documentChunks.js";
 import type * as http from "../http.js";
@@ -85,6 +87,7 @@ import type * as lib_convexDocumentStore from "../lib/convexDocumentStore.js";
 import type * as lib_convexMemoryStore from "../lib/convexMemoryStore.js";
 import type * as lib_convexSourceRetriever from "../lib/convexSourceRetriever.js";
 import type * as lib_coverageScoping from "../lib/coverageScoping.js";
+import type * as lib_declarationFacts from "../lib/declarationFacts.js";
 import type * as lib_doclingPreprocessor from "../lib/doclingPreprocessor.js";
 import type * as lib_documentMapping from "../lib/documentMapping.js";
 import type * as lib_domains from "../lib/domains.js";
@@ -186,6 +189,7 @@ declare const fullApi: ApiFromModules<{
   "actions/retryExtraction": typeof actions_retryExtraction;
   "actions/sendIntroImessage": typeof actions_sendIntroImessage;
   "actions/sendNotificationEmail": typeof actions_sendNotificationEmail;
+  "actions/sendNotificationImessage": typeof actions_sendNotificationImessage;
   "actions/sendPendingEmail": typeof actions_sendPendingEmail;
   "actions/threadTitle": typeof actions_threadTitle;
   "actions/updateDocumentChunk": typeof actions_updateDocumentChunk;
@@ -204,6 +208,7 @@ declare const fullApi: ApiFromModules<{
   connectedOrgs: typeof connectedOrgs;
   conversationTurns: typeof conversationTurns;
   crons: typeof crons;
+  declarationFacts: typeof declarationFacts;
   devClear: typeof devClear;
   documentChunks: typeof documentChunks;
   http: typeof http;
@@ -237,6 +242,7 @@ declare const fullApi: ApiFromModules<{
   "lib/convexMemoryStore": typeof lib_convexMemoryStore;
   "lib/convexSourceRetriever": typeof lib_convexSourceRetriever;
   "lib/coverageScoping": typeof lib_coverageScoping;
+  "lib/declarationFacts": typeof lib_declarationFacts;
   "lib/doclingPreprocessor": typeof lib_doclingPreprocessor;
   "lib/documentMapping": typeof lib_documentMapping;
   "lib/domains": typeof lib_domains;

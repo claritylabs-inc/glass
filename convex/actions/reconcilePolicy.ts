@@ -70,7 +70,7 @@ export const reconcilePolicy = internalAction({
         return;
       }
 
-      // 3. Multiple files — merge via reasoning model (kimi-k2.5, 256K context)
+      // 3. Multiple files — merge via the configured reasoning model.
       const n = completeFiles.length;
       const docsJson = completeFiles
         .map((f: any, i: number) =>

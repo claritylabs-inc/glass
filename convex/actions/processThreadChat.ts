@@ -25,6 +25,9 @@ import {
   confirmPolicyFact,
   generateCoi,
   createPolicyChangeRequest,
+  addPolicyChangeInfo,
+  draftPolicyChangeSubmission,
+  completePolicyChangeFromEndorsement,
   createImessageGroupChat,
   coordinateMailboxTask,
   renderEmailPreview,
@@ -63,6 +66,7 @@ import {
   buildEmailExpertTool,
   getEmailAgentFromName,
   resolveEmailAgentIdentity,
+  upsertEmailDraftArtifact,
   type EmailSubagentResult,
 } from "../lib/emailSubagent";
 import { isBrokerDirectedEmailRequest } from "../lib/emailIntentGuards";
@@ -1035,6 +1039,108 @@ function buildTools(
         }
       },
     },
+    add_policy_change_info: {
+      ...addPolicyChangeInfo,
+      execute: async (input: {
+        caseId: string;
+        infoText: string;
+        sourceSpanIds?: string[];
+      }) => {
+        await ctx.runMutation(internal.policyChanges.addInfo, {
+          caseId: input.caseId as Id<"policyChangeCases">,
+          userId: args.userId as Id<"users">,
+          infoText: input.infoText,
+          sourceSpanIds: input.sourceSpanIds,
+        });
+        return { status: "updated", caseId: input.caseId };
+      },
+    },
+    draft_policy_change_email: {
+      ...draftPolicyChangeSubmission,
+      execute: async (input: {
+        caseId: string;
+        recipientEmail?: string;
+        recipientName?: string;
+        instructions?: string;
+      }) => {
+        const draft = await ctx.runMutation(internal.policyChanges.draftSubmission, {
+          caseId: input.caseId as Id<"policyChangeCases">,
+          userId: args.userId as Id<"users">,
+          recipientEmail: input.recipientEmail,
+          recipientName: input.recipientName,
+          instructions: input.instructions,
+        });
+        let pendingEmailId: Id<"pendingEmails"> | undefined;
+        if (!draft.needsRecipient && draft.recipientEmail && draft.subject && draft.body) {
+          const toolOrg = org ?? await ctx.runQuery(internal.orgs.getInternal, {
+            id: args.orgId as Id<"organizations">,
+          });
+          const thread = await ctx.runQuery(internal.threads.getInternal, {
+            id: args.threadId as Id<"threads">,
+          });
+          const emailIdentity = toolOrg ? await resolveEmailAgentIdentity(ctx, toolOrg) : null;
+          if (emailIdentity?.canSend && emailIdentity.agentAddress && emailIdentity.fromHeader) {
+            pendingEmailId = await upsertEmailDraftArtifact(ctx, {
+              orgId: args.orgId as Id<"organizations">,
+              threadId: args.threadId as Id<"threads">,
+              chatMessageId: args.chatMessageId,
+              channel: "web",
+              fromHeader: emailIdentity.fromHeader,
+              agentAddress: emailIdentity.agentAddress,
+              replyTo: thread?.threadEmail,
+              brokerBranding: emailIdentity.brokerBranding,
+            }, {
+              to: draft.recipientEmail,
+              cc: [],
+              bcc: [],
+              subject: draft.subject,
+              body: draft.body,
+              attachments: [],
+              policyChangeCaseId: input.caseId as Id<"policyChangeCases">,
+            });
+          }
+        }
+        return {
+          status: draft.needsRecipient ? "needs_recipient" : "drafted",
+          caseId: input.caseId,
+          pendingEmailId,
+          readyToSend: !draft.needsRecipient,
+          nextAction: draft.needsRecipient
+            ? "Ask the user for the broker email address."
+            : "Show the email draft and ask the user to approve sending it.",
+          emailDraft: {
+            recipientEmail: draft.recipientEmail,
+            recipientName: draft.recipientName,
+            subject: draft.subject,
+            body: draft.body,
+            pendingEmailId,
+          },
+        };
+      },
+    },
+    complete_policy_change_from_endorsement: {
+      ...completePolicyChangeFromEndorsement,
+      execute: async (input: {
+        caseId?: string;
+        policyId: string;
+        files: Array<{ fileId: string; fileName: string }>;
+        summary?: string;
+        fieldUpdates?: Record<string, unknown>;
+      }) => {
+        const result = await ctx.runMutation(internal.policyChanges.completeFromEndorsement, {
+          caseId: input.caseId as Id<"policyChangeCases"> | undefined,
+          userId: args.userId as Id<"users">,
+          policyId: input.policyId as Id<"policies">,
+          files: input.files.map((file) => ({
+            fileId: file.fileId as Id<"_storage">,
+            fileName: file.fileName,
+          })),
+          summary: input.summary,
+          fieldUpdates: input.fieldUpdates,
+        });
+        return { status: "completed", ...result };
+      },
+    },
     create_imessage_group_chat: {
       ...createImessageGroupChat,
       execute: async (input: {
@@ -1801,6 +1907,9 @@ export const run = internalAction({
         confirm_policy_fact: "Confirming policy facts...",
         generate_coi: "Generating COI...",
         create_policy_change_request: "Creating policy change request...",
+        add_policy_change_info: "Updating policy change request...",
+        draft_policy_change_email: "Drafting policy change email...",
+        complete_policy_change_from_endorsement: "Completing policy change request...",
         create_imessage_group_chat: "Starting iMessage group...",
         coordinate_mailbox_task: "Coordinating mailbox task...",
         render_email_preview: "Rendering email preview...",

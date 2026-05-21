@@ -27,7 +27,6 @@ import AnthropicIcon from "@lobehub/icons/es/Anthropic/components/Mono";
 import GeminiIcon from "@lobehub/icons/es/Gemini/components/Mono";
 import GrokIcon from "@lobehub/icons/es/Grok/components/Mono";
 import CohereIcon from "@lobehub/icons/es/Cohere/components/Mono";
-import MoonshotIcon from "@lobehub/icons/es/Moonshot/components/Mono";
 import DeepSeekIcon from "@lobehub/icons/es/DeepSeek/components/Mono";
 import { toast } from "sonner";
 
@@ -37,7 +36,6 @@ type ProviderId =
   | "google"
   | "xai"
   | "cohere"
-  | "moonshot"
   | "deepseek";
 type Route = { provider: ProviderId; model: string };
 type Routes = Record<string, Route | null>;
@@ -67,7 +65,6 @@ const VISIBLE_PROVIDERS: ProviderId[] = [
   "google",
   "xai",
   "cohere",
-  "moonshot",
   "deepseek",
 ];
 const DEFAULT_VALUE = "__default__";
@@ -78,7 +75,6 @@ const PROVIDER_ICONS: Record<ProviderId, React.ComponentType<{ size?: number | s
   google: GeminiIcon,
   xai: GrokIcon,
   cohere: CohereIcon,
-  moonshot: MoonshotIcon,
   deepseek: DeepSeekIcon,
 };
 
