@@ -149,6 +149,8 @@ export function TeamSection() {
     );
   }
 
+  const adminCount = members.filter((member: TeamMember) => member.role === "admin").length;
+
   return (
     <div className="space-y-4">
       <div className="rounded-lg border border-foreground/6 bg-card">
@@ -156,112 +158,119 @@ export function TeamSection() {
           <h3 className="mb-0! text-sm font-medium text-foreground">Team Members</h3>
         </div>
         <div className="divide-y divide-foreground/6">
-          {members.map((member: TeamMember) => (
-            <div key={member.membershipId} className="px-5 py-3.5 flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-foreground/8 flex items-center justify-center text-label-sm font-medium text-foreground shrink-0">
-                {member.name
-                  ? member.name.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2)
-                  : member.email?.[0]?.toUpperCase() ?? "?"}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-body-sm font-medium text-foreground truncate">
-                  {member.name || member.email}
-                  {member.userId === viewer?._id && (
-                    <span className="text-label-sm text-muted-foreground/40 ml-1">(you)</span>
-                  )}
-                </p>
-                <p className="text-label-sm text-muted-foreground truncate">
-                  {[member.name ? member.email : null, member.title, member.phone]
-                    .filter(Boolean)
-                    .join(" · ") || member.email}
-                </p>
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                {member.userId === org?.primaryInsuranceContactId && (
-                  <span className="text-label-sm text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 rounded">
-                    Primary Contact
-                  </span>
-                )}
-                <span className={`text-label-sm px-1.5 py-0.5 rounded flex items-center gap-1 ${
-                  member.role === "admin"
-                    ? "text-primary-muted bg-primary-light/10"
-                    : "text-muted-foreground bg-foreground/5"
-                }`}>
-                  {member.role === "admin" && <ShieldCheck className="w-3 h-3" />}
-                  {member.role === "admin" ? "Admin" : "Member"}
-                </span>
-                {orgData?.membership?.role === "admin" && (
-                  <PillButton
-                    variant="ghost"
-                    size="compact"
-                    onClick={() => {
-                      setEditingMember(member);
-                      setEditName(member.name ?? "");
-                      setEditTitle(member.title ?? "");
-                      setEditPhone(member.phone ?? "");
-                    }}
-                  >
-                    Edit
-                  </PillButton>
-                )}
-                {member.userId !== viewer?._id && (
-                  <div className="flex items-center gap-1">
-                    {member.userId !== org?.primaryInsuranceContactId && (
-                      <PillButton
-                        variant="ghost"
-                        size="compact"
-                        onClick={async () => {
-                          try {
-                            await setPrimaryContact({ userId: member.userId });
-                            toast.success("Primary contact updated");
-                          } catch (e: unknown) {
-                            const msg = e instanceof Error ? e.message : "Failed to update";
-                            toast.error(msg);
-                          }
-                        }}
-                        title="Set as primary insurance contact"
-                      >
-                        Set Primary
-                      </PillButton>
+          {members.map((member: TeamMember) => {
+            const isLastAdmin = member.role === "admin" && adminCount <= 1;
+
+            return (
+              <div key={member.membershipId} className="px-5 py-3.5 flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-foreground/8 flex items-center justify-center text-label-sm font-medium text-foreground shrink-0">
+                  {member.name
+                    ? member.name.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2)
+                    : member.email?.[0]?.toUpperCase() ?? "?"}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-body-sm font-medium text-foreground truncate">
+                    {member.name || member.email}
+                    {member.userId === viewer?._id && (
+                      <span className="text-label-sm text-muted-foreground/40 ml-1">(you)</span>
                     )}
+                  </p>
+                  <p className="text-label-sm text-muted-foreground truncate">
+                    {[member.name ? member.email : null, member.title, member.phone]
+                      .filter(Boolean)
+                      .join(" · ") || member.email}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {member.userId === org?.primaryInsuranceContactId && (
+                    <span className="text-label-sm text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 rounded">
+                      Primary Contact
+                    </span>
+                  )}
+                  <span className={`text-label-sm px-1.5 py-0.5 rounded flex items-center gap-1 ${
+                    member.role === "admin"
+                      ? "text-primary-muted bg-primary-light/10"
+                      : "text-muted-foreground bg-foreground/5"
+                  }`}>
+                    {member.role === "admin" && <ShieldCheck className="w-3 h-3" />}
+                    {member.role === "admin" ? "Admin" : "Member"}
+                  </span>
+                  {orgData?.membership?.role === "admin" && (
                     <PillButton
                       variant="ghost"
                       size="compact"
-                      onClick={async () => {
-                        try {
-                          await updateMemberRole({
-                            membershipId: member.membershipId,
-                            role: member.role === "admin" ? "member" : "admin",
-                          });
-                          toast.success("Role updated");
-                        } catch (e: unknown) {
-                          const msg = e instanceof Error ? e.message : "Failed to update role";
-                          toast.error(msg);
-                        }
+                      onClick={() => {
+                        setEditingMember(member);
+                        setEditName(member.name ?? "");
+                        setEditTitle(member.title ?? "");
+                        setEditPhone(member.phone ?? "");
                       }}
                     >
-                      {member.role === "admin" ? "Demote" : "Promote"}
+                      Edit
                     </PillButton>
-                    <PillButton
-                      variant="destructive"
-                      size="compact"
-                      onClick={async () => {
-                        try {
-                          await removeMember({ membershipId: member.membershipId });
-                          toast.success("Member removed");
-                        } catch (e: unknown) {
-                          const msg = e instanceof Error ? e.message : "Failed to remove member";
-                          toast.error(msg);
-                        }
-                      }}
-                    >
-                      Remove
-                    </PillButton>
-                  </div>
-                )}
+                  )}
+                  {member.userId !== viewer?._id && (
+                    <div className="flex items-center gap-1">
+                      {member.userId !== org?.primaryInsuranceContactId && (
+                        <PillButton
+                          variant="ghost"
+                          size="compact"
+                          onClick={async () => {
+                            try {
+                              await setPrimaryContact({ userId: member.userId });
+                              toast.success("Primary contact updated");
+                            } catch (e: unknown) {
+                              const msg = e instanceof Error ? e.message : "Failed to update";
+                              toast.error(msg);
+                            }
+                          }}
+                          title="Set as primary insurance contact"
+                        >
+                          Set Primary
+                        </PillButton>
+                      )}
+                      <PillButton
+                        variant="ghost"
+                        size="compact"
+                        disabled={isLastAdmin}
+                        title={isLastAdmin ? "At least one admin is required" : undefined}
+                        onClick={async () => {
+                          if (isLastAdmin) return;
+                          try {
+                            await updateMemberRole({
+                              membershipId: member.membershipId,
+                              role: member.role === "admin" ? "member" : "admin",
+                            });
+                            toast.success("Role updated");
+                          } catch (e: unknown) {
+                            const msg = e instanceof Error ? e.message : "Failed to update role";
+                            toast.error(msg);
+                          }
+                        }}
+                      >
+                        {member.role === "admin" ? "Demote" : "Promote"}
+                      </PillButton>
+                      <PillButton
+                        variant="destructive"
+                        size="compact"
+                        onClick={async () => {
+                          try {
+                            await removeMember({ membershipId: member.membershipId });
+                            toast.success("Member removed");
+                          } catch (e: unknown) {
+                            const msg = e instanceof Error ? e.message : "Failed to remove member";
+                            toast.error(msg);
+                          }
+                        }}
+                      >
+                        Remove
+                      </PillButton>
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
 
           {/* Pending invitations */}
           {invitations?.filter((i) => i.status === "pending").map((inv) => (
