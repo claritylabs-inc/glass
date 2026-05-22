@@ -325,6 +325,7 @@ export const createBroker = action({
 export const createSoloClient = action({
   args: {
     name: v.string(),
+    brokerOrgId: v.optional(v.id("organizations")),
     website: v.optional(v.string()),
     agentHandle: v.optional(v.string()),
     adminEmail: v.string(),
@@ -361,6 +362,7 @@ export const createSoloClient = action({
       adminName: args.adminName,
       client: {
         name: args.name,
+        brokerOrgId: args.brokerOrgId,
         website: args.website,
         agentHandle: args.agentHandle,
       },
@@ -822,6 +824,7 @@ export const createSoloClientInternal = internalMutation({
     adminName: v.optional(v.string()),
     client: v.object({
       name: v.string(),
+      brokerOrgId: v.optional(v.id("organizations")),
       website: v.optional(v.string()),
       agentHandle: v.optional(v.string()),
     }),
@@ -830,6 +833,10 @@ export const createSoloClientInternal = internalMutation({
     await assertCustomerUser(ctx, args.adminUserId);
     const clientName = args.client.name.trim();
     if (!clientName) throw new Error("Client name is required");
+    const broker = args.client.brokerOrgId ? await ctx.db.get(args.client.brokerOrgId) : null;
+    if (args.client.brokerOrgId && (!broker || broker.type !== "broker")) {
+      throw new Error("Broker not found");
+    }
     const agentHandle = normalizeHandle(args.client.agentHandle);
     if (agentHandle) {
       const existingByHandle = await ctx.db
@@ -847,6 +854,7 @@ export const createSoloClientInternal = internalMutation({
     const clientOrgId = await ctx.db.insert("organizations", {
       name: clientName,
       type: "client",
+      brokerOrgId: args.client.brokerOrgId,
       website: args.client.website?.trim() || undefined,
       agentHandle,
       allowedEmails: [args.adminEmail],
@@ -870,8 +878,10 @@ export const createSoloClientInternal = internalMutation({
       type: "client_created",
       targetOrgId: clientOrgId,
       targetUserId: args.adminUserId,
-      summary: `Created solo client ${clientName}`,
-      metadata: { adminEmail: args.adminEmail },
+      summary: broker
+        ? `Created client ${clientName} for broker ${broker.name}`
+        : `Created standalone client ${clientName}`,
+      metadata: { adminEmail: args.adminEmail, brokerOrgId: args.client.brokerOrgId },
     });
     return { clientOrgId };
   },

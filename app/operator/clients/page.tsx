@@ -11,6 +11,13 @@ import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { Badge } from "@/components/ui/badge";
 import { PillButton } from "@/components/ui/pill-button";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Table,
   TableBody,
   TableCell,
@@ -39,8 +46,14 @@ type ClientRow = {
   createdAt: number;
 };
 
+type BrokerOption = {
+  _id: Id<"organizations">;
+  name: string;
+};
+
 const INPUT_CLASSES =
   "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
+const STANDALONE_VALUE = "__standalone__";
 
 function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -92,6 +105,7 @@ export default function OperatorClientsPage() {
   const [selectedId, setSelectedId] = useState<Id<"organizations"> | null>(null);
   const [panelMode, setPanelMode] = useState<"create" | "details" | null>(null);
   const [name, setName] = useState("");
+  const [brokerOrgId, setBrokerOrgId] = useState<string>(STANDALONE_VALUE);
   const [website, setWebsite] = useState("");
   const [agentHandle, setAgentHandle] = useState("");
   const [adminEmail, setAdminEmail] = useState("");
@@ -105,6 +119,11 @@ export default function OperatorClientsPage() {
     (api as any).operator.listClients,
     {},
   ) as ClientRow[] | undefined;
+  const brokers = useQuery(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (api as any).operator.listBrokers,
+    {},
+  ) as BrokerOption[] | undefined;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const createClient = useAction((api as any).operator.createSoloClient);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -127,6 +146,9 @@ export default function OperatorClientsPage() {
     try {
       const result = await createClient({
         name,
+        brokerOrgId: brokerOrgId === STANDALONE_VALUE
+          ? undefined
+          : brokerOrgId as Id<"organizations">,
         website: website || undefined,
         agentHandle: agentHandle || undefined,
         adminEmail,
@@ -134,6 +156,7 @@ export default function OperatorClientsPage() {
       });
       toast.success("Client created for setup");
       setName("");
+      setBrokerOrgId(STANDALONE_VALUE);
       setWebsite("");
       setAgentHandle("");
       setAdminEmail("");
@@ -262,6 +285,22 @@ export default function OperatorClientsPage() {
             placeholder="Client name"
             required
           />
+          <Select
+            value={brokerOrgId}
+            onValueChange={(value) => setBrokerOrgId(value ?? STANDALONE_VALUE)}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="Broker" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={STANDALONE_VALUE}>Standalone</SelectItem>
+              {(brokers ?? []).map((broker) => (
+                <SelectItem key={broker._id} value={broker._id}>
+                  {broker.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <input
             className={INPUT_CLASSES}
             value={website}
