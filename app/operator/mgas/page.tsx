@@ -319,9 +319,9 @@ export default function OperatorMGAsPage() {
       showBrokerShare={false}
       rightPanel={rightPanel}
     >
-      <main className="mx-auto flex w-full max-w-7xl flex-col">
+      <main className="flex w-full flex-col">
         <section className="w-full overflow-hidden rounded-lg border border-foreground/6 bg-card">
-          <Table className="min-w-[920px]">
+          <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
                 <TableHead className="w-[27%] px-4 text-label-sm text-muted-foreground">MGA</TableHead>
