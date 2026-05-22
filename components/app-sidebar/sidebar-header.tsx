@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
+import type { ReactNode } from "react";
 
 export function SidebarHeader({
   collapsed,
@@ -12,6 +13,7 @@ export function SidebarHeader({
   headerOrgName,
   onToggleCollapse,
   backHref,
+  icon,
 }: {
   collapsed: boolean;
   headerOrgIcon?: string | null;
@@ -20,6 +22,7 @@ export function SidebarHeader({
   headerOrgName: string;
   onToggleCollapse: () => void;
   backHref?: string;
+  icon?: ReactNode;
 }) {
   return (
     <div className="flex items-center gap-2 px-3 h-12 border-b border-foreground/6">
@@ -56,6 +59,8 @@ export function SidebarHeader({
                 unoptimized
                 className="w-7 h-7 rounded-full object-cover"
               />
+            ) : icon ? (
+              icon
             ) : (
               initials
             )}

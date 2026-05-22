@@ -5,6 +5,7 @@ import { Building2, LogOut, ShieldCheck, SlidersHorizontal, Users } from "lucide
 import { NavItem, SectionHeader } from "@/components/app-sidebar/nav-item";
 import { MENU_ITEM_BASE, MENU_ITEM_INACTIVE } from "@/components/app-sidebar/nav-config";
 import { SidebarHeader } from "@/components/app-sidebar/sidebar-header";
+import { LogoIcon } from "@/components/ui/logo-icon";
 
 export function OperatorSidebar({
   collapsed,
@@ -26,6 +27,7 @@ export function OperatorSidebar({
         initials="OP"
         headerOrgName="Operator"
         onToggleCollapse={onToggleCollapse}
+        icon={<LogoIcon size={15} static />}
       />
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2 py-2">
         <SectionHeader label="Internal" collapsed={collapsed} />
