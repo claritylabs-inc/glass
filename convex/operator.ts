@@ -8,6 +8,7 @@ import type { QueryCtx } from "./_generated/server";
 import { buildEmailShell, escapeHtml } from "./lib/emailTemplate";
 import { getAuthFromAddress, sendResendEmail } from "./lib/resend";
 import { getAuthSiteUrl } from "./lib/domains";
+import { normalizeAvailableUserPhone } from "./lib/userPhone";
 import {
   assertCustomerUser,
   isBootstrapOperatorEmail,
@@ -199,6 +200,7 @@ export const listBrokers = query({
           onboardingComplete: broker.onboardingComplete,
           adminName: admin?.name,
           adminEmail: admin?.email,
+          adminPhone: admin?.phone,
           clientCount: await countBrokerClients(ctx, broker._id),
           createdAt: broker._creationTime,
         };
@@ -229,6 +231,7 @@ async function listOperatorClientRows(ctx: QueryCtx) {
         primaryContactEmail: client.primaryContactEmail,
         adminName: admin?.name,
         adminEmail: admin?.email,
+        adminPhone: admin?.phone,
         brokerOrgId: client.brokerOrgId,
         brokerName: broker?.name,
         createdAt: client._creationTime,
@@ -356,6 +359,7 @@ export const createBroker = action({
     agentHandle: v.optional(v.string()),
     adminEmail: v.string(),
     adminName: v.optional(v.string()),
+    adminPhone: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<{ brokerOrgId: Id<"organizations"> }> => {
     const userId = await getAuthUserId(ctx);
@@ -386,6 +390,7 @@ export const createBroker = action({
       adminUserId: account.user._id,
       adminEmail,
       adminName: args.adminName,
+      adminPhone: args.adminPhone,
       broker: {
         name: args.name,
         slug: args.slug,
@@ -404,6 +409,7 @@ export const createSoloClient = action({
     agentHandle: v.optional(v.string()),
     adminEmail: v.string(),
     adminName: v.optional(v.string()),
+    adminPhone: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<{ clientOrgId: Id<"organizations"> }> => {
     const userId = await getAuthUserId(ctx);
@@ -434,6 +440,7 @@ export const createSoloClient = action({
       adminUserId: account.user._id,
       adminEmail,
       adminName: args.adminName,
+      adminPhone: args.adminPhone,
       client: {
         name: args.name,
         brokerOrgId: args.brokerOrgId,
@@ -811,6 +818,7 @@ export const upsertBrokerInternal = internalMutation({
     adminUserId: v.id("users"),
     adminEmail: v.string(),
     adminName: v.optional(v.string()),
+    adminPhone: v.optional(v.string()),
     broker: v.object({
       name: v.string(),
       slug: v.optional(v.string()),
@@ -852,6 +860,7 @@ export const upsertBrokerInternal = internalMutation({
       slug,
       website: args.broker.website?.trim() || undefined,
       agentHandle,
+      primaryInsuranceContactId: args.adminUserId,
       onboardingComplete: true,
       operatorStatus: "onboarding" as const,
     };
@@ -876,12 +885,26 @@ export const upsertBrokerInternal = internalMutation({
         role: "admin",
       });
     }
-    await ctx.db.patch(args.adminUserId, {
+    const adminUserPatch: {
+      accountKind: "customer";
+      email: string;
+      name?: string;
+      phone?: string;
+      onboardingComplete: boolean;
+    } = {
       accountKind: "customer",
       email: args.adminEmail,
       name: args.adminName?.trim() || undefined,
       onboardingComplete: true,
-    });
+    };
+    if (args.adminPhone !== undefined) {
+      adminUserPatch.phone = await normalizeAvailableUserPhone(
+        ctx,
+        args.adminPhone,
+        args.adminUserId,
+      );
+    }
+    await ctx.db.patch(args.adminUserId, adminUserPatch);
     await writeOperatorAudit(ctx, {
       operatorUserId: args.operatorUserId,
       type: "broker_created",
@@ -900,6 +923,7 @@ export const createSoloClientInternal = internalMutation({
     adminUserId: v.id("users"),
     adminEmail: v.string(),
     adminName: v.optional(v.string()),
+    adminPhone: v.optional(v.string()),
     client: v.object({
       name: v.string(),
       brokerOrgId: v.optional(v.id("organizations")),
@@ -930,6 +954,11 @@ export const createSoloClientInternal = internalMutation({
       .first();
     if (otherMembership) throw new Error("Client admin already belongs to another organization");
 
+    const adminPhone = await normalizeAvailableUserPhone(
+      ctx,
+      args.adminPhone,
+      args.adminUserId,
+    );
     const clientOrgId = await ctx.db.insert("organizations", {
       name: clientName,
       type: "client",
@@ -938,6 +967,9 @@ export const createSoloClientInternal = internalMutation({
       agentHandle,
       allowedEmails: [args.adminEmail],
       emailVerification: "strict",
+      primaryContactName: args.adminName?.trim() || undefined,
+      primaryContactEmail: args.adminEmail,
+      primaryContactPhone: adminPhone,
       onboardingComplete: true,
       operatorStatus: "onboarding",
     });
@@ -946,12 +978,22 @@ export const createSoloClientInternal = internalMutation({
       userId: args.adminUserId,
       role: "admin",
     });
-    await ctx.db.patch(args.adminUserId, {
+    const adminUserPatch: {
+      accountKind: "customer";
+      email: string;
+      name?: string;
+      phone?: string;
+      onboardingComplete: boolean;
+    } = {
       accountKind: "customer",
       email: args.adminEmail,
       name: args.adminName?.trim() || undefined,
       onboardingComplete: true,
-    });
+    };
+    if (args.adminPhone !== undefined) {
+      adminUserPatch.phone = adminPhone;
+    }
+    await ctx.db.patch(args.adminUserId, adminUserPatch);
     await writeOperatorAudit(ctx, {
       operatorUserId: args.operatorUserId,
       type: "client_created",

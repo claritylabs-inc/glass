@@ -13,6 +13,7 @@ import { normalizeOptionalEmail, resolveBrokerIdentityForClient } from "./lib/br
 import { buildEmailShell, escapeHtml } from "./lib/emailTemplate";
 import { getAuthSiteUrl } from "./lib/domains";
 import { getAuthFromAddress, sendResendEmail } from "./lib/resend";
+import { normalizeAvailableUserPhone } from "./lib/userPhone";
 import {
   assertCustomerUser,
   assertImpersonatedSetupWrite,
@@ -240,6 +241,7 @@ export const listMembers = query({
           role: m.role,
           name: user?.name,
           email: user?.email,
+          phone: user?.phone,
           title: user?.title,
         };
       }),
@@ -1111,6 +1113,30 @@ export const updateMemberRole = mutation({
     }
 
     await ctx.db.patch(args.membershipId, { role: args.role });
+  },
+});
+
+export const updateMemberProfile = mutation({
+  args: {
+    membershipId: v.id("orgMemberships"),
+    name: v.optional(v.string()),
+    title: v.optional(v.string()),
+    phone: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { orgId } = await requireOrgAdmin(ctx);
+
+    const membership = await ctx.db.get(args.membershipId);
+    if (!membership || membership.orgId !== orgId) throw new Error("Membership not found");
+    await assertCustomerUser(ctx, membership.userId);
+
+    const patch: { name?: string; title?: string; phone?: string | undefined } = {};
+    if (args.name !== undefined) patch.name = args.name.trim() || undefined;
+    if (args.title !== undefined) patch.title = args.title.trim() || undefined;
+    if (args.phone !== undefined) {
+      patch.phone = await normalizeAvailableUserPhone(ctx, args.phone, membership.userId);
+    }
+    await ctx.db.patch(membership.userId, patch);
   },
 });
 

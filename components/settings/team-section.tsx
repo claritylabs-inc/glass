@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useSettingsActions } from "@/components/settings/settings-actions-context";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
 import {
   Loader2,
@@ -12,6 +13,18 @@ import {
 } from "lucide-react";
 import { PillButton } from "@/components/ui/pill-button";
 import { InviteMemberDrawer } from "@/components/settings/invite-member-drawer";
+import { SettingsDrawer } from "@/components/settings/settings-drawer";
+import { PhoneInput } from "@/components/ui/phone-input";
+
+type TeamMember = {
+  membershipId: Id<"orgMemberships">;
+  userId: Id<"users">;
+  role: "admin" | "member";
+  name?: string;
+  email?: string;
+  phone?: string;
+  title?: string;
+};
 
 export function TeamSection() {
   const viewer = useQuery(api.users.viewer);
@@ -20,12 +33,18 @@ export function TeamSection() {
   const invitations = useQuery(api.orgs.listInvitations);
   const removeMember = useMutation(api.orgs.removeMember);
   const updateMemberRole = useMutation(api.orgs.updateMemberRole);
+  const updateMemberProfile = useMutation(api.orgs.updateMemberProfile);
   const setPrimaryContact = useMutation(api.orgs.setPrimaryInsuranceContact);
   const cancelInvitation = useMutation(api.orgs.cancelInvitation);
 
   const org = orgData?.org;
 
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [editingMember, setEditingMember] = useState<TeamMember | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editTitle, setEditTitle] = useState("");
+  const [editPhone, setEditPhone] = useState("");
+  const [savingProfile, setSavingProfile] = useState(false);
 
   const { setActions, setRightPanel } = useSettingsActions();
 
@@ -41,9 +60,86 @@ export function TeamSection() {
   }, []);
 
   useEffect(() => {
+    if (editingMember) {
+      setRightPanel(
+        <SettingsDrawer
+          open={!!editingMember}
+          onOpenChange={(open) => {
+            if (!open) setEditingMember(null);
+          }}
+          title="Edit team member"
+          footer={
+            <PillButton
+              disabled={savingProfile}
+              onClick={async () => {
+                if (!editingMember) return;
+                setSavingProfile(true);
+                try {
+                  await updateMemberProfile({
+                    membershipId: editingMember.membershipId,
+                    name: editName,
+                    title: editTitle,
+                    phone: editPhone,
+                  });
+                  toast.success("Profile updated");
+                  setEditingMember(null);
+                } catch (error) {
+                  toast.error(error instanceof Error ? error.message : "Failed to update profile");
+                } finally {
+                  setSavingProfile(false);
+                }
+              }}
+            >
+              {savingProfile ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              Save profile
+            </PillButton>
+          }
+        >
+          <div className="space-y-4">
+            <label className="block space-y-1.5">
+              <span className="text-label-sm font-medium text-muted-foreground">Name</span>
+              <input
+                value={editName}
+                onChange={(event) => setEditName(event.target.value)}
+                className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                placeholder="Name"
+              />
+            </label>
+            <label className="block space-y-1.5">
+              <span className="text-label-sm font-medium text-muted-foreground">Title</span>
+              <input
+                value={editTitle}
+                onChange={(event) => setEditTitle(event.target.value)}
+                className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                placeholder="Title"
+              />
+            </label>
+            <label className="block space-y-1.5">
+              <span className="text-label-sm font-medium text-muted-foreground">Phone</span>
+              <PhoneInput
+                value={editPhone}
+                onChange={(value) => setEditPhone(value ?? "")}
+                defaultCountry="US"
+                placeholder="(555) 123-4567"
+              />
+            </label>
+          </div>
+        </SettingsDrawer>,
+      );
+      return () => setRightPanel(null);
+    }
     setRightPanel(<InviteMemberDrawer open={inviteOpen} onOpenChange={setInviteOpen} />);
     return () => setRightPanel(null);
-  }, [inviteOpen, setRightPanel]);
+  }, [
+    editName,
+    editPhone,
+    editTitle,
+    editingMember,
+    inviteOpen,
+    savingProfile,
+    setRightPanel,
+    updateMemberProfile,
+  ]);
 
   if (viewer === undefined || orgData === undefined || members === undefined) {
     return (
@@ -60,7 +156,7 @@ export function TeamSection() {
           <h3 className="mb-0! text-sm font-medium text-foreground">Team Members</h3>
         </div>
         <div className="divide-y divide-foreground/6">
-          {members.map((member) => (
+          {members.map((member: TeamMember) => (
             <div key={member.membershipId} className="px-5 py-3.5 flex items-center gap-3">
               <div className="w-8 h-8 rounded-full bg-foreground/8 flex items-center justify-center text-label-sm font-medium text-foreground shrink-0">
                 {member.name
@@ -74,9 +170,11 @@ export function TeamSection() {
                     <span className="text-label-sm text-muted-foreground/40 ml-1">(you)</span>
                   )}
                 </p>
-                {member.name && member.email && (
-                  <p className="text-label-sm text-muted-foreground truncate">{member.email}</p>
-                )}
+                <p className="text-label-sm text-muted-foreground truncate">
+                  {[member.name ? member.email : null, member.title, member.phone]
+                    .filter(Boolean)
+                    .join(" · ") || member.email}
+                </p>
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 {member.userId === org?.primaryInsuranceContactId && (
@@ -92,6 +190,20 @@ export function TeamSection() {
                   {member.role === "admin" && <ShieldCheck className="w-3 h-3" />}
                   {member.role === "admin" ? "Admin" : "Member"}
                 </span>
+                {orgData?.membership?.role === "admin" && (
+                  <PillButton
+                    variant="ghost"
+                    size="compact"
+                    onClick={() => {
+                      setEditingMember(member);
+                      setEditName(member.name ?? "");
+                      setEditTitle(member.title ?? "");
+                      setEditPhone(member.phone ?? "");
+                    }}
+                  >
+                    Edit
+                  </PillButton>
+                )}
                 {member.userId !== viewer?._id && (
                   <div className="flex items-center gap-1">
                     {member.userId !== org?.primaryInsuranceContactId && (

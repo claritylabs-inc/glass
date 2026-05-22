@@ -10,6 +10,7 @@ import { AppShell } from "@/components/app-shell";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { HandleAvailability } from "@/components/settings/handle-availability";
 import { Badge } from "@/components/ui/badge";
+import { PhoneInput } from "@/components/ui/phone-input";
 import { PillButton } from "@/components/ui/pill-button";
 import { CLIENT_PORTAL_HOST, getPublicAgentDomain } from "@/lib/domains";
 import {
@@ -34,6 +35,7 @@ type BrokerRow = {
   operatorStatus: "onboarding" | "live";
   adminName?: string;
   adminEmail?: string;
+  adminPhone?: string;
   clientCount: number;
   createdAt: number;
 };
@@ -120,6 +122,7 @@ export default function OperatorPage() {
   const [agentHandle, setAgentHandle] = useState("");
   const [adminEmail, setAdminEmail] = useState("");
   const [adminName, setAdminName] = useState("");
+  const [adminPhone, setAdminPhone] = useState("");
   const [busy, setBusy] = useState(false);
   const [debouncedSlug, setDebouncedSlug] = useState("");
   const [debouncedAgentHandle, setDebouncedAgentHandle] = useState("");
@@ -186,6 +189,7 @@ export default function OperatorPage() {
         agentHandle: agentHandle || undefined,
         adminEmail,
         adminName: adminName || undefined,
+        adminPhone: adminPhone || undefined,
       });
       toast.success("Broker created for setup");
       setName("");
@@ -194,6 +198,7 @@ export default function OperatorPage() {
       setAgentHandle("");
       setAdminEmail("");
       setAdminName("");
+      setAdminPhone("");
       if (result?.brokerOrgId) setSelectedId(result.brokerOrgId);
       setPanelMode(null);
     } catch (error) {
@@ -224,7 +229,7 @@ export default function OperatorPage() {
     setBusy(true);
     try {
       await setBrokerStatus({ brokerOrgId: broker._id, status: "onboarding" });
-      toast.success("Broker moved back to onboarding");
+      toast.success("Broker account disabled");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to update broker");
     } finally {
@@ -290,7 +295,7 @@ export default function OperatorPage() {
                 disabled={busy}
                 onClick={() => moveToOnboarding(selected)}
               >
-                Move back to onboarding
+                Disable account
               </PillButton>
             )}
           </>
@@ -388,6 +393,14 @@ export default function OperatorPage() {
               placeholder="Terry Wang"
             />
           </Field>
+          <Field label="Broker admin phone">
+            <PhoneInput
+              value={adminPhone}
+              onChange={(value) => setAdminPhone(value ?? "")}
+              defaultCountry="US"
+              placeholder="(555) 123-4567"
+            />
+          </Field>
         </form>
       ) : selected ? (
         <div className="space-y-4">
@@ -414,6 +427,10 @@ export default function OperatorPage() {
             <DetailRow
               label="Agent handle"
               value={<span className="block truncate">{selected.agentHandle ?? "Not set"}</span>}
+            />
+            <DetailRow
+              label="Admin phone"
+              value={<span className="block truncate">{selected.adminPhone ?? "Not set"}</span>}
             />
             <DetailRow label="Clients" value={selected.clientCount} />
             <DetailRow label="Created" value={dayjs(selected.createdAt).format("MMM D, YYYY")} />

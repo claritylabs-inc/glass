@@ -163,7 +163,7 @@ export default function OperatorMGAsPage() {
     setBusy(true);
     try {
       await setMGAStatus({ mgaOrgId: mga._id, status: "onboarding" });
-      toast.success("MGA moved back to onboarding");
+      toast.success("MGA account disabled");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to update MGA");
     } finally {
@@ -229,7 +229,7 @@ export default function OperatorMGAsPage() {
                 disabled={busy}
                 onClick={() => moveToOnboarding(selected)}
               >
-                Move back to onboarding
+                Disable account
               </PillButton>
             )}
           </>
