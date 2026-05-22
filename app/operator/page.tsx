@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import dayjs from "dayjs";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { useRouter } from "next/navigation";
@@ -8,8 +8,10 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { AppShell } from "@/components/app-shell";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
+import { HandleAvailability } from "@/components/settings/handle-availability";
 import { Badge } from "@/components/ui/badge";
 import { PillButton } from "@/components/ui/pill-button";
+import { CLIENT_PORTAL_HOST, getPublicAgentDomain } from "@/lib/domains";
 import {
   Table,
   TableBody,
@@ -38,6 +40,30 @@ type BrokerRow = {
 
 const INPUT_CLASSES =
   "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
+const AFFIXED_INPUT_CLASSES =
+  "min-w-0 flex-1 bg-transparent px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none";
+const AGENT_DOMAIN = getPublicAgentDomain();
+const BROKER_SIGNUP_PREFIX = `${CLIENT_PORTAL_HOST}/signup/`;
+
+function normalizeIdentifierInput(value: string) {
+  const withoutDomain = value.trim().toLowerCase().split("@")[0] ?? "";
+  return withoutDomain.replace(/[^a-z0-9-]/g, "").replace(/^-+|-+$/g, "");
+}
+
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="block space-y-1.5">
+      <span className="text-label-sm font-medium text-muted-foreground">{label}</span>
+      {children}
+    </label>
+  );
+}
 
 function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -95,6 +121,8 @@ export default function OperatorPage() {
   const [adminEmail, setAdminEmail] = useState("");
   const [adminName, setAdminName] = useState("");
   const [busy, setBusy] = useState(false);
+  const [debouncedSlug, setDebouncedSlug] = useState("");
+  const [debouncedAgentHandle, setDebouncedAgentHandle] = useState("");
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const current = useQuery((api as any).operator.current, {});
@@ -103,6 +131,16 @@ export default function OperatorPage() {
     (api as any).operator.listBrokers,
     {},
   ) as BrokerRow[] | undefined;
+  const identifierCheck = useQuery(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (api as any).operator.checkBrokerSetupIdentifiers,
+    slug || agentHandle
+      ? {
+          slug: debouncedSlug || undefined,
+          agentHandle: debouncedAgentHandle || undefined,
+        }
+      : "skip",
+  );
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const createBroker = useAction((api as any).operator.createBroker);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -118,6 +156,24 @@ export default function OperatorPage() {
     () => brokers?.find((broker) => broker._id === selectedId) ?? null,
     [brokers, selectedId],
   );
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSlug(slug), 250);
+    return () => window.clearTimeout(timer);
+  }, [slug]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedAgentHandle(agentHandle), 250);
+    return () => window.clearTimeout(timer);
+  }, [agentHandle]);
+
+  const slugChecking =
+    slug.length >= 3 && (slug !== debouncedSlug || identifierCheck === undefined);
+  const handleChecking =
+    agentHandle.length >= 3 &&
+    (agentHandle !== debouncedAgentHandle || identifierCheck === undefined);
+  const slugUnavailable = !!slug && identifierCheck?.slug?.available === false;
+  const handleUnavailable = !!agentHandle && identifierCheck?.agentHandle?.available === false;
 
   async function submitBroker(event: React.FormEvent) {
     event.preventDefault();
@@ -212,7 +268,7 @@ export default function OperatorPage() {
           <PillButton
             type="submit"
             form="operator-create-broker-form"
-            disabled={busy || !name || !adminEmail}
+            disabled={busy || !name || !adminEmail || slugUnavailable || handleUnavailable}
           >
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
             Create for setup
@@ -243,45 +299,95 @@ export default function OperatorPage() {
     >
       {panelMode === "create" ? (
         <form id="operator-create-broker-form" onSubmit={submitBroker} className="space-y-3">
-          <input
-            className={INPUT_CLASSES}
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            placeholder="Broker name"
-            required
-          />
-          <input
-            className={INPUT_CLASSES}
-            value={slug}
-            onChange={(event) => setSlug(event.target.value)}
-            placeholder="Slug"
-          />
-          <input
-            className={INPUT_CLASSES}
-            value={website}
-            onChange={(event) => setWebsite(event.target.value)}
-            placeholder="Website"
-          />
-          <input
-            className={INPUT_CLASSES}
-            value={agentHandle}
-            onChange={(event) => setAgentHandle(event.target.value)}
-            placeholder="Agent handle"
-          />
-          <input
-            className={INPUT_CLASSES}
-            value={adminEmail}
-            onChange={(event) => setAdminEmail(event.target.value)}
-            placeholder="Broker admin email"
-            type="email"
-            required
-          />
-          <input
-            className={INPUT_CLASSES}
-            value={adminName}
-            onChange={(event) => setAdminName(event.target.value)}
-            placeholder="Broker admin name"
-          />
+          <Field label="Broker name">
+            <input
+              className={INPUT_CLASSES}
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="ReLease"
+              required
+            />
+          </Field>
+          <Field label="Signup link">
+            <div className="flex overflow-hidden rounded-lg border border-foreground/8 bg-popover focus-within:border-foreground/20 focus-within:ring-1 focus-within:ring-foreground/8">
+              <span className="flex shrink-0 items-center border-r border-foreground/8 bg-muted/35 px-3 text-label-sm text-muted-foreground">
+                {BROKER_SIGNUP_PREFIX}
+              </span>
+              <input
+                className={AFFIXED_INPUT_CLASSES}
+                value={slug}
+                onChange={(event) => setSlug(normalizeIdentifierInput(event.target.value))}
+                placeholder="release"
+              />
+            </div>
+            <HandleAvailability
+              saving={busy}
+              checking={slugChecking}
+              input={slug}
+              current=""
+              currentLabel="Existing broker"
+              availability={slug === debouncedSlug ? identifierCheck?.slug : undefined}
+              renderAvailablePreview={(value) =>
+                identifierCheck?.slug?.mode === "updates_existing"
+                  ? `${BROKER_SIGNUP_PREFIX}${value} will update the existing broker`
+                  : `${BROKER_SIGNUP_PREFIX}${value} is available`
+              }
+            />
+          </Field>
+          <Field label="Website">
+            <input
+              className={INPUT_CLASSES}
+              value={website}
+              onChange={(event) => setWebsite(event.target.value)}
+              placeholder="https://releaserent.com"
+            />
+          </Field>
+          <Field label="Agent handle">
+            <div className="flex overflow-hidden rounded-lg border border-foreground/8 bg-popover focus-within:border-foreground/20 focus-within:ring-1 focus-within:ring-foreground/8">
+              <input
+                className={AFFIXED_INPUT_CLASSES}
+                value={agentHandle}
+                onChange={(event) => setAgentHandle(normalizeIdentifierInput(event.target.value))}
+                placeholder="release"
+              />
+              <span className="flex shrink-0 items-center border-l border-foreground/8 bg-muted/35 px-3 text-label-sm text-muted-foreground">
+                @{AGENT_DOMAIN}
+              </span>
+            </div>
+            <HandleAvailability
+              saving={busy}
+              checking={handleChecking}
+              input={agentHandle}
+              current=""
+              currentLabel="Existing agent handle"
+              availability={
+                agentHandle === debouncedAgentHandle ? identifierCheck?.agentHandle : undefined
+              }
+              renderAvailablePreview={(value) =>
+                identifierCheck?.agentHandle?.mode === "updates_existing"
+                  ? `${value}@${AGENT_DOMAIN} will update the existing broker`
+                  : `${value}@${AGENT_DOMAIN} is available`
+              }
+            />
+          </Field>
+          <Field label="Broker admin email">
+            <input
+              className={INPUT_CLASSES}
+              value={adminEmail}
+              onChange={(event) => setAdminEmail(event.target.value)}
+              placeholder="terry@example.com"
+              type="email"
+              required
+            />
+          </Field>
+          <Field label="Broker admin name">
+            <input
+              className={INPUT_CLASSES}
+              value={adminName}
+              onChange={(event) => setAdminName(event.target.value)}
+              placeholder="Terry Wang"
+            />
+          </Field>
         </form>
       ) : selected ? (
         <div className="space-y-4">

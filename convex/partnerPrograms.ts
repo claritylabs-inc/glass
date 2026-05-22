@@ -17,6 +17,7 @@ import { notify } from "./lib/notify";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { makeEmbedText } from "./lib/sdkCallbacks";
 import { getModelForOrg, getProviderOptionsForTask } from "./lib/models";
+import { getActiveOperatorImpersonation } from "./lib/operatorIdentity";
 
 const certificateSourceValidator = v.union(
   v.literal("policy_page"),
@@ -190,6 +191,12 @@ function policyDisplayName(policy: any) {
 async function requireCurrentPartnerAccess(ctx: any) {
   const userId = await getAuthUserId(ctx);
   if (!userId) throw new Error("Not authenticated");
+  const impersonation = await getActiveOperatorImpersonation(ctx);
+  if (impersonation) {
+    const access = await getOrgAccess(ctx, impersonation.session.targetOrgId);
+    assertPartnerOrg(access);
+    return access;
+  }
   const membership = await ctx.db
     .query("orgMemberships")
     .withIndex("by_userId", (q: any) => q.eq("userId", userId))

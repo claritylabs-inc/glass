@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import dayjs from "dayjs";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { useRouter } from "next/navigation";
@@ -8,6 +8,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { AppShell } from "@/components/app-shell";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
+import { HandleAvailability } from "@/components/settings/handle-availability";
 import { Badge } from "@/components/ui/badge";
 import { PillButton } from "@/components/ui/pill-button";
 import {
@@ -28,6 +29,7 @@ import {
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { OperatorSidebar } from "../operator-sidebar";
+import { getPublicAgentDomain } from "@/lib/domains";
 
 type ClientRow = {
   _id: Id<"organizations">;
@@ -49,11 +51,36 @@ type ClientRow = {
 type BrokerOption = {
   _id: Id<"organizations">;
   name: string;
+  website?: string;
+  iconUrl?: string | null;
 };
 
 const INPUT_CLASSES =
   "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
+const AFFIXED_INPUT_CLASSES =
+  "min-w-0 flex-1 bg-transparent px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none";
 const STANDALONE_VALUE = "__standalone__";
+const AGENT_DOMAIN = getPublicAgentDomain();
+
+function normalizeIdentifierInput(value: string) {
+  const withoutDomain = value.trim().toLowerCase().split("@")[0] ?? "";
+  return withoutDomain.replace(/[^a-z0-9-]/g, "").replace(/^-+|-+$/g, "");
+}
+
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="block space-y-1.5">
+      <span className="text-label-sm font-medium text-muted-foreground">{label}</span>
+      {children}
+    </label>
+  );
+}
 
 function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -76,12 +103,23 @@ function faviconFromWebsite(website?: string | null) {
   }
 }
 
-function OrgMark({ name, iconUrl, website }: { name: string; iconUrl?: string | null; website?: string | null }) {
+function OrgMark({
+  name,
+  iconUrl,
+  website,
+  size = "md",
+}: {
+  name: string;
+  iconUrl?: string | null;
+  website?: string | null;
+  size?: "sm" | "md";
+}) {
   const [imageFailed, setImageFailed] = useState(false);
   const source = iconUrl ?? faviconFromWebsite(website);
   const initial = name.trim().charAt(0).toUpperCase() || "?";
+  const sizeClass = size === "sm" ? "h-3.5 w-3.5 rounded-sm text-[8px]" : "h-7 w-7 rounded-md text-label-sm";
   return (
-    <div className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-md border border-foreground/8 bg-white text-label-sm font-medium text-foreground">
+    <div className={`flex shrink-0 items-center justify-center overflow-hidden border border-foreground/8 bg-white font-medium text-foreground ${sizeClass}`}>
       {source && !imageFailed ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
@@ -111,6 +149,7 @@ export default function OperatorClientsPage() {
   const [adminEmail, setAdminEmail] = useState("");
   const [adminName, setAdminName] = useState("");
   const [busy, setBusy] = useState(false);
+  const [debouncedAgentHandle, setDebouncedAgentHandle] = useState("");
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const current = useQuery((api as any).operator.current, {});
@@ -124,6 +163,10 @@ export default function OperatorClientsPage() {
     (api as any).operator.listBrokers,
     {},
   ) as BrokerOption[] | undefined;
+  const handleAvailability = useQuery(
+    api.orgs.checkHandleAvailability,
+    debouncedAgentHandle ? { handle: debouncedAgentHandle } : "skip",
+  );
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const createClient = useAction((api as any).operator.createSoloClient);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -139,6 +182,20 @@ export default function OperatorClientsPage() {
     () => clients?.find((client) => client._id === selectedId) ?? null,
     [clients, selectedId],
   );
+  const selectedBroker = useMemo(
+    () => brokers?.find((broker) => broker._id === brokerOrgId) ?? null,
+    [brokerOrgId, brokers],
+  );
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedAgentHandle(agentHandle), 250);
+    return () => window.clearTimeout(timer);
+  }, [agentHandle]);
+
+  const handleChecking =
+    agentHandle.length >= 3 &&
+    (agentHandle !== debouncedAgentHandle || handleAvailability === undefined);
+  const handleUnavailable = !!agentHandle && handleAvailability?.available === false;
 
   async function submitClient(event: React.FormEvent) {
     event.preventDefault();
@@ -247,7 +304,7 @@ export default function OperatorClientsPage() {
           <PillButton
             type="submit"
             form="operator-create-client-form"
-            disabled={busy || !name || !adminEmail}
+            disabled={busy || !name || !adminEmail || handleUnavailable}
           >
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
             Create for setup
@@ -278,55 +335,100 @@ export default function OperatorClientsPage() {
     >
       {panelMode === "create" ? (
         <form id="operator-create-client-form" onSubmit={submitClient} className="space-y-3">
-          <input
-            className={INPUT_CLASSES}
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            placeholder="Client name"
-            required
-          />
-          <Select
-            value={brokerOrgId}
-            onValueChange={(value) => setBrokerOrgId(value ?? STANDALONE_VALUE)}
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="Broker" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={STANDALONE_VALUE}>Standalone</SelectItem>
-              {(brokers ?? []).map((broker) => (
-                <SelectItem key={broker._id} value={broker._id}>
-                  {broker.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <input
-            className={INPUT_CLASSES}
-            value={website}
-            onChange={(event) => setWebsite(event.target.value)}
-            placeholder="Website"
-          />
-          <input
-            className={INPUT_CLASSES}
-            value={agentHandle}
-            onChange={(event) => setAgentHandle(event.target.value)}
-            placeholder="Agent handle"
-          />
-          <input
-            className={INPUT_CLASSES}
-            value={adminEmail}
-            onChange={(event) => setAdminEmail(event.target.value)}
-            placeholder="Client admin email"
-            type="email"
-            required
-          />
-          <input
-            className={INPUT_CLASSES}
-            value={adminName}
-            onChange={(event) => setAdminName(event.target.value)}
-            placeholder="Client admin name"
-          />
+          <Field label="Client name">
+            <input
+              className={INPUT_CLASSES}
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="ReLease"
+              required
+            />
+          </Field>
+          <Field label="Broker">
+            <Select
+              value={brokerOrgId}
+              onValueChange={(value) => setBrokerOrgId(value ?? STANDALONE_VALUE)}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue>
+                  {selectedBroker ? (
+                    <span className="flex min-w-0 items-center gap-2">
+                      <OrgMark
+                        name={selectedBroker.name}
+                        iconUrl={selectedBroker.iconUrl}
+                        website={selectedBroker.website}
+                        size="sm"
+                      />
+                      <span className="truncate">{selectedBroker.name}</span>
+                    </span>
+                  ) : (
+                    "Standalone"
+                  )}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={STANDALONE_VALUE}>Standalone</SelectItem>
+                {(brokers ?? []).map((broker) => (
+                  <SelectItem key={broker._id} value={broker._id}>
+                    <span className="flex min-w-0 items-center gap-2">
+                      <OrgMark name={broker.name} iconUrl={broker.iconUrl} website={broker.website} size="sm" />
+                      <span className="truncate">{broker.name}</span>
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field label="Website">
+            <input
+              className={INPUT_CLASSES}
+              value={website}
+              onChange={(event) => setWebsite(event.target.value)}
+              placeholder="https://releaserent.com"
+            />
+          </Field>
+          <Field label="Agent handle">
+            <div className="flex overflow-hidden rounded-lg border border-foreground/8 bg-popover focus-within:border-foreground/20 focus-within:ring-1 focus-within:ring-foreground/8">
+              <input
+                className={AFFIXED_INPUT_CLASSES}
+                value={agentHandle}
+                onChange={(event) => setAgentHandle(normalizeIdentifierInput(event.target.value))}
+                placeholder="release"
+              />
+              <span className="flex shrink-0 items-center border-l border-foreground/8 bg-muted/35 px-3 text-label-sm text-muted-foreground">
+                @{AGENT_DOMAIN}
+              </span>
+            </div>
+            <HandleAvailability
+              saving={busy}
+              checking={handleChecking}
+              input={agentHandle}
+              current=""
+              currentLabel="Existing agent handle"
+              availability={
+                agentHandle === debouncedAgentHandle ? handleAvailability : undefined
+              }
+              renderAvailablePreview={(value) => `${value}@${AGENT_DOMAIN} is available`}
+            />
+          </Field>
+          <Field label="Client admin email">
+            <input
+              className={INPUT_CLASSES}
+              value={adminEmail}
+              onChange={(event) => setAdminEmail(event.target.value)}
+              placeholder="terry@example.com"
+              type="email"
+              required
+            />
+          </Field>
+          <Field label="Client admin name">
+            <input
+              className={INPUT_CLASSES}
+              value={adminName}
+              onChange={(event) => setAdminName(event.target.value)}
+              placeholder="Terry Wang"
+            />
+          </Field>
         </form>
       ) : selected ? (
         <div className="space-y-4">

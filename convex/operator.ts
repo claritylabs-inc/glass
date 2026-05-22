@@ -29,8 +29,20 @@ function slugFromName(name: string) {
 }
 
 function normalizeHandle(value: string | undefined) {
-  const normalized = value?.toLowerCase().replace(/[^a-z0-9-]/g, "").replace(/^-+|-+$/g, "");
+  const raw = value?.trim().toLowerCase() ?? "";
+  const withoutDomain = raw.includes("@") ? raw.split("@")[0] : raw;
+  const normalized = withoutDomain.replace(/[^a-z0-9-]/g, "").replace(/^-+|-+$/g, "");
   return normalized || undefined;
+}
+
+function validateAgentHandle(handle: string | undefined) {
+  if (!handle) return;
+  if (handle.length < 3 || handle.length > 30) {
+    throw new Error("Agent handle must be 3-30 characters");
+  }
+  if (!/^[a-z][a-z0-9-]*[a-z0-9]$/.test(handle)) {
+    throw new Error("Agent handle must start with a letter and end with a letter or number");
+  }
 }
 
 function operatorOwnerEmails() {
@@ -271,6 +283,68 @@ export const listMGAs = query({
         };
       }),
     );
+  },
+});
+
+export const checkBrokerSetupIdentifiers = query({
+  args: {
+    slug: v.optional(v.string()),
+    agentHandle: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await requireOperator(ctx);
+    const slug = args.slug ? normalizeSlug(args.slug) : undefined;
+    const agentHandle = normalizeHandle(args.agentHandle);
+
+    let slugOrgId: Id<"organizations"> | undefined;
+    const slugStatus = slug
+      ? await (async () => {
+          if (slug.length < 3 || slug.length > 40) {
+            return { available: false, normalized: slug, reason: "Slug must be 3-40 characters", mode: "unavailable" as const };
+          }
+          if (!/^[a-z0-9][a-z0-9-]*[a-z0-9]$/.test(slug)) {
+            return { available: false, normalized: slug, reason: "Slug must start and end with a letter or number", mode: "unavailable" as const };
+          }
+          const slugOrg = await ctx.db
+            .query("organizations")
+            .withIndex("by_slug", (q) => q.eq("slug", slug))
+            .first();
+          if (!slugOrg) return { available: true, normalized: slug, mode: "available" as const };
+          slugOrgId = slugOrg._id;
+          if (slugOrg.type === "broker") {
+            return { available: true, normalized: slug, reason: "Existing broker will be updated", mode: "updates_existing" as const };
+          }
+          return { available: false, normalized: slug, reason: "Slug is already used by a non-broker org", mode: "unavailable" as const };
+        })()
+      : null;
+
+    const handleStatus = agentHandle
+      ? await (async () => {
+          try {
+            validateAgentHandle(agentHandle);
+          } catch (error) {
+            return {
+              available: false,
+              normalized: agentHandle,
+              reason: error instanceof Error ? error.message : "Agent handle is invalid",
+              mode: "unavailable" as const,
+            };
+          }
+          const existingByHandle = await ctx.db
+            .query("organizations")
+            .withIndex("by_agentHandle", (q) => q.eq("agentHandle", agentHandle))
+            .first();
+          if (!existingByHandle) {
+            return { available: true, normalized: agentHandle, mode: "available" as const };
+          }
+          if (slugOrgId && existingByHandle._id === slugOrgId) {
+            return { available: true, normalized: agentHandle, reason: "Existing broker will be updated", mode: "updates_existing" as const };
+          }
+          return { available: false, normalized: agentHandle, reason: "Agent handle is already taken", mode: "unavailable" as const };
+        })()
+      : null;
+
+    return { slug: slugStatus, agentHandle: handleStatus };
   },
 });
 
@@ -750,6 +824,9 @@ export const upsertBrokerInternal = internalMutation({
     if (!brokerName) throw new Error("Broker name is required");
     const slug = args.broker.slug ? normalizeSlug(args.broker.slug) : slugFromName(brokerName);
     if (slug.length < 3 || slug.length > 40) throw new Error("Slug must be 3-40 characters");
+    if (!/^[a-z0-9][a-z0-9-]*[a-z0-9]$/.test(slug)) {
+      throw new Error("Slug must start and end with a letter or number");
+    }
     const existingBySlug = await ctx.db
       .query("organizations")
       .withIndex("by_slug", (q) => q.eq("slug", slug))
@@ -758,6 +835,7 @@ export const upsertBrokerInternal = internalMutation({
       throw new Error("Slug is already used by a non-broker org");
     }
     const agentHandle = normalizeHandle(args.broker.agentHandle);
+    validateAgentHandle(agentHandle);
     if (agentHandle) {
       const existingByHandle = await ctx.db
         .query("organizations")
@@ -838,6 +916,7 @@ export const createSoloClientInternal = internalMutation({
       throw new Error("Broker not found");
     }
     const agentHandle = normalizeHandle(args.client.agentHandle);
+    validateAgentHandle(agentHandle);
     if (agentHandle) {
       const existingByHandle = await ctx.db
         .query("organizations")
