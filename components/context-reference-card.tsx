@@ -75,8 +75,7 @@ export function PolicyReferenceCard({
     policy.security ||
     "Unknown";
   const policyNum = policy.policyNumber;
-  const types =
-    policy.policyTypes ?? (policy.policyType ? [policy.policyType] : []);
+  const types = policy.policyTypes ?? [];
   const primaryType = types[0]
     ? (POLICY_TYPE_LABELS[types[0]] ?? types[0])
     : null;

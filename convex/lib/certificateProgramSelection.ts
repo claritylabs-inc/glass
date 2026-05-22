@@ -3,7 +3,6 @@ import type { Id } from "../_generated/dataModel";
 export type CertificateProgramCandidate = {
   programId: string;
   programName: string;
-  categoryLabel?: string;
   categoryLabels?: string[];
   aliases?: string[];
   score?: number;
@@ -58,8 +57,6 @@ export function normalizeCertificateProgramCandidates(
         programId,
         programName,
       };
-      const categoryLabel = firstString(record.categoryLabel);
-      if (categoryLabel) normalized.categoryLabel = categoryLabel;
       if (categoryLabels?.length) normalized.categoryLabels = categoryLabels;
       const aliases = Array.isArray(record.aliases)
         ? record.aliases.filter(
@@ -95,7 +92,6 @@ export function buildCertificateProgramSelection(params: {
 function candidateSubtitle(candidate: CertificateProgramCandidate) {
   return (
     candidate.categoryLabels?.join(", ") ||
-    candidate.categoryLabel ||
     candidate.aliases?.slice(0, 2).join(", ") ||
     ""
   );

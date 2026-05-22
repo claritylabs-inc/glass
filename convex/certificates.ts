@@ -219,7 +219,6 @@ export const previewAuthorityForPolicy = action({
           programId: selectedProgram._id,
           programName: selectedProgram.name,
           categoryLabels: selectedProgram.categoryLabels,
-          categoryLabel: selectedProgram.categoryLabels?.join(", ") ?? selectedProgram.categoryLabel,
           approvalMode: selectedProgram.approvalMode,
         }
         : null,

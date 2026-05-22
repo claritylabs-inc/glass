@@ -144,8 +144,6 @@ export function useCachedPolicyList(documentType: DocumentType) {
           {
             ...(policy as unknown as NonNullable<PolicySummary>),
             partnerProgram: null,
-            hasRawResponse: false,
-            hasRawMetadata: false,
           },
         ),
       ]),

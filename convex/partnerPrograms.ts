@@ -40,8 +40,6 @@ const templateKindValidator = v.union(
   v.literal("standard_glass"),
   v.literal("custom_glass"),
   v.literal("pdf_overlay"),
-  v.literal("pdf_fields"),
-  v.literal("standard_overlay"),
 );
 
 const LlmApprovalSchema = z.object({
@@ -95,9 +93,8 @@ function programMatchText(program: {
   name?: string;
   aliases?: string[];
   categoryLabels?: string[];
-  categoryLabel?: string;
 }) {
-  return [program.name, ...(program.categoryLabels ?? []), program.categoryLabel, ...(program.aliases ?? [])]
+  return [program.name, ...(program.categoryLabels ?? []), ...(program.aliases ?? [])]
     .filter(Boolean)
     .join("\n");
 }
@@ -117,7 +114,6 @@ function cleanStringList(items?: string[]) {
 function policyMatchText(policy: any) {
   return [
     ...(Array.isArray(policy.policyTypes) ? policy.policyTypes : []),
-    policy.policyType,
     policy.mga,
     policy.security,
     policy.carrier,
@@ -324,7 +320,6 @@ export const upsertProgram = mutation({
     aliases: v.optional(v.array(v.string())),
     description: v.optional(v.string()),
     categoryLabels: v.optional(v.array(v.string())),
-    categoryLabel: v.optional(v.string()),
     defaultTemplateId: v.optional(v.id("coiTemplates")),
     approvalMode: v.optional(approvalModeValidator),
     approvalRuleText: v.optional(v.string()),
@@ -354,16 +349,13 @@ export const upsertProgram = mutation({
     }
 
     const now = dayjs().valueOf();
-    const categoryLabels = cleanStringList(
-      args.categoryLabels ?? (args.categoryLabel ? [args.categoryLabel] : []),
-    );
+    const categoryLabels = cleanStringList(args.categoryLabels);
     const patch = {
       partnerOrgId: access.org._id,
       name: args.name.trim(),
       aliases: cleanStringList(args.aliases),
       description: args.description?.trim() || undefined,
       categoryLabels,
-      categoryLabel: categoryLabels[0],
       defaultTemplateId: args.defaultTemplateId,
       approvalMode: args.approvalMode ?? "require_approval_all",
       approvalRuleText: args.approvalRuleText?.trim() || undefined,
@@ -386,7 +378,6 @@ export const saveProgram = action({
     aliases: v.optional(v.array(v.string())),
     description: v.optional(v.string()),
     categoryLabels: v.optional(v.array(v.string())),
-    categoryLabel: v.optional(v.string()),
     defaultTemplateId: v.optional(v.id("coiTemplates")),
     approvalMode: approvalModeValidator,
     approvalRuleText: v.optional(v.string()),
@@ -690,7 +681,6 @@ export const resolveCertificateAuthority = internalAction({
             _id: candidate._id,
             name: candidate.name,
             aliases: candidate.aliases,
-            categoryLabel: candidate.categoryLabels?.join(", ") ?? candidate.categoryLabel,
             categoryLabels: candidate.categoryLabels,
             score: candidate.score,
           })),
@@ -767,7 +757,6 @@ export const resolveCertificateAuthority = internalAction({
           },
           policy: {
             policyTypes: policy.policyTypes,
-            policyType: policy.policyType,
             carrier: policy.carrier,
             mga: policy.mga,
             security: policy.security,

@@ -310,8 +310,7 @@ export const quoteStats = query({
     const byYear: Record<string, number> = {};
 
     for (const q of quotes) {
-      const types = q.policyTypes ?? ["other"];
-      for (const t of types) {
+      for (const t of q.policyTypes) {
         byType[t] = (byType[t] || 0) + 1;
       }
       byCarrier[q.carrier] = (byCarrier[q.carrier] || 0) + 1;
@@ -347,16 +346,7 @@ export const listPending = query({
         !p.pipelineStatus)
     );
 
-    const enriched = pending.map((p) => {
-      const { rawExtractionResponse, rawMetadataResponse, ...rest } = p;
-      return {
-        ...rest,
-        hasRawResponse: !!rawExtractionResponse,
-        hasRawMetadata: !!rawMetadataResponse,
-      };
-    });
-
-    return enriched;
+    return pending;
   },
 });
 
@@ -376,16 +366,7 @@ export const listExtractionLog = query({
         (p.pipelineStatus === "complete" || p.dismissed === true)
     );
 
-    const enriched = completed.map((p) => {
-      const { rawExtractionResponse, rawMetadataResponse, ...rest } = p;
-      return {
-        ...rest,
-        hasRawResponse: !!rawExtractionResponse,
-        hasRawMetadata: !!rawMetadataResponse,
-      };
-    });
-
-    return enriched;
+    return completed;
   },
 });
 
@@ -410,12 +391,9 @@ export const get = query({
           programId: partnerProgram._id,
           programName: partnerProgram.name,
           categoryLabels: partnerProgram.categoryLabels,
-          categoryLabel: partnerProgram.categoryLabels?.join(", ") ?? partnerProgram.categoryLabel,
           approvalMode: partnerProgram.approvalMode,
         }
         : null,
-      hasRawResponse: !!policy.rawExtractionResponse,
-      hasRawMetadata: !!policy.rawMetadataResponse,
     };
   },
 });
@@ -444,7 +422,6 @@ export const getSummary = query({
       fileName: enrichedPolicy.fileName,
       documentType: enrichedPolicy.documentType,
       policyNumber: enrichedPolicy.policyNumber,
-      policyType: enrichedPolicy.policyType,
       policyTypes: enrichedPolicy.policyTypes,
       policyTermType: enrichedPolicy.policyTermType,
       carrier: enrichedPolicy.carrier,
@@ -470,12 +447,9 @@ export const getSummary = query({
           programId: partnerProgram._id,
           programName: partnerProgram.name,
           categoryLabels: partnerProgram.categoryLabels,
-          categoryLabel: partnerProgram.categoryLabels?.join(", ") ?? partnerProgram.categoryLabel,
           approvalMode: partnerProgram.approvalMode,
         }
         : null,
-      hasRawResponse: !!policy.rawExtractionResponse,
-      hasRawMetadata: !!policy.rawMetadataResponse,
     };
   },
 });
@@ -552,9 +526,7 @@ export const stats = query({
     const byYear: Record<string, number> = {};
 
     for (const p of policies) {
-      const policyLegacy = p as unknown as Record<string, unknown>;
-      const types = p.policyTypes ?? (policyLegacy.policyType ? [policyLegacy.policyType as string] : ["other"]);
-      for (const t of types) {
+      for (const t of p.policyTypes) {
         byType[t] = (byType[t] || 0) + 1;
       }
       byCarrier[p.carrier] = (byCarrier[p.carrier] || 0) + 1;
@@ -865,8 +837,6 @@ export const updateExtraction = mutation({
     document: v.optional(documentValidator),
     fileId: v.optional(v.id("_storage")),
     fileName: v.optional(v.string()),
-    rawExtractionResponse: v.optional(v.string()),
-    rawMetadataResponse: v.optional(v.string()),
     // Typed declarations (cl-sdk 1.4+)
     declarations: v.optional(v.any()),
     extractionReview: v.optional(v.any()),
@@ -1521,8 +1491,6 @@ export const restartExtraction = mutation({
       insuredName: "Extracting...",
       summary: undefined,
       coverages: [],
-      rawExtractionResponse: undefined,
-      rawMetadataResponse: undefined,
       document: undefined,
       metadataSource: undefined,
     });

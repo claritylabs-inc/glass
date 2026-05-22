@@ -133,7 +133,6 @@ export default defineSchema({
     // undefined = legacy/active (accepted or pre-dates this field).
     inviteStatus: v.optional(v.union(v.literal("draft"), v.literal("invited"))),
     // Draft/invite contact details captured by broker before the client accepts.
-    // Mirrored into clientPassport on accept.
     primaryContactName: v.optional(v.string()),
     primaryContactEmail: v.optional(v.string()),
     primaryContactPhone: v.optional(v.string()),
@@ -162,8 +161,6 @@ export default defineSchema({
     aliases: v.array(v.string()),
     description: v.optional(v.string()),
     categoryLabels: v.optional(v.array(v.string())),
-    // Deprecated compatibility field. New UI/backend code should use categoryLabels.
-    categoryLabel: v.optional(v.string()),
     defaultTemplateId: v.optional(v.id("coiTemplates")),
     approvalMode: v.optional(
       v.union(
@@ -188,9 +185,6 @@ export default defineSchema({
       v.literal("standard_glass"),
       v.literal("custom_glass"),
       v.literal("pdf_overlay"),
-      // Deprecated legacy values from the first program-admin pass.
-      v.literal("pdf_fields"),
-      v.literal("standard_overlay"),
     ),
     fileId: v.optional(v.id("_storage")),
     fileName: v.optional(v.string()),
@@ -338,7 +332,7 @@ export default defineSchema({
       v.literal("imessage"),
     ),
     policyId: v.optional(v.id("policies")),
-    quoteId: v.optional(v.any()), // legacy: may contain old quotes table IDs // quotes now stored in policies table with documentType="quote"
+    quoteId: v.optional(v.id("policies")),
     expiresAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -877,8 +871,7 @@ export default defineSchema({
     ),
     // Policy metadata
     policyNumber: v.string(),
-    policyType: v.optional(v.string()), // legacy single type
-    policyTypes: v.optional(v.array(v.string())),
+    policyTypes: v.array(v.string()),
     documentType: v.optional(v.union(v.literal("policy"), v.literal("quote"))),
     policyYear: v.number(),
     effectiveDate: v.string(),
@@ -943,13 +936,6 @@ export default defineSchema({
     // Dismissal flag — set when a policy row is dismissed/marked not-insurance.
     // Replaces the old extractionStatus: "not_insurance" value.
     dismissed: v.optional(v.boolean()),
-    // Deprecated — kept optional for migration. Remove after removeDeprecatedExtractionFields runs.
-    extractionStatus: v.optional(v.string()),
-    extractionError: v.optional(v.string()),
-    extractionCheckpoint: v.optional(v.any()),
-    extractionLog: v.optional(v.any()),
-    rawExtractionResponse: v.optional(v.string()),
-    rawMetadataResponse: v.optional(v.string()),
     // Typed declarations (cl-sdk 1.4+) — line-specific structured data
     declarations: v.optional(v.any()),
     // AI analysis results (risk notes, observations, key findings)
@@ -1088,10 +1074,6 @@ export default defineSchema({
       v.literal("unknown"),
     ),
     extractedData: v.optional(v.any()), // Raw per-file extraction result (InsuranceDocument)
-    // Deprecated — kept optional for migration. Remove after removeDeprecatedExtractionFields runs.
-    extractionStatus: v.optional(v.string()),
-    extractionError: v.optional(v.string()),
-    extractionLog: v.optional(v.any()),
     pageCount: v.optional(v.number()),
     createdAt: v.number(),
     orgId: v.id("organizations"),
@@ -1654,7 +1636,7 @@ export default defineSchema({
 
   policyAuditLog: defineTable({
     policyId: v.optional(v.id("policies")),
-    quoteId: v.optional(v.any()), // legacy: may contain old quotes table IDs
+    quoteId: v.optional(v.id("policies")),
     userId: v.id("users"),
     orgId: v.optional(v.id("organizations")),
     action: v.string(),
@@ -1692,9 +1674,6 @@ export default defineSchema({
         summary: v.optional(v.string()),
       }),
     ),
-    // Backwards compatibility for existing prod threads from the legacy conversation migration.
-    // Do not remove unless those documents have been backfilled/deleted in production.
-    legacyConversationId: v.optional(v.string()),
     visibility: v.optional(
       v.union(v.literal("broker_visible"), v.literal("client_internal")),
     ),
@@ -1739,9 +1718,6 @@ export default defineSchema({
     messageId: v.optional(v.string()),
     responseMessageId: v.optional(v.string()),
     resendEmailId: v.optional(v.string()),
-    // Backwards compatibility for existing prod threadMessages from the legacy conversation migration.
-    // Do not remove unless those documents have been backfilled/deleted in production.
-    legacyConversationId: v.optional(v.string()),
     // Content
     content: v.string(),
     contentHtml: v.optional(v.string()),
@@ -1761,7 +1737,7 @@ export default defineSchema({
     // Agent response metadata
     replyToMessageId: v.optional(v.id("threadMessages")),
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
-    referencedQuoteIds: v.optional(v.any()), // legacy: may contain old quotes table IDs
+    referencedQuoteIds: v.optional(v.array(v.id("policies"))),
     referencedRequirementIds: v.optional(v.array(v.id("insuranceRequirements"))),
     referencedMailboxIds: v.optional(v.array(v.id("connectedEmailAccounts"))),
     // Sections cited by the agent (titles captured from lookup_policy_section tool results)
@@ -1917,7 +1893,7 @@ export default defineSchema({
     allowMultipleCoiAttachments: v.optional(v.boolean()),
     // For unified thread dual-write
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
-    referencedQuoteIds: v.optional(v.any()), // legacy: may contain old quotes table IDs
+    referencedQuoteIds: v.optional(v.array(v.id("policies"))),
   })
     .index("by_threadId", ["threadId"])
     .index("by_status", ["status"]),

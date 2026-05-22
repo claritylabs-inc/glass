@@ -12,7 +12,6 @@ import type { ToolArtifactData } from "../types";
 type Candidate = {
   programId: string;
   programName: string;
-  categoryLabel?: string;
   categoryLabels?: string[];
 };
 
@@ -44,9 +43,6 @@ function normalizeSelection(data: unknown): SelectionArtifact {
             programId,
             programName,
           };
-          if (typeof candidateRecord.categoryLabel === "string") {
-            normalized.categoryLabel = candidateRecord.categoryLabel;
-          }
           if (Array.isArray(candidateRecord.categoryLabels)) {
             const categoryLabels = candidateRecord.categoryLabels.filter(
               (value): value is string => typeof value === "string",
@@ -70,7 +66,7 @@ function normalizeSelection(data: unknown): SelectionArtifact {
 }
 
 function candidateSubtitle(candidate: Candidate) {
-  return candidate.categoryLabels?.join(", ") || candidate.categoryLabel || "";
+  return candidate.categoryLabels?.join(", ") || "";
 }
 
 function CertificateProgramSelectionCard({

@@ -12,7 +12,6 @@ type PolicyLike = {
   security?: string;
   mga?: string;
   policyNumber?: string;
-  policyType?: string;
   policyTypes?: string[];
 };
 
@@ -36,7 +35,7 @@ function sourceFromPolicy(policy: PolicyLike, siteUrl: string): EmailPolicySourc
   const href = `${siteUrl.replace(/\/$/, "")}/policies/${policy._id}`;
   const label = policy.documentType === "quote" ? "Quote" : "Policy";
   const administrator = policy.mga || policy.security || policy.carrier || "Unknown";
-  const type = policy.policyTypes?.[0] ?? policy.policyType;
+  const type = policy.policyTypes?.[0];
   const detail = [administrator, policy.policyNumber, type].filter(Boolean).join(" - ");
 
   return {

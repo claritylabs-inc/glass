@@ -2,16 +2,13 @@ import { describe, it, expect } from "vitest";
 import { toPolicyDto, toOrgDto, toNotificationDto } from "../../convex/lib/apiDto";
 
 describe("toPolicyDto", () => {
-  it("strips raw blobs and uses snake_case", () => {
+  it("maps policy fields to snake_case", () => {
     const raw = {
       _id: "p1", _creationTime: 1000, carrier: "Zurich", policyNumber: "ZR-001",
       policyTypes: ["gl"], effectiveDate: "2024-01-01", expirationDate: "2025-01-01",
       premium: 5000, documentType: "policy",
-      rawExtractionResponse: "blob", rawMetadataResponse: "blob2",
     };
     const dto = toPolicyDto(raw);
-    expect(dto).not.toHaveProperty("rawExtractionResponse");
-    expect(dto).not.toHaveProperty("raw_extraction_response");
     expect(dto.policy_number).toBe("ZR-001");
     expect(dto.policy_types).toEqual(["gl"]);
     expect(dto.created_at).toBe(1000);

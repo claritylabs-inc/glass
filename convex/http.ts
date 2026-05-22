@@ -621,10 +621,7 @@ http.route({
 (p: any) => p._id === id);
       if (!found) return jsonResponse({ error: "Not found" }, 404);
 
-      // Return full detail (excluding raw extraction responses)
-
-      const { rawExtractionResponse: _rawExtractionResponse, rawMetadataResponse: _rawMetadataResponse, ...rest } = found;
-      return jsonResponse(rest);
+      return jsonResponse(found);
     } catch (e) {
       if (e instanceof Response) return e;
       return jsonResponse({ error: String(e) }, 500);
@@ -882,8 +879,7 @@ http.route({
       if (!found) return jsonResponse({ error: "Not found" }, 404);
 
 
-      const { rawExtractionResponse: _rawExtractionResponse, rawMetadataResponse: _rawMetadataResponse, ...rest } = found as any;
-      return jsonResponse(rest);
+      return jsonResponse(found);
     } catch (e) {
       if (e instanceof Response) return e;
       return jsonResponse({ error: String(e) }, 500);
@@ -1327,8 +1323,7 @@ async function handleToolCall(
 (p: any) => p._id === args.id);
       if (!found) throw new Error("Not found");
 
-      const { rawExtractionResponse: _rawExtractionResponse, rawMetadataResponse: _rawMetadataResponse, ...rest } = found as any;
-      return { content: [{ type: "text", text: JSON.stringify(rest, null, 2) }] };
+      return { content: [{ type: "text", text: JSON.stringify(found, null, 2) }] };
     }
     case "get_policy_pdf": {
       if (!args.id) throw new Error("Missing id parameter");
@@ -1429,8 +1424,7 @@ async function handleToolCall(
 (q: any) => q._id === args.id);
       if (!found) throw new Error("Not found");
 
-      const { rawExtractionResponse: _rawExtractionResponse, rawMetadataResponse: _rawMetadataResponse, ...rest } = found as any;
-      return { content: [{ type: "text", text: JSON.stringify(rest, null, 2) }] };
+      return { content: [{ type: "text", text: JSON.stringify(found, null, 2) }] };
     }
     case "list_threads": {
       const threads = await ctx.runQuery(internal.threads.listByOrg, { orgId });

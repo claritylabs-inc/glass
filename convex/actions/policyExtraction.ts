@@ -1066,7 +1066,6 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
           id: policyId,
           fields: {
             fileName: resolvedFileName,
-            rawExtractionResponse: undefined,
             ...fields,
           },
         },
@@ -1626,7 +1625,6 @@ export const completeExternalExtract = action({
       id: policyId,
       fields: {
         fileName: resolvedFileName,
-        rawExtractionResponse: undefined,
         ...fields,
       },
     });

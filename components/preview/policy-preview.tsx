@@ -108,8 +108,7 @@ export function PolicyPreview({
     return <div className="min-h-24" />;
   }
 
-  const types =
-    policy.policyTypes ?? (policy.policyType ? [policy.policyType] : []);
+  const types = policy.policyTypes ?? [];
   const fileCount = (policy as { files?: unknown[] }).files?.length ?? 0;
   const doc = policy.document as PolicyDocument | undefined;
 

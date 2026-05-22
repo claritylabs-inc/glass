@@ -142,10 +142,7 @@ export const listForEditor = query({
           id: policyId,
           carrier: (policy as unknown as { carrier?: string })?.carrier ?? "Unknown carrier",
           policyNumber: (policy as unknown as { policyNumber?: string })?.policyNumber ?? "Unknown policy",
-          policyType:
-            (policy as unknown as { policyTypes?: string[]; policyType?: string })?.policyTypes?.[0] ??
-            (policy as unknown as { policyType?: string })?.policyType ??
-            null,
+          policyType: policy?.policyTypes?.[0] ?? null,
           count: 0,
           chunks: [],
         };

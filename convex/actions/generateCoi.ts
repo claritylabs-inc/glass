@@ -220,7 +220,7 @@ export const run = internalAction({
         });
         outputFileName = template?.outputFileName;
         const kind = template?.templateKind;
-        if ((kind === "pdf_overlay" || kind === "pdf_fields") && template?.fileId) {
+        if (kind === "pdf_overlay" && template?.fileId) {
           try {
             const templateBlob = await ctx.storage.get(template.fileId);
             if (!templateBlob) throw new Error("Template PDF not found");

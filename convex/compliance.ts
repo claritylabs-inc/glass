@@ -175,8 +175,7 @@ function categoryTerms(
 function policySearchText(policy: Doc<"policies">) {
   return normalizeText(
     [
-      policy.policyType,
-      ...(policy.policyTypes ?? []),
+      ...policy.policyTypes,
       policy.summary,
       policy.carrier,
       policy.security,
@@ -371,9 +370,9 @@ function assessRequirement(
       }
       return (
         terms.some((term) => text.includes(normalizeText(term))) ||
-        normalizeText(policy.policyType).includes(
+        policy.policyTypes.some((policyType) => normalizeText(policyType).includes(
           requirement.category.replace("_", " "),
-        )
+        ))
       );
     })
     .sort(

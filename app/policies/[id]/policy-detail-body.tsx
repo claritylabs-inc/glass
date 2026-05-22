@@ -1822,7 +1822,6 @@ type ProgramMatchCandidate = {
   _id?: Id<"partnerPrograms">;
   name?: string;
   categoryLabels?: string[];
-  categoryLabel?: string;
   approvalMode?: string;
   score?: number;
 };
@@ -2107,12 +2106,7 @@ function CertificateCreatePanel({
                         </span>
                         <span className="mt-0.5 block text-label-sm text-muted-foreground/70">
                           {[
-                            (candidate.categoryLabels?.length
-                              ? candidate.categoryLabels
-                              : candidate.categoryLabel
-                                ? [candidate.categoryLabel]
-                                : []
-                            ).join(", "),
+                            candidate.categoryLabels?.join(", "),
                             candidate.approvalMode,
                           ]
                             .filter(Boolean)
@@ -2371,8 +2365,7 @@ export function PolicyDetailBody({
 
   useEffect(() => {
     if (policy) {
-      const types =
-        policy.policyTypes ?? (policy.policyType ? [policy.policyType] : []);
+      const types = policy.policyTypes ?? [];
       setPageContext({
         pageType: "policy",
         entityId: policy._id,
@@ -2394,9 +2387,7 @@ export function PolicyDetailBody({
   }, [fileUrl, initialPage, openWithUrl, preloadPdfUrl]);
 
   const p = (policy ?? {}) as unknown as Record<string, unknown>;
-  const policyTypes: string[] = (p.policyTypes as string[] | undefined) ?? [
-    (p.policyType as string | undefined) ?? "other",
-  ];
+  const policyTypes: string[] = (p.policyTypes as string[] | undefined) ?? ["other"];
   const documentType: string =
     (p.documentType as string | undefined) ?? "policy";
   const carrierName = (p.carrier as string | undefined) ?? "";

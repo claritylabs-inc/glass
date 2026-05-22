@@ -36,7 +36,6 @@ type Program = {
   aliases?: string[];
   description?: string;
   categoryLabels?: string[];
-  categoryLabel?: string;
   defaultTemplateId?: Id<"coiTemplates">;
   defaultTemplate?: Template | null;
   approvalMode?: ApprovalMode;
@@ -170,7 +169,7 @@ export default function PartnerProgramsPage() {
   function openEditor(program?: Program) {
     setEditing(program ?? null);
     setName(program?.name ?? "");
-    setCategoryLabels(program?.categoryLabels?.length ? program.categoryLabels : program?.categoryLabel ? [program.categoryLabel] : []);
+    setCategoryLabels(program?.categoryLabels ?? []);
     setCategoryLabelDraft("");
     setAliases(program?.aliases ?? []);
     setAliasDraft("");
@@ -193,7 +192,6 @@ export default function PartnerProgramsPage() {
         programId: editing?._id,
         name,
         categoryLabels,
-        categoryLabel: categoryLabels[0],
         aliases,
         description: description || undefined,
         defaultTemplateId: defaultTemplateId ? (defaultTemplateId as Id<"coiTemplates">) : undefined,
@@ -361,7 +359,7 @@ export default function PartnerProgramsPage() {
                   </div>
                   <p className="mt-1 line-clamp-1 text-sm text-muted-foreground">
                     {[
-                      (program.categoryLabels?.length ? program.categoryLabels : program.categoryLabel ? [program.categoryLabel] : []).join(", "),
+                      program.categoryLabels?.join(", "),
                       program.defaultTemplate?.name ?? "Standard Glass certificate",
                     ].filter(Boolean).join(" · ")}
                   </p>

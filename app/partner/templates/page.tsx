@@ -101,7 +101,7 @@ type OverlayFieldResizeUpdate = {
 type Template = {
   _id: Id<"coiTemplates">;
   name: string;
-  templateKind: TemplateKind | "pdf_fields" | "standard_overlay";
+  templateKind: TemplateKind;
   fileId?: Id<"_storage">;
   fileName?: string;
   outputFileName?: string;
@@ -1699,11 +1699,7 @@ export default function PartnerTemplatesPage() {
     setCurrentTemplateId(template?._id);
     setSaveState(template ? "saved" : "idle");
     setName(template?.name ?? "");
-    setTemplateKind(
-      template?.templateKind === "pdf_fields" || template?.templateKind === "pdf_overlay"
-        ? "pdf_overlay"
-        : "standard_glass",
-    );
+    setTemplateKind(template?.templateKind ?? "standard_glass");
     setFileId(template?.fileId ?? "");
     setFileName(template?.fileName ?? "");
     setOutputFileName(template?.outputFileName ?? "");
@@ -2245,7 +2241,7 @@ export default function PartnerTemplatesPage() {
                   <div className="flex min-w-0 flex-wrap items-center gap-2">
                     <p className="truncate text-sm font-medium text-foreground">{template.name}</p>
                     <Badge variant="secondary" className="font-normal text-muted-foreground">
-                      {template.templateKind === "pdf_overlay" || template.templateKind === "pdf_fields"
+                      {template.templateKind === "pdf_overlay"
                         ? "PDF overlay"
                         : "Standard Glass"}
                     </Badge>
