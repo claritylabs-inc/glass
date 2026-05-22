@@ -38,6 +38,10 @@ export interface CoiData {
     amBest?: string;
     admitted?: string;
   }>;
+  securityPanel?: Array<{
+    name: string;
+    participationPercent: number;
+  }>;
 
   // Coverage rows — each maps to an ACORD 25 coverage section
   coverages: CoverageLine[];
@@ -317,6 +321,22 @@ function joinLines(...values: Array<string | undefined | null | false>): string 
     .map((value) => typeof value === "string" ? value.trim() : "")
     .filter(Boolean);
   return parts.length ? parts.join("\n") : undefined;
+}
+
+export function formatSecurityPanel(
+  securityPanel?: Array<{ name?: string; participationPercent?: number }>,
+) {
+  const lines = (securityPanel ?? [])
+    .map((member) => {
+      const name = member.name?.trim();
+      if (!name) return null;
+      const percent = Number.isFinite(member.participationPercent)
+        ? `${member.participationPercent}%`
+        : "";
+      return [name, percent].filter(Boolean).join(" - ");
+    })
+    .filter(Boolean);
+  return lines.length ? lines.join("\n") : undefined;
 }
 
 function buildDescription(policy: any): string | undefined {

@@ -164,6 +164,10 @@ export default defineSchema({
     aliases: v.array(v.string()),
     description: v.optional(v.string()),
     categoryLabels: v.optional(v.array(v.string())),
+    securityPanel: v.optional(v.array(v.object({
+      name: v.string(),
+      participationPercent: v.number(),
+    }))),
     defaultTemplateId: v.optional(v.id("coiTemplates")),
     approvalMode: v.optional(
       v.union(

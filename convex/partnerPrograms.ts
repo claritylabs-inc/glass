@@ -42,6 +42,10 @@ const templateKindValidator = v.union(
   v.literal("custom_glass"),
   v.literal("pdf_overlay"),
 );
+const securityPanelMemberValidator = v.object({
+  name: v.string(),
+  participationPercent: v.number(),
+});
 
 const LlmApprovalSchema = z.object({
   approved: z.boolean(),
@@ -94,8 +98,14 @@ function programMatchText(program: {
   name?: string;
   aliases?: string[];
   categoryLabels?: string[];
+  securityPanel?: Array<{ name?: string }>;
 }) {
-  return [program.name, ...(program.categoryLabels ?? []), ...(program.aliases ?? [])]
+  return [
+    program.name,
+    ...(program.categoryLabels ?? []),
+    ...(program.aliases ?? []),
+    ...(program.securityPanel ?? []).map((member) => member.name),
+  ]
     .filter(Boolean)
     .join("\n");
 }
@@ -107,6 +117,25 @@ function cleanStringList(items?: string[]) {
     .filter((item) => {
       const key = normalize(item);
       if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function cleanSecurityPanel(
+  members?: Array<{ name: string; participationPercent: number }>,
+) {
+  const seen = new Set<string>();
+  return (members ?? [])
+    .map((member) => ({
+      name: member.name.trim(),
+      participationPercent: Math.round(member.participationPercent * 100) / 100,
+    }))
+    .filter((member) => {
+      const key = normalize(member.name);
+      if (!key || seen.has(key)) return false;
+      if (!Number.isFinite(member.participationPercent)) return false;
+      if (member.participationPercent <= 0 || member.participationPercent > 100) return false;
       seen.add(key);
       return true;
     });
@@ -327,6 +356,7 @@ export const upsertProgram = mutation({
     aliases: v.optional(v.array(v.string())),
     description: v.optional(v.string()),
     categoryLabels: v.optional(v.array(v.string())),
+    securityPanel: v.optional(v.array(securityPanelMemberValidator)),
     defaultTemplateId: v.optional(v.id("coiTemplates")),
     approvalMode: v.optional(approvalModeValidator),
     approvalRuleText: v.optional(v.string()),
@@ -357,12 +387,14 @@ export const upsertProgram = mutation({
 
     const now = dayjs().valueOf();
     const categoryLabels = cleanStringList(args.categoryLabels);
+    const securityPanel = cleanSecurityPanel(args.securityPanel);
     const patch = {
       partnerOrgId: access.org._id,
       name: args.name.trim(),
       aliases: cleanStringList(args.aliases),
       description: args.description?.trim() || undefined,
       categoryLabels,
+      securityPanel: securityPanel.length ? securityPanel : undefined,
       defaultTemplateId: args.defaultTemplateId,
       approvalMode: args.approvalMode ?? "require_approval_all",
       approvalRuleText: args.approvalRuleText?.trim() || undefined,
@@ -385,6 +417,7 @@ export const saveProgram = action({
     aliases: v.optional(v.array(v.string())),
     description: v.optional(v.string()),
     categoryLabels: v.optional(v.array(v.string())),
+    securityPanel: v.optional(v.array(securityPanelMemberValidator)),
     defaultTemplateId: v.optional(v.id("coiTemplates")),
     approvalMode: approvalModeValidator,
     approvalRuleText: v.optional(v.string()),
@@ -760,6 +793,7 @@ export const resolveCertificateAuthority = internalAction({
             name: program.name,
             aliases: program.aliases,
             categoryLabels: program.categoryLabels,
+            securityPanel: program.securityPanel,
             rule: program.approvalRuleText,
           },
           policy: {

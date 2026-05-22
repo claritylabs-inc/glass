@@ -30,12 +30,18 @@ type Template = {
   templateKind: string;
 };
 
+type SecurityPanelMember = {
+  name: string;
+  participationPercent: number;
+};
+
 type Program = {
   _id: Id<"partnerPrograms">;
   name: string;
   aliases?: string[];
   description?: string;
   categoryLabels?: string[];
+  securityPanel?: SecurityPanelMember[];
   defaultTemplateId?: Id<"coiTemplates">;
   defaultTemplate?: Template | null;
   approvalMode?: ApprovalMode;
@@ -143,6 +149,92 @@ function TagListEditor({
   );
 }
 
+function SecurityPanelEditor({
+  value,
+  onChange,
+}: {
+  value: SecurityPanelMember[];
+  onChange: (value: SecurityPanelMember[]) => void;
+}) {
+  const total = value.reduce((sum, member) => sum + (Number(member.participationPercent) || 0), 0);
+
+  function updateMember(index: number, patch: Partial<SecurityPanelMember>) {
+    onChange(value.map((member, memberIndex) =>
+      memberIndex === index ? { ...member, ...patch } : member,
+    ));
+  }
+
+  function addMember() {
+    onChange([...value, { name: "", participationPercent: 0 }]);
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-label-sm font-medium text-muted-foreground">Security panel</p>
+          <p className="text-label-sm text-muted-foreground/70">
+            Carriers, Lloyd&apos;s underwriters, reinsurers or coverholders backing this program.
+          </p>
+        </div>
+        <PillButton type="button" variant="secondary" size="compact" onClick={addMember}>
+          <Plus className="size-3.5" />
+          Add
+        </PillButton>
+      </div>
+      {value.length > 0 ? (
+        <div className="overflow-hidden rounded-lg border border-foreground/8">
+          <div className="grid grid-cols-[1fr_6rem_2rem] border-b border-foreground/8 bg-muted/25 px-2 py-1.5 text-label-sm font-medium text-muted-foreground">
+            <span>Security</span>
+            <span className="text-right">Share</span>
+            <span />
+          </div>
+          {value.map((member, index) => (
+            <div
+              key={`${index}-${member.name}`}
+              className="grid grid-cols-[1fr_6rem_2rem] items-center gap-2 border-b border-foreground/6 px-2 py-2 last:border-b-0"
+            >
+              <Input
+                value={member.name}
+                onChange={(event) => updateMember(index, { name: event.target.value })}
+                placeholder="Lloyd's underwriters"
+              />
+              <div className="flex items-center rounded-lg border border-input bg-transparent pr-2 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
+                <input
+                  className="min-w-0 flex-1 bg-transparent py-2 pl-2.5 text-right text-sm outline-none"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  value={member.participationPercent || ""}
+                  onChange={(event) =>
+                    updateMember(index, {
+                      participationPercent: Number.parseFloat(event.target.value) || 0,
+                    })
+                  }
+                  placeholder="50"
+                />
+                <span className="text-label-sm text-muted-foreground">%</span>
+              </div>
+              <button
+                type="button"
+                className="flex size-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                onClick={() => onChange(value.filter((_, memberIndex) => memberIndex !== index))}
+                aria-label={`Remove ${member.name || "security member"}`}
+              >
+                <X className="size-3.5" />
+              </button>
+            </div>
+          ))}
+          <div className="flex justify-end border-t border-foreground/8 bg-muted/15 px-2 py-1.5 text-label-sm text-muted-foreground">
+            Total {Math.round(total * 100) / 100}%
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export default function PartnerProgramsPage() {
   const programs = useQuery(api.partnerPrograms.listPrograms, {}) as Program[] | undefined;
   const templates = useQuery(api.partnerPrograms.listTemplates, {}) as Template[] | undefined;
@@ -156,6 +248,7 @@ export default function PartnerProgramsPage() {
   const [aliases, setAliases] = useState<string[]>([]);
   const [aliasDraft, setAliasDraft] = useState("");
   const [description, setDescription] = useState("");
+  const [securityPanel, setSecurityPanel] = useState<SecurityPanelMember[]>([]);
   const [defaultTemplateId, setDefaultTemplateId] = useState("");
   const [approvalMode, setApprovalMode] = useState<ApprovalMode>("require_approval_all");
   const [approvalRuleText, setApprovalRuleText] = useState("");
@@ -174,6 +267,7 @@ export default function PartnerProgramsPage() {
     setAliases(program?.aliases ?? []);
     setAliasDraft("");
     setDescription(program?.description ?? "");
+    setSecurityPanel(program?.securityPanel ?? []);
     setDefaultTemplateId(program?.defaultTemplateId ?? "");
     setApprovalMode(program?.approvalMode ?? "require_approval_all");
     setApprovalRuleText(program?.approvalRuleText ?? "");
@@ -194,6 +288,12 @@ export default function PartnerProgramsPage() {
         categoryLabels,
         aliases,
         description: description || undefined,
+        securityPanel: securityPanel
+          .map((member) => ({
+            name: member.name.trim(),
+            participationPercent: Math.round(member.participationPercent * 100) / 100,
+          }))
+          .filter((member) => member.name && member.participationPercent > 0),
         defaultTemplateId: defaultTemplateId ? (defaultTemplateId as Id<"coiTemplates">) : undefined,
         approvalMode,
         approvalRuleText: approvalRuleText || undefined,
@@ -254,6 +354,7 @@ export default function PartnerProgramsPage() {
               Description
               <Textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={3} />
             </label>
+            <SecurityPanelEditor value={securityPanel} onChange={setSecurityPanel} />
             <div className="flex flex-col gap-1.5">
               <p className="text-label-sm font-medium text-muted-foreground">Default certificate template</p>
               <Select
@@ -360,6 +461,11 @@ export default function PartnerProgramsPage() {
                   <p className="mt-1 line-clamp-1 text-sm text-muted-foreground">
                     {[
                       program.categoryLabels?.join(", "),
+                      program.securityPanel?.length
+                        ? `${program.securityPanel.length} security panel ${
+                            Math.round(program.securityPanel.reduce((sum, member) => sum + member.participationPercent, 0) * 100) / 100
+                          }%`
+                        : undefined,
                       program.defaultTemplate?.name ?? "Standard Glass certificate",
                     ].filter(Boolean).join(" · ")}
                   </p>

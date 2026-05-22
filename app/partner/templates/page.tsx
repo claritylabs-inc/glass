@@ -272,6 +272,7 @@ const SMART_FIELD_GROUPS = [
       { key: "insured_address", label: "Insured address", icon: FileText },
       { key: "producer", label: "Producer", icon: FileText },
       { key: "carrier", label: "Carrier", icon: FileText },
+      { key: "security_panel", label: "Security panel", icon: FileText },
       { key: "policy_number", label: "Policy number", icon: Hash },
       { key: "effective_date", label: "Effective date", icon: Calendar },
       { key: "expiration_date", label: "Expiration date", icon: Calendar },
@@ -309,6 +310,7 @@ const AUTO_PLACE_TARGETS: Array<Omit<AutoPlaceTarget, "id">> = [
   { key: "insured_address", label: "Insured address", type: "data" },
   { key: "insured_name", label: "Insured name", type: "data" },
   { key: "carrier", label: "Carrier", type: "data" },
+  { key: "security_panel", label: "Security panel", type: "data" },
   { key: "coverage_table", label: "Coverage rows", type: "coverage_table" },
 ];
 

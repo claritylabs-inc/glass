@@ -2,7 +2,7 @@
 
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import dayjs from "dayjs";
-import type { CoiData } from "./coiGenerator";
+import { formatSecurityPanel, type CoiData } from "./coiGenerator";
 
 type CoverageColumnKey =
   | "coverage_name"
@@ -77,6 +77,9 @@ function fieldValue(data: CoiData, key?: string, fallback?: string) {
     producer_phone: data.producerPhone,
     producer_email: data.producerEmail,
     carrier: data.insurers[0]?.name,
+    security_panel: formatSecurityPanel(data.securityPanel),
+    capacity_panel: formatSecurityPanel(data.securityPanel),
+    insurer_panel: formatSecurityPanel(data.securityPanel),
     insurer_a: data.insurers[0]?.name,
     policy_number: data.coverages[0]?.policyNumber,
     effective_date: data.coverages[0]?.effectiveDate,

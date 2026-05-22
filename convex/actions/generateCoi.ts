@@ -4,7 +4,7 @@ import dayjs from "dayjs";
 import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
-import { generateCoiPdf, policyToCoiData } from "../lib/coiGenerator";
+import { generateCoiPdf, policyToCoiData, formatSecurityPanel } from "../lib/coiGenerator";
 import { renderCoiPdfOverlay, type CoiOverlayMapping } from "../lib/coiTemplateOverlay";
 import { logAiError } from "../lib/aiUtils";
 import {
@@ -85,6 +85,7 @@ async function resolveCustomSmartFields(
   ctx: Parameters<typeof getModelForOrg>[0],
   orgId: Parameters<typeof getModelForOrg>[1],
   policy: Record<string, unknown>,
+  program: Record<string, unknown> | null,
   coiData: ReturnType<typeof policyToCoiData>,
   mapping: unknown,
 ): Promise<CoiOverlayMapping> {
@@ -109,6 +110,12 @@ async function resolveCustomSmartFields(
     conditions: policy.conditions,
     declarations: policy.declarations,
     document: policy.document,
+    partnerProgram: program
+      ? {
+          name: program.name,
+          securityPanel: program.securityPanel,
+        }
+      : undefined,
   });
   const coiContext = trimForPrompt(coiData, 12000);
 
@@ -205,6 +212,23 @@ export const run = internalAction({
       if (policy.orgId !== args.orgId) throw new Error("Policy not found for organization");
 
       const coiData = policyToCoiData(policy);
+      const program = args.partnerProgramId
+        ? await ctx.runQuery(internal.partnerPrograms.getProgramInternal, {
+            programId: args.partnerProgramId,
+          })
+        : null;
+      if (program?.securityPanel?.length) {
+        const securityPanel = program.securityPanel;
+        coiData.securityPanel = securityPanel;
+        coiData.insurers = securityPanel.slice(0, 6).map((member: any, index: number) => ({
+          letter: String.fromCharCode(65 + index),
+          name: `${member.name} (${member.participationPercent}%)`,
+        }));
+        coiData.description = [
+          coiData.description,
+          `Security panel:\n${formatSecurityPanel(securityPanel)}`,
+        ].filter(Boolean).join("\n\n");
+      }
       if (args.certificateHolder) {
         coiData.certificateHolder = args.certificateHolder;
       }
@@ -228,6 +252,7 @@ export const run = internalAction({
               ctx,
               args.orgId,
               policy as Record<string, unknown>,
+              program as Record<string, unknown> | null,
               coiData,
               template.fieldMappings ?? {},
             );
