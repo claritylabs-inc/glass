@@ -1136,6 +1136,79 @@ export default defineSchema({
     .index("by_policyId", ["policyId"])
     .index("by_policyId_kind", ["policyId", "kind"]),
 
+  policyExtractionTraceSessions: defineTable({
+    traceId: v.string(),
+    policyId: v.id("policies"),
+    orgId: v.id("organizations"),
+    userId: v.optional(v.id("users")),
+    sourceKind: v.optional(v.string()),
+    trigger: v.optional(v.string()),
+    fileName: v.optional(v.string()),
+    status: v.union(
+      v.literal("running"),
+      v.literal("complete"),
+      v.literal("error"),
+      v.literal("cancelled"),
+    ),
+    startedAt: v.number(),
+    completedAt: v.optional(v.number()),
+    lastEventAt: v.optional(v.number()),
+    totalDurationMs: v.optional(v.number()),
+    modelCallCount: v.optional(v.number()),
+    modelDurationMs: v.optional(v.number()),
+    inputTokens: v.optional(v.number()),
+    outputTokens: v.optional(v.number()),
+    slowestLabel: v.optional(v.string()),
+    slowestKind: v.optional(v.string()),
+    slowestDurationMs: v.optional(v.number()),
+    error: v.optional(v.string()),
+    expiresAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_traceId", ["traceId"])
+    .index("by_startedAt", ["startedAt"])
+    .index("by_status_startedAt", ["status", "startedAt"])
+    .index("by_orgId_startedAt", ["orgId", "startedAt"])
+    .index("by_policyId_startedAt", ["policyId", "startedAt"])
+    .index("by_expiresAt", ["expiresAt"]),
+
+  policyExtractionTraceEvents: defineTable({
+    traceId: v.string(),
+    policyId: v.id("policies"),
+    orgId: v.id("organizations"),
+    kind: v.union(
+      v.literal("session"),
+      v.literal("phase"),
+      v.literal("log"),
+      v.literal("model_call"),
+      v.literal("embedding_batch"),
+      v.literal("worker"),
+      v.literal("artifact"),
+    ),
+    timestamp: v.number(),
+    phase: v.optional(v.string()),
+    level: v.optional(v.string()),
+    message: v.optional(v.string()),
+    label: v.optional(v.string()),
+    task: v.optional(v.string()),
+    taskKind: v.optional(v.string()),
+    provider: v.optional(modelProviderValidator),
+    model: v.optional(v.string()),
+    routeSource: v.optional(v.string()),
+    transport: v.optional(v.string()),
+    attempt: v.optional(v.number()),
+    status: v.optional(v.string()),
+    durationMs: v.optional(v.number()),
+    inputTokens: v.optional(v.number()),
+    outputTokens: v.optional(v.number()),
+    error: v.optional(v.string()),
+    details: v.optional(v.any()),
+    expiresAt: v.number(),
+  })
+    .index("by_traceId_timestamp", ["traceId", "timestamp"])
+    .index("by_policyId_timestamp", ["policyId", "timestamp"])
+    .index("by_expiresAt", ["expiresAt"]),
+
   // ── Policy Files (multi-file support) ──
 
   // Each policy can have multiple source files (declaration, wording, endorsements, etc.)

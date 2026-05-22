@@ -54,6 +54,8 @@ function readReviewModeEnv(name: string, fallback: "always" | "auto" | "skip"): 
 export function buildExtractor(opts?: {
   ctx?: ActionCtx;
   orgId?: Id<"organizations">;
+  traceId?: string;
+  tracePolicyId?: Id<"policies"> | string;
   log?: LogFn;
   onProgress?: (message: string) => void;
   onTokenUsage?: (usage: TokenUsage) => void;
@@ -61,7 +63,12 @@ export function buildExtractor(opts?: {
   shouldCancel?: () => Promise<boolean>;
 }) {
   const routing = opts?.ctx && opts.orgId
-    ? { ctx: opts.ctx, orgId: opts.orgId }
+    ? {
+        ctx: opts.ctx,
+        orgId: opts.orgId,
+        traceId: opts.traceId,
+        tracePolicyId: opts.tracePolicyId,
+      }
     : undefined;
   const generateText = makeGenerateText("extraction", routing);
   const generateObject = makeGenerateObject("extraction", routing);

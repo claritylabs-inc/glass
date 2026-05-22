@@ -73,6 +73,7 @@ export type PolicyExtractionState = {
   orgId: string;
   userId: string;
   policyFileId?: string;
+  traceId?: string;
   externalWorker?: boolean;
   /** Deprecated inline SDK checkpoint. Kept for legacy in-flight resumes. */
   clSdkCheckpoint?: PipelineCheckpoint<ExtractionState>;
@@ -145,6 +146,78 @@ function readBoundedIntEnv(name: string, fallback: number, min: number, max: num
 
 function nowMs(): number {
   return dayjs().valueOf();
+}
+
+async function startTraceSession(
+  ctx: ActionCtx,
+  args: {
+    traceId: string;
+    policyId: Id<"policies">;
+    orgId: Id<"organizations">;
+    userId: Id<"users">;
+    sourceKind: PolicyExtractionState["sourceKind"];
+    trigger: string;
+    fileName?: string;
+  },
+) {
+  try {
+    await ctx.runMutation((internal as any).extractionTraces.startSession, args);
+  } catch {
+    // Extraction telemetry must not block extraction.
+  }
+}
+
+async function traceEvent(
+  ctx: ActionCtx,
+  traceId: string | undefined,
+  event: {
+    kind: "session" | "phase" | "log" | "model_call" | "embedding_batch" | "worker" | "artifact";
+    phase?: string;
+    level?: string;
+    message?: string;
+    label?: string;
+    task?: string;
+    taskKind?: string;
+    provider?: string;
+    model?: string;
+    routeSource?: string;
+    transport?: string;
+    attempt?: number;
+    status?: string;
+    durationMs?: number;
+    inputTokens?: number;
+    outputTokens?: number;
+    error?: string;
+    details?: unknown;
+  },
+) {
+  if (!traceId) return;
+  try {
+    await ctx.runMutation((internal as any).extractionTraces.recordEvent, {
+      traceId,
+      ...event,
+    });
+  } catch {
+    // Extraction telemetry must not block extraction.
+  }
+}
+
+async function completeTraceSession(
+  ctx: ActionCtx,
+  traceId: string | undefined,
+  status: "complete" | "error" | "cancelled",
+  error?: string,
+) {
+  if (!traceId) return;
+  try {
+    await ctx.runMutation((internal as any).extractionTraces.completeSession, {
+      traceId,
+      status,
+      error,
+    });
+  } catch {
+    // Extraction telemetry must not block extraction.
+  }
 }
 
 function formatBytes(bytes: number): string {
@@ -399,12 +472,16 @@ function buildDocumentGateExcerpt(
 async function classifyInsuranceExtractability(params: {
   ctx: ActionCtx;
   orgId: Id<"organizations">;
+  traceId?: string;
+  policyId?: string;
   pdfBytes: Uint8Array;
   sourceSpans: Array<{ pageStart?: number; text: string; metadata?: Record<string, unknown> }>;
 }): Promise<ExtractionGateDecision> {
   const generateGateObject = makeGenerateObject("classification", {
     ctx: params.ctx,
     orgId: params.orgId,
+    traceId: params.traceId,
+    tracePolicyId: params.policyId,
   });
   const excerpt = buildDocumentGateExcerpt(params.sourceSpans);
   const result = await generateGateObject({
@@ -644,6 +721,7 @@ async function advanceLeasedPhase(
   ) as LeasedPolicyCheckpoint | null;
 
   if (!checkpoint) return;
+  const traceId = checkpoint.state?.traceId;
 
   const scheduleWatchdog = async (expiresAt: number) => {
     await ctx.scheduler.runAfter(
@@ -692,9 +770,10 @@ async function advanceLeasedPhase(
   };
 
   const log = async (message: string, level: string = "info") => {
+    const timestamp = Date.now();
     await ctx.runMutation(internal.policies.pipelineAppendLog, {
       jobId,
-      timestamp: Date.now(),
+      timestamp,
       message,
       phase: phase.name,
       level,
@@ -741,6 +820,7 @@ async function advanceLeasedPhase(
         error: null,
         checkpoint: null,
       });
+      await completeTraceSession(ctx, traceId, "complete");
       return;
     }
 
@@ -752,6 +832,12 @@ async function advanceLeasedPhase(
         error: result.error,
         checkpoint: latestCheckpoint,
       });
+      await completeTraceSession(
+        ctx,
+        traceId,
+        result.error === CANCELLED_BY_USER ? "cancelled" : "error",
+        result.error,
+      );
       return;
     }
 
@@ -784,6 +870,12 @@ async function advanceLeasedPhase(
       error: msg,
       checkpoint: latestCheckpoint,
     });
+    await completeTraceSession(
+      ctx,
+      traceId,
+      msg === CANCELLED_BY_USER ? "cancelled" : "error",
+      msg,
+    );
   } finally {
     clearInterval(heartbeat);
     if (heartbeatPromise) {
@@ -866,6 +958,8 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
           const gateDecision = await classifyInsuranceExtractability({
             ctx: convexCtx,
             orgId: state.orgId as Id<"organizations">,
+            traceId: state.traceId,
+            policyId,
             pdfBytes,
             sourceSpans: pdfSource.sourceSpans,
           });
@@ -920,6 +1014,8 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
       const extractor = buildExtractor({
         ctx: convexCtx,
         orgId: state.orgId as Id<"organizations">,
+        traceId: state.traceId,
+        tracePolicyId: policyId,
         log: async (msg) => { await pCtx.log(msg); },
         onProgress: async (msg) => { await pCtx.log(msg); },
         shouldCancel: async () => isExtractionCancelled(convexCtx, policyId),
@@ -1128,6 +1224,8 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         );
         const embed = makeEmbedText(convexCtx, state.orgId as Id<"organizations">);
         let embedded = 0;
+        let embedFailures = 0;
+        const embedStartedAt = nowMs();
         await runBounded(chunks, EMBEDDING_CONCURRENCY, async (chunk) => {
           if (await isExtractionCancelled(convexCtx, policyId)) {
             throw new Error(CANCELLED_BY_USER);
@@ -1150,11 +1248,26 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
             embedded++;
           } catch (err) {
             if (isCancelledError(err)) throw err;
+            embedFailures++;
             await pCtx.log(
               `Warning: failed to embed chunk ${chunk.id}: ${err instanceof Error ? err.message : String(err)}`,
               "warn",
             );
           }
+        });
+        await traceEvent(convexCtx, state.traceId, {
+          kind: "embedding_batch",
+          label: "document chunks",
+          task: "embeddings",
+          provider: "openai",
+          model: "text-embedding-3-small",
+          status: embedFailures > 0 ? "partial" : "complete",
+          durationMs: nowMs() - embedStartedAt,
+          details: {
+            requested: chunks.length,
+            embedded,
+            failures: embedFailures,
+          },
         });
         await pCtx.log(`Stored ${embedded}/${chunks.length} chunks`);
       }
@@ -1191,6 +1304,8 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         if (sourceChunks?.length) {
           const embed = makeEmbedText(convexCtx, state.orgId as Id<"organizations">);
           let embeddedSourceChunks = 0;
+          let sourceChunkFailures = 0;
+          const sourceEmbedStartedAt = nowMs();
           await runBounded(sourceChunks, EMBEDDING_CONCURRENCY, async (chunk) => {
             if (await isExtractionCancelled(convexCtx, policyId)) {
               throw new Error(CANCELLED_BY_USER);
@@ -1214,11 +1329,26 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
               embeddedSourceChunks++;
             } catch (err) {
               if (isCancelledError(err)) throw err;
+              sourceChunkFailures++;
               await pCtx.log(
                 `Warning: failed to embed source chunk ${chunk.id}: ${err instanceof Error ? err.message : String(err)}`,
                 "warn",
               );
             }
+          });
+          await traceEvent(convexCtx, state.traceId, {
+            kind: "embedding_batch",
+            label: "source chunks",
+            task: "embeddings",
+            provider: "openai",
+            model: "text-embedding-3-small",
+            status: sourceChunkFailures > 0 ? "partial" : "complete",
+            durationMs: nowMs() - sourceEmbedStartedAt,
+            details: {
+              requested: sourceChunks.length,
+              embedded: embeddedSourceChunks,
+              failures: sourceChunkFailures,
+            },
           });
           await pCtx.log(`Stored ${embeddedSourceChunks}/${sourceChunks.length} source chunks`);
         }
@@ -1329,7 +1459,45 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
     },
   };
 
-  return [loadPdfPhase, extractPhase, embedAndStorePhase, postProcessPhase];
+  const withTrace = (
+    phase: Phase<PolicyExtractionState>,
+  ): Phase<PolicyExtractionState> => ({
+    ...phase,
+    run: async (pCtx) => {
+      const traceId = pCtx.checkpoint.state.traceId;
+      const startedAt = nowMs();
+      await traceEvent(convexCtx, traceId, {
+        kind: "phase",
+        phase: phase.name,
+        label: phase.name,
+        status: "started",
+      });
+      try {
+        const result = await phase.run(pCtx);
+        await traceEvent(convexCtx, traceId, {
+          kind: "phase",
+          phase: phase.name,
+          label: phase.name,
+          status: result.kind,
+          durationMs: nowMs() - startedAt,
+          error: result.kind === "error" ? result.error : undefined,
+        });
+        return result;
+      } catch (error) {
+        await traceEvent(convexCtx, traceId, {
+          kind: "phase",
+          phase: phase.name,
+          label: phase.name,
+          status: "error",
+          durationMs: nowMs() - startedAt,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+      }
+    },
+  });
+
+  return [loadPdfPhase, extractPhase, embedAndStorePhase, postProcessPhase].map(withTrace);
 }
 
 // ─── advance internal action ───────────────────────────────────────────────────
@@ -1396,6 +1564,7 @@ export const claimExternalJob = action({
         error: "External worker claimed job without fileId",
         checkpoint: null,
       });
+      await completeTraceSession(ctx, claimed.checkpoint.state.traceId, "error", "External worker claimed job without fileId");
       return null;
     }
 
@@ -1408,8 +1577,17 @@ export const claimExternalJob = action({
         error: "External worker could not resolve source file URL",
         checkpoint: null,
       });
+      await completeTraceSession(ctx, claimed.checkpoint.state.traceId, "error", "External worker could not resolve source file URL");
       return null;
     }
+    await traceEvent(ctx, claimed.checkpoint.state.traceId, {
+      kind: "worker",
+      phase: "worker",
+      label: "external worker claim",
+      status: "claimed",
+      message: `External worker claimed job${args.workerId ? ` (${args.workerId})` : ""}`,
+      details: { workerId: args.workerId, leaseId },
+    });
 
     let modelSettings:
       | {
@@ -1475,6 +1653,57 @@ export const logExternalJob = action({
       message: args.message,
       phase: args.phase ?? "worker",
       level: args.level ?? "info",
+    });
+    return { ok: true };
+  },
+});
+
+export const recordExternalTraceEvent = action({
+  args: {
+    secret: v.string(),
+    traceId: v.optional(v.string()),
+    kind: v.union(
+      v.literal("model_call"),
+      v.literal("worker"),
+      v.literal("phase"),
+      v.literal("embedding_batch"),
+      v.literal("artifact"),
+    ),
+    phase: v.optional(v.string()),
+    label: v.optional(v.string()),
+    task: v.optional(v.string()),
+    taskKind: v.optional(v.string()),
+    provider: v.optional(v.string()),
+    model: v.optional(v.string()),
+    routeSource: v.optional(v.string()),
+    transport: v.optional(v.string()),
+    attempt: v.optional(v.number()),
+    status: v.optional(v.string()),
+    durationMs: v.optional(v.number()),
+    inputTokens: v.optional(v.number()),
+    outputTokens: v.optional(v.number()),
+    error: v.optional(v.string()),
+    details: v.optional(v.any()),
+  },
+  handler: async (ctx, args): Promise<ExternalAckResult> => {
+    requireExtractionWorkerSecret(args.secret);
+    await traceEvent(ctx, args.traceId, {
+      kind: args.kind,
+      phase: args.phase,
+      label: args.label,
+      task: args.task,
+      taskKind: args.taskKind,
+      provider: args.provider,
+      model: args.model,
+      routeSource: args.routeSource,
+      transport: args.transport,
+      attempt: args.attempt,
+      status: args.status,
+      durationMs: args.durationMs,
+      inputTokens: args.inputTokens,
+      outputTokens: args.outputTokens,
+      error: args.error,
+      details: args.details,
     });
     return { ok: true };
   },
@@ -1664,6 +1893,13 @@ export const completeExternalExtract = action({
     }) as boolean;
     if (checkpointUpdated) {
       await ctx.scheduler.runAfter(0, (internal as any).actions.policyExtraction.advance, { jobId: policyId });
+      await traceEvent(ctx, state.traceId, {
+        kind: "phase",
+        phase: "external_extract",
+        label: "external_extract",
+        status: "next",
+        message: "External extraction handed off to embed_and_store",
+      });
     }
     return { ok: checkpointUpdated };
   },
@@ -1693,6 +1929,12 @@ export const failExternalJob = action({
       error: args.error,
       checkpoint,
     });
+    await completeTraceSession(
+      ctx,
+      (args.state as PolicyExtractionState | undefined)?.traceId,
+      args.error === CANCELLED_BY_USER ? "cancelled" : "error",
+      args.error,
+    );
     return { ok: true };
   },
 });
@@ -1709,6 +1951,16 @@ export const startPolicyExtractionFromUpload = internalAction({
     policyFileId: v.optional(v.id("policyFiles")),
   },
   handler: async (ctx, { policyId, fileId, fileName, orgId, userId, policyFileId }) => {
+    const traceId = randomUUID();
+    await startTraceSession(ctx, {
+      traceId,
+      policyId,
+      orgId,
+      userId,
+      sourceKind: "upload",
+      trigger: "upload",
+      fileName,
+    });
     if (EXTERNAL_WORKER_MODE) {
       await ctx.runMutation(internal.policies.pipelineClearLog, {
         jobId: String(policyId),
@@ -1723,6 +1975,7 @@ export const startPolicyExtractionFromUpload = internalAction({
           orgId: String(orgId),
           userId: String(userId),
           policyFileId: policyFileId ? String(policyFileId) : undefined,
+          traceId,
         },
       });
       return;
@@ -1754,6 +2007,7 @@ export const startPolicyExtractionFromUpload = internalAction({
         orgId: String(orgId),
         userId: String(userId),
         policyFileId: policyFileId ? String(policyFileId) : undefined,
+        traceId,
       },
     });
   },
@@ -1797,6 +2051,26 @@ export const retryPolicyExtraction = internalAction({
     if (!policy) throw new Error("Policy not found");
 
     const existingState = policy.pipelineCheckpoint?.state;
+    const traceId = mode === "resume" && existingState?.traceId
+      ? existingState.traceId
+      : randomUUID();
+    if (mode === "full" || !existingState?.traceId) {
+      await startTraceSession(ctx, {
+        traceId,
+        policyId,
+        orgId: String(policy.orgId ?? "") as Id<"organizations">,
+        userId: String(policy.userId ?? "") as Id<"users">,
+        sourceKind: existingState?.sourceKind ?? "upload",
+        trigger: `retry_${mode}`,
+        fileName: existingState?.fileName,
+      });
+    } else {
+      await traceEvent(ctx, traceId, {
+        kind: "session",
+        status: "resumed",
+        message: "Extraction retry resumed existing trace",
+      });
+    }
     if (EXTERNAL_WORKER_MODE) {
       const nextState = {
         sourceKind: existingState?.sourceKind ?? "upload",
@@ -1805,6 +2079,7 @@ export const retryPolicyExtraction = internalAction({
         orgId: existingState?.orgId ?? String(policy.orgId ?? ""),
         userId: existingState?.userId ?? String(policy.userId ?? ""),
         policyFileId: existingState?.policyFileId,
+        traceId,
         clSdkCheckpointFileId: mode === "resume" ? existingState?.clSdkCheckpointFileId : undefined,
         clSdkCheckpoint: mode === "resume" ? existingState?.clSdkCheckpoint : undefined,
       };
@@ -1834,6 +2109,7 @@ export const retryPolicyExtraction = internalAction({
         fileId: existingState?.fileId ?? (policy.fileId ? String(policy.fileId) : undefined),
         orgId: existingState?.orgId ?? String(policy.orgId ?? ""),
         userId: existingState?.userId ?? String(policy.userId ?? ""),
+        traceId,
       },
     });
   },

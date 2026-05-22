@@ -318,7 +318,7 @@ export async function getModelAndRouteForOrg(
   ctx: ActionCtx,
   orgId: Id<"organizations">,
   task: ModelTask,
-): Promise<{ model: LanguageModel; route: ModelRoute }> {
+): Promise<{ model: LanguageModel; route: ModelRoute; routeSource: "broker" | "global" | "static" | "default"; transport: "direct" | "gateway" }> {
   try {
     const settings = await ctx.runQuery(internal.modelSettings.resolveForOrg, { orgId });
     const configuredRoute = settings?.routes?.[task];
@@ -332,14 +332,26 @@ export async function getModelAndRouteForOrg(
       (routeSource !== "broker" || configuredApiKey);
     const route = canUseConfiguredRoute ? configuredRoute : MODEL_ROUTING[task];
     const apiKey = canUseConfiguredRoute ? configuredApiKey : undefined;
-    return { model: modelFromRoute(route, apiKey), route };
+    const nativeModel = nativeProviderModel(route);
+    const transport = (apiKey || (nativeModel && directProviderApiKey(route.provider)))
+      ? "direct"
+      : "gateway";
+    return {
+      model: modelFromRoute(route, apiKey),
+      route,
+      routeSource: canUseConfiguredRoute ? (routeSource ?? "global") : "default",
+      transport,
+    };
   } catch (err) {
     console.warn(
       `Configured model for task "${task}" unavailable: ${
         err instanceof Error ? err.message : String(err)
       }. Falling back to static routing.`,
     );
-    return { model: getModel(task), route: MODEL_ROUTING[task] };
+    const route = MODEL_ROUTING[task];
+    const nativeModel = nativeProviderModel(route);
+    const transport = nativeModel && directProviderApiKey(route.provider) ? "direct" : "gateway";
+    return { model: getModel(task), route, routeSource: "default", transport };
   }
 }
 

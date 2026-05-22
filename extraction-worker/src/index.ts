@@ -33,6 +33,7 @@ type WorkerState = {
   userId: string;
   policyFileId?: string;
   clSdkCheckpointFileId?: string;
+  traceId?: string;
   externalWorker?: boolean;
 };
 
@@ -128,6 +129,30 @@ const actions = {
     { secret: string; policyId: string; leaseId: string; state?: WorkerState; error: string },
     AckResult
   >("actions/policyExtraction.js:failExternalJob"),
+  recordExternalTraceEvent: makeFunctionReference<
+    "action",
+    {
+      secret: string;
+      traceId?: string;
+      kind: "model_call" | "worker" | "phase" | "embedding_batch" | "artifact";
+      phase?: string;
+      label?: string;
+      task?: string;
+      taskKind?: string;
+      provider?: string;
+      model?: string;
+      routeSource?: string;
+      transport?: string;
+      attempt?: number;
+      status?: string;
+      durationMs?: number;
+      inputTokens?: number;
+      outputTokens?: number;
+      error?: string;
+      details?: unknown;
+    },
+    AckResult
+  >("actions/policyExtraction.js:recordExternalTraceEvent"),
 };
 
 const CONVEX_URL = requiredEnv("CONVEX_URL");
@@ -236,7 +261,12 @@ function modelTaskForTaskKind(taskKind?: string): ModelTask {
   return "extraction";
 }
 
-function getModelForTaskKind(taskKind: string | undefined, settings?: WorkerModelSettings): LanguageModel {
+function getModelForTaskKind(taskKind: string | undefined, settings?: WorkerModelSettings): {
+  model: LanguageModel;
+  route: WorkerModelRoute;
+  routeSource: string;
+  transport: "direct";
+} {
   const task = modelTaskForTaskKind(taskKind);
   const configuredRoute = settings?.routes?.[task];
   const route =
@@ -244,7 +274,12 @@ function getModelForTaskKind(taskKind: string | undefined, settings?: WorkerMode
       ? configuredRoute
       : DEFAULT_ROUTES[task];
   const apiKey = settings?.providerKeys?.[route.provider];
-  return routeToModel(route, apiKey);
+  return {
+    model: routeToModel(route, apiKey),
+    route,
+    routeSource: configuredRoute ? "configured" : "default",
+    transport: "direct",
+  };
 }
 
 function getFallbackModel(taskKind?: string): LanguageModel | null {
@@ -412,7 +447,38 @@ async function generateWithFallback(
   }
 }
 
+async function recordTraceEvent(job: Pick<ClaimedJob, "state">, event: {
+  kind: "model_call" | "worker" | "phase" | "embedding_batch" | "artifact";
+  phase?: string;
+  label?: string;
+  task?: string;
+  taskKind?: string;
+  provider?: string;
+  model?: string;
+  routeSource?: string;
+  transport?: string;
+  attempt?: number;
+  status?: string;
+  durationMs?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  error?: string;
+  details?: unknown;
+}) {
+  if (!job.state.traceId) return;
+  try {
+    await convex.action(actions.recordExternalTraceEvent, {
+      secret: SECRET,
+      traceId: job.state.traceId,
+      ...event,
+    });
+  } catch {
+    // Extraction telemetry should never fail the worker.
+  }
+}
+
 function buildWorkerExtractor(opts: {
+  job: ClaimedJob;
   log: (message: string) => Promise<void>;
   onCheckpointSave: (checkpoint: PipelineCheckpoint<ExtractionState>) => Promise<void>;
   modelSettings?: WorkerModelSettings;
@@ -420,40 +486,122 @@ function buildWorkerExtractor(opts: {
   const generateText: GenerateText = async (params) => {
     const taskKind = readTaskKind(params);
     const guidedPrompt = addPolicyPeriodGuidance(params.prompt);
-    const result = await generateWithFallback({
-      model: getModelForTaskKind(taskKind, opts.modelSettings),
-      system: params.system,
-      ...buildPromptInput(guidedPrompt, params.providerOptions),
-      maxOutputTokens: getEffectiveMaxTokens(guidedPrompt, params.maxTokens),
-      providerOptions: params.providerOptions as ProviderOptions | undefined,
-    }, taskKind);
-    return {
-      text: result.text,
-      usage: mapUsage(result.usage),
-    };
+    const route = getModelForTaskKind(taskKind, opts.modelSettings);
+    const startedAt = nowMs();
+    try {
+      const result = await generateWithFallback({
+        model: route.model,
+        system: params.system,
+        ...buildPromptInput(guidedPrompt, params.providerOptions),
+        maxOutputTokens: getEffectiveMaxTokens(guidedPrompt, params.maxTokens),
+        providerOptions: params.providerOptions as ProviderOptions | undefined,
+      }, taskKind);
+      const usage = mapUsage(result.usage);
+      await recordTraceEvent(opts.job, {
+        kind: "model_call",
+        label: "external generateText",
+        task: modelTaskForTaskKind(taskKind),
+        taskKind,
+        provider: route.route.provider,
+        model: route.route.model,
+        routeSource: route.routeSource,
+        transport: route.transport,
+        attempt: 1,
+        status: "complete",
+        durationMs: nowMs() - startedAt,
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+      });
+      return {
+        text: result.text,
+        usage,
+      };
+    } catch (error) {
+      await recordTraceEvent(opts.job, {
+        kind: "model_call",
+        label: "external generateText",
+        task: modelTaskForTaskKind(taskKind),
+        taskKind,
+        provider: route.route.provider,
+        model: route.route.model,
+        routeSource: route.routeSource,
+        transport: route.transport,
+        attempt: 1,
+        status: "error",
+        durationMs: nowMs() - startedAt,
+        error: errorMessage(error),
+      });
+      throw error;
+    }
   };
 
   const generateObject: GenerateObject = async (params) => {
     const taskKind = readTaskKind(params);
     const guidedPrompt = addPolicyPeriodGuidance(params.prompt);
+    const route = getModelForTaskKind(taskKind, opts.modelSettings);
+    const startedAt = nowMs();
     try {
       const result = await generateWithFallback({
-        model: getModelForTaskKind(taskKind, opts.modelSettings),
+        model: route.model,
         system: params.system,
         ...buildPromptInput(guidedPrompt, params.providerOptions),
         output: Output.object({ schema: params.schema }),
         maxOutputTokens: getEffectiveMaxTokens(guidedPrompt, params.maxTokens),
         providerOptions: params.providerOptions as ProviderOptions | undefined,
       }, taskKind);
+      const usage = mapUsage(result.usage);
+      await recordTraceEvent(opts.job, {
+        kind: "model_call",
+        label: "external generateObject",
+        task: modelTaskForTaskKind(taskKind),
+        taskKind,
+        provider: route.route.provider,
+        model: route.route.model,
+        routeSource: route.routeSource,
+        transport: route.transport,
+        attempt: 1,
+        status: "complete",
+        durationMs: nowMs() - startedAt,
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+      });
       return {
         object: result.output!,
-        usage: mapUsage(result.usage),
+        usage,
       };
     } catch (error) {
       const isSectionsExtractor = guidedPrompt.includes(SECTIONS_EXTRACTOR_PROMPT_MARKER);
       if (isSectionsExtractor && errorMessage(error).includes("No output generated")) {
+        await recordTraceEvent(opts.job, {
+          kind: "model_call",
+          label: "external generateObject",
+          task: modelTaskForTaskKind(taskKind),
+          taskKind,
+          provider: route.route.provider,
+          model: route.route.model,
+          routeSource: route.routeSource,
+          transport: route.transport,
+          attempt: 1,
+          status: "error",
+          durationMs: nowMs() - startedAt,
+          error: errorMessage(error),
+        });
         return { object: { sections: [] }, usage: undefined };
       }
+      await recordTraceEvent(opts.job, {
+        kind: "model_call",
+        label: "external generateObject",
+        task: modelTaskForTaskKind(taskKind),
+        taskKind,
+        provider: route.route.provider,
+        model: route.route.model,
+        routeSource: route.routeSource,
+        transport: route.transport,
+        attempt: 1,
+        status: "error",
+        durationMs: nowMs() - startedAt,
+        error: errorMessage(error),
+      });
       throw error;
     }
   };
@@ -681,6 +829,7 @@ async function processJob(job: ClaimedJob): Promise<void> {
     await logJob(job, `External worker fetched PDF (${pdfBytes.byteLength} bytes)`);
 
     const extractor = buildWorkerExtractor({
+      job,
       log: async (message) => logJob(job, message),
       onCheckpointSave: async (checkpoint) => {
         await saveCheckpoint(job, checkpoint);
@@ -702,6 +851,13 @@ async function processJob(job: ClaimedJob): Promise<void> {
     }
 
     let result: ExtractionResult;
+    const extractStartedAt = nowMs();
+    await recordTraceEvent(job, {
+      kind: "phase",
+      phase: "external_extract",
+      label: "external_extract",
+      status: "started",
+    });
     try {
       const converted = await convertPdfWithDocling(pdfBytes, {
         maxPages: DOCLING_MAX_PAGES,
@@ -739,6 +895,13 @@ async function processJob(job: ClaimedJob): Promise<void> {
         },
       );
     }
+    await recordTraceEvent(job, {
+      kind: "phase",
+      phase: "external_extract",
+      label: "external_extract",
+      status: "complete",
+      durationMs: nowMs() - extractStartedAt,
+    });
 
     await completeJob(job, result, fallbackSource);
     console.log(`[${job.policyId}] completed external extraction`);

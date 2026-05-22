@@ -19,6 +19,12 @@ import {
 
 const brokerStatusValidator = v.union(v.literal("onboarding"), v.literal("live"));
 const orgRoleValidator = v.union(v.literal("admin"), v.literal("member"));
+const extractionTraceStatusValidator = v.union(
+  v.literal("running"),
+  v.literal("complete"),
+  v.literal("error"),
+  v.literal("cancelled"),
+);
 const internalApi = internal as any;
 
 function normalizeSlug(value: string) {
@@ -286,6 +292,92 @@ export const listMGAs = query({
         };
       }),
     );
+  },
+});
+
+export const listExtractionTraces = query({
+  args: {
+    status: v.optional(extractionTraceStatusValidator),
+    orgId: v.optional(v.id("organizations")),
+    dateFrom: v.optional(v.number()),
+    dateTo: v.optional(v.number()),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    await requireOperator(ctx);
+    const limit = Math.max(1, Math.min(Math.floor(args.limit ?? 200), 500));
+    const base = args.status
+      ? ctx.db
+        .query("policyExtractionTraceSessions")
+        .withIndex("by_status_startedAt", (q) => q.eq("status", args.status!))
+        .order("desc")
+      : ctx.db
+        .query("policyExtractionTraceSessions")
+        .withIndex("by_startedAt")
+        .order("desc");
+    const sessions = await base.take(limit * 3);
+    const filtered = sessions
+      .filter((session) => !args.orgId || session.orgId === args.orgId)
+      .filter((session) => args.dateFrom === undefined || session.startedAt >= args.dateFrom!)
+      .filter((session) => args.dateTo === undefined || session.startedAt <= args.dateTo!)
+      .slice(0, limit);
+
+    return await Promise.all(filtered.map(async (session) => {
+      const [org, policy] = await Promise.all([
+        ctx.db.get(session.orgId),
+        ctx.db.get(session.policyId),
+      ]);
+      return {
+        ...session,
+        orgName: org?.name ?? "Unknown org",
+        orgType: org?.type ?? "client",
+        policyLabel: policy
+          ? [
+              policy.carrier && policy.carrier !== "Extracting..." ? policy.carrier : null,
+              policy.policyNumber && policy.policyNumber !== "Extracting..." ? policy.policyNumber : null,
+            ].filter(Boolean).join(" · ") || policy.fileName || "Extracting..."
+          : "Deleted policy",
+        fileName: session.fileName ?? policy?.fileName,
+        documentType: policy?.documentType ?? "policy",
+      };
+    }));
+  },
+});
+
+export const getExtractionTrace = query({
+  args: { traceId: v.string() },
+  handler: async (ctx, args) => {
+    await requireOperator(ctx);
+    const session = await ctx.db
+      .query("policyExtractionTraceSessions")
+      .withIndex("by_traceId", (q) => q.eq("traceId", args.traceId))
+      .first();
+    if (!session) return null;
+    const [org, policy, events] = await Promise.all([
+      ctx.db.get(session.orgId),
+      ctx.db.get(session.policyId),
+      ctx.db
+        .query("policyExtractionTraceEvents")
+        .withIndex("by_traceId_timestamp", (q) => q.eq("traceId", args.traceId))
+        .order("asc")
+        .collect(),
+    ]);
+    return {
+      session: {
+        ...session,
+        orgName: org?.name ?? "Unknown org",
+        orgType: org?.type ?? "client",
+        policyLabel: policy
+          ? [
+              policy.carrier && policy.carrier !== "Extracting..." ? policy.carrier : null,
+              policy.policyNumber && policy.policyNumber !== "Extracting..." ? policy.policyNumber : null,
+            ].filter(Boolean).join(" · ") || policy.fileName || "Extracting..."
+          : "Deleted policy",
+        fileName: session.fileName ?? policy?.fileName,
+        documentType: policy?.documentType ?? "policy",
+      },
+      events,
+    };
   },
 });
 

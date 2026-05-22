@@ -7,6 +7,7 @@
  * simple callback interfaces the new SDK expects: GenerateText, GenerateObject, EmbedText.
  */
 
+import dayjs from "dayjs";
 import { Output, embed, gateway } from "ai";
 import type { LanguageModelUsage } from "ai";
 import type { ProviderOptions } from "@ai-sdk/provider-utils";
@@ -52,6 +53,8 @@ type ExtractionProviderOptions = ProviderOptions & {
 type ModelRoutingContext = {
   ctx?: ActionCtx;
   orgId?: Id<"organizations">;
+  traceId?: string;
+  tracePolicyId?: Id<"policies"> | string;
 };
 
 type PdfFilePart = {
@@ -67,6 +70,10 @@ type ParamsWithOptionalTaskKind = {
 
 function readTaskKind(params: ParamsWithOptionalTaskKind): ModelCallTaskKind | undefined {
   return typeof params.taskKind === "string" ? params.taskKind : undefined;
+}
+
+function nowMs(): number {
+  return dayjs().valueOf();
 }
 
 /**
@@ -221,6 +228,45 @@ function extractEmbeddedPdf(
   return { text, pdfBase64 };
 }
 
+async function recordModelTrace(
+  routing: ModelRoutingContext | undefined,
+  event: {
+    label: string;
+    task: ModelTask;
+    taskKind?: ModelCallTaskKind;
+    route?: ModelRoute;
+    routeSource?: string;
+    transport?: string;
+    durationMs: number;
+    usage?: TokenUsage;
+    status: "complete" | "error";
+    error?: string;
+  },
+) {
+  if (!routing?.ctx || !routing.traceId) return;
+  try {
+    await routing.ctx.runMutation((internal as any).extractionTraces.recordEvent, {
+      traceId: routing.traceId,
+      kind: "model_call",
+      label: event.label,
+      task: event.task,
+      taskKind: event.taskKind,
+      provider: event.route?.provider,
+      model: event.route?.model,
+      routeSource: event.routeSource,
+      transport: event.transport,
+      attempt: 1,
+      status: event.status,
+      durationMs: event.durationMs,
+      inputTokens: event.usage?.inputTokens,
+      outputTokens: event.usage?.outputTokens,
+      error: event.error,
+    });
+  } catch {
+    // Telemetry should never fail a user-facing extraction.
+  }
+}
+
 /**
  * Create a GenerateText callback backed by Glass's model router.
  * The task parameter selects which model to use (extraction, classification, etc.).
@@ -236,30 +282,62 @@ export function makeGenerateText(
     const effectiveTask = modelTaskForCall(task, taskKind);
     const effectiveMaxTokens = getEffectiveMaxTokens(effectiveTask, guidedPrompt, maxTokens);
     let primaryRoute: ModelRoute | undefined;
+    let routeSource: string | undefined;
+    let transport: string | undefined;
     const model = routing?.ctx && routing.orgId
       ? await getModelAndRouteForOrg(routing.ctx, routing.orgId, effectiveTask).then((resolved) => {
         primaryRoute = resolved.route;
+        routeSource = resolved.routeSource;
+        transport = resolved.transport;
         return resolved.model;
       })
       : getModel(effectiveTask);
-    const result = await generateTextWithFallback({
-      model,
-      system,
-      ...buildPromptInput(guidedPrompt, providerOptions as Record<string, unknown> | undefined),
-      maxOutputTokens: effectiveMaxTokens,
-      providerOptions: mergeProviderOptions(
-        getProviderOptionsForTask(effectiveTask),
-        providerOptions as ProviderOptions,
-      ),
-    }, {
-      task: effectiveTask,
-      taskKind,
-      primaryRoute,
-    });
-    return {
-      text: result.text,
-      usage: mapUsage(result.usage),
-    };
+    const startedAt = nowMs();
+    try {
+      const result = await generateTextWithFallback({
+        model,
+        system,
+        ...buildPromptInput(guidedPrompt, providerOptions as Record<string, unknown> | undefined),
+        maxOutputTokens: effectiveMaxTokens,
+        providerOptions: mergeProviderOptions(
+          getProviderOptionsForTask(effectiveTask),
+          providerOptions as ProviderOptions,
+        ),
+      }, {
+        task: effectiveTask,
+        taskKind,
+        primaryRoute,
+      });
+      const usage = mapUsage(result.usage);
+      await recordModelTrace(routing, {
+        label: "generateText",
+        task: effectiveTask,
+        taskKind,
+        route: primaryRoute,
+        routeSource,
+        transport,
+        durationMs: nowMs() - startedAt,
+        usage,
+        status: "complete",
+      });
+      return {
+        text: result.text,
+        usage,
+      };
+    } catch (error) {
+      await recordModelTrace(routing, {
+        label: "generateText",
+        task: effectiveTask,
+        taskKind,
+        route: primaryRoute,
+        routeSource,
+        transport,
+        durationMs: nowMs() - startedAt,
+        status: "error",
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
   };
 }
 
@@ -278,12 +356,17 @@ export function makeGenerateObject(
     const effectiveTask = modelTaskForCall(task, taskKind);
     const effectiveMaxTokens = getEffectiveMaxTokens(effectiveTask, guidedPrompt, maxTokens);
     let primaryRoute: ModelRoute | undefined;
+    let routeSource: string | undefined;
+    let transport: string | undefined;
     const model = routing?.ctx && routing.orgId
       ? await getModelAndRouteForOrg(routing.ctx, routing.orgId, effectiveTask).then((resolved) => {
         primaryRoute = resolved.route;
+        routeSource = resolved.routeSource;
+        transport = resolved.transport;
         return resolved.model;
       })
       : getModel(effectiveTask);
+    const startedAt = nowMs();
     try {
       const result = await generateStructuredWithFallback({
         model,
@@ -300,9 +383,21 @@ export function makeGenerateObject(
         taskKind,
         primaryRoute,
       });
+      const usage = mapUsage(result.usage);
+      await recordModelTrace(routing, {
+        label: "generateObject",
+        task: effectiveTask,
+        taskKind,
+        route: primaryRoute,
+        routeSource,
+        transport,
+        durationMs: nowMs() - startedAt,
+        usage,
+        status: "complete",
+      });
       return {
         object: result.output!,
-        usage: mapUsage(result.usage),
+        usage,
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -310,12 +405,34 @@ export function makeGenerateObject(
         effectiveTask === "extraction" && guidedPrompt.includes(SECTIONS_EXTRACTOR_PROMPT_MARKER);
 
       if (isSectionsExtractor && message.includes("No output generated")) {
+        await recordModelTrace(routing, {
+          label: "generateObject",
+          task: effectiveTask,
+          taskKind,
+          route: primaryRoute,
+          routeSource,
+          transport,
+          durationMs: nowMs() - startedAt,
+          status: "error",
+          error: message,
+        });
         return {
           object: { sections: [] } as unknown,
           usage: undefined,
         };
       }
 
+      await recordModelTrace(routing, {
+        label: "generateObject",
+        task: effectiveTask,
+        taskKind,
+        route: primaryRoute,
+        routeSource,
+        transport,
+        durationMs: nowMs() - startedAt,
+        status: "error",
+        error: message,
+      });
       throw error;
     }
   };

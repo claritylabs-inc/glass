@@ -1870,7 +1870,35 @@ export const pipelineAppendLog = internalMutation({
     };
     if (phase !== undefined) entry.phase = phase;
     if (level !== undefined) entry.level = level;
-    await appendPolicyPipelineLog(ctx, jobId as DataModelId<"policies">, entry);
+    const policyId = jobId as DataModelId<"policies">;
+    await appendPolicyPipelineLog(ctx, policyId, entry);
+
+    const run = await getPolicyExtractionRun(ctx, policyId);
+    const checkpoint = run?.pipelineCheckpoint as
+      | { state?: { traceId?: string } }
+      | undefined;
+    const traceId = checkpoint?.state?.traceId;
+    if (!traceId) return;
+    const session = await ctx.db
+      .query("policyExtractionTraceSessions")
+      .withIndex("by_traceId", (q) => q.eq("traceId", traceId))
+      .first();
+    if (!session) return;
+    await ctx.db.insert("policyExtractionTraceEvents", {
+      traceId,
+      policyId,
+      orgId: session.orgId,
+      kind: "log",
+      timestamp,
+      message,
+      phase,
+      level,
+      expiresAt: session.expiresAt,
+    });
+    await ctx.db.patch(session._id, {
+      lastEventAt: timestamp,
+      updatedAt: dayjs().valueOf(),
+    });
   },
 });
 

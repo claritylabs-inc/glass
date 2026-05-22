@@ -26,4 +26,11 @@ crons.interval(
   {},
 );
 
+crons.cron(
+  "sweep extraction traces",
+  "30 3 * * *",
+  (internal as any).extractionTraces.sweepExpired,
+  {},
+);
+
 export default crons;
