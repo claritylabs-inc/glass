@@ -28,6 +28,7 @@ declare global {
 const PUBLIC_PATHS = [
   "/login",
   "/signup",
+  "/operator/login",
   "/oauth/authorize",
   "/weather",
   "/invite",
@@ -36,6 +37,7 @@ const PUBLIC_PATHS = [
 ];
 const ONBOARDING_PATH = "/onboarding";
 const ADMIN_PATHS = ["/settings"];
+const OPERATOR_PATH = "/operator";
 
 /**
  * Loading state shown when we know the user needs onboarding.
@@ -89,6 +91,24 @@ function DashboardLoading() {
   );
 }
 
+function PendingLiveScreen() {
+  return (
+    <div className="min-h-screen bg-background text-foreground">
+      <div className="mx-auto flex min-h-screen w-full max-w-lg flex-col justify-center px-6">
+        <div className="rounded-lg border border-foreground/8 bg-card p-6">
+          <h1 className="text-base font-medium text-foreground">
+            Workspace is being prepared
+          </h1>
+          <p className="mt-2 text-body-sm text-muted-foreground">
+            Your Glass workspace is not live yet. You will receive an email when
+            it is ready.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useConvexAuth();
   const pathname = usePathname();
@@ -114,13 +134,20 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   const isOnboarding =
     pathname === ONBOARDING_PATH || pathname.startsWith(`${ONBOARDING_PATH}/`);
   const isAdminPath = ADMIN_PATHS.some((p) => pathname.startsWith(p));
+  const isOperatorPath = pathname === OPERATOR_PATH || pathname.startsWith(`${OPERATOR_PATH}/`);
+  const isOperatorLogin = pathname === "/operator/login";
 
   // Only query viewer when authenticated
   const viewer = useQuery(api.users.viewer, isAuthenticated ? {} : "skip");
   const viewerOrg = useQuery(api.orgs.viewerOrg, isAuthenticated ? {} : "skip");
+  const operatorContext = useQuery(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (api as any).operator.current,
+    isAuthenticated && viewer?.accountKind === "operator" ? {} : "skip",
+  );
   const pendingInvitation = useQuery(
     api.orgs.pendingInvitationForViewer,
-    isAuthenticated ? {} : "skip",
+    isAuthenticated && viewer?.accountKind !== "operator" ? {} : "skip",
   );
 
   // Update cached onboarding state when we learn it from the server
@@ -206,8 +233,36 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     }
 
     if (isAuthenticated && viewer !== undefined) {
+      const hasOperatorImpersonation = !!operatorContext?.activeImpersonation;
+      if (
+        viewer?.accountKind === "operator" &&
+        operatorContext !== undefined &&
+        !isOperatorPath &&
+        !hasOperatorImpersonation
+      ) {
+        router.replace("/operator");
+        return;
+      }
+      if (isOperatorPath && !isOperatorLogin && viewer?.accountKind !== "operator") {
+        router.replace("/");
+        return;
+      }
+      if (
+        viewer?.accountKind !== "operator" &&
+        !!viewerOrg?.org &&
+        ((viewerOrg.org as { operatorStatus?: "onboarding" | "live" }).operatorStatus ?? "live") === "onboarding" &&
+        !isPublic
+      ) {
+        return;
+      }
       // Redirect to onboarding if not complete
-      if (viewer && !viewer.onboardingComplete && !isOnboarding && !isPublic) {
+      if (
+        viewer &&
+        viewer.accountKind !== "operator" &&
+        !viewer.onboardingComplete &&
+        !isOnboarding &&
+        !isPublic
+      ) {
         router.replace("/onboarding");
         return;
       }
@@ -232,9 +287,12 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     isPublic,
     isOnboarding,
     isAdminPath,
+    isOperatorPath,
+    isOperatorLogin,
     pendingInvitation,
     viewer,
     viewerOrg,
+    operatorContext,
     router,
     pathname,
   ]);
@@ -251,6 +309,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   if (
     isLoading ||
     (isAuthenticated && viewer === undefined) ||
+    (isAuthenticated && viewer?.accountKind === "operator" && operatorContext === undefined) ||
     (isAuthenticated && pendingInvitation && !inviteAcceptError)
   ) {
     if (isPublic) return null;
@@ -271,10 +330,34 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     return null;
   }
 
+  if (
+    isAuthenticated &&
+    viewer?.accountKind !== "operator" &&
+    !!viewerOrg?.org &&
+    ((viewerOrg.org as { operatorStatus?: "onboarding" | "live" }).operatorStatus ?? "live") === "onboarding" &&
+    !isPublic
+  ) {
+    return <PendingLiveScreen />;
+  }
+
+  if (
+    isAuthenticated &&
+    viewer?.accountKind === "operator" &&
+    !isOperatorPath &&
+    !operatorContext?.activeImpersonation
+  ) {
+    return null;
+  }
+
+  if (isAuthenticated && isOperatorPath && !isOperatorLogin && viewer?.accountKind !== "operator") {
+    return null;
+  }
+
   // Waiting for redirect to onboarding
   if (
     isAuthenticated &&
     viewer &&
+    viewer.accountKind !== "operator" &&
     !viewer.onboardingComplete &&
     !isOnboarding &&
     !isPublic

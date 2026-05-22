@@ -1,7 +1,9 @@
-import { getAuthUserId } from "@convex-dev/auth/server";
+import dayjs from "dayjs";
 import { v } from "convex/values";
 import { internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
+import { requireOrgAccess } from "./lib/orgAuth";
+import { requireOperator } from "./lib/operatorIdentity";
 import {
   CONFIGURABLE_MODEL_PROVIDERS,
   EMBEDDING_MODEL_CATALOG,
@@ -18,6 +20,7 @@ import {
 
 type ProviderKeys = NonNullable<Doc<"brokerModelSettings">["providerKeys"]>;
 type Routes = NonNullable<Doc<"brokerModelSettings">["routes"]>;
+type RouteSource = "broker" | "global" | "static";
 const CONFIGURABLE_PROVIDER_SET = new Set<ModelProvider>(CONFIGURABLE_MODEL_PROVIDERS);
 
 const configurableProviderValidator = v.union(
@@ -25,6 +28,7 @@ const configurableProviderValidator = v.union(
   v.literal("anthropic"),
   v.literal("google"),
   v.literal("xai"),
+  v.literal("mistral"),
   v.literal("cohere"),
   v.literal("deepseek"),
 );
@@ -48,6 +52,7 @@ const routesValidator = v.object({
   email_extraction: v.optional(routeUpdateValidator),
   document_extraction: v.optional(routeUpdateValidator),
   security: v.optional(routeUpdateValidator),
+  mailbox_coordinator: v.optional(routeUpdateValidator),
   application_authoring: v.optional(routeUpdateValidator),
   embeddings: v.optional(routeUpdateValidator),
 });
@@ -70,23 +75,16 @@ function isConfigurableProvider(provider: ModelProvider) {
 }
 
 async function requireCurrentBrokerAdmin(ctx: QueryCtx | MutationCtx) {
-  const userId = await getAuthUserId(ctx);
-  if (!userId) throw new Error("Not authenticated");
-
-  const membership = await ctx.db
-    .query("orgMemberships")
-    .withIndex("by_userId", (q) => q.eq("userId", userId))
-    .first();
-  if (!membership || membership.role !== "admin") {
+  const access = await requireOrgAccess(ctx);
+  if (access.role !== "admin") {
     throw new Error("Admin role required to manage model settings");
   }
 
-  const org = await ctx.db.get(membership.orgId);
-  if (!org || org.type !== "broker") {
+  if (access.org.type !== "broker") {
     throw new Error("Expected a broker organization");
   }
 
-  return { userId, brokerOrgId: org._id };
+  return { userId: access.userId, brokerOrgId: access.orgId };
 }
 
 function maskProviderKeys(keys: ProviderKeys | undefined) {
@@ -104,15 +102,6 @@ function maskProviderKeys(keys: ProviderKeys | undefined) {
   ) as Record<ModelProvider, { configured: boolean; suffix: string | null }>;
 }
 
-function mergedRoutes(routes: Routes | undefined) {
-  return Object.fromEntries(
-    MODEL_TASKS.map((task) => {
-      const route = routes?.[task];
-      return [task, route && isConfigurableProvider(route.provider) ? route : MODEL_ROUTING[task]];
-    }),
-  ) as Record<ModelTask, ModelRoute>;
-}
-
 function visibleRoutes(routes: Routes | undefined, keys: ProviderKeys | undefined) {
   return Object.fromEntries(
     MODEL_TASKS.map((task) => {
@@ -122,6 +111,12 @@ function visibleRoutes(routes: Routes | undefined, keys: ProviderKeys | undefine
         route && isConfigurableProvider(route.provider) && keys?.[route.provider] ? route : null,
       ];
     }),
+  ) as Record<ModelTask, ModelRoute | null>;
+}
+
+function nullableRoutes(routes: Routes | undefined) {
+  return Object.fromEntries(
+    MODEL_TASKS.map((task) => [task, routes?.[task] ?? null]),
   ) as Record<ModelTask, ModelRoute | null>;
 }
 
@@ -183,7 +178,7 @@ export const updateRoutes = mutation({
       assertSupportedRoute(task, route);
     }
 
-    const now = Date.now();
+    const now = dayjs().valueOf();
     const routes = { ...(existing?.routes ?? {}) };
     for (const [task, route] of Object.entries(args.routes)) {
       if (!isModelTask(task)) continue;
@@ -226,7 +221,7 @@ export const updateProviderKey = mutation({
       delete providerKeys[args.provider];
     }
 
-    const now = Date.now();
+    const now = dayjs().valueOf();
     if (existing) {
       await ctx.db.patch(existing._id, { providerKeys, updatedBy: userId, updatedAt: now });
     } else {
@@ -234,6 +229,74 @@ export const updateProviderKey = mutation({
         brokerOrgId,
         providerKeys,
         updatedBy: userId,
+        updatedAt: now,
+      });
+    }
+  },
+});
+
+export const getGlobal = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireOperator(ctx);
+    const settings = await ctx.db
+      .query("globalModelSettings")
+      .withIndex("by_key", (q) => q.eq("key", "default"))
+      .first();
+
+    return {
+      providers: CONFIGURABLE_MODEL_PROVIDERS.map((id) => ({
+        id,
+        label: PROVIDER_LABELS[id],
+        languageModels: LANGUAGE_MODEL_CATALOG[id],
+        embeddingModels: EMBEDDING_MODEL_CATALOG[id] ?? [],
+      })),
+      tasks: MODEL_TASKS.map((id) => ({
+        id,
+        label: MODEL_TASK_LABELS[id],
+        description: MODEL_TASK_DESCRIPTIONS[id],
+        isEmbedding: id === "embeddings",
+        defaultRoute: MODEL_ROUTING[id],
+      })),
+      routes: nullableRoutes(settings?.routes),
+      updatedAt: settings?.updatedAt ?? null,
+    };
+  },
+});
+
+export const updateGlobalRoutes = mutation({
+  args: { routes: routesValidator },
+  handler: async (ctx, args) => {
+    const operator = await requireOperator(ctx);
+    const existing = await ctx.db
+      .query("globalModelSettings")
+      .withIndex("by_key", (q) => q.eq("key", "default"))
+      .first();
+
+    for (const [task, route] of Object.entries(args.routes)) {
+      if (!route) continue;
+      if (!isModelTask(task)) throw new Error(`Unknown model task ${task}`);
+      assertSupportedRoute(task, route);
+    }
+
+    const now = dayjs().valueOf();
+    const routes = { ...(existing?.routes ?? {}) };
+    for (const [task, route] of Object.entries(args.routes)) {
+      if (!isModelTask(task)) continue;
+      if (route === null) {
+        delete routes[task];
+      } else if (route) {
+        routes[task] = route;
+      }
+    }
+
+    if (existing) {
+      await ctx.db.patch(existing._id, { routes, updatedBy: operator.userId, updatedAt: now });
+    } else {
+      await ctx.db.insert("globalModelSettings", {
+        key: "default",
+        routes,
+        updatedBy: operator.userId,
         updatedAt: now,
       });
     }
@@ -248,15 +311,43 @@ export const resolveForOrg = internalQuery({
     const brokerOrgId = org.type === "broker" ? org._id : org.brokerOrgId;
     if (!brokerOrgId) return null;
 
+    const globalSettings = await ctx.db
+      .query("globalModelSettings")
+      .withIndex("by_key", (q) => q.eq("key", "default"))
+      .first();
     const settings = await ctx.db
       .query("brokerModelSettings")
       .withIndex("by_brokerOrgId", (q) => q.eq("brokerOrgId", brokerOrgId))
       .first();
-    if (!settings) return null;
+
+    const providerKeys = configurableProviderKeys(settings?.providerKeys);
+    const routes = {} as Record<ModelTask, ModelRoute>;
+    const routeSources = {} as Record<ModelTask, RouteSource>;
+    for (const task of MODEL_TASKS) {
+      const brokerRoute = settings?.routes?.[task];
+      if (
+        brokerRoute &&
+        brokerRoute.provider !== "moonshot" &&
+        providerKeys[brokerRoute.provider]
+      ) {
+        routes[task] = brokerRoute;
+        routeSources[task] = "broker";
+        continue;
+      }
+      const globalRoute = globalSettings?.routes?.[task];
+      if (globalRoute && globalRoute.provider !== "moonshot") {
+        routes[task] = globalRoute;
+        routeSources[task] = "global";
+        continue;
+      }
+      routes[task] = MODEL_ROUTING[task];
+      routeSources[task] = "static";
+    }
 
     return {
-      routes: mergedRoutes(settings.routes),
-      providerKeys: configurableProviderKeys(settings.providerKeys),
+      routes,
+      routeSources,
+      providerKeys,
     };
   },
 });

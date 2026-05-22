@@ -6,6 +6,7 @@ import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
 import { getAuthSiteUrl } from "./lib/domains";
+import { assertCustomerUser, isBootstrapOperatorEmail } from "./lib/operatorIdentity";
 
 const partnerTypeValidator = v.union(
   v.literal("broker"),
@@ -215,6 +216,9 @@ export const provisionBroker = action({
     await requireOperatorAuth(ctx, args.operatorAuth, body);
 
     const email = normalizeEmail(args.admin.email);
+    if (isBootstrapOperatorEmail(email)) {
+      throw new Error("Operator emails cannot be used as broker admin accounts");
+    }
     const now = dayjs().valueOf();
     const account = await createAccount(ctx, {
       provider: "resend-otp",
@@ -224,6 +228,7 @@ export const provisionBroker = action({
         name: args.admin.name?.trim() || undefined,
         title: args.admin.title?.trim() || undefined,
         emailVerificationTime: now,
+        accountKind: "customer",
         onboardingComplete: args.markOnboardingComplete ?? true,
       },
       shouldLinkViaEmail: true,
@@ -357,6 +362,7 @@ export const upsertProvisionedBroker = internalMutation({
       agentDisplayName: args.broker.agentDisplayName?.trim() || undefined,
       agentHandle,
       onboardingComplete: args.markOnboardingComplete,
+      operatorStatus: existingBySlug?.operatorStatus ?? ("onboarding" as const),
     };
 
     let brokerOrgId: Id<"organizations">;
@@ -373,6 +379,7 @@ export const upsertProvisionedBroker = internalMutation({
       .query("orgMemberships")
       .withIndex("by_orgId_userId", (q) => q.eq("orgId", brokerOrgId).eq("userId", args.adminUserId))
       .first();
+    await assertCustomerUser(ctx, args.adminUserId);
     const adminMembershipId = existingMembership?._id ?? await ctx.db.insert("orgMemberships", {
       orgId: brokerOrgId,
       userId: args.adminUserId,
@@ -381,6 +388,7 @@ export const upsertProvisionedBroker = internalMutation({
 
     const now = dayjs().valueOf();
     await ctx.db.patch(args.adminUserId, {
+      accountKind: "customer",
       email: args.adminEmail,
       name: args.adminName?.trim() || undefined,
       title: args.adminTitle?.trim() || undefined,
@@ -395,6 +403,9 @@ export const upsertProvisionedBroker = internalMutation({
       const primaryContactEmail = client.primaryContactEmail
         ? normalizeEmail(client.primaryContactEmail)
         : undefined;
+      if (primaryContactEmail && isBootstrapOperatorEmail(primaryContactEmail)) {
+        throw new Error("Operator emails cannot be used as client contacts");
+      }
 
       const brokerClients = await ctx.db
         .query("organizations")

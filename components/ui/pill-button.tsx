@@ -105,7 +105,7 @@ const PillButton = forwardRef<HTMLButtonElement, PillButtonProps>(
         whileTap={props.disabled ? undefined : config.tap}
         transition={MOTION_TRANSITION}
         className={cn(
-          "inline-flex shrink-0 items-center justify-center rounded-full font-medium outline-none transition-colors duration-150 ease-out select-none focus-visible:ring-2 focus-visible:ring-foreground/10 disabled:opacity-50 disabled:cursor-not-allowed [&_svg]:text-current",
+          "inline-flex shrink-0 items-center justify-center rounded-full font-medium leading-none outline-none transition-colors duration-150 ease-out select-none focus-visible:ring-2 focus-visible:ring-foreground/10 disabled:opacity-50 disabled:cursor-not-allowed [&_svg]:shrink-0 [&_svg]:text-current",
           config.classes,
           isIcon ? iconSizeClasses[size] : sizeClasses[size],
           className,

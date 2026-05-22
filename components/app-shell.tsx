@@ -12,6 +12,7 @@ import {
 } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useMutation } from "convex/react";
+import { AnimatePresence, motion } from "framer-motion";
 import { AppSidebar } from "@/components/app-sidebar";
 import { AppTopBar, type PresenceUser } from "@/components/app-top-bar";
 import { GlassPromptInput } from "@/components/glass-prompt-input";
@@ -184,14 +185,35 @@ function ShellContent({
   breadcrumbDetail,
   presenceUsers,
   rightPanel,
+  customSidebar,
+  customSidebarStorageKey = "custom-sidebar-collapsed",
+  disablePersistentChat = false,
+  disableCommandPalette = false,
+  showBrokerShare = true,
 }: {
   children: React.ReactNode;
   actions?: React.ReactNode;
   breadcrumbDetail?: React.ReactNode;
   presenceUsers?: PresenceUser[];
   rightPanel?: React.ReactNode;
+  customSidebar?: (props: {
+    collapsed: boolean;
+    onToggleCollapse: () => void;
+  }) => React.ReactNode;
+  customSidebarStorageKey?: string;
+  disablePersistentChat?: boolean;
+  disableCommandPalette?: boolean;
+  showBrokerShare?: boolean;
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [customSidebarCollapsed, setCustomSidebarCollapsed] = useState(() => {
+    if (!customSidebar) return false;
+    try {
+      return localStorage.getItem(customSidebarStorageKey) === "1";
+    } catch {
+      return false;
+    }
+  });
   const { isPdfOpen, fileUrl } = usePdf();
   const { preview: entityPreview } = useEntityPreview();
   const hasPdfPanel = isPdfOpen && !!fileUrl;
@@ -200,17 +222,67 @@ function ShellContent({
   const visiblePanelCount =
     (hasRightPanel ? 1 : 0) + (hasEntityPanel ? 1 : 0) + (hasPdfPanel ? 1 : 0);
   const useEqualPanelLayout = visiblePanelCount >= 2;
+  const toggleCustomSidebarCollapse = useCallback(() => {
+    setCustomSidebarCollapsed((current) => {
+      const next = !current;
+      try {
+        localStorage.setItem(customSidebarStorageKey, next ? "1" : "");
+      } catch {}
+      return next;
+    });
+  }, [customSidebarStorageKey]);
+  const renderedCustomSidebar = customSidebar?.({
+    collapsed: customSidebarCollapsed,
+    onToggleCollapse: toggleCustomSidebarCollapse,
+  });
+  const renderedMobileCustomSidebar = customSidebar?.({
+    collapsed: false,
+    onToggleCollapse: toggleCustomSidebarCollapse,
+  });
 
   return (
     <div className="flex h-dvh w-full min-w-0 overflow-hidden">
-      {/* AppSidebar uses useSearchParams; wrap in Suspense so the root
-          layout can prerender pages like /_not-found without bailing. */}
-      <Suspense fallback={null}>
-        <AppSidebar
-          mobileOpen={mobileOpen}
-          onMobileClose={() => setMobileOpen(false)}
-        />
-      </Suspense>
+      {customSidebar ? (
+        <>
+          <aside
+            className={`hidden h-full shrink-0 flex-col border-r border-foreground/6 bg-background sidebar-transition lg:flex ${
+              customSidebarCollapsed ? "w-14" : "w-[220px]"
+            }`}
+          >
+            {renderedCustomSidebar}
+          </aside>
+          <AnimatePresence>
+            {mobileOpen ? (
+              <>
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.15 }}
+                  className="fixed inset-0 z-40 bg-black/20 lg:hidden"
+                  onClick={() => setMobileOpen(false)}
+                />
+                <motion.aside
+                  initial={{ x: -280 }}
+                  animate={{ x: 0 }}
+                  exit={{ x: -280 }}
+                  transition={{ duration: 0.12, ease: [0.2, 0, 0, 1] }}
+                  className="fixed bottom-0 left-0 top-0 z-50 w-[260px] border-r border-foreground/6 bg-background lg:hidden"
+                >
+                  {renderedMobileCustomSidebar}
+                </motion.aside>
+              </>
+            ) : null}
+          </AnimatePresence>
+        </>
+      ) : (
+        <Suspense fallback={null}>
+          <AppSidebar
+            mobileOpen={mobileOpen}
+            onMobileClose={() => setMobileOpen(false)}
+          />
+        </Suspense>
+      )}
       <div className="flex min-w-0 flex-1 overflow-hidden">
         {/* Main content column */}
         <div
@@ -222,6 +294,7 @@ function ShellContent({
             actions={actions}
             breadcrumbDetail={breadcrumbDetail}
             presenceUsers={presenceUsers}
+            showBrokerShare={showBrokerShare}
             onMobileMenuToggle={() => setMobileOpen((v) => !v)}
           />
           <div className="relative min-w-0 flex-1 overflow-hidden">
@@ -230,8 +303,8 @@ function ShellContent({
                 {children}
               </div>
             </main>
-            <PersistentChatBar />
-            <CommandPalette />
+            {disablePersistentChat ? null : <PersistentChatBar />}
+            {disableCommandPalette ? null : <CommandPalette />}
           </div>
         </div>
         {/* Right-side panels can stack: policy, email/drawer, then PDF. */}
@@ -482,12 +555,25 @@ export function AppShell({
   breadcrumbDetail,
   presenceUsers,
   rightPanel,
+  customSidebar,
+  customSidebarStorageKey,
+  disablePersistentChat,
+  disableCommandPalette,
+  showBrokerShare,
 }: {
   children: React.ReactNode;
   actions?: React.ReactNode;
   breadcrumbDetail?: React.ReactNode;
   presenceUsers?: PresenceUser[];
   rightPanel?: React.ReactNode;
+  customSidebar?: (props: {
+    collapsed: boolean;
+    onToggleCollapse: () => void;
+  }) => React.ReactNode;
+  customSidebarStorageKey?: string;
+  disablePersistentChat?: boolean;
+  disableCommandPalette?: boolean;
+  showBrokerShare?: boolean;
 }) {
   return (
     <PageContextProvider>
@@ -498,6 +584,11 @@ export function AppShell({
             breadcrumbDetail={breadcrumbDetail}
             presenceUsers={presenceUsers}
             rightPanel={rightPanel}
+            customSidebar={customSidebar}
+            customSidebarStorageKey={customSidebarStorageKey}
+            disablePersistentChat={disablePersistentChat}
+            disableCommandPalette={disableCommandPalette}
+            showBrokerShare={showBrokerShare}
           >
             {children}
           </ShellContent>

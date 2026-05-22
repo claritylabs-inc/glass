@@ -62,6 +62,7 @@ export default defineSchema({
     phone: v.optional(v.string()),
     phoneVerificationTime: v.optional(v.number()),
     isAnonymous: v.optional(v.boolean()),
+    accountKind: v.optional(v.union(v.literal("customer"), v.literal("operator"))),
     // Personal profile fields
     title: v.optional(v.string()),
     // Onboarding & admin
@@ -113,6 +114,8 @@ export default defineSchema({
     emailSendDelay: v.optional(v.number()), // seconds before sending emails (default 5, 0 = instant)
     // Onboarding
     onboardingComplete: v.optional(v.boolean()),
+    // Internal operator lifecycle for operator-provisioned tenants. Missing legacy value means live.
+    operatorStatus: v.optional(v.union(v.literal("onboarding"), v.literal("live"))),
     // Branding
     iconStorageId: v.optional(v.id("_storage")),
     // Dual-org: org type discriminator
@@ -252,6 +255,55 @@ export default defineSchema({
     .index("by_nonce", ["nonce"])
     .index("by_expiresAt", ["expiresAt"]),
 
+  operatorProfiles: defineTable({
+    userId: v.id("users"),
+    email: v.string(),
+    role: v.union(v.literal("operator"), v.literal("owner")),
+    status: v.union(v.literal("active"), v.literal("disabled")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_userId", ["userId"])
+    .index("by_email", ["email"])
+    .index("by_status", ["status"]),
+
+  operatorImpersonationSessions: defineTable({
+    operatorUserId: v.id("users"),
+    targetOrgId: v.id("organizations"),
+    targetRole: v.union(v.literal("admin"), v.literal("member")),
+    status: v.union(v.literal("active"), v.literal("ended")),
+    createdAt: v.number(),
+    endedAt: v.optional(v.number()),
+  })
+    .index("by_operator_status", ["operatorUserId", "status"])
+    .index("by_targetOrgId", ["targetOrgId"]),
+
+  operatorAuditEvents: defineTable({
+    operatorUserId: v.id("users"),
+    type: v.union(
+      v.literal("operator_bootstrap"),
+      v.literal("broker_created"),
+      v.literal("broker_status_changed"),
+      v.literal("broker_launch_email_sent"),
+      v.literal("client_created"),
+      v.literal("client_status_changed"),
+      v.literal("client_launch_email_sent"),
+      v.literal("mga_created"),
+      v.literal("mga_status_changed"),
+      v.literal("mga_launch_email_sent"),
+      v.literal("impersonation_started"),
+      v.literal("impersonation_stopped"),
+      v.literal("setup_write"),
+    ),
+    targetOrgId: v.optional(v.id("organizations")),
+    targetUserId: v.optional(v.id("users")),
+    summary: v.string(),
+    metadata: v.optional(v.any()),
+    createdAt: v.number(),
+  })
+    .index("by_operatorUserId_createdAt", ["operatorUserId", "createdAt"])
+    .index("by_targetOrgId_createdAt", ["targetOrgId", "createdAt"]),
+
   brokerModelSettings: defineTable({
     brokerOrgId: v.id("organizations"),
     providerKeys: v.optional(
@@ -287,6 +339,30 @@ export default defineSchema({
     updatedBy: v.id("users"),
     updatedAt: v.number(),
   }).index("by_brokerOrgId", ["brokerOrgId"]),
+
+  globalModelSettings: defineTable({
+    key: v.literal("default"),
+    routes: v.optional(
+      v.object({
+        chat: v.optional(modelRouteValidator),
+        email_draft: v.optional(modelRouteValidator),
+        email_reply: v.optional(modelRouteValidator),
+        extraction: v.optional(modelRouteValidator),
+        classification: v.optional(modelRouteValidator),
+        analysis: v.optional(modelRouteValidator),
+        summary: v.optional(modelRouteValidator),
+        triage: v.optional(modelRouteValidator),
+        email_extraction: v.optional(modelRouteValidator),
+        document_extraction: v.optional(modelRouteValidator),
+        security: v.optional(modelRouteValidator),
+        mailbox_coordinator: v.optional(modelRouteValidator),
+        application_authoring: v.optional(modelRouteValidator),
+        embeddings: v.optional(modelRouteValidator),
+      }),
+    ),
+    updatedBy: v.id("users"),
+    updatedAt: v.number(),
+  }).index("by_key", ["key"]),
 
   connectedEmailAccounts: defineTable({
     orgId: v.id("organizations"),

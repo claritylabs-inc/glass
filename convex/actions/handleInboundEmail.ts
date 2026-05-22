@@ -1037,13 +1037,13 @@ export const processInbound = internalAction({
             const pendingSelections = Array.isArray(msg.toolArtifacts)
               ? msg.toolArtifacts
                   .filter(
-                    (artifact) =>
+                    (artifact: { type?: string; data?: unknown }) =>
                       artifact.type === "certificate_program_selection",
                   )
-                  .map((artifact) => artifact.data)
+                  .map((artifact: { data?: unknown }) => artifact.data)
               : [];
             const selectionContext = pendingSelections
-              .map((selection) =>
+              .map((selection: unknown) =>
                 formatCertificateProgramSelectionForModel(
                   selection as CertificateProgramSelection,
                 ),

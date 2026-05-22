@@ -10,6 +10,7 @@ import { sendResendEmail, getAuthFromAddress } from "./lib/resend";
 import { buildEmailShell } from "./lib/emailTemplate";
 import { getBrandingContext } from "./lib/branding";
 import { getAuthSiteUrl } from "./lib/domains";
+import { assertCustomerUser } from "./lib/operatorIdentity";
 
 const internal = internalApi as any;
 
@@ -508,6 +509,7 @@ export const acceptInvitation = mutation({
       await ctx.db.patch(inv._id, { status: "expired", updatedAt: Date.now() });
       throw new Error("This vendor invite has expired");
     }
+    await assertCustomerUser(ctx, userId);
 
     await requireConnectClientOrg(ctx, inv.clientOrgId);
     let vendorOrgId = inv.vendorOrgId;

@@ -7,7 +7,7 @@
  * simple callback interfaces the new SDK expects: GenerateText, GenerateObject, EmbedText.
  */
 
-import { Output, embed } from "ai";
+import { Output, embed, gateway } from "ai";
 import type { LanguageModelUsage } from "ai";
 import type { ProviderOptions } from "@ai-sdk/provider-utils";
 import { createOpenAI } from "@ai-sdk/openai";
@@ -334,19 +334,23 @@ function openai() {
  */
 export function makeEmbedText(ctx?: ActionCtx, orgId?: Id<"organizations">): EmbedText {
   return async (text: string) => {
-    let provider = openai();
     let model = "text-embedding-3-small";
+    let apiKey: string | undefined;
     if (ctx && orgId) {
       const settings = await ctx.runQuery(internal.modelSettings.resolveForOrg, { orgId });
       const route = settings?.routes?.embeddings;
-      const apiKey = route?.provider === "openai" ? settings?.providerKeys?.openai : undefined;
-      if (route?.provider === "openai" && apiKey) {
-        provider = createOpenAI({ apiKey });
+      if (route?.provider === "openai") {
+        apiKey = settings?.routeSources?.embeddings === "broker"
+          ? settings?.providerKeys?.openai
+          : undefined;
         model = route.model;
       }
     }
+    const embeddingModel = apiKey || process.env.OPENAI_API_KEY
+      ? (apiKey ? createOpenAI({ apiKey }) : openai()).embedding(model)
+      : gateway.textEmbeddingModel(`openai/${model}`);
     const { embedding } = await embed({
-      model: provider.embedding(model),
+      model: embeddingModel,
       providerOptions: {
         openai: { dimensions: EMBEDDING_DIMENSIONS },
       },

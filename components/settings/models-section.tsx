@@ -26,6 +26,7 @@ import OpenAIIcon from "@lobehub/icons/es/OpenAI/components/Mono";
 import AnthropicIcon from "@lobehub/icons/es/Anthropic/components/Mono";
 import GeminiIcon from "@lobehub/icons/es/Gemini/components/Mono";
 import GrokIcon from "@lobehub/icons/es/Grok/components/Mono";
+import MistralIcon from "@lobehub/icons/es/Mistral/components/Mono";
 import CohereIcon from "@lobehub/icons/es/Cohere/components/Mono";
 import DeepSeekIcon from "@lobehub/icons/es/DeepSeek/components/Mono";
 import { toast } from "sonner";
@@ -35,6 +36,7 @@ type ProviderId =
   | "anthropic"
   | "google"
   | "xai"
+  | "mistral"
   | "cohere"
   | "deepseek";
 type Route = { provider: ProviderId; model: string };
@@ -64,6 +66,7 @@ const VISIBLE_PROVIDERS: ProviderId[] = [
   "anthropic",
   "google",
   "xai",
+  "mistral",
   "cohere",
   "deepseek",
 ];
@@ -74,6 +77,7 @@ const PROVIDER_ICONS: Record<ProviderId, React.ComponentType<{ size?: number | s
   anthropic: AnthropicIcon,
   google: GeminiIcon,
   xai: GrokIcon,
+  mistral: MistralIcon,
   cohere: CohereIcon,
   deepseek: DeepSeekIcon,
 };
@@ -378,7 +382,7 @@ export function ModelsSection() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value={DEFAULT_VALUE}>
-                          <span className="text-muted-foreground">Default</span>
+                          <span className="text-muted-foreground">Reset to default</span>
                         </SelectItem>
                         <SelectSeparator />
                         {availableProviders.map((provider) => (

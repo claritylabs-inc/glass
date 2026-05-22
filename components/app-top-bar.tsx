@@ -20,6 +20,7 @@ const BREADCRUMB_MAP: Record<string, { label: string; href?: string }> = {
   "/agent": { label: "Agent Threads", href: "/policies" },
   "/settings": { label: "Settings" },
   "/profile": { label: "Profile" },
+  "/operator": { label: "Operator" },
   "/partner": { label: "Program admin", href: "/partner/approvals" },
 };
 
@@ -68,11 +69,13 @@ export function AppTopBar({
   breadcrumbDetail,
   onMobileMenuToggle,
   presenceUsers,
+  showBrokerShare = true,
 }: {
   actions?: React.ReactNode;
   breadcrumbDetail?: React.ReactNode;
   onMobileMenuToggle?: () => void;
   presenceUsers?: PresenceUser[];
+  showBrokerShare?: boolean;
 }) {
   const pathname = usePathname();
 
@@ -137,7 +140,7 @@ export function AppTopBar({
             <div className="w-px h-4 bg-foreground/10" />
           </>
         )}
-        <BrokerShareLinkButton />
+        {showBrokerShare ? <BrokerShareLinkButton /> : null}
         {actions && (
           <div className="flex items-center gap-2">
             {actions}

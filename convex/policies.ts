@@ -12,6 +12,7 @@ import {
 } from "./lib/access";
 import { recordBrokerActivity } from "./lib/brokerActivity";
 import { notify } from "./lib/notify";
+import { assertImpersonatedSetupWrite } from "./lib/operatorIdentity";
 import type { Id as DataModelId } from "./_generated/dataModel";
 import dayjs from "dayjs";
 import customParseFormat from "dayjs/plugin/customParseFormat";
@@ -1254,6 +1255,7 @@ export const createBrokerUpload = mutation({
   handler: async (ctx, args) => {
     const access = await requireBrokerAccessToClient(ctx, args.clientOrgId);
     assertCanUploadPolicy(access);
+    await assertImpersonatedSetupWrite(ctx, args.clientOrgId);
 
     const policyId = await ctx.db.insert("policies", {
       orgId: args.clientOrgId,

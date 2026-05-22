@@ -7,6 +7,7 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { QueryCtx, MutationCtx } from "../_generated/server";
 import { Id, Doc } from "../_generated/dataModel";
+import { getActiveOperatorImpersonation } from "./operatorIdentity";
 
 type Ctx = QueryCtx | MutationCtx;
 
@@ -21,6 +22,16 @@ export type OrgAccess = {
 export async function requireOrgAccess(ctx: Ctx): Promise<OrgAccess> {
   const userId = await getAuthUserId(ctx);
   if (!userId) throw new Error("Not authenticated");
+
+  const impersonation = await getActiveOperatorImpersonation(ctx);
+  if (impersonation) {
+    return {
+      userId,
+      orgId: impersonation.session.targetOrgId,
+      role: impersonation.session.targetRole,
+      org: impersonation.targetOrg,
+    };
+  }
 
   const membership = await ctx.db
     .query("orgMemberships")
@@ -38,6 +49,16 @@ export async function requireOrgAccess(ctx: Ctx): Promise<OrgAccess> {
 export async function getOrgAccess(ctx: Ctx): Promise<OrgAccess | null> {
   const userId = await getAuthUserId(ctx);
   if (!userId) return null;
+
+  const impersonation = await getActiveOperatorImpersonation(ctx);
+  if (impersonation) {
+    return {
+      userId,
+      orgId: impersonation.session.targetOrgId,
+      role: impersonation.session.targetRole,
+      org: impersonation.targetOrg,
+    };
+  }
 
   const membership = await ctx.db
     .query("orgMemberships")

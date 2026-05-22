@@ -7,7 +7,7 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createXai } from "@ai-sdk/xai";
 import { createMistral } from "@ai-sdk/mistral";
 import { createCohere } from "@ai-sdk/cohere";
-import type { LanguageModel } from "ai";
+import { gateway, type LanguageModel } from "ai";
 import type { ProviderOptions } from "@ai-sdk/provider-utils";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
@@ -27,8 +27,8 @@ import {
  * All models accessed via Vercel AI SDK's provider-agnostic interface.
  *
  * Env vars needed:
- *   OPENAI_API_KEY — GPT-5.5 for core agent work, GPT-5.4 nano/mini for extraction and fast isolated work
- *   ANTHROPIC_API_KEY — Claude Haiku fallback if the primary provider cannot initialize
+ *   OPENAI_API_KEY — direct OpenAI access for default Glass routes
+ *   AI_GATEWAY_API_KEY or VERCEL_OIDC_TOKEN — Vercel AI Gateway access for routes whose provider is not directly configured
  */
 
 // Lazy provider factories
@@ -112,25 +112,7 @@ type ModelFallbackContext = {
 };
 
 const GPT_55 = "gpt-5.5";
-const GPT_54_NANO = "gpt-5.4-nano";
-const GPT_54_MINI = "gpt-5.4-mini";
 const CLAUDE_HAIKU = "claude-haiku-4-5-20251001";
-
-const MODEL_CONFIG: Record<Exclude<ModelTask, "embeddings">, () => LanguageModel> = {
-  chat:             () => openai()(GPT_54_MINI),
-  email_draft:      () => openai()(GPT_54_MINI),
-  email_reply:      () => openai()(GPT_54_MINI),
-  analysis:         () => openai()(GPT_54_MINI),
-  summary:          () => openai()(GPT_54_MINI),
-  classification:   () => openai()(GPT_54_NANO),
-  extraction:       () => openai()(GPT_54_NANO),
-  triage:           () => openai()(GPT_54_MINI),
-  email_extraction: () => openai()(GPT_54_NANO),
-  document_extraction:   () => openai()(GPT_54_NANO),
-  security:              () => openai()(GPT_54_MINI),
-  mailbox_coordinator:   () => openai()(GPT_55),
-  application_authoring: () => openai()(GPT_54_MINI),
-};
 
 export function getProviderOptionsForRoute(route: ModelRoute): ProviderOptions | undefined {
   if (route.provider === "openai" && route.model === GPT_55) {
@@ -255,8 +237,56 @@ function providerModel(provider: ModelProvider, model: string, apiKey?: string):
   }
 }
 
+function directProviderApiKey(provider: ModelProvider): string | undefined {
+  switch (provider) {
+    case "openai":
+      return process.env.OPENAI_API_KEY;
+    case "anthropic":
+      return process.env.ANTHROPIC_API_KEY;
+    case "google":
+      return process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? process.env.GOOGLE_API_KEY;
+    case "xai":
+      return process.env.XAI_API_KEY;
+    case "mistral":
+      return process.env.MISTRAL_API_KEY;
+    case "cohere":
+      return process.env.COHERE_API_KEY;
+    case "deepseek":
+      return process.env.DEEPSEEK_API_KEY;
+    case "moonshot":
+      return undefined;
+  }
+}
+
+function gatewayModelId(route: ModelRoute): string {
+  return route.model.includes("/") ? route.model : `${route.provider}/${route.model}`;
+}
+
+function nativeProviderModel(route: ModelRoute): string | null {
+  switch (route.provider) {
+    case "anthropic":
+      if (route.model === "claude-3-haiku") return "claude-3-haiku-20240307";
+      return route.model.replace(/\.(\d+)/g, "-$1");
+    case "deepseek":
+      return route.model === "deepseek-chat" || route.model === "deepseek-reasoner"
+        ? route.model
+        : null;
+    case "moonshot":
+      return null;
+    default:
+      return route.model;
+  }
+}
+
 function modelFromRoute(route: ModelRoute, apiKey?: string): LanguageModel {
-  return providerModel(route.provider, route.model, apiKey);
+  const nativeModel = nativeProviderModel(route);
+  if (apiKey && nativeModel) {
+    return providerModel(route.provider, nativeModel, apiKey);
+  }
+  if (nativeModel && directProviderApiKey(route.provider)) {
+    return providerModel(route.provider, nativeModel);
+  }
+  return gateway(gatewayModelId(route));
 }
 
 export function getModelForRoute(route: ModelRoute): LanguageModel {
@@ -266,15 +296,10 @@ export function getModelForRoute(route: ModelRoute): LanguageModel {
 export function getModel(task: ModelTask): LanguageModel {
   if (task === "embeddings") {
     console.warn('Embeddings requested through getModel(), falling back to chat');
-    return MODEL_CONFIG.chat();
-  }
-  const factory = MODEL_CONFIG[task];
-  if (!factory) {
-    console.warn(`Unknown model task "${task}", falling back to chat`);
-    return MODEL_CONFIG.chat();
+    return modelFromRoute(MODEL_ROUTING.chat);
   }
   try {
-    return factory();
+    return modelFromRoute(MODEL_ROUTING[task] ?? MODEL_ROUTING.chat);
   } catch {
     console.warn(`Provider for task "${task}" not available, falling back to Claude Haiku`);
     return anthropic()(CLAUDE_HAIKU);
@@ -297,13 +322,14 @@ export async function getModelAndRouteForOrg(
   try {
     const settings = await ctx.runQuery(internal.modelSettings.resolveForOrg, { orgId });
     const configuredRoute = settings?.routes?.[task];
-    const configuredApiKey = configuredRoute
+    const routeSource = settings?.routeSources?.[task];
+    const configuredApiKey = routeSource === "broker" && configuredRoute
       ? settings?.providerKeys?.[configuredRoute.provider]
       : undefined;
     const canUseConfiguredRoute =
       configuredRoute &&
       configuredRoute.provider !== "moonshot" &&
-      configuredApiKey;
+      (routeSource !== "broker" || configuredApiKey);
     const route = canUseConfiguredRoute ? configuredRoute : MODEL_ROUTING[task];
     const apiKey = canUseConfiguredRoute ? configuredApiKey : undefined;
     return { model: modelFromRoute(route, apiKey), route };
@@ -373,6 +399,11 @@ export function availableProviders(): string[] {
   const providers: string[] = [];
   if (process.env.OPENAI_API_KEY) providers.push("openai");
   if (process.env.ANTHROPIC_API_KEY) providers.push("anthropic");
+  if (process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GOOGLE_API_KEY) providers.push("google");
+  if (process.env.XAI_API_KEY) providers.push("xai");
+  if (process.env.MISTRAL_API_KEY) providers.push("mistral");
+  if (process.env.COHERE_API_KEY) providers.push("cohere");
   if (process.env.DEEPSEEK_API_KEY) providers.push("deepseek");
+  if (process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN) providers.push("gateway");
   return providers;
 }

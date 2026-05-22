@@ -13,6 +13,12 @@ import { normalizeOptionalEmail, resolveBrokerIdentityForClient } from "./lib/br
 import { buildEmailShell, escapeHtml } from "./lib/emailTemplate";
 import { getAuthSiteUrl } from "./lib/domains";
 import { getAuthFromAddress, sendResendEmail } from "./lib/resend";
+import {
+  assertCustomerUser,
+  assertImpersonatedSetupWrite,
+  getActiveOperatorImpersonation,
+  isBootstrapOperatorEmail,
+} from "./lib/operatorIdentity";
 
 const internal = _internal as any;
 
@@ -34,6 +40,9 @@ async function createMemberInvitation(
   const { userId, orgId } = access;
   const email = normalizeEmail(args.email);
   if (!email) throw new Error("Email is required");
+  if (isBootstrapOperatorEmail(email)) {
+    throw new Error("Operator emails cannot be invited to customer organizations");
+  }
 
   const memberships = await ctx.db
     .query("orgMemberships")
@@ -46,6 +55,7 @@ async function createMemberInvitation(
   if (existingUser && memberships.some((m) => m.userId === existingUser._id)) {
     throw new Error("User is already a member");
   }
+  if (existingUser) await assertCustomerUser(ctx, existingUser._id);
 
   const now = dayjs().valueOf();
   const expiresAt = dayjs(now).add(7, "day").valueOf();
@@ -102,6 +112,30 @@ export const viewerOrg = query({
     if (!userId) return null;
 
     let membership;
+    const impersonation = await getActiveOperatorImpersonation(ctx);
+    if (impersonation) {
+      if (args.orgId && args.orgId !== impersonation.session.targetOrgId) {
+        const requested = await ctx.db.get(args.orgId);
+        if (
+          !requested ||
+          requested.type !== "client" ||
+          requested.brokerOrgId !== impersonation.session.targetOrgId
+        ) {
+          return null;
+        }
+        membership = {
+          orgId: requested._id,
+          userId,
+          role: impersonation.session.targetRole,
+        };
+      } else {
+        membership = {
+          orgId: impersonation.session.targetOrgId,
+          userId,
+          role: impersonation.session.targetRole,
+        };
+      }
+    } else
     if (args.orgId) {
       membership = await ctx.db
         .query("orgMemberships")
@@ -258,6 +292,7 @@ export const publicBrokerBySlug = query({
       .withIndex("by_slug", (q) => q.eq("slug", normalized))
       .first();
     if (!org || org.type !== "broker") return null;
+    if ((org.operatorStatus ?? "live") !== "live") return null;
     const whiteLabelingEnabled = isWhiteLabelingEnabled(org);
     const iconUrl = whiteLabelingEnabled && org.iconStorageId
       ? await ctx.storage.getUrl(org.iconStorageId)
@@ -385,6 +420,7 @@ export const createBrokerOrg = mutation({
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("Not authenticated");
+    await assertCustomerUser(ctx, userId);
 
     // Validate slug
     const normalized = args.slug.toLowerCase().replace(/[^a-z0-9-]/g, "");
@@ -442,6 +478,7 @@ export const createPartnerOrg = mutation({
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("Not authenticated");
+    await assertCustomerUser(ctx, userId);
 
     const orgId = await ctx.db.insert("organizations", {
       name: args.name.trim(),
@@ -480,6 +517,7 @@ export const createClientOrg = mutation({
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("Not authenticated");
+    await assertCustomerUser(ctx, userId);
 
     // Check if user already has an org membership
     const existingMembership = await ctx.db
@@ -530,6 +568,7 @@ export const updateClientEmailSettings = mutation({
     if (access.role !== "admin") {
       throw new Error("Only broker admins can update client email settings");
     }
+    await assertImpersonatedSetupWrite(ctx, client.brokerOrgId);
     const normEmails = args.allowedEmails
       ?.map((e) => e.trim().toLowerCase())
       .filter((e) => e.includes("@"));
@@ -698,6 +737,7 @@ export const updateConnectedClientBrokerIdentity = mutation({
     if (brokerAccess.role !== "admin") {
       throw new Error("Broker admin access required");
     }
+    await assertImpersonatedSetupWrite(ctx, clientOrg.brokerOrgId);
     const membership = await ctx.db
       .query("orgMemberships")
       .withIndex("by_orgId_userId", (q) =>
@@ -817,6 +857,7 @@ export const updateOrg = mutation({
   },
   handler: async (ctx, args) => {
     const { orgId } = await requireOrgAdmin(ctx);
+    await assertImpersonatedSetupWrite(ctx, orgId);
     await ctx.db.patch(orgId, args);
   },
 });
@@ -1000,6 +1041,7 @@ export const acceptInvitation = mutation({
     if (user?.email?.toLowerCase() !== invitation.email.toLowerCase()) {
       throw new Error("Invitation was sent to a different email address");
     }
+    await assertCustomerUser(ctx, userId);
 
     // Check not already a member
     const existing = await ctx.db
@@ -1164,6 +1206,9 @@ export const resolveClientBySender = internalQuery({
       if (handleOwner.brokerOrgId) return null;
       const matchedBy = await senderMatchesOrg(ctx, handleOwner, email, domain);
       return matchedBy ? { brokerOrg: handleOwner, clientOrg: null, matchedBy } : null;
+    }
+    if (handleOwner && (handleOwner.operatorStatus ?? "live") !== "live") {
+      return null;
     }
 
     if (!handleOwner && args.handle !== "agent") return null;

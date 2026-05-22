@@ -6,6 +6,7 @@ import {
   normalizeAvailableUserPhone,
   normalizeUserPhone,
 } from "./lib/userPhone";
+import { assertCustomerUser } from "./lib/operatorIdentity";
 
 export const viewer = query({
   args: {},
@@ -207,6 +208,14 @@ export const listByOrgInternal = internalQuery({
       memberships.map((m) => ctx.db.get(m.userId)),
     );
     return users.filter(Boolean);
+  },
+});
+
+export const requireCustomerUserInternal = internalQuery({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    await assertCustomerUser(ctx, args.userId);
+    return true;
   },
 });
 

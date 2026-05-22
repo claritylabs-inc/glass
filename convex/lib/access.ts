@@ -7,6 +7,7 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { QueryCtx, MutationCtx } from "../_generated/server";
 import { Id, Doc } from "../_generated/dataModel";
+import { getActiveOperatorImpersonation } from "./operatorIdentity";
 
 type Ctx = QueryCtx | MutationCtx;
 
@@ -48,6 +49,36 @@ export async function getOrgAccess(ctx: Ctx, orgId: Id<"organizations">): Promis
 
   const orgType: "broker" | "client" | "partner" =
     (org.type as "broker" | "client" | "partner") ?? "client";
+
+  const impersonation = await getActiveOperatorImpersonation(ctx);
+  if (impersonation) {
+    const targetOrgType: "broker" | "client" | "partner" =
+      (impersonation.targetOrg.type as "broker" | "client" | "partner") ?? "client";
+    if (impersonation.session.targetOrgId === orgId) {
+      return {
+        userId,
+        org,
+        orgType,
+        accessType: "member",
+        role: impersonation.session.targetRole,
+        brokerOrgId: undefined,
+      };
+    }
+    if (
+      targetOrgType === "broker" &&
+      orgType === "client" &&
+      org.brokerOrgId === impersonation.session.targetOrgId
+    ) {
+      return {
+        userId,
+        org,
+        orgType: "client",
+        accessType: "broker_of_client",
+        role: undefined,
+        brokerOrgId: impersonation.session.targetOrgId,
+      };
+    }
+  }
 
   // 1. Direct membership
   const membership = await ctx.db

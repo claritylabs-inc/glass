@@ -22,6 +22,11 @@ import {
   normalizeAvailableUserPhone,
   normalizeUserPhone,
 } from "./lib/userPhone";
+import {
+  assertCustomerUser,
+  assertImpersonatedSetupWrite,
+  isBootstrapOperatorEmail,
+} from "./lib/operatorIdentity";
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
@@ -94,7 +99,11 @@ async function upsertInvitedUser(
 ) {
   const email = normalizeEmail(args.email);
   if (!email) throw new Error("Client email is required");
+  if (isBootstrapOperatorEmail(email)) {
+    throw new Error("Operator emails cannot be used as client contacts");
+  }
   const existing = await findUserByEmail(ctx, email);
+  if (existing) await assertCustomerUser(ctx, existing._id);
   const phone = await normalizeAvailableUserPhone(ctx, args.phone, existing?._id);
   const name = cleanOptionalString(args.name);
 
@@ -187,6 +196,7 @@ export const joinBroker = mutation({
   handler: async (ctx, { slug }) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("Not authenticated");
+    await ctx.runQuery(internal.users.requireCustomerUserInternal, { userId });
 
     const normalized = slug.toLowerCase().replace(/[^a-z0-9-]/g, "");
     const broker = await ctx.db
@@ -249,6 +259,7 @@ export const createDraftClient = mutation({
   handler: async (ctx, args) => {
     const access = await getOrgAccess(ctx, args.brokerOrgId);
     assertBrokerOrg(access);
+    await assertImpersonatedSetupWrite(ctx, args.brokerOrgId);
     const primaryContactEmail = normalizeEmail(args.primaryContactEmail);
     if (!primaryContactEmail) throw new Error("Client email is required");
     await upsertInvitedUser(ctx, {
@@ -355,6 +366,7 @@ export const updateDraftClient = mutation({
     }
     const access = await getOrgAccess(ctx, org.brokerOrgId);
     assertBrokerOrg(access);
+    await assertImpersonatedSetupWrite(ctx, org.brokerOrgId);
 
     const patch: Record<string, unknown> = {};
     const email = args.primaryContactEmail
@@ -405,6 +417,7 @@ export const deleteDraftClient = mutation({
     }
     const access = await getOrgAccess(ctx, org.brokerOrgId);
     assertBrokerOrg(access);
+    await assertImpersonatedSetupWrite(ctx, org.brokerOrgId);
 
     // Revoke any pending invitations for this org
     const invites = await ctx.db
@@ -443,6 +456,7 @@ export const sendDraftInvite = action({
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("Not authenticated");
+    await ctx.runQuery(internal.users.requireCustomerUserInternal, { userId });
 
     const draft = await ctx.runQuery(internal.clientInvitations.getDraftContextInternal, {
       clientOrgId: args.clientOrgId,
@@ -646,6 +660,7 @@ export const acceptInvite = mutation({
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("Not authenticated");
+    await assertCustomerUser(ctx, userId);
 
     const tokenHash = await sha256Hex(args.token);
     const inv = await ctx.db
