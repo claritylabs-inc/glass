@@ -68,7 +68,6 @@ export function ClientListRow({ row }: { row: ClientRow }) {
   const revokeInvite = useMutation((api as any).clientInvitations.revoke);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const deleteDraft = useMutation((api as any).clientInvitations.deleteDraftClient);
-  const setPrimaryBrokerContact = useMutation(api.imessageOutboundGroups.setPrimaryBrokerContactForClient);
 
   const rowClass =
     "flex items-center gap-4 px-4 py-3 border-b border-foreground/6 last:border-0 hover:bg-muted/50 transition-colors";
@@ -167,40 +166,18 @@ export function ClientListRow({ row }: { row: ClientRow }) {
   const activityLabel = row.lastActivityAt
     ? formatDistanceToNow(new Date(row.lastActivityAt), { addSuffix: true })
     : "No activity yet";
+  const brokerContact = row.brokerMembers.find(
+    (member) => member.userId === row.primaryBrokerContactId,
+  );
+  const brokerContactLabel =
+    brokerContact?.name ?? brokerContact?.email ?? "No broker contact";
 
   return (
     <Link href={`/clients/${row.clientOrgId}`} className={rowClass}>
       {nameBlock}
-      <select
-        value={row.primaryBrokerContactId ?? ""}
-        onClick={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-        }}
-        onChange={async (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          const producerId = event.target.value as Id<"users">;
-          if (!producerId) return;
-          try {
-            await setPrimaryBrokerContact({
-              clientOrgId: row.clientOrgId,
-              producerId,
-            });
-            toast.success("Broker contact updated");
-          } catch (error) {
-            toast.error(error instanceof Error ? error.message : "Failed to update broker contact");
-          }
-        }}
-        className="hidden lg:block rounded-md border border-foreground/8 bg-popover px-2 py-1 text-label-sm text-muted-foreground"
-      >
-        <option value="">Broker contact</option>
-        {row.brokerMembers.map((member) => (
-          <option key={member.userId} value={member.userId}>
-            {member.name ?? member.email ?? "Team member"}
-          </option>
-        ))}
-      </select>
+      <span className="hidden max-w-40 truncate text-label-sm text-muted-foreground lg:block">
+        {brokerContactLabel}
+      </span>
       {badge}
       {timestamp(activityLabel)}
       <PillButton type="button" size="compact" variant="secondary" className="shrink-0">
