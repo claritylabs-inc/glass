@@ -30,42 +30,47 @@ export function OperatorSidebar({
         icon={<LogoIcon size={15} static />}
       />
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2 py-2">
-        <SectionHeader label="Internal" collapsed={collapsed} />
-        <NavItem
-          href="/operator"
-          label="Brokers"
-          icon={Building2}
-          active={active === "brokers"}
-          collapsed={collapsed}
-        />
-        <NavItem
-          href="/operator/clients"
-          label="Clients"
-          icon={Users}
-          active={active === "clients"}
-          collapsed={collapsed}
-        />
-        <NavItem
-          href="/operator/mgas"
-          label="MGAs"
-          icon={ShieldCheck}
-          active={active === "mgas"}
-          collapsed={collapsed}
-        />
-        <NavItem
-          href="/operator/models"
-          label="Models"
-          icon={SlidersHorizontal}
-          active={active === "models"}
-          collapsed={collapsed}
-        />
-        <NavItem
-          href="/operator/extractions"
-          label="Extractions"
-          icon={Activity}
-          active={active === "extractions"}
-          collapsed={collapsed}
-        />
+        <SectionHeader label="Accounts" collapsed={collapsed} />
+        <div className="flex flex-col gap-1">
+          <NavItem
+            href="/operator"
+            label="Brokers"
+            icon={Building2}
+            active={active === "brokers"}
+            collapsed={collapsed}
+          />
+          <NavItem
+            href="/operator/clients"
+            label="Clients"
+            icon={Users}
+            active={active === "clients"}
+            collapsed={collapsed}
+          />
+          <NavItem
+            href="/operator/mgas"
+            label="MGAs"
+            icon={ShieldCheck}
+            active={active === "mgas"}
+            collapsed={collapsed}
+          />
+        </div>
+        <SectionHeader label="DevOps" collapsed={collapsed} />
+        <div className="flex flex-col gap-1">
+          <NavItem
+            href="/operator/models"
+            label="Models"
+            icon={SlidersHorizontal}
+            active={active === "models"}
+            collapsed={collapsed}
+          />
+          <NavItem
+            href="/operator/extractions"
+            label="Extractions"
+            icon={Activity}
+            active={active === "extractions"}
+            collapsed={collapsed}
+          />
+        </div>
       </div>
       <div className="border-t border-foreground/6 px-2 py-2">
         {!collapsed && email ? (
