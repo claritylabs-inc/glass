@@ -58,7 +58,7 @@ type Settings = {
 };
 
 const DEFAULT_VALUE = "__default__";
-const SELECT_WIDTH_CLASS = "w-80";
+const SELECT_WIDTH_CLASS = "w-full md:w-80";
 const PROVIDER_ICONS: Record<ProviderId, React.ComponentType<{ size?: number | string }>> = {
   openai: OpenAIIcon,
   anthropic: AnthropicIcon,
@@ -176,7 +176,7 @@ export default function OperatorModelsPage() {
                       <p className="text-body-sm font-medium text-foreground">{task.label}</p>
                       <p className="text-label-sm text-muted-foreground/60">{task.description}</p>
                     </div>
-                    <div className="flex items-center gap-2 justify-self-end">
+                    <div className="flex w-full items-center gap-2 justify-self-start md:w-auto md:justify-self-end">
                       {saving ? (
                         <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
                       ) : null}
