@@ -8,11 +8,17 @@ import { AppShell } from "@/components/app-shell";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useOnboardingCache } from "@/hooks/use-onboarding-cache";
 import { Loader2 } from "lucide-react";
-import { useGlassSync } from "@/lib/sync/glass-sync";
+import {
+  useCachedShell,
+  useCacheShellRecord,
+  useGlassSync,
+} from "@/lib/sync/glass-sync";
+import { OperatorSidebar } from "@/app/operator/operator-sidebar";
 
 const BOOT_STATE_KEY = "glass:boot-state";
 
 type BootState = {
+  accountKind?: "customer" | "operator";
   onboardingComplete?: boolean;
   membershipRole?: "admin" | "member";
   userId?: string;
@@ -91,6 +97,56 @@ function DashboardLoading() {
   );
 }
 
+type OperatorNavSection =
+  | "brokers"
+  | "clients"
+  | "mgas"
+  | "models"
+  | "extractions";
+
+function getOperatorActiveSection(pathname: string): OperatorNavSection {
+  if (pathname.startsWith("/operator/clients")) return "clients";
+  if (pathname.startsWith("/operator/mgas")) return "mgas";
+  if (pathname.startsWith("/operator/models")) return "models";
+  if (pathname.startsWith("/operator/extractions")) return "extractions";
+  return "brokers";
+}
+
+function OperatorLoading({
+  pathname,
+  email,
+}: {
+  pathname: string;
+  email?: string;
+}) {
+  return (
+    <AppShell
+      customSidebar={({ collapsed, onToggleCollapse }) => (
+        <OperatorSidebar
+          collapsed={collapsed}
+          onToggleCollapse={onToggleCollapse}
+          email={email}
+          active={getOperatorActiveSection(pathname)}
+        />
+      )}
+      customSidebarStorageKey="operator-sidebar-collapsed"
+      disablePersistentChat
+      disableCommandPalette
+      showBrokerShare={false}
+    >
+      <div className="space-y-4">
+        <Skeleton className="h-10 w-full rounded-lg" />
+        <div className="rounded-lg border border-foreground/8">
+          <Skeleton className="h-10 w-full rounded-none border-b border-foreground/8" />
+          <div className="p-4">
+            <Loader2 className="mx-auto h-4 w-4 animate-spin text-muted-foreground" />
+          </div>
+        </div>
+      </div>
+    </AppShell>
+  );
+}
+
 function PendingLiveScreen() {
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -119,6 +175,8 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     clearCache: clearOnboardingCache,
   } = useOnboardingCache();
   const { scope, updateScope, clearScope } = useGlassSync();
+  const cachedShell = useCachedShell();
+  const cacheShellRecord = useCacheShellRecord();
   const acceptInvitation = useMutation(api.orgs.acceptInvitation);
   const handledInvitationIdRef = useRef<string | null>(null);
   const [inviteAcceptError, setInviteAcceptError] = useState(false);
@@ -158,31 +216,54 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   }, [viewer, setOnboardingComplete]);
 
   useEffect(() => {
-    if (!viewer || !viewerOrg?.org) return;
+    if (!viewer) return;
     const userId = String(viewer._id);
-    const orgId = String(viewerOrg.org._id);
+    const orgId =
+      viewer.accountKind === "operator"
+        ? undefined
+        : viewerOrg?.org
+          ? String(viewerOrg.org._id)
+          : undefined;
+    if (viewer.accountKind !== "operator" && !orgId) return;
     if (scope.userId === userId && scope.orgId === orgId) return;
     updateScope({ userId, orgId });
   }, [scope.orgId, scope.userId, updateScope, viewer, viewerOrg]);
 
   useEffect(() => {
-    if (!viewer || !viewerOrg?.org) return;
+    if (!viewer) return;
+    const accountKind =
+      viewer.accountKind === "operator" ? "operator" : "customer";
+    const orgId =
+      accountKind === "operator"
+        ? undefined
+        : viewerOrg?.org
+          ? String(viewerOrg.org._id)
+          : undefined;
+    if (accountKind !== "operator" && !viewerOrg?.org) return;
     if (
       scope.userId !== String(viewer._id) ||
-      scope.orgId !== String(viewerOrg.org._id)
+      scope.orgId !== orgId
     ) {
       return;
     }
     const nextBootState = {
+      accountKind,
       onboardingComplete: !!viewer.onboardingComplete,
-      membershipRole: viewerOrg.membership.role,
+      membershipRole: viewerOrg?.membership.role,
       userId: String(viewer._id),
-      orgId: String(viewerOrg.org._id),
+      orgId,
     };
     try {
       localStorage.setItem(BOOT_STATE_KEY, JSON.stringify(nextBootState));
     } catch {}
-  }, [scope.orgId, scope.userId, viewer, viewerOrg]);
+    void cacheShellRecord({
+      accountKind,
+      viewer,
+      viewerOrg,
+      onboardingComplete: !!viewer.onboardingComplete,
+      membershipRole: viewerOrg?.membership.role,
+    });
+  }, [cacheShellRecord, scope.orgId, scope.userId, viewer, viewerOrg]);
 
   useEffect(() => {
     if (isLoading || isAuthenticated) return;
@@ -303,6 +384,16 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       ? initialBootState
       : undefined;
   const bootOnboardingComplete = scopedBootState?.onboardingComplete;
+  const cachedAccountKind =
+    scopedBootState?.accountKind ?? cachedShell?.accountKind;
+  const shouldShowOperatorLoading =
+    !isOperatorLogin &&
+    isOperatorPath &&
+    (viewer?.accountKind === "operator" ||
+      cachedAccountKind === "operator" ||
+      (isAuthenticated &&
+        viewer === undefined &&
+        cachedAccountKind !== "customer"));
 
   // Loading state - cached boot state can choose the correct skeleton, but
   // protected children wait for the current Convex viewer/org checks.
@@ -313,6 +404,15 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     (isAuthenticated && pendingInvitation && !inviteAcceptError)
   ) {
     if (isPublic) return null;
+
+    if (shouldShowOperatorLoading) {
+      return (
+        <OperatorLoading
+          pathname={pathname}
+          email={operatorContext?.user?.email}
+        />
+      );
+    }
 
     // If we know from cache that onboarding is NOT complete, show onboarding loading
     // This prevents the flash of dashboard for new users

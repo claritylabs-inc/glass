@@ -38,6 +38,7 @@ export type CachedShellRecord = SyncRecord & {
   _id: "current";
   viewer?: unknown;
   viewerOrg?: unknown;
+  accountKind?: "customer" | "operator";
   onboardingComplete?: boolean;
   membershipRole?: "admin" | "member";
   updatedAt: number;
@@ -89,9 +90,17 @@ export function GlassSyncProvider({ children }: { children: ReactNode }) {
 
   const updateScope = useCallback((nextScope: GlassSyncScope) => {
     setScope((previous) => {
+      const hasUserId = Object.prototype.hasOwnProperty.call(
+        nextScope,
+        "userId",
+      );
+      const hasOrgId = Object.prototype.hasOwnProperty.call(
+        nextScope,
+        "orgId",
+      );
       const merged = {
-        userId: nextScope.userId ?? previous.userId,
-        orgId: nextScope.orgId ?? previous.orgId,
+        userId: hasUserId ? nextScope.userId : previous.userId,
+        orgId: hasOrgId ? nextScope.orgId : previous.orgId,
       };
       persistScope(merged);
       return merged;
@@ -139,6 +148,7 @@ export function useCacheShellRecord() {
         stableHash({
           viewer: existing.viewer,
           viewerOrg: existing.viewerOrg,
+          accountKind: existing.accountKind,
           onboardingComplete: existing.onboardingComplete,
           membershipRole: existing.membershipRole,
         }) === nextRecordFingerprint
