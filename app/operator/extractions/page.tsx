@@ -83,6 +83,19 @@ const RANGE_MS = {
   "30d": 30 * 24 * 60 * 60 * 1000,
   "90d": 90 * 24 * 60 * 60 * 1000,
 };
+const STATUS_LABELS: Record<string, string> = {
+  [ALL]: "All statuses",
+  running: "Running",
+  complete: "Complete",
+  error: "Error",
+  cancelled: "Cancelled",
+};
+const RANGE_LABELS: Record<keyof typeof RANGE_MS, string> = {
+  "24h": "24 hours",
+  "7d": "7 days",
+  "30d": "30 days",
+  "90d": "90 days",
+};
 
 function formatDuration(ms?: number) {
   if (ms === undefined) return "—";
@@ -127,7 +140,7 @@ export default function OperatorExtractionsPage() {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const current = useQuery((api as any).operator.current, {});
-  const dateFrom = dayjs().valueOf() - RANGE_MS[range];
+  const dateFrom = useMemo(() => dayjs().valueOf() - RANGE_MS[range], [range]);
   const traces = useQuery(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (api as any).operator.listExtractionTraces,
@@ -149,6 +162,9 @@ export default function OperatorExtractionsPage() {
     for (const trace of traces ?? []) map.set(trace.orgId, trace.orgName);
     return [...map.entries()].sort((a, b) => a[1].localeCompare(b[1]));
   }, [traces]);
+  const selectedOrgLabel = orgId === ALL
+    ? "All orgs"
+    : orgOptions.find(([id]) => id === orgId)?.[1] ?? "Selected org";
 
   const selected = detail?.session ?? traces?.find((trace) => trace.traceId === selectedTraceId) ?? null;
   const modelEvents = (detail?.events ?? []).filter((event) => event.kind === "model_call");
@@ -159,7 +175,7 @@ export default function OperatorExtractionsPage() {
     <div className="flex items-center gap-2">
       <Select value={status} onValueChange={(value) => setStatus(value ?? ALL)}>
         <SelectTrigger size="sm" className="w-32">
-          <SelectValue />
+          <SelectValue>{STATUS_LABELS[status] ?? status}</SelectValue>
         </SelectTrigger>
         <SelectContent>
           <SelectItem value={ALL}>All statuses</SelectItem>
@@ -173,7 +189,7 @@ export default function OperatorExtractionsPage() {
         if (value && value in RANGE_MS) setRange(value as keyof typeof RANGE_MS);
       }}>
         <SelectTrigger size="sm" className="w-28">
-          <SelectValue />
+          <SelectValue>{RANGE_LABELS[range]}</SelectValue>
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="24h">24 hours</SelectItem>
@@ -184,7 +200,7 @@ export default function OperatorExtractionsPage() {
       </Select>
       <Select value={orgId} onValueChange={(value) => setOrgId(value ?? ALL)}>
         <SelectTrigger size="sm" className="w-48">
-          <SelectValue />
+          <SelectValue>{selectedOrgLabel}</SelectValue>
         </SelectTrigger>
         <SelectContent>
           <SelectItem value={ALL}>All orgs</SelectItem>
@@ -341,14 +357,15 @@ export default function OperatorExtractionsPage() {
             <TableBody>
               {traces === undefined ? (
                 <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={8} className="h-32 text-center text-muted-foreground">
-                    <Loader2 className="mx-auto h-5 w-5 animate-spin" />
+                  <TableCell colSpan={8} className="h-32 px-4 text-center text-muted-foreground">
+                    <Loader2 className="mx-auto mb-3 h-5 w-5 animate-spin" />
+                    <p className="text-body-sm">Loading extraction traces...</p>
                   </TableCell>
                 </TableRow>
               ) : traces.length === 0 ? (
                 <TableRow className="hover:bg-transparent">
                   <TableCell colSpan={8} className="h-32 px-4 text-body-sm text-muted-foreground">
-                    No extraction traces found.
+                    No extraction traces yet. Run a policy extraction and traces will appear here.
                   </TableCell>
                 </TableRow>
               ) : (
