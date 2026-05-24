@@ -27,6 +27,7 @@ import {
   importConnectedEmailRequirementAttachments,
   sendConnectedVendorInvite,
   coordinateMailboxTask,
+  webResearch,
 } from "../lib/chatTools";
 import { Webhook } from "svix";
 import {
@@ -84,6 +85,7 @@ import {
   type CertificateProgramSelection,
 } from "../lib/certificateProgramSelection";
 import { resolvePolicyReferenceForOrg } from "../lib/policyToolResolution";
+import { runWebRetrieval, type WebRetrievalInput } from "../lib/webRetrieval";
 import { evaluatePceIntake, type PceRequestKind } from "../lib/pceIntake";
 import {
   filterComplianceRequirements,
@@ -1776,6 +1778,26 @@ If the broker attached an endorsement or confirmation for this change, use compl
                     userId: primaryUserId,
                     task: params.task,
                   }),
+              },
+              web_research: {
+                ...webResearch,
+                execute: async (params: WebRetrievalInput) => {
+                  const result = await runWebRetrieval(ctx, orgId, params);
+                  if (!result.text) {
+                    return {
+                      status: "unavailable",
+                      attempts: result.attempts,
+                      warnings: result.warnings,
+                    };
+                  }
+                  return {
+                    status: "ok",
+                    provider: result.provider,
+                    text: result.text,
+                    sources: result.sources,
+                    warnings: result.warnings,
+                  };
+                },
               },
             }
           : {}),

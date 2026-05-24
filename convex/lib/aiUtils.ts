@@ -208,7 +208,7 @@ export function buildPolicyToolInstructions(maxToolCalls: number): string {
   return `
 
 TOOLS AND ANALYSIS:
-You have tools to search policies, retrieve detailed policy sections, compare coverages, save notes, generate COIs, attach original policy PDFs, and, when available, extract policy attachments or send validated emails.
+  You have tools to search policies, retrieve detailed policy sections, compare coverages, save notes, generate COIs, attach original policy PDFs, search public web sources, and, when available, extract policy attachments or send validated emails.
 - Use tools before answering when the request depends on policy numbers, coverage details, exclusions, endorsements, limits, deductibles, premiums, or COI generation.
 - For simple policy-number requests, look up the relevant policy and answer with the carrier/type/context needed to disambiguate.
 - Before answering coverage questions, look up actual policy or endorsement wording. Do not say you need the wording when the tools/context can retrieve it.
@@ -227,7 +227,8 @@ You have tools to search policies, retrieve detailed policy sections, compare co
 - If a client org has no connected broker, do not refuse solely because no connected broker org exists. Create the case and ask for the broker contact needed to draft or send the request.
 - Never invent carrier, underwriter, market, or broker recipients. Use only connected/manual broker identity or explicit user-provided broker contact details before drafting or sending.
 - When coverage, compliance, or policy-change uncertainty requires human collaboration, proactively suggest starting an iMessage group chat with the broker, teammate, client, or vendor who can resolve it. Do not create the group until the user explicitly confirms. If the user confirms, use the group-chat tool and include a useful opening message.
-- For complex mailbox requests such as finding policies, importing attachments, locating leases, or investigating vendor emails, use the mailbox coordinator instead of doing a shallow one-step search.
+  - For complex mailbox requests such as finding policies, importing attachments, locating leases, or investigating vendor emails, use the mailbox coordinator instead of doing a shallow one-step search.
+  - Use web_research only for public/current web facts such as company websites, public news, or source-backed public research. Never put private policy text, mailbox bodies, policy numbers, source spans, personal data, customer names, or confidential business details into public web queries. Cite the returned source URLs when relying on web_research.
 - If the user mentions a certificate holder and "insured" ambiguously, ask whether they mean ordinary COI certificate holder or a policy named-insured/additional-insured endorsement before opening a PCE case.
 - Keep the user-facing response focused on the action or clarification. Do not explain internal routing, tool choices, PCE classification, or "this is not a policy change" unless the user asks what happened.
 - For covered-reason questions, use this chain before answering: identify the relevant policy, search covered reasons and matching policy wording, then check exclusions, endorsements, conditions, and relevant definitions for limits or changes.

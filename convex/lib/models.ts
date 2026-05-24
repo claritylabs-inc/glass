@@ -15,6 +15,8 @@ import type { ActionCtx } from "../_generated/server";
 import {
   FALLBACK_MODEL,
   MODEL_ROUTING,
+  WEB_RETRIEVAL_DEFAULT,
+  WEB_RETRIEVAL_DEFAULT_ROUTES,
   type ModelProvider,
   type ModelRoute,
   type ModelTask,
@@ -75,7 +77,15 @@ function cohere() {
   return _cohere;
 }
 
-export { FALLBACK_MODEL, MODEL_ROUTING, type ModelProvider, type ModelRoute, type ModelTask };
+export {
+  FALLBACK_MODEL,
+  MODEL_ROUTING,
+  WEB_RETRIEVAL_DEFAULT,
+  WEB_RETRIEVAL_DEFAULT_ROUTES,
+  type ModelProvider,
+  type ModelRoute,
+  type ModelTask,
+};
 
 export type ModelCallTaskKind =
   | "extraction_classify"

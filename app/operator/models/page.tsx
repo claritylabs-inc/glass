@@ -15,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2 } from "lucide-react";
+import { Globe2, Loader2 } from "lucide-react";
 import { LogoIcon } from "@/components/ui/logo-icon";
 import OpenAIIcon from "@lobehub/icons/es/OpenAI/components/Mono";
 import AnthropicIcon from "@lobehub/icons/es/Anthropic/components/Mono";
@@ -42,6 +42,8 @@ type ProviderId =
   | "deepseek";
 type Route = { provider: ProviderId; model: string };
 type Routes = Record<string, Route | null>;
+type WebRetrievalProviderId = "exa" | "openai" | "google" | "anthropic" | "xai";
+type WebRetrieval = { primary: WebRetrievalProviderId; route?: Route };
 type ProviderConfig = {
   id: ProviderId;
   label: string;
@@ -55,14 +57,24 @@ type TaskConfig = {
   isEmbedding: boolean;
   defaultRoute: Route;
 };
+type WebRetrievalProviderConfig = {
+  id: WebRetrievalProviderId;
+  label: string;
+  configured: boolean;
+  models: string[];
+  defaultRoute: Route | null;
+};
 type Settings = {
   providers: ProviderConfig[];
   tasks: TaskConfig[];
   routes: Routes;
+  webRetrieval: WebRetrieval;
+  webRetrievalProviders: WebRetrievalProviderConfig[];
   updatedAt: number | null;
 };
 
 const DEFAULT_VALUE = "__default__";
+const EXA_VALUE = "exa";
 const SELECT_WIDTH_CLASS = "w-full md:w-80";
 const PROVIDER_ICONS: Record<ProviderId, React.ComponentType<{ size?: number | string }>> = {
   openai: OpenAIIcon,
@@ -79,6 +91,11 @@ function ProviderLogo({ provider, size = 14 }: { provider: ProviderId; size?: nu
   return <Icon size={size} />;
 }
 
+function WebRetrievalLogo({ provider, size = 14 }: { provider: WebRetrievalProviderId; size?: number }) {
+  if (provider === "exa") return <Globe2 style={{ width: size, height: size }} />;
+  return <ProviderLogo provider={provider} size={size} />;
+}
+
 function sameRoute(left: Route | null, right: Route) {
   return !!left && left.provider === right.provider && left.model === right.model;
 }
@@ -87,8 +104,10 @@ export default function OperatorModelsPage() {
   const current = useCachedOperatorCurrent();
   const settings = useCachedOperatorGlobalModelSettings() as Settings | undefined;
   const updateRoutes = useMutation(api.modelSettings.updateGlobalRoutes);
-  const patchCachedRoute = useOperatorGlobalModelSettingsCacheActions();
+  const updateWebRetrieval = useMutation(api.modelSettings.updateGlobalWebRetrieval);
+  const { patchRoute, patchWebRetrieval } = useOperatorGlobalModelSettingsCacheActions();
   const [savingTask, setSavingTask] = useState<string | null>(null);
+  const [savingWebRetrieval, setSavingWebRetrieval] = useState(false);
 
   const providersById = useMemo(() => {
     return Object.fromEntries((settings?.providers ?? []).map((provider) => [provider.id, provider])) as
@@ -99,12 +118,25 @@ export default function OperatorModelsPage() {
     setSavingTask(taskId);
     try {
       await updateRoutes({ routes: { [taskId]: route } });
-      await patchCachedRoute(taskId, route);
+      await patchRoute(taskId, route);
       toast.success(route ? "Global model updated" : "Global model reset");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to update global model");
     } finally {
       setSavingTask(null);
+    }
+  }
+
+  async function commitWebRetrieval(next: WebRetrieval) {
+    setSavingWebRetrieval(true);
+    try {
+      await updateWebRetrieval({ webRetrieval: next });
+      await patchWebRetrieval(next);
+      toast.success("Web browsing provider updated");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to update web browsing provider");
+    } finally {
+      setSavingWebRetrieval(false);
     }
   }
 
@@ -230,6 +262,102 @@ export default function OperatorModelsPage() {
                   </div>
                 );
               })}
+            </div>
+          )}
+        </section>
+        <section className="mt-4 w-full overflow-hidden rounded-lg border border-foreground/6 bg-card">
+          <div className="border-b border-foreground/6 px-4 py-3">
+            <h2 className="text-sm font-medium text-foreground">Web browsing</h2>
+            <p className="mt-1 text-label-sm text-muted-foreground/70">
+              Used by website enrichment and agent web research across chat, email, iMessage, MCP, and CLI.
+            </p>
+          </div>
+          {settings === undefined ? (
+            <div className="flex h-24 items-center justify-center text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin" />
+            </div>
+          ) : (
+            <div className="grid gap-3 px-4 py-3 md:grid-cols-[1fr_auto] md:items-center">
+              <div className="min-w-0">
+                <p className="text-body-sm font-medium text-foreground">Primary browsing provider</p>
+                <p className="text-label-sm text-muted-foreground/60">
+                  Falls back to Exa when available, then raw HTML for known URLs.
+                </p>
+              </div>
+              <div className="flex w-full items-center gap-2 justify-self-start md:w-auto md:justify-self-end">
+                {savingWebRetrieval ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                ) : null}
+                <Select
+                  value={
+                    settings.webRetrieval.primary === "exa"
+                      ? EXA_VALUE
+                      : `${settings.webRetrieval.primary}:${settings.webRetrieval.route?.model ?? ""}`
+                  }
+                  onValueChange={(next) => {
+                    if (!next) return;
+                    if (next === EXA_VALUE) {
+                      void commitWebRetrieval({ primary: "exa" });
+                      return;
+                    }
+                    const [provider, ...modelParts] = next.split(":");
+                    const primary = provider as Exclude<WebRetrievalProviderId, "exa">;
+                    void commitWebRetrieval({
+                      primary,
+                      route: {
+                        provider: primary,
+                        model: modelParts.join(":"),
+                      },
+                    });
+                  }}
+                  disabled={savingWebRetrieval}
+                >
+                  <SelectTrigger className={SELECT_WIDTH_CLASS}>
+                    <SelectValue>
+                      <span className="flex items-center gap-2">
+                        <WebRetrievalLogo provider={settings.webRetrieval.primary} />
+                        <span className="text-body-sm">
+                          {settings.webRetrieval.primary === "exa"
+                            ? "Exa"
+                            : settings.webRetrieval.route?.model}
+                        </span>
+                      </span>
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {settings.webRetrievalProviders.map((provider) => {
+                      if (provider.id === "exa") {
+                        return (
+                          <SelectItem key={provider.id} value={EXA_VALUE} disabled={!provider.configured}>
+                            <span className="flex items-center gap-2">
+                              <WebRetrievalLogo provider="exa" size={12} />
+                              Exa {!provider.configured ? "(missing key)" : ""}
+                            </span>
+                          </SelectItem>
+                        );
+                      }
+                      if (provider.models.length === 0) return null;
+                      return (
+                        <SelectGroup key={provider.id}>
+                          <SelectLabel className="flex items-center gap-1.5">
+                            <WebRetrievalLogo provider={provider.id} size={12} />
+                            {provider.label} {!provider.configured ? "(missing key)" : ""}
+                          </SelectLabel>
+                          {provider.models.map((model) => (
+                            <SelectItem
+                              key={`${provider.id}:${model}`}
+                              value={`${provider.id}:${model}`}
+                              disabled={!provider.configured}
+                            >
+                              {model}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           )}
         </section>
