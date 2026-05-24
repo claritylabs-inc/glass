@@ -370,6 +370,39 @@ export const coordinateMailboxTask = tool({
   }),
 });
 
+export const webResearch = tool({
+  description:
+    "Search or retrieve public web content using the operator-configured browsing provider. Use only for public/current web facts, company websites, news, or source-backed public research. Do not include private policy text, mailbox bodies, policy numbers, source spans, personal data, or confidential customer data in the query.",
+  inputSchema: z.object({
+    query: z
+      .string()
+      .max(500)
+      .optional()
+      .describe("Public web search query. Omit when retrieving a specific URL."),
+    url: z
+      .string()
+      .optional()
+      .describe("Specific public http(s) URL to retrieve. Use this for known public pages."),
+    goal: z
+      .string()
+      .max(500)
+      .optional()
+      .describe("Short public research goal, such as verifying company services or recent public news."),
+    allowedDomains: z
+      .array(z.string())
+      .max(5)
+      .optional()
+      .describe("Optional public domains to restrict search results to."),
+    maxResults: z
+      .number()
+      .int()
+      .min(1)
+      .max(5)
+      .optional()
+      .describe("Maximum public sources to return. Defaults to 5."),
+  }),
+});
+
 export const renderEmailPreview = tool({
   description:
     "Render an outbound email draft as a visual artifact using a browser renderer. Use this when the user asks to screenshot, print, preview, inspect formatting, verify layout, or see what an email draft will look like. Returns a PNG screenshot or PDF printout attached to the current thread.",

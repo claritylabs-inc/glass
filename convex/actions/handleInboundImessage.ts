@@ -22,6 +22,7 @@ import {
   completePolicyChangeFromEndorsement,
   createImessageGroupChat,
   coordinateMailboxTask,
+  webResearch,
 } from "../lib/chatTools";
 import {
   buildComplianceRequirementsContext,
@@ -87,6 +88,7 @@ import {
   isSendAllEmailDraftsIntent,
   isShowMoreEmailDraftIntent,
 } from "../lib/emailDraftSummary";
+import { runWebRetrieval, type WebRetrievalInput } from "../lib/webRetrieval";
 
 /** Normalize a raw phone string to E.164 (+1XXXXXXXXXX). */
 function normalizePhone(raw: string): string {
@@ -1522,6 +1524,26 @@ export const processInbound = internalAction({
                     statusToPhone: fromPhone,
                     statusChatGuid: chatGuid,
                   }),
+              },
+              web_research: {
+                ...webResearch,
+                execute: async (params: WebRetrievalInput) => {
+                  const result = await runWebRetrieval(ctx, orgId, params);
+                  if (!result.text) {
+                    return {
+                      status: "unavailable",
+                      attempts: result.attempts,
+                      warnings: result.warnings,
+                    };
+                  }
+                  return {
+                    status: "ok",
+                    provider: result.provider,
+                    text: result.text,
+                    sources: result.sources,
+                    warnings: result.warnings,
+                  };
+                },
               },
             }
           : {}),

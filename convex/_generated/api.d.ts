@@ -131,6 +131,7 @@ import type * as lib_threadAccess from "../lib/threadAccess.js";
 import type * as lib_userPhone from "../lib/userPhone.js";
 import type * as lib_valueNormalization from "../lib/valueNormalization.js";
 import type * as lib_vendorComplianceTools from "../lib/vendorComplianceTools.js";
+import type * as lib_webRetrieval from "../lib/webRetrieval.js";
 import type * as modelConfig from "../modelConfig.js";
 import type * as modelSettings from "../modelSettings.js";
 import type * as notificationPreferences from "../notificationPreferences.js";
@@ -284,6 +285,7 @@ declare const fullApi: ApiFromModules<{
   "lib/userPhone": typeof lib_userPhone;
   "lib/valueNormalization": typeof lib_valueNormalization;
   "lib/vendorComplianceTools": typeof lib_vendorComplianceTools;
+  "lib/webRetrieval": typeof lib_webRetrieval;
   modelConfig: typeof modelConfig;
   modelSettings: typeof modelSettings;
   notificationPreferences: typeof notificationPreferences;

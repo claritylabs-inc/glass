@@ -13,9 +13,15 @@ import {
   MODEL_TASK_DESCRIPTIONS,
   MODEL_TASK_LABELS,
   PROVIDER_LABELS,
+  WEB_RETRIEVAL_DEFAULT,
+  WEB_RETRIEVAL_DEFAULT_ROUTES,
+  WEB_RETRIEVAL_LABELS,
+  WEB_RETRIEVAL_MODEL_CATALOG,
   type ModelProvider,
   type ModelRoute,
   type ModelTask,
+  type WebRetrievalProvider,
+  type WebRetrievalRoute,
 } from "./lib/modelCatalog";
 
 type ProviderKeys = NonNullable<Doc<"brokerModelSettings">["providerKeys"]>;
@@ -39,6 +45,19 @@ const routeValidator = v.object({
 });
 
 const routeUpdateValidator = v.union(routeValidator, v.null());
+
+const webRetrievalProviderValidator = v.union(
+  v.literal("exa"),
+  v.literal("openai"),
+  v.literal("google"),
+  v.literal("anthropic"),
+  v.literal("xai"),
+);
+
+const webRetrievalValidator = v.object({
+  primary: webRetrievalProviderValidator,
+  route: v.optional(routeValidator),
+});
 
 const routesValidator = v.object({
   chat: v.optional(routeUpdateValidator),
@@ -127,6 +146,46 @@ function configurableProviderKeys(keys: ProviderKeys | undefined) {
       return value ? [[provider, value]] : [];
     }),
   ) as ProviderKeys;
+}
+
+function webRetrievalEnvConfigured(provider: WebRetrievalProvider) {
+  const hasGatewayAccess = !!(process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN);
+  switch (provider) {
+    case "exa":
+      return !!process.env.EXA_API_KEY;
+    case "openai":
+      return !!process.env.OPENAI_API_KEY;
+    case "google":
+      return !!(process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? process.env.GOOGLE_API_KEY) || hasGatewayAccess;
+    case "anthropic":
+      return !!process.env.ANTHROPIC_API_KEY;
+    case "xai":
+      return !!process.env.XAI_API_KEY || hasGatewayAccess;
+  }
+}
+
+function normalizeWebRetrieval(config: WebRetrievalRoute | undefined): WebRetrievalRoute {
+  if (!config) return WEB_RETRIEVAL_DEFAULT;
+  if (config.primary === "exa") return { primary: "exa" };
+  return {
+    primary: config.primary,
+    route: config.route ?? WEB_RETRIEVAL_DEFAULT_ROUTES[config.primary],
+  };
+}
+
+function assertSupportedWebRetrieval(config: WebRetrievalRoute) {
+  if (config.primary === "exa") {
+    if (config.route) throw new Error("Exa web retrieval does not use a model route");
+    return;
+  }
+  const route = config.route ?? WEB_RETRIEVAL_DEFAULT_ROUTES[config.primary];
+  if (route.provider !== config.primary) {
+    throw new Error("Web retrieval route provider must match the selected provider");
+  }
+  const models = WEB_RETRIEVAL_MODEL_CATALOG[config.primary];
+  if (!models?.includes(route.model)) {
+    throw new Error(`Unsupported web retrieval model ${route.model}`);
+  }
 }
 
 export const get = query({
@@ -259,6 +318,16 @@ export const getGlobal = query({
         defaultRoute: MODEL_ROUTING[id],
       })),
       routes: nullableRoutes(settings?.routes),
+      webRetrieval: normalizeWebRetrieval(settings?.webRetrieval),
+      webRetrievalProviders: (Object.keys(WEB_RETRIEVAL_LABELS) as WebRetrievalProvider[]).map(
+        (id) => ({
+          id,
+          label: WEB_RETRIEVAL_LABELS[id],
+          configured: webRetrievalEnvConfigured(id),
+          models: id === "exa" ? [] : (WEB_RETRIEVAL_MODEL_CATALOG[id] ?? []),
+          defaultRoute: id === "exa" ? null : WEB_RETRIEVAL_DEFAULT_ROUTES[id],
+        }),
+      ),
       updatedAt: settings?.updatedAt ?? null,
     };
   },
@@ -296,6 +365,36 @@ export const updateGlobalRoutes = mutation({
       await ctx.db.insert("globalModelSettings", {
         key: "default",
         routes,
+        updatedBy: operator.userId,
+        updatedAt: now,
+      });
+    }
+  },
+});
+
+export const updateGlobalWebRetrieval = mutation({
+  args: { webRetrieval: webRetrievalValidator },
+  handler: async (ctx, args) => {
+    const operator = await requireOperator(ctx);
+    assertSupportedWebRetrieval(args.webRetrieval);
+
+    const existing = await ctx.db
+      .query("globalModelSettings")
+      .withIndex("by_key", (q) => q.eq("key", "default"))
+      .first();
+    const now = dayjs().valueOf();
+    const webRetrieval = normalizeWebRetrieval(args.webRetrieval);
+
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        webRetrieval,
+        updatedBy: operator.userId,
+        updatedAt: now,
+      });
+    } else {
+      await ctx.db.insert("globalModelSettings", {
+        key: "default",
+        webRetrieval,
         updatedBy: operator.userId,
         updatedAt: now,
       });
@@ -348,6 +447,7 @@ export const resolveForOrg = internalQuery({
       routes,
       routeSources,
       providerKeys,
+      webRetrieval: normalizeWebRetrieval(globalSettings?.webRetrieval),
     };
   },
 });

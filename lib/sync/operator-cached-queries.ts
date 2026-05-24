@@ -28,6 +28,7 @@ type OperatorExtractionTraceDetail = FunctionReturnType<
   typeof api.operator.getExtractionTrace
 >;
 type GlobalRoutes = OperatorGlobalModelSettings["routes"];
+type GlobalWebRetrieval = OperatorGlobalModelSettings["webRetrieval"];
 type EmptyArgs = Record<string, never>;
 type OperatorStatus = "onboarding" | "live";
 type TraceStatus = "running" | "complete" | "error" | "cancelled";
@@ -322,7 +323,7 @@ export function useOperatorGlobalModelSettingsCacheActions() {
     "operator.modelSettings.getGlobal",
   );
 
-  return useCallback(
+  const patchRoute = useCallback(
     async (taskId: string, route: GlobalRoute) => {
       await updateSettings({}, (current) => ({
         ...current,
@@ -335,4 +336,17 @@ export function useOperatorGlobalModelSettingsCacheActions() {
     },
     [updateSettings],
   );
+
+  const patchWebRetrieval = useCallback(
+    async (webRetrieval: GlobalWebRetrieval) => {
+      await updateSettings({}, (current) => ({
+        ...current,
+        webRetrieval,
+        updatedAt: dayjs().valueOf(),
+      }));
+    },
+    [updateSettings],
+  );
+
+  return { patchRoute, patchWebRetrieval };
 }

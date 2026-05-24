@@ -8,6 +8,7 @@ import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import { getModelForOrg } from "../lib/models";
 import { INDUSTRIES } from "../lib/industries";
+import { runWebRetrieval } from "../lib/webRetrieval";
 
 // Build a compact reference of valid industry/vertical values for the prompt
 const INDUSTRY_REF = INDUSTRIES.map(
@@ -102,52 +103,6 @@ async function fetchFavicon(siteUrl: string): Promise<Blob | null> {
   return null;
 }
 
-async function fetchWithExa(url: string): Promise<string | null> {
-  const apiKey = process.env.EXA_API_KEY;
-  if (!apiKey) return null;
-  try {
-    const res = await fetch("https://api.exa.ai/contents", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-api-key": apiKey,
-      },
-      body: JSON.stringify({
-        urls: [url],
-        text: { maxCharacters: 12000 },
-        livecrawl: "always",
-      }),
-    });
-    if (!res.ok) return null;
-    const data = (await res.json()) as { results?: Array<{ text?: string; title?: string }> };
-    const first = data.results?.[0];
-    if (!first?.text) return null;
-    return [first.title, first.text].filter(Boolean).join("\n\n");
-  } catch {
-    return null;
-  }
-}
-
-async function fetchWithRawHtml(url: string): Promise<string | null> {
-  try {
-    const response = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; GlassBot/1.0)" },
-    });
-    if (!response.ok) return null;
-    let html = await response.text();
-    html = html
-      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
-      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
-      .replace(/<[^>]+>/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-    if (html.length < 200) return null;
-    return html.slice(0, 12000);
-  } catch {
-    return null;
-  }
-}
-
 export const extractCompanyInfo = action({
   args: { url: v.string(), orgId: v.optional(v.id("organizations")) },
   returns: v.any(),
@@ -187,8 +142,12 @@ export const extractCompanyInfo = action({
       }
     })();
 
-    const content =
-      (await fetchWithExa(args.url)) ?? (await fetchWithRawHtml(args.url));
+    const retrieval = await runWebRetrieval(ctx, targetOrgId, {
+      url: args.url,
+      goal: "Extract factual company profile information from this organization's public website.",
+      maxResults: 1,
+    });
+    const content = retrieval.text;
     if (!content) {
       return { error: "Could not retrieve website content" };
     }
