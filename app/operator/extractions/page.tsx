@@ -110,6 +110,19 @@ function formatTokens(input?: number, output?: number) {
   return `${total.toLocaleString()} (${(input ?? 0).toLocaleString()} in / ${(output ?? 0).toLocaleString()} out)`;
 }
 
+function formatCompactTokens(input?: number, output?: number) {
+  const total = (input ?? 0) + (output ?? 0);
+  if (!total) return "—";
+  if (total >= 1000) return `${Math.round(total / 1000).toLocaleString()}k`;
+  return total.toLocaleString();
+}
+
+function formatPercent(value: number) {
+  if (!Number.isFinite(value)) return "0%";
+  if (value < 1 && value > 0) return "<1%";
+  return `${Math.round(value)}%`;
+}
+
 function statusVariant(status: TraceStatus): "default" | "secondary" | "destructive" {
   if (status === "complete") return "default";
   if (status === "error" || status === "cancelled") return "destructive";
@@ -127,6 +140,302 @@ function DetailRow({ label, value }: { label: string; value: React.ReactNode }) 
 
 function eventTitle(event: TraceEvent) {
   return event.label ?? event.taskKind ?? event.phase ?? event.message ?? event.kind;
+}
+
+type TimingRow = {
+  id: string;
+  label: string;
+  caption: string;
+  durationMs: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  status?: string;
+};
+
+type TimelineRow = {
+  id: string;
+  label: string;
+  caption: string;
+  kind: TraceEvent["kind"];
+  startMs: number;
+  endMs: number;
+  durationMs: number;
+  status?: string;
+};
+
+function modelGroupKey(event: TraceEvent) {
+  return [
+    event.label ?? event.taskKind ?? "model call",
+    event.provider ?? "unknown",
+    event.model ?? "unknown",
+  ].join("||");
+}
+
+function buildModelTimingRows(events: TraceEvent[]): TimingRow[] {
+  const groups = new Map<string, TimingRow & { count: number }>();
+  for (const event of events) {
+    const durationMs = event.durationMs ?? 0;
+    if (durationMs <= 0) continue;
+    const key = modelGroupKey(event);
+    const existing = groups.get(key);
+    const caption = [event.provider, event.model].filter(Boolean).join(" / ") || "model";
+    if (existing) {
+      existing.durationMs += durationMs;
+      existing.inputTokens = (existing.inputTokens ?? 0) + (event.inputTokens ?? 0);
+      existing.outputTokens = (existing.outputTokens ?? 0) + (event.outputTokens ?? 0);
+      existing.count += 1;
+      continue;
+    }
+    groups.set(key, {
+      id: key,
+      label: eventTitle(event),
+      caption,
+      durationMs,
+      inputTokens: event.inputTokens,
+      outputTokens: event.outputTokens,
+      status: event.status,
+      count: 1,
+    });
+  }
+  return [...groups.values()]
+    .map((row) => ({
+      ...row,
+      caption: `${row.caption} · ${row.count} ${row.count === 1 ? "call" : "calls"}`,
+    }))
+    .sort((a, b) => b.durationMs - a.durationMs);
+}
+
+function buildPhaseTimingRows(events: TraceEvent[], session: TraceRow): TimingRow[] {
+  const completed = events
+    .filter((event) => event.kind === "phase" && (event.durationMs ?? 0) > 0)
+    .map((event) => ({
+      id: event._id,
+      label: event.phase ?? event.label ?? "phase",
+      caption: event.message ?? event.status ?? "completed phase",
+      durationMs: event.durationMs ?? 0,
+      status: event.status,
+    }));
+  if (completed.length) return completed.sort((a, b) => b.durationMs - a.durationMs);
+
+  const activeStarts = events.filter(
+    (event) => event.kind === "phase" && event.status === "started" && event.phase,
+  );
+  const endAt = session.completedAt ?? session.lastEventAt ?? dayjs().valueOf();
+  return activeStarts
+    .filter((event) => {
+      const finished = events.some(
+        (candidate) =>
+          candidate.kind === "phase" &&
+          candidate.phase === event.phase &&
+          candidate.timestamp > event.timestamp &&
+          candidate.status !== "started",
+      );
+      return !finished && endAt > event.timestamp;
+    })
+    .map((event) => ({
+      id: event._id,
+      label: event.phase ?? "active phase",
+      caption: "active; elapsed so far",
+      durationMs: endAt - event.timestamp,
+      status: "running",
+    }))
+    .sort((a, b) => b.durationMs - a.durationMs);
+}
+
+function buildOtherTimingRows(events: TraceEvent[]): TimingRow[] {
+  return events
+    .filter((event) => event.kind !== "phase" && event.kind !== "model_call" && (event.durationMs ?? 0) > 0)
+    .map((event) => ({
+      id: event._id,
+      label: eventTitle(event),
+      caption: [event.kind, event.status].filter(Boolean).join(" · "),
+      durationMs: event.durationMs ?? 0,
+      inputTokens: event.inputTokens,
+      outputTokens: event.outputTokens,
+      status: event.status,
+    }))
+    .sort((a, b) => b.durationMs - a.durationMs);
+}
+
+function cleanTraceText(value?: string) {
+  const trimmed = value?.trim();
+  if (!trimmed) return undefined;
+  if (/^(unknown|unknown\.pdf|extracting\.\.\.)$/i.test(trimmed)) return undefined;
+  const cleaned = trimmed
+    .split(" · ")
+    .map((part) => part.trim())
+    .filter((part) => part && !/^(unknown|unknown\.pdf|extracting\.\.\.)$/i.test(part))
+    .join(" · ");
+  return cleaned || undefined;
+}
+
+function traceDisplayTitle(trace: TraceRow) {
+  return cleanTraceText(trace.policyLabel) ?? cleanTraceText(trace.fileName) ?? "Extraction trace";
+}
+
+function traceDisplayFile(trace: TraceRow) {
+  return cleanTraceText(trace.fileName) ?? "—";
+}
+
+function eventTiming(event: TraceEvent, session: TraceRow): TimelineRow | null {
+  const endAt = session.completedAt ?? session.lastEventAt ?? dayjs().valueOf();
+  if ((event.durationMs ?? 0) > 0) {
+    const durationMs = event.durationMs ?? 0;
+    return {
+      id: event._id,
+      label: eventTitle(event),
+      caption: [event.kind, event.status].filter(Boolean).join(" · "),
+      kind: event.kind,
+      startMs: Math.max(session.startedAt, event.timestamp - durationMs),
+      endMs: event.timestamp,
+      durationMs,
+      status: event.status,
+    };
+  }
+  if (event.kind === "phase" && event.status === "started" && endAt > event.timestamp) {
+    return {
+      id: event._id,
+      label: event.phase ?? "active phase",
+      caption: "phase · active",
+      kind: event.kind,
+      startMs: event.timestamp,
+      endMs: endAt,
+      durationMs: endAt - event.timestamp,
+      status: "running",
+    };
+  }
+  return null;
+}
+
+function buildTimelineRows(events: TraceEvent[], session: TraceRow) {
+  const completedPhases = new Set(
+    events
+      .filter((event) => event.kind === "phase" && event.status !== "started" && event.phase)
+      .map((event) => event.phase),
+  );
+  return events
+    .filter((event) => {
+      if (event.kind !== "phase" || event.status !== "started" || !event.phase) return true;
+      return !completedPhases.has(event.phase);
+    })
+    .map((event) => eventTiming(event, session))
+    .filter((row): row is TimelineRow => !!row)
+    .sort((a, b) => a.startMs - b.startMs || b.durationMs - a.durationMs);
+}
+
+function timelineColor(kind: TraceEvent["kind"]) {
+  if (kind === "model_call") return "bg-blue-500";
+  if (kind === "phase") return "bg-foreground";
+  if (kind === "embedding_batch") return "bg-emerald-500";
+  if (kind === "worker") return "bg-violet-500";
+  if (kind === "artifact") return "bg-amber-500";
+  return "bg-muted-foreground";
+}
+
+function TimingBar({ row, maxDurationMs }: { row: TimingRow; maxDurationMs: number }) {
+  const width = Math.max(4, Math.min(100, (row.durationMs / Math.max(maxDurationMs, 1)) * 100));
+  return (
+    <div className="border-b border-foreground/6 px-3 py-2.5 last:border-b-0">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-body-sm font-medium text-foreground">{row.label}</p>
+          <p className="truncate text-label-sm text-muted-foreground">{row.caption}</p>
+        </div>
+        <div className="shrink-0 text-right">
+          <p className="text-body-sm text-foreground">{formatDuration(row.durationMs)}</p>
+          <p className="text-label-sm text-muted-foreground">
+            {formatCompactTokens(row.inputTokens, row.outputTokens) !== "—"
+              ? formatCompactTokens(row.inputTokens, row.outputTokens)
+              : (row.status ?? "")}
+          </p>
+        </div>
+      </div>
+      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
+        <div className="h-full rounded-full bg-foreground/70" style={{ width: `${width}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function TimelineWaterfall({
+  rows,
+  session,
+}: {
+  rows: TimelineRow[];
+  session: TraceRow;
+}) {
+  const startAt = session.startedAt;
+  const endAt = Math.max(
+    session.completedAt ?? 0,
+    session.lastEventAt ?? 0,
+    ...rows.map((row) => row.endMs),
+    startAt + 1,
+  );
+  const durationMs = Math.max(1, endAt - startAt);
+  const ticks = [0, 0.25, 0.5, 0.75, 1];
+
+  return (
+    <div className="overflow-hidden rounded-lg border border-foreground/6">
+      <div className="grid grid-cols-[11rem_1fr] border-b border-foreground/6 bg-muted/20">
+        <div className="border-r border-foreground/6 px-3 py-2 text-label-sm font-medium text-muted-foreground">
+          Event
+        </div>
+        <div className="relative h-8">
+          {ticks.map((tick) => (
+            <div
+              key={tick}
+              className="absolute top-0 h-full border-l border-foreground/10"
+              style={{ left: `${tick * 100}%` }}
+            >
+              <span className="ml-1 text-[10px] leading-8 text-muted-foreground">
+                {formatDuration(durationMs * tick)}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="max-h-80 overflow-y-auto">
+        {rows.length ? rows.map((row) => {
+          const left = ((row.startMs - startAt) / durationMs) * 100;
+          const width = Math.max(1.5, (row.durationMs / durationMs) * 100);
+          return (
+            <div key={row.id} className="grid min-h-10 grid-cols-[11rem_1fr] border-b border-foreground/6 last:border-b-0">
+              <div className="min-w-0 border-r border-foreground/6 px-3 py-2">
+                <p className="truncate text-label-sm font-medium text-foreground">{row.label}</p>
+                <p className="truncate text-[10px] text-muted-foreground">{formatDuration(row.durationMs)}</p>
+              </div>
+              <div className="relative px-0 py-2">
+                {ticks.map((tick) => (
+                  <span
+                    key={tick}
+                    aria-hidden="true"
+                    className="absolute top-0 h-full border-l border-foreground/6"
+                    style={{ left: `${tick * 100}%` }}
+                  />
+                ))}
+                <div
+                  className={`absolute top-2 h-5 rounded-sm ${timelineColor(row.kind)}`}
+                  style={{
+                    left: `${Math.max(0, Math.min(100, left))}%`,
+                    width: `${Math.min(100 - Math.max(0, left), width)}%`,
+                  }}
+                  title={`${row.label} · ${formatDuration(row.durationMs)} · ${row.caption}`}
+                />
+              </div>
+            </div>
+          );
+        }) : (
+          <p className="px-3 py-3 text-body-sm text-muted-foreground">No timed events recorded yet.</p>
+        )}
+      </div>
+      <div className="flex flex-wrap gap-3 border-t border-foreground/6 px-3 py-2 text-[10px] text-muted-foreground">
+        <span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-foreground" />phase</span>
+        <span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-blue-500" />model call</span>
+        <span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-emerald-500" />embedding</span>
+        <span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-violet-500" />worker</span>
+      </div>
+    </div>
+  );
 }
 
 export default function OperatorExtractionsPage() {
@@ -160,6 +469,20 @@ export default function OperatorExtractionsPage() {
   const modelEvents = (detail?.events ?? []).filter((event) => event.kind === "model_call");
   const phaseEvents = (detail?.events ?? []).filter((event) => event.kind === "phase" && event.durationMs !== undefined);
   const logEvents = (detail?.events ?? []).filter((event) => event.kind === "log");
+  const modelTimingRows = selected ? buildModelTimingRows(modelEvents) : [];
+  const phaseTimingRows = selected && detail?.events ? buildPhaseTimingRows(detail.events, selected) : [];
+  const otherTimingRows = detail?.events ? buildOtherTimingRows(detail.events) : [];
+  const visibleTimingRows = [...phaseTimingRows, ...otherTimingRows, ...modelTimingRows]
+    .sort((a, b) => b.durationMs - a.durationMs)
+    .slice(0, 10);
+  const timelineRows = selected && detail?.events ? buildTimelineRows(detail.events, selected) : [];
+  const maxTimingDuration = Math.max(...visibleTimingRows.map((row) => row.durationMs), 1);
+  const wallDurationMs = selected?.totalDurationMs ?? (
+    selected?.lastEventAt ? selected.lastEventAt - selected.startedAt : undefined
+  );
+  const modelShare = wallDurationMs && selected?.modelDurationMs
+    ? (selected.modelDurationMs / wallDurationMs) * 100
+    : 0;
 
   const actions = (
     <div className="flex items-center gap-2">
@@ -210,18 +533,18 @@ export default function OperatorExtractionsPage() {
       onOpenChange={(open) => {
         if (!open) setSelectedTraceId(null);
       }}
-      title={selected?.policyLabel ?? "Extraction trace"}
+      title={selected ? traceDisplayTitle(selected) : "Extraction trace"}
     >
       {detail === undefined && selectedTraceId ? (
         <div className="flex h-32 items-center justify-center text-muted-foreground">
           <Loader2 className="h-5 w-5 animate-spin" />
         </div>
       ) : selected ? (
-        <>
+        <div className="space-y-5 pt-4">
           <section>
             <dl className="rounded-lg border border-foreground/6">
               <DetailRow label="Org" value={selected.orgName} />
-              <DetailRow label="File" value={selected.fileName ?? "—"} />
+              <DetailRow label="File" value={traceDisplayFile(selected)} />
               <DetailRow label="Status" value={<Badge variant={statusVariant(selected.status)}>{selected.status}</Badge>} />
               <DetailRow label="Started" value={dayjs(selected.startedAt).format("MMM D, h:mm:ss A")} />
               <DetailRow label="Duration" value={formatDuration(selected.totalDurationMs ?? (selected.lastEventAt ? selected.lastEventAt - selected.startedAt : undefined))} />
@@ -233,21 +556,54 @@ export default function OperatorExtractionsPage() {
           </section>
 
           <section className="space-y-2">
-            <h3 className="text-body-sm font-medium text-foreground">Phases</h3>
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-body-sm font-medium text-foreground">Timeline</h3>
+              <span className="text-label-sm text-muted-foreground">
+                {formatDuration(wallDurationMs)}
+              </span>
+            </div>
+            <TimelineWaterfall rows={timelineRows} session={selected} />
+          </section>
+
+          <section className="space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-body-sm font-medium text-foreground">Timing breakdown</h3>
+              <span className="text-label-sm text-muted-foreground">
+                Model time is {formatPercent(modelShare)} of elapsed wall time
+              </span>
+            </div>
             <div className="rounded-lg border border-foreground/6">
-              {phaseEvents.length ? phaseEvents.map((event) => (
-                <div key={event._id} className="flex items-center justify-between gap-3 border-b border-foreground/6 px-3 py-2 last:border-b-0">
-                  <div className="min-w-0">
-                    <p className="truncate text-body-sm text-foreground">{event.phase}</p>
-                    <p className="text-label-sm text-muted-foreground">{event.status}</p>
-                  </div>
-                  <span className="shrink-0 text-body-sm text-muted-foreground">{formatDuration(event.durationMs)}</span>
-                </div>
+              {visibleTimingRows.length ? visibleTimingRows.map((row) => (
+                <TimingBar key={row.id} row={row} maxDurationMs={maxTimingDuration} />
               )) : (
-                <p className="px-3 py-3 text-body-sm text-muted-foreground">No phase timings recorded.</p>
+                <p className="px-3 py-3 text-body-sm text-muted-foreground">
+                  No timed events recorded yet. The trace will fill in as phases, model calls, or worker events finish.
+                </p>
               )}
             </div>
+            {selected.modelDurationMs && wallDurationMs && selected.modelDurationMs > wallDurationMs ? (
+              <p className="text-label-sm text-muted-foreground">
+                Aggregate model time can exceed wall time when extraction runs model calls in parallel.
+              </p>
+            ) : null}
           </section>
+
+          {phaseEvents.length ? (
+            <section className="space-y-2">
+              <h3 className="text-body-sm font-medium text-foreground">Recorded phases</h3>
+              <div className="rounded-lg border border-foreground/6">
+                {phaseEvents.map((event) => (
+                  <div key={event._id} className="flex items-center justify-between gap-3 border-b border-foreground/6 px-3 py-2 last:border-b-0">
+                    <div className="min-w-0">
+                      <p className="truncate text-body-sm text-foreground">{event.phase}</p>
+                      <p className="text-label-sm text-muted-foreground">{event.status}</p>
+                    </div>
+                    <span className="shrink-0 text-body-sm text-muted-foreground">{formatDuration(event.durationMs)}</span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : null}
 
           <section className="space-y-2">
             <h3 className="text-body-sm font-medium text-foreground">Model calls</h3>
@@ -304,7 +660,7 @@ export default function OperatorExtractionsPage() {
               )}
             </div>
           </section>
-        </>
+        </div>
       ) : (
         <p className="text-body-sm text-muted-foreground">Trace not found.</p>
       )}
@@ -378,8 +734,7 @@ export default function OperatorExtractionsPage() {
                     </TableCell>
                     <TableCell className="max-w-48 truncate text-foreground">{trace.orgName}</TableCell>
                     <TableCell className="max-w-64">
-                      <p className="truncate text-foreground">{trace.policyLabel}</p>
-                      <p className="truncate text-label-sm text-muted-foreground">{trace.fileName ?? trace.trigger ?? trace.policyId}</p>
+                      <p className="truncate text-foreground">{traceDisplayTitle(trace)}</p>
                     </TableCell>
                     <TableCell>
                       <Badge variant={statusVariant(trace.status)}>{trace.status}</Badge>

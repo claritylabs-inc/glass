@@ -442,6 +442,7 @@ export const getSummary = query({
       dismissed: enrichedPolicy.dismissed,
       pipelineStatus: enrichedPolicy.pipelineStatus,
       pipelineError: enrichedPolicy.pipelineError,
+      pipelineLog: enrichedPolicy.pipelineLog,
       extractionReview: enrichedPolicy.extractionReview,
       partnerProgram: partnerProgram && partnerProgram.status === "active"
         ? {

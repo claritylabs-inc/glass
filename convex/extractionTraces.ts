@@ -1,8 +1,11 @@
 import dayjs from "dayjs";
 import { v } from "convex/values";
 import { internalMutation } from "./_generated/server";
+import type { MutationCtx } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
 
 const TRACE_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
+const PIPELINE_LOG_LIMIT = 500;
 
 const traceStatusValidator = v.union(
   v.literal("running"),
@@ -40,10 +43,66 @@ function expiresAt(timestamp: number) {
   return timestamp + TRACE_RETENTION_MS;
 }
 
+function formatDuration(ms?: number) {
+  if (ms === undefined) return undefined;
+  if (ms < 1000) return `${ms}ms`;
+  const seconds = ms / 1000;
+  if (seconds < 60) return `${seconds.toFixed(seconds < 10 ? 1 : 0)}s`;
+  const minutes = Math.floor(seconds / 60);
+  const rest = Math.round(seconds % 60);
+  return `${minutes}m ${rest}s`;
+}
+
 function defined<T extends Record<string, unknown>>(value: T) {
   return Object.fromEntries(
     Object.entries(value).filter(([, item]) => item !== undefined),
   ) as Partial<T>;
+}
+
+function progressMessage(args: {
+  kind: string;
+  label?: string;
+  taskKind?: string;
+  phase?: string;
+  status?: string;
+  durationMs?: number;
+  provider?: string;
+  model?: string;
+  error?: string;
+}) {
+  const duration = formatDuration(args.durationMs);
+  if (args.error) return args.error;
+  if (args.kind === "model_call") {
+    const rawLabel = args.label ?? args.taskKind ?? "model call";
+    const label = /generate(Object|Text)/i.test(rawLabel) ? "Analyzing document" : rawLabel;
+    return `${label}${duration ? ` · ${duration}` : ""}`;
+  }
+  if (args.kind === "embedding_batch") {
+    return `Indexing ${args.label ?? "document"}${duration ? ` · ${duration}` : ""}`;
+  }
+  if (args.kind === "worker" || args.kind === "artifact") {
+    return [args.label ?? args.phase ?? args.kind, args.status, duration ? `in ${duration}` : undefined]
+      .filter(Boolean)
+      .join(" ");
+  }
+  return null;
+}
+
+async function appendProgressLog(
+  ctx: MutationCtx,
+  policyId: Id<"policies">,
+  entry: { timestamp: number; message: string; phase?: string; level?: string },
+) {
+  const run = await ctx.db
+    .query("policyExtractionRuns")
+    .withIndex("by_policyId", (q) => q.eq("policyId", policyId))
+    .first();
+  if (!run) return;
+  const existing = Array.isArray(run.pipelineLog) ? run.pipelineLog : [];
+  await ctx.db.patch(run._id, {
+    pipelineLog: [...existing, entry].slice(-PIPELINE_LOG_LIMIT),
+    updatedAt: nowMs(),
+  });
 }
 
 export const startSession = internalMutation({
@@ -188,6 +247,16 @@ export const recordEvent = internalMutation({
       patch.error = args.error;
     }
     await ctx.db.patch(session._id, patch);
+
+    const message = progressMessage(args);
+    if (message) {
+      await appendProgressLog(ctx, session.policyId, {
+        timestamp,
+        message,
+        phase: args.phase ?? args.task ?? args.kind,
+        level: args.error ? "error" : undefined,
+      });
+    }
     return true;
   },
 });
