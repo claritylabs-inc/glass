@@ -29,6 +29,13 @@ export type ModelRoute = {
   model: string;
 };
 
+export type WebRetrievalProvider = "exa" | "openai" | "google" | "anthropic" | "xai";
+
+export type WebRetrievalRoute = {
+  primary: WebRetrievalProvider;
+  route?: ModelRoute;
+};
+
 export type ModelCapabilityConfig = {
   modelName: string;
   maxInputTokens?: number;
@@ -221,6 +228,35 @@ export const MODEL_PROVIDERS = Object.keys(PROVIDER_LABELS) as ModelProvider[];
 export const CONFIGURABLE_MODEL_PROVIDERS = MODEL_PROVIDERS.filter(
   (provider) => provider !== "moonshot",
 ) as Exclude<ModelProvider, "moonshot">[];
+
+export const WEB_RETRIEVAL_LABELS: Record<WebRetrievalProvider, string> = {
+  exa: "Exa",
+  openai: "OpenAI web search",
+  google: "Google Search grounding",
+  anthropic: "Claude web search",
+  xai: "xAI web search",
+};
+
+export const WEB_RETRIEVAL_DEFAULT: WebRetrievalRoute = { primary: "exa" };
+
+export const WEB_RETRIEVAL_MODEL_CATALOG: Partial<
+  Record<Exclude<WebRetrievalProvider, "exa">, string[]>
+> = {
+  openai: LANGUAGE_MODEL_CATALOG.openai,
+  google: LANGUAGE_MODEL_CATALOG.google.filter((model) => model.startsWith("gemini-")),
+  anthropic: LANGUAGE_MODEL_CATALOG.anthropic,
+  xai: LANGUAGE_MODEL_CATALOG.xai,
+};
+
+export const WEB_RETRIEVAL_DEFAULT_ROUTES: Record<
+  Exclude<WebRetrievalProvider, "exa">,
+  ModelRoute
+> = {
+  openai: { provider: "openai", model: "gpt-5.4-mini" },
+  google: { provider: "google", model: "gemini-2.5-flash" },
+  anthropic: { provider: "anthropic", model: "claude-sonnet-4.5" },
+  xai: { provider: "xai", model: "grok-4.20-non-reasoning" },
+};
 
 export const MODEL_CAPABILITIES: Record<string, ModelCapabilityConfig> = {
   "gpt-5.5": {

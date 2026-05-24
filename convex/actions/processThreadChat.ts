@@ -30,6 +30,7 @@ import {
   completePolicyChangeFromEndorsement,
   createImessageGroupChat,
   coordinateMailboxTask,
+  webResearch,
   renderEmailPreview,
 } from "../lib/chatTools";
 import {
@@ -89,6 +90,7 @@ import {
   type CertificateProgramSelection,
 } from "../lib/certificateProgramSelection";
 import { resolvePolicyReferenceForOrg } from "../lib/policyToolResolution";
+import { runWebRetrieval, type WebRetrievalInput } from "../lib/webRetrieval";
 import { evaluatePceIntake, type PceRequestKind } from "../lib/pceIntake";
 import {
   filterComplianceRequirements,
@@ -1177,6 +1179,26 @@ function buildTools(
         });
       },
     },
+    web_research: {
+      ...webResearch,
+      execute: async (input: WebRetrievalInput) => {
+        const result = await runWebRetrieval(ctx, args.orgId as Id<"organizations">, input);
+        if (!result.text) {
+          return {
+            status: "unavailable",
+            attempts: result.attempts,
+            warnings: result.warnings,
+          };
+        }
+        return {
+          status: "ok",
+          provider: result.provider,
+          text: result.text,
+          sources: result.sources,
+          warnings: result.warnings,
+        };
+      },
+    },
     render_email_preview: {
       ...renderEmailPreview,
       execute: async (input: { draftId?: string; format?: "png" | "pdf" }) => {
@@ -1912,6 +1934,7 @@ export const run = internalAction({
         complete_policy_change_from_endorsement: "Completing policy change request...",
         create_imessage_group_chat: "Starting iMessage group...",
         coordinate_mailbox_task: "Coordinating mailbox task...",
+        web_research: "Searching the web...",
         render_email_preview: "Rendering email preview...",
       };
       const SUBAGENT_TOOL_NAMES = new Set(["email_expert", "coordinate_mailbox_task"]);

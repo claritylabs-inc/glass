@@ -5,6 +5,8 @@ import { describe, expect, test } from "vitest";
 import {
   FALLBACK_MODEL,
   MODEL_ROUTING,
+  WEB_RETRIEVAL_DEFAULT,
+  WEB_RETRIEVAL_DEFAULT_ROUTES,
   fallbackRouteForCall,
   modelTaskForCall,
 } from "../convex/lib/models";
@@ -71,9 +73,13 @@ describe("model fallback policy", () => {
     expect(
       fallbackRouteForCall({ task: "extraction", taskKind: "extraction_referential_lookup" }),
     ).toEqual(FALLBACK_MODEL);
-    expect(fallbackRouteForCall({ task: "analysis", taskKind: "pce_packet_generation" })).toEqual(
-      FALLBACK_MODEL,
-    );
+    expect(
+      fallbackRouteForCall({
+        task: "analysis",
+        taskKind: "pce_packet_generation",
+        primaryRoute: { provider: "openai", model: "gpt-5.4-nano" },
+      }),
+    ).toEqual(FALLBACK_MODEL);
   });
 
   test("does not retry when the selected route is already the fallback route", () => {
@@ -93,5 +99,44 @@ describe("mailbox coordinator routing", () => {
       provider: "openai",
       model: "gpt-5.5",
     });
+  });
+});
+
+describe("web retrieval routing", () => {
+  test("defaults public web retrieval to Exa", () => {
+    expect(WEB_RETRIEVAL_DEFAULT).toEqual({ primary: "exa" });
+  });
+
+  test("keeps native browsing default routes aligned with their providers", () => {
+    expect(WEB_RETRIEVAL_DEFAULT_ROUTES.openai.provider).toBe("openai");
+    expect(WEB_RETRIEVAL_DEFAULT_ROUTES.google.provider).toBe("google");
+    expect(WEB_RETRIEVAL_DEFAULT_ROUTES.anthropic.provider).toBe("anthropic");
+    expect(WEB_RETRIEVAL_DEFAULT_ROUTES.xai.provider).toBe("xai");
+  });
+
+  test("wires web research into all agent channels", () => {
+    const files = [
+      "../convex/actions/processThreadChat.ts",
+      "../convex/actions/mcpChat.ts",
+      "../convex/actions/handleInboundEmail.ts",
+      "../convex/actions/handleInboundImessage.ts",
+    ];
+
+    for (const file of files) {
+      const source = readFileSync(join(__dirname, file), "utf-8");
+      expect(source).toContain("web_research");
+      expect(source).toContain("runWebRetrieval");
+    }
+  });
+
+  test("routes website enrichment through the shared web retrieval layer", () => {
+    const source = readFileSync(
+      join(__dirname, "../convex/actions/extractCompanyInfo.ts"),
+      "utf-8",
+    );
+
+    expect(source).toContain("runWebRetrieval");
+    expect(source).not.toContain("api.exa.ai/contents");
+    expect(source).not.toContain('livecrawl: "always"');
   });
 });

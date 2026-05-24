@@ -35,6 +35,7 @@ import {
   importConnectedEmailRequirementAttachments,
   sendConnectedVendorInvite,
   coordinateMailboxTask,
+  webResearch,
 } from "../lib/chatTools";
 import { searchPolicyDocumentWithSourceSpans } from "../lib/policyLookup";
 import { buildVendorComplianceTools } from "../lib/vendorComplianceTools";
@@ -49,6 +50,7 @@ import {
   TITLE_SYSTEM_PROMPT,
 } from "./threadTitle";
 import { getClientPortalUrl } from "../lib/domains";
+import { runWebRetrieval, type WebRetrievalInput } from "../lib/webRetrieval";
 
 /**
  * Simplified chat action for MCP — no streaming. Programmatic email draft/send
@@ -535,6 +537,26 @@ MCP MODE:
             userId: args.userId,
             task: params.task,
           }),
+      },
+      web_research: {
+        ...webResearch,
+        execute: async (params: WebRetrievalInput) => {
+          const result = await runWebRetrieval(ctx, args.orgId, params);
+          if (!result.text) {
+            return {
+              status: "unavailable",
+              attempts: result.attempts,
+              warnings: result.warnings,
+            };
+          }
+          return {
+            status: "ok",
+            provider: result.provider,
+            text: result.text,
+            sources: result.sources,
+            warnings: result.warnings,
+          };
+        },
       },
     };
 

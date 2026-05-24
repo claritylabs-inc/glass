@@ -19,6 +19,19 @@ const modelRouteValidator = v.object({
   model: v.string(),
 });
 
+const webRetrievalProviderValidator = v.union(
+  v.literal("exa"),
+  v.literal("openai"),
+  v.literal("google"),
+  v.literal("anthropic"),
+  v.literal("xai"),
+);
+
+const webRetrievalValidator = v.object({
+  primary: webRetrievalProviderValidator,
+  route: v.optional(modelRouteValidator),
+});
+
 const pipelineStatusValidator = v.union(
   v.literal("idle"),
   v.literal("running"),
@@ -364,6 +377,7 @@ export default defineSchema({
         embeddings: v.optional(modelRouteValidator),
       }),
     ),
+    webRetrieval: v.optional(webRetrievalValidator),
     updatedBy: v.id("users"),
     updatedAt: v.number(),
   }).index("by_key", ["key"]),
