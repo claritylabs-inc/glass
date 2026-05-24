@@ -139,4 +139,17 @@ describe("web retrieval routing", () => {
     expect(source).not.toContain("api.exa.ai/contents");
     expect(source).not.toContain('livecrawl: "always"');
   });
+
+  test("allows Gemini and Grok web retrieval through Vercel AI Gateway", () => {
+    const retrievalSource = readFileSync(
+      join(__dirname, "../convex/lib/webRetrieval.ts"),
+      "utf-8",
+    );
+    const settingsSource = readFileSync(join(__dirname, "../convex/modelSettings.ts"), "utf-8");
+
+    expect(retrievalSource).toContain("AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN");
+    expect(retrievalSource).toContain("gateway(gatewayModelId(route))");
+    expect(settingsSource).toContain("AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN");
+    expect(settingsSource).toContain("|| hasGatewayAccess");
+  });
 });

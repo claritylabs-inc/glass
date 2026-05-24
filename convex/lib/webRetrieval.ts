@@ -1,7 +1,7 @@
 "use node";
 
 import { isIP } from "node:net";
-import { generateText } from "ai";
+import { gateway, generateText } from "ai";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
@@ -58,18 +58,22 @@ type ProviderResult = {
   sources: WebRetrievalSource[];
 };
 
-function hasProviderKey(provider: WebRetrievalProvider) {
+function hasGatewayAccess() {
+  return !!(process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN);
+}
+
+function hasProviderAccess(provider: WebRetrievalProvider) {
   switch (provider) {
     case "exa":
       return !!process.env.EXA_API_KEY;
     case "openai":
       return !!process.env.OPENAI_API_KEY;
     case "google":
-      return !!(process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? process.env.GOOGLE_API_KEY);
+      return !!(process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? process.env.GOOGLE_API_KEY) || hasGatewayAccess();
     case "anthropic":
       return !!process.env.ANTHROPIC_API_KEY;
     case "xai":
-      return !!process.env.XAI_API_KEY;
+      return !!process.env.XAI_API_KEY || hasGatewayAccess();
   }
 }
 
@@ -267,16 +271,22 @@ function nativePrompt(input: NormalizedInput, provider: WebRetrievalProvider) {
   ].filter(Boolean).join("\n");
 }
 
+function gatewayModelId(route: ModelRoute) {
+  return route.model.includes("/") ? route.model : `${route.provider}/${route.model}`;
+}
+
 function providerModel(provider: WebRetrievalProvider, route: ModelRoute) {
   switch (provider) {
     case "openai":
       return createOpenAI()(route.model);
     case "google":
-      return createGoogleGenerativeAI()(route.model);
+      return process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GOOGLE_API_KEY
+        ? createGoogleGenerativeAI()(route.model)
+        : gateway(gatewayModelId(route));
     case "anthropic":
       return createAnthropic()(normalizeAnthropicModel(route.model));
     case "xai":
-      return createXai().responses(route.model);
+      return process.env.XAI_API_KEY ? createXai().responses(route.model) : gateway(gatewayModelId(route));
     case "exa":
       throw new Error("Exa does not use a model route");
   }
@@ -336,7 +346,7 @@ async function retrieveWithNativeProvider(
   route: ModelRoute,
   input: NormalizedInput,
 ): Promise<ProviderResult | null> {
-  if (!hasProviderKey(provider)) return null;
+  if (!hasProviderAccess(provider)) return null;
   const result = await generateText({
     model: providerModel(provider, route),
     maxOutputTokens: 2048,
