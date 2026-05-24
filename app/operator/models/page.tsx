@@ -15,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Globe2, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { LogoIcon } from "@/components/ui/logo-icon";
 import OpenAIIcon from "@lobehub/icons/es/OpenAI/components/Mono";
 import AnthropicIcon from "@lobehub/icons/es/Anthropic/components/Mono";
@@ -91,8 +91,20 @@ function ProviderLogo({ provider, size = 14 }: { provider: ProviderId; size?: nu
   return <Icon size={size} />;
 }
 
+function ExaLogo({ size = 14 }: { size?: number }) {
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src="/exa-logomark-blue.svg"
+      alt=""
+      aria-hidden="true"
+      style={{ width: size, height: size }}
+    />
+  );
+}
+
 function WebRetrievalLogo({ provider, size = 14 }: { provider: WebRetrievalProviderId; size?: number }) {
-  if (provider === "exa") return <Globe2 style={{ width: size, height: size }} />;
+  if (provider === "exa") return <ExaLogo size={size} />;
   return <ProviderLogo provider={provider} size={size} />;
 }
 
@@ -291,12 +303,12 @@ export default function OperatorModelsPage() {
                 <Select
                   value={
                     settings.webRetrieval.primary === "exa"
-                      ? EXA_VALUE
+                      ? DEFAULT_VALUE
                       : `${settings.webRetrieval.primary}:${settings.webRetrieval.route?.model ?? ""}`
                   }
                   onValueChange={(next) => {
                     if (!next) return;
-                    if (next === EXA_VALUE) {
+                    if (next === DEFAULT_VALUE || next === EXA_VALUE) {
                       void commitWebRetrieval({ primary: "exa" });
                       return;
                     }
@@ -325,15 +337,22 @@ export default function OperatorModelsPage() {
                     </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value={DEFAULT_VALUE}>
+                      <span className="text-muted-foreground">Reset to default</span>
+                    </SelectItem>
+                    <SelectSeparator />
                     {settings.webRetrievalProviders.map((provider) => {
                       if (provider.id === "exa") {
                         return (
-                          <SelectItem key={provider.id} value={EXA_VALUE} disabled={!provider.configured}>
-                            <span className="flex items-center gap-2">
+                          <SelectGroup key={provider.id}>
+                            <SelectLabel className="flex items-center gap-1.5">
                               <WebRetrievalLogo provider="exa" size={12} />
                               Exa {!provider.configured ? "(missing key)" : ""}
-                            </span>
-                          </SelectItem>
+                            </SelectLabel>
+                            <SelectItem value={EXA_VALUE} disabled={!provider.configured}>
+                              Exa
+                            </SelectItem>
+                          </SelectGroup>
                         );
                       }
                       if (provider.models.length === 0) return null;

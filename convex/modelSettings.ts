@@ -149,17 +149,18 @@ function configurableProviderKeys(keys: ProviderKeys | undefined) {
 }
 
 function webRetrievalEnvConfigured(provider: WebRetrievalProvider) {
+  const hasGatewayAccess = !!(process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN);
   switch (provider) {
     case "exa":
       return !!process.env.EXA_API_KEY;
     case "openai":
       return !!process.env.OPENAI_API_KEY;
     case "google":
-      return !!(process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? process.env.GOOGLE_API_KEY);
+      return !!(process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? process.env.GOOGLE_API_KEY) || hasGatewayAccess;
     case "anthropic":
       return !!process.env.ANTHROPIC_API_KEY;
     case "xai":
-      return !!process.env.XAI_API_KEY;
+      return !!process.env.XAI_API_KEY || hasGatewayAccess;
   }
 }
 
