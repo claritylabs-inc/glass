@@ -2,8 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { ComponentType, SVGProps } from "react";
-import { useAction, useMutation, useQuery } from "convex/react";
+import { useAction, useMutation } from "convex/react";
+import dayjs from "dayjs";
 import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
 import { Check, Loader2, Mail, Plug, Plus, Trash2 } from "lucide-react";
 import { PillButton } from "@/components/ui/pill-button";
@@ -17,8 +19,27 @@ import {
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { useSettingsActions } from "@/components/settings/settings-actions-context";
 import { useCurrentOrg } from "@/hooks/use-current-org";
+import {
+  useCachedQuery,
+  useUpdateCachedQuery,
+  useUpsertCachedQuery,
+} from "@/lib/sync/use-cached-query";
 
 type EmailScope = "user" | "org";
+type ConnectedEmailAccountRow = {
+  _id: Id<"connectedEmailAccounts">;
+  orgId: Id<"organizations">;
+  scope: EmailScope;
+  emailAddress: string;
+  host: string;
+  port: number;
+  secure: boolean;
+  username: string;
+  status: string;
+  createdAt: number;
+  updatedAt: number;
+  [key: string]: unknown;
+};
 
 const EMAIL_SCOPE_LABELS: Record<EmailScope, string> = {
   user: "Only me",
@@ -154,10 +175,19 @@ function EmailScopeSelect({
 
 export function EmailConnectionsSection() {
   const currentOrg = useCurrentOrg();
-  const connectedEmailAccounts = useQuery(
+  const connectedEmailAccounts = useCachedQuery(
+    "connectedEmail.list",
     api.connectedEmail.list,
     currentOrg?.orgId ? { orgId: currentOrg.orgId } : "skip",
-  );
+  ) as ConnectedEmailAccountRow[] | undefined;
+  const upsertConnectedEmailAccounts = useUpsertCachedQuery<
+    ConnectedEmailAccountRow[],
+    { orgId: Id<"organizations"> }
+  >("connectedEmail.list");
+  const updateConnectedEmailAccounts = useUpdateCachedQuery<
+    ConnectedEmailAccountRow[],
+    { orgId: Id<"organizations"> }
+  >("connectedEmail.list");
   const connectEmail = useAction(api.actions.connectedEmail.connect);
   const revokeConnectedEmail = useMutation(api.connectedEmail.revoke);
   const updateConnectedEmailScope = useMutation(api.connectedEmail.updateScope);
@@ -223,7 +253,7 @@ export function EmailConnectionsSection() {
     if (!currentOrg?.orgId) return;
     setConnecting(true);
     try {
-      await connectEmail({
+      const accountId = await connectEmail({
         orgId: currentOrg.orgId,
         emailAddress: form.emailAddress,
         host: form.host,
@@ -232,7 +262,27 @@ export function EmailConnectionsSection() {
         username: form.emailAddress.trim(),
         password: form.password,
         scope: form.scope,
-      });
+      }) as Id<"connectedEmailAccounts">;
+      const now = dayjs().valueOf();
+      await upsertConnectedEmailAccounts(
+        { orgId: currentOrg.orgId },
+        (current) => [
+          {
+            _id: accountId,
+            orgId: currentOrg.orgId,
+            scope: form.scope,
+            emailAddress: form.emailAddress.trim().toLowerCase(),
+            host: form.host.trim(),
+            port: Number(form.port),
+            secure: form.secure,
+            username: form.emailAddress.trim(),
+            status: "active",
+            createdAt: now,
+            updatedAt: now,
+          },
+          ...(current ?? []).filter((account) => account._id !== accountId),
+        ],
+      );
       setForm({
         emailAddress: "",
         host: selectedPreset.host,
@@ -471,7 +521,25 @@ export function EmailConnectionsSection() {
                         updateConnectedEmailScope({
                           accountId: account._id,
                           scope,
-                        }).catch(() => toast.error("Failed to update scope"))
+                        })
+                          .then(() =>
+                            currentOrg?.orgId
+                              ? updateConnectedEmailAccounts(
+                                  { orgId: currentOrg.orgId },
+                                  (current) =>
+                                    current.map((row) =>
+                                      row._id === account._id
+                                        ? {
+                                            ...row,
+                                            scope,
+                                            updatedAt: dayjs().valueOf(),
+                                          }
+                                        : row,
+                                    ),
+                                )
+                              : undefined,
+                          )
+                          .catch(() => toast.error("Failed to update scope"))
                       }
                       className="h-8 w-32 rounded-md border-foreground/8 bg-popover text-label-sm"
                     />
@@ -479,9 +547,19 @@ export function EmailConnectionsSection() {
                       variant="destructive"
                       size="compact"
                       onClick={() =>
-                        revokeConnectedEmail({ accountId: account._id }).catch(() =>
-                          toast.error("Failed to disconnect email"),
-                        )
+                        revokeConnectedEmail({ accountId: account._id })
+                          .then(() =>
+                            currentOrg?.orgId
+                              ? updateConnectedEmailAccounts(
+                                  { orgId: currentOrg.orgId },
+                                  (current) =>
+                                    current.filter(
+                                      (row) => row._id !== account._id,
+                                    ),
+                                )
+                              : undefined,
+                          )
+                          .catch(() => toast.error("Failed to disconnect email"))
                       }
                     >
                       <Trash2 className="size-3.5" />

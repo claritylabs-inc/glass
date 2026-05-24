@@ -5,10 +5,10 @@
 
 "use client";
 
-import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useSearchParams } from "next/navigation";
 import { Id } from "@/convex/_generated/dataModel";
+import { useCachedQuery } from "@/lib/sync/use-cached-query";
 
 export type CurrentOrgContext = {
   orgId: Id<"organizations">;
@@ -35,7 +35,8 @@ export function useCurrentOrg(): CurrentOrgContext | null | undefined {
   const searchParams = useSearchParams();
   const orgIdFromUrl = searchParams.get("org") as Id<"organizations"> | null;
 
-  const orgData = useQuery(
+  const orgData = useCachedQuery(
+    orgIdFromUrl ? "orgs.viewerOrg.byUrl" : "orgs.viewerOrg",
     api.orgs.viewerOrg,
     orgIdFromUrl ? { orgId: orgIdFromUrl } : {},
   );

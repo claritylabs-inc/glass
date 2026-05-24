@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useMutation } from "convex/react";
+import dayjs from "dayjs";
 import { api } from "@/convex/_generated/api";
 import { PillButton } from "@/components/ui/pill-button";
 import {
@@ -30,6 +31,10 @@ import MistralIcon from "@lobehub/icons/es/Mistral/components/Mono";
 import CohereIcon from "@lobehub/icons/es/Cohere/components/Mono";
 import DeepSeekIcon from "@lobehub/icons/es/DeepSeek/components/Mono";
 import { toast } from "sonner";
+import {
+  useCachedQuery,
+  useUpdateCachedQuery,
+} from "@/lib/sync/use-cached-query";
 
 type ProviderId =
   | "openai"
@@ -100,9 +105,16 @@ function ProviderLogo({
 }
 
 export function ModelsSection() {
-  const settings = useQuery(api.modelSettings.get, {}) as Settings | undefined;
+  const settings = useCachedQuery(
+    "settings.modelSettings.get",
+    api.modelSettings.get,
+    {},
+  ) as Settings | undefined;
   const updateRoutes = useMutation(api.modelSettings.updateRoutes);
   const updateProviderKey = useMutation(api.modelSettings.updateProviderKey);
+  const patchSettings = useUpdateCachedQuery<Settings, Record<string, never>>(
+    "settings.modelSettings.get",
+  );
   const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
   const [savingProvider, setSavingProvider] = useState<string | null>(null);
   const [savingTask, setSavingTask] = useState<string | null>(null);
@@ -130,6 +142,17 @@ export function ModelsSection() {
     setSavingProvider(provider);
     try {
       await updateProviderKey({ provider, apiKey });
+      await patchSettings({}, (current) => ({
+        ...current,
+        providerKeys: {
+          ...current.providerKeys,
+          [provider]: {
+            configured: !!apiKey,
+            suffix: apiKey ? apiKey.slice(-4) : null,
+          },
+        },
+        updatedAt: dayjs().valueOf(),
+      }));
       setApiKeys((current) => ({ ...current, [provider]: "" }));
       setDrafts((current) => current.filter((id) => id !== provider));
       toast.success(apiKey ? "Provider key saved" : "Provider key removed");
@@ -149,6 +172,14 @@ export function ModelsSection() {
     setSavingTask(taskId);
     try {
       await updateRoutes({ routes: { [taskId]: route } });
+      await patchSettings({}, (current) => ({
+        ...current,
+        routes: {
+          ...current.routes,
+          [taskId]: route,
+        },
+        updatedAt: dayjs().valueOf(),
+      }));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to update model routing");
     } finally {

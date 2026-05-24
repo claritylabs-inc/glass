@@ -1,13 +1,14 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { useCachedQuery } from "@/lib/sync/use-cached-query";
 
 export default function ClientDetailsPage() {
   const { clientOrgId } = useParams<{ clientOrgId: string }>();
-  const client = useQuery(
+  const client = useCachedQuery(
+    "clients.getDetail",
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (api as any).clients.getDetail,
     clientOrgId ? { clientOrgId: clientOrgId as Id<"organizations"> } : "skip",

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { isValidPhoneNumber } from "react-phone-number-input";
+import dayjs from "dayjs";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
@@ -15,6 +16,11 @@ import {
   type PolicyUploadMode,
 } from "@/components/policy-upload-mode-toggle";
 import { FileText, FileUp, X } from "lucide-react";
+import {
+  useCachedQuery,
+  useSetCachedQuery,
+  useUpsertCachedQuery,
+} from "@/lib/sync/use-cached-query";
 
 const INPUT_CLASSES =
   "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
@@ -62,6 +68,30 @@ type DraftPolicyRow = {
   uploadedBySide?: "broker" | "client" | "email_scan" | "agent_email";
 };
 
+type BrokerClientRow = {
+  invitationId?: Id<"clientInvitations">;
+  clientOrgId?: Id<"organizations">;
+  name: string;
+  primaryContactName?: string;
+  primaryContactEmail?: string;
+  onboardingStatus: "draft" | "invited" | "onboarding" | "active";
+  createdAt: number;
+  lastActivityAt?: number;
+  activePoliciesCount?: number;
+  primaryBrokerContactId?: Id<"users">;
+};
+
+type DraftClientDetail = {
+  clientOrgId: Id<"organizations">;
+  name: string;
+  website?: string;
+  primaryContactName?: string;
+  primaryContactEmail?: string;
+  primaryContactPhone?: string;
+  customMessage?: string;
+  inviteStatus: "draft" | "invited";
+};
+
 export function InviteClientDrawer({
   partnerOrgId,
   open,
@@ -98,8 +128,17 @@ export function InviteClientDrawer({
   const sendInvite = useAction(api.clientInvitations.sendDraftInvite);
   const extractCompanyInfo = useAction(api.actions.extractCompanyInfo.extractCompanyInfo);
   const extractFromUpload = useAction(api.actions.extractFromUpload.extractFromUpload);
+  const upsertClientRows = useUpsertCachedQuery<
+    BrokerClientRow[],
+    { brokerOrgId: Id<"organizations"> }
+  >("clients.listForBroker");
+  const setDraftCache = useSetCachedQuery<
+    DraftClientDetail | null,
+    { clientOrgId: Id<"organizations"> }
+  >("clientInvitations.getDraftClient");
 
-  const hydrateDraft = useQuery(
+  const hydrateDraft = useCachedQuery(
+    "clientInvitations.getDraftClient",
     api.clientInvitations.getDraftClient,
     resumeClientOrgId ? { clientOrgId: resumeClientOrgId } : "skip",
   );
@@ -107,7 +146,8 @@ export function InviteClientDrawer({
   const resumedDraftId =
     open && hydrateDraft && resumeClientOrgId ? resumeClientOrgId : null;
   const activeDraftId = draftId ?? resumedDraftId;
-  const existingPolicies = useQuery(
+  const existingPolicies = useCachedQuery(
+    "policies.listForBroker.inviteDraft",
     api.policies.listForBroker,
     activeDraftId
       ? { clientOrgId: activeDraftId, documentType: "policy" }
@@ -165,6 +205,7 @@ export function InviteClientDrawer({
         primaryContactName: contactName.trim(),
         primaryContactPhone: contactPhone.trim(),
       });
+      await patchClientDraftCaches(clientOrgId, "draft");
       setDraftId(clientOrgId);
       return clientOrgId;
     } catch (err) {
@@ -182,6 +223,54 @@ export function InviteClientDrawer({
       primaryContactName: contactName.trim(),
       primaryContactPhone: contactPhone.trim(),
     });
+    await patchClientDraftCaches(id, undefined);
+  }
+
+  async function patchClientDraftCaches(
+    clientOrgId: Id<"organizations">,
+    status: "draft" | "invited" | undefined,
+  ) {
+    const now = dayjs().valueOf();
+    const name = orgName.trim() || "Draft client";
+    const normalizedEmail = contactEmail.trim();
+    const normalizedName = contactName.trim() || undefined;
+    const normalizedPhone = contactPhone.trim() || undefined;
+    const draftStatus = status ?? hydrateDraft?.inviteStatus ?? "draft";
+    await Promise.all([
+      upsertClientRows({ brokerOrgId: partnerOrgId }, (current) => {
+        const existing = current ?? [];
+        const nextRow: BrokerClientRow = {
+          clientOrgId,
+          name,
+          primaryContactName: normalizedName,
+          primaryContactEmail: normalizedEmail,
+          onboardingStatus: draftStatus,
+          createdAt:
+            existing.find((row) => row.clientOrgId === clientOrgId)
+              ?.createdAt ?? now,
+          activePoliciesCount:
+            existing.find((row) => row.clientOrgId === clientOrgId)
+              ?.activePoliciesCount ?? 0,
+        };
+        return [
+          nextRow,
+          ...existing.filter((row) => row.clientOrgId !== clientOrgId),
+        ].sort((a, b) => b.createdAt - a.createdAt);
+      }),
+      setDraftCache(
+        { clientOrgId },
+        {
+          clientOrgId,
+          name,
+          website: website.trim() || undefined,
+          primaryContactName: normalizedName,
+          primaryContactEmail: normalizedEmail,
+          primaryContactPhone: normalizedPhone,
+          customMessage: hydrateDraft?.customMessage,
+          inviteStatus: draftStatus,
+        },
+      ),
+    ]);
   }
 
   async function uploadPolicyFiles(id: Id<"organizations">) {
@@ -286,6 +375,7 @@ export function InviteClientDrawer({
       enrichWebsiteInBackground(id);
       await uploadPolicyFiles(id);
       await sendInvite({ clientOrgId: id });
+      await patchClientDraftCaches(id, "invited");
       toast.success(`Invite sent to ${contactEmail}`);
       resetAndClose();
     } catch (err) {

@@ -18,7 +18,12 @@ import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { HandleAvailability } from "@/components/settings/handle-availability";
 import { getPublicAgentDomain } from "@/lib/domains";
 import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
-import { patchCachedViewerOrg } from "@/lib/sync/glass-cached-queries";
+import {
+  patchCachedViewerOrg,
+  useCachedViewerOrg,
+} from "@/lib/sync/glass-cached-queries";
+import { useCachedQuery } from "@/lib/sync/use-cached-query";
+import { useSyncStore } from "@claritylabs/cl-sync";
 
 const WORKSPACE_DOMAIN = getPublicAgentDomain();
 
@@ -53,8 +58,9 @@ type BrandingSettingsArgs = {
 };
 
 export function OrganizationSection() {
-  const viewer = useQuery(api.users.viewer);
-  const orgData = useQuery(api.orgs.viewerOrg, {});
+  const viewer = useCachedQuery("settings.organization.viewer", api.users.viewer, {});
+  const orgData = useCachedViewerOrg();
+  const store = useSyncStore();
   const updateOrg = useMutation(api.orgs.updateOrg);
   const resetAccount = useMutation(api.users.resetAccount);
   const restartOnboarding = useMutation(api.users.restartOnboarding);
@@ -135,6 +141,7 @@ export function OrganizationSection() {
         if (!cancelled) {
           setSlug(normalized);
           setDebouncedSlug(normalized);
+          patchCachedViewerOrg(store, { slug: normalized });
           toast.success("Slug saved");
         }
       } catch (err) {
@@ -153,6 +160,7 @@ export function OrganizationSection() {
     currentSlug,
     slugCheck,
     currentOrg?.orgId,
+    store,
     updateSlug,
   ]);
 
@@ -634,6 +642,7 @@ type TextOnAccent = "light" | "dark" | "auto";
 
 function BrandingCard({ website }: { website: string }) {
   const currentOrg = useCurrentOrg();
+  const store = useSyncStore();
   const org = currentOrg?.org as
     | {
         brandingColor?: string;
@@ -716,6 +725,7 @@ function BrandingCard({ website }: { website: string }) {
       });
       const { storageId } = await res.json();
       await updateBranding({ brokerOrgId: orgId, logoStorageId: storageId });
+      patchCachedViewerOrg(store, { iconStorageId: storageId });
     } catch {
       toast.error("Failed to upload logo");
     }

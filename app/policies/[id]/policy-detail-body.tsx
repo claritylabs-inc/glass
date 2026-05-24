@@ -9,7 +9,7 @@ import {
   type FormEvent,
   type ReactNode,
 } from "react";
-import { useQuery, useMutation, useAction } from "convex/react";
+import { useMutation, useAction } from "convex/react";
 import type { AddressAutofillRetrieveResponse } from "@mapbox/search-js-core";
 import type { Theme as MapboxSearchTheme } from "@mapbox/search-js-web";
 import dynamic from "next/dynamic";
@@ -60,6 +60,8 @@ import {
 import {
   cachedQueryArgsKey,
   cachedQueryCollectionFor,
+  useCachedQuery,
+  useUpdateCachedQuery,
 } from "@/lib/sync/use-cached-query";
 import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
 import type { PipelineStatus, LogEntry } from "@claritylabs/cl-pipelines";
@@ -1292,14 +1294,27 @@ function PolicyChangesTab({
   const [packetLoading, setPacketLoading] = useState(false);
   const [statusLoading, setStatusLoading] = useState<string | null>(null);
   const [cancelLoading, setCancelLoading] = useState<string | null>(null);
-  const cases = useQuery(api.policyChanges.listByPolicy, {
-    policyId: policyId as Id<"policies">,
-  });
+  const cases = useCachedQuery(
+    "policyChanges.listByPolicy",
+    api.policyChanges.listByPolicy,
+    {
+      policyId: policyId as Id<"policies">,
+    },
+  );
   const activeCaseId = selectedCaseId ?? cases?.[0]?._id ?? null;
-  const detail = useQuery(
+  const detail = useCachedQuery(
+    "policyChanges.getCaseDetail.policy",
     api.policyChanges.getCaseDetail,
     canManage && activeCaseId ? { caseId: activeCaseId } : "skip",
   );
+  const updateCases = useUpdateCachedQuery<
+    typeof cases,
+    { policyId: Id<"policies"> }
+  >("policyChanges.listByPolicy");
+  const updateDetail = useUpdateCachedQuery<
+    typeof detail,
+    { caseId: Id<"policyChangeCases"> }
+  >("policyChanges.getCaseDetail.policy");
   const generatePacket = useMutation(api.policyChanges.generateCarrierPacket);
   const markStatus = useMutation(api.policyChanges.markStatus);
   const cancelRequest = useMutation(api.policyChanges.cancelRequest);
@@ -1346,6 +1361,26 @@ function PolicyChangesTab({
     setStatusLoading(status);
     try {
       await markStatus({ caseId: activeCaseId, status });
+      await Promise.all([
+        updateCases({ policyId: policyId as Id<"policies"> }, (current) =>
+          current?.map((changeCase) =>
+            changeCase._id === activeCaseId
+              ? { ...changeCase, status }
+              : changeCase,
+          ),
+        ),
+        updateDetail({ caseId: activeCaseId }, (current) =>
+          current?.case
+            ? {
+                ...current,
+                case: {
+                  ...current.case,
+                  status,
+                },
+              }
+            : current,
+        ),
+      ]);
       toast.success(status === "submitted" ? "Marked sent" : `Marked ${status}`);
     } catch (error) {
       toast.error(
@@ -1360,6 +1395,26 @@ function PolicyChangesTab({
     setCancelLoading(caseId);
     try {
       await cancelRequest({ caseId });
+      await Promise.all([
+        updateCases({ policyId: policyId as Id<"policies"> }, (current) =>
+          current?.map((changeCase) =>
+            changeCase._id === caseId
+              ? { ...changeCase, status: "cancelled" }
+              : changeCase,
+          ),
+        ),
+        updateDetail({ caseId }, (current) =>
+          current?.case
+            ? {
+                ...current,
+                case: {
+                  ...current.case,
+                  status: "cancelled",
+                },
+              }
+            : current,
+        ),
+      ]);
       toast.success("Policy change request cancelled");
     } catch (error) {
       toast.error(
@@ -2219,7 +2274,11 @@ function CertificateCreatePanel({
 }
 
 function CertificatesTab({ policyId }: { policyId: Id<"policies"> }) {
-  const certificates = useQuery(api.certificates.listByPolicy, { policyId });
+  const certificates = useCachedQuery(
+    "certificates.listByPolicy",
+    api.certificates.listByPolicy,
+    { policyId },
+  );
   const { openWithUrl } = usePdf();
 
   if (certificates === undefined) {
@@ -2330,13 +2389,15 @@ export function PolicyDetailBody({
     shouldLoadFullPolicy,
   );
   const policy = fullPolicy ?? policySummary;
-  const auditEntries = useQuery(
+  const auditEntries = useCachedQuery(
+    "policyAuditLog.listByPolicy",
     api.policyAuditLog.listByPolicy,
     LOG_POLICY_ACTIVITY_IN_BROWSER
       ? { policyId: id as Id<"policies"> }
       : "skip",
   );
-  const fileUrl = useQuery(
+  const fileUrl = useCachedQuery(
+    "policies.getFileUrl.detail",
     api.policies.getFileUrl,
     policy?.fileId ? { fileId: policy.fileId as Id<"_storage"> } : "skip",
   );

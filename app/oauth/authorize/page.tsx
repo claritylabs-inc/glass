@@ -2,12 +2,13 @@
 
 import { useState } from "react";
 import { useAuthActions } from "@convex-dev/auth/react";
-import { useConvexAuth, useQuery, useMutation } from "convex/react";
+import { useConvexAuth, useMutation } from "convex/react";
 import { useSearchParams } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import { AuthCard, AuthShell } from "@/components/auth-shell";
 import { PillButton } from "@/components/ui/pill-button";
 import { Loader2, ArrowLeft, ArrowRight, X } from "lucide-react";
+import { useCachedQuery } from "@/lib/sync/use-cached-query";
 
 function friendlyError(raw: string): string {
   const lower = raw.toLowerCase();
@@ -51,7 +52,8 @@ export default function OAuthAuthorizePage() {
   const [redirectUrl, setRedirectUrl] = useState("");
 
   // Load client info (only when authenticated)
-  const clientInfo = useQuery(
+  const clientInfo = useCachedQuery(
+    "oauth.getClientInfo",
     api.oauth.getClientInfo,
     isAuthenticated && clientId && redirectUri
       ? { clientId, redirectUri }

@@ -15,6 +15,7 @@ import {
   patchCachedViewerOrg,
   useCachedViewerOrg,
 } from "@/lib/sync/glass-cached-queries";
+import { useSyncStore } from "@claritylabs/cl-sync";
 
 type AgentSettingsArgs = {
   chatEmailNotifications: boolean;
@@ -25,6 +26,7 @@ type AgentSettingsArgs = {
 
 export function BrokerAgentTab() {
   const viewerOrg = useCachedViewerOrg();
+  const store = useSyncStore();
   const updateOrg = useMutation(api.orgs.updateOrg);
   const claimAgentHandle = useMutation(api.orgs.claimAgentHandle);
 
@@ -165,6 +167,7 @@ export function BrokerAgentTab() {
         if (!cancelled) {
           setAgentHandle(normalized);
           setDebouncedHandle(normalized);
+          patchCachedViewerOrg(store, { agentHandle: normalized });
           toast.success("Agent handle saved");
         }
       } catch (err) {
@@ -185,6 +188,7 @@ export function BrokerAgentTab() {
     debouncedHandle,
     availability,
     claimAgentHandle,
+    store,
   ]);
 
   if (viewerOrg === undefined) {

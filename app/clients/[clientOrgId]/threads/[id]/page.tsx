@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
-import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import {
@@ -13,6 +12,7 @@ import {
   type ThreadMessage,
 } from "@/app/agent/thread/[id]/page";
 import { useClientDetailActions } from "../../layout";
+import { useCachedQuery } from "@/lib/sync/use-cached-query";
 
 export default function ClientThreadReadOnlyPage() {
   const { clientOrgId, id } = useParams<{ clientOrgId: string; id: string }>();
@@ -20,7 +20,7 @@ export default function ClientThreadReadOnlyPage() {
   const [openPolicyChangeCaseId, setOpenPolicyChangeCaseId] =
     useState<Id<"policyChangeCases"> | null>(null);
 
-  const viewer = useQuery(api.users.viewer);
+  const viewer = useCachedQuery("clients.thread.viewer", api.users.viewer, {});
   const policyChangeAccess = useMemo<PolicyChangeAccess>(
     () => ({
       canManage: true,
@@ -29,7 +29,8 @@ export default function ClientThreadReadOnlyPage() {
     [],
   );
 
-  const thread = useQuery(
+  const thread = useCachedQuery(
+    "threads.getForClient",
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (api as any).threads.getForClient,
     clientOrgId && id
@@ -52,7 +53,8 @@ export default function ClientThreadReadOnlyPage() {
     | null
     | undefined;
 
-  const messages = useQuery(
+  const messages = useCachedQuery(
+    "threads.messagesForClient",
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (api as any).threads.messagesForClient,
     clientOrgId && id

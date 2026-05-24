@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useMutation, useQuery } from "convex/react";
+import { useMutation } from "convex/react";
 import { useAuthActions } from "@convex-dev/auth/react";
 import { AnimatePresence, motion } from "framer-motion";
 import { toast } from "sonner";
@@ -38,6 +38,7 @@ import {
 } from "@/components/app-sidebar/utils";
 import { useCachedQuery, useSetCachedQuery } from "@/lib/sync/use-cached-query";
 import { createClientMutationId } from "@/lib/sync/client-mutation-id";
+import { useArchivedThreadCacheActions } from "@/lib/sync/glass-cached-queries";
 
 type OperatorImpersonationContext = {
   user?: { email?: string };
@@ -83,7 +84,8 @@ export function AppSidebar({
     NonNullable<typeof unifiedThreads>[number],
     { id: Id<"threads"> }
   >("threads.get.current");
-  const clientThreads = useQuery(
+  const clientThreads = useCachedQuery(
+    "threads.listForClient.sidebar",
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (api as any).threads.listForClient,
     clientDetailId
@@ -92,6 +94,7 @@ export function AppSidebar({
   ) as ClientThreadItem[] | undefined;
   const createThread = useMutation(api.threads.create);
   const archiveThread = useMutation(api.threads.archive);
+  const { archiveThreadLocally } = useArchivedThreadCacheActions();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const stopImpersonation = useMutation((api as any).operator.stopImpersonation);
   const { signOut } = useAuthActions();
@@ -156,12 +159,14 @@ export function AppSidebar({
     secondaryPolicyId: string;
     notificationId?: Id<"notifications">;
   }>({ open: false, primaryPolicyId: "", secondaryPolicyId: "" });
-  const unreadCount = useQuery(
+  const unreadCount = useCachedQuery(
+    "notifications.unreadCount.sidebar",
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (api as any).notifications.unreadCount,
     currentOrg?.orgId ? { orgId: currentOrg.orgId } : "skip",
   ) as number | undefined;
-  const operatorContext = useQuery(
+  const operatorContext = useCachedQuery(
+    "operator.current.sidebar",
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (api as any).operator.current,
     viewer?.accountKind === "operator" ? {} : "skip",
@@ -213,6 +218,7 @@ export function AppSidebar({
   }
 
   async function handleArchiveThread(threadId: string, active: boolean) {
+    await archiveThreadLocally(threadId as Id<"threads">);
     await archiveThread({ id: threadId as Id<"threads"> });
     if (!active) return;
 

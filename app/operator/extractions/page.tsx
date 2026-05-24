@@ -2,8 +2,6 @@
 
 import { useMemo, useState } from "react";
 import dayjs from "dayjs";
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
@@ -24,6 +22,11 @@ import {
 } from "@/components/ui/table";
 import { Loader2 } from "lucide-react";
 import { OperatorSidebar } from "../operator-sidebar";
+import {
+  useCachedOperatorCurrent,
+  useCachedOperatorExtractionTraceDetail,
+  useCachedOperatorExtractionTraces,
+} from "@/lib/sync/operator-cached-queries";
 
 type TraceStatus = "running" | "complete" | "error" | "cancelled";
 type TraceRow = {
@@ -77,12 +80,6 @@ type TraceDetail = {
 };
 
 const ALL = "__all__";
-const RANGE_MS = {
-  "24h": 24 * 60 * 60 * 1000,
-  "7d": 7 * 24 * 60 * 60 * 1000,
-  "30d": 30 * 24 * 60 * 60 * 1000,
-  "90d": 90 * 24 * 60 * 60 * 1000,
-};
 const STATUS_LABELS: Record<string, string> = {
   [ALL]: "All statuses",
   running: "Running",
@@ -90,7 +87,7 @@ const STATUS_LABELS: Record<string, string> = {
   error: "Error",
   cancelled: "Cancelled",
 };
-const RANGE_LABELS: Record<keyof typeof RANGE_MS, string> = {
+const RANGE_LABELS: Record<"24h" | "7d" | "30d" | "90d", string> = {
   "24h": "24 hours",
   "7d": "7 days",
   "30d": "30 days",
@@ -134,28 +131,21 @@ function eventTitle(event: TraceEvent) {
 
 export default function OperatorExtractionsPage() {
   const [status, setStatus] = useState<string>(ALL);
-  const [range, setRange] = useState<keyof typeof RANGE_MS>("90d");
+  const [range, setRange] = useState<keyof typeof RANGE_LABELS>("90d");
   const [orgId, setOrgId] = useState<string>(ALL);
   const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const current = useQuery((api as any).operator.current, {});
-  const dateFrom = useMemo(() => dayjs().valueOf() - RANGE_MS[range], [range]);
-  const traces = useQuery(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (api as any).operator.listExtractionTraces,
-    {
-      status: status === ALL ? undefined : status,
-      orgId: orgId === ALL ? undefined : orgId,
-      dateFrom,
-      limit: 250,
-    },
-  ) as TraceRow[] | undefined;
-  const detail = useQuery(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (api as any).operator.getExtractionTrace,
-    selectedTraceId ? { traceId: selectedTraceId } : "skip",
-  ) as TraceDetail | null | undefined;
+  const current = useCachedOperatorCurrent();
+  const traces = useCachedOperatorExtractionTraces({
+    status: status === ALL ? undefined : status as TraceStatus,
+    orgId: orgId === ALL ? undefined : orgId,
+    range,
+    limit: 250,
+  }) as TraceRow[] | undefined;
+  const detail = useCachedOperatorExtractionTraceDetail(selectedTraceId) as
+    | TraceDetail
+    | null
+    | undefined;
 
   const orgOptions = useMemo(() => {
     const map = new Map<string, string>();
@@ -186,7 +176,7 @@ export default function OperatorExtractionsPage() {
         </SelectContent>
       </Select>
       <Select value={range} onValueChange={(value) => {
-        if (value && value in RANGE_MS) setRange(value as keyof typeof RANGE_MS);
+        if (value && value in RANGE_LABELS) setRange(value as keyof typeof RANGE_LABELS);
       }}>
         <SelectTrigger size="sm" className="w-28">
           <SelectValue>{RANGE_LABELS[range]}</SelectValue>

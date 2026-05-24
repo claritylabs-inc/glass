@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, type MouseEvent } from "react";
-import { useAction, useMutation, useQuery } from "convex/react";
+import { useAction, useMutation } from "convex/react";
 import dayjs from "dayjs";
 import { Loader2, Mail as MailIcon, RotateCcw, X } from "lucide-react";
 import { toast } from "sonner";
@@ -10,6 +10,10 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { Badge } from "@/components/ui/badge";
 import { PillButton } from "@/components/ui/pill-button";
 import { ThreadAttachmentChip } from "../thread-attachment-chip";
+import {
+  useCachedQuery,
+  useUpdateCachedQuery,
+} from "@/lib/sync/use-cached-query";
 import type { ThreadMessage } from "../types";
 
 type EmailPayloadPreview = {
@@ -203,10 +207,15 @@ export function EmailSummaryCard({
 }) {
   const sendDraft = useAction(api.actions.sendPendingEmail.sendDraftNow);
   const restoreDraft = useMutation(api.pendingEmails.restoreAsDraft);
-  const pendingEmail = useQuery(
+  const pendingEmail = useCachedQuery(
+    "pendingEmails.get.summary",
     api.pendingEmails.get,
     message.pendingEmailId ? { id: message.pendingEmailId } : "skip",
   );
+  const updatePendingEmail = useUpdateCachedQuery<
+    typeof pendingEmail,
+    { id: Id<"pendingEmails"> }
+  >("pendingEmails.get.summary");
   const [isSending, setIsSending] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
   const recipients = message.toAddresses?.length
@@ -241,6 +250,9 @@ export function EmailSummaryCard({
     setIsSending(true);
     try {
       const result = await sendDraft({ id: message.pendingEmailId });
+      await updatePendingEmail({ id: message.pendingEmailId }, (current) =>
+        current ? { ...current, status: "sent" } : current,
+      );
       toast.success(`Email sent to ${result.recipientEmail}`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to send email");
@@ -255,6 +267,9 @@ export function EmailSummaryCard({
     setIsRestoring(true);
     try {
       await restoreDraft({ id: message.pendingEmailId });
+      await updatePendingEmail({ id: message.pendingEmailId }, (current) =>
+        current ? { ...current, status: "draft" } : current,
+      );
       toast.success("Email restored as draft");
     } catch (err) {
       toast.error(
@@ -506,10 +521,15 @@ export function EmailThreadSidebar({
   const sendDraft = useAction(api.actions.sendPendingEmail.sendDraftNow);
   const cancelDraft = useMutation(api.pendingEmails.cancel);
   const restoreDraft = useMutation(api.pendingEmails.restoreAsDraft);
-  const pendingEmail = useQuery(
+  const pendingEmail = useCachedQuery(
+    "pendingEmails.get.detail",
     api.pendingEmails.get,
     message?.pendingEmailId ? { id: message.pendingEmailId } : "skip",
   );
+  const updatePendingEmail = useUpdateCachedQuery<
+    typeof pendingEmail,
+    { id: Id<"pendingEmails"> }
+  >("pendingEmails.get.detail");
   const [isSending, setIsSending] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
@@ -546,6 +566,9 @@ export function EmailThreadSidebar({
     setIsSending(true);
     try {
       const result = await sendDraft({ id: message.pendingEmailId });
+      await updatePendingEmail({ id: message.pendingEmailId }, (current) =>
+        current ? { ...current, status: "sent" } : current,
+      );
       toast.success(`Email sent to ${result.recipientEmail}`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to send email");
@@ -559,6 +582,9 @@ export function EmailThreadSidebar({
     setIsCancelling(true);
     try {
       await cancelDraft({ id: message.pendingEmailId });
+      await updatePendingEmail({ id: message.pendingEmailId }, (current) =>
+        current ? { ...current, status: "cancelled" } : current,
+      );
       toast.success("Email draft cancelled");
     } catch (err) {
       toast.error(
@@ -574,6 +600,9 @@ export function EmailThreadSidebar({
     setIsRestoring(true);
     try {
       await restoreDraft({ id: message.pendingEmailId });
+      await updatePendingEmail({ id: message.pendingEmailId }, (current) =>
+        current ? { ...current, status: "draft" } : current,
+      );
       toast.success("Email restored as draft");
     } catch (err) {
       toast.error(

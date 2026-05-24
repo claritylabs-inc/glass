@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useQuery } from "convex/react";
 import dayjs from "dayjs";
 import { FileText, ShieldCheck } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
@@ -27,6 +26,7 @@ import {
 } from "@/components/ui/table";
 import { usePdf } from "@/components/pdf-context";
 import { api } from "@/convex/_generated/api";
+import { useCachedQuery } from "@/lib/sync/use-cached-query";
 import type { Id } from "@/convex/_generated/dataModel";
 
 type PartnerBroker = {
@@ -316,7 +316,11 @@ function PolicyList({
 }
 
 export default function PartnerPoliciesPage() {
-  const policies = useQuery(api.partnerPrograms.listPartnerPolicies, {}) as PartnerPolicy[] | undefined;
+  const policies = useCachedQuery(
+    "partnerPrograms.listPartnerPolicies",
+    api.partnerPrograms.listPartnerPolicies,
+    {},
+  ) as PartnerPolicy[] | undefined;
   const [brokerFilter, setBrokerFilter] = useState(ALL_BROKERS);
   const [selectedPolicy, setSelectedPolicy] = useState<PartnerPolicy | null>(null);
 

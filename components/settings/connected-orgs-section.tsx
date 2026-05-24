@@ -26,7 +26,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { useSettingsActions } from "@/components/settings/settings-actions-context";
 import { useCurrentOrg } from "@/lib/hooks/use-current-org";
-import { useCachedQuery } from "@/lib/sync/use-cached-query";
+import {
+  useCachedQuery,
+  useUpdateCachedQuery,
+} from "@/lib/sync/use-cached-query";
 
 type ConnectedOrgsApi = {
   connectedOrgs: {
@@ -481,6 +484,14 @@ export function ConnectedOrgsSection({
     connectedOrgsApi.compliance.listVendorCompliance,
     currentOrg?.orgId ? { clientOrgId: currentOrg.orgId } : "skip",
   ) as VendorComplianceSummary[] | undefined;
+  const updateVendorRows = useUpdateCachedQuery<
+    ConnectedOrgRow[],
+    { orgId: Id<"organizations"> }
+  >("connectedOrgs.listVendors");
+  const updateClientRows = useUpdateCachedQuery<
+    ConnectedOrgRow[],
+    { orgId: Id<"organizations"> }
+  >("connectedOrgs.listClients");
   const requestVendorAccessByEmail = useAction(
     connectedOrgsApi.connectedOrgs.requestVendorAccessByEmail,
   );
@@ -616,6 +627,23 @@ export function ConnectedOrgsSection({
   async function approveRelationship(id: Id<"connectedOrgRelationships">) {
     try {
       await approve({ relationshipId: id });
+      const updateRows = page === "vendors" ? updateVendorRows : updateClientRows;
+      if (currentOrg?.orgId) {
+        await updateRows({ orgId: currentOrg.orgId }, (current) =>
+          current.map((row) =>
+            row.relationshipId === id || row._id === id
+              ? {
+                  ...row,
+                  status: "active",
+                  invitationStatus: row.invitationStatus === "pending"
+                    ? "accepted"
+                    : row.invitationStatus,
+                  updatedAt: dayjs().valueOf(),
+                }
+              : row,
+          ),
+        );
+      }
       toast.success("Connection approved");
     } catch (error) {
       toast.error(
@@ -627,6 +655,23 @@ export function ConnectedOrgsSection({
   async function revokeRelationship(id: Id<"connectedOrgRelationships">) {
     try {
       await revoke({ relationshipId: id });
+      const updateRows = page === "vendors" ? updateVendorRows : updateClientRows;
+      if (currentOrg?.orgId) {
+        await updateRows({ orgId: currentOrg.orgId }, (current) =>
+          current.map((row) =>
+            row.relationshipId === id || row._id === id
+              ? {
+                  ...row,
+                  status: "revoked",
+                  invitationStatus: row.invitationStatus === "pending"
+                    ? "revoked"
+                    : row.invitationStatus,
+                  updatedAt: dayjs().valueOf(),
+                }
+              : row,
+          ),
+        );
+      }
       toast.success("Connection revoked");
     } catch (error) {
       toast.error(

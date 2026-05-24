@@ -24,7 +24,10 @@ import { Upload } from "lucide-react";
 import { toast } from "sonner";
 import { useClientDetailActions } from "../layout";
 import { getPublicAgentDomain } from "@/lib/domains";
-import { useCachedQuery } from "@/lib/sync/use-cached-query";
+import {
+  useCachedQuery,
+  useUpsertCachedQuery,
+} from "@/lib/sync/use-cached-query";
 
 type DocType = "policy" | "quote";
 
@@ -116,6 +119,10 @@ export default function ClientPoliciesPage() {
   const extractFromUpload = useAction(
     api.actions.extractFromUpload.extractFromUpload,
   );
+  const upsertBrokerPolicies = useUpsertCachedQuery<
+    BrokerPolicyRow[],
+    { clientOrgId: Id<"organizations">; documentType: DocType }
+  >("policies.listForBroker");
 
   const uploadStorage = useCallback(
     async (file: File): Promise<string> => {
@@ -151,6 +158,20 @@ export default function ClientPoliciesPage() {
               fileName: files[i].name,
               documentType: docType,
             })) as Id<"policies">;
+            await upsertBrokerPolicies(
+              { clientOrgId: clientOrgId as Id<"organizations">, documentType: docType },
+              (current) => [
+                {
+                  _id: policyId,
+                  fileName: files[i].name,
+                  carrier: "Extracting...",
+                  policyNumber: "Extracting...",
+                  pipelineStatus: "processing",
+                  uploadedBySide: "broker",
+                },
+                ...(current ?? []).filter((policy) => policy._id !== policyId),
+              ],
+            );
 
             const result = await extractFromUpload({
               fileId: storageIds[i] as Id<"_storage">,
@@ -173,6 +194,23 @@ export default function ClientPoliciesPage() {
             fileName: files[0].name,
             documentType: docType,
           })) as Id<"policies">;
+          await upsertBrokerPolicies(
+            { clientOrgId: clientOrgId as Id<"organizations">, documentType: docType },
+            (current) => [
+              {
+                _id: policyId,
+                fileName:
+                  files.length > 1
+                    ? `${files[0].name.replace(/\.pdf$/i, "")} + ${files.length - 1} more.pdf`
+                    : files[0].name,
+                carrier: "Extracting...",
+                policyNumber: "Extracting...",
+                pipelineStatus: "processing",
+                uploadedBySide: "broker",
+              },
+              ...(current ?? []).filter((policy) => policy._id !== policyId),
+            ],
+          );
 
           if (files.length > 1) toast.info(`Merging ${files.length} files…`);
           const result = await extractFromUpload({
@@ -212,6 +250,7 @@ export default function ClientPoliciesPage() {
       uploadStorage,
       createBrokerUpload,
       extractFromUpload,
+      upsertBrokerPolicies,
     ],
   );
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useAction, useQuery } from "convex/react";
+import { useAction } from "convex/react";
 import { ClipboardCheck, Loader2, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
@@ -21,6 +21,10 @@ import {
 } from "@/components/ui/select";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import {
+  useCachedQuery,
+  useUpsertCachedQuery,
+} from "@/lib/sync/use-cached-query";
 
 type ApprovalMode = "auto_approve_all" | "require_approval_all" | "llm_review";
 
@@ -236,9 +240,20 @@ function SecurityPanelEditor({
 }
 
 export default function PartnerProgramsPage() {
-  const programs = useQuery(api.partnerPrograms.listPrograms, {}) as Program[] | undefined;
-  const templates = useQuery(api.partnerPrograms.listTemplates, {}) as Template[] | undefined;
+  const programs = useCachedQuery(
+    "partnerPrograms.listPrograms",
+    api.partnerPrograms.listPrograms,
+    {},
+  ) as Program[] | undefined;
+  const templates = useCachedQuery(
+    "partnerPrograms.listTemplates",
+    api.partnerPrograms.listTemplates,
+    {},
+  ) as Template[] | undefined;
   const saveProgram = useAction(api.partnerPrograms.saveProgram);
+  const upsertPrograms = useUpsertCachedQuery<Program[], Record<string, never>>(
+    "partnerPrograms.listPrograms",
+  );
   const [editing, setEditing] = useState<Program | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -282,7 +297,7 @@ export default function PartnerProgramsPage() {
     }
     setSaving(true);
     try {
-      await saveProgram({
+      const programId = await saveProgram({
         programId: editing?._id,
         name,
         categoryLabels,
@@ -298,6 +313,40 @@ export default function PartnerProgramsPage() {
         approvalMode,
         approvalRuleText: approvalRuleText || undefined,
         status,
+      });
+      await upsertPrograms({}, (current) => {
+        const existing = current ?? [];
+        const template =
+          defaultTemplateId && templates
+            ? templates.find((item) => item._id === defaultTemplateId)
+            : null;
+        const nextProgram: Program = {
+          ...(editing ?? {}),
+          _id: programId as Id<"partnerPrograms">,
+          name: name.trim(),
+          aliases,
+          description: description || undefined,
+          categoryLabels,
+          securityPanel: securityPanel
+            .map((member) => ({
+              name: member.name.trim(),
+              participationPercent:
+                Math.round(member.participationPercent * 100) / 100,
+            }))
+            .filter((member) => member.name && member.participationPercent > 0),
+          defaultTemplateId: defaultTemplateId
+            ? (defaultTemplateId as Id<"coiTemplates">)
+            : undefined,
+          defaultTemplate: template ?? null,
+          approvalMode,
+          approvalRuleText: approvalRuleText || undefined,
+          status,
+          templateCount: editing?.templateCount ?? 0,
+        };
+        return [
+          nextProgram,
+          ...existing.filter((program) => program._id !== nextProgram._id),
+        ].sort((a, b) => a.name.localeCompare(b.name));
       });
       toast.success(editing ? "Program updated" : "Program created");
       setDrawerOpen(false);

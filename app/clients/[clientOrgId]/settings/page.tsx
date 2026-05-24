@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useMutation } from "convex/react";
 import { useParams } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -9,6 +9,10 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 import { BrokerIdentitySection } from "@/components/settings/broker-identity-section";
+import {
+  useCachedQuery,
+  useUpdateCachedQuery,
+} from "@/lib/sync/use-cached-query";
 
 type Verification = "strict" | "domain" | "open";
 
@@ -17,15 +21,21 @@ const INPUT_CLASSES =
 
 export default function ClientSettingsPage() {
   const { clientOrgId } = useParams<{ clientOrgId: string }>();
-  const org = useQuery(
+  const org = useCachedQuery(
+    "orgs.getById.clientSettings",
     api.orgs.getById,
     clientOrgId ? { orgId: clientOrgId as Id<"organizations"> } : "skip",
   );
-  const members = useQuery(
+  const members = useCachedQuery(
+    "orgs.listMembersForOrg.clientSettings",
     api.orgs.listMembersForOrg,
     clientOrgId ? { orgId: clientOrgId as Id<"organizations"> } : "skip",
   );
   const updateSettings = useMutation(api.orgs.updateClientEmailSettings);
+  const updateCachedOrg = useUpdateCachedQuery<
+    Record<string, unknown>,
+    { orgId: Id<"organizations"> }
+  >("orgs.getById.clientSettings");
 
   const [verification, setVerification] = useState<Verification>("domain");
   const [emails, setEmails] = useState<string[]>([]);
@@ -50,6 +60,15 @@ export default function ClientSettingsPage() {
   useEffect(() => {
     if (!hydratedRef.current || !clientOrgId) return;
     const handle = setTimeout(() => {
+      void updateCachedOrg(
+        { orgId: clientOrgId as Id<"organizations"> },
+        (current) => ({
+          ...current,
+          allowedEmails: emails,
+          allowedDomains: domains,
+          emailVerification: verification,
+        }),
+      );
       updateSettings({
         clientOrgId: clientOrgId as Id<"organizations">,
         allowedEmails: emails,
@@ -60,7 +79,14 @@ export default function ClientSettingsPage() {
       });
     }, 400);
     return () => clearTimeout(handle);
-  }, [emails, domains, verification, clientOrgId, updateSettings]);
+  }, [
+    emails,
+    domains,
+    verification,
+    clientOrgId,
+    updateCachedOrg,
+    updateSettings,
+  ]);
 
   const memberDomains = useMemo(() => {
     const set = new Set<string>();

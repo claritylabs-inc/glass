@@ -15,6 +15,12 @@ import { PhoneInput } from "@/components/ui/phone-input";
 import { ArrowRight, Check, Copy, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { getPublicAgentDomain } from "@/lib/domains";
+import {
+  useCachedPolicyList,
+  useCachedViewerOrg,
+  useViewerCacheActions,
+} from "@/lib/sync/glass-cached-queries";
+import { useCachedQuery } from "@/lib/sync/use-cached-query";
 
 const AGENT_DOMAIN = getPublicAgentDomain();
 const GLASS_IMESSAGE_NUMBER =
@@ -181,8 +187,9 @@ export default function ClientOnboardingSetupPage() {
   const searchParams = useSearchParams();
   const { signOut } = useAuthActions();
 
-  const viewer = useQuery(api.users.viewer);
-  const viewerOrg = useQuery(api.orgs.viewerOrg, {});
+  const viewer = useCachedQuery("onboarding.setup.viewer", api.users.viewer, {});
+  const viewerOrg = useCachedViewerOrg();
+  const { patchViewer, patchViewerOrg } = useViewerCacheActions();
   const updateProfile = useMutation(api.users.updateProfile);
   const updateOrg = useMutation(api.orgs.updateOrg);
   const createClientOrg = useMutation(api.orgs.createClientOrg);
@@ -195,9 +202,7 @@ export default function ClientOnboardingSetupPage() {
     api.actions.extractCompanyInfo.extractCompanyInfo,
   );
 
-  const policies = useQuery(api.policies.listForClient, {
-    documentType: "policy",
-  }) as PolicyRow[] | undefined;
+  const policies = useCachedPolicyList("policy") as PolicyRow[] | undefined;
 
   const [currentStep, setCurrentStep] = useState<Step>(0);
   const [userName, setUserName] = useState("");
@@ -298,6 +303,11 @@ export default function ClientOnboardingSetupPage() {
         title: userRole.trim(),
         phone: trimmedUserPhone || undefined,
       });
+      patchViewer({
+        name: userName.trim(),
+        title: userRole.trim(),
+        phone: trimmedUserPhone || undefined,
+      });
       setCurrentStep(1);
     } catch (e) {
       const message = e instanceof Error ? e.message : "Failed to save";
@@ -311,7 +321,7 @@ export default function ClientOnboardingSetupPage() {
     } finally {
       setSubmitting(false);
     }
-  }, [updateProfile, userName, userRole, trimmedUserPhone]);
+  }, [patchViewer, updateProfile, userName, userRole, trimmedUserPhone]);
 
   const handleStep1Next = useCallback(async () => {
     setSubmitting(true);
@@ -321,6 +331,10 @@ export default function ClientOnboardingSetupPage() {
       const trimmedSite = website.trim();
       if (viewerOrg?.org) {
         await updateOrg({
+          name: trimmedName || undefined,
+          website: trimmedSite || undefined,
+        });
+        patchViewerOrg({
           name: trimmedName || undefined,
           website: trimmedSite || undefined,
         });
@@ -355,6 +369,7 @@ export default function ClientOnboardingSetupPage() {
     orgName,
     website,
     extractCompanyInfo,
+    patchViewerOrg,
   ]);
 
   const handleFilesUpload = useCallback(
@@ -443,12 +458,20 @@ export default function ClientOnboardingSetupPage() {
     setError("");
     try {
       await completeOnboarding();
+      patchViewer({ onboardingComplete: true });
+      patchViewerOrg({ onboardingComplete: true });
       router.replace(isVendorInvite ? "/connect/clients" : "/");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to finish");
       setSubmitting(false);
     }
-  }, [completeOnboarding, isVendorInvite, router]);
+  }, [
+    completeOnboarding,
+    isVendorInvite,
+    patchViewer,
+    patchViewerOrg,
+    router,
+  ]);
 
   const canContinueStep0 =
     userName.trim().length > 0 && userRole.trim().length > 0 && !phoneBlocked;

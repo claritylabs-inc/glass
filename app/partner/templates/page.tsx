@@ -28,7 +28,7 @@ import {
   ZoomOut,
 } from "lucide-react";
 import { toast } from "sonner";
-import { useAction, useMutation, useQuery } from "convex/react";
+import { useAction, useMutation } from "convex/react";
 import { AppShell } from "@/components/app-shell";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { Badge } from "@/components/ui/badge";
@@ -47,6 +47,10 @@ import {
 } from "@/components/ui/select";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import {
+  useCachedQuery,
+  useUpsertCachedQuery,
+} from "@/lib/sync/use-cached-query";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
@@ -1603,10 +1607,18 @@ function PdfTemplateBuilderPanel({
 }
 
 export default function PartnerTemplatesPage() {
-  const templates = useQuery(api.partnerPrograms.listTemplates, {}) as Template[] | undefined;
+  const templates = useCachedQuery(
+    "partnerPrograms.listTemplates",
+    api.partnerPrograms.listTemplates,
+    {},
+  ) as Template[] | undefined;
   const autoPlaceTemplateFields = useAction(api.partnerPrograms.autoPlaceTemplateFields);
   const generateUploadUrl = useMutation(api.partnerPrograms.generateTemplateUploadUrl);
   const saveTemplate = useMutation(api.partnerPrograms.createTemplate);
+  const upsertTemplates = useUpsertCachedQuery<
+    Template[],
+    Record<string, never>
+  >("partnerPrograms.listTemplates");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editing, setEditing] = useState<Template | null>(null);
   const [currentTemplateId, setCurrentTemplateId] = useState<Id<"coiTemplates"> | undefined>();
@@ -2041,6 +2053,27 @@ export default function PartnerTemplatesPage() {
         status,
       });
       setCurrentTemplateId(savedId as Id<"coiTemplates">);
+      await upsertTemplates({}, (current) => {
+        const existing = current ?? [];
+        const nextTemplate: Template = {
+          ...(editing ?? {}),
+          _id: savedId as Id<"coiTemplates">,
+          name: name.trim(),
+          templateKind,
+          fileId: fileId ? (fileId as Id<"_storage">) : undefined,
+          fileName: fileName || undefined,
+          outputFileName: outputFileName.trim() || undefined,
+          fileUrl,
+          certifiedNotice: certifiedNotice || undefined,
+          fieldMappings: templateKind === "pdf_overlay" ? { fields } : undefined,
+          fallbackToStandard: true,
+          status,
+        };
+        return [
+          nextTemplate,
+          ...existing.filter((template) => template._id !== nextTemplate._id),
+        ].sort((a, b) => a.name.localeCompare(b.name));
+      });
       setSaveState("saved");
     } catch (error) {
       setSaveState("error");
@@ -2060,6 +2093,9 @@ export default function PartnerTemplatesPage() {
     saveTemplate,
     status,
     templateKind,
+    upsertTemplates,
+    editing,
+    fileUrl,
   ]);
 
   useEffect(() => {

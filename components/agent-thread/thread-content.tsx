@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
-import { useQuery, useMutation } from "convex/react";
+import { useMutation } from "convex/react";
 import Link from "next/link";
 import dayjs from "dayjs";
 import JSZip from "jszip";
@@ -23,9 +23,15 @@ import {
 } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { useCachedQuery } from "@/lib/sync/use-cached-query";
+import {
+  useCachedQuery,
+  useUpdateCachedQuery,
+} from "@/lib/sync/use-cached-query";
 import { createClientMutationId } from "@/lib/sync/client-mutation-id";
-import { useThreadCacheActions } from "@/lib/sync/glass-cached-queries";
+import {
+  useArchivedThreadCacheActions,
+  useThreadCacheActions,
+} from "@/lib/sync/glass-cached-queries";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PillButton } from "@/components/ui/pill-button";
@@ -171,7 +177,8 @@ function ThreadAttachmentList({
         .filter((fileId): fileId is Id<"_storage"> => Boolean(fileId)),
     [attachments],
   );
-  const urls = useQuery(
+  const urls = useCachedQuery(
+    "threads.getAttachmentUrls.list",
     api.threads.getAttachmentUrls,
     fileIds.length > 1 ? { threadId, fileIds } : "skip",
   );
@@ -626,7 +633,8 @@ function MessageFooterActions({
         .filter((fileId): fileId is Id<"_storage"> => Boolean(fileId)),
     [attachmentList],
   );
-  const attachmentUrls = useQuery(
+  const attachmentUrls = useCachedQuery(
+    "threads.getAttachmentUrls.message",
     api.threads.getAttachmentUrls,
     attachmentFileIds.length > 1
       ? { threadId, fileIds: attachmentFileIds }
@@ -861,13 +869,17 @@ function UnifiedThreadActions({
 }) {
   const archiveThread = useMutation(api.threads.archive);
   const unarchiveThread = useMutation(api.threads.unarchive);
+  const { archiveThreadLocally, unarchiveThreadLocally } =
+    useArchivedThreadCacheActions();
   const isArchived = !!thread.archivedAt;
   async function handleArchiveToggle() {
     try {
       if (isArchived) {
+        await unarchiveThreadLocally(threadId);
         await unarchiveThread({ id: threadId });
         toast.success("Unarchived");
       } else {
+        await archiveThreadLocally(threadId);
         await archiveThread({ id: threadId });
         toast.success("Archived");
       }
@@ -1005,7 +1017,15 @@ function PendingSendCountdown({
 }: {
   pendingEmailId: Id<"pendingEmails">;
 }) {
-  const pendingEmail = useQuery(api.pendingEmails.get, { id: pendingEmailId });
+  const pendingEmail = useCachedQuery(
+    "pendingEmails.get.countdown",
+    api.pendingEmails.get,
+    { id: pendingEmailId },
+  );
+  const updatePendingEmail = useUpdateCachedQuery<
+    typeof pendingEmail,
+    { id: Id<"pendingEmails"> }
+  >("pendingEmails.get.countdown");
   const cancelMutation = useMutation(api.pendingEmails.cancel);
   const [remaining, setRemaining] = useState<number | null>(null);
 
@@ -1046,6 +1066,9 @@ function PendingSendCountdown({
         onClick={async () => {
           try {
             await cancelMutation({ id: pendingEmailId });
+            await updatePendingEmail({ id: pendingEmailId }, (current) =>
+              current ? { ...current, status: "cancelled" } : current,
+            );
             toast.success("Email cancelled");
           } catch {
             toast.error("Failed to cancel");

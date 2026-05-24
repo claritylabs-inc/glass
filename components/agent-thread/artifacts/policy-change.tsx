@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useMutation } from "convex/react";
+import type { FunctionReturnType } from "convex/server";
 import { FileText, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
@@ -9,7 +10,17 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { Badge } from "@/components/ui/badge";
 import { PillButton } from "@/components/ui/pill-button";
 import { PolicyChangeProgress, formatPolicyChangeStatus, isPolicyChangeTerminal } from "@/components/policy-change-progress";
+import {
+  useCachedQuery,
+  useUpdateCachedQuery,
+} from "@/lib/sync/use-cached-query";
 import type { PolicyChangeAccess } from "../types";
+
+type CachedPolicyChangeStatus = NonNullable<
+  NonNullable<
+    FunctionReturnType<typeof api.policyChanges.getCaseDetail>
+  >["case"]
+>["status"];
 
 function asRecordArray(value: unknown): Record<string, unknown>[] {
   return Array.isArray(value)
@@ -26,7 +37,11 @@ export function PolicyChangeSummaryCard({
   onOpen?: (caseId: Id<"policyChangeCases">) => void;
   isOpen?: boolean;
 }) {
-  const detail = useQuery(api.policyChanges.getCaseDetail, { caseId });
+  const detail = useCachedQuery(
+    "policyChanges.getCaseDetail",
+    api.policyChanges.getCaseDetail,
+    { caseId },
+  );
   const changeCase = detail?.case;
   const title = changeCase?.summary ?? "Policy change request";
   const status = formatPolicyChangeStatus(changeCase?.status);
@@ -83,10 +98,18 @@ export function PolicyChangeThreadSidebar({
   access: PolicyChangeAccess;
   onClose: () => void;
 }) {
-  const detail = useQuery(api.policyChanges.getCaseDetail, { caseId });
+  const detail = useCachedQuery(
+    "policyChanges.getCaseDetail",
+    api.policyChanges.getCaseDetail,
+    { caseId },
+  );
   const generatePacket = useMutation(api.policyChanges.generateCarrierPacket);
   const markStatus = useMutation(api.policyChanges.markStatus);
   const cancelRequest = useMutation(api.policyChanges.cancelRequest);
+  const updateDetail = useUpdateCachedQuery<
+    typeof detail,
+    { caseId: Id<"policyChangeCases"> }
+  >("policyChanges.getCaseDetail");
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
 
   const changeCase = detail?.case;
@@ -96,10 +119,28 @@ export function PolicyChangeThreadSidebar({
   const validationIssues = asRecordArray(changeCase?.validationIssues);
   const artifacts = asRecordArray(packet?.artifacts);
 
-  async function runAction(name: string, action: () => Promise<unknown>, success: string) {
+  async function runAction(
+    name: string,
+    action: () => Promise<unknown>,
+    success: string,
+    nextStatus?: CachedPolicyChangeStatus,
+  ) {
     setLoadingAction(name);
     try {
       await action();
+      if (nextStatus) {
+        await updateDetail({ caseId }, (current) =>
+          current?.case
+            ? {
+                ...current,
+                case: {
+                  ...current.case,
+                  status: nextStatus,
+                },
+              }
+            : current,
+        );
+      }
       toast.success(success);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not update policy change request");
@@ -242,7 +283,7 @@ export function PolicyChangeThreadSidebar({
               type="button"
               variant="secondary"
               size="compact"
-              onClick={() => runAction("cancel", () => cancelRequest({ caseId }), "Policy change request cancelled")}
+              onClick={() => runAction("cancel", () => cancelRequest({ caseId }), "Policy change request cancelled", "cancelled")}
               disabled={loadingAction !== null}
             >
               {loadingAction === "cancel" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />}
@@ -255,7 +296,14 @@ export function PolicyChangeThreadSidebar({
               type="button"
               variant="secondary"
               size="compact"
-              onClick={() => runAction(status, () => markStatus({ caseId, status }), status === "submitted" ? "Marked sent" : `Marked ${status}`)}
+              onClick={() =>
+                runAction(
+                  status,
+                  () => markStatus({ caseId, status }),
+                  status === "submitted" ? "Marked sent" : `Marked ${status}`,
+                  status,
+                )
+              }
               disabled={loadingAction !== null}
             >
               {loadingAction === status ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}

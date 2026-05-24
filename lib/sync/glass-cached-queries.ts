@@ -13,7 +13,7 @@ import {
   useUpdateCachedQuery,
   useUpsertCachedQuery,
 } from "@/lib/sync/use-cached-query";
-import type { SyncStore } from "@claritylabs/cl-sync";
+import { useSyncStore, type SyncStore } from "@claritylabs/cl-sync";
 
 type DocumentType = "policy" | "quote";
 type NotificationStatus = "unread" | "read" | "actioned";
@@ -40,6 +40,7 @@ type ConnectedVendorList = FunctionReturnType<
 type PolicyList = FunctionReturnType<typeof api.policies.listForClient>;
 type PolicyDetail = FunctionReturnType<typeof api.policies.get>;
 type PolicySummary = FunctionReturnType<typeof api.policies.getSummary>;
+type Viewer = FunctionReturnType<typeof api.users.viewer>;
 type ViewerOrg = FunctionReturnType<typeof api.orgs.viewerOrg>;
 type ThreadList = FunctionReturnType<typeof api.threads.list>;
 type ThreadDetail = FunctionReturnType<typeof api.threads.get>;
@@ -85,11 +86,56 @@ type OptimisticThreadSeed = {
 const notificationCacheName = (status: NotificationStatus) =>
   `notifications.listInbox.${status}`;
 
+const viewerCacheNames = [
+  "users.viewer",
+  "appShell.viewer",
+  "authGuard.viewer",
+  "commandPalette.viewer",
+  "clients.thread.viewer",
+  "onboarding.viewer",
+  "onboarding.setup.viewer",
+  "onboarding.broker.viewer",
+  "settings.organization.viewer",
+  "settings.team.viewer",
+];
+
+const viewerOrgCacheNames = [
+  "orgs.viewerOrg",
+  "hooks.currentOrg.viewerOrg",
+  "appShell.viewerOrg",
+  "authGuard.viewerOrg",
+  "brandTheme.viewerOrg",
+  "commandPalette.viewerOrg",
+  "onboarding.viewerOrg",
+];
+
+export function patchCachedViewer(
+  store: SyncStore,
+  patch: Record<string, unknown>,
+) {
+  for (const cacheName of viewerCacheNames) {
+    const collection = cachedQueryCollectionFor<Viewer>(cacheName);
+    const argsKey = cachedQueryArgsKey({});
+    const current = store.getCollection(collection, argsKey)?.[0]?.value;
+    if (!current) continue;
+    void store.upsertCollection(collection, argsKey, [
+      {
+        _id: "result",
+        value: {
+          ...current,
+          ...patch,
+        },
+        updatedAt: dayjs().valueOf(),
+      },
+    ]);
+  }
+}
+
 export function patchCachedViewerOrg(
   store: SyncStore,
   patch: Record<string, unknown>,
 ) {
-  for (const cacheName of ["orgs.viewerOrg", "hooks.currentOrg.viewerOrg"]) {
+  for (const cacheName of viewerOrgCacheNames) {
     const collection = cachedQueryCollectionFor<ViewerOrg>(cacheName);
     const argsKey = cachedQueryArgsKey({});
     const current = store.getCollection(collection, argsKey)?.[0]?.value;
@@ -108,6 +154,39 @@ export function patchCachedViewerOrg(
       },
     ]);
   }
+}
+
+export function setCachedViewerOrg(store: SyncStore, next: NonNullable<ViewerOrg>) {
+  for (const cacheName of viewerOrgCacheNames) {
+    const collection = cachedQueryCollectionFor<ViewerOrg>(cacheName);
+    const argsKey = cachedQueryArgsKey({});
+    void store.upsertCollection(collection, argsKey, [
+      {
+        _id: "result",
+        value: next,
+        updatedAt: dayjs().valueOf(),
+      },
+    ]);
+  }
+}
+
+export function useViewerCacheActions() {
+  const store = useSyncStore();
+
+  return {
+    patchViewer: useCallback(
+      (patch: Record<string, unknown>) => patchCachedViewer(store, patch),
+      [store],
+    ),
+    patchViewerOrg: useCallback(
+      (patch: Record<string, unknown>) => patchCachedViewerOrg(store, patch),
+      [store],
+    ),
+    setViewerOrg: useCallback(
+      (next: NonNullable<ViewerOrg>) => setCachedViewerOrg(store, next),
+      [store],
+    ),
+  };
 }
 
 export function useCachedViewerOrg() {
@@ -332,8 +411,43 @@ export function useThreadCacheActions() {
 }
 
 export function useArchivedThreadCacheActions() {
+  const upsertArchived = useUpsertCachedQuery<ThreadList, ThreadListArgs>(
+    "threads.list.archived",
+  );
   const updateArchived = useUpdateCachedQuery<ThreadList, ThreadListArgs>(
     "threads.list.archived",
+  );
+  const upsertActive = useUpsertCachedQuery<ThreadList, ThreadListArgs>(
+    "threads.list.active",
+  );
+  const updateActive = useUpdateCachedQuery<ThreadList, ThreadListArgs>(
+    "threads.list.active",
+  );
+  const updateThread = useUpdateCachedQuery<
+    NonNullable<ThreadDetail>,
+    { id: Id<"threads"> }
+  >("threads.get.current");
+
+  const archiveThreadLocally = useCallback(
+    async (threadId: Id<"threads">) => {
+      const now = dayjs().valueOf();
+      let archivedThread: ThreadList[number] | null = null;
+      await updateActive({ archived: false }, (current) => {
+        archivedThread =
+          current.find((thread) => thread._id === threadId) ?? null;
+        return current.filter((thread) => thread._id !== threadId);
+      });
+      await updateThread({ id: threadId }, (current) => ({
+        ...current,
+        archivedAt: now,
+      }));
+      if (!archivedThread) return;
+      await upsertArchived({ archived: true }, (current) => [
+        { ...archivedThread!, archivedAt: now },
+        ...(current ?? []).filter((thread) => thread._id !== threadId),
+      ]);
+    },
+    [updateActive, updateThread, upsertArchived],
   );
 
   const removeArchivedThreadLocally = useCallback(
@@ -345,7 +459,34 @@ export function useArchivedThreadCacheActions() {
     [updateArchived],
   );
 
-  return { removeArchivedThreadLocally };
+  const unarchiveThreadLocally = useCallback(
+    async (threadId: Id<"threads">) => {
+      let activeThread: ThreadList[number] | null = null;
+      await updateArchived({ archived: true }, (current) => {
+        activeThread =
+          current.find((thread) => thread._id === threadId) ?? null;
+        return current.filter((thread) => thread._id !== threadId);
+      });
+      await updateThread({ id: threadId }, (current) => {
+        const { archivedAt: _archivedAt, ...rest } = current;
+        return rest as NonNullable<ThreadDetail>;
+      });
+      if (!activeThread) return;
+      const archivedRow = activeThread as ThreadList[number];
+      const { archivedAt: _archivedAt, ...rest } = archivedRow;
+      await upsertActive({ archived: false }, (current) =>
+        [rest, ...(current ?? []).filter((thread) => thread._id !== threadId)]
+          .sort((a, b) => b.lastMessageAt - a.lastMessageAt),
+      );
+    },
+    [updateArchived, updateThread, upsertActive],
+  );
+
+  return {
+    archiveThreadLocally,
+    removeArchivedThreadLocally,
+    unarchiveThreadLocally,
+  };
 }
 
 export function useCachedAgentTargets(orgId?: Id<"organizations">) {

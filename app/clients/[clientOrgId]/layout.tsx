@@ -1,12 +1,12 @@
 "use client";
 
 import { createContext, useContext, useState, type ReactNode } from "react";
-import { useQuery } from "convex/react";
 import { useParams, usePathname } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
+import { useCachedQuery } from "@/lib/sync/use-cached-query";
 
 const ClientDetailActionsContext = createContext<{
   setActions: (node: ReactNode) => void;
@@ -30,7 +30,8 @@ export default function ClientDetailLayout({
   const [rightPanel, setRightPanel] = useState<ReactNode>(null);
   const [breadcrumbExtra, setBreadcrumbExtra] = useState<ReactNode>(null);
 
-  const clientOrg = useQuery(
+  const clientOrg = useCachedQuery(
+    "clients.getDetail",
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (api as any).clients.getDetail,
     clientOrgId ? { clientOrgId: clientOrgId as Id<"organizations"> } : "skip",

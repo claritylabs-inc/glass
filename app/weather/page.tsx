@@ -1,9 +1,9 @@
 "use client";
 
-import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import Link from "next/link";
 import { LogoIcon } from "@/components/ui/logo-icon";
+import { useCachedQuery } from "@/lib/sync/use-cached-query";
 
 const BRAND_BLUE = "#A0D2FA";
 
@@ -27,7 +27,7 @@ const PROVIDER_COLORS: Record<string, string> = {
 };
 
 export default function WeatherPage() {
-  const config = useQuery(api.modelConfig.list);
+  const config = useCachedQuery("modelConfig.list", api.modelConfig.list, {});
 
   return (
     <div className="min-h-screen bg-background text-foreground">

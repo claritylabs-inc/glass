@@ -1,6 +1,6 @@
 "use client";
 
-import { useConvexAuth, useMutation, useQuery } from "convex/react";
+import { useConvexAuth, useMutation } from "convex/react";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/convex/_generated/api";
@@ -14,6 +14,7 @@ import {
   useGlassSync,
 } from "@/lib/sync/glass-sync";
 import { OperatorSidebar } from "@/app/operator/operator-sidebar";
+import { useCachedQuery } from "@/lib/sync/use-cached-query";
 
 const BOOT_STATE_KEY = "glass:boot-state";
 
@@ -196,14 +197,24 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   const isOperatorLogin = pathname === "/operator/login";
 
   // Only query viewer when authenticated
-  const viewer = useQuery(api.users.viewer, isAuthenticated ? {} : "skip");
-  const viewerOrg = useQuery(api.orgs.viewerOrg, isAuthenticated ? {} : "skip");
-  const operatorContext = useQuery(
+  const viewer = useCachedQuery(
+    "authGuard.viewer",
+    api.users.viewer,
+    isAuthenticated ? {} : "skip",
+  );
+  const viewerOrg = useCachedQuery(
+    "authGuard.viewerOrg",
+    api.orgs.viewerOrg,
+    isAuthenticated ? {} : "skip",
+  );
+  const operatorContext = useCachedQuery(
+    "authGuard.operator.current",
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (api as any).operator.current,
     isAuthenticated && viewer?.accountKind === "operator" ? {} : "skip",
   );
-  const pendingInvitation = useQuery(
+  const pendingInvitation = useCachedQuery(
+    "authGuard.pendingInvitationForViewer",
     api.orgs.pendingInvitationForViewer,
     isAuthenticated && viewer?.accountKind !== "operator" ? {} : "skip",
   );

@@ -19,6 +19,7 @@ import {
   useCachedPolicyList,
   useCachedViewerOrg,
 } from "@/lib/sync/glass-cached-queries";
+import { useUpsertCachedQuery } from "@/lib/sync/use-cached-query";
 
 const AGENT_DOMAIN = getPublicAgentDomain();
 
@@ -36,6 +37,19 @@ export default function PoliciesPage() {
 
   const policies = useCachedPolicyList(docTypeTab);
   const viewerOrg = useCachedViewerOrg();
+  const upsertPolicyList = useUpsertCachedQuery<
+    Array<{
+      _id: Id<"policies">;
+      fileName?: string | null;
+      carrier?: string | null;
+      policyNumber?: string | null;
+      documentType?: string;
+      pipelineStatus?: string;
+      uploadedBySide?: string;
+      [key: string]: unknown;
+    }>,
+    { documentType: "policy" | "quote" }
+  >("policies.listForClient");
 
   const generateUploadUrl = useMutation(api.policies.generateUploadUrl);
   const extractFromUpload = useAction(
@@ -89,6 +103,18 @@ export default function PoliciesPage() {
             if ("error" in result) {
               throw new Error(result.error);
             }
+            await upsertPolicyList({ documentType }, (current) => [
+              {
+                _id: result.id as Id<"policies">,
+                fileName: files[i].name,
+                carrier: "Extracting...",
+                policyNumber: "Extracting...",
+                documentType,
+                pipelineStatus: "processing",
+                uploadedBySide: "client",
+              },
+              ...(current ?? []).filter((policy) => policy._id !== result.id),
+            ]);
           }
         } else {
           const result = (await extractFromUpload({
@@ -105,6 +131,21 @@ export default function PoliciesPage() {
           if ("error" in result) {
             throw new Error(result.error);
           }
+          await upsertPolicyList({ documentType }, (current) => [
+            {
+              _id: result.id as Id<"policies">,
+              fileName:
+                files.length > 1
+                  ? `${files[0].name.replace(/\.pdf$/i, "")} + ${files.length - 1} more.pdf`
+                  : files[0].name,
+              carrier: "Extracting...",
+              policyNumber: "Extracting...",
+              documentType,
+              pipelineStatus: "processing",
+              uploadedBySide: "client",
+            },
+            ...(current ?? []).filter((policy) => policy._id !== result.id),
+          ]);
         }
 
         toast.success(
@@ -119,7 +160,7 @@ export default function PoliciesPage() {
         setUploading(false);
       }
     },
-    [uploadOne, extractFromUpload],
+    [uploadOne, extractFromUpload, upsertPolicyList],
   );
 
   const handleDrawerUpload = useCallback(

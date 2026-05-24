@@ -4,6 +4,7 @@ import { useAuthActions } from "@convex-dev/auth/react";
 import { useMutation, useQuery } from "convex/react";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import dayjs from "dayjs";
 import { api } from "@/convex/_generated/api";
 import { BrandWordmark } from "@/components/auth-shell";
 import { PillButton } from "@/components/ui/pill-button";
@@ -12,6 +13,11 @@ import { AccentColorPicker } from "@/components/ui/accent-color-picker";
 import { useOnboardingCache } from "@/hooks/use-onboarding-cache";
 import { ArrowRight, Check, Loader2, X } from "lucide-react";
 import { getPublicAgentDomain } from "@/lib/domains";
+import {
+  useCachedViewerOrg,
+  useViewerCacheActions,
+} from "@/lib/sync/glass-cached-queries";
+import { useCachedQuery } from "@/lib/sync/use-cached-query";
 
 const WORKSPACE_DOMAIN = getPublicAgentDomain();
 
@@ -247,8 +253,9 @@ export default function BrokerOnboardingPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { signOut } = useAuthActions();
-  const viewer = useQuery(api.users.viewer);
-  const viewerOrg = useQuery(api.orgs.viewerOrg, {});
+  const viewer = useCachedQuery("onboarding.broker.viewer", api.users.viewer, {});
+  const viewerOrg = useCachedViewerOrg();
+  const { patchViewer, patchViewerOrg, setViewerOrg } = useViewerCacheActions();
   const createBrokerOrg = useMutation(api.orgs.createBrokerOrg);
   const updateOrg = useMutation(api.orgs.updateOrg);
   const updateBrokerBranding = useMutation(
@@ -387,8 +394,13 @@ export default function BrokerOnboardingPage() {
     setError("");
     try {
       await updateProfile({ name: userName.trim(), title: userTitle.trim() });
+      patchViewer({ name: userName.trim(), title: userTitle.trim() });
       if (viewerOrg?.org) {
         await updateOrg({
+          name: orgName.trim(),
+          website: website.trim() || undefined,
+        });
+        patchViewerOrg({
           name: orgName.trim(),
           website: website.trim() || undefined,
         });
@@ -406,11 +418,32 @@ export default function BrokerOnboardingPage() {
     setError("");
     try {
       if (!viewerOrg?.org) {
-        await createBrokerOrg({
+        const orgId = await createBrokerOrg({
           name: orgName.trim(),
           website: website.trim() || undefined,
           slug: slugInput.trim(),
           partnerType,
+        });
+        const now = dayjs().valueOf();
+        setViewerOrg({
+          org: {
+            _id: orgId,
+            _creationTime: now,
+            name: orgName.trim(),
+            website: website.trim() || undefined,
+            slug: slugInput.trim(),
+            type: "broker",
+            partnerType,
+            iconUrl: null,
+          },
+          membership: {
+            _id: `local:${orgId}:membership` as never,
+            _creationTime: now,
+            orgId,
+            userId: viewer?._id as never,
+            role: "admin",
+          },
+          brokerOrg: null,
         });
       }
       setCurrentStep(2);
@@ -431,6 +464,10 @@ export default function BrokerOnboardingPage() {
         brandingColor: brandingColor || undefined,
         brandingTextOnAccent,
       });
+      patchViewerOrg({
+        brandingColor: brandingColor || undefined,
+        brandingTextOnAccent,
+      });
       setCurrentStep(3);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to save");
@@ -446,8 +483,11 @@ export default function BrokerOnboardingPage() {
       const handle = agentHandle.trim();
       if (handle && !viewerOrg?.org?.agentHandle) {
         await claimAgentHandle({ handle });
+        patchViewerOrg({ agentHandle: handle });
       }
       await completeOnboarding();
+      patchViewer({ onboardingComplete: true });
+      patchViewerOrg({ onboardingComplete: true });
       setOnboardingComplete(true);
       router.push("/");
     } catch (e: unknown) {

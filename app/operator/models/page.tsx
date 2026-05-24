@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import dayjs from "dayjs";
-import { useMutation, useQuery } from "convex/react";
+import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { AppShell } from "@/components/app-shell";
 import {
@@ -26,6 +26,11 @@ import CohereIcon from "@lobehub/icons/es/Cohere/components/Mono";
 import DeepSeekIcon from "@lobehub/icons/es/DeepSeek/components/Mono";
 import { toast } from "sonner";
 import { OperatorSidebar } from "../operator-sidebar";
+import {
+  useCachedOperatorCurrent,
+  useCachedOperatorGlobalModelSettings,
+  useOperatorGlobalModelSettingsCacheActions,
+} from "@/lib/sync/operator-cached-queries";
 
 type ProviderId =
   | "openai"
@@ -79,10 +84,10 @@ function sameRoute(left: Route | null, right: Route) {
 }
 
 export default function OperatorModelsPage() {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const current = useQuery((api as any).operator.current, {});
-  const settings = useQuery(api.modelSettings.getGlobal, {}) as Settings | undefined;
+  const current = useCachedOperatorCurrent();
+  const settings = useCachedOperatorGlobalModelSettings() as Settings | undefined;
   const updateRoutes = useMutation(api.modelSettings.updateGlobalRoutes);
+  const patchCachedRoute = useOperatorGlobalModelSettingsCacheActions();
   const [savingTask, setSavingTask] = useState<string | null>(null);
 
   const providersById = useMemo(() => {
@@ -94,6 +99,7 @@ export default function OperatorModelsPage() {
     setSavingTask(taskId);
     try {
       await updateRoutes({ routes: { [taskId]: route } });
+      await patchCachedRoute(taskId, route);
       toast.success(route ? "Global model updated" : "Global model reset");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to update global model");

@@ -1,17 +1,18 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useCurrentOrg } from "@/hooks/use-current-org";
 import { ActivityFeed, type ActivityEvent } from "@/components/activity-feed";
+import { useCachedQuery } from "@/lib/sync/use-cached-query";
 
 export default function ClientActivityPage() {
   const { clientOrgId } = useParams<{ clientOrgId: string }>();
   const currentOrg = useCurrentOrg();
 
-  const events = useQuery(
+  const events = useCachedQuery(
+    "brokerActivity.listForClient",
     api.brokerActivity.listForClient,
     currentOrg && clientOrgId
       ? {

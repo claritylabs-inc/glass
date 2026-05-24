@@ -1,11 +1,11 @@
 "use client";
 
 import { use, useState, type ReactNode } from "react";
-import { useQuery } from "convex/react";
 import { AppShell } from "@/components/app-shell";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { PolicyDetailBody } from "@/app/policies/[id]/policy-detail-body";
+import { useCachedQuery } from "@/lib/sync/use-cached-query";
 
 export default function ConnectedVendorPolicyDetailPage({
   params,
@@ -16,7 +16,7 @@ export default function ConnectedVendorPolicyDetailPage({
   const [breadcrumb, setBreadcrumb] = useState<ReactNode>(null);
   const [actions, setActions] = useState<ReactNode>(null);
   const [rightPanel, setRightPanel] = useState<ReactNode>(null);
-  const vendorOrg = useQuery(api.orgs.getById, {
+  const vendorOrg = useCachedQuery("orgs.getById.vendorPolicyDetail", api.orgs.getById, {
     orgId: vendorOrgId as Id<"organizations">,
   });
   const vendorName =

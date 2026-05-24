@@ -24,6 +24,11 @@ import {
 import { Loader2 } from "lucide-react";
 import { OperatorSidebar } from "./operator-sidebar";
 import { toast } from "sonner";
+import {
+  useCachedOperatorBrokers,
+  useCachedOperatorCurrent,
+  useOperatorBrokerCacheActions,
+} from "@/lib/sync/operator-cached-queries";
 
 type BrokerRow = {
   _id: Id<"organizations">;
@@ -127,13 +132,9 @@ export default function OperatorPage() {
   const [debouncedSlug, setDebouncedSlug] = useState("");
   const [debouncedAgentHandle, setDebouncedAgentHandle] = useState("");
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const current = useQuery((api as any).operator.current, {});
-  const brokers = useQuery(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (api as any).operator.listBrokers,
-    {},
-  ) as BrokerRow[] | undefined;
+  const current = useCachedOperatorCurrent();
+  const brokers = useCachedOperatorBrokers() as BrokerRow[] | undefined;
+  const { seedBroker, patchBrokerStatus } = useOperatorBrokerCacheActions();
   const identifierCheck = useQuery(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (api as any).operator.checkBrokerSetupIdentifiers,
@@ -192,6 +193,19 @@ export default function OperatorPage() {
         adminPhone: adminPhone || undefined,
       });
       toast.success("Broker created for setup");
+      if (result?.brokerOrgId) {
+        await seedBroker({
+          brokerOrgId: result.brokerOrgId,
+          name,
+          slug: slug || undefined,
+          website: website || undefined,
+          agentHandle: agentHandle || undefined,
+          adminEmail,
+          adminName: adminName || undefined,
+          adminPhone: adminPhone || undefined,
+        });
+        setSelectedId(result.brokerOrgId);
+      }
       setName("");
       setSlug("");
       setWebsite("");
@@ -199,7 +213,6 @@ export default function OperatorPage() {
       setAdminEmail("");
       setAdminName("");
       setAdminPhone("");
-      if (result?.brokerOrgId) setSelectedId(result.brokerOrgId);
       setPanelMode(null);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to create broker");
@@ -217,6 +230,7 @@ export default function OperatorPage() {
     setBusy(true);
     try {
       await launchBroker({ brokerOrgId: broker._id });
+      await patchBrokerStatus(broker._id, "live");
       toast.success("Broker launched and login email sent");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to launch broker");
@@ -229,6 +243,7 @@ export default function OperatorPage() {
     setBusy(true);
     try {
       await setBrokerStatus({ brokerOrgId: broker._id, status: "onboarding" });
+      await patchBrokerStatus(broker._id, "onboarding");
       toast.success("Broker account disabled");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to update broker");

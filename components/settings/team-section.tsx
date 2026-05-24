@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useSettingsActions } from "@/components/settings/settings-actions-context";
-import { useQuery, useMutation } from "convex/react";
+import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
@@ -15,6 +15,11 @@ import { PillButton } from "@/components/ui/pill-button";
 import { InviteMemberDrawer } from "@/components/settings/invite-member-drawer";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { PhoneInput } from "@/components/ui/phone-input";
+import { useCachedViewerOrg } from "@/lib/sync/glass-cached-queries";
+import {
+  useCachedQuery,
+  useUpdateCachedQuery,
+} from "@/lib/sync/use-cached-query";
 
 type TeamMember = {
   membershipId: Id<"orgMemberships">;
@@ -25,12 +30,43 @@ type TeamMember = {
   phone?: string;
   title?: string;
 };
+type TeamInvitation = {
+  _id: Id<"orgInvitations">;
+  status: string;
+  email: string;
+  role: "admin" | "member";
+  [key: string]: unknown;
+};
+type ViewerOrgData = {
+  org?: { primaryInsuranceContactId?: Id<"users"> } & Record<string, unknown>;
+  [key: string]: unknown;
+} | null;
 
 export function TeamSection() {
-  const viewer = useQuery(api.users.viewer);
-  const orgData = useQuery(api.orgs.viewerOrg, {});
-  const members = useQuery(api.orgs.listMembers);
-  const invitations = useQuery(api.orgs.listInvitations);
+  const viewer = useCachedQuery("settings.team.viewer", api.users.viewer, {});
+  const orgData = useCachedViewerOrg();
+  const members = useCachedQuery(
+    "settings.team.listMembers",
+    api.orgs.listMembers,
+    {},
+  ) as TeamMember[] | undefined;
+  const invitations = useCachedQuery(
+    "settings.team.listInvitations",
+    api.orgs.listInvitations,
+    {},
+  ) as TeamInvitation[] | undefined;
+  const updateCachedMembers = useUpdateCachedQuery<
+    TeamMember[],
+    Record<string, never>
+  >("settings.team.listMembers");
+  const updateCachedInvitations = useUpdateCachedQuery<
+    TeamInvitation[],
+    Record<string, never>
+  >("settings.team.listInvitations");
+  const updateCachedViewerOrg = useUpdateCachedQuery<
+    ViewerOrgData,
+    Record<string, never>
+  >("orgs.viewerOrg");
   const removeMember = useMutation(api.orgs.removeMember);
   const updateMemberRole = useMutation(api.orgs.updateMemberRole);
   const updateMemberProfile = useMutation(api.orgs.updateMemberProfile);
@@ -81,6 +117,18 @@ export function TeamSection() {
                     title: editTitle,
                     phone: editPhone,
                   });
+                  await updateCachedMembers({}, (current) =>
+                    current.map((member) =>
+                      member.membershipId === editingMember.membershipId
+                        ? {
+                            ...member,
+                            name: editName.trim() || undefined,
+                            title: editTitle.trim() || undefined,
+                            phone: editPhone || undefined,
+                          }
+                        : member,
+                    ),
+                  );
                   toast.success("Profile updated");
                   setEditingMember(null);
                 } catch (error) {
@@ -138,6 +186,7 @@ export function TeamSection() {
     inviteOpen,
     savingProfile,
     setRightPanel,
+    updateCachedMembers,
     updateMemberProfile,
   ]);
 
@@ -149,7 +198,7 @@ export function TeamSection() {
     );
   }
 
-  const adminCount = members.filter((member: TeamMember) => member.role === "admin").length;
+  const adminCount = members.filter((member) => member.role === "admin").length;
 
   return (
     <div className="space-y-4">
@@ -158,7 +207,7 @@ export function TeamSection() {
           <h3 className="mb-0! text-sm font-medium text-foreground">Team Members</h3>
         </div>
         <div className="divide-y divide-foreground/6">
-          {members.map((member: TeamMember) => {
+          {members.map((member) => {
             const isLastAdmin = member.role === "admin" && adminCount <= 1;
 
             return (
@@ -218,6 +267,17 @@ export function TeamSection() {
                           onClick={async () => {
                             try {
                               await setPrimaryContact({ userId: member.userId });
+                              await updateCachedViewerOrg({}, (current) =>
+                                current?.org
+                                  ? {
+                                      ...current,
+                                      org: {
+                                        ...current.org,
+                                        primaryInsuranceContactId: member.userId,
+                                      },
+                                    }
+                                  : current,
+                              );
                               toast.success("Primary contact updated");
                             } catch (e: unknown) {
                               const msg = e instanceof Error ? e.message : "Failed to update";
@@ -237,10 +297,19 @@ export function TeamSection() {
                         onClick={async () => {
                           if (isLastAdmin) return;
                           try {
+                            const nextRole =
+                              member.role === "admin" ? "member" : "admin";
                             await updateMemberRole({
                               membershipId: member.membershipId,
-                              role: member.role === "admin" ? "member" : "admin",
+                              role: nextRole,
                             });
+                            await updateCachedMembers({}, (current) =>
+                              current.map((row) =>
+                                row.membershipId === member.membershipId
+                                  ? { ...row, role: nextRole }
+                                  : row,
+                              ),
+                            );
                             toast.success("Role updated");
                           } catch (e: unknown) {
                             const msg = e instanceof Error ? e.message : "Failed to update role";
@@ -256,6 +325,11 @@ export function TeamSection() {
                         onClick={async () => {
                           try {
                             await removeMember({ membershipId: member.membershipId });
+                            await updateCachedMembers({}, (current) =>
+                              current.filter(
+                                (row) => row.membershipId !== member.membershipId,
+                              ),
+                            );
                             toast.success("Member removed");
                           } catch (e: unknown) {
                             const msg = e instanceof Error ? e.message : "Failed to remove member";
@@ -289,6 +363,9 @@ export function TeamSection() {
                   onClick={async () => {
                     try {
                       await cancelInvitation({ invitationId: inv._id });
+                      await updateCachedInvitations({}, (current) =>
+                        current.filter((row) => row._id !== inv._id),
+                      );
                       toast.success("Invitation cancelled");
                     } catch {
                       toast.error("Failed to cancel invitation");

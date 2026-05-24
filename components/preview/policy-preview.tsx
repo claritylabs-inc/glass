@@ -7,7 +7,6 @@ import {
   cloneElement,
   isValidElement,
 } from "react";
-import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import dayjs from "dayjs";
@@ -17,6 +16,7 @@ import { CoverageRow } from "./coverage-row";
 import { buildSectionContent, matchesCitation } from "./section-utils";
 import { PillButton } from "@/components/ui/pill-button";
 import { useCachedPolicyDetail } from "@/lib/sync/glass-cached-queries";
+import { useCachedQuery } from "@/lib/sync/use-cached-query";
 
 interface DocSection {
   title: string;
@@ -82,7 +82,8 @@ export function PolicyPreview({
   onHeaderActions,
 }: PolicyPreviewProps) {
   const policy = useCachedPolicyDetail(id as Id<"policies">);
-  const fileUrl = useQuery(
+  const fileUrl = useCachedQuery(
+    "policies.getFileUrl.preview",
     api.policies.getFileUrl,
     policy?.fileId ? { fileId: policy.fileId } : "skip",
   );

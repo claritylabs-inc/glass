@@ -1,8 +1,9 @@
 "use client";
 
-import { useQuery } from "convex/react";
+import dayjs from "dayjs";
 import { api } from "@/convex/_generated/api";
 import { Brain, MessageSquare, Mail, FileText, Sparkles } from "lucide-react";
+import { useCachedQuery } from "@/lib/sync/use-cached-query";
 
 const TYPE_LABELS: Record<string, string> = {
   fact: "Facts",
@@ -26,7 +27,7 @@ const SOURCE_LABELS: Record<string, string> = {
 };
 
 export function MemorySection() {
-  const memories = useQuery(api.orgMemory.list);
+  const memories = useCachedQuery("orgMemory.list", api.orgMemory.list, {});
 
   if (memories === undefined) {
     return (
@@ -108,7 +109,7 @@ export function MemorySection() {
                         <p className="text-label-sm text-muted-foreground/50 mt-1">
                           {SOURCE_LABELS[m.source] ?? m.source}
                           {" · "}
-                          {new Date(m.updatedAt).toLocaleDateString()}
+                          {dayjs(m.updatedAt).format("M/D/YYYY")}
                         </p>
                       </div>
                     </div>

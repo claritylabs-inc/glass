@@ -1,11 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery, useMutation } from "convex/react";
+import { useMutation } from "convex/react";
+import dayjs from "dayjs";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { Mail, MessageSquareText } from "lucide-react";
 import { SettingsSwitch } from "@/components/settings/settings-switch";
+import {
+  useCachedQuery,
+  useUpsertCachedQuery,
+} from "@/lib/sync/use-cached-query";
 
 interface PrefRow {
   type: string;
@@ -78,10 +83,26 @@ type NotificationChannel = "in_app" | "email" | "imessage";
 export default function NotificationPreferencesPage({ orgId, orgType }: NotificationPreferencesPageProps) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const _api = api as any;
-  const prefs = useQuery(_api.notificationPreferences.getForUser, { orgId }) ?? [];
+  const prefs = useCachedQuery(
+    "notificationPreferences.getForUser",
+    _api.notificationPreferences.getForUser,
+    { orgId },
+  ) ?? [];
   const setAll = useMutation(_api.notificationPreferences.setAllEmail);
   const setAllChannel = useMutation(_api.notificationPreferences.setAllChannel);
   const set = useMutation(_api.notificationPreferences.set);
+  const upsertCachedPrefs = useUpsertCachedQuery<
+    Array<{
+      _id: Id<"notificationPreferences">;
+      _creationTime: number;
+      orgId: Id<"organizations">;
+      type: string;
+      channel: string;
+      enabled: boolean;
+      updatedAt: number;
+    }>,
+    { orgId: Id<"organizations"> }
+  >("notificationPreferences.getForUser");
   const [optimisticPrefs, setOptimisticPrefs] = useState<Record<string, boolean>>({});
   const visibleRows =
     orgType === "broker"
@@ -126,12 +147,49 @@ export default function NotificationPreferencesPage({ orgId, orgType }: Notifica
   );
   const allImessageEnabled = optimisticPrefs[prefKey("__all__", "imessage")] ?? (allImessageRow ? allImessageRow.enabled : false);
 
+  async function patchCachedPreference(
+    type: string,
+    channel: NotificationChannel,
+    enabled: boolean,
+  ) {
+    const now = dayjs().valueOf();
+    await upsertCachedPrefs({ orgId }, (current) => {
+      const existing = current ?? [];
+      const index = existing.findIndex(
+        (row) => row.type === type && row.channel === channel,
+      );
+      if (index >= 0) {
+        return existing.map((row, rowIndex) =>
+          rowIndex === index ? { ...row, enabled, updatedAt: now } : row,
+        );
+      }
+      return [
+        ...existing,
+        {
+          _id: `local:${orgId}:${type}:${channel}` as Id<"notificationPreferences">,
+          _creationTime: now,
+          orgId,
+          type,
+          channel,
+          enabled,
+          updatedAt: now,
+        },
+      ];
+    });
+  }
+
   async function toggleAllEmail() {
     const next = !allEmailEnabled;
     const key = prefKey("__all__", "email");
     setOptimisticPrefs((current) => ({ ...current, [key]: next }));
     try {
       await setAll({ orgId, enabled: next });
+      await patchCachedPreference("__all__", "email", next);
+      setOptimisticPrefs((current) => {
+        const rest = { ...current };
+        delete rest[key];
+        return rest;
+      });
     } catch (err) {
       setOptimisticPrefs((current) => ({ ...current, [key]: !next }));
       console.warn("[NotificationPreferencesPage] Failed to update email notification preference", err);
@@ -144,6 +202,12 @@ export default function NotificationPreferencesPage({ orgId, orgType }: Notifica
     setOptimisticPrefs((current) => ({ ...current, [key]: next }));
     try {
       await setAllChannel({ orgId, channel: "imessage", enabled: next });
+      await patchCachedPreference("__all__", "imessage", next);
+      setOptimisticPrefs((current) => {
+        const rest = { ...current };
+        delete rest[key];
+        return rest;
+      });
     } catch (err) {
       setOptimisticPrefs((current) => ({ ...current, [key]: !next }));
       console.warn("[NotificationPreferencesPage] Failed to update iMessage notification preference", err);
@@ -156,6 +220,12 @@ export default function NotificationPreferencesPage({ orgId, orgType }: Notifica
     setOptimisticPrefs((current) => ({ ...current, [key]: next }));
     try {
       await set({ orgId, type, channel, enabled: next });
+      await patchCachedPreference(type, channel, next);
+      setOptimisticPrefs((current) => {
+        const rest = { ...current };
+        delete rest[key];
+        return rest;
+      });
     } catch (err) {
       setOptimisticPrefs((current) => ({ ...current, [key]: !next }));
       console.warn("[NotificationPreferencesPage] Failed to update notification preference", err);

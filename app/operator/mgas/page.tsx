@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import dayjs from "dayjs";
-import { useAction, useMutation, useQuery } from "convex/react";
+import { useAction, useMutation } from "convex/react";
 import { useRouter } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -21,6 +21,11 @@ import {
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { OperatorSidebar } from "../operator-sidebar";
+import {
+  useCachedOperatorCurrent,
+  useCachedOperatorMGAs,
+  useOperatorMGACacheActions,
+} from "@/lib/sync/operator-cached-queries";
 
 type MGARow = {
   _id: Id<"organizations">;
@@ -93,13 +98,9 @@ export default function OperatorMGAsPage() {
   const [adminName, setAdminName] = useState("");
   const [busy, setBusy] = useState(false);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const current = useQuery((api as any).operator.current, {});
-  const mgas = useQuery(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (api as any).operator.listMGAs,
-    {},
-  ) as MGARow[] | undefined;
+  const current = useCachedOperatorCurrent();
+  const mgas = useCachedOperatorMGAs() as MGARow[] | undefined;
+  const { seedMGA, patchMGAStatus } = useOperatorMGACacheActions();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const createMGA = useAction((api as any).operator.createMGA);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -128,12 +129,22 @@ export default function OperatorMGAsPage() {
         adminName: adminName || undefined,
       });
       toast.success("MGA created for setup");
+      if (result?.mgaOrgId) {
+        await seedMGA({
+          mgaOrgId: result.mgaOrgId,
+          name,
+          website: website || undefined,
+          programName: programName || undefined,
+          adminEmail,
+          adminName: adminName || undefined,
+        });
+        setSelectedId(result.mgaOrgId);
+      }
       setName("");
       setWebsite("");
       setProgramName("");
       setAdminEmail("");
       setAdminName("");
-      if (result?.mgaOrgId) setSelectedId(result.mgaOrgId);
       setPanelMode(null);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to create MGA");
@@ -151,6 +162,7 @@ export default function OperatorMGAsPage() {
     setBusy(true);
     try {
       await launchMGA({ mgaOrgId: mga._id });
+      await patchMGAStatus(mga._id, "live");
       toast.success("MGA launched and login email sent");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to launch MGA");
@@ -163,6 +175,7 @@ export default function OperatorMGAsPage() {
     setBusy(true);
     try {
       await setMGAStatus({ mgaOrgId: mga._id, status: "onboarding" });
+      await patchMGAStatus(mga._id, "onboarding");
       toast.success("MGA account disabled");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to update MGA");

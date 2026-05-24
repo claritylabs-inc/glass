@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useMutation } from "convex/react";
+import dayjs from "dayjs";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
 import {
@@ -22,12 +23,46 @@ import { PillButton } from "@/components/ui/pill-button";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { useSettingsActions } from "@/components/settings/settings-actions-context";
 import { Id } from "@/convex/_generated/dataModel";
+import {
+  useCachedQuery,
+  useUpdateCachedQuery,
+} from "@/lib/sync/use-cached-query";
+
+type ConnectedAppRow = {
+  tokenId: Id<"oauthTokens">;
+  clientId: string;
+  clientName: string;
+  connectedAt: number;
+  [key: string]: unknown;
+};
+type ApiKeyRow = {
+  _id: Id<"apiKeys">;
+  name: string;
+  keyPrefix: string;
+  createdAt: number;
+  lastUsedAt?: number;
+  revokedAt?: number;
+  [key: string]: unknown;
+};
 
 export function ConnectionsSection() {
-  const connectedApps = useQuery(api.oauth.listConnectedApps);
+  const connectedApps = useCachedQuery(
+    "oauth.listConnectedApps",
+    api.oauth.listConnectedApps,
+    {},
+  ) as ConnectedAppRow[] | undefined;
+  const updateConnectedApps = useUpdateCachedQuery<
+    ConnectedAppRow[],
+    Record<string, never>
+  >("oauth.listConnectedApps");
   const revokeApp = useMutation(api.oauth.revokeApp);
 
-  const apiKeys = useQuery(api.apiKeys.list);
+  const apiKeys = useCachedQuery("apiKeys.list", api.apiKeys.list, {}) as
+    | ApiKeyRow[]
+    | undefined;
+  const updateApiKeys = useUpdateCachedQuery<ApiKeyRow[], Record<string, never>>(
+    "apiKeys.list",
+  );
   const generateApiKey = useMutation(api.apiKeys.generate);
   const revokeApiKey = useMutation(api.apiKeys.revoke);
   const removeApiKey = useMutation(api.apiKeys.remove);
@@ -165,6 +200,13 @@ export function ConnectionsSection() {
                   if (!showRevokeKeyDialog) return;
                   try {
                     await revokeApiKey({ id: showRevokeKeyDialog as Id<"apiKeys"> });
+                    await updateApiKeys({}, (current) =>
+                      current.map((key) =>
+                        key._id === showRevokeKeyDialog
+                          ? { ...key, revokedAt: dayjs().valueOf() }
+                          : key,
+                      ),
+                    );
                     setShowRevokeKeyDialog(null);
                     toast.success("API key revoked");
                   } catch {
@@ -241,6 +283,9 @@ export function ConnectionsSection() {
     setRevoking(true);
     try {
       await revokeApp({ clientId: revokeTarget.clientId });
+      await updateConnectedApps({}, (current) =>
+        current.filter((app) => app.clientId !== revokeTarget.clientId),
+      );
       toast.success("Connection revoked");
       setRevokeTarget(null);
     } catch {
@@ -367,7 +412,7 @@ export function ConnectionsSection() {
                 <div className="flex-1 min-w-0">
                   <p className="text-body-sm font-medium text-foreground">{app.clientName}</p>
                   <p className="text-label-sm text-muted-foreground/50 mt-0.5">
-                    Connected {new Date(app.connectedAt).toLocaleDateString()}
+                    Connected {dayjs(app.connectedAt).format("M/D/YYYY")}
                   </p>
                 </div>
                 <PillButton
@@ -480,7 +525,7 @@ export function ConnectionsSection() {
                       </p>
                       {key.lastUsedAt && (
                         <p className="text-label-sm text-muted-foreground/50 mt-0.5">
-                          Last used {new Date(key.lastUsedAt).toLocaleDateString()}
+                          Last used {dayjs(key.lastUsedAt).format("M/D/YYYY")}
                         </p>
                       )}
                     </div>
@@ -500,6 +545,9 @@ export function ConnectionsSection() {
                           onClick={async () => {
                             try {
                               await removeApiKey({ id: key._id as Id<"apiKeys"> });
+                              await updateApiKeys({}, (current) =>
+                                current.filter((row) => row._id !== key._id),
+                              );
                               toast.success("Key removed");
                             } catch {
                               toast.error("Failed to remove key");

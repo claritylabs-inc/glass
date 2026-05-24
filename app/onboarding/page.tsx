@@ -1,16 +1,16 @@
 "use client";
 
-import { useQuery } from "convex/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect } from "react";
 import { Loader2 } from "lucide-react";
 import { api } from "@/convex/_generated/api";
+import { useCachedQuery } from "@/lib/sync/use-cached-query";
 
 export default function OnboardingRoutePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const viewer = useQuery(api.users.viewer);
-  const viewerOrg = useQuery(api.orgs.viewerOrg, {});
+  const viewer = useCachedQuery("onboarding.viewer", api.users.viewer, {});
+  const viewerOrg = useCachedQuery("onboarding.viewerOrg", api.orgs.viewerOrg, {});
 
   useEffect(() => {
     if (viewer === undefined || viewerOrg === undefined) return;

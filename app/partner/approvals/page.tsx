@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useAction, useMutation, useQuery } from "convex/react";
+import { useAction, useMutation } from "convex/react";
 import dayjs from "dayjs";
 import {
   CheckCircle2,
@@ -20,6 +20,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import {
+  useCachedQuery,
+  useUpdateCachedQuery,
+} from "@/lib/sync/use-cached-query";
 
 type ApprovalQueue = {
   certificateRequests: Array<{
@@ -170,11 +174,18 @@ function ApprovalRow({
 }
 
 export default function ProgramAdminApprovalsPage() {
-  const queue = useQuery(api.partnerPrograms.listApprovalQueue, {}) as ApprovalQueue | undefined;
+  const queue = useCachedQuery(
+    "partnerPrograms.listApprovalQueue",
+    api.partnerPrograms.listApprovalQueue,
+    {},
+  ) as ApprovalQueue | undefined;
   const approveCertificate = useAction(api.partnerPrograms.approveCertificateRequest);
   const declineCertificate = useMutation(api.partnerPrograms.declineCertificateRequest);
   const approvePce = useMutation(api.partnerPrograms.approvePolicyChangeCase);
   const declinePce = useMutation(api.partnerPrograms.declinePolicyChangeCase);
+  const updateQueue = useUpdateCachedQuery<ApprovalQueue, Record<string, never>>(
+    "partnerPrograms.listApprovalQueue",
+  );
   const [workingId, setWorkingId] = useState<string | null>(null);
   const [filter, setFilter] = useState<ApprovalFilter>("all");
 
@@ -186,10 +197,30 @@ export default function ProgramAdminApprovalsPage() {
   const visiblePolicyChangeCases =
     filter === "all" || filter === "policy_changes" ? policyChangeCases : [];
 
-  async function run(id: string, action: () => Promise<unknown>, message: string) {
+  async function run(
+    id: string,
+    action: () => Promise<unknown>,
+    message: string,
+    kind: ApprovalKind,
+  ) {
     setWorkingId(id);
     try {
       await action();
+      await updateQueue({}, (current) =>
+        kind === "certificate"
+          ? {
+              ...current,
+              certificateRequests: current.certificateRequests.filter(
+                (request) => request._id !== id,
+              ),
+            }
+          : {
+              ...current,
+              policyChangeCases: current.policyChangeCases.filter(
+                (changeCase) => changeCase._id !== id,
+              ),
+            },
+      );
       toast.success(message);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Approval action failed");
@@ -239,6 +270,7 @@ export default function ProgramAdminApprovalsPage() {
                       request._id,
                       () => declineCertificate({ requestId: request._id }),
                       "Certificate request declined",
+                      "certificate",
                     )
                   }
                   onApprove={() =>
@@ -246,6 +278,7 @@ export default function ProgramAdminApprovalsPage() {
                       request._id,
                       () => approveCertificate({ requestId: request._id }),
                       "Certified certificate generated",
+                      "certificate",
                     )
                   }
                 />
@@ -265,6 +298,7 @@ export default function ProgramAdminApprovalsPage() {
                       changeCase._id,
                       () => declinePce({ caseId: changeCase._id }),
                       "Policy change declined",
+                      "policy_change",
                     )
                   }
                   onApprove={() =>
@@ -272,6 +306,7 @@ export default function ProgramAdminApprovalsPage() {
                       changeCase._id,
                       () => approvePce({ caseId: changeCase._id }),
                       "Policy change approved and staged",
+                      "policy_change",
                     )
                   }
                 />

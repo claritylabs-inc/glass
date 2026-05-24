@@ -31,6 +31,12 @@ import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { OperatorSidebar } from "../operator-sidebar";
 import { getPublicAgentDomain } from "@/lib/domains";
+import {
+  useCachedOperatorBrokers,
+  useCachedOperatorClients,
+  useCachedOperatorCurrent,
+  useOperatorClientCacheActions,
+} from "@/lib/sync/operator-cached-queries";
 
 type ClientRow = {
   _id: Id<"organizations">;
@@ -154,18 +160,10 @@ export default function OperatorClientsPage() {
   const [busy, setBusy] = useState(false);
   const [debouncedAgentHandle, setDebouncedAgentHandle] = useState("");
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const current = useQuery((api as any).operator.current, {});
-  const clients = useQuery(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (api as any).operator.listClients,
-    {},
-  ) as ClientRow[] | undefined;
-  const brokers = useQuery(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (api as any).operator.listBrokers,
-    {},
-  ) as BrokerOption[] | undefined;
+  const current = useCachedOperatorCurrent();
+  const clients = useCachedOperatorClients() as ClientRow[] | undefined;
+  const brokers = useCachedOperatorBrokers() as BrokerOption[] | undefined;
+  const { seedClient, patchClientStatus } = useOperatorClientCacheActions();
   const handleAvailability = useQuery(
     api.orgs.checkHandleAvailability,
     debouncedAgentHandle ? { handle: debouncedAgentHandle } : "skip",
@@ -216,6 +214,22 @@ export default function OperatorClientsPage() {
         adminPhone: adminPhone || undefined,
       });
       toast.success("Client created for setup");
+      if (result?.clientOrgId) {
+        await seedClient({
+          clientOrgId: result.clientOrgId,
+          name,
+          brokerOrgId: brokerOrgId === STANDALONE_VALUE
+            ? undefined
+            : brokerOrgId as Id<"organizations">,
+          brokerName: selectedBroker?.name,
+          website: website || undefined,
+          agentHandle: agentHandle || undefined,
+          adminEmail,
+          adminName: adminName || undefined,
+          adminPhone: adminPhone || undefined,
+        });
+        setSelectedId(result.clientOrgId);
+      }
       setName("");
       setBrokerOrgId(STANDALONE_VALUE);
       setWebsite("");
@@ -223,7 +237,6 @@ export default function OperatorClientsPage() {
       setAdminEmail("");
       setAdminName("");
       setAdminPhone("");
-      if (result?.clientOrgId) setSelectedId(result.clientOrgId);
       setPanelMode(null);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to create client");
@@ -241,6 +254,7 @@ export default function OperatorClientsPage() {
     setBusy(true);
     try {
       await launchClient({ clientOrgId: client._id });
+      await patchClientStatus(client._id, "live");
       toast.success("Client launched and login email sent");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to launch client");
@@ -265,6 +279,7 @@ export default function OperatorClientsPage() {
     setBusy(true);
     try {
       await setClientStatus({ clientOrgId: client._id, status: "onboarding" });
+      await patchClientStatus(client._id, "onboarding");
       toast.success("Client account disabled");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to update client");

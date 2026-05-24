@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useAction, useMutation, useQuery } from "convex/react";
+import { useAction, useMutation } from "convex/react";
 import type { FunctionReference } from "convex/server";
 import { AppShell } from "@/components/app-shell";
 import { api } from "@/convex/_generated/api";
@@ -24,6 +24,8 @@ import { PillButton } from "@/components/ui/pill-button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useCurrentOrg } from "@/lib/hooks/use-current-org";
+import { useCachedConnectedVendors } from "@/lib/sync/glass-cached-queries";
+import { useCachedQuery, useUpdateCachedQuery } from "@/lib/sync/use-cached-query";
 
 type Category =
   | "general_liability"
@@ -279,18 +281,23 @@ export function CompliancePage() {
   const orgId = !isBroker
     ? (currentOrg?.orgId as Id<"organizations"> | undefined)
     : undefined;
-  const requirements = useQuery(
+  const requirements = useCachedQuery(
+    "compliance.listRequirements",
     complianceApi.compliance.listRequirements,
     orgId ? { orgId } : "skip",
   ) as Requirement[] | undefined;
-  const vendorRows = useQuery(
-    complianceApi.connectedOrgs.listVendors,
-    orgId ? { orgId } : "skip",
-  ) as ConnectedOrgRow[] | undefined;
-  const clientRows = useQuery(
+  const vendorRows = useCachedConnectedVendors(orgId) as
+    | ConnectedOrgRow[]
+    | undefined;
+  const clientRows = useCachedQuery(
+    "connectedOrgs.listClients",
     complianceApi.connectedOrgs.listClients,
     orgId ? { orgId } : "skip",
   ) as ConnectedOrgRow[] | undefined;
+  const updateRequirements = useUpdateCachedQuery<
+    Requirement[],
+    { orgId: Id<"organizations"> }
+  >("compliance.listRequirements");
   const upsertRequirement = useMutation(
     complianceApi.compliance.upsertRequirement,
   );
@@ -372,6 +379,9 @@ export function CompliancePage() {
     if (!orgId) return;
     try {
       await archiveRequirement({ orgId, requirementId });
+      await updateRequirements({ orgId }, (current) =>
+        current.filter((requirement) => requirement._id !== requirementId),
+      );
       toast.success("Requirement archived");
     } catch (error) {
       toast.error(

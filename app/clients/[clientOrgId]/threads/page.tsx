@@ -1,18 +1,19 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { FadeIn } from "@/components/ui/fade-in";
 import { Mail, MessageCircle } from "lucide-react";
 import dayjs from "dayjs";
+import { useCachedQuery } from "@/lib/sync/use-cached-query";
 
 export default function ClientThreadsPage() {
   const { clientOrgId } = useParams<{ clientOrgId: string }>();
   const router = useRouter();
 
-  const threads = useQuery(
+  const threads = useCachedQuery(
+    "threads.listForClient.page",
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (api as any).threads.listForClient,
     clientOrgId

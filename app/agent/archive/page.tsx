@@ -18,11 +18,11 @@ import {
 export default function ArchivePage() {
   const threads = useCachedArchivedThreads();
   const unarchive = useMutation(api.threads.unarchive);
-  const { removeArchivedThreadLocally } = useArchivedThreadCacheActions();
+  const { unarchiveThreadLocally } = useArchivedThreadCacheActions();
 
   async function handleUnarchive(id: Id<"threads">) {
     try {
-      void removeArchivedThreadLocally(id);
+      await unarchiveThreadLocally(id);
       await unarchive({ id });
       toast.success("Unarchived");
     } catch {

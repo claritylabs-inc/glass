@@ -92,6 +92,7 @@ export function ClientList({
     if (r.onboardingStatus === "draft" || r.onboardingStatus === "invited") {
       return {
         kind: "draft",
+        partnerOrgId,
         clientOrgId: r.clientOrgId as Id<"organizations">,
         name: r.name,
         primaryContactName: r.primaryContactName,

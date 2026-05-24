@@ -1,12 +1,12 @@
 "use client";
 
 import { type MouseEvent } from "react";
-import { useQuery } from "convex/react";
 import { Paperclip } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { usePdf } from "@/components/pdf-context";
 import { cn } from "@/lib/utils";
+import { useCachedQuery } from "@/lib/sync/use-cached-query";
 import type { ThreadAttachment } from "./types";
 
 /* ── Attachment chip for unified thread messages ── */
@@ -20,7 +20,8 @@ export function ThreadAttachmentChip({
   className?: string;
 }) {
   const { openWithUrl } = usePdf();
-  const url = useQuery(
+  const url = useCachedQuery(
+    "threads.getAttachmentUrl",
     api.threads.getAttachmentUrl,
     attachment.fileId ? { threadId, fileId: attachment.fileId } : "skip",
   );

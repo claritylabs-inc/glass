@@ -2,13 +2,13 @@
 
 import { use, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { AppShell } from "@/components/app-shell";
 import { PolicyListItem } from "@/components/policy-list-item";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useCachedQuery } from "@/lib/sync/use-cached-query";
 
 type DocType = "policy" | "quote";
 
@@ -30,13 +30,17 @@ export default function ConnectedVendorPoliciesPage({
   const { vendorOrgId } = use(params);
   const router = useRouter();
   const [docType, setDocType] = useState<DocType>("policy");
-  const vendorOrg = useQuery(api.orgs.getById, {
+  const vendorOrg = useCachedQuery("orgs.getById.vendorPolicies", api.orgs.getById, {
     orgId: vendorOrgId as Id<"organizations">,
   });
-  const policies = useQuery(api.policies.listForOrg, {
-    orgId: vendorOrgId as Id<"organizations">,
-    documentType: docType,
-  });
+  const policies = useCachedQuery(
+    "policies.listForOrg.vendorPolicies",
+    api.policies.listForOrg,
+    {
+      orgId: vendorOrgId as Id<"organizations">,
+      documentType: docType,
+    },
+  );
 
   const rows = policies ?? [];
   const vendorName =

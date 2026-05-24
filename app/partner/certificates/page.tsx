@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useQuery } from "convex/react";
 import dayjs from "dayjs";
 import { BadgeCheck, FileText } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
@@ -27,6 +26,7 @@ import {
 } from "@/components/ui/table";
 import { usePdf } from "@/components/pdf-context";
 import { api } from "@/convex/_generated/api";
+import { useCachedQuery } from "@/lib/sync/use-cached-query";
 import type { Id } from "@/convex/_generated/dataModel";
 
 type PartnerBroker = {
@@ -361,7 +361,11 @@ function CertificateList({
 }
 
 export default function PartnerCertificatesPage() {
-  const certificates = useQuery(api.partnerPrograms.listPartnerCertificates, {}) as PartnerCertificate[] | undefined;
+  const certificates = useCachedQuery(
+    "partnerPrograms.listPartnerCertificates",
+    api.partnerPrograms.listPartnerCertificates,
+    {},
+  ) as PartnerCertificate[] | undefined;
   const [brokerFilter, setBrokerFilter] = useState(ALL_BROKERS);
   const [selectedCertificate, setSelectedCertificate] = useState<PartnerCertificate | null>(null);
 

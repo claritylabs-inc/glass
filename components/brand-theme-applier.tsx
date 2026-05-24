@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect } from "react";
-import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { tokensForAccent, type BrandTokens } from "@/lib/branding";
+import { useCachedQuery } from "@/lib/sync/use-cached-query";
 
 const STORAGE_KEY = "brandTheme";
 
@@ -15,7 +15,11 @@ const STORAGE_KEY = "brandTheme";
  * synchronously on the next page load.
  */
 export function BrandThemeApplier() {
-  const viewerOrg = useQuery(api.orgs.viewerOrg, {});
+  const viewerOrg = useCachedQuery(
+    "brandTheme.viewerOrg",
+    api.orgs.viewerOrg,
+    {},
+  );
 
   // Swap tokens when dark mode toggles without waiting for a re-query.
   useEffect(() => {
