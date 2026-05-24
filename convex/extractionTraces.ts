@@ -74,8 +74,9 @@ function progressMessage(args: {
   if (args.error) return args.error;
   if (args.kind === "model_call") {
     const rawLabel = args.label ?? args.taskKind ?? "model call";
-    const label = /generate(Object|Text)/i.test(rawLabel) ? "Analyzing document" : rawLabel;
-    return `${label}${duration ? ` · ${duration}` : ""}`;
+    const label = /generate(Object|Text)/i.test(rawLabel) ? (args.taskKind ?? "Analyzing document") : rawLabel;
+    const model = [args.provider, args.model].filter(Boolean).join(" / ");
+    return `${label}${model ? ` (${model})` : ""}${duration ? ` · ${duration}` : ""}`;
   }
   if (args.kind === "embedding_batch") {
     return `Indexing ${args.label ?? "document"}${duration ? ` · ${duration}` : ""}`;

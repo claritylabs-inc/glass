@@ -13,7 +13,6 @@ import {
 import type { Phase, PhaseResult } from "@claritylabs/cl-pipelines";
 import {
   buildExtractor,
-  insuranceDocToPolicy,
   summarizeExtractionCheckpoint,
 } from "../lib/extraction";
 import { preparePdfTextWithDoclingFallback } from "../lib/doclingPreprocessor";
@@ -22,10 +21,10 @@ import type { ExtractOptions } from "../lib/extraction";
 import { makeEmbedText, makeGenerateObject } from "../lib/sdkCallbacks";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
-import { getModelForOrg } from "../lib/models";
-import { applyPolicyPeriodFallback } from "../lib/policyPeriodExtraction";
-import { applyCoverageDeclarationScoping } from "../lib/coverageScoping";
-import { generateObject } from "ai";
+import {
+  openExtractionReviewQuestions,
+  postProcessExtractionDocument,
+} from "../lib/extractionPostProcess";
 import { z } from "zod";
 
 const CANCELLED_BY_USER = "Cancelled by user";
@@ -519,119 +518,6 @@ function shouldRejectDocument(decision: ExtractionGateDecision): boolean {
   return !decision.shouldExtract && decision.confidence >= 0.7;
 }
 
-const orgNameNormalizationSchema = z.object({
-  carrier: z.string().nullable(),
-  security: z.string().nullable(),
-  mga: z.string().nullable(),
-  broker: z.string().nullable(),
-  brokerAgency: z.string().nullable(),
-});
-
-const coverageReviewCopySchema = z.object({
-  questions: z.array(z.object({
-    id: z.string(),
-    question: z.string(),
-    reason: z.string(),
-    recommendation: z.string(),
-  })),
-});
-
-function compactCoverageReviewForPrompt(fields: Record<string, unknown>) {
-  const review = fields.extractionReview as { questions?: Array<Record<string, unknown>> } | undefined;
-  const questions = Array.isArray(review?.questions) ? review.questions : [];
-  return questions.map((question) => ({
-    id: question.id,
-    coverageName: question.coverageName,
-    limitType: question.limitType,
-    currentValue: question.currentValue,
-    reason: question.reason,
-    options: Array.isArray(question.options)
-      ? question.options.map((option) => {
-        const item = option as Record<string, unknown>;
-        const coverage = typeof item.coverage === "object" && item.coverage
-          ? item.coverage as Record<string, unknown>
-          : {};
-        return {
-          id: item.id,
-          label: item.label,
-          value: item.value,
-          limitType: item.limitType ?? coverage.limitType,
-          source: item.sourceLabel,
-          extractedAs: coverage.name,
-          originalText: coverage.originalContent,
-          reason: item.reason,
-        };
-      })
-      : [],
-  }));
-}
-
-async function refineCoverageReviewCopyWithLlm(
-  ctx: ActionCtx,
-  orgId: Id<"organizations">,
-  fields: Record<string, unknown>,
-): Promise<Record<string, unknown>> {
-  const review = fields.extractionReview as { questions?: Array<Record<string, unknown>> } | undefined;
-  const questions = Array.isArray(review?.questions) ? review.questions : [];
-  if (questions.length === 0) return fields;
-
-  try {
-    const model = await getModelForOrg(ctx, orgId, "extraction");
-    const result = await generateObject({
-      model,
-      schema: coverageReviewCopySchema,
-      prompt: `Rewrite coverage extraction review questions for a broker or client reviewing an insurance policy.
-
-Rules:
-- Keep each id unchanged.
-- Write clear, plain questions. Avoid duplicated words like "limit limit".
-- Do not ask users to choose between terms that can all be true. If options are a deductible, retroactive date, aggregate, and per-occurrence/per-claim limit, explain that the recommendation is the actual coverage limit and the others are separate policy terms.
-- Use "per occurrence" in user-facing wording instead of "per claim" unless quoting source text.
-- Include a short reason that explains why review is needed.
-- Include a short recommendation sentence that names the recommended option and why source evidence supports it.
-- Do not use jargon like extraction slot, candidate, or model.
-- Keep question under 120 characters and reason/recommendation under 180 characters.
-
-Review JSON:
-${JSON.stringify(compactCoverageReviewForPrompt(fields))}`,
-    });
-
-    const copyById = new Map(result.object.questions.map((question) => [question.id, question]));
-    return {
-      ...fields,
-      extractionReview: {
-        ...(review ?? {}),
-        questions: questions.map((question) => {
-          const copy = typeof question.id === "string" ? copyById.get(question.id) : undefined;
-          return copy
-            ? {
-              ...question,
-              question: copy.question,
-              reason: copy.reason,
-              recommendation: copy.recommendation,
-            }
-            : question;
-        }),
-      },
-    };
-  } catch (err) {
-    console.warn(
-      `LLM coverage-review copy failed: ${err instanceof Error ? err.message : String(err)}`,
-    );
-    return fields;
-  }
-}
-
-function openExtractionReviewQuestions(value: unknown): Array<Record<string, unknown>> {
-  const review = value as { questions?: Array<Record<string, unknown>> } | undefined;
-  if (!Array.isArray(review?.questions)) return [];
-  return review.questions.filter((question) =>
-    typeof question.id === "string" &&
-    question.status !== "confirmed" &&
-    question.status !== "dismissed"
-  );
-}
-
 async function notifyExtractionReviewRequired(
   ctx: ActionCtx,
   args: {
@@ -657,55 +543,6 @@ async function notifyExtractionReviewRequired(
     actionPayload: { policyId: args.policyId, tab: "review" },
     sourceRef: { policyId: args.policyId, kind: "extraction_review" },
   });
-}
-
-async function normalizeOrgNamesWithLlm(
-  ctx: ActionCtx,
-  orgId: Id<"organizations">,
-  fields: Record<string, unknown>,
-): Promise<Record<string, unknown>> {
-  const candidates = {
-    carrier: typeof fields.carrier === "string" ? fields.carrier : undefined,
-    security: typeof fields.security === "string" ? fields.security : undefined,
-    mga: typeof fields.mga === "string" ? fields.mga : undefined,
-    broker: typeof fields.broker === "string" ? fields.broker : undefined,
-    brokerAgency: typeof fields.brokerAgency === "string" ? fields.brokerAgency : undefined,
-  };
-  if (!Object.values(candidates).some(Boolean)) return fields;
-
-  try {
-    const model = await getModelForOrg(ctx, orgId, "extraction");
-    const result = await generateObject({
-      model,
-      schema: orgNameNormalizationSchema,
-      prompt: `Normalize insurance organization display names.
-
-Rules:
-- Return concise user-facing names only.
-- Remove legal/disclaimer suffixes, "administered by" clauses, and parenthetical metadata.
-- Keep the canonical brand/entity name.
-- If input is already concise, keep it unchanged.
-- Return every schema key. Use null for missing input keys.
-
-Input JSON:
-${JSON.stringify(candidates)}`,
-    });
-
-    const normalized = result.object;
-    return {
-      ...fields,
-      carrier: normalized.carrier ?? fields.carrier,
-      security: normalized.security ?? fields.security,
-      mga: normalized.mga ?? fields.mga,
-      broker: normalized.broker ?? fields.broker,
-      brokerAgency: normalized.brokerAgency ?? fields.brokerAgency,
-    };
-  } catch (err) {
-    console.warn(
-      `LLM org-name normalization failed: ${err instanceof Error ? err.message : String(err)}`,
-    );
-    return fields;
-  }
 }
 
 async function advanceLeasedPhase(
@@ -1098,25 +935,11 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
       const sourceChunks = resultSourceChunks.length > 0
         ? resultSourceChunks
         : pdfSource.sourceChunks as Array<Record<string, any>>;
-      const periodFallback = applyPolicyPeriodFallback(
-        result.document as Record<string, unknown>,
-        [...sourceSpans, ...(pdfSource.sourceSpans as Array<Record<string, any>>)].map((span) => ({
-          text: typeof span.text === "string" ? span.text : undefined,
-          pageStart: typeof span.pageStart === "number" ? span.pageStart : undefined,
-        })),
-      );
-      if (periodFallback.changed) {
-        result.document = periodFallback.document as typeof result.document;
-        await pCtx.log(
-          `Policy period verified from source text: ${periodFallback.period?.effectiveDate} to ${periodFallback.period?.expirationDate}`,
-        );
-      }
-      const doc = result.document as Record<string, unknown>;
       const chunks = result.chunks;
       const tokenUsage = result.tokenUsage;
 
       await pCtx.log(
-        `Extraction complete. Type: ${doc.type}. ${chunks.length} chunks, ${sourceSpans.length} source spans. Tokens: ${tokenUsage.inputTokens}in/${tokenUsage.outputTokens}out`,
+        `Extraction complete. Type: ${(result.document as Record<string, unknown>).type}. ${chunks.length} chunks, ${sourceSpans.length} source spans. Tokens: ${tokenUsage.inputTokens}in/${tokenUsage.outputTokens}out`,
       );
       if (result.performanceReport) {
         const totalSeconds = Math.round(result.performanceReport.totalModelCallDurationMs / 1000);
@@ -1128,29 +951,16 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         await pCtx.log(line);
       }
 
-      // Save extracted fields to the policy row
-      const mappedFields = insuranceDocToPolicy(result.document);
-      const scopedCoverage = applyCoverageDeclarationScoping({
-        fields: mappedFields,
-        sourceSpans,
-        nowMs: dayjs().valueOf(),
+      const processed = await postProcessExtractionDocument({
+        ctx: convexCtx,
+        orgId: state.orgId as Id<"organizations">,
+        document: result.document as Record<string, unknown>,
+        sourceSpans: [...sourceSpans, ...(pdfSource.sourceSpans as Array<Record<string, any>>)],
+        log: async (message, level) => { await pCtx.log(message, level); },
       });
-      if (scopedCoverage.changed && scopedCoverage.review.questions.length > 0) {
-        await pCtx.log(
-          `Coverage scoping found ${scopedCoverage.review.questions.length} limit question${scopedCoverage.review.questions.length === 1 ? "" : "s"} for declaration review`,
-          "warn",
-        );
-      }
-      const reviewCopyFields = await refineCoverageReviewCopyWithLlm(
-        convexCtx,
-        state.orgId as Id<"organizations">,
-        scopedCoverage.fields,
-      );
-      const fields = await normalizeOrgNamesWithLlm(
-        convexCtx,
-        state.orgId as Id<"organizations">,
-        reviewCopyFields,
-      );
+      result.document = processed.document as typeof result.document;
+      const doc = processed.document;
+      const fields = processed.fields;
       const docName = doc.type === "quote"
         ? (doc.quoteNumber || "quote")
         : (doc.policyNumber || "policy");
@@ -1773,24 +1583,6 @@ export const completeExternalExtract = action({
       throw new Error("External extraction completion missing orgId or userId");
     }
 
-    const periodFallback = applyPolicyPeriodFallback(
-      doc,
-      args.sourceSpans.map((span: Record<string, unknown>) => ({
-        text: typeof span.text === "string" ? span.text : undefined,
-        pageStart: typeof span.pageStart === "number" ? span.pageStart : undefined,
-      })),
-    );
-    if (periodFallback.changed) {
-      doc = periodFallback.document;
-      await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
-        jobId: policyId,
-        timestamp: nowMs(),
-        message: `Policy period verified from source text: ${periodFallback.period?.effectiveDate} to ${periodFallback.period?.expirationDate}`,
-        phase: "extract",
-        level: "info",
-      });
-    }
-
     await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
       jobId: policyId,
       timestamp: nowMs(),
@@ -1820,31 +1612,32 @@ export const completeExternalExtract = action({
       }
     }
 
-    const mappedFields = insuranceDocToPolicy(doc);
-    const scopedCoverage = applyCoverageDeclarationScoping({
-      fields: mappedFields,
+    const processed = await postProcessExtractionDocument({
+      ctx,
+      orgId: state.orgId as Id<"organizations">,
+      document: doc,
       sourceSpans: args.sourceSpans,
-      nowMs: nowMs(),
+      log: async (message, level = "info") => {
+        await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
+          jobId: policyId,
+          timestamp: nowMs(),
+          message,
+          phase: "extract",
+          level,
+        });
+      },
     });
-    if (scopedCoverage.changed && scopedCoverage.review.questions.length > 0) {
+    doc = processed.document;
+    const fields = processed.fields;
+    if (processed.coverageReviewQuestionCount > 0) {
       await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
         jobId: policyId,
         timestamp: nowMs(),
-        message: `Coverage scoping found ${scopedCoverage.review.questions.length} limit question${scopedCoverage.review.questions.length === 1 ? "" : "s"} for declaration review`,
+        message: `Extraction review has ${processed.coverageReviewQuestionCount} open question${processed.coverageReviewQuestionCount === 1 ? "" : "s"}`,
         phase: "extract",
         level: "warn",
       });
     }
-    const reviewCopyFields = await refineCoverageReviewCopyWithLlm(
-      ctx,
-      state.orgId as Id<"organizations">,
-      scopedCoverage.fields,
-    );
-    const fields = await normalizeOrgNamesWithLlm(
-      ctx,
-      state.orgId as Id<"organizations">,
-      reviewCopyFields,
-    );
     const docName = doc.type === "quote"
       ? (doc.quoteNumber || "quote")
       : (doc.policyNumber || "policy");

@@ -76,6 +76,46 @@ function nowMs(): number {
   return dayjs().valueOf();
 }
 
+function modelTraceLabel(kind: "generateText" | "generateObject", taskKind?: ModelCallTaskKind, task?: ModelTask) {
+  const labels: Record<string, string> = {
+    extraction_classify: "Classify document",
+    extraction_form_inventory: "Extract form inventory",
+    extraction_page_map: "Map policy pages",
+    extraction_focused: "Extract policy fields",
+    extraction_long_list: "Extract long policy lists",
+    extraction_referential_lookup: "Resolve policy references",
+    extraction_review: "Review extraction evidence",
+    extraction_summary: "Summarize extracted policy",
+    extraction_format: "Format extracted policy",
+    query_attachment: "Read attachment",
+    query_classify: "Classify question",
+    query_reason: "Reason over documents",
+    query_verify: "Verify answer evidence",
+    query_respond: "Write answer",
+    application_classify: "Classify application",
+    application_extract_fields: "Extract application fields",
+    application_auto_fill: "Autofill application",
+    application_lookup: "Look up application context",
+    application_parse_answers: "Parse application answers",
+    application_batch: "Generate application batch",
+    application_email: "Draft application email",
+    application_pdf_mapping: "Map application PDF",
+    pce_impact_analysis: "Analyze policy change",
+    pce_reply_parse: "Parse policy-change reply",
+    pce_packet_generation: "Generate policy-change packet",
+  };
+  if (taskKind && labels[taskKind]) return labels[taskKind];
+  if (taskKind) {
+    return taskKind
+      .replace(/_/g, " ")
+      .replace(/\b\w/g, (letter) => letter.toUpperCase());
+  }
+  if (task === "extraction") return kind === "generateText" ? "Extract policy text" : "Extract policy structure";
+  if (task === "classification") return "Classify document";
+  if (task === "chat") return kind === "generateText" ? "Generate answer" : "Analyze chat context";
+  return kind === "generateText" ? "Generate text" : "Generate structured output";
+}
+
 /**
  * Build a single AI SDK file message part for the PDF, preferring memory-efficient
  * inputs over the legacy base64 fallback. The AI SDK handles provider-specific
@@ -310,7 +350,7 @@ export function makeGenerateText(
       });
       const usage = mapUsage(result.usage);
       await recordModelTrace(routing, {
-        label: "generateText",
+        label: modelTraceLabel("generateText", taskKind, effectiveTask),
         task: effectiveTask,
         taskKind,
         route: primaryRoute,
@@ -326,7 +366,7 @@ export function makeGenerateText(
       };
     } catch (error) {
       await recordModelTrace(routing, {
-        label: "generateText",
+        label: modelTraceLabel("generateText", taskKind, effectiveTask),
         task: effectiveTask,
         taskKind,
         route: primaryRoute,
@@ -385,7 +425,7 @@ export function makeGenerateObject(
       });
       const usage = mapUsage(result.usage);
       await recordModelTrace(routing, {
-        label: "generateObject",
+        label: modelTraceLabel("generateObject", taskKind, effectiveTask),
         task: effectiveTask,
         taskKind,
         route: primaryRoute,
@@ -406,7 +446,7 @@ export function makeGenerateObject(
 
       if (isSectionsExtractor && message.includes("No output generated")) {
         await recordModelTrace(routing, {
-          label: "generateObject",
+          label: modelTraceLabel("generateObject", taskKind, effectiveTask),
           task: effectiveTask,
           taskKind,
           route: primaryRoute,
@@ -423,7 +463,7 @@ export function makeGenerateObject(
       }
 
       await recordModelTrace(routing, {
-        label: "generateObject",
+        label: modelTraceLabel("generateObject", taskKind, effectiveTask),
         task: effectiveTask,
         taskKind,
         route: primaryRoute,

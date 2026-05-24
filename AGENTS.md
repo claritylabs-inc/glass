@@ -180,6 +180,8 @@ The Glass-specific `cl-sdk` wiring lives under `convex/lib/`.
 - [sdkCallbacks.ts](convex/lib/sdkCallbacks.ts): adapts Glass model routing to `cl-sdk` callbacks
 - [extraction.ts](convex/lib/extraction.ts): builds a preconfigured extractor
 - [documentMapping.ts](convex/lib/documentMapping.ts): maps SDK documents to Convex policy records
+- [extractionFieldReview.ts](convex/lib/extractionFieldReview.ts): reusable evidence-backed field review groups for missed or contradicted extracted fields
+- [extractionPostProcess.ts](convex/lib/extractionPostProcess.ts): shared post-extraction quality pipeline before policy persistence
 - [convexDocumentStore.ts](convex/lib/convexDocumentStore.ts): `DocumentStore` adapter
 - [convexMemoryStore.ts](convex/lib/convexMemoryStore.ts): `MemoryStore` adapter
 - [queryAgent.ts](convex/lib/queryAgent.ts): `createQueryAgent()` wrapper
@@ -214,7 +216,9 @@ Glass persists:
 - Document detail: `document.sections`, `document.definitions`, `document.coveredReasons`, `document.endorsements`, `document.exclusions`, `document.conditions`
 - Declarations, form inventory, and supplementary facts as top-level policy fields
 - Raw source evidence in `sourceSpans` and embedded `sourceChunks` when cl-sdk returns source spans/chunks. These source units preserve stable `sourceSpanIds` for exact policy citations.
-- Glass performs a deterministic post-extraction policy-period check over raw PDF source spans before persisting policy fields. Clear `PERIOD OF INSURANCE` / `POLICY PERIOD` / `POLICY TERM` source text, including day-month-year table layouts, is allowed to override missing, malformed, or conflicting SDK `effectiveDate` / `expirationDate` values.
+- Glass runs all post-extraction cleanup through `postProcessExtractionDocument()`: deterministic policy-period fallback, evidence-backed field review, `insuranceDocToPolicy()`, coverage declaration scoping, review-copy polish, and organization-name normalization. Keep new cross-cutting extraction cleanup in this pipeline rather than adding one-off fallback extractors inside `policyExtraction.ts` or `documentMapping.ts`.
+- Field review is configured as reusable groups in `extractionFieldReview.ts`. It uses source spans and document sections, applies only evidence-quoted corrections for registered fields, and runs on the low-cost `classification` route. `EXTRACTION_FIELD_REVIEW_MODE=skip|auto|always` controls whether it is disabled, runs only for missing group fields, or runs for all groups with evidence.
+- The policy-period fallback still performs a deterministic source-span check over raw PDF text before persistence. Clear `PERIOD OF INSURANCE` / `POLICY PERIOD` / `POLICY TERM` source text, including day-month-year table layouts, is allowed to override missing, malformed, or conflicting SDK `effectiveDate` / `expirationDate` values.
 
 ### Token Limits
 
