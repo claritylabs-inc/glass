@@ -68,6 +68,17 @@ type WorkerModelSettings = {
   providerKeys?: Partial<Record<ModelProvider | string, string>>;
 };
 
+type ModelCallTrace = {
+  label?: string;
+  extractorName?: string;
+  startPage?: number;
+  endPage?: number;
+  batchIndex?: number;
+  batchCount?: number;
+  phase?: string;
+  sourceBacked?: boolean;
+};
+
 type AckResult = {
   ok: boolean;
   leaseExpiresAt?: number;
@@ -292,7 +303,27 @@ function getFallbackModel(taskKind?: string): LanguageModel | null {
   return null;
 }
 
-function modelTraceLabel(kind: "generateText" | "generateObject", taskKind?: string, task?: ModelTask) {
+function readTraceDetails(params: { trace?: unknown }): ModelCallTrace | undefined {
+  if (!params.trace || typeof params.trace !== "object" || Array.isArray(params.trace)) return undefined;
+  return params.trace as ModelCallTrace;
+}
+
+function modelTraceLabel(
+  kind: "generateText" | "generateObject",
+  taskKind?: string,
+  task?: ModelTask,
+  trace?: ModelCallTrace,
+) {
+  if (trace?.label) return trace.label;
+  if (trace?.extractorName) {
+    const pageRange = trace.startPage
+      ? ` pages ${trace.startPage}${trace.endPage && trace.endPage !== trace.startPage ? `-${trace.endPage}` : ""}`
+      : "";
+    return `${trace.extractorName}${pageRange}`;
+  }
+  if (trace?.phase === "format" && trace.batchIndex && trace.batchCount) {
+    return `Format extracted content ${trace.batchIndex}/${trace.batchCount}`;
+  }
   const labels: Record<string, string> = {
     extraction_classify: "Classify document",
     extraction_form_inventory: "Extract form inventory",
@@ -386,6 +417,7 @@ function modelTraceDetails(params: {
   system?: string;
   maxOutputTokens: number;
   providerOptions?: ProviderOptions;
+  trace?: ModelCallTrace;
   output?: unknown;
   outputKind?: "text" | "object";
 }) {
@@ -394,6 +426,7 @@ function modelTraceDetails(params: {
     callKind: params.kind,
     task: params.task,
     taskKind: params.taskKind,
+    trace: params.trace,
     maxOutputTokens: params.maxOutputTokens,
     systemPreview: traceTextPreview(params.system),
     promptPreview: traceTextPreview(params.prompt),
@@ -411,7 +444,7 @@ const EXTRACTION_MAX_TOKEN_OVERRIDES: Record<string, number> = {
 };
 
 const SECTIONS_EXTRACTOR_PROMPT_MARKER =
-  "Extract ALL sections, clauses, endorsements, and schedules from this document";
+  "Build a compact source-backed section index for this document";
 
 const POLICY_PERIOD_EXTRACTION_GUIDANCE = `
 
@@ -598,10 +631,11 @@ function buildWorkerExtractor(opts: {
 }) {
   const generateText: GenerateText = async (params) => {
     const taskKind = readTaskKind(params);
+    const trace = readTraceDetails(params);
     const guidedPrompt = addPolicyPeriodGuidance(params.prompt);
     const route = getModelForTaskKind(taskKind, opts.modelSettings);
     const task = modelTaskForTaskKind(taskKind);
-    const label = modelTraceLabel("generateText", taskKind, task);
+    const label = modelTraceLabel("generateText", taskKind, task, trace);
     const maxOutputTokens = getEffectiveMaxTokens(guidedPrompt, params.maxTokens);
     const startedAt = nowMs();
     try {
@@ -636,6 +670,7 @@ function buildWorkerExtractor(opts: {
           system: params.system,
           maxOutputTokens,
           providerOptions: params.providerOptions as ProviderOptions | undefined,
+          trace,
           output: result.text,
           outputKind: "text",
         }),
@@ -667,6 +702,7 @@ function buildWorkerExtractor(opts: {
           system: params.system,
           maxOutputTokens,
           providerOptions: params.providerOptions as ProviderOptions | undefined,
+          trace,
         }),
       });
       throw error;
@@ -675,10 +711,11 @@ function buildWorkerExtractor(opts: {
 
   const generateObject: GenerateObject = async (params) => {
     const taskKind = readTaskKind(params);
+    const trace = readTraceDetails(params);
     const guidedPrompt = addPolicyPeriodGuidance(params.prompt);
     const route = getModelForTaskKind(taskKind, opts.modelSettings);
     const task = modelTaskForTaskKind(taskKind);
-    const label = modelTraceLabel("generateObject", taskKind, task);
+    const label = modelTraceLabel("generateObject", taskKind, task, trace);
     const maxOutputTokens = getEffectiveMaxTokens(guidedPrompt, params.maxTokens);
     const startedAt = nowMs();
     try {
@@ -714,6 +751,7 @@ function buildWorkerExtractor(opts: {
           system: params.system,
           maxOutputTokens,
           providerOptions: params.providerOptions as ProviderOptions | undefined,
+          trace,
           output: result.output,
           outputKind: "object",
         }),
@@ -747,6 +785,7 @@ function buildWorkerExtractor(opts: {
             system: params.system,
             maxOutputTokens,
             providerOptions: params.providerOptions as ProviderOptions | undefined,
+            trace,
             output: { sections: [] },
             outputKind: "object",
           }),
@@ -775,6 +814,7 @@ function buildWorkerExtractor(opts: {
           system: params.system,
           maxOutputTokens,
           providerOptions: params.providerOptions as ProviderOptions | undefined,
+          trace,
         }),
       });
       throw error;
