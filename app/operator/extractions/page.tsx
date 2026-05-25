@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import dayjs from "dayjs";
 import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
@@ -105,6 +106,7 @@ type TraceDetail = {
   events: TraceEvent[];
 };
 type TracePanelTab = "summary" | "timeline" | "timing" | "models" | "log";
+const TRACE_PANEL_TABS = ["summary", "timeline", "timing", "models", "log"] as const;
 
 const ALL = "__all__";
 const STATUS_LABELS: Record<string, string> = {
@@ -148,6 +150,10 @@ function statusVariant(status: TraceStatus): "default" | "secondary" | "destruct
   if (status === "complete") return "default";
   if (status === "error" || status === "cancelled") return "destructive";
   return "secondary";
+}
+
+function parseTracePanelTab(value: string | null): TracePanelTab {
+  return TRACE_PANEL_TABS.includes(value as TracePanelTab) ? value as TracePanelTab : "summary";
 }
 
 function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
@@ -470,6 +476,10 @@ function timelineColor(kind: TraceEvent["kind"]) {
   return "bg-muted-foreground";
 }
 
+function timelineInsideTextColor(kind: TraceEvent["kind"]) {
+  return kind === "phase" ? "text-background" : "text-white";
+}
+
 function modelCallDebugDetails(event?: TraceEvent): ModelCallDebugDetails | null {
   if (!event?.details || typeof event.details !== "object") return null;
   return event.details as ModelCallDebugDetails;
@@ -560,7 +570,6 @@ function TimelineEventDetail({ row }: { row?: TimelineRow }) {
       <div className="flex min-w-0 items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="truncate text-body-sm font-medium text-foreground">{row.label}</p>
-          <p className="truncate text-label-sm text-muted-foreground">{row.caption || row.kind}</p>
         </div>
         <Badge variant="secondary">{formatDuration(row.durationMs)}</Badge>
       </div>
@@ -663,7 +672,7 @@ function TimelineWaterfall({
   }
 
   return (
-    <div className="flex h-full min-h-[28rem] overflow-hidden rounded-lg border border-foreground/6">
+    <div className="flex h-full min-h-0 overflow-hidden rounded-lg border border-foreground/6">
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="grid border-b border-foreground/6 bg-muted/20" style={{ gridTemplateColumns }}>
           <div className="relative border-r border-foreground/6 px-2.5 py-2 text-label-sm font-medium text-muted-foreground">
@@ -693,6 +702,11 @@ function TimelineWaterfall({
           {visibleRows.length ? visibleRows.map((row) => {
             const left = ((row.startMs - startAt) / durationMs) * 100;
             const width = Math.max(1.5, (row.durationMs / durationMs) * 100);
+            const constrainedLeft = Math.max(0, Math.min(100, left));
+            const constrainedWidth = Math.min(100 - constrainedLeft, width);
+            const durationLabel = formatDuration(row.durationMs);
+            const showDurationInside = constrainedWidth >= 8;
+            const showOutsideAfter = constrainedLeft + constrainedWidth <= 88;
             const isCollapsed = collapsedIds.has(row.id);
             const hasChildren = (row.childCount ?? 0) > 0;
             return (
@@ -743,15 +757,27 @@ function TimelineWaterfall({
                   <div
                     className={`absolute top-1.5 flex h-4 items-center justify-center rounded-sm px-1 ${timelineColor(row.kind)}`}
                     style={{
-                      left: `${Math.max(0, Math.min(100, left))}%`,
-                      width: `${Math.min(100 - Math.max(0, left), width)}%`,
+                      left: `${constrainedLeft}%`,
+                      width: `${constrainedWidth}%`,
                     }}
-                    title={`${row.label} · ${formatDuration(row.durationMs)} · ${row.caption}`}
+                    title={`${row.label} · ${durationLabel} · ${row.caption}`}
                   >
-                    <span className="truncate text-[10px] font-medium text-white mix-blend-screen">
-                      {formatDuration(row.durationMs)}
-                    </span>
+                    {showDurationInside ? (
+                      <span className={`truncate text-[10px] font-medium ${timelineInsideTextColor(row.kind)}`}>
+                        {durationLabel}
+                      </span>
+                    ) : null}
                   </div>
+                  {!showDurationInside ? (
+                    <span
+                      className="pointer-events-none absolute top-1/2 max-w-14 -translate-y-1/2 truncate px-1 text-[10px] font-medium text-foreground"
+                      style={showOutsideAfter
+                        ? { left: `${constrainedLeft + constrainedWidth}%` }
+                        : { right: `${100 - constrainedLeft}%` }}
+                    >
+                      {durationLabel}
+                    </span>
+                  ) : null}
                 </div>
               </div>
             );
@@ -771,11 +797,16 @@ function TimelineWaterfall({
 }
 
 export default function OperatorExtractionsPage() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const traceIdParam = searchParams.get("traceId");
+  const traceTabParam = parseTracePanelTab(searchParams.get("tab"));
   const [status, setStatus] = useState<string>(ALL);
   const [range, setRange] = useState<keyof typeof RANGE_LABELS>("90d");
   const [orgId, setOrgId] = useState<string>(ALL);
-  const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null);
-  const [activeTraceTab, setActiveTraceTab] = useState<TracePanelTab>("summary");
+  const selectedTraceId = traceIdParam;
+  const activeTraceTab = traceIdParam ? traceTabParam : "summary";
   const [selectedModelEventId, setSelectedModelEventId] = useState<string | null>(null);
   const [timelineLabelWidth, setTimelineLabelWidth] = useState(150);
   const [collapsedTimelineIds, setCollapsedTimelineIds] = useState<Set<string>>(() => new Set());
@@ -817,6 +848,34 @@ export default function OperatorExtractionsPage() {
   const wallDurationMs = selected?.totalDurationMs ?? (
     selected?.lastEventAt ? selected.lastEventAt - selected.startedAt : undefined
   );
+  const updateTraceUrl = useCallback((traceId: string | null, tab: TracePanelTab) => {
+    const next = new URLSearchParams(searchParams.toString());
+    if (traceId) {
+      next.set("traceId", traceId);
+      next.set("tab", tab);
+    } else {
+      next.delete("traceId");
+      next.delete("tab");
+    }
+    const query = next.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  }, [pathname, router, searchParams]);
+  const resetTraceLocalState = useCallback(() => {
+    setSelectedModelEventId(null);
+    setCollapsedTimelineIds(new Set());
+    setSelectedTimelineRowId(null);
+  }, []);
+  const openTrace = useCallback((traceId: string, tab: TracePanelTab = "summary") => {
+    resetTraceLocalState();
+    updateTraceUrl(traceId, tab);
+  }, [resetTraceLocalState, updateTraceUrl]);
+  const closeTrace = useCallback(() => {
+    resetTraceLocalState();
+    updateTraceUrl(null, "summary");
+  }, [resetTraceLocalState, updateTraceUrl]);
+  const selectTraceTab = useCallback((tab: TracePanelTab) => {
+    if (selectedTraceId) updateTraceUrl(selectedTraceId, tab);
+  }, [selectedTraceId, updateTraceUrl]);
   const copyExtractionId = useCallback((traceId: string) => {
     void navigator.clipboard
       .writeText(traceId)
@@ -879,13 +938,7 @@ export default function OperatorExtractionsPage() {
     <SettingsDrawer
       open={!!selectedTraceId}
       onOpenChange={(open) => {
-        if (!open) {
-          setSelectedTraceId(null);
-          setActiveTraceTab("summary");
-          setSelectedModelEventId(null);
-          setCollapsedTimelineIds(new Set());
-          setSelectedTimelineRowId(null);
-        }
+        if (!open) closeTrace();
       }}
       title={selected ? traceDisplayTitle(selected) : "Extraction trace"}
     >
@@ -897,10 +950,10 @@ export default function OperatorExtractionsPage() {
         <div className="flex min-h-0 flex-1">
           <Tabs
             value={activeTraceTab}
-            onValueChange={(value) => setActiveTraceTab(value as TracePanelTab)}
-            className="min-h-0 flex-1"
+            onValueChange={(value) => selectTraceTab(parseTracePanelTab(value))}
+            className="min-h-0 flex-1 overflow-hidden"
           >
-            <TabsList variant="pill" className="max-w-full overflow-x-auto pb-1">
+            <TabsList variant="pill" className="sticky top-0 z-10 max-w-full shrink-0 overflow-x-auto bg-background py-1">
               <TabsTrigger value="summary">Summary</TabsTrigger>
               <TabsTrigger value="timeline">Timeline</TabsTrigger>
               <TabsTrigger value="timing">Timing</TabsTrigger>
@@ -908,7 +961,7 @@ export default function OperatorExtractionsPage() {
               <TabsTrigger value="log">Log</TabsTrigger>
             </TabsList>
 
-            <TabsContent value="summary" className="pt-3">
+            <TabsContent value="summary" className="min-h-0 overflow-y-auto pt-3">
               <dl className="rounded-lg border border-foreground/6">
                 <DetailRow
                   label="Extraction ID"
@@ -941,7 +994,7 @@ export default function OperatorExtractionsPage() {
               </dl>
             </TabsContent>
 
-            <TabsContent value="timeline" className="min-h-0 flex-1 pt-3">
+            <TabsContent value="timeline" className="grid min-h-0 grid-rows-[minmax(0,1fr)_auto] gap-2 overflow-hidden pt-3">
               <TimelineWaterfall
                 rows={timelineRows}
                 session={selected}
@@ -952,12 +1005,12 @@ export default function OperatorExtractionsPage() {
                 selectedRowId={selectedTimelineRowId}
                 onSelectRow={setSelectedTimelineRowId}
               />
-              <div className="mt-2">
+              <div className="min-h-0 max-h-44 overflow-y-auto">
                 <TimelineEventDetail row={selectedTimelineRow ?? timelineRows[0]} />
               </div>
             </TabsContent>
 
-            <TabsContent value="timing" className="space-y-3 pt-3">
+            <TabsContent value="timing" className="min-h-0 space-y-3 overflow-y-auto pt-3">
               <div className="space-y-2">
                 <div>
                   <h4 className="mb-1 text-label-sm font-medium text-muted-foreground">Phases</h4>
@@ -997,7 +1050,7 @@ export default function OperatorExtractionsPage() {
               ) : null}
             </TabsContent>
 
-            <TabsContent value="models" className="min-w-0 space-y-2 pt-3">
+            <TabsContent value="models" className="min-h-0 min-w-0 space-y-2 overflow-y-auto pt-3">
               <div className="w-full min-w-0 overflow-hidden rounded-lg border border-foreground/6">
                 <Table className="min-w-0 table-fixed">
                   <TableHeader>
@@ -1048,7 +1101,7 @@ export default function OperatorExtractionsPage() {
               <ModelCallDebugPanel event={selectedModelEvent} />
             </TabsContent>
 
-            <TabsContent value="log" className="space-y-2 pt-3">
+            <TabsContent value="log" className="min-h-0 space-y-2 overflow-y-auto pt-3">
               <div className="rounded-lg border border-foreground/6">
                 {logEvents.length ? logEvents.map((event) => (
                   <div key={event._id} className="border-b border-foreground/6 px-3 py-2 last:border-b-0">
@@ -1125,21 +1178,11 @@ export default function OperatorExtractionsPage() {
                   <TableRow
                     key={trace.traceId}
                     tabIndex={0}
-                    onClick={() => {
-                      setActiveTraceTab("summary");
-                      setSelectedTraceId(trace.traceId);
-                      setSelectedModelEventId(null);
-                      setCollapsedTimelineIds(new Set());
-                      setSelectedTimelineRowId(null);
-                    }}
+                    onClick={() => openTrace(trace.traceId)}
                     onKeyDown={(event) => {
                       if (event.key !== "Enter" && event.key !== " ") return;
                       event.preventDefault();
-                      setActiveTraceTab("summary");
-                      setSelectedTraceId(trace.traceId);
-                      setSelectedModelEventId(null);
-                      setCollapsedTimelineIds(new Set());
-                      setSelectedTimelineRowId(null);
+                      openTrace(trace.traceId);
                     }}
                     className={`cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 ${
                       selectedTraceId === trace.traceId ? "bg-muted/50" : ""
