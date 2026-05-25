@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
+import type { PointerEvent as ReactPointerEvent } from "react";
 import dayjs from "dayjs";
 import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
@@ -197,7 +198,7 @@ function humanizeTaskKind(value?: string) {
 
 function modelCallTitle(event: TraceEvent) {
   const raw = event.label ?? "";
-  if (raw && !/^generate(Object|Text)$/i.test(raw)) return raw;
+  if (raw && !/^(external\s+)?generate(Object|Text)$/i.test(raw)) return raw;
   return humanizeTaskKind(event.taskKind) ?? humanizeTaskKind(event.task) ?? "Model call";
 }
 
@@ -232,6 +233,7 @@ type TimelineRow = {
   label: string;
   caption: string;
   kind: TraceEvent["kind"];
+  level: number;
   startMs: number;
   endMs: number;
   durationMs: number;
@@ -355,7 +357,7 @@ function traceDisplayFile(trace: TraceRow) {
   return cleanTraceText(trace.fileName) ?? "—";
 }
 
-function eventTiming(event: TraceEvent, session: TraceRow): TimelineRow | null {
+function eventTiming(event: TraceEvent, session: TraceRow, level = 0): TimelineRow | null {
   const endAt = session.completedAt ?? session.lastEventAt ?? dayjs().valueOf();
   if ((event.durationMs ?? 0) > 0) {
     const durationMs = event.durationMs ?? 0;
@@ -364,6 +366,7 @@ function eventTiming(event: TraceEvent, session: TraceRow): TimelineRow | null {
       label: eventTitle(event),
       caption: eventCaption(event),
       kind: event.kind,
+      level,
       startMs: Math.max(session.startedAt, event.timestamp - durationMs),
       endMs: event.timestamp,
       durationMs,
@@ -376,6 +379,7 @@ function eventTiming(event: TraceEvent, session: TraceRow): TimelineRow | null {
       label: event.phase ?? "active phase",
       caption: "phase · active",
       kind: event.kind,
+      level,
       startMs: event.timestamp,
       endMs: endAt,
       durationMs: endAt - event.timestamp,
@@ -386,6 +390,33 @@ function eventTiming(event: TraceEvent, session: TraceRow): TimelineRow | null {
 }
 
 function buildTimelineRows(events: TraceEvent[], session: TraceRow) {
+  const parentRows = events
+    .filter((event) =>
+      (event.kind === "phase" || event.kind === "worker") &&
+      event.status !== "started" &&
+      (event.durationMs ?? 0) > 0
+    )
+    .map((event) => eventTiming(event, session, 0))
+    .filter((row): row is TimelineRow => !!row)
+    .sort((a, b) => a.startMs - b.startMs || b.durationMs - a.durationMs);
+
+  const activeParentRows = events
+    .filter((event) => event.kind === "phase" && event.status === "started" && event.phase)
+    .filter((event) => !parentRows.some((row) => row.kind === "phase" && row.label === event.phase))
+    .map((event) => eventTiming(event, session, 0))
+    .filter((row): row is TimelineRow => !!row);
+
+  const parents = [...parentRows, ...activeParentRows].sort((a, b) => a.startMs - b.startMs);
+  const childRows = events
+    .filter((event) => event.kind === "model_call" || event.kind === "embedding_batch" || event.kind === "artifact")
+    .map((event) => eventTiming(event, session, 1))
+    .filter((row): row is TimelineRow => !!row);
+
+  if (parents.length) {
+    return [...parents, ...childRows]
+      .sort((a, b) => a.startMs - b.startMs || a.level - b.level || b.durationMs - a.durationMs);
+  }
+
   const completedPhases = new Set(
     events
       .filter((event) => event.kind === "phase" && event.status !== "started" && event.phase)
@@ -393,10 +424,11 @@ function buildTimelineRows(events: TraceEvent[], session: TraceRow) {
   );
   return events
     .filter((event) => {
+      if (event.kind === "session") return false;
       if (event.kind !== "phase" || event.status !== "started" || !event.phase) return true;
       return !completedPhases.has(event.phase);
     })
-    .map((event) => eventTiming(event, session))
+    .map((event) => eventTiming(event, session, event.kind === "model_call" ? 1 : 0))
     .filter((row): row is TimelineRow => !!row)
     .sort((a, b) => a.startMs - b.startMs || b.durationMs - a.durationMs);
 }
@@ -521,9 +553,13 @@ function TimingBar({ row, maxDurationMs }: { row: TimingRow; maxDurationMs: numb
 function TimelineWaterfall({
   rows,
   session,
+  labelWidth,
+  onLabelWidthChange,
 }: {
   rows: TimelineRow[];
   session: TraceRow;
+  labelWidth: number;
+  onLabelWidthChange: (width: number) => void;
 }) {
   const startAt = session.startedAt;
   const endAt = Math.max(
@@ -534,15 +570,38 @@ function TimelineWaterfall({
   );
   const durationMs = Math.max(1, endAt - startAt);
   const ticks = [0, 0.25, 0.5, 0.75, 1];
+  const gridTemplateColumns = `${labelWidth}px minmax(0, 1fr)`;
+
+  function startResize(event: ReactPointerEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = labelWidth;
+    const onMove = (moveEvent: PointerEvent) => {
+      const next = Math.max(110, Math.min(280, startWidth + moveEvent.clientX - startX));
+      onLabelWidthChange(next);
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }
 
   return (
     <div className="flex h-full min-h-[28rem] overflow-hidden rounded-lg border border-foreground/6">
       <div className="flex min-h-0 flex-1 flex-col">
-        <div className="grid grid-cols-[9.5rem_1fr] border-b border-foreground/6 bg-muted/20">
-          <div className="border-r border-foreground/6 px-2.5 py-2 text-label-sm font-medium text-muted-foreground">
+        <div className="grid border-b border-foreground/6 bg-muted/20" style={{ gridTemplateColumns }}>
+          <div className="relative border-r border-foreground/6 px-2.5 py-2 text-label-sm font-medium text-muted-foreground">
             Event
+            <button
+              type="button"
+              aria-label="Resize event column"
+              className="absolute -right-1 top-0 h-full w-2 cursor-col-resize rounded-sm hover:bg-foreground/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+              onPointerDown={startResize}
+            />
           </div>
-          <div className="relative h-8">
+          <div className="relative h-8 min-w-0 overflow-hidden">
             {ticks.map((tick) => (
               <div
                 key={tick}
@@ -561,8 +620,12 @@ function TimelineWaterfall({
             const left = ((row.startMs - startAt) / durationMs) * 100;
             const width = Math.max(1.5, (row.durationMs / durationMs) * 100);
             return (
-              <div key={row.id} className="grid min-h-8 grid-cols-[9.5rem_1fr] border-b border-foreground/6 last:border-b-0">
-                <div className="min-w-0 border-r border-foreground/6 px-2.5 py-1.5">
+              <div
+                key={row.id}
+                className="grid min-h-8 border-b border-foreground/6 last:border-b-0"
+                style={{ gridTemplateColumns }}
+              >
+                <div className={`min-w-0 border-r border-foreground/6 py-1.5 pr-2.5 ${row.level > 0 ? "pl-5" : "pl-2.5"}`}>
                   <p className="truncate text-label-sm font-medium text-foreground">{row.label}</p>
                   <p className="truncate text-[10px] text-muted-foreground">
                     {row.kind === "model_call" && row.caption
@@ -570,7 +633,7 @@ function TimelineWaterfall({
                       : formatDuration(row.durationMs)}
                   </p>
                 </div>
-                <div className="relative px-0 py-1.5">
+                <div className="relative min-w-0 overflow-hidden px-0 py-1.5">
                   {ticks.map((tick) => (
                     <span
                       key={tick}
@@ -612,6 +675,7 @@ export default function OperatorExtractionsPage() {
   const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null);
   const [activeTraceTab, setActiveTraceTab] = useState<TracePanelTab>("summary");
   const [selectedModelEventId, setSelectedModelEventId] = useState<string | null>(null);
+  const [timelineLabelWidth, setTimelineLabelWidth] = useState(150);
 
   const current = useCachedOperatorCurrent();
   const traces = useCachedOperatorExtractionTraces({
@@ -721,7 +785,7 @@ export default function OperatorExtractionsPage() {
             onValueChange={(value) => setActiveTraceTab(value as TracePanelTab)}
             className="min-h-0 flex-1"
           >
-            <TabsList variant="pill" className="flex-wrap">
+            <TabsList variant="pill" className="max-w-full overflow-x-auto pb-1">
               <TabsTrigger value="summary">Summary</TabsTrigger>
               <TabsTrigger value="timeline">Timeline</TabsTrigger>
               <TabsTrigger value="timing">Timing</TabsTrigger>
@@ -763,7 +827,12 @@ export default function OperatorExtractionsPage() {
             </TabsContent>
 
             <TabsContent value="timeline" className="min-h-0 flex-1 pt-3">
-              <TimelineWaterfall rows={timelineRows} session={selected} />
+              <TimelineWaterfall
+                rows={timelineRows}
+                session={selected}
+                labelWidth={timelineLabelWidth}
+                onLabelWidthChange={setTimelineLabelWidth}
+              />
             </TabsContent>
 
             <TabsContent value="timing" className="space-y-3 pt-3">

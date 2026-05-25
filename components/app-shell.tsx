@@ -163,16 +163,16 @@ function ResizableRightPanelSlot({
   return (
     <div
       ref={slotRef}
-      className={`relative hidden h-full min-w-0 overflow-hidden lg:flex ${
+      className={`contents lg:relative lg:flex lg:h-full lg:min-w-0 lg:overflow-hidden ${
         isFixedWidth ? "shrink-0" : "flex-1 basis-0"
       }`}
       style={isFixedWidth ? { width } : undefined}
     >
       <div
         onPointerDown={onPointerDown}
-        className="absolute left-0 top-0 bottom-0 z-10 w-1 cursor-col-resize hover:bg-foreground/8 active:bg-foreground/12"
+        className="absolute left-0 top-0 bottom-0 z-10 hidden w-1 cursor-col-resize hover:bg-foreground/8 active:bg-foreground/12 lg:block"
       />
-      <div className="flex h-full min-w-0 w-full max-w-full flex-1 overflow-hidden">
+      <div className="contents lg:flex lg:h-full lg:min-w-0 lg:w-full lg:max-w-full lg:flex-1 lg:overflow-hidden">
         {children}
       </div>
     </div>

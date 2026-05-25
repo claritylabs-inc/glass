@@ -292,6 +292,119 @@ function getFallbackModel(taskKind?: string): LanguageModel | null {
   return null;
 }
 
+function modelTraceLabel(kind: "generateText" | "generateObject", taskKind?: string, task?: ModelTask) {
+  const labels: Record<string, string> = {
+    extraction_classify: "Classify document",
+    extraction_form_inventory: "Extract form inventory",
+    extraction_page_map: "Map policy pages",
+    extraction_focused: "Extract policy fields",
+    extraction_long_list: "Extract long policy lists",
+    extraction_referential_lookup: "Resolve policy references",
+    extraction_review: "Review extraction evidence",
+    extraction_summary: "Summarize extracted policy",
+    extraction_format: "Format extracted policy",
+  };
+  if (taskKind && labels[taskKind]) return labels[taskKind];
+  if (taskKind) {
+    return taskKind
+      .replace(/_/g, " ")
+      .replace(/\b\w/g, (letter) => letter.toUpperCase());
+  }
+  if (task === "extraction") return kind === "generateText" ? "Extract policy text" : "Extract policy structure";
+  if (task === "classification") return "Classify document";
+  return kind === "generateText" ? "Generate text" : "Generate structured output";
+}
+
+const TRACE_TEXT_PREVIEW_LIMIT = 6000;
+const TRACE_OUTPUT_PREVIEW_LIMIT = 6000;
+
+function truncateTraceText(value: string, limit: number) {
+  if (value.length <= limit) return value;
+  return `${value.slice(0, limit)}\n...[truncated ${value.length - limit} chars]`;
+}
+
+function redactEmbeddedPdfBase64(value: string) {
+  return value.replace(/JVBER[A-Za-z0-9+/=\s]{200,}/g, (match) => {
+    const compact = match.replace(/\s/g, "");
+    return `[PDF base64 omitted: ${compact.length} chars]`;
+  });
+}
+
+function traceTextPreview(value: unknown, limit = TRACE_TEXT_PREVIEW_LIMIT) {
+  if (typeof value !== "string" || value.length === 0) return undefined;
+  return truncateTraceText(redactEmbeddedPdfBase64(value), limit);
+}
+
+function traceJsonPreview(value: unknown) {
+  try {
+    return truncateTraceText(JSON.stringify(value, null, 2), TRACE_OUTPUT_PREVIEW_LIMIT);
+  } catch {
+    return truncateTraceText(String(value), TRACE_OUTPUT_PREVIEW_LIMIT);
+  }
+}
+
+function stripUndefined(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stripUndefined);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([, item]) => item !== undefined)
+      .map(([key, item]) => [key, stripUndefined(item)]),
+  );
+}
+
+function providerInputSummary(providerOptions: ProviderOptions | undefined) {
+  const options = providerOptions as ExtractionProviderOptions | undefined;
+  if (!options) return undefined;
+  return {
+    hasPdfBase64: typeof options.pdfBase64 === "string",
+    pdfBase64Chars: typeof options.pdfBase64 === "string" ? options.pdfBase64.length : undefined,
+    hasPdfUrl: !!options.pdfUrl,
+    pdfUrl: typeof options.pdfUrl === "string"
+      ? options.pdfUrl
+      : options.pdfUrl instanceof URL
+        ? options.pdfUrl.toString()
+        : undefined,
+    hasPdfBytes: options.pdfBytes instanceof Uint8Array,
+    pdfBytes: options.pdfBytes instanceof Uint8Array ? options.pdfBytes.byteLength : undefined,
+    mimeType: typeof options.mimeType === "string" ? options.mimeType : undefined,
+    images: Array.isArray(options.images)
+      ? options.images.map((image) => ({
+        mimeType: image.mimeType,
+        base64Chars: image.imageBase64.length,
+      }))
+      : undefined,
+  };
+}
+
+function modelTraceDetails(params: {
+  kind: "generateText" | "generateObject";
+  label: string;
+  task: ModelTask;
+  taskKind?: string;
+  prompt: string;
+  system?: string;
+  maxOutputTokens: number;
+  providerOptions?: ProviderOptions;
+  output?: unknown;
+  outputKind?: "text" | "object";
+}) {
+  return stripUndefined({
+    purpose: params.label,
+    callKind: params.kind,
+    task: params.task,
+    taskKind: params.taskKind,
+    maxOutputTokens: params.maxOutputTokens,
+    systemPreview: traceTextPreview(params.system),
+    promptPreview: traceTextPreview(params.prompt),
+    inputSummary: providerInputSummary(params.providerOptions),
+    outputKind: params.outputKind,
+    outputPreview: params.outputKind === "object"
+      ? traceJsonPreview(params.output)
+      : traceTextPreview(params.output, TRACE_OUTPUT_PREVIEW_LIMIT),
+  });
+}
+
 const EXTRACTION_MAX_TOKEN_OVERRIDES: Record<string, number> = {
   coveredReasons: 24576,
   exclusions: 8192,
@@ -487,20 +600,23 @@ function buildWorkerExtractor(opts: {
     const taskKind = readTaskKind(params);
     const guidedPrompt = addPolicyPeriodGuidance(params.prompt);
     const route = getModelForTaskKind(taskKind, opts.modelSettings);
+    const task = modelTaskForTaskKind(taskKind);
+    const label = modelTraceLabel("generateText", taskKind, task);
+    const maxOutputTokens = getEffectiveMaxTokens(guidedPrompt, params.maxTokens);
     const startedAt = nowMs();
     try {
       const result = await generateWithFallback({
         model: route.model,
         system: params.system,
         ...buildPromptInput(guidedPrompt, params.providerOptions),
-        maxOutputTokens: getEffectiveMaxTokens(guidedPrompt, params.maxTokens),
+        maxOutputTokens,
         providerOptions: params.providerOptions as ProviderOptions | undefined,
       }, taskKind);
       const usage = mapUsage(result.usage);
       await recordTraceEvent(opts.job, {
         kind: "model_call",
-        label: "external generateText",
-        task: modelTaskForTaskKind(taskKind),
+        label,
+        task,
         taskKind,
         provider: route.route.provider,
         model: route.route.model,
@@ -511,6 +627,18 @@ function buildWorkerExtractor(opts: {
         durationMs: nowMs() - startedAt,
         inputTokens: usage.inputTokens,
         outputTokens: usage.outputTokens,
+        details: modelTraceDetails({
+          kind: "generateText",
+          label,
+          task,
+          taskKind,
+          prompt: guidedPrompt,
+          system: params.system,
+          maxOutputTokens,
+          providerOptions: params.providerOptions as ProviderOptions | undefined,
+          output: result.text,
+          outputKind: "text",
+        }),
       });
       return {
         text: result.text,
@@ -519,8 +647,8 @@ function buildWorkerExtractor(opts: {
     } catch (error) {
       await recordTraceEvent(opts.job, {
         kind: "model_call",
-        label: "external generateText",
-        task: modelTaskForTaskKind(taskKind),
+        label,
+        task,
         taskKind,
         provider: route.route.provider,
         model: route.route.model,
@@ -530,6 +658,16 @@ function buildWorkerExtractor(opts: {
         status: "error",
         durationMs: nowMs() - startedAt,
         error: errorMessage(error),
+        details: modelTraceDetails({
+          kind: "generateText",
+          label,
+          task,
+          taskKind,
+          prompt: guidedPrompt,
+          system: params.system,
+          maxOutputTokens,
+          providerOptions: params.providerOptions as ProviderOptions | undefined,
+        }),
       });
       throw error;
     }
@@ -539,6 +677,9 @@ function buildWorkerExtractor(opts: {
     const taskKind = readTaskKind(params);
     const guidedPrompt = addPolicyPeriodGuidance(params.prompt);
     const route = getModelForTaskKind(taskKind, opts.modelSettings);
+    const task = modelTaskForTaskKind(taskKind);
+    const label = modelTraceLabel("generateObject", taskKind, task);
+    const maxOutputTokens = getEffectiveMaxTokens(guidedPrompt, params.maxTokens);
     const startedAt = nowMs();
     try {
       const result = await generateWithFallback({
@@ -546,14 +687,14 @@ function buildWorkerExtractor(opts: {
         system: params.system,
         ...buildPromptInput(guidedPrompt, params.providerOptions),
         output: Output.object({ schema: params.schema }),
-        maxOutputTokens: getEffectiveMaxTokens(guidedPrompt, params.maxTokens),
+        maxOutputTokens,
         providerOptions: params.providerOptions as ProviderOptions | undefined,
       }, taskKind);
       const usage = mapUsage(result.usage);
       await recordTraceEvent(opts.job, {
         kind: "model_call",
-        label: "external generateObject",
-        task: modelTaskForTaskKind(taskKind),
+        label,
+        task,
         taskKind,
         provider: route.route.provider,
         model: route.route.model,
@@ -564,6 +705,18 @@ function buildWorkerExtractor(opts: {
         durationMs: nowMs() - startedAt,
         inputTokens: usage.inputTokens,
         outputTokens: usage.outputTokens,
+        details: modelTraceDetails({
+          kind: "generateObject",
+          label,
+          task,
+          taskKind,
+          prompt: guidedPrompt,
+          system: params.system,
+          maxOutputTokens,
+          providerOptions: params.providerOptions as ProviderOptions | undefined,
+          output: result.output,
+          outputKind: "object",
+        }),
       });
       return {
         object: result.output!,
@@ -574,8 +727,8 @@ function buildWorkerExtractor(opts: {
       if (isSectionsExtractor && errorMessage(error).includes("No output generated")) {
         await recordTraceEvent(opts.job, {
           kind: "model_call",
-          label: "external generateObject",
-          task: modelTaskForTaskKind(taskKind),
+          label,
+          task,
           taskKind,
           provider: route.route.provider,
           model: route.route.model,
@@ -585,13 +738,25 @@ function buildWorkerExtractor(opts: {
           status: "error",
           durationMs: nowMs() - startedAt,
           error: errorMessage(error),
+          details: modelTraceDetails({
+            kind: "generateObject",
+            label,
+            task,
+            taskKind,
+            prompt: guidedPrompt,
+            system: params.system,
+            maxOutputTokens,
+            providerOptions: params.providerOptions as ProviderOptions | undefined,
+            output: { sections: [] },
+            outputKind: "object",
+          }),
         });
         return { object: { sections: [] }, usage: undefined };
       }
       await recordTraceEvent(opts.job, {
         kind: "model_call",
-        label: "external generateObject",
-        task: modelTaskForTaskKind(taskKind),
+        label,
+        task,
         taskKind,
         provider: route.route.provider,
         model: route.route.model,
@@ -601,6 +766,16 @@ function buildWorkerExtractor(opts: {
         status: "error",
         durationMs: nowMs() - startedAt,
         error: errorMessage(error),
+        details: modelTraceDetails({
+          kind: "generateObject",
+          label,
+          task,
+          taskKind,
+          prompt: guidedPrompt,
+          system: params.system,
+          maxOutputTokens,
+          providerOptions: params.providerOptions as ProviderOptions | undefined,
+        }),
       });
       throw error;
     }
