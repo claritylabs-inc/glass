@@ -44,6 +44,15 @@ type Route = { provider: ProviderId; model: string };
 type Routes = Record<string, Route | null>;
 type WebRetrievalProviderId = "exa" | "openai" | "google" | "anthropic" | "xai";
 type WebRetrieval = { primary: WebRetrievalProviderId; route?: Route };
+type ModelCapability = {
+  modelName: string;
+  known: boolean;
+  maxInputTokens?: number;
+  maxOutputTokens?: number;
+  defaultOutputTokens?: number;
+  longListOutputTokens?: number;
+  taskOutputTokens?: Record<string, number>;
+};
 type ProviderConfig = {
   id: ProviderId;
   label: string;
@@ -70,6 +79,7 @@ type Settings = {
   routes: Routes;
   webRetrieval: WebRetrieval;
   webRetrievalProviders: WebRetrievalProviderConfig[];
+  modelCapabilities: Record<string, ModelCapability>;
   updatedAt: number | null;
 };
 
@@ -112,6 +122,35 @@ function sameRoute(left: Route | null, right: Route) {
   return !!left && left.provider === right.provider && left.model === right.model;
 }
 
+function formatTokens(value: number | undefined) {
+  if (!value) return "unknown";
+  if (value >= 1_000_000) return `${Number((value / 1_000_000).toFixed(1))}m`;
+  if (value >= 1_000) return `${Number((value / 1_000).toFixed(1))}k`;
+  return value.toLocaleString();
+}
+
+function capabilityKey(route: Route) {
+  return `${route.provider}:${route.model}`;
+}
+
+function capabilitySummary(capability: ModelCapability | undefined, taskId?: string) {
+  if (!capability) return "Caps unknown";
+  if (!capability.known) {
+    return `${formatTokens(capability.defaultOutputTokens)} preferred / provider cap unknown`;
+  }
+  const parts = [
+    `${formatTokens(capability.maxInputTokens)} in`,
+    `${formatTokens(capability.maxOutputTokens)} out`,
+  ];
+  const taskBudget = taskId ? capability.taskOutputTokens?.[taskId] : undefined;
+  if (taskBudget) {
+    parts.push(`${formatTokens(taskBudget)} ${taskId}`);
+  } else if (capability.defaultOutputTokens) {
+    parts.push(`${formatTokens(capability.defaultOutputTokens)} default`);
+  }
+  return parts.join(" / ");
+}
+
 export default function OperatorModelsPage() {
   const current = useCachedOperatorCurrent();
   const settings = useCachedOperatorGlobalModelSettings() as Settings | undefined;
@@ -125,6 +164,7 @@ export default function OperatorModelsPage() {
     return Object.fromEntries((settings?.providers ?? []).map((provider) => [provider.id, provider])) as
       Record<ProviderId, ProviderConfig>;
   }, [settings?.providers]);
+  const modelCapabilities = settings?.modelCapabilities ?? {};
 
   async function commitRoute(taskId: string, route: Route | null) {
     setSavingTask(taskId);
@@ -198,6 +238,8 @@ export default function OperatorModelsPage() {
                 const route = settings.routes[task.id] ?? null;
                 const routeIsDefault = sameRoute(route, task.defaultRoute);
                 const displayRoute = routeIsDefault ? null : route;
+                const effectiveRoute = displayRoute ?? task.defaultRoute;
+                const effectiveCapability = modelCapabilities[capabilityKey(effectiveRoute)];
                 const saving = savingTask === task.id;
                 const value = displayRoute ? `${displayRoute.provider}:${displayRoute.model}` : DEFAULT_VALUE;
 
@@ -225,6 +267,9 @@ export default function OperatorModelsPage() {
                     <div className="min-w-0">
                       <p className="text-body-sm font-medium text-foreground">{task.label}</p>
                       <p className="text-label-sm text-muted-foreground/60">{task.description}</p>
+                      <p className="mt-1 text-label-sm text-muted-foreground/55">
+                        {capabilitySummary(effectiveCapability, task.id)}
+                      </p>
                     </div>
                     <div className="flex w-full items-center gap-2 justify-self-start md:w-auto md:justify-self-end">
                       {saving ? (
@@ -260,11 +305,20 @@ export default function OperatorModelsPage() {
                                   <ProviderLogo provider={provider.id} size={12} />
                                   {provider.label}
                                 </SelectLabel>
-                                {models.map((model) => (
-                                  <SelectItem key={`${provider.id}:${model}`} value={`${provider.id}:${model}`}>
-                                    {model}
-                                  </SelectItem>
-                                ))}
+                                {models.map((model) => {
+                                  const optionRoute = { provider: provider.id, model };
+                                  const capability = modelCapabilities[capabilityKey(optionRoute)];
+                                  return (
+                                    <SelectItem key={`${provider.id}:${model}`} value={`${provider.id}:${model}`}>
+                                      <span className="flex min-w-0 items-center justify-between gap-4">
+                                        <span className="truncate">{model}</span>
+                                        <span className="shrink-0 text-label-sm text-muted-foreground/60">
+                                          {capabilitySummary(capability)}
+                                        </span>
+                                      </span>
+                                    </SelectItem>
+                                  );
+                                })}
                               </SelectGroup>
                             );
                           })}

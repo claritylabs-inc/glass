@@ -12,11 +12,13 @@ import {
   MODEL_TASKS,
   MODEL_TASK_DESCRIPTIONS,
   MODEL_TASK_LABELS,
+  MODEL_CAPABILITIES,
   PROVIDER_LABELS,
   WEB_RETRIEVAL_DEFAULT,
   WEB_RETRIEVAL_DEFAULT_ROUTES,
   WEB_RETRIEVAL_LABELS,
   WEB_RETRIEVAL_MODEL_CATALOG,
+  modelCapabilitiesForRoute,
   type ModelProvider,
   type ModelRoute,
   type ModelTask,
@@ -188,6 +190,26 @@ function assertSupportedWebRetrieval(config: WebRetrievalRoute) {
   }
 }
 
+function modelCapabilityCatalog() {
+  return Object.fromEntries(
+    CONFIGURABLE_MODEL_PROVIDERS.flatMap((provider) =>
+      [
+        ...(LANGUAGE_MODEL_CATALOG[provider] ?? []),
+        ...(EMBEDDING_MODEL_CATALOG[provider] ?? []),
+      ].map((model) => {
+        const capabilities = modelCapabilitiesForRoute({ provider, model });
+        return [
+          `${provider}:${model}`,
+          {
+            ...capabilities,
+            known: Object.prototype.hasOwnProperty.call(MODEL_CAPABILITIES, model),
+          },
+        ];
+      }),
+    ),
+  );
+}
+
 export const get = query({
   args: {},
   handler: async (ctx) => {
@@ -328,6 +350,7 @@ export const getGlobal = query({
           defaultRoute: id === "exa" ? null : WEB_RETRIEVAL_DEFAULT_ROUTES[id],
         }),
       ),
+      modelCapabilities: modelCapabilityCatalog(),
       updatedAt: settings?.updatedAt ?? null,
     };
   },
