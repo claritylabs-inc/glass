@@ -2,7 +2,7 @@
 
 Standalone worker for long-running `cl-sdk` policy extraction jobs. Convex stays the durable job ledger; this service claims extract-phase work, sends heartbeats, saves SDK checkpoints, and returns the extracted document/chunks to Convex for embedding and post-processing.
 
-The worker also owns Docling preprocessing for `@claritylabs/cl-sdk@1.2.1`. It converts PDFs to serialized DoclingDocument JSON, passes that document into `cl-sdk`, and exposes a small authenticated HTTP endpoint for Convex actions that need synchronous PDF-to-Docling text conversion. If Docling fails or times out, callers fall back to the existing PDF/PDF.js path.
+The worker also owns Docling preprocessing for `@claritylabs/cl-sdk`. It converts PDFs to serialized DoclingDocument JSON, passes that document into `cl-sdk`, and exposes a small authenticated HTTP endpoint for Convex actions that need synchronous PDF-to-Docling text conversion. If Docling fails or times out, callers fall back to the existing PDF/PDF.js path.
 
 ## Local
 
