@@ -24,7 +24,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Copy, Loader2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Copy, Loader2 } from "lucide-react";
 import { OperatorSidebar } from "../operator-sidebar";
 import {
   useCachedOperatorCurrent,
@@ -230,10 +230,13 @@ type TimingRow = {
 
 type TimelineRow = {
   id: string;
+  event: TraceEvent;
+  parentId?: string;
   label: string;
   caption: string;
   kind: TraceEvent["kind"];
   level: number;
+  childCount?: number;
   startMs: number;
   endMs: number;
   durationMs: number;
@@ -290,6 +293,7 @@ function buildPhaseTimingRows(events: TraceEvent[], session: TraceRow): TimingRo
     .filter((event) => event.kind === "phase" && (event.durationMs ?? 0) > 0)
     .map((event) => ({
       id: event._id,
+      event,
       label: event.phase ?? event.label ?? "phase",
       caption: event.message ?? event.status ?? "completed phase",
       durationMs: event.durationMs ?? 0,
@@ -314,6 +318,7 @@ function buildPhaseTimingRows(events: TraceEvent[], session: TraceRow): TimingRo
     })
     .map((event) => ({
       id: event._id,
+      event,
       label: event.phase ?? "active phase",
       caption: "active; elapsed so far",
       durationMs: endAt - event.timestamp,
@@ -363,6 +368,7 @@ function eventTiming(event: TraceEvent, session: TraceRow, level = 0): TimelineR
     const durationMs = event.durationMs ?? 0;
     return {
       id: event._id,
+      event,
       label: eventTitle(event),
       caption: eventCaption(event),
       kind: event.kind,
@@ -376,6 +382,7 @@ function eventTiming(event: TraceEvent, session: TraceRow, level = 0): TimelineR
   if (event.kind === "phase" && event.status === "started" && endAt > event.timestamp) {
     return {
       id: event._id,
+      event,
       label: event.phase ?? "active phase",
       caption: "phase · active",
       kind: event.kind,
@@ -387,6 +394,26 @@ function eventTiming(event: TraceEvent, session: TraceRow, level = 0): TimelineR
     };
   }
   return null;
+}
+
+function assignTimelineChildren(parents: TimelineRow[], children: TimelineRow[]) {
+  if (!parents.length) return children;
+  const counts = new Map<string, number>();
+  const nextChildren = children.map((child) => {
+    const parent = parents
+      .filter((candidate) =>
+        candidate.startMs <= child.startMs &&
+        candidate.endMs >= child.endMs
+      )
+      .sort((a, b) => a.durationMs - b.durationMs)[0];
+    if (!parent) return child;
+    counts.set(parent.id, (counts.get(parent.id) ?? 0) + 1);
+    return { ...child, parentId: parent.id, level: parent.level + 1 };
+  });
+  for (const parent of parents) {
+    parent.childCount = counts.get(parent.id) ?? 0;
+  }
+  return nextChildren;
 }
 
 function buildTimelineRows(events: TraceEvent[], session: TraceRow) {
@@ -407,10 +434,11 @@ function buildTimelineRows(events: TraceEvent[], session: TraceRow) {
     .filter((row): row is TimelineRow => !!row);
 
   const parents = [...parentRows, ...activeParentRows].sort((a, b) => a.startMs - b.startMs);
-  const childRows = events
+  const rawChildRows = events
     .filter((event) => event.kind === "model_call" || event.kind === "embedding_batch" || event.kind === "artifact")
     .map((event) => eventTiming(event, session, 1))
     .filter((row): row is TimelineRow => !!row);
+  const childRows = assignTimelineChildren(parents, rawChildRows);
 
   if (parents.length) {
     return [...parents, ...childRows]
@@ -525,6 +553,43 @@ function ModelCallDebugPanel({ event }: { event?: TraceEvent }) {
   );
 }
 
+function TimelineEventDetail({ row }: { row?: TimelineRow }) {
+  if (!row) return null;
+  return (
+    <div className="space-y-2 rounded-lg border border-foreground/6 p-3">
+      <div className="flex min-w-0 items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-body-sm font-medium text-foreground">{row.label}</p>
+          <p className="truncate text-label-sm text-muted-foreground">{row.caption || row.kind}</p>
+        </div>
+        <Badge variant="secondary">{formatDuration(row.durationMs)}</Badge>
+      </div>
+      <div className="grid gap-2 text-label-sm text-muted-foreground sm:grid-cols-2">
+        <div>
+          <span className="font-medium text-foreground">Kind</span>
+          <span className="ml-2">{row.kind}</span>
+        </div>
+        <div>
+          <span className="font-medium text-foreground">Status</span>
+          <span className="ml-2">{row.status ?? "—"}</span>
+        </div>
+        {row.event.provider || row.event.model ? (
+          <div className="sm:col-span-2">
+            <span className="font-medium text-foreground">Model</span>
+            <span className="ml-2">{[row.event.provider, row.event.model].filter(Boolean).join(" / ")}</span>
+          </div>
+        ) : null}
+        {row.event.inputTokens || row.event.outputTokens ? (
+          <div className="sm:col-span-2">
+            <span className="font-medium text-foreground">Tokens</span>
+            <span className="ml-2">{formatTokens(row.event.inputTokens, row.event.outputTokens)}</span>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function TimingBar({ row, maxDurationMs }: { row: TimingRow; maxDurationMs: number }) {
   const width = Math.max(4, Math.min(100, (row.durationMs / Math.max(maxDurationMs, 1)) * 100));
   return (
@@ -555,11 +620,19 @@ function TimelineWaterfall({
   session,
   labelWidth,
   onLabelWidthChange,
+  collapsedIds,
+  onToggleCollapsed,
+  selectedRowId,
+  onSelectRow,
 }: {
   rows: TimelineRow[];
   session: TraceRow;
   labelWidth: number;
   onLabelWidthChange: (width: number) => void;
+  collapsedIds: Set<string>;
+  onToggleCollapsed: (id: string) => void;
+  selectedRowId?: string | null;
+  onSelectRow: (id: string) => void;
 }) {
   const startAt = session.startedAt;
   const endAt = Math.max(
@@ -571,6 +644,7 @@ function TimelineWaterfall({
   const durationMs = Math.max(1, endAt - startAt);
   const ticks = [0, 0.25, 0.5, 0.75, 1];
   const gridTemplateColumns = `${labelWidth}px minmax(0, 1fr)`;
+  const visibleRows = rows.filter((row) => !row.parentId || !collapsedIds.has(row.parentId));
 
   function startResize(event: ReactPointerEvent<HTMLButtonElement>) {
     event.preventDefault();
@@ -616,22 +690,46 @@ function TimelineWaterfall({
           </div>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto">
-          {rows.length ? rows.map((row) => {
+          {visibleRows.length ? visibleRows.map((row) => {
             const left = ((row.startMs - startAt) / durationMs) * 100;
             const width = Math.max(1.5, (row.durationMs / durationMs) * 100);
+            const isCollapsed = collapsedIds.has(row.id);
+            const hasChildren = (row.childCount ?? 0) > 0;
             return (
               <div
+                role="button"
+                tabIndex={0}
                 key={row.id}
-                className="grid min-h-8 border-b border-foreground/6 last:border-b-0"
+                className={`grid min-h-7 border-b border-foreground/6 text-left last:border-b-0 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 ${
+                  selectedRowId === row.id ? "bg-muted/50" : ""
+                }`}
                 style={{ gridTemplateColumns }}
+                onClick={() => onSelectRow(row.id)}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter" && event.key !== " ") return;
+                  event.preventDefault();
+                  onSelectRow(row.id);
+                }}
               >
                 <div className={`min-w-0 border-r border-foreground/6 py-1.5 pr-2.5 ${row.level > 0 ? "pl-5" : "pl-2.5"}`}>
-                  <p className="truncate text-label-sm font-medium text-foreground">{row.label}</p>
-                  <p className="truncate text-[10px] text-muted-foreground">
-                    {row.kind === "model_call" && row.caption
-                      ? `${formatDuration(row.durationMs)} · ${row.caption}`
-                      : formatDuration(row.durationMs)}
-                  </p>
+                  <div className="flex min-w-0 items-center gap-1">
+                    {hasChildren ? (
+                      <button
+                        type="button"
+                        aria-label={isCollapsed ? "Expand timeline row" : "Collapse timeline row"}
+                        className="-ml-1 flex h-4 w-4 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-foreground/6 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onToggleCollapsed(row.id);
+                        }}
+                      >
+                        {isCollapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                      </button>
+                    ) : (
+                      <span className="h-4 w-4 shrink-0" />
+                    )}
+                    <p className="min-w-0 truncate text-label-sm font-medium text-foreground">{row.label}</p>
+                  </div>
                 </div>
                 <div className="relative min-w-0 overflow-hidden px-0 py-1.5">
                   {ticks.map((tick) => (
@@ -643,13 +741,17 @@ function TimelineWaterfall({
                     />
                   ))}
                   <div
-                    className={`absolute top-1.5 h-5 rounded-sm ${timelineColor(row.kind)}`}
+                    className={`absolute top-1.5 flex h-4 items-center justify-center rounded-sm px-1 ${timelineColor(row.kind)}`}
                     style={{
                       left: `${Math.max(0, Math.min(100, left))}%`,
                       width: `${Math.min(100 - Math.max(0, left), width)}%`,
                     }}
                     title={`${row.label} · ${formatDuration(row.durationMs)} · ${row.caption}`}
-                  />
+                  >
+                    <span className="truncate text-[10px] font-medium text-white mix-blend-screen">
+                      {formatDuration(row.durationMs)}
+                    </span>
+                  </div>
                 </div>
               </div>
             );
@@ -676,6 +778,8 @@ export default function OperatorExtractionsPage() {
   const [activeTraceTab, setActiveTraceTab] = useState<TracePanelTab>("summary");
   const [selectedModelEventId, setSelectedModelEventId] = useState<string | null>(null);
   const [timelineLabelWidth, setTimelineLabelWidth] = useState(150);
+  const [collapsedTimelineIds, setCollapsedTimelineIds] = useState<Set<string>>(() => new Set());
+  const [selectedTimelineRowId, setSelectedTimelineRowId] = useState<string | null>(null);
 
   const current = useCachedOperatorCurrent();
   const traces = useCachedOperatorExtractionTraces({
@@ -706,6 +810,7 @@ export default function OperatorExtractionsPage() {
   const phaseTimingRows = selected && detail?.events ? buildPhaseTimingRows(detail.events, selected) : [];
   const otherTimingRows = detail?.events ? buildOtherTimingRows(detail.events) : [];
   const timelineRows = selected && detail?.events ? buildTimelineRows(detail.events, selected) : [];
+  const selectedTimelineRow = timelineRows.find((row) => row.id === selectedTimelineRowId) ?? null;
   const maxPhaseDuration = Math.max(...phaseTimingRows.map((row) => row.durationMs), 1);
   const maxModelDuration = Math.max(...modelTimingRows.map((row) => row.durationMs), 1);
   const maxOtherDuration = Math.max(...otherTimingRows.map((row) => row.durationMs), 1);
@@ -717,6 +822,14 @@ export default function OperatorExtractionsPage() {
       .writeText(traceId)
       .then(() => toast.success("Extraction ID copied"))
       .catch(() => toast.error("Couldn't copy extraction ID"));
+  }, []);
+  const toggleTimelineCollapsed = useCallback((id: string) => {
+    setCollapsedTimelineIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   }, []);
 
   const actions = (
@@ -770,6 +883,8 @@ export default function OperatorExtractionsPage() {
           setSelectedTraceId(null);
           setActiveTraceTab("summary");
           setSelectedModelEventId(null);
+          setCollapsedTimelineIds(new Set());
+          setSelectedTimelineRowId(null);
         }
       }}
       title={selected ? traceDisplayTitle(selected) : "Extraction trace"}
@@ -832,7 +947,14 @@ export default function OperatorExtractionsPage() {
                 session={selected}
                 labelWidth={timelineLabelWidth}
                 onLabelWidthChange={setTimelineLabelWidth}
+                collapsedIds={collapsedTimelineIds}
+                onToggleCollapsed={toggleTimelineCollapsed}
+                selectedRowId={selectedTimelineRowId}
+                onSelectRow={setSelectedTimelineRowId}
               />
+              <div className="mt-2">
+                <TimelineEventDetail row={selectedTimelineRow ?? timelineRows[0]} />
+              </div>
             </TabsContent>
 
             <TabsContent value="timing" className="space-y-3 pt-3">
@@ -1007,6 +1129,8 @@ export default function OperatorExtractionsPage() {
                       setActiveTraceTab("summary");
                       setSelectedTraceId(trace.traceId);
                       setSelectedModelEventId(null);
+                      setCollapsedTimelineIds(new Set());
+                      setSelectedTimelineRowId(null);
                     }}
                     onKeyDown={(event) => {
                       if (event.key !== "Enter" && event.key !== " ") return;
@@ -1014,6 +1138,8 @@ export default function OperatorExtractionsPage() {
                       setActiveTraceTab("summary");
                       setSelectedTraceId(trace.traceId);
                       setSelectedModelEventId(null);
+                      setCollapsedTimelineIds(new Set());
+                      setSelectedTimelineRowId(null);
                     }}
                     className={`cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 ${
                       selectedTraceId === trace.traceId ? "bg-muted/50" : ""
