@@ -698,29 +698,29 @@ export default function OperatorExtractionsPage() {
               ) : null}
             </TabsContent>
 
-            <TabsContent value="models" className="space-y-2 pt-3">
-              <div className="overflow-hidden rounded-lg border border-foreground/6">
-                <Table>
+            <TabsContent value="models" className="min-w-0 space-y-2 pt-3">
+              <div className="w-full min-w-0 overflow-hidden rounded-lg border border-foreground/6">
+                <Table className="min-w-0 table-fixed">
                   <TableHeader>
                     <TableRow className="hover:bg-transparent">
-                      <TableHead className="px-3 text-label-sm text-muted-foreground">Call</TableHead>
-                      <TableHead className="text-label-sm text-muted-foreground">Model</TableHead>
-                      <TableHead className="text-label-sm text-muted-foreground">Time</TableHead>
-                      <TableHead className="px-3 text-label-sm text-muted-foreground">Tokens</TableHead>
+                      <TableHead className="w-[38%] px-3 text-label-sm text-muted-foreground">Call</TableHead>
+                      <TableHead className="w-[28%] text-label-sm text-muted-foreground">Model</TableHead>
+                      <TableHead className="w-[12%] text-label-sm text-muted-foreground">Time</TableHead>
+                      <TableHead className="w-[22%] px-3 text-label-sm text-muted-foreground">Tokens</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {modelEvents.length ? modelEvents.map((event) => (
                       <TableRow key={event._id}>
-                        <TableCell className="max-w-40 px-3">
+                        <TableCell className="min-w-0 px-3">
                           <p className="truncate text-body-sm text-foreground">{eventTitle(event)}</p>
                           <p className="truncate text-label-sm text-muted-foreground">{event.status}{event.routeSource ? ` · ${event.routeSource}` : ""}</p>
                         </TableCell>
-                        <TableCell className="max-w-44 truncate text-muted-foreground">
+                        <TableCell className="min-w-0 truncate text-muted-foreground">
                           {[event.provider, event.model].filter(Boolean).join(" / ") || "—"}
                         </TableCell>
-                        <TableCell className="text-muted-foreground">{formatDuration(event.durationMs)}</TableCell>
-                        <TableCell className="px-3 text-muted-foreground">{formatTokens(event.inputTokens, event.outputTokens)}</TableCell>
+                        <TableCell className="min-w-0 truncate text-muted-foreground">{formatDuration(event.durationMs)}</TableCell>
+                        <TableCell className="min-w-0 truncate px-3 text-muted-foreground">{formatTokens(event.inputTokens, event.outputTokens)}</TableCell>
                       </TableRow>
                     )) : (
                       <TableRow className="hover:bg-transparent">
