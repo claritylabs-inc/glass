@@ -116,6 +116,97 @@ function modelTraceLabel(kind: "generateText" | "generateObject", taskKind?: Mod
   return kind === "generateText" ? "Generate text" : "Generate structured output";
 }
 
+const TRACE_TEXT_PREVIEW_LIMIT = 6000;
+const TRACE_OUTPUT_PREVIEW_LIMIT = 6000;
+
+function truncateTraceText(value: string, limit: number) {
+  if (value.length <= limit) return value;
+  return `${value.slice(0, limit)}\n...[truncated ${value.length - limit} chars]`;
+}
+
+function redactEmbeddedPdfBase64(value: string) {
+  return value.replace(/JVBER[A-Za-z0-9+/=\s]{200,}/g, (match) => {
+    const compact = match.replace(/\s/g, "");
+    return `[PDF base64 omitted: ${compact.length} chars]`;
+  });
+}
+
+function traceTextPreview(value: unknown, limit = TRACE_TEXT_PREVIEW_LIMIT) {
+  if (typeof value !== "string" || value.length === 0) return undefined;
+  return truncateTraceText(redactEmbeddedPdfBase64(value), limit);
+}
+
+function traceJsonPreview(value: unknown) {
+  try {
+    return truncateTraceText(JSON.stringify(value, null, 2), TRACE_OUTPUT_PREVIEW_LIMIT);
+  } catch {
+    return truncateTraceText(String(value), TRACE_OUTPUT_PREVIEW_LIMIT);
+  }
+}
+
+function stripUndefined(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stripUndefined);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([, item]) => item !== undefined)
+      .map(([key, item]) => [key, stripUndefined(item)]),
+  );
+}
+
+function providerInputSummary(providerOptions: ProviderOptions | undefined) {
+  const options = providerOptions as ExtractionProviderOptions | undefined;
+  if (!options) return undefined;
+  return {
+    hasPdfBase64: typeof options.pdfBase64 === "string",
+    pdfBase64Chars: typeof options.pdfBase64 === "string" ? options.pdfBase64.length : undefined,
+    hasPdfUrl: !!options.pdfUrl,
+    pdfUrl: typeof options.pdfUrl === "string"
+      ? options.pdfUrl
+      : options.pdfUrl instanceof URL
+        ? options.pdfUrl.toString()
+        : undefined,
+    hasPdfBytes: options.pdfBytes instanceof Uint8Array,
+    pdfBytes: options.pdfBytes instanceof Uint8Array ? options.pdfBytes.byteLength : undefined,
+    fileId: typeof options.fileId === "string" ? options.fileId : undefined,
+    mimeType: typeof options.mimeType === "string" ? options.mimeType : undefined,
+    images: Array.isArray(options.images)
+      ? options.images.map((image) => ({
+        mimeType: image.mimeType,
+        base64Chars: image.imageBase64.length,
+      }))
+      : undefined,
+  };
+}
+
+function modelTraceDetails(params: {
+  kind: "generateText" | "generateObject";
+  label: string;
+  task: ModelTask;
+  taskKind?: ModelCallTaskKind;
+  prompt: string;
+  system?: string;
+  maxOutputTokens: number;
+  providerOptions?: ProviderOptions;
+  output?: unknown;
+  outputKind?: "text" | "object";
+}) {
+  return stripUndefined({
+    purpose: params.label,
+    callKind: params.kind,
+    task: params.task,
+    taskKind: params.taskKind,
+    maxOutputTokens: params.maxOutputTokens,
+    systemPreview: traceTextPreview(params.system),
+    promptPreview: traceTextPreview(params.prompt),
+    inputSummary: providerInputSummary(params.providerOptions),
+    outputKind: params.outputKind,
+    outputPreview: params.outputKind === "object"
+      ? traceJsonPreview(params.output)
+      : traceTextPreview(params.output, TRACE_OUTPUT_PREVIEW_LIMIT),
+  }) as Record<string, unknown>;
+}
+
 /**
  * Build a single AI SDK file message part for the PDF, preferring memory-efficient
  * inputs over the legacy base64 fallback. The AI SDK handles provider-specific
@@ -281,6 +372,7 @@ async function recordModelTrace(
     usage?: TokenUsage;
     status: "complete" | "error";
     error?: string;
+    details?: Record<string, unknown>;
   },
 ) {
   if (!routing?.ctx || !routing.traceId) return;
@@ -301,6 +393,7 @@ async function recordModelTrace(
       inputTokens: event.usage?.inputTokens,
       outputTokens: event.usage?.outputTokens,
       error: event.error,
+      details: event.details,
     });
   } catch {
     // Telemetry should never fail a user-facing extraction.
@@ -333,6 +426,7 @@ export function makeGenerateText(
       })
       : getModel(effectiveTask);
     const startedAt = nowMs();
+    const label = modelTraceLabel("generateText", taskKind, effectiveTask);
     try {
       const result = await generateTextWithFallback({
         model,
@@ -350,7 +444,7 @@ export function makeGenerateText(
       });
       const usage = mapUsage(result.usage);
       await recordModelTrace(routing, {
-        label: modelTraceLabel("generateText", taskKind, effectiveTask),
+        label,
         task: effectiveTask,
         taskKind,
         route: primaryRoute,
@@ -359,6 +453,18 @@ export function makeGenerateText(
         durationMs: nowMs() - startedAt,
         usage,
         status: "complete",
+        details: modelTraceDetails({
+          kind: "generateText",
+          label,
+          task: effectiveTask,
+          taskKind,
+          prompt: guidedPrompt,
+          system,
+          maxOutputTokens: effectiveMaxTokens,
+          providerOptions: providerOptions as ProviderOptions,
+          output: result.text,
+          outputKind: "text",
+        }),
       });
       return {
         text: result.text,
@@ -366,7 +472,7 @@ export function makeGenerateText(
       };
     } catch (error) {
       await recordModelTrace(routing, {
-        label: modelTraceLabel("generateText", taskKind, effectiveTask),
+        label,
         task: effectiveTask,
         taskKind,
         route: primaryRoute,
@@ -375,6 +481,16 @@ export function makeGenerateText(
         durationMs: nowMs() - startedAt,
         status: "error",
         error: error instanceof Error ? error.message : String(error),
+        details: modelTraceDetails({
+          kind: "generateText",
+          label,
+          task: effectiveTask,
+          taskKind,
+          prompt: guidedPrompt,
+          system,
+          maxOutputTokens: effectiveMaxTokens,
+          providerOptions: providerOptions as ProviderOptions,
+        }),
       });
       throw error;
     }
@@ -407,6 +523,7 @@ export function makeGenerateObject(
       })
       : getModel(effectiveTask);
     const startedAt = nowMs();
+    const label = modelTraceLabel("generateObject", taskKind, effectiveTask);
     try {
       const result = await generateStructuredWithFallback({
         model,
@@ -425,7 +542,7 @@ export function makeGenerateObject(
       });
       const usage = mapUsage(result.usage);
       await recordModelTrace(routing, {
-        label: modelTraceLabel("generateObject", taskKind, effectiveTask),
+        label,
         task: effectiveTask,
         taskKind,
         route: primaryRoute,
@@ -434,6 +551,18 @@ export function makeGenerateObject(
         durationMs: nowMs() - startedAt,
         usage,
         status: "complete",
+        details: modelTraceDetails({
+          kind: "generateObject",
+          label,
+          task: effectiveTask,
+          taskKind,
+          prompt: guidedPrompt,
+          system,
+          maxOutputTokens: effectiveMaxTokens,
+          providerOptions: providerOptions as ProviderOptions,
+          output: result.output,
+          outputKind: "object",
+        }),
       });
       return {
         object: result.output!,
@@ -446,7 +575,7 @@ export function makeGenerateObject(
 
       if (isSectionsExtractor && message.includes("No output generated")) {
         await recordModelTrace(routing, {
-          label: modelTraceLabel("generateObject", taskKind, effectiveTask),
+          label,
           task: effectiveTask,
           taskKind,
           route: primaryRoute,
@@ -455,6 +584,18 @@ export function makeGenerateObject(
           durationMs: nowMs() - startedAt,
           status: "error",
           error: message,
+          details: modelTraceDetails({
+            kind: "generateObject",
+            label,
+            task: effectiveTask,
+            taskKind,
+            prompt: guidedPrompt,
+            system,
+            maxOutputTokens: effectiveMaxTokens,
+            providerOptions: providerOptions as ProviderOptions,
+            output: { sections: [] },
+            outputKind: "object",
+          }),
         });
         return {
           object: { sections: [] } as unknown,
@@ -463,7 +604,7 @@ export function makeGenerateObject(
       }
 
       await recordModelTrace(routing, {
-        label: modelTraceLabel("generateObject", taskKind, effectiveTask),
+        label,
         task: effectiveTask,
         taskKind,
         route: primaryRoute,
@@ -472,6 +613,16 @@ export function makeGenerateObject(
         durationMs: nowMs() - startedAt,
         status: "error",
         error: message,
+        details: modelTraceDetails({
+          kind: "generateObject",
+          label,
+          task: effectiveTask,
+          taskKind,
+          prompt: guidedPrompt,
+          system,
+          maxOutputTokens: effectiveMaxTokens,
+          providerOptions: providerOptions as ProviderOptions,
+        }),
       });
       throw error;
     }

@@ -77,6 +77,28 @@ type TraceEvent = {
   error?: string;
   details?: unknown;
 };
+type ModelCallDebugDetails = {
+  purpose?: string;
+  callKind?: string;
+  task?: string;
+  taskKind?: string;
+  maxOutputTokens?: number;
+  systemPreview?: string;
+  promptPreview?: string;
+  outputPreview?: string;
+  outputKind?: string;
+  inputSummary?: {
+    hasPdfBase64?: boolean;
+    pdfBase64Chars?: number;
+    hasPdfUrl?: boolean;
+    pdfUrl?: string;
+    hasPdfBytes?: boolean;
+    pdfBytes?: number;
+    fileId?: string;
+    mimeType?: string;
+    images?: Array<{ mimeType?: string; base64Chars?: number }>;
+  };
+};
 type TraceDetail = {
   session: TraceRow;
   events: TraceEvent[];
@@ -388,6 +410,89 @@ function timelineColor(kind: TraceEvent["kind"]) {
   return "bg-muted-foreground";
 }
 
+function modelCallDebugDetails(event?: TraceEvent): ModelCallDebugDetails | null {
+  if (!event?.details || typeof event.details !== "object") return null;
+  return event.details as ModelCallDebugDetails;
+}
+
+function DebugPreview({
+  label,
+  value,
+}: {
+  label: string;
+  value?: string;
+}) {
+  if (!value) return null;
+  return (
+    <div className="space-y-1">
+      <p className="text-label-sm font-medium text-muted-foreground">{label}</p>
+      <pre className="max-h-64 overflow-auto rounded-lg border border-foreground/6 bg-muted/20 p-3 whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-foreground">
+        {value}
+      </pre>
+    </div>
+  );
+}
+
+function ModelCallDebugPanel({ event }: { event?: TraceEvent }) {
+  if (!event) return null;
+  const details = modelCallDebugDetails(event);
+  if (!details) {
+    return (
+      <div className="rounded-lg border border-foreground/6 px-3 py-3 text-body-sm text-muted-foreground">
+        No prompt or output details were recorded for this call. Rerun the extraction to capture model-call debug payloads.
+      </div>
+    );
+  }
+  const inputSummary = details.inputSummary;
+  const inputRows = [
+    inputSummary?.mimeType ? ["MIME type", inputSummary.mimeType] : null,
+    inputSummary?.fileId ? ["File ID", inputSummary.fileId] : null,
+    inputSummary?.hasPdfUrl ? ["PDF URL", inputSummary.pdfUrl ?? "present"] : null,
+    inputSummary?.hasPdfBytes ? ["PDF bytes", inputSummary.pdfBytes?.toLocaleString() ?? "present"] : null,
+    inputSummary?.hasPdfBase64 ? ["PDF base64", `${inputSummary.pdfBase64Chars?.toLocaleString() ?? "present"} chars`] : null,
+    inputSummary?.images?.length ? ["Images", `${inputSummary.images.length} image${inputSummary.images.length === 1 ? "" : "s"}`] : null,
+  ].filter((row): row is [string, string] => !!row);
+
+  return (
+    <div className="space-y-3 rounded-lg border border-foreground/6 p-3">
+      <div className="grid gap-2 text-label-sm text-muted-foreground sm:grid-cols-2">
+        <div>
+          <span className="font-medium text-foreground">Purpose</span>
+          <span className="ml-2">{details.purpose ?? eventTitle(event)}</span>
+        </div>
+        <div>
+          <span className="font-medium text-foreground">Task</span>
+          <span className="ml-2">{[details.task, details.taskKind].filter(Boolean).join(" / ") || "—"}</span>
+        </div>
+        <div>
+          <span className="font-medium text-foreground">Output</span>
+          <span className="ml-2">{details.outputKind ?? "—"}</span>
+        </div>
+        <div>
+          <span className="font-medium text-foreground">Max tokens</span>
+          <span className="ml-2">{details.maxOutputTokens?.toLocaleString() ?? "—"}</span>
+        </div>
+      </div>
+      {inputRows.length ? (
+        <div className="space-y-1">
+          <p className="text-label-sm font-medium text-muted-foreground">Input attachments</p>
+          <div className="rounded-lg border border-foreground/6">
+            {inputRows.map(([label, value]) => (
+              <div key={label} className="grid grid-cols-[7rem_minmax(0,1fr)] gap-2 border-b border-foreground/6 px-3 py-2 last:border-b-0">
+                <span className="text-label-sm text-muted-foreground">{label}</span>
+                <span className="truncate text-label-sm text-foreground">{value}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      <DebugPreview label="System" value={details.systemPreview} />
+      <DebugPreview label="Prompt / input text" value={details.promptPreview} />
+      <DebugPreview label="Output" value={details.outputPreview} />
+    </div>
+  );
+}
+
 function TimingBar({ row, maxDurationMs }: { row: TimingRow; maxDurationMs: number }) {
   const width = Math.max(4, Math.min(100, (row.durationMs / Math.max(maxDurationMs, 1)) * 100));
   return (
@@ -506,6 +611,7 @@ export default function OperatorExtractionsPage() {
   const [orgId, setOrgId] = useState<string>(ALL);
   const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null);
   const [activeTraceTab, setActiveTraceTab] = useState<TracePanelTab>("summary");
+  const [selectedModelEventId, setSelectedModelEventId] = useState<string | null>(null);
 
   const current = useCachedOperatorCurrent();
   const traces = useCachedOperatorExtractionTraces({
@@ -530,6 +636,7 @@ export default function OperatorExtractionsPage() {
 
   const selected = detail?.session ?? traces?.find((trace) => trace.traceId === selectedTraceId) ?? null;
   const modelEvents = (detail?.events ?? []).filter((event) => event.kind === "model_call");
+  const selectedModelEvent = modelEvents.find((event) => event._id === selectedModelEventId) ?? modelEvents[0];
   const logEvents = (detail?.events ?? []).filter((event) => event.kind === "log");
   const modelTimingRows = selected ? buildModelTimingRows(modelEvents) : [];
   const phaseTimingRows = selected && detail?.events ? buildPhaseTimingRows(detail.events, selected) : [];
@@ -598,6 +705,7 @@ export default function OperatorExtractionsPage() {
         if (!open) {
           setSelectedTraceId(null);
           setActiveTraceTab("summary");
+          setSelectedModelEventId(null);
         }
       }}
       title={selected ? traceDisplayTitle(selected) : "Extraction trace"}
@@ -711,10 +819,24 @@ export default function OperatorExtractionsPage() {
                   </TableHeader>
                   <TableBody>
                     {modelEvents.length ? modelEvents.map((event) => (
-                      <TableRow key={event._id}>
+                      <TableRow
+                        key={event._id}
+                        tabIndex={0}
+                        onClick={() => setSelectedModelEventId(event._id)}
+                        onKeyDown={(keyboardEvent) => {
+                          if (keyboardEvent.key !== "Enter" && keyboardEvent.key !== " ") return;
+                          keyboardEvent.preventDefault();
+                          setSelectedModelEventId(event._id);
+                        }}
+                        className={`cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 ${
+                          selectedModelEvent?._id === event._id ? "bg-muted/50" : ""
+                        }`}
+                      >
                         <TableCell className="min-w-0 px-3">
                           <p className="truncate text-body-sm text-foreground">{eventTitle(event)}</p>
-                          <p className="truncate text-label-sm text-muted-foreground">{event.status}{event.routeSource ? ` · ${event.routeSource}` : ""}</p>
+                          <p className="truncate text-label-sm text-muted-foreground">
+                            {[event.status, event.routeSource, modelCallDebugDetails(event) ? "debug details" : undefined].filter(Boolean).join(" · ")}
+                          </p>
                         </TableCell>
                         <TableCell className="min-w-0 truncate text-muted-foreground">
                           {[event.provider, event.model].filter(Boolean).join(" / ") || "—"}
@@ -732,6 +854,7 @@ export default function OperatorExtractionsPage() {
                   </TableBody>
                 </Table>
               </div>
+              <ModelCallDebugPanel event={selectedModelEvent} />
             </TabsContent>
 
             <TabsContent value="log" className="space-y-2 pt-3">
@@ -814,12 +937,14 @@ export default function OperatorExtractionsPage() {
                     onClick={() => {
                       setActiveTraceTab("summary");
                       setSelectedTraceId(trace.traceId);
+                      setSelectedModelEventId(null);
                     }}
                     onKeyDown={(event) => {
                       if (event.key !== "Enter" && event.key !== " ") return;
                       event.preventDefault();
                       setActiveTraceTab("summary");
                       setSelectedTraceId(trace.traceId);
+                      setSelectedModelEventId(null);
                     }}
                     className={`cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 ${
                       selectedTraceId === trace.traceId ? "bg-muted/50" : ""
