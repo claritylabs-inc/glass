@@ -58,13 +58,19 @@ export async function buildDocumentContext(
     };
   }
 
-  // Check if we have embedded chunks for this org
-  const hasChunks = await ctx.runQuery(
-    internal.documentChunks.hasChunksForOrg,
-    { orgId },
-  );
+  // Prefer source-backed retrieval whenever the org has raw source chunks.
+  const [hasDocumentChunks, hasSourceChunks] = await Promise.all([
+    ctx.runQuery(
+      internal.documentChunks.hasChunksForOrg,
+      { orgId },
+    ),
+    ctx.runQuery(
+      (internal as any).sourceSpans.hasChunksForOrg,
+      { orgId },
+    ) as Promise<boolean>,
+  ]);
 
-  if (hasChunks) {
+  if (hasSourceChunks || hasDocumentChunks) {
     return buildVectorContext(ctx, orgId, policies, quotes, queryText);
   }
 
@@ -131,7 +137,8 @@ export async function buildComplianceRequirementsContext(
 
 /**
  * Vector-search-based document context.
- * Embeds the query, searches sourceChunks plus documentChunks, and formats results.
+ * Embeds the query, searches sourceChunks for policy wording, then adds
+ * structured document facts as secondary context.
  */
 async function buildVectorContext(
   ctx: ActionCtx,
@@ -147,14 +154,14 @@ async function buildVectorContext(
   const embed = makeEmbedText(ctx, orgId);
   const queryEmbedding = await embed(queryText);
 
-  const results = await ctx.vectorSearch("documentChunks", "by_embedding", {
+  const sourceResults = await ctx.vectorSearch("sourceChunks", "by_embedding", {
     vector: queryEmbedding,
     limit: 15,
     filter: (q) => q.eq("orgId", orgId),
   });
-  const sourceResults = await ctx.vectorSearch("sourceChunks", "by_embedding", {
+  const results = await ctx.vectorSearch("documentChunks", "by_embedding", {
     vector: queryEmbedding,
-    limit: 10,
+    limit: 30,
     filter: (q) => q.eq("orgId", orgId),
   });
 
@@ -164,7 +171,7 @@ async function buildVectorContext(
     const doc = await ctx.runQuery(internal.documentChunks.get, {
       id: result._id,
     });
-    if (doc) chunkDocs.push({ ...doc, _score: result._score });
+    if (doc && isStructuredFactChunk(doc)) chunkDocs.push({ ...doc, _score: result._score });
   }
   const sourceChunkDocs = [];
   for (const result of sourceResults) {
@@ -257,9 +264,11 @@ async function buildVectorContext(
     );
   }
 
-  // Add retrieved extracted chunks grouped by policy
+  // Add retrieved structured fact chunks grouped by policy. Generated section
+  // prose and long policy wording are intentionally excluded; sourceChunks
+  // above are the canonical evidence for exact contractual text.
   const chunksByPolicy = new Map<string, typeof chunkDocs>();
-  for (const chunk of chunkDocs) {
+  for (const chunk of chunkDocs.slice(0, 15)) {
     const key = chunk.policyId as string;
     if (!chunksByPolicy.has(key)) chunksByPolicy.set(key, []);
     chunksByPolicy.get(key)!.push(chunk);
@@ -299,7 +308,7 @@ async function buildVectorContext(
 
   if (expandedSections.length > 0) {
     parts.push(
-      `RELEVANT DOCUMENT DATA (via semantic search):\n${expandedSections.join("\n")}`,
+      `STRUCTURED DOCUMENT FACTS (secondary context, not source wording):\n${expandedSections.join("\n")}`,
     );
   }
 
@@ -308,6 +317,32 @@ async function buildVectorContext(
     relevantPolicyIds: [...relevantPolicyIdSet],
     relevantQuoteIds: [...relevantQuoteIdSet],
   };
+}
+
+const STRUCTURED_FACT_CHUNK_TYPES = new Set([
+  "carrier_info",
+  "named_insured",
+  "coverage",
+  "declaration",
+  "loss_history",
+  "premium",
+  "financial",
+  "supplementary",
+  "location",
+  "vehicle",
+  "classification",
+  "party",
+  "subjectivity",
+  "underwriting_condition",
+]);
+
+function isStructuredFactChunk(chunk: Doc<"documentChunks">): boolean {
+  const evidenceKind = (chunk.metadata as { evidenceKind?: string } | undefined)?.evidenceKind;
+  return (
+    STRUCTURED_FACT_CHUNK_TYPES.has(chunk.chunkType)
+    && evidenceKind !== "navigation"
+    && evidenceKind !== "generated_long_text"
+  );
 }
 
 /**

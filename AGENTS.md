@@ -194,6 +194,8 @@ Current `cl-sdk` passes document content through callback `providerOptions`.
 - `providerOptions.pdfBase64` carries the PDF for classification, planning, review, and page-scoped extraction calls when extraction is using raw PDF input.
 - `providerOptions.doclingText` carries full or page-scoped text when extraction is using a host-provided DoclingDocument input.
 - `providerOptions.images` carries page images when PDF-to-image conversion is used.
+- `providerOptions.sourceSpans` carries source evidence for page-scoped extraction. Source-backed section and endorsement output is a compact index with excerpts and `sourceSpanIds`; canonical policy wording belongs in `sourceSpans`/`sourceChunks`, not generated section or endorsement `content`.
+- `trace` metadata identifies extractor/page range or formatting batches for operator model-call debugging. Preserve it in extraction trace events.
 
 Glass translates those into AI SDK multipart message content in `sdkCallbacks.ts`:
 
@@ -245,7 +247,7 @@ Two entrypoints, both PDF-only:
 5. Run coverage declaration scoping before persistence. When the SDK extracts multiple limits for the same coverage and limit role, Glass scores declarations, selected-option markers, summary/confirmation pages, endorsements, and source-span evidence; persists only the best current coverage value; and stores `extractionReview.questions` for any same-role limit conflict that still needs client/broker confirmation. Distinct limit roles such as per-occurrence and aggregate remain separate coverage rows.
 6. Persist the extracted document and metadata.
 7. Chunk the document and embed each chunk with `text-embedding-3-small`.
-8. Store chunks in `documentChunks` for semantic retrieval.
+8. Store structured extracted fact chunks in `documentChunks` and raw source evidence chunks in `sourceChunks` for retrieval. Section and endorsement chunks are navigation/index metadata only; do not use them as the source of exact policy wording.
 
 Pipeline runtime state:
 
@@ -268,14 +270,14 @@ Cancellation:
 Glass uses two vector-backed stores plus one list-based store:
 
 - `sourceChunks` — raw source-span evidence chunks (vector), preferred for exact policy terms when present
-- `documentChunks` — extracted policy/quote content chunks (vector)
+- `documentChunks` — extracted policy/quote structured fact chunks (vector), plus navigation/index metadata for sections and endorsements
 - `conversationTurns` — cross-thread conversation memory (vector)
 - `orgMemory` — business facts/preferences/risk notes/observations (list, filtered by kind/source)
 
 [agentPrompts.ts](convex/lib/agentPrompts.ts) builds agent context:
 
-- `buildDocumentContext()` — if chunks exist, embed query and search `documentChunks`; otherwise fall back to keyword-scored document summary.
-- When `sourceChunks` exist, `buildDocumentContext()` searches them before `documentChunks` and labels the results as source-span evidence with stable `sourceSpanIds`.
+- `buildDocumentContext()` — if chunks exist, embed query and search `sourceChunks` first for exact policy wording; otherwise fall back to keyword-scored document summary.
+- When `sourceChunks` exist, `buildDocumentContext()` labels them as source-span evidence with stable `sourceSpanIds`. It only adds `documentChunks` as secondary structured-fact context and filters out generated long text or section/endorsement navigation chunks for Q&A.
 - `lookup_policy_section` uses [policyLookup.ts](convex/lib/policyLookup.ts) in web chat, inbound email, iMessage, and MCP chat to return structured policy matches enriched with stable `sourceSpanIds` and short raw evidence excerpts. If extracted structured data is missing or weak, it also searches original-PDF source evidence from `sourceChunks` / `sourceSpans`; for older policies without stored spans it can parse the stored policy PDF on demand for read-only evidence.
 - `confirm_policy_fact` lets agents persist a concise policy fact after `lookup_policy_section` returns supporting original-PDF `sourceSpanIds`. The tool records an `orgMemory` fact and may patch only a constrained set of top-level policy fields when the cited PDF text directly supports the update.
 - SDK query-agent wrappers use [convexSourceRetriever.ts](convex/lib/convexSourceRetriever.ts) to search `sourceChunks` and return source spans for SDK hybrid retrieval.

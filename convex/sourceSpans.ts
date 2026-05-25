@@ -70,6 +70,17 @@ export const listChunksByPolicy = internalQuery({
   },
 });
 
+export const hasChunksForOrg = internalQuery({
+  args: { orgId: v.id("organizations") },
+  handler: async (ctx, args) => {
+    const first = await ctx.db
+      .query("sourceChunks")
+      .withIndex("by_orgId", (q) => q.eq("orgId", args.orgId))
+      .first();
+    return first !== null;
+  },
+});
+
 export const getSpan = internalQuery({
   args: { id: v.id("sourceSpans") },
   handler: async (ctx, args) => {

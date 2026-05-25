@@ -66,17 +66,49 @@ type PdfFilePart = {
 
 type ParamsWithOptionalTaskKind = {
   taskKind?: unknown;
+  trace?: unknown;
+};
+
+type ModelCallTraceDetails = {
+  label?: string;
+  extractorName?: string;
+  startPage?: number;
+  endPage?: number;
+  batchIndex?: number;
+  batchCount?: number;
+  phase?: string;
+  sourceBacked?: boolean;
 };
 
 function readTaskKind(params: ParamsWithOptionalTaskKind): ModelCallTaskKind | undefined {
   return typeof params.taskKind === "string" ? params.taskKind : undefined;
 }
 
+function readTraceDetails(params: ParamsWithOptionalTaskKind): ModelCallTraceDetails | undefined {
+  if (!params.trace || typeof params.trace !== "object" || Array.isArray(params.trace)) return undefined;
+  return params.trace as ModelCallTraceDetails;
+}
+
 function nowMs(): number {
   return dayjs().valueOf();
 }
 
-function modelTraceLabel(kind: "generateText" | "generateObject", taskKind?: ModelCallTaskKind, task?: ModelTask) {
+function modelTraceLabel(
+  kind: "generateText" | "generateObject",
+  taskKind?: ModelCallTaskKind,
+  task?: ModelTask,
+  trace?: ModelCallTraceDetails,
+) {
+  if (trace?.label) return trace.label;
+  if (trace?.extractorName) {
+    const pageRange = trace.startPage
+      ? ` pages ${trace.startPage}${trace.endPage && trace.endPage !== trace.startPage ? `-${trace.endPage}` : ""}`
+      : "";
+    return `${trace.extractorName}${pageRange}`;
+  }
+  if (trace?.phase === "format" && trace.batchIndex && trace.batchCount) {
+    return `Format extracted content ${trace.batchIndex}/${trace.batchCount}`;
+  }
   const labels: Record<string, string> = {
     extraction_classify: "Classify document",
     extraction_form_inventory: "Extract form inventory",
@@ -188,6 +220,7 @@ function modelTraceDetails(params: {
   system?: string;
   maxOutputTokens: number;
   providerOptions?: ProviderOptions;
+  trace?: ModelCallTraceDetails;
   output?: unknown;
   outputKind?: "text" | "object";
 }) {
@@ -196,6 +229,7 @@ function modelTraceDetails(params: {
     callKind: params.kind,
     task: params.task,
     taskKind: params.taskKind,
+    trace: params.trace,
     maxOutputTokens: params.maxOutputTokens,
     systemPreview: traceTextPreview(params.system),
     promptPreview: traceTextPreview(params.prompt),
@@ -412,6 +446,7 @@ export function makeGenerateText(
     const { prompt, system, maxTokens, providerOptions } = params;
     const guidedPrompt = addPolicyPeriodGuidance(prompt);
     const taskKind = readTaskKind(params as ParamsWithOptionalTaskKind);
+    const trace = readTraceDetails(params as ParamsWithOptionalTaskKind);
     const effectiveTask = modelTaskForCall(task, taskKind);
     const effectiveMaxTokens = getEffectiveMaxTokens(effectiveTask, guidedPrompt, maxTokens);
     let primaryRoute: ModelRoute | undefined;
@@ -426,7 +461,7 @@ export function makeGenerateText(
       })
       : getModel(effectiveTask);
     const startedAt = nowMs();
-    const label = modelTraceLabel("generateText", taskKind, effectiveTask);
+    const label = modelTraceLabel("generateText", taskKind, effectiveTask, trace);
     try {
       const result = await generateTextWithFallback({
         model,
@@ -462,6 +497,7 @@ export function makeGenerateText(
           system,
           maxOutputTokens: effectiveMaxTokens,
           providerOptions: providerOptions as ProviderOptions,
+          trace,
           output: result.text,
           outputKind: "text",
         }),
@@ -490,6 +526,7 @@ export function makeGenerateText(
           system,
           maxOutputTokens: effectiveMaxTokens,
           providerOptions: providerOptions as ProviderOptions,
+          trace,
         }),
       });
       throw error;
@@ -509,6 +546,7 @@ export function makeGenerateObject(
     const { prompt, system, schema, maxTokens, providerOptions } = params;
     const guidedPrompt = addPolicyPeriodGuidance(prompt);
     const taskKind = readTaskKind(params as ParamsWithOptionalTaskKind);
+    const trace = readTraceDetails(params as ParamsWithOptionalTaskKind);
     const effectiveTask = modelTaskForCall(task, taskKind);
     const effectiveMaxTokens = getEffectiveMaxTokens(effectiveTask, guidedPrompt, maxTokens);
     let primaryRoute: ModelRoute | undefined;
@@ -523,7 +561,7 @@ export function makeGenerateObject(
       })
       : getModel(effectiveTask);
     const startedAt = nowMs();
-    const label = modelTraceLabel("generateObject", taskKind, effectiveTask);
+    const label = modelTraceLabel("generateObject", taskKind, effectiveTask, trace);
     try {
       const result = await generateStructuredWithFallback({
         model,
@@ -560,6 +598,7 @@ export function makeGenerateObject(
           system,
           maxOutputTokens: effectiveMaxTokens,
           providerOptions: providerOptions as ProviderOptions,
+          trace,
           output: result.output,
           outputKind: "object",
         }),
@@ -593,6 +632,7 @@ export function makeGenerateObject(
             system,
             maxOutputTokens: effectiveMaxTokens,
             providerOptions: providerOptions as ProviderOptions,
+            trace,
             output: { sections: [] },
             outputKind: "object",
           }),
@@ -622,6 +662,7 @@ export function makeGenerateObject(
           system,
           maxOutputTokens: effectiveMaxTokens,
           providerOptions: providerOptions as ProviderOptions,
+          trace,
         }),
       });
       throw error;
