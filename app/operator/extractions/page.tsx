@@ -121,12 +121,6 @@ function formatCompactTokens(input?: number, output?: number) {
   return total.toLocaleString();
 }
 
-function formatPercent(value: number) {
-  if (!Number.isFinite(value)) return "0%";
-  if (value < 1 && value > 0) return "<1%";
-  return `${Math.round(value)}%`;
-}
-
 function statusVariant(status: TraceStatus): "default" | "secondary" | "destructive" {
   if (status === "complete") return "default";
   if (status === "error" || status === "cancelled") return "destructive";
@@ -437,68 +431,70 @@ function TimelineWaterfall({
   const ticks = [0, 0.25, 0.5, 0.75, 1];
 
   return (
-    <div className="overflow-hidden rounded-lg border border-foreground/6">
-      <div className="grid grid-cols-[9.5rem_1fr] border-b border-foreground/6 bg-muted/20">
-        <div className="border-r border-foreground/6 px-2.5 py-2 text-label-sm font-medium text-muted-foreground">
-          Event
-        </div>
-        <div className="relative h-8">
-          {ticks.map((tick) => (
-            <div
-              key={tick}
-              className="absolute top-0 h-full border-l border-foreground/10"
-              style={{ left: `${tick * 100}%` }}
-            >
-              <span className="ml-1 text-[10px] leading-8 text-muted-foreground">
-                {formatDuration(durationMs * tick)}
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
-      <div className="max-h-64 overflow-y-auto">
-        {rows.length ? rows.map((row) => {
-          const left = ((row.startMs - startAt) / durationMs) * 100;
-          const width = Math.max(1.5, (row.durationMs / durationMs) * 100);
-          return (
-            <div key={row.id} className="grid min-h-8 grid-cols-[9.5rem_1fr] border-b border-foreground/6 last:border-b-0">
-              <div className="min-w-0 border-r border-foreground/6 px-2.5 py-1.5">
-                <p className="truncate text-label-sm font-medium text-foreground">{row.label}</p>
-                <p className="truncate text-[10px] text-muted-foreground">
-                  {row.kind === "model_call" && row.caption
-                    ? `${formatDuration(row.durationMs)} · ${row.caption}`
-                    : formatDuration(row.durationMs)}
-                </p>
+    <div className="flex h-full min-h-[28rem] overflow-hidden rounded-lg border border-foreground/6">
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="grid grid-cols-[9.5rem_1fr] border-b border-foreground/6 bg-muted/20">
+          <div className="border-r border-foreground/6 px-2.5 py-2 text-label-sm font-medium text-muted-foreground">
+            Event
+          </div>
+          <div className="relative h-8">
+            {ticks.map((tick) => (
+              <div
+                key={tick}
+                className="absolute top-0 h-full border-l border-foreground/10"
+                style={{ left: `${tick * 100}%` }}
+              >
+                <span className="ml-1 text-[10px] leading-8 text-muted-foreground">
+                  {formatDuration(durationMs * tick)}
+                </span>
               </div>
-              <div className="relative px-0 py-1.5">
-                {ticks.map((tick) => (
-                  <span
-                    key={tick}
-                    aria-hidden="true"
-                    className="absolute top-0 h-full border-l border-foreground/6"
-                    style={{ left: `${tick * 100}%` }}
+            ))}
+          </div>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {rows.length ? rows.map((row) => {
+            const left = ((row.startMs - startAt) / durationMs) * 100;
+            const width = Math.max(1.5, (row.durationMs / durationMs) * 100);
+            return (
+              <div key={row.id} className="grid min-h-8 grid-cols-[9.5rem_1fr] border-b border-foreground/6 last:border-b-0">
+                <div className="min-w-0 border-r border-foreground/6 px-2.5 py-1.5">
+                  <p className="truncate text-label-sm font-medium text-foreground">{row.label}</p>
+                  <p className="truncate text-[10px] text-muted-foreground">
+                    {row.kind === "model_call" && row.caption
+                      ? `${formatDuration(row.durationMs)} · ${row.caption}`
+                      : formatDuration(row.durationMs)}
+                  </p>
+                </div>
+                <div className="relative px-0 py-1.5">
+                  {ticks.map((tick) => (
+                    <span
+                      key={tick}
+                      aria-hidden="true"
+                      className="absolute top-0 h-full border-l border-foreground/6"
+                      style={{ left: `${tick * 100}%` }}
+                    />
+                  ))}
+                  <div
+                    className={`absolute top-1.5 h-5 rounded-sm ${timelineColor(row.kind)}`}
+                    style={{
+                      left: `${Math.max(0, Math.min(100, left))}%`,
+                      width: `${Math.min(100 - Math.max(0, left), width)}%`,
+                    }}
+                    title={`${row.label} · ${formatDuration(row.durationMs)} · ${row.caption}`}
                   />
-                ))}
-                <div
-                  className={`absolute top-1.5 h-5 rounded-sm ${timelineColor(row.kind)}`}
-                  style={{
-                    left: `${Math.max(0, Math.min(100, left))}%`,
-                    width: `${Math.min(100 - Math.max(0, left), width)}%`,
-                  }}
-                  title={`${row.label} · ${formatDuration(row.durationMs)} · ${row.caption}`}
-                />
+                </div>
               </div>
-            </div>
-          );
-        }) : (
-          <p className="px-3 py-3 text-body-sm text-muted-foreground">No timed events recorded yet.</p>
-        )}
-      </div>
-      <div className="flex flex-wrap gap-3 border-t border-foreground/6 px-3 py-2 text-[10px] text-muted-foreground">
-        <span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-foreground" />phase</span>
-        <span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-blue-500" />model call</span>
-        <span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-emerald-500" />embedding</span>
-        <span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-violet-500" />worker</span>
+            );
+          }) : (
+            <p className="px-3 py-3 text-body-sm text-muted-foreground">No timed events recorded yet.</p>
+          )}
+        </div>
+        <div className="flex flex-wrap gap-3 border-t border-foreground/6 px-3 py-2 text-[10px] text-muted-foreground">
+          <span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-foreground" />phase</span>
+          <span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-blue-500" />model call</span>
+          <span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-emerald-500" />embedding</span>
+          <span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-violet-500" />worker</span>
+        </div>
       </div>
     </div>
   );
@@ -545,9 +541,6 @@ export default function OperatorExtractionsPage() {
   const wallDurationMs = selected?.totalDurationMs ?? (
     selected?.lastEventAt ? selected.lastEventAt - selected.startedAt : undefined
   );
-  const modelShare = wallDurationMs && selected?.modelDurationMs
-    ? (selected.modelDurationMs / wallDurationMs) * 100
-    : 0;
   const copyExtractionId = useCallback((traceId: string) => {
     void navigator.clipboard
       .writeText(traceId)
@@ -614,10 +607,11 @@ export default function OperatorExtractionsPage() {
           <Loader2 className="h-5 w-5 animate-spin" />
         </div>
       ) : selected ? (
-        <div className="pt-4">
+        <div className="flex min-h-0 flex-1">
           <Tabs
             value={activeTraceTab}
             onValueChange={(value) => setActiveTraceTab(value as TracePanelTab)}
+            className="min-h-0 flex-1"
           >
             <TabsList variant="pill" className="flex-wrap">
               <TabsTrigger value="summary">Summary</TabsTrigger>
@@ -660,23 +654,11 @@ export default function OperatorExtractionsPage() {
               </dl>
             </TabsContent>
 
-            <TabsContent value="timeline" className="space-y-2 pt-3">
-              <div className="flex items-center justify-between gap-3">
-                <h3 className="text-body-sm font-medium text-foreground">Timeline</h3>
-                <span className="text-label-sm text-muted-foreground">
-                  {formatDuration(wallDurationMs)}
-                </span>
-              </div>
+            <TabsContent value="timeline" className="min-h-0 flex-1 pt-3">
               <TimelineWaterfall rows={timelineRows} session={selected} />
             </TabsContent>
 
             <TabsContent value="timing" className="space-y-3 pt-3">
-              <div className="flex items-center justify-between gap-3">
-                <h3 className="text-body-sm font-medium text-foreground">Timing breakdown</h3>
-                <span className="text-label-sm text-muted-foreground">
-                  Model time is {formatPercent(modelShare)} of elapsed wall time
-                </span>
-              </div>
               <div className="space-y-2">
                 <div>
                   <h4 className="mb-1 text-label-sm font-medium text-muted-foreground">Phases</h4>
@@ -717,7 +699,6 @@ export default function OperatorExtractionsPage() {
             </TabsContent>
 
             <TabsContent value="models" className="space-y-2 pt-3">
-              <h3 className="text-body-sm font-medium text-foreground">Model calls</h3>
               <div className="overflow-hidden rounded-lg border border-foreground/6">
                 <Table>
                   <TableHeader>
@@ -754,7 +735,6 @@ export default function OperatorExtractionsPage() {
             </TabsContent>
 
             <TabsContent value="log" className="space-y-2 pt-3">
-              <h3 className="text-body-sm font-medium text-foreground">Pipeline log</h3>
               <div className="rounded-lg border border-foreground/6">
                 {logEvents.length ? logEvents.map((event) => (
                   <div key={event._id} className="border-b border-foreground/6 px-3 py-2 last:border-b-0">
