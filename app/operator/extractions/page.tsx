@@ -1,9 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import dayjs from "dayjs";
+import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import {
   Select,
@@ -20,7 +22,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Loader2 } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Copy, Loader2 } from "lucide-react";
 import { OperatorSidebar } from "../operator-sidebar";
 import {
   useCachedOperatorCurrent,
@@ -78,6 +81,7 @@ type TraceDetail = {
   session: TraceRow;
   events: TraceEvent[];
 };
+type TracePanelTab = "summary" | "timeline" | "timing" | "models" | "log";
 
 const ALL = "__all__";
 const STATUS_LABELS: Record<string, string> = {
@@ -505,6 +509,7 @@ export default function OperatorExtractionsPage() {
   const [range, setRange] = useState<keyof typeof RANGE_LABELS>("90d");
   const [orgId, setOrgId] = useState<string>(ALL);
   const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null);
+  const [activeTraceTab, setActiveTraceTab] = useState<TracePanelTab>("summary");
 
   const current = useCachedOperatorCurrent();
   const traces = useCachedOperatorExtractionTraces({
@@ -543,6 +548,12 @@ export default function OperatorExtractionsPage() {
   const modelShare = wallDurationMs && selected?.modelDurationMs
     ? (selected.modelDurationMs / wallDurationMs) * 100
     : 0;
+  const copyExtractionId = useCallback((traceId: string) => {
+    void navigator.clipboard
+      .writeText(traceId)
+      .then(() => toast.success("Extraction ID copied"))
+      .catch(() => toast.error("Couldn't copy extraction ID"));
+  }, []);
 
   const actions = (
     <div className="flex items-center gap-2">
@@ -591,7 +602,10 @@ export default function OperatorExtractionsPage() {
     <SettingsDrawer
       open={!!selectedTraceId}
       onOpenChange={(open) => {
-        if (!open) setSelectedTraceId(null);
+        if (!open) {
+          setSelectedTraceId(null);
+          setActiveTraceTab("summary");
+        }
       }}
       title={selected ? traceDisplayTitle(selected) : "Extraction trace"}
     >
@@ -600,134 +614,164 @@ export default function OperatorExtractionsPage() {
           <Loader2 className="h-5 w-5 animate-spin" />
         </div>
       ) : selected ? (
-        <div className="space-y-5 pt-4">
-          <section>
-            <dl className="rounded-lg border border-foreground/6">
-              <DetailRow label="Org" value={selected.orgName} />
-              <DetailRow label="File" value={traceDisplayFile(selected)} />
-              <DetailRow label="Status" value={<Badge variant={statusVariant(selected.status)}>{selected.status}</Badge>} />
-              <DetailRow label="Started" value={dayjs(selected.startedAt).format("MMM D, h:mm:ss A")} />
-              <DetailRow label="Duration" value={formatDuration(selected.totalDurationMs ?? (selected.lastEventAt ? selected.lastEventAt - selected.startedAt : undefined))} />
-              <DetailRow label="Model time" value={formatDuration(selected.modelDurationMs)} />
-              <DetailRow label="Tokens" value={formatTokens(selected.inputTokens, selected.outputTokens)} />
-              <DetailRow label="Slowest" value={selected.slowestLabel ? `${selected.slowestLabel} · ${formatDuration(selected.slowestDurationMs)}` : "—"} />
-              {selected.error ? <DetailRow label="Error" value={<span className="text-destructive">{selected.error}</span>} /> : null}
-            </dl>
-          </section>
+        <div className="pt-4">
+          <Tabs
+            value={activeTraceTab}
+            onValueChange={(value) => setActiveTraceTab(value as TracePanelTab)}
+          >
+            <TabsList variant="pill" className="flex-wrap">
+              <TabsTrigger value="summary">Summary</TabsTrigger>
+              <TabsTrigger value="timeline">Timeline</TabsTrigger>
+              <TabsTrigger value="timing">Timing</TabsTrigger>
+              <TabsTrigger value="models">Model calls</TabsTrigger>
+              <TabsTrigger value="log">Log</TabsTrigger>
+            </TabsList>
 
-          <section className="space-y-2">
-            <div className="flex items-center justify-between gap-3">
-              <h3 className="text-body-sm font-medium text-foreground">Timeline</h3>
-              <span className="text-label-sm text-muted-foreground">
-                {formatDuration(wallDurationMs)}
-              </span>
-            </div>
-            <TimelineWaterfall rows={timelineRows} session={selected} />
-          </section>
+            <TabsContent value="summary" className="pt-3">
+              <dl className="rounded-lg border border-foreground/6">
+                <DetailRow
+                  label="Extraction ID"
+                  value={(
+                    <div className="flex min-w-0 items-center gap-2">
+                      <code className="min-w-0 truncate rounded bg-muted px-1.5 py-0.5 font-mono text-label-sm">
+                        {selected.traceId}
+                      </code>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-xs"
+                        aria-label="Copy extraction ID"
+                        onClick={() => copyExtractionId(selected.traceId)}
+                      >
+                        <Copy className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  )}
+                />
+                <DetailRow label="Org" value={selected.orgName} />
+                <DetailRow label="File" value={traceDisplayFile(selected)} />
+                <DetailRow label="Status" value={<Badge variant={statusVariant(selected.status)}>{selected.status}</Badge>} />
+                <DetailRow label="Started" value={dayjs(selected.startedAt).format("MMM D, h:mm:ss A")} />
+                <DetailRow label="Duration" value={formatDuration(selected.totalDurationMs ?? (selected.lastEventAt ? selected.lastEventAt - selected.startedAt : undefined))} />
+                <DetailRow label="Model time" value={formatDuration(selected.modelDurationMs)} />
+                <DetailRow label="Tokens" value={formatTokens(selected.inputTokens, selected.outputTokens)} />
+                <DetailRow label="Slowest" value={selected.slowestLabel ? `${selected.slowestLabel} · ${formatDuration(selected.slowestDurationMs)}` : "—"} />
+                {selected.error ? <DetailRow label="Error" value={<span className="text-destructive">{selected.error}</span>} /> : null}
+              </dl>
+            </TabsContent>
 
-          <section className="space-y-3">
-            <div className="flex items-center justify-between gap-3">
-              <h3 className="text-body-sm font-medium text-foreground">Timing breakdown</h3>
-              <span className="text-label-sm text-muted-foreground">
-                Model time is {formatPercent(modelShare)} of elapsed wall time
-              </span>
-            </div>
-            <div className="space-y-2">
-              <div>
-                <h4 className="mb-1 text-label-sm font-medium text-muted-foreground">Phases</h4>
-                <div className="rounded-lg border border-foreground/6">
-                  {phaseTimingRows.length ? phaseTimingRows.map((row) => (
-                    <TimingBar key={row.id} row={row} maxDurationMs={maxPhaseDuration} />
-                  )) : (
-                    <p className="px-3 py-3 text-body-sm text-muted-foreground">No phase timings recorded.</p>
-                  )}
-                </div>
+            <TabsContent value="timeline" className="space-y-2 pt-3">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-body-sm font-medium text-foreground">Timeline</h3>
+                <span className="text-label-sm text-muted-foreground">
+                  {formatDuration(wallDurationMs)}
+                </span>
               </div>
-              <div>
-                <h4 className="mb-1 text-label-sm font-medium text-muted-foreground">Model calls</h4>
-                <div className="rounded-lg border border-foreground/6">
-                  {modelTimingRows.length ? modelTimingRows.map((row) => (
-                    <TimingBar key={row.id} row={row} maxDurationMs={maxModelDuration} />
-                  )) : (
-                    <p className="px-3 py-3 text-body-sm text-muted-foreground">No model timings recorded.</p>
-                  )}
-                </div>
+              <TimelineWaterfall rows={timelineRows} session={selected} />
+            </TabsContent>
+
+            <TabsContent value="timing" className="space-y-3 pt-3">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-body-sm font-medium text-foreground">Timing breakdown</h3>
+                <span className="text-label-sm text-muted-foreground">
+                  Model time is {formatPercent(modelShare)} of elapsed wall time
+                </span>
               </div>
-              {otherTimingRows.length ? (
+              <div className="space-y-2">
                 <div>
-                  <h4 className="mb-1 text-label-sm font-medium text-muted-foreground">Other timed work</h4>
+                  <h4 className="mb-1 text-label-sm font-medium text-muted-foreground">Phases</h4>
                   <div className="rounded-lg border border-foreground/6">
-                    {otherTimingRows.map((row) => (
-                      <TimingBar key={row.id} row={row} maxDurationMs={maxOtherDuration} />
-                    ))}
+                    {phaseTimingRows.length ? phaseTimingRows.map((row) => (
+                      <TimingBar key={row.id} row={row} maxDurationMs={maxPhaseDuration} />
+                    )) : (
+                      <p className="px-3 py-3 text-body-sm text-muted-foreground">No phase timings recorded.</p>
+                    )}
                   </div>
                 </div>
-              ) : (
-                null
-              )}
-            </div>
-            {selected.modelDurationMs && wallDurationMs && selected.modelDurationMs > wallDurationMs ? (
-              <p className="text-label-sm text-muted-foreground">
-                Aggregate model time can exceed wall time when extraction runs model calls in parallel.
-              </p>
-            ) : null}
-          </section>
+                <div>
+                  <h4 className="mb-1 text-label-sm font-medium text-muted-foreground">Model calls</h4>
+                  <div className="rounded-lg border border-foreground/6">
+                    {modelTimingRows.length ? modelTimingRows.map((row) => (
+                      <TimingBar key={row.id} row={row} maxDurationMs={maxModelDuration} />
+                    )) : (
+                      <p className="px-3 py-3 text-body-sm text-muted-foreground">No model timings recorded.</p>
+                    )}
+                  </div>
+                </div>
+                {otherTimingRows.length ? (
+                  <div>
+                    <h4 className="mb-1 text-label-sm font-medium text-muted-foreground">Other timed work</h4>
+                    <div className="rounded-lg border border-foreground/6">
+                      {otherTimingRows.map((row) => (
+                        <TimingBar key={row.id} row={row} maxDurationMs={maxOtherDuration} />
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+              {selected.modelDurationMs && wallDurationMs && selected.modelDurationMs > wallDurationMs ? (
+                <p className="text-label-sm text-muted-foreground">
+                  Aggregate model time can exceed wall time when extraction runs model calls in parallel.
+                </p>
+              ) : null}
+            </TabsContent>
 
-          <section className="space-y-2">
-            <h3 className="text-body-sm font-medium text-foreground">Model calls</h3>
-            <div className="overflow-hidden rounded-lg border border-foreground/6">
-              <Table>
-                <TableHeader>
-                  <TableRow className="hover:bg-transparent">
-                    <TableHead className="px-3 text-label-sm text-muted-foreground">Call</TableHead>
-                    <TableHead className="text-label-sm text-muted-foreground">Model</TableHead>
-                    <TableHead className="text-label-sm text-muted-foreground">Time</TableHead>
-                    <TableHead className="px-3 text-label-sm text-muted-foreground">Tokens</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {modelEvents.length ? modelEvents.map((event) => (
-                    <TableRow key={event._id}>
-                      <TableCell className="max-w-40 px-3">
-                        <p className="truncate text-body-sm text-foreground">{eventTitle(event)}</p>
-                        <p className="truncate text-label-sm text-muted-foreground">{event.status}{event.routeSource ? ` · ${event.routeSource}` : ""}</p>
-                      </TableCell>
-                      <TableCell className="max-w-44 truncate text-muted-foreground">
-                        {[event.provider, event.model].filter(Boolean).join(" / ") || "—"}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">{formatDuration(event.durationMs)}</TableCell>
-                      <TableCell className="px-3 text-muted-foreground">{formatTokens(event.inputTokens, event.outputTokens)}</TableCell>
-                    </TableRow>
-                  )) : (
+            <TabsContent value="models" className="space-y-2 pt-3">
+              <h3 className="text-body-sm font-medium text-foreground">Model calls</h3>
+              <div className="overflow-hidden rounded-lg border border-foreground/6">
+                <Table>
+                  <TableHeader>
                     <TableRow className="hover:bg-transparent">
-                      <TableCell colSpan={4} className="h-20 px-3 text-body-sm text-muted-foreground">
-                        No model calls recorded.
-                      </TableCell>
+                      <TableHead className="px-3 text-label-sm text-muted-foreground">Call</TableHead>
+                      <TableHead className="text-label-sm text-muted-foreground">Model</TableHead>
+                      <TableHead className="text-label-sm text-muted-foreground">Time</TableHead>
+                      <TableHead className="px-3 text-label-sm text-muted-foreground">Tokens</TableHead>
                     </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-          </section>
+                  </TableHeader>
+                  <TableBody>
+                    {modelEvents.length ? modelEvents.map((event) => (
+                      <TableRow key={event._id}>
+                        <TableCell className="max-w-40 px-3">
+                          <p className="truncate text-body-sm text-foreground">{eventTitle(event)}</p>
+                          <p className="truncate text-label-sm text-muted-foreground">{event.status}{event.routeSource ? ` · ${event.routeSource}` : ""}</p>
+                        </TableCell>
+                        <TableCell className="max-w-44 truncate text-muted-foreground">
+                          {[event.provider, event.model].filter(Boolean).join(" / ") || "—"}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">{formatDuration(event.durationMs)}</TableCell>
+                        <TableCell className="px-3 text-muted-foreground">{formatTokens(event.inputTokens, event.outputTokens)}</TableCell>
+                      </TableRow>
+                    )) : (
+                      <TableRow className="hover:bg-transparent">
+                        <TableCell colSpan={4} className="h-20 px-3 text-body-sm text-muted-foreground">
+                          No model calls recorded.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </TabsContent>
 
-          <section className="space-y-2">
-            <h3 className="text-body-sm font-medium text-foreground">Pipeline log</h3>
-            <div className="rounded-lg border border-foreground/6">
-              {logEvents.length ? logEvents.map((event) => (
-                <div key={event._id} className="border-b border-foreground/6 px-3 py-2 last:border-b-0">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-label-sm text-muted-foreground">
-                      {dayjs(event.timestamp).format("h:mm:ss A")}{event.phase ? ` · ${event.phase}` : ""}
-                    </p>
-                    {event.level && event.level !== "info" ? <Badge variant={event.level === "error" ? "destructive" : "secondary"}>{event.level}</Badge> : null}
+            <TabsContent value="log" className="space-y-2 pt-3">
+              <h3 className="text-body-sm font-medium text-foreground">Pipeline log</h3>
+              <div className="rounded-lg border border-foreground/6">
+                {logEvents.length ? logEvents.map((event) => (
+                  <div key={event._id} className="border-b border-foreground/6 px-3 py-2 last:border-b-0">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-label-sm text-muted-foreground">
+                        {dayjs(event.timestamp).format("h:mm:ss A")}{event.phase ? ` · ${event.phase}` : ""}
+                      </p>
+                      {event.level && event.level !== "info" ? <Badge variant={event.level === "error" ? "destructive" : "secondary"}>{event.level}</Badge> : null}
+                    </div>
+                    <p className="mt-1 text-body-sm text-foreground">{event.message}</p>
                   </div>
-                  <p className="mt-1 text-body-sm text-foreground">{event.message}</p>
-                </div>
-              )) : (
-                <p className="px-3 py-3 text-body-sm text-muted-foreground">No log messages recorded.</p>
-              )}
-            </div>
-          </section>
+                )) : (
+                  <p className="px-3 py-3 text-body-sm text-muted-foreground">No log messages recorded.</p>
+                )}
+              </div>
+            </TabsContent>
+          </Tabs>
         </div>
       ) : (
         <p className="text-body-sm text-muted-foreground">Trace not found.</p>
@@ -787,10 +831,14 @@ export default function OperatorExtractionsPage() {
                   <TableRow
                     key={trace.traceId}
                     tabIndex={0}
-                    onClick={() => setSelectedTraceId(trace.traceId)}
+                    onClick={() => {
+                      setActiveTraceTab("summary");
+                      setSelectedTraceId(trace.traceId);
+                    }}
                     onKeyDown={(event) => {
                       if (event.key !== "Enter" && event.key !== " ") return;
                       event.preventDefault();
+                      setActiveTraceTab("summary");
                       setSelectedTraceId(trace.traceId);
                     }}
                     className={`cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 ${
