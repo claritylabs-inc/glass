@@ -21,7 +21,7 @@ import {
   type ModelCapabilities,
   type PipelineCheckpoint,
 } from "@claritylabs/cl-sdk";
-import { EXTRACTION_MODEL_CAPABILITIES } from "./modelCapabilities.js";
+import { modelCapabilitiesForRoute } from "./modelCapabilities.js";
 import { buildPdfSourceSpans } from "./pdfSourceSpans.js";
 import { convertPdfWithDocling } from "./docling.js";
 
@@ -277,6 +277,7 @@ function getModelForTaskKind(taskKind: string | undefined, settings?: WorkerMode
   route: WorkerModelRoute;
   routeSource: string;
   transport: "direct";
+  capabilities: ModelCapabilities;
 } {
   const task = modelTaskForTaskKind(taskKind);
   const configuredRoute = settings?.routes?.[task];
@@ -290,6 +291,7 @@ function getModelForTaskKind(taskKind: string | undefined, settings?: WorkerMode
     route,
     routeSource: configuredRoute ? "configured" : "default",
     transport: "direct",
+    capabilities: modelCapabilitiesForRoute(route.model),
   };
 }
 
@@ -438,11 +440,6 @@ function modelTraceDetails(params: {
   });
 }
 
-const EXTRACTION_MAX_TOKEN_OVERRIDES: Record<string, number> = {
-  coveredReasons: 24576,
-  exclusions: 8192,
-};
-
 const SECTIONS_EXTRACTOR_PROMPT_MARKER =
   "Build a compact source-backed section index for this document";
 
@@ -462,14 +459,8 @@ function addPolicyPeriodGuidance(prompt: string): string {
   return `${prompt}${POLICY_PERIOD_EXTRACTION_GUIDANCE}`;
 }
 
-function getEffectiveMaxTokens(prompt: string, maxTokens: number): number {
-  if (prompt.includes("Extract ALL covered reasons from this document")) {
-    return Math.max(maxTokens, EXTRACTION_MAX_TOKEN_OVERRIDES.coveredReasons);
-  }
-  if (prompt.includes("Extract ALL exclusions from this document")) {
-    return Math.max(maxTokens, EXTRACTION_MAX_TOKEN_OVERRIDES.exclusions);
-  }
-  return maxTokens;
+function getEffectiveMaxTokens(maxTokens: number, capabilities: ModelCapabilities): number {
+  return capabilities.maxOutputTokens ?? maxTokens;
 }
 
 type ExtractionImage = {
@@ -636,7 +627,7 @@ function buildWorkerExtractor(opts: {
     const route = getModelForTaskKind(taskKind, opts.modelSettings);
     const task = modelTaskForTaskKind(taskKind);
     const label = modelTraceLabel("generateText", taskKind, task, trace);
-    const maxOutputTokens = getEffectiveMaxTokens(guidedPrompt, params.maxTokens);
+    const maxOutputTokens = getEffectiveMaxTokens(params.maxTokens, route.capabilities);
     const startedAt = nowMs();
     try {
       const result = await generateWithFallback({
@@ -716,7 +707,7 @@ function buildWorkerExtractor(opts: {
     const route = getModelForTaskKind(taskKind, opts.modelSettings);
     const task = modelTaskForTaskKind(taskKind);
     const label = modelTraceLabel("generateObject", taskKind, task, trace);
-    const maxOutputTokens = getEffectiveMaxTokens(guidedPrompt, params.maxTokens);
+    const maxOutputTokens = getEffectiveMaxTokens(params.maxTokens, route.capabilities);
     const startedAt = nowMs();
     try {
       const result = await generateWithFallback({
@@ -822,6 +813,7 @@ function buildWorkerExtractor(opts: {
   };
 
   const concurrency = readBoundedIntEnv("EXTRACTION_CONCURRENCY", 6, 1, 8);
+  const extractionRoute = getModelForTaskKind("extraction_focused", opts.modelSettings);
   return createExtractor({
     generateText,
     generateObject,
@@ -830,11 +822,11 @@ function buildWorkerExtractor(opts: {
     extractorConcurrency: readBoundedIntEnv("EXTRACTION_EXTRACTOR_CONCURRENCY", concurrency, 1, 8),
     formatConcurrency: readBoundedIntEnv("EXTRACTION_FORMAT_CONCURRENCY", concurrency, 1, 8),
     maxReviewRounds: readBoundedIntEnv("EXTRACTION_MAX_REVIEW_ROUNDS", 1, 0, 2),
-    reviewMode: readReviewModeEnv("EXTRACTION_REVIEW_MODE", "auto"),
+    reviewMode: readReviewModeEnv("EXTRACTION_REVIEW_MODE", "skip"),
     log: opts.log,
     onProgress: opts.log,
     onCheckpointSave: opts.onCheckpointSave,
-    modelCapabilities: EXTRACTION_MODEL_CAPABILITIES as ModelCapabilities,
+    modelCapabilities: extractionRoute.capabilities,
   });
 }
 
