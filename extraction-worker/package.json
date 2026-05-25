@@ -10,6 +10,7 @@
   },
   "main": "dist/index.js",
   "scripts": {
+    "prebuild": "node ../scripts/check-cl-sdk-version.mjs",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts"
@@ -23,7 +24,7 @@
     "@ai-sdk/openai": "^3.0.52",
     "@ai-sdk/provider-utils": "^4.0.23",
     "@ai-sdk/xai": "^3.0.83",
-    "@claritylabs/cl-sdk": "^1.3.2",
+    "@claritylabs/cl-sdk": "^1.3.3",
     "ai": "^6.0.134",
     "convex": "^1.32.0",
     "dayjs": "^1.11.19",

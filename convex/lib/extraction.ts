@@ -111,10 +111,10 @@ export function buildExtractor(opts?: {
       1,
       8,
     ),
-    // Let cl-sdk's evidence-gated auto review decide when a repair pass is useful.
-    // Hosts can still disable it explicitly via EXTRACTION_REVIEW_MODE=skip.
+    // Glass runs targeted field/evidence review in post-processing, so keep the
+    // SDK's broad review pass opt-in for production cost and latency.
     maxReviewRounds: readBoundedIntEnv("EXTRACTION_MAX_REVIEW_ROUNDS", 1, 0, 2),
-    reviewMode: readReviewModeEnv("EXTRACTION_REVIEW_MODE", "auto"),
+    reviewMode: readReviewModeEnv("EXTRACTION_REVIEW_MODE", "skip"),
     log: opts?.log,
     onProgress: opts?.onProgress,
     onTokenUsage: opts?.onTokenUsage,

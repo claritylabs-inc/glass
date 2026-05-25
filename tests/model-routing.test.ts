@@ -28,6 +28,29 @@ describe("model task routing", () => {
     );
     expect(modelTaskForCall("extraction", "pce_impact_analysis")).toBe("analysis");
   });
+
+  test("keeps root app and extraction worker on the same cl-sdk version", () => {
+    const appPackage = JSON.parse(readFileSync(join(__dirname, "../package.json"), "utf-8"));
+    const workerPackage = JSON.parse(
+      readFileSync(join(__dirname, "../extraction-worker/package.json"), "utf-8"),
+    );
+
+    expect(appPackage.scripts["check:cl-sdk-version"]).toContain("check-cl-sdk-version");
+    expect(workerPackage.scripts.prebuild).toContain("check-cl-sdk-version");
+    expect(appPackage.dependencies["@claritylabs/cl-sdk"]).toBe(
+      workerPackage.dependencies["@claritylabs/cl-sdk"],
+    );
+  });
+
+  test("keeps SDK extraction review broad pass disabled in Glass hosts", () => {
+    const appExtractor = readFileSync(join(__dirname, "../convex/lib/extraction.ts"), "utf-8");
+    const worker = readFileSync(join(__dirname, "../extraction-worker/src/index.ts"), "utf-8");
+
+    expect(appExtractor).toContain('readReviewModeEnv("EXTRACTION_REVIEW_MODE", "skip")');
+    expect(worker).toContain('readReviewModeEnv("EXTRACTION_REVIEW_MODE", "skip")');
+    expect(worker).toContain("modelCapabilitiesForRoute(route.model)");
+    expect(worker).not.toContain("EXTRACTION_MAX_TOKEN_OVERRIDES");
+  });
 });
 
 describe("thread chat streaming reliability", () => {

@@ -1,7 +1,6 @@
 import type { ModelCapabilities } from "@claritylabs/cl-sdk";
 
-export const EXTRACTION_MODEL_CAPABILITIES: ModelCapabilities = {
-  modelName: "gpt-5.4-nano",
+const OPENAI_GPT_5_4_CAPABILITIES: Omit<ModelCapabilities, "modelName"> = {
   maxInputTokens: 400_000,
   maxOutputTokens: 32_768,
   defaultOutputTokens: 8_192,
@@ -15,3 +14,24 @@ export const EXTRACTION_MODEL_CAPABILITIES: ModelCapabilities = {
     extraction_review: 12_288,
   },
 };
+
+const MODEL_CAPABILITIES: Record<string, ModelCapabilities> = {
+  "gpt-5.5": { modelName: "gpt-5.5", ...OPENAI_GPT_5_4_CAPABILITIES },
+  "gpt-5.4": { modelName: "gpt-5.4", ...OPENAI_GPT_5_4_CAPABILITIES },
+  "gpt-5.4-mini": { modelName: "gpt-5.4-mini", ...OPENAI_GPT_5_4_CAPABILITIES },
+  "gpt-5.4-nano": { modelName: "gpt-5.4-nano", ...OPENAI_GPT_5_4_CAPABILITIES },
+  "claude-haiku-4-5-20251001": {
+    modelName: "claude-haiku-4-5-20251001",
+    maxInputTokens: 200_000,
+    maxOutputTokens: 8_192,
+    defaultOutputTokens: 4_096,
+    longListOutputTokens: 8_192,
+  },
+};
+
+export function modelCapabilitiesForRoute(model: string): ModelCapabilities {
+  return MODEL_CAPABILITIES[model] ?? {
+    modelName: model,
+    defaultOutputTokens: 4_096,
+  };
+}
