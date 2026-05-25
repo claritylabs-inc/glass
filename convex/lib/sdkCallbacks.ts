@@ -24,6 +24,7 @@ import {
   type ModelRoute,
   type ModelTask,
 } from "./models";
+import { modelCapabilitiesForRoute, modelCapabilitiesForTask } from "./modelCatalog";
 import type { GenerateText, GenerateObject, EmbedText, TokenUsage } from "@claritylabs/cl-sdk";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
@@ -267,13 +268,8 @@ function buildPdfFilePart(opts: {
   return null;
 }
 
-const EXTRACTION_MAX_TOKEN_OVERRIDES: Record<string, number> = {
-  coveredReasons: 24576,
-  exclusions: 8192,
-};
-
 const SECTIONS_EXTRACTOR_PROMPT_MARKER =
-  "Extract ALL sections, clauses, endorsements, and schedules from this document";
+  "Build a compact source-backed section index for this document";
 
 const POLICY_PERIOD_EXTRACTION_GUIDANCE = `
 
@@ -293,17 +289,11 @@ function addPolicyPeriodGuidance(prompt: string): string {
 
 function getEffectiveMaxTokens(
   task: ModelTask,
-  prompt: string,
   maxTokens: number,
+  route?: ModelRoute,
 ): number {
-  if (task !== "extraction") return maxTokens;
-  if (prompt.includes("Extract ALL covered reasons from this document")) {
-    return Math.max(maxTokens, EXTRACTION_MAX_TOKEN_OVERRIDES.coveredReasons);
-  }
-  if (prompt.includes("Extract ALL exclusions from this document")) {
-    return Math.max(maxTokens, EXTRACTION_MAX_TOKEN_OVERRIDES.exclusions);
-  }
-  return maxTokens;
+  const routeCapabilities = route ? modelCapabilitiesForRoute(route) : modelCapabilitiesForTask(task);
+  return routeCapabilities?.maxOutputTokens ?? maxTokens;
 }
 
 function buildPromptInput(
@@ -448,7 +438,6 @@ export function makeGenerateText(
     const taskKind = readTaskKind(params as ParamsWithOptionalTaskKind);
     const trace = readTraceDetails(params as ParamsWithOptionalTaskKind);
     const effectiveTask = modelTaskForCall(task, taskKind);
-    const effectiveMaxTokens = getEffectiveMaxTokens(effectiveTask, guidedPrompt, maxTokens);
     let primaryRoute: ModelRoute | undefined;
     let routeSource: string | undefined;
     let transport: string | undefined;
@@ -460,6 +449,7 @@ export function makeGenerateText(
         return resolved.model;
       })
       : getModel(effectiveTask);
+    const effectiveMaxTokens = getEffectiveMaxTokens(effectiveTask, maxTokens, primaryRoute);
     const startedAt = nowMs();
     const label = modelTraceLabel("generateText", taskKind, effectiveTask, trace);
     try {
@@ -548,7 +538,6 @@ export function makeGenerateObject(
     const taskKind = readTaskKind(params as ParamsWithOptionalTaskKind);
     const trace = readTraceDetails(params as ParamsWithOptionalTaskKind);
     const effectiveTask = modelTaskForCall(task, taskKind);
-    const effectiveMaxTokens = getEffectiveMaxTokens(effectiveTask, guidedPrompt, maxTokens);
     let primaryRoute: ModelRoute | undefined;
     let routeSource: string | undefined;
     let transport: string | undefined;
@@ -560,6 +549,7 @@ export function makeGenerateObject(
         return resolved.model;
       })
       : getModel(effectiveTask);
+    const effectiveMaxTokens = getEffectiveMaxTokens(effectiveTask, maxTokens, primaryRoute);
     const startedAt = nowMs();
     const label = modelTraceLabel("generateObject", taskKind, effectiveTask, trace);
     try {

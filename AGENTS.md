@@ -224,11 +224,11 @@ Glass persists:
 
 ### Token Limits
 
-Glass preserves higher extraction token allowances for long-list extractors in `sdkCallbacks.ts`.
+Glass avoids low artificial max-output caps for SDK-facing extraction calls.
 
-- Default token limits come from `cl-sdk`.
-- If the prompt matches the exclusions extractor, Glass raises the effective max token count to `8192`.
-- If the prompt matches the covered reasons extractor, Glass raises the effective max token count to `24576`.
+- `cl-sdk` resolves task preferences for diagnostics, but when model capabilities expose `maxOutputTokens`, the SDK uses that upper bound as the request cap.
+- `sdkCallbacks.ts` re-resolves the effective cap from the actual Glass route selected for the call. Broker or operator model overrides therefore use the selected route's known max output limit instead of the static SDK hint.
+- Do not add prompt-specific low max-token overrides for extraction unless the provider itself has a lower hard limit.
 
 ## Policy Extraction
 
