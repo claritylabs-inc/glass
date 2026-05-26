@@ -467,7 +467,7 @@ async function reconcileFinancialTable(options: FieldReviewOptions): Promise<Rev
   const evidence = financialEvidence(options.document, options.sourceSpans);
   if (evidence.length === 0) return null;
 
-  const model = await getModelForOrg(options.ctx, options.orgId, "analysis");
+  const model = await getModelForOrg(options.ctx, options.orgId, "classification");
   const current = compactDocumentForGroup(
     options.document,
     FIELD_REVIEW_GROUPS.find((item) => item.id === "financial_terms")!,
