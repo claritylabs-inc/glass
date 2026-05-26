@@ -110,4 +110,50 @@ describe("extraction field review", () => {
       "unregisteredField",
     ]);
   });
+
+  it("allows high-confidence review to keep percentage-only premium terms textual", () => {
+    const result = applyFieldReviewResults(
+      {
+        type: "policy",
+        minimumPremium: "$25",
+        premiumBreakdown: [
+          { line: "Annual Premium", amount: "$42,000", amountValue: 42000 },
+          { line: "Minimum Earned Premium", amount: "$25" },
+        ],
+      },
+      [
+        {
+          groupId: "financial_terms",
+          corrections: [
+            {
+              field: "minimumPremium",
+              value: "25% of Annual Premium, fully earned at inception",
+              confidence: "high",
+              reason: "The premium table states a percentage-only minimum earned premium term.",
+              evidenceQuote: "Minimum Earned Premium 25% of Annual Premium, fully earned at inception",
+            },
+            {
+              field: "premiumBreakdown",
+              value: [
+                { line: "Annual Premium", amount: "CAD $42,000", amountValue: 42000 },
+                { line: "Total Payable", amount: "CAD $43,820", amountValue: 43820 },
+              ],
+              confidence: "high",
+              reason: "The table contains currency rows for annual premium and total payable.",
+              evidenceQuote: "Annual Premium CAD $42,000 Total Payable CAD $43,820",
+            },
+          ],
+        },
+      ],
+    );
+
+    expect(result.document.minimumPremium).toBe(
+      "25% of Annual Premium, fully earned at inception",
+    );
+    expect(result.document.premiumBreakdown).toEqual([
+      { line: "Annual Premium", amount: "CAD $42,000", amountValue: 42000 },
+      { line: "Total Payable", amount: "CAD $43,820", amountValue: 43820 },
+    ]);
+    expect(result.applied).toHaveLength(2);
+  });
 });

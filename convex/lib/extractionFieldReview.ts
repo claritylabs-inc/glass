@@ -116,7 +116,7 @@ const FIELD_REVIEW_GROUPS: FieldReviewGroup[] = [
       "payment",
     ],
     instructions:
-      "Verify all money-related fields. Prefer declaration/schedule tables over definitions, exclusions, application summaries, licensing statements, and premium-basis descriptions. Annual or term premium belongs in premium, total payable/due belongs in totalCost, minimum earned/deposit terms belong in minimumPremium/depositPremium, and itemized taxes/fees belong only in taxesAndFees. When correcting money fields, also correct the paired numeric amount field without currency symbols or commas when evidence directly states the number. Capture premium table rows as structured premiumBreakdown and taxesAndFees when source evidence contains rows but the current extraction missed them.",
+      "Verify all money-related fields. Prefer declaration/schedule tables over definitions, exclusions, application summaries, licensing statements, and premium-basis descriptions. Annual or term premium belongs in premium, total payable/due belongs in totalCost, minimum earned/deposit terms belong in minimumPremium/depositPremium, and itemized taxes/fees belong only in taxesAndFees. Percentage-only or rate-only terms are not currency amounts: preserve them as text in minimumPremium/depositPremium/paymentPlan and leave paired numeric amount fields null unless the source directly states a fixed currency amount. Do not convert a percentage such as 25% into $25. PremiumBreakdown rows should represent source-stated premium table rows with currency amounts; omit percentage-only terms from premiumBreakdown unless the row also states a currency amount. When correcting money fields, also correct the paired numeric amount field without currency symbols or commas when evidence directly states the number. Capture premium table rows as structured premiumBreakdown and taxesAndFees when source evidence contains rows but the current extraction missed them.",
   },
   {
     id: "coverage_terms",
@@ -389,6 +389,7 @@ Rules:
 - Examples:
   {"field":"premiumAmount","valueString":null,"valueNumber":42000,"valueBoolean":null,"valueRows":null,...}
   {"field":"totalCostAmount","valueString":null,"valueNumber":43820,"valueBoolean":null,"valueRows":null,...}
+  {"field":"minimumPremium","valueString":"25% of Annual Premium, fully earned at inception","valueNumber":null,"valueBoolean":null,"valueRows":null,...}
   {"field":"premiumBreakdown","valueString":null,"valueNumber":null,"valueBoolean":null,"valueRows":[{"line":"Annual Premium","name":null,"amount":"CAD $42,000","amountValue":42000,"type":null,"limit":null,"limitAmount":null,"limitType":null,"deductible":null,"deductibleAmount":null,"deductibleType":null,"formNumber":null,"pageNumber":5,"sectionRef":null,"originalContent":null}],...}
   {"field":"taxesAndFees","valueString":null,"valueNumber":null,"valueBoolean":null,"valueRows":[{"line":null,"name":"Policy Fee","amount":"CAD $350","amountValue":350,"type":"fee","limit":null,"limitAmount":null,"limitType":null,"deductible":null,"deductibleAmount":null,"deductibleType":null,"formNumber":null,"pageNumber":5,"sectionRef":null,"originalContent":null}],...}
 - Return an empty corrections array when evidence does not justify a change.
