@@ -54,11 +54,12 @@ function policyYearFromInput(value: string | undefined): number | undefined {
   return parsed.isValid() ? parsed.year() : undefined;
 }
 
-function normalizeEditableFields(
+export function normalizeEditableFields(
   fields: Record<string, unknown>,
-  options: { deriveNumericAmounts?: boolean } = {},
+  options: { deriveNumericAmounts?: boolean; normalizeMoneyText?: boolean } = {},
 ): Record<string, unknown> {
   const deriveNumericAmounts = options.deriveNumericAmounts ?? true;
+  const normalizeMoneyText = options.normalizeMoneyText ?? true;
   const next = { ...fields };
   for (const key of ["effectiveDate", "expirationDate", "retroactiveDate", "nextReviewDate"]) {
     if (typeof next[key] === "string") next[key] = normalizeExtractedDate(next[key]) ?? next[key];
@@ -71,15 +72,9 @@ function normalizeEditableFields(
     ["depositPremium", "depositPremiumAmount"],
   ] as const) {
     if (next[textKey] !== undefined) {
-      if (
-        (textKey === "minPremium" || textKey === "depositPremium") &&
-        typeof next[textKey] === "string" &&
-        next[textKey].includes("%")
-      ) {
-        continue;
-      }
+      if (!normalizeMoneyText && !deriveNumericAmounts) continue;
       const money = normalizeMoneyField(next[textKey]);
-      if (money.text !== undefined) next[textKey] = money.text;
+      if (normalizeMoneyText && money.text !== undefined) next[textKey] = money.text;
       if (deriveNumericAmounts && money.amount !== undefined) next[amountKey] = money.amount;
     }
   }
@@ -97,8 +92,12 @@ function normalizeEditableFields(
         : deriveNumericAmounts
           ? parseExtractedNumber(row.deductible)
           : undefined;
-      if (row.limit !== undefined) row.limit = normalizeMoneyString(row.limit) ?? row.limit;
-      if (row.deductible !== undefined) row.deductible = normalizeMoneyString(row.deductible) ?? row.deductible;
+      if (normalizeMoneyText && row.limit !== undefined) {
+        row.limit = normalizeMoneyString(row.limit) ?? row.limit;
+      }
+      if (normalizeMoneyText && row.deductible !== undefined) {
+        row.deductible = normalizeMoneyString(row.deductible) ?? row.deductible;
+      }
       if (row.retroactiveDate !== undefined) {
         row.retroactiveDate = normalizeExtractedDate(row.retroactiveDate) ?? row.retroactiveDate;
       }
@@ -111,10 +110,11 @@ function normalizeEditableFields(
   for (const key of ["taxesAndFees", "premiumBreakdown"]) {
     if (!Array.isArray(next[key])) continue;
     next[key] = (next[key] as Array<Record<string, unknown>>).map((row) => {
+      if (!normalizeMoneyText && !deriveNumericAmounts) return row;
       const money = normalizeMoneyField(row.amount);
       return {
         ...row,
-        ...(money.text !== undefined ? { amount: money.text } : {}),
+        ...(normalizeMoneyText && money.text !== undefined ? { amount: money.text } : {}),
         ...(deriveNumericAmounts && money.amount !== undefined ? { amountValue: money.amount } : {}),
       };
     });
@@ -1615,7 +1615,10 @@ export const updateExtractionInternal = internalMutation({
     fields: v.any(), // Accept any policy fields from insuranceDocToPolicy
   },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.id, normalizeEditableFields(args.fields, { deriveNumericAmounts: false }));
+    await ctx.db.patch(args.id, normalizeEditableFields(args.fields, {
+      deriveNumericAmounts: false,
+      normalizeMoneyText: false,
+    }));
   },
 });
 

@@ -130,7 +130,7 @@ const FIELD_REVIEW_GROUPS: FieldReviewGroup[] = [
       "payment",
     ],
     instructions:
-      "Verify all money-related fields. Prefer declaration/schedule tables over definitions, exclusions, application summaries, licensing statements, and premium-basis descriptions. Annual or term premium belongs in premium, total payable/due belongs in totalCost, minimum earned/deposit terms belong in minimumPremium/depositPremium, and itemized taxes/fees belong only in taxesAndFees. Percentage-only or rate-only terms are not currency amounts: preserve them as text in minimumPremium/depositPremium/paymentPlan and leave paired numeric amount fields null unless the source directly states a fixed currency amount. Do not convert a percentage such as 25% into $25. PremiumBreakdown rows should represent source-stated premium table rows with currency amounts; omit percentage-only terms from premiumBreakdown unless the row also states a currency amount. When correcting money fields, also correct the paired numeric amount field without currency symbols or commas when evidence directly states the number. Capture premium table rows as structured premiumBreakdown and taxesAndFees when source evidence contains rows but the current extraction missed them.",
+      "Verify all money-related fields. Prefer declaration/schedule tables over definitions, exclusions, application summaries, licensing statements, and premium-basis descriptions. Annual or term premium belongs in premium, total payable/due belongs in totalCost, minimum earned/deposit terms belong in minimumPremium/depositPremium, and itemized taxes/fees belong only in taxesAndFees. Percentage-only or rate-only terms are not currency amounts: preserve them as text in minimumPremium/depositPremium/paymentPlan and leave paired numeric amount fields null unless the source directly states a fixed currency amount. PremiumBreakdown rows should represent source-stated premium table rows with currency amounts; omit percentage-only terms from premiumBreakdown unless the row also states a currency amount. When correcting money fields, also correct the paired numeric amount field without currency symbols or commas when evidence directly states the number. Capture premium table rows as structured premiumBreakdown and taxesAndFees when source evidence contains rows but the current extraction missed them.",
   },
   {
     id: "coverage_terms",
@@ -194,6 +194,8 @@ const financialReconciliationSchema = z.object({
   depositPremium: z.string().nullable(),
   depositPremiumAmount: z.number().nullable(),
   paymentPlan: z.string().nullable(),
+  premiumRow: reviewRowSchema.nullable(),
+  totalCostRow: reviewRowSchema.nullable(),
   minimumPremiumRow: reviewRowSchema.nullable(),
   premiumBreakdown: z.array(reviewRowSchema).nullable(),
   taxesAndFees: z.array(reviewRowSchema).nullable(),
@@ -269,15 +271,6 @@ function sanitizeCorrectionValue(field: string, value: unknown) {
 
 function rowAmount(row: z.infer<typeof reviewRowSchema> | null | undefined) {
   return typeof row?.amount === "string" && row.amount.trim() ? row.amount.trim() : undefined;
-}
-
-function findRowAmount(rows: z.infer<typeof reviewRowSchema>[] | null | undefined, labels: string[]) {
-  if (!Array.isArray(rows)) return undefined;
-  for (const row of rows) {
-    const line = typeof row.line === "string" ? row.line.toLowerCase() : "";
-    if (labels.some((label) => line.includes(label))) return rowAmount(row);
-  }
-  return undefined;
 }
 
 function reviewMode() {
@@ -507,12 +500,6 @@ Rules:
 - Use confidence "high" only when the evidence directly states the value.
 - Put exactly one value slot on each correction:
   valueString for string fields, valueNumber for numeric fields, valueBoolean for boolean fields, or valueRows for financial/coverage table rows. Set the unused value slots to null.
-- Examples:
-  {"field":"premiumAmount","valueString":null,"valueNumber":42000,"valueBoolean":null,"valueRows":null,...}
-  {"field":"totalCostAmount","valueString":null,"valueNumber":43820,"valueBoolean":null,"valueRows":null,...}
-  {"field":"minimumPremium","valueString":"25% of Annual Premium, fully earned at inception","valueNumber":null,"valueBoolean":null,"valueRows":null,...}
-  {"field":"premiumBreakdown","valueString":null,"valueNumber":null,"valueBoolean":null,"valueRows":[{"line":"Annual Premium","name":null,"amount":"CAD $42,000","amountValue":42000,"type":null,"limit":null,"limitAmount":null,"limitType":null,"deductible":null,"deductibleAmount":null,"deductibleType":null,"formNumber":null,"pageNumber":5,"sectionRef":null,"originalContent":null}],...}
-  {"field":"taxesAndFees","valueString":null,"valueNumber":null,"valueBoolean":null,"valueRows":[{"line":null,"name":"Policy Fee","amount":"CAD $350","amountValue":350,"type":"fee","limit":null,"limitAmount":null,"limitType":null,"deductible":null,"deductibleAmount":null,"deductibleType":null,"formNumber":null,"pageNumber":5,"sectionRef":null,"originalContent":null}],...}
 - Return an empty corrections array when evidence does not justify a change.
 
 Current extracted fields:
@@ -560,11 +547,13 @@ Rules:
 - Total payable/due belongs in totalCost and totalCostAmount.
 - Itemized taxes and fees belong in taxesAndFees.
 - Minimum earned premium, minimum premium, deposit premium, and payment-plan terms are not annual premium unless the source says so.
-- When the evidence contains a row labeled "Minimum Earned Premium", set minimumPremium to that row's value. If the row value is "25% of Annual Premium, fully earned at inception", minimumPremium must be exactly that text.
-- Percentage-only or rate-only terms must stay textual. Do not convert 25% into $25.
+- Return premiumRow for the source row that states the annual or term premium.
+- Return totalCostRow for the source row that states total payable, total due, or total cost.
+- When the evidence contains a minimum earned, minimum premium, or deposit premium row, set minimumPremium or depositPremium to that row's value.
+- Percentage-only or rate-only terms must stay textual. Do not convert percentages or rates into currency amounts.
 - Put a numeric amount field only when the source directly states a fixed currency amount.
-- Return minimumPremiumRow when the premium table has a Minimum Earned Premium row. For percentage-only rows, put the exact row value in amount and leave amountValue null.
-- premiumBreakdown should include source-stated premium table rows with currency amounts for premium/payable rows, using the row label as line, for example line "Annual Premium" amount "CAD $42,000" and line "Total Payable" amount "CAD $43,820".
+- Return minimumPremiumRow when the premium table has a minimum earned or minimum premium row. For percentage-only rows, put the exact row value in amount and leave amountValue null.
+- premiumBreakdown should include source-stated premium table rows with currency amounts for premium/payable rows, using the source row label as line.
 - Do not put tax or fee rows in premiumBreakdown when they are already represented in taxesAndFees.
 - Exclude percentage-only rows from premiumBreakdown unless they also state a fixed currency amount.
 - Return confidence high only when the evidence directly states the corrected values.
@@ -592,10 +581,8 @@ ${JSON.stringify(evidence, null, 2)}`,
     });
   };
 
-  const premium = findRowAmount(result.object.premiumBreakdown, ["annual premium", "term premium"]) ??
-    result.object.premium;
-  const totalCost = findRowAmount(result.object.premiumBreakdown, ["total payable", "total due", "total cost"]) ??
-    result.object.totalCost;
+  const premium = rowAmount(result.object.premiumRow) ?? result.object.premium;
+  const totalCost = rowAmount(result.object.totalCostRow) ?? result.object.totalCost;
   const minimumPremium = result.object.minimumPremium ?? rowAmount(result.object.minimumPremiumRow);
 
   add("premium", premium);
@@ -632,9 +619,8 @@ async function reconcileMinimumPremium(options: FieldReviewOptions): Promise<Rev
 Rules:
 - Return only source-stated minimum earned premium, minimum premium, or deposit premium terms.
 - Prefer declaration or premium-table rows over policy wording, definitions, examples, conditions, applications, or licensing statements.
-- If any evidence contains a declaration or premium-table row labeled "Minimum Earned Premium", you must return that row's value in minimumPremium.
-- If the source row says "Minimum Earned Premium 25% of Annual Premium, fully earned at inception", return minimumPremium exactly as "25% of Annual Premium, fully earned at inception".
-- A percentage-only term is text, not a currency amount. Do not convert 25% into $25.
+- If any evidence contains a declaration or premium-table row labeled as a minimum earned, minimum premium, or deposit premium term, return that row's exact value in the matching field.
+- A percentage-only term is text, not a currency amount. Do not convert percentages into currency amounts.
 - Set minimumPremiumAmount or depositPremiumAmount only when the source directly states a fixed currency amount for that row.
 - If the current minimumPremiumAmount is a stale conversion from a percentage-only term, set clearMinimumPremiumAmount true.
 - If the current depositPremium/depositPremiumAmount came from the same minimum earned premium percentage row and the evidence does not separately state a deposit premium, set clearDepositPremium and clearDepositPremiumAmount true.
