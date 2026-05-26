@@ -485,9 +485,12 @@ Rules:
 - Total payable/due belongs in totalCost and totalCostAmount.
 - Itemized taxes and fees belong in taxesAndFees.
 - Minimum earned premium, minimum premium, deposit premium, and payment-plan terms are not annual premium unless the source says so.
+- When the evidence contains a row labeled "Minimum Earned Premium", set minimumPremium to that row's value. If the row value is "25% of Annual Premium, fully earned at inception", minimumPremium must be exactly that text.
 - Percentage-only or rate-only terms must stay textual. Do not convert 25% into $25.
 - Put a numeric amount field only when the source directly states a fixed currency amount.
-- premiumBreakdown should include source-stated premium table rows with currency amounts. Exclude percentage-only rows unless they also state a fixed currency amount.
+- premiumBreakdown should include source-stated premium table rows with currency amounts for premium/payable rows, using the row label as line, for example line "Annual Premium" amount "CAD $42,000" and line "Total Payable" amount "CAD $43,820".
+- Do not put tax or fee rows in premiumBreakdown when they are already represented in taxesAndFees.
+- Exclude percentage-only rows from premiumBreakdown unless they also state a fixed currency amount.
 - Return confidence high only when the evidence directly states the corrected values.
 
 Current extracted fields:
