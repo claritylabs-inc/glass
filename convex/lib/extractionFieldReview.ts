@@ -184,6 +184,15 @@ const financialReconciliationSchema = z.object({
   taxesAndFees: z.array(reviewRowSchema).nullable(),
 });
 
+const minimumPremiumSchema = z.object({
+  confidence: z.enum(["high", "medium", "low"]),
+  evidenceQuote: z.string().nullable(),
+  minimumPremium: z.string().nullable(),
+  minimumPremiumAmount: z.number().nullable(),
+  depositPremium: z.string().nullable(),
+  depositPremiumAmount: z.number().nullable(),
+});
+
 const REVIEW_ROW_KEYS_BY_FIELD: Record<string, Set<string>> = {
   taxesAndFees: new Set(["name", "amount", "amountValue", "type", "description"]),
   premiumBreakdown: new Set(["line", "amount", "amountValue"]),
@@ -533,6 +542,62 @@ ${JSON.stringify(evidence, null, 2)}`,
     : null;
 }
 
+async function reconcileMinimumPremium(options: FieldReviewOptions): Promise<ReviewResult | null> {
+  const evidence = financialEvidence(options.document, options.sourceSpans);
+  if (evidence.length === 0) return null;
+
+  const model = await getModelForOrg(options.ctx, options.orgId, "classification");
+  const result = await generateObject({
+    model,
+    schema: minimumPremiumSchema,
+    maxOutputTokens: 900,
+    prompt: `Find the policy's minimum earned premium, minimum premium, or deposit premium term from the source evidence.
+
+Rules:
+- Return only source-stated minimum earned premium, minimum premium, or deposit premium terms.
+- If the source row says "Minimum Earned Premium 25% of Annual Premium, fully earned at inception", return minimumPremium exactly as "25% of Annual Premium, fully earned at inception".
+- A percentage-only term is text, not a currency amount. Do not convert 25% into $25.
+- Set minimumPremiumAmount or depositPremiumAmount only when the source directly states a fixed currency amount for that row.
+- Use confidence high only when the evidence directly states the value.
+
+Current values:
+${JSON.stringify({
+  minimumPremium: options.document.minimumPremium,
+  minimumPremiumAmount: options.document.minimumPremiumAmount,
+  depositPremium: options.document.depositPremium,
+  depositPremiumAmount: options.document.depositPremiumAmount,
+}, null, 2)}
+
+Evidence:
+${JSON.stringify(evidence, null, 2)}`,
+  });
+
+  if (result.object.confidence === "low" || !normalizeText(result.object.evidenceQuote)) {
+    return null;
+  }
+
+  const corrections: ReviewCorrection[] = [];
+  const add = (field: string, value: unknown) => {
+    if (value === null || value === undefined) return;
+    corrections.push({
+      field,
+      value,
+      confidence: result.object.confidence,
+      reason: "Reconciled minimum premium term from source evidence.",
+      evidenceQuote: result.object.evidenceQuote ?? "",
+    });
+  };
+
+  add("minimumPremium", result.object.minimumPremium);
+  add("minimumPremiumAmount", result.object.minimumPremiumAmount);
+  add("depositPremium", result.object.depositPremium);
+  add("depositPremiumAmount", result.object.depositPremiumAmount);
+
+  return corrections.length > 0
+    ? { groupId: "financial_terms", corrections }
+    : null;
+}
+
 export async function reviewExtractionFields(
   options: FieldReviewOptions,
 ): Promise<FieldReviewApplication> {
@@ -558,6 +623,15 @@ export async function reviewExtractionFields(
   } catch (error) {
     await options.log?.(
       `Financial table reconciliation failed: ${error instanceof Error ? error.message : String(error)}`,
+      "warn",
+    );
+  }
+  try {
+    const review = await reconcileMinimumPremium(options);
+    if (review) reviews.push(review);
+  } catch (error) {
+    await options.log?.(
+      `Minimum premium reconciliation failed: ${error instanceof Error ? error.message : String(error)}`,
       "warn",
     );
   }
