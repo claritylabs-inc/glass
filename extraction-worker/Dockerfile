@@ -18,6 +18,6 @@ COPY package*.json ./
 RUN NPM_CONFIG_MIN_RELEASE_AGE=0 npm ci
 
 COPY . .
-RUN npm run build
+RUN npm run build --ignore-scripts
 
 CMD ["npm", "run", "start"]
