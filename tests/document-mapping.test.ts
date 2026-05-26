@@ -132,4 +132,23 @@ describe("insurance document mapping", () => {
     expect(fields).toHaveProperty("depositPremium", undefined);
     expect(fields).toHaveProperty("depositPremiumAmount", undefined);
   });
+
+  it("does not strip legal or administration clauses from model-owned organization names", () => {
+    const fields = insuranceDocToPolicy({
+      type: "policy",
+      carrier: "ReLease Coverage Company Inc. (administered by Coverage Admin LLC)",
+      security: "ReLease Coverage Company Inc., administered by Coverage Admin LLC",
+      brokerAgency: "Brokerage Inc. DBA Coverage Team",
+      insuredName: "ReLease Coverage Company Inc.",
+      policyNumber: "SLS-EO-26-110482",
+      effectiveDate: "2026-01-01",
+      expirationDate: "2027-01-01",
+      policyTypes: ["professional_liability"],
+      coverages: [],
+    } as never);
+
+    expect(fields.carrier).toBe("ReLease Coverage Company Inc. (administered by Coverage Admin LLC)");
+    expect(fields.security).toBe("ReLease Coverage Company Inc., administered by Coverage Admin LLC");
+    expect(fields.brokerAgency).toBe("Brokerage Inc. DBA Coverage Team");
+  });
 });

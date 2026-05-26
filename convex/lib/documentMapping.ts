@@ -84,21 +84,7 @@ function normalizeMoneyRows<T extends Record<string, unknown>>(
 function normalizeOrgName(raw: unknown): string | undefined {
   if (typeof raw !== "string") return undefined;
   const value = raw.trim().replace(/\s+/g, " ");
-  if (!value) return undefined;
-
-  // Extraction occasionally includes explanatory/legal parentheticals in org names.
-  // Keep the primary display name and drop trailing metadata.
-  const withoutParenthetical = value
-    .replace(
-      /\s*\((?:administered by|dba|doing business as|a registered business name of)[\s\S]*$/i,
-      "",
-    )
-    .trim();
-  const withoutAdminClause = withoutParenthetical
-    .replace(/\s*,\s*(?:administered by|dba|doing business as)\b[\s\S]*$/i, "")
-    .trim();
-
-  return withoutAdminClause || value;
+  return value || undefined;
 }
 
 function policyYearFromDate(value: unknown): number {
