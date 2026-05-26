@@ -64,4 +64,22 @@ describe("policy extraction transient artifacts", () => {
     expect(getDocumentSize(inlineCheckpoint)).toBeGreaterThan(1_048_576);
     expect(getDocumentSize(compactCheckpoint)).toBeLessThan(1_000);
   });
+
+  it("reconciles terminal policy extraction runs with running trace sessions", () => {
+    const policies = read("convex/policies.ts");
+    const traces = read("convex/extractionTraces.ts");
+    const extraction = read("convex/actions/policyExtraction.ts");
+
+    expect(policies).toContain("pipelineReconcileTerminalState");
+    expect(policies).toContain('status === "complete" || status === "error"');
+    expect(policies).toContain("pipelineCheckpoint: undefined");
+
+    expect(traces).toContain("reconcileTerminalPolicy");
+    expect(traces).toContain("reconcileTerminalRunningSessions");
+    expect(traces).toContain("Extraction trace reconciled from terminal pipeline status");
+
+    expect(extraction).toContain("pipelineReconcileTerminalState");
+    expect(extraction).toContain("reconcileTerminalPolicy");
+    expect(extraction).toContain("reconcileTerminalRunningSessions");
+  });
 });

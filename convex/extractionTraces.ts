@@ -89,6 +89,51 @@ function progressMessage(args: {
   return null;
 }
 
+function traceStatusFromPipeline(status: "complete" | "error", error?: string) {
+  if (status === "complete") return "complete" as const;
+  return error === "Cancelled by user" ? "cancelled" as const : "error" as const;
+}
+
+async function completeSessionDoc(
+  ctx: MutationCtx,
+  session: {
+    _id: Id<"policyExtractionTraceSessions">;
+    traceId: string;
+    policyId: Id<"policies">;
+    orgId: Id<"organizations">;
+    startedAt: number;
+    expiresAt: number;
+    status: "running" | "complete" | "error" | "cancelled";
+  },
+  status: "complete" | "error" | "cancelled",
+  error?: string,
+  message?: string,
+) {
+  if (session.status !== "running") return false;
+  const timestamp = nowMs();
+  await ctx.db.patch(session._id, defined({
+    status,
+    completedAt: timestamp,
+    lastEventAt: timestamp,
+    totalDurationMs: timestamp - session.startedAt,
+    error,
+    updatedAt: timestamp,
+  }));
+  await ctx.db.insert("policyExtractionTraceEvents", defined({
+    traceId: session.traceId,
+    policyId: session.policyId,
+    orgId: session.orgId,
+    kind: "session",
+    timestamp,
+    status,
+    message: message ?? (status === "complete" ? "Extraction trace completed" : "Extraction trace ended"),
+    error,
+    durationMs: timestamp - session.startedAt,
+    expiresAt: session.expiresAt,
+  }) as any);
+  return true;
+}
+
 async function appendProgressLog(
   ctx: MutationCtx,
   policyId: Id<"policies">,
@@ -270,33 +315,92 @@ export const completeSession = internalMutation({
   },
   handler: async (ctx, args) => {
     if (!args.traceId) return false;
+    if (args.status === "running") return false;
     const session = await ctx.db
       .query("policyExtractionTraceSessions")
       .withIndex("by_traceId", (q) => q.eq("traceId", args.traceId!))
       .first();
     if (!session) return false;
-    const timestamp = nowMs();
-    await ctx.db.patch(session._id, defined({
-      status: args.status,
-      completedAt: timestamp,
-      lastEventAt: timestamp,
-      totalDurationMs: timestamp - session.startedAt,
-      error: args.error,
-      updatedAt: timestamp,
-    }));
-    await ctx.db.insert("policyExtractionTraceEvents", defined({
-      traceId: args.traceId,
-      policyId: session.policyId,
-      orgId: session.orgId,
-      kind: "session",
-      timestamp,
-      status: args.status,
-      message: args.status === "complete" ? "Extraction trace completed" : "Extraction trace ended",
-      error: args.error,
-      durationMs: timestamp - session.startedAt,
-      expiresAt: session.expiresAt,
-    }) as any);
-    return true;
+    return await completeSessionDoc(ctx, session, args.status, args.error);
+  },
+});
+
+export const reconcileTerminalPolicy = internalMutation({
+  args: {
+    policyId: v.id("policies"),
+  },
+  handler: async (ctx, args) => {
+    const [policy, run] = await Promise.all([
+      ctx.db.get(args.policyId),
+      ctx.db
+        .query("policyExtractionRuns")
+        .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+        .first(),
+    ]);
+    const pipelineStatus = run?.pipelineStatus ?? policy?.pipelineStatus;
+    if (pipelineStatus !== "complete" && pipelineStatus !== "error") {
+      return { terminal: false, closed: [] as string[] };
+    }
+    const error = run?.pipelineError ?? policy?.pipelineError;
+    const status = traceStatusFromPipeline(pipelineStatus, error);
+    const sessions = await ctx.db
+      .query("policyExtractionTraceSessions")
+      .withIndex("by_policyId_startedAt", (q) => q.eq("policyId", args.policyId))
+      .collect();
+    const closed: string[] = [];
+    for (const session of sessions) {
+      if (session.status !== "running") continue;
+      const ok = await completeSessionDoc(
+        ctx,
+        session,
+        status,
+        error,
+        "Extraction trace reconciled from terminal pipeline status",
+      );
+      if (ok) closed.push(session.traceId);
+    }
+    return { terminal: true, status, closed };
+  },
+});
+
+export const reconcileTerminalRunningSessions = internalMutation({
+  args: {
+    batchSize: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const batchSize = Math.max(1, Math.min(Math.floor(args.batchSize ?? 100), 500));
+    const sessions = await ctx.db
+      .query("policyExtractionTraceSessions")
+      .withIndex("by_status_startedAt", (q) => q.eq("status", "running"))
+      .order("asc")
+      .take(batchSize);
+    const closed: string[] = [];
+    const skipped: string[] = [];
+    for (const session of sessions) {
+      const [policy, run] = await Promise.all([
+        ctx.db.get(session.policyId),
+        ctx.db
+          .query("policyExtractionRuns")
+          .withIndex("by_policyId", (q) => q.eq("policyId", session.policyId))
+          .first(),
+      ]);
+      const pipelineStatus = run?.pipelineStatus ?? policy?.pipelineStatus;
+      if (pipelineStatus !== "complete" && pipelineStatus !== "error") {
+        skipped.push(session.traceId);
+        continue;
+      }
+      const error = run?.pipelineError ?? policy?.pipelineError;
+      const status = traceStatusFromPipeline(pipelineStatus, error);
+      const ok = await completeSessionDoc(
+        ctx,
+        session,
+        status,
+        error,
+        "Extraction trace reconciled from terminal pipeline status",
+      );
+      if (ok) closed.push(session.traceId);
+    }
+    return { scanned: sessions.length, closed, skipped };
   },
 });
 

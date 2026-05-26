@@ -557,7 +557,19 @@ async function advanceLeasedPhase(
     { jobId, leaseId, leaseExpiresAt },
   ) as LeasedPolicyCheckpoint | null;
 
-  if (!checkpoint) return;
+  if (!checkpoint) {
+    const reconciled = await ctx.runMutation(
+      (internal as any).policies.pipelineReconcileTerminalState,
+      { jobId },
+    ) as { terminal?: boolean } | null;
+    if (reconciled?.terminal) {
+      await ctx.runMutation(
+        (internal as any).extractionTraces.reconcileTerminalPolicy,
+        { policyId: jobId },
+      );
+    }
+    return;
+  }
   const traceId = checkpoint.state?.traceId;
 
   const scheduleWatchdog = async (expiresAt: number) => {
@@ -1339,7 +1351,16 @@ export const sweepStale = internalAction({
         `Stale extraction sweep scanned ${result.scanned}; requeued ${result.requeued.length}; marked error ${result.markedError.length}`,
       );
     }
-    return result;
+    const traces = await ctx.runMutation(
+      (internal as any).extractionTraces.reconcileTerminalRunningSessions,
+      { batchSize: args.batchSize },
+    ) as { scanned: number; closed: string[]; skipped: string[] };
+    if (traces.closed.length) {
+      console.log(
+        `Terminal trace reconciliation scanned ${traces.scanned}; closed ${traces.closed.length}`,
+      );
+    }
+    return { ...result, traces };
   },
 });
 

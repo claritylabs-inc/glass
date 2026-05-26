@@ -1852,12 +1852,22 @@ export const pipelineSetStatus = internalMutation({
     error: v.union(v.string(), v.null()),
   },
   handler: async (ctx, { jobId, status, error }) => {
-    await setPolicyPipelineStatus(
-      ctx,
-      jobId as DataModelId<"policies">,
-      status,
-      error,
-    );
+    const policyId = jobId as DataModelId<"policies">;
+    if (status === "complete" || status === "error") {
+      await patchPolicyExtractionRun(ctx, policyId, {
+        pipelineStatus: status,
+        pipelineError: error ?? undefined,
+        pipelineCheckpoint: undefined,
+      });
+      await ctx.db.patch(policyId, {
+        pipelineStatus: status,
+        pipelineError: error ?? undefined,
+        pipelineCheckpoint: undefined,
+        pipelineLog: undefined,
+      });
+      return;
+    }
+    await setPolicyPipelineStatus(ctx, policyId, status, error);
   },
 });
 
@@ -2154,6 +2164,58 @@ export const pipelineRequeueStale = internalMutation({
   },
 });
 
+export const pipelineReconcileTerminalState = internalMutation({
+  args: { jobId: v.string() },
+  handler: async (ctx, { jobId }) => {
+    const policyId = jobId as DataModelId<"policies">;
+    const [run, policy] = await Promise.all([
+      getPolicyExtractionRun(ctx, policyId),
+      ctx.db.get(policyId),
+    ]);
+    const status = (run?.pipelineStatus ?? policy?.pipelineStatus) as
+      | "complete"
+      | "error"
+      | undefined;
+    if (status !== "complete" && status !== "error") {
+      return { terminal: false };
+    }
+
+    const error = run?.pipelineError ?? policy?.pipelineError;
+    const runCheckpoint = run?.pipelineCheckpoint as
+      | { state?: { traceId?: string } }
+      | undefined;
+    const policyCheckpoint = policy?.pipelineCheckpoint as
+      | { state?: { traceId?: string } }
+      | undefined;
+    const traceIds = [
+      runCheckpoint?.state?.traceId,
+      policyCheckpoint?.state?.traceId,
+    ].filter((traceId): traceId is string => Boolean(traceId));
+
+    if (run && run.pipelineCheckpoint !== undefined) {
+      await ctx.db.patch(run._id, {
+        pipelineCheckpoint: undefined,
+        updatedAt: nowMs(),
+      });
+    }
+    if (policy) {
+      await ctx.db.patch(policyId, {
+        pipelineStatus: status,
+        pipelineError: error ?? undefined,
+        pipelineCheckpoint: undefined,
+        pipelineLog: undefined,
+      });
+    }
+
+    return {
+      terminal: true,
+      status,
+      error,
+      traceIds: Array.from(new Set(traceIds)),
+    };
+  },
+});
+
 export const pipelineAcquireLease = internalMutation({
   args: {
     jobId: v.string(),
@@ -2315,8 +2377,11 @@ export const pipelineCompleteLease = internalMutation({
     if (args.status) {
       patch.pipelineStatus = args.status;
       patch.pipelineError = args.error ?? undefined;
+      if (args.status === "complete" || args.status === "error") {
+        patch.pipelineCheckpoint = undefined;
+      }
     }
-    patch.updatedAt = Date.now();
+    patch.updatedAt = nowMs();
 
     await ctx.db.patch(run._id, patch);
     if (args.status) {
