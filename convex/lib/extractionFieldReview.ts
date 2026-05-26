@@ -84,16 +84,20 @@ const FIELD_REVIEW_GROUPS: FieldReviewGroup[] = [
       "period",
     ],
     instructions:
-      "Verify carrier/security, MGA, broker, policy or quote number, named insured, and policy period fields. Prefer declaration pages and schedule summaries over policy wording.",
+      "Verify carrier/security, MGA, broker, policy or quote number, named insured, and policy period fields. Prefer declaration pages and schedule summaries over policy wording. For named insured, use rows explicitly labeled named insured/insured/applicant and do not use authorized officer contacts, notice contacts, broker/producer names, signatures, incorporation/licensing statements, or corporate-authority wording as the insured.",
   },
   {
     id: "financial_terms",
     label: "Premiums, taxes, fees, and payment terms",
     fields: [
       "premium",
+      "premiumAmount",
       "totalCost",
+      "totalCostAmount",
       "minimumPremium",
+      "minimumPremiumAmount",
       "depositPremium",
+      "depositPremiumAmount",
       "premiumBreakdown",
       "taxesAndFees",
       "paymentPlan",
@@ -112,7 +116,7 @@ const FIELD_REVIEW_GROUPS: FieldReviewGroup[] = [
       "payment",
     ],
     instructions:
-      "Verify all money-related fields. Capture premium table rows as structured premiumBreakdown and taxesAndFees when source evidence contains rows but the current extraction missed them.",
+      "Verify all money-related fields. Prefer declaration/schedule tables over definitions, exclusions, application summaries, licensing statements, and premium-basis descriptions. Annual or term premium belongs in premium, total payable/due belongs in totalCost, minimum earned/deposit terms belong in minimumPremium/depositPremium, and itemized taxes/fees belong only in taxesAndFees. When correcting money fields, also correct the paired numeric amount field without currency symbols or commas when evidence directly states the number. Capture premium table rows as structured premiumBreakdown and taxesAndFees when source evidence contains rows but the current extraction missed them.",
   },
   {
     id: "coverage_terms",
@@ -129,19 +133,47 @@ const FIELD_REVIEW_GROUPS: FieldReviewGroup[] = [
       "retroactive",
     ],
     instructions:
-      "Verify coverage names, limits, deductibles, retentions, aggregate/per-occurrence typing, coverage form, and retroactive date. Do not collapse distinct limits into one field.",
+      "Verify coverage names, limits, deductibles, retentions, aggregate/per-occurrence typing, coverage form, and retroactive date. Do not collapse distinct limits into one field. When correcting numeric coverage rows, include limitAmount and deductibleAmount as plain numbers only when the evidence directly states fixed numeric currency values.",
   },
 ];
+
+const reviewRowSchema = z.object({
+  line: z.string().nullable().optional(),
+  name: z.string().nullable().optional(),
+  amount: z.string().nullable().optional(),
+  amountValue: z.number().nullable().optional(),
+  type: z.string().nullable().optional(),
+  limit: z.string().nullable().optional(),
+  limitAmount: z.number().nullable().optional(),
+  limitType: z.string().nullable().optional(),
+  deductible: z.string().nullable().optional(),
+  deductibleAmount: z.number().nullable().optional(),
+  deductibleType: z.string().nullable().optional(),
+  formNumber: z.string().nullable().optional(),
+  pageNumber: z.number().nullable().optional(),
+  sectionRef: z.string().nullable().optional(),
+  originalContent: z.string().nullable().optional(),
+});
 
 const fieldReviewSchema = z.object({
   corrections: z.array(z.object({
     field: z.string(),
-    value: z.any(),
+    valueString: z.string().optional(),
+    valueNumber: z.number().optional(),
+    valueBoolean: z.boolean().optional(),
+    valueRows: z.array(reviewRowSchema).optional(),
     confidence: z.enum(["high", "medium", "low"]),
     reason: z.string(),
     evidenceQuote: z.string(),
   })),
 });
+
+function correctionValue(correction: z.infer<typeof fieldReviewSchema>["corrections"][number]) {
+  if (correction.valueRows !== undefined) return correction.valueRows;
+  if (correction.valueNumber !== undefined) return correction.valueNumber;
+  if (correction.valueBoolean !== undefined) return correction.valueBoolean;
+  return correction.valueString;
+}
 
 function reviewMode() {
   const raw = process.env.EXTRACTION_FIELD_REVIEW_MODE;
@@ -321,9 +353,14 @@ Rules:
 - Correct missing, Unknown, incomplete, or source-contradicted values.
 - Do not invent. Every correction needs a short exact evidenceQuote from the provided evidence.
 - Use confidence "high" only when the evidence directly states the value.
-- For financial table rows, return arrays matching these shapes when applicable:
-  premiumBreakdown: [{"line":"Annual Premium","amount":"CAD $42,000"}]
-  taxesAndFees: [{"name":"Policy Fee","amount":"CAD $350","type":"fee"}]
+- Put exactly one value slot on each correction:
+  valueString for string fields, valueNumber for numeric fields, valueBoolean for boolean fields, or valueRows for financial/coverage table rows.
+- Examples:
+  {"field":"premiumAmount","valueNumber":42000,...}
+  {"field":"totalCostAmount","valueNumber":43820,...}
+  {"field":"premiumBreakdown","valueRows":[{"line":"Annual Premium","amount":"CAD $42,000","amountValue":42000}],...}
+  {"field":"taxesAndFees","valueRows":[{"name":"Policy Fee","amount":"CAD $350","amountValue":350,"type":"fee"}],...}
+  {"field":"coverages","valueRows":[{"name":"Each Occurrence","limit":"CAD $1,000,000","limitAmount":1000000,"deductible":"CAD $2,500","deductibleAmount":2500}],...}
 - Return an empty corrections array when evidence does not justify a change.
 
 Current extracted fields:
@@ -335,7 +372,17 @@ ${JSON.stringify(evidence, null, 2)}`,
 
   return {
     groupId: group.id,
-    corrections: result.object.corrections,
+    corrections: result.object.corrections.flatMap((correction): ReviewCorrection[] => {
+      const value = correctionValue(correction);
+      if (value === undefined) return [];
+      return [{
+        field: correction.field,
+        value,
+        confidence: correction.confidence,
+        reason: correction.reason,
+        evidenceQuote: correction.evidenceQuote,
+      }];
+    }),
   };
 }
 
