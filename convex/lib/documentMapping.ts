@@ -24,9 +24,6 @@ import {
 import {
   normalizeExtractedDate,
   normalizeExtractedString,
-  normalizeMoneyField,
-  normalizeMoneyString,
-  parseExtractedNumber,
 } from "./valueNormalization";
 
 dayjs.extend(customParseFormat);
@@ -38,20 +35,19 @@ function normalizeCoverageValues(rawCoverages: unknown): unknown[] {
     const limitAmount =
       typeof coverage.limitAmount === "number"
         ? coverage.limitAmount
-        : (parseExtractedNumber(coverage.limit) ??
-          parseExtractedNumber(coverage.originalContent));
+        : undefined;
     const deductibleAmount =
       typeof coverage.deductibleAmount === "number"
         ? coverage.deductibleAmount
-        : parseExtractedNumber(coverage.deductible);
+        : undefined;
     return {
       ...coverage,
       ...(coverage.limit
-        ? { limit: normalizeMoneyString(coverage.limit) ?? coverage.limit }
+        ? { limit: normalizeExtractedString(coverage.limit) ?? coverage.limit }
         : {}),
       ...(limitAmount !== undefined ? { limitAmount } : {}),
       ...(coverage.deductible
-        ? { deductible: normalizeMoneyString(coverage.deductible) ?? coverage.deductible }
+        ? { deductible: normalizeExtractedString(coverage.deductible) ?? coverage.deductible }
         : {}),
       ...(deductibleAmount !== undefined ? { deductibleAmount } : {}),
       ...(coverage.retroactiveDate
@@ -72,12 +68,13 @@ function normalizeMoneyRows<T extends Record<string, unknown>>(
   const normalized = rows
     .map((row) => sanitizeNulls(row) as T)
     .map((row) => {
-      const money = normalizeMoneyField(row.amount);
+      const amountValue =
+        typeof row.amountValue === "number" ? row.amountValue : undefined;
       return {
         ...row,
         [labelKey]: normalizeExtractedString(row[labelKey]) ?? String(row[labelKey] ?? ""),
-        ...(money.text !== undefined ? { amount: money.text } : {}),
-        ...(money.amount !== undefined ? { amountValue: money.amount } : {}),
+        ...(typeof row.amount === "string" ? { amount: row.amount } : {}),
+        ...(amountValue !== undefined ? { amountValue } : {}),
       } as T;
     })
     .filter((row) => normalizeExtractedString(row[labelKey]) || normalizeExtractedString(row.amount));
@@ -136,8 +133,12 @@ export function insuranceDocToPolicy(
     normalizePolicyDate(d.effectiveDate) || resolvedPeriod?.effectiveDate;
   const expirationDate =
     normalizePolicyDate(d.expirationDate) || resolvedPeriod?.expirationDate;
-  const premium = normalizeMoneyField(d.premium);
-  const totalCost = normalizeMoneyField(d.totalCost);
+  const premium = normalizeExtractedString(d.premium);
+  const totalCost = normalizeExtractedString(d.totalCost);
+  const premiumAmount =
+    typeof d.premiumAmount === "number" ? d.premiumAmount : undefined;
+  const totalCostAmount =
+    typeof d.totalCostAmount === "number" ? d.totalCostAmount : undefined;
 
   const fields: Record<string, unknown> = {
     carrier:
@@ -156,10 +157,10 @@ export function insuranceDocToPolicy(
     expirationDate: expirationDate ?? "Unknown",
     isRenewal: d.isRenewal ?? false,
     coverages: normalizeCoverageValues(d.coverages),
-    premium: premium.text,
-    ...(premium.amount !== undefined ? { premiumAmount: premium.amount } : {}),
-    totalCost: totalCost.text,
-    ...(totalCost.amount !== undefined ? { totalCostAmount: totalCost.amount } : {}),
+    premium,
+    ...(premiumAmount !== undefined ? { premiumAmount } : {}),
+    totalCost,
+    ...(totalCostAmount !== undefined ? { totalCostAmount } : {}),
     insuredName: d.insuredName || "Unknown",
     summary: d.summary ?? undefined,
   };
@@ -211,12 +212,20 @@ export function insuranceDocToPolicy(
   if (taxesAndFees) fields.taxesAndFees = taxesAndFees;
   const premiumBreakdown = normalizeMoneyRows(d.premiumBreakdown, "line");
   if (premiumBreakdown) fields.premiumBreakdown = premiumBreakdown;
-  const minimumPremium = normalizeMoneyField(d.minimumPremium);
-  if (minimumPremium.text) fields.minPremium = minimumPremium.text;
-  if (minimumPremium.amount !== undefined) fields.minPremiumAmount = minimumPremium.amount;
-  const depositPremium = normalizeMoneyField(d.depositPremium);
-  if (depositPremium.text) fields.depositPremium = depositPremium.text;
-  if (depositPremium.amount !== undefined) fields.depositPremiumAmount = depositPremium.amount;
+  const minimumPremium = normalizeExtractedString(d.minimumPremium);
+  if (minimumPremium) fields.minPremium = minimumPremium;
+  const minPremiumAmount =
+    typeof d.minimumPremiumAmount === "number"
+      ? d.minimumPremiumAmount
+      : undefined;
+  if (minPremiumAmount !== undefined) fields.minPremiumAmount = minPremiumAmount;
+  const depositPremium = normalizeExtractedString(d.depositPremium);
+  if (depositPremium) fields.depositPremium = depositPremium;
+  const depositPremiumAmount =
+    typeof d.depositPremiumAmount === "number"
+      ? d.depositPremiumAmount
+      : undefined;
+  if (depositPremiumAmount !== undefined) fields.depositPremiumAmount = depositPremiumAmount;
 
   // Document structure (sections, endorsements, definitions, covered reasons, conditions, exclusions)
   const document: Record<string, unknown> = {};

@@ -100,6 +100,8 @@ import type * as lib_emailPolicySources from "../lib/emailPolicySources.js";
 import type * as lib_emailSubagent from "../lib/emailSubagent.js";
 import type * as lib_emailTemplate from "../lib/emailTemplate.js";
 import type * as lib_extraction from "../lib/extraction.js";
+import type * as lib_extractionFieldReview from "../lib/extractionFieldReview.js";
+import type * as lib_extractionPostProcess from "../lib/extractionPostProcess.js";
 import type * as lib_imessageConfig from "../lib/imessageConfig.js";
 import type * as lib_imessageGroupResolution from "../lib/imessageGroupResolution.js";
 import type * as lib_imessageOutbound from "../lib/imessageOutbound.js";
@@ -254,6 +256,8 @@ declare const fullApi: ApiFromModules<{
   "lib/emailSubagent": typeof lib_emailSubagent;
   "lib/emailTemplate": typeof lib_emailTemplate;
   "lib/extraction": typeof lib_extraction;
+  "lib/extractionFieldReview": typeof lib_extractionFieldReview;
+  "lib/extractionPostProcess": typeof lib_extractionPostProcess;
   "lib/imessageConfig": typeof lib_imessageConfig;
   "lib/imessageGroupResolution": typeof lib_imessageGroupResolution;
   "lib/imessageOutbound": typeof lib_imessageOutbound;
