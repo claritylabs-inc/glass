@@ -71,6 +71,13 @@ function normalizeEditableFields(
     ["depositPremium", "depositPremiumAmount"],
   ] as const) {
     if (next[textKey] !== undefined) {
+      if (
+        (textKey === "minPremium" || textKey === "depositPremium") &&
+        typeof next[textKey] === "string" &&
+        next[textKey].includes("%")
+      ) {
+        continue;
+      }
       const money = normalizeMoneyField(next[textKey]);
       if (money.text !== undefined) next[textKey] = money.text;
       if (deriveNumericAmounts && money.amount !== undefined) next[amountKey] = money.amount;
