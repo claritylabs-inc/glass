@@ -213,6 +213,7 @@ const REVIEW_ROW_KEYS_BY_FIELD: Record<string, Set<string>> = {
 
 function compactReviewRow(field: string, row: z.infer<typeof reviewRowSchema>) {
   const allowedKeys = REVIEW_ROW_KEYS_BY_FIELD[field];
+  if (!allowedKeys) return null;
   const compacted = Object.fromEntries(
     Object.entries(row).filter(([key, value]) =>
       value !== null &&
@@ -228,6 +229,7 @@ function compactReviewRow(field: string, row: z.infer<typeof reviewRowSchema>) {
 
 function correctionValue(correction: z.infer<typeof fieldReviewSchema>["corrections"][number]) {
   if (correction.valueRows !== null) {
+    if (!REVIEW_ROW_KEYS_BY_FIELD[correction.field]) return undefined;
     const rows = correction.valueRows
       .map((row) => compactReviewRow(correction.field, row))
       .filter((row) => row !== null);
@@ -240,6 +242,7 @@ function correctionValue(correction: z.infer<typeof fieldReviewSchema>["correcti
 
 function sanitizeCorrectionValue(field: string, value: unknown) {
   if (!Array.isArray(value)) return value;
+  if (!REVIEW_ROW_KEYS_BY_FIELD[field]) return undefined;
   const rows = value
     .map((row) => compactReviewRow(field, row as z.infer<typeof reviewRowSchema>))
     .filter((row) => row !== null);

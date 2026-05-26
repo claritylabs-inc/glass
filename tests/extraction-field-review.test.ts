@@ -189,4 +189,30 @@ describe("extraction field review", () => {
       { field: "coverages", reasonSkipped: "empty correction value" },
     ]);
   });
+
+  it("drops row-shaped corrections for scalar fields", () => {
+    const result = applyFieldReviewResults(
+      { type: "policy", retroactiveDate: undefined },
+      [
+        {
+          groupId: "coverage_terms",
+          corrections: [
+            {
+              field: "retroactiveDate",
+              value: [{ pageNumber: 5 }],
+              confidence: "high",
+              reason: "Malformed review row for a string field.",
+              evidenceQuote: "Retroactive Date Item 8.",
+            },
+          ],
+        },
+      ],
+    );
+
+    expect(result.document.retroactiveDate).toBeUndefined();
+    expect(result.applied).toHaveLength(0);
+    expect(result.skipped).toMatchObject([
+      { field: "retroactiveDate", reasonSkipped: "empty correction value" },
+    ]);
+  });
 });
