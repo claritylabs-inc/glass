@@ -74,34 +74,62 @@ describe("insurance document mapping", () => {
       effectiveDate: "2026-07-16",
       expirationDate: "07/16/2026 at 11:59 PM",
       premium: "$325.00",
+      premiumAmount: 325,
       totalCost: "325",
+      totalCostAmount: 325,
       policyTypes: ["general_liability"],
       coverages: [
         {
           name: "General Liability",
           limit: "$1,000,000",
+          limitAmount: 1000000,
           deductible: "$0",
+          deductibleAmount: 0,
         },
         {
           name: "Liquor Liability",
-          limit: "1m",
-          deductible: "$500.00",
+          limit: "$1,000,000",
+          limitAmount: 1000000,
+          deductible: "$500",
+          deductibleAmount: 500,
         },
       ],
-      premiumBreakdown: [{ line: "Premium", amount: "$325.00" }],
-      taxesAndFees: [{ name: "Policy fee", amount: "12.5" }],
+      premiumBreakdown: [{ line: "Premium", amount: "$325.00", amountValue: 325 }],
+      taxesAndFees: [{ name: "Policy fee", amount: "12.5", amountValue: 12.5 }],
     } as never);
 
     expect(fields.effectiveDate).toBe("07/16/2026");
     expect(fields.expirationDate).toBe("07/16/2026");
-    expect(fields.premium).toBe("$325");
+    expect(fields.premium).toBe("$325.00");
     expect(fields.premiumAmount).toBe(325);
     expect(fields.totalCostAmount).toBe(325);
     expect(fields.coverages).toMatchObject([
       { limit: "$1,000,000", limitAmount: 1000000, deductible: "$0", deductibleAmount: 0 },
       { limit: "$1,000,000", limitAmount: 1000000, deductible: "$500", deductibleAmount: 500 },
     ]);
-    expect(fields.premiumBreakdown).toMatchObject([{ amount: "$325", amountValue: 325 }]);
-    expect(fields.taxesAndFees).toMatchObject([{ amount: "$12.50", amountValue: 12.5 }]);
+    expect(fields.premiumBreakdown).toMatchObject([{ amount: "$325.00", amountValue: 325 }]);
+    expect(fields.taxesAndFees).toMatchObject([{ amount: "12.5", amountValue: 12.5 }]);
+  });
+
+  it("preserves explicit clears for minimum and deposit premium fields", () => {
+    const fields = insuranceDocToPolicy({
+      type: "policy",
+      carrier: "RLI Insurance Company",
+      insuredName: "Clarity Labs Inc.",
+      policyNumber: "RLI-EVT-2026-72190",
+      effectiveDate: "2026-07-16",
+      expirationDate: "2027-07-16",
+      policyTypes: ["general_liability"],
+      coverages: [],
+      minimumPremium: "25% of Annual Premium, fully earned at inception",
+      minimumPremiumAmount: undefined,
+      depositPremium: undefined,
+      depositPremiumAmount: undefined,
+    } as never);
+
+    expect(fields.minPremium).toBe("25% of Annual Premium, fully earned at inception");
+    expect(fields).toHaveProperty("minPremiumAmount", undefined);
+    expect(fields).toHaveProperty("depositPremium", undefined);
+    expect(fields).toHaveProperty("depositPremiumAmount", undefined);
   });
 });

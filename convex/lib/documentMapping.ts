@@ -213,19 +213,27 @@ export function insuranceDocToPolicy(
   const premiumBreakdown = normalizeMoneyRows(d.premiumBreakdown, "line");
   if (premiumBreakdown) fields.premiumBreakdown = premiumBreakdown;
   const minimumPremium = normalizeExtractedString(d.minimumPremium);
-  if (minimumPremium) fields.minPremium = minimumPremium;
+  if (Object.prototype.hasOwnProperty.call(d, "minimumPremium")) {
+    fields.minPremium = minimumPremium || undefined;
+  }
   const minPremiumAmount =
     typeof d.minimumPremiumAmount === "number"
       ? d.minimumPremiumAmount
       : undefined;
-  if (minPremiumAmount !== undefined) fields.minPremiumAmount = minPremiumAmount;
+  if (Object.prototype.hasOwnProperty.call(d, "minimumPremiumAmount")) {
+    fields.minPremiumAmount = minPremiumAmount;
+  }
   const depositPremium = normalizeExtractedString(d.depositPremium);
-  if (depositPremium) fields.depositPremium = depositPremium;
+  if (Object.prototype.hasOwnProperty.call(d, "depositPremium")) {
+    fields.depositPremium = depositPremium || undefined;
+  }
   const depositPremiumAmount =
     typeof d.depositPremiumAmount === "number"
       ? d.depositPremiumAmount
       : undefined;
-  if (depositPremiumAmount !== undefined) fields.depositPremiumAmount = depositPremiumAmount;
+  if (Object.prototype.hasOwnProperty.call(d, "depositPremiumAmount")) {
+    fields.depositPremiumAmount = depositPremiumAmount;
+  }
 
   // Document structure (sections, endorsements, definitions, covered reasons, conditions, exclusions)
   const document: Record<string, unknown> = {};

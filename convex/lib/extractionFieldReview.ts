@@ -41,6 +41,20 @@ type ReviewCorrection = {
   evidenceQuote: string;
 };
 
+const CLEAR_FIELD_CORRECTION = { __clearFieldCorrection: true } as const;
+
+function clearFieldCorrection() {
+  return CLEAR_FIELD_CORRECTION;
+}
+
+function isClearFieldCorrection(value: unknown): value is typeof CLEAR_FIELD_CORRECTION {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    (value as { __clearFieldCorrection?: unknown }).__clearFieldCorrection === true
+  );
+}
+
 type ReviewResult = {
   groupId: string;
   corrections: ReviewCorrection[];
@@ -191,6 +205,9 @@ const minimumPremiumSchema = z.object({
   minimumPremiumAmount: z.number().nullable(),
   depositPremium: z.string().nullable(),
   depositPremiumAmount: z.number().nullable(),
+  clearMinimumPremiumAmount: z.boolean(),
+  clearDepositPremium: z.boolean(),
+  clearDepositPremiumAmount: z.boolean(),
 });
 
 const REVIEW_ROW_KEYS_BY_FIELD: Record<string, Set<string>> = {
@@ -369,6 +386,36 @@ function financialEvidence(document: Record<string, unknown>, sourceSpans: Sourc
   });
 }
 
+function minimumPremiumEvidence(document: Record<string, unknown>, sourceSpans: SourceLike[]) {
+  const direct = [...sectionEvidence(document), ...sourceSpans]
+    .map((source, index) => ({ source, index, text: normalizeText(source.text) }))
+    .filter((item) => {
+      const lower = item.text.toLowerCase();
+      return (
+        lower.includes("minimum earned premium") ||
+        lower.includes("minimum premium") ||
+        lower.includes("deposit premium")
+      );
+    })
+    .sort((a, b) => a.index - b.index)
+    .map((item, index) => ({
+      id: item.source.id ?? item.source.sectionId ?? `minimum_premium_evidence_${index + 1}`,
+      pageStart: item.source.pageStart,
+      pageEnd: item.source.pageEnd,
+      text: item.text.slice(0, 1800),
+    }));
+
+  const seen = new Set<string>();
+  return [...direct, ...financialEvidence(document, sourceSpans)]
+    .filter((item) => {
+      const key = item.text;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 10);
+}
+
 function hasEvidenceQuote(correction: ReviewCorrection) {
   const quote = normalizeText(correction.evidenceQuote);
   return quote.length >= 8;
@@ -406,7 +453,9 @@ export function applyFieldReviewResults(
         skipped.push({ ...normalizedCorrection, groupId: review.groupId, reasonSkipped });
         continue;
       }
-      next[normalizedCorrection.field] = normalizedCorrection.value;
+      next[normalizedCorrection.field] = isClearFieldCorrection(normalizedCorrection.value)
+        ? undefined
+        : normalizedCorrection.value;
       applied.push({ ...normalizedCorrection, groupId: review.groupId });
     }
   }
@@ -546,7 +595,7 @@ ${JSON.stringify(evidence, null, 2)}`,
 }
 
 async function reconcileMinimumPremium(options: FieldReviewOptions): Promise<ReviewResult | null> {
-  const evidence = financialEvidence(options.document, options.sourceSpans);
+  const evidence = minimumPremiumEvidence(options.document, options.sourceSpans);
   if (evidence.length === 0) return null;
 
   const model = await getModelForOrg(options.ctx, options.orgId, "classification");
@@ -561,12 +610,15 @@ Rules:
 - If the source row says "Minimum Earned Premium 25% of Annual Premium, fully earned at inception", return minimumPremium exactly as "25% of Annual Premium, fully earned at inception".
 - A percentage-only term is text, not a currency amount. Do not convert 25% into $25.
 - Set minimumPremiumAmount or depositPremiumAmount only when the source directly states a fixed currency amount for that row.
+- If the current minimumPremiumAmount is a stale conversion from a percentage-only term, set clearMinimumPremiumAmount true.
+- If the current depositPremium/depositPremiumAmount came from the same minimum earned premium percentage row and the evidence does not separately state a deposit premium, set clearDepositPremium and clearDepositPremiumAmount true.
+- Otherwise set clearMinimumPremiumAmount, clearDepositPremium, and clearDepositPremiumAmount false.
 - Use confidence high only when the evidence directly states the value.
 
 Current values:
 ${JSON.stringify({
-  minimumPremium: options.document.minimumPremium,
-  minimumPremiumAmount: options.document.minimumPremiumAmount,
+  minimumPremium: options.document.minimumPremium ?? options.document.minPremium,
+  minimumPremiumAmount: options.document.minimumPremiumAmount ?? options.document.minPremiumAmount,
   depositPremium: options.document.depositPremium,
   depositPremiumAmount: options.document.depositPremiumAmount,
 }, null, 2)}
@@ -595,6 +647,9 @@ ${JSON.stringify(evidence, null, 2)}`,
   add("minimumPremiumAmount", result.object.minimumPremiumAmount);
   add("depositPremium", result.object.depositPremium);
   add("depositPremiumAmount", result.object.depositPremiumAmount);
+  if (result.object.clearMinimumPremiumAmount) add("minimumPremiumAmount", clearFieldCorrection());
+  if (result.object.clearDepositPremium) add("depositPremium", clearFieldCorrection());
+  if (result.object.clearDepositPremiumAmount) add("depositPremiumAmount", clearFieldCorrection());
 
   return corrections.length > 0
     ? { groupId: "financial_terms", corrections }
