@@ -138,30 +138,30 @@ const FIELD_REVIEW_GROUPS: FieldReviewGroup[] = [
 ];
 
 const reviewRowSchema = z.object({
-  line: z.string().nullable().optional(),
-  name: z.string().nullable().optional(),
-  amount: z.string().nullable().optional(),
-  amountValue: z.number().nullable().optional(),
-  type: z.string().nullable().optional(),
-  limit: z.string().nullable().optional(),
-  limitAmount: z.number().nullable().optional(),
-  limitType: z.string().nullable().optional(),
-  deductible: z.string().nullable().optional(),
-  deductibleAmount: z.number().nullable().optional(),
-  deductibleType: z.string().nullable().optional(),
-  formNumber: z.string().nullable().optional(),
-  pageNumber: z.number().nullable().optional(),
-  sectionRef: z.string().nullable().optional(),
-  originalContent: z.string().nullable().optional(),
+  line: z.string().nullable(),
+  name: z.string().nullable(),
+  amount: z.string().nullable(),
+  amountValue: z.number().nullable(),
+  type: z.string().nullable(),
+  limit: z.string().nullable(),
+  limitAmount: z.number().nullable(),
+  limitType: z.string().nullable(),
+  deductible: z.string().nullable(),
+  deductibleAmount: z.number().nullable(),
+  deductibleType: z.string().nullable(),
+  formNumber: z.string().nullable(),
+  pageNumber: z.number().nullable(),
+  sectionRef: z.string().nullable(),
+  originalContent: z.string().nullable(),
 });
 
 const fieldReviewSchema = z.object({
   corrections: z.array(z.object({
     field: z.string(),
-    valueString: z.string().optional(),
-    valueNumber: z.number().optional(),
-    valueBoolean: z.boolean().optional(),
-    valueRows: z.array(reviewRowSchema).optional(),
+    valueString: z.string().nullable(),
+    valueNumber: z.number().nullable(),
+    valueBoolean: z.boolean().nullable(),
+    valueRows: z.array(reviewRowSchema).nullable(),
     confidence: z.enum(["high", "medium", "low"]),
     reason: z.string(),
     evidenceQuote: z.string(),
@@ -169,10 +169,14 @@ const fieldReviewSchema = z.object({
 });
 
 function correctionValue(correction: z.infer<typeof fieldReviewSchema>["corrections"][number]) {
-  if (correction.valueRows !== undefined) return correction.valueRows;
-  if (correction.valueNumber !== undefined) return correction.valueNumber;
-  if (correction.valueBoolean !== undefined) return correction.valueBoolean;
-  return correction.valueString;
+  if (correction.valueRows !== null) {
+    return correction.valueRows.map((row) => Object.fromEntries(
+      Object.entries(row).filter(([, value]) => value !== null && value !== undefined),
+    ));
+  }
+  if (correction.valueNumber !== null) return correction.valueNumber;
+  if (correction.valueBoolean !== null) return correction.valueBoolean;
+  return correction.valueString ?? undefined;
 }
 
 function reviewMode() {
@@ -354,13 +358,12 @@ Rules:
 - Do not invent. Every correction needs a short exact evidenceQuote from the provided evidence.
 - Use confidence "high" only when the evidence directly states the value.
 - Put exactly one value slot on each correction:
-  valueString for string fields, valueNumber for numeric fields, valueBoolean for boolean fields, or valueRows for financial/coverage table rows.
+  valueString for string fields, valueNumber for numeric fields, valueBoolean for boolean fields, or valueRows for financial/coverage table rows. Set the unused value slots to null.
 - Examples:
-  {"field":"premiumAmount","valueNumber":42000,...}
-  {"field":"totalCostAmount","valueNumber":43820,...}
-  {"field":"premiumBreakdown","valueRows":[{"line":"Annual Premium","amount":"CAD $42,000","amountValue":42000}],...}
-  {"field":"taxesAndFees","valueRows":[{"name":"Policy Fee","amount":"CAD $350","amountValue":350,"type":"fee"}],...}
-  {"field":"coverages","valueRows":[{"name":"Each Occurrence","limit":"CAD $1,000,000","limitAmount":1000000,"deductible":"CAD $2,500","deductibleAmount":2500}],...}
+  {"field":"premiumAmount","valueString":null,"valueNumber":42000,"valueBoolean":null,"valueRows":null,...}
+  {"field":"totalCostAmount","valueString":null,"valueNumber":43820,"valueBoolean":null,"valueRows":null,...}
+  {"field":"premiumBreakdown","valueString":null,"valueNumber":null,"valueBoolean":null,"valueRows":[{"line":"Annual Premium","name":null,"amount":"CAD $42,000","amountValue":42000,"type":null,"limit":null,"limitAmount":null,"limitType":null,"deductible":null,"deductibleAmount":null,"deductibleType":null,"formNumber":null,"pageNumber":5,"sectionRef":null,"originalContent":null}],...}
+  {"field":"taxesAndFees","valueString":null,"valueNumber":null,"valueBoolean":null,"valueRows":[{"line":null,"name":"Policy Fee","amount":"CAD $350","amountValue":350,"type":"fee","limit":null,"limitAmount":null,"limitType":null,"deductible":null,"deductibleAmount":null,"deductibleType":null,"formNumber":null,"pageNumber":5,"sectionRef":null,"originalContent":null}],...}
 - Return an empty corrections array when evidence does not justify a change.
 
 Current extracted fields:
