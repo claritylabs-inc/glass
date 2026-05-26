@@ -375,6 +375,7 @@ export const reconcileTerminalRunningSessions = internalMutation({
       .order("asc")
       .take(batchSize);
     const closed: string[] = [];
+    const closedPolicyIds: string[] = [];
     const skipped: string[] = [];
     for (const session of sessions) {
       const [policy, run] = await Promise.all([
@@ -398,9 +399,17 @@ export const reconcileTerminalRunningSessions = internalMutation({
         error,
         "Extraction trace reconciled from terminal pipeline status",
       );
-      if (ok) closed.push(session.traceId);
+      if (ok) {
+        closed.push(session.traceId);
+        closedPolicyIds.push(session.policyId);
+      }
     }
-    return { scanned: sessions.length, closed, skipped };
+    return {
+      scanned: sessions.length,
+      closed,
+      closedPolicyIds: Array.from(new Set(closedPolicyIds)),
+      skipped,
+    };
   },
 });
 

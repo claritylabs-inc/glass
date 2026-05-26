@@ -1354,7 +1354,13 @@ export const sweepStale = internalAction({
     const traces = await ctx.runMutation(
       (internal as any).extractionTraces.reconcileTerminalRunningSessions,
       { batchSize: args.batchSize },
-    ) as { scanned: number; closed: string[]; skipped: string[] };
+    ) as { scanned: number; closed: string[]; closedPolicyIds: string[]; skipped: string[] };
+    for (const policyId of traces.closedPolicyIds) {
+      await ctx.runMutation(
+        (internal as any).policies.pipelineReconcileTerminalState,
+        { jobId: policyId },
+      );
+    }
     if (traces.closed.length) {
       console.log(
         `Terminal trace reconciliation scanned ${traces.scanned}; closed ${traces.closed.length}`,
