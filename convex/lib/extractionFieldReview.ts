@@ -528,7 +528,7 @@ async function reconcileFinancialTable(options: FieldReviewOptions): Promise<Rev
   const evidence = financialEvidence(options.document, options.sourceSpans);
   if (evidence.length === 0) return null;
 
-  const model = await getModelForOrg(options.ctx, options.orgId, "classification");
+  const model = await getModelForOrg(options.ctx, options.orgId, "chat");
   const current = compactDocumentForGroup(
     options.document,
     FIELD_REVIEW_GROUPS.find((item) => item.id === "financial_terms")!,
@@ -607,6 +607,8 @@ async function reconcileMinimumPremium(options: FieldReviewOptions): Promise<Rev
 
 Rules:
 - Return only source-stated minimum earned premium, minimum premium, or deposit premium terms.
+- Prefer declaration or premium-table rows over policy wording, definitions, examples, conditions, applications, or licensing statements.
+- If any evidence contains a declaration or premium-table row labeled "Minimum Earned Premium", you must return that row's value in minimumPremium.
 - If the source row says "Minimum Earned Premium 25% of Annual Premium, fully earned at inception", return minimumPremium exactly as "25% of Annual Premium, fully earned at inception".
 - A percentage-only term is text, not a currency amount. Do not convert 25% into $25.
 - Set minimumPremiumAmount or depositPremiumAmount only when the source directly states a fixed currency amount for that row.
