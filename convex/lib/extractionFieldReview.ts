@@ -168,6 +168,22 @@ const fieldReviewSchema = z.object({
   })),
 });
 
+const financialReconciliationSchema = z.object({
+  confidence: z.enum(["high", "medium", "low"]),
+  evidenceQuote: z.string().nullable(),
+  premium: z.string().nullable(),
+  premiumAmount: z.number().nullable(),
+  totalCost: z.string().nullable(),
+  totalCostAmount: z.number().nullable(),
+  minimumPremium: z.string().nullable(),
+  minimumPremiumAmount: z.number().nullable(),
+  depositPremium: z.string().nullable(),
+  depositPremiumAmount: z.number().nullable(),
+  paymentPlan: z.string().nullable(),
+  premiumBreakdown: z.array(reviewRowSchema).nullable(),
+  taxesAndFees: z.array(reviewRowSchema).nullable(),
+});
+
 const REVIEW_ROW_KEYS_BY_FIELD: Record<string, Set<string>> = {
   taxesAndFees: new Set(["name", "amount", "amountValue", "type", "description"]),
   premiumBreakdown: new Set(["line", "amount", "amountValue"]),
@@ -330,6 +346,17 @@ function shouldReviewGroup(document: Record<string, unknown>, group: FieldReview
   return group.fields.some((field) => isMissingValue(document[field]));
 }
 
+function financialEvidence(document: Record<string, unknown>, sourceSpans: SourceLike[]) {
+  const group = FIELD_REVIEW_GROUPS.find((item) => item.id === "financial_terms");
+  if (!group) return [];
+  return selectEvidenceForFieldGroup({
+    document,
+    sourceSpans,
+    group,
+    maxSnippets: 10,
+  });
+}
+
 function hasEvidenceQuote(correction: ReviewCorrection) {
   const quote = normalizeText(correction.evidenceQuote);
   return quote.length >= 8;
@@ -436,6 +463,73 @@ ${JSON.stringify(evidence, null, 2)}`,
   };
 }
 
+async function reconcileFinancialTable(options: FieldReviewOptions): Promise<ReviewResult | null> {
+  const evidence = financialEvidence(options.document, options.sourceSpans);
+  if (evidence.length === 0) return null;
+
+  const model = await getModelForOrg(options.ctx, options.orgId, "classification");
+  const current = compactDocumentForGroup(
+    options.document,
+    FIELD_REVIEW_GROUPS.find((item) => item.id === "financial_terms")!,
+  );
+  const result = await generateObject({
+    model,
+    schema: financialReconciliationSchema,
+    maxOutputTokens: 1800,
+    prompt: `Reconcile the policy premium table against source evidence.
+
+Return the best source-backed financial fields for the policy. Use only rows and values directly supported by the evidence.
+
+Rules:
+- Annual or term premium belongs in premium and premiumAmount.
+- Total payable/due belongs in totalCost and totalCostAmount.
+- Itemized taxes and fees belong in taxesAndFees.
+- Minimum earned premium, minimum premium, deposit premium, and payment-plan terms are not annual premium unless the source says so.
+- Percentage-only or rate-only terms must stay textual. Do not convert 25% into $25.
+- Put a numeric amount field only when the source directly states a fixed currency amount.
+- premiumBreakdown should include source-stated premium table rows with currency amounts. Exclude percentage-only rows unless they also state a fixed currency amount.
+- Return confidence high only when the evidence directly states the corrected values.
+
+Current extracted fields:
+${JSON.stringify(current, null, 2)}
+
+Evidence:
+${JSON.stringify(evidence, null, 2)}`,
+  });
+
+  if (result.object.confidence === "low" || !normalizeText(result.object.evidenceQuote)) {
+    return null;
+  }
+
+  const corrections: ReviewCorrection[] = [];
+  const add = (field: string, value: unknown) => {
+    if (value === null || value === undefined) return;
+    corrections.push({
+      field,
+      value,
+      confidence: result.object.confidence,
+      reason: "Reconciled financial table from source evidence.",
+      evidenceQuote: result.object.evidenceQuote ?? "",
+    });
+  };
+
+  add("premium", result.object.premium);
+  add("premiumAmount", result.object.premiumAmount);
+  add("totalCost", result.object.totalCost);
+  add("totalCostAmount", result.object.totalCostAmount);
+  add("minimumPremium", result.object.minimumPremium);
+  add("minimumPremiumAmount", result.object.minimumPremiumAmount);
+  add("depositPremium", result.object.depositPremium);
+  add("depositPremiumAmount", result.object.depositPremiumAmount);
+  add("paymentPlan", result.object.paymentPlan);
+  add("premiumBreakdown", result.object.premiumBreakdown);
+  add("taxesAndFees", result.object.taxesAndFees);
+
+  return corrections.length > 0
+    ? { groupId: "financial_terms", corrections }
+    : null;
+}
+
 export async function reviewExtractionFields(
   options: FieldReviewOptions,
 ): Promise<FieldReviewApplication> {
@@ -454,6 +548,15 @@ export async function reviewExtractionFields(
         "warn",
       );
     }
+  }
+  try {
+    const review = await reconcileFinancialTable(options);
+    if (review) reviews.push(review);
+  } catch (error) {
+    await options.log?.(
+      `Financial table reconciliation failed: ${error instanceof Error ? error.message : String(error)}`,
+      "warn",
+    );
   }
 
   const applied = applyFieldReviewResults(options.document, reviews);
