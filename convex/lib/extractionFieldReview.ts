@@ -194,6 +194,7 @@ const financialReconciliationSchema = z.object({
   depositPremium: z.string().nullable(),
   depositPremiumAmount: z.number().nullable(),
   paymentPlan: z.string().nullable(),
+  minimumPremiumRow: reviewRowSchema.nullable(),
   premiumBreakdown: z.array(reviewRowSchema).nullable(),
   taxesAndFees: z.array(reviewRowSchema).nullable(),
 });
@@ -264,6 +265,19 @@ function sanitizeCorrectionValue(field: string, value: unknown) {
     .map((row) => compactReviewRow(field, row as z.infer<typeof reviewRowSchema>))
     .filter((row) => row !== null);
   return rows.length > 0 ? rows : undefined;
+}
+
+function rowAmount(row: z.infer<typeof reviewRowSchema> | null | undefined) {
+  return typeof row?.amount === "string" && row.amount.trim() ? row.amount.trim() : undefined;
+}
+
+function findRowAmount(rows: z.infer<typeof reviewRowSchema>[] | null | undefined, labels: string[]) {
+  if (!Array.isArray(rows)) return undefined;
+  for (const row of rows) {
+    const line = typeof row.line === "string" ? row.line.toLowerCase() : "";
+    if (labels.some((label) => line.includes(label))) return rowAmount(row);
+  }
+  return undefined;
 }
 
 function reviewMode() {
@@ -549,6 +563,7 @@ Rules:
 - When the evidence contains a row labeled "Minimum Earned Premium", set minimumPremium to that row's value. If the row value is "25% of Annual Premium, fully earned at inception", minimumPremium must be exactly that text.
 - Percentage-only or rate-only terms must stay textual. Do not convert 25% into $25.
 - Put a numeric amount field only when the source directly states a fixed currency amount.
+- Return minimumPremiumRow when the premium table has a Minimum Earned Premium row. For percentage-only rows, put the exact row value in amount and leave amountValue null.
 - premiumBreakdown should include source-stated premium table rows with currency amounts for premium/payable rows, using the row label as line, for example line "Annual Premium" amount "CAD $42,000" and line "Total Payable" amount "CAD $43,820".
 - Do not put tax or fee rows in premiumBreakdown when they are already represented in taxesAndFees.
 - Exclude percentage-only rows from premiumBreakdown unless they also state a fixed currency amount.
@@ -577,17 +592,26 @@ ${JSON.stringify(evidence, null, 2)}`,
     });
   };
 
-  add("premium", result.object.premium);
+  const premium = findRowAmount(result.object.premiumBreakdown, ["annual premium", "term premium"]) ??
+    result.object.premium;
+  const totalCost = findRowAmount(result.object.premiumBreakdown, ["total payable", "total due", "total cost"]) ??
+    result.object.totalCost;
+  const minimumPremium = result.object.minimumPremium ?? rowAmount(result.object.minimumPremiumRow);
+
+  add("premium", premium);
   add("premiumAmount", result.object.premiumAmount);
-  add("totalCost", result.object.totalCost);
+  add("totalCost", totalCost);
   add("totalCostAmount", result.object.totalCostAmount);
-  add("minimumPremium", result.object.minimumPremium);
+  add("minimumPremium", minimumPremium);
   add("minimumPremiumAmount", result.object.minimumPremiumAmount);
   add("depositPremium", result.object.depositPremium);
   add("depositPremiumAmount", result.object.depositPremiumAmount);
   add("paymentPlan", result.object.paymentPlan);
   add("premiumBreakdown", result.object.premiumBreakdown);
   add("taxesAndFees", result.object.taxesAndFees);
+  if (minimumPremium && result.object.minimumPremiumAmount === null) add("minimumPremiumAmount", clearFieldCorrection());
+  if (minimumPremium && result.object.depositPremium === null) add("depositPremium", clearFieldCorrection());
+  if (minimumPremium && result.object.depositPremiumAmount === null) add("depositPremiumAmount", clearFieldCorrection());
 
   return corrections.length > 0
     ? { groupId: "financial_terms", corrections }
