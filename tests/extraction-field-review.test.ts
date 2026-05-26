@@ -156,4 +156,37 @@ describe("extraction field review", () => {
     ]);
     expect(result.applied).toHaveLength(2);
   });
+
+  it("drops table correction rows that cannot satisfy destination schema", () => {
+    const result = applyFieldReviewResults(
+      { type: "policy", coverages: [] },
+      [
+        {
+          groupId: "coverage_terms",
+          corrections: [
+            {
+              field: "coverages",
+              value: [
+                {
+                  limit: "$1",
+                  limitType: "aggregate",
+                  originalContent: "01/01/2022",
+                  pageNumber: 5,
+                },
+              ],
+              confidence: "high",
+              reason: "Malformed review row without a coverage name.",
+              evidenceQuote: "Item 6. Coverages, Limits of Liability",
+            },
+          ],
+        },
+      ],
+    );
+
+    expect(result.document.coverages).toEqual([]);
+    expect(result.applied).toHaveLength(0);
+    expect(result.skipped).toMatchObject([
+      { field: "coverages", reasonSkipped: "empty correction value" },
+    ]);
+  });
 });

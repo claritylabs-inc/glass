@@ -188,22 +188,37 @@ const REVIEW_ROW_KEYS_BY_FIELD: Record<string, Set<string>> = {
 
 function compactReviewRow(field: string, row: z.infer<typeof reviewRowSchema>) {
   const allowedKeys = REVIEW_ROW_KEYS_BY_FIELD[field];
-  return Object.fromEntries(
+  const compacted = Object.fromEntries(
     Object.entries(row).filter(([key, value]) =>
       value !== null &&
       value !== undefined &&
       (!allowedKeys || allowedKeys.has(key)),
     ),
   );
+  if (field === "coverages" && typeof compacted.name !== "string") return null;
+  if (field === "taxesAndFees" && typeof compacted.name !== "string") return null;
+  if (field === "premiumBreakdown" && typeof compacted.line !== "string") return null;
+  return compacted;
 }
 
 function correctionValue(correction: z.infer<typeof fieldReviewSchema>["corrections"][number]) {
   if (correction.valueRows !== null) {
-    return correction.valueRows.map((row) => compactReviewRow(correction.field, row));
+    const rows = correction.valueRows
+      .map((row) => compactReviewRow(correction.field, row))
+      .filter((row) => row !== null);
+    return rows.length > 0 ? rows : undefined;
   }
   if (correction.valueNumber !== null) return correction.valueNumber;
   if (correction.valueBoolean !== null) return correction.valueBoolean;
   return correction.valueString ?? undefined;
+}
+
+function sanitizeCorrectionValue(field: string, value: unknown) {
+  if (!Array.isArray(value)) return value;
+  const rows = value
+    .map((row) => compactReviewRow(field, row as z.infer<typeof reviewRowSchema>))
+    .filter((row) => row !== null);
+  return rows.length > 0 ? rows : undefined;
 }
 
 function reviewMode() {
@@ -343,13 +358,17 @@ export function applyFieldReviewResults(
     const group = FIELD_REVIEW_GROUPS.find((item) => item.id === review.groupId);
     if (!group) continue;
     for (const correction of review.corrections) {
-      const reasonSkipped = canApplyCorrection(next, group, correction);
+      const normalizedCorrection = {
+        ...correction,
+        value: sanitizeCorrectionValue(correction.field, correction.value),
+      };
+      const reasonSkipped = canApplyCorrection(next, group, normalizedCorrection);
       if (reasonSkipped) {
-        skipped.push({ ...correction, groupId: review.groupId, reasonSkipped });
+        skipped.push({ ...normalizedCorrection, groupId: review.groupId, reasonSkipped });
         continue;
       }
-      next[correction.field] = correction.value;
-      applied.push({ ...correction, groupId: review.groupId });
+      next[normalizedCorrection.field] = normalizedCorrection.value;
+      applied.push({ ...normalizedCorrection, groupId: review.groupId });
     }
   }
 
