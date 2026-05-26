@@ -15,7 +15,7 @@ COPY requirements.txt ./
 RUN python3 -m pip install --break-system-packages --no-cache-dir -r requirements.txt
 
 COPY package*.json ./
-RUN npm ci
+RUN NPM_CONFIG_MIN_RELEASE_AGE=0 npm ci
 
 COPY . .
 RUN npm run build
