@@ -168,11 +168,38 @@ const fieldReviewSchema = z.object({
   })),
 });
 
+const REVIEW_ROW_KEYS_BY_FIELD: Record<string, Set<string>> = {
+  taxesAndFees: new Set(["name", "amount", "amountValue", "type", "description"]),
+  premiumBreakdown: new Set(["line", "amount", "amountValue"]),
+  coverages: new Set([
+    "name",
+    "limit",
+    "limitAmount",
+    "limitType",
+    "deductible",
+    "deductibleAmount",
+    "deductibleType",
+    "formNumber",
+    "pageNumber",
+    "sectionRef",
+    "originalContent",
+  ]),
+};
+
+function compactReviewRow(field: string, row: z.infer<typeof reviewRowSchema>) {
+  const allowedKeys = REVIEW_ROW_KEYS_BY_FIELD[field];
+  return Object.fromEntries(
+    Object.entries(row).filter(([key, value]) =>
+      value !== null &&
+      value !== undefined &&
+      (!allowedKeys || allowedKeys.has(key)),
+    ),
+  );
+}
+
 function correctionValue(correction: z.infer<typeof fieldReviewSchema>["corrections"][number]) {
   if (correction.valueRows !== null) {
-    return correction.valueRows.map((row) => Object.fromEntries(
-      Object.entries(row).filter(([, value]) => value !== null && value !== undefined),
-    ));
+    return correction.valueRows.map((row) => compactReviewRow(correction.field, row));
   }
   if (correction.valueNumber !== null) return correction.valueNumber;
   if (correction.valueBoolean !== null) return correction.valueBoolean;
