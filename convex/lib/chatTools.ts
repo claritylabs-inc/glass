@@ -175,13 +175,21 @@ export const attachPolicyDocument = tool({
 
 export const generateCoi = tool({
   description:
-    "Generate a Certificate of Insurance (COI) PDF for a specific policy.",
+    "Generate a Certificate of Insurance (COI) PDF for a specific policy. Include requestedEndorsements/requestText when the user asks for additional insured, waiver of subrogation, primary and non-contributory, loss payee, mortgagee, special wording, or another endorsement-bearing certificate.",
   inputSchema: z.object({
     policyId: z.string().describe("The policy ID to generate the COI for"),
     certificateHolder: z
       .string()
       .optional()
       .describe("Name/address of the certificate holder"),
+    requestText: z
+      .string()
+      .optional()
+      .describe("The user's full certificate request, especially any requested endorsement or special wording"),
+    requestedEndorsements: z
+      .array(z.string())
+      .optional()
+      .describe("Specific endorsement or special wording requests, such as additional insured, waiver of subrogation, primary and non-contributory, loss payee, or mortgagee"),
     partnerProgramId: z
       .string()
       .optional()

@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import dayjs from "dayjs";
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { requireOrgAccess } from "./lib/orgAuth";
 import {
   assertCanCreatePolicyChange,
@@ -1050,6 +1051,15 @@ export const completeFromEndorsement = internalMutation({
         createdByUserId: args.userId,
         createdAt: now,
       });
+      const holds = await ctx.db
+        .query("certificateRequestHolds")
+        .withIndex("by_policyChangeCaseId", (q) =>
+          q.eq("policyChangeCaseId", args.caseId!),
+        )
+        .collect();
+      for (const hold of holds) {
+        await ctx.db.patch(hold._id, { status: "resolved", updatedAt: now });
+      }
     }
 
     await ctx.db.insert("policyAuditLog", {
@@ -1076,6 +1086,14 @@ export const completeFromEndorsement = internalMutation({
       sourceRef: { policyId: args.policyId, caseId: args.caseId, policyUpdateRunId: runId },
       coalesceKeyParts: ["policy_change_completed", String(policy.orgId), String(args.caseId ?? runId)],
     });
+
+    for (const policyFileId of policyFileIds) {
+      await ctx.runMutation((internal as any).policyDelivery.enqueueInternal, {
+        policyId: args.policyId,
+        policyFileId,
+        sourceKind: "endorsement",
+      });
+    }
 
     return { policyUpdateRunId: runId, policyFileIds };
   },

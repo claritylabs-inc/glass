@@ -83,6 +83,8 @@ export class GlassClient {
     city?: string;
     state?: string;
     postalCode?: string;
+    requestText?: string;
+    requestedEndorsements?: string[];
   }) {
     return this.post("/mcp/policies/certificates/generate", input);
   }

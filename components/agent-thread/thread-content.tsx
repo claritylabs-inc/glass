@@ -67,6 +67,7 @@ import type {
 } from "@/components/agent-thread/types";
 import {
   CertificateProgramSelectionArtifacts,
+  CertificateHoldArtifacts,
   EmailStackCard,
   EmailSummaryCard,
   EmailThreadSidebar,
@@ -1435,6 +1436,15 @@ export function UnifiedMessageBubble({
                 />
                 <CertificateProgramSelectionArtifacts
                   artifacts={msg.toolArtifacts}
+                />
+                <CertificateHoldArtifacts
+                  artifacts={msg.toolArtifacts}
+                  onOpenPolicyChange={
+                    onOpenPolicyChange
+                      ? (caseId) =>
+                          onOpenPolicyChange(caseId as Id<"policyChangeCases">)
+                      : undefined
+                  }
                 />
                 {relatedEmailMessages.length > 0 ? (
                   <div className="mt-4">

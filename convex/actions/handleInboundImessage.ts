@@ -1409,6 +1409,8 @@ export const processInbound = internalAction({
           execute: async (params: {
             policyId: string;
             certificateHolder?: string;
+            requestText?: string;
+            requestedEndorsements?: string[];
             partnerProgramId?: string;
           }) => {
             if (!currentSenderIsLinked) {
@@ -1446,6 +1448,8 @@ export const processInbound = internalAction({
                     params.certificateHolder?.split(/\r?\n/)[0]?.trim() ||
                     "Certificate holder",
                   certificateHolder: params.certificateHolder,
+                  requestText: params.requestText,
+                  requestedEndorsements: params.requestedEndorsements,
                   selectedPartnerProgramId: normalizeSelectedPartnerProgramId(
                     params.partnerProgramId,
                   ),
@@ -1454,6 +1458,9 @@ export const processInbound = internalAction({
                 },
               );
               if (!generated) return COI_GENERATION_FAILED_MESSAGE;
+              if (generated.status === "held_policy_change_required") {
+                return generated.message ?? "This certificate is on hold because it requires broker review before a COI can be issued.";
+              }
               if (generated.status === "pending_approval") {
                 return "Certified COI approval requested from the program administrator. I will not send a certificate PDF until it is approved.";
               }

@@ -35,6 +35,7 @@ import dayjs from "dayjs";
 import customParseFormat from "dayjs/plugin/customParseFormat";
 import { Id } from "@/convex/_generated/dataModel";
 import { PillButton } from "@/components/ui/pill-button";
+import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -1881,6 +1882,14 @@ type ProgramMatchCandidate = {
   score?: number;
 };
 
+const CERTIFICATE_ENDORSEMENT_OPTIONS = [
+  { value: "additional_insured", label: "Additional insured" },
+  { value: "waiver_of_subrogation", label: "Waiver" },
+  { value: "primary_non_contributory", label: "Primary/non-contributory" },
+  { value: "loss_payee", label: "Loss payee" },
+  { value: "mortgagee", label: "Mortgagee" },
+];
+
 function normalizeProgramMatchCandidate(candidate: ProgramMatchCandidate) {
   const programId = candidate.programId ?? candidate._id;
   if (!programId) return null;
@@ -1920,6 +1929,9 @@ function CertificateCreatePanel({
   const [selectedPartnerProgramId, setSelectedPartnerProgramId] = useState<
     Id<"partnerPrograms"> | undefined
   >(initialProgramCandidate?.programId);
+  const [requestedEndorsements, setRequestedEndorsements] = useState<string[]>(
+    [],
+  );
   const [programCandidates, setProgramCandidates] = useState<
     ProgramMatchCandidate[]
   >(() => (initialProgramCandidate ? [initialProgramCandidate] : []));
@@ -1933,6 +1945,7 @@ function CertificateCreatePanel({
     setCity("");
     setState("");
     setPostalCode("");
+    setRequestedEndorsements([]);
     setSelectedPartnerProgramId(initialProgramCandidate?.programId);
     setProgramCandidates(
       initialProgramCandidate ? [initialProgramCandidate] : [],
@@ -2031,9 +2044,27 @@ function CertificateCreatePanel({
         state: state.trim() || undefined,
         postalCode: postalCode.trim() || undefined,
         selectedPartnerProgramId,
+        requestedEndorsements:
+          requestedEndorsements.length > 0 ? requestedEndorsements : undefined,
+        requestText:
+          requestedEndorsements.length > 0
+            ? `Generate certificate for ${holderName.trim()} with ${requestedEndorsements.join(", ")}.`
+            : undefined,
       });
       if ((result as { status?: string }).status === "pending_approval") {
         toast.success("Certified COI sent for program administrator approval");
+        onOpenChange(false);
+        reset();
+        return;
+      }
+      if (
+        (result as { status?: string }).status ===
+        "held_policy_change_required"
+      ) {
+        toast.message(
+          (result as { message?: string }).message ??
+            "Certificate request is on hold for broker review",
+        );
         onOpenChange(false);
         reset();
         return;
@@ -2267,6 +2298,41 @@ function CertificateCreatePanel({
               />
             </div>
           </div>
+
+          <div className="space-y-2">
+            <Label>Requested endorsements</Label>
+            <div className="flex flex-wrap gap-2">
+              {CERTIFICATE_ENDORSEMENT_OPTIONS.map((option) => {
+                const selected = requestedEndorsements.includes(option.value);
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    aria-pressed={selected}
+                    disabled={generating}
+                    onClick={() =>
+                      setRequestedEndorsements((current) =>
+                        selected
+                          ? current.filter((value) => value !== option.value)
+                          : [...current, option.value],
+                      )
+                    }
+                    className={`rounded-md border px-2.5 py-1.5 text-label-sm capitalize transition-colors ${
+                      selected
+                        ? "border-foreground/25 bg-foreground/[0.04] text-foreground"
+                        : "border-foreground/8 bg-popover text-muted-foreground hover:border-foreground/15"
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-label-sm text-muted-foreground/60">
+              Endorsement-bearing requests are checked against policy wording
+              before Glass issues a certificate.
+            </p>
+          </div>
         </form>
       </div>
     </SettingsDrawer>
@@ -2274,14 +2340,14 @@ function CertificateCreatePanel({
 }
 
 function CertificatesTab({ policyId }: { policyId: Id<"policies"> }) {
-  const certificates = useCachedQuery(
-    "certificates.listByPolicy",
-    api.certificates.listByPolicy,
+  const activity = useCachedQuery(
+    "certificates.listActivityByPolicy",
+    api.certificates.listActivityByPolicy,
     { policyId },
   );
   const { openWithUrl } = usePdf();
 
-  if (certificates === undefined) {
+  if (activity === undefined) {
     return (
       <div className="space-y-2">
         {Array.from({ length: 3 }).map((_, i) => (
@@ -2291,7 +2357,12 @@ function CertificatesTab({ policyId }: { policyId: Id<"policies"> }) {
     );
   }
 
-  if (certificates.length === 0) {
+  const rows = [
+    ...((activity.certificates ?? []) as Array<Record<string, unknown>>),
+    ...((activity.holds ?? []) as Array<Record<string, unknown>>),
+  ].sort((left, right) => Number(right.createdAt ?? 0) - Number(left.createdAt ?? 0));
+
+  if (rows.length === 0) {
     return (
       <div className="rounded-lg border border-foreground/6 bg-card px-4 py-8 text-center">
         <BadgeCheck className="mx-auto mb-3 h-5 w-5 text-muted-foreground/50" />
@@ -2307,45 +2378,55 @@ function CertificatesTab({ policyId }: { policyId: Id<"policies"> }) {
 
   return (
     <div className="space-y-2">
-      {certificates.map((certificate) => (
+      {rows.map((row) => (
         <div
-          key={certificate._id}
+          key={String(row._id)}
           className="rounded-lg border border-foreground/6 bg-card px-4 py-3"
         >
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               <p className="text-body-sm font-medium text-foreground truncate">
-                {certificate.certificateHolderName ??
-                  "Certificate of Insurance"}
+                {String(row.certificateHolderName ?? row.holderName ?? "Certificate of Insurance")}
               </p>
               <p className="mt-1 whitespace-pre-line text-label-sm text-muted-foreground">
-                {certificate.certificateHolder ??
-                  "No certificate holder recorded"}
+                {String(row.certificateHolder ?? row.reasonMessage ?? "No certificate holder recorded")}
               </p>
               <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
-                <span>{formatCertificateTimestamp(certificate.createdAt)}</span>
-                {certificate.source && (
-                  <span>{certificate.source.replace("_", " ")}</span>
+                <span>{formatCertificateTimestamp(Number(row.createdAt))}</span>
+                {typeof row.source === "string" && row.source ? (
+                  <span>{String(row.source).replace("_", " ")}</span>
+                ) : null}
+                {row.activityType === "hold" ? (
+                  <span>on hold</span>
+                ) : (
+                  <span>
+                    {row.authorityType === "certified"
+                      ? "certified"
+                      : "non-binding"}
+                  </span>
                 )}
-                <span>
-                  {certificate.authorityType === "certified"
-                    ? "certified"
-                    : "non-binding"}
-                </span>
-                {certificate.certificationStatus === "pending" && (
+                {row.certificationStatus === "pending" && (
                   <span>pending approval</span>
                 )}
               </div>
             </div>
-            <PillButton
-              variant="secondary"
-              size="compact"
-              disabled={!certificate.url}
-              onClick={() => certificate.url && openWithUrl(certificate.url)}
-            >
-              <Eye className="w-3.5 h-3.5" />
-              PDF
-            </PillButton>
+            {row.activityType === "hold" ? (
+              <Badge variant="outline" className="h-6 shrink-0 capitalize">
+                Held
+              </Badge>
+            ) : (
+              <PillButton
+                variant="secondary"
+                size="compact"
+                disabled={!row.url}
+                onClick={() =>
+                  typeof row.url === "string" && openWithUrl(row.url)
+                }
+              >
+                <Eye className="w-3.5 h-3.5" />
+                PDF
+              </PillButton>
+            )}
           </div>
         </div>
       ))}

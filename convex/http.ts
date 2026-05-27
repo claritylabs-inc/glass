@@ -504,6 +504,11 @@ function normalizeCertificateRequest(body: Record<string, unknown>) {
     (typeof body.certificate_holder_name === "string" && body.certificate_holder_name.trim()) ||
     certificateHolder.split(/\r?\n/)[0]?.trim() ||
     "";
+  const requestedEndorsements = Array.isArray(body.requestedEndorsements)
+    ? body.requestedEndorsements.filter((item): item is string => typeof item === "string")
+    : Array.isArray(body.requested_endorsements)
+      ? body.requested_endorsements.filter((item): item is string => typeof item === "string")
+      : undefined;
 
   return {
     holderName,
@@ -527,6 +532,11 @@ function normalizeCertificateRequest(body: Record<string, unknown>) {
       (typeof body.postalCode === "string" && body.postalCode.trim()) ||
       (typeof body.postal_code === "string" && body.postal_code.trim()) ||
       undefined,
+    requestText:
+      (typeof body.requestText === "string" && body.requestText.trim()) ||
+      (typeof body.request_text === "string" && body.request_text.trim()) ||
+      undefined,
+    requestedEndorsements,
     selectedPartnerProgramId: selectedPartnerProgramId as Id<"partnerPrograms"> | undefined,
   };
 }

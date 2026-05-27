@@ -435,6 +435,8 @@ export function buildEmailExpertTool(
         fileId: z.string().optional(),
         filename: z.string().optional(),
         certificateHolder: z.string().optional(),
+        requestText: z.string().optional(),
+        requestedEndorsements: z.array(z.string()).optional(),
       })).optional().describe(
         "Documents the user explicitly asked to attach. For certificate/COI requests, use kind 'coi' only; do not include original_policy unless the user separately asked for the original/full policy PDF.",
       ),
@@ -544,6 +546,8 @@ async function runEmailSubagent(
   const generateCoiAttachment = async (
     policyId: string,
     certificateHolder?: string,
+    requestText?: string,
+    requestedEndorsements?: string[],
     partnerProgramId?: string,
   ): Promise<string> => {
     const resolved = await resolvePolicyReferenceForOrg(ctx, {
@@ -569,6 +573,8 @@ async function runEmailSubagent(
         orgId: context.orgId,
         holderName: certificateHolder?.split(/\r?\n/)[0]?.trim() || "Certificate holder",
         certificateHolder,
+        requestText,
+        requestedEndorsements,
         selectedPartnerProgramId: normalizeSelectedPartnerProgramId(partnerProgramId),
         source: context.channel === "web" ? "chat" : context.channel,
       });
@@ -577,6 +583,9 @@ async function runEmailSubagent(
       return COI_GENERATION_FAILED_MESSAGE;
     }
     if (!generated) return COI_GENERATION_FAILED_MESSAGE;
+    if (generated.status === "held_policy_change_required") {
+      return generated.message ?? "This certificate is on hold because it requires broker review before a COI can be issued.";
+    }
     if (generated.status === "pending_approval") {
       return "Certified COI approval has been requested from the program administrator; no certificate PDF is attached yet.";
     }
@@ -619,7 +628,12 @@ async function runEmailSubagent(
     if (requested.kind === "original_policy" && requested.policyId) {
       await attachOriginalPolicy(requested.policyId);
     } else if (requested.kind === "coi" && requested.policyId) {
-      await generateCoiAttachment(requested.policyId, requested.certificateHolder);
+      await generateCoiAttachment(
+        requested.policyId,
+        requested.certificateHolder,
+        requested.requestText,
+        requested.requestedEndorsements,
+      );
     } else if (requested.kind === "uploaded_file" && requested.fileId) {
       attachUploadedFile(requested.fileId, requested.filename);
     }
@@ -917,10 +931,12 @@ Call send_or_draft_email exactly once after preparing any requested attachments.
         inputSchema: z.object({
           policyId: z.string(),
           certificateHolder: z.string().optional(),
+          requestText: z.string().optional(),
+          requestedEndorsements: z.array(z.string()).optional(),
           partnerProgramId: z.string().optional(),
         }),
-        execute: async ({ policyId, certificateHolder, partnerProgramId }) =>
-          generateCoiAttachment(policyId, certificateHolder, partnerProgramId),
+        execute: async ({ policyId, certificateHolder, requestText, requestedEndorsements, partnerProgramId }) =>
+          generateCoiAttachment(policyId, certificateHolder, requestText, requestedEndorsements, partnerProgramId),
       }),
       send_or_draft_email: tool({
         description: "Finalize the email. This either sends, queues, or returns a confirmation draft based on safety and org settings.",

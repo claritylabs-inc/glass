@@ -46,6 +46,42 @@ const notificationChannelValidator = v.union(
   v.literal("imessage"),
 );
 
+const policyDeliveryChannelValidator = v.union(
+  v.literal("email"),
+  v.literal("imessage"),
+);
+
+const policyDeliveryActionValidator = v.union(
+  v.literal("auto_send"),
+  v.literal("broker_review"),
+  v.literal("do_not_send"),
+);
+
+const policyDeliveryStatusValidator = v.union(
+  v.literal("queued"),
+  v.literal("review_required"),
+  v.literal("sending"),
+  v.literal("sent"),
+  v.literal("partially_sent"),
+  v.literal("blocked"),
+  v.literal("failed"),
+  v.literal("suppressed"),
+  v.literal("cancelled"),
+);
+
+const policyDeliverySourceKindValidator = v.union(
+  v.literal("policy"),
+  v.literal("endorsement"),
+);
+
+const policyDeliveryRuleFiltersValidator = v.object({
+  carriers: v.optional(v.array(v.string())),
+  securities: v.optional(v.array(v.string())),
+  underwriters: v.optional(v.array(v.string())),
+  productLines: v.optional(v.array(v.string())),
+  policyTypes: v.optional(v.array(v.string())),
+});
+
 const policyChangeStatusValidator = v.union(
   // Legacy statuses kept during widen-migrate-narrow.
   v.literal("draft"),
@@ -110,6 +146,8 @@ export default defineSchema({
       v.union(v.literal("broker"), v.literal("member"), v.literal("ignore")),
     ),
     autoGenerateCoi: v.optional(v.boolean()), // when true, generate COI PDFs automatically on request
+    policyChangeRequestsEnabled: v.optional(v.boolean()),
+    certificateChangeRequestsEnabled: v.optional(v.boolean()),
     // Agent
     agentHandle: v.optional(v.string()),
     // Primary insurance contact for the org
@@ -466,6 +504,85 @@ export default defineSchema({
     .index("by_orgId_clientOrgId", ["orgId", "clientOrgId"])
     .index("by_orgId_producerId", ["orgId", "producerId"])
     .index("by_clientOrgId", ["clientOrgId"]),
+
+  policyDeliverySettings: defineTable({
+    brokerOrgId: v.id("organizations"),
+    clientOrgId: v.optional(v.id("organizations")),
+    enabled: v.boolean(),
+    channels: v.array(policyDeliveryChannelValidator),
+    defaultAction: policyDeliveryActionValidator,
+    deliverBeforeClientAcceptance: v.boolean(),
+    copyInstructions: v.optional(v.string()),
+    updatedByUserId: v.optional(v.id("users")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_brokerOrgId", ["brokerOrgId"])
+    .index("by_brokerOrgId_clientOrgId", ["brokerOrgId", "clientOrgId"]),
+
+  policyDeliveryRules: defineTable({
+    brokerOrgId: v.id("organizations"),
+    clientOrgId: v.optional(v.id("organizations")),
+    name: v.string(),
+    enabled: v.boolean(),
+    priority: v.number(),
+    filters: policyDeliveryRuleFiltersValidator,
+    llmRuleText: v.optional(v.string()),
+    action: policyDeliveryActionValidator,
+    channels: v.optional(v.array(policyDeliveryChannelValidator)),
+    copyInstructions: v.optional(v.string()),
+    createdByUserId: v.optional(v.id("users")),
+    updatedByUserId: v.optional(v.id("users")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_brokerOrgId", ["brokerOrgId"])
+    .index("by_brokerOrgId_clientOrgId", ["brokerOrgId", "clientOrgId"])
+    .index("by_brokerOrgId_priority", ["brokerOrgId", "priority"]),
+
+  policyDeliveryJobs: defineTable({
+    brokerOrgId: v.id("organizations"),
+    clientOrgId: v.id("organizations"),
+    policyId: v.id("policies"),
+    policyFileId: v.optional(v.id("policyFiles")),
+    sourceKind: policyDeliverySourceKindValidator,
+    idempotencyKey: v.string(),
+    status: policyDeliveryStatusValidator,
+    action: policyDeliveryActionValidator,
+    channels: v.array(policyDeliveryChannelValidator),
+    ruleId: v.optional(v.id("policyDeliveryRules")),
+    ruleName: v.optional(v.string()),
+    decisionSummary: v.optional(v.string()),
+    decisionDetails: v.optional(v.any()),
+    recipientName: v.optional(v.string()),
+    recipientEmail: v.optional(v.string()),
+    recipientPhone: v.optional(v.string()),
+    threadId: v.optional(v.id("threads")),
+    emailSentAt: v.optional(v.number()),
+    imessageSentAt: v.optional(v.number()),
+    sentAt: v.optional(v.number()),
+    lastError: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_brokerOrgId_status_updatedAt", ["brokerOrgId", "status", "updatedAt"])
+    .index("by_clientOrgId_updatedAt", ["clientOrgId", "updatedAt"])
+    .index("by_policyId", ["policyId"])
+    .index("by_idempotencyKey", ["idempotencyKey"]),
+
+  policyDeliveryAttempts: defineTable({
+    jobId: v.id("policyDeliveryJobs"),
+    brokerOrgId: v.id("organizations"),
+    clientOrgId: v.id("organizations"),
+    policyId: v.id("policies"),
+    channel: policyDeliveryChannelValidator,
+    status: v.union(v.literal("sent"), v.literal("failed"), v.literal("skipped")),
+    messageId: v.optional(v.string()),
+    error: v.optional(v.string()),
+    createdAt: v.number(),
+  })
+    .index("by_jobId", ["jobId"])
+    .index("by_brokerOrgId_createdAt", ["brokerOrgId", "createdAt"]),
 
   connectedOrgRelationships: defineTable({
     // A client/customer org can view selected insurance system-of-record data
@@ -1300,6 +1417,53 @@ export default defineSchema({
     .index("by_fileId", ["fileId"])
     .index("by_partnerOrgId", ["partnerOrgId"]),
 
+  certificateRequestHolds: defineTable({
+    orgId: v.id("organizations"),
+    policyId: v.id("policies"),
+    holderName: v.string(),
+    certificateHolder: v.optional(v.string()),
+    requestText: v.optional(v.string()),
+    requestedEndorsements: v.optional(v.array(v.string())),
+    source: v.optional(
+      v.union(
+        v.literal("policy_page"),
+        v.literal("chat"),
+        v.literal("email"),
+        v.literal("imessage"),
+        v.literal("sms"),
+        v.literal("api"),
+        v.literal("mcp"),
+        v.literal("agent"),
+        v.literal("unknown"),
+      ),
+    ),
+    status: v.union(
+      v.literal("held"),
+      v.literal("policy_change_opened"),
+      v.literal("broker_handoff_offered"),
+      v.literal("resolved"),
+      v.literal("cancelled"),
+    ),
+    reasonCode: v.union(
+      v.literal("policy_change_required"),
+      v.literal("missing_policy_evidence"),
+      v.literal("ambiguous_policy_evidence"),
+      v.literal("conflicting_policy_evidence"),
+    ),
+    reasonMessage: v.string(),
+    requiredChanges: v.array(v.string()),
+    evidence: v.optional(v.any()),
+    policyChangeCaseId: v.optional(v.id("policyChangeCases")),
+    pendingEmailId: v.optional(v.id("pendingEmails")),
+    createdByUserId: v.optional(v.id("users")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_orgId", ["orgId"])
+    .index("by_policyId", ["policyId"])
+    .index("by_policyChangeCaseId", ["policyChangeCaseId"])
+    .index("by_status", ["status"]),
+
   certificateRequests: defineTable({
     orgId: v.id("organizations"),
     policyId: v.id("policies"),
@@ -1844,6 +2008,7 @@ export default defineSchema({
     visibility: v.optional(
       v.union(v.literal("broker_visible"), v.literal("client_internal")),
     ),
+    deliveryContactKey: v.optional(v.string()),
     threadPhone: v.optional(v.string()),
     imessageChatGuid: v.optional(v.string()),
     imessageIsGroup: v.optional(v.boolean()),
@@ -1857,6 +2022,7 @@ export default defineSchema({
     .index("by_threadEmail", ["threadEmail"])
     .index("by_threadPhone", ["threadPhone"])
     .index("by_orgId_threadPhone", ["orgId", "threadPhone"])
+    .index("by_orgId_deliveryContactKey", ["orgId", "deliveryContactKey"])
     .index("by_imessageChatGuid", ["imessageChatGuid"])
     .index("by_orgId_imessageChatGuid", ["orgId", "imessageChatGuid"]),
 
