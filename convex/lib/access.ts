@@ -197,6 +197,12 @@ export function assertCanUploadPolicy(access: OrgAccess): void {
   // member OR broker_of_client
 }
 
+export function assertCanEditPolicyExtractedFields(access: OrgAccess): void {
+  if (access.accessType === "broker_of_client") return;
+  if (access.accessType === "member" && access.orgType === "broker") return;
+  throw new Error("Only brokers can edit extracted policy fields");
+}
+
 export function assertCanDeletePolicy(
   access: OrgAccess,
   policy: { uploadedBySide?: string; uploadedByBrokerOrgId?: Id<"organizations"> },

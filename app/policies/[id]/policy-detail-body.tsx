@@ -2664,6 +2664,8 @@ export function PolicyDetailBody({
   const isDeleted = !!p.deletedAt;
   const canManagePolicyChanges =
     (viewerOrg?.org as { type?: "broker" } | undefined)?.type === "broker";
+  const canEditExtractedFields =
+    (viewerOrg?.org as { type?: "broker" } | undefined)?.type === "broker";
   const canRequestBrokerExtractionHelp =
     !!viewerOrg?.brokerOrg && !readOnly && !isDeleted;
   const pipelineStatus = p.pipelineStatus as PipelineStatus | undefined;
@@ -3147,7 +3149,7 @@ export function PolicyDetailBody({
                     _id: Id<"policies">;
                   }
                 }
-                readOnly={readOnly || isDeleted}
+                readOnly={readOnly || isDeleted || !canEditExtractedFields}
               />
               <ExtractionCards
                 policyDocument={extractionData}

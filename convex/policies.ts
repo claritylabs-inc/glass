@@ -4,6 +4,7 @@ import { api, internal } from "./_generated/api";
 import { requireOrgAccess, getOrgAccess } from "./lib/orgAuth";
 import {
   requireBrokerAccessToClient,
+  assertCanEditPolicyExtractedFields,
   assertCanUploadPolicy,
   assertCanDeletePolicy,
   assertCanReadPolicies,
@@ -948,7 +949,7 @@ export const updateExtractedFields = mutation({
     const policy = await ctx.db.get(args.id);
     if (!policy?.orgId) throw new Error("Not found");
     const access = await getOrgAccessFor(ctx, policy.orgId);
-    assertCanUploadPolicy(access);
+    assertCanEditPolicyExtractedFields(access);
 
     const patch: Record<string, unknown> = {};
     const normalizedFields = normalizeEditableFields(args.fields);
