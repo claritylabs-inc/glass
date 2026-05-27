@@ -22,6 +22,8 @@ type AgentSettingsArgs = {
   autoSendEmails: boolean;
   bccRequesterOnAgentEmails: boolean;
   emailSendDelay: number;
+  policyChangeRequestsEnabled: boolean;
+  certificateChangeRequestsEnabled: boolean;
 };
 
 export function BrokerAgentTab() {
@@ -39,6 +41,8 @@ export function BrokerAgentTab() {
         autoSendEmails?: boolean;
         bccRequesterOnAgentEmails?: boolean;
         emailSendDelay?: number;
+        policyChangeRequestsEnabled?: boolean;
+        certificateChangeRequestsEnabled?: boolean;
       }
     | undefined;
 
@@ -52,6 +56,10 @@ export function BrokerAgentTab() {
   const [bccRequesterOnAgentEmails, setBccRequesterOnAgentEmails] =
     useState(true);
   const [emailSendDelay, setEmailSendDelay] = useState<number>(5);
+  const [policyChangeRequestsEnabled, setPolicyChangeRequestsEnabled] =
+    useState(true);
+  const [certificateChangeRequestsEnabled, setCertificateChangeRequestsEnabled] =
+    useState(true);
   const [settingsHydrated, setSettingsHydrated] = useState(false);
 
   const hydratedRef = useRef(false);
@@ -66,6 +74,10 @@ export function BrokerAgentTab() {
       setAutoSendEmails(org.autoSendEmails ?? false);
       setBccRequesterOnAgentEmails(org.bccRequesterOnAgentEmails ?? true);
       setEmailSendDelay(org.emailSendDelay ?? 5);
+      setPolicyChangeRequestsEnabled(org.policyChangeRequestsEnabled ?? true);
+      setCertificateChangeRequestsEnabled(
+        org.certificateChangeRequestsEnabled ?? true,
+      );
       hydratedRef.current = true;
       setSettingsHydrated(true);
     }
@@ -78,12 +90,16 @@ export function BrokerAgentTab() {
         autoSendEmails,
         bccRequesterOnAgentEmails,
         emailSendDelay,
+        policyChangeRequestsEnabled,
+        certificateChangeRequestsEnabled,
       }),
     [
       autoSendEmails,
       bccRequesterOnAgentEmails,
+      certificateChangeRequestsEnabled,
       chatEmailNotifications,
       emailSendDelay,
+      policyChangeRequestsEnabled,
     ],
   );
 
@@ -101,6 +117,8 @@ export function BrokerAgentTab() {
       autoSendEmails,
       bccRequesterOnAgentEmails,
       emailSendDelay,
+      policyChangeRequestsEnabled,
+      certificateChangeRequestsEnabled,
     },
     valueKey: settingsValueKey,
     enabled: settingsHydrated,
@@ -333,6 +351,67 @@ export function BrokerAgentTab() {
           </div>
         </div>
       </div>
+
+      {isBroker ? (
+        <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
+          <div className="px-5 py-3.5 border-b border-foreground/6">
+            <h3 className="mb-0! text-sm font-medium text-foreground">
+              Certificate safeguards
+            </h3>
+          </div>
+          <div className="px-5 py-2 divide-y divide-foreground/6">
+            <div className="flex items-center justify-between gap-4 py-3">
+              <div>
+                <p className="text-body-sm font-medium text-foreground">
+                  Policy change requests
+                </p>
+                <p className="text-label-sm text-muted-foreground/60 mt-0.5 max-w-md">
+                  Allow Glass to open broker-mediated policy change requests
+                  when certificates require endorsements.
+                </p>
+              </div>
+              <SettingsSwitch
+                checked={policyChangeRequestsEnabled}
+                onCheckedChange={() => {
+                  setPolicyChangeRequestsEnabled((value) => {
+                    const next = !value;
+                    if (!next) setCertificateChangeRequestsEnabled(false);
+                    return next;
+                  });
+                }}
+                label="Toggle policy change requests"
+                className="ml-4"
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-4 py-3">
+              <div>
+                <p className="text-body-sm font-medium text-foreground">
+                  Certificate change requests
+                </p>
+                <p className="text-label-sm text-muted-foreground/60 mt-0.5 max-w-md">
+                  Held certificate requests create a linked policy change case
+                  when this is on. When off, Glass keeps the hold and offers
+                  broker email or iMessage handoff.
+                </p>
+              </div>
+              <SettingsSwitch
+                checked={
+                  policyChangeRequestsEnabled &&
+                  certificateChangeRequestsEnabled
+                }
+                onCheckedChange={() =>
+                  setCertificateChangeRequestsEnabled((value) =>
+                    policyChangeRequestsEnabled ? !value : false,
+                  )
+                }
+                label="Toggle certificate change requests"
+                className="ml-4"
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {/* Send delay */}
       <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">

@@ -844,6 +844,8 @@ export const updateOrg = mutation({
     partnersContext: v.optional(v.string()),
     coiHandling: v.optional(v.union(v.literal("broker"), v.literal("member"), v.literal("ignore"))),
     autoGenerateCoi: v.optional(v.boolean()),
+    policyChangeRequestsEnabled: v.optional(v.boolean()),
+    certificateChangeRequestsEnabled: v.optional(v.boolean()),
     chatEmailNotifications: v.optional(v.boolean()),
     autoSendEmails: v.optional(v.boolean()),
     bccRequesterOnAgentEmails: v.optional(v.boolean()),

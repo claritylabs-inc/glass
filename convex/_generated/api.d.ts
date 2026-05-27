@@ -80,6 +80,7 @@ import type * as lib_branding from "../lib/branding.js";
 import type * as lib_brokerActivity from "../lib/brokerActivity.js";
 import type * as lib_brokerIdentity from "../lib/brokerIdentity.js";
 import type * as lib_certificateProgramSelection from "../lib/certificateProgramSelection.js";
+import type * as lib_certificateRequestGate from "../lib/certificateRequestGate.js";
 import type * as lib_chatTools from "../lib/chatTools.js";
 import type * as lib_coiAttachmentGuards from "../lib/coiAttachmentGuards.js";
 import type * as lib_coiGenerator from "../lib/coiGenerator.js";
@@ -238,6 +239,7 @@ declare const fullApi: ApiFromModules<{
   "lib/brokerActivity": typeof lib_brokerActivity;
   "lib/brokerIdentity": typeof lib_brokerIdentity;
   "lib/certificateProgramSelection": typeof lib_certificateProgramSelection;
+  "lib/certificateRequestGate": typeof lib_certificateRequestGate;
   "lib/chatTools": typeof lib_chatTools;
   "lib/coiAttachmentGuards": typeof lib_coiAttachmentGuards;
   "lib/coiGenerator": typeof lib_coiGenerator;

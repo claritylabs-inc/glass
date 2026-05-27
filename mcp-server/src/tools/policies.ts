@@ -86,6 +86,8 @@ export function registerPolicyTools(server: McpServer, client: GlassClient) {
       city: z.string().optional().describe("Certificate holder city"),
       state: z.string().optional().describe("Certificate holder state"),
       postalCode: z.string().optional().describe("Certificate holder ZIP or postal code"),
+      requestText: z.string().optional().describe("Full certificate request, including endorsement or special wording language"),
+      requestedEndorsements: z.array(z.string()).optional().describe("Requested certificate endorsements or special wording"),
     },
     async (input) => {
       const result = await client.generatePolicyCertificate(input);

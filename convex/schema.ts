@@ -46,7 +46,10 @@ const notificationChannelValidator = v.union(
   v.literal("imessage"),
 );
 
-const policyDeliveryChannelValidator = v.union(v.literal("email"), v.literal("imessage"));
+const policyDeliveryChannelValidator = v.union(
+  v.literal("email"),
+  v.literal("imessage"),
+);
 
 const policyDeliveryActionValidator = v.union(
   v.literal("auto_send"),
@@ -143,6 +146,8 @@ export default defineSchema({
       v.union(v.literal("broker"), v.literal("member"), v.literal("ignore")),
     ),
     autoGenerateCoi: v.optional(v.boolean()), // when true, generate COI PDFs automatically on request
+    policyChangeRequestsEnabled: v.optional(v.boolean()),
+    certificateChangeRequestsEnabled: v.optional(v.boolean()),
     // Agent
     agentHandle: v.optional(v.string()),
     // Primary insurance contact for the org
@@ -508,7 +513,7 @@ export default defineSchema({
     defaultAction: policyDeliveryActionValidator,
     deliverBeforeClientAcceptance: v.boolean(),
     copyInstructions: v.optional(v.string()),
-    updatedByUserId: v.id("users"),
+    updatedByUserId: v.optional(v.id("users")),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -526,13 +531,14 @@ export default defineSchema({
     action: policyDeliveryActionValidator,
     channels: v.optional(v.array(policyDeliveryChannelValidator)),
     copyInstructions: v.optional(v.string()),
-    createdByUserId: v.id("users"),
-    updatedByUserId: v.id("users"),
+    createdByUserId: v.optional(v.id("users")),
+    updatedByUserId: v.optional(v.id("users")),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index("by_brokerOrgId", ["brokerOrgId"])
-    .index("by_brokerOrgId_clientOrgId", ["brokerOrgId", "clientOrgId"]),
+    .index("by_brokerOrgId_clientOrgId", ["brokerOrgId", "clientOrgId"])
+    .index("by_brokerOrgId_priority", ["brokerOrgId", "priority"]),
 
   policyDeliveryJobs: defineTable({
     brokerOrgId: v.id("organizations"),
@@ -560,6 +566,7 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_brokerOrgId_status_updatedAt", ["brokerOrgId", "status", "updatedAt"])
+    .index("by_clientOrgId_updatedAt", ["clientOrgId", "updatedAt"])
     .index("by_clientOrgId_status_updatedAt", ["clientOrgId", "status", "updatedAt"])
     .index("by_policyId", ["policyId"])
     .index("by_idempotencyKey", ["idempotencyKey"]),
@@ -1412,6 +1419,53 @@ export default defineSchema({
     .index("by_fileId", ["fileId"])
     .index("by_partnerOrgId", ["partnerOrgId"]),
 
+  certificateRequestHolds: defineTable({
+    orgId: v.id("organizations"),
+    policyId: v.id("policies"),
+    holderName: v.string(),
+    certificateHolder: v.optional(v.string()),
+    requestText: v.optional(v.string()),
+    requestedEndorsements: v.optional(v.array(v.string())),
+    source: v.optional(
+      v.union(
+        v.literal("policy_page"),
+        v.literal("chat"),
+        v.literal("email"),
+        v.literal("imessage"),
+        v.literal("sms"),
+        v.literal("api"),
+        v.literal("mcp"),
+        v.literal("agent"),
+        v.literal("unknown"),
+      ),
+    ),
+    status: v.union(
+      v.literal("held"),
+      v.literal("policy_change_opened"),
+      v.literal("broker_handoff_offered"),
+      v.literal("resolved"),
+      v.literal("cancelled"),
+    ),
+    reasonCode: v.union(
+      v.literal("policy_change_required"),
+      v.literal("missing_policy_evidence"),
+      v.literal("ambiguous_policy_evidence"),
+      v.literal("conflicting_policy_evidence"),
+    ),
+    reasonMessage: v.string(),
+    requiredChanges: v.array(v.string()),
+    evidence: v.optional(v.any()),
+    policyChangeCaseId: v.optional(v.id("policyChangeCases")),
+    pendingEmailId: v.optional(v.id("pendingEmails")),
+    createdByUserId: v.optional(v.id("users")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_orgId", ["orgId"])
+    .index("by_policyId", ["policyId"])
+    .index("by_policyChangeCaseId", ["policyChangeCaseId"])
+    .index("by_status", ["status"]),
+
   certificateRequests: defineTable({
     orgId: v.id("organizations"),
     policyId: v.id("policies"),
@@ -1967,10 +2021,10 @@ export default defineSchema({
     .index("by_orgId", ["orgId"])
     .index("by_orgId_lastMessageAt", ["orgId", "lastMessageAt"])
     .index("by_orgId_clientMutationId", ["orgId", "clientMutationId"])
-    .index("by_orgId_deliveryContactKey", ["orgId", "deliveryContactKey"])
     .index("by_threadEmail", ["threadEmail"])
     .index("by_threadPhone", ["threadPhone"])
     .index("by_orgId_threadPhone", ["orgId", "threadPhone"])
+    .index("by_orgId_deliveryContactKey", ["orgId", "deliveryContactKey"])
     .index("by_imessageChatGuid", ["imessageChatGuid"])
     .index("by_orgId_imessageChatGuid", ["orgId", "imessageChatGuid"]),
 

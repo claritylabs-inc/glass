@@ -13,6 +13,8 @@ export type RequestedEmailAttachment = {
   fileId?: string;
   filename?: string;
   certificateHolder?: string;
+  requestText?: string;
+  requestedEndorsements?: string[];
 };
 
 export const MULTIPLE_COI_SINGLE_RECIPIENT_WARNING =

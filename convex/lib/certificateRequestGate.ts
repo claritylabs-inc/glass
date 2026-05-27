@@ -1,0 +1,297 @@
+export type CertificateEndorsementKind =
+  | "additional_insured"
+  | "named_insured"
+  | "waiver_of_subrogation"
+  | "primary_non_contributory"
+  | "loss_payee"
+  | "mortgagee"
+  | "special_wording"
+  | "policy_change";
+
+export type CertificateGateEvidence = {
+  label: string;
+  excerpt: string;
+  sourceSpanIds?: string[];
+  pageStart?: number;
+  pageEnd?: number;
+};
+
+export type CertificateGateVerdict =
+  | {
+      status: "allowed";
+      requiredChanges: CertificateEndorsementKind[];
+      evidence: CertificateGateEvidence[];
+    }
+  | {
+      status: "held";
+      reasonCode:
+        | "policy_change_required"
+        | "missing_policy_evidence"
+        | "ambiguous_policy_evidence"
+        | "conflicting_policy_evidence";
+      reasonMessage: string;
+      requiredChanges: CertificateEndorsementKind[];
+      evidence: CertificateGateEvidence[];
+    };
+
+type SourceSpanLike = {
+  spanId?: string;
+  pageStart?: number;
+  pageEnd?: number;
+  text?: string;
+  sectionId?: string;
+  formNumber?: string;
+};
+
+const ENDORSEMENT_PATTERNS: Array<{
+  kind: CertificateEndorsementKind;
+  pattern: RegExp;
+}> = [
+  {
+    kind: "additional_insured",
+    pattern: /\b(additional insured|addl\.?\s*insr|ai endorsement|named as insured|add .* as an insured)\b/i,
+  },
+  {
+    kind: "named_insured",
+    pattern: /\b(named insured|add .* as named insured|change insured name|insured name change)\b/i,
+  },
+  {
+    kind: "waiver_of_subrogation",
+    pattern: /\b(waiver of subrogation|subrogation waived|subr\s*wvd|wos)\b/i,
+  },
+  {
+    kind: "primary_non_contributory",
+    pattern: /\b(primary\s*(?:and|&)?\s*non[-\s]?contributory|primary non[-\s]?contributory|pnc)\b/i,
+  },
+  {
+    kind: "loss_payee",
+    pattern: /\b(loss payee|lender'?s loss payable)\b/i,
+  },
+  {
+    kind: "mortgagee",
+    pattern: /\b(mortgagee|mortgage holder|lender clause)\b/i,
+  },
+  {
+    kind: "special_wording",
+    pattern: /\b(special wording|specific wording|wording must say|description of operations|certificate wording)\b/i,
+  },
+  {
+    kind: "policy_change",
+    pattern: /\b(endorsement required|requires endorsement|policy change|change request|amend policy|modify policy)\b/i,
+  },
+];
+
+const KIND_LABELS: Record<CertificateEndorsementKind, string> = {
+  additional_insured: "additional insured",
+  named_insured: "named insured",
+  waiver_of_subrogation: "waiver of subrogation",
+  primary_non_contributory: "primary and non-contributory",
+  loss_payee: "loss payee",
+  mortgagee: "mortgagee",
+  special_wording: "special certificate wording",
+  policy_change: "policy change",
+};
+
+const SUPPORT_PATTERNS: Record<CertificateEndorsementKind, RegExp> = {
+  additional_insured:
+    /\b(additional insured|additional insureds|blanket additional insured|automatic additional insured|where required by written contract|as required by contract|scheduled additional insured)\b/i,
+  named_insured: /\b(named insured|insured shown|named insured schedule|additional named insured)\b/i,
+  waiver_of_subrogation:
+    /\b(waiver of subrogation|transfer of rights.*waived|subrogation.*waived|where required by written contract|as required by contract)\b/i,
+  primary_non_contributory:
+    /\b(primary and non[-\s]?contributory|primary non[-\s]?contributory|non[-\s]?contributory|primary insurance)\b/i,
+  loss_payee: /\b(loss payee|loss payable|lender'?s loss payable)\b/i,
+  mortgagee: /\b(mortgagee|mortgage holder|lender'?s loss payable)\b/i,
+  special_wording: /\b(description of operations|certificate holder|additional insured|waiver|primary|non[-\s]?contributory)\b/i,
+  policy_change: /\b(endorsement|policy change|change request|amend(?:ment)?|modified by endorsement)\b/i,
+};
+
+const NEGATIVE_PATTERN =
+  /\b(not automatically|no automatic|must be endorsed|only by endorsement|requires endorsement|not included|excluded|no coverage|does not apply|not shown|not listed)\b/i;
+
+export function inferCertificateEndorsements(params: {
+  certificateHolder?: string;
+  requestText?: string;
+  requestedEndorsements?: string[];
+}): CertificateEndorsementKind[] {
+  const text = [
+    params.certificateHolder,
+    params.requestText,
+    ...(params.requestedEndorsements ?? []),
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const kinds = new Set<CertificateEndorsementKind>();
+  for (const item of params.requestedEndorsements ?? []) {
+    const normalized = normalizeKind(item);
+    if (normalized) kinds.add(normalized);
+  }
+  for (const rule of ENDORSEMENT_PATTERNS) {
+    if (rule.pattern.test(text)) kinds.add(rule.kind);
+  }
+  return [...kinds];
+}
+
+export function evaluateCertificateRequestGate(params: {
+  certificateHolder?: string;
+  requestText?: string;
+  requestedEndorsements?: string[];
+  policy?: Record<string, unknown> | null;
+  sourceSpans?: SourceSpanLike[];
+}): CertificateGateVerdict {
+  const requiredChanges = inferCertificateEndorsements(params);
+  if (requiredChanges.length === 0) {
+    return { status: "allowed", requiredChanges, evidence: [] };
+  }
+
+  const evidenceCorpus = buildEvidenceCorpus(params.policy, params.sourceSpans);
+  if (evidenceCorpus.length === 0) {
+    return held({
+      reasonCode: "missing_policy_evidence",
+      reasonMessage:
+        "I need the broker to review this before issuing the certificate because I could not find source-backed policy wording for the requested endorsement language.",
+      requiredChanges,
+      evidence: [],
+    });
+  }
+
+  const evidence: CertificateGateEvidence[] = [];
+  const missing: CertificateEndorsementKind[] = [];
+  const conflicting: CertificateEndorsementKind[] = [];
+
+  for (const kind of requiredChanges) {
+    const support = evidenceCorpus
+      .filter((item) => SUPPORT_PATTERNS[kind].test(item.text))
+      .slice(0, 3);
+    const negative = support.filter((item) => NEGATIVE_PATTERN.test(item.text));
+    if (negative.length > 0) {
+      conflicting.push(kind);
+      evidence.push(...negative.map(toGateEvidence));
+      continue;
+    }
+    if (support.length === 0) {
+      missing.push(kind);
+      continue;
+    }
+    evidence.push(...support.map(toGateEvidence));
+  }
+
+  if (conflicting.length > 0) {
+    return held({
+      reasonCode: "conflicting_policy_evidence",
+      reasonMessage: `I found policy wording that may require broker action before adding ${formatKinds(conflicting)} to this certificate.`,
+      requiredChanges,
+      evidence: uniqueEvidence(evidence),
+    });
+  }
+
+  if (missing.length > 0) {
+    return held({
+      reasonCode: "policy_change_required",
+      reasonMessage: `I could not confirm from the policy wording that ${formatKinds(missing)} can be added to this certificate without a policy change.`,
+      requiredChanges,
+      evidence: uniqueEvidence(evidence),
+    });
+  }
+
+  return {
+    status: "allowed",
+    requiredChanges,
+    evidence: uniqueEvidence(evidence),
+  };
+}
+
+function normalizeKind(value: string): CertificateEndorsementKind | undefined {
+  const text = value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  if (!text) return undefined;
+  if (/additional insured|addl insr/.test(text)) return "additional_insured";
+  if (/named insured/.test(text)) return "named_insured";
+  if (/waiver|subrogation|wos/.test(text)) return "waiver_of_subrogation";
+  if (/primary|non contributory|pnc/.test(text)) return "primary_non_contributory";
+  if (/loss payee/.test(text)) return "loss_payee";
+  if (/mortgagee|mortgage holder/.test(text)) return "mortgagee";
+  if (/wording|description/.test(text)) return "special_wording";
+  if (/endorsement|policy change|change request/.test(text)) return "policy_change";
+  return undefined;
+}
+
+function buildEvidenceCorpus(
+  policy?: Record<string, unknown> | null,
+  sourceSpans?: SourceSpanLike[],
+) {
+  const items = [];
+  for (const span of sourceSpans ?? []) {
+    const text = span.text?.trim();
+    if (!text) continue;
+    items.push({
+      label: span.sectionId ?? span.formNumber ?? "Policy source",
+      text,
+      sourceSpanIds: span.spanId ? [span.spanId] : undefined,
+      pageStart: span.pageStart,
+      pageEnd: span.pageEnd,
+    });
+  }
+
+  const structured = [
+    policy?.summary,
+    policy?.coverages,
+    policy?.endorsements,
+    policy?.supplementaryFacts,
+    policy?.document,
+  ];
+  for (const item of structured) {
+    const text = stringifyEvidence(item);
+    if (!text) continue;
+    items.push({ label: "Extracted policy data", text });
+  }
+  return items;
+}
+
+function stringifyEvidence(value: unknown): string | undefined {
+  if (value === null || value === undefined) return undefined;
+  if (typeof value === "string") return value.trim() || undefined;
+  try {
+    const text = JSON.stringify(value);
+    return text.length > 60000 ? text.slice(0, 60000) : text;
+  } catch {
+    return undefined;
+  }
+}
+
+function toGateEvidence(item: {
+  label: string;
+  text: string;
+  sourceSpanIds?: string[];
+  pageStart?: number;
+  pageEnd?: number;
+}): CertificateGateEvidence {
+  return {
+    label: item.label,
+    excerpt: item.text.slice(0, 900),
+    sourceSpanIds: item.sourceSpanIds,
+    pageStart: item.pageStart,
+    pageEnd: item.pageEnd,
+  };
+}
+
+function uniqueEvidence(evidence: CertificateGateEvidence[]) {
+  const seen = new Set<string>();
+  const result: CertificateGateEvidence[] = [];
+  for (const item of evidence) {
+    const key = `${item.sourceSpanIds?.join(",") ?? ""}:${item.excerpt.slice(0, 120)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(item);
+  }
+  return result.slice(0, 6);
+}
+
+function held(
+  params: Omit<Extract<CertificateGateVerdict, { status: "held" }>, "status">,
+): Extract<CertificateGateVerdict, { status: "held" }> {
+  return { status: "held", ...params };
+}
+
+function formatKinds(kinds: CertificateEndorsementKind[]) {
+  return kinds.map((kind) => KIND_LABELS[kind]).join(", ");
+}

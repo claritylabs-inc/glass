@@ -18,10 +18,15 @@ describe("certificate API surfaces", () => {
     expect(http).toContain("authority_type");
     expect(http).toContain("certification_status");
     expect(http).toContain("standing_authorization_id");
+    expect(http).toContain("requestedEndorsements");
+    expect(http).toContain("requestText");
 
     expect(mcpPolicies).toContain('"list_policy_certificates"');
     expect(mcpPolicies).toContain('"generate_policy_certificate"');
+    expect(mcpPolicies).toContain("requestedEndorsements");
+    expect(mcpPolicies).toContain("requestText");
     expect(mcpClient).toContain('/mcp/policies/certificates/list');
     expect(mcpClient).toContain('/mcp/policies/certificates/generate');
+    expect(mcpClient).toContain("requestedEndorsements");
   });
 });

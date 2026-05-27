@@ -899,6 +899,8 @@ function buildTools(
       execute: async (input: {
         policyId: string;
         certificateHolder?: string;
+        requestText?: string;
+        requestedEndorsements?: string[];
         partnerProgramId?: string;
       }) => {
         // Check org settings — autoGenerateCoi defaults to true if not set
@@ -937,6 +939,8 @@ function buildTools(
               holderName:
                 input.certificateHolder?.split(/\r?\n/)[0]?.trim() || "Certificate holder",
               certificateHolder: input.certificateHolder,
+              requestText: input.requestText,
+              requestedEndorsements: input.requestedEndorsements,
               selectedPartnerProgramId: normalizeSelectedPartnerProgramId(
                 input.partnerProgramId,
               ),
@@ -945,6 +949,17 @@ function buildTools(
             },
           );
           if (!generated) return COI_GENERATION_FAILED_MESSAGE;
+          if (generated.status === "held_policy_change_required") {
+            return {
+              message: generated.message,
+              holdId: generated.holdId,
+              policyChangeCaseId: generated.policyChangeCaseId,
+              requiredChanges: generated.requiredChanges,
+              reasonCode: generated.reasonCode,
+              evidence: generated.evidence,
+              brokerHandoffOffered: generated.brokerHandoffOffered,
+            };
+          }
           if (generated.status === "pending_approval") {
             return {
               message: "Certified COI request created and sent to the program administrator for approval.",
@@ -2104,6 +2119,20 @@ export const run = internalAction({
               (part as Record<string, unknown>).output
             ) {
               const output = (part as Record<string, unknown>).output;
+              if (
+                output &&
+                typeof output === "object" &&
+                "holdId" in output
+              ) {
+                toolArtifacts.push({
+                  type: "certificate_hold",
+                  data: output,
+                });
+                const caseId = (output as Record<string, unknown>).policyChangeCaseId;
+                if (typeof caseId === "string" && caseId) {
+                  policyChangeCaseId = caseId as Id<"policyChangeCases">;
+                }
+              }
               if (
                 output &&
                 typeof output === "object" &&

@@ -1051,6 +1051,15 @@ export const completeFromEndorsement = internalMutation({
         createdByUserId: args.userId,
         createdAt: now,
       });
+      const holds = await ctx.db
+        .query("certificateRequestHolds")
+        .withIndex("by_policyChangeCaseId", (q) =>
+          q.eq("policyChangeCaseId", args.caseId!),
+        )
+        .collect();
+      for (const hold of holds) {
+        await ctx.db.patch(hold._id, { status: "resolved", updatedAt: now });
+      }
     }
 
     await ctx.db.insert("policyAuditLog", {
