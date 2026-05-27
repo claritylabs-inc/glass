@@ -65,7 +65,6 @@ import {
   buildEmailPayload,
   buildEmailSignature,
   buildEmailExpertTool,
-  getEmailAgentFromName,
   resolveEmailAgentIdentity,
   upsertEmailDraftArtifact,
   type EmailSubagentResult,
@@ -1092,9 +1091,6 @@ function buildTools(
           const toolOrg = org ?? await ctx.runQuery(internal.orgs.getInternal, {
             id: args.orgId as Id<"organizations">,
           });
-          const thread = await ctx.runQuery(internal.threads.getInternal, {
-            id: args.threadId as Id<"threads">,
-          });
           const emailIdentity = toolOrg ? await resolveEmailAgentIdentity(ctx, toolOrg) : null;
           if (emailIdentity?.canSend && emailIdentity.agentAddress && emailIdentity.fromHeader) {
             pendingEmailId = await upsertEmailDraftArtifact(ctx, {
@@ -1104,7 +1100,6 @@ function buildTools(
               channel: "web",
               fromHeader: emailIdentity.fromHeader,
               agentAddress: emailIdentity.agentAddress,
-              replyTo: thread?.threadEmail,
               brokerBranding: emailIdentity.brokerBranding,
             }, {
               to: draft.recipientEmail,
@@ -1765,8 +1760,8 @@ export const run = internalAction({
         emailIdentity.agentAddress &&
         emailIdentity.fromHeader
       ) {
-        const agentAddress = thread?.threadEmail ?? emailIdentity.agentAddress;
-        const fromHeader = `${getEmailAgentFromName(emailIdentity.brokerBranding)} <${agentAddress}>`;
+        const agentAddress = emailIdentity.agentAddress;
+        const fromHeader = emailIdentity.fromHeader;
         const signature = buildEmailSignature(agentAddress, emailIdentity.brokerBranding);
         let revisedCount = 0;
         let repairedAttachmentCount = 0;
@@ -1864,8 +1859,8 @@ export const run = internalAction({
                 threadId: args.threadId,
                 chatMessageId: agentMsgId,
                 channel: "web",
-                fromHeader: `${getEmailAgentFromName(emailIdentity.brokerBranding)} <${thread?.threadEmail ?? emailIdentity.agentAddress}>`,
-                agentAddress: thread?.threadEmail ?? emailIdentity.agentAddress,
+                fromHeader: emailIdentity.fromHeader,
+                agentAddress: emailIdentity.agentAddress,
                 brokerBranding: emailIdentity.brokerBranding,
                 senderEmail: user?.email,
                 defaultTo: brokerDirectedEmailRequest

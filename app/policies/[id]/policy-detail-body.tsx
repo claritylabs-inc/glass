@@ -1283,6 +1283,108 @@ function PolicyBreakdownEditor({
   );
 }
 
+type DeclarationDiscrepancy = {
+  _id: Id<"declarationDiscrepancies">;
+  fieldGroup: string;
+  likelyCurrentValue?: string;
+  severity: "info" | "warning" | "critical";
+  status: "open" | "notified" | "confirmed" | "dismissed" | "case_created";
+  updatedAt: number;
+  conflictingValues: Array<{
+    displayValue?: string;
+    normalizedValue?: string;
+    policyLabels?: Array<{ policyId: string; label: string }>;
+  }>;
+};
+
+function formatDeclarationFieldGroup(fieldGroup: string) {
+  return fieldGroup
+    .split("_")
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+function DeclarationDiscrepancyList({
+  discrepancies,
+}: {
+  discrepancies: DeclarationDiscrepancy[];
+}) {
+  if (discrepancies.length === 0) return null;
+
+  return (
+    <section className="rounded-lg border border-amber-500/20 bg-amber-500/[0.035] p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="text-body-sm font-medium text-foreground">
+            Declaration mismatches
+          </h3>
+          <p className="mt-1 max-w-3xl text-label-sm leading-5 text-muted-foreground">
+            Glass found declaration values that do not match across active
+            policies. Confirm the current value before using these fields in
+            certificates, renewals, or change requests.
+          </p>
+        </div>
+        <span className="rounded-full border border-amber-500/20 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300">
+          {discrepancies.length} open
+        </span>
+      </div>
+
+      <div className="mt-4 space-y-3">
+        {discrepancies.map((discrepancy) => (
+          <div
+            key={discrepancy._id}
+            className="rounded-md border border-foreground/6 bg-background/70 p-3"
+          >
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-label-sm font-medium text-foreground">
+                  {formatDeclarationFieldGroup(discrepancy.fieldGroup)}
+                </p>
+                <p className="mt-1 text-label-sm text-muted-foreground">
+                  Likely current value:{" "}
+                  <span className="text-foreground">
+                    {discrepancy.likelyCurrentValue ?? "Needs confirmation"}
+                  </span>
+                </p>
+              </div>
+              <span className="rounded-full border border-foreground/8 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                Updated {dayjs(discrepancy.updatedAt).format("MMM D")}
+              </span>
+            </div>
+
+            <div className="mt-3 grid gap-2 md:grid-cols-2">
+              {discrepancy.conflictingValues.map((value, index) => (
+                <div
+                  key={`${value.normalizedValue ?? value.displayValue ?? "value"}-${index}`}
+                  className="rounded-md border border-foreground/6 p-2"
+                >
+                  <p className="text-label-sm font-medium text-foreground">
+                    {value.displayValue ?? value.normalizedValue ?? "Unknown"}
+                  </p>
+                  {value.policyLabels && value.policyLabels.length > 0 && (
+                    <div className="mt-1 flex flex-wrap gap-1.5">
+                      {value.policyLabels.map((policy) => (
+                        <Link
+                          key={policy.policyId}
+                          href={`/policies/${policy.policyId}`}
+                          className="rounded-full border border-foreground/8 px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                        >
+                          {policy.label}
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function PolicyChangesTab({
   policyId,
   canManage,
@@ -1298,6 +1400,13 @@ function PolicyChangesTab({
   const cases = useCachedQuery(
     "policyChanges.listByPolicy",
     api.policyChanges.listByPolicy,
+    {
+      policyId: policyId as Id<"policies">,
+    },
+  );
+  const declarationDiscrepancies = useCachedQuery(
+    "declarationFacts.listForPolicy",
+    api.declarationFacts.listForPolicy,
     {
       policyId: policyId as Id<"policies">,
     },
@@ -1320,7 +1429,7 @@ function PolicyChangesTab({
   const markStatus = useMutation(api.policyChanges.markStatus);
   const cancelRequest = useMutation(api.policyChanges.cancelRequest);
 
-  if (cases === undefined) {
+  if (cases === undefined || declarationDiscrepancies === undefined) {
     return (
       <div className="space-y-2">
         {Array.from({ length: 3 }).map((_, i) => (
@@ -1332,10 +1441,15 @@ function PolicyChangesTab({
 
   if (cases.length === 0) {
     return (
-      <div className="rounded-lg border border-foreground/6 bg-card px-4 py-6 text-center">
-        <p className="text-body-sm text-muted-foreground">
-          No policy change requests recorded yet.
-        </p>
+      <div className="space-y-3">
+        <DeclarationDiscrepancyList
+          discrepancies={declarationDiscrepancies}
+        />
+        <div className="rounded-lg border border-foreground/6 bg-card px-4 py-6 text-center">
+          <p className="text-body-sm text-muted-foreground">
+            No policy change requests recorded yet.
+          </p>
+        </div>
       </div>
     );
   }
@@ -1429,6 +1543,9 @@ function PolicyChangesTab({
   if (!canManage) {
     return (
       <div className="space-y-3">
+        <DeclarationDiscrepancyList
+          discrepancies={declarationDiscrepancies}
+        />
         {cases.map((change) => {
           const missingInfoCount = Array.isArray(change.missingInfoQuestions)
             ? change.missingInfoQuestions.length
@@ -1516,6 +1633,14 @@ function PolicyChangesTab({
 
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(260px,0.9fr)_minmax(0,1.4fr)]">
+      {declarationDiscrepancies.length > 0 && (
+        <div className="lg:col-span-2">
+          <DeclarationDiscrepancyList
+            discrepancies={declarationDiscrepancies}
+          />
+        </div>
+      )}
+
       <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
         {cases.map((change) => {
           const missingInfoCount = Array.isArray(change.missingInfoQuestions)

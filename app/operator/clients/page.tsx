@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import dayjs from "dayjs";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { useRouter } from "next/navigation";
+import { isValidPhoneNumber } from "react-phone-number-input";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { AppShell } from "@/components/app-shell";
@@ -48,6 +49,7 @@ type ClientRow = {
   inviteStatus?: "draft" | "invited";
   primaryContactName?: string;
   primaryContactEmail?: string;
+  primaryContactPhone?: string;
   adminName?: string;
   adminEmail?: string;
   adminPhone?: string;
@@ -75,27 +77,44 @@ function normalizeIdentifierInput(value: string) {
   return withoutDomain.replace(/[^a-z0-9-]/g, "").replace(/^-+|-+$/g, "");
 }
 
+function isValidOptionalEmail(value: string) {
+  const trimmed = value.trim();
+  return !trimmed || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed);
+}
+
+function isValidOptionalPhone(value: string) {
+  const trimmed = value.trim();
+  return !trimmed || isValidPhoneNumber(trimmed);
+}
+
+function saveStatusLabel(args: {
+  dirty: boolean;
+  status: "idle" | "saving" | "saved" | "error";
+  validationError: string | null;
+}) {
+  if (args.validationError) return args.validationError;
+  if (args.status === "saving") return "Saving";
+  if (args.status === "error") return "Not saved";
+  if (args.status === "saved" && !args.dirty) return "Saved";
+  if (args.dirty) return "Waiting";
+  return null;
+}
+
 function Field({
   label,
   children,
+  error,
 }: {
   label: string;
   children: React.ReactNode;
+  error?: string | null;
 }) {
   return (
     <label className="block space-y-1.5">
       <span className="text-label-sm font-medium text-muted-foreground">{label}</span>
       {children}
+      {error ? <span className="block text-label-sm text-destructive">{error}</span> : null}
     </label>
-  );
-}
-
-function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="flex items-start justify-between gap-4 border-b border-foreground/6 py-2.5 last:border-b-0">
-      <dt className="shrink-0 text-label-sm font-medium text-muted-foreground">{label}</dt>
-      <dd className="min-w-0 text-right text-body-sm text-foreground">{value}</dd>
-    </div>
   );
 }
 
@@ -157,13 +176,21 @@ export default function OperatorClientsPage() {
   const [adminEmail, setAdminEmail] = useState("");
   const [adminName, setAdminName] = useState("");
   const [adminPhone, setAdminPhone] = useState("");
+  const [editBrokerOrgId, setEditBrokerOrgId] = useState<string>(STANDALONE_VALUE);
+  const [editWebsite, setEditWebsite] = useState("");
+  const [editAgentHandle, setEditAgentHandle] = useState("");
+  const [editPrimaryContactName, setEditPrimaryContactName] = useState("");
+  const [editPrimaryContactEmail, setEditPrimaryContactEmail] = useState("");
+  const [editPrimaryContactPhone, setEditPrimaryContactPhone] = useState("");
   const [busy, setBusy] = useState(false);
+  const [settingsDirty, setSettingsDirty] = useState(false);
+  const [settingsSaveStatus, setSettingsSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [debouncedAgentHandle, setDebouncedAgentHandle] = useState("");
 
   const current = useCachedOperatorCurrent();
   const clients = useCachedOperatorClients() as ClientRow[] | undefined;
   const brokers = useCachedOperatorBrokers() as BrokerOption[] | undefined;
-  const { seedClient, patchClientStatus } = useOperatorClientCacheActions();
+  const { seedClient, patchClientStatus, patchClientSettings } = useOperatorClientCacheActions();
   const handleAvailability = useQuery(
     api.orgs.checkHandleAvailability,
     debouncedAgentHandle ? { handle: debouncedAgentHandle } : "skip",
@@ -174,6 +201,7 @@ export default function OperatorClientsPage() {
   const launchClient = useAction((api as any).operator.launchSoloClient);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const setClientStatus = useMutation((api as any).operator.setSoloClientStatus);
+  const updateClientSettings = useMutation(api.operator.updateClientSettings);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const startImpersonation = useMutation((api as any).operator.startImpersonation);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -187,6 +215,15 @@ export default function OperatorClientsPage() {
     () => brokers?.find((broker) => broker._id === brokerOrgId) ?? null,
     [brokerOrgId, brokers],
   );
+  const selectedEditBroker = useMemo(
+    () => brokers?.find((broker) => broker._id === editBrokerOrgId) ?? null,
+    [editBrokerOrgId, brokers],
+  );
+  const clientSettingsValidationError = !isValidOptionalEmail(editPrimaryContactEmail)
+    ? "Enter a valid email"
+    : !isValidOptionalPhone(editPrimaryContactPhone)
+      ? "Enter a valid phone number"
+      : null;
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedAgentHandle(agentHandle), 250);
@@ -263,10 +300,6 @@ export default function OperatorClientsPage() {
     }
   }
 
-  function contactName(client: ClientRow) {
-    return client.adminName ?? client.primaryContactName;
-  }
-
   function contactEmail(client: ClientRow) {
     return client.adminEmail ?? client.primaryContactEmail;
   }
@@ -274,6 +307,87 @@ export default function OperatorClientsPage() {
   function brokerLabel(client: ClientRow) {
     return client.brokerName ?? "Standalone";
   }
+
+  function primeEditState(client: ClientRow) {
+    setEditBrokerOrgId(client.brokerOrgId ?? STANDALONE_VALUE);
+    setEditWebsite(client.website ?? "");
+    setEditAgentHandle(client.agentHandle ?? "");
+    setEditPrimaryContactName(client.primaryContactName ?? client.adminName ?? "");
+    setEditPrimaryContactEmail(client.primaryContactEmail ?? client.adminEmail ?? "");
+    setEditPrimaryContactPhone(client.primaryContactPhone ?? client.adminPhone ?? "");
+    setSettingsDirty(false);
+    setSettingsSaveStatus("idle");
+  }
+
+  function openDetails(client: ClientRow) {
+    setSelectedId(client._id);
+    primeEditState(client);
+    setPanelMode("details");
+  }
+
+  function markClientSettingsDirty() {
+    setSettingsDirty(true);
+    setSettingsSaveStatus("idle");
+  }
+
+  const saveClientSettings = useCallback(async (client: ClientRow) => {
+    if (clientSettingsValidationError) return;
+    setSettingsSaveStatus("saving");
+    const nextBrokerOrgId =
+      editBrokerOrgId === STANDALONE_VALUE
+        ? undefined
+        : editBrokerOrgId as Id<"organizations">;
+    try {
+      await updateClientSettings({
+        clientOrgId: client._id,
+        brokerOrgId: nextBrokerOrgId,
+        website: editWebsite || undefined,
+        agentHandle: editAgentHandle || undefined,
+        primaryContactName: editPrimaryContactName || undefined,
+        primaryContactEmail: editPrimaryContactEmail || undefined,
+        primaryContactPhone: editPrimaryContactPhone || undefined,
+      });
+      await patchClientSettings(client._id, {
+        brokerOrgId: nextBrokerOrgId,
+        brokerName: selectedEditBroker?.name,
+        website: editWebsite || undefined,
+        agentHandle: editAgentHandle || undefined,
+        primaryContactName: editPrimaryContactName || undefined,
+        primaryContactEmail: editPrimaryContactEmail || undefined,
+        primaryContactPhone: editPrimaryContactPhone || undefined,
+      });
+      setSettingsDirty(false);
+      setSettingsSaveStatus("saved");
+    } catch (error) {
+      setSettingsSaveStatus("error");
+      toast.error(error instanceof Error ? error.message : "Failed to save client settings");
+    }
+  }, [
+    clientSettingsValidationError,
+    editAgentHandle,
+    editBrokerOrgId,
+    editPrimaryContactEmail,
+    editPrimaryContactName,
+    editPrimaryContactPhone,
+    editWebsite,
+    patchClientSettings,
+    selectedEditBroker,
+    updateClientSettings,
+  ]);
+
+  useEffect(() => {
+    if (panelMode !== "details" || !selected || !settingsDirty || clientSettingsValidationError) return;
+    const timer = window.setTimeout(() => {
+      void saveClientSettings(selected);
+    }, 800);
+    return () => window.clearTimeout(timer);
+  }, [
+    clientSettingsValidationError,
+    panelMode,
+    saveClientSettings,
+    selected,
+    settingsDirty,
+  ]);
 
   async function moveToOnboarding(client: ClientRow) {
     setBusy(true);
@@ -311,6 +425,11 @@ export default function OperatorClientsPage() {
       </PillButton>
     </>
   );
+  const clientSettingsSaveLabel = saveStatusLabel({
+    dirty: settingsDirty,
+    status: settingsSaveStatus,
+    validationError: clientSettingsValidationError,
+  });
 
   const rightPanel = (
     <SettingsDrawer
@@ -318,7 +437,32 @@ export default function OperatorClientsPage() {
       onOpenChange={(open) => {
         if (!open) setPanelMode(null);
       }}
-      title={panelMode === "create" ? "Create client" : selected?.name ?? "Client details"}
+      title={
+        panelMode === "create" || !selected ? (
+          "Create client"
+        ) : (
+          <span className="flex min-w-0 flex-1 items-center justify-between gap-3">
+            <span className="min-w-0 truncate">{selected.name}</span>
+            <span className="flex shrink-0 items-center gap-2">
+              <Badge variant={selected.operatorStatus === "live" ? "default" : "secondary"}>
+                {selected.operatorStatus === "live" ? "Live" : "Onboarding"}
+              </Badge>
+              {settingsSaveStatus === "saving" ? (
+                <Loader2 className="h-3 w-3 shrink-0 animate-spin text-muted-foreground" />
+              ) : null}
+              {clientSettingsSaveLabel ? (
+                <span className={`max-w-28 truncate text-label-sm font-normal ${
+                  clientSettingsValidationError || settingsSaveStatus === "error"
+                    ? "text-destructive"
+                    : "text-muted-foreground"
+                }`}>
+                  {clientSettingsSaveLabel}
+                </span>
+              ) : null}
+            </span>
+          </span>
+        )
+      }
       footer={
         panelMode === "create" ? (
           <PillButton
@@ -460,44 +604,113 @@ export default function OperatorClientsPage() {
         </form>
       ) : selected ? (
         <div className="space-y-4">
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <p className="truncate text-body-sm font-medium text-foreground">{selected.name}</p>
-              <p className="mt-1 truncate text-label-sm text-muted-foreground">
-                {contactName(selected) ?? contactEmail(selected) ?? "No admin contact"}
-              </p>
-            </div>
-            <Badge variant={selected.operatorStatus === "live" ? "default" : "secondary"}>
-              {selected.operatorStatus === "live" ? "Live" : "Onboarding"}
-            </Badge>
-          </div>
-          <dl className="border-t border-foreground/6">
-            <DetailRow
-              label="Broker"
-              value={<span className="block truncate">{brokerLabel(selected)}</span>}
-            />
-            <DetailRow
-              label="Contact"
-              value={<span className="block truncate">{contactEmail(selected) ?? "Not set"}</span>}
-            />
-            <DetailRow
-              label="Admin phone"
-              value={<span className="block truncate">{selected.adminPhone ?? "Not set"}</span>}
-            />
-            <DetailRow
-              label="Invite"
-              value={<span className="block truncate">{selected.inviteStatus ?? "Accepted"}</span>}
-            />
-            <DetailRow
-              label="Website"
-              value={<span className="block truncate">{selected.website ?? "Not set"}</span>}
-            />
-            <DetailRow
-              label="Agent handle"
-              value={<span className="block truncate">{selected.agentHandle ?? "Not set"}</span>}
-            />
-            <DetailRow label="Created" value={dayjs(selected.createdAt).format("MMM D, YYYY")} />
-          </dl>
+          <section className="space-y-3">
+            <Field label="Broker">
+              <Select
+                value={editBrokerOrgId}
+                onValueChange={(value) => {
+                  setEditBrokerOrgId(value ?? STANDALONE_VALUE);
+                  markClientSettingsDirty();
+                }}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue>
+                    {selectedEditBroker ? (
+                      <span className="flex min-w-0 items-center gap-2">
+                        <OrgMark
+                          name={selectedEditBroker.name}
+                          iconUrl={selectedEditBroker.iconUrl}
+                          website={selectedEditBroker.website}
+                          size="sm"
+                        />
+                        <span className="truncate">{selectedEditBroker.name}</span>
+                      </span>
+                    ) : (
+                      "Standalone"
+                    )}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={STANDALONE_VALUE}>Standalone</SelectItem>
+                  {(brokers ?? []).map((broker) => (
+                    <SelectItem key={broker._id} value={broker._id}>
+                      <span className="flex min-w-0 items-center gap-2">
+                        <OrgMark name={broker.name} iconUrl={broker.iconUrl} website={broker.website} size="sm" />
+                        <span className="truncate">{broker.name}</span>
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field label="Website">
+              <input
+                className={INPUT_CLASSES}
+                value={editWebsite}
+                onChange={(event) => {
+                  setEditWebsite(event.target.value);
+                  markClientSettingsDirty();
+                }}
+                placeholder="https://client.com"
+              />
+            </Field>
+            <Field label="Agent handle">
+              <div className="flex overflow-hidden rounded-lg border border-foreground/8 bg-popover focus-within:border-foreground/20 focus-within:ring-1 focus-within:ring-foreground/8">
+                <input
+                  className={AFFIXED_INPUT_CLASSES}
+                  value={editAgentHandle}
+                  onChange={(event) => {
+                    setEditAgentHandle(normalizeIdentifierInput(event.target.value));
+                    markClientSettingsDirty();
+                  }}
+                  placeholder="client"
+                />
+                <span className="flex shrink-0 items-center border-l border-foreground/8 bg-muted/35 px-3 text-label-sm text-muted-foreground">
+                  @{AGENT_DOMAIN}
+                </span>
+              </div>
+            </Field>
+            <Field label="Primary contact name">
+              <input
+                className={INPUT_CLASSES}
+                value={editPrimaryContactName}
+                onChange={(event) => {
+                  setEditPrimaryContactName(event.target.value);
+                  markClientSettingsDirty();
+                }}
+                placeholder="Client contact"
+              />
+            </Field>
+            <Field
+              label="Primary contact email"
+              error={!isValidOptionalEmail(editPrimaryContactEmail) ? "Enter a valid email" : null}
+            >
+              <input
+                className={INPUT_CLASSES}
+                value={editPrimaryContactEmail}
+                onChange={(event) => {
+                  setEditPrimaryContactEmail(event.target.value);
+                  markClientSettingsDirty();
+                }}
+                placeholder="client@example.com"
+                type="email"
+              />
+            </Field>
+            <Field
+              label="Primary contact phone"
+              error={!isValidOptionalPhone(editPrimaryContactPhone) ? "Enter a valid phone number" : null}
+            >
+              <PhoneInput
+                value={editPrimaryContactPhone}
+                onChange={(value) => {
+                  setEditPrimaryContactPhone(value ?? "");
+                  markClientSettingsDirty();
+                }}
+                defaultCountry="US"
+                placeholder="(555) 123-4567"
+              />
+            </Field>
+          </section>
         </div>
       ) : null}
     </SettingsDrawer>
@@ -552,15 +765,11 @@ export default function OperatorClientsPage() {
                   <TableRow
                     key={client._id}
                     tabIndex={0}
-                    onClick={() => {
-                      setSelectedId(client._id);
-                      setPanelMode("details");
-                    }}
+                    onClick={() => openDetails(client)}
                     onKeyDown={(event) => {
                       if (event.key !== "Enter" && event.key !== " ") return;
                       event.preventDefault();
-                      setSelectedId(client._id);
-                      setPanelMode("details");
+                      openDetails(client);
                     }}
                     className={`cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 ${
                       selectedId === client._id ? "bg-muted/50" : ""

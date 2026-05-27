@@ -238,6 +238,7 @@ export function useOperatorClientCacheActions() {
         inviteStatus: "draft",
         primaryContactName: input.adminName,
         primaryContactEmail: input.adminEmail,
+        primaryContactPhone: input.adminPhone,
         adminName: input.adminName,
         adminEmail: input.adminEmail,
         adminPhone: input.adminPhone,
@@ -268,7 +269,32 @@ export function useOperatorClientCacheActions() {
     [updateClients],
   );
 
-  return { seedClient, patchClientStatus };
+  const patchClientSettings = useCallback(
+    async (
+      clientOrgId: Id<"organizations">,
+      patch: Partial<
+        Pick<
+          OperatorClientRow,
+          | "brokerOrgId"
+          | "brokerName"
+          | "website"
+          | "agentHandle"
+          | "primaryContactName"
+          | "primaryContactEmail"
+          | "primaryContactPhone"
+        >
+      >,
+    ) => {
+      await updateClients({}, (current) =>
+        current.map((client) =>
+          client._id === clientOrgId ? { ...client, ...patch } : client,
+        ),
+      );
+    },
+    [updateClients],
+  );
+
+  return { seedClient, patchClientStatus, patchClientSettings };
 }
 
 export function useOperatorMGACacheActions() {

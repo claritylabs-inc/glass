@@ -77,8 +77,8 @@ async function sendPendingEmailById(
         ...(payload.headers && typeof payload.headers === "object" ? payload.headers : {}),
         "Message-ID": outboundMessageId,
       };
-      if (thread?.threadEmail && !payload.reply_to) {
-        payload.reply_to = thread.threadEmail;
+      if (thread?.threadEmail && payload.reply_to === thread.threadEmail) {
+        delete payload.reply_to;
       }
       if (pending.attachments && pending.attachments.length > 0) {
         payload.attachments = await toResendAttachments(ctx, pending.attachments);

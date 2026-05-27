@@ -1,13 +1,87 @@
 import dayjs from "dayjs";
 import { v } from "convex/values";
-import { internalMutation } from "./_generated/server";
+import { internalMutation, query } from "./_generated/server";
 import {
   declarationFactHash,
   extractDeclarationFactsFromPolicy,
   findDeclarationDiscrepancies,
   shouldNotifyForDeclarationDiscrepancy,
 } from "./lib/declarationFacts";
+import { getOrgAccess } from "./lib/access";
 import { notify } from "./lib/notify";
+
+export const listForPolicy = query({
+  args: { policyId: v.id("policies") },
+  handler: async (ctx, args) => {
+    const policy = await ctx.db.get(args.policyId);
+    if (!policy?.orgId) return [];
+    const orgId = policy.orgId;
+
+    await getOrgAccess(ctx, orgId);
+
+    const discrepancies = await ctx.db
+      .query("declarationDiscrepancies")
+      .withIndex("by_orgId_status", (q) =>
+        q.eq("orgId", orgId).eq("status", "notified"),
+      )
+      .collect();
+    const openDiscrepancies = await ctx.db
+      .query("declarationDiscrepancies")
+      .withIndex("by_orgId_status", (q) =>
+        q.eq("orgId", orgId).eq("status", "open"),
+      )
+      .collect();
+
+    const visible = [...discrepancies, ...openDiscrepancies]
+      .filter((discrepancy) =>
+        discrepancy.affectedPolicyIds.some((id) => id === args.policyId),
+      )
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+
+    const policyIds = Array.from(
+      new Set(
+        visible.flatMap((discrepancy) =>
+          discrepancy.affectedPolicyIds.map((id) => String(id)),
+        ),
+      ),
+    );
+    const policies = await Promise.all(
+      policyIds.map(async (policyId) => {
+        const row = await ctx.db.get(policyId as typeof args.policyId);
+        return row
+          ? [
+              policyId,
+              row.policyNumber ||
+                row.insuredName ||
+                row.fileName ||
+                "Policy",
+            ]
+          : [policyId, "Policy"];
+      }),
+    );
+    const policyLabels = Object.fromEntries(policies);
+
+    return visible.map((discrepancy) => ({
+      ...discrepancy,
+      affectedPolicyLabels: discrepancy.affectedPolicyIds.map((id) => ({
+        policyId: id,
+        label: policyLabels[String(id)] ?? "Policy",
+      })),
+      conflictingValues: discrepancy.conflictingValues.map((value: {
+        policyIds?: string[];
+        [key: string]: unknown;
+      }) => ({
+        ...value,
+        policyLabels: Array.isArray(value.policyIds)
+          ? value.policyIds.map((policyId: string) => ({
+              policyId,
+              label: policyLabels[policyId] ?? "Policy",
+            }))
+          : [],
+      })),
+    }));
+  },
+});
 
 export const syncPolicyInternal = internalMutation({
   args: { policyId: v.id("policies") },

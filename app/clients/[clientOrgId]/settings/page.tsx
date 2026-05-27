@@ -9,10 +9,12 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 import { BrokerIdentitySection } from "@/components/settings/broker-identity-section";
+import { PolicyDeliverySection } from "@/components/settings/policy-delivery-section";
 import {
   useCachedQuery,
   useUpdateCachedQuery,
 } from "@/lib/sync/use-cached-query";
+import { useClientDetailActions } from "../layout";
 
 type Verification = "strict" | "domain" | "open";
 
@@ -21,6 +23,7 @@ const INPUT_CLASSES =
 
 export default function ClientSettingsPage() {
   const { clientOrgId } = useParams<{ clientOrgId: string }>();
+  const { setActions, setRightPanel } = useClientDetailActions();
   const org = useCachedQuery(
     "orgs.getById.clientSettings",
     api.orgs.getById,
@@ -132,6 +135,12 @@ export default function ClientSettingsPage() {
   return (
     <div className="w-full space-y-6">
       <BrokerIdentitySection orgId={clientOrgId as Id<"organizations">} />
+
+      <PolicyDeliverySection
+        clientOrgId={clientOrgId as Id<"organizations">}
+        setActions={setActions}
+        setRightPanel={setRightPanel}
+      />
 
       <section className="rounded-xl border border-foreground/6 bg-card overflow-hidden">
         <header className="px-6 py-5 border-b border-foreground/6">

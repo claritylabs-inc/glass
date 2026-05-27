@@ -567,6 +567,7 @@ export default defineSchema({
   })
     .index("by_brokerOrgId_status_updatedAt", ["brokerOrgId", "status", "updatedAt"])
     .index("by_clientOrgId_updatedAt", ["clientOrgId", "updatedAt"])
+    .index("by_clientOrgId_status_updatedAt", ["clientOrgId", "status", "updatedAt"])
     .index("by_policyId", ["policyId"])
     .index("by_idempotencyKey", ["idempotencyKey"]),
 
@@ -582,7 +583,8 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index("by_jobId", ["jobId"])
-    .index("by_brokerOrgId_createdAt", ["brokerOrgId", "createdAt"]),
+    .index("by_brokerOrgId_createdAt", ["brokerOrgId", "createdAt"])
+    .index("by_clientOrgId_createdAt", ["clientOrgId", "createdAt"]),
 
   connectedOrgRelationships: defineTable({
     // A client/customer org can view selected insurance system-of-record data
@@ -1983,6 +1985,7 @@ export default defineSchema({
     orgId: v.id("organizations"),
     title: v.string(),
     threadEmail: v.optional(v.string()),
+    deliveryContactKey: v.optional(v.string()),
     createdBy: v.id("users"),
     clientMutationId: v.optional(v.string()),
     lastMessageAt: v.number(),
@@ -2008,7 +2011,6 @@ export default defineSchema({
     visibility: v.optional(
       v.union(v.literal("broker_visible"), v.literal("client_internal")),
     ),
-    deliveryContactKey: v.optional(v.string()),
     threadPhone: v.optional(v.string()),
     imessageChatGuid: v.optional(v.string()),
     imessageIsGroup: v.optional(v.boolean()),

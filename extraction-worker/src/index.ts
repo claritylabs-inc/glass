@@ -1133,7 +1133,14 @@ async function main(): Promise<void> {
   let lastIdleLogAt = 0;
   try {
     while (!shuttingDown) {
-      const job = await claimJob();
+      let job: ClaimedJob | null = null;
+      try {
+        job = await claimJob();
+      } catch (error) {
+        console.error("Failed to claim extraction job:", error);
+        await sleep(POLL_MS);
+        continue;
+      }
       if (job) {
         await processJob(job);
         continue;
