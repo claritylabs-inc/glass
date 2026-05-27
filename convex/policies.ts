@@ -1307,23 +1307,6 @@ export const createBrokerUpload = mutation({
       summary: `Broker uploaded a ${args.documentType} on behalf of client`,
     });
 
-    // Notify client of policy/quote delivery
-    const brokerOrg = await ctx.db.get(access.brokerOrgId);
-    const notifType = args.documentType === "quote" ? "quote_delivered_by_broker" as const : "policy_delivered_by_broker" as const;
-    const notifTitle = args.documentType === "quote" ? "New quote available" : "New policy available";
-    const notifBody = args.documentType === "quote"
-      ? `${brokerOrg?.name ?? "Your broker"} delivered a new quote.`
-      : `${brokerOrg?.name ?? "Your broker"} delivered a new policy.`;
-    await notify(ctx, {
-      orgId: args.clientOrgId,
-      type: notifType,
-      title: notifTitle,
-      body: notifBody,
-      relatedOrgId: access.brokerOrgId,
-      actionType: "view_policy",
-      actionPayload: { policyId },
-    });
-
     return policyId;
   },
 });

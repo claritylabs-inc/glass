@@ -1,6 +1,7 @@
 import dayjs from "dayjs";
 import { v } from "convex/values";
 import { createAccount, getAuthUserId } from "@convex-dev/auth/server";
+import { parsePhoneNumberFromString } from "libphonenumber-js/min";
 import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
@@ -50,6 +51,25 @@ function validateAgentHandle(handle: string | undefined) {
   if (!/^[a-z][a-z0-9-]*[a-z0-9]$/.test(handle)) {
     throw new Error("Agent handle must start with a letter and end with a letter or number");
   }
+}
+
+function normalizeOptionalContactEmail(value: string | undefined) {
+  const email = normalizeOperatorEmail(value);
+  if (!email) return undefined;
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new Error("Enter a valid contact email");
+  }
+  return email;
+}
+
+function normalizeOptionalContactPhone(value: string | undefined) {
+  const phone = value?.trim();
+  if (!phone) return undefined;
+  const parsed = parsePhoneNumberFromString(phone, "US");
+  if (!parsed || !parsed.isValid()) {
+    throw new Error("Enter a valid contact phone number");
+  }
+  return parsed.number;
 }
 
 function operatorOwnerEmails() {
@@ -235,6 +255,7 @@ async function listOperatorClientRows(ctx: QueryCtx) {
         inviteStatus: client.inviteStatus,
         primaryContactName: client.primaryContactName,
         primaryContactEmail: client.primaryContactEmail,
+        primaryContactPhone: client.primaryContactPhone,
         adminName: admin?.name,
         adminEmail: admin?.email,
         adminPhone: admin?.phone,
@@ -627,6 +648,66 @@ export const setSoloClientStatus = mutation({
       targetOrgId: args.clientOrgId,
       summary: `${client.name} changed from ${previous} to ${args.status}`,
       metadata: { previous, next: args.status },
+    });
+  },
+});
+
+export const updateClientSettings = mutation({
+  args: {
+    clientOrgId: v.id("organizations"),
+    brokerOrgId: v.optional(v.id("organizations")),
+    website: v.optional(v.string()),
+    agentHandle: v.optional(v.string()),
+    primaryContactName: v.optional(v.string()),
+    primaryContactEmail: v.optional(v.string()),
+    primaryContactPhone: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const operator = await requireOperator(ctx);
+    const client = await ctx.db.get(args.clientOrgId);
+    if (!client || client.type !== "client") throw new Error("Client not found");
+
+    const broker = args.brokerOrgId ? await ctx.db.get(args.brokerOrgId) : null;
+    if (args.brokerOrgId && (!broker || broker.type !== "broker")) {
+      throw new Error("Broker not found");
+    }
+
+    const agentHandle = normalizeHandle(args.agentHandle);
+    validateAgentHandle(agentHandle);
+    if (agentHandle) {
+      const existingByHandle = await ctx.db
+        .query("organizations")
+        .withIndex("by_agentHandle", (q) => q.eq("agentHandle", agentHandle))
+        .first();
+      if (existingByHandle && existingByHandle._id !== args.clientOrgId) {
+        throw new Error("Agent handle is already taken");
+      }
+    }
+
+    const primaryContactEmail = normalizeOptionalContactEmail(args.primaryContactEmail);
+    const primaryContactPhone = normalizeOptionalContactPhone(args.primaryContactPhone);
+    const patch = {
+      brokerOrgId: args.brokerOrgId,
+      website: args.website?.trim() || undefined,
+      agentHandle,
+      primaryContactName: args.primaryContactName?.trim() || undefined,
+      primaryContactEmail,
+      primaryContactPhone,
+    };
+
+    await ctx.db.patch(args.clientOrgId, patch);
+    await writeOperatorAudit(ctx, {
+      operatorUserId: operator.userId,
+      type: "setup_write",
+      targetOrgId: args.clientOrgId,
+      summary: `Updated client settings for ${client.name}`,
+      metadata: {
+        previousBrokerOrgId: client.brokerOrgId,
+        nextBrokerOrgId: args.brokerOrgId,
+        website: patch.website,
+        agentHandle,
+        primaryContactEmail,
+      },
     });
   },
 });

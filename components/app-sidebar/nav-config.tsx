@@ -7,6 +7,7 @@ import {
   ClipboardCheck,
   FileText,
   FileStack,
+  Send,
   ShieldCheck,
   Settings,
   User,
@@ -115,6 +116,12 @@ export const BROKER_NAV_ITEMS: NavItemConfig[] = [
     label: "Activity",
     icon: Activity,
     shortcut: navShortcut("a"),
+  },
+  {
+    href: "/deliveries",
+    label: "Deliveries",
+    icon: Send,
+    shortcut: navShortcut("d"),
   },
 ];
 

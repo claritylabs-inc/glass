@@ -15,7 +15,7 @@ export function SettingsDrawer({
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  title: string;
+  title: ReactNode;
   children: ReactNode;
   footer?: ReactNode;
 }) {

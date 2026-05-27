@@ -25,6 +25,7 @@ import type * as actions_mailboxCoordinator from "../actions/mailboxCoordinator.
 import type * as actions_mcpChat from "../actions/mcpChat.js";
 import type * as actions_mirrorWebChatToImessage from "../actions/mirrorWebChatToImessage.js";
 import type * as actions_policyChangeRequests from "../actions/policyChangeRequests.js";
+import type * as actions_policyDelivery from "../actions/policyDelivery.js";
 import type * as actions_policyExtraction from "../actions/policyExtraction.js";
 import type * as actions_processThreadChat from "../actions/processThreadChat.js";
 import type * as actions_reExtractFromFile from "../actions/reExtractFromFile.js";
@@ -149,6 +150,7 @@ import type * as pendingEmails from "../pendingEmails.js";
 import type * as policies from "../policies.js";
 import type * as policyAuditLog from "../policyAuditLog.js";
 import type * as policyChanges from "../policyChanges.js";
+import type * as policyDelivery from "../policyDelivery.js";
 import type * as policyFiles from "../policyFiles.js";
 import type * as presence from "../presence.js";
 import type * as rateLimits from "../rateLimits.js";
@@ -181,6 +183,7 @@ declare const fullApi: ApiFromModules<{
   "actions/mcpChat": typeof actions_mcpChat;
   "actions/mirrorWebChatToImessage": typeof actions_mirrorWebChatToImessage;
   "actions/policyChangeRequests": typeof actions_policyChangeRequests;
+  "actions/policyDelivery": typeof actions_policyDelivery;
   "actions/policyExtraction": typeof actions_policyExtraction;
   "actions/processThreadChat": typeof actions_processThreadChat;
   "actions/reExtractFromFile": typeof actions_reExtractFromFile;
@@ -305,6 +308,7 @@ declare const fullApi: ApiFromModules<{
   policies: typeof policies;
   policyAuditLog: typeof policyAuditLog;
   policyChanges: typeof policyChanges;
+  policyDelivery: typeof policyDelivery;
   policyFiles: typeof policyFiles;
   presence: typeof presence;
   rateLimits: typeof rateLimits;

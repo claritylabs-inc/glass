@@ -69,6 +69,23 @@ interface NotificationsPanelProps {
   variant?: "popover" | "pane";
 }
 
+function notificationActionLabel(notification: Notification) {
+  if (!notification.actionType) return undefined;
+  if (notification.type === "policy_declaration_discrepancy") {
+    return "Review declaration mismatches";
+  }
+  switch (notification.actionType) {
+    case "view_policy":
+      return "Open policy";
+    case "view_thread":
+      return "Open thread";
+    case "view_vendor_compliance":
+      return "Open vendor compliance";
+    default:
+      return undefined;
+  }
+}
+
 export function NotificationsPanel({
   orgId,
   onClose,
@@ -265,6 +282,7 @@ export function NotificationsPanel({
               !!(notification.actionType && notification.actionPayload) ||
               (notification.type === "merge_suggestion" &&
                 !!notification.actionPayload);
+            const actionLabel = notificationActionLabel(notification);
 
             return (
               <button
@@ -293,11 +311,20 @@ export function NotificationsPanel({
                       {notification.relatedOrgName}
                     </p>
                   )}
-                  <p className="mt-0.5 line-clamp-2 wrap-break-word text-label-sm text-muted-foreground/60">
+                  <p
+                    className={`mt-0.5 wrap-break-word text-label-sm leading-5 text-muted-foreground/60 ${
+                      variant === "pane" ? "" : "line-clamp-2"
+                    }`}
+                  >
                     {notification.body}
                   </p>
-                  <p className="text-label-sm text-muted-foreground/40 mt-1">
-                    {dayjs(notification.createdAt).fromNow()}
+                  <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-label-sm text-muted-foreground/40">
+                    <span>{dayjs(notification.createdAt).fromNow()}</span>
+                    {actionLabel && (
+                      <span className="text-muted-foreground/60">
+                        {actionLabel}
+                      </span>
+                    )}
                   </p>
                 </div>
                 {isUnread && (

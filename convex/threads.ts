@@ -941,6 +941,52 @@ export const createProactiveInternal = internalMutation({
   },
 });
 
+export const findOrCreateForDeliveryContact = internalMutation({
+  args: {
+    orgId: v.id("organizations"),
+    userId: v.id("users"),
+    contactKey: v.string(),
+    title: v.string(),
+    email: v.optional(v.string()),
+    phone: v.optional(v.string()),
+    agentDomain: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("threads")
+      .withIndex("by_orgId_deliveryContactKey", (q) =>
+        q.eq("orgId", args.orgId).eq("deliveryContactKey", args.contactKey),
+      )
+      .first();
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        lastMessageAt: dayjs().valueOf(),
+        threadPhone: existing.threadPhone ?? args.phone,
+        originChannel: existing.originChannel ?? (args.phone ? "imessage" : "email"),
+      });
+      return existing._id;
+    }
+
+    const domain = args.agentDomain || FALLBACK_AGENT_DOMAIN;
+    const org = await ctx.db.get(args.orgId);
+    const handle = org?.agentHandle;
+    const threadEmail = handle
+      ? `${handle}+${shortId()}@${domain}`
+      : undefined;
+
+    return await ctx.db.insert("threads", {
+      orgId: args.orgId,
+      title: args.title,
+      createdBy: args.userId,
+      lastMessageAt: dayjs().valueOf(),
+      threadEmail,
+      deliveryContactKey: args.contactKey,
+      threadPhone: args.phone,
+      originChannel: args.phone ? "imessage" : "email",
+    });
+  },
+});
+
 export const insertUserMessageInternal = internalMutation({
   args: {
     threadId: v.id("threads"),
