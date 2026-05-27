@@ -126,11 +126,11 @@ export function buildFollowUpThreadContext(
         : `Review the draft below, edit anything that should change, then send it to ${vendorEmail}. If ${event.vendorName} already sent documents, upload them or ask the vendor to reply with the policies, certificates, or endorsements that satisfy these requirements.`;
 
   return [
-    `Glass created this thread because the daily vendor compliance monitor found ${issueCount} ${issueLabel} needing attention for ${event.vendorName}.`,
+    `Glass found ${issueCount} vendor insurance ${issueLabel} needing attention for ${event.vendorName}.`,
     "",
     `Reason: ${event.clientName}'s active vendor requirements do not currently have matching policy evidence in Glass for ${event.vendorName}.`,
     "",
-    "Current gaps:",
+    "What needs attention:",
     ...issuePreview,
     "",
     action,

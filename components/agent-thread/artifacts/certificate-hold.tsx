@@ -31,7 +31,17 @@ function evidenceRows(value: unknown) {
 }
 
 function labelForChange(value: string) {
-  return value.replace(/_/g, " ");
+  const labels: Record<string, string> = {
+    additional_insured: "Additional insured",
+    named_insured: "Named insured",
+    waiver_of_subrogation: "Waiver of subrogation",
+    primary_non_contributory: "Primary and non-contributory",
+    loss_payee: "Loss payee",
+    mortgagee: "Mortgagee",
+    special_wording: "Special certificate wording",
+    policy_change: "Policy change",
+  };
+  return labels[value] ?? value.replace(/_/g, " ");
 }
 
 export function CertificateHoldArtifacts({
@@ -92,7 +102,7 @@ export function CertificateHoldArtifacts({
                   {requiredChanges.map((change) => (
                     <span
                       key={change}
-                      className="rounded-full border border-foreground/10 bg-background px-2 py-0.5 text-[11px] capitalize text-muted-foreground"
+                      className="rounded-full border border-foreground/10 bg-background px-2 py-0.5 text-[11px] text-muted-foreground"
                     >
                       {labelForChange(change)}
                     </span>

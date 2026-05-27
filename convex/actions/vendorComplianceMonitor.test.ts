@@ -22,9 +22,9 @@ describe("buildFollowUpThreadContext", () => {
   test("explains why a vendor compliance draft exists and what to do next", () => {
     const result = buildFollowUpThreadContext(baseEvent, "terry@getcios.com", "draft");
 
-    expect(result).toContain("daily vendor compliance monitor");
+    expect(result).toContain("Glass found 2 vendor insurance compliance items");
     expect(result).toContain("Reason:");
-    expect(result).toContain("Current gaps:");
+    expect(result).toContain("What needs attention:");
     expect(result).toContain("Review the draft below");
     expect(result).toContain("send it to terry@getcios.com");
   });
