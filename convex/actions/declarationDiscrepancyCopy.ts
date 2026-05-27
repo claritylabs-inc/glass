@@ -131,6 +131,9 @@ Rules:
         plainLanguageSummary: copy.plainLanguageSummary,
         recommendedAction: copy.recommendedAction,
       });
+      await ctx.runMutation((internal as any).declarationFacts.notifyCopyInternal, {
+        discrepancyId: row._id,
+      });
     }
 
     return { phrased: rows.length };

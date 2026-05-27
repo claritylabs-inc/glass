@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query, internalQuery, internalMutation } from "./_generated/server";
+import type { MutationCtx } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import { requireOrgAccess, getOrgAccess } from "./lib/orgAuth";
 import {
@@ -34,6 +35,50 @@ type PolicyPipelineLogEntry = {
   phase?: string;
   level?: string;
 };
+
+async function deactivatePolicyDeclarationFacts(
+  ctx: MutationCtx,
+  policyId: DataModelId<"policies">,
+  orgId?: DataModelId<"organizations">,
+) {
+  const now = dayjs().valueOf();
+  const facts = await ctx.db
+    .query("policyDeclarationFacts")
+    .withIndex("by_policyId_active", (q) =>
+      q.eq("policyId", policyId).eq("active", true),
+    )
+    .collect();
+  for (const fact of facts) {
+    await ctx.db.patch(fact._id, { active: false });
+  }
+  if (!orgId) return;
+  const discrepancies = await ctx.db
+    .query("declarationDiscrepancies")
+    .withIndex("by_orgId", (q) => q.eq("orgId", orgId))
+    .filter((q) =>
+      q.or(
+        q.eq(q.field("status"), "open"),
+        q.eq(q.field("status"), "notified"),
+      ),
+    )
+    .collect();
+  for (const discrepancy of discrepancies) {
+    if (!discrepancy.affectedPolicyIds.some((id) => id === policyId)) continue;
+    const remainingPolicies = await Promise.all(
+      discrepancy.affectedPolicyIds
+        .filter((id) => id !== policyId)
+        .map((id) => ctx.db.get(id)),
+    );
+    const activeRemainingCount = remainingPolicies.filter(
+      (policy) => policy && !policy.deletedAt,
+    ).length;
+    if (activeRemainingCount > 1) continue;
+    await ctx.db.patch(discrepancy._id, {
+      status: "dismissed",
+      updatedAt: now,
+    });
+  }
+}
 
 const PIPELINE_LOG_LIMIT = 500;
 const PIPELINE_STALE_REQUEUE_MS = 5 * 60 * 1000;
@@ -1539,7 +1584,8 @@ export const softDelete = mutation({
         policy,
       );
     }
-    await ctx.db.patch(args.id, { deletedAt: Date.now() });
+    await ctx.db.patch(args.id, { deletedAt: dayjs().valueOf() });
+    await deactivatePolicyDeclarationFacts(ctx, args.id, orgId);
     await ctx.db.insert("policyAuditLog", {
       policyId: args.id,
       userId,
@@ -1610,7 +1656,9 @@ export const updateExtractionInternal = internalMutation({
 export const softDeleteInternal = internalMutation({
   args: { id: v.id("policies") },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.id, { deletedAt: Date.now() });
+    const policy = await ctx.db.get(args.id);
+    await ctx.db.patch(args.id, { deletedAt: dayjs().valueOf() });
+    await deactivatePolicyDeclarationFacts(ctx, args.id, policy?.orgId);
   },
 });
 

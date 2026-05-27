@@ -1249,7 +1249,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
           );
           await convexCtx.runMutation(
             (internal as any).declarationFacts.scanOrgInternal,
-            { orgId: finalPolicy.orgId, notifyExternal: true },
+            { orgId: finalPolicy.orgId, notifyExternal: false },
           );
           await convexCtx.runAction(
             (internal as any).actions.declarationDiscrepancyCopy.phraseOpenInternal,

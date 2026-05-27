@@ -10,6 +10,40 @@ import {
 import { getOrgAccess } from "./lib/access";
 import { notify } from "./lib/notify";
 
+function formatDiscrepancyFieldGroup(fieldGroup: string) {
+  const [group, detail] = fieldGroup.split(":", 2);
+  const labels: Record<string, string> = {
+    insured_identity: "named insured",
+    policy_number: "policy number",
+    carrier: "insurance company",
+    insurer: "insurer",
+    producer: "producer",
+    dba: "DBA",
+    entity_type: "entity type",
+    fein: "FEIN",
+    mailing_address: "mailing address",
+    scheduled_location: "location",
+    additional_named_insured: "additional named insured",
+  };
+  const base = labels[group] ?? group.replace(/_/g, " ");
+  return detail ? `${base}: ${detail}` : base;
+}
+
+function fallbackDiscrepancyQuestion(fieldGroup: string) {
+  return `Which ${formatDiscrepancyFieldGroup(fieldGroup)} should Glass use?`;
+}
+
+function fallbackDiscrepancySummary(discrepancy: {
+  fieldGroup: string;
+  likelyCurrentValue?: string;
+}) {
+  const field = formatDiscrepancyFieldGroup(discrepancy.fieldGroup);
+  const likely = discrepancy.likelyCurrentValue?.trim();
+  return likely
+    ? `Active policies do not all show the same ${field}. Glass currently thinks "${likely}" is most likely correct.`
+    : `Active policies do not all show the same ${field}.`;
+}
+
 export const listForPolicy = query({
   args: { policyId: v.id("policies") },
   handler: async (ctx, args) => {
@@ -239,11 +273,13 @@ export const scanOrgInternal = internalMutation({
       upserted += 1;
 
       if (args.notifyExternal && shouldNotifyForDeclarationDiscrepancy(discrepancy)) {
+        const question = fallbackDiscrepancyQuestion(discrepancy.fieldGroup);
+        const summary = fallbackDiscrepancySummary(discrepancy);
         const notificationId = await notify(ctx, {
           orgId: args.orgId,
           type: "policy_declaration_discrepancy",
-          title: "Policy declarations do not match",
-          body: `Glass found conflicting ${discrepancy.fieldGroup.replace(/_/g, " ")} values across policies. Likely current value: ${discrepancy.likelyCurrentValue ?? "needs confirmation"}.`,
+          title: question,
+          body: summary,
           actionType: "view_policy",
           actionPayload: {
             policyId: discrepancy.affectedPolicyIds[0],
@@ -308,5 +344,41 @@ export const updateCopyInternal = internalMutation({
       recommendedAction: args.recommendedAction,
       updatedAt: dayjs().valueOf(),
     });
+  },
+});
+
+export const notifyCopyInternal = internalMutation({
+  args: { discrepancyId: v.id("declarationDiscrepancies") },
+  handler: async (ctx, args) => {
+    const discrepancy = await ctx.db.get(args.discrepancyId);
+    if (!discrepancy || discrepancy.status !== "open") return { notified: false };
+    if (!shouldNotifyForDeclarationDiscrepancy(discrepancy)) return { notified: false };
+    const policyId = discrepancy.affectedPolicyIds[0];
+    if (!policyId) return { notified: false };
+    const notificationId = await notify(ctx, {
+      orgId: discrepancy.orgId,
+      type: "policy_declaration_discrepancy",
+      title: discrepancy.question ?? fallbackDiscrepancyQuestion(discrepancy.fieldGroup),
+      body:
+        discrepancy.plainLanguageSummary ??
+        fallbackDiscrepancySummary(discrepancy),
+      actionType: "view_policy",
+      actionPayload: {
+        policyId,
+        tab: "changes",
+      },
+      sourceRef: { declarationDiscrepancyId: args.discrepancyId },
+      coalesceKeyParts: [
+        "policy_declaration_discrepancy",
+        discrepancy.orgId,
+        discrepancy.fieldGroup,
+      ],
+    });
+    await ctx.db.patch(args.discrepancyId, {
+      status: "notified",
+      notificationId,
+      updatedAt: dayjs().valueOf(),
+    });
+    return { notified: true };
   },
 });

@@ -703,11 +703,11 @@ function PolicyExtractionReview({
           const isConfirming = pendingId === `${questionId}:confirm`;
           const optionCards = [
             ...(recommendedEntry
-              ? [{ ...recommendedEntry, heading: "Recommended Value" }]
+              ? [{ ...recommendedEntry, heading: "Recommended" }]
               : []),
             ...alternativeEntries.map((entry) => ({
               ...entry,
-              heading: "Other Extracted Entry",
+              heading: "Other value found",
             })),
           ];
           return (
@@ -731,7 +731,7 @@ function PolicyExtractionReview({
                 ) : null}
               </div>
 
-              <div className="mt-3 grid gap-3 md:grid-cols-2">
+              <div className="mt-3 divide-y divide-foreground/6 border-y border-foreground/6">
                 {optionCards.map(({ option, key, heading }) => {
                   const details = optionDetailParts(option);
                   const selected = selectedKey === key;
@@ -747,14 +747,14 @@ function PolicyExtractionReview({
                         }))
                       }
                       aria-pressed={selected}
-                      className={`flex min-w-0 flex-wrap items-start justify-between gap-3 rounded-md border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+                      className={`flex w-full min-w-0 flex-wrap items-start justify-between gap-3 px-0 py-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
                         selected
-                          ? "border-foreground/30 bg-foreground/[0.03] hover:border-foreground/40 hover:bg-foreground/[0.04]"
-                          : "border-foreground/10 bg-background hover:border-foreground/20 hover:bg-foreground/[0.02]"
+                          ? "bg-foreground/[0.025]"
+                          : "hover:bg-foreground/[0.015]"
                       }`}
                     >
                       <div className="min-w-0">
-                        <p className="text-label-sm font-medium text-muted-foreground">
+                        <p className="text-[11px] font-medium uppercase tracking-normal text-muted-foreground">
                           {heading}
                         </p>
                         <p className="mt-1 text-body-sm font-medium text-foreground">
@@ -764,7 +764,7 @@ function PolicyExtractionReview({
                           <p className="mt-1 text-[11px] leading-4 text-muted-foreground">
                             {[details.type, details.source]
                               .filter(Boolean)
-                              .join(" | ")}
+                              .join(" from ")}
                           </p>
                         ) : null}
                         {key === recommendedEntry?.key ? (
@@ -1341,6 +1341,40 @@ function displayDeclarationValue(value: string | undefined) {
     .replace(/\bunknown\b/gi, "Unknown");
 }
 
+function humanizeSnake(value: unknown) {
+  if (typeof value !== "string") return "";
+  return value
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^\w/, (char) => char.toUpperCase());
+}
+
+function displayPolicyChangeItemLabel(item: Record<string, unknown>) {
+  const label = String(item.label ?? "").trim();
+  if (label) return label;
+  const field = humanizeSnake(item.fieldPath);
+  return field || "Policy detail";
+}
+
+function displayPolicyChangeValue(value: unknown) {
+  if (value === undefined || value === null || value === "") return "not listed";
+  return String(value)
+    .replace(/\bnull\b/gi, "not listed")
+    .replace(/\bunknown\b/gi, "Unknown");
+}
+
+function displayValidationMessage(issue: Record<string, unknown>) {
+  const message = String(issue.message ?? "").trim();
+  if (message) {
+    return message
+      .replace(/source-span evidence/gi, "supporting policy evidence")
+      .replace(/source span/gi, "policy evidence");
+  }
+  const code = humanizeSnake(issue.code);
+  return code || "Review this item before sending.";
+}
+
 function DeclarationDiscrepancyList({
   discrepancies,
 }: {
@@ -1736,12 +1770,17 @@ function PolicyChangesTab({
                 </span>
               </div>
               <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
-                <span>{change.sourceKind.replace("_", " ")}</span>
+                <span>{humanizeSnake(change.sourceKind)}</span>
                 <span>{dayjs(change.updatedAt).format("MMM D, YYYY")}</span>
-                <span>{missingInfoCount} questions</span>
-                <span>{validationIssueCount} validation issues</span>
-                {(change.evidenceSourceIds?.length ?? 0) > 0 && (
-                  <span>{change.evidenceSourceIds!.length} evidence spans</span>
+                {missingInfoCount > 0 && (
+                  <span>
+                    {missingInfoCount} answer{missingInfoCount === 1 ? "" : "s"} needed
+                  </span>
+                )}
+                {validationIssueCount > 0 && (
+                  <span>
+                    {validationIssueCount} item{validationIssueCount === 1 ? "" : "s"} to review
+                  </span>
                 )}
               </div>
             </button>
@@ -1859,43 +1898,42 @@ function PolicyChangesTab({
             <div className="p-4 grid gap-4 xl:grid-cols-2">
               <section>
                 <h3 className="text-label-sm font-medium text-foreground">
-                  Affected Values
+                  Requested changes
                 </h3>
-                <div className="mt-2 space-y-2">
+                <div className="mt-2 divide-y divide-foreground/6 border-y border-foreground/6">
                   {items.length > 0 ? (
                     items.map((item, i) => (
                       <div
                         key={String(item.id ?? i)}
-                        className="rounded-md border border-foreground/6 p-3"
+                        className="py-3"
                       >
                         <p className="text-label-sm font-medium text-foreground">
-                          {String(
-                            item.label ?? item.fieldPath ?? "Change item",
-                          )}
-                        </p>
-                        <p className="mt-1 text-[11px] text-muted-foreground">
-                          {String(item.action ?? "update")} ·{" "}
-                          {String(item.kind ?? "general")}
+                          {displayPolicyChangeItemLabel(item)}
                         </p>
                         <p className="mt-2 text-label-sm text-muted-foreground">
-                          {String(item.beforeValue ?? "(not cited)")} →{" "}
-                          {String(
-                            item.requestedValue ??
-                              item.afterValue ??
-                              "(pending)",
-                          )}
+                          Current:{" "}
+                          <span className="text-foreground">
+                            {displayPolicyChangeValue(item.beforeValue)}
+                          </span>
+                          {" "}→ Requested:{" "}
+                          <span className="text-foreground">
+                            {displayPolicyChangeValue(
+                              item.requestedValue ?? item.afterValue,
+                            )}
+                          </span>
                         </p>
-                        {Array.isArray(item.sourceSpanIds) &&
-                          item.sourceSpanIds.length > 0 && (
-                            <p className="mt-2 text-[11px] text-muted-foreground break-all">
-                              evidence: {item.sourceSpanIds.join(", ")}
-                            </p>
-                          )}
+                        {item.action || item.kind ? (
+                          <p className="mt-1 text-[11px] text-muted-foreground">
+                            {[humanizeSnake(item.action), humanizeSnake(item.kind)]
+                              .filter(Boolean)
+                              .join(" · ")}
+                          </p>
+                        ) : null}
                       </div>
                     ))
                   ) : (
-                    <p className="text-label-sm text-muted-foreground">
-                      No structured change items yet.
+                    <p className="py-3 text-label-sm text-muted-foreground">
+                      No specific policy fields have been prepared yet.
                     </p>
                   )}
                 </div>
@@ -1903,29 +1941,28 @@ function PolicyChangesTab({
 
               <section>
                 <h3 className="text-label-sm font-medium text-foreground">
-                  Validation
+                  Items to check
                 </h3>
-                <div className="mt-2 space-y-2">
+                <div className="mt-2 divide-y divide-foreground/6 border-y border-foreground/6">
                   {validationIssues.length > 0 ? (
                     validationIssues.map((issue, i) => (
                       <div
                         key={`${String(issue.code ?? "issue")}-${i}`}
-                        className="rounded-md border border-foreground/6 p-3"
+                        className="py-3"
                       >
                         <p className="text-label-sm font-medium text-foreground">
-                          {String(issue.code ?? "validation issue")}
+                          {displayValidationMessage(issue)}
                         </p>
-                        <p className="mt-1 text-[11px] text-muted-foreground">
-                          {String(issue.severity ?? "warning")}
-                        </p>
-                        <p className="mt-2 text-label-sm text-muted-foreground">
-                          {String(issue.message ?? "")}
-                        </p>
+                        {issue.severity ? (
+                          <p className="mt-1 text-[11px] text-muted-foreground">
+                            {humanizeSnake(issue.severity)}
+                          </p>
+                        ) : null}
                       </div>
                     ))
                   ) : (
-                    <p className="text-label-sm text-muted-foreground">
-                      No validation issues recorded.
+                    <p className="py-3 text-label-sm text-muted-foreground">
+                      No issues to review.
                     </p>
                   )}
                 </div>
@@ -1935,20 +1972,20 @@ function PolicyChangesTab({
             <div className="p-4 grid gap-4 xl:grid-cols-2">
               <section>
                 <h3 className="text-label-sm font-medium text-foreground">
-                  Packet Preview
+                  Packet preview
                 </h3>
                 <div className="mt-2 space-y-2">
                   {artifacts.length > 0 ? (
                     artifacts.map((artifact, i) => (
                       <details
                         key={`${String(artifact.kind ?? "artifact")}-${i}`}
-                        className="rounded-md border border-foreground/6 p-3"
+                        className="border-y border-foreground/6 py-3"
                       >
                         <summary className="text-label-sm font-medium text-foreground transition-colors hover:text-muted-foreground">
                           {String(
                             artifact.title ??
-                              artifact.kind ??
-                              "Packet artifact",
+                              humanizeSnake(artifact.kind) ??
+                              "Packet draft",
                           )}
                         </summary>
                         <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-5 text-muted-foreground">
@@ -1966,61 +2003,37 @@ function PolicyChangesTab({
 
               <section>
                 <h3 className="text-label-sm font-medium text-foreground">
-                  Missing Info And Audit
+                  Information needed
                 </h3>
                 <div className="mt-2 space-y-3">
                   {missingInfo.length > 0 ? (
-                    <div className="space-y-2">
+                    <div className="divide-y divide-foreground/6 border-y border-foreground/6">
                       {missingInfo.map((question, i) => (
-                        <div
-                          key={String(question.id ?? i)}
-                          className="rounded-md border border-foreground/6 p-3"
-                        >
-                          <p className="text-label-sm text-foreground">
-                            {String(question.question ?? "Missing information")}
+                      <div
+                        key={String(question.id ?? question.code ?? i)}
+                        className="py-3"
+                      >
+                        <p className="text-label-sm text-foreground">
+                          {String(question.question ?? "Missing information")}
+                        </p>
+                        {question.reason ? (
+                          <p className="mt-1 text-label-sm text-muted-foreground">
+                            {String(question.reason)}
                           </p>
-                          {question.answer ? (
-                            <p className="mt-2 text-label-sm text-muted-foreground">
-                              {String(question.answer)}
-                            </p>
-                          ) : null}
-                        </div>
+                        ) : null}
+                        {question.answer ? (
+                          <p className="mt-2 text-label-sm text-muted-foreground">
+                            Answer: {String(question.answer)}
+                          </p>
+                        ) : null}
+                      </div>
                       ))}
                     </div>
                   ) : (
                     <p className="text-label-sm text-muted-foreground">
-                      No open missing-info questions.
+                      No open questions.
                     </p>
                   )}
-                  <div className="space-y-2">
-                    {(detail.messages ?? []).map((message) => (
-                      <div
-                        key={message._id}
-                        className="text-[11px] text-muted-foreground"
-                      >
-                        {dayjs(message.createdAt).format("MMM D, YYYY h:mm A")}{" "}
-                        · {message.direction} · {message.channel ?? "case"} ·{" "}
-                        {message.content.slice(0, 140)}
-                      </div>
-                    ))}
-                    {(detail.validationReports ?? []).map((report) => (
-                      <div
-                        key={report._id}
-                        className="text-[11px] text-muted-foreground"
-                      >
-                        {dayjs(report.createdAt).format("MMM D, YYYY h:mm A")} ·
-                        validation {report.status}
-                      </div>
-                    ))}
-                    {(detail.evidenceLinks ?? []).map((link) => (
-                      <div
-                        key={link._id}
-                        className="text-[11px] text-muted-foreground break-all"
-                      >
-                        evidence · {link.itemId ?? "case"} · {link.sourceSpanId}
-                      </div>
-                    ))}
-                  </div>
                 </div>
               </section>
             </div>
