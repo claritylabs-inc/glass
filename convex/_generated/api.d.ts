@@ -12,6 +12,7 @@ import type * as actions_backfillChunks from "../actions/backfillChunks.js";
 import type * as actions_complianceRequirements from "../actions/complianceRequirements.js";
 import type * as actions_connectedEmail from "../actions/connectedEmail.js";
 import type * as actions_createOutboundImessageGroup from "../actions/createOutboundImessageGroup.js";
+import type * as actions_declarationDiscrepancyCopy from "../actions/declarationDiscrepancyCopy.js";
 import type * as actions_detectDuplicatePolicies from "../actions/detectDuplicatePolicies.js";
 import type * as actions_emailDrafts from "../actions/emailDrafts.js";
 import type * as actions_extractCompanyInfo from "../actions/extractCompanyInfo.js";
@@ -171,6 +172,7 @@ declare const fullApi: ApiFromModules<{
   "actions/complianceRequirements": typeof actions_complianceRequirements;
   "actions/connectedEmail": typeof actions_connectedEmail;
   "actions/createOutboundImessageGroup": typeof actions_createOutboundImessageGroup;
+  "actions/declarationDiscrepancyCopy": typeof actions_declarationDiscrepancyCopy;
   "actions/detectDuplicatePolicies": typeof actions_detectDuplicatePolicies;
   "actions/emailDrafts": typeof actions_emailDrafts;
   "actions/extractCompanyInfo": typeof actions_extractCompanyInfo;

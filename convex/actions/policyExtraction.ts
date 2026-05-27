@@ -1251,6 +1251,10 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
             (internal as any).declarationFacts.scanOrgInternal,
             { orgId: finalPolicy.orgId, notifyExternal: true },
           );
+          await convexCtx.runAction(
+            (internal as any).actions.declarationDiscrepancyCopy.phraseOpenInternal,
+            { orgId: finalPolicy.orgId },
+          );
           const reviewQuestions = openExtractionReviewQuestions(finalPolicy.extractionReview);
           if (reviewQuestions.length > 0) {
             await notifyExtractionReviewRequired(convexCtx, {

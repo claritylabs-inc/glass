@@ -27,6 +27,9 @@ export type DeclarationDiscrepancyInput = {
 
 const ACTIONABLE_FIELD_GROUPS = new Set([
   "insured_identity",
+  "policy_number",
+  "carrier",
+  "insurer",
   "dba",
   "entity_type",
   "fein",
@@ -34,6 +37,13 @@ const ACTIONABLE_FIELD_GROUPS = new Set([
   "scheduled_location",
   "additional_named_insured",
 ]);
+
+function isUserFacingDiscrepancyGroup(fieldGroup: string): boolean {
+  return !(
+    fieldGroup.startsWith("coverage_limit:") ||
+    fieldGroup.startsWith("coverage_deductible:")
+  );
+}
 
 function stableHash(input: string): string {
   let hash = 2166136261;
@@ -224,6 +234,7 @@ export function findDeclarationDiscrepancies(
 
   const discrepancies: DeclarationDiscrepancyInput[] = [];
   for (const [fieldGroup, rows] of byGroup) {
+    if (!isUserFacingDiscrepancyGroup(fieldGroup)) continue;
     const values = new Map<string, { displayValue: string; policyIds: Set<string>; newestObservedAt: number }>();
     for (const row of rows) {
       const current = values.get(row.normalizedValue) ?? {
@@ -245,6 +256,7 @@ export function findDeclarationDiscrepancies(
     }));
     conflictingValues.sort((a, b) => b.newestObservedAt - a.newestObservedAt);
     const affectedPolicyIds = Array.from(new Set(conflictingValues.flatMap((value) => value.policyIds)));
+    if (affectedPolicyIds.length <= 1) continue;
     discrepancies.push({
       fieldGroup,
       likelyCurrentValue: conflictingValues[0]?.displayValue,
