@@ -183,7 +183,12 @@ export const listForBrokerInternal = internalQuery({
 export const getDetail = query({
   args: { clientOrgId: v.id("organizations") },
   handler: async (ctx, args) => {
-    const access = await getOrgAccess(ctx, args.clientOrgId);
+    let access;
+    try {
+      access = await getOrgAccess(ctx, args.clientOrgId);
+    } catch {
+      return null;
+    }
     if (access.orgType !== "client") throw new Error("Expected a client organization");
     return await getClientDetailRecord(ctx, args.clientOrgId);
   },

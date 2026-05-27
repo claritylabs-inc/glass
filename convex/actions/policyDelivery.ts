@@ -395,7 +395,6 @@ export const processJob = internalAction({
       phone: recipient.phone,
       agentDomain: getAgentDomain(),
     });
-    const thread = await ctx.runQuery(internal.threads.getInternal, { id: threadId });
     const copyInstructions = decision.rule?.copyInstructions ?? settings?.copyInstructions;
     const copy = await buildDeliveryCopy(ctx, data, copyInstructions);
 
@@ -418,6 +417,7 @@ export const processJob = internalAction({
           throw new Error(identity.reason ?? "Email sender is not configured.");
         }
         const signature = buildEmailSignature(identity.agentAddress, identity.brokerBranding);
+        const outboundMessageId = `<glass-policy-delivery-${args.jobId}@${getAgentDomain()}>`;
         const emailPayload = buildEmailPayload({
           fromHeader: identity.fromHeader,
           to: recipient.email,
@@ -426,11 +426,10 @@ export const processJob = internalAction({
           subject: copy.subject,
           body: copy.body,
           signature,
-          replyTo: thread?.threadEmail,
         });
         emailPayload.headers = {
           ...((emailPayload.headers as Record<string, string> | undefined) ?? {}),
-          "Message-ID": `<glass-policy-delivery-${args.jobId}@${getAgentDomain()}>`,
+          "Message-ID": outboundMessageId,
         };
         emailPayload.attachments = await toResendAttachments(ctx, [attachment]);
         const result = await sendResendEmail(emailPayload as Parameters<typeof sendResendEmail>[0], {
@@ -452,6 +451,7 @@ export const processJob = internalAction({
           toAddresses: [recipient.email],
           subject: copy.subject,
           content: copy.body,
+          messageId: outboundMessageId,
           responseMessageId: result.id,
           resendEmailId: result.id,
           attachments: [attachment],

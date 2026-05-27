@@ -41,4 +41,17 @@ describe("policy delivery automation surfaces", () => {
     expect(read("app/deliveries/page.tsx")).toContain("policyDelivery.listQueue");
     expect(read("components/app-sidebar/nav-config.tsx")).toContain('href: "/deliveries"');
   });
+
+  it("keeps thread aliases internal for email delivery replies", () => {
+    const delivery = read("convex/actions/policyDelivery.ts");
+    const pending = read("convex/actions/sendPendingEmail.ts");
+    const chat = read("convex/actions/processThreadChat.ts");
+
+    expect(delivery).not.toContain("replyTo: thread?.threadEmail");
+    expect(delivery).toContain("\"Message-ID\": outboundMessageId");
+    expect(delivery).toContain("messageId: outboundMessageId");
+    expect(pending).not.toContain("payload.reply_to = thread.threadEmail");
+    expect(chat).not.toContain("thread?.threadEmail ?? emailIdentity.agentAddress");
+    expect(chat).not.toContain("agentAddress: thread?.threadEmail");
+  });
 });

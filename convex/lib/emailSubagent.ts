@@ -276,11 +276,7 @@ export async function upsertEmailDraftArtifact(
     signature,
     inReplyTo: context.inReplyTo,
     references: context.references,
-    replyTo: context.replyTo ?? (
-      context.threadId && context.agentAddress.includes("+")
-        ? context.agentAddress
-        : undefined
-    ),
+    replyTo: context.replyTo,
   });
 
   const existing = await ctx.runQuery(internal.pendingEmails.findDraftByThreadAndRecipient, {
@@ -751,6 +747,7 @@ async function runEmailSubagent(
       signature,
       inReplyTo: context.inReplyTo,
       references: context.references,
+      replyTo: context.replyTo,
     });
 
     const sendDelay = context.emailSendDelay ?? 5;
