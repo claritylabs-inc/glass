@@ -213,7 +213,30 @@ export function useOperatorBrokerCacheActions() {
     [updateBrokers],
   );
 
-  return { seedBroker, patchBrokerStatus };
+  const patchBrokerSettings = useCallback(
+    async (
+      brokerOrgId: Id<"organizations">,
+      patch: Partial<
+        Pick<
+          OperatorBrokerRow,
+          | "slug"
+          | "website"
+          | "agentHandle"
+          | "adminName"
+          | "adminPhone"
+        >
+      >,
+    ) => {
+      await updateBrokers({}, (current) =>
+        current.map((broker) =>
+          broker._id === brokerOrgId ? { ...broker, ...patch } : broker,
+        ),
+      );
+    },
+    [updateBrokers],
+  );
+
+  return { seedBroker, patchBrokerStatus, patchBrokerSettings };
 }
 
 export function useOperatorClientCacheActions() {

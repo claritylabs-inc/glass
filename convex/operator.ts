@@ -712,6 +712,80 @@ export const updateClientSettings = mutation({
   },
 });
 
+export const updateBrokerSettings = mutation({
+  args: {
+    brokerOrgId: v.id("organizations"),
+    slug: v.optional(v.string()),
+    website: v.optional(v.string()),
+    agentHandle: v.optional(v.string()),
+    adminName: v.optional(v.string()),
+    adminPhone: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const operator = await requireOperator(ctx);
+    const broker = await ctx.db.get(args.brokerOrgId);
+    if (!broker || broker.type !== "broker") throw new Error("Broker not found");
+
+    const slug = args.slug ? normalizeSlug(args.slug) : undefined;
+    if (slug) {
+      if (slug.length < 3 || slug.length > 40) {
+        throw new Error("Slug must be 3-40 characters");
+      }
+      if (!/^[a-z0-9][a-z0-9-]*[a-z0-9]$/.test(slug)) {
+        throw new Error("Slug must start and end with a letter or number");
+      }
+      const existingBySlug = await ctx.db
+        .query("organizations")
+        .withIndex("by_slug", (q) => q.eq("slug", slug))
+        .first();
+      if (existingBySlug && existingBySlug._id !== args.brokerOrgId) {
+        throw new Error("Slug is already taken");
+      }
+    }
+
+    const agentHandle = normalizeHandle(args.agentHandle);
+    validateAgentHandle(agentHandle);
+    if (agentHandle) {
+      const existingByHandle = await ctx.db
+        .query("organizations")
+        .withIndex("by_agentHandle", (q) => q.eq("agentHandle", agentHandle))
+        .first();
+      if (existingByHandle && existingByHandle._id !== args.brokerOrgId) {
+        throw new Error("Agent handle is already taken");
+      }
+    }
+
+    const adminPhone = normalizeOptionalContactPhone(args.adminPhone);
+    const admin = await getOrgAdmin(ctx, args.brokerOrgId);
+    if (admin) {
+      await ctx.db.patch(admin._id, {
+        name: args.adminName?.trim() || undefined,
+        phone: adminPhone,
+      });
+    }
+
+    const patch = {
+      slug,
+      website: args.website?.trim() || undefined,
+      agentHandle,
+    };
+
+    await ctx.db.patch(args.brokerOrgId, patch);
+    await writeOperatorAudit(ctx, {
+      operatorUserId: operator.userId,
+      type: "setup_write",
+      targetOrgId: args.brokerOrgId,
+      summary: `Updated broker settings for ${broker.name}`,
+      metadata: {
+        slug,
+        website: patch.website,
+        agentHandle,
+        adminName: args.adminName?.trim() || undefined,
+      },
+    });
+  },
+});
+
 export const setMGAStatus = mutation({
   args: {
     mgaOrgId: v.id("organizations"),
