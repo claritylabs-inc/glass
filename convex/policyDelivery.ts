@@ -118,6 +118,28 @@ export const getClientOverride = query({
   },
 });
 
+export const getClientSettings = query({
+  args: { clientOrgId: v.id("organizations") },
+  handler: async (ctx, args) => {
+    const access = await requireBrokerAccessToClient(ctx, args.clientOrgId);
+    const [override, brokerSettings] = await Promise.all([
+      ctx.db
+        .query("policyDeliverySettings")
+        .withIndex("by_brokerOrgId_clientOrgId", (q) =>
+          q.eq("brokerOrgId", access.brokerOrgId).eq("clientOrgId", args.clientOrgId),
+        )
+        .first(),
+      ctx.db
+        .query("policyDeliverySettings")
+        .withIndex("by_brokerOrgId_clientOrgId", (q) =>
+          q.eq("brokerOrgId", access.brokerOrgId).eq("clientOrgId", undefined),
+        )
+        .first(),
+    ]);
+    return { override, brokerSettings };
+  },
+});
+
 export const updateClientOverride = mutation({
   args: {
     clientOrgId: v.id("organizations"),

@@ -49,6 +49,10 @@ type RuleRow = {
   channels?: Channel[];
   copyInstructions?: string;
 };
+type ClientSettingsResult = {
+  override: SettingsRow | null;
+  brokerSettings: SettingsRow | null;
+};
 
 const DEFAULT_SETTINGS: SettingsRow = {
   enabled: false,
@@ -68,6 +72,10 @@ function channelsLabel(channels: Channel[] | undefined) {
   if (!channels?.length) return "Inherit";
   if (channels.length === 2) return "Email + iMessage";
   return channels[0] === "email" ? "Email" : "iMessage";
+}
+
+function onOffLabel(enabled: boolean) {
+  return enabled ? "On" : "Off";
 }
 
 function parseList(value: string) {
@@ -293,14 +301,16 @@ export function PolicyDeliverySection({
     clientOrgId ? "skip" : {},
   ) as SettingsRow | null | undefined;
   const clientSettings = useQuery(
-    api.policyDelivery.getClientOverride,
+    api.policyDelivery.getClientSettings,
     clientOrgId ? { clientOrgId } : "skip",
-  ) as SettingsRow | null | undefined;
+  ) as ClientSettingsResult | undefined;
   const rules = useQuery(api.policyDelivery.listRules, clientOrgId ? { clientOrgId } : {}) as RuleRow[] | undefined;
 
-  const settings = clientOrgId ? clientSettings : brokerSettings;
+  const clientOverride = clientOrgId ? (clientSettings?.override ?? null) : null;
+  const inheritedSettings = clientOrgId ? (clientSettings?.brokerSettings ?? null) : null;
+  const settings = clientOrgId ? clientOverride : brokerSettings;
 
-  if (settings === undefined || rules === undefined) {
+  if ((clientOrgId ? clientSettings === undefined : brokerSettings === undefined) || rules === undefined) {
     return (
       <div className="flex h-48 items-center justify-center text-muted-foreground">
         <Loader2 className="h-5 w-5 animate-spin" />
@@ -308,13 +318,15 @@ export function PolicyDeliverySection({
     );
   }
 
-  const draftKey = `${clientOrgId ?? "broker"}:${settings?._id ?? "default"}`;
+  const draftKey = `${clientOrgId ?? "broker"}:${settings?._id ?? "default"}:${inheritedSettings?._id ?? "none"}`;
 
   return (
     <PolicyDeliveryEditor
       key={draftKey}
       clientOrgId={clientOrgId}
-      settings={toDraftSettings(settings)}
+      settings={toDraftSettings(settings ?? inheritedSettings)}
+      inheritedSettings={inheritedSettings ? toDraftSettings(inheritedSettings) : null}
+      hasClientOverride={!clientOrgId || !!clientOverride}
       rules={rules}
       setRightPanelOverride={setRightPanelOverride}
       setActionsOverride={setActionsOverride}
@@ -325,12 +337,16 @@ export function PolicyDeliverySection({
 function PolicyDeliveryEditor({
   clientOrgId,
   settings,
+  inheritedSettings,
+  hasClientOverride,
   rules,
   setRightPanelOverride,
   setActionsOverride,
 }: {
   clientOrgId?: Id<"organizations">;
   settings: SettingsRow;
+  inheritedSettings?: SettingsRow | null;
+  hasClientOverride: boolean;
   rules: RuleRow[];
   setRightPanelOverride?: (node: ReactNode) => void;
   setActionsOverride?: (node: ReactNode) => void;
@@ -351,6 +367,7 @@ function PolicyDeliveryEditor({
   const [draft, setDraft] = useState<SettingsRow>(settings);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedRef = useRef(settingsSignature(settings));
+  const isInheritedClientSettings = !!clientOrgId && !hasClientOverride;
 
   const saveSettings = useCallback(async () => {
     setSaveStatus("saving");
@@ -442,10 +459,32 @@ function PolicyDeliveryEditor({
   async function resetOverride() {
     if (!clientOrgId) return;
     await clearOverride({ clientOrgId });
-    setDraft(DEFAULT_SETTINGS);
-    lastSavedRef.current = settingsSignature(DEFAULT_SETTINGS);
+    const next = inheritedSettings ?? DEFAULT_SETTINGS;
+    setDraft(next);
+    lastSavedRef.current = settingsSignature(next);
     setSaveStatus("saved");
     toast.success("Client override cleared");
+  }
+
+  async function addOverride() {
+    if (!clientOrgId) return;
+    setSaveStatus("saving");
+    try {
+      await updateClientOverride({
+        clientOrgId,
+        enabled: draft.enabled,
+        channels: draft.channels,
+        defaultAction: draft.defaultAction,
+        deliverBeforeClientAcceptance: draft.deliverBeforeClientAcceptance,
+        copyInstructions: draft.copyInstructions,
+      });
+      lastSavedRef.current = settingsSignature(draft);
+      setSaveStatus("saved");
+      toast.success("Client override added");
+    } catch (error) {
+      setSaveStatus("error");
+      toast.error(error instanceof Error ? error.message : "Failed to add override");
+    }
   }
 
   return (
@@ -454,51 +493,80 @@ function PolicyDeliveryEditor({
         <div className="flex items-center justify-between gap-3 border-b border-foreground/6 px-5 py-3.5">
           <h3 className="text-sm font-medium text-foreground">Policy delivery</h3>
           <span className="text-label-sm text-muted-foreground">
-            {saveStatus === "saving" ? "Saving" : saveStatus === "error" ? "Not saved" : "Saved"}
+            {isInheritedClientSettings
+              ? "Inherited"
+              : saveStatus === "saving"
+                ? "Saving"
+                : saveStatus === "error"
+                  ? "Not saved"
+                  : "Saved"}
           </span>
         </div>
-        <div className="space-y-5 px-5 py-5">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-body-sm font-medium text-foreground">Enable delivery automation</p>
-              <p className="text-body-sm text-muted-foreground">Deliver bound policy documents and endorsements after processing.</p>
+        {isInheritedClientSettings ? (
+          <div className="flex flex-col gap-3 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-wrap items-center gap-2 text-body-sm">
+              <Badge variant={draft.enabled ? "secondary" : "outline"}>
+                Delivery {onOffLabel(draft.enabled)}
+              </Badge>
+              <span className="text-muted-foreground">{channelsLabel(draft.channels)}</span>
+              <span className="text-muted-foreground">{ACTION_LABELS[draft.defaultAction]}</span>
+              <span className="text-muted-foreground">
+                Pre-invite {onOffLabel(draft.deliverBeforeClientAcceptance)}
+              </span>
             </div>
-            <SettingsSwitch checked={draft.enabled} onCheckedChange={() => setDraft({ ...draft, enabled: !draft.enabled })} label="Enable policy delivery" />
+            <PillButton
+              type="button"
+              size="compact"
+              variant="secondary"
+              onClick={() => void addOverride()}
+            >
+              Add override
+            </PillButton>
           </div>
-          <div className="grid gap-5 lg:grid-cols-2">
-            <div className="space-y-2">
-              <p className="text-label-sm text-muted-foreground">Channels</p>
-              <ChannelToggles value={draft.channels} onChange={(channels) => setDraft({ ...draft, channels })} />
+        ) : (
+          <div className="space-y-5 px-5 py-5">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-body-sm font-medium text-foreground">Enable delivery automation</p>
+                <p className="text-body-sm text-muted-foreground">Deliver bound policy documents and endorsements after processing.</p>
+              </div>
+              <SettingsSwitch checked={draft.enabled} onCheckedChange={() => setDraft({ ...draft, enabled: !draft.enabled })} label="Enable policy delivery" />
             </div>
-            <div className="space-y-2">
-              <p className="text-label-sm text-muted-foreground">Default action</p>
-              <ActionSelect value={draft.defaultAction} onChange={(defaultAction) => setDraft({ ...draft, defaultAction })} />
+            <div className="grid gap-5 lg:grid-cols-2">
+              <div className="space-y-2">
+                <p className="text-label-sm text-muted-foreground">Channels</p>
+                <ChannelToggles value={draft.channels} onChange={(channels) => setDraft({ ...draft, channels })} />
+              </div>
+              <div className="space-y-2">
+                <p className="text-label-sm text-muted-foreground">Default action</p>
+                <ActionSelect value={draft.defaultAction} onChange={(defaultAction) => setDraft({ ...draft, defaultAction })} />
+              </div>
+            </div>
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-body-sm font-medium text-foreground">Deliver before invite acceptance</p>
+                <p className="text-body-sm text-muted-foreground">Use captured primary contact details before the client logs in.</p>
+              </div>
+              <SettingsSwitch checked={draft.deliverBeforeClientAcceptance} onCheckedChange={() => setDraft({ ...draft, deliverBeforeClientAcceptance: !draft.deliverBeforeClientAcceptance })} label="Deliver before invite acceptance" />
+            </div>
+            <label className="block space-y-2">
+              <span className="text-label-sm text-muted-foreground">Broker copy instructions</span>
+              <textarea
+                value={draft.copyInstructions ?? ""}
+                onChange={(event) => setDraft({ ...draft, copyInstructions: event.target.value })}
+                className="min-h-24 w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm outline-none focus:border-foreground/20"
+                placeholder="Use our standard policy delivery language. Mention claims contact details when available."
+              />
+            </label>
+            <div className="flex justify-end gap-2">
+              {clientOrgId ? (
+                <PillButton type="button" variant="secondary" onClick={resetOverride}>
+                  Clear override
+                </PillButton>
+              ) : null}
             </div>
           </div>
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-body-sm font-medium text-foreground">Deliver before invite acceptance</p>
-              <p className="text-body-sm text-muted-foreground">Use captured primary contact details before the client logs in.</p>
-            </div>
-            <SettingsSwitch checked={draft.deliverBeforeClientAcceptance} onCheckedChange={() => setDraft({ ...draft, deliverBeforeClientAcceptance: !draft.deliverBeforeClientAcceptance })} label="Deliver before invite acceptance" />
-          </div>
-          <label className="block space-y-2">
-            <span className="text-label-sm text-muted-foreground">Broker copy instructions</span>
-            <textarea
-              value={draft.copyInstructions ?? ""}
-              onChange={(event) => setDraft({ ...draft, copyInstructions: event.target.value })}
-              className="min-h-24 w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm outline-none focus:border-foreground/20"
-              placeholder="Use our standard policy delivery language. Mention claims contact details when available."
-            />
-          </label>
-          <div className="flex justify-end gap-2">
-            {clientOrgId && settings ? (
-              <PillButton type="button" variant="secondary" onClick={resetOverride}>
-                Clear override
-              </PillButton>
-            ) : null}
-          </div>
-        </div>
+        )}
       </section>
 
       <section className="overflow-hidden rounded-lg border border-foreground/6 bg-card">
