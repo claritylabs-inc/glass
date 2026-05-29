@@ -2769,6 +2769,15 @@ export function PolicyDetailBody({
     | undefined;
   const extractionData: Record<string, unknown> = {
     ...(policyDocument ?? {}),
+    carrier: p.carrier,
+    carrierLegalName: p.carrierLegalName,
+    security: p.security,
+    mga: p.mga,
+    policyNumber: p.policyNumber,
+    insuredName: p.insuredName,
+    effectiveDate: p.effectiveDate,
+    expirationDate: p.expirationDate,
+    policyTypes: p.policyTypes,
     coverages: p.coverages,
     premium: p.premium,
     totalCost: p.totalCost,

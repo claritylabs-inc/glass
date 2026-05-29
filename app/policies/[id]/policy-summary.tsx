@@ -90,8 +90,44 @@ export interface PolicySummaryProps {
   pdfUrl?: string | null;
 }
 
+function buildFactualSummary({
+  policyNumber,
+  carrier,
+  administrator,
+  insuredName,
+  periodValue,
+  premium,
+  policyTypes,
+}: {
+  policyNumber?: string;
+  carrier?: string;
+  administrator?: string;
+  insuredName?: string;
+  periodValue?: string;
+  premium?: string;
+  policyTypes: string[];
+}) {
+  const issuer = administrator || carrier;
+  const coverageLabel = policyTypes
+    .map((type) => POLICY_TYPE_LABELS[type] ?? type)
+    .filter(Boolean)
+    .join(", ");
+  const parts = [
+    issuer ? `Issued by ${issuer}` : null,
+    insuredName ? `for ${insuredName}` : null,
+    coverageLabel ? `covering ${coverageLabel}` : null,
+    policyNumber ? `under policy ${policyNumber}` : null,
+    periodValue && !periodValue.includes("Unknown")
+      ? `effective ${periodValue}`
+      : null,
+    premium ? `with premium ${premium}` : null,
+  ].filter(Boolean);
+
+  return parts.length > 0 ? `${parts.join(" ")}.` : null;
+}
+
 export function PolicySummary({
-  policyNumber: _policyNumber,
+  policyNumber,
   carrier,
   administrator,
   insuredName,
@@ -102,7 +138,7 @@ export function PolicySummary({
   policyTermType,
   limits,
   deductibles,
-  summary,
+  summary: _summary,
   isRenewal,
   documentType,
   pdfUrl,
@@ -133,6 +169,15 @@ export function PolicySummary({
     else if (d.perClaim) keyDeductibles.push({ label: "Deductible", value: d.perClaim as string });
     else if (d.aggregate) keyDeductibles.push({ label: "Deductible (Agg)", value: d.aggregate as string });
   }
+  const factualSummary = buildFactualSummary({
+    policyNumber,
+    carrier,
+    administrator,
+    insuredName,
+    periodValue,
+    premium,
+    policyTypes,
+  });
 
   return (
     <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden mb-6 @container">
@@ -206,10 +251,9 @@ export function PolicySummary({
         </div>
       </div>
 
-      {/* AI summary if available */}
-      {summary && (
+      {factualSummary && (
         <div className="px-5 py-3 border-t border-foreground/6 bg-foreground/1">
-          <p className="text-body-sm text-muted-foreground leading-relaxed">{summary}</p>
+          <p className="text-body-sm text-muted-foreground leading-relaxed">{factualSummary}</p>
         </div>
       )}
     </div>

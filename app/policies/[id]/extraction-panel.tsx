@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { usePdf } from "@/components/pdf-context";
 import { ProseMarkdown } from "@/components/prose-markdown";
+import { POLICY_TYPE_LABELS } from "@/convex/lib/policyTypes";
 
 // ─── Internal types for policy document data ──────────────────────────────────
 
@@ -174,6 +175,15 @@ type ComplaintContact = {
 };
 
 type PolicyDocument = {
+  carrier?: string;
+  carrierLegalName?: string;
+  security?: string;
+  mga?: string;
+  policyNumber?: string;
+  insuredName?: string;
+  effectiveDate?: string;
+  expirationDate?: string;
+  policyTypes?: string[];
   coverages?: CoverageEntry[];
   premium?: string;
   taxesAndFees?: FeeEntry[];
@@ -320,6 +330,17 @@ function objectEntries(value?: Record<string, unknown>) {
     .filter((entry) => entry.value);
 }
 
+function compactRows(rows: unknown[]) {
+  return rows.filter(
+    (row): row is DataRow =>
+      typeof row === "object" &&
+      row !== null &&
+      "label" in row &&
+      "value" in row &&
+      Boolean(row.label && row.value),
+  );
+}
+
 type DataRow = {
   label: string;
   value: string;
@@ -366,6 +387,20 @@ function groupRowsBySection(rows: DataRow[]) {
   }
 
   return sections;
+}
+
+function displaySectionTitle(section: PolicySection) {
+  const title = section.title?.trim();
+  if (title && title.toLowerCase() !== section.type.toLowerCase()) {
+    return title;
+  }
+  return SECTION_TYPE_LABELS[section.type] ?? formatStructuredLabel(section.type) ?? "Section";
+}
+
+function sectionHasUsefulHeading(section: PolicySection) {
+  const type = section.type.toLowerCase();
+  if (type === "page_header" || type === "page_footer") return false;
+  return Boolean(section.title?.trim() || section.sectionNumber?.trim());
 }
 
 // ─── Section / Exclusion / Condition / Endorsement cards ─────────────────────
@@ -421,10 +456,7 @@ function DocumentSection({
               {section.sectionNumber}
             </span>
           )}
-          {section.title ??
-            SECTION_TYPE_LABELS[section.type] ??
-            section.type ??
-            "Untitled"}
+          {displaySectionTitle(section)}
         </span>
         <span
           className={`shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${typeColor}`}
@@ -1138,6 +1170,7 @@ export function ExtractionCards({
   const formInventory = policyDocument?.formInventory ?? [];
   const supplementaryFacts = policyDocument?.supplementaryFacts ?? [];
   const sections = policyDocument?.sections ?? [];
+  const sourceSections = sections.filter(sectionHasUsefulHeading);
   const declarationsPage = declarationsFallbackPage(sections);
   const definitions = policyDocument?.definitions ?? [];
   const coveredReasons = policyDocument?.coveredReasons ?? [];
@@ -1146,6 +1179,39 @@ export function ExtractionCards({
   const fees = costsAndFees?.fees ?? [];
   const exclusions = policyDocument?.exclusions ?? [];
   const conditions = policyDocument?.conditions ?? [];
+  const carrierDisplay =
+    policyDocument?.carrierLegalName ||
+    policyDocument?.security ||
+    policyDocument?.carrier;
+  const topLevelRows = compactRows([
+    carrierDisplay && { label: "Carrier", value: carrierDisplay },
+    policyDocument?.mga && {
+      label: "Administrator",
+      value: policyDocument.mga,
+    },
+    policyDocument?.policyNumber && {
+      label: "Policy number",
+      value: policyDocument.policyNumber,
+    },
+    policyDocument?.insuredName && {
+      label: "Named insured",
+      value: policyDocument.insuredName,
+    },
+    (policyDocument?.effectiveDate || policyDocument?.expirationDate) && {
+      label: "Policy period",
+      value: `${policyDocument.effectiveDate ?? "—"} – ${policyDocument.expirationDate ?? "—"}`,
+    },
+    policyDocument?.policyTypes?.length && {
+      label: "Coverage types",
+      value: policyDocument.policyTypes
+        .map((type) => POLICY_TYPE_LABELS[type] ?? formatStructuredLabel(type) ?? type)
+        .join(", "),
+    },
+    policyDocument?.premium && {
+      label: "Premium",
+      value: policyDocument.premium,
+    },
+  ]);
   const declarationRows = declarations
     .map((field) => ({
       label: formatStructuredLabel(field.field) ?? field.field ?? "Field",
@@ -1162,6 +1228,7 @@ export function ExtractionCards({
     .filter((row) => row.value);
 
   const hasAnyData =
+    topLevelRows.length > 0 ||
     coverages.length > 0 ||
     declarations.length > 0 ||
     premiumRows.length > 0 ||
@@ -1171,7 +1238,7 @@ export function ExtractionCards({
     deductibles.length > 0 ||
     formInventory.length > 0 ||
     supplementaryFacts.length > 0 ||
-    sections.length > 0 ||
+    sourceSections.length > 0 ||
     definitions.length > 0 ||
     coveredReasons.length > 0 ||
     endorsements.length > 0 ||
@@ -1186,42 +1253,8 @@ export function ExtractionCards({
 
   return (
     <div className="space-y-4">
-      {premiumRows.length > 0 && (
-        <DataCard title="Premium" rows={premiumRows} />
-      )}
-
-      {taxesAndFees.length > 0 && (
-        <DataCard
-          title="Taxes & fees"
-          rows={taxesAndFees
-            .map((item) => ({
-              label: item.name,
-              value: item.amount ?? "",
-              section: item.type
-                ? (formatStructuredLabel(item.type) ?? item.type)
-                : item.description,
-            }))
-            .filter((row) => row.label && row.value)}
-        />
-      )}
-
-      {premiumBreakdown.length > 0 && (
-        <DataCard
-          title="Premium breakdown"
-          rows={premiumBreakdown
-            .map((item) => ({
-              label: item.line ?? "Premium line",
-              value: item.amount ?? "",
-            }))
-            .filter((row) => row.value)}
-        />
-      )}
-
-      {declarations.length > 0 && (
-        <SectionedDataCard
-          title="Declarations"
-          sections={groupRowsBySection(declarationRows)}
-        />
+      {topLevelRows.length > 0 && (
+        <DataCard title="Policy details" rows={topLevelRows} />
       )}
 
       {coverages.length > 0 && (
@@ -1257,6 +1290,48 @@ export function ExtractionCards({
       {limits.length > 0 && <DataCard title="Limits" rows={limits} />}
       {deductibles.length > 0 && (
         <DataCard title="Deductibles" rows={deductibles} />
+      )}
+
+      {(premiumRows.length > 0 ||
+        taxesAndFees.length > 0 ||
+        premiumBreakdown.length > 0) && (
+        <SectionedDataCard
+          title="Premium"
+          sections={[
+            {
+              label: "Summary",
+              rows: premiumRows,
+            },
+            {
+              label: "Taxes & fees",
+              rows: taxesAndFees
+                .map((item) => ({
+                  label: item.name,
+                  value: item.amount ?? "",
+                  section: item.type
+                    ? (formatStructuredLabel(item.type) ?? item.type)
+                    : item.description,
+                }))
+                .filter((row) => row.label && row.value),
+            },
+            {
+              label: "Breakdown",
+              rows: premiumBreakdown
+                .map((item) => ({
+                  label: item.line ?? "Premium line",
+                  value: item.amount ?? "",
+                }))
+                .filter((row) => row.value),
+            },
+          ]}
+        />
+      )}
+
+      {declarations.length > 0 && (
+        <SectionedDataCard
+          title="Declarations"
+          sections={groupRowsBySection(declarationRows)}
+        />
       )}
 
       {definitions.length > 0 && (
@@ -1359,28 +1434,6 @@ export function ExtractionCards({
             }))
             .filter((row) => row.value)}
         />
-      )}
-
-      {/* Document Sections */}
-      {sections.length > 0 && (
-        <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
-          <div className="px-5 py-3 border-b border-foreground/4">
-            <p className="text-sm font-medium text-foreground">
-              Document sections ({sections.length})
-            </p>
-          </div>
-          {sections.map((section: PolicySection, i: number) => (
-            <DocumentSection
-              key={i}
-              section={section}
-              highlighted={
-                initialPage != null &&
-                section.pageStart <= initialPage &&
-                (section.pageEnd ?? section.pageStart) >= initialPage
-              }
-            />
-          ))}
-        </div>
       )}
 
       {/* Endorsements */}
@@ -1595,6 +1648,27 @@ export function ExtractionCards({
               data={policyDocument.regulatoryContext}
             />
           </SupplementaryCard>
+        </div>
+      )}
+
+      {sourceSections.length > 0 && (
+        <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
+          <div className="px-5 py-3 border-b border-foreground/4">
+            <p className="text-sm font-medium text-foreground">
+              Source sections ({sourceSections.length})
+            </p>
+          </div>
+          {sourceSections.map((section: PolicySection, i: number) => (
+            <DocumentSection
+              key={i}
+              section={section}
+              highlighted={
+                initialPage != null &&
+                section.pageStart <= initialPage &&
+                (section.pageEnd ?? section.pageStart) >= initialPage
+              }
+            />
+          ))}
         </div>
       )}
     </div>
