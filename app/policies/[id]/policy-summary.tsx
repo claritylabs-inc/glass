@@ -34,14 +34,6 @@ function SummaryRow({
 }
 
 function StatusBadge({ expirationDate }: { effectiveDate?: string; expirationDate?: string }) {
-  if (!expirationDate || expirationDate === "—") {
-    return (
-      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-label-sm font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400">
-        Active
-      </span>
-    );
-  }
-
   const now = dayjs();
   const expiry = dayjs(expirationDate, ["MM/DD/YYYY", "YYYY-MM-DD", "M/D/YYYY"], true);
   if (!expiry.isValid()) {
@@ -70,6 +62,39 @@ function StatusBadge({ expirationDate }: { effectiveDate?: string; expirationDat
       Active
     </span>
   );
+}
+
+function isPendingValue(value: unknown) {
+  const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
+  return (
+    normalized === "extracting" ||
+    normalized === "extracting..." ||
+    normalized === "unknown" ||
+    normalized === "n/a" ||
+    normalized === "none" ||
+    normalized === "—" ||
+    normalized === "-"
+  );
+}
+
+function realText(value: string | undefined) {
+  const trimmed = value?.trim();
+  return trimmed && !isPendingValue(trimmed) ? trimmed : undefined;
+}
+
+function isRealPolicyType(value: string) {
+  const normalized = value.trim().toLowerCase();
+  return normalized && normalized !== "other" && !isPendingValue(normalized);
+}
+
+function pushRealValue(
+  rows: { label: string; value: string }[],
+  label: string,
+  value: unknown,
+) {
+  const text = realText(typeof value === "string" ? value : undefined);
+  if (text) rows.push({ label, value: text });
+  return text;
 }
 
 export interface PolicySummaryProps {
@@ -143,41 +168,60 @@ export function PolicySummary({
   documentType,
   pdfUrl,
 }: PolicySummaryProps) {
+  const realPolicyNumber = realText(policyNumber);
+  const realCarrier = realText(carrier);
+  const realAdministrator = realText(administrator);
+  const realInsuredName = realText(insuredName);
+  const realEffectiveDate = realText(effectiveDate);
+  const realExpirationDate = realText(expirationDate);
+  const realPremium = realText(premium);
+  const realPolicyTypes = policyTypes.filter(isRealPolicyType);
   const periodValue =
-    effectiveDate === "Unknown" && !expirationDate
-      ? documentType === "quote"
-        ? "Quote"
-        : "Unknown"
-      : policyTermType === "continuous"
-        ? `${effectiveDate} — Until Cancelled`
-        : `${effectiveDate ?? "—"} – ${expirationDate ?? "—"}`;
+    documentType === "quote" && !realEffectiveDate && !realExpirationDate
+      ? undefined
+      : policyTermType === "continuous" && realEffectiveDate
+        ? `${realEffectiveDate} — Until Cancelled`
+        : realEffectiveDate || realExpirationDate
+          ? `${realEffectiveDate ?? "—"} – ${realExpirationDate ?? "—"}`
+          : undefined;
 
   const keyLimits: { label: string; value: string }[] = [];
   if (limits && typeof limits === "object") {
     const l = limits as Record<string, unknown>;
-    if (l.perOccurrence) keyLimits.push({ label: "Per Occurrence", value: l.perOccurrence as string });
-    if (l.aggregate) keyLimits.push({ label: "Aggregate", value: l.aggregate as string });
-    if (l.perClaim) keyLimits.push({ label: "Per Claim", value: l.perClaim as string });
-    if (l.eachOccurrence) keyLimits.push({ label: "Each Occurrence", value: l.eachOccurrence as string });
-    if (l.generalAggregate) keyLimits.push({ label: "General Aggregate", value: l.generalAggregate as string });
+    pushRealValue(keyLimits, "Per Occurrence", l.perOccurrence);
+    pushRealValue(keyLimits, "Aggregate", l.aggregate);
+    pushRealValue(keyLimits, "Per Claim", l.perClaim);
+    pushRealValue(keyLimits, "Each Occurrence", l.eachOccurrence);
+    pushRealValue(keyLimits, "General Aggregate", l.generalAggregate);
   }
 
   const keyDeductibles: { label: string; value: string }[] = [];
   if (deductibles && typeof deductibles === "object") {
     const d = deductibles as Record<string, unknown>;
-    if (d.perOccurrence) keyDeductibles.push({ label: "Deductible", value: d.perOccurrence as string });
-    else if (d.perClaim) keyDeductibles.push({ label: "Deductible", value: d.perClaim as string });
-    else if (d.aggregate) keyDeductibles.push({ label: "Deductible (Agg)", value: d.aggregate as string });
+    if (!pushRealValue(keyDeductibles, "Deductible", d.perOccurrence)) {
+      if (!pushRealValue(keyDeductibles, "Deductible", d.perClaim)) {
+        pushRealValue(keyDeductibles, "Deductible (Agg)", d.aggregate);
+      }
+    }
   }
   const factualSummary = buildFactualSummary({
-    policyNumber,
-    carrier,
-    administrator,
-    insuredName,
+    policyNumber: realPolicyNumber,
+    carrier: realCarrier,
+    administrator: realAdministrator,
+    insuredName: realInsuredName,
     periodValue,
-    premium,
-    policyTypes,
+    premium: realPremium,
+    policyTypes: realPolicyTypes,
   });
+  const hasExtractedDetails =
+    realPolicyTypes.length > 0 ||
+    !!realAdministrator ||
+    !!realCarrier ||
+    !!realInsuredName ||
+    !!periodValue ||
+    !!realPremium ||
+    keyLimits.length > 0 ||
+    keyDeductibles.length > 0;
 
   return (
     <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden mb-6 @container">
@@ -192,7 +236,7 @@ export function PolicySummary({
               Renewal
             </span>
           )}
-          <StatusBadge effectiveDate={effectiveDate} expirationDate={expirationDate} />
+          <StatusBadge effectiveDate={realEffectiveDate} expirationDate={realExpirationDate} />
         </div>
       </div>
 
@@ -204,12 +248,12 @@ export function PolicySummary({
         {/* Details column */}
         <div className="flex-1 min-w-0 space-y-2.5">
           {/* Coverage types — same row style as other fields */}
-          {policyTypes.length > 0 && (
+          {realPolicyTypes.length > 0 && (
             <SummaryRow
               label="Coverage types"
               value={
                 <span className="flex flex-wrap justify-end gap-1">
-                  {policyTypes.slice(0, 4).map((t) => (
+                  {realPolicyTypes.slice(0, 4).map((t) => (
                     <span
                       key={t}
                       className="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium bg-foreground/5 text-foreground/70"
@@ -217,9 +261,9 @@ export function PolicySummary({
                       {POLICY_TYPE_LABELS[t] ?? t}
                     </span>
                   ))}
-                  {policyTypes.length > 4 && (
+                  {realPolicyTypes.length > 4 && (
                     <span className="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium bg-foreground/5 text-muted-foreground">
-                      +{policyTypes.length - 4} more
+                      +{realPolicyTypes.length - 4} more
                     </span>
                   )}
                 </span>
@@ -227,20 +271,20 @@ export function PolicySummary({
             />
           )}
 
-          {administrator && (
-            <SummaryRow label="Administrator" value={administrator} />
+          {realAdministrator && (
+            <SummaryRow label="Administrator" value={realAdministrator} />
           )}
-          {carrier && (
-            <SummaryRow label="Carrier" value={carrier} />
+          {realCarrier && (
+            <SummaryRow label="Carrier" value={realCarrier} />
           )}
-          {insuredName && (
-            <SummaryRow label="Named insured" value={insuredName} />
+          {realInsuredName && (
+            <SummaryRow label="Named insured" value={realInsuredName} />
           )}
-          {(effectiveDate || expirationDate) && (
+          {periodValue && (
             <SummaryRow label="Policy period" value={periodValue} />
           )}
-          {premium && (
-            <SummaryRow label="Premium" value={premium} />
+          {realPremium && (
+            <SummaryRow label="Premium" value={realPremium} />
           )}
           {keyLimits.map(({ label, value }) => (
             <SummaryRow key={label} label={label} value={value} />
@@ -248,6 +292,13 @@ export function PolicySummary({
           {keyDeductibles.map(({ label, value }) => (
             <SummaryRow key={label} label={label} value={value} />
           ))}
+          {!hasExtractedDetails && (
+            <div className="flex min-h-32 items-center justify-end">
+              <span className="text-body-sm text-muted-foreground">
+                Extraction in progress
+              </span>
+            </div>
+          )}
         </div>
       </div>
 
