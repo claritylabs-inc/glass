@@ -310,6 +310,23 @@ function insuredNameMatches(
   return matched.length / expectedTokens.length >= 0.7;
 }
 
+function orgLegalNames(org: Doc<"organizations"> | null | undefined) {
+  return [
+    org?.name,
+    ...(org?.relatedLegalEntities ?? []).map((entity) => entity.legalName),
+  ].filter((name): name is string => Boolean(name?.trim()));
+}
+
+function insuredNameMatchesAny(
+  actual: string | undefined | null,
+  expectedNames: string[],
+) {
+  if (expectedNames.length === 0) return true;
+  return expectedNames.some((expectedName) =>
+    insuredNameMatches(actual, expectedName),
+  );
+}
+
 function matchedPolicySummary(
   candidate:
     | {
@@ -344,7 +361,13 @@ function assessRequirement(
   policies: Doc<"policies">[],
   now = dayjs().valueOf(),
   expectedInsuredName?: string,
+  expectedInsuredNames?: string[],
 ) {
+  const insuredNames = expectedInsuredNames?.length
+    ? expectedInsuredNames
+    : expectedInsuredName
+      ? [expectedInsuredName]
+      : [];
   const terms = categoryTerms(
     requirement.category,
     requirement.title,
@@ -439,7 +462,7 @@ function assessRequirement(
   }
   if (
     active &&
-    !insuredNameMatches(best.policy.insuredName, expectedInsuredName)
+    !insuredNameMatchesAny(best.policy.insuredName, insuredNames)
   ) {
     return {
       requirementId: requirement._id,
@@ -453,8 +476,8 @@ function assessRequirement(
         ? Math.ceil((best.expiration - now) / (24 * 60 * 60 * 1000))
         : undefined,
       notes: best.policy.insuredName
-        ? `Matched ${best.policy.carrier} ${best.policy.policyNumber}, but the insured name is ${best.policy.insuredName}; expected ${expectedInsuredName}.`
-        : `Matched ${best.policy.carrier} ${best.policy.policyNumber}, but Glass could not verify the named insured as ${expectedInsuredName}.`,
+        ? `Matched ${best.policy.carrier} ${best.policy.policyNumber}, but the insured name is ${best.policy.insuredName}; expected one of ${insuredNames.join(", ")}.`
+        : `Matched ${best.policy.carrier} ${best.policy.policyNumber}, but Glass could not verify the named insured as one of ${insuredNames.join(", ")}.`,
     };
   }
   const daysUntilExpiration = Number.isFinite(best.expiration)
@@ -482,6 +505,43 @@ function assessRequirement(
           ? `Matched ${best.policy.carrier} ${best.policy.policyNumber}, but it expires in ${daysUntilExpiration} days.`
           : `Latest matching policy ${best.policy.carrier} ${best.policy.policyNumber} appears expired.`,
   };
+}
+
+function manualReviewForRequirement(requirement: Doc<"insuranceRequirements">) {
+  const review = requirement.manualComplianceReview;
+  if (!review || review.checkedAt < requirement.updatedAt) return undefined;
+  return {
+    requirementId: requirement._id,
+    status: review.status,
+    matchedPolicyIds: review.matchedPolicyIds,
+    matchedPolicy: undefined,
+    expiresAt: review.expiresAt,
+    daysUntilExpiration: review.daysUntilExpiration,
+    notes: review.notes
+      ? `LLM compliance check: ${review.notes}`
+      : "LLM compliance check completed.",
+    checkedAt: review.checkedAt,
+    checkedBy: "agent" as const,
+  };
+}
+
+function assessRequirementWithManualReview(
+  requirement: Doc<"insuranceRequirements">,
+  policies: Doc<"policies">[],
+  now = dayjs().valueOf(),
+  expectedInsuredName?: string,
+  expectedInsuredNames?: string[],
+) {
+  return (
+    manualReviewForRequirement(requirement) ??
+    assessRequirement(
+      requirement,
+      policies,
+      now,
+      expectedInsuredName,
+      expectedInsuredNames,
+    )
+  );
 }
 
 async function requireOrgMember(
@@ -522,6 +582,7 @@ async function listClientRequirementsForVendor(
   vendorOrgId: Id<"organizations">,
   vendorPolicies: Doc<"policies">[],
   vendorName?: string,
+  vendorLegalNames?: string[],
 ) {
   const relationships = await ctx.db
     .query("connectedOrgRelationships")
@@ -544,6 +605,7 @@ async function listClientRequirementsForVendor(
           vendorPolicies,
           dayjs().valueOf(),
           vendorName,
+          vendorLegalNames,
         ),
         canArchive: false,
         clientRequirementSource: {
@@ -585,17 +647,19 @@ async function listRequirementsVisibleToOrg(
     orgId,
     orgPolicies,
     org?.name,
+    orgLegalNames(org),
   );
   return [
     ...ownRequirements.map((requirement) => ({
       ...requirement,
       complianceCheck:
         requirement.appliesTo === "own_org" || requirement.appliesTo === "both"
-          ? assessRequirement(
+          ? assessRequirementWithManualReview(
               requirement,
               orgPolicies,
               dayjs().valueOf(),
               org?.name,
+              orgLegalNames(org),
             )
           : undefined,
       canArchive: true,
@@ -795,6 +859,7 @@ export const listVendorCompliance = query({
           policies,
           dayjs().valueOf(),
           vendorOrg?.name,
+          orgLegalNames(vendorOrg),
         ),
       }));
       const missing = checks.filter(
@@ -884,6 +949,7 @@ export const getVendorChecklist = query({
           policies,
           dayjs().valueOf(),
           vendorOrg?.name,
+          orgLegalNames(vendorOrg),
         ),
       }));
       rows.push({
@@ -905,6 +971,141 @@ export const listRequirementsInternal = internalQuery({
   args: { orgId: v.id("organizations") },
   handler: async (ctx, args) =>
     await listRequirementsVisibleToOrg(ctx, args.orgId),
+});
+
+export const getManualComplianceReviewContextInternal = internalQuery({
+  args: {
+    orgId: v.id("organizations"),
+    requirementId: v.id("insuranceRequirements"),
+    userId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    const membership = await ctx.db
+      .query("orgMemberships")
+      .withIndex("by_orgId_userId", (q) =>
+        q.eq("orgId", args.orgId).eq("userId", args.userId),
+      )
+      .first();
+    if (!membership) throw new Error("Organization access required");
+
+    const requirement = await ctx.db.get(args.requirementId);
+    if (
+      !requirement ||
+      requirement.orgId !== args.orgId ||
+      requirement.status !== "active"
+    ) {
+      throw new Error("Requirement not found");
+    }
+    if (
+      requirement.appliesTo !== "own_org" &&
+      requirement.appliesTo !== "both"
+    ) {
+      throw new Error("This requirement is not checked against your organization");
+    }
+
+    const [org, policies] = await Promise.all([
+      ctx.db.get(args.orgId),
+      ctx.db
+        .query("policies")
+        .withIndex("by_orgId", (q) => q.eq("orgId", args.orgId))
+        .collect(),
+    ]);
+    const activePolicies = policies.filter(
+      (policy) =>
+        !policy.deletedAt &&
+        !policy.dismissed &&
+        policy.documentType !== "quote",
+    );
+
+    return {
+      org: org
+        ? {
+            _id: org._id,
+            name: org.name,
+            relatedLegalEntities: org.relatedLegalEntities ?? [],
+          }
+        : null,
+      requirement: {
+        _id: requirement._id,
+        title: requirement.title,
+        category: requirement.category,
+        requirementText: requirement.requirementText,
+        limit: requirement.limit,
+        limitAmount: requirement.limitAmount,
+        deductible: requirement.deductible,
+        deductibleAmount: requirement.deductibleAmount,
+        sourceExcerpt: requirement.sourceExcerpt,
+      },
+      deterministicCheck: assessRequirement(
+        requirement,
+        activePolicies,
+        dayjs().valueOf(),
+        org?.name,
+        orgLegalNames(org),
+      ),
+      policies: activePolicies.map((policy) => ({
+        _id: policy._id,
+        carrier: policy.carrier,
+        policyNumber: policy.policyNumber,
+        insuredName: policy.insuredName,
+        effectiveDate: policy.effectiveDate,
+        expirationDate: policy.expirationDate,
+        policyTypes: policy.policyTypes,
+        summary: policy.summary,
+        coverages: (policy.coverages ?? []).map((coverage) => ({
+          name: coverage.name,
+          coverageCode: coverage.coverageCode,
+          limit: coverage.limit,
+          limitAmount: coverage.limitAmount,
+          limitType: coverage.limitType,
+          deductible: coverage.deductible,
+          deductibleAmount: coverage.deductibleAmount,
+          deductibleType: coverage.deductibleType,
+          formNumber: coverage.formNumber,
+          pageNumber: coverage.pageNumber,
+          sectionRef: coverage.sectionRef,
+          originalContent: coverage.originalContent,
+        })),
+      })),
+    };
+  },
+});
+
+export const saveManualComplianceReviewInternal = internalMutation({
+  args: {
+    orgId: v.id("organizations"),
+    requirementId: v.id("insuranceRequirements"),
+    userId: v.id("users"),
+    status: complianceStatusValidator,
+    matchedPolicyIds: v.array(v.id("policies")),
+    expiresAt: v.optional(v.string()),
+    daysUntilExpiration: v.optional(v.number()),
+    notes: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const membership = await ctx.db
+      .query("orgMemberships")
+      .withIndex("by_orgId_userId", (q) =>
+        q.eq("orgId", args.orgId).eq("userId", args.userId),
+      )
+      .first();
+    if (!membership) throw new Error("Organization access required");
+    const requirement = await ctx.db.get(args.requirementId);
+    if (!requirement || requirement.orgId !== args.orgId) {
+      throw new Error("Requirement not found");
+    }
+    await ctx.db.patch(args.requirementId, {
+      manualComplianceReview: {
+        status: args.status,
+        matchedPolicyIds: args.matchedPolicyIds,
+        expiresAt: args.expiresAt,
+        daysUntilExpiration: args.daysUntilExpiration,
+        notes: args.notes?.trim() || undefined,
+        checkedAt: dayjs().valueOf(),
+        checkedByUserId: args.userId,
+      },
+    });
+  },
 });
 
 export const upsertRequirementInternal = internalMutation({
@@ -1226,6 +1427,7 @@ export const listVendorComplianceInternal = internalQuery({
           policies,
           dayjs().valueOf(),
           vendorOrg?.name,
+          orgLegalNames(vendorOrg),
         ),
       }));
       const missing = checks.filter(

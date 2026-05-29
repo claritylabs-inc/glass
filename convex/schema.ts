@@ -134,6 +134,28 @@ export default defineSchema({
     insuranceContext: v.optional(v.string()), // brokers, carriers, insurance relationships
     investorsContext: v.optional(v.string()), // investors, shareholders, funding
     partnersContext: v.optional(v.string()), // joint ventures, affiliates, partners
+    relatedLegalEntities: v.optional(
+      v.array(
+        v.object({
+          legalName: v.string(),
+          relationship: v.optional(
+            v.union(
+              v.literal("current"),
+              v.literal("fka"),
+              v.literal("dba"),
+              v.literal("subsidiary"),
+              v.literal("parent"),
+              v.literal("affiliate"),
+              v.literal("other"),
+            ),
+          ),
+          incorporationNumber: v.optional(v.string()),
+          taxId: v.optional(v.string()),
+          jurisdiction: v.optional(v.string()),
+          notes: v.optional(v.string()),
+        }),
+      ),
+    ),
     // Client-org verification: which sender emails/domains count as "this client"
     // when routing inbound email sent to the broker's agent handle.
     allowedEmails: v.optional(v.array(v.string())),
@@ -717,6 +739,23 @@ export default defineSchema({
       v.literal("vendors"),
       v.literal("own_org"),
       v.literal("both"),
+    ),
+    manualComplianceReview: v.optional(
+      v.object({
+        status: v.union(
+          v.literal("met"),
+          v.literal("missing"),
+          v.literal("expiring_soon"),
+          v.literal("expired"),
+          v.literal("needs_review"),
+        ),
+        matchedPolicyIds: v.array(v.id("policies")),
+        expiresAt: v.optional(v.string()),
+        daysUntilExpiration: v.optional(v.number()),
+        notes: v.optional(v.string()),
+        checkedAt: v.number(),
+        checkedByUserId: v.id("users"),
+      }),
     ),
     minimumRequired: v.boolean(),
     status: v.union(v.literal("active"), v.literal("archived")),

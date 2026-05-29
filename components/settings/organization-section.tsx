@@ -9,7 +9,7 @@ import { api } from "@/convex/_generated/api";
 import { useCurrentOrg } from "@/hooks/use-current-org";
 import type { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
-import { Loader2, AlertTriangle, RotateCcw } from "lucide-react";
+import { Loader2, AlertTriangle, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { AccentColorPicker } from "@/components/ui/accent-color-picker";
 import { INDUSTRIES } from "@/convex/lib/industries";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -48,6 +48,16 @@ type OrgSettingsArgs = {
   insuranceContext?: string;
   investorsContext?: string;
   partnersContext?: string;
+  relatedLegalEntities?: RelatedLegalEntity[];
+};
+
+type RelatedLegalEntity = {
+  legalName: string;
+  relationship?: "current" | "fka" | "dba" | "subsidiary" | "parent" | "affiliate" | "other";
+  incorporationNumber?: string;
+  taxId?: string;
+  jurisdiction?: string;
+  notes?: string;
 };
 
 type BrandingSettingsArgs = {
@@ -81,6 +91,9 @@ export function OrganizationSection() {
   const [insuranceContext, setInsuranceContext] = useState("");
   const [investorsContext, setInvestorsContext] = useState("");
   const [partnersContext, setPartnersContext] = useState("");
+  const [relatedLegalEntities, setRelatedLegalEntities] = useState<
+    RelatedLegalEntity[]
+  >([]);
   const [settingsHydrated, setSettingsHydrated] = useState(false);
   const currentOrg = useCurrentOrg();
   const isBroker = currentOrg?.isBroker ?? false;
@@ -187,6 +200,7 @@ export function OrganizationSection() {
       setInsuranceContext(org.insuranceContext ?? "");
       setInvestorsContext(org.investorsContext ?? "");
       setPartnersContext(org.partnersContext ?? "");
+      setRelatedLegalEntities(org.relatedLegalEntities ?? []);
       hydratedRef.current = true;
       setSettingsHydrated(true);
     }
@@ -207,6 +221,16 @@ export function OrganizationSection() {
     insuranceContext: insuranceContext || undefined,
     investorsContext: investorsContext || undefined,
     partnersContext: partnersContext || undefined,
+    relatedLegalEntities: relatedLegalEntities
+      .map((entity) => ({
+        legalName: entity.legalName.trim(),
+        relationship: entity.relationship,
+        incorporationNumber: entity.incorporationNumber?.trim() || undefined,
+        taxId: entity.taxId?.trim() || undefined,
+        jurisdiction: entity.jurisdiction?.trim() || undefined,
+        notes: entity.notes?.trim() || undefined,
+      }))
+      .filter((entity) => entity.legalName),
   };
 
   const saveOrgSettings = useCallback(
@@ -340,6 +364,30 @@ export function OrganizationSection() {
     }
   }
 
+  function updateRelatedLegalEntity(
+    index: number,
+    patch: Partial<RelatedLegalEntity>,
+  ) {
+    setRelatedLegalEntities((current) =>
+      current.map((entity, entityIndex) =>
+        entityIndex === index ? { ...entity, ...patch } : entity,
+      ),
+    );
+  }
+
+  function addRelatedLegalEntity() {
+    setRelatedLegalEntities((current) => [
+      ...current,
+      { legalName: "", relationship: "fka" },
+    ]);
+  }
+
+  function removeRelatedLegalEntity(index: number) {
+    setRelatedLegalEntities((current) =>
+      current.filter((_, entityIndex) => entityIndex !== index),
+    );
+  }
+
   if (viewer === undefined || orgData === undefined) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -418,6 +466,125 @@ export function OrganizationSection() {
                 placeholder="https://yourcompany.com"
                 className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
               />
+            </div>
+
+            <div className="space-y-3 rounded-lg border border-foreground/6 bg-popover px-4 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <label className="text-label-sm font-medium text-muted-foreground block">
+                    Legal names and related entities
+                  </label>
+                  <p className="mt-0.5 text-label-sm text-muted-foreground/60">
+                    Used to match named insureds against current names, FKAs,
+                    DBAs, subsidiaries, and legal registry identifiers.
+                  </p>
+                </div>
+                <PillButton
+                  type="button"
+                  size="compact"
+                  variant="secondary"
+                  onClick={addRelatedLegalEntity}
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Add
+                </PillButton>
+              </div>
+              {relatedLegalEntities.length === 0 ? (
+                <p className="text-body-sm text-muted-foreground/70">
+                  No related legal entities listed.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {relatedLegalEntities.map((entity, index) => (
+                    <div
+                      key={index}
+                      className="grid gap-2 rounded-lg border border-foreground/6 bg-card p-3 sm:grid-cols-12"
+                    >
+                      <input
+                        type="text"
+                        value={entity.legalName}
+                        onChange={(event) =>
+                          updateRelatedLegalEntity(index, {
+                            legalName: event.target.value,
+                          })
+                        }
+                        placeholder="Actual legal name"
+                        className="sm:col-span-5 rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                      />
+                      <select
+                        value={entity.relationship ?? "other"}
+                        onChange={(event) =>
+                          updateRelatedLegalEntity(index, {
+                            relationship: event.target
+                              .value as RelatedLegalEntity["relationship"],
+                          })
+                        }
+                        className="sm:col-span-2 rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                      >
+                        <option value="current">Current</option>
+                        <option value="fka">FKA</option>
+                        <option value="dba">DBA</option>
+                        <option value="subsidiary">Subsidiary</option>
+                        <option value="parent">Parent</option>
+                        <option value="affiliate">Affiliate</option>
+                        <option value="other">Other</option>
+                      </select>
+                      <input
+                        type="text"
+                        value={entity.incorporationNumber ?? ""}
+                        onChange={(event) =>
+                          updateRelatedLegalEntity(index, {
+                            incorporationNumber: event.target.value,
+                          })
+                        }
+                        placeholder="Incorp. no."
+                        className="sm:col-span-2 rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                      />
+                      <input
+                        type="text"
+                        value={entity.taxId ?? ""}
+                        onChange={(event) =>
+                          updateRelatedLegalEntity(index, {
+                            taxId: event.target.value,
+                          })
+                        }
+                        placeholder="EIN / tax ID"
+                        className="sm:col-span-2 rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeRelatedLegalEntity(index)}
+                        className="sm:col-span-1 inline-flex h-9 items-center justify-center rounded-lg border border-foreground/8 text-muted-foreground transition-colors hover:bg-foreground/4 hover:text-foreground"
+                        aria-label="Remove legal entity"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                      <input
+                        type="text"
+                        value={entity.jurisdiction ?? ""}
+                        onChange={(event) =>
+                          updateRelatedLegalEntity(index, {
+                            jurisdiction: event.target.value,
+                          })
+                        }
+                        placeholder="Jurisdiction"
+                        className="sm:col-span-3 rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                      />
+                      <input
+                        type="text"
+                        value={entity.notes ?? ""}
+                        onChange={(event) =>
+                          updateRelatedLegalEntity(index, {
+                            notes: event.target.value,
+                          })
+                        }
+                        placeholder="Notes"
+                        className="sm:col-span-9 rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {!isBroker && (

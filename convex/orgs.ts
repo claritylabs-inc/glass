@@ -842,6 +842,28 @@ export const updateOrg = mutation({
     insuranceContext: v.optional(v.string()),
     investorsContext: v.optional(v.string()),
     partnersContext: v.optional(v.string()),
+    relatedLegalEntities: v.optional(
+      v.array(
+        v.object({
+          legalName: v.string(),
+          relationship: v.optional(
+            v.union(
+              v.literal("current"),
+              v.literal("fka"),
+              v.literal("dba"),
+              v.literal("subsidiary"),
+              v.literal("parent"),
+              v.literal("affiliate"),
+              v.literal("other"),
+            ),
+          ),
+          incorporationNumber: v.optional(v.string()),
+          taxId: v.optional(v.string()),
+          jurisdiction: v.optional(v.string()),
+          notes: v.optional(v.string()),
+        }),
+      ),
+    ),
     coiHandling: v.optional(v.union(v.literal("broker"), v.literal("member"), v.literal("ignore"))),
     autoGenerateCoi: v.optional(v.boolean()),
     policyChangeRequestsEnabled: v.optional(v.boolean()),

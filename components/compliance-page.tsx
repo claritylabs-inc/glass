@@ -12,7 +12,8 @@ import {
   CheckCircle2,
   ClipboardCheck,
   FileUp,
-  PencilLine,
+  Plus,
+  RefreshCcw,
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -57,6 +58,9 @@ type ComplianceApi = {
     complianceRequirements: {
       importRequirements: FunctionReference<"action">;
     };
+    complianceReview: {
+      recheckOwnRequirement: FunctionReference<"action">;
+    };
   };
   connectedOrgs: {
     listVendors: FunctionReference<"query">;
@@ -94,8 +98,13 @@ type Requirement = {
   sourcePageEnd?: number;
   updatedAt: number;
   complianceCheck?: {
-    status: "met" | "missing" | "expiring_soon" | "expired";
+    status: "met" | "missing" | "expiring_soon" | "expired" | "needs_review";
+    matchedPolicyIds?: Id<"policies">[];
+    expiresAt?: string;
+    daysUntilExpiration?: number;
     notes?: string;
+    checkedAt?: number;
+    checkedBy?: "system" | "user" | "agent";
   };
   canArchive?: boolean;
   clientRequirementSource?: {
@@ -191,6 +200,17 @@ function ComplianceStatusBadge({
       >
         <AlertCircle className="h-3 w-3" />
         Needs attention
+      </Badge>
+    );
+  }
+  if (status === "needs_review") {
+    return (
+      <Badge
+        variant="outline"
+        className="gap-1 border-amber-500/25 bg-amber-500/10 text-amber-500"
+      >
+        <AlertCircle className="h-3 w-3" />
+        Needs review
       </Badge>
     );
   }
@@ -310,6 +330,9 @@ export function CompliancePage() {
   const importRequirements = useAction(
     complianceApi.actions.complianceRequirements.importRequirements,
   );
+  const recheckOwnRequirement = useAction(
+    complianceApi.actions.complianceReview.recheckOwnRequirement,
+  );
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerMode, setDrawerMode] = useState<"bulk" | "manual">("bulk");
@@ -327,6 +350,8 @@ export function CompliancePage() {
   const [requirementText, setRequirementText] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [recheckingRequirementId, setRecheckingRequirementId] =
+    useState<Id<"insuranceRequirements"> | null>(null);
 
   if (isBroker) return null;
 
@@ -392,6 +417,43 @@ export function CompliancePage() {
     }
   }
 
+  async function recheckRequirement(requirement: Requirement) {
+    if (!orgId) return;
+    setRecheckingRequirementId(requirement._id);
+    try {
+      const result = await recheckOwnRequirement({
+        orgId,
+        requirementId: requirement._id,
+      });
+      await updateRequirements({ orgId }, (current) =>
+        current.map((item) =>
+          item._id === requirement._id
+            ? {
+                ...item,
+                complianceCheck: {
+                  status: result.status,
+                  matchedPolicyIds: result.matchedPolicyIds,
+                  expiresAt: result.expiresAt,
+                  daysUntilExpiration: result.daysUntilExpiration,
+                  notes: `LLM compliance check: ${result.notes}`,
+                  checkedBy: "agent",
+                },
+              }
+            : item,
+        ),
+      );
+      toast.success("Compliance checked");
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Unable to check compliance",
+      );
+    } finally {
+      setRecheckingRequirementId(null);
+    }
+  }
+
   async function generateRequirements() {
     if (!orgId) return;
     if (!sourceText.trim() && !sourceFile) {
@@ -447,13 +509,8 @@ export function CompliancePage() {
     }
   }
 
-  function openBulkImport() {
+  function openAddRequirements() {
     setDrawerMode("bulk");
-    setDrawerOpen(true);
-  }
-
-  function openManualAdd() {
-    setDrawerMode("manual");
     setDrawerOpen(true);
   }
 
@@ -468,11 +525,7 @@ export function CompliancePage() {
     <SettingsDrawer
       open={drawerOpen}
       onOpenChange={setDrawerOpen}
-      title={
-        drawerMode === "bulk"
-          ? `Bulk import ${scopeLabel.toLowerCase()} requirements`
-          : `Add ${scopeLabel.toLowerCase()} requirement`
-      }
+      title={`Add ${scopeLabel.toLowerCase()} requirements`}
       footer={
         <>
           <PillButton
@@ -503,8 +556,18 @@ export function CompliancePage() {
         </>
       }
     >
-      {drawerMode === "bulk" ? (
-        <div className="flex min-h-0 flex-1 flex-col gap-4">
+      <div className="flex min-h-0 flex-1 flex-col gap-4">
+        <Tabs
+          value={drawerMode}
+          onValueChange={(value) => setDrawerMode(value as "bulk" | "manual")}
+        >
+          <TabsList variant="pill">
+            <TabsTrigger value="bulk">Extract from document</TabsTrigger>
+            <TabsTrigger value="manual">Manual</TabsTrigger>
+          </TabsList>
+        </Tabs>
+        {drawerMode === "bulk" ? (
+          <>
           <p className="text-body-sm text-muted-foreground">
             {activeRequirementScope === "vendors"
               ? "Paste contract insurance language or upload a vendor requirements document. Glass will turn it into structured checklist items with source provenance."
@@ -567,17 +630,17 @@ export function CompliancePage() {
                 disabled={importing}
                 onClick={() => setSourceFile(null)}
               >
-                Remove
-              </PillButton>
-            </div>
-          ) : null}
-        </div>
-      ) : (
-        <form
-          id="manual-compliance-requirement"
-          onSubmit={submitRequirement}
-          className="flex min-h-0 flex-1 flex-col gap-4"
-        >
+              Remove
+            </PillButton>
+          </div>
+            ) : null}
+          </>
+        ) : (
+          <form
+            id="manual-compliance-requirement"
+            onSubmit={submitRequirement}
+            className="flex min-h-0 flex-1 flex-col gap-4"
+          >
           <label className="flex flex-col gap-1.5 text-label-sm font-medium text-muted-foreground">
             Requirement title
             <Input
@@ -622,8 +685,9 @@ export function CompliancePage() {
               required
             />
           </label>
-        </form>
-      )}
+          </form>
+        )}
+      </div>
     </SettingsDrawer>
   );
 
@@ -633,19 +697,11 @@ export function CompliancePage() {
         <>
           <PillButton
             size="compact"
-            variant="secondary"
-            onClick={openManualAdd}
+            variant="primary"
+            onClick={openAddRequirements}
           >
-            <PencilLine className="h-3.5 w-3.5" />
-            Manual
-          </PillButton>
-          <PillButton
-            size="compact"
-            variant="secondary"
-            onClick={openBulkImport}
-          >
-            <FileUp className="h-3.5 w-3.5" />
-            Extract from document
+            <Plus className="h-3.5 w-3.5" />
+            Add requirements
           </PillButton>
         </>
       }
@@ -673,7 +729,7 @@ export function CompliancePage() {
         ) : visibleRequirements.length === 0 ? (
           <ComplianceEmptyState
             scope={activeRequirementScope}
-            onBulkAdd={openBulkImport}
+            onBulkAdd={openAddRequirements}
           />
         ) : (
           <section className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
@@ -750,15 +806,37 @@ export function CompliancePage() {
                     </p>
                   ) : null}
                 </div>
-                {requirement.canArchive !== false ? (
-                  <PillButton
-                    size="compact"
-                    variant="secondary"
-                    onClick={() => removeRequirement(requirement._id)}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" /> Archive
-                  </PillButton>
-                ) : null}
+                <div className="flex shrink-0 items-center gap-2">
+                  {activeRequirementScope === "own_org" &&
+                  requirement.complianceCheck ? (
+                    <PillButton
+                      size="compact"
+                      variant="primary"
+                      disabled={recheckingRequirementId === requirement._id}
+                      onClick={() => void recheckRequirement(requirement)}
+                    >
+                      <RefreshCcw
+                        className={`h-3.5 w-3.5 ${
+                          recheckingRequirementId === requirement._id
+                            ? "animate-spin"
+                            : ""
+                        }`}
+                      />
+                      {recheckingRequirementId === requirement._id
+                        ? "Checking"
+                        : "Check compliance"}
+                    </PillButton>
+                  ) : null}
+                  {requirement.canArchive !== false ? (
+                    <PillButton
+                      size="compact"
+                      variant="secondary"
+                      onClick={() => removeRequirement(requirement._id)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" /> Archive
+                    </PillButton>
+                  ) : null}
+                </div>
               </div>
             ))}
           </section>
