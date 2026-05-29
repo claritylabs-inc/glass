@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { usePdf } from "@/components/pdf-context";
 import { ProseMarkdown } from "@/components/prose-markdown";
@@ -207,49 +207,6 @@ type PolicyDocument = {
 
 // ─── Shared sub-components (moved from page.tsx) ─────────────────────────────
 
-const SECTION_TYPE_LABELS: Record<string, string> = {
-  declarations: "Declarations",
-  insuring_agreement: "Insuring Agreement",
-  policy_form: "Policy Form",
-  endorsement: "Endorsement",
-  application: "Application",
-  exclusion: "Exclusion",
-  condition: "Condition",
-  definition: "Definition",
-  schedule: "Schedule",
-  subjectivity: "Subjectivity",
-  warranty: "Warranty",
-  notice: "Notice",
-  regulatory: "Regulatory",
-  other: "Other",
-};
-
-const SECTION_TYPE_COLORS: Record<string, string> = {
-  declarations:
-    "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400",
-  insuring_agreement:
-    "bg-green-50 text-green-600 dark:bg-green-950/40 dark:text-green-400",
-  policy_form:
-    "bg-cyan-50 text-cyan-600 dark:bg-cyan-950/40 dark:text-cyan-400",
-  endorsement: "bg-sky-50 text-sky-600 dark:bg-sky-950/40 dark:text-sky-400",
-  application:
-    "bg-lime-50 text-lime-600 dark:bg-lime-950/40 dark:text-lime-400",
-  exclusion: "bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400",
-  condition:
-    "bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400",
-  definition:
-    "bg-purple-50 text-purple-600 dark:bg-purple-950/40 dark:text-purple-400",
-  schedule:
-    "bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-400",
-  subjectivity:
-    "bg-orange-50 text-orange-600 dark:bg-orange-950/40 dark:text-orange-400",
-  warranty: "bg-pink-50 text-pink-600 dark:bg-pink-950/40 dark:text-pink-400",
-  notice: "bg-teal-50 text-teal-600 dark:bg-teal-950/40 dark:text-teal-400",
-  regulatory:
-    "bg-yellow-50 text-yellow-700 dark:bg-yellow-950/40 dark:text-yellow-400",
-  other: "bg-gray-50 text-gray-600 dark:bg-gray-800/40 dark:text-gray-400",
-};
-
 function PageRef({ page }: { page: number }) {
   const pdf = usePdf();
 
@@ -389,106 +346,7 @@ function groupRowsBySection(rows: DataRow[]) {
   return sections;
 }
 
-function displaySectionTitle(section: PolicySection) {
-  const title = section.title?.trim();
-  if (title && title.toLowerCase() !== section.type.toLowerCase()) {
-    return title;
-  }
-  return SECTION_TYPE_LABELS[section.type] ?? formatStructuredLabel(section.type) ?? "Section";
-}
-
-function sectionHasUsefulHeading(section: PolicySection) {
-  const type = section.type.toLowerCase();
-  if (type === "page_header" || type === "page_footer") return false;
-  return Boolean(section.title?.trim() || section.sectionNumber?.trim());
-}
-
-// ─── Section / Exclusion / Condition / Endorsement cards ─────────────────────
-
-function DocumentSection({
-  section,
-  highlighted,
-}: {
-  section: PolicySection;
-  highlighted?: boolean;
-}) {
-  const [expanded, setExpanded] = useState(() => !!highlighted);
-  const sectionRef = useRef<HTMLDivElement>(null);
-  const prevHighlighted = useRef(highlighted);
-  const typeColor =
-    SECTION_TYPE_COLORS[section.type] ?? SECTION_TYPE_COLORS.other;
-
-  // When highlighted newly becomes true, expand and scroll
-  useEffect(() => {
-    if (highlighted && !prevHighlighted.current && !expanded) {
-      setTimeout(() => setExpanded(true), 0);
-    }
-    prevHighlighted.current = highlighted;
-  }, [highlighted, expanded]);
-
-  // Scroll into view in a separate effect (no setState)
-  useEffect(() => {
-    if (!highlighted) return;
-    const timer = setTimeout(() => {
-      sectionRef.current?.scrollIntoView({ behavior: "auto", block: "center" });
-    }, 50);
-    return () => clearTimeout(timer);
-  }, [highlighted]);
-
-  return (
-    <div
-      ref={sectionRef}
-      className={`border-t border-foreground/4 transition-colors duration-150 ${highlighted ? "bg-blue-50/60 dark:bg-blue-950/30" : ""}`}
-    >
-      <button
-        type="button"
-        onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center gap-2 px-5 py-2.5 text-left hover:bg-foreground/[0.015] transition-colors"
-      >
-        {expanded ? (
-          <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-        ) : (
-          <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-        )}
-        <span className="text-sm font-normal text-foreground flex-1 min-w-0 truncate">
-          {section.sectionNumber && (
-            <span className="text-muted-foreground mr-1.5">
-              {section.sectionNumber}
-            </span>
-          )}
-          {displaySectionTitle(section)}
-        </span>
-        <span
-          className={`shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${typeColor}`}
-        >
-          {SECTION_TYPE_LABELS[section.type] ?? section.type}
-        </span>
-        <span className="hidden sm:inline-flex">
-          <PageRef page={section.pageStart} />
-        </span>
-      </button>
-      {expanded && (
-        <div className="px-5 pt-2 pb-3 pl-11">
-          <DocContent>{section.content}</DocContent>
-          {section.subsections?.map((sub: PolicySubsection, i: number) => (
-            <div key={i} className="mt-3 pl-3 border-l-2 border-foreground/6">
-              <p className="text-sm font-medium text-foreground mb-1">
-                {sub.sectionNumber && (
-                  <span className="text-muted-foreground mr-1.5">
-                    {sub.sectionNumber}
-                  </span>
-                )}
-                {sub.title}
-                {sub.pageNumber != null && <PageRef page={sub.pageNumber} />}
-              </p>
-              <DocContent>{sub.content}</DocContent>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
+// ─── Exclusion / Condition / Endorsement cards ───────────────────────────────
 
 function ExclusionBody({ ex }: { ex: PolicyExclusion }) {
   const metaItems = [
@@ -1144,7 +1002,7 @@ export interface ExtractionPanelProps {
 /** Renders extraction details as separate, flat cards — one per data type */
 export function ExtractionCards({
   policyDocument,
-  initialPage,
+  initialPage: _initialPage,
 }: ExtractionPanelProps) {
   const coverages = policyDocument?.coverages ?? [];
   const declarations = Array.isArray(
@@ -1170,7 +1028,6 @@ export function ExtractionCards({
   const formInventory = policyDocument?.formInventory ?? [];
   const supplementaryFacts = policyDocument?.supplementaryFacts ?? [];
   const sections = policyDocument?.sections ?? [];
-  const sourceSections = sections.filter(sectionHasUsefulHeading);
   const declarationsPage = declarationsFallbackPage(sections);
   const definitions = policyDocument?.definitions ?? [];
   const coveredReasons = policyDocument?.coveredReasons ?? [];
@@ -1238,7 +1095,6 @@ export function ExtractionCards({
     deductibles.length > 0 ||
     formInventory.length > 0 ||
     supplementaryFacts.length > 0 ||
-    sourceSections.length > 0 ||
     definitions.length > 0 ||
     coveredReasons.length > 0 ||
     endorsements.length > 0 ||
@@ -1648,27 +1504,6 @@ export function ExtractionCards({
               data={policyDocument.regulatoryContext}
             />
           </SupplementaryCard>
-        </div>
-      )}
-
-      {sourceSections.length > 0 && (
-        <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
-          <div className="px-5 py-3 border-b border-foreground/4">
-            <p className="text-sm font-medium text-foreground">
-              Source sections ({sourceSections.length})
-            </p>
-          </div>
-          {sourceSections.map((section: PolicySection, i: number) => (
-            <DocumentSection
-              key={i}
-              section={section}
-              highlighted={
-                initialPage != null &&
-                section.pageStart <= initialPage &&
-                (section.pageEnd ?? section.pageStart) >= initialPage
-              }
-            />
-          ))}
         </div>
       )}
     </div>
