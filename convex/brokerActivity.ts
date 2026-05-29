@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { internalMutation, query } from "./_generated/server";
-import { getOrgAccess, assertBrokerOrg } from "./lib/access";
+import { assertBrokerOrg, getOrgAccessForQuery } from "./lib/access";
 
 // Internal mutation so that actions can record broker activity via ctx.runMutation
 export const record = internalMutation({
@@ -39,7 +39,8 @@ export const listPortfolio = query({
     typeFilter: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const access = await getOrgAccess(ctx, args.brokerOrgId);
+    const access = await getOrgAccessForQuery(ctx, args.brokerOrgId);
+    if (!access) return [];
     assertBrokerOrg(access);
 
     const limit = args.limit ?? 50;
@@ -78,7 +79,8 @@ export const listForClient = query({
     typeFilter: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const brokerAccess = await getOrgAccess(ctx, args.brokerOrgId);
+    const brokerAccess = await getOrgAccessForQuery(ctx, args.brokerOrgId);
+    if (!brokerAccess) return [];
     assertBrokerOrg(brokerAccess);
 
     const limit = args.limit ?? 50;

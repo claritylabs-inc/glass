@@ -146,3 +146,30 @@ export async function assertImpersonatedSetupWrite(
   }
   return active;
 }
+
+export async function assertImpersonatedBrokerTaskWrite(
+  ctx: Ctx,
+  orgId: Id<"organizations">,
+) {
+  const active = await getActiveOperatorImpersonation(ctx);
+  if (!active) return null;
+
+  let brokerOrg: Doc<"organizations"> | null = null;
+  if (active.targetOrg._id === orgId && active.targetOrg.type === "broker") {
+    brokerOrg = active.targetOrg;
+  } else {
+    const org = await ctx.db.get(orgId);
+    if (
+      org?.type === "client" &&
+      org.brokerOrgId === active.targetOrg._id &&
+      active.targetOrg.type === "broker"
+    ) {
+      brokerOrg = active.targetOrg;
+    }
+  }
+
+  if (!brokerOrg) {
+    throw new Error("Operator impersonation is read-only for this organization");
+  }
+  return active;
+}

@@ -7,7 +7,7 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { QueryCtx, MutationCtx } from "../_generated/server";
 import { Id, Doc } from "../_generated/dataModel";
-import { getActiveOperatorImpersonation } from "./operatorIdentity";
+import { getActiveOperatorImpersonation, getActiveOperatorProfile } from "./operatorIdentity";
 
 type Ctx = QueryCtx | MutationCtx;
 
@@ -152,6 +152,27 @@ export async function getOrgAccess(ctx: Ctx, orgId: Id<"organizations">): Promis
   throw new Error("Unauthorized");
 }
 
+async function shouldSuppressOperatorTeardownUnauthorized(ctx: Ctx, error: unknown) {
+  if (!(error instanceof Error) || error.message !== "Unauthorized") return false;
+  const [operator, impersonation] = await Promise.all([
+    getActiveOperatorProfile(ctx),
+    getActiveOperatorImpersonation(ctx),
+  ]);
+  return !!operator && !impersonation;
+}
+
+export async function getOrgAccessForQuery(
+  ctx: Ctx,
+  orgId: Id<"organizations">,
+): Promise<OrgAccess | null> {
+  try {
+    return await getOrgAccess(ctx, orgId);
+  } catch (error) {
+    if (await shouldSuppressOperatorTeardownUnauthorized(ctx, error)) return null;
+    throw error;
+  }
+}
+
 // ── Capability helpers ──────────────────────────────────────────────────────
 
 export function assertBrokerOrg(access: OrgAccess): void {
@@ -280,6 +301,18 @@ export async function requireBrokerAccessToClient(
     ...access,
     brokerOrgId: access.brokerOrgId,
   };
+}
+
+export async function getBrokerAccessToClientForQuery(
+  ctx: Ctx,
+  clientOrgId: Id<"organizations">,
+): Promise<(OrgAccess & { brokerOrgId: Id<"organizations"> }) | null> {
+  try {
+    return await requireBrokerAccessToClient(ctx, clientOrgId);
+  } catch (error) {
+    if (await shouldSuppressOperatorTeardownUnauthorized(ctx, error)) return null;
+    throw error;
+  }
 }
 
 

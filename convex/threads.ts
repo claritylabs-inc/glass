@@ -4,7 +4,7 @@ import { query, mutation, internalQuery, internalMutation, type QueryCtx } from 
 import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
 import { requireOrgAccess, getOrgAccess } from "./lib/orgAuth";
-import { requireBrokerAccessToClient } from "./lib/access";
+import { getBrokerAccessToClientForQuery } from "./lib/access";
 import { buildImessageGroupMemberTitle } from "./lib/imessageGroupResolution";
 
 // Note: mutations/queries don't have process.env
@@ -146,7 +146,8 @@ export const listForClient = query({
     archived: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    await requireBrokerAccessToClient(ctx, args.clientOrgId);
+    const access = await getBrokerAccessToClientForQuery(ctx, args.clientOrgId);
+    if (!access) return [];
     const all = await ctx.db
       .query("threads")
       .withIndex("by_orgId_lastMessageAt", (q) => q.eq("orgId", args.clientOrgId))
@@ -165,7 +166,8 @@ export const getForClient = query({
     id: v.id("threads"),
   },
   handler: async (ctx, args) => {
-    await requireBrokerAccessToClient(ctx, args.clientOrgId);
+    const access = await getBrokerAccessToClientForQuery(ctx, args.clientOrgId);
+    if (!access) return null;
     const thread = await ctx.db.get(args.id);
     if (!thread || thread.orgId !== args.clientOrgId) return null;
     return await withImessageGroupDisplayTitle(ctx, thread);
@@ -178,7 +180,8 @@ export const messagesForClient = query({
     threadId: v.id("threads"),
   },
   handler: async (ctx, args) => {
-    await requireBrokerAccessToClient(ctx, args.clientOrgId);
+    const access = await getBrokerAccessToClientForQuery(ctx, args.clientOrgId);
+    if (!access) return [];
     const thread = await ctx.db.get(args.threadId);
     if (!thread || thread.orgId !== args.clientOrgId) return [];
     return await ctx.db

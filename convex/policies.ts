@@ -5,6 +5,7 @@ import { api, internal } from "./_generated/api";
 import { requireOrgAccess, getOrgAccess } from "./lib/orgAuth";
 import {
   requireBrokerAccessToClient,
+  getOrgAccessForQuery,
   assertCanEditPolicyExtractedFields,
   assertCanUploadPolicy,
   assertCanDeletePolicy,
@@ -14,7 +15,7 @@ import {
 } from "./lib/access";
 import { recordBrokerActivity } from "./lib/brokerActivity";
 import { notify } from "./lib/notify";
-import { assertImpersonatedSetupWrite } from "./lib/operatorIdentity";
+import { assertImpersonatedBrokerTaskWrite } from "./lib/operatorIdentity";
 import type { Id as DataModelId } from "./_generated/dataModel";
 import dayjs from "dayjs";
 import customParseFormat from "dayjs/plugin/customParseFormat";
@@ -1317,7 +1318,7 @@ export const createBrokerUpload = mutation({
   handler: async (ctx, args) => {
     const access = await requireBrokerAccessToClient(ctx, args.clientOrgId);
     assertCanUploadPolicy(access);
-    await assertImpersonatedSetupWrite(ctx, args.clientOrgId);
+    await assertImpersonatedBrokerTaskWrite(ctx, args.clientOrgId);
 
     const policyId = await ctx.db.insert("policies", {
       orgId: args.clientOrgId,
@@ -1364,7 +1365,8 @@ export const listForBroker = query({
     documentType: v.optional(v.union(v.literal("policy"), v.literal("quote"))),
   },
   handler: async (ctx, args) => {
-    const access = await getOrgAccessFor(ctx, args.clientOrgId);
+    const access = await getOrgAccessForQuery(ctx, args.clientOrgId);
+    if (!access) return [];
     assertCanReadPolicy(access);
     const all = await ctx.db
       .query("policies")
