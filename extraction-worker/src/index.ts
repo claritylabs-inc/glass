@@ -893,13 +893,17 @@ async function logJob(
   message: string,
   level: "info" | "warn" | "error" = "info",
 ): Promise<void> {
-  await convex.action(actions.logExternalJob, {
-    secret: SECRET,
-    policyId: job.policyId,
-    message,
-    phase: "worker",
-    level,
-  });
+  try {
+    await convex.action(actions.logExternalJob, {
+      secret: SECRET,
+      policyId: job.policyId,
+      message,
+      phase: "worker",
+      level,
+    });
+  } catch (error) {
+    console.warn(`[${job.policyId}] failed to append extraction log: ${errorMessage(error)}`);
+  }
 }
 
 async function fetchPdfBytes(fileUrl: string): Promise<Uint8Array> {
