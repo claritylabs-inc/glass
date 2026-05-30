@@ -4,6 +4,7 @@ import { POLICY_TYPE_LABELS } from "@/convex/lib/policyTypes";
 import dayjs from "dayjs";
 import dynamic from "next/dynamic";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Loader2 } from "lucide-react";
 
 const PolicyPdfThumbnail = dynamic(
   () =>
@@ -95,6 +96,27 @@ function pushRealValue(
   const text = realText(typeof value === "string" ? value : undefined);
   if (text) rows.push({ label, value: text });
   return text;
+}
+
+function ExtractionPendingDetails() {
+  return (
+    <div className="min-w-0 space-y-4">
+      <div className="flex items-center gap-2">
+        <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground/45" />
+        <span className="text-body-sm font-medium text-muted-foreground">
+          Extracting policy details
+        </span>
+      </div>
+      <div className="grid max-w-2xl gap-3 sm:grid-cols-2">
+        {["Coverage types", "Carrier", "Named insured", "Policy period", "Premium"].map((label, index) => (
+          <div key={label} className={index === 0 ? "sm:col-span-2" : undefined}>
+            <p className="mb-1.5 text-label-sm text-muted-foreground/55">{label}</p>
+            <Skeleton className="h-4 w-full max-w-56 bg-foreground/6" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export interface PolicySummaryProps {
@@ -246,7 +268,9 @@ export function PolicySummary({
         {pdfUrl && <PolicyPdfThumbnail url={pdfUrl} />}
 
         {/* Details column */}
-        <div className="flex-1 min-w-0 space-y-2.5">
+        <div className="flex-1 min-w-0 space-y-2.5 self-start pt-1">
+          {!hasExtractedDetails && <ExtractionPendingDetails />}
+
           {/* Coverage types — same row style as other fields */}
           {realPolicyTypes.length > 0 && (
             <SummaryRow
@@ -292,13 +316,6 @@ export function PolicySummary({
           {keyDeductibles.map(({ label, value }) => (
             <SummaryRow key={label} label={label} value={value} />
           ))}
-          {!hasExtractedDetails && (
-            <div className="flex min-h-32 items-center justify-end">
-              <span className="text-body-sm text-muted-foreground">
-                Extraction in progress
-              </span>
-            </div>
-          )}
         </div>
       </div>
 
