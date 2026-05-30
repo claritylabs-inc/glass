@@ -36,5 +36,8 @@
     "@types/node": "^22.0.0",
     "tsx": "^4.20.6",
     "typescript": "^5.7.0"
+  },
+  "optionalDependencies": {
+    "@llamaindex/liteparse-linux-x64-gnu": "^2.0.3"
   }
 }
