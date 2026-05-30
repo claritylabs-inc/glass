@@ -51,11 +51,13 @@ export function PolicyReferenceCard({
   page,
   citedSections,
   citedCoverageNames,
+  citedSourceSpanIds,
 }: {
   id: string;
   page?: number;
   citedSections?: string[];
   citedCoverageNames?: string[];
+  citedSourceSpanIds?: string[];
 }) {
   const policy = useCachedPolicySummary(id as Id<"policies">);
   const { openPreview } = useEntityPreview();
@@ -95,6 +97,7 @@ export function PolicyReferenceCard({
           page,
           citedSections,
           citedCoverageNames,
+          citedSourceSpanIds,
         })
       }
       className="inline-flex max-w-[18rem] items-center gap-1.5 rounded-md border border-foreground/6 bg-card px-2 py-1.5 text-left transition-colors hover:border-foreground/10 hover:bg-foreground/2"
@@ -119,11 +122,13 @@ export function PolicyCitation({
   page,
   citedSections,
   citedCoverageNames,
+  citedSourceSpanIds,
 }: {
   id: string;
   page?: number;
   citedSections?: string[];
   citedCoverageNames?: string[];
+  citedSourceSpanIds?: string[];
 }) {
   const policy = useCachedPolicySummary(id as Id<"policies">);
   const { openPreview } = useEntityPreview();
@@ -144,6 +149,7 @@ export function PolicyCitation({
           page,
           citedSections,
           citedCoverageNames,
+          citedSourceSpanIds,
         })
       }
       className="mx-0.5 inline-flex h-5 max-w-40 -translate-y-px items-center gap-1 rounded-full border border-foreground/8 bg-foreground/3 px-1.5 align-middle text-[10px] font-medium leading-none text-muted-foreground/65 no-underline transition-colors hover:border-foreground/12 hover:bg-foreground/5 hover:text-foreground/80"
@@ -160,12 +166,14 @@ export function PolicySourcePill({
   page,
   citedSections,
   citedCoverageNames,
+  citedSourceSpanIds,
   index,
 }: {
   id: string;
   page?: number;
   citedSections?: string[];
   citedCoverageNames?: string[];
+  citedSourceSpanIds?: string[];
   index: number;
 }) {
   const policy = useCachedPolicySummary(id as Id<"policies">);
@@ -187,6 +195,7 @@ export function PolicySourcePill({
           page,
           citedSections,
           citedCoverageNames,
+          citedSourceSpanIds,
         })
       }
       className="inline-flex h-6 max-w-48 items-center gap-1.5 rounded-full border border-foreground/8 bg-transparent px-2 text-label-sm font-medium text-muted-foreground/60 transition-colors hover:border-foreground/12 hover:bg-foreground/3 hover:text-foreground/75"
@@ -229,11 +238,13 @@ export function ReferenceCardStrip({
   refs,
   citedSections,
   citedCoverageNames,
+  citedSourceSpanIds,
   rightAligned,
 }: {
   refs: { type: "policy"; id: string; page?: number }[];
   citedSections?: string[];
   citedCoverageNames?: string[];
+  citedSourceSpanIds?: string[];
   rightAligned?: boolean;
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -254,6 +265,7 @@ export function ReferenceCardStrip({
           page={ref.page}
           citedSections={citedSections}
           citedCoverageNames={citedCoverageNames}
+          citedSourceSpanIds={citedSourceSpanIds}
           index={1}
         />
       </div>
@@ -289,6 +301,7 @@ export function ReferenceCardStrip({
                 page={ref.page}
                 citedSections={citedSections}
                 citedCoverageNames={citedCoverageNames}
+                citedSourceSpanIds={citedSourceSpanIds}
                 index={index + 1}
               />
             </span>

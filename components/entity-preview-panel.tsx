@@ -7,7 +7,7 @@
 
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useEntityPreview } from "@/hooks/use-entity-preview";
-import { usePdf } from "@/components/pdf-context";
+import { usePdf, type PdfHighlightBox } from "@/components/pdf-context";
 import { X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { PolicyPreview } from "./preview/policy-preview";
@@ -17,6 +17,7 @@ const EASE = [0.2, 0, 0, 1] as const;
 const MIN_WIDTH = 320;
 const MAX_WIDTH = 700;
 const DEFAULT_WIDTH = 400;
+type HighlightBox = PdfHighlightBox;
 
 export function EntityPreviewPanel({
   fitContainer = false,
@@ -38,6 +39,7 @@ export function EntityPreviewPanel({
     fileUrl?: string;
     policyId: string;
     page?: number;
+    highlightBoxes?: HighlightBox[];
   } | null>(null);
 
   useEffect(() => {
@@ -168,6 +170,7 @@ export function EntityPreviewPanel({
                 page={preview.page}
                 citedSections={preview.citedSections}
                 citedCoverageNames={preview.citedCoverageNames}
+                citedSourceSpanIds={preview.citedSourceSpanIds}
                 onHeaderInfo={setHeaderInfo}
                 onHeaderActions={setHeaderActions}
               />
@@ -184,10 +187,12 @@ function PolicyPreviewButtons({
   fileUrl,
   policyId,
   page,
+  highlightBoxes,
 }: {
   fileUrl: string;
   policyId: string;
   page?: number;
+  highlightBoxes?: HighlightBox[];
 }) {
   const { openWithUrl } = usePdf();
 
@@ -196,7 +201,7 @@ function PolicyPreviewButtons({
       <PillButton
         size="compact"
         variant="secondary"
-        onClick={() => openWithUrl(fileUrl, page)}
+        onClick={() => openWithUrl(fileUrl, page, highlightBoxes)}
       >
         View PDF
       </PillButton>

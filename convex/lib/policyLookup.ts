@@ -20,6 +20,8 @@ type SourceSpanDoc = {
   text: string;
   textHash?: string;
   semanticScore?: number;
+  bbox?: Array<{ page: number; x: number; y: number; width: number; height: number }>;
+  metadata?: Record<string, unknown>;
 };
 
 function textValue(value: unknown): string {
@@ -81,6 +83,8 @@ function attachSourceSpans(result: LookupResult, spans: Array<SourceSpanDoc & { 
       pageEnd: span.pageEnd,
       sectionId: span.sectionId,
       formNumber: span.formNumber,
+      bbox: span.bbox,
+      metadata: span.metadata,
       confidence: span.score >= 6 ? "high" : span.score >= 2 ? "medium" : "low",
       text: span.text.slice(0, 1200),
     })),
@@ -107,12 +111,18 @@ function sourceOnlyResults(spans: Array<SourceSpanDoc & { score: number }>, maxR
         pageEnd: span.pageEnd,
         sectionId: span.sectionId,
         formNumber: span.formNumber,
+        bbox: span.bbox,
+        metadata: span.metadata,
         text: span.text.slice(0, 1200),
       }],
     }));
 }
 
-function toSourceSpanDoc(span: GlassSourceSpan | { id: string; documentId: string; sourceKind: string; pageStart?: number; pageEnd?: number; sectionId?: string; formNumber?: string; text: string; textHash?: string; hash?: string }): SourceSpanDoc {
+function toSourceSpanDoc(span: GlassSourceSpan | { id: string; documentId: string; sourceKind: string; pageStart?: number; pageEnd?: number; sectionId?: string; formNumber?: string; text: string; textHash?: string; hash?: string; bbox?: Array<{ page: number; x: number; y: number; width: number; height: number }>; metadata?: Record<string, unknown> }): SourceSpanDoc {
+  const spanWithLocation = span as typeof span & {
+    bbox?: Array<{ page: number; x: number; y: number; width: number; height: number }>;
+    metadata?: Record<string, unknown>;
+  };
   return {
     spanId: span.id,
     documentId: span.documentId,
@@ -123,6 +133,8 @@ function toSourceSpanDoc(span: GlassSourceSpan | { id: string; documentId: strin
     formNumber: span.formNumber,
     text: span.text,
     textHash: span.textHash ?? span.hash,
+    bbox: spanWithLocation.bbox,
+    metadata: spanWithLocation.metadata,
   };
 }
 
@@ -141,6 +153,8 @@ async function loadStoredSourceSpans(
       formNumber: doc.formNumber,
       text: doc.text,
       textHash: doc.textHash,
+      bbox: doc.bbox,
+      metadata: doc.metadata,
     })))
     .catch(() => []);
 }

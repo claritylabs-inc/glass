@@ -8,6 +8,7 @@ export interface EntityPreview {
   page?: number; // optional page from ?page= param
   citedSections?: string[]; // section/endorsement titles or form numbers referenced in the agent answer
   citedCoverageNames?: string[]; // structured coverage names referenced in the agent answer
+  citedSourceSpanIds?: string[]; // exact source evidence spans to highlight in the PDF
 }
 
 interface EntityPreviewContextValue {

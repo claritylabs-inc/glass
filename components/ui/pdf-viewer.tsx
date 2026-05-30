@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
+import type { PdfHighlightBox } from "@/components/pdf-context";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 import {
@@ -22,6 +23,7 @@ interface PdfViewerProps {
   fileUrl: string;
   currentPage: number;
   highlightedPage: number | null;
+  highlightBoxes?: PdfHighlightBox[];
   onPageChange: (page: number) => void;
   onDocumentLoad: (numPages: number) => void;
   /** When provided, renders close + download buttons in the toolbar */
@@ -106,6 +108,7 @@ export function PdfViewer({
   fileUrl,
   currentPage,
   highlightedPage,
+  highlightBoxes = [],
   onPageChange,
   onDocumentLoad,
   onClose,
@@ -526,6 +529,8 @@ export function PdfViewer({
           >
             {Array.from({ length: numPages }, (_, i) => i + 1).map((page) => {
               const h = getPageHeight(page, pageWidth, pageDimensions);
+              const pageHighlightBoxes = highlightBoxes.filter((box) => box.page === page);
+              const intrinsicDims = pageDimensions.get(page);
               return (
                 <div
                   key={page}
@@ -547,6 +552,26 @@ export function PdfViewer({
                       }}
                     />
                   )}
+                  {pageHighlightBoxes.map((box, index) => {
+                    const coordinateWidth = box.coordinateWidth ?? intrinsicDims?.width ?? pageWidth ?? 1;
+                    const coordinateHeight = box.coordinateHeight ?? intrinsicDims?.height ?? h;
+                    const left = (box.x / coordinateWidth) * 100;
+                    const top = (box.y / coordinateHeight) * 100;
+                    const width = (box.width / coordinateWidth) * 100;
+                    const height = (box.height / coordinateHeight) * 100;
+                    return (
+                      <div
+                        key={`${page}:${index}:${box.x}:${box.y}`}
+                        className="absolute z-20 pointer-events-none rounded-[2px] border border-sky-500/70 bg-sky-400/18 shadow-[0_0_0_1px_rgba(255,255,255,0.65)]"
+                        style={{
+                          left: `${left}%`,
+                          top: `${top}%`,
+                          width: `${width}%`,
+                          height: `${height}%`,
+                        }}
+                      />
+                    );
+                  })}
                   {shouldRenderPage(page) ? (
                     <Page
                       pageNumber={page}

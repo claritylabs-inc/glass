@@ -2,6 +2,16 @@
 
 import { createContext, useContext, useState, useCallback, useMemo } from "react";
 
+export type PdfHighlightBox = {
+  page: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  coordinateWidth?: number;
+  coordinateHeight?: number;
+};
+
 interface PdfContextValue {
   currentPage: number;
   numPages: number;
@@ -15,8 +25,9 @@ interface PdfContextValue {
   /** Pre-load a URL without opening the viewer */
   setFileUrl: (url: string) => void;
   highlightedPage: number | null;
+  highlightBoxes: PdfHighlightBox[];
   /** Imperatively open a PDF by URL, optionally jumping to a page */
-  openWithUrl: (url: string, page?: number) => void;
+  openWithUrl: (url: string, page?: number, highlightBoxes?: PdfHighlightBox[]) => void;
 }
 
 const PdfContext = createContext<PdfContextValue | null>(null);
@@ -31,6 +42,7 @@ export function PdfProvider({
   const [numPages, setNumPages] = useState(0);
   const [isPdfOpen, setIsPdfOpen] = useState(false);
   const [highlightedPage, setHighlightedPage] = useState<number | null>(null);
+  const [highlightBoxes, setHighlightBoxes] = useState<PdfHighlightBox[]>([]);
 
   const setFileUrl = useCallback((url: string) => {
     setFileUrlState(url);
@@ -47,11 +59,12 @@ export function PdfProvider({
     [fileUrl, numPages]
   );
 
-  const openWithUrl = useCallback((url: string, page?: number) => {
+  const openWithUrl = useCallback((url: string, page?: number, boxes?: PdfHighlightBox[]) => {
     setFileUrlState(url);
     setIsPdfOpen(true);
     setCurrentPage(page ?? 1);
     setHighlightedPage(page ?? null);
+    setHighlightBoxes(boxes ?? []);
     setNumPages(0);
   }, []);
 
@@ -71,8 +84,9 @@ export function PdfProvider({
     fileUrl,
     setFileUrl,
     highlightedPage,
+    highlightBoxes,
     openWithUrl,
-  }), [currentPage, numPages, setNumPages, navigateToPage, isPdfOpen, togglePdf, openPdf, closePdf, fileUrl, setFileUrl, highlightedPage, openWithUrl]);
+  }), [currentPage, numPages, setNumPages, navigateToPage, isPdfOpen, togglePdf, openPdf, closePdf, fileUrl, setFileUrl, highlightedPage, highlightBoxes, openWithUrl]);
 
   return (
     <PdfContext.Provider value={value}>
@@ -93,6 +107,7 @@ const NOOP_PDF: PdfContextValue = {
   fileUrl: null,
   setFileUrl: () => {},
   highlightedPage: null,
+  highlightBoxes: [],
   openWithUrl: () => {},
 };
 

@@ -868,6 +868,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         log: async (msg) => { await pCtx.log(msg); },
         onProgress: async (msg) => { await pCtx.log(msg); },
         shouldCancel: async () => isExtractionCancelled(convexCtx, policyId),
+        pageScreenshots: pdfSource.pageScreenshots,
         onCheckpointSave: async (cp) => {
           if (await isExtractionCancelled(convexCtx, policyId)) {
             throw new Error(CANCELLED_BY_USER);

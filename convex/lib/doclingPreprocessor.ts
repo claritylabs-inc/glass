@@ -18,12 +18,22 @@ export type PdfPreparationResult = {
   parsingMs?: number;
   sourceSpans: Array<SourceSpan | GlassSourceSpan>;
   sourceChunks: Array<SourceChunk | GlassSourceChunk>;
+  pageScreenshots?: PageScreenshot[];
+};
+
+export type PageScreenshot = {
+  page: number;
+  imageBase64: string;
+  mimeType: "image/png";
+  width: number;
+  height: number;
 };
 
 export type LiteParseConvertResult = {
   text: string;
   sourceSpans: SourceSpan[];
   sourceChunks?: SourceChunk[];
+  pageScreenshots?: PageScreenshot[];
   metadata: {
     parserBackend: "liteparse";
     parserVersion?: string;
@@ -98,6 +108,7 @@ export async function tryConvertPdfWithLiteParse(params: {
       text?: unknown;
       sourceSpans?: unknown;
       sourceChunks?: unknown;
+      pageScreenshots?: unknown;
       metadata?: LiteParseConvertResult["metadata"];
     };
     if (typeof payload.text !== "string" || !Array.isArray(payload.sourceSpans)) {
@@ -107,6 +118,7 @@ export async function tryConvertPdfWithLiteParse(params: {
       text: payload.text,
       sourceSpans: payload.sourceSpans as SourceSpan[],
       sourceChunks: Array.isArray(payload.sourceChunks) ? payload.sourceChunks as SourceChunk[] : undefined,
+      pageScreenshots: Array.isArray(payload.pageScreenshots) ? payload.pageScreenshots as PageScreenshot[] : undefined,
       metadata: {
         parserBackend: "liteparse",
         ...payload.metadata,
@@ -149,6 +161,7 @@ export async function preparePdfTextWithParserFallback(params: {
       parsingMs: converted.metadata.parsingMs,
       sourceSpans,
       sourceChunks,
+      pageScreenshots: converted.pageScreenshots,
     };
   }
 

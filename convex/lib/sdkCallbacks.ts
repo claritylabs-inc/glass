@@ -302,6 +302,12 @@ function buildPromptInput(
 ) {
   const options = providerOptions as ExtractionProviderOptions | undefined;
   const images = options?.images;
+  const pdfPart = buildPdfFilePart({
+    pdfUrl: options?.pdfUrl,
+    pdfBytes: options?.pdfBytes,
+    pdfBase64: options?.pdfBase64,
+    mimeType: options?.mimeType,
+  });
 
   if (images?.length) {
     return {
@@ -314,19 +320,13 @@ function buildPromptInput(
               image: img.imageBase64,
               mediaType: img.mimeType,
             })),
+            ...(pdfPart ? [pdfPart] : []),
             { type: "text" as const, text: prompt },
           ],
         },
       ],
     };
   }
-
-  const pdfPart = buildPdfFilePart({
-    pdfUrl: options?.pdfUrl,
-    pdfBytes: options?.pdfBytes,
-    pdfBase64: options?.pdfBase64,
-    mimeType: options?.mimeType,
-  });
 
   if (pdfPart) {
     return {

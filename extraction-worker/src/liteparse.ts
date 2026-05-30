@@ -22,7 +22,16 @@ export type LiteParseConversionResult = {
   text: string;
   sourceSpans: SourceSpan[];
   sourceChunks: SourceChunk[];
+  pageScreenshots?: PageScreenshot[];
   metadata: LiteParseConversionMetadata;
+};
+
+export type PageScreenshot = {
+  page: number;
+  imageBase64: string;
+  mimeType: "image/png";
+  width: number;
+  height: number;
 };
 
 type PositionedCell = {
@@ -63,13 +72,19 @@ function formatNumber(value: number): string {
   return Number.isFinite(value) ? value.toFixed(2) : "";
 }
 
-function spanWithBbox(span: SourceSpan, bbox: PositionedRow["bbox"]): SourceSpan {
+function spanWithBbox(
+  span: SourceSpan,
+  bbox: PositionedRow["bbox"],
+  pageDims: { width: number; height: number },
+): SourceSpan {
   return {
     ...span,
     bbox: [bbox],
     metadata: {
       ...(span.metadata ?? {}),
       bbox: `${formatNumber(bbox.x)},${formatNumber(bbox.y)},${formatNumber(bbox.width)},${formatNumber(bbox.height)}`,
+      bboxCoordinateWidth: formatNumber(pageDims.width),
+      bboxCoordinateHeight: formatNumber(pageDims.height),
     },
   };
 }
@@ -141,6 +156,20 @@ function isHeaderRow(row: PositionedRow): boolean {
   return row.cells.length >= 2 && TABLE_HEADER_PATTERN.test(row.text) && !/\$|\bCAD\b|\bUSD\b|\d{2,}/i.test(row.text);
 }
 
+function classifyTextElement(row: PositionedRow, pageRows: PositionedRow[]): "title" | "paragraph" {
+  const text = row.text.trim();
+  const heights = pageRows
+    .map((item) => item.bbox.height)
+    .filter((value) => Number.isFinite(value) && value > 0)
+    .sort((a, b) => a - b);
+  const medianHeight = heights.length > 0 ? heights[Math.floor(heights.length / 2)] : row.bbox.height;
+  const looksLikeHeading =
+    row.bbox.height >= medianHeight * 1.2 ||
+    (/^[A-Z0-9][A-Z0-9\s,.'&/():-]{6,}$/.test(text) && text.length <= 120) ||
+    /^(section|coverage|endorsement|declarations?|schedule|exclusions?|conditions?)\b/i.test(text);
+  return looksLikeHeading ? "title" : "paragraph";
+}
+
 function normalizeHeader(value: string, index: number): string {
   const normalized = normalizeWhitespace(value).replace(/[:*]+$/g, "");
   return normalized || `Column ${index + 1}`;
@@ -178,7 +207,8 @@ function buildLiteParseSourceSpans(params: {
   for (const page of params.pages) {
     const pageText = normalizeWhitespace(page.text);
     if (pageText) {
-      const pageSpan = buildSourceSpan({
+      const pageSpan = {
+        ...buildSourceSpan({
         documentId: params.documentId,
         sourceKind: params.sourceKind,
         text: pageText,
@@ -191,7 +221,9 @@ function buildLiteParseSourceSpans(params: {
           pageWidth: formatNumber(page.width),
           pageHeight: formatNumber(page.height),
         },
-      }, sourceSpans.length);
+        }, sourceSpans.length),
+        bbox: [{ page: page.pageNum, x: 0, y: 0, width: page.width, height: page.height }],
+      };
       sourceSpans.push(pageSpan);
     }
 
@@ -207,6 +239,7 @@ function buildLiteParseSourceSpans(params: {
         inTable = false;
         currentHeaders = [];
         if (row.text.length >= 12) {
+          const elementType = classifyTextElement(row, rows);
           const textSpan = spanWithBbox(buildSourceSpan({
             documentId: params.documentId,
             sourceKind: params.sourceKind,
@@ -216,9 +249,12 @@ function buildLiteParseSourceSpans(params: {
             sourceUnit: "text",
             metadata: {
               sourceSystem: "liteparse",
-              sourceUnit: "line",
+              sourceUnit: elementType,
+              elementType,
+              pageWidth: formatNumber(page.width),
+              pageHeight: formatNumber(page.height),
             },
-          }, sourceSpans.length), row.bbox);
+          }, sourceSpans.length), row.bbox, { width: page.width, height: page.height });
           sourceSpans.push(textSpan);
         }
         continue;
@@ -248,10 +284,13 @@ function buildLiteParseSourceSpans(params: {
         metadata: {
           sourceSystem: "liteparse",
           sourceUnit: "table_row",
+          elementType: headerRow ? "table_header" : "table_row",
           tableId,
           isHeader: String(headerRow),
+          pageWidth: formatNumber(page.width),
+          pageHeight: formatNumber(page.height),
         },
-      }, sourceSpans.length), row.bbox);
+      }, sourceSpans.length), row.bbox, { width: page.width, height: page.height });
       sourceSpans.push(rowSpan);
 
       const alignedHeaders = alignHeaders(currentHeaders, row.cells);
@@ -283,12 +322,15 @@ function buildLiteParseSourceSpans(params: {
           metadata: {
             sourceSystem: "liteparse",
             sourceUnit: "table_cell",
+            elementType: "table_cell",
             tableId,
             parentSpanId: rowSpan.id,
             columnName: columnName ?? "",
             isHeader: String(headerRow),
+            pageWidth: formatNumber(page.width),
+            pageHeight: formatNumber(page.height),
           },
-        }, sourceSpans.length), cellBbox);
+        }, sourceSpans.length), cellBbox, { width: page.width, height: page.height });
         sourceSpans.push(cellSpan);
       }
 
@@ -300,6 +342,32 @@ function buildLiteParseSourceSpans(params: {
   }
 
   return sourceSpans;
+}
+
+async function buildPageScreenshots(params: {
+  parser: LiteParse;
+  pdfBytes: Uint8Array;
+  pages: ParsedPage[];
+}): Promise<PageScreenshot[]> {
+  const maxPages = readBoundedIntEnv("LITEPARSE_SCREENSHOT_MAX_PAGES", 12, 0, 100);
+  if (maxPages <= 0) return [];
+  const pageNumbers = params.pages
+    .map((page) => page.pageNum)
+    .slice(0, maxPages);
+  if (pageNumbers.length === 0) return [];
+  try {
+    const screenshots = await params.parser.screenshot(Buffer.from(params.pdfBytes), pageNumbers);
+    return screenshots.map((shot) => ({
+      page: shot.pageNum,
+      imageBase64: shot.imageBuffer.toString("base64"),
+      mimeType: "image/png" as const,
+      width: shot.width,
+      height: shot.height,
+    }));
+  } catch (error) {
+    console.warn(`LiteParse screenshots unavailable: ${error instanceof Error ? error.message : String(error)}`);
+    return [];
+  }
 }
 
 export async function convertPdfWithLiteParse(params: {
@@ -329,11 +397,17 @@ export async function convertPdfWithLiteParse(params: {
     documentId: params.documentId,
     sourceKind: params.sourceKind ?? "policy_pdf",
   });
+  const pageScreenshots = await buildPageScreenshots({
+    parser,
+    pdfBytes: params.pdfBytes,
+    pages: parsed.pages,
+  });
 
   return {
     text: parsed.text,
     sourceSpans,
     sourceChunks: chunkSourceSpans(sourceSpans),
+    pageScreenshots,
     metadata: {
       parserBackend: "liteparse",
       parserVersion: LITEPARSE_VERSION,

@@ -2,7 +2,7 @@
 
 Standalone worker for long-running `cl-sdk` policy extraction jobs. Convex stays the durable job ledger; this service claims extract-phase work, sends heartbeats, saves SDK checkpoints, and returns the extracted document/chunks to Convex for embedding and post-processing.
 
-The worker also owns LiteParse preprocessing for `@claritylabs/cl-sdk`. It converts PDFs to parser text plus hierarchical page/row/cell source spans, passes the original PDF bytes and those spans into `cl-sdk`, and exposes a small authenticated HTTP endpoint for Convex actions that need synchronous parsed PDF text. If LiteParse fails or times out, callers fall back to the existing PDF/PDF.js path.
+The worker also owns LiteParse preprocessing for `@claritylabs/cl-sdk`. It converts PDFs to parser text plus hierarchical page/row/cell source spans with bounding boxes, captures bounded page screenshots for multimodal model calls, passes the original PDF bytes and those spans into `cl-sdk`, and exposes a small authenticated HTTP endpoint for Convex actions that need synchronous parsed PDF text. If LiteParse fails or times out, callers fall back to the existing PDF/PDF.js path.
 
 ## Local
 
@@ -22,7 +22,7 @@ Required env:
 
 Set `EXTRACTION_WORKER_MODE=external` on the Convex deployment to queue new and retried extraction jobs for this worker.
 
-Set `EXTRACTION_WORKER_URL` and the same `EXTRACTION_WORKER_SECRET` on Convex to let requirement imports, mailbox attachment reads, on-demand source lookup, and agent PDF attachment context call the worker's LiteParse endpoint. The endpoint accepts `{ "pdfBase64": "..." }` with `Authorization: Bearer <secret>` and returns `{ text, sourceSpans, sourceChunks, metadata }`.
+Set `EXTRACTION_WORKER_URL` and the same `EXTRACTION_WORKER_SECRET` on Convex to let requirement imports, mailbox attachment reads, on-demand source lookup, and agent PDF attachment context call the worker's LiteParse endpoint. The endpoint accepts `{ "pdfBase64": "..." }` with `Authorization: Bearer <secret>` and returns `{ text, sourceSpans, sourceChunks, pageScreenshots, metadata }`.
 
 ## Railway
 

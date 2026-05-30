@@ -29,6 +29,7 @@ import { makeGenerateText, makeGenerateObject } from "./sdkCallbacks";
 import { modelCapabilitiesForTask } from "./modelCatalog";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
+import type { PageScreenshot } from "./doclingPreprocessor";
 
 function readBoundedIntEnv(name: string, fallback: number, min: number, max: number): number {
   const raw = process.env[name];
@@ -42,6 +43,34 @@ function readReviewModeEnv(name: string, fallback: "always" | "auto" | "skip"): 
   const raw = process.env[name];
   if (raw === "always" || raw === "auto" || raw === "skip") return raw;
   return fallback;
+}
+
+function enrichProviderOptionsWithPageImages<T extends { providerOptions?: unknown; trace?: unknown }>(
+  params: T,
+  screenshots: PageScreenshot[] | undefined,
+): T {
+  if (!screenshots?.length) return params;
+  const trace = params.trace as { startPage?: unknown; endPage?: unknown } | undefined;
+  const startPage = typeof trace?.startPage === "number" ? trace.startPage : undefined;
+  const endPage = typeof trace?.endPage === "number" ? trace.endPage : startPage;
+  if (!startPage || !endPage) return params;
+  const maxImages = readBoundedIntEnv("EXTRACTION_MULTIMODAL_MAX_IMAGES", 2, 0, 6);
+  if (maxImages <= 0) return params;
+  const images = screenshots
+    .filter((shot) => shot.page >= startPage && shot.page <= endPage)
+    .slice(0, maxImages)
+    .map((shot) => ({
+      imageBase64: shot.imageBase64,
+      mimeType: shot.mimeType,
+    }));
+  if (images.length === 0) return params;
+  return {
+    ...params,
+    providerOptions: {
+      ...((params.providerOptions as Record<string, unknown> | undefined) ?? {}),
+      images,
+    },
+  };
 }
 
 /**
@@ -61,6 +90,7 @@ export function buildExtractor(opts?: {
   onTokenUsage?: (usage: TokenUsage) => void;
   onCheckpointSave?: (checkpoint: PipelineCheckpoint<ExtractionState>) => Promise<void>;
   shouldCancel?: () => Promise<boolean>;
+  pageScreenshots?: PageScreenshot[];
 }) {
   const routing = opts?.ctx && opts.orgId
     ? {
@@ -82,13 +112,13 @@ export function buildExtractor(opts?: {
   return createExtractor({
     generateText: async (params) => {
       await throwIfCancelled();
-      const result = await generateText(params);
+      const result = await generateText(enrichProviderOptionsWithPageImages(params, opts?.pageScreenshots));
       await throwIfCancelled();
       return result;
     },
     generateObject: async (params) => {
       await throwIfCancelled();
-      const result = await generateObject(params);
+      const result = await generateObject(enrichProviderOptionsWithPageImages(params, opts?.pageScreenshots));
       await throwIfCancelled();
       return result;
     },

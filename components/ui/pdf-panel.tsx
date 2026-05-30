@@ -19,6 +19,7 @@ export function PdfPanel({ fitContainer = false }: { fitContainer?: boolean }) {
     navigateToPage,
     setNumPages,
     highlightedPage,
+    highlightBoxes,
   } = usePdf();
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   const [isDraggingState, setIsDraggingState] = useState(false);
@@ -112,6 +113,7 @@ export function PdfPanel({ fitContainer = false }: { fitContainer?: boolean }) {
               fileUrl={fileUrl}
               currentPage={currentPage}
               highlightedPage={highlightedPage}
+              highlightBoxes={highlightBoxes}
               onPageChange={navigateToPage}
               onDocumentLoad={setNumPages}
               onClose={closePdf}

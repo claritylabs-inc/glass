@@ -585,6 +585,7 @@ function MessageFooterActions({
   refs,
   citedSections,
   citedCoverageNames,
+  citedSourceSpanIds,
   attachments,
   threadId,
   toolCalls,
@@ -604,6 +605,7 @@ function MessageFooterActions({
   refs: { type: "policy"; id: string; page?: number }[];
   citedSections?: string[];
   citedCoverageNames?: string[];
+  citedSourceSpanIds?: string[];
   attachments?: ThreadAttachment[];
   threadId: Id<"threads">;
   toolCalls: { name: string; input?: string; output?: string }[];
@@ -733,6 +735,7 @@ function MessageFooterActions({
               refs={refs}
               citedSections={citedSections}
               citedCoverageNames={citedCoverageNames}
+              citedSourceSpanIds={citedSourceSpanIds}
               rightAligned={rightAligned}
             />
           )}
@@ -1301,6 +1304,7 @@ export function UnifiedMessageBubble({
     // Cited sections from tool results (stored on message by processThreadChat)
     const citedSections = msg.citedSections;
     const citedCoverageNames = msg.citedCoverageNames;
+    const citedSourceSpanIds = msg.citedSourceSpanIds;
     const toolCalls = msg.toolCalls?.length
       ? msg.toolCalls
       : (msg.usedTools ?? []).map((name) => ({ name }));
@@ -1406,6 +1410,7 @@ export function UnifiedMessageBubble({
                   refs={allRefs}
                   citedSections={citedSections}
                   citedCoverageNames={citedCoverageNames}
+                  citedSourceSpanIds={citedSourceSpanIds}
                   attachments={msg.attachments}
                   threadId={msg.threadId}
                   toolCalls={regularToolCalls}

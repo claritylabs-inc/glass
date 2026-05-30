@@ -50,6 +50,23 @@ export const listSpansByPolicy = query({
   },
 });
 
+export const listSpansByPolicyAndSpanIds = query({
+  args: {
+    policyId: v.id("policies"),
+    spanIds: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await requireOrgAccess(ctx);
+    const wanted = new Set(args.spanIds);
+    if (wanted.size === 0) return [];
+    const spans = await ctx.db
+      .query("sourceSpans")
+      .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+      .collect();
+    return spans.filter((span) => wanted.has(span.spanId));
+  },
+});
+
 export const listSpansByPolicyInternal = internalQuery({
   args: { policyId: v.id("policies") },
   handler: async (ctx, args) => {

@@ -3,6 +3,7 @@
 import {
   useState,
   useEffect,
+  useMemo,
   Children,
   cloneElement,
   isValidElement,
@@ -60,17 +61,45 @@ interface PolicyCoverage {
   deductible?: string;
 }
 
+type SourceSpanDoc = {
+  spanId: string;
+  pageStart?: number;
+  pageEnd?: number;
+  sectionId?: string;
+  formNumber?: string;
+  text: string;
+  bbox?: Array<{ page: number; x: number; y: number; width: number; height: number }>;
+  metadata?: Record<string, unknown>;
+};
+
 interface PolicyPreviewProps {
   id: string;
   page?: number;
   citedSections?: string[];
   citedCoverageNames?: string[];
+  citedSourceSpanIds?: string[];
   onHeaderInfo?: (info: { carrier: string; policyNum?: string }) => void;
   onHeaderActions?: (actions: {
     fileUrl?: string;
     policyId: string;
     page?: number;
+    highlightBoxes?: Array<{
+      page: number;
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      coordinateWidth?: number;
+      coordinateHeight?: number;
+    }>;
   }) => void;
+}
+
+function readNumber(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value !== "string") return undefined;
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 export function PolicyPreview({
@@ -78,6 +107,7 @@ export function PolicyPreview({
   page,
   citedSections,
   citedCoverageNames,
+  citedSourceSpanIds,
   onHeaderInfo,
   onHeaderActions,
 }: PolicyPreviewProps) {
@@ -88,6 +118,16 @@ export function PolicyPreview({
     policy?.fileId ? { fileId: policy.fileId } : "skip",
   );
   const [showAllTypes, setShowAllTypes] = useState(false);
+  const citedSourceSpans = useCachedQuery(
+    "sourceSpans.listSpansByPolicyAndSpanIds.preview",
+    api.sourceSpans.listSpansByPolicyAndSpanIds,
+    citedSourceSpanIds?.length
+      ? {
+          policyId: id as Id<"policies">,
+          spanIds: citedSourceSpanIds,
+        }
+      : "skip",
+  ) as SourceSpanDoc[] | undefined;
 
   // Notify parent of header info
   const carrier = policy?.carrier || "Unknown carrier";
@@ -99,11 +139,24 @@ export function PolicyPreview({
     }
   }, [carrier, policyNum, policy, onHeaderInfo]);
 
+  const highlightBoxes = useMemo(
+    () =>
+      (citedSourceSpans ?? []).flatMap((span) =>
+        (span.bbox ?? []).map((box) => ({
+          ...box,
+          coordinateWidth: readNumber(span.metadata?.bboxCoordinateWidth ?? span.metadata?.pageWidth),
+          coordinateHeight: readNumber(span.metadata?.bboxCoordinateHeight ?? span.metadata?.pageHeight),
+        })),
+      ),
+    [citedSourceSpans],
+  );
+  const citedPage = page ?? highlightBoxes[0]?.page;
+
   useEffect(() => {
     if (fileUrl && onHeaderActions) {
-      onHeaderActions({ fileUrl, policyId: id, page });
+      onHeaderActions({ fileUrl, policyId: id, page: citedPage, highlightBoxes });
     }
-  }, [fileUrl, id, page, onHeaderActions]);
+  }, [fileUrl, id, citedPage, onHeaderActions, highlightBoxes]);
 
   if (!policy) {
     return <div className="min-h-24" />;
@@ -159,6 +212,33 @@ export function PolicyPreview({
         <p className="text-xs text-muted-foreground/50">
           Combined from {fileCount} files
         </p>
+      )}
+
+      {citedSourceSpans && citedSourceSpans.length > 0 && (
+        <div className="min-w-0 rounded-md border border-foreground/8 bg-foreground/[0.02]">
+          <div className="border-b border-foreground/6 px-3 py-2">
+            <p className="text-label-sm font-medium text-foreground">
+              Exact source locations
+            </p>
+          </div>
+          <div className="divide-y divide-foreground/6">
+            {citedSourceSpans.slice(0, 5).map((span) => (
+              <div key={span.spanId} className="px-3 py-2">
+                <div className="mb-1 flex min-w-0 items-center gap-2">
+                  <span className="text-label-sm font-medium text-muted-foreground">
+                    p.{span.pageStart ?? span.bbox?.[0]?.page ?? "?"}
+                  </span>
+                  <span className="truncate text-label-sm text-muted-foreground/50">
+                    {span.sectionId ?? span.formNumber ?? (span.metadata?.elementType as string | undefined) ?? "Source span"}
+                  </span>
+                </div>
+                <p className="line-clamp-3 text-body-sm leading-relaxed text-foreground/80">
+                  {span.text}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
 
       {/* Policy Details with Labels */}

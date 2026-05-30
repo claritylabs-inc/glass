@@ -23,7 +23,7 @@ import {
 } from "@claritylabs/cl-sdk";
 import { modelCapabilitiesForRoute } from "./modelCapabilities.js";
 import { buildPdfSourceSpans } from "./pdfSourceSpans.js";
-import { convertPdfWithLiteParse } from "./liteparse.js";
+import { convertPdfWithLiteParse, type PageScreenshot } from "./liteparse.js";
 
 type WorkerState = {
   sourceKind: "upload" | "agent_email";
@@ -234,6 +234,37 @@ function mapUsage(usage?: { inputTokens?: number; outputTokens?: number }) {
 
 function readTaskKind(params: { taskKind?: unknown }): string | undefined {
   return typeof params.taskKind === "string" ? params.taskKind : undefined;
+}
+
+function selectPageImages(
+  screenshots: PageScreenshot[] | undefined,
+  trace: ModelCallTrace | undefined,
+): { images?: ExtractionImage[] } {
+  if (!screenshots?.length) return {};
+  const startPage = typeof trace?.startPage === "number" ? trace.startPage : undefined;
+  const endPage = typeof trace?.endPage === "number" ? trace.endPage : startPage;
+  if (!startPage || !endPage) return {};
+  const maxImages = readBoundedIntEnv("EXTRACTION_MULTIMODAL_MAX_IMAGES", 2, 0, 6);
+  if (maxImages <= 0) return {};
+  const images = screenshots
+    .filter((shot) => shot.page >= startPage && shot.page <= endPage)
+    .slice(0, maxImages)
+    .map((shot) => ({
+      imageBase64: shot.imageBase64,
+      mimeType: shot.mimeType,
+    }));
+  return images.length > 0 ? { images } : {};
+}
+
+function enrichProviderOptions(
+  providerOptions: unknown,
+  screenshots: PageScreenshot[] | undefined,
+  trace: ModelCallTrace | undefined,
+): Record<string, unknown> {
+  return {
+    ...((providerOptions as Record<string, unknown> | undefined) ?? {}),
+    ...selectPageImages(screenshots, trace),
+  };
 }
 
 function readSourceKind(value: unknown): "policy_pdf" | "application_pdf" | "email" | "attachment" | "manual_note" {
@@ -526,6 +557,12 @@ function extractEmbeddedPdf(prompt: string): { text: string; pdfBase64: string }
 
 function buildPromptInput(prompt: string, providerOptions?: Record<string, unknown>) {
   const options = providerOptions as ExtractionProviderOptions | undefined;
+  const pdfPart = buildPdfFilePart({
+    pdfUrl: options?.pdfUrl,
+    pdfBytes: options?.pdfBytes,
+    pdfBase64: options?.pdfBase64,
+    mimeType: options?.mimeType,
+  });
   if (options?.images?.length) {
     return {
       messages: [
@@ -537,19 +574,13 @@ function buildPromptInput(prompt: string, providerOptions?: Record<string, unkno
               image: img.imageBase64,
               mediaType: img.mimeType,
             })),
+            ...(pdfPart ? [pdfPart] : []),
             { type: "text" as const, text: prompt },
           ],
         },
       ],
     };
   }
-
-  const pdfPart = buildPdfFilePart({
-    pdfUrl: options?.pdfUrl,
-    pdfBytes: options?.pdfBytes,
-    pdfBase64: options?.pdfBase64,
-    mimeType: options?.mimeType,
-  });
 
   if (pdfPart) {
     return {
@@ -637,11 +668,13 @@ function buildWorkerExtractor(opts: {
   log: (message: string) => Promise<void>;
   onCheckpointSave: (checkpoint: PipelineCheckpoint<ExtractionState>) => Promise<void>;
   modelSettings?: WorkerModelSettings;
+  pageScreenshots?: PageScreenshot[];
 }) {
   const generateText: GenerateText = async (params) => {
     const taskKind = readTaskKind(params);
     const trace = readTraceDetails(params);
     const guidedPrompt = addPolicyPeriodGuidance(params.prompt);
+    const providerOptions = enrichProviderOptions(params.providerOptions, opts.pageScreenshots, trace);
     const route = getModelForTaskKind(taskKind, opts.modelSettings);
     const task = modelTaskForTaskKind(taskKind);
     const label = modelTraceLabel("generateText", taskKind, task, trace);
@@ -651,9 +684,9 @@ function buildWorkerExtractor(opts: {
       const result = await generateWithFallback({
         model: route.model,
         system: params.system,
-        ...buildPromptInput(guidedPrompt, params.providerOptions),
+        ...buildPromptInput(guidedPrompt, providerOptions),
         maxOutputTokens,
-        providerOptions: params.providerOptions as ProviderOptions | undefined,
+        providerOptions: providerOptions as ProviderOptions | undefined,
       }, taskKind);
       const usage = mapUsage(result.usage);
       await recordTraceEvent(opts.job, {
@@ -678,7 +711,7 @@ function buildWorkerExtractor(opts: {
           prompt: guidedPrompt,
           system: params.system,
           maxOutputTokens,
-          providerOptions: params.providerOptions as ProviderOptions | undefined,
+          providerOptions: providerOptions as ProviderOptions | undefined,
           trace,
           output: result.text,
           outputKind: "text",
@@ -710,7 +743,7 @@ function buildWorkerExtractor(opts: {
           prompt: guidedPrompt,
           system: params.system,
           maxOutputTokens,
-          providerOptions: params.providerOptions as ProviderOptions | undefined,
+          providerOptions: providerOptions as ProviderOptions | undefined,
           trace,
         }),
       });
@@ -722,6 +755,7 @@ function buildWorkerExtractor(opts: {
     const taskKind = readTaskKind(params);
     const trace = readTraceDetails(params);
     const guidedPrompt = addPolicyPeriodGuidance(params.prompt);
+    const providerOptions = enrichProviderOptions(params.providerOptions, opts.pageScreenshots, trace);
     const route = getModelForTaskKind(taskKind, opts.modelSettings);
     const task = modelTaskForTaskKind(taskKind);
     const label = modelTraceLabel("generateObject", taskKind, task, trace);
@@ -731,10 +765,10 @@ function buildWorkerExtractor(opts: {
       const result = await generateWithFallback({
         model: route.model,
         system: params.system,
-        ...buildPromptInput(guidedPrompt, params.providerOptions),
+        ...buildPromptInput(guidedPrompt, providerOptions),
         output: Output.object({ schema: params.schema }),
         maxOutputTokens,
-        providerOptions: params.providerOptions as ProviderOptions | undefined,
+        providerOptions: providerOptions as ProviderOptions | undefined,
       }, taskKind);
       const usage = mapUsage(result.usage);
       await recordTraceEvent(opts.job, {
@@ -759,7 +793,7 @@ function buildWorkerExtractor(opts: {
           prompt: guidedPrompt,
           system: params.system,
           maxOutputTokens,
-          providerOptions: params.providerOptions as ProviderOptions | undefined,
+          providerOptions: providerOptions as ProviderOptions | undefined,
           trace,
           output: result.output,
           outputKind: "object",
@@ -793,7 +827,7 @@ function buildWorkerExtractor(opts: {
             prompt: guidedPrompt,
             system: params.system,
             maxOutputTokens,
-            providerOptions: params.providerOptions as ProviderOptions | undefined,
+            providerOptions: providerOptions as ProviderOptions | undefined,
             trace,
             output: { sections: [] },
             outputKind: "object",
@@ -822,7 +856,7 @@ function buildWorkerExtractor(opts: {
           prompt: guidedPrompt,
           system: params.system,
           maxOutputTokens,
-          providerOptions: params.providerOptions as ProviderOptions | undefined,
+          providerOptions: providerOptions as ProviderOptions | undefined,
           trace,
         }),
       });
@@ -935,6 +969,7 @@ async function handleConvertRequest(req: IncomingMessage, res: ServerResponse): 
     text: converted.text,
     sourceSpans: converted.sourceSpans,
     sourceChunks: converted.sourceChunks,
+    pageScreenshots: converted.pageScreenshots,
     metadata: converted.metadata,
   });
 }
@@ -1070,15 +1105,6 @@ async function processJob(job: ClaimedJob): Promise<void> {
     const pdfBytes = await fetchPdfBytes(job.fileUrl);
     await logJob(job, `External worker fetched PDF (${pdfBytes.byteLength} bytes)`);
 
-    const extractor = buildWorkerExtractor({
-      job,
-      log: async (message) => logJob(job, message),
-      onCheckpointSave: async (checkpoint) => {
-        await saveCheckpoint(job, checkpoint);
-      },
-      modelSettings: job.modelSettings,
-    });
-
     if (job.clSdkCheckpoint) {
       await logJob(job, `Resuming extraction from cl-sdk phase "${job.clSdkCheckpoint.phase}"`);
     }
@@ -1104,6 +1130,15 @@ async function processJob(job: ClaimedJob): Promise<void> {
         job,
         `LiteParse parsed PDF in ${converted.metadata.parsingMs ?? 0}ms; prepared ${converted.sourceSpans.length} hierarchical source spans`,
       );
+      const extractor = buildWorkerExtractor({
+        job,
+        log: async (message) => logJob(job, message),
+        onCheckpointSave: async (checkpoint) => {
+          await saveCheckpoint(job, checkpoint);
+        },
+        modelSettings: job.modelSettings,
+        pageScreenshots: converted.pageScreenshots,
+      });
       preparedSource = {
         sourceSpans: converted.sourceSpans as Awaited<ReturnType<typeof buildPdfSourceSpans>>["sourceSpans"],
         sourceChunks: converted.sourceChunks as Awaited<ReturnType<typeof buildPdfSourceSpans>>["sourceChunks"],
@@ -1132,6 +1167,14 @@ async function processJob(job: ClaimedJob): Promise<void> {
       if (preparedSource.sourceSpans.length > 0) {
         await logJob(job, `Prepared ${preparedSource.sourceSpans.length} PDF.js source spans for source-grounded extraction`);
       }
+      const extractor = buildWorkerExtractor({
+        job,
+        log: async (message) => logJob(job, message),
+        onCheckpointSave: async (checkpoint) => {
+          await saveCheckpoint(job, checkpoint);
+        },
+        modelSettings: job.modelSettings,
+      });
       result = await extractor.extract(
         pdfBytes,
         job.policyId,
