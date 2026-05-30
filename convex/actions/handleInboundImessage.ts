@@ -37,7 +37,7 @@ import {
   policySearchScore,
 } from "../lib/aiUtils";
 import { searchPolicyDocumentWithSourceSpans } from "../lib/policyLookup";
-import { tryBuildDoclingPdfText } from "../lib/doclingPreprocessor";
+import { tryBuildParsedPdfText } from "../lib/doclingPreprocessor";
 import { classifyPromptInjection, enforceInputLimits } from "../lib/security";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { AgentScope } from "../lib/agentScope";
@@ -919,16 +919,16 @@ export const processInbound = internalAction({
           for (const att of attachmentRecords) {
             if (!att.buffer) continue;
             if (att.contentType === "application/pdf") {
-              const doclingText = await tryBuildDoclingPdfText({
+              const parsedPdfText = await tryBuildParsedPdfText({
                 pdfBytes: att.buffer,
                 documentId: att.filename,
                 sourceKind: "attachment",
                 timeoutMs: 20_000,
               });
-              if (doclingText) {
+              if (parsedPdfText) {
                 parts.push({
                   type: "text",
-                  text: `--- PDF attachment: ${att.filename} (Docling text) ---\n${doclingText}\n--- End PDF attachment ---`,
+                  text: `--- PDF attachment: ${att.filename} (LiteParse text) ---\n${parsedPdfText}\n--- End PDF attachment ---`,
                 });
               } else {
                 parts.push({

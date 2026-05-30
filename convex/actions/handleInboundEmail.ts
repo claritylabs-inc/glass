@@ -56,7 +56,7 @@ import {
   buildPolicyToolInstructions,
   policySearchScore,
 } from "../lib/aiUtils";
-import { tryBuildDoclingPdfText } from "../lib/doclingPreprocessor";
+import { tryBuildParsedPdfText } from "../lib/doclingPreprocessor";
 import { searchPolicyDocumentWithSourceSpans } from "../lib/policyLookup";
 import {
   classifyPromptInjection,
@@ -1078,16 +1078,16 @@ export const processInbound = internalAction({
 
         for (const att of claudeAttachments) {
           if (att.content_type === "application/pdf") {
-            const doclingText = await tryBuildDoclingPdfText({
+            const parsedPdfText = await tryBuildParsedPdfText({
               pdfBytes: att.buffer,
               documentId: att.filename,
               sourceKind: "attachment",
               timeoutMs: 20_000,
             });
-            if (doclingText) {
+            if (parsedPdfText) {
               contentParts.push({
                 type: "text",
-                text: `--- PDF attachment: ${att.filename} (Docling text) ---\n${doclingText}\n--- End PDF attachment ---`,
+                text: `--- PDF attachment: ${att.filename} (LiteParse text) ---\n${parsedPdfText}\n--- End PDF attachment ---`,
               });
             } else {
               contentParts.push({

@@ -3,37 +3,42 @@
 import dayjs from "dayjs";
 import {
   chunkSourceSpans,
-  normalizeDoclingDocument,
-  type DoclingDocumentLike,
   type SourceChunk,
   type SourceSpan,
 } from "@claritylabs/cl-sdk";
 import { buildPdfSourceSpans, type GlassSourceChunk, type GlassSourceSpan } from "./pdfSourceSpans";
 
-type DoclingSourceKind = "policy_pdf" | "application_pdf" | "email" | "attachment" | "manual_note";
+type ParsedPdfSourceKind = "policy_pdf" | "application_pdf" | "email" | "attachment" | "manual_note";
 
 export type PdfPreparationResult = {
   text: string;
-  parserBackend: "docling" | "pdfjs";
+  parserBackend: "liteparse" | "pdfjs";
   parserVersion?: string;
   parsedAt: number;
   parsingMs?: number;
-  doclingDocument?: DoclingDocumentLike;
   sourceSpans: Array<SourceSpan | GlassSourceSpan>;
   sourceChunks: Array<SourceChunk | GlassSourceChunk>;
 };
 
-export type DoclingConvertResult = {
-  document: DoclingDocumentLike;
+export type LiteParseConvertResult = {
+  text: string;
+  sourceSpans: SourceSpan[];
+  sourceChunks?: SourceChunk[];
   metadata: {
-    parserBackend: "docling";
+    parserBackend: "liteparse";
     parserVersion?: string;
     parsedAt?: number;
     parsingMs?: number;
+    pageCount?: number;
   };
 };
 
-const DEFAULT_TIMEOUT_MS = readBoundedIntEnv("DOCLING_CONVERT_TIMEOUT_MS", 120_000, 1_000, 15 * 60_000);
+const DEFAULT_TIMEOUT_MS = readBoundedIntEnv(
+  "LITEPARSE_CONVERT_TIMEOUT_MS",
+  readBoundedIntEnv("DOCLING_CONVERT_TIMEOUT_MS", 120_000, 1_000, 15 * 60_000),
+  1_000,
+  15 * 60_000,
+);
 
 function readBoundedIntEnv(name: string, fallback: number, min: number, max: number): number {
   const raw = process.env[name];
@@ -62,18 +67,18 @@ function sourceTextFromSpans(sourceSpans: Array<SourceSpan | GlassSourceSpan>): 
     .join("\n\n");
 }
 
-export async function tryConvertPdfWithDocling(params: {
+export async function tryConvertPdfWithLiteParse(params: {
   pdfBytes: Uint8Array;
   documentId: string;
-  sourceKind?: DoclingSourceKind;
+  sourceKind?: ParsedPdfSourceKind;
   timeoutMs?: number;
-}): Promise<DoclingConvertResult | null> {
+}): Promise<LiteParseConvertResult | null> {
   const baseUrl = workerUrl();
   const secret = process.env.EXTRACTION_WORKER_SECRET;
   if (!baseUrl || !secret) return null;
 
   try {
-    const response = await fetch(`${baseUrl}/docling/convert`, {
+    const response = await fetch(`${baseUrl}/liteparse/convert`, {
       method: "POST",
       headers: {
         authorization: `Bearer ${secret}`,
@@ -87,60 +92,61 @@ export async function tryConvertPdfWithDocling(params: {
       signal: AbortSignal.timeout(params.timeoutMs ?? DEFAULT_TIMEOUT_MS),
     });
     if (!response.ok) {
-      throw new Error(`Docling worker returned ${response.status}`);
+      throw new Error(`LiteParse worker returned ${response.status}`);
     }
     const payload = await response.json() as {
-      document?: unknown;
-      metadata?: DoclingConvertResult["metadata"];
+      text?: unknown;
+      sourceSpans?: unknown;
+      sourceChunks?: unknown;
+      metadata?: LiteParseConvertResult["metadata"];
     };
-    if (!payload.document || typeof payload.document !== "object") {
-      throw new Error("Docling worker returned no document");
+    if (typeof payload.text !== "string" || !Array.isArray(payload.sourceSpans)) {
+      throw new Error("LiteParse worker returned no text/source spans");
     }
     return {
-      document: payload.document as DoclingDocumentLike,
+      text: payload.text,
+      sourceSpans: payload.sourceSpans as SourceSpan[],
+      sourceChunks: Array.isArray(payload.sourceChunks) ? payload.sourceChunks as SourceChunk[] : undefined,
       metadata: {
-        parserBackend: "docling",
+        parserBackend: "liteparse",
         ...payload.metadata,
       },
     };
   } catch (error) {
-    console.warn(`Docling conversion unavailable; using PDF fallback: ${error instanceof Error ? error.message : String(error)}`);
+    console.warn(`LiteParse conversion unavailable; using PDF fallback: ${error instanceof Error ? error.message : String(error)}`);
     return null;
   }
 }
 
-export async function preparePdfTextWithDoclingFallback(params: {
+export const tryConvertPdfWithDocling = tryConvertPdfWithLiteParse;
+
+export async function preparePdfTextWithParserFallback(params: {
   pdfBytes: Uint8Array;
   documentId: string;
-  sourceKind?: DoclingSourceKind;
+  sourceKind?: ParsedPdfSourceKind;
 }): Promise<PdfPreparationResult> {
   const startedAt = dayjs().valueOf();
-  const converted = await tryConvertPdfWithDocling(params);
+  const converted = await tryConvertPdfWithLiteParse(params);
   if (converted) {
-    const normalized = normalizeDoclingDocument(converted.document, {
-      documentId: params.documentId,
-      sourceKind: params.sourceKind ?? "policy_pdf",
-    });
     const rawSource = await buildPdfSourceSpans({
       pdfBytes: params.pdfBytes,
       documentId: params.documentId,
       sourceKind: params.sourceKind ?? "policy_pdf",
     });
     const sourceSpans = [
-      ...normalized.sourceSpans,
+      ...converted.sourceSpans,
       ...rawSource.sourceSpans,
     ];
     const sourceChunks = [
-      ...chunkSourceSpans(normalized.sourceSpans),
+      ...(converted.sourceChunks ?? chunkSourceSpans(converted.sourceSpans)),
       ...rawSource.sourceChunks,
     ];
     return {
-      text: normalized.fullText,
-      parserBackend: "docling",
+      text: converted.text,
+      parserBackend: "liteparse",
       parserVersion: converted.metadata.parserVersion,
       parsedAt: converted.metadata.parsedAt ?? dayjs().valueOf(),
       parsingMs: converted.metadata.parsingMs,
-      doclingDocument: converted.document,
       sourceSpans,
       sourceChunks,
     };
@@ -161,21 +167,21 @@ export async function preparePdfTextWithDoclingFallback(params: {
   };
 }
 
-export async function tryBuildDoclingPdfText(params: {
+export const preparePdfTextWithDoclingFallback = preparePdfTextWithParserFallback;
+
+export async function tryBuildParsedPdfText(params: {
   pdfBytes: Uint8Array;
   documentId: string;
-  sourceKind?: DoclingSourceKind;
+  sourceKind?: ParsedPdfSourceKind;
   maxChars?: number;
   timeoutMs?: number;
 }): Promise<string | null> {
-  const converted = await tryConvertPdfWithDocling(params);
+  const converted = await tryConvertPdfWithLiteParse(params);
   if (!converted) return null;
-  const normalized = normalizeDoclingDocument(converted.document, {
-    documentId: params.documentId,
-    sourceKind: params.sourceKind ?? "attachment",
-  });
-  const text = normalized.fullText.trim();
+  const text = converted.text.trim();
   if (!text) return null;
   const maxChars = params.maxChars ?? 40_000;
   return text.length > maxChars ? text.slice(0, maxChars) : text;
 }
+
+export const tryBuildDoclingPdfText = tryBuildParsedPdfText;

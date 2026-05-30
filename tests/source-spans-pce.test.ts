@@ -121,21 +121,22 @@ describe("source spans and PCE backend surfaces", () => {
     expect(threadContent).not.toContain("Hide tool calls");
   });
 
-  it("prepares Docling or PDF source spans before policy extraction", () => {
+  it("prepares LiteParse or PDF source spans before policy extraction", () => {
     const policyExtraction = read("convex/actions/policyExtraction.ts");
     const doclingPreprocessor = read("convex/lib/doclingPreprocessor.ts");
     const pdfSourceSpans = read("convex/lib/pdfSourceSpans.ts");
 
-    expect(doclingPreprocessor).toContain("preparePdfTextWithDoclingFallback");
-    expect(doclingPreprocessor).toContain("normalizeDoclingDocument");
+    expect(doclingPreprocessor).toContain("preparePdfTextWithParserFallback");
+    expect(doclingPreprocessor).toContain("tryConvertPdfWithLiteParse");
+    expect(doclingPreprocessor).toContain("/liteparse/convert");
     expect(doclingPreprocessor).toContain("EXTRACTION_WORKER_URL");
     expect(doclingPreprocessor).toContain("buildPdfSourceSpans");
     expect(pdfSourceSpans).toContain("pdfjs-dist/legacy/build/pdf.mjs");
     expect(pdfSourceSpans).toContain("getTextContent");
     expect(pdfSourceSpans).toContain("splitPageIntoSectionCandidates");
     expect(pdfSourceSpans).toContain("sourceUnit: \"section_candidate\"");
-    expect(policyExtraction).toContain("preparePdfTextWithDoclingFallback");
-    expect(policyExtraction).toContain("kind: \"docling_document\"");
+    expect(policyExtraction).toContain("preparePdfTextWithParserFallback");
+    expect(policyExtraction).not.toContain("kind: \"docling_document\"");
     expect(policyExtraction).toContain("sourceSpans: pdfSource.sourceSpans as Array<Record<string, any>>");
     expect(policyExtraction).toContain(": pdfSource.sourceSpans as Array<Record<string, any>>");
     expect(policyExtraction).not.toContain("SDK source-grounding is disabled");

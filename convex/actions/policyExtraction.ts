@@ -15,7 +15,7 @@ import {
   buildExtractor,
   summarizeExtractionCheckpoint,
 } from "../lib/extraction";
-import { preparePdfTextWithDoclingFallback } from "../lib/doclingPreprocessor";
+import { preparePdfTextWithParserFallback } from "../lib/doclingPreprocessor";
 import type { ExtractionResult, ExtractionState, PipelineCheckpoint } from "../lib/extraction";
 import type { ExtractOptions } from "../lib/extraction";
 import { makeEmbedText, makeGenerateObject } from "../lib/sdkCallbacks";
@@ -790,7 +790,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
 
       const policyId = pCtx.jobId;
       const clSdkCheckpoint = await loadClSdkCheckpoint(convexCtx, policyId, state);
-      const pdfSource = await preparePdfTextWithDoclingFallback({
+      const pdfSource = await preparePdfTextWithParserFallback({
         pdfBytes,
         documentId: policyId,
         sourceKind: "policy_pdf",
@@ -899,13 +899,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
       let result: ExtractionResult;
       try {
         result = await extractor.extract(
-          pdfSource.doclingDocument
-            ? {
-                kind: "docling_document",
-                document: pdfSource.doclingDocument,
-                sourceKind: "policy_pdf",
-              }
-            : pdfBytes,
+          pdfBytes,
           policyId,
           extractOptions,
         );

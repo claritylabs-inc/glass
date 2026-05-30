@@ -5,7 +5,7 @@ import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { searchPolicyDocument } from "./aiUtils";
 import type { GlassSourceSpan } from "./pdfSourceSpans";
-import { preparePdfTextWithDoclingFallback } from "./doclingPreprocessor";
+import { preparePdfTextWithParserFallback } from "./doclingPreprocessor";
 import { makeEmbedText } from "./sdkCallbacks";
 
 type LookupResult = Record<string, unknown>;
@@ -157,7 +157,7 @@ async function loadOriginalPdfSpans(
   if (!blob) return [];
 
   const bytes = new Uint8Array(await blob.arrayBuffer());
-  const { sourceSpans } = await preparePdfTextWithDoclingFallback({
+  const { sourceSpans } = await preparePdfTextWithParserFallback({
     pdfBytes: bytes,
     documentId: policyId,
     sourceKind: "policy_pdf",

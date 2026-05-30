@@ -675,6 +675,7 @@ export default defineSchema({
     sourceTextExcerpt: v.optional(v.string()),
     parserBackend: v.optional(
       v.union(
+        v.literal("liteparse"),
         v.literal("docling"),
         v.literal("pdfjs"),
         v.literal("mammoth"),

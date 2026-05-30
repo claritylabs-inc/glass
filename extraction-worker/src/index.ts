@@ -23,7 +23,7 @@ import {
 } from "@claritylabs/cl-sdk";
 import { modelCapabilitiesForRoute } from "./modelCapabilities.js";
 import { buildPdfSourceSpans } from "./pdfSourceSpans.js";
-import { convertPdfWithDocling } from "./docling.js";
+import { convertPdfWithLiteParse } from "./liteparse.js";
 
 type WorkerState = {
   sourceKind: "upload" | "agent_email";
@@ -172,10 +172,15 @@ const WORKER_ID = process.env.EXTRACTION_WORKER_ID ?? `extraction-worker-${proce
 const POLL_MS = readBoundedIntEnv("EXTRACTION_WORKER_POLL_MS", 5000, 500, 60_000);
 const IDLE_LOG_MS = readBoundedIntEnv("EXTRACTION_WORKER_IDLE_LOG_MS", 60_000, 5_000, 10 * 60_000);
 const HEARTBEAT_MS = readBoundedIntEnv("EXTRACTION_WORKER_HEARTBEAT_MS", 30_000, 5_000, 5 * 60_000);
-const HTTP_PORT = readOptionalIntEnv("PORT") ?? readOptionalIntEnv("DOCLING_HTTP_PORT");
-const HTTP_MAX_BODY_BYTES = readBoundedIntEnv("DOCLING_HTTP_MAX_BODY_BYTES", 50 * 1024 * 1024, 1024, 250 * 1024 * 1024);
-const DOCLING_MAX_PAGES = readOptionalIntEnv("DOCLING_MAX_PAGES");
-const DOCLING_MAX_FILE_SIZE = readOptionalIntEnv("DOCLING_MAX_FILE_SIZE_BYTES");
+const HTTP_PORT = readOptionalIntEnv("PORT") ?? readOptionalIntEnv("LITEPARSE_HTTP_PORT") ?? readOptionalIntEnv("DOCLING_HTTP_PORT");
+const HTTP_MAX_BODY_BYTES = readBoundedIntEnv(
+  "LITEPARSE_HTTP_MAX_BODY_BYTES",
+  readBoundedIntEnv("DOCLING_HTTP_MAX_BODY_BYTES", 50 * 1024 * 1024, 1024, 250 * 1024 * 1024),
+  1024,
+  250 * 1024 * 1024,
+);
+const LITEPARSE_MAX_PAGES = readOptionalIntEnv("LITEPARSE_MAX_PAGES") ?? readOptionalIntEnv("DOCLING_MAX_PAGES");
+const LITEPARSE_MAX_FILE_SIZE = readOptionalIntEnv("LITEPARSE_MAX_FILE_SIZE_BYTES") ?? readOptionalIntEnv("DOCLING_MAX_FILE_SIZE_BYTES");
 
 const convex = new ConvexHttpClient(CONVEX_URL);
 
@@ -229,6 +234,19 @@ function mapUsage(usage?: { inputTokens?: number; outputTokens?: number }) {
 
 function readTaskKind(params: { taskKind?: unknown }): string | undefined {
   return typeof params.taskKind === "string" ? params.taskKind : undefined;
+}
+
+function readSourceKind(value: unknown): "policy_pdf" | "application_pdf" | "email" | "attachment" | "manual_note" {
+  if (
+    value === "policy_pdf"
+    || value === "application_pdf"
+    || value === "email"
+    || value === "attachment"
+    || value === "manual_note"
+  ) {
+    return value;
+  }
+  return "policy_pdf";
 }
 
 const DEFAULT_ROUTES: Record<ModelTask, WorkerModelRoute> = {
@@ -905,13 +923,18 @@ async function handleConvertRequest(req: IncomingMessage, res: ServerResponse): 
   }
 
   const pdfBytes = Buffer.from(pdfBase64, "base64");
-  const converted = await convertPdfWithDocling(pdfBytes, {
-    maxPages: DOCLING_MAX_PAGES,
-    maxFileSize: DOCLING_MAX_FILE_SIZE,
+  const converted = await convertPdfWithLiteParse({
+    pdfBytes,
+    documentId: typeof body.documentId === "string" ? body.documentId : "inline-pdf",
+    sourceKind: readSourceKind(body.sourceKind),
+    maxPages: LITEPARSE_MAX_PAGES,
+    maxFileSize: LITEPARSE_MAX_FILE_SIZE,
   });
   jsonResponse(res, 200, {
     ok: true,
-    document: converted.document,
+    text: converted.text,
+    sourceSpans: converted.sourceSpans,
+    sourceChunks: converted.sourceChunks,
     metadata: converted.metadata,
   });
 }
@@ -924,9 +947,9 @@ function startHttpServer(): { close: () => void } | null {
       jsonResponse(res, 200, { ok: true, workerId: WORKER_ID });
       return;
     }
-    if (req.method === "POST" && url.pathname === "/docling/convert") {
+    if (req.method === "POST" && (url.pathname === "/liteparse/convert" || url.pathname === "/docling/convert")) {
       handleConvertRequest(req, res).catch((error) => {
-        console.error("Docling HTTP conversion failed:", error);
+        console.error("LiteParse HTTP conversion failed:", error);
         jsonResponse(res, 500, { error: errorMessage(error) });
       });
       return;
@@ -934,7 +957,7 @@ function startHttpServer(): { close: () => void } | null {
     jsonResponse(res, 404, { error: "Not found" });
   });
   server.listen(HTTP_PORT, () => {
-    console.log(`Docling conversion endpoint listening on port ${HTTP_PORT}`);
+    console.log(`LiteParse conversion endpoint listening on port ${HTTP_PORT}`);
   });
   return {
     close: () => server.close(),
@@ -987,12 +1010,12 @@ async function completeJob(
 
   const rawSourceSpans = fallbackSource.sourceSpans as unknown as Array<Record<string, unknown>>;
   const rawSourceChunks = fallbackSource.sourceChunks as unknown as Array<Record<string, unknown>>;
-  const sourceSpans = resultSourceSpans.length > 0
+  const sourceSpans = dedupeById(resultSourceSpans.length > 0
     ? [...resultSourceSpans, ...rawSourceSpans]
-    : rawSourceSpans;
-  const sourceChunks = resultSourceChunks.length > 0
+    : rawSourceSpans);
+  const sourceChunks = dedupeById(resultSourceChunks.length > 0
     ? [...resultSourceChunks, ...rawSourceChunks]
-    : rawSourceChunks;
+    : rawSourceChunks);
 
   const completed = await convex.action(actions.completeExternalExtract, {
     secret: SECRET,
@@ -1010,6 +1033,18 @@ async function completeJob(
   if (!completed.ok) {
     throw new Error(`Convex rejected completion for ${job.policyId}`);
   }
+}
+
+function dedupeById<T extends Record<string, unknown>>(items: T[]): T[] {
+  const seen = new Set<string>();
+  const deduped: T[] = [];
+  for (const item of items) {
+    const id = typeof item.id === "string" ? item.id : "";
+    if (id && seen.has(id)) continue;
+    if (id) seen.add(id);
+    deduped.push(item);
+  }
+  return deduped;
 }
 
 async function failJob(job: ClaimedJob, error: unknown): Promise<void> {
@@ -1048,16 +1083,8 @@ async function processJob(job: ClaimedJob): Promise<void> {
       await logJob(job, `Resuming extraction from cl-sdk phase "${job.clSdkCheckpoint.phase}"`);
     }
 
-    const fallbackSource = await buildPdfSourceSpans({
-      pdfBytes,
-      documentId: job.policyId,
-      sourceKind: "policy_pdf",
-    });
-    if (fallbackSource.sourceSpans.length > 0) {
-      await logJob(job, `Prepared ${fallbackSource.sourceSpans.length} raw source spans for source-grounded extraction`);
-    }
-
     let result: ExtractionResult;
+    let preparedSource: Awaited<ReturnType<typeof buildPdfSourceSpans>>;
     const extractStartedAt = nowMs();
     await recordTraceEvent(job, {
       kind: "phase",
@@ -1066,38 +1093,52 @@ async function processJob(job: ClaimedJob): Promise<void> {
       status: "started",
     });
     try {
-      const converted = await convertPdfWithDocling(pdfBytes, {
-        maxPages: DOCLING_MAX_PAGES,
-        maxFileSize: DOCLING_MAX_FILE_SIZE,
+      const converted = await convertPdfWithLiteParse({
+        pdfBytes,
+        documentId: job.policyId,
+        sourceKind: "policy_pdf",
+        maxPages: LITEPARSE_MAX_PAGES,
+        maxFileSize: LITEPARSE_MAX_FILE_SIZE,
       });
       await logJob(
         job,
-        `Docling preprocessor parsed PDF in ${converted.metadata.parsingMs ?? 0}ms; running cl-sdk on DoclingDocument`,
+        `LiteParse parsed PDF in ${converted.metadata.parsingMs ?? 0}ms; prepared ${converted.sourceSpans.length} hierarchical source spans`,
       );
-      result = await extractor.extract(
-        {
-          kind: "docling_document",
-          document: converted.document,
-          sourceKind: "policy_pdf",
-        },
-        job.policyId,
-        {
-          ...(job.clSdkCheckpoint ? { resumeFrom: job.clSdkCheckpoint } : {}),
-        },
-      );
-    } catch (error) {
-      await logJob(
-        job,
-        `Docling preprocessor unavailable; falling back to PDF extraction (${errorMessage(error)})`,
-        "warn",
-      );
+      preparedSource = {
+        sourceSpans: converted.sourceSpans as Awaited<ReturnType<typeof buildPdfSourceSpans>>["sourceSpans"],
+        sourceChunks: converted.sourceChunks as Awaited<ReturnType<typeof buildPdfSourceSpans>>["sourceChunks"],
+      };
       result = await extractor.extract(
         pdfBytes,
         job.policyId,
         {
           ...(job.clSdkCheckpoint ? { resumeFrom: job.clSdkCheckpoint } : {}),
-          ...(fallbackSource.sourceSpans.length > 0
-            ? { sourceSpans: fallbackSource.sourceSpans as unknown as Array<Record<string, unknown>> }
+          ...(converted.sourceSpans.length > 0
+            ? { sourceSpans: converted.sourceSpans as unknown as Array<Record<string, unknown>> }
+            : {}),
+        },
+      );
+    } catch (error) {
+      await logJob(
+        job,
+        `LiteParse unavailable; falling back to PDF.js source spans (${errorMessage(error)})`,
+        "warn",
+      );
+      preparedSource = await buildPdfSourceSpans({
+        pdfBytes,
+        documentId: job.policyId,
+        sourceKind: "policy_pdf",
+      });
+      if (preparedSource.sourceSpans.length > 0) {
+        await logJob(job, `Prepared ${preparedSource.sourceSpans.length} PDF.js source spans for source-grounded extraction`);
+      }
+      result = await extractor.extract(
+        pdfBytes,
+        job.policyId,
+        {
+          ...(job.clSdkCheckpoint ? { resumeFrom: job.clSdkCheckpoint } : {}),
+          ...(preparedSource.sourceSpans.length > 0
+            ? { sourceSpans: preparedSource.sourceSpans as unknown as Array<Record<string, unknown>> }
             : {}),
         },
       );
@@ -1110,7 +1151,7 @@ async function processJob(job: ClaimedJob): Promise<void> {
       durationMs: nowMs() - extractStartedAt,
     });
 
-    await completeJob(job, result, fallbackSource);
+    await completeJob(job, result, preparedSource);
     console.log(`[${job.policyId}] completed external extraction`);
   } catch (error) {
     console.error(`[${job.policyId}] extraction failed:`, error);

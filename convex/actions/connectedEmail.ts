@@ -15,7 +15,7 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 import type { Id } from "../_generated/dataModel";
 import { getImessageWorkerUrl } from "../lib/imessageConfig";
 import { getModelForOrg, getProviderOptionsForTask } from "../lib/models";
-import { preparePdfTextWithDoclingFallback } from "../lib/doclingPreprocessor";
+import { preparePdfTextWithParserFallback } from "../lib/doclingPreprocessor";
 
 type ConnectedEmailAccount = {
   _id: Id<"connectedEmailAccounts">;
@@ -370,7 +370,7 @@ async function extractAttachmentText(attachment: ParsedMail["attachments"][numbe
   copy.set(attachment.content);
   const buffer = copy.buffer;
   if (type.includes("pdf") || lowerName.endsWith(".pdf")) {
-    const prepared = await preparePdfTextWithDoclingFallback({
+    const prepared = await preparePdfTextWithParserFallback({
       pdfBytes: new Uint8Array(buffer),
       documentId: attachment.filename ?? "email-attachment",
       sourceKind: "attachment",

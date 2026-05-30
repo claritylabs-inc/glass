@@ -10,7 +10,7 @@ import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { getModel } from "../lib/models";
-import { preparePdfTextWithDoclingFallback } from "../lib/doclingPreprocessor";
+import { preparePdfTextWithParserFallback } from "../lib/doclingPreprocessor";
 
 const CATEGORY_VALUES = [
   "general_liability",
@@ -58,7 +58,7 @@ type RequirementImportContext = {
 };
 type ExtractedFileText = {
   text: string;
-  parserBackend?: "docling" | "pdfjs" | "mammoth" | "plain_text";
+  parserBackend?: "liteparse" | "docling" | "pdfjs" | "mammoth" | "plain_text";
   parserVersion?: string;
   parsedAt?: number;
   parsingMs?: number;
@@ -115,7 +115,7 @@ async function extractPdfRequirementText(
   buffer: ArrayBuffer,
   fileName?: string,
 ): Promise<ExtractedFileText> {
-  const prepared = await preparePdfTextWithDoclingFallback({
+  const prepared = await preparePdfTextWithParserFallback({
     pdfBytes: new Uint8Array(buffer),
     documentId: fileName || "requirement-document",
     sourceKind: "attachment",
