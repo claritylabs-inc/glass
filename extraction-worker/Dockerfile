@@ -15,6 +15,7 @@ RUN set -eux; \
   mkdir -p node_modules/@llamaindex/liteparse-linux-x64-gnu; \
   tar -xzf "/tmp/${native_tgz}" -C node_modules/@llamaindex/liteparse-linux-x64-gnu --strip-components=1; \
   rm "/tmp/${native_tgz}"
+ENV LD_LIBRARY_PATH=/app/node_modules/@llamaindex/liteparse-linux-x64-gnu
 
 COPY . .
 RUN npm run build --ignore-scripts
