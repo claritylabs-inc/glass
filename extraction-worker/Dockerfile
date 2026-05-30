@@ -10,6 +10,7 @@ RUN apt-get update \
 
 COPY package*.json ./
 RUN NPM_CONFIG_MIN_RELEASE_AGE=0 npm ci --include=optional
+RUN NPM_CONFIG_MIN_RELEASE_AGE=0 npm install --no-save @llamaindex/liteparse-linux-x64-gnu@2.0.3
 
 COPY . .
 RUN npm run build --ignore-scripts
