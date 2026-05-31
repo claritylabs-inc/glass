@@ -52,6 +52,12 @@ import { usePdf } from "@/components/pdf-context";
 import { usePageContext } from "@/hooks/use-page-context";
 
 import { PolicySummary } from "./policy-summary";
+import {
+  SourceEvidenceButton,
+  collectSourceSpanIds,
+  sourceSpanIdsFrom,
+  usePolicySourceSpans,
+} from "./source-provenance";
 import { PolicyExtractionBanner } from "@/components/shared/extraction-banner";
 import {
   useCachedPolicyDetail,
@@ -127,12 +133,14 @@ type EditableCoverage = {
   deductibleAmount?: number;
   coverageCode?: string;
   originalContent?: string;
+  sourceSpanIds?: string[];
 };
 
 type EditablePremiumLine = {
   line: string;
   amount: string;
   amountValue?: number;
+  sourceSpanIds?: string[];
 };
 
 type EditableTaxFee = {
@@ -141,6 +149,7 @@ type EditableTaxFee = {
   amountValue?: number;
   type?: string;
   description?: string;
+  sourceSpanIds?: string[];
 };
 
 type CoverageReviewOption = {
@@ -372,6 +381,7 @@ function normalizeCoverageRows(value: unknown): EditableCoverage[] {
             : parseMoneyInput(row.deductible),
         coverageCode: stringValue(row.coverageCode) || undefined,
         originalContent: stringValue(row.originalContent) || undefined,
+        sourceSpanIds: sourceSpanIdsFrom(row),
       };
     })
     .filter((row) => row.name.trim());
@@ -389,6 +399,7 @@ function normalizePremiumRows(value: unknown): EditablePremiumLine[] {
           typeof row.amountValue === "number"
             ? row.amountValue
             : parseMoneyInput(row.amount),
+        sourceSpanIds: sourceSpanIdsFrom(row),
       };
     })
     .filter((row) => row.line.trim() || row.amount.trim());
@@ -408,6 +419,7 @@ function normalizeTaxRows(value: unknown): EditableTaxFee[] {
             : parseMoneyInput(row.amount),
         type: stringValue(row.type) || undefined,
         description: stringValue(row.description) || undefined,
+        sourceSpanIds: sourceSpanIdsFrom(row),
       };
     })
     .filter((row) => row.name.trim() || row.amount.trim());
@@ -906,6 +918,11 @@ function PolicyBreakdownEditor({
   });
 
   const saving = policyFieldAutoSave.saving;
+  const allSourceSpanIds = useMemo(
+    () => collectSourceSpanIds(policy),
+    [policy],
+  );
+  const sourceSpans = usePolicySourceSpans(policy._id, allSourceSpanIds);
 
   const saveFields = useCallback(
     (fields: Record<string, unknown>) => {
@@ -1215,7 +1232,7 @@ function PolicyBreakdownEditor({
             {draft.coverages.map((row, index) => (
               <div
                 key={index}
-                className="grid grid-cols-1 sm:grid-cols-[1.2fr_1fr_1fr_auto] gap-2"
+                className="grid grid-cols-1 sm:grid-cols-[1.2fr_1fr_1fr_auto_auto] gap-2"
               >
                 <Input
                   placeholder="Coverage"
@@ -1262,6 +1279,13 @@ function PolicyBreakdownEditor({
                     updateCoverages(next);
                   }}
                 />
+                <div className="flex items-center gap-2">
+                  <SourceEvidenceButton
+                    sourceSpanIds={row.sourceSpanIds}
+                    sourceSpans={sourceSpans}
+                    label="Proof"
+                  />
+                </div>
                 <PillButton
                   size="compact"
                   variant="icon"
@@ -1358,7 +1382,8 @@ function displayPolicyChangeItemLabel(item: Record<string, unknown>) {
 }
 
 function displayPolicyChangeValue(value: unknown) {
-  if (value === undefined || value === null || value === "") return "not listed";
+  if (value === undefined || value === null || value === "")
+    return "not listed";
   return String(value)
     .replace(/\bnull\b/gi, "not listed")
     .replace(/\bunknown\b/gi, "Unknown");
@@ -1390,9 +1415,8 @@ function DeclarationDiscrepancyList({
             Policy details need confirmation
           </h3>
           <p className="mt-1 max-w-3xl text-label-sm leading-5 text-muted-foreground">
-            Different active policies show different values. Confirm the
-            correct detail before using it on certificates, renewals, or policy
-            changes.
+            Different active policies show different values. Confirm the correct
+            detail before using it on certificates, renewals, or policy changes.
           </p>
         </div>
         <span className="rounded-full border border-amber-500/20 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300">
@@ -1402,10 +1426,7 @@ function DeclarationDiscrepancyList({
 
       <div className="mt-4 divide-y divide-foreground/6 border-t border-foreground/6">
         {discrepancies.map((discrepancy) => (
-          <div
-            key={discrepancy._id}
-            className="py-3 first:pt-3 last:pb-0"
-          >
+          <div key={discrepancy._id} className="py-3 first:pt-3 last:pb-0">
             <div className="grid gap-3 md:grid-cols-[minmax(160px,0.8fr)_minmax(220px,1fr)_minmax(220px,1.4fr)_auto] md:items-start">
               <div className="min-w-0 flex-1">
                 <p className="text-[11px] font-medium uppercase tracking-normal text-muted-foreground">
@@ -1537,9 +1558,7 @@ function PolicyChangesTab({
   if (cases.length === 0) {
     return (
       <div className="space-y-3">
-        <DeclarationDiscrepancyList
-          discrepancies={declarationDiscrepancies}
-        />
+        <DeclarationDiscrepancyList discrepancies={declarationDiscrepancies} />
         <div className="rounded-lg border border-foreground/6 bg-card px-4 py-6 text-center">
           <p className="text-body-sm text-muted-foreground">
             No policy change requests recorded yet.
@@ -1591,7 +1610,9 @@ function PolicyChangesTab({
             : current,
         ),
       ]);
-      toast.success(status === "submitted" ? "Marked sent" : `Marked ${status}`);
+      toast.success(
+        status === "submitted" ? "Marked sent" : `Marked ${status}`,
+      );
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Could not update status",
@@ -1638,9 +1659,7 @@ function PolicyChangesTab({
   if (!canManage) {
     return (
       <div className="space-y-3">
-        <DeclarationDiscrepancyList
-          discrepancies={declarationDiscrepancies}
-        />
+        <DeclarationDiscrepancyList discrepancies={declarationDiscrepancies} />
         {cases.map((change) => {
           const missingInfoCount = Array.isArray(change.missingInfoQuestions)
             ? change.missingInfoQuestions.length
@@ -1774,12 +1793,14 @@ function PolicyChangesTab({
                 <span>{dayjs(change.updatedAt).format("MMM D, YYYY")}</span>
                 {missingInfoCount > 0 && (
                   <span>
-                    {missingInfoCount} answer{missingInfoCount === 1 ? "" : "s"} needed
+                    {missingInfoCount} answer{missingInfoCount === 1 ? "" : "s"}{" "}
+                    needed
                   </span>
                 )}
                 {validationIssueCount > 0 && (
                   <span>
-                    {validationIssueCount} item{validationIssueCount === 1 ? "" : "s"} to review
+                    {validationIssueCount} item
+                    {validationIssueCount === 1 ? "" : "s"} to review
                   </span>
                 )}
               </div>
@@ -1903,10 +1924,7 @@ function PolicyChangesTab({
                 <div className="mt-2 divide-y divide-foreground/6 border-y border-foreground/6">
                   {items.length > 0 ? (
                     items.map((item, i) => (
-                      <div
-                        key={String(item.id ?? i)}
-                        className="py-3"
-                      >
+                      <div key={String(item.id ?? i)} className="py-3">
                         <p className="text-label-sm font-medium text-foreground">
                           {displayPolicyChangeItemLabel(item)}
                         </p>
@@ -1914,8 +1932,8 @@ function PolicyChangesTab({
                           Current:{" "}
                           <span className="text-foreground">
                             {displayPolicyChangeValue(item.beforeValue)}
-                          </span>
-                          {" "}→ Requested:{" "}
+                          </span>{" "}
+                          → Requested:{" "}
                           <span className="text-foreground">
                             {displayPolicyChangeValue(
                               item.requestedValue ?? item.afterValue,
@@ -1924,7 +1942,10 @@ function PolicyChangesTab({
                         </p>
                         {item.action || item.kind ? (
                           <p className="mt-1 text-[11px] text-muted-foreground">
-                            {[humanizeSnake(item.action), humanizeSnake(item.kind)]
+                            {[
+                              humanizeSnake(item.action),
+                              humanizeSnake(item.kind),
+                            ]
                               .filter(Boolean)
                               .join(" · ")}
                           </p>
@@ -2009,24 +2030,24 @@ function PolicyChangesTab({
                   {missingInfo.length > 0 ? (
                     <div className="divide-y divide-foreground/6 border-y border-foreground/6">
                       {missingInfo.map((question, i) => (
-                      <div
-                        key={String(question.id ?? question.code ?? i)}
-                        className="py-3"
-                      >
-                        <p className="text-label-sm text-foreground">
-                          {String(question.question ?? "Missing information")}
-                        </p>
-                        {question.reason ? (
-                          <p className="mt-1 text-label-sm text-muted-foreground">
-                            {String(question.reason)}
+                        <div
+                          key={String(question.id ?? question.code ?? i)}
+                          className="py-3"
+                        >
+                          <p className="text-label-sm text-foreground">
+                            {String(question.question ?? "Missing information")}
                           </p>
-                        ) : null}
-                        {question.answer ? (
-                          <p className="mt-2 text-label-sm text-muted-foreground">
-                            Answer: {String(question.answer)}
-                          </p>
-                        ) : null}
-                      </div>
+                          {question.reason ? (
+                            <p className="mt-1 text-label-sm text-muted-foreground">
+                              {String(question.reason)}
+                            </p>
+                          ) : null}
+                          {question.answer ? (
+                            <p className="mt-2 text-label-sm text-muted-foreground">
+                              Answer: {String(question.answer)}
+                            </p>
+                          ) : null}
+                        </div>
                       ))}
                     </div>
                   ) : (
@@ -2257,8 +2278,7 @@ function CertificateCreatePanel({
         return;
       }
       if (
-        (result as { status?: string }).status ===
-        "held_policy_change_required"
+        (result as { status?: string }).status === "held_policy_change_required"
       ) {
         toast.message(
           (result as { message?: string }).message ??
@@ -2559,7 +2579,9 @@ function CertificatesTab({ policyId }: { policyId: Id<"policies"> }) {
   const rows = [
     ...((activity.certificates ?? []) as Array<Record<string, unknown>>),
     ...((activity.holds ?? []) as Array<Record<string, unknown>>),
-  ].sort((left, right) => Number(right.createdAt ?? 0) - Number(left.createdAt ?? 0));
+  ].sort(
+    (left, right) => Number(right.createdAt ?? 0) - Number(left.createdAt ?? 0),
+  );
 
   if (rows.length === 0) {
     return (
@@ -2585,10 +2607,18 @@ function CertificatesTab({ policyId }: { policyId: Id<"policies"> }) {
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               <p className="text-body-sm font-medium text-foreground truncate">
-                {String(row.certificateHolderName ?? row.holderName ?? "Certificate of Insurance")}
+                {String(
+                  row.certificateHolderName ??
+                    row.holderName ??
+                    "Certificate of Insurance",
+                )}
               </p>
               <p className="mt-1 whitespace-pre-line text-label-sm text-muted-foreground">
-                {String(row.certificateHolder ?? row.reasonMessage ?? "No certificate holder recorded")}
+                {String(
+                  row.certificateHolder ??
+                    row.reasonMessage ??
+                    "No certificate holder recorded",
+                )}
               </p>
               <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
                 <span>{formatCertificateTimestamp(Number(row.createdAt))}</span>
@@ -2728,7 +2758,9 @@ export function PolicyDetailBody({
   }, [fileUrl, initialPage, openWithUrl, preloadPdfUrl]);
 
   const p = (policy ?? {}) as unknown as Record<string, unknown>;
-  const policyTypes: string[] = (p.policyTypes as string[] | undefined) ?? ["other"];
+  const policyTypes: string[] = (p.policyTypes as string[] | undefined) ?? [
+    "other",
+  ];
   const documentType: string =
     (p.documentType as string | undefined) ?? "policy";
   const carrierName = (p.carrier as string | undefined) ?? "";
@@ -3235,6 +3267,7 @@ export function PolicyDetailBody({
                 readOnly={readOnly || isDeleted || !canEditExtractedFields}
               />
               <ExtractionCards
+                policyId={policy._id}
                 policyDocument={extractionData}
                 initialPage={initialPage}
               />

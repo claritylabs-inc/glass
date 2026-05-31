@@ -1,10 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { usePdf } from "@/components/pdf-context";
 import { ProseMarkdown } from "@/components/prose-markdown";
 import { POLICY_TYPE_LABELS } from "@/convex/lib/policyTypes";
+import type { Id } from "@/convex/_generated/dataModel";
+import {
+  SourceEvidenceButton,
+  collectSourceSpanIds,
+  sourceSpanIdsFrom,
+  usePolicySourceSpans,
+  type SourceSpanDoc,
+} from "./source-provenance";
 
 // ─── Internal types for policy document data ──────────────────────────────────
 
@@ -75,6 +83,7 @@ type FeeEntry = {
   amount?: string;
   type?: string;
   description?: string;
+  sourceSpanIds?: string[];
 };
 
 type PolicyFee = {
@@ -93,6 +102,7 @@ type CoverageEntry = {
   pageNumber?: number;
   sectionRef?: string;
   originalContent?: string;
+  sourceSpanIds?: string[];
 };
 
 type DefinitionEntry = {
@@ -103,6 +113,7 @@ type DefinitionEntry = {
   formTitle?: string;
   sectionRef?: string;
   originalContent?: string;
+  sourceSpanIds?: string[];
 };
 
 type CoveredReasonEntry = {
@@ -118,6 +129,7 @@ type CoveredReasonEntry = {
   formTitle?: string;
   sectionRef?: string;
   originalContent?: string;
+  sourceSpanIds?: string[];
 };
 
 type DeclarationField = {
@@ -126,6 +138,7 @@ type DeclarationField = {
   section?: string;
   pageNumber?: number;
   pageStart?: number;
+  sourceSpanIds?: string[];
 };
 
 type FormInventoryEntry = {
@@ -135,6 +148,7 @@ type FormInventoryEntry = {
   formType?: string;
   pageStart?: number;
   pageEnd?: number;
+  sourceSpanIds?: string[];
 };
 
 type SupplementaryFact = {
@@ -142,11 +156,13 @@ type SupplementaryFact = {
   value?: string;
   subject?: string;
   context?: string;
+  sourceSpanIds?: string[];
 };
 
 type PremiumLine = {
   line?: string;
   amount?: string;
+  sourceSpanIds?: string[];
 };
 
 type RegulatoryDetail = { label: string; value: string };
@@ -158,6 +174,7 @@ type RegulatoryContext = {
   regulatoryBody?: string;
   governingLaw?: string;
   details?: RegulatoryDetail[];
+  sourceSpanIds?: string[];
 };
 
 type ClaimsContact = {
@@ -166,12 +183,14 @@ type ClaimsContact = {
   contacts?: ContactEntry[];
   processSteps?: string[];
   reportingTimeLimit?: string;
+  sourceSpanIds?: string[];
 };
 
 type ComplaintContact = {
   content: string;
   pageNumber?: number;
   contacts?: ContactEntry[];
+  sourceSpanIds?: string[];
 };
 
 type PolicyDocument = {
@@ -303,6 +322,7 @@ type DataRow = {
   value: string;
   section?: string;
   pageNumber?: number;
+  sourceSpanIds?: string[];
 };
 type DataSection = { label: string; rows: DataRow[] };
 
@@ -433,7 +453,13 @@ function EndorsementBody({ e }: { e: PolicyEndorsement }) {
   );
 }
 
-function CoverageBody({ coverage }: { coverage: CoverageEntry }) {
+function CoverageBody({
+  coverage,
+  sourceSpans,
+}: {
+  coverage: CoverageEntry;
+  sourceSpans?: SourceSpanDoc[];
+}) {
   const metaItems = [
     coverage.coverageCode && { label: "Code", value: coverage.coverageCode },
     coverage.limit && { label: "Limit", value: coverage.limit },
@@ -455,6 +481,12 @@ function CoverageBody({ coverage }: { coverage: CoverageEntry }) {
           valueCellClassName={STRUCTURED_BODY_VALUE_CLASS}
         />
       )}
+      <SourceEvidenceButton
+        sourceSpanIds={coverage.sourceSpanIds}
+        sourceSpans={sourceSpans}
+        fallbackPage={coverage.pageNumber}
+        className="ml-[2.625rem]"
+      />
       {coverage.originalContent && (
         <div className={STRUCTURED_BODY_TEXT_CLASS}>
           <DocContent>{coverage.originalContent}</DocContent>
@@ -582,6 +614,8 @@ function StructuredItemsCard<T>({
   getPage,
   getBadges,
   renderBody,
+  getSourceSpanIds,
+  sourceSpans,
 }: {
   id: string;
   title: string;
@@ -590,6 +624,8 @@ function StructuredItemsCard<T>({
   getPage?: (item: T) => number | undefined;
   getBadges?: (item: T) => { label: string; className: string }[];
   renderBody: (item: T) => React.ReactNode;
+  getSourceSpanIds?: (item: T) => string[] | undefined;
+  sourceSpans?: SourceSpanDoc[];
 }) {
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   if (!items?.length) return null;
@@ -615,38 +651,49 @@ function StructuredItemsCard<T>({
       {items.map((item, i) => {
         const badges = getBadges?.(item) ?? [];
         const page = getPage?.(item);
+        const sourceSpanIds = getSourceSpanIds?.(item) ?? [];
         return (
           <div
             key={i}
             className="border-t border-foreground/4 first:border-t-0"
           >
-            <button
-              type="button"
-              onClick={() => toggle(i)}
-              className="w-full flex items-center gap-2 px-5 py-2.5 text-left hover:bg-foreground/[0.015] transition-colors"
-            >
-              {expanded.has(i) ? (
-                <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-              ) : (
-                <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+            <div className="flex items-center gap-2 px-5 py-2.5 hover:bg-foreground/[0.015] transition-colors">
+              <button
+                type="button"
+                onClick={() => toggle(i)}
+                className="flex min-w-0 flex-1 items-center gap-2 text-left"
+              >
+                {expanded.has(i) ? (
+                  <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                ) : (
+                  <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                )}
+                <span className="text-sm font-normal text-foreground flex-1 min-w-0 truncate">
+                  {getTitle(item)}
+                </span>
+                {badges.length > 0 && (
+                  <div className="hidden md:flex items-center gap-1.5 shrink-0">
+                    {badges.map((badge) => (
+                      <span
+                        key={badge.label}
+                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${badge.className}`}
+                      >
+                        {badge.label}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </button>
+              <SourceEvidenceButton
+                sourceSpanIds={sourceSpanIds}
+                sourceSpans={sourceSpans}
+                fallbackPage={page}
+                label="Proof"
+              />
+              {page != null && sourceSpanIds.length === 0 && (
+                <PageRef page={page} />
               )}
-              <span className="text-sm font-normal text-foreground flex-1 min-w-0 truncate">
-                {getTitle(item)}
-              </span>
-              {badges.length > 0 && (
-                <div className="hidden md:flex items-center gap-1.5 shrink-0">
-                  {badges.map((badge) => (
-                    <span
-                      key={badge.label}
-                      className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${badge.className}`}
-                    >
-                      {badge.label}
-                    </span>
-                  ))}
-                </div>
-              )}
-              {page != null && <PageRef page={page} />}
-            </button>
+            </div>
             {expanded.has(i) && (
               <div className="space-y-3 pt-2 pb-3">
                 {badges.length > 0 && (
@@ -872,11 +919,13 @@ function ClaimsContactStructured({ data }: { data: ClaimsContact }) {
 
 function KeyValueTable({
   rows,
+  sourceSpans,
   className = "",
   labelCellClassName = "",
   valueCellClassName = "",
 }: {
   rows: DataRow[];
+  sourceSpans?: SourceSpanDoc[];
   className?: string;
   labelCellClassName?: string;
   valueCellClassName?: string;
@@ -905,7 +954,15 @@ function KeyValueTable({
             >
               <span className="inline-flex items-center gap-1.5 break-words">
                 <span>{row.value}</span>
-                {row.pageNumber != null && <PageRef page={row.pageNumber} />}
+                <SourceEvidenceButton
+                  sourceSpanIds={row.sourceSpanIds}
+                  sourceSpans={sourceSpans}
+                  fallbackPage={row.pageNumber}
+                  label="Proof"
+                />
+                {row.pageNumber != null && !row.sourceSpanIds?.length && (
+                  <PageRef page={row.pageNumber} />
+                )}
               </span>
             </td>
           </tr>
@@ -915,14 +972,22 @@ function KeyValueTable({
   );
 }
 
-function DataCard({ title, rows }: { title: string; rows: DataRow[] }) {
+function DataCard({
+  title,
+  rows,
+  sourceSpans,
+}: {
+  title: string;
+  rows: DataRow[];
+  sourceSpans?: SourceSpanDoc[];
+}) {
   if (!rows.length) return null;
   return (
     <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
       <div className="px-5 py-3 border-b border-foreground/4">
         <p className="text-sm font-medium text-foreground">{title}</p>
       </div>
-      <KeyValueTable rows={rows} />
+      <KeyValueTable rows={rows} sourceSpans={sourceSpans} />
     </div>
   );
 }
@@ -930,9 +995,11 @@ function DataCard({ title, rows }: { title: string; rows: DataRow[] }) {
 function SectionedDataCard({
   title,
   sections,
+  sourceSpans,
 }: {
   title: string;
   sections: DataSection[];
+  sourceSpans?: SourceSpanDoc[];
 }) {
   const nonEmptySections = sections.filter(
     (section) => section.rows.length > 0,
@@ -950,7 +1017,11 @@ function SectionedDataCard({
           label={`${section.label} (${section.rows.length})`}
           defaultOpen={index === 0}
         >
-          <KeyValueTable rows={section.rows} labelCellClassName="sm:pl-11" />
+          <KeyValueTable
+            rows={section.rows}
+            sourceSpans={sourceSpans}
+            labelCellClassName="sm:pl-11"
+          />
         </GroupSection>
       ))}
     </div>
@@ -993,6 +1064,7 @@ export function GroupSection({
 // ─── Public component ─────────────────────────────────────────────────────────
 
 export interface ExtractionPanelProps {
+  policyId?: Id<"policies">;
   /** The full `document` field from the policy record */
   policyDocument: PolicyDocument | null | undefined;
   /** page number that triggered the URL (for section highlighting) */
@@ -1001,9 +1073,15 @@ export interface ExtractionPanelProps {
 
 /** Renders extraction details as separate, flat cards — one per data type */
 export function ExtractionCards({
+  policyId,
   policyDocument,
   initialPage: _initialPage,
 }: ExtractionPanelProps) {
+  const allSourceSpanIds = useMemo(
+    () => collectSourceSpanIds(policyDocument),
+    [policyDocument],
+  );
+  const sourceSpans = usePolicySourceSpans(policyId, allSourceSpanIds);
   const coverages = policyDocument?.coverages ?? [];
   const declarations = Array.isArray(
     (
@@ -1061,7 +1139,10 @@ export function ExtractionCards({
     policyDocument?.policyTypes?.length && {
       label: "Coverage types",
       value: policyDocument.policyTypes
-        .map((type) => POLICY_TYPE_LABELS[type] ?? formatStructuredLabel(type) ?? type)
+        .map(
+          (type) =>
+            POLICY_TYPE_LABELS[type] ?? formatStructuredLabel(type) ?? type,
+        )
         .join(", "),
     },
     policyDocument?.premium && {
@@ -1081,6 +1162,7 @@ export function ExtractionCards({
         field.pageStart,
         declarationsPage,
       ),
+      sourceSpanIds: sourceSpanIdsFrom(field),
     }))
     .filter((row) => row.value);
 
@@ -1110,7 +1192,11 @@ export function ExtractionCards({
   return (
     <div className="space-y-4">
       {topLevelRows.length > 0 && (
-        <DataCard title="Policy details" rows={topLevelRows} />
+        <DataCard
+          title="Policy details"
+          rows={topLevelRows}
+          sourceSpans={sourceSpans}
+        />
       )}
 
       {coverages.length > 0 && (
@@ -1121,6 +1207,8 @@ export function ExtractionCards({
             items={coverages}
             getTitle={(coverage) => coverage.name ?? "Unnamed coverage"}
             getPage={(coverage) => coverage.pageNumber}
+            getSourceSpanIds={(coverage) => coverage.sourceSpanIds}
+            sourceSpans={sourceSpans}
             getBadges={(coverage) =>
               [
                 coverage.limit
@@ -1138,14 +1226,22 @@ export function ExtractionCards({
                   : undefined,
               ].filter(Boolean) as { label: string; className: string }[]
             }
-            renderBody={(coverage) => <CoverageBody coverage={coverage} />}
+            renderBody={(coverage) => (
+              <CoverageBody coverage={coverage} sourceSpans={sourceSpans} />
+            )}
           />
         </div>
       )}
 
-      {limits.length > 0 && <DataCard title="Limits" rows={limits} />}
+      {limits.length > 0 && (
+        <DataCard title="Limits" rows={limits} sourceSpans={sourceSpans} />
+      )}
       {deductibles.length > 0 && (
-        <DataCard title="Deductibles" rows={deductibles} />
+        <DataCard
+          title="Deductibles"
+          rows={deductibles}
+          sourceSpans={sourceSpans}
+        />
       )}
 
       {(premiumRows.length > 0 ||
@@ -1153,6 +1249,7 @@ export function ExtractionCards({
         premiumBreakdown.length > 0) && (
         <SectionedDataCard
           title="Premium"
+          sourceSpans={sourceSpans}
           sections={[
             {
               label: "Summary",
@@ -1167,6 +1264,7 @@ export function ExtractionCards({
                   section: item.type
                     ? (formatStructuredLabel(item.type) ?? item.type)
                     : item.description,
+                  sourceSpanIds: sourceSpanIdsFrom(item),
                 }))
                 .filter((row) => row.label && row.value),
             },
@@ -1176,6 +1274,7 @@ export function ExtractionCards({
                 .map((item) => ({
                   label: item.line ?? "Premium line",
                   value: item.amount ?? "",
+                  sourceSpanIds: sourceSpanIdsFrom(item),
                 }))
                 .filter((row) => row.value),
             },
@@ -1186,6 +1285,7 @@ export function ExtractionCards({
       {declarations.length > 0 && (
         <SectionedDataCard
           title="Declarations"
+          sourceSpans={sourceSpans}
           sections={groupRowsBySection(declarationRows)}
         />
       )}
@@ -1198,6 +1298,8 @@ export function ExtractionCards({
             items={definitions}
             getTitle={(definition) => definition.term ?? "Unnamed definition"}
             getPage={(definition) => definition.pageNumber}
+            getSourceSpanIds={(definition) => definition.sourceSpanIds}
+            sourceSpans={sourceSpans}
             getBadges={(definition) =>
               definition.sectionRef
                 ? [
@@ -1231,6 +1333,8 @@ export function ExtractionCards({
                 .join(". ")
             }
             getPage={(reason) => reason.pageNumber}
+            getSourceSpanIds={(reason) => reason.sourceSpanIds}
+            sourceSpans={sourceSpans}
             getBadges={(reason) =>
               [
                 reason.coverageName
@@ -1256,6 +1360,7 @@ export function ExtractionCards({
 
       {formInventory.length > 0 && (
         <DataCard
+          sourceSpans={sourceSpans}
           title="Form inventory"
           rows={formInventory
             .map((form) => ({
@@ -1272,6 +1377,7 @@ export function ExtractionCards({
               ]
                 .filter(Boolean)
                 .join(" | "),
+              sourceSpanIds: sourceSpanIdsFrom(form),
             }))
             .filter((row) => row.value)}
         />
@@ -1279,6 +1385,7 @@ export function ExtractionCards({
 
       {supplementaryFacts.length > 0 && (
         <DataCard
+          sourceSpans={sourceSpans}
           title="Supplementary facts"
           rows={supplementaryFacts
             .map((fact) => ({
@@ -1287,6 +1394,7 @@ export function ExtractionCards({
               section:
                 [fact.subject, fact.context].filter(Boolean).join(" | ") ||
                 undefined,
+              sourceSpanIds: sourceSpanIdsFrom(fact),
             }))
             .filter((row) => row.value)}
         />

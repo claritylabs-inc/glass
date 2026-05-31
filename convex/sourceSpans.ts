@@ -63,7 +63,30 @@ export const listSpansByPolicyAndSpanIds = query({
       .query("sourceSpans")
       .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
       .collect();
-    return spans.filter((span) => wanted.has(span.spanId));
+    const direct = spans.filter((span) => wanted.has(span.spanId));
+    const relatedIds = new Set<string>();
+    for (const span of direct) {
+      const metadata = (span.metadata ?? {}) as Record<string, unknown>;
+      for (const value of [metadata.parentSpanId, metadata.rowSpanId]) {
+        if (typeof value === "string" && value.length > 0) {
+          relatedIds.add(value);
+        }
+      }
+    }
+    for (const span of spans) {
+      const metadata = (span.metadata ?? {}) as Record<string, unknown>;
+      const parentSpanId = metadata.parentSpanId;
+      const rowSpanId = metadata.rowSpanId;
+      if (
+        (typeof parentSpanId === "string" && wanted.has(parentSpanId)) ||
+        (typeof rowSpanId === "string" && wanted.has(rowSpanId))
+      ) {
+        relatedIds.add(span.spanId);
+      }
+    }
+    return spans.filter(
+      (span) => wanted.has(span.spanId) || relatedIds.has(span.spanId),
+    );
   },
 });
 
